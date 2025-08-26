@@ -6,6 +6,7 @@ var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 @onready var action_list = $PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/ActionList
 @onready var search_bar = $PanelContainer/MarginContainer/VBoxContainer/SearchBar
 @onready var save_config = $PanelContainer/MarginContainer/VBoxContainer/SaveButton
+@onready var return_main_menu_button: Button = $PanelContainer/MarginContainer/VBoxContainer/ReturnMainMenuButton
 
 var input_map_path = "user://inputs.map"
 var is_remapping = false
@@ -18,8 +19,8 @@ var last_press = ""
 static var is_shown
 
 func _ready() -> void:
+	if not is_multiplayer_authority(): return
 	is_shown = false
-	if multiplayer.is_server(): return
 	InputMap.load_from_project_settings()
 	import_input_map()
 	create_action_list()
@@ -65,37 +66,27 @@ func _on_input_button_pressed(b, a):
 		b.find_child("LabelInput").text = "Press key to bind..."
 	get_tree().root.get_viewport().set_input_as_handled()
 
-func _input(ev: InputEvent):
-	if is_remapping:
-		if(
-			ev is InputEventKey ||
-			(ev is InputEventMouseButton && ev.pressed)
-		):
-			InputMap.action_erase_events(action_to_remap)
-			InputMap.action_add_event(action_to_remap, ev)
-			_update_action_list(remapping_button, ev)
-			if ev is InputEventKey:
-				keycode_dic.set(action_to_remap, ev.as_text_physical_keycode())
-			elif ev is InputEventMouseButton:
-				keycode_dic.set(action_to_remap, "mouse_" + str(ev.button_index))
-			is_remapping = false
-			action_to_remap = null
-			remapping_button = null
-			save_config.visible = true
-			
-			get_tree().root.get_viewport().set_input_as_handled()
-			return
-			
-	if ev.is_action_pressed("open_shortcut_menu"):
-		if not visible:
-			visible = true			
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-			visible = false
-		get_tree().root.get_viewport().set_input_as_handled()
+func _unhandled_input(event: InputEvent) -> void:
+	
+	if visible:
+		if event.is_action_pressed("pause"):
+			return_main_menu_button.emit_signal("pressed")
 		
-	is_shown = visible
+		if is_remapping:
+			if event is InputEventKey or (event is InputEventMouseButton && event.pressed):
+				InputMap.action_erase_events(action_to_remap)
+				InputMap.action_add_event(action_to_remap, event)
+				_update_action_list(remapping_button, event)
+				if event is InputEventKey:
+					keycode_dic.set(action_to_remap, event.as_text_physical_keycode())
+				elif event is InputEventMouseButton:
+					keycode_dic.set(action_to_remap, "mouse_" + str(event.button_index))
+				is_remapping = false
+				action_to_remap = null
+				remapping_button = null
+				save_config.visible = true
+		
+		get_viewport().set_input_as_handled()
 	
 func _update_action_list(button: Button, ev: InputEvent):
 	button.find_child("LabelInput").text = format_input_label(ev)
@@ -123,8 +114,6 @@ func _on_save_button_pressed() -> void:
 	
 	print("Actions exportées vers :", input_map_path)
 	save_config.visible = false
-	visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func import_input_map() -> void:
 	if not FileAccess.file_exists(input_map_path):

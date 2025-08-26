@@ -305,10 +305,8 @@ visible = false
 layout_mode = 1
 mouse_filter = 1
 
-[node name="PausePage" parent="UserInterface" instance=ExtResource("11_82eon")]
-visible = false
+[node name="PauseMenu" parent="UserInterface" instance=ExtResource("11_82eon")]
 layout_mode = 1
-mouse_filter = 2
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
 

@@ -4,7 +4,6 @@
 [ext_resource type="PackedScene" uid="uid://c8lapfbcseu04" path="res://ui/menu_config/input_button.tscn" id="1_ndumg"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7wffm"]
-content_margin_bottom = 20.0
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gfdrd"]
 content_margin_left = 20.0
@@ -63,6 +62,7 @@ theme_override_constants/margin_bottom = 50
 
 [node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer/MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 5
 
 [node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -70,7 +70,7 @@ layout_mode = 2
 [node name="Title" type="Label" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 50
+theme_override_font_sizes/font_size = 40
 theme_override_styles/normal = SubResource("StyleBoxEmpty_7wffm")
 text = "Input configuration"
 
@@ -78,7 +78,7 @@ text = "Input configuration"
 layout_mode = 2
 size_flags_vertical = 4
 focus_mode = 0
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 24
 theme_override_styles/hover = SubResource("StyleBoxFlat_gfdrd")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_gfdrd")
 theme_override_styles/normal = SubResource("StyleBoxFlat_rgm8q")
@@ -121,7 +121,14 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 40
 theme_override_styles/hover = SubResource("StyleBoxFlat_7wffm")
 theme_override_styles/normal = SubResource("StyleBoxFlat_c8v1g")
-text = "Save and close"
+text = "Save changes"
+
+[node name="ReturnMainMenuButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 24
+text = "Return"
 
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/ResetButton" to="." method="_on_reset_button_pressed"]
 [connection signal="text_changed" from="PanelContainer/MarginContainer/VBoxContainer/SearchBar" to="." method="_on_text_edit_text_changed"]

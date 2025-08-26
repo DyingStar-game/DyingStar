@@ -22,7 +22,7 @@ signal client_action_requested(datas: Dictionary)
 @onready var box50m: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 @onready var isInsideBox4m: bool = false
 
-@onready var game_is_paused: bool = false
+@onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
 
 @onready var clientUUID
 
@@ -159,6 +159,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
+	
+	if event.is_action_pressed("toggle_flashlight"):
+		flashlight.visible = not flashlight.visible
 	
 	if event.is_action_pressed("spawn_50cmbox"):
 		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
