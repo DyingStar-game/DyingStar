@@ -16,16 +16,17 @@ func serialize():
 	}
 	return JSON.stringify(dict)
 
-func _ready():
+func _on_parent_ready() -> void:
 	if OS.has_feature("dedicated_server"):
 		print("is in server")
 		parent = get_parent()
-		PersitDataBridge.setup_persistence_manager(_on_client_ready)
 		planete_name = "TestPlanete+"+get_parent().name
 		uuid_obj = uuid.v4()
+		PersitDataBridge.setup_persistence_manager(_on_client_ready)
+		
 	else:
 		print ("data planete is instanciate on client ")
-
+	
 func  _on_client_ready():
 	print("🚀 Signal ClientReady Persist Physic Data !")
 	PersitDataBridge.execute_custom_query('''
@@ -35,12 +36,6 @@ func  _on_client_ready():
 			uid 
 			uuid 
 			name 
-			contains 
-			{ 
-				uid 
-				uuid 
-				name 
-			} 
 		} }'''.format([planete_name]),_check_planete)
 	#save_data(on_saved)
 func _check_planete(result: String):
@@ -59,12 +54,14 @@ func _check_planete(result: String):
 			
 func query_child_data():
 	print("🚀 Query Get child !")
+	print(planete_name)
 	print(NetworkOrchestrator.ServerSDOId)
 	if NetworkOrchestrator.ServerSDOId == 1:
 		PersitDataBridge.execute_custom_query('''
 		{
 		  entity(func: uid({0})) {
 			~parent{
+				uid
 				expand(_all_)
 			  }
 		  }
@@ -73,10 +70,10 @@ func query_child_data():
 func _load_child_entity(result: String):
 	var parsed = JSON.parse_string(result)
 	if parsed["entity"].size() > 0 :
+		var n = 0;
 		for element in parsed["entity"][0]["~parent"]:
+			n+=1
 			NetworkOrchestrator.spawn_prop(element["type_obj"],element)
-			#var childpck = load(element["type_obj"])
-			#var child = childpck.instantiate()
-			#if child.has_node("DataEntity"):
-			#	child.get_node("DataEntity").load_obj(element,self)
-			#	parent.add_child(child,true)
+			if n > 10000 :
+				await get_tree().create_timer(1).timeout
+				n=0 

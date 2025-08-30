@@ -9,13 +9,13 @@
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_xjcjc"]
 properties/0/path = NodePath(".:position")
 properties/0/spawn = true
-properties/0/replication_mode = 1
+properties/0/replication_mode = 2
 properties/1/path = NodePath(".:rotation")
 properties/1/spawn = true
-properties/1/replication_mode = 1
+properties/1/replication_mode = 2
 properties/2/path = NodePath("PilotSeat:remote_path")
 properties/2/spawn = true
-properties/2/replication_mode = 1
+properties/2/replication_mode = 2
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hn282"]
 size = Vector3(3.16406, 3.22339, 5.33411)

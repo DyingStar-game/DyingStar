@@ -1,8 +1,7 @@
 // Wrapper pour les transactions en lecture seule
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
-using Godot;
+using Grpc.Core;
 
 public class DgraphReadOnlyTransactionWrapper : IReadOnlyTransaction
 {

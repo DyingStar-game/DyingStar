@@ -8,6 +8,13 @@ var type_obj: String
 
 var is_new_object := true
 
+func _ready() -> void:
+	if not get_parent().ready.is_connected(_on_parent_ready):
+		get_parent().ready.connect(_on_parent_ready)
+
+func _on_parent_ready() -> void:
+	print("Parent is ready ")
+
 func serialize():
 	var dict = {
 		"uuid": uuid_obj,
@@ -57,4 +64,3 @@ func load_obj(data: Dictionary):
 
 func loaded(result: String):
 	print(" Data Object is loaded")
-	

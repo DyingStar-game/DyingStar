@@ -1,9 +1,11 @@
 using System;
+using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Dgraph;
 using Godot;
 using Grpc.Net.Client;
+using Grpc.Net.Compression;
 
 public class DgraphPersistenceProvider : IPersistenceProvider
 {
@@ -36,12 +38,14 @@ public class DgraphPersistenceProvider : IPersistenceProvider
                 Timeout = TimeSpan.FromSeconds(100)
             };
 
+
             var options = new GrpcChannelOptions
             {
                 HttpClient = httpClient,
-                MaxReceiveMessageSize = 4 * 1024 * 1024,
-                MaxSendMessageSize = 4 * 1024 * 1024,
+                MaxReceiveMessageSize = 64 * 1024 * 1024, // 64 MiB
+                MaxSendMessageSize = 64 * 1024 * 1024,
                 ThrowOperationCanceledOnCancellation = true,
+                CompressionProviders = new[] { new GzipCompressionProvider(CompressionLevel.Optimal) },
             };
             _channel = GrpcChannel.ForAddress(_connectionString, options);
             _client = new DgraphClient(_channel);

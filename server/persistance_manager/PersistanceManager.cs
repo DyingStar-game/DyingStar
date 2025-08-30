@@ -108,7 +108,7 @@ public partial class PersistanceManager : Node
                 MinBatchSize = 20,
                 MaxBatchSize = 1000,
                 MaxRetries = 3,
-                FlushInterval = TimeSpan.FromSeconds(5)
+                FlushInterval = TimeSpan.FromSeconds(2)
             };
 
             _batchManager = new BatchOperationManager(

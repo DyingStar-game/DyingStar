@@ -14,6 +14,7 @@ var type_name = "ship"
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.ZERO
+var is_remote: bool = false
 
 var force_multiplier = 1000
 var gravity_area: Area3D

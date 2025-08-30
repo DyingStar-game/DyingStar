@@ -44,8 +44,8 @@ var PropsListLastRotation = {
 }
 
 var ServersTicksTasks = {
-	"TooManyPlayersCurent": 3600,
-	"TooManyPlayersReset": 3600, # all 1 minute
+	"TooManyPlayersCurent": 900,
+	"TooManyPlayersReset": 900, # all 1 minute
 	"SendPlayersToMQTTCurrent": 15,
 	"SendPlayersToMQTTReset": 15,
 	"CheckPlayersOutOfZoneCurrent": 20,
@@ -315,6 +315,7 @@ func _spawn_prop_remote_add(prop):
 	NetworkOrchestrator.PropsList[prop.type][uuid] = prop_instance
 	prop_instance.spawn_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
 	prop_instance.set_physics_process(false)
+	prop_instance.is_remote = true
 	NetworkOrchestrator.small_props_spawner_node.get_node(NetworkOrchestrator.small_props_spawner_node.spawn_path).call_deferred("add_child", prop_instance, true)
 	NetworkOrchestrator.PropsList[prop.type][uuid] = prop_instance
 
