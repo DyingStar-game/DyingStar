@@ -145,7 +145,7 @@ func _on_scene_changed(changed_scene: Node) -> void:
 					login_player_name = "AlfredThaddeusCranePennyworth"
 					var server_instance =  NetworkOrchestrator.start_server(changed_scene)
 					server_instance.connect("populated_universe", _on_populated_universe)
-					server_instance.populate_universe(univers_creation_entities)
+					#server_instance.populate_universe(univers_creation_entities)
 				NETWORK_ROLE.PLAYER:
 					NetworkOrchestrator.start_client(changed_scene)
 		GAME_STATES_SCENES_PATHS[GAME_STATES.SERVER_UNIVERS_CREATION]:

@@ -15,10 +15,10 @@ size = Vector3(3.8, 3.8, 3.88033)
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_l5hyn"]
 properties/0/path = NodePath(".:rotation")
 properties/0/spawn = true
-properties/0/replication_mode = 1
+properties/0/replication_mode = 2
 properties/1/path = NodePath(".:position")
 properties/1/spawn = true
-properties/1/replication_mode = 1
+properties/1/replication_mode = 2
 
 [node name="RigidBody3D" type="RigidBody3D"]
 script = ExtResource("1_ealuu")
@@ -51,9 +51,3 @@ replication_config = SubResource("SceneReplicationConfig_l5hyn")
 [node name="DataEntity" type="Node" parent="."]
 script = ExtResource("5_pnqhc")
 metadata/_custom_type_script = "uid://6f0l3p44h7vy"
-
-; [node name="FmodEventEmitter3D" type="FmodEventEmitter3D" parent="."]
-; event_name = "event:/sound_test/spawn_palette"
-; event_guid = "{e24fbf02-2112-40f1-ad8f-f417a9f35ed0}"
-; autoplay = true
-; auto_release = true

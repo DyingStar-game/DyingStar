@@ -20,9 +20,10 @@ func _on_parent_ready() -> void:
 	if OS.has_feature("dedicated_server"):
 		print("is in server")
 		parent = get_parent()
-		PersitDataBridge.setup_persistence_manager(_on_client_ready)
 		planete_name = "TestPlanete+"+get_parent().name
 		uuid_obj = uuid.v4()
+		PersitDataBridge.setup_persistence_manager(_on_client_ready)
+		
 	else:
 		print ("data planete is instanciate on client ")
 	
@@ -53,8 +54,9 @@ func _check_planete(result: String):
 			
 func query_child_data():
 	print("🚀 Query Get child !")
+	print(planete_name)
 	print(NetworkOrchestrator.ServerSDOId)
-	if NetworkOrchestrator.ServerSDOId == 0:
+	if NetworkOrchestrator.ServerSDOId == 1:
 		PersitDataBridge.execute_custom_query('''
 		{
 		  entity(func: uid({0})) {

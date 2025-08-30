@@ -68,13 +68,19 @@ signal set_gameserver_numberPlayers(number_players_server)
 signal set_gameserver_numberServers(nbServers)
 signal set_gameserver_numberPlayersUniverse(nbPlayers)
 signal set_gameserver_serverzone(serverzone)
+signal send_server_sdo_id(id)
 
 func _enter_tree() -> void:
 	pass
 
 func create_server() -> void:
 	network_agent = load("res://server/server.tscn").instantiate()
+	connect("send_server_sdo_id", _on_sdo_id_assigned)
 	call_deferred("add_child", network_agent)
+
+func _on_sdo_id_assigned(id: int) -> void:
+	print_rich("[color=green]J'ai reçu l'ID SDO %d[/color]" % id)
+	network_agent.populate_universe(GameOrchestrator.univers_creation_entities)
 
 func create_client() -> void:
 	network_agent = load("res://server/client.tscn").instantiate()
@@ -274,6 +280,8 @@ func connect_mqtt_sdo():
 	MQTTClientSDO.connect_to_broker("ws://", ServerSDOUrl, ServerSDOPort)
 
 func _sdo_register():
+	if ServerIP == "127.0.0.1" && ServerName != "gameserverDev01":
+		await get_tree().create_timer(0.5).timeout
 	MQTTClientSDO.subscribe("sdo/serverslist")
 	MQTTClientSDO.subscribe("sdo/playerslist")
 	MQTTClientSDO.subscribe("sdo/propslist")
@@ -322,7 +330,7 @@ func _on_mqtt_sdo_received_message(topic, message):
 
 				MQTTClientSDO.unsubscribe("sdo/serverslist")
 				MQTTClientSDO.subscribe("sdo/serverschanges")
-
+				send_server_sdo_id.emit(ServerSDOId)
 			var split = null
 			if server.to_split_server_id != null:
 				split = int(server.to_split_server_id)
@@ -342,6 +350,7 @@ func _on_mqtt_sdo_received_message(topic, message):
 			}
 		get_gameserver_numberServers.rpc(ServersList.size())
 		get_gameserver_serverzone.rpc(network_agent.ServerZone)
+		
 	elif topic == "sdo/serverschanges":
 		var pushPlayers = false
 		var serversReceived = JSON.parse_string(message)

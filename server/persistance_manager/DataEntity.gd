@@ -62,10 +62,11 @@ func start_loop(): # is depracated
 		Backgroud_save()
 
 func Backgroud_save():
-	last_saved_position = parent.position
-	last_saved_rotation = parent.rotation
-	if not is_new_object and uid != "":
-		backgroud_save(1)
+	if parent.is_remote == false:
+		last_saved_position = parent.position
+		last_saved_rotation = parent.rotation
+		if not is_new_object and uid != "":
+			backgroud_save(1)
 
 func await_parent_save():
 	# Attendre que le parent soit sauvé
@@ -74,10 +75,11 @@ func await_parent_save():
 	initialize_and_save()
 
 func initialize_and_save():
-	uuid_obj = uuid.v4()
-	last_saved_position = parent.position
-	last_saved_rotation = parent.rotation
-	saved()
+	if parent.is_remote == false:
+		uuid_obj = uuid.v4()
+		last_saved_position = parent.position
+		last_saved_rotation = parent.rotation
+		saved()
 
 func load_obj(data: Dictionary):
 	print("load Data Object")

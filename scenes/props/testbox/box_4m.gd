@@ -7,6 +7,7 @@ var type_name = "box4m"
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
+var is_remote: bool = false
 
 func _ready() -> void:
 	$Area3D.body_entered.connect(_on_box_entered)
