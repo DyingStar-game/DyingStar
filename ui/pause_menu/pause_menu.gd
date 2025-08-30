@@ -42,7 +42,7 @@ func _on_pause_menu_button_pressed(button_pressed: String) -> void:
 			actual_page = input_settings_menu
 			actual_page.visible = true
 		"quit_game_button":
-			pass
+			get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
 		"resume_game_button":
 			GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.PLAYING)
 			visible = false

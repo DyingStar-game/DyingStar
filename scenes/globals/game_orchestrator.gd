@@ -66,6 +66,13 @@ func _ready():
 		change_network_role(NETWORK_ROLE.PLAYER)
 		change_game_state(GAME_STATES.HOME_MENU)
 
+func _notification(what):
+	match what:
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			## TODO :
+			## TOUTES LES ACTIONS A FAIRE AVANT DE QUITTER (besoin d'envoyer l'info au serveur ?)
+			get_tree().quit()
+
 func change_network_role(new_network_role) -> int:
 	match new_network_role:
 		NETWORK_ROLE.PLAYER:

@@ -100,12 +100,12 @@ grow_vertical = 2
 
 [node name="Title" type="Label" parent="ErrorMessage/VBox/Panel/VBoxContainer"]
 layout_mode = 2
-text = "ERROR 1337"
+text = "%%ERR_NUM_1337"
 label_settings = SubResource("LabelSettings_2xb8d")
 
 [node name="Message" type="Label" parent="ErrorMessage/VBox/Panel/VBoxContainer"]
 layout_mode = 2
-text = "SERVER CONNECTION FAILED"
+text = "%%ERR_NUM_1337_MSG"
 label_settings = SubResource("LabelSettings_rlngi")
 
 [node name="Icon" type="Sprite2D" parent="ErrorMessage/VBox/Panel/VBoxContainer"]
@@ -123,6 +123,6 @@ theme_override_styles/focus = SubResource("StyleBoxFlat_cfbt7")
 theme_override_styles/hover = SubResource("StyleBoxFlat_5vj24")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_cfbt7")
 theme_override_styles/normal = SubResource("StyleBoxFlat_5vj24")
-text = "BACK TO MENU"
+text = "%%ERR_BACKTOMENU"
 
 [connection signal="pressed" from="ErrorMessage/VBox/ExitBtn" to="." method="_on_exit_btn_pressed"]

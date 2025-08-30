@@ -72,7 +72,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 40
 theme_override_styles/normal = SubResource("StyleBoxEmpty_7wffm")
-text = "Input configuration"
+text = "%%KM_TITLE"
 
 [node name="ResetButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -82,7 +82,7 @@ theme_override_font_sizes/font_size = 24
 theme_override_styles/hover = SubResource("StyleBoxFlat_gfdrd")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_gfdrd")
 theme_override_styles/normal = SubResource("StyleBoxFlat_rgm8q")
-text = "Reset settings"
+text = "%%KM_RESET"
 
 [node name="SearchBar" type="LineEdit" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -90,7 +90,7 @@ theme_override_font_sizes/font_size = 30
 theme_override_styles/focus = SubResource("StyleBoxFlat_622vu")
 theme_override_styles/read_only = SubResource("StyleBoxFlat_622vu")
 theme_override_styles/normal = SubResource("StyleBoxFlat_622vu")
-placeholder_text = "Search for an action.."
+placeholder_text = "%%KM_SEARCH"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -121,14 +121,14 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 40
 theme_override_styles/hover = SubResource("StyleBoxFlat_7wffm")
 theme_override_styles/normal = SubResource("StyleBoxFlat_c8v1g")
-text = "Save changes"
+text = "%%KM_SAVEKEYCHANGE"
 
 [node name="ReturnMainMenuButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 theme_override_font_sizes/font_size = 24
-text = "Return"
+text = "%%RETURN"
 
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/ResetButton" to="." method="_on_reset_button_pressed"]
 [connection signal="text_changed" from="PanelContainer/MarginContainer/VBoxContainer/SearchBar" to="." method="_on_text_edit_text_changed"]

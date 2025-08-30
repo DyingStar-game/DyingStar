@@ -34,7 +34,7 @@ grow_vertical = 2
 [node name="Label" type="Label" parent="CenterContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 30
-text = "Game Paused"
+text = "%%PAUSEPAGE_TITLE"
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -57,14 +57,14 @@ theme_override_constants/separation = 10
 [node name="KeymappingButton" type="Button" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Key Mapping"
+text = "%%PAUSEPAGE_KEYMAPPING"
 
 [node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Quitter le jeu"
+text = "%%PAUSEPAGE_QUITGAME"
 
 [node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Retour au jeu"
+text = "%%PAUSEPAGE_RESUMEGAME"
