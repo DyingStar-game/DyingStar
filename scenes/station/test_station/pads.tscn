@@ -7,10 +7,10 @@
 [ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://assets/models/spawn_kiosk/spawn_kiosk.tscn" id="6_ba5kc"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bguhe"]
-size = Vector3(50.8096, 10.478, 50.5645)
+size = Vector3(50, 9.512, 49.952)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_s7jgl"]
-size = Vector3(37.1553, 7.23497, 9.00781)
+size = Vector3(37.3423, 7.23497, 9.00781)
 
 [node name="Pads" type="CSGCombiner3D"]
 material_override = ExtResource("1_tluwj")
@@ -43,15 +43,15 @@ size = Vector3(35.5876, 3.03906, 10)
 gravity_space_override = 3
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GravityArea"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.6284, 2.21193, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.6882, 2.51413, -0.00383949)
 shape = SubResource("BoxShape3D_bguhe")
 
 [node name="CollisionShape3D3" type="CollisionShape3D" parent="GravityArea"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.885799, 0.590416, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.792274, 0.590416, 0)
 shape = SubResource("BoxShape3D_s7jgl")
 
 [node name="CollisionShape3D2" type="CollisionShape3D" parent="GravityArea"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42.1657, 2.21193, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42.4024, 2.63792, 0)
 shape = SubResource("BoxShape3D_bguhe")
 
 [node name="SpotLight3D2" type="SpotLight3D" parent="."]
