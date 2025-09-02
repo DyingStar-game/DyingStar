@@ -1,61 +1,29 @@
-[gd_scene load_steps=13 format=3 uid="uid://bcer07jbu28y1"]
+[gd_scene load_steps=9 format=3 uid="uid://bcer07jbu28y1"]
 
 [ext_resource type="PackedScene" uid="uid://b86xjxnhg5yhd" path="res://scenes/planet/terrain_generator.tscn" id="1_invnv"]
 [ext_resource type="Script" uid="uid://qav8e3vvh7vd" path="res://scenes/planet/planet_terrain.gd" id="1_q7o7h"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="2_xntnt"]
+[ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="3_5md1e"]
 [ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="3_xntnt"]
 
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_q7o7h"]
-noise_type = 3
-frequency = 0.004
-fractal_type = 2
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_25nq4"]
-frequency = 0.0064
-fractal_type = 2
-fractal_octaves = 6
-fractal_lacunarity = 1.995
-fractal_gain = 0.695
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_2vvio"]
-frequency = 0.0016
-fractal_type = 2
-fractal_lacunarity = 2.045
-fractal_gain = 0.78
-domain_warp_fractal_type = 0
-domain_warp_fractal_lacunarity = 6.195
-
-[sub_resource type="Resource" id="Resource_42vvu"]
-script = ExtResource("2_xntnt")
-amplitude = 0.8
-noise = SubResource("FastNoiseLite_2vvio")
-metadata/_custom_type_script = "uid://d0532xwig15xf"
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_xntnt"]
-noise_type = 3
-frequency = 0.0507
-
-[sub_resource type="Resource" id="Resource_2vvio"]
-script = ExtResource("2_xntnt")
-amplitude = 0.3
-noise = SubResource("FastNoiseLite_xntnt")
-metadata/_custom_type_script = "uid://d0532xwig15xf"
+[sub_resource type="Resource" id="Resource_8bpd4"]
+script = ExtResource("3_5md1e")
+elev_scale = 1.0
+noise_scale = 1.0
+noise_params = Array[ExtResource("2_xntnt")]([])
+metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="SphereOccluder3D" id="SphereOccluder3D_xntnt"]
-radius = 5600.0
+radius = 5300.0
 
 [sub_resource type="SphereMesh" id="SphereMesh_25nq4"]
 
 [node name="Planet" type="StaticBody3D"]
 script = ExtResource("1_q7o7h")
 radius = 5000
-elev_scale = 1000.0
 min_height = 0.0
 max_height = 881774.0
-noise_scale = 3.0
-noise = SubResource("FastNoiseLite_q7o7h")
-noise_micro = SubResource("FastNoiseLite_25nq4")
-noise_maps = Array[ExtResource("2_xntnt")]([SubResource("Resource_42vvu"), SubResource("Resource_2vvio")])
+terrain_settings = SubResource("Resource_8bpd4")
 terrain_material = ExtResource("3_xntnt")
 
 [node name="TerrainGeneratorFront" parent="." node_paths=PackedStringArray("planet") instance=ExtResource("1_invnv")]

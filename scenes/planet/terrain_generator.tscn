@@ -1,10 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://b86xjxnhg5yhd"]
+[gd_scene load_steps=2 format=3 uid="uid://b86xjxnhg5yhd"]
 
 [ext_resource type="Script" uid="uid://d1idtpp16el8c" path="res://scenes/planet/terrain_generator.gd" id="1_h2rjh"]
-[ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="2_tk31g"]
 
 [node name="TerrainGenerator" type="Node3D"]
 script = ExtResource("1_h2rjh")
-focus_position = Vector3(-9.25827, 10.5354, 13.4754)
-material = ExtResource("2_tk31g")
 normal = Vector3(0, 0, 1)
