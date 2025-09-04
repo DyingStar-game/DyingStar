@@ -71,6 +71,8 @@ light_energy = 2.0
 spot_range = 200.0
 spot_angle = 41.4246
 
+[node name="FmodListener3D" type="FmodListener3D" parent="CameraPivot/Camera3D"]
+
 [node name="AreaDetector" type="Area3D" parent="."]
 collision_layer = 4
 monitorable = false

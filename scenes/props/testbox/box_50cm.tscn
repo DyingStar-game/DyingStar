@@ -21,6 +21,12 @@ mass = 0.25
 continuous_cd = true
 script = ExtResource("1_o2evt")
 
+[node name="FmodEventEmitter3D" type="FmodEventEmitter3D" parent="."]
+event_name = "event:/sound_test/spawn_colis"
+event_guid = "{7bbb0878-baaa-466e-a4f5-c12da18131e7}"
+autoplay = true
+auto_release = true
+
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 mesh = ExtResource("1_xngen")
 surface_material_override/0 = ExtResource("3_ovsim")
@@ -34,9 +40,3 @@ replication_config = SubResource("SceneReplicationConfig_8kwx5")
 [node name="DataEntity" type="Node" parent="."]
 script = ExtResource("4_f5bhg")
 metadata/_custom_type_script = "uid://6f0l3p44h7vy"
-
-; [node name="FmodEventEmitter3D" type="FmodEventEmitter3D" parent="."]
-; event_name = "event:/sound_test/spawn_colis"
-; event_guid = "{7bbb0878-baaa-466e-a4f5-c12da18131e7}"
-; autoplay = true
-; auto_release = true

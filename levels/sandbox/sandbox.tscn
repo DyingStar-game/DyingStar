@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://d1mhk3prnqywk"]
+[gd_scene load_steps=10 format=3 uid="uid://d1mhk3prnqywk"]
 
 [ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="1_fb2x7"]
 [ext_resource type="Script" uid="uid://u7bmtowwqmhu" path="res://levels/sandbox/sandbox.gd" id="1_fd0ol"]
