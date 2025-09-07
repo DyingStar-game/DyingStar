@@ -45,6 +45,7 @@ uuid="*res://addons/uuid/uuid.gd"
 PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
 FmodManager="*res://addons/fmod/FmodManager.gd"
 Fmod="*res://scenes/globals/Fmod.tscn"
+Endtoend="*res://scenes/globals/endtoend.gd"
 
 [debug]
 
