@@ -9,8 +9,8 @@ height = 200.0
 radial_segments = 16
 rings = 8
 
-[node name="Planet" type="MeshInstance3D"]
+[node name="Planet2" type="MeshInstance3D"]
 mesh = SubResource("SphereMesh_1k8ak")
 script = ExtResource("1_1k8ak")
 radius = 100.0
-real_radius = 10000.0
+real_radius = 1e+12

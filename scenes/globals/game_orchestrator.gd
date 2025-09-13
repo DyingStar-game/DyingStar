@@ -57,7 +57,7 @@ func _ready():
 		if ResourceUID.id_to_text(ResourceLoader.get_resource_uid(get_tree().current_scene.scene_file_path)) != ProjectSettings.get_setting("application/run/main_scene") and not OS.has_feature("dedicated_server"):
 			return
 	
-	get_tree().connect("scene_changed",_on_scene_changed)
+	get_tree().connect("scene_changed_custom", _on_scene_changed)
 	
 	if OS.has_feature("dedicated_server"):
 		change_network_role(NETWORK_ROLE.SERVER)
@@ -72,6 +72,9 @@ func _notification(what):
 			## TODO :
 			## TOUTES LES ACTIONS A FAIRE AVANT DE QUITTER (besoin d'envoyer l'info au serveur ?)
 			get_tree().quit()
+
+func is_server():
+	return current_network_role == NETWORK_ROLE.SERVER
 
 func change_network_role(new_network_role) -> int:
 	match new_network_role:
@@ -150,7 +153,7 @@ func _on_scene_changed(changed_scene: Node) -> void:
 					login_player_name = "AlfredThaddeusCranePennyworth"
 					var server_instance =  NetworkOrchestrator.start_server(changed_scene)
 					server_instance.connect("populated_universe", _on_populated_universe)
-					server_instance.populate_universe(univers_creation_entities)
+					# server_instance.populate_universe(univers_creation_entities)
 				NETWORK_ROLE.PLAYER:
 					NetworkOrchestrator.start_client(changed_scene)
 		GAME_STATES_SCENES_PATHS[GAME_STATES.SERVER_UNIVERS_CREATION]:

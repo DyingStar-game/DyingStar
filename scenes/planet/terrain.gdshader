@@ -121,26 +121,26 @@ void fragment() {
 
 	vec3 rock_normal_tex = triplanar_texture_notile(texture_normal, uv1_power_normal, uv1_triplanar_pos).rgb;
 	vec3 sand_normal_tex = triplanar_texture_notile(sand_normal, uv1_power_normal, uv1_triplanar_pos * 0.05).rgb;
-	
+
 	float offset = 0.9;
 	float fade = 0.1;
-	
+
 	//vec3 rock_normal = rock_normal_tex * 2.0 - 1.0;
 	//rock_normal.z = sqrt(1.0 - rock_normal.x * rock_normal.x - rock_normal.y * rock_normal.y);
 	//vec3 normal_applied = rock_normal.x * TANGENT + rock_normal.y * BINORMAL + rock_normal.z * NORMAL;
-	
+
 	vec3 up_vector_viewspace = mat3(VIEW_MATRIX) * normalize(offset_pos);
 	float dot_product = dot(up_vector_viewspace, NORMAL);
 	float mask = smoothstep(offset - fade, offset + fade, dot_product);
-	
-	
+
+
 	//float mask_var = mask * (1.0 - pow(triplanar_texture(noise, uv1_power_normal, uv1_triplanar_pos * 0.0002).x, 0.5));
 
 	vec3 roughness_texture_channel = vec3(1.0, 0.0, 0.0);
 	float roughness_tex = triplanar_texture_notile(texture_roughness, uv1_power_normal, uv1_triplanar_pos).r;
 	float sand_roughness_tex = triplanar_texture_notile(sand_roughness, uv1_power_normal, uv1_triplanar_pos).r * 1.5;
 
-	
+
 	ALBEDO = albedo.rgb;
 	SPECULAR = specular;
 	ROUGHNESS = mix(roughness_tex * roughness, sand_roughness_tex, mask);

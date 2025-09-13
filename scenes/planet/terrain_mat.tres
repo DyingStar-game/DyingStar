@@ -14,8 +14,8 @@ frequency = 0.8952
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_mpfmm"]
 width = 128
 height = 128
-seamless = true
 noise = SubResource("FastNoiseLite_pwywj")
+seamless = true
 
 [sub_resource type="Gradient" id="Gradient_3iebd"]
 offsets = PackedFloat32Array(0, 0.438384, 0.69495, 1)
@@ -24,9 +24,9 @@ colors = PackedColorArray(0.328125, 0.224896, 0.120598, 1, 0.677083, 0.464071, 0
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_4o7e0"]
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_uks27"]
-seamless = true
-color_ramp = SubResource("Gradient_3iebd")
 noise = SubResource("FastNoiseLite_4o7e0")
+color_ramp = SubResource("Gradient_3iebd")
+seamless = true
 
 [resource]
 render_priority = 0

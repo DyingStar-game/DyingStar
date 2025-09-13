@@ -292,7 +292,7 @@ func _ready():
 	my_name = name
 	is_visible_status = visible
 	
-	run_serverside = not Engine.is_editor_hint() and multiplayer.is_server()
+	run_serverside = not Engine.is_editor_hint() and GameOrchestrator.is_server()
 	
 	# Clear existing children
 	for child in get_children():

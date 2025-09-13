@@ -1,6 +1,6 @@
 extends SceneTree
 
-signal scene_changed(new_scene: Node)
+signal scene_changed_custom(new_scene: Node)
 
 const MAX_WAITING_FRAME_COUNT: int = 5
 
@@ -19,9 +19,9 @@ func change_scene_to_packed(packed_scene: PackedScene) -> int:
 			if new_current_scene.get("is_ready"):
 				if not new_current_scene.is_ready:
 					await new_current_scene.ready
-					emit_signal("scene_changed", new_current_scene)
+					emit_signal("scene_changed_custom", new_current_scene)
 				else:
-					emit_signal("scene_changed", new_current_scene)
+					emit_signal("scene_changed_custom", new_current_scene)
 	
 	return err
 
@@ -40,8 +40,8 @@ func change_scene_to_file(scene_file: String) -> int:
 			if new_current_scene.get("is_ready"):
 				if not new_current_scene.is_ready:
 					await new_current_scene.ready
-					emit_signal("scene_changed", new_current_scene)
+					emit_signal("scene_changed_custom_custom", new_current_scene)
 				else:
-					emit_signal("scene_changed", new_current_scene)
+					emit_signal("scene_changed_custom", new_current_scene)
 	
 	return err

@@ -31,7 +31,7 @@ DSP/dsp_buffer_count=4
 config/name="DyingStar"
 config/version="0.0.1-dev"
 run/main_scene="uid://dpderfrunb8lr"
-config/features=PackedStringArray("4.4", "C#", "Double Precision", "GL Compatibility")
+config/features=PackedStringArray("4.5", "C#", "Double Precision", "GL Compatibility")
 boot_splash/image="uid://ck5w0cxx7uj4"
 config/icon="uid://bqoexxd6necib"
 boot_splash/minimum_display_time=1000
@@ -46,6 +46,7 @@ uuid="*res://addons/uuid/uuid.gd"
 PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
 FmodManager="*res://addons/fmod/FmodManager.gd"
 Fmod="*res://scenes/globals/Fmod.tscn"
+Endtoend="*res://scenes/globals/endtoend.gd"
 
 [debug]
 

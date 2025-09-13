@@ -68,6 +68,7 @@ signal set_gameserver_numberPlayers(number_players_server)
 signal set_gameserver_numberServers(nbServers)
 signal set_gameserver_numberPlayersUniverse(nbPlayers)
 signal set_gameserver_serverzone(serverzone)
+signal set_gameserver_numberBoxes50cm(number_boxes_server)
 
 func _enter_tree() -> void:
 	pass
@@ -84,35 +85,35 @@ func start_server(changed_scene) -> Node:
 	
 	universe_scene = changed_scene
 	
-	small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
-	universe_datas_spawner_node = universe_scene.get_node("UniversDatasMultiplayerSpawner")
+	# small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
+	# universe_datas_spawner_node = universe_scene.get_node("UniversDatasMultiplayerSpawner")
 	
-	var spawnable_planet_path: String = universe_datas_spawner_node.get_spawnable_scene(0)
-	spawnable_planet_scene = load(spawnable_planet_path)
-	var spawnable_station_path: String = universe_datas_spawner_node.get_spawnable_scene(1)
-	spawnable_station_scene = load(spawnable_station_path)
+	#var spawnable_planet_path: String = universe_datas_spawner_node.get_spawnable_scene(0)
+	#spawnable_planet_scene = load(spawnable_planet_path)
+	#var spawnable_station_path: String = universe_datas_spawner_node.get_spawnable_scene(1)
+	#spawnable_station_scene = load(spawnable_station_path)
 	
-	small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
+	#small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
 	
-	preload_small_props(small_props_spawner_node)
-	small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
-	network_agent.start_server(changed_scene, small_spawnable_props_entry_point)
+	#preload_small_props(small_props_spawner_node)
+	#small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
+	network_agent.start_server(changed_scene)
 	return network_agent
 
 func start_client(changed_scene, ip = "127.0.0.1", port = 7051, serverChanges: bool = false) -> Node:
 	if not serverChanges:
 		universe_scene = changed_scene
-		small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
-		
-		small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
-		
-		small_props_spawner_node.connect("spawned", _on_entity_spawned)
-	
-		multiplayer.connected_to_server.connect(_client_connected_to_server)
-		multiplayer.server_disconnected.connect(_client_disconnected_server)
-
-		preload_small_props(small_props_spawner_node)
-		small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
+		#small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
+		#
+		#small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
+		#
+		#small_props_spawner_node.connect("spawned", _on_entity_spawned)
+	#
+		#multiplayer.connected_to_server.connect(_client_connected_to_server)
+		#multiplayer.server_disconnected.connect(_client_disconnected_server)
+#
+		#preload_small_props(small_props_spawner_node)
+		#small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
 	
 	network_agent.start_client(changed_scene, ip, port)
 	return network_agent
@@ -223,7 +224,7 @@ func _on_mqtt_broker_connection_failed():
 @rpc("any_peer", "call_remote", "unreliable")
 func send_chat_message_to_server(message: Dictionary) -> void:
 
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	
 	####################
@@ -250,7 +251,7 @@ func send_chat_message_to_server(message: Dictionary) -> void:
 # Receives a message from the server
 @rpc("authority", "call_remote", "unreliable")
 func receive_chat_message_from_server(message: Dictionary) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		var chat_message = ChatMessage.new(message["content"], message["channel"], message["author"], message["creation_schedule"])
 		network_agent.receive_chat_message(chat_message)
 
@@ -718,7 +719,7 @@ func get_spawnable_props_newinstance(proptype):
 
 @rpc("any_peer", "call_remote", "reliable")
 func spawn_prop(proptype,data: Dictionary ) -> void: #spawn_position: Vector3 = Vector3.ZERO, spawn_rotation: Vector3 = Vector3.UP) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	var prop_instance: RigidBody3D = get_spawnable_props_newinstance(proptype)
 	if prop_instance == null:
@@ -746,8 +747,8 @@ func spawn_prop(proptype,data: Dictionary ) -> void: #spawn_position: Vector3 = 
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_planet(planet_datas: Dictionary) -> void:
-	if not multiplayer.is_server():
-		return
+	# if not multiplayer.is_server():
+	# 	return
 	
 	var spawnable_planet_instance: Node3D = spawnable_planet_scene.instantiate()
 	spawnable_planet_instance.spawn_position = planet_datas["coordinates"]
@@ -761,7 +762,7 @@ func spawn_planet(planet_datas: Dictionary) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_station(station_datas: Dictionary) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	
 	var spawnable_station_instance: Node3D = spawnable_station_scene.instantiate()

@@ -27,49 +27,52 @@ var debug_panel: PanelContainer
 var debug_label: RichTextLabel
 
 func _enter_tree() -> void:
-	if Engine.is_editor_hint():
-		debug_panel = PanelContainer.new()
-		debug_panel.name = "DebugPanel"
-		debug_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		debug_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		debug_panel.custom_minimum_size = Vector2(400, 420)
-		debug_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE)
-		
-		debug_panel.offset_top = 10
-		debug_panel.offset_bottom = -10
-		debug_panel.offset_right = -200
-		debug_panel.offset_left = 200
-		debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if OS.has_feature("editor"):
+		if Engine.is_editor_hint():
+			debug_panel = PanelContainer.new()
+			debug_panel.name = "DebugPanel"
+			debug_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			debug_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			debug_panel.custom_minimum_size = Vector2(400, 420)
+			debug_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE)
+			
+			debug_panel.offset_top = 10
+			debug_panel.offset_bottom = -10
+			debug_panel.offset_right = -200
+			debug_panel.offset_left = 200
+			debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-		debug_panel.add_theme_stylebox_override("panel", StyleBoxFlat.new())
-		debug_panel.get_theme_stylebox("panel").bg_color = Color(0, 0, 0, 0)
+			debug_panel.add_theme_stylebox_override("panel", StyleBoxFlat.new())
+			debug_panel.get_theme_stylebox("panel").bg_color = Color(0, 0, 0, 0)
 
-		debug_label = RichTextLabel.new()
-		debug_label.scroll_active = false
-		debug_label.fit_content = true
-		debug_label.bbcode_enabled = true
-		debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-		debug_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		debug_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+			debug_label = RichTextLabel.new()
+			debug_label.scroll_active = false
+			debug_label.fit_content = true
+			debug_label.bbcode_enabled = true
+			debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+			debug_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			debug_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
-		debug_panel.add_child(debug_label)
+			debug_panel.add_child(debug_label)
 
-		EditorInterface.get_editor_viewport_3d(0).add_child(debug_panel)
+			#EditorInterface.get_editor_viewport_3d(0).add_child(debug_panel)
 
 func _ready() -> void:
-	if Engine.is_editor_hint():
-		debug_label.append_text("[color=green]POUET[/color]\n")
+	if OS.has_feature("editor"):
+		if Engine.is_editor_hint():
+			debug_label.append_text("[color=green]POUET[/color]\n")
 	trigger_update()
 
 func _process(delta: float) -> void:
 	var camera: Camera3D
-	if Engine.is_editor_hint():
-		camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
-		players_ids = [1]
-		focus_positions = [camera.global_position + -camera.global_basis.z * 1]
-		return
+	if OS.has_feature("editor"):
+		if Engine.is_editor_hint():
+			#camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
+			#players_ids = [1]
+			#focus_positions = [camera.global_position + -camera.global_basis.z * 1]
+			return
 	
-	if multiplayer.is_server():
+	if GameOrchestrator.is_server():
 		focus_positions = []
 		players_ids = []
 		for player: Player in get_tree().get_nodes_in_group("player"):

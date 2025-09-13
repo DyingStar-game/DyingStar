@@ -1,4 +1,4 @@
-[gd_scene load_steps=46 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=45 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -15,14 +15,6 @@
 [ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="10_nqw6u"]
 [ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="10_qugoe"]
 [ext_resource type="PackedScene" uid="uid://ckogdailxd1jo" path="res://scenes/props/rock/rock_large.tscn" id="12_yhksb"]
-
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_c1vqx"]
-properties/0/path = NodePath("PlanetTerrain:rotation")
-properties/0/spawn = true
-properties/0/replication_mode = 0
-properties/1/path = NodePath(".:position")
-properties/1/spawn = true
-properties/1/replication_mode = 0
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 3
@@ -42,8 +34,6 @@ fractal_gain = 0.695
 
 [sub_resource type="Resource" id="Resource_qc8cq"]
 script = ExtResource("5_yhksb")
-noise_type = "macro"
-amplitude = 300.0
 scale = 400.0
 clamp_min = 300.0
 clamp_max = 350.0
@@ -52,7 +42,6 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_yhksb"]
 script = ExtResource("5_yhksb")
-noise_type = "macro"
 amplitude = 270.0
 scale = 400.0
 clamp_min = 350.0
@@ -64,15 +53,11 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 script = ExtResource("5_yhksb")
 noise_type = "micro"
 amplitude = 10.0
-scale = 300.0
-clamp_min = 0.0
-clamp_max = 10000.0
 description = "Micro details elevation"
 metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("5_qc8cq")
-elev_scale = 1.0
 noise_scale = 5.0
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
@@ -95,10 +80,10 @@ shading_mode = 0
 frequency = 0.0348
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
-seamless = true
-seamless_blend_skirt = 0.031
-as_normal_map = true
 noise = SubResource("FastNoiseLite_mv8ka")
+seamless = true
+as_normal_map = true
+seamless_blend_skirt = 0.031
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
 albedo_color = Color(0.301579, 0.510198, 0.570312, 1)
@@ -185,9 +170,6 @@ size = Vector3(24780, 24780, 24780)
 [node name="Planet" type="Node3D"]
 script = ExtResource("1_83pno")
 planet_settings = ExtResource("2_nqw6u")
-
-[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
-replication_config = SubResource("SceneReplicationConfig_c1vqx")
 
 [node name="DataPlanet" type="Node" parent="."]
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"

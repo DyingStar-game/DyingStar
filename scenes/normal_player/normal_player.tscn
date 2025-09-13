@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://cp4hqc0wqd0l0" path="res://scenes/normal_player/label_game_server_number.gd" id="6_ev378"]
 [ext_resource type="Script" uid="uid://bwj71lom8cof6" path="res://scenes/normal_player/label_universe_number_players.gd" id="7_82eon"]
 [ext_resource type="PackedScene" uid="uid://dk4le3cck03bg" path="res://ui/direct_chat/direct_chat.tscn" id="8_ikqc6"]
+[ext_resource type="Script" uid="uid://btyj4wvtqhqhg" path="res://scenes/normal_player/label_universe_number_box_50_cm.gd" id="10_0o2xm"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 
@@ -19,23 +20,6 @@ height = 1.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_kcm5r"]
 size = Vector3(0.53418, 1.39465, 0.44873)
-
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_ll2l8"]
-properties/0/path = NodePath("LabelPlayerName:text")
-properties/0/spawn = true
-properties/0/replication_mode = 1
-properties/1/path = NodePath(".:position")
-properties/1/spawn = true
-properties/1/replication_mode = 1
-properties/2/path = NodePath(".:rotation")
-properties/2/spawn = true
-properties/2/replication_mode = 1
-properties/3/path = NodePath("LabelServerName:text")
-properties/3/spawn = true
-properties/3/replication_mode = 1
-properties/4/path = NodePath("UserInterface/Debug/LabelServerZone:text")
-properties/4/spawn = true
-properties/4/replication_mode = 1
 
 [sub_resource type="LabelSettings" id="LabelSettings_kcm5r"]
 font_size = 24
@@ -59,7 +43,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.9, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot"]
-far = 1e+08
+far = 100000000.0
 
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D"]
 target_position = Vector3(0, 0, -3)
@@ -95,9 +79,6 @@ billboard = 1
 text = "DummyServer"
 font_size = 24
 
-[node name="PlayerSync" type="MultiplayerSynchronizer" parent="."]
-replication_config = SubResource("SceneReplicationConfig_ll2l8")
-
 [node name="UserInterface" type="Control" parent="."]
 top_level = true
 layout_mode = 3
@@ -119,11 +100,11 @@ mouse_filter = 2
 [node name="ColorRect" type="ColorRect" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_right = 561.0
-offset_bottom = 104.0
+offset_bottom = 127.0
 color = Color(0, 0, 0, 0.690196)
 
 [node name="Label" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 65.0
 offset_right = 277.0
 offset_bottom = 23.0
@@ -132,7 +113,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label4" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 2.0
 offset_top = 16.0
 offset_right = 277.0
@@ -142,7 +123,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label2" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 28.0
 offset_top = 32.0
 offset_right = 278.0
@@ -152,7 +133,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label3" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_top = 48.0
 offset_right = 278.0
 offset_bottom = 71.0
@@ -160,8 +141,17 @@ text = "Number of total players in the universe: "
 label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
+[node name="Label_number_box50cm" type="Label" parent="UserInterface/Debug"]
+layout_mode = 0
+offset_top = 98.0
+offset_right = 278.0
+offset_bottom = 121.0
+text = "Number of total box50cm in the universe: "
+label_settings = ExtResource("4_dpwvv")
+horizontal_alignment = 2
+
 [node name="Labelx" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 3.0
 offset_top = 62.0
 offset_right = 23.0
@@ -170,7 +160,7 @@ text = "x: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labely" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 191.0
 offset_top = 62.0
 offset_right = 211.0
@@ -179,7 +169,7 @@ text = "y: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labelz" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 379.0
 offset_top = 62.0
 offset_right = 399.0
@@ -188,7 +178,7 @@ text = "z: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelServerZone" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 3.0
 offset_top = 77.0
 offset_right = 638.0
@@ -198,7 +188,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_ev378")
 
 [node name="LabelGameServerName" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_right = 403.0
 offset_bottom = 23.0
@@ -207,7 +197,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("4_ikqc6")
 
 [node name="LabelGameServerNumberPlayers" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 16.0
 offset_right = 403.0
@@ -217,7 +207,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_dpwvv")
 
 [node name="LabelGameServerNumber" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 32.0
 offset_right = 403.0
@@ -227,7 +217,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("6_ev378")
 
 [node name="LabelUniverseNumberPlayers" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 48.0
 offset_right = 403.0
@@ -236,8 +226,18 @@ text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("7_82eon")
 
+[node name="LabelUniverseNumberBox50cm" type="Label" parent="UserInterface/Debug"]
+layout_mode = 0
+offset_left = 289.0
+offset_top = 97.0
+offset_right = 411.0
+offset_bottom = 120.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("10_0o2xm")
+
 [node name="LabelXValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 21.0
 offset_top = 62.0
 offset_right = 181.0
@@ -245,7 +245,7 @@ offset_bottom = 85.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelYValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 208.0
 offset_top = 62.0
 offset_right = 368.0
@@ -253,7 +253,7 @@ offset_bottom = 85.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelZValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 393.0
 offset_top = 60.0
 offset_right = 553.0
@@ -309,5 +309,6 @@ mouse_filter = 1
 layout_mode = 1
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
+visible = false
 
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]

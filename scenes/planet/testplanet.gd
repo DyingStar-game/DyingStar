@@ -17,7 +17,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 
 func _enter_tree() -> void:
 	global_position = spawn_position
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
 
 
