@@ -365,11 +365,11 @@ func instantiate_player(message: Dictionary):
 
 func player_move(message: Dictionary):
 	print("================")
-	print(message["player_id"])
+	print(message["data"]["uuid"])
 	print(PlayersList.keys())
-	if PlayersList.has(message["player_id"]):
+	if PlayersList.has(message["data"]["uuid"]):
 		print("YEAH!")
-		var player = PlayersList[message["player_id"]]
+		var player = PlayersList[message["data"]["uuid"]]
 		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
 		player.input_from_server.rotation = Vector3(float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"]))
 		player.new_input_from_server = true

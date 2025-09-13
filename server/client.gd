@@ -11,9 +11,10 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://127.0.0.1:7040"
+var websocket_url = "ws://136.144.204.107:7040" # "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
+var players_list: Dictionary = {}
 
 var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 
@@ -152,28 +153,41 @@ func _process(_delta: float) -> void:
 
 
 func handle_player_props_event(event: Dictionary) -> void:
-	if event.has("player"):
-		var player_data = event["player"]
-		print("Player data received: %s" % player_data)
+	if event.has("players"):
+		var players_data = event["players"]
+		print("Player data received:")
+		print(players_data)
 		# Here you can handle the player data, e.g., spawn the player in the game world
 		# complete_client_initialization(spawn_player(player_data))
+		for player_data in players_data:
+			if player_data["name"] == GameOrchestrator.login_player_name:
+				if not player_entity:
+					var spawned_entity_instance = load(player_scene_path).instantiate()
+					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+					spawned_entity_instance.name = player_data["name"]
+					spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
 
+					spawned_entity_instance.tree_entered.connect(func():
+						spawned_entity_instance.owner = get_tree().current_scene
+					)
+					universe_scene.add_child(spawned_entity_instance)
+					spawned_entity_instance.set_physics_process(false)
+					spawned_entity_instance.clientUUID = player_data["uuid"]
+					player_entity = spawned_entity_instance
+			else:
+				if not players_list.has(player_data["uuid"]):
+					var spawned_entity_instance = load(player_scene_path).instantiate()
+					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+					spawned_entity_instance.name = "remoteplayer" + player_data["name"]
+					players_list[player_data["uuid"]] = spawned_entity_instance
 
-		var spawned_entity_instance = load(player_scene_path).instantiate()
-		spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
-		if player_data["name"] == GameOrchestrator.login_player_name:
-			spawned_entity_instance.name = player_data["name"]
-			spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
-		else:
-			spawned_entity_instance.name = "remoteplayer" + player_data["name"]
+					spawned_entity_instance.tree_entered.connect(func():
+						spawned_entity_instance.owner = get_tree().current_scene
+					)
+					universe_scene.add_child(spawned_entity_instance)
+					spawned_entity_instance.set_physics_process(false)
+					spawned_entity_instance.clientUUID = player_data["uuid"]
 
-		spawned_entity_instance.tree_entered.connect(func():
-			spawned_entity_instance.owner = get_tree().current_scene
-		)
-		universe_scene.add_child(spawned_entity_instance)
-		spawned_entity_instance.set_physics_process(false)
-		if player_data["name"] == GameOrchestrator.login_player_name:
-			player_entity = spawned_entity_instance
 
 	if event.has("planets"):
 		var planets_data = event["planets"]
@@ -288,8 +302,9 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 				"x": move_rotation[0],
 				"y": move_rotation[1],
 				"z": move_rotation[2]
-			}
-		}
+			},
+			"uuid": player_entity.clientUUID
+		},
 	}))
 
 func update_props(event: Dictionary) -> void:
@@ -312,10 +327,11 @@ func update_props(event: Dictionary) -> void:
 	#     "type": "update_props"
 	# }
 	for player in event["players"]:
-		# print("Player position update received: %s" % player)
-		# Here you can handle the player data, e.g., update the player in the game world
-		# print("update global position")
-		# print(player.global_position)
-		player_entity.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
-		# print(player.global_position)
-		# player_entity.global_rotation = Vector3(player["rot"]["x"], player["rot"]["y"], player["rot"]["z"])
+		print("Player position update received: %s" % player)
+		if player_entity.clientUUID == player["uuid"]:
+			player_entity.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
+		elif players_list.has(player["uuid"]):
+			var remote_player = players_list[player["uuid"]]
+			remote_player.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
+
+		
