@@ -45,6 +45,7 @@ uuid="*res://addons/uuid/uuid.gd"
 PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
 Endtoend="*res://scenes/globals/endtoend.gd"
 WwiseRuntimeManager="*res://addons/Wwise/runtime/wwise_runtime_manager.gd"
+Obs="*res://tools/observability/obs.gd"
 
 [debug]
 
