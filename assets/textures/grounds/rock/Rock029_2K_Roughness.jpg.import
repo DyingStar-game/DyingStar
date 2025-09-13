@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cu0q6lhjb8n8j"
-path.s3tc="res://.godot/imported/Ground055L_2K_NormalGL.jpg-a1ff10a446e3093f4b9dfecea8fd4a7f.s3tc.ctex"
+uid="uid://tlqwrtnp20lv"
+path.s3tc="res://.godot/imported/Rock029_2K_Roughness.jpg-fad70de5cead4b6d76e941821b3802c8.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/textures/sand/Ground055L_2K_NormalGL.jpg"
-dest_files=["res://.godot/imported/Ground055L_2K_NormalGL.jpg-a1ff10a446e3093f4b9dfecea8fd4a7f.s3tc.ctex"]
+source_file="res://assets/textures/grounds/rock/Rock029_2K_Roughness.jpg"
+dest_files=["res://.godot/imported/Rock029_2K_Roughness.jpg-fad70de5cead4b6d76e941821b3802c8.s3tc.ctex"]
 
 [params]
 
@@ -22,12 +22,12 @@ compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=1
+compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
-roughness/mode=1
-roughness/src_normal="res://assets/textures/sand/Ground055L_2K_NormalGL.jpg"
+roughness/mode=0
+roughness/src_normal=""
 process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2

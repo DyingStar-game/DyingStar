@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cesk744y087at"
-path="res://.godot/imported/Ground055L_2K_Color.jpg-c57d821a084375cf34a2681bf3b00f26.ctex"
+path="res://.godot/imported/Ground055L_2K_Color.jpg-48e4a108d32874b5b5c819bf6cfac80b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/sand/Ground055L_2K_Color.jpg"
-dest_files=["res://.godot/imported/Ground055L_2K_Color.jpg-c57d821a084375cf34a2681bf3b00f26.ctex"]
+source_file="res://assets/textures/grounds/sand/Ground055L_2K_Color.jpg"
+dest_files=["res://.godot/imported/Ground055L_2K_Color.jpg-48e4a108d32874b5b5c819bf6cfac80b.ctex"]
 
 [params]
 
