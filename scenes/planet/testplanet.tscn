@@ -224,9 +224,9 @@ metadata/_custom_type_script = "uid://3b53gu5cyf58"
 
 [node name="RockSpawner" parent="PlanetTerrain" node_paths=PackedStringArray("planet_terrain", "debugmesh") instance=ExtResource("9_642k6")]
 transform = Transform3D(0.904889, 0, 0.425651, 0, 1, 0, -0.425651, 0, 0.904889, 0, 0, 0)
-planet_terrain = NodePath("..")
 cell_size = 200.0
 asset_scenes = Array[PackedScene]([ExtResource("10_nqw6u"), ExtResource("10_qugoe"), ExtResource("12_yhksb")])
+planet_terrain = NodePath("..")
 debugmesh = NodePath("debug")
 
 [node name="debug" type="MeshInstance3D" parent="PlanetTerrain/RockSpawner"]

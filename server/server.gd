@@ -19,7 +19,7 @@ var ServerZone = {
 	"z_end": 100000.0
 }
 
-var MaxPlayersAllowed = 2
+var MaxPlayersAllowed = 40
 var PlayersList = {}
 var PlayersListLastMovement = {}
 var PlayersListLastRotation = {}
@@ -56,11 +56,24 @@ var ServersTicksTasks = {
 	"SendMetricsReset": 120,
 }
 
+# Horizon server
+# The port we will listen to.
+const PORT = 8980
+# Our TCP Server instance.
+var _tcp_server = TCPServer.new()
+# Our connected peers list.
+var peer := WebSocketPeer.new()
+
+var planet_scene = preload("res://scenes/planet/testplanet.tscn")
+var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
+
+var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
+
 func _enter_tree() -> void:
 	NetworkOrchestrator.loadServerConfig()
 
 func _ready() -> void:
-	pass
+	set_process(false)
 
 func _physics_process(_delta: float) -> void:
 	if NetworkOrchestrator.isSDOActive == true:
@@ -68,6 +81,11 @@ func _physics_process(_delta: float) -> void:
 		_send_players_to_sdo()
 		_checkPlayerOutOfZone()
 		_send_props_to_sdo()
+	# for uuid in PlayersList.keys():
+	# 	if PlayersListLastMovement[uuid] != PlayersList[uuid].global_position:
+	# 		send_player_pos_horizon(uuid, PlayersList[uuid].global_position)
+	# 		PlayersListLastMovement[uuid] = PlayersList[uuid].global_position
+
 
 func start_server(receveid_universe_scene: Node, receveid_player_spawn_node: Node) -> void:
 	Engine.physics_ticks_per_second = 30
@@ -75,25 +93,65 @@ func start_server(receveid_universe_scene: Node, receveid_player_spawn_node: Nod
 	
 	universe_scene = receveid_universe_scene
 	entities_spawn_node = receveid_player_spawn_node
-	var server_peer = ENetMultiplayerPeer.new()
-	if not server_peer:
-		printerr("creating server_peer failed!")
-		return
+	# var server_peer = ENetMultiplayerPeer.new()
+	# if not server_peer:
+	# 	printerr("creating server_peer failed!")
+	# 	return
 	
-	var res = server_peer.create_server(NetworkOrchestrator.ServerPort, 150)
-	if res != OK:
-		printerr("creating server failed: ", error_string(res))
-		return
+	# var res = server_peer.create_server(NetworkOrchestrator.ServerPort, 150)
+	# if res != OK:
+	# 	printerr("creating server failed: ", error_string(res))
+	# 	return
 	
-	universe_scene.multiplayer.multiplayer_peer = server_peer
-	NetworkOrchestrator.connect_chat_mqtt()
-	# load SDO mqtt in NetworkOrchestrator
-	NetworkOrchestrator.connect_mqtt_sdo()
-	if NetworkOrchestrator.MetricsEnabled == true:
-		NetworkOrchestrator.connect_mqtt_metrics()
+	# universe_scene.multiplayer.multiplayer_peer = server_peer
+	# NetworkOrchestrator.connect_chat_mqtt()
+	# # load SDO mqtt in NetworkOrchestrator
+	# NetworkOrchestrator.connect_mqtt_sdo()
+	# if NetworkOrchestrator.MetricsEnabled == true:
+	# 	NetworkOrchestrator.connect_mqtt_metrics()
 	print("server loaded... \\o/")
 	universe_scene.multiplayer.peer_connected.connect(_on_client_peer_connected)
 	universe_scene.multiplayer.peer_disconnected.connect(_on_client_peer_disconnect)
+	
+	start_websocket_server()
+
+func start_websocket_server():
+	var err = _tcp_server.listen(PORT)
+	if err == OK:
+		print("Server socket started.")
+		set_process(true)
+	else:
+		push_error("Unable to start server socket.")
+
+func _process(_delta: float) -> void:
+	while _tcp_server.is_connection_available():
+		print("Peer connected (Horizon server).")
+		peer.accept_stream(_tcp_server.take_connection())
+
+	peer.poll()
+
+	var peer_state = peer.get_ready_state()
+	if peer_state == WebSocketPeer.STATE_OPEN:
+		while peer.get_available_packet_count():
+			var packet = peer.get_packet()
+			if peer.was_string_packet():
+				var packet_text = packet.get_string_from_utf8()
+				print("Received packet: %s" % [packet_text])
+				var message = JSON.parse_string(packet_text)
+				if message != null:
+					dispatch_horizon_message(message)
+
+				# Echo the packet back.
+				# peer.send_text(packet_text)
+			else:
+				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
+				# Echo the packet back.
+				peer.send(packet)
+	# elif peer_state == WebSocketPeer.STATE_CLOSED:
+	# 	# Remove the disconnected peer.
+	# 	var code = peer.get_close_code()
+	# 	var reason = peer.get_close_reason()
+	# 	print("- Peer closed with code: %d, reason %s. Clean: %s" % [code, reason, code != -1])
 
 func populate_universe(datas: Dictionary) -> void:
 	
@@ -282,6 +340,40 @@ func instantiate_player_remote(player, set_player_position = false, server_id = 
 
 	print("Remnote player spawned with position: ", player_to_add.global_position)
 
+
+# Instantiate server player
+func instantiate_player(message: Dictionary):
+	var playername = "Pigeon with no name"
+	var spawn_position: Vector3 = Vector3(message["data"]["pos"]["x"], message["data"]["pos"]["y"], message["data"]["pos"]["z"])
+
+	var player_to_add = NetworkOrchestrator.small_props_spawner_node.spawn({
+		"entity": "player",
+		"player_scene_path": NetworkOrchestrator.player_scene_path,
+		"player_name": playername,
+		"player_spawn_position": spawn_position,
+		"player_spawn_up": Vector3.UP,
+		"authority_peer_id": 1
+	})
+	# player_to_add.global_rotation = Vector3(float(player.xr), float(player.yr), float(player.zr))
+	# player_to_add.set_physics_process(false)
+	PlayersList[message.player_id] = player_to_add
+	PlayersListLastMovement[message.player_id] = spawn_position
+	# if server_id != null:
+	# 	player_to_add.labelServerName.text = NetworkOrchestrator.ServersList[server_id].name
+
+	# print("Remnote player spawned with position: ", player_to_add.global_position)
+
+func player_move(message: Dictionary):
+	print("================")
+	print(message["player_id"])
+	print(PlayersList.keys())
+	if PlayersList.has(message["player_id"]):
+		print("YEAH!")
+		var player = PlayersList[message["player_id"]]
+		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
+		player.input_from_server.rotation = Vector3(float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"]))
+		player.new_input_from_server = true
+
 func _sendMetrics():
 	if ServersTicksTasks.SendMetricsCurrent > 0:
 		ServersTicksTasks.SendMetricsCurrent -= 1
@@ -382,3 +474,96 @@ func set_server_inactive(_newserverId):
 		for uuid in PropsList[proptype].keys():
 			PropsList[proptype][uuid].queue_free()
 			PropsList[proptype].erase(uuid)
+
+
+
+
+
+
+
+
+
+#####################################################
+# Horizon server part                              #
+#####################################################
+
+func dispatch_horizon_message(message: Dictionary):
+	if message['namespace'] == "server":
+		match message['event']:
+			"add_props":
+				print(message)
+				for planet in message["data"]["planets"]:
+					var spawnable_planet_instance = planet_scene.instantiate()
+					spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
+					spawnable_planet_instance.name = planet.name
+					spawnable_planet_instance.tree_entered.connect(func():
+						spawnable_planet_instance.owner = get_tree().current_scene
+					)
+					universe_scene.call_deferred("add_child", spawnable_planet_instance)
+
+				# manage player
+				var player_data = message["data"]["player"]
+				print("Player data received: %s" % player_data)
+
+				var spawned_entity_instance = player_scene.instantiate()
+				spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+				spawned_entity_instance.name = player_data["name"]
+
+				spawned_entity_instance.tree_entered.connect(func():
+					spawned_entity_instance.owner = get_tree().current_scene
+				)
+				universe_scene.add_child(spawned_entity_instance)
+				spawned_entity_instance.set_uuid(player_data["uuid"])
+				PlayersList[player_data["uuid"]] = spawned_entity_instance
+				PlayersListLastMovement[player_data["uuid"]] = spawned_entity_instance.global_position
+				PlayersListLastRotation[player_data["uuid"]] = spawned_entity_instance.global_rotation
+				spawned_entity_instance.connect("hs_server_move", _on_player_move)
+
+			_:
+				print("Unknown server event: " + message['event'])
+	elif message['namespace'] == "player":
+		match message['event']:
+			"spawn":
+				instantiate_player(message)
+			"move":
+				player_move(message)
+
+func send_player_pos_horizon(player_id: String, position: Vector3):
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		var message = {
+			"namespace": "player",
+			"event": "position",
+			"player_id": player_id,
+			"data": {
+				"pos": {
+					"x": position.x,
+					"y": position.y,
+					"z": position.z
+				}
+			}
+		}
+		peer.send_text(JSON.stringify(message))
+
+func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		if PlayersListLastMovement[clientUUID] != position or PlayersListLastRotation[clientUUID] != rotation:
+			var message = {
+				"namespace": "player",
+				"event": "position",
+				"player_id": clientUUID,
+				"data": {
+					"pos": {
+						"x": position[0],
+						"y": position[1],
+						"z": position[2]
+					},
+					"rot": {
+						"x": rotation[0],
+						"y": rotation[1],
+						"z": rotation[2]
+					}
+				}
+			}
+			peer.send_text(JSON.stringify(message))
+			PlayersListLastMovement[clientUUID] = position
+			PlayersListLastRotation[clientUUID] = rotation

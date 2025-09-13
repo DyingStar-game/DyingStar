@@ -1,6 +1,9 @@
 extends CharacterBody3D
 class_name Player
 
+signal hs_client_action_move
+signal hs_server_move
+
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
 
@@ -23,8 +26,6 @@ signal client_action_requested(datas: Dictionary)
 @onready var isInsideBox4m: bool = false
 
 @onready var game_is_paused: bool = false
-
-@onready var clientUUID
 
 @export_group("Controls map names")
 @export var MOVE_FORWARD: String = "move_forward"
@@ -52,6 +53,10 @@ signal client_action_requested(datas: Dictionary)
 @export_range(0.0, 0.5) var camera_start_deadzone: float = .2
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
 
+@export var gravity = 0.0
+
+var clientUUID: String = ""
+
 var player_display_name: String = ""
 
 var input_direction: Vector2
@@ -64,11 +69,19 @@ var spawn_up: Vector3 = Vector3.UP
 
 var can_interact: bool = false
 
-@export var gravity = 0.0
 
 var gravity_parents: Array[Area3D]
 
 var last_basis: Basis
+var remote_player: bool = false
+var input_from_server: Dictionary = {
+	"input_direction": Vector2.ZERO,
+	"rotation": Vector3.ZERO
+}
+var new_input_from_server: bool = false
+
+var client_last_input_direction = Vector2.ZERO
+var client_last_global_rotation = Vector3.ZERO
 
 
 # to disable player input when piloting vehicule/ship
@@ -78,14 +91,14 @@ func _enter_tree() -> void:
 	$UserInterface/LoadingScreen.hide()
 	
 	if name.begins_with("remoteplayer"):
-		set_multiplayer_authority(1)
+		remote_player = true
 		global_position = spawn_position
 		
 	else:
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
-	if not is_multiplayer_authority():
+	if remote_player:
 		return
 	
 	$UserInterface/LoadingScreen.show()
@@ -118,6 +131,9 @@ func _ready() -> void:
 	
 	$UserInterface/LoadingScreen.hide()
 
+func set_uuid(uuid: String) -> void:
+	clientUUID = uuid
+	self.set_meta("clientUUID", uuid)
 
 func connect_area_detect():
 	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
@@ -151,7 +167,7 @@ func update_last_basis() -> void:
 	last_basis = gravity_parent.global_transform.basis
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority(): return
+	if remote_player: return
 	if !active: return
 		
 	if event.is_action_pressed(JUMP) and is_on_floor():
@@ -184,8 +200,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			astronaut.visible = true
 			$ExtCamera3D.make_current()
 
+func server_set_input(input_dir: Vector2, rotation: Vector3) -> void:
+	input_from_server["input_direction"] = input_dir
+	input_from_server["rotation"] = rotation
+	new_input_from_server = true
+
 func _process(_delta: float) -> void:
-	if not is_multiplayer_authority(): return
+	if remote_player: return
 	if !active:
 		interact_label.hide()
 		return
@@ -204,73 +225,125 @@ func _process(_delta: float) -> void:
 				collider.interact(self)
 				interact_label.hide()
 
-func _physics_process(delta: float) -> void:
-	if not is_multiplayer_authority(): return
-	if !active: return
-	
-	var dir_vect = Vector3.ZERO
-	var sprint = null
-	
-	#apply_parent_movement()
-	
-	if not direct_chat.can_write:
-		dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-		sprint = Input.is_action_pressed(SPRINT)
-	
-	if dir_vect:
-		input_direction = dir_vect
-	else:
-		input_direction = Vector2.ZERO
-	
-	var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
-	
-	if parent_gravity_area:
-		
-		if parent_gravity_area.gravity_point:
-			up_direction = parent_gravity_area.global_position.direction_to(global_position)
-		else:
-			up_direction = parent_gravity_area.global_basis.y
-		
-		gravity = parent_gravity_area.gravity
-		motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
-	else:
-		# 0g movement
-		gravity = 0.0
-		camera_pivot.rotation.x = 0
-		motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-		var dir = Vector3(input_direction.x, 0, input_direction.y)
-		
-		velocity += global_basis * dir * player_thruster_force * delta
-		velocity *= 0.98
-	
-	var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
-	
-	var speed = sprint_speed if sprint else walk_speed
-	
-	if is_on_floor():
-		if input_direction:
-			velocity = move_direction * speed
-		else:
-			velocity = velocity.move_toward(Vector3.ZERO, speed)
-	else:
-		# "air" movement
-		if input_direction:
-			velocity += move_direction * speed * delta
 
-	
-	if is_on_floor() and is_jumping:
-		velocity += up_direction * jump_height * gravity
-		is_jumping = false
-	# Add the gravity.
-	elif not is_on_floor():
-		velocity -= up_direction * gravity * 2.0 * delta
+	if not OS.has_feature("dedicated_server"):
 		
-	move_and_slide()
-	update_last_basis()
-	
-	labelx.text = str("%0.2f" % global_position[0])
-	labely.text = str("%0.2f" % global_position[1])
-	labelz.text = str("%0.2f" % global_position[2])
+		var dir_vect = Vector3.ZERO
+		var sprint = null
+		
+		#apply_parent_movement()
+		
+		if not direct_chat.can_write:
+			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
+			sprint = Input.is_action_pressed(SPRINT)
+		
+		if dir_vect:
+			input_direction = dir_vect
+		else:
+			input_direction = Vector2.ZERO
+
+		# send move_direction
+		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
+			client_last_input_direction = input_direction
+			client_last_global_rotation = global_rotation
+			emit_signal("hs_client_action_move", input_direction, global_rotation)
+		update_last_basis()
+		
+		labelx.text = str("%0.2f" % global_position[0])
+		labely.text = str("%0.2f" % global_position[1])
+		labelz.text = str("%0.2f" % global_position[2])
+
+func _physics_process(delta: float) -> void:
+	if OS.has_feature("dedicated_server"):
+		if new_input_from_server:
+			input_direction = input_from_server["input_direction"]
+			global_rotation = input_from_server["rotation"]
+
+			var sprint = null
+
+			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+			
+			if parent_gravity_area:
+				
+				if parent_gravity_area.gravity_point:
+					up_direction = parent_gravity_area.global_position.direction_to(global_position)
+				else:
+					up_direction = parent_gravity_area.global_basis.y
+				
+				gravity = parent_gravity_area.gravity
+				motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
+			else:
+				# 0g movement
+				gravity = 0.0
+				camera_pivot.rotation.x = 0
+				motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+				var dir = Vector3(input_direction.x, 0, input_direction.y)
+				
+				velocity += global_basis * dir * player_thruster_force * delta
+				velocity *= 0.98
+			
+			var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
+			
+			var speed = sprint_speed if sprint else walk_speed
+			
+			if is_on_floor():
+				if input_direction:
+					velocity = move_direction * speed
+				else:
+					velocity = velocity.move_toward(Vector3.ZERO, speed)
+			else:
+				# "air" movement
+				if input_direction:
+					velocity += move_direction * speed * delta
+
+			
+			if is_on_floor() and is_jumping:
+				velocity += up_direction * jump_height * gravity
+				is_jumping = false
+			# Add the gravity.
+			elif not is_on_floor():
+				velocity -= up_direction * gravity * 2.0 * delta
+				
+			move_and_slide()
+			update_last_basis()
+
+			new_input_from_server = false
+		else:
+			move_and_slide()
+			update_last_basis()
+
+		emit_signal("hs_server_move", clientUUID, global_position, global_rotation)
+		return
+
+	else:
+		# player part
+		if remote_player: return
+		if !active: return
+		
+		var dir_vect = Vector3.ZERO
+		var sprint = null
+		
+		#apply_parent_movement()
+		
+		if not direct_chat.can_write:
+			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
+			sprint = Input.is_action_pressed(SPRINT)
+		
+		if dir_vect:
+			input_direction = dir_vect
+		else:
+			input_direction = Vector2.ZERO
+
+		# send move_direction
+		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
+			client_last_input_direction = input_direction
+			client_last_global_rotation = global_rotation
+			emit_signal("hs_client_action_move", input_direction, global_rotation)
+		update_last_basis()
+		
+		labelx.text = str("%0.2f" % global_position[0])
+		labely.text = str("%0.2f" % global_position[1])
+		labelz.text = str("%0.2f" % global_position[2])
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)

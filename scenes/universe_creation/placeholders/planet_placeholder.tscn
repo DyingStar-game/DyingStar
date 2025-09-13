@@ -13,4 +13,4 @@ rings = 8
 mesh = SubResource("SphereMesh_1k8ak")
 script = ExtResource("1_1k8ak")
 radius = 100.0
-real_radius = 10000.0
+real_radius = 1e+08
