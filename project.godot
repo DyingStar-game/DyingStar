@@ -28,12 +28,16 @@ DSP/dsp_buffer_count=4
 
 [application]
 
-config/name="StarDeception"
+config/name="Dying Star"
 config/version="0.0.1-dev"
 run/main_scene="uid://dpderfrunb8lr"
 config/features=PackedStringArray("4.4", "C#", "Double Precision", "GL Compatibility")
 boot_splash/image="uid://bm7wkmcuwwpxn"
 config/icon="res://icon.svg"
+
+[audio]
+
+buses/default_bus_layout=""
 
 [autoload]
 
@@ -43,7 +47,6 @@ NetworkOrchestrator="*res://scenes/globals/network_orchestrator.gd"
 uuid="*res://addons/uuid/uuid.gd"
 PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
 FmodManager="*res://addons/fmod/FmodManager.gd"
-Fmod="*res://scenes/globals/Fmod.tscn"
 
 [debug]
 

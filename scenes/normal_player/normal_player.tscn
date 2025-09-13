@@ -61,6 +61,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 [node name="Camera3D" type="Camera3D" parent="CameraPivot"]
 far = 1e+08
 
+[node name="FmodListener3D" type="FmodListener3D" parent="CameraPivot/Camera3D"]
+
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D"]
 target_position = Vector3(0, 0, -3)
 collide_with_areas = true
@@ -70,8 +72,6 @@ collide_with_bodies = false
 light_energy = 2.0
 spot_range = 200.0
 spot_angle = 41.4246
-
-[node name="FmodListener3D" type="FmodListener3D" parent="CameraPivot/Camera3D"]
 
 [node name="AreaDetector" type="Area3D" parent="."]
 collision_layer = 4

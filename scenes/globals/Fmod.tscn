@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://j3ml2dagcdpk"]
-
-[node name="Node3D" type="Node3D"]
-
-[node name="FmodBankLoader" type="FmodBankLoader" parent="."]
-bank_paths = ["res://assets/FmodBanks/Desktop/Master.strings.bank", "res://assets/FmodBanks/Desktop/Master.bank", "res://assets/FmodBanks/Desktop/Music.bank", "res://assets/FmodBanks/Desktop/UI.bank", "res://assets/FmodBanks/Desktop/Player.bank", "res://assets/FmodBanks/Desktop/VO.bank", "res://assets/FmodBanks/Desktop/SFX.bank", "res://assets/FmodBanks/Desktop/Vehicles.bank", "res://assets/FmodBanks/Desktop/sound_test.bank"]
