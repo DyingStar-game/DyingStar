@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=16 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
@@ -19,23 +19,6 @@ height = 1.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_kcm5r"]
 size = Vector3(0.53418, 1.39465, 0.44873)
-
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_ll2l8"]
-properties/0/path = NodePath("LabelPlayerName:text")
-properties/0/spawn = true
-properties/0/replication_mode = 1
-properties/1/path = NodePath(".:position")
-properties/1/spawn = true
-properties/1/replication_mode = 1
-properties/2/path = NodePath(".:rotation")
-properties/2/spawn = true
-properties/2/replication_mode = 1
-properties/3/path = NodePath("LabelServerName:text")
-properties/3/spawn = true
-properties/3/replication_mode = 1
-properties/4/path = NodePath("UserInterface/Debug/LabelServerZone:text")
-properties/4/spawn = true
-properties/4/replication_mode = 1
 
 [sub_resource type="LabelSettings" id="LabelSettings_kcm5r"]
 font_size = 24
@@ -94,9 +77,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05, 0)
 billboard = 1
 text = "DummyServer"
 font_size = 24
-
-[node name="PlayerSync" type="MultiplayerSynchronizer" parent="."]
-replication_config = SubResource("SceneReplicationConfig_ll2l8")
 
 [node name="UserInterface" type="Control" parent="."]
 top_level = true

@@ -746,8 +746,8 @@ func spawn_prop(proptype,data: Dictionary ) -> void: #spawn_position: Vector3 = 
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_planet(planet_datas: Dictionary) -> void:
-	if not multiplayer.is_server():
-		return
+	# if not multiplayer.is_server():
+	# 	return
 	
 	var spawnable_planet_instance: Node3D = spawnable_planet_scene.instantiate()
 	spawnable_planet_instance.spawn_position = planet_datas["coordinates"]
