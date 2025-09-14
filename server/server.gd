@@ -28,6 +28,7 @@ var PlayersListCurrentlyInTransfert = {}
 var ChangingZone = false
 var TransferPlayers = false
 var PropsList = {
+	"planets": {},
 	"box50cm": {},
 	"box4m": {},
 	"ship": {},
@@ -493,13 +494,16 @@ func dispatch_horizon_message(message: Dictionary):
 			"add_props":
 				print(message)
 				for planet in message["data"]["planets"]:
-					var spawnable_planet_instance = planet_scene.instantiate()
-					spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
-					spawnable_planet_instance.name = planet.name
-					spawnable_planet_instance.tree_entered.connect(func():
-						spawnable_planet_instance.owner = get_tree().current_scene
-					)
-					universe_scene.call_deferred("add_child", spawnable_planet_instance)
+					if not PropsList["planets"].has(planet["uuid"]):
+						# spawn planet
+						var spawnable_planet_instance = planet_scene.instantiate()
+						spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
+						spawnable_planet_instance.name = planet.name
+						spawnable_planet_instance.tree_entered.connect(func():
+							spawnable_planet_instance.owner = get_tree().current_scene
+						)
+						universe_scene.add_child(spawnable_planet_instance)
+						PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
 
 				# manage player
 				var player_data = message["data"]["player"]

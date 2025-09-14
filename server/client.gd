@@ -11,10 +11,16 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://136.144.204.107:7040" # "ws://127.0.0.1:7040"
+var websocket_url = "ws://127.0.0.1:7040" # "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
+var PropsList: Dictionary = {
+	"planets": {},
+	"box50cm": {},
+	"box4m": {},
+	"ship": {},
+}
 
 var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 
@@ -194,17 +200,20 @@ func handle_player_props_event(event: Dictionary) -> void:
 		print("Planets data received: %s" % planets_data)
 		# Here you can handle the planets data, e.g., spawn planets in the game world
 		for planet in planets_data:
-			print("Loading planet scene...")
-			var spawnable_planet_instance = planet_scene.instantiate()
-			spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
-			spawnable_planet_instance.name = planet.name
-			# get_tree().current_scene.add_child(spawnable_planet_instance, true)
-			# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
-			spawnable_planet_instance.tree_entered.connect(func():
-				spawnable_planet_instance.owner = get_tree().current_scene
-			)
-			universe_scene.add_child(spawnable_planet_instance)
-			spawnable_planet_instance.set_physics_process(false)
+			if not PropsList["planets"].has(planet["uuid"]):
+				# spawn planet
+				print("Loading planet scene...")
+				var spawnable_planet_instance = planet_scene.instantiate()
+				spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
+				spawnable_planet_instance.name = planet.name
+				# get_tree().current_scene.add_child(spawnable_planet_instance, true)
+				# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
+				spawnable_planet_instance.tree_entered.connect(func():
+					spawnable_planet_instance.owner = get_tree().current_scene
+				)
+				universe_scene.add_child(spawnable_planet_instance)
+				spawnable_planet_instance.set_physics_process(false)
+				PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
 
 
 func on_connection_established() -> void:
@@ -333,5 +342,6 @@ func update_props(event: Dictionary) -> void:
 		elif players_list.has(player["uuid"]):
 			var remote_player = players_list[player["uuid"]]
 			remote_player.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
+			remote_player.global_rotation = Vector3(player["rot"]["x"], player["rot"]["y"], player["rot"]["z"])
 
 		

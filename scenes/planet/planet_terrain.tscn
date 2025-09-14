@@ -14,7 +14,7 @@ noise_params = Array[ExtResource("2_xntnt")]([])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="SphereOccluder3D" id="SphereOccluder3D_xntnt"]
-radius = 5300.0
+radius = 10300.0
 
 [sub_resource type="SphereMesh" id="SphereMesh_25nq4"]
 
