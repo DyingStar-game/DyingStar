@@ -70,6 +70,8 @@ var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 
 var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
 
+var debug_message_number: int = 0
+
 func _enter_tree() -> void:
 	NetworkOrchestrator.loadServerConfig()
 
@@ -84,16 +86,15 @@ func _physics_process(_delta: float) -> void:
 		_send_props_to_sdo()
 	# for uuid in PlayersList.keys():
 	# 	if PlayersListLastMovement[uuid] != PlayersList[uuid].global_position:
-	# 		send_player_pos_horizon(uuid, PlayersList[uuid].global_position)
 	# 		PlayersListLastMovement[uuid] = PlayersList[uuid].global_position
 
 
-func start_server(receveid_universe_scene: Node, receveid_player_spawn_node: Node) -> void:
+func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 30
 	Engine.max_fps = 30
 	
 	universe_scene = receveid_universe_scene
-	entities_spawn_node = receveid_player_spawn_node
+	# entities_spawn_node = receveid_player_spawn_node
 	# var server_peer = ENetMultiplayerPeer.new()
 	# if not server_peer:
 	# 	printerr("creating server_peer failed!")
@@ -137,7 +138,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("Received packet: %s" % [packet_text])
+				# print("Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)
@@ -365,11 +366,11 @@ func instantiate_player(message: Dictionary):
 	# print("Remnote player spawned with position: ", player_to_add.global_position)
 
 func player_move(message: Dictionary):
-	print("================")
-	print(message["data"]["uuid"])
-	print(PlayersList.keys())
+	# print("================")
+	# print(message["data"]["uuid"])
+	# print(PlayersList.keys())
 	if PlayersList.has(message["data"]["uuid"]):
-		print("YEAH!")
+		# print("YEAH!")
 		var player = PlayersList[message["data"]["uuid"]]
 		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
 		player.input_from_server.rotation = Vector3(float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"]))
@@ -492,7 +493,7 @@ func dispatch_horizon_message(message: Dictionary):
 	if message['namespace'] == "server":
 		match message['event']:
 			"add_props":
-				print(message)
+				# print(message)
 				for planet in message["data"]["planets"]:
 					if not PropsList["planets"].has(planet["uuid"]):
 						# spawn planet
@@ -507,7 +508,7 @@ func dispatch_horizon_message(message: Dictionary):
 
 				# manage player
 				var player_data = message["data"]["player"]
-				print("Player data received: %s" % player_data)
+				# print("Player data received: %s" % player_data)
 
 				var spawned_entity_instance = player_scene.instantiate()
 				spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
@@ -532,29 +533,15 @@ func dispatch_horizon_message(message: Dictionary):
 			"move":
 				player_move(message)
 
-func send_player_pos_horizon(player_id: String, position: Vector3):
-	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		var message = {
-			"namespace": "player",
-			"event": "position",
-			"player_id": player_id,
-			"data": {
-				"pos": {
-					"x": position.x,
-					"y": position.y,
-					"z": position.z
-				}
-			}
-		}
-		peer.send_text(JSON.stringify(message))
-
 func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if PlayersListLastMovement[clientUUID] != position or PlayersListLastRotation[clientUUID] != rotation:
+			debug_message_number = debug_message_number + 1
 			var message = {
 				"namespace": "player",
 				"event": "position",
 				"player_id": clientUUID,
+				"amessagenb": debug_message_number,
 				"data": {
 					"pos": {
 						"x": position[0],

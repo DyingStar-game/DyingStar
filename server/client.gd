@@ -11,7 +11,7 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://127.0.0.1:7040" # "ws://127.0.0.1:7040"
+var websocket_url = "ws://192.168.20.174:7040" # "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
@@ -95,7 +95,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("< Got text data from server: %s" % packet_text)
+				# print("< Got text data from server: %s" % packet_text)
 				var event = JSON.parse_string(packet_text)
 
 				# Handle the event based on its type
@@ -161,13 +161,14 @@ func _process(_delta: float) -> void:
 func handle_player_props_event(event: Dictionary) -> void:
 	if event.has("players"):
 		var players_data = event["players"]
-		print("Player data received:")
-		print(players_data)
+		# print("Player data received:")
+		# print(players_data)
 		# Here you can handle the player data, e.g., spawn the player in the game world
 		# complete_client_initialization(spawn_player(player_data))
 		for player_data in players_data:
 			if player_data["name"] == GameOrchestrator.login_player_name:
 				if not player_entity:
+					await get_tree().create_timer(1).timeout
 					var spawned_entity_instance = load(player_scene_path).instantiate()
 					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
 					spawned_entity_instance.name = player_data["name"]
@@ -299,6 +300,7 @@ func _on_message_from_player(message: ChatMessage) -> void:
 
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
+	print("action move: %s - %s" % [move_direction, move_rotation])
 	socket.send_text(JSON.stringify({
 		"namespace": "movement",
 		"event": "update_position", # "move_direction",
@@ -336,8 +338,8 @@ func update_props(event: Dictionary) -> void:
 	#     "type": "update_props"
 	# }
 	for player in event["players"]:
-		print("Player position update received: %s" % player)
-		if player_entity.clientUUID == player["uuid"]:
+		# print("Player position update received: %s" % player)
+		if player_entity != null and player_entity.clientUUID == player["uuid"]:
 			player_entity.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
 		elif players_list.has(player["uuid"]):
 			var remote_player = players_list[player["uuid"]]

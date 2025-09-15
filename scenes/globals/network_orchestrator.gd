@@ -84,35 +84,35 @@ func start_server(changed_scene) -> Node:
 	
 	universe_scene = changed_scene
 	
-	small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
-	universe_datas_spawner_node = universe_scene.get_node("UniversDatasMultiplayerSpawner")
+	# small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
+	# universe_datas_spawner_node = universe_scene.get_node("UniversDatasMultiplayerSpawner")
 	
-	var spawnable_planet_path: String = universe_datas_spawner_node.get_spawnable_scene(0)
-	spawnable_planet_scene = load(spawnable_planet_path)
-	var spawnable_station_path: String = universe_datas_spawner_node.get_spawnable_scene(1)
-	spawnable_station_scene = load(spawnable_station_path)
+	#var spawnable_planet_path: String = universe_datas_spawner_node.get_spawnable_scene(0)
+	#spawnable_planet_scene = load(spawnable_planet_path)
+	#var spawnable_station_path: String = universe_datas_spawner_node.get_spawnable_scene(1)
+	#spawnable_station_scene = load(spawnable_station_path)
 	
-	small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
+	#small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
 	
-	preload_small_props(small_props_spawner_node)
-	small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
-	network_agent.start_server(changed_scene, small_spawnable_props_entry_point)
+	#preload_small_props(small_props_spawner_node)
+	#small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
+	network_agent.start_server(changed_scene)
 	return network_agent
 
 func start_client(changed_scene, ip = "127.0.0.1", port = 7051, serverChanges: bool = false) -> Node:
 	if not serverChanges:
 		universe_scene = changed_scene
-		small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
-		
-		small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
-		
-		small_props_spawner_node.connect("spawned", _on_entity_spawned)
-	
-		multiplayer.connected_to_server.connect(_client_connected_to_server)
-		multiplayer.server_disconnected.connect(_client_disconnected_server)
-
-		preload_small_props(small_props_spawner_node)
-		small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
+		#small_props_spawner_node = universe_scene.get_node("SmallPropsMultiplayerSpawner")
+		#
+		#small_props_spawner_node.spawn_function = Callable(self, "_spawn_entity")
+		#
+		#small_props_spawner_node.connect("spawned", _on_entity_spawned)
+	#
+		#multiplayer.connected_to_server.connect(_client_connected_to_server)
+		#multiplayer.server_disconnected.connect(_client_disconnected_server)
+#
+		#preload_small_props(small_props_spawner_node)
+		#small_spawnable_props_entry_point = small_props_spawner_node.get_node(small_props_spawner_node.get_spawn_path())
 	
 	network_agent.start_client(changed_scene, ip, port)
 	return network_agent

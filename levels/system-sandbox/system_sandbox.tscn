@@ -31,10 +31,6 @@ custom_aabb = AABB(0, 0, 0, 0, 0, 0)
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_jp7ei")
 
-[node name="SmallPropsMultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("uid://ccme8rxijtf2s", "uid://xud5xo51ir5r", "uid://d37hc6ybk8fsj", "uid://cptjp55tlikyl")
-spawn_path = NodePath("../SmallProps")
-
 [node name="SmallProps" type="Node" parent="."]
 
 [node name="Players" type="Node" parent="SmallProps"]
@@ -44,7 +40,3 @@ spawn_path = NodePath("../SmallProps")
 [node name="DataPlanet" type="Node" parent="SmallProps"]
 script = ExtResource("4_88c12")
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
-
-[node name="UniversDatasMultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("uid://rv6ugxi8n8pe", "uid://cn1e5bp50weao")
-spawn_path = NodePath("..")
