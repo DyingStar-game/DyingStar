@@ -57,6 +57,8 @@ var ServersTicksTasks = {
 	"SendMetricsReset": 120,
 }
 
+var players_newposition: Dictionary = {}
+
 # Horizon server
 # The port we will listen to.
 const PORT = 8980
@@ -79,6 +81,7 @@ func _ready() -> void:
 	set_process(false)
 
 func _physics_process(_delta: float) -> void:
+	send_players_newposition_to_horizon()
 	if NetworkOrchestrator.isSDOActive == true:
 		_is_server_has_too_many_players()
 		_send_players_to_sdo()
@@ -536,25 +539,30 @@ func dispatch_horizon_message(message: Dictionary):
 func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if PlayersListLastMovement[clientUUID] != position or PlayersListLastRotation[clientUUID] != rotation:
-			debug_message_number = debug_message_number + 1
-			var message = {
-				"namespace": "player",
-				"event": "position",
-				"player_id": clientUUID,
-				"amessagenb": debug_message_number,
-				"data": {
-					"pos": {
-						"x": position[0],
-						"y": position[1],
-						"z": position[2]
-					},
-					"rot": {
-						"x": rotation[0],
-						"y": rotation[1],
-						"z": rotation[2]
-					}
+			players_newposition[clientUUID] = {
+				"uuid": clientUUID,
+				"pos": {
+					"x": position[0],
+					"y": position[1],
+					"z": position[2]
+				},
+				"rot": {
+					"x": rotation[0],
+					"y": rotation[1],
+					"z": rotation[2]
 				}
 			}
-			peer.send_text(JSON.stringify(message))
 			PlayersListLastMovement[clientUUID] = position
 			PlayersListLastRotation[clientUUID] = rotation
+
+func send_players_newposition_to_horizon():
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		debug_message_number = debug_message_number + 1
+		var message = {
+			"namespace": "players",
+			"event": "position",
+			"amessagenb": debug_message_number,
+			"data": players_newposition.values()
+		}
+		peer.send_text(JSON.stringify(message))
+		players_newposition.clear()
