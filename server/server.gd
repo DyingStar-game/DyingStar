@@ -115,8 +115,8 @@ func start_server(receveid_universe_scene: Node) -> void:
 	# if NetworkOrchestrator.MetricsEnabled == true:
 	# 	NetworkOrchestrator.connect_mqtt_metrics()
 	print("server loaded... \\o/")
-	universe_scene.multiplayer.peer_connected.connect(_on_client_peer_connected)
-	universe_scene.multiplayer.peer_disconnected.connect(_on_client_peer_disconnect)
+	# universe_scene.multiplayer.peer_connected.connect(_on_client_peer_connected)
+	# universe_scene.multiplayer.peer_disconnected.connect(_on_client_peer_disconnect)
 	
 	start_websocket_server()
 

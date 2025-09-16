@@ -195,7 +195,6 @@ func handle_player_props_event(event: Dictionary) -> void:
 					spawned_entity_instance.set_physics_process(false)
 					spawned_entity_instance.clientUUID = player_data["uuid"]
 
-
 	if event.has("planets"):
 		var planets_data = event["planets"]
 		print("Planets data received: %s" % planets_data)
@@ -215,6 +214,8 @@ func handle_player_props_event(event: Dictionary) -> void:
 				universe_scene.add_child(spawnable_planet_instance)
 				spawnable_planet_instance.set_physics_process(false)
 				PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
+
+	NetworkOrchestrator.set_gameserver_numberPlayers.emit(players_list.size() + 1)
 
 
 func on_connection_established() -> void:

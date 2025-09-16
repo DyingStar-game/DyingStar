@@ -93,12 +93,15 @@ func _enter_tree() -> void:
 	if name.begins_with("remoteplayer"):
 		remote_player = true
 		global_position = spawn_position
+		$UserInterface.visible = false
+		$CameraPivot.visible = false
 		
 	else:
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
 	if remote_player:
+		set_player_name(name)
 		return
 	
 	$UserInterface/LoadingScreen.show()
