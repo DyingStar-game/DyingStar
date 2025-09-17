@@ -5,4 +5,3 @@ func _process(_delta: float) -> void:
 	var camera = get_viewport().get_camera_3d()
 	if camera:
 		$DirectionalLight3D.look_at(camera.global_position)
-

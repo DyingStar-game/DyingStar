@@ -117,6 +117,7 @@ vec3 blend_normals(vec3 a, vec3 b) {
 }
 
 void fragment() {
+
 	vec3 albedo = triplanar_texture(noise_c_variation, uv1_power_normal, uv1_triplanar_pos * noise_c_scale / 10000.0).rgb;
 
 	vec3 rock_normal_tex = triplanar_texture_notile(texture_normal, uv1_power_normal, uv1_triplanar_pos).rgb;

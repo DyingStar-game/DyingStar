@@ -1,16 +1,24 @@
-[gd_scene load_steps=9 format=3 uid="uid://bcer07jbu28y1"]
+[gd_scene load_steps=12 format=3 uid="uid://bcer07jbu28y1"]
 
 [ext_resource type="PackedScene" uid="uid://b86xjxnhg5yhd" path="res://scenes/planet/terrain_generator.tscn" id="1_invnv"]
 [ext_resource type="Script" uid="uid://qav8e3vvh7vd" path="res://scenes/planet/planet_terrain.gd" id="1_q7o7h"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="2_xntnt"]
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="3_5md1e"]
 [ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="3_xntnt"]
+[ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="4_8bpd4"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_txc4c"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_ts4ci"]
 
 [sub_resource type="Resource" id="Resource_8bpd4"]
 script = ExtResource("3_5md1e")
 elev_scale = 1.0
 noise_scale = 1.0
+noise = SubResource("FastNoiseLite_txc4c")
+noise_micro = SubResource("FastNoiseLite_ts4ci")
 noise_params = Array[ExtResource("2_xntnt")]([])
+terrain_map = ExtResource("4_8bpd4")
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="SphereOccluder3D" id="SphereOccluder3D_xntnt"]
