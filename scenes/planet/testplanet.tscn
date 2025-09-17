@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=52 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -9,12 +9,55 @@
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="5_qc8cq"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="5_yhksb"]
 [ext_resource type="PackedScene" uid="uid://bb0fma643hacs" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere.tscn" id="6_mv8ka"]
+[ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="6_qc8cq"]
 [ext_resource type="Shader" uid="uid://dsu80023m2ier" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere_fbcosentino.gdshader" id="7_l6ihg"]
+[ext_resource type="Shader" uid="uid://4sqcy5ila4dp" path="res://scenes/planet/biome_terrain.gdshader" id="7_rx63j"]
+[ext_resource type="Texture2D" uid="uid://csllwx2l4vj4q" path="res://scenes/planet/biomes.png" id="8_7f52q"]
 [ext_resource type="PackedScene" uid="uid://br2b6gumt3gyn" path="res://scenes/planet/asset_spawner.tscn" id="9_642k6"]
+[ext_resource type="Texture2DArray" uid="uid://ce1wipa7g2y3t" path="res://scenes/planet/planet_biomes.res" id="9_r4ens"]
 [ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="9_xk4jg"]
 [ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="10_nqw6u"]
 [ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="10_qugoe"]
 [ext_resource type="PackedScene" uid="uid://ckogdailxd1jo" path="res://scenes/props/rock/rock_large.tscn" id="12_yhksb"]
+
+[sub_resource type="Environment" id="Environment_yhksb"]
+background_mode = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_sky_contribution = 0.79
+tonemap_mode = 3
+glow_enabled = true
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_c1vqx"]
+properties/0/path = NodePath("PlanetTerrain:rotation")
+properties/0/spawn = true
+properties/0/replication_mode = 0
+properties/1/path = NodePath(".:position")
+properties/1/spawn = true
+properties/1/replication_mode = 0
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_mv8ka"]
+frequency = 0.0348
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
+noise = SubResource("FastNoiseLite_mv8ka")
+seamless = true
+as_normal_map = true
+seamless_blend_skirt = 0.031
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
+albedo_color = Color(0.301579, 0.510198, 0.570312, 1)
+metallic = 1.0
+roughness = 0.05
+normal_enabled = true
+normal_texture = SubResource("NoiseTexture2D_6x306")
+subsurf_scatter_strength = 0.21
+refraction_scale = -0.02
+uv1_scale = Vector3(0.05, 0.05, 0.05)
+uv1_triplanar = true
+
+[sub_resource type="SphereMesh" id="SphereMesh_642k6"]
+radius = 10120.0
+height = 20240.0
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 3
@@ -64,7 +107,28 @@ noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
 max_lod = 11
 noise_params = Array[ExtResource("5_yhksb")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
+terrain_map = ExtResource("6_qc8cq")
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dl7hi"]
+render_priority = 0
+shader = ExtResource("7_rx63j")
+shader_parameter/terrain_map = ExtResource("6_qc8cq")
+shader_parameter/biome_map = ExtResource("8_7f52q")
+shader_parameter/ground_textures = ExtResource("9_r4ens")
+shader_parameter/normal_scale = 1.0
+shader_parameter/uv1_blend_sharpness = 0.0
+shader_parameter/uv1_scale = Vector3(0, 0, 0)
+shader_parameter/uv1_offset = Vector3(0, 0, 0)
+shader_parameter/notile_offset = 1.0
+shader_parameter/terrain_normal_blend_offset = 0.83
+shader_parameter/terrain_normal_blend_fade = 0.1
+shader_parameter/sand_color = Color(0.8, 0.7, 0.4, 1)
+shader_parameter/rock_color = Color(0.4, 0.4, 0.4, 1)
+shader_parameter/soil_color = Color(0.35, 0.2, 0.1, 1)
+shader_parameter/snow_temp_threshold = 0.015
+shader_parameter/sand_elev_threshold = 0.585
+shader_parameter/soil_humid_blend = 0.26
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_6wdpo"]
 radius = 2112000.0
@@ -77,30 +141,6 @@ height = 400.0
 render_priority = 4
 no_depth_test = true
 shading_mode = 0
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_mv8ka"]
-frequency = 0.0348
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
-noise = SubResource("FastNoiseLite_mv8ka")
-seamless = true
-as_normal_map = true
-seamless_blend_skirt = 0.031
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
-albedo_color = Color(0.301579, 0.510198, 0.570312, 1)
-metallic = 1.0
-roughness = 0.05
-normal_enabled = true
-normal_texture = SubResource("NoiseTexture2D_6x306")
-subsurf_scatter_strength = 0.21
-refraction_scale = -0.02
-uv1_scale = Vector3(0.05, 0.05, 0.05)
-uv1_triplanar = true
-
-[sub_resource type="SphereMesh" id="SphereMesh_642k6"]
-radius = 10680.0
-height = 21360.0
 
 [sub_resource type="Gradient" id="Gradient_ge052"]
 offsets = PackedFloat32Array(0.503401, 0.57483)
@@ -177,8 +217,10 @@ planet_settings = ExtResource("2_nqw6u")
 radius = 2100000
 max_height = 2103839.988902211
 terrain_settings = SubResource("Resource_7f52q")
+terrain_material = SubResource("ShaderMaterial_dl7hi")
 
 [node name="PlanetGravity" type="Area3D" parent="PlanetTerrain" groups=["gravity"]]
+visible = false
 collision_mask = 3
 gravity_space_override = 2
 gravity_point = true
@@ -191,7 +233,7 @@ script = ExtResource("2_c1vqx")
 shape = SubResource("SphereShape3D_6wdpo")
 
 [node name="SpawnKiosk01" parent="PlanetTerrain" instance=ExtResource("5_mv8ka")]
-transform = Transform3D(0.0192737, -0.363338, 0.931458, 8.67362e-19, 0.931631, 0.363405, -0.999814, -0.00700417, 0.017956, -4920.53, 9452.58, 60.1234)
+transform = Transform3D(0.51495, -0.416024, -0.749499, 0.346044, 0.900817, -0.262263, 0.784269, -0.124308, 0.607838, -5580.25, 8340.41, -1616.26)
 
 [node name="PlayerSpawnPointsList" type="Node3D" parent="PlanetTerrain"]
 transform = Transform3D(1, 0, -5.55112e-17, 0, 1, 0, 5.55112e-17, 0, 1, 0, 0, 0)
@@ -199,7 +241,7 @@ script = ExtResource("5_6x306")
 metadata/_custom_type_script = "uid://7pymoxifok1q"
 
 [node name="PlayerSpawnPoint01" type="Marker3D" parent="PlanetTerrain/PlayerSpawnPointsList"]
-transform = Transform3D(0.0192737, -0.327725, 0.944576, 0, 0.944752, 0.327787, -0.999813, -0.00631764, 0.0182089, -4912.47, 9460.65, 60.2788)
+transform = Transform3D(0.629273, -0.0344885, -0.776416, 0.0870212, 0.995859, 0.0262919, 0.772295, -0.0841105, 0.629668, -5587.43, 8341.18, -1612.16)
 gizmo_extents = 2.5
 script = ExtResource("9_xk4jg")
 metadata/_custom_type_script = "uid://3b53gu5cyf58"
@@ -217,13 +259,6 @@ transform = Transform3D(1, 0, 1.1102230246251563e-15, 0, 1, 0, -1.11022302462515
 visible = false
 mesh = SubResource("SphereMesh_qugoe")
 surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
-
-[node name="WaterSurface" type="MeshInstance3D" parent="."]
-transform = Transform3D(0.996345, 0, 0.0854169, 0, 1, 0, -0.0854169, 0, 0.996345, 0, 0, 0)
-visible = false
-material_override = SubResource("StandardMaterial3D_7o858")
-mesh = SubResource("SphereMesh_642k6")
-skeleton = NodePath("../PlanetTerrain")
 
 [node name="Atmosphere" parent="." instance=ExtResource("6_mv8ka")]
 transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 0, 0, 0)

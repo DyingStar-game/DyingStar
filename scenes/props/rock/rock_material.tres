@@ -1,15 +1,12 @@
-[gd_resource type="StandardMaterial3D" load_steps=4 format=3 uid="uid://bp1l8v64nroad"]
+[gd_resource type="StandardMaterial3D" load_steps=3 format=3 uid="uid://bp1l8v64nroad"]
 
-[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/rock/Rock029_2K_Color.jpg" id="1_6rtjk"]
-[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/rock/Rock029_2K_NormalGL.jpg" id="2_bf257"]
-[ext_resource type="Texture2D" uid="uid://tlqwrtnp20lv" path="res://assets/textures/rock/Rock029_2K_Roughness.jpg" id="3_a4pnd"]
+[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="1_4uoih"]
+[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="1_vhad4"]
 
 [resource]
-albedo_color = Color(1, 0.77914, 0.427083, 1)
-albedo_texture = ExtResource("1_6rtjk")
-roughness_texture = ExtResource("3_a4pnd")
+albedo_texture = ExtResource("1_vhad4")
 normal_enabled = true
-normal_texture = ExtResource("2_bf257")
+normal_texture = ExtResource("1_4uoih")
 uv1_triplanar = true
 proximity_fade_distance = 0.2
 distance_fade_mode = 2

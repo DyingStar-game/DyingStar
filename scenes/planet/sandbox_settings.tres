@@ -1,9 +1,32 @@
-[gd_resource type="Resource" script_class="PlanetSettings" load_steps=11 format=3 uid="uid://dndwamrx0yyd8"]
+[gd_resource type="Resource" script_class="PlanetSettings" load_steps=15 format=3 uid="uid://dndwamrx0yyd8"]
 
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="1_ec2n1"]
-[ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="2_0m3tu"]
+[ext_resource type="Shader" uid="uid://4sqcy5ila4dp" path="res://scenes/planet/biome_terrain.gdshader" id="2_dl7hi"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="3_dl7hi"]
+[ext_resource type="Texture2D" uid="uid://csllwx2l4vj4q" path="res://scenes/planet/biomes.png" id="3_y0ecf"]
+[ext_resource type="Texture2DArray" uid="uid://ce1wipa7g2y3t" path="res://scenes/planet/planet_biomes.res" id="4_u5fus"]
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="4_y0ecf"]
+[ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="6_dl7hi"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dl7hi"]
+render_priority = 0
+shader = ExtResource("2_dl7hi")
+shader_parameter/terrain_map = ExtResource("6_dl7hi")
+shader_parameter/biome_map = ExtResource("3_y0ecf")
+shader_parameter/ground_textures = ExtResource("4_u5fus")
+shader_parameter/normal_scale = 1.0
+shader_parameter/uv1_blend_sharpness = 0.0
+shader_parameter/uv1_scale = Vector3(0, 0, 0)
+shader_parameter/uv1_offset = Vector3(0, 0, 0)
+shader_parameter/notile_offset = 1.0
+shader_parameter/terrain_normal_blend_offset = 0.83
+shader_parameter/terrain_normal_blend_fade = 0.1
+shader_parameter/sand_color = Color(0.8, 0.7, 0.4, 1)
+shader_parameter/rock_color = Color(0.4, 0.4, 0.4, 1)
+shader_parameter/soil_color = Color(0.35, 0.2, 0.1, 1)
+shader_parameter/snow_temp_threshold = 0.015
+shader_parameter/sand_elev_threshold = 0.585
+shader_parameter/soil_humid_blend = 0.26
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 3
@@ -53,6 +76,7 @@ noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
 max_lod = 11
 noise_params = Array[ExtResource("3_dl7hi")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
+terrain_map = ExtResource("6_dl7hi")
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [resource]

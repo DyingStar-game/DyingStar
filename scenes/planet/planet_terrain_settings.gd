@@ -18,3 +18,5 @@ extends Resource
 
 ## List of noise modifiers to generate the terrain
 @export var noise_params: Array[NoiseParam]
+
+@export var terrain_map: Texture2D

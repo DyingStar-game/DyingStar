@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cesk744y087at"
-path="res://.godot/imported/Ground055L_2K_Color.jpg-48e4a108d32874b5b5c819bf6cfac80b.ctex"
+uid="uid://2edlb88hhigw"
+path="res://.godot/imported/Ground055L_4K_NormalGL.jpg-6b473295cdd11432257a7cbfdc048b03.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/grounds/sand/Ground055L_2K_Color.jpg"
-dest_files=["res://.godot/imported/Ground055L_2K_Color.jpg-48e4a108d32874b5b5c819bf6cfac80b.ctex"]
+source_file="res://assets/textures/grounds/sand/Ground055L_4K_NormalGL.jpg"
+dest_files=["res://.godot/imported/Ground055L_4K_NormalGL.jpg-6b473295cdd11432257a7cbfdc048b03.ctex"]
 
 [params]
 
