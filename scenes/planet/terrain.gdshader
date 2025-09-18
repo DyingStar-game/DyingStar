@@ -141,7 +141,7 @@ void fragment() {
 	float sand_roughness_tex = triplanar_texture_notile(sand_roughness, uv1_power_normal, uv1_triplanar_pos).r * 1.5;
 
 
-	ALBEDO = vec3(1.0,0.0,0.0);
+	ALBEDO = albedo.rgb;
 	SPECULAR = specular;
 	ROUGHNESS = mix(roughness_tex * roughness, sand_roughness_tex, mask);
 	NORMAL_MAP = mix(rock_normal_tex, sand_normal_tex, mask);
