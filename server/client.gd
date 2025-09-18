@@ -23,6 +23,8 @@ var PropsList: Dictionary = {
 }
 
 var planet_scene = preload("res://scenes/planet/testplanet.tscn")
+var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
+var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 
 const uuid_util = preload("res://addons/uuid/uuid.gd")
 
@@ -104,6 +106,8 @@ func _process(_delta: float) -> void:
 						handle_player_props_event(event)
 					"update_props":
 						update_props(event)
+					"props_position_update":
+						update_props_position(event)
 					_:
 						print("< Unknown event type: %s" % event["type"])
 
@@ -168,8 +172,8 @@ func handle_player_props_event(event: Dictionary) -> void:
 		for player_data in players_data:
 			if player_data["name"] == GameOrchestrator.login_player_name:
 				if not player_entity:
-					await get_tree().create_timer(1).timeout
-					var spawned_entity_instance = load(player_scene_path).instantiate()
+					# await get_tree().create_timer(1).timeout
+					var spawned_entity_instance = player_scene.instantiate()
 					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
 					spawned_entity_instance.name = player_data["name"]
 					spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
@@ -180,6 +184,7 @@ func handle_player_props_event(event: Dictionary) -> void:
 					universe_scene.add_child(spawned_entity_instance)
 					spawned_entity_instance.set_physics_process(false)
 					spawned_entity_instance.clientUUID = player_data["uuid"]
+					spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
 					player_entity = spawned_entity_instance
 			else:
 				if not players_list.has(player_data["uuid"]):
@@ -211,7 +216,9 @@ func handle_player_props_event(event: Dictionary) -> void:
 				spawnable_planet_instance.tree_entered.connect(func():
 					spawnable_planet_instance.owner = get_tree().current_scene
 				)
+				
 				universe_scene.add_child(spawnable_planet_instance)
+				universe_scene.assign_spawn_informations()
 				spawnable_planet_instance.set_physics_process(false)
 				PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
 
@@ -228,7 +235,7 @@ func complete_client_initialization(entity) -> void:
 	player_instance = entity
 	player_instance.player_display_name = GameOrchestrator.login_player_name
 	player_instance.labelPlayerName.text = player_instance.player_display_name
-	player_instance.connect("client_action_requested", _on_client_action_requested)
+	# player_instance.connect("client_action_requested", _on_client_action_requested)
 	player_instance.direct_chat.connect("send_message", _on_message_from_player)
 	player_instance.connect("hs_client_action_move", _on_client_action_move)
  
@@ -254,17 +261,15 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 							}
 							NetworkOrchestrator.spawn_prop.rpc_id(1, "ship",data)
 						"box50cm":
-							var spawn_position: Vector3 = datas["spawn_position"] if datas.has("spawn_position") else player_instance.global_position + Vector3(10.0,10.0,10.0)
-							var spawn_rotation: Vector3 = datas["spawn_rotation"] if datas.has("spawn_rotation") else player_instance.global_transform.basis.y.normalized()
-							var data =  {
-								"x": spawn_position.x,
-								"y": spawn_position.y,
-								"z": spawn_position.z,
-								"rx": spawn_rotation.x,
-								"ry": spawn_rotation.y,
-								"rz": spawn_rotation.z,
-							}
-							NetworkOrchestrator.spawn_prop.rpc_id(1, "box50cm", data)
+							print("Request to spawn box50cm")
+							socket.send_text(JSON.stringify({
+								"namespace": "props",
+								"event": "spawn_request",
+								"data": {
+									"type": "box50cm",
+									"player_uuid": datas["uuid"],
+								},
+							}))
 						"box4m":
 							var spawn_position: Vector3 = datas["spawn_position"] if datas.has("spawn_position") else player_instance.global_position + Vector3(10.0,10.0,10.0)
 							var spawn_rotation: Vector3 = datas["spawn_rotation"] if datas.has("spawn_rotation") else player_instance.global_transform.basis.y.normalized()
@@ -346,5 +351,51 @@ func update_props(event: Dictionary) -> void:
 			var remote_player = players_list[player["uuid"]]
 			remote_player.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
 			remote_player.global_rotation = Vector3(player["rot"]["x"], player["rot"]["y"], player["rot"]["z"])
-
+		else:
+			print("Unknown player UUID: %s" % player["uuid"])
 		
+func update_props_position(event: Dictionary) -> void:
+	# {
+	#     "props": [
+	#         {
+	#             "pos": {
+	#                 "x": 86785.5546875,
+	#                 "y": 13341.7998046875,
+	#                 "z": -10387.7001953125
+	#             },
+	#             "rot": {
+	#                 "x": 0.05005964636803,
+	#                 "y": -0.00235530687496,
+	#                 "z": -0.00202143285424
+	#             },
+	#             "type": "box50cm",
+	#             "uuid": "e4490a88-a58f-4968-a6e3-b9ec662c7d54"
+	#         },
+	#     ],
+	#     "type": "props_position_update"
+	# }
+	for prop in event["props"]:
+		# print("Prop position update received: %s" % prop)
+		if PropsList.has(prop["type"]):
+			match prop["type"]:
+				"box50cm":
+					if not PropsList[prop["type"]].has(prop["uuid"]):
+						var prop_instance = box50cm_scene.instantiate()
+						prop_instance.tree_entered.connect(func():
+							prop_instance.owner = get_tree().current_scene
+						)
+						universe_scene.add_child(prop_instance)
+						prop_instance.set_physics_process(false)
+						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+						prop_instance.uuid = prop["uuid"]
+						PropsList[prop["type"]][prop["uuid"]] = prop_instance
+					else:
+						var prop_instance = PropsList[prop["type"]][prop["uuid"]]
+						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+				_:
+					print("Unknown prop type: %s" % prop["type"])
+					continue
+		else:
+			print("Unknown prop type: %s" % prop["type"])

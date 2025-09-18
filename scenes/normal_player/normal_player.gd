@@ -101,6 +101,8 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	if remote_player:
+		camera.current = false
+		$ExtCamera3D.current = false		
 		set_player_name(name)
 		return
 	
@@ -118,6 +120,8 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	camera.current = false
 	$ExtCamera3D.current = false
+
+	camera.make_current()
 	# hide player name label for me only
 	labelPlayerName.visible = false
 	labelServerName.visible = false
@@ -184,7 +188,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	
 	if event.is_action_pressed("spawn_50cmbox"):
 		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
-		emit_signal("client_action_requested", {"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position})
+		emit_signal("client_action_requested", {"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position, "uuid": clientUUID})
 	
 	if event.is_action_pressed("spawn_4mbox"):
 		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 3.0) + global_basis.y * 6.0
@@ -254,12 +258,13 @@ func _process(_delta: float) -> void:
 			client_last_global_rotation = global_rotation
 			emit_signal("hs_client_action_move", input_direction, global_rotation)
 		update_last_basis()
-		
+
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
 		labelz.text = str("%0.2f" % global_position[2])
 
 func _physics_process(delta: float) -> void:
+	if remote_player: return
 	if OS.has_feature("dedicated_server"):
 		if new_input_from_server:
 			input_direction = input_from_server["input_direction"]

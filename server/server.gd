@@ -34,14 +34,14 @@ var PropsList = {
 	"ship": {},
 }
 var PropsListLastMovement = {
-	"box50cm": {},
-	"box4m": {},
-	"ship": {},
+	# "box50cm": {},
+	# "box4m": {},
+	# "ship": {},
 }
 var PropsListLastRotation = {
-	"box50cm": {},
-	"box4m": {},
-	"ship": {},
+	# "box50cm": {},
+	# "box4m": {},
+	# "ship": {},
 }
 
 var ServersTicksTasks = {
@@ -58,6 +58,7 @@ var ServersTicksTasks = {
 }
 
 var players_newposition: Dictionary = {}
+var props_newposition: Dictionary = {}
 
 # Horizon server
 # The port we will listen to.
@@ -71,6 +72,7 @@ var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 
 var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
+var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 
 var debug_message_number: int = 0
 
@@ -82,6 +84,7 @@ func _ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
+	send_props_newposition_to_horizon()
 	if NetworkOrchestrator.isSDOActive == true:
 		_is_server_has_too_many_players()
 		_send_players_to_sdo()
@@ -426,41 +429,42 @@ func _spawn_prop_remote_update(prop):
 	NetworkOrchestrator.PropsList[prop.type][prop.uuid].global_rotation = Vector3(float(prop.xr), float(prop.yr), float(prop.zr))
 
 func _send_props_to_sdo():
-	if ServersTicksTasks.SendPropsToMQTTCurrent > 0:
-		ServersTicksTasks.SendPropsToMQTTCurrent -= 1
-	else:
-		var propsData = []
-		var position = Vector3(0.0, 0.0, 0.0)
-		var rotation = Vector3(0.0, 0.0, 0.0)
-		for proptype in PropsList.keys():
-			for uuid in PropsList[proptype].keys():
-				position = PropsList[proptype][uuid].global_position
-				rotation = PropsList[proptype][uuid].global_rotation
-				if PropsListLastMovement[proptype][uuid] != position or PropsListLastRotation[proptype][uuid] != rotation:
-					propsData.append({
-						"type": proptype,
-						"uuid": uuid,
-						"x": position[0],
-						"y": position[1],
-						"z": position[2],
-						"xr": rotation[0],
-						"yr": rotation[1],
-						"zr": rotation[2]
-					})
-					PropsListLastMovement[proptype][uuid] = position
-					PropsListLastRotation[proptype][uuid] = rotation
-					# used for call save on persistance
-					if PropsList[proptype][uuid].has_node("DataEntity"):
-						var dataentity = PropsList[proptype][uuid].get_node("DataEntity")
-						dataentity.Backgroud_save()
-		if propsData.size() > 0:
-			NetworkOrchestrator.MQTTClientSDO.publish("sdo/propschanges", JSON.stringify({
-				"add": [],
-				"update": propsData,
-				"delete": [],
-				"server_id": NetworkOrchestrator.ServerSDOId,
-			}))
-		ServersTicksTasks.SendPropsToMQTTCurrent = ServersTicksTasks.SendPropsToMQTTReset
+	# if ServersTicksTasks.SendPropsToMQTTCurrent > 0:
+	# 	ServersTicksTasks.SendPropsToMQTTCurrent -= 1
+	# else:
+	# 	var propsData = []
+	# 	var position = Vector3(0.0, 0.0, 0.0)
+	# 	var rotation = Vector3(0.0, 0.0, 0.0)
+	# 	for proptype in PropsList.keys():
+	# 		for uuid in PropsList[proptype].keys():
+	# 			position = PropsList[proptype][uuid].global_position
+	# 			rotation = PropsList[proptype][uuid].global_rotation
+	# 			if PropsListLastMovement[proptype][uuid] != position or PropsListLastRotation[proptype][uuid] != rotation:
+	# 				propsData.append({
+	# 					"type": proptype,
+	# 					"uuid": uuid,
+	# 					"x": position[0],
+	# 					"y": position[1],
+	# 					"z": position[2],
+	# 					"xr": rotation[0],
+	# 					"yr": rotation[1],
+	# 					"zr": rotation[2]
+	# 				})
+	# 				PropsListLastMovement[proptype][uuid] = position
+	# 				PropsListLastRotation[proptype][uuid] = rotation
+	# 				# used for call save on persistance
+	# 				if PropsList[proptype][uuid].has_node("DataEntity"):
+	# 					var dataentity = PropsList[proptype][uuid].get_node("DataEntity")
+	# 					dataentity.Backgroud_save()
+	# 	if propsData.size() > 0:
+	# 		NetworkOrchestrator.MQTTClientSDO.publish("sdo/propschanges", JSON.stringify({
+	# 			"add": [],
+	# 			"update": propsData,
+	# 			"delete": [],
+	# 			"server_id": NetworkOrchestrator.ServerSDOId,
+	# 		}))
+	# 	ServersTicksTasks.SendPropsToMQTTCurrent = ServersTicksTasks.SendPropsToMQTTReset
+	pass
 
 func set_server_inactive(_newserverId):
 	print("# Disable the server")
@@ -527,6 +531,58 @@ func dispatch_horizon_message(message: Dictionary):
 				PlayersListLastRotation[player_data["uuid"]] = spawned_entity_instance.global_rotation
 				spawned_entity_instance.connect("hs_server_move", _on_player_move)
 
+			"add_prop":
+				for type in message["data"].keys():
+					match type:
+						"box50cm":
+							var box = message["data"][type]
+							if Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"]) == Vector3.ZERO:
+								if PlayersList.has(message["data"]["player_uuid"]):
+									var player = PlayersList[message["data"]["player_uuid"]]
+									var box_spawn_position: Vector3 = player.global_position + (-player.global_basis.z * 1.5) + player.global_basis.y * 2.0
+									var spawn_position: Vector3 = box_spawn_position
+									var spawn_rotation: Vector3 = player.global_transform.basis.y.normalized()
+									var data =  {
+										"x": spawn_position.x,
+										"y": spawn_position.y,
+										"z": spawn_position.z,
+										"rx": spawn_rotation.x,
+										"ry": spawn_rotation.y,
+										"rz": spawn_rotation.z,
+									}
+
+									# spawn box50cm
+									var spawnable_box50cm_instance = box50cm_scene.instantiate()
+									spawnable_box50cm_instance.spawn_position = Vector3(data["x"], data["y"], data["z"])
+									# spawnable_box50cm_instance.name = box["uuid"]
+									spawnable_box50cm_instance.uuid = box["uuid"]
+									spawnable_box50cm_instance.tree_entered.connect(func():
+										spawnable_box50cm_instance.owner = get_tree().current_scene
+									)
+									universe_scene.add_child(spawnable_box50cm_instance)
+									PropsListLastMovement[box["uuid"]] = Vector3.ZERO
+									PropsListLastRotation[box["uuid"]] = Vector3.ZERO
+									spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
+									PropsList["box50cm"][box["uuid"]] = spawnable_box50cm_instance									
+							else:
+								# spawn box50cm
+								var spawnable_box50cm_instance = box50cm_scene.instantiate()
+								spawnable_box50cm_instance.spawn_position = Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"])
+								spawnable_box50cm_instance.global_rotation = Vector3(box["rotation"]["x"], box["rotation"]["y"], box["rotation"]["z"])
+								# spawnable_box50cm_instance.name = box["uuid"]
+								spawnable_box50cm_instance.uuid = box["uuid"]
+								spawnable_box50cm_instance.tree_entered.connect(func():
+									spawnable_box50cm_instance.owner = get_tree().current_scene
+								)
+								universe_scene.add_child(spawnable_box50cm_instance)
+								spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
+								PropsList["box50cm"][box["uuid"]] = spawnable_box50cm_instance									
+
+						"player_uuid":
+							# only used to spawn something by the player
+							pass
+						_:
+							print("Unknown prop type: " + type)
 			_:
 				print("Unknown server event: " + message['event'])
 	elif message['namespace'] == "player":
@@ -557,6 +613,8 @@ func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
 
 func send_players_newposition_to_horizon():
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		if players_newposition.values().size() == 0:
+			return
 		debug_message_number = debug_message_number + 1
 		var message = {
 			"namespace": "players",
@@ -566,3 +624,37 @@ func send_players_newposition_to_horizon():
 		}
 		peer.send_text(JSON.stringify(message))
 		players_newposition.clear()
+
+func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String):
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		if PropsListLastMovement[uuid] != position or PropsListLastRotation[uuid] != rotation:
+			props_newposition[uuid] = {
+				"uuid": uuid,
+				"pos": {
+					"x": position[0],
+					"y": position[1],
+					"z": position[2]
+				},
+				"rot": {
+					"x": rotation[0],
+					"y": rotation[1],
+					"z": rotation[2]
+				},
+				"type": type,
+			}
+			PropsListLastMovement[uuid] = position
+			PropsListLastRotation[uuid] = rotation
+
+func send_props_newposition_to_horizon():
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		if props_newposition.values().size() == 0:
+			return
+		debug_message_number = debug_message_number + 1
+		var message = {
+			"namespace": "props",
+			"event": "position",
+			"amessagenb": debug_message_number,
+			"data": props_newposition.values()
+		}
+		peer.send_text(JSON.stringify(message))
+		props_newposition.clear()
