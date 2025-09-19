@@ -28,12 +28,13 @@ DSP/dsp_buffer_count=4
 
 [application]
 
-config/name="StarDeception"
+config/name="DyingStar"
 config/version="0.0.1-dev"
 run/main_scene="uid://dpderfrunb8lr"
 config/features=PackedStringArray("4.4", "C#", "Double Precision", "GL Compatibility")
-boot_splash/image="uid://bm7wkmcuwwpxn"
-config/icon="res://icon.svg"
+boot_splash/image="uid://ck5w0cxx7uj4"
+config/icon="uid://bqoexxd6necib"
+boot_splash/minimum_display_time=1000
 
 [autoload]
 
