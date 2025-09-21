@@ -10,7 +10,7 @@
 [ext_resource type="Script" uid="uid://cp4hqc0wqd0l0" path="res://scenes/normal_player/label_game_server_number.gd" id="6_ev378"]
 [ext_resource type="Script" uid="uid://bwj71lom8cof6" path="res://scenes/normal_player/label_universe_number_players.gd" id="7_82eon"]
 [ext_resource type="PackedScene" uid="uid://dk4le3cck03bg" path="res://ui/direct_chat/direct_chat.tscn" id="8_ikqc6"]
-[ext_resource type="PackedScene" uid="uid://c77xahaiy4r4r" path="res://ui/pause_page/pause_page.tscn" id="11_82eon"]
+[ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
@@ -305,7 +305,7 @@ visible = false
 layout_mode = 1
 mouse_filter = 1
 
-[node name="PauseMenu" parent="UserInterface" instance=ExtResource("11_82eon")]
+[node name="PauseMenu" parent="UserInterface" instance=ExtResource("11_edphc")]
 layout_mode = 1
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]

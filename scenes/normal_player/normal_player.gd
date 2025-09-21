@@ -90,7 +90,7 @@ func _ready() -> void:
 	
 	$UserInterface/LoadingScreen.show()
 	
-		
+	
 	global_position = spawn_position
 	look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
 	
