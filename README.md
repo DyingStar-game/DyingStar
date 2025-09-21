@@ -6,6 +6,9 @@
 - [C] = toggle crouch or slide (when sprinting)
 - [Space] = jump, hold near ledge while falling to grab
 
+### VR
+
+To enable vr, add to the arguments: `--xr-mode on` 
 
 ### Code Organization
 

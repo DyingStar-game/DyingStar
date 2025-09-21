@@ -120,7 +120,7 @@ void fragment() {
 	vec3 albedo = triplanar_texture(noise_c_variation, uv1_power_normal, uv1_triplanar_pos * noise_c_scale / 10000.0).rgb;
 
 	vec3 rock_normal_tex = triplanar_texture_notile(texture_normal, uv1_power_normal, uv1_triplanar_pos).rgb;
-	vec3 sand_normal_tex = triplanar_texture_notile(sand_normal, uv1_power_normal, uv1_triplanar_pos * 0.05).rgb;
+	vec3 sand_normal_tex = triplanar_texture_notile(sand_normal, uv1_power_normal, uv1_triplanar_pos * 0.07).rgb;
 	
 	float offset = 0.9;
 	float fade = 0.1;
