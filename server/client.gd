@@ -108,6 +108,8 @@ func _process(_delta: float) -> void:
 						update_props(event)
 					"props_position_update":
 						update_props_position(event)
+					"delete_player":
+						delete_player(event)
 					_:
 						print("< Unknown event type: %s" % event["type"])
 
@@ -306,7 +308,7 @@ func _on_message_from_player(message: ChatMessage) -> void:
 
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
-	print("action move: %s - %s" % [move_direction, move_rotation])
+	# print("action move: %s - %s" % [move_direction, move_rotation])
 	socket.send_text(JSON.stringify({
 		"namespace": "movement",
 		"event": "update_position", # "move_direction",
@@ -353,7 +355,16 @@ func update_props(event: Dictionary) -> void:
 			remote_player.global_rotation = Vector3(player["rot"]["x"], player["rot"]["y"], player["rot"]["z"])
 		else:
 			print("Unknown player UUID: %s" % player["uuid"])
-		
+
+func delete_player(event: Dictionary) -> void:
+	print(event)
+	if players_list.has(event["player_uuid"]):
+		var remote_player = players_list[event["player_uuid"]]
+		remote_player.queue_free()
+		players_list.erase(event["player_uuid"])
+		NetworkOrchestrator.set_gameserver_numberPlayers.emit(players_list.size() + 1)
+		print("Player %s has been removed." % event["player_uuid"])
+
 func update_props_position(event: Dictionary) -> void:
 	# {
 	#     "props": [
@@ -390,6 +401,8 @@ func update_props_position(event: Dictionary) -> void:
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 						prop_instance.uuid = prop["uuid"]
 						PropsList[prop["type"]][prop["uuid"]] = prop_instance
+						NetworkOrchestrator.set_gameserver_numberBoxes50cm.emit(PropsList["box50cm"].size() + 1)
+
 					else:
 						var prop_instance = PropsList[prop["type"]][prop["uuid"]]
 						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])

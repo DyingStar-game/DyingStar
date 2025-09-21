@@ -1,6 +1,6 @@
 extends SceneTree
 
-signal scene_changed(new_scene: Node)
+signal scene_changed_custom(new_scene: Node)
 
 const MAX_WAITING_FRAME_COUNT: int = 5
 

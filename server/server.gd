@@ -583,6 +583,14 @@ func dispatch_horizon_message(message: Dictionary):
 							pass
 						_:
 							print("Unknown prop type: " + type)
+			"delete_player":
+				var player_uuid = message["data"]["uuid"]
+				if PlayersList.has(player_uuid):
+					var player = PlayersList[player_uuid]
+					player.queue_free()
+					PlayersList.erase(player_uuid)
+					PlayersListLastMovement.erase(player_uuid)
+					PlayersListLastRotation.erase(player_uuid)
 			_:
 				print("Unknown server event: " + message['event'])
 	elif message['namespace'] == "player":

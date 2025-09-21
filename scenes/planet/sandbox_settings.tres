@@ -23,8 +23,6 @@ fractal_gain = 0.695
 
 [sub_resource type="Resource" id="Resource_qc8cq"]
 script = ExtResource("3_dl7hi")
-noise_type = "macro"
-amplitude = 300.0
 scale = 400.0
 clamp_min = 300.0
 clamp_max = 350.0
@@ -33,7 +31,6 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_yhksb"]
 script = ExtResource("3_dl7hi")
-noise_type = "macro"
 amplitude = 270.0
 scale = 400.0
 clamp_min = 350.0
@@ -45,15 +42,11 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 script = ExtResource("3_dl7hi")
 noise_type = "micro"
 amplitude = 10.0
-scale = 300.0
-clamp_min = 0.0
-clamp_max = 10000.0
 description = "Micro details elevation"
 metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("4_y0ecf")
-elev_scale = 1.0
 noise_scale = 5.0
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
@@ -66,6 +59,5 @@ radius = 10000
 atmosphere_height = 1200
 terrain_material = ExtResource("2_0m3tu")
 sea_level = 680
-has_ocean = false
 terrain_settings = SubResource("Resource_7f52q")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"

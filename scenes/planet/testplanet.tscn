@@ -34,8 +34,6 @@ fractal_gain = 0.695
 
 [sub_resource type="Resource" id="Resource_qc8cq"]
 script = ExtResource("5_yhksb")
-noise_type = "macro"
-amplitude = 300.0
 scale = 400.0
 clamp_min = 300.0
 clamp_max = 350.0
@@ -44,7 +42,6 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_yhksb"]
 script = ExtResource("5_yhksb")
-noise_type = "macro"
 amplitude = 270.0
 scale = 400.0
 clamp_min = 350.0
@@ -56,15 +53,11 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 script = ExtResource("5_yhksb")
 noise_type = "micro"
 amplitude = 10.0
-scale = 300.0
-clamp_min = 0.0
-clamp_max = 10000.0
 description = "Micro details elevation"
 metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("5_qc8cq")
-elev_scale = 1.0
 noise_scale = 5.0
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
@@ -87,10 +80,10 @@ shading_mode = 0
 frequency = 0.0348
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
-seamless = true
-seamless_blend_skirt = 0.031
-as_normal_map = true
 noise = SubResource("FastNoiseLite_mv8ka")
+seamless = true
+as_normal_map = true
+seamless_blend_skirt = 0.031
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
 albedo_color = Color(0.301579, 0.510198, 0.570312, 1)

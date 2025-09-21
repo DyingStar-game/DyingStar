@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=17 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://bwj71lom8cof6" path="res://scenes/normal_player/label_universe_number_players.gd" id="7_82eon"]
 [ext_resource type="PackedScene" uid="uid://dk4le3cck03bg" path="res://ui/direct_chat/direct_chat.tscn" id="8_ikqc6"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
+[ext_resource type="Script" uid="uid://btyj4wvtqhqhg" path="res://scenes/normal_player/label_universe_number_box_50_cm.gd" id="10_0o2xm"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
@@ -42,7 +43,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.9, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot"]
-far = 1e+08
+far = 100000000.0
 
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D"]
 target_position = Vector3(0, 0, -3)
@@ -99,11 +100,11 @@ mouse_filter = 2
 [node name="ColorRect" type="ColorRect" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_right = 561.0
-offset_bottom = 104.0
+offset_bottom = 127.0
 color = Color(0, 0, 0, 0.690196)
 
 [node name="Label" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 65.0
 offset_right = 277.0
 offset_bottom = 23.0
@@ -112,7 +113,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label4" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 2.0
 offset_top = 16.0
 offset_right = 277.0
@@ -122,7 +123,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label2" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 28.0
 offset_top = 32.0
 offset_right = 278.0
@@ -132,7 +133,7 @@ label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
 [node name="Label3" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_top = 48.0
 offset_right = 278.0
 offset_bottom = 71.0
@@ -140,8 +141,17 @@ text = "Number of total players in the universe: "
 label_settings = ExtResource("4_dpwvv")
 horizontal_alignment = 2
 
+[node name="Label_number_box50cm" type="Label" parent="UserInterface/Debug"]
+layout_mode = 0
+offset_top = 98.0
+offset_right = 278.0
+offset_bottom = 121.0
+text = "Number of total box50cm in the universe: "
+label_settings = ExtResource("4_dpwvv")
+horizontal_alignment = 2
+
 [node name="Labelx" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 3.0
 offset_top = 62.0
 offset_right = 23.0
@@ -150,7 +160,7 @@ text = "x: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labely" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 191.0
 offset_top = 62.0
 offset_right = 211.0
@@ -159,7 +169,7 @@ text = "y: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labelz" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 379.0
 offset_top = 62.0
 offset_right = 399.0
@@ -168,7 +178,7 @@ text = "z: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelServerZone" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 3.0
 offset_top = 77.0
 offset_right = 638.0
@@ -178,7 +188,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_ev378")
 
 [node name="LabelGameServerName" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_right = 403.0
 offset_bottom = 23.0
@@ -187,7 +197,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("4_ikqc6")
 
 [node name="LabelGameServerNumberPlayers" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 16.0
 offset_right = 403.0
@@ -197,7 +207,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_dpwvv")
 
 [node name="LabelGameServerNumber" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 32.0
 offset_right = 403.0
@@ -207,7 +217,7 @@ label_settings = ExtResource("4_dpwvv")
 script = ExtResource("6_ev378")
 
 [node name="LabelUniverseNumberPlayers" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 281.0
 offset_top = 48.0
 offset_right = 403.0
@@ -216,8 +226,18 @@ text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("7_82eon")
 
+[node name="LabelUniverseNumberBox50cm" type="Label" parent="UserInterface/Debug"]
+layout_mode = 0
+offset_left = 289.0
+offset_top = 97.0
+offset_right = 411.0
+offset_bottom = 120.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("10_0o2xm")
+
 [node name="LabelXValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 21.0
 offset_top = 62.0
 offset_right = 181.0
@@ -225,7 +245,7 @@ offset_bottom = 85.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelYValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 208.0
 offset_top = 62.0
 offset_right = 368.0
@@ -233,7 +253,7 @@ offset_bottom = 85.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelZValue" type="Label" parent="UserInterface/Debug"]
-layout_mode = 2
+layout_mode = 0
 offset_left = 393.0
 offset_top = 60.0
 offset_right = 553.0
@@ -289,5 +309,6 @@ mouse_filter = 1
 layout_mode = 1
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
+visible = false
 
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]

@@ -68,6 +68,7 @@ signal set_gameserver_numberPlayers(number_players_server)
 signal set_gameserver_numberServers(nbServers)
 signal set_gameserver_numberPlayersUniverse(nbPlayers)
 signal set_gameserver_serverzone(serverzone)
+signal set_gameserver_numberBoxes50cm(number_boxes_server)
 
 func _enter_tree() -> void:
 	pass
