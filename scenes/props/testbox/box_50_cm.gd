@@ -17,7 +17,7 @@ func _ready() -> void:
 	global_position = spawn_position
 
 func _physics_process(_delta: float) -> void:
-	if OS.has_feature("dedicated_server"):
+	if GameOrchestrator.is_server():
 		if server_last_global_position != global_position or server_last_global_rotation != global_rotation:
 			emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "box50cm")
 			server_last_global_position = global_position

@@ -31,6 +31,6 @@ func align_with_y(xform: Transform3D, new_y: Vector3) -> Transform3D:
 func log(message: String):
 	 
 	var header = "[color=green][lb]client[rb][/color]"
-	if multiplayer and multiplayer.is_server():
+	if multiplayer and GameOrchestrator.is_server():
 		header = "[color=teal][lb]server[rb][/color]: "
 	print_rich(header + message)

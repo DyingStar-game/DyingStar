@@ -21,6 +21,7 @@ static var is_shown
 func _ready() -> void:
 	if not is_multiplayer_authority(): return
 	is_shown = false
+	if GameOrchestrator.is_server(): return
 	InputMap.load_from_project_settings()
 	import_input_map()
 	create_action_list()

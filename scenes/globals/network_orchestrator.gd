@@ -223,7 +223,7 @@ func _on_mqtt_broker_connection_failed():
 @rpc("any_peer", "call_remote", "unreliable")
 func send_chat_message_to_server(message: Dictionary) -> void:
 
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	
 	####################
@@ -250,7 +250,7 @@ func send_chat_message_to_server(message: Dictionary) -> void:
 # Receives a message from the server
 @rpc("authority", "call_remote", "unreliable")
 func receive_chat_message_from_server(message: Dictionary) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		var chat_message = ChatMessage.new(message["content"], message["channel"], message["author"], message["creation_schedule"])
 		network_agent.receive_chat_message(chat_message)
 
@@ -718,7 +718,7 @@ func get_spawnable_props_newinstance(proptype):
 
 @rpc("any_peer", "call_remote", "reliable")
 func spawn_prop(proptype,data: Dictionary ) -> void: #spawn_position: Vector3 = Vector3.ZERO, spawn_rotation: Vector3 = Vector3.UP) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	var prop_instance: RigidBody3D = get_spawnable_props_newinstance(proptype)
 	if prop_instance == null:
@@ -761,7 +761,7 @@ func spawn_planet(planet_datas: Dictionary) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_station(station_datas: Dictionary) -> void:
-	if not multiplayer.is_server():
+	if not GameOrchestrator.is_server():
 		return
 	
 	var spawnable_station_instance: Node3D = spawnable_station_scene.instantiate()

@@ -72,7 +72,7 @@ func _process(delta: float) -> void:
 			#focus_positions = [camera.global_position + -camera.global_basis.z * 1]
 			return
 	
-	if OS.has_feature("dedicated_server"):
+	if GameOrchestrator.is_server():
 		focus_positions = []
 		players_ids = []
 		for player: Player in get_tree().get_nodes_in_group("player"):

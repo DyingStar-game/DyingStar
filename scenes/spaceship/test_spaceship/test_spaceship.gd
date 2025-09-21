@@ -32,7 +32,7 @@ func _ready() -> void:
 	update_last_basis()
 
 func on_ship_console_interact(interactor: Node):
-	if interactor is Player and not multiplayer.is_server():
+	if interactor is Player and not GameOrchestrator.is_server():
 		interactor.emit_signal("client_action_requested", {"action": "control", "entity": "ship", "entity_node": self})
 
 func _unhandled_input(event: InputEvent) -> void:

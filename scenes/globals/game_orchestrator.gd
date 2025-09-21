@@ -73,6 +73,9 @@ func _notification(what):
 			## TOUTES LES ACTIONS A FAIRE AVANT DE QUITTER (besoin d'envoyer l'info au serveur ?)
 			get_tree().quit()
 
+func is_server():
+	return current_network_role == NETWORK_ROLE.SERVER
+
 func change_network_role(new_network_role) -> int:
 	match new_network_role:
 		NETWORK_ROLE.PLAYER:
