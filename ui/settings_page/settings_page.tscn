@@ -1,0 +1,159 @@
+[gd_scene load_steps=5 format=3 uid="uid://b0ejqlhiwo0gb"]
+
+[ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_84msf"]
+[ext_resource type="Script" uid="uid://c2wb57c2srlse" path="res://ui/settings_page/settings_page.gd" id="1_tirmb"]
+[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="2_tirmb"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_ug86k"]
+font = ExtResource("2_tirmb")
+font_size = 100
+
+[node name="SettingsPage" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_tirmb")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="TextureRect" parent="Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("1_84msf")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="MarginContainer" type="MarginContainer" parent="Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Settings - General"
+label_settings = SubResource("LabelSettings_ug86k")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="Generals" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Generals"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Generals"
+label_settings = SubResource("LabelSettings_ug86k")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Graphics" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Graphics"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Graphics"
+label_settings = SubResource("LabelSettings_ug86k")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Audio" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Audio"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Audio"
+label_settings = SubResource("LabelSettings_ug86k")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Controls" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Controls"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Controls"
+label_settings = SubResource("LabelSettings_ug86k")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Return" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Return"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Return"
+label_settings = SubResource("LabelSettings_ug86k")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer"]
+handle_input_locally = false
+size = Vector2i(1476, 939)
+render_target_update_mode = 4

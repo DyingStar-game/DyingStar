@@ -12,7 +12,6 @@ var multiples_spaces_filter: RegEx = RegEx.new()
 
 func _on_ready() -> void:
 	is_ready = true
-
 	allowed_chars_filter.compile(REGEX_ALLOWED_CHARS)
 	multiples_spaces_filter.compile(REGEX_MULTIPLE_SPACES)
 

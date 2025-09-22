@@ -1,0 +1,128 @@
+[gd_scene load_steps=4 format=3 uid="uid://6ysukgsaga26"]
+
+[ext_resource type="Script" uid="uid://dxp1gnukx0qma" path="res://ui/settings_page/graphical_page/graphical_settings_page.gd" id="1_6drnw"]
+[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="2_pcucv"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_aqojs"]
+font = ExtResource("2_pcucv")
+font_size = 100
+
+[node name="GraphicalSettingsPage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_6drnw")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.219608, 0.254902, 0.415686, 1)
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="Monitor" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Monitor"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor"]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 3
+popup/item_0/text = "Fullscreen"
+popup/item_0/id = 0
+popup/item_1/text = "Windowed"
+popup/item_1/id = 1
+popup/item_2/id = 2
+
+[node name="DisplayMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Display Mode"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode"]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 3
+popup/item_0/text = "Fullscreen"
+popup/item_0/id = 0
+popup/item_1/text = "Windowed"
+popup/item_1/id = 1
+popup/item_2/id = 2
+
+[node name="ScreenResolution" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Screen Resolution"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution"]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 2
+item_count = 6
+popup/item_0/text = "640 x 480"
+popup/item_0/id = 0
+popup/item_1/text = "1280x 720"
+popup/item_1/id = 1
+popup/item_2/text = "1920 x 1080"
+popup/item_2/id = 2
+popup/item_3/text = "2560 x 1440"
+popup/item_3/id = 3
+popup/item_4/text = "3840 x 2160"
+popup/item_4/id = 4
+popup/item_5/text = "7680 x 4320"
+popup/item_5/id = 5
+
+[node name="VSync" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "V-Sync"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync"]
+layout_mode = 2
+size_flags_horizontal = 10
+text = "On"
