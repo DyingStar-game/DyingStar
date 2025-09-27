@@ -6,16 +6,16 @@ public partial class PersistanceManager : Node
 {
     [Signal]
     public delegate void ClientReadyEventHandler();
-    
+
     [Signal]
     public delegate void SaveCompletedEventHandler(bool success, string uid, string errorMessage, string requestId);
-    
+
     [Signal]
     public delegate void DeleteCompletedEventHandler(bool success, string errorMessage, string requestId);
-    
+
     [Signal]
     public delegate void QueryCompletedEventHandler(bool success, string jsonData, string errorMessage, string requestId);
-    
+
     [Signal]
     public delegate void FindByIdCompletedEventHandler(bool success, string jsonData, string errorMessage, string requestId);
 
@@ -30,7 +30,7 @@ public partial class PersistanceManager : Node
     const string SECTION_CONF = "persistance";
 
     private BatchOperationManager _batchManager;
- 
+
     public override void _Ready()
     {
         if (Godot.OS.HasFeature("dedicated_server"))
@@ -38,7 +38,7 @@ public partial class PersistanceManager : Node
           Instance = this;
           InitializeAsync();
         }
-       
+
     }
 
 
@@ -77,7 +77,7 @@ public partial class PersistanceManager : Node
                     {
                         GD.PrintErr($"File not found: {path}");
                     }
-                   
+
                     IsReady = true;
                     EmitSignal(nameof(ClientReady));
                     await batchInitializeAsync();
@@ -87,7 +87,7 @@ public partial class PersistanceManager : Node
                     GD.PrintErr("❌ Failed to initialize database connection");
                     _enabled = false;
                 }
-                
+
             }
         }
         catch (Exception ex)
@@ -115,14 +115,14 @@ public partial class PersistanceManager : Node
                 () => _persistenceProvider.BeginTransactionAsync(),
                 config
             );
-            
+
             // Écouter les événements
-            _batchManager.OnStatsUpdated += stats => 
+            _batchManager.OnStatsUpdated += stats =>
             {
                 GD.Print($"Stats: {stats.TotalItemsProcessed} items ({stats.TotalMutationsProcessed} mutations, {stats.TotalDeletionsProcessed} suppressions), {stats.SuccessRate:F1}% succès, batch={stats.CurrentBatchSize}");
             };
-            
-            _batchManager.OnError += error => 
+
+            _batchManager.OnError += error =>
             {
                 GD.PrintErr($"Erreur batch: {error}");
             };
@@ -148,7 +148,7 @@ public partial class PersistanceManager : Node
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 var result = await SaveAsync(obj);
                 CallDeferred(nameof(EmitSaveCompleted), result.IsSuccess, result.Uid ?? "", result.ErrorMessage ?? "", requestId);
@@ -180,18 +180,18 @@ public partial class PersistanceManager : Node
         {
             GD.PrintErr($"❌ Save failed: {errorMessage}");
         }
-        
+
         EmitSignal(nameof(SaveCompleted), success, uid, errorMessage, requestId);
     }
 
     public void BackgroundSaveObjAsync(string obj, int priority)
     {
-       
+
         GD.Print($"🔄 Starting async background save ");
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 await _batchManager.QueueMutationAsync(obj, priority);
             }
@@ -214,7 +214,7 @@ public partial class PersistanceManager : Node
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 var result = await DeleteAsync(uid);
                 CallDeferred(nameof(EmitDeleteCompleted), result.IsSuccess, result.ErrorMessage ?? "", requestId);
@@ -246,18 +246,18 @@ public partial class PersistanceManager : Node
         {
             GD.PrintErr($"❌ Delete failed: {errorMessage}");
         }
-        
+
         EmitSignal(nameof(DeleteCompleted), success, errorMessage, requestId);
     }
 
     public void BackgroundDeleteObjAsync(string uid, int priority)
     {
-       
+
         GD.Print($"🔄 Starting async background save ");
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 await _batchManager.QueueDeletionAsync(uid, priority);
             }
@@ -279,7 +279,7 @@ public partial class PersistanceManager : Node
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 var result = await ExecuteQueryAsync(queryString);
                 CallDeferred(nameof(EmitQueryCompleted), result.IsSuccess, result.Data ?? "", result.ErrorMessage ?? "", requestId);
@@ -311,7 +311,7 @@ public partial class PersistanceManager : Node
         {
             GD.PrintErr($"❌ Query failed: {errorMessage}");
         }
-        
+
         EmitSignal(nameof(QueryCompleted), success, jsonData, errorMessage, requestId);
     }
 
@@ -327,7 +327,7 @@ public partial class PersistanceManager : Node
 
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            try 
+            try
             {
                 var result = await FindByIdInternalAsync(uid);
                 CallDeferred(nameof(EmitFindByIdCompleted), result.IsSuccess, result.Data ?? "", result.ErrorMessage ?? "", requestId);
@@ -359,7 +359,7 @@ public partial class PersistanceManager : Node
         {
             GD.PrintErr($"❌ Find by ID failed: {errorMessage}");
         }
-        
+
         EmitSignal(nameof(FindByIdCompleted), success, jsonData, errorMessage, requestId);
     }
 
@@ -373,7 +373,7 @@ public partial class PersistanceManager : Node
     }
 
     // ============ INTERNAL ASYNC METHODS ============
-    
+
     public async Task<OperationResultWithUid> SaveAsync(string entity)
     {
         if (!_enabled) return OperationResultWithUid.Failure("Database not enabled");
@@ -397,7 +397,7 @@ public partial class PersistanceManager : Node
         if (!_enabled) return OperationResult.Failure("Database not enabled");
 
         using var transaction = await _persistenceProvider.BeginTransactionAsync();
-        
+
         // Construire l'objet de suppression
         var deleteResult = await transaction.DeleteAsync(deleteObj);
 

@@ -1,22 +1,21 @@
 @tool
-extends Node3D
 class_name QuadtreeNode
+extends Node3D
 
 ## Based on: https://github.com/stefsdev/ProcPlanetLOD
 
 @export var planet: PlanetTerrain
+# Quadtree specific properties
+@export var normal : Vector3
 
 var focus_positions_last = []
 var focus_positions: Array[Vector3] = []
 
-# Quadtree specific properties
-@export var normal : Vector3
-
 var camera_dir: Vector3
 var last_cam_dir: Vector3
 
-var axisA: Vector3
-var axisB: Vector3
+var axis_a: Vector3
+var axis_b: Vector3
 
 var skirt_indices := 2
 var chunk_resolution := 60
@@ -50,13 +49,22 @@ class QuadtreeChunk:
 	var max_chunk_depth: int
 	var identifier: String
 	var chunk_name: String
-	
+
 	var planet: PlanetTerrain
 	var face_origin: Vector3
-	var axisA: Vector3
-	var axisB: Vector3
-	
-	func _init(_bounds: AABB, _depth: int, _max_chunk_depth: int, _planet: PlanetTerrain, _face_origin: Vector3, _axisA: Vector3, _axisB: Vector3, _name: String):
+	var axis_a: Vector3
+	var axis_b: Vector3
+
+	func _init(
+		_bounds: AABB,
+		_depth: int,
+		_max_chunk_depth: int,
+		_planet: PlanetTerrain,
+		_face_origin: Vector3,
+		_axis_a: Vector3,
+		_axis_b: Vector3,
+		_name: String
+	):
 		bounds = _bounds
 		depth = _depth
 		max_chunk_depth = _max_chunk_depth
@@ -64,23 +72,27 @@ class QuadtreeChunk:
 		chunk_name = _name
 		planet = _planet
 		face_origin = _face_origin
-		axisA = _axisA
-		axisB = _axisB
+		axis_a = _axis_a
+		axis_b = _axis_b
 
 	func generate_identifier() -> String:
 		# Generate a unique identifier for the chunk based on bounds and depth
 		return "%s_%s_%d" % [bounds.position, bounds.size, depth]
-	
-	
-	func within_lod_distance(lod_centers: Array[Vector3], run_serverside: bool, center_local_3d: Vector3) -> bool:
+
+
+	func within_lod_distance(
+		lod_centers: Array[Vector3],
+		_run_serverside: bool,
+		center_local_3d: Vector3
+	) -> bool:
 		for pos: Vector3 in lod_centers:
 			var h := planet.get_height(center_local_3d.normalized())
 			var distance := h.distance_to(pos)
-			
+
 			if distance <= planet.radius * bounds.size.x * 0.7:
 			#if distance <= planet.radius * bounds.size.x * 0.35:
 				return true
-		
+
 		return false
 
 	func subdivide(lod_centers: Array[Vector3], run_serverside: bool):
@@ -88,57 +100,78 @@ class QuadtreeChunk:
 		var half_size := bounds.size.x * 0.5
 		var quarter_size := bounds.size.x * 0.25
 		var half_extents := Vector3(half_size, half_size, half_size)
-		
+
 		var child_offsets: Array[Vector2] = [
 			Vector2(-quarter_size, -quarter_size),
 			Vector2(quarter_size, -quarter_size),
 			Vector2(-quarter_size, quarter_size),
 			Vector2(quarter_size, quarter_size)
 		]
-		
+
 
 		for offset: Vector2 in child_offsets:
 			var child_pos_2d := Vector2(bounds.position.x, bounds.position.z) + offset
-			var center_local_3d := face_origin + child_pos_2d.x * axisA + child_pos_2d.y * axisB
-			
+			var center_local_3d := face_origin + child_pos_2d.x * axis_a + child_pos_2d.y * axis_b
+
 			var child_number: int = children.size()
 			if depth < max_chunk_depth and within_lod_distance(lod_centers, run_serverside, center_local_3d):
 				var child_bounds := AABB(Vector3(child_pos_2d.x, 0, child_pos_2d.y), half_extents)
-				var new_child := QuadtreeChunk.new(child_bounds, depth + 1, max_chunk_depth, planet, face_origin, axisA, axisB, chunk_name+"_"+str(child_number))
+				var new_child := QuadtreeChunk.new(
+					child_bounds,
+					depth + 1,
+					max_chunk_depth,
+					planet,
+					face_origin,
+					axis_a,
+					axis_b,
+					chunk_name+"_"+str(child_number)
+				)
 				children.append(new_child)
-				
+
 				new_child.subdivide(lod_centers, run_serverside)
 			else:
-				var child_bounds := AABB(Vector3(child_pos_2d.x, 0, child_pos_2d.y) - Vector3(quarter_size, quarter_size, quarter_size), half_extents)
-				var new_child := QuadtreeChunk.new(child_bounds, depth + 1, max_chunk_depth, planet, face_origin, axisA, axisB, chunk_name+"_"+str(child_number))
+				var child_bounds := AABB(
+					Vector3(child_pos_2d.x, 0, child_pos_2d.y) - Vector3(quarter_size, quarter_size, quarter_size),
+					half_extents
+				)
+				var new_child := QuadtreeChunk.new(
+					child_bounds,
+					depth + 1,
+					max_chunk_depth,
+					planet,
+					face_origin,
+					axis_a,
+					axis_b,
+					chunk_name+"_"+str(child_number)
+				)
 				children.append(new_child)
 
 func visualize_quadtree(chunk: QuadtreeChunk):
-	
+
 	var at_col_depth = chunk.depth == max_chunk_depth
-	
+
 	# Generate a MeshInstance for each chunk
 	if not chunk.children or at_col_depth:
-	
+
 		chunks_list_current[chunk.identifier] = true
-		
+
 		#if chunk.identifier already exists leave it
 		if chunks_generating.has(chunk.identifier):
 			return
-		
+
 		var chunk_res = 0 if run_serverside and chunk.depth < max_chunk_depth - 1 else chunk_resolution
-		
+
 		var size := chunk.bounds.size.x
 		var offset := chunk.bounds.position
 		var resolution: int = chunk_resolution + skirt_indices
-		
+
 		if at_col_depth:
 			resolution -= 20
-		
+
 		var vertex_array := PackedVector3Array()
 		var normal_array := PackedVector3Array()
 		var index_array := PackedInt32Array()
-		
+
 		# Pre-allocate indices (we know exact count)
 		var num_cells := (resolution - 1)
 		index_array.resize(num_cells * num_cells * 6)
@@ -146,9 +179,9 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		# Build vertices & normals (initialized zero)
 		vertex_array.resize(resolution * resolution)
 		normal_array.resize(resolution * resolution)
-		
-		var chunk_global_pos := (normal + offset.x * axisA + offset.z * axisB).normalized() * planet.radius
-		
+
+		var chunk_global_pos := (normal + offset.x * axis_a + offset.z * axis_b).normalized() * planet.radius
+
 		var tri_idx: int = 0
 		for y in range(resolution):
 			for x in range(resolution):
@@ -156,21 +189,21 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				var i := x + y * resolution
 				var percent := Vector2(x, y) / float(resolution - skirt_indices - 1)
 				var local := Vector2(offset.x, offset.z) + percent * size
-				var point_on_plane = normal + local.x * axisA + local.y * axisB
-				
+				var point_on_plane = normal + local.x * axis_a + local.y * axis_b
+
 				# Project onto sphere and apply height
 				var sphere_pos := planet.get_height(point_on_plane.normalized())
-				
+
 				# calculate offset to lower the vertices that are on the edge of the chunk
 				var lod_offset := point_on_plane.normalized() * 0.01 if edge else Vector3.ZERO
 				vertex_array[i] = sphere_pos - chunk_global_pos - lod_offset
 				normal_array[i] = Vector3.ZERO
-				
+
 				# Track height extremes
 				var length := sphere_pos.length()
 				planet.min_height = min(planet.min_height, length)
 				planet.max_height = max(planet.max_height, length)
-				
+
 				# Create two triangles per cell
 				if x < resolution - 1 and y < resolution - 1:
 					# Triangle 1
@@ -182,7 +215,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 					index_array[tri_idx + 4] = i + resolution + 1
 					index_array[tri_idx + 5] = i + 1
 					tri_idx += 6
-		
+
 		# Calculate smooth normals
 		for t in range(0, index_array.size(), 3):
 			var a := index_array[t]
@@ -192,27 +225,27 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 			var v1 := vertex_array[b]
 			var v2 := vertex_array[c]
 			var face_normal := -(v1 - v0).cross(v2 - v0).normalized()
-			
+
 			normal_array[a] += face_normal
 			normal_array[b] += face_normal
 			normal_array[c] += face_normal
-			
+
 		# Normalize vertex normals
 		for i in range(normal_array.size()):
 			normal_array[i] = normal_array[i].normalized()
-		
+
 		# Prepare mesh arrays
 		var arrays = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = vertex_array
 		arrays[Mesh.ARRAY_NORMAL] = normal_array
 		arrays[Mesh.ARRAY_INDEX] = index_array
-		
+
 		if not at_col_depth or not chunk.children:
 			chunks_generating[chunk.identifier] = true
-		
+
 		create_mesh_and_collision.call_deferred(arrays, chunk, chunk_global_pos, not chunk.children.is_empty())
-	
+
 	# Recursively visualize children chunks
 	for child in chunk.children:
 		visualize_quadtree(child)
@@ -223,7 +256,7 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 	# Create and instance mesh
 	var mesh = ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	
+
 	# generate collisions
 	if chunk.depth == max_chunk_depth and not Engine.is_editor_hint():
 		if !chunks_col_list.has(chunk.identifier):
@@ -232,10 +265,10 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 		else:
 			update_collision(chunk.identifier, mesh)
 		# dont generate the mesh if there are chunk children
-	
+
 	if has_children:
 		return
-	
+
 	if not run_serverside:
 		var mi = MeshInstance3D.new()
 		mi.position = chunk_pos
@@ -243,15 +276,15 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 		mi.name = "Mesh_" + chunk.chunk_name
 		mi.material_override = planet.terrain_material
 		mi.set_instance_shader_parameter("offset_pos", chunk_pos)
-		
+
 		if planet.terrain_material is ShaderMaterial:
 			var mat = planet.terrain_material as ShaderMaterial
-			
+
 			#(material as ShaderMaterial).set_shader_parameter("h_min", planet.min_height)
 			#(material as ShaderMaterial).set_shader_parameter("h_max", planet.max_height)
-		
+
 			add_child(mi)
-		
+
 			#add this chunk to chunk list
 			chunks_list[chunk.identifier] = mi
 
@@ -262,14 +295,14 @@ func update_collision(id: String, _mesh: ArrayMesh):
 	#prints("update shape for chunk", id)
 
 func add_collision_shape(id: String, mesh: ArrayMesh, chunk_pos: Vector3):
-	var _t =  Time.get_ticks_msec()
+	# var _t =  Time.get_ticks_msec()
 	#staticbody.position = mesh.get_aabb().get_center()
 	var collision_shape = CollisionShape3D.new()
 	collision_shape.position = chunk_pos
 	collision_shape.name = "ChunkColShape"
 	collision_shape.shape = mesh.create_trimesh_shape()
 	planet.add_child(collision_shape, true)
-	
+
 	#logmsg("duration: %d ms" % (t - Time.get_ticks_msec()))
 #
 	#logmsg("add static body for chunk %s faces %d" % [id, (collision_shape.shape as ConcavePolygonShape3D).get_faces().size()])
@@ -287,40 +320,40 @@ func _enter_tree() -> void:
 	mutex = Mutex.new()
 
 func _ready():
-	
+
 	should_exit = false
 	my_name = name
 	is_visible_status = visible
-	
+
 	run_serverside = not Engine.is_editor_hint() and GameOrchestrator.is_server()
-	
+
 	# Clear existing children
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
-	
+
 	var chunk_parent: Node = get_parent()
 	if not chunk_parent is PlanetTerrain: return
-	
+
 	planet = chunk_parent
-	
+
 	if not planet.terrain_settings:
 		push_error("Oops il n'y a pas de terrain_settings dans planet_terrain!")
 		return
-	
+
 	var thread_name: String = name + "_thread"
 	update_thread.start(Callable(self, "update_process").bind(thread_name))
-	
-	axisA = Vector3(normal.y, normal.z, normal.x).normalized()
-	axisB = normal.cross(axisA).normalized()
-	
+
+	axis_a = Vector3(normal.y, normal.z, normal.x).normalized()
+	axis_b = normal.cross(axis_a).normalized()
+
 	update_chunks.call_deferred()
-	
+
 	planet.regenerate.connect(func(resolution):
 		chunk_resolution = resolution
 		for chunk in chunks_list:
 			chunks_list[chunk].queue_free()
-		
+
 		chunks_list.clear()
 		chunks_generating.clear()
 		if is_visible_status:
@@ -332,48 +365,48 @@ func _exit_tree() -> void:
 		mutex.lock()
 		should_exit = true # Protect with Mutex.
 		mutex.unlock()
-		
+
 		semaphore.post()
 		update_thread.wait_to_finish()
 
-func update_process(thread_name: String):
+func update_process(_thread_name: String):
 	while true:
 		semaphore.wait() # Wait until posted.
-		
+
 		mutex.lock()
 		var must_exit = should_exit # Protect with Mutex.
 		mutex.unlock()
-		
+
 		if must_exit:
 			break
-		
+
 		call_deferred("_get_visibility", self)
-		
+
 		semaphore.wait()
-		
+
 		mutex.lock()
 		var node_is_visible = is_visible_status
 		mutex.unlock()
-		
+
 		mutex.lock()
 		var positions = []
 		for pos in focus_positions:
 			positions.push_back(floor(pos))
 		focus_positions_last = positions
 		mutex.unlock()
-		
+
 		if node_is_visible:
 			update_chunks()
 
 func positions_changed() -> bool:
 	if focus_positions.size() != focus_positions_last.size():
 		return true
-	
+
 	for i in focus_positions.size():
 		if focus_positions[i] != focus_positions_last[i]:
 			if floor(focus_positions[i]) != focus_positions_last[i]:
 				return true
-	
+
 	return false
 
 func transform_positions() -> Array[Vector3]:
@@ -387,9 +420,9 @@ func _process(_delta):
 	if Engine.is_editor_hint():
 		if chunks_list.is_empty():
 			return
-	
+
 	var current_focus_positions = transform_positions()
-	
+
 	var positions_changed_flag = false
 	if focus_positions.size() != current_focus_positions.size():
 		#print_rich("\t[color=green]positions_changed_flag = true[/color]")
@@ -399,7 +432,7 @@ func _process(_delta):
 			if focus_positions[i] != current_focus_positions[i]:
 				positions_changed_flag = true
 				break
-	
+
 	if positions_changed_flag:
 		mutex.lock()
 		focus_positions = current_focus_positions
@@ -410,30 +443,30 @@ func update_chunks():
 	# Initialize the quadtree by creating the root chunk
 	var bounds = AABB(Vector3(0, 0, 0), Vector3(2,2,2))
 	var chunk_name: String = "Chunk_" + str(0)
-	quadtree = QuadtreeChunk.new(bounds, 0, max_chunk_depth, planet, normal, axisA, axisB, chunk_name)
+	quadtree = QuadtreeChunk.new(bounds, 0, max_chunk_depth, planet, normal, axis_a, axis_b, chunk_name)
 	# Start the subdivision process
 	quadtree.subdivide(focus_positions.duplicate(), run_serverside)
-	
+
 	chunks_list_current = {}
-	
+
 	# Create a visual representation
 	var t = Time.get_ticks_msec()
 	visualize_quadtree(quadtree)
 	#prints(quadtree, "quadtree visualize took: ", Time.get_ticks_msec() - t, "ms")
 	#prints("deleting chunk", chunks_list_current)
-	
+
 	#remove any old unused chunks
 	var chunks_to_remove = []
 	for chunk_id in chunks_list:
 		if not chunks_list_current.has(chunk_id):
 			chunks_to_remove.append(chunk_id)
-	
+
 	for chunk_id in chunks_to_remove:
 		if chunk_id in chunks_list:
 			chunks_list[chunk_id].queue_free.call_deferred()
 			chunks_list.erase(chunk_id)
 			chunks_generating.erase(chunk_id)
-	
+
 	cleanup_collisions.call_deferred()
 
 func cleanup_collisions():
@@ -456,7 +489,7 @@ func disable_col(chunk_id):
 	if chunk_id in chunks_col_list:
 		chunks_col_list[chunk_id].disabled = true
 
-func _get_visibility(called_node) -> void:
+func _get_visibility(_called_node) -> void:
 	mutex.lock()
 	is_visible_status = visible
 	mutex.unlock()

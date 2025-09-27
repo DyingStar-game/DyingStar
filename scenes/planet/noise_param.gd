@@ -1,5 +1,6 @@
-extends Resource
 class_name NoiseParam
+
+extends Resource
 
 @export_enum("macro", "micro") var noise_type = "macro"
 

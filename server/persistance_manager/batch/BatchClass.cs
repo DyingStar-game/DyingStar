@@ -34,13 +34,13 @@ public class BatchOperationItem : IBatchOperationItem
 // Classes de commodité
 public class BatchMutationItem : BatchOperationItem
 {
-    public BatchMutationItem(string jsonData, int priority = 5) 
+    public BatchMutationItem(string jsonData, int priority = 5)
         : base(jsonData, BatchOperationType.Mutation, priority) { }
 }
 
 public class BatchDeletionItem : BatchOperationItem
 {
-    public BatchDeletionItem(string jsonData, int priority = 5) 
+    public BatchDeletionItem(string jsonData, int priority = 5)
         : base(jsonData, BatchOperationType.Deletion, priority) { }
 }
 
@@ -72,9 +72,9 @@ public class BatchOperationStats
     public DateTime LastFlush { get; set; }
 
     public long TotalItemsProcessed => TotalMutationsProcessed + TotalDeletionsProcessed;
-    
-    public double SuccessRate => 
-        SuccessfulBatches + AbortedBatches == 0 ? 100.0 : 
+
+    public double SuccessRate =>
+        SuccessfulBatches + AbortedBatches == 0 ? 100.0 :
         (double)SuccessfulBatches / (SuccessfulBatches + AbortedBatches) * 100.0;
 
     public void IncrementSuccessfulBatches() =>

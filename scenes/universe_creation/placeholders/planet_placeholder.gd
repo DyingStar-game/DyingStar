@@ -24,13 +24,13 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if Engine.is_editor_hint():
-		
+
 		if mesh:
 			mesh.radius = radius
 			mesh.height = radius * 2.0
-		
+
 		real_radius = radius
-		
+
 		if _last_position != global_position:
 			print("Changement dans les coordonnées")
 			_last_position = global_position

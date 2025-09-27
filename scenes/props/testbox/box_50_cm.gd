@@ -1,10 +1,11 @@
+class_name Box50cm
+
 extends RigidBody3D
 
-class_name box50cm
-@onready var isInsideBox4m: bool = false
+signal hs_server_prop_move
+
 @export var uuid: String = ""
 
-signal hs_server_prop_move
 var type_name = "box50cm"
 
 var spawn_position: Vector3 = Vector3.ZERO
@@ -12,6 +13,8 @@ var spawn_rotation: Vector3 = Vector3.UP
 
 var server_last_global_position = Vector3.ZERO
 var server_last_global_rotation = Vector3.ZERO
+
+@onready var is_inside_box4m: bool = false
 
 func _ready() -> void:
 	global_position = spawn_position

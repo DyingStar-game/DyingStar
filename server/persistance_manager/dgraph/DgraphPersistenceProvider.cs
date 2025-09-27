@@ -45,7 +45,7 @@ public class DgraphPersistenceProvider : IPersistenceProvider
             };
             _channel = GrpcChannel.ForAddress(_connectionString, options);
             _client = new DgraphClient(_channel);
-            
+
             return await TestConnectionAsync();
         }
         catch (Exception)

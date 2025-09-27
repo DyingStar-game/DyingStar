@@ -1,6 +1,6 @@
-extends Resource
-
 class_name  PlanetSettings
+
+extends Resource
 
 @export var radius: int = 5000
 @export var atmosphere_height: int = 800

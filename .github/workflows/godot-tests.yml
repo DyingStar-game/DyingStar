@@ -24,3 +24,16 @@ jobs:
       #  uses: ceceppa/godot-gut-ci@main
       #  with:
       #    godot_version: 4.4.1
+
+  linter:
+    name: Run GDScript linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GDScript linter
+        run: pip3 install "gdtoolkit==4.*"
+
+      - name: Run linter
+        run: gdlint assets levels scenes server tools ui

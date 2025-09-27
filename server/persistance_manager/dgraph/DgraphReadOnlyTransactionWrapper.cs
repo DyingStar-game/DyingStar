@@ -19,7 +19,7 @@ public class DgraphReadOnlyTransactionWrapper : IReadOnlyTransaction
         {
             var transaction = _dgraphTransaction;
             var result = await transaction.Query(query);
-            
+
             if (result.IsSuccess)
             {
                 return OperationResultData.Success(result.Value.Json);
@@ -30,7 +30,7 @@ public class DgraphReadOnlyTransactionWrapper : IReadOnlyTransaction
             }
         }
         catch (Exception ex)
-        {   
+        {
             return OperationResultData.Failure(ex.Message, ex);
         }
     }
