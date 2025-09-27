@@ -30,7 +30,7 @@ outline_color = Color(0, 0, 0, 1)
 script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
-metadata/clientUUID = ""
+metadata/client_uuid = ""
 
 [node name="Placeholder_Collider" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)
@@ -72,7 +72,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
 billboard = 1
 text = "Dummy"
 
-[node name="LabelServerName" type="Label3D" parent="."]
+[node name="Labelserver_name" type="Label3D" parent="."]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05, 0)
 billboard = 1
@@ -177,7 +177,7 @@ offset_bottom = 85.0
 text = "z: "
 label_settings = ExtResource("4_dpwvv")
 
-[node name="LabelServerZone" type="Label" parent="UserInterface/Debug"]
+[node name="Labelserver_zone" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 3.0
 offset_top = 77.0
@@ -187,7 +187,7 @@ text = "Server zone:"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_ev378")
 
-[node name="LabelGameServerName" type="Label" parent="UserInterface/Debug"]
+[node name="LabelGameserver_name" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 281.0
 offset_right = 403.0

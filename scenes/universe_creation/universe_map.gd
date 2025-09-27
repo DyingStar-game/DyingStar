@@ -10,7 +10,7 @@ func _ready() -> void:
 func retrieve_universe_datas() -> void:
 	var universe_datas: Dictionary = {}
 	var datas_count: int = 0
-	
+
 	for child in get_children():
 		if child is PlanetPlaceholder:
 			if not universe_datas.has("planets"):
@@ -19,7 +19,7 @@ func retrieve_universe_datas() -> void:
 			var planet_datas: Dictionary = {"name": child.name, "coordinates": real_coordinates}
 			universe_datas.planets.append(planet_datas)
 			datas_count += 1
-		
+
 		if child is StationPlaceholder:
 			if not universe_datas.has("stations"):
 				universe_datas["stations"] = []
@@ -27,8 +27,8 @@ func retrieve_universe_datas() -> void:
 			var stations_datas: Dictionary = {"name": child.name, "coordinates": real_coordinates}
 			universe_datas.stations.append(stations_datas)
 			datas_count += 1
-	
+
 	if not universe_datas.has("datas_count"):
 		universe_datas["datas_count"] = datas_count
-	
+
 	emit_signal("universe_data_retrieved", universe_datas)

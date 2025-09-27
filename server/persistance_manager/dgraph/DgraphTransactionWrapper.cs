@@ -49,7 +49,7 @@ public class DgraphTransactionWrapper : ITransaction
             // Cast vers le type Dgraph réel
             var transaction = _dgraphTransaction;
             var result = await transaction.Mutate(null,json);
-            
+
             if (result.IsSuccess)
             {
                 return OperationResult.Success();
@@ -74,10 +74,10 @@ public class DgraphTransactionWrapper : ITransaction
             if (result.IsSuccess)
             {
                 return OperationResult.Success();
-                
+
             }
             else
-            {   
+            {
                 return OperationResult.Failure(result.Errors[0].Message);
             }
         }

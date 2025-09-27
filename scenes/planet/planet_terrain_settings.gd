@@ -1,6 +1,6 @@
-extends Resource
-
 class_name  PlanetTerrainSettings
+
+extends Resource
 
 ## Global scale of the terrain elevation
 @export var elev_scale: float = 1.0

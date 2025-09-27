@@ -4,7 +4,6 @@ extends StaticBody3D
 
 func _ready() -> void:
 	kiosk_interaction_area.connect("interacted", _on_interaction_requested)
-	pass
 	#kiosk_interaction_area.connect("body_entered", on_player_entered)
 	#kiosk_interaction_area.connect("body_exited", on_player_exited)
 #
@@ -25,7 +24,7 @@ func _ready() -> void:
 func _on_interaction_requested(interactor: Node) -> void:
 	if interactor is Player and not multiplayer.is_server():
 		var spawn_position: Vector3 = interactor.global_position - interactor.global_basis.z * 5.0 + interactor.global_basis.y * 5.0
-		
+
 		var player_up = interactor.global_transform.basis.y.normalized()
 		var to_player = (interactor.global_transform.origin - spawn_position)
 		to_player -= to_player.dot(player_up) * player_up
@@ -33,5 +32,8 @@ func _on_interaction_requested(interactor: Node) -> void:
 		var ship_basis: Basis = Basis.looking_at(to_player, player_up)
 		ship_basis = ship_basis.rotated(Vector3.UP, deg_to_rad(-90))
 		var spawn_rotation = ship_basis.get_euler()
-		
-		interactor.emit_signal("client_action_requested", {"action": "spawn", "entity": "ship", "spawn_position": spawn_position, "spawn_rotation": spawn_rotation})
+
+		interactor.emit_signal(
+			"client_action_requested",
+			{"action": "spawn", "entity": "ship", "spawn_position": spawn_position, "spawn_rotation": spawn_rotation}
+		)

@@ -1,6 +1,5 @@
-extends DataObject
-
 class_name DataPlanet
+extends DataObject
 
 var contains: Array[DataObject]
 var parent
@@ -29,18 +28,18 @@ func _ready():
 func  _on_client_ready():
 	print("🚀 Signal ClientReady Persist Physic Data !")
 	PersitDataBridge.execute_custom_query('''
-	{ 
-		planet(func: eq(name, "{0}")) @filter(eq(dgraph.type, "Planete")) 
-		{ 
-			uid 
-			uuid 
-			name 
-			contains 
-			{ 
-				uid 
-				uuid 
-				name 
-			} 
+	{
+		planet(func: eq(name, "{0}")) @filter(eq(dgraph.type, "Planete"))
+		{
+			uid
+			uuid
+			name
+			contains
+			{
+				uid
+				uuid
+				name
+			}
 		} }'''.format([planete_name]),_check_planete)
 	#save_data(on_saved)
 func _check_planete(result: String):
@@ -56,18 +55,18 @@ func _check_planete(result: String):
 				query_child_data()
 		else:
 			print("Unexpected data")
-			
+
 func query_child_data():
 	print("🚀 Query Get child !")
-	print(NetworkOrchestrator.ServerSDOId)
-	if NetworkOrchestrator.ServerSDOId == 1:
+	print(NetworkOrchestrator.server_sdo_id)
+	if NetworkOrchestrator.server_sdo_id == 1:
 		PersitDataBridge.execute_custom_query('''
 		{
-		  entity(func: uid({0})) {
-			~parent{
-				expand(_all_)
-			  }
-		  }
+			entity(func: uid({0})) {
+				~parent{
+					expand(_all_)
+				}
+			}
 		}'''.format([uid]),_load_child_entity)
 
 func _load_child_entity(result: String):

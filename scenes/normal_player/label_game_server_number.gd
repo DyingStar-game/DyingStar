@@ -1,7 +1,7 @@
 extends Label
 
 func _ready() -> void:
-	NetworkOrchestrator.set_gameserver_numberServers.connect(_set_gameserver_numberServers)
-	
-func _set_gameserver_numberServers(nbServers):
-	text = str(nbServers)
+	NetworkOrchestrator.set_gameserver_number_servers.connect(_set_gameserver_number_servers)
+
+func _set_gameserver_number_servers(nb_servers):
+	text = str(nb_servers)

@@ -33,26 +33,26 @@ func get_local_focus_positions():
 		local_positions.push_back(planet_terrain.to_local(pos))
 	return local_positions
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	var positions = get_local_focus_positions()
 	if not positions_changed(positions): return
 	focus_positions_last = positions
-	
+
 	for i in planet_terrain.players_ids.size():
 		var player_id = planet_terrain.players_ids[i]
 		var pos: Vector3 = planet_terrain.focus_positions[i]
 		if pos.distance_to(planet_terrain.global_position) < (spawn_distance + planet_terrain.radius):
 			var local_pos = planet_terrain.to_local(pos)
 			var cell := get_cell_from_position(local_pos, cell_size)
-			
+
 			var needed_cells = []
 			for dx in range(-chunk_radius, chunk_radius + 1):
 				for dy in range(-chunk_radius, chunk_radius + 1):
 					for dz in range(-chunk_radius, chunk_radius + 1):
 						needed_cells.push_back(cell + Vector3i(dx, dy, dz))
-			
+
 			player_chunks[player_id] = needed_cells
-	
+
 	update_world_chunks()
 
 func update_world_chunks():
@@ -75,18 +75,18 @@ func update_world_chunks():
 func despawn_chunk(cell):
 	for asset in loaded_cells[cell]:
 		asset.queue_free()
-	
+
 	loaded_cells.erase(cell)
 
 func positions_changed(positions: Array) -> bool:
 	if positions.size() != focus_positions_last.size():
 		return true
-	
+
 	for i in positions.size():
 		if positions[i] != focus_positions_last[i]:
 			if floor(positions[i]) != focus_positions_last[i]:
 				return true
-	
+
 	return false
 
 func spawn_cell(cell: Vector3i):
@@ -103,22 +103,22 @@ func get_seed_from_cell(cell_coords: Vector3i) -> int:
 func generate_asset_in_cell(cell: Vector3i, rng: RandomNumberGenerator, cell_size_value: float):
 	var seed = get_seed_from_cell(cell)
 	rng.seed = seed
-	
+
 	if debugmesh and debugmesh.visible:
 		debugmesh.global_position = planet_terrain.to_global(planet_terrain.get_height(Vector3(cell + Vector3i.ONE).normalized()))
-	
+
 	var count = rng.randi_range(min_asset_cell, max_asset_cell) # Number of assets in this cell
 	var nodes = []
-	
+
 	for i in count:
-		
+
 		var x = (cell.x + rng.randf() * 0.5) * cell_size_value
 		var y = (cell.y + rng.randf() * 0.5) * cell_size_value
 		var z = (cell.z + rng.randf() * 0.5) * cell_size_value
 
 		var asset = spawn_asset_at(rng, Vector3(x, y, z))
 		nodes.push_back(asset)
-		
+
 	return nodes
 
 func spawn_asset_at(rng: RandomNumberGenerator, position: Vector3) -> Node3D:
@@ -127,11 +127,11 @@ func spawn_asset_at(rng: RandomNumberGenerator, position: Vector3) -> Node3D:
 	var asset = asset_scenes[rng.randi() % asset_scenes.size()].instantiate()
 	add_child(asset, true)
 	asset.global_position = planet_terrain.to_global(pos)
-	
+
 	asset.rotation = Vector3(
 		rng.randf(),
 		rng.randf(),
 		rng.randf()
 	)
-	
+
 	return asset

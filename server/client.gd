@@ -1,5 +1,7 @@
 extends Node
 
+const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+
 var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -15,7 +17,7 @@ var websocket_url = "ws://127.0.0.1:7040" # "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
-var PropsList: Dictionary = {
+var props_list: Dictionary = {
 	"planets": {},
 	"box50cm": {},
 	"box4m": {},
@@ -26,23 +28,21 @@ var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 
-const uuid_util = preload("res://addons/uuid/uuid.gd")
-
 func _enter_tree() -> void:
 	set_process(false)
 
 func _ready() -> void:
 	set_process(false)
 
-func start_client(receveid_universe_scene: Node, ip, port) -> void:
+func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	universe_scene = receveid_universe_scene
 	var spawn_points_list: Array[Vector3] = universe_scene.spawn_points_list
-	
+
 	if spawn_points_list.size() > 0:
 		spawn_point = spawn_points_list.pick_random()
-	
-	if Globals.playerUUID == "":
-		Globals.playerUUID = uuid_util.v4()
+
+	if Globals.player_uuid == "":
+		Globals.player_uuid = UUID_UTIL.v4()
 	# client_peer = ENetMultiplayerPeer.new()
 	# client_peer.create_client(ip, port)
 	# universe_scene.multiplayer.multiplayer_peer = client_peer
@@ -52,7 +52,7 @@ func start_client(receveid_universe_scene: Node, ip, port) -> void:
 	var err = socket.connect_to_url(websocket_url)
 	if err != OK:
 		push_error("connect_to_url returned error: %d" % err)
-		GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.CONNEXION_ERROR)
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		return
 
 	print("Connecting to %s..." % websocket_url)
@@ -78,7 +78,7 @@ func start_client(receveid_universe_scene: Node, ip, port) -> void:
 		}))
 	else:
 		push_error("Unable to connect (timeout or error). State: %d" % socket.get_ready_state())
-		GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.CONNEXION_ERROR)
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
 
 func _process(_delta: float) -> void:
@@ -113,7 +113,7 @@ func _process(_delta: float) -> void:
 					_:
 						print("< Unknown event type: %s" % event["type"])
 
-# < Got text data from server: 
+# < Got text data from server:
 # {
 #     "planets": [
 #         {
@@ -176,7 +176,9 @@ func handle_player_props_event(event: Dictionary) -> void:
 				if not player_entity:
 					# await get_tree().create_timer(1).timeout
 					var spawned_entity_instance = player_scene.instantiate()
-					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+					spawned_entity_instance.spawn_position = Vector3(
+						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+					)
 					spawned_entity_instance.name = player_data["name"]
 					spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
 
@@ -185,13 +187,15 @@ func handle_player_props_event(event: Dictionary) -> void:
 					)
 					universe_scene.add_child(spawned_entity_instance)
 					spawned_entity_instance.set_physics_process(false)
-					spawned_entity_instance.clientUUID = player_data["uuid"]
+					spawned_entity_instance.client_uuid = player_data["uuid"]
 					spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
 					player_entity = spawned_entity_instance
 			else:
 				if not players_list.has(player_data["uuid"]):
 					var spawned_entity_instance = load(player_scene_path).instantiate()
-					spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+					spawned_entity_instance.spawn_position = Vector3(
+						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+					)
 					spawned_entity_instance.name = "remoteplayer" + player_data["name"]
 					players_list[player_data["uuid"]] = spawned_entity_instance
 
@@ -200,47 +204,51 @@ func handle_player_props_event(event: Dictionary) -> void:
 					)
 					universe_scene.add_child(spawned_entity_instance)
 					spawned_entity_instance.set_physics_process(false)
-					spawned_entity_instance.clientUUID = player_data["uuid"]
+					spawned_entity_instance.client_uuid = player_data["uuid"]
 
 	if event.has("planets"):
 		var planets_data = event["planets"]
 		print("Planets data received: %s" % planets_data)
 		# Here you can handle the planets data, e.g., spawn planets in the game world
 		for planet in planets_data:
-			if not PropsList["planets"].has(planet["uuid"]):
+			if not props_list["planets"].has(planet["uuid"]):
 				# spawn planet
 				print("Loading planet scene...")
 				var spawnable_planet_instance = planet_scene.instantiate()
-				spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
+				spawnable_planet_instance.spawn_position = Vector3(
+					planet["position"]["x"], planet["position"]["y"], planet["position"]["z"]
+				)
 				spawnable_planet_instance.name = planet.name
 				# get_tree().current_scene.add_child(spawnable_planet_instance, true)
 				# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
 				spawnable_planet_instance.tree_entered.connect(func():
 					spawnable_planet_instance.owner = get_tree().current_scene
 				)
-				
+
 				universe_scene.add_child(spawnable_planet_instance)
 				universe_scene.assign_spawn_informations()
 				spawnable_planet_instance.set_physics_process(false)
-				PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
+				props_list["planets"][planet["uuid"]] = spawnable_planet_instance
 
-	NetworkOrchestrator.set_gameserver_numberPlayers.emit(players_list.size() + 1)
+	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
 
 func on_connection_established() -> void:
 	request_spawn()
 
 func request_spawn() -> void:
-	NetworkOrchestrator.set_player_uuid.rpc_id(1, Globals.playerUUID, GameOrchestrator.login_player_name, GameOrchestrator.requested_spawn_point)
+	NetworkOrchestrator.set_player_uuid.rpc_id(
+		1, Globals.player_uuid, GameOrchestrator.login_player_name, GameOrchestrator.requested_spawn_point
+	)
 
 func complete_client_initialization(entity) -> void:
 	player_instance = entity
 	player_instance.player_display_name = GameOrchestrator.login_player_name
-	player_instance.labelPlayerName.text = player_instance.player_display_name
+	player_instance.label_player_name.text = player_instance.player_display_name
 	# player_instance.connect("client_action_requested", _on_client_action_requested)
 	player_instance.direct_chat.connect("send_message", _on_message_from_player)
 	player_instance.connect("hs_client_action_move", _on_client_action_move)
- 
+
 func receive_chat_message(message: ChatMessage) -> void:
 	player_instance.direct_chat.receive_message_from_server(message)
 
@@ -251,8 +259,12 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 				if datas.has("entity"):
 					match datas["entity"]:
 						"ship":
-							var spawn_position: Vector3 = datas["spawn_position"] if datas.has("spawn_position") else player_instance.global_position + Vector3(10.0,10.0,10.0)
-							var spawn_rotation: Vector3 = datas["spawn_rotation"] if datas.has("spawn_rotation") else player_instance.global_transform.basis.y.normalized()
+							var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
+							if datas.has("spawn_position"):
+								spawn_position = datas["spawn_position"]
+							var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
+							if datas.has("spawn_rotation"):
+								spawn_rotation = datas["spawn_rotation"]
 							var data =  {
 								"x": spawn_position.x,
 								"y": spawn_position.y,
@@ -273,8 +285,12 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 								},
 							}))
 						"box4m":
-							var spawn_position: Vector3 = datas["spawn_position"] if datas.has("spawn_position") else player_instance.global_position + Vector3(10.0,10.0,10.0)
-							var spawn_rotation: Vector3 = datas["spawn_rotation"] if datas.has("spawn_rotation") else player_instance.global_transform.basis.y.normalized()
+							var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
+							if datas.has("spawn_position"):
+								spawn_position = datas["spawn_position"]
+							var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
+							if datas.has("spawn_rotation"):
+								spawn_rotation = datas["spawn_rotation"]
 							var data =  {
 								"x": spawn_position.x,
 								"y": spawn_position.y,
@@ -322,7 +338,7 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 				"y": move_rotation[1],
 				"z": move_rotation[2]
 			},
-			"uuid": player_entity.clientUUID
+			"uuid": player_entity.client_uuid
 		},
 	}))
 
@@ -347,7 +363,7 @@ func update_props(event: Dictionary) -> void:
 	# }
 	for player in event["players"]:
 		# print("Player position update received: %s" % player)
-		if player_entity != null and player_entity.clientUUID == player["uuid"]:
+		if player_entity != null and player_entity.client_uuid == player["uuid"]:
 			player_entity.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
 		elif players_list.has(player["uuid"]):
 			var remote_player = players_list[player["uuid"]]
@@ -362,7 +378,7 @@ func delete_player(event: Dictionary) -> void:
 		var remote_player = players_list[event["player_uuid"]]
 		remote_player.queue_free()
 		players_list.erase(event["player_uuid"])
-		NetworkOrchestrator.set_gameserver_numberPlayers.emit(players_list.size() + 1)
+		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 		print("Player %s has been removed." % event["player_uuid"])
 
 func update_props_position(event: Dictionary) -> void:
@@ -387,10 +403,10 @@ func update_props_position(event: Dictionary) -> void:
 	# }
 	for prop in event["props"]:
 		# print("Prop position update received: %s" % prop)
-		if PropsList.has(prop["type"]):
+		if props_list.has(prop["type"]):
 			match prop["type"]:
 				"box50cm":
-					if not PropsList[prop["type"]].has(prop["uuid"]):
+					if not props_list[prop["type"]].has(prop["uuid"]):
 						var prop_instance = box50cm_scene.instantiate()
 						prop_instance.tree_entered.connect(func():
 							prop_instance.owner = get_tree().current_scene
@@ -400,11 +416,11 @@ func update_props_position(event: Dictionary) -> void:
 						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 						prop_instance.uuid = prop["uuid"]
-						PropsList[prop["type"]][prop["uuid"]] = prop_instance
-						NetworkOrchestrator.set_gameserver_numberBoxes50cm.emit(PropsList["box50cm"].size() + 1)
+						props_list[prop["type"]][prop["uuid"]] = prop_instance
+						NetworkOrchestrator.set_gameserver_number_boxes50cm.emit(props_list["box50cm"].size() + 1)
 
 					else:
-						var prop_instance = PropsList[prop["type"]][prop["uuid"]]
+						var prop_instance = props_list[prop["type"]][prop["uuid"]]
 						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 				_:

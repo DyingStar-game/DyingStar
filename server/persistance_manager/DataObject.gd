@@ -1,6 +1,5 @@
-extends  Node
 class_name  DataObject
-
+extends  Node
 
 var uuid_obj: String
 var uid: String
@@ -23,7 +22,7 @@ func deserialize(data: Dictionary):
 		is_new_object = false
 	if data.has("uuid"):
 		uuid_obj = data["uuid"]
-	
+
 func saved():
 	PersitDataBridge.save_data(self,on_saved)
 
@@ -50,11 +49,11 @@ func get_current_uid() -> String:
 
 func is_saved() -> bool:
 	return uid != "" and not uid.begins_with("_")
-	
+
 func load_obj(data: Dictionary):
 	print("load Data Object")
 	PersitDataBridge.find_data_by_id(data["uid"],loaded)
 
-func loaded(result: String):
+func loaded(_result: String):
 	print(" Data Object is loaded")
-	
+

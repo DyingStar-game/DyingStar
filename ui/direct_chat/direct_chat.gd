@@ -1,19 +1,7 @@
-extends PanelContainer
 class_name DirectChat
+extends PanelContainer
 
 signal send_message
-
-@onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
-@export var input_field: LineEdit
-@export var output_field: RichTextLabel
-#@export var channel_selector: OptionButton
-static var is_shown: bool = false
-var can_write: bool = false
-var loggin := "all"
-
-# List for storing messages
-var messages_list: Array[ChatMessage] = []
-var messages_waiting: Array[ChatMessage] = []
 
 # Channel enumeration
 enum ChannelE {
@@ -25,6 +13,19 @@ enum ChannelE {
 	UNSPECIFIED
 }
 
+@export var input_field: LineEdit
+@export var output_field: RichTextLabel
+#@export var channel_selector: OptionButton
+
+var is_shown: bool = false
+
+var can_write: bool = false
+var loggin := "all"
+
+# List for storing messages
+var messages_list: Array[ChatMessage] = []
+var messages_waiting: Array[ChatMessage] = []
+
 # Forced colors in hexadecimal according to channel
 var forced_colors := {
 	str(ChannelE.GENERAL): "FFFFFF",
@@ -34,6 +35,8 @@ var forced_colors := {
 	str(ChannelE.REGION): "F7F3B5",
 	str(ChannelE.DIRECT_MESSAGE): "79F25E"
 }
+
+@onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
 
 func _enter_tree() -> void:
 	connect("visibility_changed", _on_visibility_changed)
@@ -62,16 +65,16 @@ func _on_input_text_text_submitted(message: String) -> void:
 
 func _unhandled_input(event):
 	if not is_multiplayer_authority(): return
-	
+
 	if is_shown:
 		if event.is_action_pressed("toggle_chat"):
 			visible = false
 			is_shown = false
 			mouse_filter = Control.MOUSE_FILTER_IGNORE
-		
+
 		if event.is_action_pressed("pause"):
-			GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.PAUSE_MENU)
-		
+			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
+
 		if not can_write:
 			if event.is_action_pressed("write_in_chat"):
 				can_write = true
@@ -82,12 +85,12 @@ func _unhandled_input(event):
 				input_field.release_focus()
 				can_write = false
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-			
+
 			if event is InputEventMouseButton:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 				input_field.release_focus()
 				can_write = false
-			
+
 			get_viewport().set_input_as_handled()
 	else:
 		if event.is_action_pressed("toggle_chat"):

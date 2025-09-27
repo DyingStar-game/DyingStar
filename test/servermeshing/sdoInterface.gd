@@ -11,7 +11,7 @@ var messages = {
 	"sdo/serverslist": [],
 	"sdo/serverschanges": [],
 	"sdo/servertooheavy": [],
-	"sdo/playerslist": [],
+	"sdo/players_list": [],
 	"sdo/playerschanges": [],
 }
 

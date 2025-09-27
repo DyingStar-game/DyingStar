@@ -2,7 +2,11 @@ extends Node
 
 signal populated_universe
 
-const uuid_util = preload("res://addons/uuid/uuid.gd")
+const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+
+# Horizon port we will listen to.
+const PORT = 8980
+
 
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
@@ -10,7 +14,7 @@ var datas_to_spawn_count: int = 0
 
 var clients_peers_ids: Array[int] = []
 
-var ServerZone = {
+var server_zone = {
 	"x_start": -100000.0,
 	"x_end": 100000.0,
 	"y_start": -100000.0,
@@ -19,32 +23,32 @@ var ServerZone = {
 	"z_end": 100000.0
 }
 
-var MaxPlayersAllowed = 40
-var PlayersList = {}
-var PlayersListLastMovement = {}
-var PlayersListLastRotation = {}
-var PlayersListTempById = {}
-var PlayersListCurrentlyInTransfert = {}
-var ChangingZone = false
-var TransferPlayers = false
-var PropsList = {
+var max_players_allowed = 40
+var players_list = {}
+var players_list_last_movement = {}
+var players_list_last_rotation = {}
+var players_list_temp_by_id = {}
+var players_list_currently_in_transfert = {}
+var changing_zone = false
+var transfer_players = false
+var props_list = {
 	"planets": {},
 	"box50cm": {},
 	"box4m": {},
 	"ship": {},
 }
-var PropsListLastMovement = {
+var props_list_last_movement = {
 	# "box50cm": {},
 	# "box4m": {},
 	# "ship": {},
 }
-var PropsListLastRotation = {
+var props_list_last_rotation = {
 	# "box50cm": {},
 	# "box4m": {},
 	# "ship": {},
 }
 
-var ServersTicksTasks = {
+var servers_ticks_tasks = {
 	"TooManyPlayersCurent": 3600,
 	"TooManyPlayersReset": 3600, # all 1 minute
 	"SendPlayersToMQTTCurrent": 15,
@@ -61,10 +65,8 @@ var players_newposition: Dictionary = {}
 var props_newposition: Dictionary = {}
 
 # Horizon server
-# The port we will listen to.
-const PORT = 8980
 # Our TCP Server instance.
-var _tcp_server = TCPServer.new()
+var tcp_server = TCPServer.new()
 # Our connected peers list.
 var peer := WebSocketPeer.new()
 
@@ -77,7 +79,7 @@ var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.ts
 var debug_message_number: int = 0
 
 func _enter_tree() -> void:
-	NetworkOrchestrator.loadServerConfig()
+	NetworkOrchestrator.load_server_config()
 
 func _ready() -> void:
 	set_process(false)
@@ -85,46 +87,46 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
 	send_props_newposition_to_horizon()
-	if NetworkOrchestrator.isSDOActive == true:
+	if NetworkOrchestrator.is_sdo_active == true:
 		_is_server_has_too_many_players()
 		_send_players_to_sdo()
-		_checkPlayerOutOfZone()
+		_check_player_out_of_zone()
 		_send_props_to_sdo()
-	# for uuid in PlayersList.keys():
-	# 	if PlayersListLastMovement[uuid] != PlayersList[uuid].global_position:
-	# 		PlayersListLastMovement[uuid] = PlayersList[uuid].global_position
+	# for uuid in players_list.keys():
+	# 	if players_list_last_movement[uuid] != players_list[uuid].global_position:
+	# 		players_list_last_movement[uuid] = players_list[uuid].global_position
 
 
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 30
 	Engine.max_fps = 30
-	
+
 	universe_scene = receveid_universe_scene
 	# entities_spawn_node = receveid_player_spawn_node
 	# var server_peer = ENetMultiplayerPeer.new()
 	# if not server_peer:
 	# 	printerr("creating server_peer failed!")
 	# 	return
-	
-	# var res = server_peer.create_server(NetworkOrchestrator.ServerPort, 150)
+
+	# var res = server_peer.create_server(NetworkOrchestrator.server_port, 150)
 	# if res != OK:
 	# 	printerr("creating server failed: ", error_string(res))
 	# 	return
-	
+
 	# universe_scene.multiplayer.multiplayer_peer = server_peer
 	# NetworkOrchestrator.connect_chat_mqtt()
 	# # load SDO mqtt in NetworkOrchestrator
 	# NetworkOrchestrator.connect_mqtt_sdo()
-	# if NetworkOrchestrator.MetricsEnabled == true:
+	# if NetworkOrchestrator.metrics_enabled == true:
 	# 	NetworkOrchestrator.connect_mqtt_metrics()
 	print("server loaded... \\o/")
 	# universe_scene.multiplayer.peer_connected.connect(_on_client_peer_connected)
 	# universe_scene.multiplayer.peer_disconnected.connect(_on_client_peer_disconnect)
-	
+
 	start_websocket_server()
 
 func start_websocket_server():
-	var err = _tcp_server.listen(PORT)
+	var err = tcp_server.listen(PORT)
 	if err == OK:
 		print("Server socket started.")
 		set_process(true)
@@ -132,9 +134,9 @@ func start_websocket_server():
 		push_error("Unable to start server socket.")
 
 func _process(_delta: float) -> void:
-	while _tcp_server.is_connection_available():
+	while tcp_server.is_connection_available():
 		print("Peer connected (Horizon server).")
-		peer.accept_stream(_tcp_server.take_connection())
+		peer.accept_stream(tcp_server.take_connection())
 
 	peer.poll()
 
@@ -162,10 +164,10 @@ func _process(_delta: float) -> void:
 	# 	print("- Peer closed with code: %d, reason %s. Clean: %s" % [code, reason, code != -1])
 
 func populate_universe(datas: Dictionary) -> void:
-	
+
 	if datas.has("datas_count"):
 		datas_to_spawn_count = datas["datas_count"]
-	
+
 	for data_key in datas:
 		match data_key:
 			"planets":
@@ -190,27 +192,27 @@ func _on_client_peer_disconnect(id):
 	var player = entities_spawn_node.get_node_or_null("Player_" + str(id))
 	if player:
 		player.queue_free()
-	
+
 	if NetworkOrchestrator.player_ship.has(id):
 		var ship = NetworkOrchestrator.player_ship[id]
 		if ship:
 			ship.queue_free()
-	
+
 	NetworkOrchestrator.players.erase(id)
 	NetworkOrchestrator.player_ship.erase(id)
 
 	# TODO manage players move to another server and players disconnect completly
-	var uuid = PlayersListTempById[id]
-	if not PlayersListCurrentlyInTransfert.has(uuid):
+	var uuid = players_list_temp_by_id[id]
+	if not players_list_currently_in_transfert.has(uuid):
 		var data = JSON.stringify({
 			"add": [],
 			"update": [],
-			"delete": [{"client_uuid" : PlayersListTempById[id]}],
-			"server_id": NetworkOrchestrator.ServerSDOId,
+			"delete": [{"client_uuid" : players_list_temp_by_id[id]}],
+			"server_id": NetworkOrchestrator.server_sdo_id,
 		})
-		NetworkOrchestrator.MQTTClientSDO.publish("sdo/playerschanges", data)
-		PlayersListTempById.erase(multiplayer.get_remote_sender_id())
-		PlayersList.erase(PlayersListTempById[id])
+		NetworkOrchestrator.mqtt_client_sdo.publish("sdo/playerschanges", data)
+		players_list_temp_by_id.erase(multiplayer.get_remote_sender_id())
+		players_list.erase(players_list_temp_by_id[id])
 
 		# player.queue_free()
 	NetworkOrchestrator.update_all_text_client()
@@ -218,41 +220,41 @@ func _on_client_peer_disconnect(id):
 
 
 func _is_server_has_too_many_players():
-	if ServersTicksTasks.TooManyPlayersCurent > 0:
-		ServersTicksTasks.TooManyPlayersCurent -= 1
+	if servers_ticks_tasks.TooManyPlayersCurent > 0:
+		servers_ticks_tasks.TooManyPlayersCurent -= 1
 	else:
-		if PlayersList.size() > MaxPlayersAllowed and ChangingZone == false:
-			if _playersMustChangeServer() == false:
-				var playersData = []
-				for value in PlayersList.values():
+		if players_list.size() > max_players_allowed and changing_zone == false:
+			if _players_must_change_server() == false:
+				var players_data = []
+				for value in players_list.values():
 					var position = value.global_position
 					if position != Vector3.ZERO:
-						# can have position zero if spawn not yet defined and it can break split of servers 
-						playersData.append({"x": position[0], "y": position[1], "z": position[2]})
+						# can have position zero if spawn not yet defined and it can break split of servers
+						players_data.append({"x": position[0], "y": position[1], "z": position[2]})
 				print("######################################################")
 				print("####################### Too many players, need split #")
-				ChangingZone = true
-				NetworkOrchestrator.MQTTClientSDO.publish("sdo/servertooheavy", JSON.stringify({
-					"id": NetworkOrchestrator.ServerSDOId,
-					"players": playersData,
+				changing_zone = true
+				NetworkOrchestrator.mqtt_client_sdo.publish("sdo/servertooheavy", JSON.stringify({
+					"id": NetworkOrchestrator.server_sdo_id,
+					"players": players_data,
 				}))
-		ServersTicksTasks.TooManyPlayersCurent = ServersTicksTasks.TooManyPlayersReset
+		servers_ticks_tasks.TooManyPlayersCurent = servers_ticks_tasks.TooManyPlayersReset
 
 func _send_players_to_sdo():
-	if ServersTicksTasks.SendPlayersToMQTTCurrent > 0:
-		ServersTicksTasks.SendPlayersToMQTTCurrent -= 1
+	if servers_ticks_tasks.SendPlayersToMQTTCurrent > 0:
+		servers_ticks_tasks.SendPlayersToMQTTCurrent -= 1
 	else:
-		var playersData = []
+		var players_data = []
 		var position = Vector3(0.0, 0.0, 0.0)
 		var rotation = Vector3(0.0, 0.0, 0.0)
-		for puuid in PlayersList.keys():
-			position = PlayersList[puuid].global_position
-			rotation = PlayersList[puuid].global_rotation
-			if PlayersListLastMovement[puuid] != position or PlayersListLastRotation[puuid] != rotation:
-				if not PlayersListCurrentlyInTransfert.has(puuid):
+		for puuid in players_list.keys():
+			position = players_list[puuid].global_position
+			rotation = players_list[puuid].global_rotation
+			if players_list_last_movement[puuid] != position or players_list_last_rotation[puuid] != rotation:
+				if not players_list_currently_in_transfert.has(puuid):
 					# only the players of this server and not in transfert
-					playersData.append({
-						"name": PlayersList[puuid].name,
+					players_data.append({
+						"name": players_list[puuid].name,
 						"client_uuid": puuid,
 						"x": position[0],
 						"y": position[1],
@@ -261,62 +263,67 @@ func _send_players_to_sdo():
 						"yr": rotation[1],
 						"zr": rotation[2]
 					})
-					PlayersListLastMovement[puuid] = position
-					PlayersListLastRotation[puuid] = rotation
-		if playersData.size() > 0:
-			NetworkOrchestrator.MQTTClientSDO.publish("sdo/playerschanges", JSON.stringify({
+					players_list_last_movement[puuid] = position
+					players_list_last_rotation[puuid] = rotation
+		if players_data.size() > 0:
+			NetworkOrchestrator.mqtt_client_sdo.publish("sdo/playerschanges", JSON.stringify({
 				"add": [],
-				"update": playersData,
+				"update": players_data,
 				"delete": [],
-				"server_id": NetworkOrchestrator.ServerSDOId,
+				"server_id": NetworkOrchestrator.server_sdo_id,
 			}))
-		ServersTicksTasks.SendPlayersToMQTTCurrent = ServersTicksTasks.SendPlayersToMQTTReset
+		servers_ticks_tasks.SendPlayersToMQTTCurrent = servers_ticks_tasks.SendPlayersToMQTTReset
 
-func _checkPlayerOutOfZone():
-	if ServersTicksTasks.CheckPlayersOutOfZoneCurrent > 0:
-		ServersTicksTasks.CheckPlayersOutOfZoneCurrent -= 1
+func _check_player_out_of_zone():
+	if servers_ticks_tasks.CheckPlayersOutOfZoneCurrent > 0:
+		servers_ticks_tasks.CheckPlayersOutOfZoneCurrent -= 1
 	else:
-		if ChangingZone == false:
-			_playersMustChangeServer()
-		ServersTicksTasks.CheckPlayersOutOfZoneCurrent = ServersTicksTasks.CheckPlayersOutOfZoneReset
+		if changing_zone == false:
+			_players_must_change_server()
+		servers_ticks_tasks.CheckPlayersOutOfZoneCurrent = servers_ticks_tasks.CheckPlayersOutOfZoneReset
 
-func _playersMustChangeServer():
+func _players_must_change_server():
 	# loop on coordinates of new server
-	var somePlayersTransfered = false
-	for puuid in PlayersList.keys():
-		if PlayersListCurrentlyInTransfert.has(puuid):
+	var some_players_transfered = false
+	for puuid in players_list.keys():
+		if players_list_currently_in_transfert.has(puuid):
 			continue
-		var position = PlayersList[puuid].global_position
-		if position[0] < ServerZone.x_start or position[0] > ServerZone.x_end:
+		var position = players_list[puuid].global_position
+		if position[0] < server_zone.x_start or position[0] > server_zone.x_end:
 			print("Expulse player X: " + str(puuid))
-			print("serverstart, server end, player: ", ServerZone.x_start, " ", ServerZone.x_end, " ", position[0])
-			var newServer = _searchAnotherServerForCoordinates(position[0], position[1], position[2])
-			if newServer != null:
-				NetworkOrchestrator.transfert_player_to_another_server(puuid, newServer)
-				somePlayersTransfered = true
+			print("serverstart, server end, player: ", server_zone.x_start, " ", server_zone.x_end, " ", position[0])
+			var new_server = _search_another_server_for_coordinates(position[0], position[1], position[2])
+			if new_server != null:
+				NetworkOrchestrator.transfert_player_to_another_server(puuid, new_server)
+				some_players_transfered = true
 			else:
 				print("ERROR: no server found to expulse :/")
-		elif position[1] < ServerZone.y_start or position[1] > ServerZone.y_end:
+		elif position[1] < server_zone.y_start or position[1] > server_zone.y_end:
 			print("Expulse player Y: " + str(puuid))
-			print("serverstart, server end, player: ", ServerZone.y_start, " ", ServerZone.y_end, " ", position[1])
-			var newServer = _searchAnotherServerForCoordinates(position[0], position[1], position[2])
-			if newServer != null:
-				NetworkOrchestrator.transfert_player_to_another_server(puuid, newServer)
-				somePlayersTransfered = true
-		elif position[2] < ServerZone.z_start or position[2] > ServerZone.z_end:
+			print("serverstart, server end, player: ", server_zone.y_start, " ", server_zone.y_end, " ", position[1])
+			var new_server = _search_another_server_for_coordinates(position[0], position[1], position[2])
+			if new_server != null:
+				NetworkOrchestrator.transfert_player_to_another_server(puuid, new_server)
+				some_players_transfered = true
+		elif position[2] < server_zone.z_start or position[2] > server_zone.z_end:
 			print("Expulse player Z: " + str(puuid))
-			print("serverstart, server end, player: ", ServerZone.z_start, " ", ServerZone.z_end, " ", position[2])
-			var newServer = _searchAnotherServerForCoordinates(position[0], position[1], position[2])
-			if newServer != null:
-				NetworkOrchestrator.transfert_player_to_another_server(puuid, newServer)
-				somePlayersTransfered = true
-	return somePlayersTransfered
+			print("serverstart, server end, player: ", server_zone.z_start, " ", server_zone.z_end, " ", position[2])
+			var new_server = _search_another_server_for_coordinates(position[0], position[1], position[2])
+			if new_server != null:
+				NetworkOrchestrator.transfert_player_to_another_server(puuid, new_server)
+				some_players_transfered = true
+	return some_players_transfered
 
-func _searchAnotherServerForCoordinates(x, y, z):
-	for s in NetworkOrchestrator.ServersList.values():
-		if s.id == NetworkOrchestrator.ServerSDOId:
+func _search_another_server_for_coordinates(x, y, z):
+	for s in NetworkOrchestrator.servers_list.values():
+		if s.id == NetworkOrchestrator.server_sdo_id:
 			continue
-		if float(s.x_start) <= x and x < float(s.x_end) and float(s.y_start) <= y and y < float(s.y_end) and float(s.z_start) <= z and z < float(s.z_end):
+		if float(s.x_start) <= x \
+			and x < float(s.x_end) \
+			and float(s.y_start) <= y \
+			and y < float(s.y_end) \
+			and float(s.z_start) <= z \
+			and z < float(s.z_end):
 			return s
 	return null
 
@@ -339,12 +346,12 @@ func instantiate_player_remote(player, set_player_position = false, server_id = 
 		"authority_peer_id": 1
 	})
 	player_to_add.name = playername
-	player_to_add.labelPlayerName.text = playername
+	player_to_add.label_player_name.text = playername
 	player_to_add.global_rotation = Vector3(float(player.xr), float(player.yr), float(player.zr))
 	player_to_add.set_physics_process(false)
-	NetworkOrchestrator.PlayersList[player.client_uuid] = player_to_add
+	NetworkOrchestrator.players_list[player.client_uuid] = player_to_add
 	if server_id != null:
-		player_to_add.labelServerName.text = NetworkOrchestrator.ServersList[server_id].name
+		player_to_add.label_server_name.text = NetworkOrchestrator.servers_list[server_id].name
 
 	print("Remnote player spawned with position: ", player_to_add.global_position)
 
@@ -364,39 +371,41 @@ func instantiate_player(message: Dictionary):
 	})
 	# player_to_add.global_rotation = Vector3(float(player.xr), float(player.yr), float(player.zr))
 	# player_to_add.set_physics_process(false)
-	PlayersList[message.player_id] = player_to_add
-	PlayersListLastMovement[message.player_id] = spawn_position
+	players_list[message.player_id] = player_to_add
+	players_list_last_movement[message.player_id] = spawn_position
 	# if server_id != null:
-	# 	player_to_add.labelServerName.text = NetworkOrchestrator.ServersList[server_id].name
+	# 	player_to_add.label_server_name.text = NetworkOrchestrator.servers_list[server_id].name
 
 	# print("Remnote player spawned with position: ", player_to_add.global_position)
 
 func player_move(message: Dictionary):
 	# print("================")
 	# print(message["data"]["uuid"])
-	# print(PlayersList.keys())
-	if PlayersList.has(message["data"]["uuid"]):
+	# print(players_list.keys())
+	if players_list.has(message["data"]["uuid"]):
 		# print("YEAH!")
-		var player = PlayersList[message["data"]["uuid"]]
+		var player = players_list[message["data"]["uuid"]]
 		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
-		player.input_from_server.rotation = Vector3(float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"]))
+		player.input_from_server.rotation = Vector3(
+			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
+		)
 		player.new_input_from_server = true
 
-func _sendMetrics():
-	if ServersTicksTasks.SendMetricsCurrent > 0:
-		ServersTicksTasks.SendMetricsCurrent -= 1
+func _send_metrics():
+	if servers_ticks_tasks.SendMetricsCurrent > 0:
+		servers_ticks_tasks.SendMetricsCurrent -= 1
 	else:
-		if NetworkOrchestrator.MetricsEnabled == true:
-			var allMetrics = {
-				"currentplayers": PlayersList.size(),
+		if NetworkOrchestrator.metrics_enabled == true:
+			var all_metrics = {
+				"currentplayers": players_list.size(),
 				"memory": Performance.get_monitor(Performance.MEMORY_STATIC),
 				"numberobjects": Performance.get_monitor(Performance.OBJECT_COUNT),
 				"timefps": Performance.get_monitor(Performance.TIME_FPS),
 			}
-			for proptype in PropsList.keys():
-				allMetrics["current" + proptype] = PropsList[proptype].size()
-			NetworkOrchestrator.MQTTClientMetrics.publish("metrics/server/" + NetworkOrchestrator.ServerName, JSON.stringify(allMetrics))
-		ServersTicksTasks.SendMetricsCurrent = ServersTicksTasks.SendMetricsReset
+			for proptype in props_list.keys():
+				all_metrics["current" + proptype] = props_list[proptype].size()
+			NetworkOrchestrator.mqtt_client_metrics.publish("metrics/server/" + NetworkOrchestrator.server_name, JSON.stringify(all_metrics))
+		servers_ticks_tasks.SendMetricsCurrent = servers_ticks_tasks.SendMetricsReset
 
 
 #########################
@@ -411,35 +420,37 @@ func instantiate_props_remote_update(prop):
 func _spawn_prop_remote_add(prop):
 	# print("Create prop: ", prop)
 	# add prop
-	if not PropsList.has(prop.type):
+	if not props_list.has(prop.type):
 		return
-	var uuid = uuid_util.v4()
+	var uuid = UUID_UTIL.v4()
 	var prop_instance: RigidBody3D = NetworkOrchestrator.get_spawnable_props_newinstance(prop.type)
-	NetworkOrchestrator.PropsList[prop.type][uuid] = prop_instance
+	NetworkOrchestrator.props_list[prop.type][uuid] = prop_instance
 	prop_instance.spawn_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
 	prop_instance.set_physics_process(false)
-	NetworkOrchestrator.small_props_spawner_node.get_node(NetworkOrchestrator.small_props_spawner_node.spawn_path).call_deferred("add_child", prop_instance, true)
-	NetworkOrchestrator.PropsList[prop.type][uuid] = prop_instance
+	NetworkOrchestrator.small_props_spawner_node.get_node(
+		NetworkOrchestrator.small_props_spawner_node.spawn_path
+	).call_deferred("add_child", prop_instance, true)
+	NetworkOrchestrator.props_list[prop.type][uuid] = prop_instance
 
 func _spawn_prop_remote_update(prop):
-	if not NetworkOrchestrator.PropsList[prop.type].has(prop.uuid):
+	if not NetworkOrchestrator.props_list[prop.type].has(prop.uuid):
 		return
 	# update the position
-	NetworkOrchestrator.PropsList[prop.type][prop.uuid].global_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
-	NetworkOrchestrator.PropsList[prop.type][prop.uuid].global_rotation = Vector3(float(prop.xr), float(prop.yr), float(prop.zr))
+	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
+	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_rotation = Vector3(float(prop.xr), float(prop.yr), float(prop.zr))
 
 func _send_props_to_sdo():
-	# if ServersTicksTasks.SendPropsToMQTTCurrent > 0:
-	# 	ServersTicksTasks.SendPropsToMQTTCurrent -= 1
+	# if servers_ticks_tasks.SendPropsToMQTTCurrent > 0:
+	# 	servers_ticks_tasks.SendPropsToMQTTCurrent -= 1
 	# else:
 	# 	var propsData = []
 	# 	var position = Vector3(0.0, 0.0, 0.0)
 	# 	var rotation = Vector3(0.0, 0.0, 0.0)
-	# 	for proptype in PropsList.keys():
-	# 		for uuid in PropsList[proptype].keys():
-	# 			position = PropsList[proptype][uuid].global_position
-	# 			rotation = PropsList[proptype][uuid].global_rotation
-	# 			if PropsListLastMovement[proptype][uuid] != position or PropsListLastRotation[proptype][uuid] != rotation:
+	# 	for proptype in props_list.keys():
+	# 		for uuid in props_list[proptype].keys():
+	# 			position = props_list[proptype][uuid].global_position
+	# 			rotation = props_list[proptype][uuid].global_rotation
+	# 			if props_list_last_movement[proptype][uuid] != position or props_list_last_rotation[proptype][uuid] != rotation:
 	# 				propsData.append({
 	# 					"type": proptype,
 	# 					"uuid": uuid,
@@ -450,39 +461,39 @@ func _send_props_to_sdo():
 	# 					"yr": rotation[1],
 	# 					"zr": rotation[2]
 	# 				})
-	# 				PropsListLastMovement[proptype][uuid] = position
-	# 				PropsListLastRotation[proptype][uuid] = rotation
+	# 				props_list_last_movement[proptype][uuid] = position
+	# 				props_list_last_rotation[proptype][uuid] = rotation
 	# 				# used for call save on persistance
-	# 				if PropsList[proptype][uuid].has_node("DataEntity"):
-	# 					var dataentity = PropsList[proptype][uuid].get_node("DataEntity")
-	# 					dataentity.Backgroud_save()
+	# 				if props_list[proptype][uuid].has_node("DataEntity"):
+	# 					var dataentity = props_list[proptype][uuid].get_node("DataEntity")
+	# 					dataentity.backgroud_save()
 	# 	if propsData.size() > 0:
-	# 		NetworkOrchestrator.MQTTClientSDO.publish("sdo/propschanges", JSON.stringify({
+	# 		NetworkOrchestrator.mqtt_client_sdo.publish("sdo/propschanges", JSON.stringify({
 	# 			"add": [],
 	# 			"update": propsData,
 	# 			"delete": [],
-	# 			"server_id": NetworkOrchestrator.ServerSDOId,
+	# 			"server_id": NetworkOrchestrator.server_sdo_id,
 	# 		}))
-	# 	ServersTicksTasks.SendPropsToMQTTCurrent = ServersTicksTasks.SendPropsToMQTTReset
+	# 	servers_ticks_tasks.SendPropsToMQTTCurrent = servers_ticks_tasks.SendPropsToMQTTReset
 	pass
 
-func set_server_inactive(_newserverId):
+func set_server_inactive(_newserver_id: int):
 	print("# Disable the server")
-	NetworkOrchestrator.isSDOActive = false
+	NetworkOrchestrator.is_sdo_active = false
 	# TODO send props to new server id
 	# unload all
 	print("Clean items")
-	for uuid in NetworkOrchestrator.PlayersList.keys():
-		NetworkOrchestrator.PlayersList[uuid].queue_free()
-		NetworkOrchestrator.PlayersList.erase(uuid)
-	for proptype in NetworkOrchestrator.PropsList.keys():
-		for uuid in NetworkOrchestrator.PropsList[proptype].keys():
-			NetworkOrchestrator.PropsList[proptype][uuid].queue_free()
-			NetworkOrchestrator.PropsList[proptype].erase(uuid)
-	for proptype in PropsList.keys():
-		for uuid in PropsList[proptype].keys():
-			PropsList[proptype][uuid].queue_free()
-			PropsList[proptype].erase(uuid)
+	for uuid in NetworkOrchestrator.players_list.keys():
+		NetworkOrchestrator.players_list[uuid].queue_free()
+		NetworkOrchestrator.players_list.erase(uuid)
+	for proptype in NetworkOrchestrator.props_list.keys():
+		for uuid in NetworkOrchestrator.props_list[proptype].keys():
+			NetworkOrchestrator.props_list[proptype][uuid].queue_free()
+			NetworkOrchestrator.props_list[proptype].erase(uuid)
+	for proptype in props_list.keys():
+		for uuid in props_list[proptype].keys():
+			props_list[proptype][uuid].queue_free()
+			props_list[proptype].erase(uuid)
 
 
 
@@ -502,7 +513,7 @@ func dispatch_horizon_message(message: Dictionary):
 			"add_props":
 				# print(message)
 				for planet in message["data"]["planets"]:
-					if not PropsList["planets"].has(planet["uuid"]):
+					if not props_list["planets"].has(planet["uuid"]):
 						# spawn planet
 						var spawnable_planet_instance = planet_scene.instantiate()
 						spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
@@ -511,14 +522,16 @@ func dispatch_horizon_message(message: Dictionary):
 							spawnable_planet_instance.owner = get_tree().current_scene
 						)
 						universe_scene.add_child(spawnable_planet_instance)
-						PropsList["planets"][planet["uuid"]] = spawnable_planet_instance
+						props_list["planets"][planet["uuid"]] = spawnable_planet_instance
 
 				# manage player
 				var player_data = message["data"]["player"]
 				# print("Player data received: %s" % player_data)
 
 				var spawned_entity_instance = player_scene.instantiate()
-				spawned_entity_instance.spawn_position = Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+				spawned_entity_instance.spawn_position = Vector3(
+					player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+				)
 				spawned_entity_instance.name = player_data["name"]
 
 				spawned_entity_instance.tree_entered.connect(func():
@@ -526,9 +539,9 @@ func dispatch_horizon_message(message: Dictionary):
 				)
 				universe_scene.add_child(spawned_entity_instance)
 				spawned_entity_instance.set_uuid(player_data["uuid"])
-				PlayersList[player_data["uuid"]] = spawned_entity_instance
-				PlayersListLastMovement[player_data["uuid"]] = spawned_entity_instance.global_position
-				PlayersListLastRotation[player_data["uuid"]] = spawned_entity_instance.global_rotation
+				players_list[player_data["uuid"]] = spawned_entity_instance
+				players_list_last_movement[player_data["uuid"]] = spawned_entity_instance.global_position
+				players_list_last_rotation[player_data["uuid"]] = spawned_entity_instance.global_rotation
 				spawned_entity_instance.connect("hs_server_move", _on_player_move)
 
 			"add_prop":
@@ -537,8 +550,8 @@ func dispatch_horizon_message(message: Dictionary):
 						"box50cm":
 							var box = message["data"][type]
 							if Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"]) == Vector3.ZERO:
-								if PlayersList.has(message["data"]["player_uuid"]):
-									var player = PlayersList[message["data"]["player_uuid"]]
+								if players_list.has(message["data"]["player_uuid"]):
+									var player = players_list[message["data"]["player_uuid"]]
 									var box_spawn_position: Vector3 = player.global_position + (-player.global_basis.z * 1.5) + player.global_basis.y * 2.0
 									var spawn_position: Vector3 = box_spawn_position
 									var spawn_rotation: Vector3 = player.global_transform.basis.y.normalized()
@@ -560,10 +573,10 @@ func dispatch_horizon_message(message: Dictionary):
 										spawnable_box50cm_instance.owner = get_tree().current_scene
 									)
 									universe_scene.add_child(spawnable_box50cm_instance)
-									PropsListLastMovement[box["uuid"]] = Vector3.ZERO
-									PropsListLastRotation[box["uuid"]] = Vector3.ZERO
+									props_list_last_movement[box["uuid"]] = Vector3.ZERO
+									props_list_last_rotation[box["uuid"]] = Vector3.ZERO
 									spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
-									PropsList["box50cm"][box["uuid"]] = spawnable_box50cm_instance									
+									props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
 							else:
 								# spawn box50cm
 								var spawnable_box50cm_instance = box50cm_scene.instantiate()
@@ -576,7 +589,7 @@ func dispatch_horizon_message(message: Dictionary):
 								)
 								universe_scene.add_child(spawnable_box50cm_instance)
 								spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
-								PropsList["box50cm"][box["uuid"]] = spawnable_box50cm_instance									
+								props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
 
 						"player_uuid":
 							# only used to spawn something by the player
@@ -585,12 +598,12 @@ func dispatch_horizon_message(message: Dictionary):
 							print("Unknown prop type: " + type)
 			"delete_player":
 				var player_uuid = message["data"]["uuid"]
-				if PlayersList.has(player_uuid):
-					var player = PlayersList[player_uuid]
+				if players_list.has(player_uuid):
+					var player = players_list[player_uuid]
 					player.queue_free()
-					PlayersList.erase(player_uuid)
-					PlayersListLastMovement.erase(player_uuid)
-					PlayersListLastRotation.erase(player_uuid)
+					players_list.erase(player_uuid)
+					players_list_last_movement.erase(player_uuid)
+					players_list_last_rotation.erase(player_uuid)
 			_:
 				print("Unknown server event: " + message['event'])
 	elif message['namespace'] == "player":
@@ -600,11 +613,11 @@ func dispatch_horizon_message(message: Dictionary):
 			"move":
 				player_move(message)
 
-func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
+func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		if PlayersListLastMovement[clientUUID] != position or PlayersListLastRotation[clientUUID] != rotation:
-			players_newposition[clientUUID] = {
-				"uuid": clientUUID,
+		if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
+			players_newposition[client_uuid] = {
+				"uuid": client_uuid,
 				"pos": {
 					"x": position[0],
 					"y": position[1],
@@ -616,8 +629,8 @@ func _on_player_move(clientUUID: String, position: Vector3, rotation: Vector3):
 					"z": rotation[2]
 				}
 			}
-			PlayersListLastMovement[clientUUID] = position
-			PlayersListLastRotation[clientUUID] = rotation
+			players_list_last_movement[client_uuid] = position
+			players_list_last_rotation[client_uuid] = rotation
 
 func send_players_newposition_to_horizon():
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -635,7 +648,7 @@ func send_players_newposition_to_horizon():
 
 func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		if PropsListLastMovement[uuid] != position or PropsListLastRotation[uuid] != rotation:
+		if props_list_last_movement[uuid] != position or props_list_last_rotation[uuid] != rotation:
 			props_newposition[uuid] = {
 				"uuid": uuid,
 				"pos": {
@@ -650,8 +663,8 @@ func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: Str
 				},
 				"type": type,
 			}
-			PropsListLastMovement[uuid] = position
-			PropsListLastRotation[uuid] = rotation
+			props_list_last_movement[uuid] = position
+			props_list_last_rotation[uuid] = rotation
 
 func send_props_newposition_to_horizon():
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:

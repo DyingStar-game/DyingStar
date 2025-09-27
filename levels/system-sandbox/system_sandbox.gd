@@ -15,7 +15,7 @@ var planet_center: Vector3 = Vector3.ZERO
 
 func _ready() -> void:
 	is_ready = true
-	
+
 	if has_node("PlayerSpawnPointsList"):
 		for child in get_node("PlayerSpawnPointsList").get_children():
 			spawn_points_list.append(child.global_position)
