@@ -34,9 +34,9 @@ const SPAWN_POINTS_LIST: Array[Dictionary] = [
 var current_network_role = null
 var current_state = null
 var distinguish_instances: Dictionary = {
-		NetworkRole.PLAYER: {"instance_name": "Joueur", "instance_color": "salmon"},
-		NetworkRole.SERVER: {"instance_name": "Serveur", "instance_color": "aquamarine"},
-	}
+	NetworkRole.PLAYER: {"instance_name": "Joueur", "instance_color": "salmon"},
+	NetworkRole.SERVER: {"instance_name": "Serveur", "instance_color": "aquamarine"},
+}
 
 var univers_creation_entities: Dictionary = {}
 
@@ -141,7 +141,7 @@ func _on_scene_changed(changed_scene: Node) -> void:
 				login_player_name = "AlfredThaddeusCranePennyworth"
 				var server_instance =  NetworkOrchestrator.start_server(changed_scene)
 				server_instance.connect("populated_universe", _on_populated_universe)
-				server_instance.populate_universe(univers_creation_entities)
+				# server_instance.populate_universe(univers_creation_entities)
 			NetworkRole.PLAYER:
 				NetworkOrchestrator.start_client(changed_scene)
 	elif scene_path == GAME_STATES_SCENES_PATHS[GameStates.SERVER_UNIVERS_CREATION]:
