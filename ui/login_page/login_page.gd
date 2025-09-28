@@ -27,9 +27,6 @@ func _on_button_pressed(button_id: String) -> void:
 		"Online":
 			Globals.onlineMode = true
 			GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.UNIVERSE_MENU)
-		"Local":
-			Globals.onlineMode = false
-			GameOrchestrator.change_game_state(GameOrchestrator.GAME_STATES.TROLL)
 
 func _on_username_changed(new_username: String) -> void:
 	var cursor_pos = username_edit.caret_column

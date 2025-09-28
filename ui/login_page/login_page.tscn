@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://ck5cjdbjngm6a" path="res://ui/login_page/login_page.gd" id="1_ihlnx"]
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="2_rpukb"]
 [ext_resource type="Texture2D" uid="uid://0yw6o1aoe6pj" path="res://assets/textures/Menu/Title_StarDeception.svg" id="3_11evp"]
-[ext_resource type="Texture2D" uid="uid://dq2e8gaxm2dkp" path="res://icon.svg" id="4_fk6tm"]
+[ext_resource type="Texture2D" uid="uid://bqoexxd6necib" path="res://icon.svg" id="4_fk6tm"]
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
 
@@ -83,14 +83,6 @@ size_flags_vertical = 0
 theme_override_font_sizes/font_size = 24
 text = "CONNECT"
 
-[node name="LocalButton" type="Button" parent="FormPlacer/FormContainer/ButtonContainer"]
-clip_contents = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-theme_override_font_sizes/font_size = 24
-text = "OFFLINE"
-
 [node name="Logo" type="TextureRect" parent="."]
 self_modulate = Color(1, 1, 1, 0.392157)
 layout_mode = 1
@@ -144,5 +136,4 @@ popup/item_2/id = 2
 
 [connection signal="ready" from="." to="." method="_on_ready"]
 [connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/OnlineButton" to="." method="_on_button_pressed" binds= ["Online"]]
-[connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/LocalButton" to="." method="_on_button_pressed" binds= ["Local"]]
 [connection signal="item_selected" from="Node/HBoxContainer/OptionButton" to="Node" method="_on_option_button_item_selected"]
