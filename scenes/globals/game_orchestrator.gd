@@ -8,7 +8,7 @@ const MIN_USERNAME_LENGTH: int = 4
 enum CHANGE_STATE_RETURNS {OK, ERROR, NO_CHANGE}
 
 enum NETWORK_ROLE {PLAYER, SERVER}
-enum GAME_STATES {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, TROLL, CONNEXION_ERROR}
+enum GAME_STATES {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, CONNEXION_ERROR}
 enum PLAYING_LEVELS{SYSTEM_SANDBOX}
 
 const SCENE_TREE_EXTENDED_SCRIPT_PATH = preload("res://scenes/globals/scene_tree_extended.gd")
@@ -21,7 +21,6 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 	GAME_STATES.PLAYING : "res://levels/system-sandbox/system_sandbox.tscn",
 	GAME_STATES.SERVER_UNIVERS_CREATION : "res://scenes/universe_creation/universe_map.tscn",
 	GAME_STATES.SERVER_PLAYING : "res://levels/system-sandbox/system_sandbox.tscn",
-	GAME_STATES.TROLL : "res://ui/trolling_page/trolling_page.tscn",
 	GAME_STATES.CONNEXION_ERROR : "res://ui/error_message/error_message.tscn",
 }
 
@@ -92,10 +91,6 @@ func change_game_state(new_state) -> int:
 		return CHANGE_STATE_RETURNS.NO_CHANGE
 	
 	match new_state:
-		GAME_STATES.TROLL:
-			current_state = new_state
-			get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GAME_STATES.TROLL])
-			return CHANGE_STATE_RETURNS.OK
 		GAME_STATES.HOME_MENU:
 			current_state = new_state
 			get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GAME_STATES.HOME_MENU])
