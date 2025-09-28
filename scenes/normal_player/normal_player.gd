@@ -224,7 +224,7 @@ func _process(_delta: float) -> void:
 	if !active:
 		interact_label.hide()
 		return
-	
+
 	_handle_camera_motion()
 
 	interact_label.hide()
