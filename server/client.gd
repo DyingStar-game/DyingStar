@@ -2,7 +2,6 @@ extends Node
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
-var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
 
 var client_peer: ENetMultiplayerPeer = null
@@ -13,7 +12,7 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://127.0.0.1:7040" # "ws://127.0.0.1:7040"
+var websocket_url = "ws://192.168.20.174:7040" # "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
@@ -27,6 +26,8 @@ var props_list: Dictionary = {
 var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
+
+var lock_players_planets_creation: bool = false
 
 func _enter_tree() -> void:
 	set_process(false)
@@ -103,7 +104,10 @@ func _process(_delta: float) -> void:
 				# Handle the event based on its type
 				match event["type"]:
 					"player_props":
-						handle_player_props_event(event)
+						# loop until lock_players_planets_creation is true
+						while lock_players_planets_creation:
+							await get_tree().create_timer(0.1).timeout
+						create_players_planets(event)
 					"update_props":
 						update_props(event)
 					"props_position_update":
@@ -164,7 +168,9 @@ func _process(_delta: float) -> void:
 		set_process(false) # Stop processing.
 
 
-func handle_player_props_event(event: Dictionary) -> void:
+func create_players_planets(event: Dictionary) -> void:
+	lock_players_planets_creation = true
+	print("CREATE PLAYERS AND PLANETS")
 	if event.has("players"):
 		var players_data = event["players"]
 		# print("Player data received:")
@@ -192,7 +198,7 @@ func handle_player_props_event(event: Dictionary) -> void:
 					player_entity = spawned_entity_instance
 			else:
 				if not players_list.has(player_data["uuid"]):
-					var spawned_entity_instance = load(player_scene_path).instantiate()
+					var spawned_entity_instance = player_scene.instantiate()
 					spawned_entity_instance.spawn_position = Vector3(
 						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 					)
@@ -230,6 +236,7 @@ func handle_player_props_event(event: Dictionary) -> void:
 				spawnable_planet_instance.set_physics_process(false)
 				props_list["planets"][planet["uuid"]] = spawnable_planet_instance
 
+	lock_players_planets_creation = false
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
 
@@ -258,22 +265,22 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 			"spawn":
 				if datas.has("entity"):
 					match datas["entity"]:
-						"ship":
-							var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
-							if datas.has("spawn_position"):
-								spawn_position = datas["spawn_position"]
-							var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
-							if datas.has("spawn_rotation"):
-								spawn_rotation = datas["spawn_rotation"]
-							var data =  {
-								"x": spawn_position.x,
-								"y": spawn_position.y,
-								"z": spawn_position.z,
-								"rx": spawn_rotation.x,
-								"ry": spawn_rotation.y,
-								"rz": spawn_rotation.z,
-							}
-							NetworkOrchestrator.spawn_prop.rpc_id(1, "ship",data)
+						# "ship":
+						# 	var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
+						# 	if datas.has("spawn_position"):
+						# 		spawn_position = datas["spawn_position"]
+						# 	var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
+						# 	if datas.has("spawn_rotation"):
+						# 		spawn_rotation = datas["spawn_rotation"]
+						# 	var data =  {
+						# 		"x": spawn_position.x,
+						# 		"y": spawn_position.y,
+						# 		"z": spawn_position.z,
+						# 		"rx": spawn_rotation.x,
+						# 		"ry": spawn_rotation.y,
+						# 		"rz": spawn_rotation.z,
+						# 	}
+						# 	NetworkOrchestrator.spawn_prop.rpc_id(1, "ship",data)
 						"box50cm":
 							print("Request to spawn box50cm")
 							socket.send_text(JSON.stringify({
@@ -284,22 +291,22 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 									"player_uuid": datas["uuid"],
 								},
 							}))
-						"box4m":
-							var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
-							if datas.has("spawn_position"):
-								spawn_position = datas["spawn_position"]
-							var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
-							if datas.has("spawn_rotation"):
-								spawn_rotation = datas["spawn_rotation"]
-							var data =  {
-								"x": spawn_position.x,
-								"y": spawn_position.y,
-								"z": spawn_position.z,
-								"rx": spawn_rotation.x,
-								"ry": spawn_rotation.y,
-								"rz": spawn_rotation.z,
-							}
-							NetworkOrchestrator.spawn_prop.rpc_id(1, "box4m", data)
+						# "box4m":
+						# 	var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
+						# 	if datas.has("spawn_position"):
+						# 		spawn_position = datas["spawn_position"]
+						# 	var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
+						# 	if datas.has("spawn_rotation"):
+						# 		spawn_rotation = datas["spawn_rotation"]
+						# 	var data =  {
+						# 		"x": spawn_position.x,
+						# 		"y": spawn_position.y,
+						# 		"z": spawn_position.z,
+						# 		"rx": spawn_rotation.x,
+						# 		"ry": spawn_rotation.y,
+						# 		"rz": spawn_rotation.z,
+						# 	}
+						# 	NetworkOrchestrator.spawn_prop.rpc_id(1, "box4m", data)
 			"control":
 				if datas.has("entity"):
 					match datas["entity"]:

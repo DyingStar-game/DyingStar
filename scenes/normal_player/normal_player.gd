@@ -189,11 +189,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
-		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
-		emit_signal(
-			"client_action_requested",
-			{"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position, "uuid": client_uuid}
-		)
+		spawn_box50cm()
 
 	if event.is_action_pressed("spawn_4mbox"):
 		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 3.0) + global_basis.y * 6.0
@@ -228,7 +224,7 @@ func _process(_delta: float) -> void:
 	if !active:
 		interact_label.hide()
 		return
-
+	
 	_handle_camera_motion()
 
 	interact_label.hide()
@@ -245,7 +241,6 @@ func _process(_delta: float) -> void:
 
 
 	if not OS.has_feature("dedicated_server"):
-
 		var dir_vect = Vector3.ZERO
 		var sprint = null
 
@@ -402,3 +397,10 @@ func _set_gameserver_name(server_name: String):
 func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation =rot
+
+func spawn_box50cm():
+	var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
+	emit_signal(
+		"client_action_requested",
+		{"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position, "uuid": client_uuid}
+	)

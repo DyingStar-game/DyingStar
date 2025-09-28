@@ -48,7 +48,7 @@ var small_spawnable_props: Array[PackedScene] = []
 var small_spawnable_props_entry_point: Node = null
 
 var universe_datas_spawner_node: MultiplayerSpawner = null
-var spawnable_planet_scene: PackedScene = null
+var spawnable_planet_scene: PackedScene = preload("res://scenes/planet/testplanet.tscn")
 var spawnable_station_scene: PackedScene = null
 
 var players: Dictionary[int, Player] = {}
@@ -761,31 +761,31 @@ func spawn_prop(proptype,data: Dictionary ) -> void:
 		prop_instance.set_collision_mask_value(1, false)
 		prop_instance.set_collision_mask_value(2, true)
 
-@rpc("authority", "call_remote", "reliable")
-func spawn_planet(planet_datas: Dictionary) -> void:
-	# if not multiplayer.is_server():
-	# 	return
+# @rpc("authority", "call_remote", "reliable")
+# func spawn_planet(planet_datas: Dictionary) -> void:
+# 	# if not multiplayer.is_server():
+# 	# 	return
 
-	var spawnable_planet_instance: Node3D = spawnable_planet_scene.instantiate()
-	spawnable_planet_instance.spawn_position = planet_datas["coordinates"]
-	spawnable_planet_instance.name = planet_datas["name"]
+# 	var spawnable_planet_instance: Node3D = spawnable_planet_scene.instantiate()
+# 	spawnable_planet_instance.spawn_position = planet_datas["coordinates"]
+# 	spawnable_planet_instance.name = planet_datas["name"]
 
-	#if spawnable_planet_instance.name == "PlanetB":
-		#spawnable_planet_instance.material_path = "res://scenes/planet/planet_orange.material"
+# 	#if spawnable_planet_instance.name == "PlanetB":
+# 		#spawnable_planet_instance.material_path = "res://scenes/planet/planet_orange.material"
 
-	universe_datas_spawner_node.get_node(universe_datas_spawner_node.spawn_path).call_deferred("add_child", spawnable_planet_instance, true)
-	network_agent.spawn_data_processed(spawnable_planet_instance)
+# 	universe_datas_spawner_node.get_node(universe_datas_spawner_node.spawn_path).call_deferred("add_child", spawnable_planet_instance, true)
+# 	network_agent.spawn_data_processed(spawnable_planet_instance)
 
-@rpc("authority", "call_remote", "reliable")
-func spawn_station(station_datas: Dictionary) -> void:
-	if not GameOrchestrator.is_server():
-		return
+# @rpc("authority", "call_remote", "reliable")
+# func spawn_station(station_datas: Dictionary) -> void:
+# 	if not GameOrchestrator.is_server():
+# 		return
 
-	var spawnable_station_instance: Node3D = spawnable_station_scene.instantiate()
-	spawnable_station_instance.spawn_position = station_datas["coordinates"]
-	spawnable_station_instance.name = station_datas["name"]
-	universe_datas_spawner_node.get_node(universe_datas_spawner_node.spawn_path).call_deferred("add_child", spawnable_station_instance, true)
-	network_agent.spawn_data_processed(spawnable_station_instance)
+# 	var spawnable_station_instance: Node3D = spawnable_station_scene.instantiate()
+# 	spawnable_station_instance.spawn_position = station_datas["coordinates"]
+# 	spawnable_station_instance.name = station_datas["name"]
+# 	universe_datas_spawner_node.get_node(universe_datas_spawner_node.spawn_path).call_deferred("add_child", spawnable_station_instance, true)
+# 	network_agent.spawn_data_processed(spawnable_station_instance)
 
 @rpc("any_peer", "call_remote", "reliable")
 func spawn_player(_player_scene_path: String = "", _spawn_point: int = 0):
