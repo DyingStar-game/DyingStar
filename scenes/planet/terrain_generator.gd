@@ -193,7 +193,6 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 
 				# Project onto sphere and apply height
 				var sphere_pos := planet.get_height(point_on_plane.normalized())
-
 				# calculate offset to lower the vertices that are on the edge of the chunk
 				var lod_offset := point_on_plane.normalized() * 0.01 if edge else Vector3.ZERO
 				vertex_array[i] = sphere_pos - chunk_global_pos - lod_offset
@@ -204,17 +203,23 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				planet.min_height = min(planet.min_height, length)
 				planet.max_height = max(planet.max_height, length)
 
-				# Create two triangles per cell
-				if x < resolution - 1 and y < resolution - 1:
-					# Triangle 1
-					index_array[tri_idx]     = i
-					index_array[tri_idx + 1] = i + resolution
-					index_array[tri_idx + 2] = i + resolution + 1
-					# Triangle 2
-					index_array[tri_idx + 3] = i
-					index_array[tri_idx + 4] = i + resolution + 1
-					index_array[tri_idx + 5] = i + 1
-					tri_idx += 6
+				var in_hole = planet.is_in_hole(sphere_pos)
+				if not in_hole:
+					
+					# Create two triangles per cell
+					if x < resolution - 1 and y < resolution - 1:
+						# Triangle 1
+						index_array[tri_idx]     = i
+						index_array[tri_idx + 1] = i + resolution
+						index_array[tri_idx + 2] = i + resolution + 1
+						# Triangle 2
+						index_array[tri_idx + 3] = i
+						index_array[tri_idx + 4] = i + resolution + 1
+						index_array[tri_idx + 5] = i + 1
+
+						tri_idx += 6
+
+		index_array.resize(tri_idx)
 
 		# Calculate smooth normals
 		for t in range(0, index_array.size(), 3):

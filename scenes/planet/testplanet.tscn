@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=48 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -15,6 +15,8 @@
 [ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="10_nqw6u"]
 [ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="10_qugoe"]
 [ext_resource type="PackedScene" uid="uid://ckogdailxd1jo" path="res://scenes/props/rock/rock_large.tscn" id="12_yhksb"]
+[ext_resource type="PackedScene" uid="uid://cxfsdv8b370jd" path="res://scenes/planet/terrain_hole.tscn" id="14_rx63j"]
+[ext_resource type="PackedScene" uid="uid://cn1e5bp50weao" path="res://scenes/station/test_station/test_station.tscn" id="16_qc8cq"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 3
@@ -149,7 +151,7 @@ colors = PackedColorArray(1.49205e-06, 0.489553, 0.503481, 1, 0.00948865, 0.2322
 gradient = SubResource("Gradient_wsl8f")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_7o858"]
-render_priority = 2
+render_priority = 0
 shader = ExtResource("7_l6ihg")
 shader_parameter/height_profile_curve = SubResource("CurveTexture_hltm3")
 shader_parameter/height_profile_main_colors = SubResource("GradientTexture1D_kghk6")
@@ -160,7 +162,7 @@ shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_
 shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
 shader_parameter/sea_level = 10600.0
 shader_parameter/atmosphere_radius = 11800.0
-shader_parameter/atmosphere_density = 0.515
+shader_parameter/atmosphere_density = 0.535
 shader_parameter/water_density_factor = -0.205
 
 [sub_resource type="BoxMesh" id="BoxMesh_642k6"]
@@ -174,8 +176,10 @@ planet_settings = ExtResource("2_nqw6u")
 [node name="DataPlanet" type="Node" parent="."]
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
 
-[node name="PlanetTerrain" parent="." instance=ExtResource("4_2pfeq")]
+[node name="PlanetTerrain" parent="." node_paths=PackedStringArray("holes_parent") instance=ExtResource("4_2pfeq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 7, -1)
 radius = 10000
+holes_parent = NodePath("Holes")
 terrain_settings = SubResource("Resource_7f52q")
 
 [node name="PlanetGravity" type="Area3D" parent="PlanetTerrain" groups=["gravity"]]
@@ -217,6 +221,11 @@ visible = false
 mesh = SubResource("SphereMesh_qugoe")
 surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 
+[node name="Holes" type="Node3D" parent="PlanetTerrain"]
+
+[node name="TerrainHole" parent="PlanetTerrain/Holes" instance=ExtResource("14_rx63j")]
+transform = Transform3D(0.9625559118262026, 0.2658344354284525, -0.05308643469723392, -0.26749715731909907, 0.9631795844032064, -0.02702515522745279, 0.04394755322687353, 0.04021369330592157, 0.9982241589122498, 4395.94664626798, 9635.134824738709, 1519.2215939068567)
+
 [node name="WaterSurface" type="MeshInstance3D" parent="."]
 transform = Transform3D(0.996345, 0, 0.0854169, 0, 1, 0, -0.0854169, 0, 0.996345, 0, 0, 0)
 visible = false
@@ -224,9 +233,47 @@ material_override = SubResource("StandardMaterial3D_7o858")
 mesh = SubResource("SphereMesh_642k6")
 skeleton = NodePath("../PlanetTerrain")
 
+[node name="ReflectionProbe" type="ReflectionProbe" parent="."]
+transform = Transform3D(-0.2401922901508915, 0.908033018078886, 0.34319630218086494, -5.551115123125781e-17, 0.3535462525177032, -0.9354170446013308, -0.9707253286857565, -0.2246799621889724, -0.08491908406649247, 10119.020999999992, 895.8340000000026, -3420.626999999993)
+blend_distance = 1.03
+max_distance = 57.4
+size = Vector3(50000, 50000, 50000)
+
 [node name="Atmosphere" parent="." instance=ExtResource("6_mv8ka")]
-transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 0, 0, 0)
+transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, -2.778615088112929, -1.8189894035458565e-12, -4.8325716061699495)
 material_override = SubResource("ShaderMaterial_7o858")
 mesh = SubResource("BoxMesh_642k6")
 planet_radius = 10600.0
 atmosphere_height = 1200.0
+
+[node name="CSGCylinder3D" type="CSGCylinder3D" parent="."]
+transform = Transform3D(-0.8708032300639781, 0.3603068268640096, 0.3344857620666852, 0.03101172459464686, 0.7192602323974198, -0.6940482627521486, -0.4906526342004171, -0.5940064886908208, -0.6375078697125185, 4055.698794288582, 7940.714681997426, -7718.091992312134)
+radius = 6.831514
+height = 2180.3655
+sides = 32
+
+[node name="Node3D" type="Node3D" parent="CSGCylinder3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5527136788005016e-14, -1085.0717257312972, 0)
+
+[node name="CSGTorus3D" type="CSGTorus3D" parent="CSGCylinder3D/Node3D"]
+transform = Transform3D(1, 0, 0, -5.551115123125783e-17, 1, 1.1102230246251563e-16, -5.551115123125783e-17, 5.551115123125783e-17, 1, 0, 0.850758118509475, 0)
+inner_radius = 14.838
+outer_radius = 7.001
+sides = 19
+ring_sides = 10
+
+[node name="TestStation" parent="CSGCylinder3D" instance=ExtResource("16_qc8cq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7230868732178104, 1103.4613959411645, -3.64791681790118)
+
+[node name="CSGCylinder3D2" type="CSGCylinder3D" parent="."]
+transform = Transform3D(0.9127341195907104, 0.3994187860467793, 0.08591309730121828, -0.4023037138916368, 0.915316407393432, 0.01864393052384555, -0.07119093147281869, -0.05158010962860616, 0.996128176273884, 4346.665052973987, 9523.50175884182, 1525.5492783059065)
+radius = 42.448
+height = 300.55624
+sides = 32
+
+[node name="CSGCylinder3D3" type="CSGCylinder3D" parent="CSGCylinder3D2"]
+transform = Transform3D(0.9999999999999918, -3.907464629637758e-16, -4.718447854656915e-16, -1.3400738851920835e-15, 0.9999999999999992, 1.0200174038743626e-15, -5.384581669432009e-15, 2.0816681711721685e-16, 0.9999999999999978, -2.3732127374387346e-12, 25.069472312930884, 1.3642420526593924e-12)
+operation = 2
+radius = 36.302
+height = 267.2785
+sides = 32

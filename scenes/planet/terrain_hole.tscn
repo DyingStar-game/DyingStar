@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://cxfsdv8b370jd"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_rre0u"]
+radius = 10.947661
+
+[node name="TerrainHole" type="CollisionShape3D"]
+shape = SubResource("SphereShape3D_rre0u")

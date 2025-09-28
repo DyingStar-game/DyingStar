@@ -13,56 +13,32 @@ signal regenerate()
 @export var max_height: float
 @export var resolution: int = 60
 
+@export var holes_parent: Node3D
+
 @export var terrain_settings: PlanetTerrainSettings
 
 @export var terrain_material: Material
 
 var focus_positions = []
 var players_ids = []
+var holes = []
 
 var debug_panel: PanelContainer
 var debug_label: RichTextLabel
 
 @onready var occluder_instance_3d: OccluderInstance3D = $OccluderInstance3D
 
-func _enter_tree() -> void:
-	if OS.has_feature("editor"):
-		if Engine.is_editor_hint():
-			debug_panel = PanelContainer.new()
-			debug_panel.name = "DebugPanel"
-			debug_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			debug_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			debug_panel.custom_minimum_size = Vector2(400, 420)
-			debug_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE)
-
-			debug_panel.offset_top = 10
-			debug_panel.offset_bottom = -10
-			debug_panel.offset_right = -200
-			debug_panel.offset_left = 200
-			debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-			debug_panel.add_theme_stylebox_override("panel", StyleBoxFlat.new())
-			debug_panel.get_theme_stylebox("panel").bg_color = Color(0, 0, 0, 0)
-
-			debug_label = RichTextLabel.new()
-			debug_label.scroll_active = false
-			debug_label.fit_content = true
-			debug_label.bbcode_enabled = true
-			debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-			debug_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			debug_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-
-			debug_panel.add_child(debug_label)
-
-			#EditorInterface.get_editor_viewport_3d(0).add_child(debug_panel)
-
 func _ready() -> void:
-	if OS.has_feature("editor"):
-		if Engine.is_editor_hint():
-			debug_label.append_text("[color=green]POUET[/color]\n")
 	trigger_update()
+	get_holes()
 
-func _process(_delta: float) -> void:
+func get_holes():
+	for hole: CollisionShape3D in holes_parent.get_children():
+		var shape = hole.shape as SphereShape3D
+		holes.push_back([hole.position, shape.radius])
+	
+	
+func _process(delta: float) -> void:
 	var camera: Camera3D
 	if OS.has_feature("editor"):
 		if Engine.is_editor_hint():
@@ -92,6 +68,15 @@ func trigger_update():
 
 func norm(value: float):
 	return value + 1 / 2.0
+
+
+func is_in_hole(point: Vector3) -> bool:
+	for hole in holes:
+		var pos = hole[0]
+		var radius = hole[1]
+		if pos.distance_to(point) <= radius:
+				return true
+	return false
 
 func get_height(point) -> Vector3:
 	var elev = 0.0
