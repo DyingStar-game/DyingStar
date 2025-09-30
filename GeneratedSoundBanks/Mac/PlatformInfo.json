@@ -1,8 +1,8 @@
 {
  "PlatformInfo": {
   "Platform": {
-   "Name": "Windows",
-   "BasePlatform": "Windows",
+   "Name": "Mac",
+   "BasePlatform": "Mac",
    "Generator": "2024.1.8.8893"
   },
   "RootPaths": {
@@ -10,7 +10,7 @@
    "SourceFilesRoot": "../../../Dying Star_Wwise Sessions/.cache",
    "SoundBanksRoot": ".",
    "ExternalSourcesInputFile": "",
-   "ExternalSourcesOutputRoot": "../../../Dying Star_Wwise Sessions/GeneratedSoundBanks/Windows"
+   "ExternalSourcesOutputRoot": "../../../Dying Star_Wwise Sessions/GeneratedSoundBanks/Mac"
   },
   "DefaultAlign": "16",
   "Settings": {
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{E5FB8F67-5A79-2D53-2292-CAA1BC6151C3}"
+  "FileHash": "{F5A23F22-64A3-03BE-5FB6-F744E2EEE9F3}"
  }
 }
