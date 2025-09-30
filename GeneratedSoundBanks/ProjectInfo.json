@@ -8,20 +8,6 @@
   "CacheRoot": "../../DyingStar_WwiseSession/.cache",
   "Platforms": [
    {
-    "Name": "Linux",
-    "GUID": "{60685402-BAF9-45EB-8379-7764A706B2B1}",
-    "BasePlatform": "Linux",
-    "BasePlatformGUID": "{BD0BDF13-3125-454F-8BFD-319537169F81}",
-    "Path": "Linux"
-   },
-   {
-    "Name": "Mac",
-    "GUID": "{E40373FD-80D6-4767-8789-E14E8638AC6E}",
-    "BasePlatform": "Mac",
-    "BasePlatformGUID": "{9C6217D5-DD11-4795-87C1-6CE02853C540}",
-    "Path": "Mac"
-   },
-   {
     "Name": "Windows",
     "GUID": "{3E5DE781-F98B-42C3-9617-B14E1D1BB369}",
     "BasePlatform": "Windows",
@@ -38,6 +24,6 @@
     "UseAsStandIn": "true"
    }
   ],
-  "FileHash": "{ECC79628-CECA-11BC-B524-B7ED3950CBD5}"
+  "FileHash": "{F76F1AD3-F4F6-EDA6-F4D9-3094979175C5}"
  }
 }
