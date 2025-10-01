@@ -7,6 +7,10 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 # Horizon port we will listen to.
 const PORT = 8980
 
+# conversion of position to prevent collision problems when position is so far from origin
+const POSITION_CONVERSION_X = 18999498785.9
+const POSITION_CONVERSION_Y = 0.0
+const POSITION_CONVERSION_Z = 0.0
 
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
@@ -507,6 +511,17 @@ func set_server_inactive(_newserver_id: int):
 # Horizon server part                              #
 #####################################################
 
+func create_vector3_with_conversion_hg(x: float, y: float, z: float) -> Vector3:
+	return Vector3(
+		x - POSITION_CONVERSION_X,
+		y - POSITION_CONVERSION_Y,
+		z - POSITION_CONVERSION_Z
+	)
+
+func convert_value_to_universe(value: float, conversion: float) -> float:
+	return value + conversion
+
+
 func dispatch_horizon_message(message: Dictionary):
 	if message['namespace'] == "server":
 		match message['event']:
@@ -516,7 +531,11 @@ func dispatch_horizon_message(message: Dictionary):
 					if not props_list["planets"].has(planet["uuid"]):
 						# spawn planet
 						var spawnable_planet_instance = planet_scene.instantiate()
-						spawnable_planet_instance.spawn_position = Vector3(planet["position"]["x"], planet["position"]["y"], planet["position"]["z"])
+						spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
+							planet["position"]["x"],
+							planet["position"]["y"],
+							planet["position"]["z"]
+						)
 						spawnable_planet_instance.name = planet.name
 						spawnable_planet_instance.tree_entered.connect(func():
 							spawnable_planet_instance.owner = get_tree().current_scene
@@ -529,8 +548,10 @@ func dispatch_horizon_message(message: Dictionary):
 				# print("Player data received: %s" % player_data)
 
 				var spawned_entity_instance = player_scene.instantiate()
-				spawned_entity_instance.spawn_position = Vector3(
-					player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+				spawned_entity_instance.spawn_position = create_vector3_with_conversion_hg(
+					player_data["position"]["x"],
+					player_data["position"]["y"],
+					player_data["position"]["z"]
 				)
 				spawned_entity_instance.name = player_data["name"]
 
@@ -580,7 +601,11 @@ func dispatch_horizon_message(message: Dictionary):
 							else:
 								# spawn box50cm
 								var spawnable_box50cm_instance = box50cm_scene.instantiate()
-								spawnable_box50cm_instance.spawn_position = Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"])
+								spawnable_box50cm_instance.spawn_position = create_vector3_with_conversion_hg(
+									box["position"]["x"],
+									box["position"]["y"],
+									box["position"]["z"]
+								)
 								spawnable_box50cm_instance.global_rotation = Vector3(box["rotation"]["x"], box["rotation"]["y"], box["rotation"]["z"])
 								# spawnable_box50cm_instance.name = box["uuid"]
 								spawnable_box50cm_instance.uuid = box["uuid"]
@@ -619,9 +644,9 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3):
 			players_newposition[client_uuid] = {
 				"uuid": client_uuid,
 				"pos": {
-					"x": position[0],
-					"y": position[1],
-					"z": position[2]
+					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
 				},
 				"rot": {
 					"x": rotation[0],
@@ -652,9 +677,9 @@ func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: Str
 			props_newposition[uuid] = {
 				"uuid": uuid,
 				"pos": {
-					"x": position[0],
-					"y": position[1],
-					"z": position[2]
+					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
 				},
 				"rot": {
 					"x": rotation[0],
@@ -677,5 +702,6 @@ func send_props_newposition_to_horizon():
 			"amessagenb": debug_message_number,
 			"data": props_newposition.values()
 		}
+		print("Send props to horizon: ", message)
 		peer.send_text(JSON.stringify(message))
 		props_newposition.clear()
