@@ -256,9 +256,9 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 			players_newposition[client_uuid] = {
 				"player_id": client_uuid,
 				"pos": {
-					"x": position[0],
-					"y": position[1],
-					"z": position[2]
+					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
 				},
 				"rot": {
 					"x": rotation[0],
