@@ -384,6 +384,8 @@ func get_player_name():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
+		print(area.get_overlapping_areas())
+		print(area.get_overlapping_bodies())
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:

@@ -55,7 +55,7 @@ metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [resource]
 script = ExtResource("1_ec2n1")
-radius = 10000
+radius = 500000
 atmosphere_height = 1200
 terrain_material = ExtResource("2_0m3tu")
 sea_level = 680
