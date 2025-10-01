@@ -1,16 +1,16 @@
 {
  "PlatformInfo": {
   "Platform": {
-   "Name": "Mac",
-   "BasePlatform": "Mac",
+   "Name": "Linux",
+   "BasePlatform": "Linux",
    "Generator": "2024.1.8.8893"
   },
   "RootPaths": {
-   "ProjectRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions",
-   "SourceFilesRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions/.cache",
+   "ProjectRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions",
+   "SourceFilesRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions/.cache",
    "SoundBanksRoot": ".",
    "ExternalSourcesInputFile": "",
-   "ExternalSourcesOutputRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions/GeneratedSoundBanks/Mac"
+   "ExternalSourcesOutputRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions/GeneratedSoundBanks/Linux"
   },
   "DefaultAlign": "16",
   "Settings": {
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{FD468928-D904-C1AD-D304-2E3A4AD74D7A}"
+  "FileHash": "{858A05B0-66D3-6E2E-034B-CE19807E6231}"
  }
 }

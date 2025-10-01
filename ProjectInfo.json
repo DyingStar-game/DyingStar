@@ -12,21 +12,21 @@
     "GUID": "{60685402-BAF9-45EB-8379-7764A706B2B1}",
     "BasePlatform": "Linux",
     "BasePlatformGUID": "{BD0BDF13-3125-454F-8BFD-319537169F81}",
-    "Path": "GeneratedSoundBanks/Linux"
+    "Path": "assets/audio/GeneratedSoundBanks/Linux"
    },
    {
     "Name": "Mac",
     "GUID": "{E40373FD-80D6-4767-8789-E14E8638AC6E}",
     "BasePlatform": "Mac",
     "BasePlatformGUID": "{9C6217D5-DD11-4795-87C1-6CE02853C540}",
-    "Path": "GeneratedSoundBanks/Mac"
+    "Path": "assets/audio/GeneratedSoundBanks/Mac"
    },
    {
     "Name": "Windows",
     "GUID": "{3E5DE781-F98B-42C3-9617-B14E1D1BB369}",
     "BasePlatform": "Windows",
     "BasePlatformGUID": "{6E0CB257-C6C8-4C5C-8366-2740DFC441EB}",
-    "Path": "GeneratedSoundBanks/Windows"
+    "Path": "assets/audio/GeneratedSoundBanks/Windows"
    }
   ],
   "Languages": [
@@ -38,6 +38,6 @@
     "UseAsStandIn": "true"
    }
   ],
-  "FileHash": "{DEC33A1F-F6FF-E22B-154B-74A3BF110DAF}"
+  "FileHash": "{FAFE8908-FBE0-9FB3-3567-4F916C46B0B6}"
  }
 }

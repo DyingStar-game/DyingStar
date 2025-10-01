@@ -1,16 +1,16 @@
 {
  "PlatformInfo": {
   "Platform": {
-   "Name": "Linux",
-   "BasePlatform": "Linux",
+   "Name": "Windows",
+   "BasePlatform": "Windows",
    "Generator": "2024.1.8.8893"
   },
   "RootPaths": {
-   "ProjectRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions",
-   "SourceFilesRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions/.cache",
+   "ProjectRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions",
+   "SourceFilesRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions/.cache",
    "SoundBanksRoot": ".",
    "ExternalSourcesInputFile": "",
-   "ExternalSourcesOutputRoot": "../../../Audio/Wwise/Dying Star_Wwise Sessions/GeneratedSoundBanks/Linux"
+   "ExternalSourcesOutputRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions/GeneratedSoundBanks/Windows"
   },
   "DefaultAlign": "16",
   "Settings": {
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{E738EFCB-C53C-DCB7-768C-612685120122}"
+  "FileHash": "{EF75C93D-82C6-B386-FCCD-7F2C20867888}"
  }
 }
