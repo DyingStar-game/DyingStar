@@ -205,7 +205,7 @@ occlusion_culling/use_occlusion_culling=true
 
 [wwise]
 
-common_user_settings/root_output_path="res://GeneratedSoundBanks"
+common_user_settings/root_output_path="res://assets/audio/GeneratedSoundBanks"
 common_user_settings/samples_per_frame=1
 common_user_settings/sample_rate=3
 project_settings/windows_platform_info="res://Wwise/resources/Windows.tres"
