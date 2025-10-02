@@ -35,3 +35,4 @@ mono_crash.*.json
 *.wsettings
 AkWwiseProjectData.asset
 IncrementalSoundBankData.xml
+*.windows.editor.profile.dll
