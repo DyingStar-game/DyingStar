@@ -2,9 +2,13 @@
 class_name Planet
 extends Node3D
 
+signal hs_server_prop_move
+
 @export_tool_button("update") var on_update = update_planet
 
 @export var planet_settings: PlanetSettings
+
+@export var uuid: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO
 
@@ -22,9 +26,28 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	update_planet()
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint(): return
-	#planet_terrain.rotation.y += 0.001 * delta
+	planet_terrain.rotation.y += 0.001 * delta
+	# print(transform.basis)
+	# global_position = Vector3(global_position[0] + 100, global_position[1], global_position[2])
+	# rotate_y(0.1)
+	# look_at(global_transform.origin + vector, Vector3.UP)
+
+	# rotate this Node3D around the world origin (Vector3.ZERO) about the Y axis
+	#var angle = 0.000001 * delta
+	var angle = 0.0000000001 * delta
+	var origin = global_position - Vector3(18999498785.9, 0.0, 0.0)
+	var rot = Basis(Vector3.UP, angle)
+
+	var gt = global_transform
+	gt.basis = rot * gt.basis
+	gt.origin = rot * (gt.origin - origin) + origin
+	global_transform = gt
+
+	if GameOrchestrator.is_server():
+		emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "planet")
+
 
 func update_planet():
 	planet_gravity.gravity_point_unit_distance = planet_settings.radius
