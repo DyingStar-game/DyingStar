@@ -65,6 +65,7 @@ var new_input_from_server: bool = false
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
+var is_parented: bool = false
 
 # to disable player input when piloting vehicule/ship
 var active = false
@@ -278,7 +279,6 @@ func _physics_process(delta: float) -> void:
 			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
 
 			if parent_gravity_area:
-
 				if parent_gravity_area.gravity_point:
 					up_direction = parent_gravity_area.global_position.direction_to(global_position)
 				else:
@@ -295,6 +295,11 @@ func _physics_process(delta: float) -> void:
 
 				velocity += global_basis * dir * player_thruster_force * delta
 				velocity *= 0.98
+
+
+
+
+
 
 			var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
 
@@ -326,7 +331,7 @@ func _physics_process(delta: float) -> void:
 			move_and_slide()
 			update_last_basis()
 
-		emit_signal("hs_server_move", client_uuid, global_position, global_rotation)
+		emit_signal("hs_server_move", client_uuid, position, global_rotation, null, is_parented)
 
 	else:
 		# player part
@@ -384,8 +389,15 @@ func get_player_name():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
-		print(area.get_overlapping_areas())
-		print(area.get_overlapping_bodies())
+		print(area.name)
+		if area.name == "PlanetGravity":
+			var planet = area.get_parent().get_parent()
+			reparent(planet)
+			is_parented = true
+			print("reparent to planet ", planet.name)
+			print(global_position)
+			print(position)
+			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -398,7 +410,7 @@ func _set_gameserver_name(server_name: String):
 
 func _set_player_global_position(pos, rot):
 	global_position = pos
-	global_rotation =rot
+	global_rotation = rot
 
 func spawn_box50cm():
 	var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0

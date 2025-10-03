@@ -537,11 +537,16 @@ func dispatch_horizon_message(message: Dictionary):
 							planet["position"]["z"]
 						)
 						spawnable_planet_instance.name = planet.name
+						spawnable_planet_instance.uuid = planet["uuid"]
 						spawnable_planet_instance.tree_entered.connect(func():
 							spawnable_planet_instance.owner = get_tree().current_scene
 						)
 						universe_scene.add_child(spawnable_planet_instance)
+						spawnable_planet_instance.connect("hs_server_prop_move", _on_prop_move)
+						props_list_last_movement[planet["uuid"]] = Vector3.ZERO
+						props_list_last_rotation[planet["uuid"]] = Vector3.ZERO
 						props_list["planets"][planet["uuid"]] = spawnable_planet_instance
+
 
 				# manage player
 				var player_data = message["data"]["player"]
@@ -549,7 +554,7 @@ func dispatch_horizon_message(message: Dictionary):
 
 				var spawned_entity_instance = player_scene.instantiate()
 				spawned_entity_instance.spawn_position = create_vector3_with_conversion_hg(
-					player_data["position"]["x"],
+					(player_data["position"]["x"] + 8700.0),
 					player_data["position"]["y"],
 					player_data["position"]["z"]
 				)
@@ -638,22 +643,44 @@ func dispatch_horizon_message(message: Dictionary):
 			"move":
 				player_move(message)
 
-func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3):
+func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, is_parented = false):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
-			players_newposition[client_uuid] = {
-				"uuid": client_uuid,
-				"pos": {
-					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
+			# Prevent write over reparent (because reparent will not sent to client)
+			if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
+				return
+			print(position)
+			if is_parented == true:
+				players_newposition[client_uuid] = {
+					"uuid": client_uuid,
+					"pos": {
+						"x": position[0],
+						"y": position[1],
+						"z": position[2]
+					},
+					"rot": {
+						"x": rotation[0],
+						"y": rotation[1],
+						"z": rotation[2]
+					}
 				}
-			}
+			else:
+				players_newposition[client_uuid] = {
+					"uuid": client_uuid,
+					"pos": {
+						"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+						"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+						"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
+					},
+					"rot": {
+						"x": rotation[0],
+						"y": rotation[1],
+						"z": rotation[2]
+					}
+				}
+
+			if reparent_uuid != null:
+				players_newposition[client_uuid]["reparent"] = reparent_uuid
 			players_list_last_movement[client_uuid] = position
 			players_list_last_rotation[client_uuid] = rotation
 
@@ -661,6 +688,7 @@ func send_players_newposition_to_horizon():
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if players_newposition.values().size() == 0:
 			return
+		print(players_newposition.values())
 		debug_message_number = debug_message_number + 1
 		var message = {
 			"namespace": "players",
@@ -702,6 +730,6 @@ func send_props_newposition_to_horizon():
 			"amessagenb": debug_message_number,
 			"data": props_newposition.values()
 		}
-		print("Send props to horizon: ", message)
+		# print("Send props to horizon: ", message)
 		peer.send_text(JSON.stringify(message))
 		props_newposition.clear()
