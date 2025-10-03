@@ -17,7 +17,7 @@ var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
 var props_list: Dictionary = {
-	"planets": {},
+	"planet": {},
 	"box50cm": {},
 	"box4m": {},
 	"ship": {},
@@ -217,7 +217,7 @@ func create_players_planets(event: Dictionary) -> void:
 		print("Planets data received: %s" % planets_data)
 		# Here you can handle the planets data, e.g., spawn planets in the game world
 		for planet in planets_data:
-			if not props_list["planets"].has(planet["uuid"]):
+			if not props_list["planet"].has(planet["uuid"]):
 				# spawn planet
 				print("Loading planet scene...")
 				var spawnable_planet_instance = planet_scene.instantiate()
@@ -225,6 +225,7 @@ func create_players_planets(event: Dictionary) -> void:
 					planet["position"]["x"], planet["position"]["y"], planet["position"]["z"]
 				)
 				spawnable_planet_instance.name = planet.name
+				spawnable_planet_instance.uuid = planet["uuid"]
 				# get_tree().current_scene.add_child(spawnable_planet_instance, true)
 				# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
 				spawnable_planet_instance.tree_entered.connect(func():
@@ -234,7 +235,7 @@ func create_players_planets(event: Dictionary) -> void:
 				universe_scene.add_child(spawnable_planet_instance)
 				universe_scene.assign_spawn_informations()
 				spawnable_planet_instance.set_physics_process(false)
-				props_list["planets"][planet["uuid"]] = spawnable_planet_instance
+				props_list["planet"][planet["uuid"]] = spawnable_planet_instance
 
 	lock_players_planets_creation = false
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
@@ -371,7 +372,10 @@ func update_props(event: Dictionary) -> void:
 	for player in event["players"]:
 		# print("Player position update received: %s" % player)
 		if player_entity != null and player_entity.client_uuid == player["uuid"]:
-			player_entity.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
+			if player.has("reparent"):
+				var planet = props_list["planet"][player["reparent"]]
+				player_entity.reparent(planet)
+			player_entity.position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
 		elif players_list.has(player["uuid"]):
 			var remote_player = players_list[player["uuid"]]
 			remote_player.global_position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
@@ -380,7 +384,7 @@ func update_props(event: Dictionary) -> void:
 			print("Unknown player UUID: %s" % player["uuid"])
 
 func delete_player(event: Dictionary) -> void:
-	print(event)
+	# print(event)
 	if players_list.has(event["player_uuid"]):
 		var remote_player = players_list[event["player_uuid"]]
 		remote_player.queue_free()
@@ -430,6 +434,13 @@ func update_props_position(event: Dictionary) -> void:
 						var prop_instance = props_list[prop["type"]][prop["uuid"]]
 						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+				"planet":
+					if props_list["planet"].has(prop["uuid"]):
+						var prop_instance = props_list["planet"][prop["uuid"]]
+						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+					else:
+						print("Unknown planet UUID: %s" % prop["uuid"])
 				_:
 					print("Unknown prop type: %s" % prop["type"])
 					continue

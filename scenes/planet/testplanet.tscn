@@ -170,6 +170,7 @@ size = Vector3(1053780, 1053780, 1053780)
 [node name="Planet" type="Node3D"]
 script = ExtResource("1_83pno")
 planet_settings = ExtResource("2_nqw6u")
+uuid = null
 
 [node name="DataPlanet" type="Node" parent="."]
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"

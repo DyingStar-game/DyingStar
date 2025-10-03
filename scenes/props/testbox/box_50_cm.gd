@@ -22,8 +22,6 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
 		if server_last_global_position != global_position or server_last_global_rotation != global_rotation:
-			print("Box50cm: server pos", global_position[0], ",", global_position[0] / 1000000.0)
-			print("Box50cm: server rot", global_rotation[0], ",", global_rotation[0] / 1000000.0)
 			emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "box50cm")
 			server_last_global_position = global_position
 			server_last_global_rotation = global_rotation
