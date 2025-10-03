@@ -19,9 +19,7 @@ var otel_manager = load("res://tools/observability/OpenTelemetryManager.cs").new
 
 func _ready() -> void:
 	otel_manager._ready()
-	logs_debug("audio","test")
-	pass
-
+	OS.add_logger(CustomLogger.new())
 # LOG
 
 func print_colored(level: String, section: String, message: String) -> void:
@@ -33,7 +31,7 @@ func print_colored(level: String, section: String, message: String) -> void:
 	else :
 		ownerColor = "brown"
 	
-	print_rich("[color="+sectionColor+"][b]["+section+"][/b][/color] [color="+levelColor+"]"+level+"[/color] [color="+ownerColor+"] "+message+" [/color]")
+	print_rich("OBS.[color="+sectionColor+"][b]["+section+"][/b][/color] [color="+levelColor+"]"+level+"[/color] [color="+ownerColor+"] "+message+" [/color]")
 
 func logs_trace(section: String, message: String, tags: Dictionary = {}) -> void:
 	if 0 >= otel_manager.GDS_GetLogLevelType() :
@@ -49,6 +47,7 @@ func logs_info(section: String, message: String, tags: Dictionary = {}) -> void:
 	if 2 >= otel_manager.GDS_GetLogLevelType() :
 		otel_manager.GDS_LogInformation(section,message,tags)
 		print_colored("information",section,message)
+		
 
 func logs_Warn(section: String, message: String, tags: Dictionary = {}) -> void:
 	if 3 >= otel_manager.GDS_GetLogLevelType() :
