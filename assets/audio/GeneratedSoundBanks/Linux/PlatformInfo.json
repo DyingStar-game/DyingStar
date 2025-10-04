@@ -3,7 +3,7 @@
   "Platform": {
    "Name": "Linux",
    "BasePlatform": "Linux",
-   "Generator": "2024.1.8.8893"
+   "Generator": "2024.1.8.8898"
   },
   "RootPaths": {
    "ProjectRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions",
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{858A05B0-66D3-6E2E-034B-CE19807E6231}"
+  "FileHash": "{E10C4EB2-37EF-E365-BE4A-CB7BD5C50F2E}"
  }
 }

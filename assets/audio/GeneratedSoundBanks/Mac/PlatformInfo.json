@@ -3,7 +3,7 @@
   "Platform": {
    "Name": "Mac",
    "BasePlatform": "Mac",
-   "Generator": "2024.1.8.8893"
+   "Generator": "2024.1.8.8898"
   },
   "RootPaths": {
    "ProjectRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions",
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{91AA5EC7-DCF8-8773-416D-A3E650CBD94A}"
+  "FileHash": "{07AEDC75-9528-4B40-DAEC-4B310EB45EAE}"
  }
 }

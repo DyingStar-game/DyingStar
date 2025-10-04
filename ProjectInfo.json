@@ -3,7 +3,7 @@
   "Project": {
    "Name": "DyingStar_WwiseSession",
    "GUID": "{196CFA7E-ED60-44D8-8044-113B0A892616}",
-   "Generator": "2024.1.8.8893"
+   "Generator": "2024.1.8.8898"
   },
   "CacheRoot": "../Audio/Wwise/Dying Star_Wwise Sessions/.cache",
   "Platforms": [
@@ -38,6 +38,6 @@
     "UseAsStandIn": "true"
    }
   ],
-  "FileHash": "{FAFE8908-FBE0-9FB3-3567-4F916C46B0B6}"
+  "FileHash": "{0129BE03-A8F6-AB95-3F6B-F20BDE5976B7}"
  }
 }

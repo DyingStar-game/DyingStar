@@ -3,7 +3,7 @@
   "Platform": {
    "Name": "Windows",
    "BasePlatform": "Windows",
-   "Generator": "2024.1.8.8893"
+   "Generator": "2024.1.8.8898"
   },
   "RootPaths": {
    "ProjectRoot": "../../../../../Audio/Wwise/Dying Star_Wwise Sessions",
@@ -33,6 +33,6 @@
    "PrintObjectPath": "true",
    "PrintObjectColor": "true"
   },
-  "FileHash": "{EF75C93D-82C6-B386-FCCD-7F2C20867888}"
+  "FileHash": "{0E5C20D1-3D7C-C859-0BF3-9C74CB9FBFCD}"
  }
 }
