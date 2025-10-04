@@ -1,10 +1,9 @@
-[gd_scene load_steps=11 format=3 uid="uid://xud5xo51ir5r"]
+[gd_scene load_steps=10 format=3 uid="uid://xud5xo51ir5r"]
 
 [ext_resource type="Script" uid="uid://bpb1urve1pqnj" path="res://scenes/spaceship/test_spaceship/test_spaceship.gd" id="1_f1s04"]
 [ext_resource type="Material" uid="uid://wm1k35sl1iwp" path="res://assets/materials/material_basic_orange.tres" id="1_vvggs"]
 [ext_resource type="Script" uid="uid://di4o647k2wjid" path="res://scenes/spaceship/test_spaceship/ship_console.gd" id="2_xjcjc"]
 [ext_resource type="PackedScene" uid="uid://dumbqmrjvj582" path="res://scenes/grid/physics_grid.tscn" id="3_xjcjc"]
-[ext_resource type="Script" uid="uid://6f0l3p44h7vy" path="res://server/persistance_manager/DataEntity.gd" id="5_mugai"]
 
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_xjcjc"]
 properties/0/path = NodePath(".:position")
@@ -112,10 +111,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.921729, -4.98048)
 light_energy = 3.0
 spot_range = 500.0
 spot_angle = 30.0
-
-[node name="DataEntity" type="Node" parent="."]
-script = ExtResource("5_mugai")
-metadata/_custom_type_script = "uid://6f0l3p44h7vy"
 
 [connection signal="area_entered" from="ShipPhysicsGrid" to="." method="_on_collision_area_entered"]
 [connection signal="area_exited" from="ShipPhysicsGrid" to="." method="_on_collision_area_exited"]

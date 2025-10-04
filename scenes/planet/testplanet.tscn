@@ -171,9 +171,6 @@ size = Vector3(24780, 24780, 24780)
 script = ExtResource("1_83pno")
 planet_settings = ExtResource("2_nqw6u")
 
-[node name="DataPlanet" type="Node" parent="."]
-metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
-
 [node name="PlanetTerrain" parent="." instance=ExtResource("4_2pfeq")]
 radius = 10000
 terrain_settings = SubResource("Resource_7f52q")

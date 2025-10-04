@@ -1,10 +1,9 @@
-[gd_scene load_steps=9 format=3 uid="uid://cptjp55tlikyl"]
+[gd_scene load_steps=8 format=3 uid="uid://cptjp55tlikyl"]
 
 [ext_resource type="ArrayMesh" uid="uid://jg1qr0355r1d" path="res://assets/models/Testbox/Box4m.mesh" id="1_82nol"]
 [ext_resource type="Script" uid="uid://d01f76c0qpc0d" path="res://scenes/props/testbox/box_4m.gd" id="1_ealuu"]
 [ext_resource type="Material" uid="uid://bxvng5yhb4rki" path="res://assets/models/Testbox/box_4m.material" id="3_3xnib"]
 [ext_resource type="Shape3D" uid="uid://csg45728c5gy4" path="res://scenes/props/testbox/Box4mInsideCollider2.shape" id="3_ealuu"]
-[ext_resource type="Script" uid="uid://6f0l3p44h7vy" path="res://server/persistance_manager/DataEntity.gd" id="5_pnqhc"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_0fj0l"]
 size = Vector3(4, 4, 4)
@@ -47,13 +46,3 @@ shape = ExtResource("3_ealuu")
 
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_l5hyn")
-
-[node name="DataEntity" type="Node" parent="."]
-script = ExtResource("5_pnqhc")
-metadata/_custom_type_script = "uid://6f0l3p44h7vy"
-
-; [node name="FmodEventEmitter3D" type="FmodEventEmitter3D" parent="."]
-; event_name = "event:/sound_test/spawn_palette"
-; event_guid = "{e24fbf02-2112-40f1-ad8f-f417a9f35ed0}"
-; autoplay = true
-; auto_release = true
