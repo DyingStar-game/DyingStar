@@ -296,11 +296,6 @@ func _physics_process(delta: float) -> void:
 				velocity += global_basis * dir * player_thruster_force * delta
 				velocity *= 0.98
 
-
-
-
-
-
 			var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
 
 			var speed = sprint_speed if sprint else walk_speed

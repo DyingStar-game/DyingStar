@@ -554,7 +554,7 @@ func dispatch_horizon_message(message: Dictionary):
 
 				var spawned_entity_instance = player_scene.instantiate()
 				spawned_entity_instance.spawn_position = create_vector3_with_conversion_hg(
-					(player_data["position"]["x"] + 8700.0),
+					(player_data["position"]["x"] + 9000.0),
 					player_data["position"]["y"],
 					player_data["position"]["z"]
 				)
