@@ -384,14 +384,11 @@ func get_player_name():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
-		print(area.name)
 		if area.name == "PlanetGravity":
 			var planet = area.get_parent().get_parent()
-			reparent(planet)
+			#reparent(planet)
+			call_deferred("reparent", planet)
 			is_parented = true
-			print("reparent to planet ", planet.name)
-			print(global_position)
-			print(position)
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
 		gravity_parents.push_back(area)
 

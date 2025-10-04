@@ -417,22 +417,29 @@ func update_props_position(event: Dictionary) -> void:
 		if props_list.has(prop["type"]):
 			match prop["type"]:
 				"box50cm":
-					if not props_list[prop["type"]].has(prop["uuid"]):
+					if not props_list["box50cm"].has(prop["uuid"]):
 						var prop_instance = box50cm_scene.instantiate()
 						prop_instance.tree_entered.connect(func():
 							prop_instance.owner = get_tree().current_scene
 						)
 						universe_scene.add_child(prop_instance)
 						prop_instance.set_physics_process(false)
-						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+						if prop.has("reparent"):
+							var planet = props_list["planet"][prop["reparent"]]
+							prop_instance.reparent(planet)
+						prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 						prop_instance.uuid = prop["uuid"]
-						props_list[prop["type"]][prop["uuid"]] = prop_instance
+						props_list["box50cm"][prop["uuid"]] = prop_instance
 						NetworkOrchestrator.set_gameserver_number_boxes50cm.emit(props_list["box50cm"].size() + 1)
 
 					else:
-						var prop_instance = props_list[prop["type"]][prop["uuid"]]
-						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+						var prop_instance = props_list["box50cm"][prop["uuid"]]
+						if prop.has("reparent"):
+							var planet = props_list["planet"][prop["reparent"]]
+							prop_instance.reparent(planet)
+
+						prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 				"planet":
 					if props_list["planet"].has(prop["uuid"]):

@@ -51,6 +51,7 @@ func _enter_tree():
 	check_parent()
 
 func _ready() -> void:
+	return
 	if OS.has_feature("dedicated_server"):
 		check_parent()
 		PersitDataBridge.setup_persistence_manager(_on_client_ready)
