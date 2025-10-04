@@ -395,6 +395,14 @@ func player_move(message: Dictionary):
 		)
 		player.new_input_from_server = true
 
+func player_action(message: Dictionary):
+	if players_list.has(message["data"]["uuid"]):
+		var player = players_list[message["data"]["uuid"]]
+		if message["data"]["action"] == "jump":
+			player.is_jumping = true
+			player.new_input_from_server = true
+
+
 func _send_metrics():
 	if servers_ticks_tasks.SendMetricsCurrent > 0:
 		servers_ticks_tasks.SendMetricsCurrent -= 1
@@ -651,6 +659,8 @@ func dispatch_horizon_message(message: Dictionary):
 				instantiate_player(message)
 			"move":
 				player_move(message)
+			"action":
+				player_action(message)
 
 func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, is_parented = false):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
