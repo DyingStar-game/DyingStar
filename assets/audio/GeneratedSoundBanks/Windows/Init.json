@@ -10,7 +10,7 @@
     "Type": "User",
     "GUID": "{701ECBBD-9C7B-4030-8CDB-749EE5D1C7B9}",
     "Language": "SFX",
-    "Hash": "{1D975587-5471-305D-BD82-AF331D8780D3}",
+    "Hash": "{60911A23-B66C-A976-4098-A44141D08619}",
     "ObjectPath": "Init",
     "ShortName": "Init",
     "Path": "Init.bnk",
@@ -35,6 +35,12 @@
      ]
     },
     "Busses": [
+     {
+      "Id": "1662150309",
+      "Name": "Output_capture",
+      "ObjectPath": "\\Master-Mixer Hierarchy\\Default Work Unit\\Master Audio Bus\\Output_capture",
+      "GUID": "{D8BFBAF0-E41C-4B88-87E4-320F4284599B}"
+     },
      {
       "Id": "3803692087",
       "Name": "Master Audio Bus",
@@ -521,6 +527,6 @@
     ]
    }
   ],
-  "FileHash": "{139E2F31-CF31-F3E4-DEC8-DB840E896D7C}"
+  "FileHash": "{8312A052-ACD7-396A-72D1-D64042DC7AE2}"
  }
 }
