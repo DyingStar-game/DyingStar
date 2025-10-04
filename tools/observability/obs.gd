@@ -1,17 +1,17 @@
 extends  Node
 
 var sections :Dictionary= {
-	"persistance" = "blue",
-	"audio" = "green"
+	"network" : "blue",
+	"audio" : "green"
 }
 
 var levels :Dictionary= {
-	"trace" = "grey",
-	"debug" = "blue",
-	"information" = "green",
-	"warning" = "yellow",
-	"error" = "red",
-	"critical" = "purple"
+	"trace" : "grey",
+	"debug" : "blue",
+	"information" : "green",
+	"warning" : "yellow",
+	"error" : "red",
+	"critical" : "purple"
 }
 
 
@@ -20,6 +20,7 @@ var otel_manager = load("res://tools/observability/OpenTelemetryManager.cs").new
 func _ready() -> void:
 	otel_manager._ready()
 	OS.add_logger(CustomLogger.new())
+	Obs.logs_info("engine","Ready for obs")
 # LOG
 
 func print_colored(level: String, section: String, message: String) -> void:

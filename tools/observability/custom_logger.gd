@@ -2,8 +2,8 @@ extends Logger
 
 class_name  CustomLogger
 
-func _log_error(function: String, file: String, line: int, code: String, rationale: String, editor_notify: bool, error_type: int, script_backtraces: Array[ScriptBacktrace]) -> void:
-	pass;
+#func _log_error(function: String, file: String, line: int, code: String, rationale: String, editor_notify: bool, error_type: int, script_backtraces: Array[ScriptBacktrace]) -> void:
+#	pass;
 
 
 func _log_message(message: String, error: bool) -> void:
