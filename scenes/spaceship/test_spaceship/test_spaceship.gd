@@ -144,4 +144,3 @@ func _on_gravity_area_body_entered(body: PhysicsBody3D) -> void:
 func _on_gravity_area_body_exited(body: Node3D) -> void:
 	if pilot and body == pilot: return
 	remove_collision_exception_with(body)
-

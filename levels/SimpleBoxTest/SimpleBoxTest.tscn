@@ -1,8 +1,7 @@
-[gd_scene load_steps=8 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene load_steps=7 format=3 uid="uid://fxj147p5soqi"]
 
 [ext_resource type="PackedScene" uid="uid://ccme8rxijtf2s" path="res://scenes/normal_player/normal_player.tscn" id="1_o506w"]
 [ext_resource type="Shape3D" uid="uid://nlfpii7pt3xn" path="res://levels/SimpleBoxTest/InversedCollisider100m.shape" id="1_xqwsu"]
-[ext_resource type="Script" uid="uid://cj5kd1hkfvjrg" path="res://server/persistance_manager/DataPlanet.gd" id="4_le64j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)
@@ -36,7 +35,3 @@ transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_le64j")
-
-[node name="DataPlanet" type="Node" parent="."]
-script = ExtResource("4_le64j")
-metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"

@@ -743,9 +743,6 @@ func spawn_prop(proptype,data: Dictionary ) -> void:
 	var spawn_position = Vector3(data["x"],data["y"],data["z"])
 	var spawn_rotation = Vector3(data["rx"],data["ry"],data["rz"])
 	prop_instance.spawn_position = spawn_position
-	if data.has("uid"):
-		if prop_instance.has_node("DataEntity"):
-			prop_instance.get_node("DataEntity").load_obj(data)
 
 	var uuid = UUID_UTIL.v4()
 	small_props_spawner_node.get_node(small_props_spawner_node.spawn_path).call_deferred("add_child", prop_instance, true)
