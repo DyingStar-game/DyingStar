@@ -578,9 +578,9 @@ func dispatch_horizon_message(message: Dictionary):
 							if Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"]) == Vector3.ZERO:
 								if players_list.has(message["data"]["player_uuid"]):
 									var player = players_list[message["data"]["player_uuid"]]
-									var box_spawn_position: Vector3 = player.global_position + (-player.global_basis.z * 1.5) + player.global_basis.y * 2.0
+									var box_spawn_position: Vector3 = player.position + (-player.basis.z * 1.5) + player.basis.y * 2.0
 									var spawn_position: Vector3 = box_spawn_position
-									var spawn_rotation: Vector3 = player.global_transform.basis.y.normalized()
+									var spawn_rotation: Vector3 = player.transform.basis.y.normalized()
 									var data =  {
 										"x": spawn_position.x,
 										"y": spawn_position.y,
@@ -595,13 +595,22 @@ func dispatch_horizon_message(message: Dictionary):
 									spawnable_box50cm_instance.spawn_position = Vector3(data["x"], data["y"], data["z"])
 									# spawnable_box50cm_instance.name = box["uuid"]
 									spawnable_box50cm_instance.uuid = box["uuid"]
-									spawnable_box50cm_instance.tree_entered.connect(func():
-										spawnable_box50cm_instance.owner = get_tree().current_scene
-									)
+									# spawnable_box50cm_instance.tree_entered.connect(func():
+									# 	spawnable_box50cm_instance.owner = get_tree().current_scene
+									# )
 									universe_scene.add_child(spawnable_box50cm_instance)
+									spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
 									props_list_last_movement[box["uuid"]] = Vector3.ZERO
 									props_list_last_rotation[box["uuid"]] = Vector3.ZERO
 									spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
+									_on_prop_move(
+										box["uuid"],
+										spawnable_box50cm_instance.position,
+										spawnable_box50cm_instance.global_rotation,
+										"box50cm",
+										player.get_parent().uuid,
+										true
+									)
 									props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
 							else:
 								# spawn box50cm
@@ -649,7 +658,6 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 			# Prevent write over reparent (because reparent will not sent to client)
 			if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
 				return
-			print(position)
 			if is_parented == true:
 				players_newposition[client_uuid] = {
 					"uuid": client_uuid,
@@ -688,7 +696,6 @@ func send_players_newposition_to_horizon():
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if players_newposition.values().size() == 0:
 			return
-		print(players_newposition.values())
 		debug_message_number = debug_message_number + 1
 		var message = {
 			"namespace": "players",
@@ -699,23 +706,44 @@ func send_players_newposition_to_horizon():
 		peer.send_text(JSON.stringify(message))
 		players_newposition.clear()
 
-func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String):
+func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String, reparent_uuid = null, is_parented = false):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if props_list_last_movement[uuid] != position or props_list_last_rotation[uuid] != rotation:
-			props_newposition[uuid] = {
-				"uuid": uuid,
-				"pos": {
-					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				},
-				"type": type,
-			}
+			if props_newposition.has(uuid) and props_newposition[uuid].has("reparent"):
+				return
+
+			if is_parented == true:
+				props_newposition[uuid] = {
+					"uuid": uuid,
+					"pos": {
+						"x": position[0],
+						"y": position[1],
+						"z": position[2]
+					},
+					"rot": {
+						"x": rotation[0],
+						"y": rotation[1],
+						"z": rotation[2]
+					},
+					"type": type,
+				}
+			else:
+				props_newposition[uuid] = {
+					"uuid": uuid,
+					"pos": {
+						"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+						"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+						"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
+					},
+					"rot": {
+						"x": rotation[0],
+						"y": rotation[1],
+						"z": rotation[2]
+					},
+					"type": type,
+				}
+			if reparent_uuid != null:
+				props_newposition[uuid]["reparent"] = reparent_uuid			
 			props_list_last_movement[uuid] = position
 			props_list_last_rotation[uuid] = rotation
 

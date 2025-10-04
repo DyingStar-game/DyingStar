@@ -25,7 +25,7 @@ signal hs_server_prop_move
 @export var mean_anomaly_deg: float = 0.0          # M0 
 @export var time_scale: float = 1.0            # 1s écran = 1 jour si delta=1s
 @export var debug_fast_orbit: bool = true
-@export var debug_multiplier: float = 1      # x1000 sur la vitesse d’orbite pour tester
+@export var debug_multiplier: float = 0.001      # x1000 sur la vitesse d’orbite pour tester
 @export var enable_spin_motion: bool = false   # rotation visuelle de la planète
 @export var spin_speed_base: float = 0.001     # vitesse de spin (rad/s environ)
 # ligne d'orbite
@@ -65,7 +65,7 @@ var _n: float = 0.0              # vitesse moyenne (rad/s)
 var _M: float = 0.0              # anomalie moyenne courante (rad)
 var _basis := Basis()            # base orbitale Rz(Ω)*Rx(i)*Rz(ω)
 var _orbit_center := Vector3.ZERO
-var _dbg_t: float = 0.0
+# var _dbg_t: float = 0.0
 
 
 var spawn_position: Vector3 = Vector3.ZERO
@@ -104,11 +104,11 @@ func _process(delta: float) -> void:
 		_beacon_node.global_position = global_position
 	var speed_mult := (debug_multiplier if debug_fast_orbit else 1.0)
 	
-	_M = fmod(_M + _n * time_scale * delta * speed_mult, TAU)
-
-	
-	var pos_plane = _kepler_position(_a_m, _e, _M)
-	global_position = _orbit_center + (_basis * pos_plane)
+	if GameOrchestrator.is_server():
+		_M = fmod(_M + _n * time_scale * delta * speed_mult, TAU)
+		
+		var pos_plane = _kepler_position(_a_m, _e, _M)
+		global_position = _orbit_center + (_basis * pos_plane)
 
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint(): return
@@ -148,6 +148,7 @@ func _physics_process(delta: float) -> void:
 func _setup_orbit() -> void:
 	# centre d’orbite = l’étoile au (0,0,0) pour l’instant
 	_orbit_center = Vector3.ZERO
+	_orbit_center = Vector3(global_position[0] - 8999498785.9, 0.0, 0.0)
 
 	# demi-grand axe & excentricité
 	if periapsis_AU > 0.0 or apoapsis_AU > 0.0:
