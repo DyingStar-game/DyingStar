@@ -4,6 +4,7 @@ extends CharacterBody3D
 
 signal hs_client_action_move
 signal hs_server_move
+signal hs_client_action_pressed
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -180,8 +181,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
 	if !active: return
 
-	if event.is_action_pressed(JUMP) and is_on_floor():
-		is_jumping = true
+	if event.is_action_pressed(JUMP):
+		emit_signal("hs_client_action_pressed", JUMP)
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
@@ -317,6 +318,7 @@ func _physics_process(delta: float) -> void:
 			# Add the gravity.
 			elif not is_on_floor():
 				velocity -= up_direction * gravity * 2.0 * delta
+				is_jumping = false
 
 			move_and_slide()
 			update_last_basis()

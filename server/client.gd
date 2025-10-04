@@ -187,6 +187,7 @@ func create_players_planets(event: Dictionary) -> void:
 					)
 					spawned_entity_instance.name = player_data["name"]
 					spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
+					spawned_entity_instance.connect("hs_client_action_pressed", _on_client_action_pressed)
 
 					spawned_entity_instance.tree_entered.connect(func():
 						spawned_entity_instance.owner = get_tree().current_scene
@@ -346,6 +347,16 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 				"y": move_rotation[1],
 				"z": move_rotation[2]
 			},
+			"uuid": player_entity.client_uuid
+		},
+	}))
+
+func _on_client_action_pressed(action: String) -> void:
+	socket.send_text(JSON.stringify({
+		"namespace": "actions",
+		"event": "action_pressed",
+		"data": {
+			"action": action,
 			"uuid": player_entity.client_uuid
 		},
 	}))
