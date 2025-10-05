@@ -1,4 +1,4 @@
-[gd_resource type="WwiseProjectData" load_steps=19 format=3 uid="uid://j1xinvdi4bkv"]
+[gd_resource type="WwiseProjectData" load_steps=20 format=3 uid="uid://j1xinvdi4bkv"]
 
 [sub_resource type="WwiseTreeObject" id="WwiseTreeObject_dn5s6"]
 path = "\\Virtual Acoustics\\Factory Acoustic Textures\\Textures\\Acoustic_Banner"
@@ -109,17 +109,22 @@ name = "Factory Acoustic Textures"
 id = 2954047558
 
 [sub_resource type="WwiseTreeObject" id="WwiseTreeObject_mqnyt"]
-path = "\\Master-Mixer Hierarchy\\Default Work Unit\\Master Audio Bus"
+path = "\\Master-Mixer Hierarchy\\Default Work Unit\\Master Audio Bus\\Output_capture"
 type = 2
-name = "Master Audio Bus"
-guid = "{1514A4D8-1DA6-412A-A17E-75CA0C2149F3}"
-id = 3803692087
+name = "Output_capture"
+guid = "{D8BFBAF0-E41C-4B88-87E4-320F4284599B}"
+id = 1662150309
 
 [sub_resource type="WwiseTreeObject" id="WwiseTreeObject_v560u"]
 children = [SubResource("WwiseTreeObject_mqnyt")]
+name = "Master Audio Bus"
+id = 3803692087
+
+[sub_resource type="WwiseTreeObject" id="WwiseTreeObject_yyrou"]
+children = [SubResource("WwiseTreeObject_v560u")]
 name = "Default Work Unit"
 id = 125608783
 
 [resource]
 acoustic_texture_root = [SubResource("WwiseTreeObject_4djpx")]
-bus_root = [SubResource("WwiseTreeObject_v560u")]
+bus_root = [SubResource("WwiseTreeObject_yyrou")]
