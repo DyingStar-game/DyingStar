@@ -1,0 +1,63 @@
+[gd_scene load_steps=12 format=3 uid="uid://dyteyioml710s"]
+
+[ext_resource type="Script" uid="uid://dwyop31mo6jj6" path="res://levels-dev/test01/test_scene_01.gd" id="1_8lujx"]
+[ext_resource type="PackedScene" uid="uid://ccme8rxijtf2s" path="res://scenes/normal_player/normal_player.tscn" id="1_ee1ng"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_8lujx"]
+size = Vector3(100, 50, 100)
+
+[sub_resource type="WorldBoundaryShape3D" id="WorldBoundaryShape3D_8lujx"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_bl60c"]
+size = Vector2(100, 100)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_8lujx"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_bl60c"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d5cux"]
+albedo_color = Color(1, 0, 0, 1)
+roughness = 0.37
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_ee1ng"]
+
+[sub_resource type="Sky" id="Sky_8lujx"]
+sky_material = SubResource("ProceduralSkyMaterial_ee1ng")
+
+[sub_resource type="Environment" id="Environment_bl60c"]
+background_mode = 2
+sky = SubResource("Sky_8lujx")
+
+[node name="TestScene01" type="Node3D"]
+script = ExtResource("1_8lujx")
+
+[node name="DevSceneGravity" type="Area3D" parent="." groups=["gravity"]]
+gravity_space_override = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DevSceneGravity"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25, 0)
+shape = SubResource("BoxShape3D_8lujx")
+
+[node name="DefaultGround" type="StaticBody3D" parent="."]
+
+[node name="Collision" type="CollisionShape3D" parent="DefaultGround"]
+shape = SubResource("WorldBoundaryShape3D_8lujx")
+
+[node name="Visual" type="MeshInstance3D" parent="DefaultGround/Collision"]
+mesh = SubResource("PlaneMesh_bl60c")
+
+[node name="Dummy01" type="StaticBody3D" parent="."]
+
+[node name="Collision" type="CollisionShape3D" parent="Dummy01"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -4)
+shape = SubResource("CapsuleShape3D_8lujx")
+
+[node name="Visual" type="MeshInstance3D" parent="Dummy01/Collision"]
+mesh = SubResource("CapsuleMesh_bl60c")
+surface_material_override/0 = SubResource("StandardMaterial3D_d5cux")
+
+[node name="NormalPlayer" parent="." instance=ExtResource("1_ee1ng")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_bl60c")

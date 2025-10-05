@@ -309,6 +309,5 @@ mouse_filter = 1
 layout_mode = 1
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
-visible = false
 
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]

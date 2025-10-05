@@ -8,14 +8,17 @@ signal hs_server_move
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
 
-const MOVE_FORWARD: String = "move_forward"
-const MOVE_BACK: String = "move_back"
-const MOVE_LEFT: String = "move_left"
-const MOVE_RIGHT: String = "move_right"
-const JUMP: String = "jump"
-const CROUCH: String = "crouch"
-const SPRINT: String = "sprint"
-const PAUSE: String = "pause"
+#const MOVE_FORWARD: String = "move_forward"
+#const MOVE_BACK: String = "move_back"
+#const MOVE_LEFT: String = "move_left"
+#const MOVE_RIGHT: String = "move_right"
+#const JUMP: String = "jump"
+#const CROUCH: String = "crouch"
+#const SPRINT: String = "sprint"
+#const PAUSE: String = "pause"
+
+@export_custom(PROPERTY_HINT_RESOURCE_TYPE, "EntityControllability") var controllability_component: EntityControllability
+#@export var controllability_component: EntityControllability
 
 @export_group("Controls map names")
 
@@ -41,9 +44,9 @@ var client_uuid: String = ""
 
 var player_display_name: String = ""
 
-var input_direction: Vector2
+#var input_direction: Vector2
 var movement_strength: float
-var mouse_motion: Vector2
+#var mouse_motion: Vector2
 var is_jumping: bool = false
 
 var spawn_position: Vector3 = Vector3.ZERO
@@ -55,14 +58,14 @@ var can_interact: bool = false
 var gravity_parents: Array[Area3D]
 
 var last_basis: Basis
-var remote_player: bool = false
+var puppet_player: bool = false
 var input_from_server: Dictionary = {
 	"input_direction": Vector2.ZERO,
 	"rotation": Vector3.ZERO
 }
 var new_input_from_server: bool = false
 
-var client_last_input_direction = Vector2.ZERO
+#var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
 var is_parented: bool = false
@@ -70,7 +73,8 @@ var is_parented: bool = false
 # to disable player input when piloting vehicule/ship
 var active = false
 
-@onready var camera = $CameraPivot/Camera3D
+@onready var camera_pov: Camera3D = $CameraPivot/Camera3D
+@onready var camera_ext: Camera3D = $ExtCamera3D
 
 @onready var labelx: Label = $UserInterface/Debug/LabelXValue
 @onready var labely: Label = $UserInterface/Debug/LabelYValue
@@ -94,22 +98,24 @@ func _enter_tree() -> void:
 	$UserInterface/LoadingScreen.hide()
 
 	if name.begins_with("remoteplayer"):
-		remote_player = true
+		puppet_player = true
 		global_position = spawn_position
 		$UserInterface.visible = false
 		$CameraPivot.visible = false
 
 	else:
-		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
+		if not NetworkOrchestrator.set_player_global_position.is_connected(_set_player_global_position):
+			NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
-	if remote_player:
-		camera.current = false
+	if puppet_player:
+		camera_pov.current = false
 		$ExtCamera3D.current = false
 		set_player_name(name)
 		return
-
-	$UserInterface/LoadingScreen.show()
+	
+	if GameOrchestrator.current_network_role == GameOrchestrator.NetworkRole.PLAYER:
+		$UserInterface/LoadingScreen.show()
 
 
 	global_position = spawn_position
@@ -121,10 +127,10 @@ func _ready() -> void:
 	self.set_meta("client_uuid", Globals.player_uuid)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	camera.current = false
+	camera_pov.current = false
 	$ExtCamera3D.current = false
 
-	camera.make_current()
+	camera_pov.make_current()
 	# hide player name label for me only
 	label_player_name.visible = false
 	label_server_name.visible = false
@@ -132,14 +138,16 @@ func _ready() -> void:
 	interact_label.hide()
 	connect_area_detect()
 	active = false
-
-	await get_tree().create_timer(5).timeout
+	
+	if GameOrchestrator.current_network_role == GameOrchestrator.NetworkRole.PLAYER:
+		print_rich("[color=gree]JE VEUX ATTENDRE LES 5 SECONDES[/color]")
+		await get_tree().create_timer(5).timeout
+		$UserInterface/LoadingScreen.hide()
 
 	update_last_basis()
 
 	active = true
 
-	$UserInterface/LoadingScreen.hide()
 
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
@@ -177,56 +185,20 @@ func update_last_basis() -> void:
 	last_basis = gravity_parent.global_transform.basis
 
 func _unhandled_input(event: InputEvent) -> void:
-	if remote_player: return
+	if puppet_player: return
 	if !active: return
-
-	if event.is_action_pressed(JUMP) and is_on_floor():
-		is_jumping = true
-
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		mouse_motion = -event.relative * 0.001
-
-	if event.is_action_pressed("toggle_flashlight"):
-		flashlight.visible = not flashlight.visible
-
-	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box50cm()
-
-	if event.is_action_pressed("spawn_4mbox"):
-		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 3.0) + global_basis.y * 6.0
-
-		var player_up = global_transform.basis.y.normalized()
-		var to_player = (global_transform.origin - box_spawn_position)
-		to_player -= to_player.dot(player_up) * player_up
-		to_player = to_player.normalized()
-		var box_basis: Basis = Basis.looking_at(to_player, player_up)
-		var box_spawn_rotation = box_basis.get_euler()
-
-		emit_signal(
-			"client_action_requested",
-			{"action": "spawn", "entity": "box4m", "spawn_position": box_spawn_position, "spawn_rotation": box_spawn_rotation}
-		)
-
-	if Input.is_action_just_pressed("ext_cam"):
-		if $ExtCamera3D.current:
-			camera.make_current()
-			astronaut.visible = false
-		else:
-			astronaut.visible = true
-			$ExtCamera3D.make_current()
-
-func server_set_input(input_dir: Vector2, rotation: Vector3) -> void:
-	input_from_server["input_direction"] = input_dir
-	input_from_server["rotation"] = rotation
-	new_input_from_server = true
+	
+	if controllability_component:
+		controllability_component.handle_input(event)
 
 func _process(_delta: float) -> void:
-	if remote_player: return
+	if puppet_player: return
 	if !active:
 		interact_label.hide()
 		return
 
-	_handle_camera_motion()
+	if controllability_component:
+		controllability_component.process(_delta)
 
 	interact_label.hide()
 	can_interact = false
@@ -240,119 +212,15 @@ func _process(_delta: float) -> void:
 				collider.interact(self)
 				interact_label.hide()
 
-
-	if not OS.has_feature("dedicated_server"):
-		var dir_vect = Vector3.ZERO
-		var sprint = null
-
-		#apply_parent_movement()
-
-		if not direct_chat.can_write:
-			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-			sprint = Input.is_action_pressed(SPRINT)
-
-		if dir_vect:
-			input_direction = dir_vect
-		else:
-			input_direction = Vector2.ZERO
-
-		# send move_direction
-		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
-			client_last_input_direction = input_direction
-			client_last_global_rotation = global_rotation
-			emit_signal("hs_client_action_move", input_direction, global_rotation)
-		update_last_basis()
-
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
 		labelz.text = str("%0.2f" % global_position[2])
 
-func _physics_process(delta: float) -> void:
-	if remote_player: return
-	if OS.has_feature("dedicated_server"):
-		if new_input_from_server:
-			input_direction = input_from_server["input_direction"]
-			global_rotation = input_from_server["rotation"]
-
-			var sprint = null
-
-			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
-
-			if parent_gravity_area:
-				if parent_gravity_area.gravity_point:
-					up_direction = parent_gravity_area.global_position.direction_to(global_position)
-				else:
-					up_direction = parent_gravity_area.global_basis.y
-
-				gravity = parent_gravity_area.gravity
-				motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
-			else:
-				# 0g movement
-				gravity = 0.0
-				camera_pivot.rotation.x = 0
-				motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-				var dir = Vector3(input_direction.x, 0, input_direction.y)
-
-				velocity += global_basis * dir * player_thruster_force * delta
-				velocity *= 0.98
-
-			var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
-
-			var speed = sprint_speed if sprint else walk_speed
-
-			if is_on_floor():
-				if input_direction:
-					velocity = move_direction * speed
-				else:
-					velocity = velocity.move_toward(Vector3.ZERO, speed)
-			else:
-				# "air" movement
-				if input_direction:
-					velocity += move_direction * speed * delta
-
-
-			if is_on_floor() and is_jumping:
-				velocity += up_direction * jump_height * gravity
-				is_jumping = false
-			# Add the gravity.
-			elif not is_on_floor():
-				velocity -= up_direction * gravity * 2.0 * delta
-
-			move_and_slide()
-			update_last_basis()
-
-			new_input_from_server = false
-		else:
-			move_and_slide()
-			update_last_basis()
-
-		emit_signal("hs_server_move", client_uuid, position, global_rotation, null, is_parented)
-
-	else:
-		# player part
-		if remote_player: return
-		if !active: return
-
-		var dir_vect = Vector3.ZERO
-		var sprint = null
-
-		#apply_parent_movement()
-
-		if not direct_chat.can_write:
-			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-			sprint = Input.is_action_pressed(SPRINT)
-
-		if dir_vect:
-			input_direction = dir_vect
-		else:
-			input_direction = Vector2.ZERO
-
-		# send move_direction
-		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
-			client_last_input_direction = input_direction
-			client_last_global_rotation = global_rotation
-			emit_signal("hs_client_action_move", input_direction, global_rotation)
-		update_last_basis()
+func _physics_process(_delta: float) -> void:
+	if puppet_player: return
+	
+	if controllability_component:
+		controllability_component.physics_process(_delta)
 
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
@@ -360,21 +228,6 @@ func _physics_process(delta: float) -> void:
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
-
-func _handle_camera_motion():
-	if gravity == 0:
-		camera_pivot.rotation.x = 0
-		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
-		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-	else:
-		orient_player()
-		global_basis = global_basis.rotated(global_basis.y, mouse_motion.x * camera_sensitivity)
-		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-		camera_pivot.rotation_degrees.x = clamp(camera_pivot.rotation_degrees.x, -80, 80)
-	mouse_motion = Vector2.ZERO
-
-func orient_player():
-	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
 
 func set_player_name(player_name):
 	label_player_name.text = str(player_name)
@@ -390,6 +243,7 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			call_deferred("reparent", planet)
 			is_parented = true
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
+		
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:

@@ -2,7 +2,7 @@ extends Node
 
 enum ChangeStateReturns {OK, ERROR, NO_CHANGE}
 
-enum NetworkRole {PLAYER, SERVER}
+enum NetworkRole {NONE, PLAYER, SERVER}
 enum GameStates {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, TROLL, CONNEXION_ERROR}
 enum PlayingLevels {SYSTEM_SANDBOX}
 
@@ -31,11 +31,12 @@ const SPAWN_POINTS_LIST: Array[Dictionary] = [
 
 @export var levels: Array[PackedScene]
 
-var current_network_role = null
+var current_network_role: int = NetworkRole.NONE
 var current_state = null
 var distinguish_instances: Dictionary = {
-	NetworkRole.PLAYER: {"instance_name": "Joueur", "instance_color": "salmon"},
-	NetworkRole.SERVER: {"instance_name": "Serveur", "instance_color": "aquamarine"},
+	NetworkRole.NONE: {"instance_name": "No Network", "instance_color": "moccasin"},
+	NetworkRole.PLAYER: {"instance_name": "Player", "instance_color": "salmon"},
+	NetworkRole.SERVER: {"instance_name": "Server", "instance_color": "aquamarine"},
 }
 
 var univers_creation_entities: Dictionary = {}
@@ -52,13 +53,17 @@ func _enter_tree() -> void:
 	get_tree().set_script(SCENE_TREE_EXTENDED_SCRIPT_PATH)
 
 func _ready():
+	get_tree().connect("scene_changed_custom", _on_scene_changed)
+	
 	if OS.has_feature("editor"):
 		if ResourceUID.id_to_text(
 			ResourceLoader.get_resource_uid(get_tree().current_scene.scene_file_path)
-		) != ProjectSettings.get_setting("application/run/main_scene") and not OS.has_feature("dedicated_server"):
+		) != ProjectSettings.get_setting("application/run/main_scene"):
+			if OS.has_feature("dedicated_server"):
+				get_tree().quit()
+			else:
+				change_game_state(GameStates.PLAYING)
 			return
-
-	get_tree().connect("scene_changed_custom", _on_scene_changed)
 
 	if OS.has_feature("dedicated_server"):
 		change_network_role(NetworkRole.SERVER)
@@ -79,6 +84,9 @@ func is_server():
 
 func change_network_role(new_network_role) -> int:
 	match new_network_role:
+		NetworkRole.NONE:
+			current_network_role = new_network_role
+			return ChangeStateReturns.OK
 		NetworkRole.PLAYER:
 			current_network_role = new_network_role
 			return ChangeStateReturns.OK
@@ -114,15 +122,18 @@ func change_game_state(new_state) -> int:
 					current_state = new_state
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				_:
-					if GameOrchestrator.GAME_STATES_SCENES_PATHS[GameOrchestrator.GameStates.PLAYING]:
+					if current_network_role == GameOrchestrator.NetworkRole.PLAYER:
+						if GameOrchestrator.GAME_STATES_SCENES_PATHS[GameOrchestrator.GameStates.PLAYING]:
+							current_state = new_state
+							NetworkOrchestrator.create_client()
+							get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
+						else:
+							printerr(error_string(ERR_FILE_BAD_PATH) + " (Aucune scène de jeu à ouvrir game_orchestrator.gd)")
+							return_state = ChangeStateReturns.ERROR
+					elif current_network_role == GameOrchestrator.NetworkRole.NONE:
 						current_state = new_state
-						NetworkOrchestrator.create_client()
-						get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
-
-					printerr(error_string(ERR_FILE_BAD_PATH) + " (Aucune scène de jeu à ouvrir game_orchestrator.gd)")
-					return_state = ChangeStateReturns.ERROR
 		GameStates.PAUSE_MENU:
-			match  current_state:
+			match current_state:
 				GameStates.PLAYING:
 					Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 					current_state = new_state

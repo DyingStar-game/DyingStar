@@ -17,7 +17,8 @@ var server_last_global_rotation = Vector3.ZERO
 @onready var is_inside_box4m: bool = false
 
 func _ready() -> void:
-	freeze = true
+	if not GameOrchestrator.current_network_role == GameOrchestrator.NetworkRole.NONE:
+		freeze = true
 	position = spawn_position
 
 func _physics_process(_delta: float) -> void:

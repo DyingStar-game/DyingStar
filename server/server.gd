@@ -352,6 +352,8 @@ func instantiate_player_remote(player, set_player_position = false, server_id = 
 	player_to_add.name = playername
 	player_to_add.label_player_name.text = playername
 	player_to_add.global_rotation = Vector3(float(player.xr), float(player.yr), float(player.zr))
+	#player_to_add.controllability_component = RemotePlayerControllability.new()
+	#player_to_add.controllability_component.entity = player_to_add
 	player_to_add.set_physics_process(false)
 	NetworkOrchestrator.players_list[player.client_uuid] = player_to_add
 	if server_id != null:
@@ -375,6 +377,8 @@ func instantiate_player(message: Dictionary):
 	})
 	# player_to_add.global_rotation = Vector3(float(player.xr), float(player.yr), float(player.zr))
 	# player_to_add.set_physics_process(false)
+	#player_to_add.controllability_component = RemotePlayerControllability.new()
+	#player_to_add.controllability_component.entity = player_to_add
 	players_list[message.player_id] = player_to_add
 	players_list_last_movement[message.player_id] = spawn_position
 	# if server_id != null:
@@ -393,7 +397,8 @@ func player_move(message: Dictionary):
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
 		)
-		player.new_input_from_server = true
+		if player.controllability_component:
+			player.controllability_component.new_input_from_server = true
 
 func _send_metrics():
 	if servers_ticks_tasks.SendMetricsCurrent > 0:
@@ -540,7 +545,7 @@ func dispatch_horizon_message(message: Dictionary):
 						spawnable_planet_instance.uuid = planet["uuid"]
 						spawnable_planet_instance.tree_entered.connect(func():
 							spawnable_planet_instance.owner = get_tree().current_scene
-						)
+						, CONNECT_ONE_SHOT)
 						universe_scene.add_child(spawnable_planet_instance)
 						spawnable_planet_instance.connect("hs_server_prop_move", _on_prop_move)
 						props_list_last_movement[planet["uuid"]] = Vector3.ZERO
@@ -559,10 +564,12 @@ func dispatch_horizon_message(message: Dictionary):
 					player_data["position"]["z"]
 				)
 				spawned_entity_instance.name = player_data["name"]
+				spawned_entity_instance.controllability_component = RemotePlayerControllability.new()
+				spawned_entity_instance.controllability_component.entity = spawned_entity_instance
 
 				spawned_entity_instance.tree_entered.connect(func():
 					spawned_entity_instance.owner = get_tree().current_scene
-				)
+				, CONNECT_ONE_SHOT)
 				universe_scene.add_child(spawned_entity_instance)
 				spawned_entity_instance.set_uuid(player_data["uuid"])
 				players_list[player_data["uuid"]] = spawned_entity_instance
@@ -597,7 +604,7 @@ func dispatch_horizon_message(message: Dictionary):
 									spawnable_box50cm_instance.uuid = box["uuid"]
 									# spawnable_box50cm_instance.tree_entered.connect(func():
 									# 	spawnable_box50cm_instance.owner = get_tree().current_scene
-									# )
+									# , CONNECT_ONE_SHOT)
 									universe_scene.add_child(spawnable_box50cm_instance)
 									spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
 									props_list_last_movement[box["uuid"]] = Vector3.ZERO
@@ -625,7 +632,7 @@ func dispatch_horizon_message(message: Dictionary):
 								spawnable_box50cm_instance.uuid = box["uuid"]
 								spawnable_box50cm_instance.tree_entered.connect(func():
 									spawnable_box50cm_instance.owner = get_tree().current_scene
-								)
+								, CONNECT_ONE_SHOT)
 								universe_scene.add_child(spawnable_box50cm_instance)
 								spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
 								props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance

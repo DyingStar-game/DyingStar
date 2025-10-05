@@ -71,6 +71,7 @@ enabled=PackedStringArray("res://addons/extremely_fast_atmosphere/plugin.cfg", "
 
 folder_colors={
 "res://assets/": "green",
+"res://levels-dev/": "purple",
 "res://levels/": "purple",
 "res://scenes/": "blue"
 }

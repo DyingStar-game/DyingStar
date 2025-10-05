@@ -39,7 +39,8 @@ var forced_colors := {
 @onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
 
 func _enter_tree() -> void:
-	connect("visibility_changed", _on_visibility_changed)
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		connect("visibility_changed", _on_visibility_changed)
 
 func _ready():
 	visible = false

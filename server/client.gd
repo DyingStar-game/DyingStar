@@ -12,7 +12,8 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://192.168.20.174:7040" # "ws://127.0.0.1:7040"
+#var websocket_url = "ws://192.168.20.174:7040"
+var websocket_url = "ws://127.0.0.1:7040"
 var socket = WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
@@ -182,6 +183,8 @@ func create_players_planets(event: Dictionary) -> void:
 				if not player_entity:
 					# await get_tree().create_timer(1).timeout
 					var spawned_entity_instance = player_scene.instantiate()
+					spawned_entity_instance.controllability_component = RemotePlayerControllability.new()
+					spawned_entity_instance.controllability_component.entity = spawned_entity_instance
 					spawned_entity_instance.spawn_position = Vector3(
 						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 					)
@@ -190,7 +193,7 @@ func create_players_planets(event: Dictionary) -> void:
 
 					spawned_entity_instance.tree_entered.connect(func():
 						spawned_entity_instance.owner = get_tree().current_scene
-					)
+					, CONNECT_ONE_SHOT)
 					universe_scene.add_child(spawned_entity_instance)
 					spawned_entity_instance.set_physics_process(false)
 					spawned_entity_instance.client_uuid = player_data["uuid"]
@@ -207,7 +210,7 @@ func create_players_planets(event: Dictionary) -> void:
 
 					spawned_entity_instance.tree_entered.connect(func():
 						spawned_entity_instance.owner = get_tree().current_scene
-					)
+					, CONNECT_ONE_SHOT)
 					universe_scene.add_child(spawned_entity_instance)
 					spawned_entity_instance.set_physics_process(false)
 					spawned_entity_instance.client_uuid = player_data["uuid"]
@@ -230,7 +233,7 @@ func create_players_planets(event: Dictionary) -> void:
 				# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
 				spawnable_planet_instance.tree_entered.connect(func():
 					spawnable_planet_instance.owner = get_tree().current_scene
-				)
+				, CONNECT_ONE_SHOT)
 
 				universe_scene.add_child(spawnable_planet_instance)
 				universe_scene.assign_spawn_informations()
@@ -421,7 +424,7 @@ func update_props_position(event: Dictionary) -> void:
 						var prop_instance = box50cm_scene.instantiate()
 						prop_instance.tree_entered.connect(func():
 							prop_instance.owner = get_tree().current_scene
-						)
+						, CONNECT_ONE_SHOT)
 						universe_scene.add_child(prop_instance)
 						prop_instance.set_physics_process(false)
 						if prop.has("reparent"):

@@ -76,12 +76,15 @@ var spawn_position: Vector3 = Vector3.ZERO
 @onready var water_surface: MeshInstance3D = $WaterSurface
 
 func _enter_tree() -> void:
+	if Engine.is_editor_hint(): return;
+	
 	global_position = spawn_position
 	if not OS.has_feature("dedicated_server"):
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint(): return;
 	set_process(true)
 	if orbit_enabled:
 		_setup_orbit()
@@ -94,9 +97,8 @@ func _ready() -> void:
 		_rebuild_beacon()
 
 func _process(delta: float) -> void:
+	if Engine.is_editor_hint(): return;
 	
-	
-
 	if not orbit_enabled:
 		return
 	if beacon_enabled and _beacon_node and not beacon_attach_to_planet:
@@ -253,11 +255,11 @@ func _kepler_E_from_M(M: float, e: float) -> float:
 			break
 	return _norm(E)
 
-func _orbit_basis(arg_peri_deg: float, inc_deg: float, node_deg: float) -> Basis:
+func _orbit_basis(passed_arg_peri_deg: float, passed_inc_deg: float, passed_node_deg: float) -> Basis:
 	var b := Basis()
-	b = b.rotated(Vector3.UP, deg_to_rad(node_deg))
-	b = b.rotated(Vector3.RIGHT, deg_to_rad(inc_deg))
-	b = b.rotated(Vector3.UP, deg_to_rad(arg_peri_deg))
+	b = b.rotated(Vector3.UP, deg_to_rad(passed_node_deg))
+	b = b.rotated(Vector3.RIGHT, deg_to_rad(passed_inc_deg))
+	b = b.rotated(Vector3.UP, deg_to_rad(passed_arg_peri_deg))
 	return b
 
 func _clamp_e(e: float, max_e: float = 0.999) -> float:
