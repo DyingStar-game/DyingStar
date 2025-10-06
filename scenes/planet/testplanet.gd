@@ -76,6 +76,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 @onready var water_surface: MeshInstance3D = $WaterSurface
 
 func _enter_tree() -> void:
+	if Engine.is_editor_hint(): return
 	global_position = spawn_position
 	if not OS.has_feature("dedicated_server"):
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
@@ -94,8 +95,7 @@ func _ready() -> void:
 		_rebuild_beacon()
 
 func _process(delta: float) -> void:
-	
-	
+	if Engine.is_editor_hint(): return
 
 	if not orbit_enabled:
 		return

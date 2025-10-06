@@ -606,8 +606,8 @@ func dispatch_horizon_message(message: Dictionary):
 									# spawnable_box50cm_instance.tree_entered.connect(func():
 									# 	spawnable_box50cm_instance.owner = get_tree().current_scene
 									# )
-									universe_scene.add_child(spawnable_box50cm_instance)
-									spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
+									player.get_parent().add_child(spawnable_box50cm_instance)
+									# spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
 									props_list_last_movement[box["uuid"]] = Vector3.ZERO
 									props_list_last_rotation[box["uuid"]] = Vector3.ZERO
 									spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
