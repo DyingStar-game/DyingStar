@@ -170,34 +170,6 @@ size = Vector3(1053780, 1053780, 1053780)
 [node name="Planet" type="Node3D"]
 script = ExtResource("1_83pno")
 planet_settings = ExtResource("2_nqw6u")
-orbit_enabled = null
-align_orbit_to_spawn = null
-star_mass_kg = null
-planet_mass_kg = null
-periapsis_AU = null
-apoapsis_AU = null
-inc_deg = null
-node_deg = null
-arg_peri_deg = null
-mean_anomaly_deg = null
-time_scale = null
-debug_fast_orbit = null
-debug_multiplier = null
-enable_spin_motion = null
-spin_speed_base = null
-orbit_line_enabled = null
-orbit_line_segments = null
-orbit_line_color = null
-orbit_line_as_ribbon = null
-orbit_line_ribbon_width_m = null
-beacon_enabled = null
-beacon_attach_to_planet = null
-beacon_auto_height = null
-beacon_extra_km = null
-beacon_height_m = null
-beacon_thickness_m = null
-beacon_color = null
-beacon_emission = null
 
 [node name="PlanetTerrain" parent="." instance=ExtResource("4_2pfeq")]
 radius = 500000
