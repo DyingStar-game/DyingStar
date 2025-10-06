@@ -98,7 +98,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("< Got text data from server: %s" % packet_text)
+				print("< Got text data from server: %s" % packet_text)
 				var event = JSON.parse_string(packet_text)
 
 				# Handle the event based on its type
