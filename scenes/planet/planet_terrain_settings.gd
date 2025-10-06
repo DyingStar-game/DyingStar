@@ -13,5 +13,8 @@ extends Resource
 ## Micro Noise Generator
 @export var noise_micro: FastNoiseLite
 
+## Max number of lod levels for the terrain
+@export var max_lod: int = 9
+
 ## List of noise modifiers to generate the terrain
 @export var noise_params: Array[NoiseParam]

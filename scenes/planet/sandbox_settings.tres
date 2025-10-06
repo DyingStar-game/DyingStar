@@ -47,16 +47,18 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("4_y0ecf")
-noise_scale = 5.0
+elev_scale = 5.0
+noise_scale = 50.0
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
+max_lod = 11
 noise_params = Array[ExtResource("3_dl7hi")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [resource]
 script = ExtResource("1_ec2n1")
 radius = 500000
-atmosphere_height = 1200
+atmosphere_height = 12000
 terrain_material = ExtResource("2_0m3tu")
 sea_level = 680
 terrain_settings = SubResource("Resource_7f52q")

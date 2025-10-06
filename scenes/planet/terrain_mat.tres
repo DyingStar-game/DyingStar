@@ -48,4 +48,4 @@ shader_parameter/noise = SubResource("NoiseTexture2D_mpfmm")
 shader_parameter/notile_offset = 0.73
 shader_parameter/albedo_var = Color(0.664063, 0.550762, 0.351307, 1)
 shader_parameter/noise_c_variation = SubResource("NoiseTexture2D_uks27")
-shader_parameter/noise_c_scale = 3.125
+shader_parameter/noise_c_scale = 0.3

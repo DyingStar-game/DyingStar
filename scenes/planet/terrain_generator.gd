@@ -19,7 +19,6 @@ var axis_b: Vector3
 
 var skirt_indices := 2
 var chunk_resolution := 60
-var max_chunk_depth := 8
 
 var chunks_list = {}
 var chunks_list_current = {}
@@ -148,25 +147,21 @@ class QuadtreeChunk:
 
 func visualize_quadtree(chunk: QuadtreeChunk):
 
-	var at_col_depth = chunk.depth == max_chunk_depth
-
 	# Generate a MeshInstance for each chunk
-	if not chunk.children or at_col_depth:
+	if not chunk.children:
 
 		chunks_list_current[chunk.identifier] = true
 
 		#if chunk.identifier already exists leave it
 		if chunks_generating.has(chunk.identifier):
 			return
-
-		var chunk_res = 0 if run_serverside and chunk.depth < max_chunk_depth - 1 else chunk_resolution
+		
+		var chunk_res = 0 if run_serverside and chunk.depth != planet.terrain_settings.max_lod else chunk_resolution
 
 		var size := chunk.bounds.size.x
 		var offset := chunk.bounds.position
-		var resolution: int = chunk_resolution + skirt_indices
+		var resolution: int = chunk_res + skirt_indices
 
-		if at_col_depth:
-			resolution -= 20
 
 		var vertex_array := PackedVector3Array()
 		var normal_array := PackedVector3Array()
@@ -241,8 +236,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		arrays[Mesh.ARRAY_NORMAL] = normal_array
 		arrays[Mesh.ARRAY_INDEX] = index_array
 
-		if not at_col_depth or not chunk.children:
-			chunks_generating[chunk.identifier] = true
+		chunks_generating[chunk.identifier] = true
 
 		create_mesh_and_collision.call_deferred(arrays, chunk, chunk_global_pos, not chunk.children.is_empty())
 
@@ -258,9 +252,9 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 	# generate collisions
-	if chunk.depth == max_chunk_depth and not Engine.is_editor_hint():
+	if run_serverside and not Engine.is_editor_hint():
 		if !chunks_col_list.has(chunk.identifier):
-			#print("generating collision", chunk.identifier, mesh.get_surface_count())
+			# print("generating collision", chunk.identifier, mesh.get_surface_count())
 			add_collision_shape(chunk.identifier, mesh, chunk_pos)
 		else:
 			update_collision(chunk.identifier, mesh)
@@ -443,7 +437,7 @@ func update_chunks():
 	# Initialize the quadtree by creating the root chunk
 	var bounds = AABB(Vector3(0, 0, 0), Vector3(2,2,2))
 	var chunk_name: String = "Chunk_" + str(0)
-	quadtree = QuadtreeChunk.new(bounds, 0, max_chunk_depth, planet, normal, axis_a, axis_b, chunk_name)
+	quadtree = QuadtreeChunk.new(bounds, 0, planet.terrain_settings.max_lod, planet, normal, axis_a, axis_b, chunk_name)
 	# Start the subdivision process
 	quadtree.subdivide(focus_positions.duplicate(), run_serverside)
 
@@ -473,13 +467,19 @@ func cleanup_collisions():
 	for chunkid: String in chunks_col_list:
 		if is_instance_valid(chunks_col_list[chunkid]):
 			var col = chunks_col_list[chunkid] as CollisionShape3D
-			if any_player_near(col, 400):
-				col.disabled = true
-			elif not any_player_near(col):
+			#if any_player_near(col, 1000):
+				#col.disabled = true
+				#print("disable collision because player further than 1000m")
+			if not any_player_near(col, 5000):
 				col.queue_free()
+				#print("deleting collision because no player near it")
 				chunks_col_list.erase(chunkid)
+			
+			#elif not any_player_near(col, 1000):
+				#col.disabled = true
+				#print("disable collision because player further than 1000m")
 
-func any_player_near(shape: CollisionShape3D, distance = 1000):
+func any_player_near(shape: CollisionShape3D, distance = 5000):
 	for pos: Vector3 in focus_positions:
 		if pos.distance_squared_to(shape.position) < distance*distance:
 			return true
