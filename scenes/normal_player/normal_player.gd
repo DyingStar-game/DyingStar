@@ -364,15 +364,26 @@ func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
 
 func _handle_camera_motion():
-	if gravity == 0:
-		camera_pivot.rotation.x = 0
-		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
-		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-	else:
+	var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+	
+	if parent_gravity_area:
+		if parent_gravity_area.gravity_point:
+			up_direction = parent_gravity_area.global_position.direction_to(global_position)
+		else:
+			up_direction = parent_gravity_area.global_basis.y
+		
+		gravity = parent_gravity_area.gravity
 		orient_player()
 		global_basis = global_basis.rotated(global_basis.y, mouse_motion.x * camera_sensitivity)
 		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
 		camera_pivot.rotation_degrees.x = clamp(camera_pivot.rotation_degrees.x, -80, 80)
+	else:
+		# 0g movement
+		gravity = 0.0
+		camera_pivot.rotation.x = 0
+		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
+		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
+	
 	mouse_motion = Vector2.ZERO
 
 func orient_player():

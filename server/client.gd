@@ -433,11 +433,14 @@ func update_props_position(event: Dictionary) -> void:
 						prop_instance.tree_entered.connect(func():
 							prop_instance.owner = get_tree().current_scene
 						)
-						universe_scene.add_child(prop_instance)
-						prop_instance.set_physics_process(false)
 						if prop.has("reparent"):
 							var planet = props_list["planet"][prop["reparent"]]
-							prop_instance.reparent(planet)
+							planet.add_child(prop_instance)
+						else:
+							universe_scene.add_child(prop_instance)
+							
+						prop_instance.set_physics_process(false)
+						prop_instance.freeze = true
 						prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
 						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
 						prop_instance.uuid = prop["uuid"]
