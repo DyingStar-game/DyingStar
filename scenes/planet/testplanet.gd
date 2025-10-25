@@ -4,7 +4,10 @@ extends Node3D
 
 signal hs_server_prop_move
 
+@export var planet_id = "planet"
+
 @export_tool_button("update") var on_update = update_planet
+@export_tool_button("pack biomes") var on_pack_biomes = pack_biomes
 
 @export var planet_settings: PlanetSettings
 
@@ -16,6 +19,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain
 @onready var atmosphere: ExtremelyFastAtmpsphere = $Atmosphere
 @onready var water_surface: MeshInstance3D = $WaterSurface
+
 
 func _enter_tree() -> void:
 	if Engine.is_editor_hint(): return
@@ -68,5 +72,22 @@ func update_planet():
 		water_surface.show()
 	else:
 		water_surface.hide()
+	
 
 	planet_terrain.trigger_update()
+
+func _pack_textures(textures: Array[Texture2D]) -> Texture2DArray:
+	var tex_array = Texture2DArray.new()
+	var images: Array[Image] = []
+	for tex in textures:
+		images.push_back(tex.get_image())
+	tex_array.create_from_images(images)
+	return tex_array
+
+func pack_biomes():
+	print("packing...")
+	var biome_albedo = _pack_textures(planet_settings.terrain_settings.biomes_albedo)
+	ResourceSaver.save(biome_albedo, "res://assets/textures/biomes_packed/"+ planet_id +"_albedo_array.res")
+	
+	var biome_normal = _pack_textures(planet_settings.terrain_settings.biomes_normal)
+	ResourceSaver.save(biome_normal, "res://assets/textures/biomes_packed/"+ planet_id +"_normal_array.res")

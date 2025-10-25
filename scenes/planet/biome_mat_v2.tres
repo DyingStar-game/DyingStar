@@ -1,0 +1,28 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://buq45al0nf2q0"]
+
+[ext_resource type="Shader" uid="uid://4sqcy5ila4dp" path="res://scenes/planet/biome_terrain.gdshader" id="1_4tsvq"]
+[ext_resource type="Texture2D" uid="uid://csllwx2l4vj4q" path="res://scenes/planet/biomes.png" id="2_mlhcv"]
+[ext_resource type="Texture2DArray" uid="uid://ce1wipa7g2y3t" path="res://scenes/planet/planet_biomes.res" id="3_2qrod"]
+[ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="4_hs4y0"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_4tsvq")
+shader_parameter/terrain_map = ExtResource("4_hs4y0")
+shader_parameter/biome_map = ExtResource("2_mlhcv")
+shader_parameter/ground_textures = ExtResource("3_2qrod")
+shader_parameter/normal_scale = 1.0
+shader_parameter/uv1_blend_sharpness = 48.68400231249
+shader_parameter/uv1_scale = Vector3(0, 0, 0)
+shader_parameter/uv1_offset = Vector3(0, 0, 0)
+shader_parameter/blend_start = 10.0
+shader_parameter/blend_end = 30.0
+shader_parameter/notile_offset = 1.0
+shader_parameter/terrain_normal_blend_offset = 0.83
+shader_parameter/terrain_normal_blend_fade = 0.1
+shader_parameter/sand_color = Color(0.8, 0.7, 0.4, 1)
+shader_parameter/rock_color = Color(0.4, 0.4, 0.4, 1)
+shader_parameter/soil_color = Color(0.35, 0.2, 0.1, 1)
+shader_parameter/snow_temp_threshold = 0.015
+shader_parameter/sand_elev_threshold = 0.585
+shader_parameter/soil_humid_blend = 0.26

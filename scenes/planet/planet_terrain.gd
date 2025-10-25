@@ -17,6 +17,9 @@ signal regenerate()
 
 @export var terrain_material: Material
 
+
+var biomes_tex: Array[Image] = []
+
 var terrain_map_image: Image
 
 var focus_positions = []
@@ -60,13 +63,23 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	
+	
 	if terrain_settings.terrain_map:
 		terrain_map_image = terrain_settings.terrain_map.get_image()
 		
 		if terrain_map_image.is_compressed():
 			terrain_map_image.decompress()
+	# loading biome images
+	for biome in terrain_settings.biomes_elevations:
+		biomes_tex.push_back(biome.get_image())
 	
 	trigger_update()
+
+func align_with_y(xform: Transform3D, new_y: Vector3) -> Transform3D:
+	xform.basis.y = new_y
+	xform.basis.x = -xform.basis.z.cross(new_y)
+	xform.basis = xform.basis.orthonormalized()
+	return xform
 
 func _process(_delta: float) -> void:
 	var camera: Camera3D
@@ -100,30 +113,84 @@ func norm(value: float):
 	return value + 1 / 2.0
 
 
-func sample_bilinear(img: Image, u: float, v: float) -> Color:
-	var w := img.get_width()
-	var h := img.get_height()
+func sample_bilinear_wrapped(img: Image, uv: Vector2) -> float:
+	var w = img.get_width()
+	var h = img.get_height()
 
-	# Convert to image space
-	var x = u * w
-	var y = v * h
+	# Align with texel centers like GPU
+	var u = fposmod(uv.x * w - 0.5, w)
+	var v = fposmod(uv.y * h - 0.5, h)
 
-	var x0 = int(floor(x)) % w
-	var y0 = int(floor(y)) % h
+	var x0 = int(floor(u))
+	var y0 = int(floor(v))
 	var x1 = (x0 + 1) % w
 	var y1 = (y0 + 1) % h
 
-	var tx = x - floor(x)
-	var ty = y - floor(y)
+	var tx = u - x0
+	var ty = v - y0
 
-	var c00 = img.get_pixel(x0, y0)
-	var c10 = img.get_pixel(x1, y0)
-	var c01 = img.get_pixel(x0, y1)
-	var c11 = img.get_pixel(x1, y1)
+	var c00 = img.get_pixel(x0, y0).r
+	var c10 = img.get_pixel(x1, y0).r
+	var c01 = img.get_pixel(x0, y1).r
+	var c11 = img.get_pixel(x1, y1).r
 
-	var c0 = c00.lerp(c10, tx)
-	var c1 = c01.lerp(c11, tx)
-	return c0.lerp(c1, ty)
+	var cx0 = lerp(c00, c10, tx)
+	var cx1 = lerp(c01, c11, tx)
+	return lerp(cx0, cx1, ty)
+
+func get_cube_uv(normalized_pos: Vector3) -> Vector2:
+	var x = normalized_pos.x
+	var y = normalized_pos.y
+	var z = normalized_pos.z
+
+	var abs_x = abs(x)
+	var abs_y = abs(y)
+	var abs_z = abs(z)
+
+	var u: float
+	var v: float
+
+	# +X face
+	if abs_x >= abs_y and abs_x >= abs_z:
+		if x > 0.0:
+			u = -z / abs_x
+			v = y / abs_x
+		else:
+			# -X face
+			u = z / abs_x
+			v = y / abs_x
+
+	# +Y face
+	elif abs_y >= abs_x and abs_y >= abs_z:
+		if y > 0.0:
+			u = x / abs_y
+			v = -z / abs_y
+		else:
+			# -Y face
+			u = x / abs_y
+			v = z / abs_y
+
+	# +Z face
+	else:
+		if z > 0.0:
+			u = x / abs_z
+			v = y / abs_z
+		else:
+			# -Z face
+			u = -x / abs_z
+			v = y / abs_z
+
+	# Map from [-1, 1] → [0, 1]
+	return Vector2((u + 1.0) * 0.5, (v + 1.0) * 0.5)
+
+# Catmull–Rom cubic interpolation between 4 points
+func cubic_interp(p0: float, p1: float, p2: float, p3: float, t: float) -> float:
+	var a = -0.5*p0 + 1.5*p1 - 1.5*p2 + 0.5*p3
+	var b = p0 - 2.5*p1 + 2.0*p2 - 0.5*p3
+	var c = -0.5*p0 + 0.5*p2
+	var d = p1
+	return ((a * t + b) * t + c) * t + d
+
 
 func point_to_uv(point: Vector3) -> Vector2:
 	var lon = atan2(point.z, point.x)  # -π .. π
@@ -133,15 +200,56 @@ func point_to_uv(point: Vector3) -> Vector2:
 	var v = clamp(fmod(lat / PI + 0.5, 1.0), 0.0, 1.0)
 	return Vector2(u, v)
 
+func sample_height_triplanar_bilinear(img: Image, pos: Vector3, normal: Vector3, tiling: float) -> float:
+	normal = normal.normalized()
+	var blend = normal.abs()
+	var sum = blend.x + blend.y + blend.z
+	if sum > 0.0:
+		blend /= sum
+
+	# Project world position to three planes
+	var uv_x = Vector2(pos.z, pos.y) * tiling  # YZ projection
+	var uv_y = Vector2(pos.x, pos.z) * tiling  # XZ projection
+	var uv_z = Vector2(pos.x, pos.y) * tiling  # XY projection
+
+	# Wrap UVs to 0–1
+	uv_x = Vector2(fposmod(uv_x.x, 1.0), fposmod(uv_x.y, 1.0))
+	uv_y = Vector2(fposmod(uv_y.x, 1.0), fposmod(uv_y.y, 1.0))
+	uv_z = Vector2(fposmod(uv_z.x, 1.0), fposmod(uv_z.y, 1.0))
+
+	var hx = sample_bilinear_wrapped(img, uv_x)
+	var hy = sample_bilinear_wrapped(img, uv_y)
+	var hz = sample_bilinear_wrapped(img, uv_z)
+
+	return hx * blend.x + hy * blend.y + hz * blend.z
+
+func get_biome(point: Vector3) -> float:
+	var v = terrain_settings.biome_noise.get_noise_3dv(point * 10000)
+	v = (v + 1.0) * 0.5
+	
+	v = v * v
+	#v = snappedf(v, 1.0 / 8)
+	return v
+
 func get_height(point: Vector3) -> Vector3:
 	var elev = 0.0
 	
 	if !terrain_map_image: return Vector3.ZERO
 	
-	var uv = point_to_uv(point)
-	var terrain_map_elev = sample_bilinear(terrain_map_image, uv.x, uv.y).r * 1.0
+	var b = get_biome(point)
+	
+	var i = 0
+	for biome_tex in biomes_tex:
+		var biome_val = i * (1.0 / 4.0)
+		var mul = 1 - b - biome_val
+			#var uv = get_cube_uv(point) * 4.0
+		var terrain_map_elev = sample_height_triplanar_bilinear(biome_tex, point * radius /300000, point, 16.0)
 
-	elev += terrain_map_elev * (1.0 + terrain_settings.noise.get_noise_3dv(point * 400.0 * terrain_settings.noise_scale)) * 300.0
+		elev += terrain_map_elev * mul # (1.0 + terrain_settings.noise.get_noise_3dv(point * 400.0 * terrain_settings.noise_scale)) * 300.0
+		i += 1
+	
+	#elev  /= biomes_tex.size()
+	elev *= 2000
 	
 	#for n_param in terrain_settings.noise_params:
 		#if n_param.noise_type == "macro":
