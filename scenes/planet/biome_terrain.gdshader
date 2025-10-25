@@ -3,8 +3,12 @@
 // 2nd layer: grass (color based on biome)
 // 3rd layer: snow based on temp
 
+
+
+
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
 
 uniform sampler2D base_normal: hint_normal, filter_linear_mipmap;
 
@@ -19,6 +23,9 @@ uniform float uv1_blend_sharpness : hint_range(0.0, 150.0, 0.001);
 uniform vec3 uv1_scale;
 uniform vec3 uv1_offset;
 
+uniform float blend_start = 10.0;
+uniform float blend_end  = 30.0;
+
 uniform sampler2D noise: source_color, filter_linear_mipmap, repeat_enable;
 uniform float notile_offset = 1.0;
 
@@ -28,6 +35,8 @@ uniform float terrain_normal_blend_fade = 0.1;
 uniform vec4 sand_color: source_color = vec4(0.8, 0.7, 0.4, 1.0);
 uniform vec4 rock_color: source_color = vec4(0.4, 0.4, 0.4, 1.0);
 uniform vec4 soil_color: source_color = vec4(0.35, 0.2, 0.1, 1.0);
+
+uniform sampler2D distant_normal: hint_normal;
 
 uniform float snow_temp_threshold = 0.3;
 uniform float sand_elev_threshold = 0.05;
@@ -63,11 +72,11 @@ void vertex() {
 
 }
 
-vec4 triplanar_texture(sampler2D p_sampler, vec3 p_weights, vec3 p_triplanar_pos) {
+vec4 triplanar_texture(sampler2DArray p_sampler, vec3 p_weights, vec3 p_triplanar_pos, float layer) {
 	vec4 samp = vec4(0.0);
-	samp += texture(p_sampler, p_triplanar_pos.xy) * p_weights.z;
-	samp += texture(p_sampler, p_triplanar_pos.xz) * p_weights.y;
-	samp += texture(p_sampler, p_triplanar_pos.zy * vec2(-1.0, 1.0)) * p_weights.x;
+	samp += texture(p_sampler, vec3(p_triplanar_pos.xy, layer)) * p_weights.z;
+	samp += texture(p_sampler, vec3(p_triplanar_pos.xz, layer)) * p_weights.y;
+	samp += texture(p_sampler, vec3(p_triplanar_pos.zy * vec2(-1.0, 1.0), layer)) * p_weights.x;
 	return samp;
 }
 
@@ -129,24 +138,27 @@ vec3 get_biome_color(float temp, float humid) {
 }
 
 void fragment() {
-	vec3 planet_tex = texture(terrain_map, UV).rgb;
+
+	vec3 planet_tex = texture(terrain_map, UV + vec2(0.0, 10.0)).rgb;
 	float elev = planet_tex.r;
 	float temp = planet_tex.g;
 	float humid = planet_tex.b;
-	
+
 	//vec3 up_dir_chunk = normalize(offset_pos + VERTEX);
 	//vec3 up_vector_viewspace = up_dir_chunk; //mat3(VIEW_MATRIX) * vert_normal;
 	//float dot_product = dot(up_vector_viewspace, mat3(VIEW_MATRIX) * NORMAL);
 	float slope = smoothstep(terrain_normal_blend_offset - terrain_normal_blend_fade, terrain_normal_blend_offset + terrain_normal_blend_fade, terrain_slope);
-	
-	
+
+
+	vec3 distant_n = texture(distant_normal, UV * 100.0).rgb;
+
 	// Layer masks
     float sand_mask = slope * clamp((smoothstep(0.04, 0.035, elev) + smoothstep(sand_elev_threshold, 0.8, temp)), 0.0, 1.0);
     float rock_mask = 1.0 - slope;
-    float soil_mask = slope * smoothstep(0.7, 0.6, temp); 
+    float soil_mask = slope * smoothstep(0.7, 0.6, temp);
     float grass_mask = soil_mask * smoothstep(soil_humid_blend, 0.2, humid);
     float snow_mask = clamp(smoothstep(snow_temp_threshold, 0.01, temp) + smoothstep(0.7, 0.75, elev), 0.0, 1.0);
-	
+
 	// Normalize masks
     float sum_mask = sand_mask + rock_mask + soil_mask + grass_mask + snow_mask + 0.0001;
     sand_mask /= sum_mask;
@@ -154,34 +166,37 @@ void fragment() {
     soil_mask /= sum_mask;
     grass_mask /= sum_mask;
     snow_mask /= sum_mask;
-	
+
+	vec2 fuv = UV * 1000.0;
+
 	// Textures sampling
-	vec4 sand_tex = texture(ground_textures,vec3(UV * 3000.0, 1.0)); // triplanar_texture_notile(ground_textures, uv1_power_normal, uv1_triplanar_pos / 100000.0, 1.0);
-	vec4 rock_tex = texture(ground_textures,vec3(UV * 30000.0, 0.0));
-	vec4 soil_tex = texture(ground_textures,vec3(UV * 30000.0, 2.0));
-	
+	//vec4 sand_tex = triplanar_texture(ground_textures, uv1_power_normal, uv1_triplanar_pos , 1.0);
+	vec4 sand_tex = texture(ground_textures,vec3(fuv, 1.0)); // triplanar_texture_notile(ground_textures, uv1_power_normal, uv1_triplanar_pos / 100000.0, 1.0);
+	vec4 rock_tex = triplanar_texture(ground_textures, uv1_power_normal, uv1_triplanar_pos, 0.0); // texture(ground_textures,vec3(fuv * 3000.0, 0.0));
+	vec4 soil_tex = triplanar_texture(ground_textures, uv1_power_normal, uv1_triplanar_pos, 2.0); //texture(ground_textures,vec3(fuv * 3000.0, 2.0));
+
 	// Colors
     vec3 sand_col = sand_tex.b * sand_color.rgb;
     vec3 rock_col = rock_tex.b * rock_color.rgb;
     vec3 soil_col = soil_tex.b * soil_color.rgb;
     vec3 grass_col = get_biome_color(temp, humid);
     vec3 snow_col = vec3(1.0);
-	
+
 	// Final color blend
 	vec3 col = sand_col * sand_mask +
                rock_col * rock_mask +
                soil_col * soil_mask +
                grass_col * grass_mask +
                snow_col * snow_mask;
-	
-	ALBEDO = col;
+
+	ALBEDO = sand_col; //vec3(fuv.xy / 2.0, 1.0); //col;
 
 	// Final normal blend
 	vec3 sand_normal = normal_from_packed_tex(sand_tex);
 	vec3 rock_normal = normal_from_packed_tex(rock_tex);
 	vec3 soil_normal = normal_from_packed_tex(soil_tex);
-	vec3 b_normal = texture(base_normal, UV * 10000.0).rgb;
-	
+	vec3 b_normal = texture(base_normal, fuv).rgb;
+
 	vec3 normal = normalize(sand_normal * sand_mask +
                rock_normal * rock_mask +
                soil_normal * soil_mask +
@@ -189,6 +204,19 @@ void fragment() {
                b_normal * snow_mask
 	);
 
+	 // World-space position of the fragment
+    vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    // Distance from camera
+    float dist = distance(CAMERA_POSITION_WORLD, world_pos);
+	// Blend factor between 0 (near) and 1 (far)
+    float blend = smoothstep(blend_start, blend_end, dist);
+
+
+	ROUGHNESS = 1.0;
+
 	NORMAL_MAP = normal;
+
+	//ALBEDO = vec3(blend);
+
 	NORMAL_MAP_DEPTH = normal_scale;
 }

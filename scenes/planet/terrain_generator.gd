@@ -148,10 +148,61 @@ class QuadtreeChunk:
 func to_sphere_uv(point: Vector3) -> Vector2:
 	var lon = atan2(point.z, point.x)  # -π .. π
 	var lat = asin(point.y)             # -π/2 .. π/2
+	
 
-	var u = clamp(fmod(lon / TAU + 0.5, 1.0), 0.0, 1.0)
-	var v = clamp(fmod(lat / PI + 0.5, 1.0), 0.0, 1.0)
+	var u = clamp((lon / TAU) + 0.5, 0.0, 1.0)
+	var v = clamp((lat / PI)  + 0.5, 0.0, 1.0)
+	if u > 0.999999:
+		u = 1.0
+	
 	return Vector2(u, v)
+
+
+func get_cube_uv(normalized_pos: Vector3) -> Vector2:
+	var x = normalized_pos.x
+	var y = normalized_pos.y
+	var z = normalized_pos.z
+
+	var abs_x = abs(x)
+	var abs_y = abs(y)
+	var abs_z = abs(z)
+
+	var u: float
+	var v: float
+
+	# +X face
+	if abs_x >= abs_y and abs_x >= abs_z:
+		if x > 0.0:
+			u = -z / abs_x
+			v = y / abs_x
+		else:
+			# -X face
+			u = z / abs_x
+			v = y / abs_x
+
+	# +Y face
+	elif abs_y >= abs_x and abs_y >= abs_z:
+		if y > 0.0:
+			u = x / abs_y
+			v = -z / abs_y
+		else:
+			# -Y face
+			u = x / abs_y
+			v = z / abs_y
+
+	# +Z face
+	else:
+		if z > 0.0:
+			u = x / abs_z
+			v = y / abs_z
+		else:
+			# -Z face
+			u = -x / abs_z
+			v = y / abs_z
+
+	# Map from [-1, 1] → [0, 1]
+	return Vector2((u + 1.0) * 0.5, (v + 1.0) * 0.5)
+
 
 func visualize_quadtree(chunk: QuadtreeChunk):
 
@@ -175,6 +226,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		var normal_array := PackedVector3Array()
 		var uv_array := PackedVector2Array()
 		var index_array := PackedInt32Array()
+		var color_array := PackedColorArray()
 
 		# Pre-allocate indices (we know exact count)
 		var num_cells := (resolution - 1)
@@ -184,6 +236,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		vertex_array.resize(resolution * resolution)
 		normal_array.resize(resolution * resolution)
 		uv_array.resize(resolution * resolution)
+		color_array.resize(resolution * resolution)
 		
 		var chunk_global_pos := (normal + offset.x * axis_a + offset.z * axis_b).normalized() * planet.radius
 		
@@ -203,7 +256,8 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				var lod_offset := point_on_plane.normalized() * 0.01 if edge else Vector3.ZERO
 				vertex_array[i] = sphere_pos - chunk_global_pos - lod_offset
 				normal_array[i] = Vector3.ZERO
-				uv_array[i] = to_sphere_uv(point_on_plane.normalized())
+				uv_array[i] = get_cube_uv(point_on_plane.normalized()) #to_sphere_uv(point_on_plane.normalized())
+				color_array[i] = Color(planet.get_biome(point_on_plane.normalized()), 0.0, 0.0)
 				
 				# Track height extremes
 				var length := sphere_pos.length()
@@ -246,6 +300,8 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		arrays[Mesh.ARRAY_VERTEX] = vertex_array
 		arrays[Mesh.ARRAY_NORMAL] = normal_array
 		arrays[Mesh.ARRAY_INDEX] = index_array
+		arrays[Mesh.ARRAY_COLOR] = color_array
+		arrays[Mesh.ARRAY_TEX_UV] = uv_array
 
 		chunks_generating[chunk.identifier] = true
 

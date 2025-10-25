@@ -8,6 +8,8 @@ extends Resource
 ## Global noise scale value
 @export var noise_scale: float = 1.0
 
+@export var biome_noise: FastNoiseLite
+
 ## Macro Noise Generator
 @export var noise: FastNoiseLite
 ## Micro Noise Generator
@@ -17,6 +19,10 @@ extends Resource
 @export var max_lod: int = 9
 
 ## List of noise modifiers to generate the terrain
-@export var noise_params: Array[NoiseParam]
+@export var noise_params: Array[NoiseParam] = []
 
 @export var terrain_map: Texture2D
+
+@export var biomes_elevations: Array[Texture2D] = []
+@export var biomes_albedo: Array[Texture2D] = []
+@export var biomes_normal: Array[Texture2D] = []

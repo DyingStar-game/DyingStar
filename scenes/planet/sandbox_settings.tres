@@ -1,38 +1,39 @@
-[gd_resource type="Resource" script_class="PlanetSettings" load_steps=15 format=3 uid="uid://dndwamrx0yyd8"]
+[gd_resource type="Resource" script_class="PlanetSettings" load_steps=23 format=3 uid="uid://dndwamrx0yyd8"]
 
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="1_ec2n1"]
-[ext_resource type="Shader" uid="uid://4sqcy5ila4dp" path="res://scenes/planet/biome_terrain.gdshader" id="2_dl7hi"]
+[ext_resource type="Shader" uid="uid://btsydfvxyvh77" path="res://scenes/planet/biome_terrainv2.gdshader" id="2_csqwb"]
+[ext_resource type="Texture2DArray" uid="uid://datt66mdctdku" path="res://assets/textures/biomes_packed/sandbox_albedo_array.res" id="3_ain3u"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="3_dl7hi"]
-[ext_resource type="Texture2D" uid="uid://csllwx2l4vj4q" path="res://scenes/planet/biomes.png" id="3_y0ecf"]
-[ext_resource type="Texture2DArray" uid="uid://ce1wipa7g2y3t" path="res://scenes/planet/planet_biomes.res" id="4_u5fus"]
+[ext_resource type="Texture2D" uid="uid://b7pwydv1ido3s" path="res://assets/materials/planet/biome_plateau_albedo.png" id="3_ydjwp"]
+[ext_resource type="Texture2D" uid="uid://b1bn704xjyalr" path="res://assets/materials/planet/biome_plateau_normal.png" id="4_tqcrq"]
+[ext_resource type="Texture2DArray" uid="uid://cyqpkcpjpn4tr" path="res://assets/textures/biomes_packed/sandbox_normal_array.res" id="4_undai"]
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="4_y0ecf"]
+[ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="5_undai"]
+[ext_resource type="Texture2D" uid="uid://c32kva5xh2tud" path="res://assets/materials/planet/biome_crater_heightmap.png" id="6_csqwb"]
 [ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="6_dl7hi"]
+[ext_resource type="Texture2D" uid="uid://b5wpurm1yw2nm" path="res://assets/materials/planet/biome_plateau_heightmap.png" id="6_u5fus"]
+[ext_resource type="Texture2D" uid="uid://4djedg7r2hws" path="res://assets/materials/planet/biome_crater_albedo.png" id="6_ybjps"]
+[ext_resource type="Texture2D" uid="uid://wf0vmnexos5p" path="res://assets/materials/planet/biome_crater_normal.png" id="10_uwhv6"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_dl7hi"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
-shader = ExtResource("2_dl7hi")
-shader_parameter/terrain_map = ExtResource("6_dl7hi")
-shader_parameter/biome_map = ExtResource("3_y0ecf")
-shader_parameter/ground_textures = ExtResource("4_u5fus")
-shader_parameter/normal_scale = 1.0
-shader_parameter/uv1_blend_sharpness = 0.0
-shader_parameter/uv1_scale = Vector3(0, 0, 0)
-shader_parameter/uv1_offset = Vector3(0, 0, 0)
-shader_parameter/notile_offset = 1.0
-shader_parameter/terrain_normal_blend_offset = 0.83
-shader_parameter/terrain_normal_blend_fade = 0.1
-shader_parameter/sand_color = Color(0.8, 0.7, 0.4, 1)
-shader_parameter/rock_color = Color(0.4, 0.4, 0.4, 1)
-shader_parameter/soil_color = Color(0.35, 0.2, 0.1, 1)
-shader_parameter/snow_temp_threshold = 0.015
-shader_parameter/sand_elev_threshold = 0.585
-shader_parameter/soil_humid_blend = 0.26
+shader = ExtResource("2_csqwb")
+shader_parameter/biome_color = ExtResource("3_ain3u")
+shader_parameter/biome_normal = ExtResource("4_undai")
+shader_parameter/terrain_normal = ExtResource("5_undai")
+shader_parameter/uv1_blend_sharpness = 8.0
+shader_parameter/uv1_scale = 50.0
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
+frequency = 0.0003
+fractal_type = 2
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
-noise_type = 3
+noise_type = 2
 seed = 1
-frequency = 0.004
-fractal_type = 2
+frequency = 0.0045
+fractal_type = 0
+cellular_return_type = 3
 domain_warp_enabled = true
 domain_warp_amplitude = 3.0
 domain_warp_frequency = 0.003
@@ -71,19 +72,23 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("4_y0ecf")
 elev_scale = 5.0
-noise_scale = 50.0
+noise_scale = 5.0
+biome_noise = SubResource("FastNoiseLite_8q5ja")
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
-max_lod = 11
+max_lod = 9
 noise_params = Array[ExtResource("3_dl7hi")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
 terrain_map = ExtResource("6_dl7hi")
+biomes_elevations = Array[Texture2D]([ExtResource("6_u5fus"), ExtResource("6_csqwb")])
+biomes_albedo = Array[Texture2D]([ExtResource("3_ydjwp"), ExtResource("6_ybjps")])
+biomes_normal = Array[Texture2D]([ExtResource("4_tqcrq"), ExtResource("10_uwhv6")])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [resource]
 script = ExtResource("1_ec2n1")
 radius = 2100000
-atmosphere_height = 12000
-terrain_material = ExtResource("2_0m3tu")
-sea_level = 680
+atmosphere_height = 40000
+terrain_material = SubResource("ShaderMaterial_jl8nh")
+sea_level = 1300
 terrain_settings = SubResource("Resource_7f52q")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"
