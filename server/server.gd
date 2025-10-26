@@ -572,10 +572,10 @@ func dispatch_horizon_message(message: Dictionary):
 					spawned_entity_instance.owner = get_tree().current_scene
 				)
 				universe_scene.add_child(spawned_entity_instance)
-				spawned_entity_instance.set_uuid(player_data["uuid"])
-				players_list[player_data["uuid"]] = spawned_entity_instance
-				players_list_last_movement[player_data["uuid"]] = spawned_entity_instance.global_position
-				players_list_last_rotation[player_data["uuid"]] = spawned_entity_instance.global_rotation
+				spawned_entity_instance.set_uuid(player_data["internal_uuid"])
+				players_list[player_data["internal_uuid"]] = spawned_entity_instance
+				players_list_last_movement[player_data["internal_uuid"]] = spawned_entity_instance.global_position
+				players_list_last_rotation[player_data["internal_uuid"]] = spawned_entity_instance.global_rotation
 				spawned_entity_instance.connect("hs_server_move", _on_player_move)
 
 			"add_prop":
@@ -714,7 +714,30 @@ func send_players_newposition_to_horizon():
 			"data": players_newposition.values()
 		}
 		peer.send_text(JSON.stringify(message))
+
+		# # luminal_handle,
+		# # "GorcPlayer",
+		# # 0, // Channel 0: Critical movement data
+		# # "move",
+		# for p in players_newposition.values():
+		# 	var newMessage = {
+		# 		"type": "gorc_event",
+		# 		"object_id": p["uuid"],
+		# 		"channel": 0,
+		# 		"event": "move",
+		# 		"data": { 
+		# 			"player_id": p["uuid"],
+		# 			"new_position": { "x": p["pos"]["x"], "y": p["pos"]["y"], "z": p["pos"]["z"] },
+		# 			"velocity": { "x": 10.0, "y": 0.0, "z": 5.0 },
+		# 			"movement_state": 1,
+		# 			"client_timestamp": "2024-01-15T10:30:45Z"		
+		# 		}			
+		# 	}
+		# 	peer.send_text(JSON.stringify(newMessage))
+
 		players_newposition.clear()
+
+
 
 func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String, reparent_uuid = null, is_parented = false):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:

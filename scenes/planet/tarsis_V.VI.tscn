@@ -1,0 +1,236 @@
+[gd_scene load_steps=45 format=3 uid="uid://ywuxq3qwr2ps"]
+
+[ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_jm070"]
+[ext_resource type="Resource" uid="uid://dndwamrx0yyd8" path="res://scenes/planet/sandbox_settings.tres" id="2_t8mid"]
+[ext_resource type="PackedScene" uid="uid://bcer07jbu28y1" path="res://scenes/planet/planet_terrain.tscn" id="3_qwf3j"]
+[ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="4_att7a"]
+[ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="5_jdoh6"]
+[ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="6_w0fh4"]
+[ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://assets/models/spawn_kiosk/spawn_kiosk.tscn" id="7_dpo0c"]
+[ext_resource type="Script" uid="uid://7pymoxifok1q" path="res://tools/spawn_points/player_spawn_points_list.gd" id="8_crlgu"]
+[ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="9_nthtm"]
+[ext_resource type="PackedScene" uid="uid://br2b6gumt3gyn" path="res://scenes/planet/asset_spawner.tscn" id="10_pgklh"]
+[ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="11_pmrfd"]
+[ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="12_q1ovv"]
+[ext_resource type="PackedScene" uid="uid://ckogdailxd1jo" path="res://scenes/props/rock/rock_large.tscn" id="13_1kvle"]
+[ext_resource type="PackedScene" uid="uid://bb0fma643hacs" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere.tscn" id="14_8tvvc"]
+[ext_resource type="Shader" uid="uid://dsu80023m2ier" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere_fbcosentino.gdshader" id="15_3wdip"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
+noise_type = 3
+seed = 1
+frequency = 0.004
+fractal_type = 2
+domain_warp_enabled = true
+domain_warp_amplitude = 3.0
+domain_warp_frequency = 0.003
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_qc8cq"]
+frequency = 0.0064
+fractal_type = 2
+fractal_octaves = 6
+fractal_lacunarity = 1.995
+fractal_gain = 0.695
+
+[sub_resource type="Resource" id="Resource_qc8cq"]
+script = ExtResource("4_att7a")
+scale = 400.0
+clamp_min = 300.0
+clamp_max = 350.0
+description = "Plateau"
+metadata/_custom_type_script = "uid://d0532xwig15xf"
+
+[sub_resource type="Resource" id="Resource_yhksb"]
+script = ExtResource("4_att7a")
+amplitude = 270.0
+scale = 400.0
+clamp_min = 350.0
+clamp_max = 1000.0
+description = "Mountains"
+metadata/_custom_type_script = "uid://d0532xwig15xf"
+
+[sub_resource type="Resource" id="Resource_rx63j"]
+script = ExtResource("4_att7a")
+noise_type = "micro"
+amplitude = 10.0
+description = "Micro details elevation"
+metadata/_custom_type_script = "uid://d0532xwig15xf"
+
+[sub_resource type="Resource" id="Resource_7f52q"]
+script = ExtResource("5_jdoh6")
+elev_scale = 5.0
+noise_scale = 50.0
+noise = SubResource("FastNoiseLite_xk4jg")
+noise_micro = SubResource("FastNoiseLite_qc8cq")
+max_lod = 11
+noise_params = Array[ExtResource("4_att7a")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
+metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_6wdpo"]
+radius = 282000.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_qugoe"]
+radius = 200.0
+height = 400.0
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_642k6"]
+render_priority = 4
+no_depth_test = true
+shading_mode = 0
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_mv8ka"]
+frequency = 0.0348
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
+noise = SubResource("FastNoiseLite_mv8ka")
+seamless = true
+as_normal_map = true
+seamless_blend_skirt = 0.031
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
+albedo_color = Color(0.301579, 0.510198, 0.570312, 1)
+metallic = 1.0
+roughness = 0.05
+normal_enabled = true
+normal_texture = SubResource("NoiseTexture2D_6x306")
+subsurf_scatter_strength = 0.21
+refraction_scale = -0.02
+uv1_scale = Vector3(0.05, 0.05, 0.05)
+uv1_triplanar = true
+
+[sub_resource type="SphereMesh" id="SphereMesh_642k6"]
+radius = 10680.0
+height = 21360.0
+
+[sub_resource type="Gradient" id="Gradient_ge052"]
+offsets = PackedFloat32Array(0.503401, 0.57483)
+colors = PackedColorArray(0.0873382, 1.82897e-06, 0.450119, 1, 0, 0.791469, 0.587378, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_f8q4h"]
+gradient = SubResource("Gradient_ge052")
+
+[sub_resource type="Curve" id="Curve_0lcug"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.421162, 0.206226), 1.05027, 1.05027, 0, 0, Vector2(0.574689, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_utdev"]
+curve = SubResource("Curve_0lcug")
+
+[sub_resource type="Gradient" id="Gradient_o7yqh"]
+offsets = PackedFloat32Array(0.377551, 0.530612, 0.651613)
+colors = PackedColorArray(0, 0, 0, 1, 0.98, 0.711317, 0.5194, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_24slt"]
+gradient = SubResource("Gradient_o7yqh")
+
+[sub_resource type="Gradient" id="Gradient_q6jia"]
+offsets = PackedFloat32Array(0, 0.0133929, 0.102041, 0.557823, 1)
+colors = PackedColorArray(0, 0, 0, 1, 1, 0.199517, 0.159956, 1, 1, 0.904724, 0.795297, 1, 0.79, 0.716267, 0.632, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_gfhus"]
+gradient = SubResource("Gradient_q6jia")
+
+[sub_resource type="Curve" id="Curve_50f0x"]
+_data = [Vector2(0, 1), 0.0, -5.45596, 0, 0, Vector2(0.246888, 0.330739), -1.25032, -1.25032, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_hltm3"]
+curve = SubResource("Curve_50f0x")
+
+[sub_resource type="Gradient" id="Gradient_mv8ka"]
+offsets = PackedFloat32Array(0, 0.083871, 1)
+colors = PackedColorArray(0.595456, 0.838318, 0.927083, 1, 0.593183, 0.873433, 1, 1, 0.716683, 0.97923, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_kghk6"]
+gradient = SubResource("Gradient_mv8ka")
+
+[sub_resource type="Gradient" id="Gradient_wsl8f"]
+colors = PackedColorArray(1.49205e-06, 0.489553, 0.503481, 1, 0.00948865, 0.232265, 0.294271, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_tfj6s"]
+gradient = SubResource("Gradient_wsl8f")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_7o858"]
+render_priority = 2
+shader = ExtResource("15_3wdip")
+shader_parameter/height_profile_curve = SubResource("CurveTexture_hltm3")
+shader_parameter/height_profile_main_colors = SubResource("GradientTexture1D_kghk6")
+shader_parameter/height_profile_back_colors = SubResource("GradientTexture1D_gfhus")
+shader_parameter/direction_profile_curve = SubResource("CurveTexture_utdev")
+shader_parameter/direction_profile_main_colors = SubResource("GradientTexture1D_24slt")
+shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_f8q4h")
+shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
+shader_parameter/sea_level = 270600.0
+shader_parameter/atmosphere_radius = 282600.0
+shader_parameter/atmosphere_density = 0.515
+shader_parameter/water_density_factor = -0.205
+
+[sub_resource type="BoxMesh" id="BoxMesh_642k6"]
+flip_faces = true
+size = Vector3(593460, 593460, 593460)
+
+[node name="Planet" type="Node3D"]
+script = ExtResource("1_jm070")
+planet_settings = ExtResource("2_t8mid")
+
+[node name="DataPlanet" type="Node" parent="."]
+metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
+
+[node name="PlanetTerrain" parent="." instance=ExtResource("3_qwf3j")]
+radius = 270000
+max_height = 23100839.98890221
+terrain_settings = SubResource("Resource_7f52q")
+
+[node name="PlanetGravity" type="Area3D" parent="PlanetTerrain" groups=["gravity"]]
+collision_mask = 3
+gravity_space_override = 2
+gravity_point = true
+gravity_point_unit_distance = 270000.0
+gravity_point_center = Vector3(0, 0, 0)
+gravity_direction = Vector3(0, 0, 0)
+script = ExtResource("6_w0fh4")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTerrain/PlanetGravity"]
+shape = SubResource("SphereShape3D_6wdpo")
+
+[node name="SpawnKiosk01" parent="PlanetTerrain" instance=ExtResource("7_dpo0c")]
+transform = Transform3D(0.0192737, -0.363338, 0.931458, 8.67362e-19, 0.931631, 0.363405, -0.999814, -0.00700417, 0.017956, -4920.53, 9452.58, 60.1234)
+
+[node name="PlayerSpawnPointsList" type="Node3D" parent="PlanetTerrain"]
+transform = Transform3D(1, 0, -5.55112e-17, 0, 1, 0, 5.55112e-17, 0, 1, 0, 0, 0)
+script = ExtResource("8_crlgu")
+metadata/_custom_type_script = "uid://7pymoxifok1q"
+
+[node name="PlayerSpawnPoint01" type="Marker3D" parent="PlanetTerrain/PlayerSpawnPointsList"]
+transform = Transform3D(0.0192737, -0.327725, 0.944576, 0, 0.944752, 0.327787, -0.999813, -0.00631764, 0.0182089, -4912.47, 9460.65, 60.2788)
+gizmo_extents = 2.5
+script = ExtResource("9_nthtm")
+metadata/_custom_type_script = "uid://3b53gu5cyf58"
+
+[node name="RockSpawner" parent="PlanetTerrain" node_paths=PackedStringArray("planet_terrain", "debugmesh") instance=ExtResource("10_pgklh")]
+transform = Transform3D(0.904889, 0, 0.425651, 0, 1, 0, -0.425651, 0, 0.904889, 0, 0, 0)
+planet_terrain = NodePath("..")
+cell_size = 200.0
+spawn_distance = 4000
+asset_scenes = Array[PackedScene]([ExtResource("11_pmrfd"), ExtResource("12_q1ovv"), ExtResource("13_1kvle")])
+debugmesh = NodePath("debug")
+
+[node name="debug" type="MeshInstance3D" parent="PlanetTerrain/RockSpawner"]
+transform = Transform3D(1, 0, 1.1102230246251563e-15, 0, 1, 0, -1.1102230246251563e-15, 0, 1, 95486.86373387644, 417962.86136467016, -263602.6236243045)
+visible = false
+mesh = SubResource("SphereMesh_qugoe")
+surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
+
+[node name="WaterSurface" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.996345, 0, 0.0854169, 0, 1, 0, -0.0854169, 0, 0.996345, 0, 0, 0)
+visible = false
+material_override = SubResource("StandardMaterial3D_7o858")
+mesh = SubResource("SphereMesh_642k6")
+skeleton = NodePath("../PlanetTerrain")
+
+[node name="Atmosphere" parent="." instance=ExtResource("14_8tvvc")]
+transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 0, 0, 0)
+material_override = SubResource("ShaderMaterial_7o858")
+mesh = SubResource("BoxMesh_642k6")
+planet_radius = 270600.0
+atmosphere_height = 12000.0
