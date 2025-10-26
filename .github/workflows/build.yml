@@ -21,14 +21,7 @@ jobs:
 
       - name: Uninstall dotnet (9.0)
         run: |
-          New-Item -ItemType Directory -Force -Path "D:\dotnet-core-uninstall" | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/dotnet/cli-lab/releases/download/1.7.618124/dotnet-core-uninstall.msi" -OutFile "D:\dotnet-core-uninstall\dotnet-core-uninstall.msi"
-          Start-Process msiexec.exe -Wait -ArgumentList '/i "D:\dotnet-core-uninstall\dotnet-core-uninstall.msi" /qn /norestart'
-
-      - name: Uninstall dotnet (9.0) 2/2
-        run: |
-          dotnet-core-uninstall list
-          dotnet-core-uninstall remove --all --force
+          Get-Package -Name "Microsoft .NET*" -AllVersions | Uninstall-Package -Force
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
