@@ -19,17 +19,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install dotnet SDK 8.0
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
       - name: get Godot Windows
         run: |
           Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/windows-editor-mono-double.zip" -OutFile "$env:TEMP\windows-editor-mono-double.zip"
           New-Item -ItemType Directory -Force -Path "D:\Godot" | Out-Null
           Expand-Archive -Path "$env:TEMP\windows-editor-mono-double.zip" -DestinationPath "D:\Godot" -Force
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
-
-      - name: Install dotnet SDK 8.0
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '8.0.x'
 
       - name: Windows Build
         run: |
