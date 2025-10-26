@@ -24,8 +24,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path "D:\dotnet-core-uninstall" | Out-Null
           Invoke-WebRequest -Uri "https://github.com/dotnet/cli-lab/releases/download/1.7.618124/dotnet-core-uninstall.msi" -OutFile "D:\dotnet-core-uninstall\dotnet-core-uninstall.msi"
           Start-Process msiexec.exe -Wait -ArgumentList '/i "D:\dotnet-core-uninstall\dotnet-core-uninstall.msi" /qn /norestart'
-          & "dotnet-core-uninstall.exe" list
-          & "dotnet-core-uninstall.exe" remove --all --force
+          dotnet-core-uninstall list
+          dotnet-core-uninstall remove --all --force
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
