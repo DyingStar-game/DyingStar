@@ -21,7 +21,8 @@ jobs:
 
       - name: Uninstall dotnet (9.0)
         run: |
-          Get-Package -Name "Microsoft .NET*" -AllVersions | Uninstall-Package -Force
+          Get-Package -Name "*.NET*" -AllVersions
+        #  | Uninstall-Package -Force
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
