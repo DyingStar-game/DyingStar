@@ -21,7 +21,11 @@ jobs:
 
       - name: Uninstall dotnet (9.0)
         run: |
-          dotnet tool install -g dotnet-core-uninstall
+          dotnet tool install dotnet-core-uninstall
+
+      - name: continue uninstall
+        run: |
+          dotnet-core-uninstall list
           dotnet-core-uninstall remove --all
 
       - name: Install dotnet SDK 8.0
