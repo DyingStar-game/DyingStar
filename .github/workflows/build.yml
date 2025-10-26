@@ -21,7 +21,7 @@ jobs:
 
       - name: Uninstall dotnet (9.0)
         run: |
-          dotnet tool install dotnet-core-uninstall
+          dotnet tool install --global dotnet-core-uninstall
 
       - name: continue uninstall
         run: |
