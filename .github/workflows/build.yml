@@ -21,12 +21,14 @@ jobs:
 
       - name: Uninstall dotnet (9.0)
         run: |
-          dotnet tool install --global dotnet-core-uninstall
-
-      - name: continue uninstall
-        run: |
-          dotnet-core-uninstall list
-          dotnet-core-uninstall remove --all
+          New-Item -ItemType Directory -Force -Path "D:\dotnet-core-uninstall" | Out-Null
+          $downloadUrl = "https://github.com/dotnet/cli-lab/releases/latest/download/dotnet-core-uninstall-win-x64.zip"
+          $zipPath = "D:\dotnet-core-uninstall\dotnet-core-uninstall.zip"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "D:\dotnet-core-uninstall" -Force
+          $env:PATH += ";D:\dotnet-core-uninstall"
+          & "D:\dotnet-core-uninstall\dotnet-core-uninstall.exe" list
+          & "D:\dotnet-core-uninstall\dotnet-core-uninstall.exe" remove --all --force
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
