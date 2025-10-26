@@ -1,0 +1,37 @@
+name: "Building DyingStar"
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+       - '*'
+  # Runs test suite when a PR is opened or synchronyzed
+  pull_request:
+  # Runs test suite every night
+  schedule:
+    - cron:  '0 0 * * *'
+  
+jobs:
+  Build-Windows:
+    name: Build DyingStar for Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: get Godot Windows
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/windows-editor-mono-double.zip" -OutFile "$env:TEMP\windows-editor-mono-double.zip"
+          New-Item -ItemType Directory -Force -Path "D:\Godot" | Out-Null
+          Expand-Archive -Path "$env:TEMP\windows-editor-mono-double.zip" -DestinationPath "D:\Godot" -Force
+          Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
+
+      - name: Windows Build
+        run: |
+          D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: build/windows_client
