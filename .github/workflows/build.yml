@@ -19,10 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clean dotnet 9
-        uses: AdityaGarg8/remove-unwanted-software@v5
-        with:
-          remove-dotnet: 'true'        
+      - name: Uninstall dotnet (9.0)
+        run: |
+          dotnet tool install -g dotnet-core-uninstall
+          dotnet-core-uninstall remove --all
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
