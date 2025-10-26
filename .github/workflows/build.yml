@@ -26,6 +26,11 @@ jobs:
           Expand-Archive -Path "$env:TEMP\windows-editor-mono-double.zip" -DestinationPath "D:\Godot" -Force
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
 
+      - name: Install dotnet SDK 8.0
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Windows Build
         run: |
           D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop"
