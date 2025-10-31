@@ -77,7 +77,14 @@ class QuadtreeChunk:
 	func generate_identifier() -> String:
 		# Generate a unique identifier for the chunk based on bounds and depth
 		return "%s_%s_%d" % [bounds.position, bounds.size, depth]
-
+	
+	func get_sphere_point(p: Vector3) -> Vector3:
+		var np = Vector3()
+		var p2 = p * p
+		np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
+		np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
+		np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
+		return np
 
 	func within_lod_distance(
 		lod_centers: Array[Vector3],
@@ -85,7 +92,7 @@ class QuadtreeChunk:
 		center_local_3d: Vector3
 	) -> bool:
 		for pos: Vector3 in lod_centers:
-			var h := planet.get_height(center_local_3d.normalized())
+			var h := planet.get_height(get_sphere_point(center_local_3d))
 			var distance := h.distance_to(pos)
 
 			if distance <= planet.radius * bounds.size.x * 0.7:
@@ -157,52 +164,13 @@ func to_sphere_uv(point: Vector3) -> Vector2:
 	
 	return Vector2(u, v)
 
-
-func get_cube_uv(normalized_pos: Vector3) -> Vector2:
-	var x = normalized_pos.x
-	var y = normalized_pos.y
-	var z = normalized_pos.z
-
-	var abs_x = abs(x)
-	var abs_y = abs(y)
-	var abs_z = abs(z)
-
-	var u: float
-	var v: float
-
-	# +X face
-	if abs_x >= abs_y and abs_x >= abs_z:
-		if x > 0.0:
-			u = -z / abs_x
-			v = y / abs_x
-		else:
-			# -X face
-			u = z / abs_x
-			v = y / abs_x
-
-	# +Y face
-	elif abs_y >= abs_x and abs_y >= abs_z:
-		if y > 0.0:
-			u = x / abs_y
-			v = -z / abs_y
-		else:
-			# -Y face
-			u = x / abs_y
-			v = z / abs_y
-
-	# +Z face
-	else:
-		if z > 0.0:
-			u = x / abs_z
-			v = y / abs_z
-		else:
-			# -Z face
-			u = -x / abs_z
-			v = y / abs_z
-
-	# Map from [-1, 1] → [0, 1]
-	return Vector2((u + 1.0) * 0.5, (v + 1.0) * 0.5)
-
+func get_sphere_point(p: Vector3) -> Vector3:
+	var np = Vector3()
+	var p2 = p * p
+	np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
+	np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
+	np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
+	return np
 
 func visualize_quadtree(chunk: QuadtreeChunk):
 
@@ -238,7 +206,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		uv_array.resize(resolution * resolution)
 		color_array.resize(resolution * resolution)
 		
-		var chunk_global_pos := (normal + offset.x * axis_a + offset.z * axis_b).normalized() * planet.radius
+		var chunk_global_pos := get_sphere_point(normal + offset.x * axis_a + offset.z * axis_b) * planet.radius
 		
 		var tri_idx: int = 0
 		for y in range(resolution):
@@ -248,16 +216,18 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				var percent := Vector2(x, y) / float(resolution - skirt_indices - 1)
 				var local := Vector2(offset.x, offset.z) + percent * size
 				var point_on_plane = normal + local.x * axis_a + local.y * axis_b
+				
+				var sphere_p := get_sphere_point(point_on_plane)
 
 				# Project onto sphere and apply height
-				var sphere_pos := planet.get_height(point_on_plane.normalized())
+				var sphere_pos := planet.get_height(sphere_p)
 
 				# calculate offset to lower the vertices that are on the edge of the chunk
-				var lod_offset := point_on_plane.normalized() * 0.01 if edge else Vector3.ZERO
+				var lod_offset := sphere_p * 0.03 if edge else Vector3.ZERO
 				vertex_array[i] = sphere_pos - chunk_global_pos - lod_offset
 				normal_array[i] = Vector3.ZERO
-				uv_array[i] = get_cube_uv(point_on_plane.normalized()) #to_sphere_uv(point_on_plane.normalized())
-				color_array[i] = Color(planet.get_biome(point_on_plane.normalized()), 0.0, 0.0)
+				uv_array[i] = planet.get_uv(sphere_p) #to_sphere_uv(point_on_plane.normalized())
+				color_array[i] = Color(planet.get_biome(sphere_p), 0.0, 0.0)
 				
 				# Track height extremes
 				var length := sphere_pos.length()

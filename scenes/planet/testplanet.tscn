@@ -1,4 +1,4 @@
-[gd_scene load_steps=61 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=55 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -27,47 +27,8 @@
 [ext_resource type="Texture2DArray" uid="uid://cyqpkcpjpn4tr" path="res://assets/textures/biomes_packed/sandbox_normal_array.res" id="15_kyu43"]
 [ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="16_kyu43"]
 
-[sub_resource type="Environment" id="Environment_yhksb"]
-background_mode = 2
-ambient_light_color = Color(1, 1, 1, 1)
-ambient_light_sky_contribution = 0.79
-tonemap_mode = 3
-glow_enabled = true
-
-[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_c1vqx"]
-properties/0/path = NodePath("PlanetTerrain:rotation")
-properties/0/spawn = true
-properties/0/replication_mode = 0
-properties/1/path = NodePath(".:position")
-properties/1/spawn = true
-properties/1/replication_mode = 0
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_mv8ka"]
-frequency = 0.0348
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6x306"]
-noise = SubResource("FastNoiseLite_mv8ka")
-seamless = true
-as_normal_map = true
-seamless_blend_skirt = 0.031
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7o858"]
-albedo_color = Color(0.301579, 0.510198, 0.570312, 1)
-metallic = 1.0
-roughness = 0.05
-normal_enabled = true
-normal_texture = SubResource("NoiseTexture2D_6x306")
-subsurf_scatter_strength = 0.21
-refraction_scale = -0.02
-uv1_scale = Vector3(0.05, 0.05, 0.05)
-uv1_triplanar = true
-
-[sub_resource type="SphereMesh" id="SphereMesh_642k6"]
-radius = 501300.0
-height = 1002600.0
-
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
-frequency = 0.0003
+frequency = 0.00039999999999999
 fractal_type = 2
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
@@ -113,8 +74,7 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("5_qc8cq")
-elev_scale = 5.0
-noise_scale = 5.0
+noise_scale = 50.0
 biome_noise = SubResource("FastNoiseLite_8q5ja")
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
@@ -129,11 +89,13 @@ metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("9_4eq58")
+shader_parameter/layer_count = 2
 shader_parameter/biome_color = ExtResource("14_8q5ja")
 shader_parameter/biome_normal = ExtResource("15_kyu43")
 shader_parameter/terrain_normal = ExtResource("16_kyu43")
 shader_parameter/uv1_blend_sharpness = 8.0
-shader_parameter/uv1_scale = 50.0
+shader_parameter/uv1_scale = 1.0
+shader_parameter/uv_distance_scale = 1.0
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_6wdpo"]
 radius = 2112000.0
@@ -221,6 +183,18 @@ script = ExtResource("1_83pno")
 planet_id = "sandbox"
 planet_settings = ExtResource("2_nqw6u")
 
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.5620833778521304, -0.23351913426712265, 0.7934299529722034, 0, -0.9593139745400576, -0.2823414568428763, 0.827080574274562, -0.15869943976993542, 0.5392144392302282, 0, 0, 0)
+shadow_enabled = true
+directional_shadow_split_1 = 0.015
+directional_shadow_split_2 = 0.045
+directional_shadow_split_3 = 0.215
+directional_shadow_blend_splits = true
+directional_shadow_max_distance = 1000000.0
+
+[node name="WaterSurface" type="MeshInstance3D" parent="."]
+visible = false
+
 [node name="PlanetTerrain" parent="." instance=ExtResource("4_2pfeq")]
 radius = 2100000
 max_height = 2103839.988902211
@@ -273,9 +247,9 @@ surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 shape = SubResource("BoxShape3D_r4ens")
 
 [node name="Atmosphere" parent="." instance=ExtResource("6_mv8ka")]
-transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 16.975248443524833, 0, -12.228018846491976)
+transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 1130.4892572409972, -922.5814580358564, -1.3390314438274782)
 material_override = SubResource("ShaderMaterial_7o858")
 cast_shadow = 0
 mesh = SubResource("BoxMesh_642k6")
 planet_radius = 2100600.0
-atmosphere_height = 12000.0
+atmosphere_height = 150000.0

@@ -18,14 +18,16 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("2_csqwb")
+shader_parameter/layer_count = 2
 shader_parameter/biome_color = ExtResource("3_ain3u")
 shader_parameter/biome_normal = ExtResource("4_undai")
 shader_parameter/terrain_normal = ExtResource("5_undai")
 shader_parameter/uv1_blend_sharpness = 8.0
-shader_parameter/uv1_scale = 50.0
+shader_parameter/uv1_scale = 1.0
+shader_parameter/uv_distance_scale = 1.0
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
-frequency = 0.0003
+frequency = 0.00039999999999999
 fractal_type = 2
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
@@ -71,12 +73,11 @@ metadata/_custom_type_script = "uid://d0532xwig15xf"
 
 [sub_resource type="Resource" id="Resource_7f52q"]
 script = ExtResource("4_y0ecf")
-elev_scale = 5.0
-noise_scale = 5.0
+noise_scale = 50.0
 biome_noise = SubResource("FastNoiseLite_8q5ja")
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
-max_lod = 9
+max_lod = 11
 noise_params = Array[ExtResource("3_dl7hi")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
 terrain_map = ExtResource("6_dl7hi")
 biomes_elevations = Array[Texture2D]([ExtResource("6_u5fus"), ExtResource("6_csqwb")])
