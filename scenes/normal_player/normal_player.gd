@@ -328,11 +328,18 @@ func _physics_process(delta: float) -> void:
 			move_and_slide()
 			update_last_basis()
 
-		emit_signal("hs_server_move", client_uuid, position, global_rotation, null, is_parented)
+		emit_signal(
+			"hs_server_move",
+			client_uuid,
+			# stepify tu prevent floating points with too many chars after coma
+			snapped(position, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			null,
+			is_parented
+		)
 
 	else:
 		# player part
-		if remote_player: return
 		if !active: return
 
 		var dir_vect = Vector3.ZERO

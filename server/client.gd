@@ -22,12 +22,33 @@ var props_list: Dictionary = {
 	"box4m": {},
 	"ship": {},
 }
+var my_player_uuid: String = ""
 
-var planet_scene = preload("res://scenes/planet/testplanet.tscn")
+# var planet_scene = preload("res://scenes/planet/testplanet.tscn")
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
-var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 
-var lock_players_planets_creation: bool = false
+var preload_planet_scene = {
+	"tarsis_I": preload("res://scenes/planet/tarsis_I.tscn"),
+	"tarsis_II": preload("res://scenes/planet/tarsis_II.tscn"),
+	"tarsis_III": preload("res://scenes/planet/tarsis_III.tscn"),
+	"tarsis_IV": preload("res://scenes/planet/tarsis_IV.tscn"),
+	"tarsis_V": preload("res://scenes/planet/tarsis_V.tscn"),
+	"tarsis_V.I": preload("res://scenes/planet/tarsis_V.I.tscn"),
+	"tarsis_V.II": preload("res://scenes/planet/tarsis_V.II.tscn"),
+	"tarsis_V.III": preload("res://scenes/planet/tarsis_V.III.tscn"),
+	"tarsis_V.IV": preload("res://scenes/planet/tarsis_V.IV.tscn"),
+	"tarsis_V.V": preload("res://scenes/planet/tarsis_V.V.tscn"),
+	"tarsis_V.VI": preload("res://scenes/planet/tarsis_V.VI.tscn"),
+	"tarsis_VI": preload("res://scenes/planet/tarsis_VI.tscn"),
+	"tarsis_VI.I": preload("res://scenes/planet/tarsis_VI.I.tscn"),
+	"tarsis_VI.II": preload("res://scenes/planet/tarsis_VI.II.tscn"),
+	"tarsis_VII": preload("res://scenes/planet/tarsis_VII.tscn"),
+	"tarsis_VIII": preload("res://scenes/planet/tarsis_VIII.tscn"),
+}
+
+# on client, Horizon messages can arrives in not right order when have parent_id for players
+# so we store the message in this case in the goal to process them later
+var pending_messages_parenting: Array[Dictionary] = []
 
 func _enter_tree() -> void:
 	set_process(false)
@@ -98,61 +119,28 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("< Got text data from server: %s" % packet_text)
+				print("< Client - Got text data from server: %s" % packet_text)
 				var event = JSON.parse_string(packet_text)
+
+				if not event.has("type"):
+					match event["object_type"]:
+						"GorcPlayer":
+							player_update(event)
+						_:
+							pass
+					continue
 
 				# Handle the event based on its type
 				match event["type"]:
-					"player_props":
-						# loop until lock_players_planets_creation is true
-						while lock_players_planets_creation:
-							await get_tree().create_timer(0.1).timeout
-						create_players_planets(event)
-					"update_props":
-						update_props(event)
-					"props_position_update":
-						update_props_position(event)
-					"delete_player":
-						delete_player(event)
+					"init_ack":
+						# store my player uuid
+						my_player_uuid = event["player_id"]
+					"gorc_zone_enter":
+						create_object(event)
 					_:
 						print("< Unknown event type: %s" % event["type"])
-
-# < Got text data from server:
-# {
-#     "planets": [
-#         {
-#             "name": "Sandbox",
-#             "position": {
-#                 "x": 15067000000,
-#                 "y": 0,
-#                 "z": 0
-#             },
-#             "rotation": {
-#                 "x": 0,
-#                 "y": 0,
-#                 "z": 0
-#             },
-#             "uuid": "2c28e3fb-9ef0-45ae-ad14-dfc81a701024"
-#         }
-#     ],
-#     "player": {
-#         "name": "gergerg",
-#         "position": {
-#             "x": 15067000000,
-#             "y": 12000,
-#             "z": 0
-#         },
-#         "rotation": {
-#             "x": 0,
-#             "y": 0,
-#             "z": 0
-#         },
-#         "uuid": "e946ee8d-737e-4577-ab11-b169991010bd"
-#     },
-#     "type": "player_props"
-# }
 			else:
-				print("< Got binary data from server: %d bytes" % packet.size())
+				print("< Client - Got binary data from server: %d bytes" % packet.size())
 
 	# `WebSocketPeer.STATE_CLOSING` means the socket is closing.
 	# It is important to keep polling for a clean close.
@@ -167,79 +155,6 @@ func _process(_delta: float) -> void:
 		print("WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
 
-
-func create_players_planets(event: Dictionary) -> void:
-	lock_players_planets_creation = true
-	print("CREATE PLAYERS AND PLANETS")
-	if event.has("players"):
-		var players_data = event["players"]
-		# print("Player data received:")
-		# print(players_data)
-		# Here you can handle the player data, e.g., spawn the player in the game world
-		# complete_client_initialization(spawn_player(player_data))
-		for player_data in players_data:
-			if player_data["name"] == GameOrchestrator.login_player_name:
-				if not player_entity:
-					# await get_tree().create_timer(1).timeout
-					var spawned_entity_instance = player_scene.instantiate()
-					spawned_entity_instance.spawn_position = Vector3(
-						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
-					)
-					spawned_entity_instance.name = player_data["name"]
-					spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
-					spawned_entity_instance.connect("hs_client_action_pressed", _on_client_action_pressed)
-
-					spawned_entity_instance.tree_entered.connect(func():
-						spawned_entity_instance.owner = get_tree().current_scene
-					)
-					universe_scene.add_child(spawned_entity_instance)
-					spawned_entity_instance.set_physics_process(false)
-					spawned_entity_instance.client_uuid = player_data["uuid"]
-					spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
-					player_entity = spawned_entity_instance
-			else:
-				if not players_list.has(player_data["uuid"]):
-					var spawned_entity_instance = player_scene.instantiate()
-					spawned_entity_instance.spawn_position = Vector3(
-						player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
-					)
-					spawned_entity_instance.name = "remoteplayer" + player_data["name"]
-					players_list[player_data["uuid"]] = spawned_entity_instance
-
-					spawned_entity_instance.tree_entered.connect(func():
-						spawned_entity_instance.owner = get_tree().current_scene
-					)
-					universe_scene.add_child(spawned_entity_instance)
-					spawned_entity_instance.set_physics_process(false)
-					spawned_entity_instance.client_uuid = player_data["uuid"]
-
-	if event.has("planets"):
-		var planets_data = event["planets"]
-		print("Planets data received: %s" % planets_data)
-		# Here you can handle the planets data, e.g., spawn planets in the game world
-		for planet in planets_data:
-			if not props_list["planet"].has(planet["uuid"]):
-				# spawn planet
-				print("Loading planet scene...")
-				var spawnable_planet_instance = planet_scene.instantiate()
-				spawnable_planet_instance.spawn_position = Vector3(
-					planet["position"]["x"], planet["position"]["y"], planet["position"]["z"]
-				)
-				spawnable_planet_instance.name = planet.name
-				spawnable_planet_instance.uuid = planet["uuid"]
-				# get_tree().current_scene.add_child(spawnable_planet_instance, true)
-				# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
-				spawnable_planet_instance.tree_entered.connect(func():
-					spawnable_planet_instance.owner = get_tree().current_scene
-				)
-
-				universe_scene.add_child(spawnable_planet_instance)
-				universe_scene.assign_spawn_informations()
-				spawnable_planet_instance.set_physics_process(false)
-				props_list["planet"][planet["uuid"]] = spawnable_planet_instance
-
-	lock_players_planets_creation = false
-	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
 
 func on_connection_established() -> void:
@@ -403,7 +318,7 @@ func delete_player(event: Dictionary) -> void:
 		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 		print("Player %s has been removed." % event["player_uuid"])
 
-func update_props_position(event: Dictionary) -> void:
+#func update_props_position(event: Dictionary) -> void:
 	# {
 	#     "props": [
 	#         {
@@ -423,47 +338,212 @@ func update_props_position(event: Dictionary) -> void:
 	#     ],
 	#     "type": "props_position_update"
 	# }
-	for prop in event["props"]:
-		# print("Prop position update received: %s" % prop)
-		if props_list.has(prop["type"]):
-			match prop["type"]:
-				"box50cm":
-					if not props_list["box50cm"].has(prop["uuid"]):
-						var prop_instance = box50cm_scene.instantiate()
-						prop_instance.tree_entered.connect(func():
-							prop_instance.owner = get_tree().current_scene
-						)
-						if prop.has("reparent"):
-							var planet = props_list["planet"][prop["reparent"]]
-							planet.add_child(prop_instance)
-						else:
-							universe_scene.add_child(prop_instance)
+	# for prop in event["props"]:
+	# 	# print("Prop position update received: %s" % prop)
+	# 	if props_list.has(prop["type"]):
+	# 		match prop["type"]:
+	# 			"box50cm":
+	# 				if not props_list["box50cm"].has(prop["uuid"]):
+	# 					var prop_instance = box50cm_scene.instantiate()
+	# 					prop_instance.tree_entered.connect(func():
+	# 						prop_instance.owner = get_tree().current_scene
+	# 					)
+	# 					if prop.has("reparent"):
+	# 						var planet = props_list["planet"][prop["reparent"]]
+	# 						planet.add_child(prop_instance)
+	# 					else:
+	# 						universe_scene.add_child(prop_instance)
 							
-						prop_instance.set_physics_process(false)
-						prop_instance.freeze = true
-						prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
-						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
-						prop_instance.uuid = prop["uuid"]
-						props_list["box50cm"][prop["uuid"]] = prop_instance
-						NetworkOrchestrator.set_gameserver_number_boxes50cm.emit(props_list["box50cm"].size() + 1)
+	# 					prop_instance.set_physics_process(false)
+	# 					prop_instance.freeze = true
+	# 					prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+	# 					prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+	# 					prop_instance.uuid = prop["uuid"]
+	# 					props_list["box50cm"][prop["uuid"]] = prop_instance
+	# 					NetworkOrchestrator.set_gameserver_number_boxes50cm.emit(props_list["box50cm"].size() + 1)
 
-					else:
-						var prop_instance = props_list["box50cm"][prop["uuid"]]
-						if prop.has("reparent"):
-							var planet = props_list["planet"][prop["reparent"]]
-							prop_instance.reparent(planet)
+	# 				else:
+	# 					var prop_instance = props_list["box50cm"][prop["uuid"]]
+	# 					if prop.has("reparent"):
+	# 						var planet = props_list["planet"][prop["reparent"]]
+	# 						prop_instance.reparent(planet)
 
-						prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
-						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
-				"planet":
-					if props_list["planet"].has(prop["uuid"]):
-						var prop_instance = props_list["planet"][prop["uuid"]]
-						prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
-						prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
-					else:
-						print("Unknown planet UUID: %s" % prop["uuid"])
-				_:
-					print("Unknown prop type: %s" % prop["type"])
-					continue
+	# 					prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+	# 					prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+	# 			"planet":
+	# 				if props_list["planet"].has(prop["uuid"]):
+	# 					var prop_instance = props_list["planet"][prop["uuid"]]
+	# 					prop_instance.global_position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
+	# 					prop_instance.global_rotation = Vector3(prop["rot"]["x"], prop["rot"]["y"], prop["rot"]["z"])
+	# 				else:
+	# 					print("Unknown planet UUID: %s" % prop["uuid"])
+	# 			_:
+	# 				print("Unknown prop type: %s" % prop["type"])
+	# 				continue
+	# 	else:
+	# 		print("Unknown prop type: %s" % prop["type"])
+
+func create_object(event: Dictionary) -> void:
+	match event["object_type"]:
+		"GorcPlayer":
+			if event["channel"] == 0:
+				create_player(event)
+			if event["channel"] == 2:
+				set_player_name(event)
+
+		"planet":
+			create_planet(event)
+		_:
+			print("unknown object type")
+
+func create_generic_prop(event: Dictionary) -> void:
+	if event["zone_data"]["objectdef"] == "planets":
+		var planet = event["zone_data"]
+		print("Client: Load planet: %s" % planet)
+		var planet_scene = load("res://scenes/planet/" + planet["scenename"] + ".tscn")
+
+		var spawnable_planet_instance = planet_scene.instantiate()
+		spawnable_planet_instance.spawn_position = Vector3(
+			planet["position"]["x"], planet["position"]["y"], planet["position"]["z"]
+		)
+		spawnable_planet_instance.name = planet["name"]
+		spawnable_planet_instance.uuid = planet["uuid"]
+		# get_tree().current_scene.add_child(spawnable_planet_instance, true)
+		# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
+		spawnable_planet_instance.tree_entered.connect(func():
+			spawnable_planet_instance.owner = get_tree().current_scene
+		)
+
+		universe_scene.add_child(spawnable_planet_instance)
+		universe_scene.assign_spawn_informations()
+		spawnable_planet_instance.set_physics_process(false)
+		props_list["planet"][planet["uuid"]] = spawnable_planet_instance
+
+func create_player(event: Dictionary) -> void:
+	print("Create player: %s" % event)
+	var player_data = event["zone_data"]
+
+	# Special code because received 2 times the gorc_zone_enter for the same player (my player)
+	if players_list.has(event["object_id"]):
+		return
+
+	if player_data["parent_id"] != "" and not props_list["planet"].has(player_data["parent_id"]):
+		# store pending message
+		pending_messages_parenting.append(event)
+		print("Pending message for player %s because parent_id %s not found yet" % [event["object_id"], player_data["parent_id"]])
+		return
+
+	if event["object_id"] == my_player_uuid:
+		# await get_tree().create_timer(1).timeout
+		var spawned_entity_instance = player_scene.instantiate()
+		spawned_entity_instance.spawn_position = Vector3(
+			player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+		)
+		spawned_entity_instance.name = my_player_uuid
+		spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
+		spawned_entity_instance.connect("hs_client_action_pressed", _on_client_action_pressed)
+		spawned_entity_instance.tree_entered.connect(func():
+			spawned_entity_instance.owner = get_tree().current_scene
+		)
+		universe_scene.add_child(spawned_entity_instance)
+		spawned_entity_instance.set_physics_process(false)
+
+		var planet = props_list["planet"][player_data["parent_id"]]
+		spawned_entity_instance.reparent(planet)
+
+		spawned_entity_instance.client_uuid = my_player_uuid
+		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
+		player_entity = spawned_entity_instance
+		players_list[event["object_id"]] = spawned_entity_instance
+	else:
+		# create remote player
+		if not players_list.has(event["object_id"]):
+			var remote_player_instance = player_scene.instantiate()
+			remote_player_instance.spawn_position = Vector3(
+				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+			)
+			remote_player_instance.name = "remoteplayer" + event["object_id"]
+			players_list[event["object_id"]] = remote_player_instance
+
+			remote_player_instance.tree_entered.connect(func():
+				remote_player_instance.owner = get_tree().current_scene
+			)
+			universe_scene.add_child(remote_player_instance)
+			remote_player_instance.set_physics_process(false)
+			remote_player_instance.client_uuid = event["object_id"]
+
+	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
+
+func set_player_name(event: Dictionary) -> void:
+	pass
+	if players_list.has(event["object_id"]):
+		if event["object_id"] == my_player_uuid:
+			players_list[event["object_id"]].name = event["zone_data"]["name"]
 		else:
-			print("Unknown prop type: %s" % prop["type"])
+			pass
+			players_list[event["object_id"]].name = "remoteplayer" + event["zone_data"]["name"]
+
+func create_planet(message: Dictionary) -> void:
+	print("Create planet: %s" % message)
+
+	# {
+	#     "channel": 2,
+	#     "object_id": "3388a817-f3ef-421d-b10f-4325e105628e",
+	#     "object_type": "planet",
+	#     "player_id": "105bb18d-cce5-448c-9d76-47f3dbba762d",
+	#     "timestamp": 1762005669,
+	#     "type": "gorc_zone_enter",
+	#     "zone_data": {
+	#         "name": "Sandbox",
+	#         "position": {
+	#             "x": 10000000,
+	#             "y": 0,
+	#             "z": 0
+	#         },
+	#         "rotation": {
+	#             "x": 0,
+	#             "y": 0,
+	#             "z": 0
+	#         },
+	#         "scenename": "tarsis_IV"
+	#     }
+	# }
+
+	# Here you can handle the planets data, e.g., spawn planets in the game world
+	if not props_list["planet"].has(message["object_id"]):
+		# spawn planet
+		var spawnable_planet_instance = preload_planet_scene[message["zone_data"]["scenename"]].instantiate()
+		spawnable_planet_instance.spawn_position = Vector3(
+			message["zone_data"]["position"]["x"], message["zone_data"]["position"]["y"], message["zone_data"]["position"]["z"]
+		)
+		spawnable_planet_instance.name = message["zone_data"]["name"]
+		spawnable_planet_instance.uuid = message["object_id"]
+		# get_tree().current_scene.add_child(spawnable_planet_instance, true)
+		# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
+		spawnable_planet_instance.tree_entered.connect(func():
+			spawnable_planet_instance.owner = get_tree().current_scene
+		)
+
+		universe_scene.add_child(spawnable_planet_instance)
+		universe_scene.assign_spawn_informations()
+		spawnable_planet_instance.set_physics_process(false)
+		props_list["planet"][message["object_id"]] = spawnable_planet_instance
+		# planet created, now process pending messages for players waiting for this planet as parent
+		for pending_message in pending_messages_parenting.duplicate():
+			var pending_player_data = pending_message["zone_data"]
+			if pending_player_data["parent_id"] == message["object_id"]:
+				print("Processing pending message for player %s now that parent_id %s is available" % [pending_message["object_id"], pending_player_data["parent_id"]])
+				create_player(pending_message)
+				pending_messages_parenting.erase(pending_message)
+
+func player_update(message: Dictionary) -> void:
+	# print("Player update: %s" % message)
+	if message["channel"] == 0:
+		var uuid = message["object_id"]
+		if players_list.has(uuid):
+			if message["event_type"] == "move":
+				var player = players_list[uuid]
+				player.position = Vector3(message["data"]["new_position"]["x"], message["data"]["new_position"]["y"], message["data"]["new_position"]["z"])
+				# remote_player.global_rotation = Vector3(message["data"]["rotation"]["x"], message["data"]["rotation"]["y"], message["data"]["rotation"]["z"])
+		else:
+			print("Update Player but not found...")

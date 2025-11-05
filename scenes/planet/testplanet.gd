@@ -29,7 +29,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint(): return
-	planet_terrain.rotation.y += 0.001 * delta
+	# planet_terrain.rotation.y += 0.001 * delta
 	# print(transform.basis)
 	# global_position = Vector3(global_position[0] + 100, global_position[1], global_position[2])
 	# rotate_y(0.1)
@@ -46,8 +46,8 @@ func _physics_process(delta: float) -> void:
 	gt.origin = rot * (gt.origin - origin) + origin
 	global_transform = gt
 
-	if GameOrchestrator.is_server():
-		emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "planet")
+	# if GameOrchestrator.is_server():
+	# 	emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "planet")
 
 func update_planet():
 	planet_gravity.gravity_point_unit_distance = planet_settings.radius

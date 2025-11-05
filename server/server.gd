@@ -8,7 +8,7 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const PORT = 8980
 
 # conversion of position to prevent collision problems when position is so far from origin
-const POSITION_CONVERSION_X = 18999498785.9
+const POSITION_CONVERSION_X = 0.0 #18999498785.9
 const POSITION_CONVERSION_Y = 0.0
 const POSITION_CONVERSION_Z = 0.0
 
@@ -74,7 +74,25 @@ var tcp_server = TCPServer.new()
 # Our connected peers list.
 var peer := WebSocketPeer.new()
 
-var planet_scene = preload("res://scenes/planet/testplanet.tscn")
+var preload_planet_scene = {
+	"tarsis_I": preload("res://scenes/planet/tarsis_I.tscn"),
+	"tarsis_II": preload("res://scenes/planet/tarsis_II.tscn"),
+	"tarsis_III": preload("res://scenes/planet/tarsis_III.tscn"),
+	"tarsis_IV": preload("res://scenes/planet/tarsis_IV.tscn"),
+	"tarsis_V": preload("res://scenes/planet/tarsis_V.tscn"),
+	"tarsis_V.I": preload("res://scenes/planet/tarsis_V.I.tscn"),
+	"tarsis_V.II": preload("res://scenes/planet/tarsis_V.II.tscn"),
+	"tarsis_V.III": preload("res://scenes/planet/tarsis_V.III.tscn"),
+	"tarsis_V.IV": preload("res://scenes/planet/tarsis_V.IV.tscn"),
+	"tarsis_V.V": preload("res://scenes/planet/tarsis_V.V.tscn"),
+	"tarsis_V.VI": preload("res://scenes/planet/tarsis_V.VI.tscn"),
+	"tarsis_VI": preload("res://scenes/planet/tarsis_VI.tscn"),
+	"tarsis_VI.I": preload("res://scenes/planet/tarsis_VI.I.tscn"),
+	"tarsis_VI.II": preload("res://scenes/planet/tarsis_VI.II.tscn"),
+	"tarsis_VII": preload("res://scenes/planet/tarsis_VII.tscn"),
+	"tarsis_VIII": preload("res://scenes/planet/tarsis_VIII.tscn"),
+}
+
 var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 
 var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
@@ -150,7 +168,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("Received packet: %s" % [packet_text])
+				print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)
@@ -531,128 +549,162 @@ func convert_value_to_universe(value: float, conversion: float) -> float:
 
 
 func dispatch_horizon_message(message: Dictionary):
+
+
+# SERVER - Received packet: 
+# {
+#     "data": {
+#         "object_data": {
+#             "name": "tarsis II",
+#             "position": {
+#                 "x": 0,
+#                 "y": 10000000,
+#                 "z": 10000000
+#             },
+#             "rotation": {
+#                 "x": 0,
+#                 "y": 0,
+#                 "z": 0
+#             },
+#             "scenename": "tarsis_II"
+#         },
+#         "object_type": "planets",
+#         "object_uuid": "6f3b006e-a6e3-493b-ba3b-57a180a09cc5"
+#     },
+#     "event": "add_prop",
+#     "namespace": "server"
+# }
+	
 	if message['namespace'] == "server":
 		match message['event']:
-			"add_props":
-				# print(message)
-				for planet in message["data"]["planets"]:
-					if not props_list["planets"].has(planet["uuid"]):
+			"add_prop":
+				match message["data"]["object_type"]:
+					"planet":
 						# spawn planet
-						var spawnable_planet_instance = planet_scene.instantiate()
+						var planet_data = message["data"]["object_data"]
+
+						var spawnable_planet_instance = preload_planet_scene[planet_data["scenename"]].instantiate()
 						spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
-							planet["position"]["x"],
-							planet["position"]["y"],
-							planet["position"]["z"]
+							planet_data["position"]["x"],
+							planet_data["position"]["y"],
+							planet_data["position"]["z"]
 						)
-						spawnable_planet_instance.name = planet.name
-						spawnable_planet_instance.uuid = planet["uuid"]
+						spawnable_planet_instance.name = planet_data["name"]
+						spawnable_planet_instance.uuid = message["data"]["object_uuid"]
 						spawnable_planet_instance.tree_entered.connect(func():
 							spawnable_planet_instance.owner = get_tree().current_scene
 						)
 						universe_scene.add_child(spawnable_planet_instance)
-						spawnable_planet_instance.connect("hs_server_prop_move", _on_prop_move)
-						props_list_last_movement[planet["uuid"]] = Vector3.ZERO
-						props_list_last_rotation[planet["uuid"]] = Vector3.ZERO
-						props_list["planets"][planet["uuid"]] = spawnable_planet_instance
+						# spawnable_planet_instance.connect("hs_server_prop_move", _on_prop_move)
+						props_list_last_movement[message["data"]["object_uuid"]] = Vector3.ZERO
+						props_list_last_rotation[message["data"]["object_uuid"]] = Vector3.ZERO
+						props_list["planets"][message["data"]["object_uuid"]] = spawnable_planet_instance
+					"player":
+						var player_data = message["data"]["object_data"]
+						# var player_uuid = message["data"]["object_uuid"]
+						var player_uuid = message["data"]["object_data"]["connection_id"]
+
+						print("Player data received: %s" % player_data)
+
+						var spawned_entity_instance = player_scene.instantiate()
+						spawned_entity_instance.spawn_position = create_vector3_with_conversion_hg(
+							(player_data["position"]["x"] + 6000.0),
+							player_data["position"]["y"],
+							player_data["position"]["z"]
+						)
+						spawned_entity_instance.name = player_data["name"]
+
+						spawned_entity_instance.tree_entered.connect(func():
+							spawned_entity_instance.owner = get_tree().current_scene
+						)
+						universe_scene.add_child(spawned_entity_instance)
+
+						var planet = props_list["planets"][player_data["parent_id"]]
+						spawned_entity_instance.reparent(planet)
+
+						spawned_entity_instance.set_uuid(player_uuid)
+						players_list[player_uuid] = spawned_entity_instance
+						players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
+						players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
+						spawned_entity_instance.connect("hs_server_move", _on_player_move)
+					_:
+						pass
 
 
-				# manage player
-				var player_data = message["data"]["player"]
-				# print("Player data received: %s" % player_data)
+			# 	for type in message["data"].keys():
+			# 		match type:
+			# 			"box50cm":
+			# 				var box = message["data"][type]
+			# 				if Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"]) == Vector3.ZERO:
+			# 					if players_list.has(message["data"]["player_uuid"]):
+			# 						var player = players_list[message["data"]["player_uuid"]]
+			# 						var box_spawn_position: Vector3 = player.position + (-player.basis.z * 1.5) + player.basis.y * 2.0
+			# 						var spawn_position: Vector3 = box_spawn_position
+			# 						var spawn_rotation: Vector3 = player.transform.basis.y.normalized()
+			# 						var data =  {
+			# 							"x": spawn_position.x,
+			# 							"y": spawn_position.y,
+			# 							"z": spawn_position.z,
+			# 							"rx": spawn_rotation.x,
+			# 							"ry": spawn_rotation.y,
+			# 							"rz": spawn_rotation.z,
+			# 						}
 
-				var spawned_entity_instance = player_scene.instantiate()
-				spawned_entity_instance.spawn_position = create_vector3_with_conversion_hg(
-					(player_data["position"]["x"] + 6000.0),
-					player_data["position"]["y"],
-					player_data["position"]["z"]
-				)
-				spawned_entity_instance.name = player_data["name"]
+			# 						# spawn box50cm
+			# 						var spawnable_box50cm_instance = box50cm_scene.instantiate()
+			# 						spawnable_box50cm_instance.spawn_position = Vector3(data["x"], data["y"], data["z"])
+			# 						# spawnable_box50cm_instance.name = box["uuid"]
+			# 						spawnable_box50cm_instance.uuid = box["uuid"]
+			# 						# spawnable_box50cm_instance.tree_entered.connect(func():
+			# 						# 	spawnable_box50cm_instance.owner = get_tree().current_scene
+			# 						# )
+			# 						player.get_parent().add_child(spawnable_box50cm_instance)
+			# 						# spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
+			# 						props_list_last_movement[box["uuid"]] = Vector3.ZERO
+			# 						props_list_last_rotation[box["uuid"]] = Vector3.ZERO
+			# 						spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
+			# 						_on_prop_move(
+			# 							box["uuid"],
+			# 							spawnable_box50cm_instance.position,
+			# 							spawnable_box50cm_instance.global_rotation,
+			# 							"box50cm",
+			# 							player.get_parent().uuid,
+			# 							true
+			# 						)
+			# 						props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
+			# 				else:
+			# 					# spawn box50cm
+			# 					var spawnable_box50cm_instance = box50cm_scene.instantiate()
+			# 					spawnable_box50cm_instance.spawn_position = create_vector3_with_conversion_hg(
+			# 						box["position"]["x"],
+			# 						box["position"]["y"],
+			# 						box["position"]["z"]
+			# 					)
+			# 					spawnable_box50cm_instance.global_rotation = Vector3(box["rotation"]["x"], box["rotation"]["y"], box["rotation"]["z"])
+			# 					# spawnable_box50cm_instance.name = box["uuid"]
+			# 					spawnable_box50cm_instance.uuid = box["uuid"]
+			# 					spawnable_box50cm_instance.tree_entered.connect(func():
+			# 						spawnable_box50cm_instance.owner = get_tree().current_scene
+			# 					)
+			# 					universe_scene.add_child(spawnable_box50cm_instance)
+			# 					spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
+			# 					props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
 
-				spawned_entity_instance.tree_entered.connect(func():
-					spawned_entity_instance.owner = get_tree().current_scene
-				)
-				universe_scene.add_child(spawned_entity_instance)
-				spawned_entity_instance.set_uuid(player_data["internal_uuid"])
-				players_list[player_data["internal_uuid"]] = spawned_entity_instance
-				players_list_last_movement[player_data["internal_uuid"]] = spawned_entity_instance.global_position
-				players_list_last_rotation[player_data["internal_uuid"]] = spawned_entity_instance.global_rotation
-				spawned_entity_instance.connect("hs_server_move", _on_player_move)
-
-			"add_prop":
-				for type in message["data"].keys():
-					match type:
-						"box50cm":
-							var box = message["data"][type]
-							if Vector3(box["position"]["x"], box["position"]["y"], box["position"]["z"]) == Vector3.ZERO:
-								if players_list.has(message["data"]["player_uuid"]):
-									var player = players_list[message["data"]["player_uuid"]]
-									var box_spawn_position: Vector3 = player.position + (-player.basis.z * 1.5) + player.basis.y * 2.0
-									var spawn_position: Vector3 = box_spawn_position
-									var spawn_rotation: Vector3 = player.transform.basis.y.normalized()
-									var data =  {
-										"x": spawn_position.x,
-										"y": spawn_position.y,
-										"z": spawn_position.z,
-										"rx": spawn_rotation.x,
-										"ry": spawn_rotation.y,
-										"rz": spawn_rotation.z,
-									}
-
-									# spawn box50cm
-									var spawnable_box50cm_instance = box50cm_scene.instantiate()
-									spawnable_box50cm_instance.spawn_position = Vector3(data["x"], data["y"], data["z"])
-									# spawnable_box50cm_instance.name = box["uuid"]
-									spawnable_box50cm_instance.uuid = box["uuid"]
-									# spawnable_box50cm_instance.tree_entered.connect(func():
-									# 	spawnable_box50cm_instance.owner = get_tree().current_scene
-									# )
-									player.get_parent().add_child(spawnable_box50cm_instance)
-									# spawnable_box50cm_instance.call_deferred("reparent", player.get_parent())
-									props_list_last_movement[box["uuid"]] = Vector3.ZERO
-									props_list_last_rotation[box["uuid"]] = Vector3.ZERO
-									spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
-									_on_prop_move(
-										box["uuid"],
-										spawnable_box50cm_instance.position,
-										spawnable_box50cm_instance.global_rotation,
-										"box50cm",
-										player.get_parent().uuid,
-										true
-									)
-									props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
-							else:
-								# spawn box50cm
-								var spawnable_box50cm_instance = box50cm_scene.instantiate()
-								spawnable_box50cm_instance.spawn_position = create_vector3_with_conversion_hg(
-									box["position"]["x"],
-									box["position"]["y"],
-									box["position"]["z"]
-								)
-								spawnable_box50cm_instance.global_rotation = Vector3(box["rotation"]["x"], box["rotation"]["y"], box["rotation"]["z"])
-								# spawnable_box50cm_instance.name = box["uuid"]
-								spawnable_box50cm_instance.uuid = box["uuid"]
-								spawnable_box50cm_instance.tree_entered.connect(func():
-									spawnable_box50cm_instance.owner = get_tree().current_scene
-								)
-								universe_scene.add_child(spawnable_box50cm_instance)
-								spawnable_box50cm_instance.connect("hs_server_prop_move", _on_prop_move)
-								props_list["box50cm"][box["uuid"]] = spawnable_box50cm_instance
-
-						"player_uuid":
-							# only used to spawn something by the player
-							pass
-						_:
-							print("Unknown prop type: " + type)
-			"delete_player":
-				var player_uuid = message["data"]["uuid"]
-				if players_list.has(player_uuid):
-					var player = players_list[player_uuid]
-					player.queue_free()
-					players_list.erase(player_uuid)
-					players_list_last_movement.erase(player_uuid)
-					players_list_last_rotation.erase(player_uuid)
-			_:
-				print("Unknown server event: " + message['event'])
+			# 			"player_uuid":
+			# 				# only used to spawn something by the player
+			# 				pass
+			# 			_:
+			# 				print("Unknown prop type: " + type)
+			# "delete_player":
+			# 	var player_uuid = message["data"]["uuid"]
+			# 	if players_list.has(player_uuid):
+			# 		var player = players_list[player_uuid]
+			# 		player.queue_free()
+			# 		players_list.erase(player_uuid)
+			# 		players_list_last_movement.erase(player_uuid)
+			# 		players_list_last_rotation.erase(player_uuid)
+			# _:
+			# 	print("Unknown server event: " + message['event'])
 	elif message['namespace'] == "player":
 		match message['event']:
 			"spawn":
@@ -670,7 +722,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 				return
 			if is_parented == true:
 				players_newposition[client_uuid] = {
-					"uuid": client_uuid,
+					"player_id": client_uuid,
 					"pos": {
 						"x": position[0],
 						"y": position[1],
@@ -684,7 +736,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 				}
 			else:
 				players_newposition[client_uuid] = {
-					"uuid": client_uuid,
+					"player_id": client_uuid,
 					"pos": {
 						"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
 						"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
@@ -707,6 +759,7 @@ func send_players_newposition_to_horizon():
 		if players_newposition.values().size() == 0:
 			return
 		debug_message_number = debug_message_number + 1
+		print("Send players to horizon: ", players_newposition.values().size())
 		var message = {
 			"namespace": "players",
 			"event": "position",
@@ -714,30 +767,7 @@ func send_players_newposition_to_horizon():
 			"data": players_newposition.values()
 		}
 		peer.send_text(JSON.stringify(message))
-
-		# # luminal_handle,
-		# # "GorcPlayer",
-		# # 0, // Channel 0: Critical movement data
-		# # "move",
-		# for p in players_newposition.values():
-		# 	var newMessage = {
-		# 		"type": "gorc_event",
-		# 		"object_id": p["uuid"],
-		# 		"channel": 0,
-		# 		"event": "move",
-		# 		"data": { 
-		# 			"player_id": p["uuid"],
-		# 			"new_position": { "x": p["pos"]["x"], "y": p["pos"]["y"], "z": p["pos"]["z"] },
-		# 			"velocity": { "x": 10.0, "y": 0.0, "z": 5.0 },
-		# 			"movement_state": 1,
-		# 			"client_timestamp": "2024-01-15T10:30:45Z"		
-		# 		}			
-		# 	}
-		# 	peer.send_text(JSON.stringify(newMessage))
-
 		players_newposition.clear()
-
-
 
 func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String, reparent_uuid = null, is_parented = false):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
