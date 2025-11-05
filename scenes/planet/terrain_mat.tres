@@ -1,11 +1,8 @@
-[gd_resource type="ShaderMaterial" load_steps=12 format=3 uid="uid://degky8mc31ncp"]
+[gd_resource type="ShaderMaterial" load_steps=9 format=3 uid="uid://degky8mc31ncp"]
 
 [ext_resource type="Shader" uid="uid://cqo8jlsmx8n7n" path="res://scenes/planet/terrain.gdshader" id="1_3iebd"]
-[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/rock/Rock029_2K_Color.jpg" id="2_4o7e0"]
 [ext_resource type="Texture2D" uid="uid://cu0q6lhjb8n8j" path="res://assets/textures/sand/Ground055L_2K_NormalGL.jpg" id="2_11uw2"]
-[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/rock/Rock029_2K_NormalGL.jpg" id="3_uks27"]
 [ext_resource type="Texture2D" uid="uid://btk6yarjmrxkb" path="res://assets/textures/sand/Ground055L_2K_Roughness.jpg" id="3_xkdyo"]
-[ext_resource type="Texture2D" uid="uid://tlqwrtnp20lv" path="res://assets/textures/rock/Rock029_2K_Roughness.jpg" id="4_qdhxs"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_pwywj"]
 noise_type = 0
@@ -31,12 +28,9 @@ seamless = true
 [resource]
 render_priority = 0
 shader = ExtResource("1_3iebd")
-shader_parameter/texture_albedo = ExtResource("2_4o7e0")
 shader_parameter/roughness = 1.0
-shader_parameter/texture_roughness = ExtResource("4_qdhxs")
 shader_parameter/sand_roughness = ExtResource("3_xkdyo")
 shader_parameter/specular = 0.5
-shader_parameter/texture_normal = ExtResource("3_uks27")
 shader_parameter/normal_scale = 1.0
 shader_parameter/sand_normal = ExtResource("2_11uw2")
 shader_parameter/uv1_blend_sharpness = 5.0
