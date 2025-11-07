@@ -404,14 +404,17 @@ func player_move(message: Dictionary):
 	# print("================")
 	# print(message["data"]["uuid"])
 	# print(players_list.keys())
-	if players_list.has(message["data"]["uuid"]):
+	if players_list.has(message["player_id"]):
 		# print("YEAH!")
-		var player = players_list[message["data"]["uuid"]]
+		var player = players_list[message["player_id"]]
 		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
 		)
 		player.new_input_from_server = true
+	else:
+		print("Player move not found: " + str(message["player_id"]))
+
 
 func player_action(message: Dictionary):
 	if players_list.has(message["data"]["uuid"]):
@@ -628,7 +631,38 @@ func dispatch_horizon_message(message: Dictionary):
 						players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
 						spawned_entity_instance.connect("hs_server_move", _on_player_move)
 					_:
-						pass
+						# spawn genericprops
+						var object_data = message["data"]["object_data"]
+						var prop_scene = load("res://" + object_data["scenename"])
+						var spawnable_prop_instance = prop_scene.instantiate()
+						spawnable_prop_instance.spawn_position = create_vector3_with_conversion_hg(
+							object_data["position"]["x"],
+							object_data["position"]["y"],
+							object_data["position"]["z"]
+						)
+						spawnable_prop_instance.uuid = message["data"]["object_uuid"]
+						spawnable_prop_instance.tree_entered.connect(func():
+							spawnable_prop_instance.owner = get_tree().current_scene
+						)
+						universe_scene.add_child(spawnable_prop_instance)
+
+						var parent = props_list["planets"][object_data["parent_id"]]
+						spawnable_prop_instance.reparent(parent)
+
+						spawnable_prop_instance.position = Vector3(
+							object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"]
+						)
+						spawnable_prop_instance.global_rotation = Vector3(
+							object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"]
+						)
+
+						spawnable_prop_instance.connect("hs_server_prop_move", _on_prop_move)
+						props_list_last_movement[message["data"]["object_uuid"]] = Vector3.ZERO
+						props_list_last_rotation[message["data"]["object_uuid"]] = Vector3.ZERO
+						if not props_list.has(message["data"]["object_type"]):
+							props_list[message["data"]["object_type"]] = {}
+						props_list[message["data"]["object_type"]][message["data"]["object_uuid"]] = spawnable_prop_instance
+
 
 
 			# 	for type in message["data"].keys():

@@ -126,8 +126,15 @@ func _process(_delta: float) -> void:
 					match event["object_type"]:
 						"GorcPlayer":
 							player_update(event)
-						_:
-							pass
+
+					if event["event_type"] == "gorc_create":
+						if event["channel"] == 0:
+							create_generic_object(event["data"])
+
+					if event["event_type"] == "gorc_update":
+						if event["channel"] == 0:
+							update_generic_object(event["data"])
+
 					continue
 
 				# Handle the event based on its type
@@ -137,6 +144,8 @@ func _process(_delta: float) -> void:
 						my_player_uuid = event["player_id"]
 					"gorc_zone_enter":
 						create_object(event)
+					"gorc_zone_exit":
+						delete_object(event)
 					_:
 						print("< Unknown event type: %s" % event["type"])
 			else:
@@ -180,50 +189,12 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 	if datas.has("action"):
 		match datas["action"]:
 			"spawn":
-				if datas.has("entity"):
-					match datas["entity"]:
-						# "ship":
-						# 	var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
-						# 	if datas.has("spawn_position"):
-						# 		spawn_position = datas["spawn_position"]
-						# 	var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
-						# 	if datas.has("spawn_rotation"):
-						# 		spawn_rotation = datas["spawn_rotation"]
-						# 	var data =  {
-						# 		"x": spawn_position.x,
-						# 		"y": spawn_position.y,
-						# 		"z": spawn_position.z,
-						# 		"rx": spawn_rotation.x,
-						# 		"ry": spawn_rotation.y,
-						# 		"rz": spawn_rotation.z,
-						# 	}
-						# 	NetworkOrchestrator.spawn_prop.rpc_id(1, "ship",data)
-						"box50cm":
-							print("Request to spawn box50cm")
-							socket.send_text(JSON.stringify({
-								"namespace": "props",
-								"event": "spawn_request",
-								"data": {
-									"type": "box50cm",
-									"player_uuid": datas["uuid"],
-								},
-							}))
-						# "box4m":
-						# 	var spawn_position: Vector3 = player_instance.global_position + Vector3(10.0,10.0,10.0)
-						# 	if datas.has("spawn_position"):
-						# 		spawn_position = datas["spawn_position"]
-						# 	var spawn_rotation: Vector3 = player_instance.global_transform.basis.y.normalized()
-						# 	if datas.has("spawn_rotation"):
-						# 		spawn_rotation = datas["spawn_rotation"]
-						# 	var data =  {
-						# 		"x": spawn_position.x,
-						# 		"y": spawn_position.y,
-						# 		"z": spawn_position.z,
-						# 		"rx": spawn_rotation.x,
-						# 		"ry": spawn_rotation.y,
-						# 		"rz": spawn_rotation.z,
-						# 	}
-						# 	NetworkOrchestrator.spawn_prop.rpc_id(1, "box4m", data)
+				print("Request to spawn %s" % datas["entity"])
+				socket.send_text(JSON.stringify({
+					"namespace": "props",
+					"event": "spawn_request",
+					"data": datas,
+				}))
 			"control":
 				if datas.has("entity"):
 					match datas["entity"]:
@@ -251,7 +222,7 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 	# print("action move: %s - %s" % [move_direction, move_rotation])
 	socket.send_text(JSON.stringify({
 		"namespace": "movement",
-		"event": "update_position", # "move_direction",
+		"event": "update_velocity",
 		"data": {
 			"pos": {
 				"x": move_direction[0],
@@ -308,15 +279,6 @@ func update_props(event: Dictionary) -> void:
 			remote_player.global_rotation = Vector3(player["rot"]["x"], player["rot"]["y"], player["rot"]["z"])
 		else:
 			print("Unknown player UUID: %s" % player["uuid"])
-
-func delete_player(event: Dictionary) -> void:
-	# print(event)
-	if players_list.has(event["player_uuid"]):
-		var remote_player = players_list[event["player_uuid"]]
-		remote_player.queue_free()
-		players_list.erase(event["player_uuid"])
-		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
-		print("Player %s has been removed." % event["player_uuid"])
 
 #func update_props_position(event: Dictionary) -> void:
 	# {
@@ -394,7 +356,15 @@ func create_object(event: Dictionary) -> void:
 		"planet":
 			create_planet(event)
 		_:
-			print("unknown object type")
+			if event["channel"] == 0:
+				create_generic_object(event)
+
+func delete_object(event: Dictionary) -> void:
+	match event["object_type"]:
+		"GorcPlayer":
+			delete_player(event)
+		_:
+			print("unknown object type for deletion")
 
 func create_generic_prop(event: Dictionary) -> void:
 	if event["zone_data"]["objectdef"] == "planets":
@@ -470,6 +440,12 @@ func create_player(event: Dictionary) -> void:
 			)
 			universe_scene.add_child(remote_player_instance)
 			remote_player_instance.set_physics_process(false)
+
+			var planet = props_list["planet"][player_data["parent_id"]]
+			remote_player_instance.reparent(planet)
+			remote_player_instance.position = Vector3(
+				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+			)
 			remote_player_instance.client_uuid = event["object_id"]
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
@@ -535,6 +511,94 @@ func create_planet(message: Dictionary) -> void:
 				print("Processing pending message for player %s now that parent_id %s is available" % [pending_message["object_id"], pending_player_data["parent_id"]])
 				create_player(pending_message)
 				pending_messages_parenting.erase(pending_message)
+
+func create_generic_object(event: Dictionary) -> void:
+	print("Create generic object: %s" % event)
+	# {
+	# 	"channel": 0,
+	# 	"data": {
+	# 		"object_data": {
+	# 			"parent_id": "3388a817-f3ef-421d-b10f-4325e105628e",
+	# 			"position": {
+	# 				"x": -2203850,
+	# 				"y": 2,
+	# 				"z": 16.4841
+	# 			},
+	# 			"rotation": {
+	# 				"x": 0,
+	# 				"y": 0,
+	# 				"z": 0
+	# 			},
+	# 			"scenename": "scenes/props/testbox/box_50cm.tscn"
+	# 		},
+	# 		"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
+	# 		"object_type": "box50cm",
+	# 		"position": {
+	# 			"x": -2203850,
+	# 			"y": 2,
+	# 			"z": 16.4841
+	# 		}
+	# 	},
+	# 	"event_type": "gorc_create",
+	# 	"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
+	# 	"object_type": "box50cm",
+	# 	"player_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
+	# 	"timestamp": 1762519740
+	# }
+	var object_data = {}
+	if event.has("zone_data"):
+		object_data = event["zone_data"]
+	else:
+		object_data = event["object_data"]
+	if not props_list.has(event["object_type"]):
+		props_list[event["object_type"]] = {}
+	if not props_list[event["object_type"]].has(event["object_id"]):
+		var prop_scene = load("res://" + object_data["scenename"])
+		var prop_instance = prop_scene.instantiate()
+		prop_instance.tree_entered.connect(func():
+			prop_instance.owner = get_tree().current_scene
+		)
+		universe_scene.add_child(prop_instance)
+		prop_instance.set_physics_process(false)
+		var planet = props_list["planet"][object_data["parent_id"]]
+		prop_instance.reparent(planet)
+		prop_instance.position = Vector3(
+			object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"]
+		)
+		prop_instance.global_rotation = Vector3(
+			object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"]
+		)
+		prop_instance.freeze = true
+		prop_instance.uuid = event["object_id"]
+		props_list[event["object_type"]][event["object_id"]] = prop_instance
+
+func update_generic_object(event: Dictionary) -> void:
+	var object_data = event["object_data"]
+	if props_list.has(event["object_type"]):
+		if props_list[event["object_type"]].has(event["object_id"]):
+			var prop_instance = props_list[event["object_type"]][event["object_id"]]
+			prop_instance.position = Vector3(
+				object_data["pos"]["x"], object_data["pos"]["y"], object_data["pos"]["z"]
+			)
+			prop_instance.global_rotation = Vector3(
+				object_data["rot"]["x"], object_data["rot"]["y"], object_data["rot"]["z"]
+			)
+		else:
+			print("Update generic object but not found: %s" % event["object_id"])
+	else:
+		print("Update generic object but type not found: %s" % event["object_type"])
+
+func delete_player(event: Dictionary) -> void:
+	if not event["channel"] == 0:
+		return
+	if players_list.has(event["object_id"]):
+		var remote_player = players_list[event["object_id"]]
+		remote_player.queue_free()
+		players_list.erase(event["object_id"])
+		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
+		print("Player %s has been removed." % event["object_id"])
+	else:
+		print("Player to delete %s not found." % event)
 
 func player_update(message: Dictionary) -> void:
 	# print("Player update: %s" % message)

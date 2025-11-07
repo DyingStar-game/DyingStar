@@ -100,7 +100,7 @@ func _enter_tree() -> void:
 		$UserInterface.visible = false
 		$CameraPivot.visible = false
 
-	else:
+	elif not OS.has_feature("dedicated_server"):
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
@@ -191,22 +191,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box50cm()
+		spawn_box("box_50cm", 1.5, 2.0)
 
 	if event.is_action_pressed("spawn_4mbox"):
-		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 3.0) + global_basis.y * 6.0
-
-		var player_up = global_transform.basis.y.normalized()
-		var to_player = (global_transform.origin - box_spawn_position)
-		to_player -= to_player.dot(player_up) * player_up
-		to_player = to_player.normalized()
-		var box_basis: Basis = Basis.looking_at(to_player, player_up)
-		var box_spawn_rotation = box_basis.get_euler()
-
-		emit_signal(
-			"client_action_requested",
-			{"action": "spawn", "entity": "box4m", "spawn_position": box_spawn_position, "spawn_rotation": box_spawn_rotation}
-		)
+		spawn_box("box_4m", 3.0, 6.0)
 
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
@@ -355,12 +343,12 @@ func _physics_process(delta: float) -> void:
 			input_direction = dir_vect
 		else:
 			input_direction = Vector2.ZERO
-
 		# send move_direction
-		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
+		var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+		if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
 			client_last_input_direction = input_direction
-			client_last_global_rotation = global_rotation
-			emit_signal("hs_client_action_move", input_direction, global_rotation)
+			client_last_global_rotation = short_rotation
+			emit_signal("hs_client_action_move", input_direction, short_rotation)
 		update_last_basis()
 
 		labelx.text = str("%0.2f" % global_position[0])
@@ -424,9 +412,21 @@ func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
 
-func spawn_box50cm():
-	var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
+func spawn_box(boxscene: String, coeffz: float, coeffy: float):
+	var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
+	# parent is for example the planet
+	var parent = get_parent();
 	emit_signal(
 		"client_action_requested",
-		{"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position, "uuid": client_uuid}
+		{
+			"action": "spawn",
+			"entity": "box",
+			"position": {
+				"x": item_spawn_position[0],
+				"y": item_spawn_position[1],
+				"z": item_spawn_position[2]
+			},
+			"scenename": "scenes/props/testbox/" + boxscene + ".tscn",
+			"parent_id": parent.uuid,
+		}
 	)
