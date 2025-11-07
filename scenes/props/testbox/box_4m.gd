@@ -4,10 +4,15 @@ extends RigidBody3D
 
 @export var inside_space: World3D
 
+@export var uuid: String = ""
+
 var type_name = "box4m"
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
+
+var server_last_position = Vector3.ZERO
+var server_last_global_rotation = Vector3.ZERO
 
 func _ready() -> void:
 	$Area3D.body_entered.connect(_on_box_entered)
@@ -15,6 +20,13 @@ func _ready() -> void:
 
 	global_position = spawn_position
 	global_rotation = spawn_rotation
+
+func _physics_process(_delta: float) -> void:
+	if GameOrchestrator.is_server():
+		if server_last_position != position or server_last_global_rotation != global_rotation:
+			emit_signal("hs_server_prop_move", uuid, position, global_rotation, "box", null, true)
+			server_last_position = position
+			server_last_global_rotation = global_rotation
 
 func _on_box_entered(body: Node3D):
 	if body.is_in_group("containable"):
