@@ -1,4 +1,4 @@
-[gd_scene load_steps=55 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=63 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -12,32 +12,38 @@
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="5_qc8cq"]
 [ext_resource type="Texture2D" uid="uid://4djedg7r2hws" path="res://assets/materials/planet/biome_crater_albedo.png" id="5_rjy3x"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="5_yhksb"]
+[ext_resource type="Texture2D" uid="uid://bblqhxnfv840e" path="res://assets/materials/planet/biome_volcano_albedo.png" id="6_2pnho"]
 [ext_resource type="PackedScene" uid="uid://bb0fma643hacs" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere.tscn" id="6_mv8ka"]
 [ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="6_qc8cq"]
 [ext_resource type="Shader" uid="uid://dsu80023m2ier" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere_fbcosentino.gdshader" id="7_l6ihg"]
 [ext_resource type="Texture2D" uid="uid://b1bn704xjyalr" path="res://assets/materials/planet/biome_plateau_normal.png" id="8_8q5ja"]
 [ext_resource type="Shader" uid="uid://btsydfvxyvh77" path="res://scenes/planet/biome_terrainv2.gdshader" id="9_4eq58"]
 [ext_resource type="PackedScene" uid="uid://br2b6gumt3gyn" path="res://scenes/planet/asset_spawner.tscn" id="9_642k6"]
+[ext_resource type="Texture2D" uid="uid://dtler3svcbnlj" path="res://assets/materials/planet/biome_volcano_heightmap.png" id="9_aety1"]
 [ext_resource type="Texture2D" uid="uid://wf0vmnexos5p" path="res://assets/materials/planet/biome_crater_normal.png" id="9_kyu43"]
 [ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="9_xk4jg"]
 [ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="10_nqw6u"]
 [ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="10_qugoe"]
+[ext_resource type="Texture2D" uid="uid://ds8oh8bnkfup3" path="res://assets/materials/planet/biome_volcano_normal.png" id="12_5cqxa"]
 [ext_resource type="PackedScene" uid="uid://ckogdailxd1jo" path="res://scenes/props/rock/rock_large.tscn" id="12_yhksb"]
 [ext_resource type="Texture2DArray" uid="uid://datt66mdctdku" path="res://assets/textures/biomes_packed/sandbox_albedo_array.res" id="14_8q5ja"]
 [ext_resource type="Texture2DArray" uid="uid://cyqpkcpjpn4tr" path="res://assets/textures/biomes_packed/sandbox_normal_array.res" id="15_kyu43"]
 [ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="16_kyu43"]
+[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="19_wr466"]
+[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="20_s0dqk"]
+[ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/props/testbox/box_50cm.tscn" id="32_wr466"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
 frequency = 0.00039999999999999
 fractal_type = 2
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
-noise_type = 2
+noise_type = 4
 seed = 1
-frequency = 0.0045
+frequency = 0.0044
 fractal_type = 0
-cellular_return_type = 3
-domain_warp_enabled = true
+cellular_distance_function = 2
+cellular_return_type = 0
 domain_warp_amplitude = 3.0
 domain_warp_frequency = 0.003
 
@@ -78,21 +84,31 @@ noise_scale = 50.0
 biome_noise = SubResource("FastNoiseLite_8q5ja")
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
-max_lod = 11
+max_lod = 10
 noise_params = Array[ExtResource("5_yhksb")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
 terrain_map = ExtResource("6_qc8cq")
-biomes_elevations = Array[Texture2D]([ExtResource("4_sn4pu"), ExtResource("5_4eq58")])
-biomes_albedo = Array[Texture2D]([ExtResource("4_qc3d8"), ExtResource("5_rjy3x")])
-biomes_normal = Array[Texture2D]([ExtResource("8_8q5ja"), ExtResource("9_kyu43")])
+biomes_elevations = Array[CompressedTexture2D]([ExtResource("4_sn4pu"), ExtResource("5_4eq58"), ExtResource("9_aety1")])
+biomes_albedo = Array[CompressedTexture2D]([ExtResource("4_qc3d8"), ExtResource("5_rjy3x"), ExtResource("6_2pnho")])
+biomes_normal = Array[CompressedTexture2D]([ExtResource("8_8q5ja"), ExtResource("9_kyu43"), ExtResource("12_5cqxa")])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
+
+[sub_resource type="Gradient" id="Gradient_2pnho"]
+offsets = PackedFloat32Array(0, 0.19376026, 0.63875204)
+colors = PackedColorArray(0.47916666, 0.4702687, 0.40978014, 1, 0.8541667, 0.7814584, 0.47917345, 1, 0.546875, 0.3260756, 0.17466106, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_aety1"]
+gradient = SubResource("Gradient_2pnho")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("9_4eq58")
-shader_parameter/layer_count = 2
+shader_parameter/layer_count = 3
+shader_parameter/color_map = SubResource("GradientTexture1D_aety1")
 shader_parameter/biome_color = ExtResource("14_8q5ja")
 shader_parameter/biome_normal = ExtResource("15_kyu43")
 shader_parameter/terrain_normal = ExtResource("16_kyu43")
+shader_parameter/surface_albedo = ExtResource("19_wr466")
+shader_parameter/surface_normal = ExtResource("20_s0dqk")
 shader_parameter/uv1_blend_sharpness = 8.0
 shader_parameter/uv1_scale = 1.0
 shader_parameter/uv_distance_scale = 1.0
@@ -147,8 +163,7 @@ point_count = 3
 curve = SubResource("Curve_50f0x")
 
 [sub_resource type="Gradient" id="Gradient_mv8ka"]
-offsets = PackedFloat32Array(0, 0.083871, 1)
-colors = PackedColorArray(0.595456, 0.838318, 0.927083, 1, 0.593183, 0.873433, 1, 1, 0.716683, 0.97923, 1, 1)
+colors = PackedColorArray(0.6614583, 0.44561893, 0.2212808, 1, 0.8805977, 0.9609375, 0.79069793, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_kghk6"]
 gradient = SubResource("Gradient_mv8ka")
@@ -171,7 +186,7 @@ shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_
 shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
 shader_parameter/sea_level = 2100600.0
 shader_parameter/atmosphere_radius = 2112600.0
-shader_parameter/atmosphere_density = 0.515
+shader_parameter/atmosphere_density = 5.0
 shader_parameter/water_density_factor = -0.205
 
 [sub_resource type="BoxMesh" id="BoxMesh_642k6"]
@@ -184,13 +199,14 @@ planet_id = "sandbox"
 planet_settings = ExtResource("2_nqw6u")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(-0.5620833778521304, -0.23351913426712265, 0.7934299529722034, 0, -0.9593139745400576, -0.2823414568428763, 0.827080574274562, -0.15869943976993542, 0.5392144392302282, 0, 0, 0)
+transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, -4076503.527693874, 0, 0)
 shadow_enabled = true
-directional_shadow_split_1 = 0.015
-directional_shadow_split_2 = 0.045
-directional_shadow_split_3 = 0.215
+directional_shadow_split_1 = 0.001
+directional_shadow_split_2 = 0.09
+directional_shadow_split_3 = 0.389
 directional_shadow_blend_splits = true
-directional_shadow_max_distance = 1000000.0
+directional_shadow_fade_start = 0.699
+directional_shadow_max_distance = 8192.0
 
 [node name="WaterSurface" type="MeshInstance3D" parent="."]
 visible = false
@@ -216,7 +232,6 @@ script = ExtResource("2_c1vqx")
 shape = SubResource("SphereShape3D_6wdpo")
 
 [node name="SpawnKiosk01" parent="PlanetTerrain" instance=ExtResource("5_mv8ka")]
-transform = Transform3D(0.51495, -0.416024, -0.749499, 0.346044, 0.900817, -0.262263, 0.784269, -0.124308, 0.607838, -5580.25, 8340.41, -1616.26)
 
 [node name="PlayerSpawnPointsList" type="Node3D" parent="PlanetTerrain"]
 transform = Transform3D(1, 0, -5.55112e-17, 0, 1, 0, 5.55112e-17, 0, 1, 0, 0, 0)
@@ -232,13 +247,15 @@ metadata/_custom_type_script = "uid://3b53gu5cyf58"
 [node name="RockSpawner" parent="PlanetTerrain" node_paths=PackedStringArray("planet_terrain", "debugmesh") instance=ExtResource("9_642k6")]
 transform = Transform3D(0.904889, 0, 0.425651, 0, 1, 0, -0.425651, 0, 0.904889, 0, 0, 0)
 planet_terrain = NodePath("..")
-cell_size = 200.0
-spawn_distance = 4000
+min_asset_cell = 10
+max_asset_cell = 50
+cell_size = 4000.0
+spawn_distance = 10000
 asset_scenes = Array[PackedScene]([ExtResource("10_nqw6u"), ExtResource("10_qugoe"), ExtResource("12_yhksb")])
 debugmesh = NodePath("debug")
 
 [node name="debug" type="MeshInstance3D" parent="PlanetTerrain/RockSpawner"]
-transform = Transform3D(1, 0, 1.1102230246251563e-15, 0, 1, 0, -1.1102230246251563e-15, 0, 1, 95486.86373387644, 417962.86136467016, -263602.6236243045)
+transform = Transform3D(1, 0, 1.1102230246251563e-15, 0, 1, 0, -1.1102230246251563e-15, 0, 1, -1217112.933933496, 321278.46700440237, 1562738.8143762564)
 visible = false
 mesh = SubResource("SphereMesh_qugoe")
 surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
@@ -246,10 +263,22 @@ surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTerrain"]
 shape = SubResource("BoxShape3D_r4ens")
 
-[node name="Atmosphere" parent="." instance=ExtResource("6_mv8ka")]
-transform = Transform3D(1, 0, 0, 0, -0.77332, 0.634015, 0, -0.634015, -0.77332, 1130.4892572409972, -922.5814580358564, -1.3390314438274782)
+[node name="Atmosphere" parent="." node_paths=PackedStringArray("sun_object") instance=ExtResource("6_mv8ka")]
+transform = Transform3D(3.2838441083609986e-07, 0.00022625397392215784, -0.9999993957168327, 0, 0.9999993957168867, 0.00022625397392217003, 0.9999999999999459, -7.429827792575813e-11, 3.283842123989458e-07, 1130.4892572409972, -922.5814580358564, -1.3390314438274782)
 material_override = SubResource("ShaderMaterial_7o858")
 cast_shadow = 0
 mesh = SubResource("BoxMesh_642k6")
 planet_radius = 2100600.0
 atmosphere_height = 150000.0
+sun_object = NodePath("../DirectionalLight3D")
+
+[node name="box_50cm" parent="." instance=ExtResource("32_wr466")]
+transform = Transform3D(0.9772480156054437, -0.2069291231679782, -0.046547330537372485, -0.015327571558579785, 0.1499857743546374, -0.9885693364864988, 0.21154522340468995, 0.9667908799094928, 0.1434015794142037, -440303.3404243231, 378544.028104928, 1916853.1921094842)
+
+[node name="ReflectionProbe" type="ReflectionProbe" parent="."]
+transform = Transform3D(0.9589033022629205, -0.2712299179366697, -0.08329939090613812, 0, 0.29358364861867015, -0.9559333874615685, 0.28373307334406084, 0.9166476819802778, 0.28151833015083966, -467134.1017031611, 416347.0564607997, 1904108.90547567)
+blend_distance = 500.0
+size = Vector3(10000, 10000, 10000)
+ambient_color = Color(0.7239583, 0.7239583, 0.7239583, 1)
+
+[editable path="PlanetTerrain"]

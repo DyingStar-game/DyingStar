@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="PlanetSettings" load_steps=23 format=3 uid="uid://dndwamrx0yyd8"]
+[gd_resource type="Resource" script_class="PlanetSettings" load_steps=30 format=3 uid="uid://dndwamrx0yyd8"]
 
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="1_ec2n1"]
 [ext_resource type="Shader" uid="uid://btsydfvxyvh77" path="res://scenes/planet/biome_terrainv2.gdshader" id="2_csqwb"]
@@ -8,20 +8,35 @@
 [ext_resource type="Texture2D" uid="uid://b1bn704xjyalr" path="res://assets/materials/planet/biome_plateau_normal.png" id="4_tqcrq"]
 [ext_resource type="Texture2DArray" uid="uid://cyqpkcpjpn4tr" path="res://assets/textures/biomes_packed/sandbox_normal_array.res" id="4_undai"]
 [ext_resource type="Script" uid="uid://c5xl5lwuo7n57" path="res://scenes/planet/planet_terrain_settings.gd" id="4_y0ecf"]
+[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="5_j8mb4"]
 [ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="5_undai"]
 [ext_resource type="Texture2D" uid="uid://c32kva5xh2tud" path="res://assets/materials/planet/biome_crater_heightmap.png" id="6_csqwb"]
 [ext_resource type="Texture2D" uid="uid://ehivuhelblb3" path="res://scenes/planet/terrain_map.png" id="6_dl7hi"]
 [ext_resource type="Texture2D" uid="uid://b5wpurm1yw2nm" path="res://assets/materials/planet/biome_plateau_heightmap.png" id="6_u5fus"]
 [ext_resource type="Texture2D" uid="uid://4djedg7r2hws" path="res://assets/materials/planet/biome_crater_albedo.png" id="6_ybjps"]
+[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="6_yd54e"]
+[ext_resource type="Texture2D" uid="uid://bblqhxnfv840e" path="res://assets/materials/planet/biome_volcano_albedo.png" id="8_vw8ih"]
 [ext_resource type="Texture2D" uid="uid://wf0vmnexos5p" path="res://assets/materials/planet/biome_crater_normal.png" id="10_uwhv6"]
+[ext_resource type="Texture2D" uid="uid://dtler3svcbnlj" path="res://assets/materials/planet/biome_volcano_heightmap.png" id="10_ybjps"]
+[ext_resource type="Texture2D" uid="uid://ds8oh8bnkfup3" path="res://assets/materials/planet/biome_volcano_normal.png" id="14_cw145"]
+
+[sub_resource type="Gradient" id="Gradient_2pnho"]
+offsets = PackedFloat32Array(0, 0.19376026, 0.63875204)
+colors = PackedColorArray(0.47916666, 0.4702687, 0.40978014, 1, 0.8541667, 0.7814584, 0.47917345, 1, 0.546875, 0.3260756, 0.17466106, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_aety1"]
+gradient = SubResource("Gradient_2pnho")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("2_csqwb")
-shader_parameter/layer_count = 2
+shader_parameter/layer_count = 3
+shader_parameter/color_map = SubResource("GradientTexture1D_aety1")
 shader_parameter/biome_color = ExtResource("3_ain3u")
 shader_parameter/biome_normal = ExtResource("4_undai")
 shader_parameter/terrain_normal = ExtResource("5_undai")
+shader_parameter/surface_albedo = ExtResource("5_j8mb4")
+shader_parameter/surface_normal = ExtResource("6_yd54e")
 shader_parameter/uv1_blend_sharpness = 8.0
 shader_parameter/uv1_scale = 1.0
 shader_parameter/uv_distance_scale = 1.0
@@ -31,12 +46,12 @@ frequency = 0.00039999999999999
 fractal_type = 2
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
-noise_type = 2
+noise_type = 4
 seed = 1
-frequency = 0.0045
+frequency = 0.0044
 fractal_type = 0
-cellular_return_type = 3
-domain_warp_enabled = true
+cellular_distance_function = 2
+cellular_return_type = 0
 domain_warp_amplitude = 3.0
 domain_warp_frequency = 0.003
 
@@ -77,12 +92,12 @@ noise_scale = 50.0
 biome_noise = SubResource("FastNoiseLite_8q5ja")
 noise = SubResource("FastNoiseLite_xk4jg")
 noise_micro = SubResource("FastNoiseLite_qc8cq")
-max_lod = 11
+max_lod = 10
 noise_params = Array[ExtResource("3_dl7hi")]([SubResource("Resource_qc8cq"), SubResource("Resource_yhksb"), SubResource("Resource_rx63j")])
 terrain_map = ExtResource("6_dl7hi")
-biomes_elevations = Array[Texture2D]([ExtResource("6_u5fus"), ExtResource("6_csqwb")])
-biomes_albedo = Array[Texture2D]([ExtResource("3_ydjwp"), ExtResource("6_ybjps")])
-biomes_normal = Array[Texture2D]([ExtResource("4_tqcrq"), ExtResource("10_uwhv6")])
+biomes_elevations = Array[CompressedTexture2D]([ExtResource("6_u5fus"), ExtResource("6_csqwb"), ExtResource("10_ybjps")])
+biomes_albedo = Array[CompressedTexture2D]([ExtResource("3_ydjwp"), ExtResource("6_ybjps"), ExtResource("8_vw8ih")])
+biomes_normal = Array[CompressedTexture2D]([ExtResource("4_tqcrq"), ExtResource("10_uwhv6"), ExtResource("14_cw145")])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [resource]

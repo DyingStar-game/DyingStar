@@ -70,7 +70,10 @@ func _ready() -> void:
 			terrain_map_image.decompress()
 	# loading biome images
 	for biome in terrain_settings.biomes_elevations:
-		biomes_tex.push_back(biome.get_image())
+		var img = biome.get_image()
+		if img.is_compressed():
+			img.decompress()
+		biomes_tex.push_back(img)
 	
 	trigger_update()
 
@@ -111,6 +114,18 @@ func trigger_update():
 func norm(value: float):
 	return value + 1 / 2.0
 
+func sample_nearest_wrapped(img: Image, uv: Vector2) -> float:
+	var w = img.get_width()
+	var h = img.get_height()
+
+	# Align with texel centers like GPU
+	var u = fposmod(uv.x * w - 0.5, w)
+	var v = fposmod(uv.y * h - 0.5, h)
+
+	var x0 = int(floor(u))
+	var y0 = int(floor(v))
+	
+	return img.get_pixel(x0, y0).r
 
 func sample_bilinear_wrapped(img: Image, uv: Vector2) -> float:
 	var w = img.get_width()
@@ -136,8 +151,6 @@ func sample_bilinear_wrapped(img: Image, uv: Vector2) -> float:
 	var cx0 = lerp(c00, c10, tx)
 	var cx1 = lerp(c01, c11, tx)
 	return lerp(cx0, cx1, ty)
-
-
 
 
 ## pos = 3D position (world or object space)
@@ -166,6 +179,13 @@ func get_box_uv(pos: Vector3, normal: Vector3, sharpness: float = 4.0) -> Vector
 
 	# Wrap to [0, 1] range for repeating textures
 	return blended_uv - blended_uv.floor()
+
+func rotate_uv(uv: Vector2, rot: float) -> Vector2:
+	var mid = 0.5;
+	return Vector2(
+		cos(rot) * (uv.x - mid) + sin(rot) * (uv.y - mid) + mid,
+		cos(rot) * (uv.y - mid) - sin(rot) * (uv.x - mid) + mid
+	);
 
 func get_cube_uv(normalized_pos: Vector3) -> Vector2:
 	var x = normalized_pos.x
@@ -408,17 +428,95 @@ func blended_uv(n: Vector3) -> Vector2:
 func get_uv(point: Vector3) -> Vector2:
 	#return hybrid_uv(point * 100, 0.6)
 	#return get_box_uv(point, point, 200) * 100
-	var p = get_cube_uv(point) * 100
-	#p.x = fmod(p.x, 1.0)
-	#p.y = fmod(p.y, 1.0)
-	return p
+	var uv_cube = get_cube_uv(point) * 300
+	var uv_pol = point_to_uv(point) * 300
+	var uv = uv_pol
+	if abs(point.y) > .95:
+		uv = uv_cube
+	#var uv = lerp(uv_pol, uv_cube, smoothstep(.8, .85, abs(point.y)))
+	
+	#sin(point.x * 10.0) * 0.001
+	#uv = uv + Vector2(v * 0.1, v * -0.4)
+	#uv = rotate_uv(uv, v * 0.001)
+	
+	#uv.x = fmod(uv.x, 1.0)
+	#uv.y = fmod(uv.y, 1.0)
+	
+	#if uv.x > 0.99: uv.x = 1.0
+	#if uv.x < 0.01: uv.x = 0.0
+#
+	#if uv.y > 0.99: uv.y = 1.0
+	#if uv.y < 0.01: uv.y = 0.0
+	
+	
+	return uv
 
-func get_height(point: Vector3) -> Vector3:
+func smooth_blend_axis(normalized_pos: Vector3) -> Array[Vector3]:
+	var x = normalized_pos.x
+	var y = normalized_pos.y
+	var z = normalized_pos.z
+
+	var abs_x = abs(x)
+	var abs_y = abs(y)
+	var abs_z = abs(z)
+
+	# +X face
+	if abs_x >= abs_y and abs_x >= abs_z:
+		if x > 0.0:
+			return [Vector3.UP, Vector3.BACK]
+		else:
+			# -X face
+			return [Vector3.UP, Vector3.FORWARD]
+
+	# +Y face (top)
+	elif abs_y >= abs_x and abs_y >= abs_z:
+		if y > 0.0:
+			return [Vector3.FORWARD, Vector3.LEFT]
+		else:
+			# -Y face (bottom)
+			return [Vector3.FORWARD, Vector3.LEFT]
+
+	# +Z face
+	else:
+		if z > 0.0:
+			return [Vector3.UP, Vector3.LEFT]
+		else:
+			# -Z face
+			return [Vector3.UP, Vector3.RIGHT]
+
+func random_from_vec3(v: Vector3) -> float:
+	var seed_val = int(v.x * 374761393 + v.y * 668265263 + v.z * 2147483647) & 0x7fffffff
+	seed_val = (seed_val ^ (seed_val >> 13)) * 1274126177
+	seed_val = (seed_val ^ (seed_val >> 16)) & 0x7fffffff
+	return float(seed_val) / float(0x7fffffff)
+
+func smooth_blend(point: Vector3, img: Image, uvmult = 1.0) -> float:
+	var axis = smooth_blend_axis(point)
+	var amount = 0.0
+	var uv00 = get_uv((point).normalized()) * uvmult
+	var uv10 = get_uv((point + axis[0] * 0.001).normalized()) * uvmult
+	var uv01 = get_uv((point + axis[1] * 0.001).normalized()) * uvmult
+	var uv11 = get_uv((point + axis[1] * 0.001 + axis[0] * 0.001).normalized()) * uvmult
+	
+	amount = lerpf(sample_nearest_wrapped(img, uv00), sample_nearest_wrapped(img, uv10), 0.01)
+	amount = lerpf(amount, sample_nearest_wrapped(img, uv01), 0.01)
+	amount = lerpf(amount, sample_nearest_wrapped(img, uv11), 0.01)
+	return amount
+
+func get_sphere_point(p: Vector3) -> Vector3:
+	var np = Vector3()
+	var p2 = p * p
+	np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
+	np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
+	np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
+	return np
+
+func get_height(normalized_point: Vector3) -> Vector3:
 	var elev = 0.0
 	
 	if !terrain_map_image: return Vector3.ZERO
 	
-	var b = get_biome(point)
+	var b = get_biome(normalized_point)
 	
 	var layer_count = biomes_tex.size()
 	
@@ -427,15 +525,23 @@ func get_height(point: Vector3) -> Vector3:
 	var upper_layer = lower_layer + 1
 	var blend = fract(scaled)
 	
-	var uv = get_uv(point)
+	var uv = get_uv(normalized_point)
+	
+	#var last = upper_layer == layer_count - 1
 	
 	var lower_h = sample_bilinear_wrapped(biomes_tex[lower_layer], uv)
 	var upper_h = sample_bilinear_wrapped(biomes_tex[upper_layer], uv)
+	#var lower_h = smooth_blend(point, biomes_tex[lower_layer], 1.0)
+	#var upper_h = smooth_blend(point, biomes_tex[upper_layer], 1.0 / 2.0 if last else 1.0)
+	
+	
+	#if last:
+		#upper_h *= 5.0
 	elev += lerp(lower_h, upper_h, blend)
 	
-	elev += b * 10
+	elev += b * 5
 	#elev  /= biomes_tex.size()
-	elev *= 2000 * (1.0 - abs(point.y) + 0.4)
+	elev *= 200 + 1500 * (1.0 - abs(normalized_point.y) + 0.4)
 	
 	#for n_param in terrain_settings.noise_params:
 		#if n_param.noise_type == "macro":
@@ -452,4 +558,4 @@ func get_height(point: Vector3) -> Vector3:
 	## micro detail elevations
 	#elev += norm(noise_micro.get_noise_3dv(point * 300 * noise_scale)) * 10
 
-	return point * (radius + (elev * terrain_settings.elev_scale))
+	return normalized_point * (radius + (elev * terrain_settings.elev_scale))
