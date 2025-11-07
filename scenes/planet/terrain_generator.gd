@@ -78,13 +78,7 @@ class QuadtreeChunk:
 		# Generate a unique identifier for the chunk based on bounds and depth
 		return "%s_%s_%d" % [bounds.position, bounds.size, depth]
 	
-	func get_sphere_point(p: Vector3) -> Vector3:
-		var np = Vector3()
-		var p2 = p * p
-		np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
-		np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
-		np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
-		return np
+
 
 	func within_lod_distance(
 		lod_centers: Array[Vector3],
@@ -92,7 +86,7 @@ class QuadtreeChunk:
 		center_local_3d: Vector3
 	) -> bool:
 		for pos: Vector3 in lod_centers:
-			var h := planet.get_height(get_sphere_point(center_local_3d))
+			var h := planet.get_height(planet.get_sphere_point(center_local_3d))
 			var distance := h.distance_to(pos)
 
 			if distance <= planet.radius * bounds.size.x * 0.7:
@@ -164,13 +158,6 @@ func to_sphere_uv(point: Vector3) -> Vector2:
 	
 	return Vector2(u, v)
 
-func get_sphere_point(p: Vector3) -> Vector3:
-	var np = Vector3()
-	var p2 = p * p
-	np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
-	np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
-	np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
-	return np
 
 func visualize_quadtree(chunk: QuadtreeChunk):
 
@@ -184,11 +171,14 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 			return
 
 		var chunk_res = 0 if run_serverside and chunk.depth != planet.terrain_settings.max_lod else chunk_resolution
+		
 
 		var size := chunk.bounds.size.x
 		var offset := chunk.bounds.position
 		var resolution: int = chunk_res + skirt_indices
-
+		
+		#resolution = chunk_res - int(30 * exp(-(chunk.depth+1)/4)) + skirt_indices
+		
 
 		var vertex_array := PackedVector3Array()
 		var normal_array := PackedVector3Array()
@@ -206,7 +196,8 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		uv_array.resize(resolution * resolution)
 		color_array.resize(resolution * resolution)
 		
-		var chunk_global_pos := get_sphere_point(normal + offset.x * axis_a + offset.z * axis_b) * planet.radius
+		var chunk_global_pos := planet.get_sphere_point(normal + offset.x * axis_a + offset.z * axis_b) * planet.radius
+		
 		
 		var tri_idx: int = 0
 		for y in range(resolution):
@@ -217,13 +208,13 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				var local := Vector2(offset.x, offset.z) + percent * size
 				var point_on_plane = normal + local.x * axis_a + local.y * axis_b
 				
-				var sphere_p := get_sphere_point(point_on_plane)
+				var sphere_p := planet.get_sphere_point(point_on_plane)
 
 				# Project onto sphere and apply height
 				var sphere_pos := planet.get_height(sphere_p)
 
 				# calculate offset to lower the vertices that are on the edge of the chunk
-				var lod_offset := sphere_p * 0.03 if edge else Vector3.ZERO
+				var lod_offset := sphere_p * 0.01 if edge else Vector3.ZERO
 				vertex_array[i] = sphere_pos - chunk_global_pos - lod_offset
 				normal_array[i] = Vector3.ZERO
 				uv_array[i] = planet.get_uv(sphere_p) #to_sphere_uv(point_on_plane.normalized())

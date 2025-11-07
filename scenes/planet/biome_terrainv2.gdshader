@@ -3,9 +3,13 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 
 
 uniform int layer_count = 2;
+uniform sampler2D color_map: source_color;
 uniform sampler2DArray biome_color: source_color, filter_linear_mipmap;
 uniform sampler2DArray biome_normal: filter_linear_mipmap;
 uniform sampler2D terrain_normal: hint_normal, filter_linear_mipmap;
+
+uniform sampler2D surface_albedo: source_color, filter_linear_mipmap;
+uniform sampler2D surface_normal: hint_normal, filter_linear_mipmap;
 
 uniform float uv1_blend_sharpness = 8.0;
 uniform float uv1_scale = 1.0;
@@ -20,6 +24,8 @@ varying vec3 uv1_power_normal;
 
 varying float terrain_slope;
 
+varying vec2 _uv;
+
 void vertex() {
 	vec3 normal = NORMAL;
 	terrain_slope = dot(normalize(offset_pos + VERTEX), NORMAL);
@@ -33,6 +39,9 @@ void vertex() {
 	//BINORMAL += vec3(0.0, 0.0, -1.0) * abs(normal.y);
 	//BINORMAL += vec3(0.0, 1.0, 0.0) * abs(normal.z);
 	//BINORMAL = normalize(BINORMAL);
+
+
+	_uv = UV * uv1_scale;
 
 	// UV1 Triplanar: Enabled
 	uv1_power_normal = pow(abs(NORMAL), vec3(uv1_blend_sharpness));
@@ -72,7 +81,7 @@ vec3 sample_layers(sampler2DArray tex, vec2 uv, ivec2 layer_bounds, float local_
 
 void fragment() {
 
-	vec2 uv = UV * uv1_scale;
+	//vec2 uv = UV * uv1_scale;
 
 	//vec3 up_dir_chunk = normalize(offset_pos + VERTEX);
 	//vec3 up_vector_viewspace = up_dir_chunk; //mat3(VIEW_MATRIX) * vert_normal;
@@ -83,12 +92,12 @@ void fragment() {
 	//ALBEDO = COLOR.r * vec3(0.6, 0.2, 0.0);
 	//ALBEDO = vec3(COLOR.r, 0.0, 0.0);
 	//ALBEDO = triplanar_texture_arr(biome_color, uv1_power_normal, uv1_triplanar_pos, COLOR.r).rgb;
-	ROUGHNESS = .9;
+	ROUGHNESS = 1.0;
 
-	SPECULAR = 0.2;
+	SPECULAR = 0.5;
 
 
-	vec3 terrain_n = triplanar_texture(terrain_normal, uv1_power_normal, uv1_triplanar_pos * uv_distance_scale).rgb;
+	vec3 terrain_n = triplanar_texture(terrain_normal, uv1_power_normal, uv1_triplanar_pos_loc * uv_distance_scale).rgb;
 
 	//NORMAL_MAP = blend_normals(triplanar_texture_arr(biome_normal, uv1_power_normal * vec3(1, 1, 1), uv1_triplanar_pos, COLOR.r).rgb, terrain_n);
 
@@ -97,13 +106,24 @@ void fragment() {
     int upper_layer = lower_layer + 1;
     float local_blend = fract(scaled);
 
-    vec3 albedo = sample_layers(biome_color, uv, ivec2(lower_layer, upper_layer), local_blend);
-	//ALBEDO = vec3(uv.xy / 100.0, 0.0);
-	ALBEDO = mix(albedo, (1.0 - COLOR.r) * vec3(0.6, 0.2, 0.0), 0.3);
+    vec3 albedo = sample_layers(biome_color, _uv, ivec2(lower_layer, upper_layer), local_blend);
+	
+	vec3 color_variation = texture(color_map, vec2(COLOR.r, 0.0)).rgb;
+	vec3 biome_albedo = mix(albedo, color_variation, 0.2);
+	
+	float surface_uv_scale = 100.0;
+	
+	vec3 surface_a = triplanar_texture(surface_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	
+	ALBEDO = mix(biome_albedo, surface_a, 0.5);
+	//ALBEDO = vec3(_uv.xy, 0.0);
 	//ALBEDO = COLOR.rrr;
 
-	vec3 normal = sample_layers(biome_normal, uv, ivec2(lower_layer, upper_layer), local_blend);
+	vec3 normal = sample_layers(biome_normal, _uv, ivec2(lower_layer, upper_layer), local_blend);
 
-	NORMAL_MAP = blend_normals(normal, terrain_n);
+	vec3 biome_n = blend_normals(normal, terrain_n);
+	vec3 surface_n = triplanar_texture(surface_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+
+	NORMAL_MAP = blend_normals(biome_n, surface_n);
 	NORMAL_MAP_DEPTH = 1.0;
 }

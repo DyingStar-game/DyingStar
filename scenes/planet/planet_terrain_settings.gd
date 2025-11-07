@@ -23,6 +23,6 @@ extends Resource
 
 @export var terrain_map: Texture2D
 
-@export var biomes_elevations: Array[Texture2D] = []
-@export var biomes_albedo: Array[Texture2D] = []
-@export var biomes_normal: Array[Texture2D] = []
+@export var biomes_elevations: Array[CompressedTexture2D] = []
+@export var biomes_albedo: Array[CompressedTexture2D] = []
+@export var biomes_normal: Array[CompressedTexture2D] = []

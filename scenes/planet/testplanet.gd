@@ -76,7 +76,7 @@ func update_planet():
 
 	planet_terrain.trigger_update()
 
-func _pack_textures(textures: Array[Texture2D]) -> Texture2DArray:
+func _pack_textures(textures: Array[CompressedTexture2D]) -> Texture2DArray:
 	var tex_array = Texture2DArray.new()
 	var images: Array[Image] = []
 	for tex in textures:
