@@ -3,16 +3,16 @@ extends CanvasLayer
 var is_ready: bool = false
 
 @onready var spawn_points_list_display: OptionButton = %OptionButton
-@onready var SettingsButton : Button = $Control/Button
+@onready var settings_button : Button = $Control/Button
 
 var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
 func _ready() -> void:
-	SettingsButton.pressed.connect(_on_settings_pressed)
+	settings_button.pressed.connect(_on_settings_pressed)
 	is_ready = true
 
-	for spaw_point in GameOrchestrator.SPAWN_POINTS_LIST:
-		spawn_points_list_display.add_item(spaw_point["label"])
+	for spawn_point in GameOrchestrator.SPAWN_POINTS_LIST:
+		spawn_points_list_display.add_item(spawn_point["label"])
 
 	if spawn_points_list_display.item_count > 0:
 		spawn_points_list_display.select(0)

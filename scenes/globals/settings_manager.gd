@@ -1,6 +1,6 @@
 extends Node
 
-const config_filepath : String = "res://settings.ini"
+const CONFIG_FILEPATH : String = "res://settings.ini"
 var config : ConfigFile = ConfigFile.new()
 
 func _ready() -> void:
@@ -13,13 +13,13 @@ func initialize_settings():
 	config.set_value("video", "screen_shake", true)
 
 func save_settings():
-	config.save(config_filepath)
+	config.save(CONFIG_FILEPATH)
 
 func reset_settings():
-	config.load(config_filepath)
+	config.load(CONFIG_FILEPATH)
 
 func load_settings():
-	config.load(config_filepath)
+	config.load(CONFIG_FILEPATH)
 	var settings : Dictionary
 	for section in config.get_sections():
 		for key in config.get_section_keys(section):
