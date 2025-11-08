@@ -454,9 +454,9 @@ func create_player(event: Dictionary) -> void:
 
 func set_player_name(event: Dictionary) -> void:
 	pass
-	if players_list.has(event["object_id"]):
-		if event["object_id"] == my_player_uuid:
-			players_list[event["object_id"]].name = event["zone_data"]["name"]
+	# if players_list.has(event["object_id"]):
+	# 	if event["object_id"] == my_player_uuid:
+	# 		players_list[event["object_id"]].name = event["zone_data"]["name"]
 		# else:
 		# 	pass
 			# players_list[event["object_id"]].name = "remoteplayer" + event["zone_data"]["name"]
