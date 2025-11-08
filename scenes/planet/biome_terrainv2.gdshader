@@ -11,6 +11,9 @@ uniform sampler2D terrain_normal: hint_normal, filter_linear_mipmap;
 uniform sampler2D surface_albedo: source_color, filter_linear_mipmap;
 uniform sampler2D surface_normal: hint_normal, filter_linear_mipmap;
 
+uniform sampler2D noise: source_color, filter_linear_mipmap, repeat_enable;
+uniform float notile_offset;
+
 uniform float uv1_blend_sharpness = 8.0;
 uniform float uv1_scale = 1.0;
 uniform float uv_distance_scale = 1.0;
@@ -50,6 +53,34 @@ void vertex() {
 	uv1_power_normal /= dot(uv1_power_normal, vec3(1.0));
 	uv1_triplanar_pos *= vec3(1.0, -1.0, 1.0);
 }
+float sum( vec3 v ) { return v.x+v.y+v.z; }
+
+vec3 textureNoTile(sampler2D tex, in vec2 x, float v ) {
+    float k = texture( noise, 0.005*x ).x; // cheap (cache friendly) lookup
+
+    vec2 duvdx = dFdx( x );
+    vec2 duvdy = dFdy( x );
+
+    float l = k*8.0;
+    float f = fract(l);
+
+//#if 1
+    //float ia = floor(l); // my method
+    //float ib = ia + 1.0;
+//#else
+    float ia = floor(l+0.5); // suslik's method (see comments)
+    float ib = floor(l);
+    f = min(f, 1.0-f)*2.0;
+//#endif
+
+    vec2 offa = sin(vec2(3.0,7.0)*ia); // can replace with any other hash
+    vec2 offb = sin(vec2(3.0,7.0)*ib); // can replace with any other hash
+
+    vec3 cola = textureGrad(tex, x + v*offa, duvdx, duvdy ).xyz;
+    vec3 colb = textureGrad(tex, x + v*offb, duvdx, duvdy ).xyz;
+
+    return mix( cola, colb, smoothstep(0.2,0.8,f-0.1*sum(cola-colb)) );
+}
 
 vec4 triplanar_texture_arr(sampler2DArray p_sampler, vec3 p_weights, vec3 p_triplanar_pos, float layer) {
 	vec4 samp = vec4(0.0);
@@ -66,6 +97,15 @@ vec4 triplanar_texture(sampler2D p_sampler, vec3 p_weights, vec3 p_triplanar_pos
 	samp += texture(p_sampler, p_triplanar_pos.zy * vec2(-1.0, 1.0)) * p_weights.x;
 	return samp;
 }
+
+vec3 triplanar_texture_notile(sampler2D p_sampler, vec3 p_weights, vec3 p_triplanar_pos) {
+	vec3 samp = vec3(0.0);
+	samp += textureNoTile(p_sampler, p_triplanar_pos.xy, notile_offset).rgb * p_weights.z;
+	samp += textureNoTile(p_sampler, p_triplanar_pos.xz, notile_offset).rgb * p_weights.y;
+	samp += textureNoTile(p_sampler, p_triplanar_pos.zy * vec2(-1.0, 1.0), notile_offset).rgb * p_weights.x;
+	return samp;
+}
+
 
 
 vec3 blend_normals(vec3 a, vec3 b) {
@@ -107,14 +147,14 @@ void fragment() {
     float local_blend = fract(scaled);
 
     vec3 albedo = sample_layers(biome_color, _uv, ivec2(lower_layer, upper_layer), local_blend);
-	
+
 	vec3 color_variation = texture(color_map, vec2(COLOR.r, 0.0)).rgb;
 	vec3 biome_albedo = mix(albedo, color_variation, 0.2);
-	
+
 	float surface_uv_scale = 100.0;
-	
-	vec3 surface_a = triplanar_texture(surface_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
-	
+
+	vec3 surface_a = triplanar_texture_notile(surface_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+
 	ALBEDO = mix(biome_albedo, surface_a, 0.5);
 	//ALBEDO = vec3(_uv.xy, 0.0);
 	//ALBEDO = COLOR.rrr;
@@ -122,7 +162,7 @@ void fragment() {
 	vec3 normal = sample_layers(biome_normal, _uv, ivec2(lower_layer, upper_layer), local_blend);
 
 	vec3 biome_n = blend_normals(normal, terrain_n);
-	vec3 surface_n = triplanar_texture(surface_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 surface_n = triplanar_texture_notile(surface_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
 
 	NORMAL_MAP = blend_normals(biome_n, surface_n);
 	NORMAL_MAP_DEPTH = 1.0;
