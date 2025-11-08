@@ -1,11 +1,10 @@
 extends CanvasLayer
 
 var is_ready: bool = false
+var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
 @onready var spawn_points_list_display: OptionButton = %OptionButton
 @onready var settings_button : Button = $Control/Button
-
-var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
 func _ready() -> void:
 	settings_button.pressed.connect(_on_settings_pressed)
