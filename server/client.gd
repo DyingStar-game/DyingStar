@@ -315,7 +315,7 @@ func update_props(event: Dictionary) -> void:
 	# 						planet.add_child(prop_instance)
 	# 					else:
 	# 						universe_scene.add_child(prop_instance)
-							
+
 	# 					prop_instance.set_physics_process(false)
 	# 					prop_instance.freeze = true
 	# 					prop_instance.position = Vector3(prop["pos"]["x"], prop["pos"]["y"], prop["pos"]["z"])
@@ -457,9 +457,9 @@ func set_player_name(event: Dictionary) -> void:
 	if players_list.has(event["object_id"]):
 		if event["object_id"] == my_player_uuid:
 			players_list[event["object_id"]].name = event["zone_data"]["name"]
-		else:
-			pass
-			players_list[event["object_id"]].name = "remoteplayer" + event["zone_data"]["name"]
+		# else:
+		# 	pass
+			# players_list[event["object_id"]].name = "remoteplayer" + event["zone_data"]["name"]
 
 func create_planet(message: Dictionary) -> void:
 	print("Create planet: %s" % message)
@@ -510,7 +510,12 @@ func create_planet(message: Dictionary) -> void:
 		for pending_message in pending_messages_parenting.duplicate():
 			var pending_player_data = pending_message["zone_data"]
 			if pending_player_data["parent_id"] == message["object_id"]:
-				print("Processing pending message for player %s now that parent_id %s is available" % [pending_message["object_id"], pending_player_data["parent_id"]])
+				print(
+					"Processing pending message for player %s now that parent_id %s is available" % [
+						pending_message["object_id"],
+						pending_player_data["parent_id"]
+					]
+				)
 				create_player(pending_message)
 				pending_messages_parenting.erase(pending_message)
 
@@ -611,8 +616,11 @@ func player_update(message: Dictionary) -> void:
 		if players_list.has(uuid):
 			if message["event_type"] == "move":
 				var player = players_list[uuid]
-				player.position = Vector3(message["data"]["new_position"]["x"], message["data"]["new_position"]["y"], message["data"]["new_position"]["z"])
-				# remote_player.global_rotation = Vector3(message["data"]["rotation"]["x"], message["data"]["rotation"]["y"], message["data"]["rotation"]["z"])
+				player.position = Vector3(
+					message["data"]["new_position"]["x"],
+					message["data"]["new_position"]["y"],
+					message["data"]["new_position"]["z"]
+				)
 		else:
 			print("Update Player but not found...")
 

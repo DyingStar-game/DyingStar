@@ -55,13 +55,13 @@ func _process(_delta: float) -> void:
 				if message != null:
 					dispatch_horizon_message(message)
 					if devmode:
-						_devmode_Horizon_mapping(message)
+						_devmode_horizon_mapping(message)
 			else:
 				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
 				peer.send(packet)
 
 func dispatch_horizon_message(message: Dictionary):
-	# SERVER - Received packet: 
+	# SERVER - Received packet:
 	# {
 	#     "data": {
 	#         "object_data": {
@@ -84,7 +84,7 @@ func dispatch_horizon_message(message: Dictionary):
 	#     "event": "add_prop",
 	#     "namespace": "server"
 	# }
-	
+
 	if message['namespace'] == "server":
 		match message['event']:
 			"add_prop":
@@ -267,7 +267,7 @@ func _devmode_mapping_props_position(message: Dictionary):
 	#   "object_type": "box",
 	#   "player_id": "d89afbf7-01ef-402c-8a1e-5b28605164ed",
 	#   "timestamp": 1762583555
-   	# }
+	# }
 	#
 	for data in message["data"]:
 		peer.send_text(
@@ -292,7 +292,7 @@ func _devmode_mapping_props_position(message: Dictionary):
 		)
 
 ### Messages mapping from godot client to godot server in devmode (Horizon in non-devmode)
-func _devmode_Horizon_mapping(message: Dictionary):
+func _devmode_horizon_mapping(message: Dictionary):
 	match message['namespace']:
 		"player":
 			match message['event']:
@@ -470,7 +470,7 @@ func _devmode_Horizon_mapping(message: Dictionary):
 					# 	"player_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
 					# 	"timestamp": 1762519740
 					# }
-					
+
 					# 1/ create prop on server side
 					var uuid = UUID_UTIL.v4()
 

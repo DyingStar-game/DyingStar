@@ -155,7 +155,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		#if chunk.identifier already exists leave it
 		if chunks_generating.has(chunk.identifier):
 			return
-		
+
 		var chunk_res = 0 if run_serverside and chunk.depth != planet.terrain_settings.max_lod else chunk_resolution
 
 		var size := chunk.bounds.size.x
@@ -474,7 +474,7 @@ func cleanup_collisions():
 				col.queue_free()
 				#print("deleting collision because no player near it")
 				chunks_col_list.erase(chunkid)
-			
+
 			#elif not any_player_near(col, 1000):
 				#col.disabled = true
 				#print("disable collision because player further than 1000m")

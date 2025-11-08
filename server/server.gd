@@ -356,7 +356,7 @@ func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: Str
 				"type": type,
 			}
 		if reparent_uuid != null:
-			props_newposition[uuid]["reparent"] = reparent_uuid			
+			props_newposition[uuid]["reparent"] = reparent_uuid
 		props_list_last_movement[uuid] = position
 		props_list_last_rotation[uuid] = rotation
 
