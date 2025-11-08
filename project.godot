@@ -18,8 +18,13 @@ boot_splash/image="uid://ck5w0cxx7uj4"
 config/icon="uid://bqoexxd6necib"
 boot_splash/minimum_display_time=1000
 
+[audio]
+
+buses/default_bus_layout=""
+
 [autoload]
 
+SettingsManager="*res://scenes/globals/settings_manager.gd"
 Globals="*res://scenes/globals/globals.gd"
 GameOrchestrator="*res://scenes/globals/game_orchestrator.gd"
 NetworkOrchestrator="*res://scenes/globals/network_orchestrator.gd"
@@ -182,8 +187,7 @@ locale/translations=PackedStringArray("res://tools/localization/localisation.en.
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
-anti_aliasing/quality/msaa_3d=1
-environment/defaults/default_clear_color=Color(0, 0, 0, 1)
+environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
 
 [wwise]
