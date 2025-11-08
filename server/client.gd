@@ -452,7 +452,7 @@ func create_player(event: Dictionary) -> void:
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
-func set_player_name(event: Dictionary) -> void:
+func set_player_name(_event: Dictionary) -> void:
 	pass
 	# if players_list.has(event["object_id"]):
 	# 	if event["object_id"] == my_player_uuid:
