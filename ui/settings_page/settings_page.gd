@@ -1,5 +1,9 @@
 extends CanvasLayer
 
+var general_settings : PackedScene = preload("res://ui/settings_page/general_page/general_settings_page.tscn")
+var graphic_settings : PackedScene = preload("res://ui/settings_page/graphical_page/graphical_settings_page.tscn")
+var audio_settings : PackedScene = preload("res://ui/settings_page/audio_page/audio_settings_page.tscn")
+var control_settings : PackedScene = preload("res://ui/settings_page/control_page/control_settings_page.tscn")
 
 @onready var return_button : Button = $Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Return
 @onready var general_button : Button = $Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Generals
@@ -7,12 +11,6 @@ extends CanvasLayer
 @onready var audio_button : Button = $Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Audio
 @onready var control_button : Button = $Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Controls
 @onready var settings_container : SubViewport = $Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer/SubViewport
-
-var general_settings : PackedScene = preload("res://ui/settings_page/general_page/general_settings_page.tscn")
-var graphic_settings : PackedScene = preload("res://ui/settings_page/graphical_page/graphical_settings_page.tscn")
-var audio_settings : PackedScene = preload("res://ui/settings_page/audio_page/audio_settings_page.tscn")
-var control_settings : PackedScene = preload("res://ui/settings_page/control_page/control_settings_page.tscn")
-
 
 func _ready() -> void:
 	return_button.pressed.connect(queue_free)
