@@ -416,6 +416,12 @@ func spawn_box(boxscene: String, coeffz: float, coeffy: float):
 	var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
 	# parent is for example the planet
 	var parent = get_parent();
+	var parentuuid = ""
+	if parent.name == "SystemSandbox":
+		parentuuid = ""
+	else:
+		parentuuid = parent.uuid
+
 	emit_signal(
 		"client_action_requested",
 		{
@@ -427,6 +433,6 @@ func spawn_box(boxscene: String, coeffz: float, coeffy: float):
 				"z": item_spawn_position[2]
 			},
 			"scenename": "scenes/props/testbox/" + boxscene + ".tscn",
-			"parent_id": parent.uuid,
+			"parent_id": parentuuid,
 		}
 	)
