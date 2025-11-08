@@ -1,6 +1,7 @@
 extends Node3D
 
 @export var spawn_node: Node
+@export var uuid: String = ""
 
 var is_ready: bool = false
 var spawn_points_list: Array[Vector3]:

@@ -270,8 +270,8 @@ func update_props(event: Dictionary) -> void:
 		# print("Player position update received: %s" % player)
 		if player_entity != null and player_entity.client_uuid == player["uuid"]:
 			if player.has("reparent"):
-				var planet = props_list["planet"][player["reparent"]]
-				player_entity.reparent(planet)
+				var parent = _search_parent_node(player["reparent"])
+				player_entity.reparent(parent)
 			player_entity.position = Vector3(player["pos"]["x"], player["pos"]["y"], player["pos"]["z"])
 		elif players_list.has(player["uuid"]):
 			var remote_player = players_list[player["uuid"]]
@@ -397,7 +397,7 @@ func create_player(event: Dictionary) -> void:
 	if players_list.has(event["object_id"]):
 		return
 
-	if player_data["parent_id"] != "" and not props_list["planet"].has(player_data["parent_id"]):
+	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
 		# store pending message
 		pending_messages_parenting.append(event)
 		print("Pending message for player %s because parent_id %s not found yet" % [event["object_id"], player_data["parent_id"]])
@@ -418,8 +418,10 @@ func create_player(event: Dictionary) -> void:
 		universe_scene.add_child(spawned_entity_instance)
 		spawned_entity_instance.set_physics_process(false)
 
-		var planet = props_list["planet"][player_data["parent_id"]]
-		spawned_entity_instance.reparent(planet)
+		if player_data["parent_id"] != "":
+			var parent = _search_parent_node(player_data["parent_id"])
+			if parent != null:
+				spawned_entity_instance.reparent(parent)
 
 		spawned_entity_instance.client_uuid = my_player_uuid
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
@@ -441,8 +443,8 @@ func create_player(event: Dictionary) -> void:
 			universe_scene.add_child(remote_player_instance)
 			remote_player_instance.set_physics_process(false)
 
-			var planet = props_list["planet"][player_data["parent_id"]]
-			remote_player_instance.reparent(planet)
+			var parent = _search_parent_node(player_data["parent_id"])
+			remote_player_instance.reparent(parent)
 			remote_player_instance.position = Vector3(
 				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 			)
@@ -560,15 +562,17 @@ func create_generic_object(event: Dictionary) -> void:
 		)
 		universe_scene.add_child(prop_instance)
 		prop_instance.set_physics_process(false)
-		var planet = props_list["planet"][object_data["parent_id"]]
-		prop_instance.reparent(planet)
+		if object_data["parent_id"] != "":
+			var parent = _search_parent_node(object_data["parent_id"])
+			if parent != null:
+				prop_instance.reparent(parent)
 		prop_instance.position = Vector3(
 			object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"]
 		)
 		prop_instance.global_rotation = Vector3(
 			object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"]
 		)
-		prop_instance.freeze = true
+		#prop_instance.freeze = true
 		prop_instance.uuid = event["object_id"]
 		props_list[event["object_type"]][event["object_id"]] = prop_instance
 
@@ -611,3 +615,9 @@ func player_update(message: Dictionary) -> void:
 				# remote_player.global_rotation = Vector3(message["data"]["rotation"]["x"], message["data"]["rotation"]["y"], message["data"]["rotation"]["z"])
 		else:
 			print("Update Player but not found...")
+
+func _search_parent_node(parent_id: String) -> Node:
+	for proptype in props_list.keys():
+		if props_list[proptype].has(parent_id):
+			return props_list[proptype][parent_id]
+	return null
