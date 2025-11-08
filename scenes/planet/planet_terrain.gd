@@ -15,7 +15,7 @@ signal regenerate()
 
 @export var terrain_settings: PlanetTerrainSettings
 
-@export var terrain_material: Material
+@export var terrain_material: ShaderMaterial
 
 var biomes_tex: Array[Image] = []
 
@@ -127,30 +127,32 @@ func sample_nearest_wrapped(img: Image, uv: Vector2) -> float:
 	
 	return img.get_pixel(x0, y0).r
 
-func sample_bilinear_wrapped(img: Image, uv: Vector2) -> float:
+
+
+func sample_bilinear_wrapped(img: Image, uv: Vector2) -> Color:
 	var w = img.get_width()
 	var h = img.get_height()
 
 	# Align with texel centers like GPU
-	var u = fposmod(uv.x * w - 0.5, w)
-	var v = fposmod(uv.y * h - 0.5, h)
+	var u := fposmod(uv.x * w - 0.5, w)
+	var v := fposmod(uv.y * h - 0.5, h)
 
-	var x0 = int(floor(u))
-	var y0 = int(floor(v))
+	var x0 := int(floor(u))
+	var y0 := int(floor(v))
 	var x1 = (x0 + 1) % w
 	var y1 = (y0 + 1) % h
 
-	var tx = u - x0
-	var ty = v - y0
+	var tx := u - x0
+	var ty := v - y0
 
-	var c00 = img.get_pixel(x0, y0).r
-	var c10 = img.get_pixel(x1, y0).r
-	var c01 = img.get_pixel(x0, y1).r
-	var c11 = img.get_pixel(x1, y1).r
+	var c00 := img.get_pixel(x0, y0)
+	var c10 := img.get_pixel(x1, y0)
+	var c01 := img.get_pixel(x0, y1)
+	var c11 := img.get_pixel(x1, y1)
 
-	var cx0 = lerp(c00, c10, tx)
-	var cx1 = lerp(c01, c11, tx)
-	return lerp(cx0, cx1, ty)
+	var cx0 := c00.lerp(c10, tx)
+	var cx1 := c01.lerp(c11, tx)
+	return cx0.lerp(cx1, ty)
 
 
 ## pos = 3D position (world or object space)
@@ -375,12 +377,18 @@ func sample_height_triplanar_bilinear(img: Image, pos: Vector3, normal: Vector3,
 	return hx * blend.x + hy * blend.y + hz * blend.z
 
 func get_biome(point: Vector3) -> float:
-	var v = terrain_settings.biome_noise.get_noise_3dv(point * 10000)
-	v = (v + 1.0) * 0.5
+	#var v = terrain_settings.biome_noise.get_noise_3dv(point * 10000)
+	#v = (v + 1.0) * 0.5
+	#
+	#v = v * v
 	
-	v = v * v
+	
 	#v = snappedf(v, 1.0 / 8)
-	return clamp(v, 0.0, 1.0)
+	
+	var equirect_uv = spherical_uv(point)
+	var v := sample_bilinear_wrapped(terrain_map_image, equirect_uv).r
+	
+	return clamp(v - 0.001, 0.0, 1.0)
 
 func fract(x: float) -> float:
 	return x - floor(x)
@@ -518,29 +526,25 @@ func get_height(normalized_point: Vector3) -> Vector3:
 	
 	var b = get_biome(normalized_point)
 	
+	
 	var layer_count = biomes_tex.size()
 	
 	var scaled = b * float(layer_count - 1)
 	var lower_layer = int(floor(scaled))
 	var upper_layer = lower_layer + 1
+	assert(upper_layer < layer_count, "upper layer is out of bound: " + str(upper_layer))
 	var blend = fract(scaled)
 	
 	var uv = get_uv(normalized_point)
 	
-	#var last = upper_layer == layer_count - 1
 	
-	var lower_h = sample_bilinear_wrapped(biomes_tex[lower_layer], uv)
-	var upper_h = sample_bilinear_wrapped(biomes_tex[upper_layer], uv)
-	#var lower_h = smooth_blend(point, biomes_tex[lower_layer], 1.0)
-	#var upper_h = smooth_blend(point, biomes_tex[upper_layer], 1.0 / 2.0 if last else 1.0)
+	var lower_h = sample_bilinear_wrapped(biomes_tex[lower_layer], uv).r
+	var upper_h = sample_bilinear_wrapped(biomes_tex[upper_layer], uv).r
 	
-	
-	#if last:
-		#upper_h *= 5.0
 	elev += lerp(lower_h, upper_h, blend)
 	
-	elev += b * 5
-	#elev  /= biomes_tex.size()
+	elev += b * 10
+	
 	elev *= 200 + 1500 * (1.0 - abs(normalized_point.y) + 0.4)
 	
 	#for n_param in terrain_settings.noise_params:

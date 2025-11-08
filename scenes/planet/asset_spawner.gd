@@ -14,8 +14,6 @@ extends Node3D
 
 var rnd := RandomNumberGenerator.new()
 
-var planet: Planet
-
 var player_chunks: Dictionary[int, Array]
 var loaded_cells: Dictionary[Vector3i, Array]
 var last_cell: Vector2i
@@ -24,8 +22,6 @@ var focus_positions_last = []
 
 var current_seed = 123
 
-func _ready() -> void:
-	planet = owner
 
 func get_local_focus_positions():
 	var local_positions = []

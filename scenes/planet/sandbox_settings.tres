@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="PlanetSettings" load_steps=30 format=3 uid="uid://dndwamrx0yyd8"]
+[gd_resource type="Resource" script_class="PlanetSettings" load_steps=32 format=3 uid="uid://dndwamrx0yyd8"]
 
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="1_ec2n1"]
 [ext_resource type="Shader" uid="uid://btsydfvxyvh77" path="res://scenes/planet/biome_terrainv2.gdshader" id="2_csqwb"]
@@ -27,6 +27,16 @@ colors = PackedColorArray(0.47916666, 0.4702687, 0.40978014, 1, 0.8541667, 0.781
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_aety1"]
 gradient = SubResource("Gradient_2pnho")
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_wr466"]
+noise_type = 0
+frequency = 1.0
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_s0dqk"]
+width = 128
+height = 128
+noise = SubResource("FastNoiseLite_wr466")
+seamless = true
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("2_csqwb")
@@ -37,6 +47,8 @@ shader_parameter/biome_normal = ExtResource("4_undai")
 shader_parameter/terrain_normal = ExtResource("5_undai")
 shader_parameter/surface_albedo = ExtResource("5_j8mb4")
 shader_parameter/surface_normal = ExtResource("6_yd54e")
+shader_parameter/noise = SubResource("NoiseTexture2D_s0dqk")
+shader_parameter/notile_offset = 0.56
 shader_parameter/uv1_blend_sharpness = 8.0
 shader_parameter/uv1_scale = 1.0
 shader_parameter/uv_distance_scale = 1.0
@@ -44,6 +56,7 @@ shader_parameter/uv_distance_scale = 1.0
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
 frequency = 0.00039999999999999
 fractal_type = 2
+fractal_octaves = 7
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 4
@@ -105,6 +118,6 @@ script = ExtResource("1_ec2n1")
 radius = 2100000
 atmosphere_height = 40000
 terrain_material = SubResource("ShaderMaterial_jl8nh")
-sea_level = 1300
+sea_level = 5900
 terrain_settings = SubResource("Resource_7f52q")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"

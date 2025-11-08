@@ -65,6 +65,8 @@ func update_planet():
 	atmosphere.atmosphere_height = planet_settings.atmosphere_height
 	atmosphere.planet_radius = planet_settings.radius
 	
+	planet_terrain.terrain_material.set_shader_parameter("layer_count", planet_terrain.biomes_tex.size())
+	
 	if planet_settings.has_ocean:
 		var watermesh = water_surface.mesh as SphereMesh
 		watermesh.radius = planet_settings.radius + planet_settings.sea_level

@@ -1,4 +1,4 @@
-[gd_scene load_steps=63 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=68 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/testplanet.gd" id="1_83pno"]
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="2_c1vqx"]
@@ -31,11 +31,12 @@
 [ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="16_kyu43"]
 [ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="19_wr466"]
 [ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="20_s0dqk"]
-[ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/props/testbox/box_50cm.tscn" id="32_wr466"]
+[ext_resource type="Material" uid="uid://dtb4yud0tneyu" path="res://scenes/planet/cloud_material.tres" id="33_s0dqk"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]
 frequency = 0.00039999999999999
 fractal_type = 2
+fractal_octaves = 7
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_xk4jg"]
 noise_type = 4
@@ -99,6 +100,16 @@ colors = PackedColorArray(0.47916666, 0.4702687, 0.40978014, 1, 0.8541667, 0.781
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_aety1"]
 gradient = SubResource("Gradient_2pnho")
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_wr466"]
+noise_type = 0
+frequency = 1.0
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_s0dqk"]
+width = 128
+height = 128
+noise = SubResource("FastNoiseLite_wr466")
+seamless = true
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jl8nh"]
 render_priority = 0
 shader = ExtResource("9_4eq58")
@@ -109,6 +120,8 @@ shader_parameter/biome_normal = ExtResource("15_kyu43")
 shader_parameter/terrain_normal = ExtResource("16_kyu43")
 shader_parameter/surface_albedo = ExtResource("19_wr466")
 shader_parameter/surface_normal = ExtResource("20_s0dqk")
+shader_parameter/noise = SubResource("NoiseTexture2D_s0dqk")
+shader_parameter/notile_offset = 0.56
 shader_parameter/uv1_blend_sharpness = 8.0
 shader_parameter/uv1_scale = 1.0
 shader_parameter/uv_distance_scale = 1.0
@@ -175,7 +188,7 @@ colors = PackedColorArray(1.49205e-06, 0.489553, 0.503481, 1, 0.00948865, 0.2322
 gradient = SubResource("Gradient_wsl8f")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_7o858"]
-render_priority = 0
+render_priority = 1
 shader = ExtResource("7_l6ihg")
 shader_parameter/height_profile_curve = SubResource("CurveTexture_hltm3")
 shader_parameter/height_profile_main_colors = SubResource("GradientTexture1D_kghk6")
@@ -193,23 +206,42 @@ shader_parameter/water_density_factor = -0.205
 flip_faces = true
 size = Vector3(4436460, 4436460, 4436460)
 
+[sub_resource type="SphereMesh" id="SphereMesh_s0dqk"]
+radius = 2005900.0
+height = 4011800.0
+radial_segments = 128
+rings = 64
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wr466"]
+albedo_color = Color(0.1181386, 0.23124999, 0.2890625, 1)
+metallic = 0.45
+metallic_specular = 0.39
+roughness = 0.03
+refraction_scale = -0.14
+
+[sub_resource type="SphereMesh" id="SphereMesh_wr466"]
+radius = 2100.0
+height = 4200.0
+radial_segments = 128
+rings = 64
+
 [node name="Planet" type="Node3D"]
 script = ExtResource("1_83pno")
 planet_id = "sandbox"
 planet_settings = ExtResource("2_nqw6u")
+orbit_line_enabled = false
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, -4076503.527693874, 0, 0)
+light_color = Color(1, 0.9315436, 0.7966081, 1)
 shadow_enabled = true
+shadow_opacity = 0.91
 directional_shadow_split_1 = 0.001
 directional_shadow_split_2 = 0.09
 directional_shadow_split_3 = 0.389
 directional_shadow_blend_splits = true
 directional_shadow_fade_start = 0.699
 directional_shadow_max_distance = 8192.0
-
-[node name="WaterSurface" type="MeshInstance3D" parent="."]
-visible = false
 
 [node name="PlanetTerrain" parent="." instance=ExtResource("4_2pfeq")]
 radius = 2100000
@@ -264,7 +296,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 shape = SubResource("BoxShape3D_r4ens")
 
 [node name="Atmosphere" parent="." node_paths=PackedStringArray("sun_object") instance=ExtResource("6_mv8ka")]
-transform = Transform3D(3.2838441083609986e-07, 0.00022625397392215784, -0.9999993957168327, 0, 0.9999993957168867, 0.00022625397392217003, 0.9999999999999459, -7.429827792575813e-11, 3.283842123989458e-07, 1130.4892572409972, -922.5814580358564, -1.3390314438274782)
+transform = Transform3D(-0.0014302068489236972, -0.002999518730806298, -0.9999938999929535, 0, 0.9999949227340995, -0.0029995217985562335, 0.9999989772536616, -4.289936619791053e-06, -0.0014301995873832322, 5287.879060608664, 12243.496987137478, 5837.811996419086)
 material_override = SubResource("ShaderMaterial_7o858")
 cast_shadow = 0
 mesh = SubResource("BoxMesh_642k6")
@@ -272,13 +304,16 @@ planet_radius = 2100600.0
 atmosphere_height = 150000.0
 sun_object = NodePath("../DirectionalLight3D")
 
-[node name="box_50cm" parent="." instance=ExtResource("32_wr466")]
-transform = Transform3D(0.9772480156054437, -0.2069291231679782, -0.046547330537372485, -0.015327571558579785, 0.1499857743546374, -0.9885693364864988, 0.21154522340468995, 0.9667908799094928, 0.1434015794142037, -440303.3404243231, 378544.028104928, 1916853.1921094842)
+[node name="WaterSurface" type="MeshInstance3D" parent="."]
+visible = false
+mesh = SubResource("SphereMesh_s0dqk")
+surface_material_override/0 = SubResource("StandardMaterial3D_wr466")
 
-[node name="ReflectionProbe" type="ReflectionProbe" parent="."]
-transform = Transform3D(0.9589033022629205, -0.2712299179366697, -0.08329939090613812, 0, 0.29358364861867015, -0.9559333874615685, 0.28373307334406084, 0.9166476819802778, 0.28151833015083966, -467134.1017031611, 416347.0564607997, 1904108.90547567)
-blend_distance = 500.0
-size = Vector3(10000, 10000, 10000)
-ambient_color = Color(0.7239583, 0.7239583, 0.7239583, 1)
+[node name="Clouds" type="MeshInstance3D" parent="."]
+transform = Transform3D(959.855, 0, 0, 0, 959.855, 0, 0, 0, 959.855, 0, 0, 0)
+visible = false
+material_override = ExtResource("33_s0dqk")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_wr466")
 
 [editable path="PlanetTerrain"]
