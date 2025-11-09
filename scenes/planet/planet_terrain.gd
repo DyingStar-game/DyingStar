@@ -137,8 +137,8 @@ func sample_bilinear_wrapped(img: Image, uv: Vector2) -> Color:
 	var u := fposmod(uv.x * w - 0.5, w)
 	var v := fposmod(uv.y * h - 0.5, h)
 
-	var x0 := int(floor(u))
-	var y0 := int(floor(v))
+	var x0 := floori(u)
+	var y0 := floori(v)
 	var x1 = (x0 + 1) % w
 	var y1 = (y0 + 1) % h
 
@@ -517,9 +517,15 @@ func smooth_blend(point: Vector3, img: Image, uvmult = 1.0) -> float:
 func get_sphere_point(p: Vector3) -> Vector3:
 	var np = Vector3()
 	var p2 = p * p
+	
 	np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
 	np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
 	np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
+	
+	if is_nan(np.x): np.x = 0.0
+	if is_nan(np.y): np.y = 0.0
+	if is_nan(np.z): np.z = 0.0
+	
 	return np
 
 func get_height(normalized_point: Vector3) -> Vector3:
@@ -527,15 +533,17 @@ func get_height(normalized_point: Vector3) -> Vector3:
 	if !biomes_tex: return Vector3.ZERO
 	if !terrain_map_image: return Vector3.ZERO
 	
-	var b = get_biome(normalized_point)
+	var b := get_biome(normalized_point)
 	
 	
-	var layer_count = biomes_tex.size()
+	var layer_count := biomes_tex.size()
 	
-	var scaled = b * float(layer_count - 1)
-	var lower_layer = int(floor(scaled))
+	var scaled := b * float(layer_count - 1)
+	
+	var lower_layer = floori(scaled)
 	var upper_layer = lower_layer + 1
 	assert(upper_layer < layer_count, "upper layer is out of bound: " + str(upper_layer))
+	assert(lower_layer >= 0, "lower layer must be superior or equal to 0")
 	var blend = fract(scaled)
 	
 	var uv = get_uv(normalized_point)
