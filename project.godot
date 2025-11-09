@@ -49,7 +49,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="StarDeception"
+project/assembly_name="DyingStar"
 
 [editor_plugins]
 

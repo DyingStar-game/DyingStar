@@ -1,4 +1,4 @@
-# StarDeception
+# DyingStar
 
 ### Controls
 - [Z][S][Q][D] = move

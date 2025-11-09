@@ -1,9 +1,8 @@
-[gd_scene load_steps=6 format=3 uid="uid://c2iig1r7l0cbb"]
+[gd_scene load_steps=5 format=3 uid="uid://c2iig1r7l0cbb"]
 
 [ext_resource type="Script" uid="uid://1l14ge8hbbo1" path="res://ui/main_page/main_page.gd" id="1_o7ao7"]
-[ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="2_b1ygv"]
+[ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
 [ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="3_n4a6o"]
-[ext_resource type="Texture2D" uid="uid://0yw6o1aoe6pj" path="res://assets/textures/Menu/Title_StarDeception.svg" id="3_wrgf5"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_75xce"]
 font = ExtResource("3_n4a6o")
@@ -27,7 +26,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-texture = ExtResource("2_b1ygv")
+texture = ExtResource("2_n3f7d")
 expand_mode = 1
 stretch_mode = 6
 
@@ -44,17 +43,16 @@ theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
 [node name="Button" type="Button" parent="Control"]
-layout_mode = 2
+layout_mode = 1
+anchors_preset = -1
 anchor_left = 0.5
 anchor_top = 0.696
 anchor_right = 0.5
 anchor_bottom = 0.696
 offset_left = -72.0
-offset_top = -13.68
+offset_top = 115.32000000000005
 offset_right = 79.0
-offset_bottom = 35.32
-grow_horizontal = 2
-grow_vertical = 0
+offset_bottom = 164.32000000000005
 
 [node name="Label" type="Label" parent="Control/Button"]
 layout_mode = 1
@@ -65,6 +63,8 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Settings"
 label_settings = SubResource("LabelSettings_75xce")
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control"]
 layout_mode = 1
@@ -74,16 +74,12 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -364.0
-offset_top = -88.5
+offset_top = 109.0
 offset_right = 364.0
-offset_bottom = 88.5
+offset_bottom = 217.5
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
-
-[node name="TextureRect" type="TextureRect" parent="Control/VBoxContainer"]
-layout_mode = 2
-texture = ExtResource("3_wrgf5")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="Control/VBoxContainer"]
 layout_mode = 2
