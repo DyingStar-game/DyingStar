@@ -116,8 +116,10 @@ metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 [resource]
 script = ExtResource("1_ec2n1")
 radius = 2100000
-atmosphere_height = 40000
+atmosphere_height = 80000
 terrain_material = SubResource("ShaderMaterial_jl8nh")
-sea_level = 5900
+sea_level = 8900
+has_clouds = true
+cloud_height = 18000
 terrain_settings = SubResource("Resource_7f52q")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"

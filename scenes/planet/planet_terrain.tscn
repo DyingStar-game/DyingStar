@@ -19,6 +19,7 @@ terrain_map = ExtResource("4_8bpd4")
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="SphereOccluder3D" id="SphereOccluder3D_xntnt"]
+resource_local_to_scene = true
 radius = 5000.0
 
 [sub_resource type="SphereMesh" id="SphereMesh_25nq4"]

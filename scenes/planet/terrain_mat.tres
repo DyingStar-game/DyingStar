@@ -1,8 +1,6 @@
-[gd_resource type="ShaderMaterial" load_steps=9 format=3 uid="uid://degky8mc31ncp"]
+[gd_resource type="ShaderMaterial" load_steps=7 format=3 uid="uid://degky8mc31ncp"]
 
 [ext_resource type="Shader" uid="uid://cqo8jlsmx8n7n" path="res://scenes/planet/terrain.gdshader" id="1_3iebd"]
-[ext_resource type="Texture2D" uid="uid://cu0q6lhjb8n8j" path="res://assets/textures/sand/Ground055L_2K_NormalGL.jpg" id="2_11uw2"]
-[ext_resource type="Texture2D" uid="uid://btk6yarjmrxkb" path="res://assets/textures/sand/Ground055L_2K_Roughness.jpg" id="3_xkdyo"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_pwywj"]
 noise_type = 0
@@ -29,7 +27,6 @@ seamless = true
 render_priority = 0
 shader = ExtResource("1_3iebd")
 shader_parameter/roughness = 1.0
-shader_parameter/sand_roughness = ExtResource("3_xkdyo")
 shader_parameter/specular = 0.5
 shader_parameter/normal_scale = 1.0
 shader_parameter/uv1_blend_sharpness = 5.0
