@@ -22,10 +22,7 @@ jobs:
       - name: remove dotnet
         uses: AdityaGarg8/remove-unwanted-software@v5
         with:
-          remove-dotnet:
-            description: 'Removes .NET runtime and libraries.'
-            required: false
-            default: 'false'
+          remove-dotnet: true
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
