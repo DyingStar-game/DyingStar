@@ -19,15 +19,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: remove dotnet
+        uses: AdityaGarg8/remove-unwanted-software@v5
+        with:
+          remove-dotnet:
+            description: 'Removes .NET runtime and libraries.'
+            required: false
+            default: 'false'
+
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-
-      - run: dotnet tool install --global NETFrameworkTool
-      - run: NETFrameworkTool --list
-      # - run: NETFrameworkTool --net 4.0 --install
-      # - run: NETFrameworkTool --net 4.5 --install
 
       - name: get Godot Windows
         run: |
