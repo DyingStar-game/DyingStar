@@ -384,6 +384,9 @@ func get_biome(point: Vector3) -> float:
 	
 	
 	#v = snappedf(v, 1.0 / 8)
+
+	if !terrain_map_image: return 0.0
+
 	
 	var equirect_uv = spherical_uv(point)
 	var v := sample_bilinear_wrapped(terrain_map_image, equirect_uv).r
@@ -521,7 +524,7 @@ func get_sphere_point(p: Vector3) -> Vector3:
 
 func get_height(normalized_point: Vector3) -> Vector3:
 	var elev = 0.0
-	
+	if !biomes_tex: return Vector3.ZERO
 	if !terrain_map_image: return Vector3.ZERO
 	
 	var b = get_biome(normalized_point)

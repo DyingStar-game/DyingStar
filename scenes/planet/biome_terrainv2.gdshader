@@ -149,7 +149,7 @@ void fragment() {
     vec3 albedo = sample_layers(biome_color, _uv, ivec2(lower_layer, upper_layer), local_blend);
 
 	vec3 color_variation = texture(color_map, vec2(COLOR.r, 0.0)).rgb;
-	vec3 biome_albedo = mix(albedo, color_variation, 0.2);
+	vec3 biome_albedo = mix(albedo, color_variation, 0.8);
 
 	float surface_uv_scale = 100.0;
 

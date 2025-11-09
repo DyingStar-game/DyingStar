@@ -19,6 +19,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain
 @onready var atmosphere: ExtremelyFastAtmpsphere = $Atmosphere
 @onready var water_surface: MeshInstance3D = $WaterSurface
+@onready var clouds: MeshInstance3D = $Clouds
 
 
 func _enter_tree() -> void:
@@ -65,6 +66,8 @@ func update_planet():
 	atmosphere.atmosphere_height = planet_settings.atmosphere_height
 	atmosphere.planet_radius = planet_settings.radius
 	
+	
+	
 	planet_terrain.terrain_material.set_shader_parameter("layer_count", planet_terrain.biomes_tex.size())
 	
 	if planet_settings.has_ocean:
@@ -74,7 +77,15 @@ func update_planet():
 		water_surface.show()
 	else:
 		water_surface.hide()
-	
+		
+	if planet_settings.has_clouds:
+		clouds.show()
+		var cloud_mesh = clouds.mesh as SphereMesh
+		var cloud_mesh_radius = planet_settings.radius + planet_settings.cloud_height
+		cloud_mesh.height = cloud_mesh_radius * 2
+		cloud_mesh.radius = cloud_mesh_radius
+	else:
+		clouds.hide()
 
 	planet_terrain.trigger_update()
 

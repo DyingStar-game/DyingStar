@@ -48,7 +48,7 @@ var small_spawnable_props: Array[PackedScene] = []
 var small_spawnable_props_entry_point: Node = null
 
 var universe_datas_spawner_node: MultiplayerSpawner = null
-var spawnable_planet_scene: PackedScene = preload("res://scenes/planet/testplanet.tscn")
+var spawnable_planet_scene: PackedScene = preload("res://scenes/planet/base_planet.tscn")
 var spawnable_station_scene: PackedScene = null
 
 var players: Dictionary[int, Player] = {}
