@@ -24,6 +24,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - run: dotnet tool install --global NETFrameworkTool
+      - run: NETFrameworkTool --list
+      # - run: NETFrameworkTool --net 4.0 --install
+      # - run: NETFrameworkTool --net 4.5 --install
+
       - name: get Godot Windows
         run: |
           Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/windows-editor-mono-double.zip" -OutFile "$env:TEMP\windows-editor-mono-double.zip"
