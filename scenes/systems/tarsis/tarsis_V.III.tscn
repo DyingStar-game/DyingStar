@@ -117,7 +117,7 @@ biomes_albedo = Array[CompressedTexture2D]([ExtResource("4_x1hmp"), ExtResource(
 biomes_normal = Array[CompressedTexture2D]([ExtResource("10_ul17d"), ExtResource("11_dtaqs"), ExtResource("12_8x4re")])
 metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
-[sub_resource type="Resource" id="Resource_4tymd"]
+[sub_resource type="Resource" id="Resource_8bq2n"]
 script = ExtResource("2_gvpu1")
 radius = 1560000
 atmosphere_height = 60000
@@ -127,7 +127,7 @@ cloud_height = 18000
 terrain_settings = SubResource("Resource_udjps")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"
 
-[sub_resource type="SphereOccluder3D" id="SphereOccluder3D_ul17d"]
+[sub_resource type="SphereOccluder3D" id="SphereOccluder3D_v5pic"]
 resource_local_to_scene = true
 radius = 1560000.0
 
@@ -178,7 +178,7 @@ colors = PackedColorArray(1.49205e-06, 0.489553, 0.503481, 1, 0.00948865, 0.2322
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_tfj6s"]
 gradient = SubResource("Gradient_wsl8f")
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_dtaqs"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_b16d7"]
 resource_local_to_scene = true
 render_priority = 1
 shader = ExtResource("15_oigd4")
@@ -194,39 +194,35 @@ shader_parameter/atmosphere_radius = 1620000.0
 shader_parameter/atmosphere_density = 5.0
 shader_parameter/water_density_factor = -0.205
 
-[sub_resource type="SphereMesh" id="SphereMesh_8x4re"]
+[sub_resource type="SphereMesh" id="SphereMesh_eldcm"]
 resource_local_to_scene = true
 radius = 2118000.0
 height = 4236000.0
 radial_segments = 128
 rings = 64
 
-[node name="TarsisI" type="Node3D"]
+[node name="TarsisV_III" instance=ExtResource("1_x3g5b")]
+planet_settings = SubResource("Resource_8bq2n")
 
-[node name="Planet" parent="." instance=ExtResource("1_x3g5b")]
-planet_id = "tarsis_I"
-planet_settings = SubResource("Resource_4tymd")
-
-[node name="PlanetTerrain" parent="Planet" index="1"]
+[node name="PlanetTerrain" parent="." index="1"]
 radius = 1560000
 terrain_settings = SubResource("Resource_udjps")
 terrain_material = SubResource("ShaderMaterial_eaiis")
 
-[node name="OccluderInstance3D" parent="Planet/PlanetTerrain" index="6"]
-occluder = SubResource("SphereOccluder3D_ul17d")
+[node name="OccluderInstance3D" parent="PlanetTerrain" index="6"]
+occluder = SubResource("SphereOccluder3D_v5pic")
 
-[node name="PlanetGravity" parent="Planet/PlanetTerrain" index="8"]
+[node name="PlanetGravity" parent="PlanetTerrain" index="8"]
 gravity_point_unit_distance = 1560000.0
 
-[node name="Atmosphere" parent="Planet" index="2"]
-transform = Transform3D(-0.0014302068489236972, -0.0029995187308062966, -0.9999938999929531, 0, 0.9999949227340991, -0.002999521798556232, 0.9999989772536616, -4.289936619791051e-06, -0.0014301995873832315, 5287.879060608664, 12243.496987137478, 5837.811996419086)
-material_override = SubResource("ShaderMaterial_dtaqs")
+[node name="Atmosphere" parent="." index="2"]
+transform = Transform3D(-0.0014302068489236972, -0.002999518730806298, -0.9999938999929535, 0, 0.9999949227340995, -0.0029995217985562335, 0.9999989772536616, -4.289936619791053e-06, -0.0014301995873832322, 5287.879060608664, 12243.496987137478, 5837.811996419086)
+material_override = SubResource("ShaderMaterial_b16d7")
 planet_radius = 1560000.0
 atmosphere_height = 60000.0
 
-[node name="Clouds" parent="Planet" index="4"]
+[node name="Clouds" parent="." index="4"]
 visible = false
-mesh = SubResource("SphereMesh_8x4re")
+mesh = SubResource("SphereMesh_eldcm")
 
-[editable path="Planet"]
-[editable path="Planet/PlanetTerrain"]
+[editable path="PlanetTerrain"]
