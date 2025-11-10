@@ -432,7 +432,8 @@ func spawn_box(boxscene: String, coeffz: float, coeffy: float):
 				"y": item_spawn_position[1],
 				"z": item_spawn_position[2]
 			},
-			"scenename": "scenes/props/testbox/" + boxscene + ".tscn",
+			# "scenename": "scenes/props/testbox/" + boxscene + ".tscn",
+			"scenename": "scenes/props/rock/rock_mining_01.tscn",
 			"parent_id": parentuuid,
 		}
 	)
