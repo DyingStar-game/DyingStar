@@ -15,12 +15,15 @@ normal_texture = ExtResource("3_kvafs")
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wphnb"]
 albedo_texture = ExtResource("3_ducf2")
 
-[node name="RockMining01" type="Node3D"]
+[node name="RockMining01" type="RigidBody3D"]
+mass = 800.0
 script = ExtResource("1_6o14g")
 
 [node name="CSGCombiner3D" type="CSGCombiner3D" parent="."]
+unique_name_in_owner = true
 material_override = SubResource("StandardMaterial3D_ducf2")
 operation = 2
+use_collision = true
 
 [node name="CSGMesh3D" type="CSGMesh3D" parent="CSGCombiner3D"]
 mesh = ExtResource("1_yg06r")
@@ -35,5 +38,6 @@ size = Vector3(5, 10, 10)
 [node name="CSGBox3D2" type="CSGBox3D" parent="CSGCombiner3D"]
 unique_name_in_owner = true
 transform = Transform3D(0.7157089477359955, -0.239472864038218, -0.6560590289905073, 0.31730465640509214, 0.9483236552061993, 0, 0.6221562964033077, -0.2081705847752913, 0.754709580222772, 3.504355610893421, 0, 0)
+visible = false
 operation = 2
 size = Vector3(5, 10, 10)
