@@ -280,7 +280,8 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 	# generate collisions
-	if run_serverside and not Engine.is_editor_hint():
+	#if run_serverside and not Engine.is_editor_hint():
+	if true and not Engine.is_editor_hint():
 		if !chunks_col_list.has(chunk.identifier):
 			# print("generating collision", chunk.identifier, mesh.get_surface_count())
 			add_collision_shape(chunk.identifier, mesh, chunk_pos)
@@ -324,6 +325,7 @@ func add_collision_shape(id: String, mesh: ArrayMesh, chunk_pos: Vector3):
 	collision_shape.name = "ChunkColShape"
 	collision_shape.shape = mesh.create_trimesh_shape()
 	planet.add_child(collision_shape, true)
+	collision_shape.disabled = not run_serverside
 
 	#logmsg("duration: %d ms" % (t - Time.get_ticks_msec()))
 #

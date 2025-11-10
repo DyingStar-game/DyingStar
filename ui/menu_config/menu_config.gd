@@ -21,7 +21,6 @@ var last_press = ""
 @onready var return_main_menu_button: Button = $PanelContainer/MarginContainer/VBoxContainer/ReturnMainMenuButton
 
 func _ready() -> void:
-	if not is_multiplayer_authority(): return
 	is_shown = false
 	if GameOrchestrator.is_server(): return
 	InputMap.load_from_project_settings()

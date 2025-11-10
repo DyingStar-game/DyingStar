@@ -14,7 +14,7 @@ extends Node3D
 
 var rnd := RandomNumberGenerator.new()
 
-var player_chunks: Dictionary[int, Array]
+var player_chunks: Dictionary[String, Array]
 var loaded_cells: Dictionary[Vector3i, Array]
 var last_cell: Vector2i
 

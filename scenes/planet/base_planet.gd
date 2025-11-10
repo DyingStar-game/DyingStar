@@ -86,8 +86,22 @@ func update_planet():
 		cloud_mesh.radius = cloud_mesh_radius
 	else:
 		clouds.hide()
-
+		
 	planet_terrain.trigger_update()
+	
+	update_spawn_points()
+
+func update_spawn_points():
+	for spawn_point: Marker3D in planet_terrain.get_node("PlayerSpawnPointsList").get_children():
+		var normalized_pos = spawn_point.position.normalized()
+		var surface_pos = planet_terrain.get_height(normalized_pos)
+		var above_surf_pos = surface_pos + normalized_pos * 500
+		spawn_point.position = above_surf_pos
+		spawn_point.global_transform = planet_terrain.align_with_y(spawn_point.global_transform, normalized_pos)
+
+func get_spawn_point() -> Transform3D:
+	var spawn_point = planet_terrain.get_node("PlayerSpawnPointsList").get_children().front() as Marker3D
+	return spawn_point.global_transform
 
 func _pack_textures(textures: Array[CompressedTexture2D]) -> Texture2DArray:
 	var tex_array = Texture2DArray.new()

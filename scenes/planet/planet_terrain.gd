@@ -22,12 +22,13 @@ var biomes_tex: Array[Image] = []
 var terrain_map_image: Image
 
 var focus_positions = []
-var players_ids = []
+var players_ids: Array[String] = []
 
 var debug_panel: PanelContainer
 var debug_label: RichTextLabel
 
 @onready var occluder_instance_3d: OccluderInstance3D = $OccluderInstance3D
+@onready var planet_gravity: PhysicsGrid = $PlanetGravity
 
 func _enter_tree() -> void:
 	if OS.has_feature("editor"):
@@ -88,21 +89,25 @@ func _process(_delta: float) -> void:
 	if OS.has_feature("editor"):
 		if Engine.is_editor_hint():
 			camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
-			players_ids = [1]
+			players_ids = ["editor"]
 			focus_positions = [camera.global_position + -camera.global_basis.z * 1]
 			return
 
 	if GameOrchestrator.is_server():
 		focus_positions = []
 		players_ids = []
-		for player: Player in get_tree().get_nodes_in_group("player"):
-			focus_positions.push_back(player.global_position)
-			players_ids.push_back(player.name.to_int())
+		
+		for body: PhysicsBody3D in planet_gravity.get_overlapping_bodies():
+			if body is Player:
+				#prints("server position", body.name, body.global_position)
+				focus_positions.push_back(body.global_position)
+				players_ids.push_back(body.name)
 		return
 
 	camera = get_viewport().get_camera_3d()
 	if camera:
-		players_ids = [multiplayer.get_unique_id()]
+		#prints("client position", camera.global_position)
+		players_ids = ["client"]
 		focus_positions = [camera.global_position + -camera.global_basis.z * 1]
 
 func trigger_update():
