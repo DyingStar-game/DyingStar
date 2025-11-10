@@ -29,7 +29,7 @@ outline_color = Color(0, 0, 0, 1)
 
 [node name="NormalPlayer" type="CharacterBody3D" groups=["containable", "player"]]
 script = ExtResource("1_ll2l8")
-walk_speed = 5.0
+walk_speed = 500.0
 sprint_speed = 10.0
 metadata/client_uuid = ""
 

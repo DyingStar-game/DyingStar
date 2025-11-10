@@ -290,7 +290,7 @@ func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
 		return
 	debug_message_number = debug_message_number + 1
-	print("Send players to horizon: ", players_newposition.values().size())
+	#print("Send players to horizon: ", players_newposition.values().size())
 	var message = {
 		"namespace": "players",
 		"event": "position",
@@ -377,7 +377,6 @@ func create_player(event: Dictionary) -> void:
 	print("Player data received: %s" % player_data)
 
 	var spawned_entity_instance = player_scene.instantiate()
-
 	spawned_entity_instance.name = player_data["name"]
 
 	spawned_entity_instance.tree_entered.connect(func():
@@ -385,9 +384,11 @@ func create_player(event: Dictionary) -> void:
 	)
 	universe_scene.add_child(spawned_entity_instance)
 
-	if player_data["parent_id"] != "":
-		var planet = _search_parent_node(player_data["parent_id"])
-		spawned_entity_instance.reparent(planet)
+	#if player_data["parent_id"] != "":
+		#var planet = _search_parent_node(player_data["parent_id"])
+		#spawned_entity_instance.reparent(planet)
+	spawned_entity_instance.reparent(spawn_planet)
+	
 
 	spawned_entity_instance.position = Vector3(
 		player_data["position"]["x"],
@@ -399,6 +400,7 @@ func create_player(event: Dictionary) -> void:
 
 	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
+	
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 
 func create_generic_object(event: Dictionary) -> void:

@@ -50,7 +50,7 @@ shader_parameter/surface_normal = ExtResource("6_yd54e")
 shader_parameter/noise = SubResource("NoiseTexture2D_s0dqk")
 shader_parameter/notile_offset = 0.56
 shader_parameter/uv1_blend_sharpness = 8.0
-shader_parameter/uv1_scale = 1.0
+shader_parameter/uv1_scale = 5.0
 shader_parameter/uv_distance_scale = 1.0
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_8q5ja"]

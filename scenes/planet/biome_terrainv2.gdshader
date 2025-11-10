@@ -8,8 +8,12 @@ uniform sampler2DArray biome_color: source_color, filter_linear_mipmap;
 uniform sampler2DArray biome_normal: filter_linear_mipmap;
 uniform sampler2D terrain_normal: hint_normal, filter_linear_mipmap;
 
-uniform sampler2D surface_albedo: source_color, filter_linear_mipmap;
-uniform sampler2D surface_normal: hint_normal, filter_linear_mipmap;
+uniform sampler2D rock_albedo: source_color, filter_linear_mipmap;
+uniform sampler2D rock_normal: hint_normal, filter_linear_mipmap;
+
+uniform sampler2D ground_albedo: source_color, filter_linear_mipmap;
+uniform sampler2D ground_normal: hint_normal, filter_linear_mipmap;
+
 
 uniform sampler2D noise: source_color, filter_linear_mipmap, repeat_enable;
 uniform float notile_offset;
@@ -17,6 +21,11 @@ uniform float notile_offset;
 uniform float uv1_blend_sharpness = 8.0;
 uniform float uv1_scale = 1.0;
 uniform float uv_distance_scale = 1.0;
+uniform float surface_uv_scale = 100.0;
+
+uniform float terrain_normal_blend_offset = 0.9;
+uniform float terrain_normal_blend_fade = 0.1;
+
 
 instance uniform vec3 offset_pos;
 
@@ -50,8 +59,9 @@ void vertex() {
 	uv1_power_normal = pow(abs(NORMAL), vec3(uv1_blend_sharpness));
 	uv1_triplanar_pos = (VERTEX + offset_pos) * uv1_scale / 1000.0;
 	uv1_triplanar_pos_loc = VERTEX * uv1_scale / 1000.0;
+	uv1_triplanar_pos_loc *= vec3(1.0, 1.0, -1.0);
 	uv1_power_normal /= dot(uv1_power_normal, vec3(1.0));
-	uv1_triplanar_pos *= vec3(1.0, -1.0, 1.0);
+	uv1_triplanar_pos *= vec3(1.0, 1.0, -1.0);
 }
 float sum( vec3 v ) { return v.x+v.y+v.z; }
 
@@ -126,7 +136,7 @@ void fragment() {
 	//vec3 up_dir_chunk = normalize(offset_pos + VERTEX);
 	//vec3 up_vector_viewspace = up_dir_chunk; //mat3(VIEW_MATRIX) * vert_normal;
 	//float dot_product = dot(up_vector_viewspace, mat3(VIEW_MATRIX) * NORMAL);
-	//float slope = smoothstep(terrain_normal_blend_offset - terrain_normal_blend_fade, terrain_normal_blend_offset + terrain_normal_blend_fade, terrain_slope);
+	float slope = smoothstep(terrain_normal_blend_offset - terrain_normal_blend_fade, terrain_normal_blend_offset + terrain_normal_blend_fade, terrain_slope);
 
 
 	//ALBEDO = COLOR.r * vec3(0.6, 0.2, 0.0);
@@ -134,7 +144,7 @@ void fragment() {
 	//ALBEDO = triplanar_texture_arr(biome_color, uv1_power_normal, uv1_triplanar_pos, COLOR.r).rgb;
 	ROUGHNESS = 1.0;
 
-	SPECULAR = 0.5;
+	SPECULAR = 0.2;
 
 
 	vec3 terrain_n = triplanar_texture(terrain_normal, uv1_power_normal, uv1_triplanar_pos_loc * uv_distance_scale).rgb;
@@ -149,21 +159,27 @@ void fragment() {
     vec3 albedo = sample_layers(biome_color, _uv, ivec2(lower_layer, upper_layer), local_blend);
 
 	vec3 color_variation = texture(color_map, vec2(COLOR.r, 0.0)).rgb;
-	vec3 biome_albedo = mix(albedo, color_variation, 0.8);
+	vec3 biome_albedo = mix(albedo, color_variation, 0.2);
 
-	float surface_uv_scale = 100.0;
-
-	vec3 surface_a = triplanar_texture_notile(surface_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 ground_a = triplanar_texture_notile(ground_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 rock_a = triplanar_texture_notile(rock_albedo, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 surface_a = mix(rock_a, ground_a, slope);
 
 	ALBEDO = mix(biome_albedo, surface_a, 0.5);
 	//ALBEDO = vec3(_uv.xy, 0.0);
 	//ALBEDO = COLOR.rrr;
 
 	vec3 normal = sample_layers(biome_normal, _uv, ivec2(lower_layer, upper_layer), local_blend);
-
-	vec3 biome_n = blend_normals(normal, terrain_n);
-	vec3 surface_n = triplanar_texture_notile(surface_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	//vec3 biome_n = blend_normals(normal, terrain_n);
+	vec3 biome_n = terrain_n;
+	
+	vec3 ground_n = triplanar_texture_notile(ground_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 rock_n = triplanar_texture_notile(rock_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
+	vec3 surface_n = mix(rock_n, ground_n, slope);
 
 	NORMAL_MAP = blend_normals(biome_n, surface_n);
-	NORMAL_MAP_DEPTH = 1.0;
+	NORMAL_MAP.x = clamp(NORMAL_MAP.x, 0.0, 1.0);
+	NORMAL_MAP.y = clamp(NORMAL_MAP.y, 0.0, 1.0);
+	NORMAL_MAP.z = clamp(NORMAL_MAP.z, 0.0, 1.0);
+	NORMAL_MAP_DEPTH = 1.5;
 }

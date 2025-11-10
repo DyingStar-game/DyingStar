@@ -104,6 +104,8 @@ func _enter_tree() -> void:
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
+	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
+
 	if remote_player:
 		camera.current = false
 		$ExtCamera3D.current = false
@@ -113,8 +115,9 @@ func _ready() -> void:
 	$UserInterface/LoadingScreen.show()
 
 
+
 	global_position = spawn_position
-	look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
+	global_transform = Globals.align_with_y(global_transform, spawn_up)
 
 	NetworkOrchestrator.set_gameserver_name.connect(_set_gameserver_name)
 
