@@ -191,7 +191,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box("box_50cm", 5.5, 2.0)
+		spawn_box("box_50cm", 5.5, 1.2)
 
 	if event.is_action_pressed("spawn_4mbox"):
 		spawn_box("box_4m", 3.0, 6.0)

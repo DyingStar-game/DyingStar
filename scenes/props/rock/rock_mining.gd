@@ -2,9 +2,8 @@ extends RigidBody3D
 
 @export var uuid: String = ""
 
-@onready var cutCube = %CSGBox3D
-@onready var cutCube2 = %CSGBox3D2
 @onready var combiner = %CSGCombiner3D
+@onready var origmesh = %CSGMesh3D
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
@@ -40,7 +39,6 @@ func _ready() -> void:
 		bloc.instance.operation = CSGShape3D.OPERATION_SUBTRACTION
 		if bloc.used == true:
 			_cut_rock(bloc)
-		
 
 
 
@@ -75,9 +73,9 @@ func _cut_rock(bloc: Dictionary) -> void:
 	var collisioninstance = CollisionShape3D.new()
 	collisioninstance.shape = collision_shape
 	add_child(collisioninstance) 
-	
-	meshinstance.position = -meshcenter
-	collisioninstance.position = -meshcenter
+
+	#meshinstance.center_of_mass = -meshcenter
+	#collisioninstance.center_of_mass = -meshcenter
 	
 	combiner.queue_free()
 	if bloc.keep_side == 1:
@@ -92,9 +90,15 @@ func _cut_rock(bloc: Dictionary) -> void:
 			}
 		]
 		get_parent().add_child(instance)
-		instance.global_position = global_position + Vector3(1.0, 0, 0)
+		instance.reparent(get_parent())
+		instance.position = position
+		# instance.global_position = global_position + Vector3(1.0, 0, 0)
 
-	# cutCube.queue_free()
+	meshinstance.position = -meshcenter
+	collisioninstance.position = -meshcenter
+	global_position = global_position + meshcenter
+	center_of_mass = meshcenter
+
 
 #####################################################################
 # Definitions
@@ -158,7 +162,9 @@ func _server_channel_2() -> void:
 	pass
 
 func _on_area_3d_body_entered(body: Node3D) -> void:
+	# run cut the rock only for the player character enter in area zone
 	if body.get_class() == "CharacterBody3D":
 		for bloc in blocs:
 			if bloc.used == false:
 				_cut_rock(bloc)
+				return
