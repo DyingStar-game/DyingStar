@@ -19,14 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # - name: Install dotnet SDK 8.0
-      #   uses: actions/setup-dotnet@v5
-      #   with:
-      #     dotnet-version: '8.0.x'
-
-      - name: Install dotnet 8
-        run: |
-          "C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v5\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Channel 8.0
+      - name: Install dotnet SDK 8.0
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
 
       - name: get Godot Windows
         run: |
