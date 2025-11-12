@@ -14,15 +14,10 @@ on:
 jobs:
   Build-Windows:
     name: Build DyingStar for Windows
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: remove dotnet
-        uses: AdityaGarg8/remove-unwanted-software@v5
-        with:
-          remove-dotnet: true
 
       - name: Install dotnet SDK 8.0
         uses: actions/setup-dotnet@v5
