@@ -35,7 +35,7 @@ jobs:
 
       - name: Windows Build
         run: |
-          D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop" build\windows_client
+          D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop" build\windows_client\dyingstar.exe
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
