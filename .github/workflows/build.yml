@@ -29,8 +29,8 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/windows-editor-mono-double.zip" -OutFile "$env:TEMP\windows-editor-mono-double.zip"
           New-Item -ItemType Directory -Force -Path "D:\Godot" | Out-Null
           Expand-Archive -Path "$env:TEMP\windows-editor-mono-double.zip" -DestinationPath "D:\Godot" -Force
-          New-Item -ItemType Directory -Path "$env:USERPROFILE\.local\share\godot\export_templates\4.5.1.stable.mono.double" -Force | Out-Null
-          Move-Item -Path "D:\Godot\*template*" -Destination "$env:USERPROFILE\.local\share\godot\export_templates\4.5.1.stable.mono.double\"
+          New-Item -ItemType Directory -Path "$env:APPDATA\Godot\export_templates\4.5.1.stable.mono.double" -Force | Out-Null
+          Move-Item -Path "D:\Godot\*template*" -Destination "$env:APPDATA\Godot\export_templates\4.5.1.stable.mono.double\"
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
 
       - name: Windows Build
