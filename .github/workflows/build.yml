@@ -14,7 +14,7 @@ on:
 jobs:
   Build-Windows:
     name: Build DyingStar for Windows
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +29,8 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/windows-editor-mono-double.zip" -OutFile "$env:TEMP\windows-editor-mono-double.zip"
           New-Item -ItemType Directory -Force -Path "D:\Godot" | Out-Null
           Expand-Archive -Path "$env:TEMP\windows-editor-mono-double.zip" -DestinationPath "D:\Godot" -Force
+          New-Item -ItemType Directory -Path "$env:USERPROFILE\.local\share\godot\export_templates\4.5.1.stable.mono" -Force | Out-Null
+          Move-Item -Path "D:\Godot\*template*" -Destination "$env:USERPROFILE\.local\share\godot\export_templates\4.5.1.stable.mono\"
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
 
       - name: Windows Build
