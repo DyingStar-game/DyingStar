@@ -4,6 +4,7 @@ extends CharacterBody3D
 
 signal hs_client_action_move
 signal hs_server_move
+signal hs_client_action_pressed
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -65,6 +66,7 @@ var new_input_from_server: bool = false
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
+var is_parented: bool = false
 
 # to disable player input when piloting vehicule/ship
 var active = false
@@ -98,7 +100,7 @@ func _enter_tree() -> void:
 		$UserInterface.visible = false
 		$CameraPivot.visible = false
 
-	else:
+	elif not OS.has_feature("dedicated_server"):
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 
 func _ready() -> void:
@@ -179,8 +181,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
 	if !active: return
 
-	if event.is_action_pressed(JUMP) and is_on_floor():
-		is_jumping = true
+	if event.is_action_pressed(JUMP):
+		emit_signal("hs_client_action_pressed", JUMP)
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
@@ -189,22 +191,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box50cm()
+		spawn_box("box_50cm", 1.5, 2.0)
 
 	if event.is_action_pressed("spawn_4mbox"):
-		var box_spawn_position: Vector3 = global_position + (-global_basis.z * 3.0) + global_basis.y * 6.0
-
-		var player_up = global_transform.basis.y.normalized()
-		var to_player = (global_transform.origin - box_spawn_position)
-		to_player -= to_player.dot(player_up) * player_up
-		to_player = to_player.normalized()
-		var box_basis: Basis = Basis.looking_at(to_player, player_up)
-		var box_spawn_rotation = box_basis.get_euler()
-
-		emit_signal(
-			"client_action_requested",
-			{"action": "spawn", "entity": "box4m", "spawn_position": box_spawn_position, "spawn_rotation": box_spawn_rotation}
-		)
+		spawn_box("box_4m", 3.0, 6.0)
 
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
@@ -278,7 +268,6 @@ func _physics_process(delta: float) -> void:
 			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
 
 			if parent_gravity_area:
-
 				if parent_gravity_area.gravity_point:
 					up_direction = parent_gravity_area.global_position.direction_to(global_position)
 				else:
@@ -317,6 +306,7 @@ func _physics_process(delta: float) -> void:
 			# Add the gravity.
 			elif not is_on_floor():
 				velocity -= up_direction * gravity * 2.0 * delta
+				is_jumping = false
 
 			move_and_slide()
 			update_last_basis()
@@ -326,11 +316,18 @@ func _physics_process(delta: float) -> void:
 			move_and_slide()
 			update_last_basis()
 
-		emit_signal("hs_server_move", client_uuid, global_position, global_rotation)
+		emit_signal(
+			"hs_server_move",
+			client_uuid,
+			# stepify tu prevent floating points with too many chars after coma
+			snapped(position, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			null,
+			is_parented
+		)
 
 	else:
 		# player part
-		if remote_player: return
 		if !active: return
 
 		var dir_vect = Vector3.ZERO
@@ -346,12 +343,12 @@ func _physics_process(delta: float) -> void:
 			input_direction = dir_vect
 		else:
 			input_direction = Vector2.ZERO
-
 		# send move_direction
-		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
+		var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+		if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
 			client_last_input_direction = input_direction
-			client_last_global_rotation = global_rotation
-			emit_signal("hs_client_action_move", input_direction, global_rotation)
+			client_last_global_rotation = short_rotation
+			emit_signal("hs_client_action_move", input_direction, short_rotation)
 		update_last_basis()
 
 		labelx.text = str("%0.2f" % global_position[0])
@@ -362,15 +359,26 @@ func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
 
 func _handle_camera_motion():
-	if gravity == 0:
-		camera_pivot.rotation.x = 0
-		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
-		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-	else:
+	var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+
+	if parent_gravity_area:
+		if parent_gravity_area.gravity_point:
+			up_direction = parent_gravity_area.global_position.direction_to(global_position)
+		else:
+			up_direction = parent_gravity_area.global_basis.y
+
+		gravity = parent_gravity_area.gravity
 		orient_player()
 		global_basis = global_basis.rotated(global_basis.y, mouse_motion.x * camera_sensitivity)
 		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
 		camera_pivot.rotation_degrees.x = clamp(camera_pivot.rotation_degrees.x, -80, 80)
+	else:
+		# 0g movement
+		gravity = 0.0
+		camera_pivot.rotation.x = 0
+		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
+		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
+
 	mouse_motion = Vector2.ZERO
 
 func orient_player():
@@ -384,6 +392,12 @@ func get_player_name():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
+		if area.name == "PlanetGravity":
+			var planet = area.get_parent().get_parent()
+			#reparent(planet)
+			call_deferred("reparent", planet)
+			is_parented = true
+			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -396,11 +410,29 @@ func _set_gameserver_name(server_name: String):
 
 func _set_player_global_position(pos, rot):
 	global_position = pos
-	global_rotation =rot
+	global_rotation = rot
 
-func spawn_box50cm():
-	var box_spawn_position: Vector3 = global_position + (-global_basis.z * 1.5) + global_basis.y * 2.0
+func spawn_box(boxscene: String, coeffz: float, coeffy: float):
+	var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
+	# parent is for example the planet
+	var parent = get_parent();
+	var parentuuid = ""
+	if parent.name == "SystemSandbox":
+		parentuuid = ""
+	else:
+		parentuuid = parent.uuid
+
 	emit_signal(
 		"client_action_requested",
-		{"action": "spawn", "entity": "box50cm", "spawn_position": box_spawn_position, "uuid": client_uuid}
+		{
+			"action": "spawn",
+			"entity": "box",
+			"position": {
+				"x": item_spawn_position[0],
+				"y": item_spawn_position[1],
+				"z": item_spawn_position[2]
+			},
+			"scenename": "scenes/props/testbox/" + boxscene + ".tscn",
+			"parent_id": parentuuid,
+		}
 	)

@@ -1,6 +1,7 @@
 extends Node3D
 
 @export var spawn_node: Node
+@export var uuid: String = ""
 
 var is_ready: bool = false
 var spawn_points_list: Array[Vector3]:
@@ -21,7 +22,8 @@ func _ready() -> void:
 			spawn_points_list.append(child.global_position)
 
 func assign_spawn_informations() -> void:
-	planet_center = get_node("Sandbox").global_position
+	pass
+	#planet_center = get_node("Sandbox").global_position
 
 
 func _physics_process(_delta: float) -> void:

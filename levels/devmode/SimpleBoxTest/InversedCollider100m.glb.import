@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://d2fuvcev4h0b3"
-path="res://.godot/imported/InversedCollider100m.glb-7c88c649ca8c3d8fd14d4acb00aca130.scn"
+path="res://.godot/imported/InversedCollider100m.glb-935ed0c03ea1df31a324c758449a4538.scn"
 
 [deps]
 
-source_file="res://levels/SimpleBoxTest/InversedCollider100m.glb"
-dest_files=["res://.godot/imported/InversedCollider100m.glb-7c88c649ca8c3d8fd14d4acb00aca130.scn"]
+source_file="res://levels/devmode/SimpleBoxTest/InversedCollider100m.glb"
+dest_files=["res://.godot/imported/InversedCollider100m.glb-935ed0c03ea1df31a324c758449a4538.scn"]
 
 [params]
 

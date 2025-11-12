@@ -93,7 +93,6 @@ func spawn_cell(cell: Vector3i):
 	loaded_cells[cell] = generate_asset_in_cell(cell, rnd, cell_size)
 
 func get_cell_from_position(pos: Vector3, cell_size_deg: float) -> Vector3i:
-	var dir = pos.normalized()
 	var scaled = pos / cell_size_deg
 	return Vector3i(scaled)
 
@@ -101,8 +100,8 @@ func get_seed_from_cell(cell_coords: Vector3i) -> int:
 	return int(cell_coords.x * 73856093 ^ cell_coords.y * 19349663 ^ cell_coords.z * 83492791)
 
 func generate_asset_in_cell(cell: Vector3i, rng: RandomNumberGenerator, cell_size_value: float):
-	var seed = get_seed_from_cell(cell)
-	rng.seed = seed
+	var cell_seed = get_seed_from_cell(cell)
+	rng.seed = cell_seed
 
 	if debugmesh and debugmesh.visible:
 		debugmesh.global_position = planet_terrain.to_global(planet_terrain.get_height(Vector3(cell + Vector3i.ONE).normalized()))
@@ -121,8 +120,8 @@ func generate_asset_in_cell(cell: Vector3i, rng: RandomNumberGenerator, cell_siz
 
 	return nodes
 
-func spawn_asset_at(rng: RandomNumberGenerator, position: Vector3) -> Node3D:
-	var dir = position.normalized()
+func spawn_asset_at(rng: RandomNumberGenerator, surface_pos: Vector3) -> Node3D:
+	var dir = surface_pos.normalized()
 	var pos = planet_terrain.get_height(dir)
 	var asset = asset_scenes[rng.randi() % asset_scenes.size()].instantiate()
 	add_child(asset, true)
