@@ -33,6 +33,9 @@ jobs:
           Move-Item -Path "D:\Godot\*template*" -Destination "$env:APPDATA\Godot\export_templates\4.5.1.stable.mono.double\"
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
 
+      - name: List dotnet
+        run: dir C:\Program Files\dotnet
+
       - name: Windows Build
         run: |
           D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop"
