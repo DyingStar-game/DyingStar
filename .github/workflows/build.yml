@@ -23,7 +23,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-          global-json-file: ./.github/workflows/global.json
 
       - name: get Godot Windows
         run: |
@@ -34,12 +33,9 @@ jobs:
           Move-Item -Path "D:\Godot\*template*" -Destination "$env:APPDATA\Godot\export_templates\4.5.1.stable.mono.double\"
           Remove-Item "$env:TEMP\windows-editor-mono-double.zip"
 
-      - name: List dotnet
-        run: dir "C:\Program Files\dotnet\sdk"
-
       - name: Windows Build
         run: |
-          D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop"
+          D:\Godot\godot.windows.editor.double.x86_64.mono.exe --headless --verbose --export-release "Windows Desktop" build\windows_client
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
