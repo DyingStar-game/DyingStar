@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=18 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://btyj4wvtqhqhg" path="res://scenes/normal_player/label_universe_number_box_50_cm.gd" id="10_0o2xm"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
+[ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/models/equipments/tools/mining/hammerdrill.glb" id="14_fuv0x"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -310,5 +311,8 @@ layout_mode = 1
 
 [node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
 visible = false
+
+[node name="hammerdrill2" parent="." instance=ExtResource("14_fuv0x")]
+transform = Transform3D(5.406494717047727e-17, -2.874684233282234e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]

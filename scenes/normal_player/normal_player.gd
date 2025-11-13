@@ -426,7 +426,7 @@ func spawn_box(boxscene: String, coeffz: float, coeffy: float):
 		"client_action_requested",
 		{
 			"action": "spawn",
-			"entity": "box",
+			"entity": "miningrock",
 			"position": {
 				"x": item_spawn_position[0],
 				"y": item_spawn_position[1],

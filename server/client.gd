@@ -22,6 +22,7 @@ var props_list: Dictionary = {
 	"box4m": {},
 	"ship": {},
 }
+var props_pre_creations: Dictionary = {}
 var my_player_uuid: String = ""
 
 # var planet_scene = preload("res://scenes/planet/testplanet.tscn")
@@ -346,6 +347,27 @@ func update_props(event: Dictionary) -> void:
 	# 		print("Unknown prop type: %s" % prop["type"])
 
 func create_object(event: Dictionary) -> void:
+	#{
+	#     "channel": 0,
+	#     "object_id": "dc804655-7af7-4172-9dd0-47d8497b722e",
+	#     "object_type": "miningrock",
+	#     "player_id": "371a6b85-d941-454a-8b91-a28eb1fbe188",
+	#     "timestamp": 1763037787,
+	#     "type": "gorc_zone_enter",
+	#     "zone_data": {
+	#         "parent_id": "3388a817-f3ef-421d-b10f-4325e105628e",
+	#         "position": {
+	#             "x": -2209850,
+	#             "y": 1.2,
+	#             "z": 46.7425
+	#         },
+	#         "rotation": {
+	#             "x": 0,
+	#             "y": 0,
+	#             "z": 0
+	#         }
+	#     }
+	# }
 	match event["object_type"]:
 		"GorcPlayer":
 			if event["channel"] == 0:
@@ -364,6 +386,13 @@ func delete_object(event: Dictionary) -> void:
 		"GorcPlayer":
 			delete_player(event)
 		_:
+			if props_list.has(event["object_type"]):
+				var type = event["object_type"]
+				if props_list[type].has(event["object_id"]):
+					var prop_instance = props_list[type][event["object_id"]]
+					prop_instance.queue_free()
+					props_list[type].erase(event["object_id"])
+					return
 			print("unknown object type for deletion")
 
 func create_generic_prop(event: Dictionary) -> void:
@@ -579,6 +608,9 @@ func create_generic_object(event: Dictionary) -> void:
 		)
 		#prop_instance.freeze = true
 		prop_instance.uuid = event["object_id"]
+
+		# TODO need add func in box 50mcm and 4m
+		prop_instance.gorc_create(event)
 		props_list[event["object_type"]][event["object_id"]] = prop_instance
 
 func update_generic_object(event: Dictionary) -> void:
@@ -586,12 +618,17 @@ func update_generic_object(event: Dictionary) -> void:
 	if props_list.has(event["object_type"]):
 		if props_list[event["object_type"]].has(event["object_id"]):
 			var prop_instance = props_list[event["object_type"]][event["object_id"]]
-			prop_instance.position = Vector3(
-				object_data["pos"]["x"], object_data["pos"]["y"], object_data["pos"]["z"]
-			)
-			prop_instance.global_rotation = Vector3(
-				object_data["rot"]["x"], object_data["rot"]["y"], object_data["rot"]["z"]
-			)
+
+			prop_instance.gorc_create(event)
+
+			if object_data.has("pos"):
+				prop_instance.position = Vector3(
+					object_data["pos"]["x"], object_data["pos"]["y"], object_data["pos"]["z"]
+				)
+			if object_data.has("rot"):
+				prop_instance.global_rotation = Vector3(
+					object_data["rot"]["x"], object_data["rot"]["y"], object_data["rot"]["z"]
+				)
 		else:
 			print("Update generic object but not found: %s" % event["object_id"])
 	else:
