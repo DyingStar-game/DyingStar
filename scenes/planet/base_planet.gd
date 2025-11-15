@@ -15,46 +15,29 @@ signal hs_server_prop_move
 
 var spawn_position: Vector3 = Vector3.ZERO
 
-@onready var planet_gravity: PhysicsGrid = $PlanetTerrain/PlanetGravity
-@onready var planet_terrain: PlanetTerrain = $PlanetTerrain
-@onready var atmosphere: ExtremelyFastAtmpsphere = $Atmosphere
-@onready var water_surface: MeshInstance3D = $WaterSurface
-@onready var clouds: MeshInstance3D = $Clouds
-
-
 func _enter_tree() -> void:
 	if Engine.is_editor_hint(): return
 	global_position = spawn_position
 	if not OS.has_feature("dedicated_server") and not Engine.is_editor_hint():
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
 
+func _physics_process(delta: float) -> void:
+	if Engine.is_editor_hint(): return
+
 
 func _ready() -> void:
 	update_planet()
-
-func _physics_process(delta: float) -> void:
-	if Engine.is_editor_hint(): return
-	# planet_terrain.rotation.y += 0.001 * delta
-	# print(transform.basis)
-	# global_position = Vector3(global_position[0] + 100, global_position[1], global_position[2])
-	# rotate_y(0.1)
-	# look_at(global_transform.origin + vector, Vector3.UP)
-
-	# rotate this Node3D around the world origin (Vector3.ZERO) about the Y axis
-	#var angle = 0.000001 * delta
-	var angle = 0.0000000001 * delta
-	var origin = global_position - Vector3(18999498785.9, 0.0, 0.0)
-	var rot = Basis(Vector3.UP, angle)
-
-	var gt = global_transform
-	gt.basis = rot * gt.basis
-	gt.origin = rot * (gt.origin - origin) + origin
-	global_transform = gt
 
 	# if GameOrchestrator.is_server():
 	# 	emit_signal("hs_server_prop_move", uuid, global_position, global_rotation, "planet")
 
 func update_planet():
+	var planet_gravity: PhysicsGrid = $PlanetTerrain/PlanetGravity
+	var planet_terrain: PlanetTerrain = $PlanetTerrain
+	var atmosphere: ExtremelyFastAtmpsphere = $Atmosphere
+	var water_surface: MeshInstance3D = $WaterSurface
+	var clouds: MeshInstance3D = $Clouds
+
 	planet_gravity.gravity_point_unit_distance = planet_settings.radius
 	var shape = planet_gravity.get_node("CollisionShape3D").shape as SphereShape3D
 	shape.radius = planet_settings.radius + planet_settings.atmosphere_height
@@ -65,11 +48,11 @@ func update_planet():
 
 	atmosphere.atmosphere_height = planet_settings.atmosphere_height
 	atmosphere.planet_radius = planet_settings.radius
-	
-	
-	
-	planet_terrain.terrain_material.set_shader_parameter("layer_count", planet_terrain.biomes_tex.size())
-	
+
+
+
+	planet_terrain.terrain_material.set_shader_parameter("layer_count", planet_terrain.terrain_settings.biomes_albedo.size())
+
 	if planet_settings.has_ocean:
 		var watermesh = water_surface.mesh as SphereMesh
 		watermesh.radius = planet_settings.radius + planet_settings.sea_level
@@ -77,7 +60,7 @@ func update_planet():
 		water_surface.show()
 	else:
 		water_surface.hide()
-		
+
 	if planet_settings.has_clouds:
 		clouds.show()
 		var cloud_mesh = clouds.mesh as SphereMesh
@@ -88,18 +71,30 @@ func update_planet():
 		clouds.hide()
 		
 	planet_terrain.trigger_update()
-	
+
 	update_spawn_points()
 
 func update_spawn_points():
+	var planet_terrain: PlanetTerrain = $PlanetTerrain
+
 	for spawn_point: Marker3D in planet_terrain.get_node("PlayerSpawnPointsList").get_children():
 		var normalized_pos = spawn_point.position.normalized()
 		var surface_pos = planet_terrain.get_height(normalized_pos)
-		var above_surf_pos = surface_pos + normalized_pos * 500
-		spawn_point.position = above_surf_pos
+		var space = get_world_3d().direct_space_state
+		var param = PhysicsRayQueryParameters3D.new()
+		param.from = surface_pos + normalized_pos * 100
+		param.to = surface_pos
+
+		var spawn_pos = surface_pos
+		var collision = space.intersect_ray(param)
+		if collision:
+			spawn_pos = collision["position"]
+
+		spawn_point.position = spawn_pos + normalized_pos * 3
 		spawn_point.global_transform = planet_terrain.align_with_y(spawn_point.global_transform, normalized_pos)
 
 func get_spawn_point() -> Transform3D:
+	var planet_terrain: PlanetTerrain = $PlanetTerrain
 	var spawn_point = planet_terrain.get_node("PlayerSpawnPointsList").get_children().front() as Marker3D
 	return spawn_point.global_transform
 
@@ -115,6 +110,6 @@ func pack_biomes():
 	print("packing...")
 	var biome_albedo = _pack_textures(planet_settings.terrain_settings.biomes_albedo)
 	ResourceSaver.save(biome_albedo, "res://assets/textures/biomes_packed/"+ planet_id +"_albedo_array.res")
-	
+
 	var biome_normal = _pack_textures(planet_settings.terrain_settings.biomes_normal)
 	ResourceSaver.save(biome_normal, "res://assets/textures/biomes_packed/"+ planet_id +"_normal_array.res")
