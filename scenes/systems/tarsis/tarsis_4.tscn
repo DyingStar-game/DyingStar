@@ -210,7 +210,7 @@ height = 4236000.0
 radial_segments = 128
 rings = 64
 
-[node name="TarsisIV" instance=ExtResource("1_x3g5b")]
+[node name="Tarsis4" instance=ExtResource("1_x3g5b")]
 planet_settings = SubResource("Resource_8bq2n")
 
 [node name="PlayerSpawnPoint01" parent="PlanetTerrain/PlayerSpawnPointsList" index="0"]
