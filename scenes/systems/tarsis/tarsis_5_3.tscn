@@ -201,7 +201,7 @@ height = 4236000.0
 radial_segments = 128
 rings = 64
 
-[node name="TarsisV_III" instance=ExtResource("1_x3g5b")]
+[node name="Tarsis5_3" instance=ExtResource("1_x3g5b")]
 planet_settings = SubResource("Resource_8bq2n")
 
 [node name="PlanetTerrain" parent="." index="1"]

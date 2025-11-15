@@ -1,4 +1,4 @@
-[gd_scene load_steps=52 format=3 uid="uid://mhdunmnpxrqy"]
+[gd_scene load_steps=52 format=3 uid="uid://dpxxqq8jurpw6"]
 
 [ext_resource type="PackedScene" uid="uid://rv6ugxi8n8pe" path="res://scenes/planet/base_planet.tscn" id="1_x3g5b"]
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="2_gvpu1"]
@@ -201,7 +201,7 @@ height = 4236000.0
 radial_segments = 128
 rings = 64
 
-[node name="TarsisVI_I" instance=ExtResource("1_x3g5b")]
+[node name="Tarsis6" instance=ExtResource("1_x3g5b")]
 planet_settings = SubResource("Resource_8bq2n")
 
 [node name="PlanetTerrain" parent="." index="1"]
