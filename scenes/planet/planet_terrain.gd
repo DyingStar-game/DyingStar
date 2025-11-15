@@ -4,18 +4,16 @@ extends StaticBody3D
 
 signal regenerate()
 
-@export_tool_button("update") var on_update = trigger_update
-
 ## Base radius of the planet
-@export var radius: int
+var radius: int
 
-@export var min_height: float = 10000.0
-@export var max_height: float
-@export var resolution: int = 60
+var min_height: float = 10000.0
+var max_height: float
+var resolution: int = 60
 
-@export var terrain_settings: PlanetTerrainSettings
+var terrain_settings: PlanetTerrainSettings
 
-@export var terrain_material: ShaderMaterial
+var terrain_material: ShaderMaterial
 
 var biomes_tex: Array[Image] = []
 
@@ -24,58 +22,28 @@ var terrain_map_image: Image
 var focus_positions = []
 var players_ids: Array[String] = []
 
-var debug_panel: PanelContainer
-var debug_label: RichTextLabel
-
 @onready var occluder_instance_3d: OccluderInstance3D = $OccluderInstance3D
-@onready var planet_gravity: PhysicsGrid = $PlanetGravity
-
-func _enter_tree() -> void:
-	if OS.has_feature("editor"):
-		if Engine.is_editor_hint():
-			debug_panel = PanelContainer.new()
-			debug_panel.name = "DebugPanel"
-			debug_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			debug_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			debug_panel.custom_minimum_size = Vector2(400, 420)
-			debug_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE)
-
-			debug_panel.offset_top = 10
-			debug_panel.offset_bottom = -10
-			debug_panel.offset_right = -200
-			debug_panel.offset_left = 200
-			debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-			debug_panel.add_theme_stylebox_override("panel", StyleBoxFlat.new())
-			debug_panel.get_theme_stylebox("panel").bg_color = Color(0, 0, 0, 0)
-
-			debug_label = RichTextLabel.new()
-			debug_label.scroll_active = false
-			debug_label.fit_content = true
-			debug_label.bbcode_enabled = true
-			debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-			debug_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			debug_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-
-			debug_panel.add_child(debug_label)
-
-			#EditorInterface.get_editor_viewport_3d(0).add_child(debug_panel)
+@export var planet_gravity: PhysicsGrid
 
 func _ready() -> void:
-	
-	
+	setup.call_deferred()
+
+func setup():
+	if !terrain_settings: return
+
 	if terrain_settings.terrain_map:
 		terrain_map_image = terrain_settings.terrain_map.get_image()
-		
+
 		if terrain_map_image.is_compressed():
 			terrain_map_image.decompress()
+
 	# loading biome images
 	for biome in terrain_settings.biomes_elevations:
 		var img = biome.get_image()
 		if img.is_compressed():
 			img.decompress()
 		biomes_tex.push_back(img)
-	
+
 	trigger_update()
 
 func align_with_y(xform: Transform3D, new_y: Vector3) -> Transform3D:
@@ -91,13 +59,17 @@ func _process(_delta: float) -> void:
 			camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
 			players_ids = ["editor"]
 			focus_positions = [camera.global_position + -camera.global_basis.z * 1]
+
 			return
 
 	if GameOrchestrator.is_server():
 		focus_positions = []
 		players_ids = []
-		
-		for body: PhysicsBody3D in planet_gravity.get_overlapping_bodies():
+
+		if !planet_gravity:
+			return
+
+		for body in planet_gravity.get_overlapping_bodies():
 			if body is Player:
 				#prints("server position", body.name, body.global_position)
 				focus_positions.push_back(body.global_position)
@@ -111,9 +83,10 @@ func _process(_delta: float) -> void:
 		focus_positions = [camera.global_position + -camera.global_basis.z * 1]
 
 func trigger_update():
-	var occluder = occluder_instance_3d.occluder as SphereOccluder3D
-	occluder.radius = radius
-	
+	if occluder_instance_3d:
+		var occluder = occluder_instance_3d.occluder as SphereOccluder3D
+		occluder.radius = radius
+
 	regenerate.emit(resolution)
 
 func norm(value: float):
@@ -129,7 +102,7 @@ func sample_nearest_wrapped(img: Image, uv: Vector2) -> float:
 
 	var x0 = int(floor(u))
 	var y0 = int(floor(v))
-	
+
 	return img.get_pixel(x0, y0).r
 
 
@@ -276,7 +249,7 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 	var abs_dir = direction.abs()
 	var major_axis = 0
 	var max_axis = abs_dir.x
-	
+
 	# Find dominant axis
 	if abs_dir.y > max_axis:
 		major_axis = 1
@@ -284,9 +257,9 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 	if abs_dir.z > max_axis:
 		major_axis = 2
 		max_axis = abs_dir.z
-	
+
 	var uv = Vector2()
-	
+
 	# Determine face and compute base UV
 	match major_axis:
 		0:
@@ -304,7 +277,7 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 				uv = Vector2(direction.x, direction.y) / max_axis
 			else:
 				uv = Vector2(-direction.x, direction.y) / max_axis
-	
+
 	# Map from [-1, 1] → [0, 1]
 	uv = uv * 0.5 + Vector2(0.5, 0.5)
 	
@@ -324,20 +297,19 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 			(direction + Vector3(0, 0, eps)).normalized(),
 			(direction - Vector3(0, 0, eps)).normalized()
 		]
-		
 		var avg_uv = Vector2()
 		var count = 0
 		for n in neighbors:
 			avg_uv += cubemap_uv_simple(n)
 			count += 1
 		avg_uv /= float(count)
-		
+
 		# Distance from edge to control blend
 		var edge_dist = min(uv.x, uv.y, 1.0 - uv.x, 1.0 - uv.y)
 		blend_weight = smoothstep(edge_blend, 0.0, edge_dist)
 		
 		blend_uv = uv.lerp(avg_uv, blend_weight)
-	
+
 	return blend_uv
 
 # Catmull–Rom cubic interpolation between 4 points
@@ -355,7 +327,7 @@ func point_to_uv(point: Vector3) -> Vector2:
 
 	var u = clamp(fmod(lon / TAU + 0.5, 1.0), 0.0, 1.0)
 	var v = clamp(fmod(lat / PI + 0.5, 1.0), 0.0, 1.0)
-	
+
 	return Vector2(u, v)
 
 func sample_height_triplanar_bilinear(img: Image, pos: Vector3, normal: Vector3, tiling: float) -> float:
@@ -386,16 +358,14 @@ func get_biome(point: Vector3) -> float:
 	#v = (v + 1.0) * 0.5
 	#
 	#v = v * v
-	
-	
 	#v = snappedf(v, 1.0 / 8)
 
 	if !terrain_map_image: return 0.0
 
-	
+
 	var equirect_uv = spherical_uv(point)
 	var v := sample_bilinear_wrapped(terrain_map_image, equirect_uv).r
-	
+
 	return clamp(v - 0.001, 0.0, 1.0)
 
 func fract(x: float) -> float:
@@ -412,7 +382,7 @@ func octahedral_projection(direction: Vector3) -> Vector2:
 	var u = p.x + p.z * 0.0  # adjust for mapping
 	var v = p.y + p.z * 0.0
 	return Vector2(0.5 * (u + 1.0), 0.5 * (v + 1.0))
-	
+
 func spherical_uv(n: Vector3) -> Vector2:
 	var u = 0.5 + atan2(n.z, n.x) / (2.0 * PI)
 	var v = 0.5 - asin(n.y) / PI
@@ -430,41 +400,24 @@ func blended_uv(n: Vector3) -> Vector2:
 	# Compute both projections
 	var uv_sphere = spherical_uv(n)
 	var uv_cube = get_cube_uv(n)
-	
+
 	# Blend factor based on latitude to minimize distortion
 	# abs(y) → 0 at equator, 1 at poles
 	var lat_factor = abs(n.y)
-	
+
 	# Smooth transition: use more spherical near poles, more stereo near equator
 	var blend = smoothstep(0.5, 0.6, lat_factor)
-	
+
 	# Interpolate UVs
 	return uv_sphere.lerp(uv_cube, blend)
 
 func get_uv(point: Vector3) -> Vector2:
-	#return hybrid_uv(point * 100, 0.6)
-	#return get_box_uv(point, point, 200) * 100
 	var uv_cube = get_cube_uv(point) * 300
 	var uv_pol = point_to_uv(point) * 300
 	var uv = uv_pol
 	if abs(point.y) > .95:
 		uv = uv_cube
-	#var uv = lerp(uv_pol, uv_cube, smoothstep(.8, .85, abs(point.y)))
-	
-	#sin(point.x * 10.0) * 0.001
-	#uv = uv + Vector2(v * 0.1, v * -0.4)
-	#uv = rotate_uv(uv, v * 0.001)
-	
-	#uv.x = fmod(uv.x, 1.0)
-	#uv.y = fmod(uv.y, 1.0)
-	
-	#if uv.x > 0.99: uv.x = 1.0
-	#if uv.x < 0.01: uv.x = 0.0
-#
-	#if uv.y > 0.99: uv.y = 1.0
-	#if uv.y < 0.01: uv.y = 0.0
-	
-	
+
 	return uv
 
 func smooth_blend_axis(normalized_pos: Vector3) -> Array[Vector3]:
@@ -513,7 +466,7 @@ func smooth_blend(point: Vector3, img: Image, uvmult = 1.0) -> float:
 	var uv10 = get_uv((point + axis[0] * 0.001).normalized()) * uvmult
 	var uv01 = get_uv((point + axis[1] * 0.001).normalized()) * uvmult
 	var uv11 = get_uv((point + axis[1] * 0.001 + axis[0] * 0.001).normalized()) * uvmult
-	
+
 	amount = lerpf(sample_nearest_wrapped(img, uv00), sample_nearest_wrapped(img, uv10), 0.01)
 	amount = lerpf(amount, sample_nearest_wrapped(img, uv01), 0.01)
 	amount = lerpf(amount, sample_nearest_wrapped(img, uv11), 0.01)
@@ -522,60 +475,46 @@ func smooth_blend(point: Vector3, img: Image, uvmult = 1.0) -> float:
 func get_sphere_point(p: Vector3) -> Vector3:
 	var np = Vector3()
 	var p2 = p * p
-	
+
 	np.x = p.x * sqrt(1 - (p2.y / 2.0) - (p2.z / 2.0) + (p2.y * p2.z) / 3.0)
 	np.y = p.y * sqrt(1 - (p2.z / 2.0) - (p2.x / 2.0) + (p2.z * p2.x) / 3.0)
 	np.z = p.z * sqrt(1 - (p2.x / 2.0) - (p2.y / 2.0) + (p2.x * p2.y) / 3.0)
-	
+
 	if is_nan(np.x): np.x = 0.0
 	if is_nan(np.y): np.y = 0.0
 	if is_nan(np.z): np.z = 0.0
-	
+
 	return np
 
 func get_height(normalized_point: Vector3) -> Vector3:
 	var elev = 0.0
+
 	if !biomes_tex: return Vector3.ZERO
 	if !terrain_map_image: return Vector3.ZERO
-	
+
 	var b := get_biome(normalized_point)
-	
-	
+
+
 	var layer_count := biomes_tex.size()
-	
+
 	var scaled := b * float(layer_count - 1)
-	
+
 	var lower_layer = floori(scaled)
 	var upper_layer = lower_layer + 1
 	assert(upper_layer < layer_count, "upper layer is out of bound: " + str(upper_layer))
 	assert(lower_layer >= 0, "lower layer must be superior or equal to 0")
 	var blend = fract(scaled)
-	
+
 	var uv = get_uv(normalized_point)
-	
-	
+
+
 	var lower_h = sample_bilinear_wrapped(biomes_tex[lower_layer], uv).r
 	var upper_h = sample_bilinear_wrapped(biomes_tex[upper_layer], uv).r
-	
+
 	elev += lerp(lower_h, upper_h, blend)
-	
+
 	elev += b * 10
-	
+
 	elev *= 200 + 1500 * (1.0 - abs(normalized_point.y) + 0.4)
-	
-	#for n_param in terrain_settings.noise_params:
-		#if n_param.noise_type == "macro":
-			#elev += clamp(norm(terrain_settings.noise.get_noise_3dv(point * 400.0 * terrain_settings.noise_scale)) * n_param.amplitude, n_param.clamp_min, n_param.clamp_max)
-		#elif n_param.noise_type == "micro":
-			#elev += clamp(norm(terrain_settings.noise_micro.get_noise_3dv(point * 300 * terrain_settings.noise_scale)) * n_param.amplitude, n_param.clamp_min, n_param.clamp_max)
-	
-	# plateau
-	#elev += clamp(norm(noise.get_noise_3dv(point * 400.0 * noise_scale)) * 300, 300, 350)
-	#
-	## some mountains
-	#elev += clamp(norm(noise.get_noise_3dv(point * 400.0 * noise_scale)) * 270, 350, 500)
-	#
-	## micro detail elevations
-	#elev += norm(noise_micro.get_noise_3dv(point * 300 * noise_scale)) * 10
 
 	return normalized_point * (radius + (elev * terrain_settings.elev_scale))

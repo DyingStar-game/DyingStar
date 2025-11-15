@@ -77,7 +77,7 @@ class QuadtreeChunk:
 	func generate_identifier() -> String:
 		# Generate a unique identifier for the chunk based on bounds and depth
 		return "%s_%s_%d" % [bounds.position, bounds.size, depth]
-	
+
 
 
 	func within_lod_distance(
@@ -149,13 +149,11 @@ class QuadtreeChunk:
 func to_sphere_uv(point: Vector3) -> Vector2:
 	var lon = atan2(point.z, point.x)  # -π .. π
 	var lat = asin(point.y)             # -π/2 .. π/2
-	
 
 	var u = clamp((lon / TAU) + 0.5, 0.0, 1.0)
 	var v = clamp((lat / PI)  + 0.5, 0.0, 1.0)
 	if u > 0.999999:
 		u = 1.0
-	
 	return Vector2(u, v)
 
 
@@ -171,14 +169,12 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 			return
 
 		var chunk_res = 0 if run_serverside and chunk.depth != planet.terrain_settings.max_lod else chunk_resolution
-		
 
 		var size := chunk.bounds.size.x
 		var offset := chunk.bounds.position
 		var resolution: int = chunk_res + skirt_indices
 		
 		#resolution = chunk_res - int(30 * exp(-(chunk.depth+1)/4)) + skirt_indices
-		
 
 		var vertex_array := PackedVector3Array()
 		var normal_array := PackedVector3Array()
@@ -195,10 +191,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		normal_array.resize(resolution * resolution)
 		uv_array.resize(resolution * resolution)
 		color_array.resize(resolution * resolution)
-		
 		var chunk_global_pos := planet.get_sphere_point(normal + offset.x * axis_a + offset.z * axis_b) * planet.radius
-		
-		
 		var tri_idx: int = 0
 		for y in range(resolution):
 			for x in range(resolution):
@@ -207,7 +200,6 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				var percent := Vector2(x, y) / float(resolution - skirt_indices - 1)
 				var local := Vector2(offset.x, offset.z) + percent * size
 				var point_on_plane = normal + local.x * axis_a + local.y * axis_b
-				
 				var sphere_p := planet.get_sphere_point(point_on_plane)
 
 				# Project onto sphere and apply height
@@ -302,10 +294,8 @@ func create_mesh_and_collision(arrays: Array, chunk: QuadtreeChunk, chunk_pos: V
 
 		if planet.terrain_material is ShaderMaterial:
 			#var mat = planet.terrain_material as ShaderMaterial
-			
 			#(material as ShaderMaterial).set_shader_parameter("h_min", planet.min_height)
 			#(material as ShaderMaterial).set_shader_parameter("h_max", planet.max_height)
-			
 			add_child(mi)
 
 			#add this chunk to chunk list
@@ -328,7 +318,6 @@ func add_collision_shape(id: String, mesh: ArrayMesh, chunk_pos: Vector3):
 	collision_shape.disabled = not run_serverside
 
 	#logmsg("duration: %d ms" % (t - Time.get_ticks_msec()))
-#
 	#logmsg("add static body for chunk %s faces %d" % [id, (collision_shape.shape as ConcavePolygonShape3D).get_faces().size()])
 
 	chunks_col_list[id] = collision_shape
@@ -361,18 +350,16 @@ func _ready():
 
 	planet = chunk_parent
 
-	if not planet.terrain_settings:
-		push_error("Oops il n'y a pas de terrain_settings dans planet_terrain!")
-		return
+	init_terrain.call_deferred()
 
+
+func init_terrain():
 	var thread_name: String = name + "_thread"
 	update_thread.start(Callable(self, "update_process").bind(thread_name))
 
 	axis_a = Vector3(normal.y, normal.z, normal.x).normalized()
 	axis_b = normal.cross(axis_a).normalized()
-
-	update_chunks.call_deferred()
-
+	
 	planet.regenerate.connect(func(resolution):
 		chunk_resolution = resolution
 		for chunk in chunks_list:
@@ -383,6 +370,9 @@ func _ready():
 		if is_visible_status:
 			update_chunks.call_deferred()
 	)
+	
+	update_chunks()
+
 
 func _exit_tree() -> void:
 	if update_thread.is_started():
@@ -439,9 +429,16 @@ func transform_positions() -> Array[Vector3]:
 		transformed_positions.push_back(global_transform.inverse() * pos)
 	return transformed_positions
 
+func is_planet_ready() -> bool:
+	return planet.terrain_settings and planet.terrain_map_image
+
 func _process(_delta):
+	
 	#### EMPECHE LES COLLISIONS COTES SERVEUR
 	if Engine.is_editor_hint():
+		if not is_planet_ready():
+			return
+
 		if chunks_list.is_empty():
 			return
 
@@ -464,6 +461,9 @@ func _process(_delta):
 		semaphore.post()
 
 func update_chunks():
+	if not is_planet_ready():
+		return
+
 	# Initialize the quadtree by creating the root chunk
 	var bounds = AABB(Vector3(0, 0, 0), Vector3(2,2,2))
 	var chunk_name: String = "Chunk_" + str(0)

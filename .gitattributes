@@ -7,9 +7,12 @@
 *.tscn text eol=lf
 *.tres text eol=lf
 *.import text eol=lf
+*.gdshader text eol=lf
+*.godot text eol=lf
 
 # Binaries
 *.png    binary
 *.ogg    binary
 *.wav    binary
 *.res    binary
+*.dll    binary
