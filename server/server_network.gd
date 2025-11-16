@@ -144,15 +144,21 @@ func _init_server_network_devmode():
 			}
 		})
 
+### messages to send to Horizon, if we are in devmode, we convert to the client format
 func _devmode_mapping_send(message: Dictionary, message_type: String):
 	if devmode:
 		match message_type:
 			"player_position":
 				_devmode_mapping_players_position(message)
 				return true
-			"prop_position":
+			"prop_update":
 				_devmode_mapping_props_position(message)
 				return true
+			"devmodecreate_object":
+				_devmode_mapping_props_creation(message)
+				return true
+			_:
+				print("DevMode - ERROR - No mapping for message type: %s" % message_type)
 	return false
 
 func _devmode_mapping_players_position(message: Dictionary):
@@ -245,24 +251,14 @@ func _devmode_mapping_props_position(message: Dictionary):
 	# {
 	#   "channel": 0,
 	#   "data": {
-	#     "object_data": {
-	#       "pos": {
-	#         "x": -2203849.86215246,
-	#         "y": 5.11689467541873,
-	#         "z": 2.13528040036042
-	#       },
-	#       "rot": {
-	#         "x": 1.01564578285282,
-	#         "y": -0.0836469790948896,
-	#         "z": -0.0504217741125035
-	#       },
-	#       "type": "box",
-	#       "uuid": "d89afbf7-01ef-402c-8a1e-5b28605164ed"
+	#     "position": {
+	#       "x": -2203849.86215246,
+	#       "y": 5.11689467541873,
+	#       "z": 2.13528040036042
 	#     },
-	#     "object_id": "d89afbf7-01ef-402c-8a1e-5b28605164ed",
-	#     "object_type": "box"
+	#     "opened": false
 	#   },
-	#   "event_type": "gorc_update",
+	#   "event_type": "update_property",
 	#   "object_id": "d89afbf7-01ef-402c-8a1e-5b28605164ed",
 	#   "object_type": "box",
 	#   "player_id": "d89afbf7-01ef-402c-8a1e-5b28605164ed",
@@ -273,22 +269,40 @@ func _devmode_mapping_props_position(message: Dictionary):
 		peer.send_text(
 			JSON.stringify({
 				"channel": 0,
-				"event_type": "gorc_update",
+				"event_type": "update_property",
 				"object_id": data["uuid"],
 				"object_type": data["type"],
 				"player_id": data["uuid"],
 				"timestamp": int(Time.get_unix_time_from_system()),
-				"data": {
-					"object_data": {
-						"pos": data["pos"],
-						"rot": data["rot"],
-						"type": data["type"],
-						"uuid": data["uuid"],
-					},
+				"data": data
+			})
+		)
+
+func _devmode_mapping_props_creation(message: Dictionary):
+	for data in message["data"]:
+ 		# create into server (simalute Horizon send to me (server) the item to create)
+		NetworkOrchestrator.network_agent.create_generic_object({
+			"namespace": "server",
+			"event": "add_prop",
+			"data": {
+				"object_type": data["type"],
+				"object_uuid": data["uuid"],
+				"object_data": data,
+			}
+		})
+		# send to client
+		peer.send_text(
+			JSON.stringify(
+				{
+					"channel": 0,
+					"zone_data": data,
+					"type": "gorc_zone_enter",
 					"object_id": data["uuid"],
 					"object_type": data["type"],
+					"player_id": data["uuid"],
+					"timestamp": int(Time.get_unix_time_from_system())
 				}
-			})
+			)
 		)
 
 ### Messages mapping from godot client to godot server in devmode (Horizon in non-devmode)
@@ -317,30 +331,21 @@ func _devmode_horizon_mapping(message: Dictionary):
 						JSON.stringify(
 							{
 								"channel": 0,
-								"data": {
-									"object_data": {
-										"parent_id": "",
-										"position": {
-											"x": 0,
-											"y": 0,
-											"z": 0
-										},
-										"rotation": {
-											"x": 0,
-											"y": 0,
-											"z": 0
-										},
-										"scenename": "levels/devmode/" + devscene + "/" + devscene + ".tscn"
-									},
-									"object_id": sceneuuid,
-									"object_type": "testlevel",
+								"zone_data": {
+									"parent_id": "",
 									"position": {
 										"x": 0,
 										"y": 0,
 										"z": 0
-									}
+									},
+									"rotation": {
+										"x": 0,
+										"y": 0,
+										"z": 0
+									},
+									"scenename": "levels/devmode/" + devscene + "/" + devscene + ".tscn"
 								},
-								"event_type": "gorc_create",
+								"type": "gorc_zone_enter",
 								"object_id": sceneuuid,
 								"object_type": "testlevel",
 								"player_id": sceneuuid,
@@ -494,18 +499,13 @@ func _devmode_horizon_mapping(message: Dictionary):
 					peer.send_text(
 						JSON.stringify({
 							"channel": 0,
-							"data": {
-								"object_data": {
-									"parent_id": sceneuuid,
-									"position": message["data"]["position"],
-									"rotation": message["data"]["rotation"],
-									"scenename": message["data"]["scenename"]
-								},
-								"object_id": uuid,
-								"object_type": message["data"]["entity"],
+							"zone_data": {
+								"parent_id": sceneuuid,
 								"position": message["data"]["position"],
+								"rotation": message["data"]["rotation"],
+								"scenename": message["data"]["scenename"]
 							},
-							"event_type": "gorc_create",
+							"type": "gorc_zone_enter",
 							"object_id": uuid,
 							"object_type": message["data"]["entity"],
 							"player_id": uuid,

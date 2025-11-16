@@ -63,27 +63,7 @@ var servers_ticks_tasks = {
 }
 
 var players_newposition: Dictionary = {}
-var props_newposition: Dictionary = {}
-
-
-var preload_planet_scene = {
-	"tarsis_I": preload("res://scenes/planet/tarsis_I.tscn"),
-	"tarsis_II": preload("res://scenes/planet/tarsis_II.tscn"),
-	"tarsis_III": preload("res://scenes/planet/tarsis_III.tscn"),
-	"tarsis_IV": preload("res://scenes/planet/tarsis_IV.tscn"),
-	"tarsis_V": preload("res://scenes/planet/tarsis_V.tscn"),
-	"tarsis_V.I": preload("res://scenes/planet/tarsis_V.I.tscn"),
-	"tarsis_V.II": preload("res://scenes/planet/tarsis_V.II.tscn"),
-	"tarsis_V.III": preload("res://scenes/planet/tarsis_V.III.tscn"),
-	"tarsis_V.IV": preload("res://scenes/planet/tarsis_V.IV.tscn"),
-	"tarsis_V.V": preload("res://scenes/planet/tarsis_V.V.tscn"),
-	"tarsis_V.VI": preload("res://scenes/planet/tarsis_V.VI.tscn"),
-	"tarsis_VI": preload("res://scenes/planet/tarsis_VI.tscn"),
-	"tarsis_VI.I": preload("res://scenes/planet/tarsis_VI.I.tscn"),
-	"tarsis_VI.II": preload("res://scenes/planet/tarsis_VI.II.tscn"),
-	"tarsis_VII": preload("res://scenes/planet/tarsis_VII.tscn"),
-	"tarsis_VIII": preload("res://scenes/planet/tarsis_VIII.tscn"),
-}
+var props_update: Dictionary = {}
 
 var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 
@@ -100,7 +80,7 @@ func _ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
-	send_props_newposition_to_horizon()
+	send_props_update_to_horizon()
 
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 30
@@ -320,65 +300,60 @@ func send_players_newposition_to_horizon():
 	ServerNetwork.send_message(message, "player_position")
 	players_newposition.clear()
 
-func _on_prop_move(uuid: String, position: Vector3, rotation: Vector3, type: String, reparent_uuid = null, is_parented = false):
-	if props_list_last_movement[uuid] != position or props_list_last_rotation[uuid] != rotation:
-		if props_newposition.has(uuid) and props_newposition[uuid].has("reparent"):
-			return
-
-		if is_parented == true:
-			props_newposition[uuid] = {
-				"uuid": uuid,
-				"pos": {
-					"x": position[0],
-					"y": position[1],
-					"z": position[2]
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				},
-				"type": type,
+func _on_prop_update(
+	uuid: String, 
+	properties: Dictionary,
+	type: String,
+	is_parented = false
+):
+	if not props_update.has(uuid):
+		props_update[uuid] = {
+			"uuid": uuid,
+			"type": type,
+		}
+	var prop_entry = props_update[uuid]
+	for key in properties.keys():
+		if key == "position":
+			if is_parented == true:
+				prop_entry['position'] = {
+					"x": properties["position"][0],
+					"y": properties["position"][1],
+					"z": properties["position"][2]
+				}
+			else:
+				prop_entry['position'] = {
+					"x": convert_value_to_universe(properties["position"][0], POSITION_CONVERSION_X),
+					"y": convert_value_to_universe(properties["position"][1], POSITION_CONVERSION_Y),
+					"z": convert_value_to_universe(properties["position"][2], POSITION_CONVERSION_Z)
+				}
+		elif key == "rotation":
+			prop_entry['rotation'] = {
+				"x": properties["rotation"][0],
+				"y": properties["rotation"][1],
+				"z": properties["rotation"][2]
 			}
 		else:
-			props_newposition[uuid] = {
-				"uuid": uuid,
-				"pos": {
-					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				},
-				"type": type,
-			}
-		if reparent_uuid != null:
-			props_newposition[uuid]["reparent"] = reparent_uuid
-		props_list_last_movement[uuid] = position
-		props_list_last_rotation[uuid] = rotation
+			prop_entry[key] = properties[key]
 
-func send_props_newposition_to_horizon():
-	if props_newposition.values().size() == 0:
+func send_props_update_to_horizon():
+	if props_update.values().size() == 0:
 		return
 	debug_message_number = debug_message_number + 1
 	var message = {
 		"namespace": "props",
 		"event": "position",
 		"amessagenb": debug_message_number,
-		"data": props_newposition.values()
+		"data": props_update.values()
 	}
-	# print("Send props to horizon: ", message)
-	ServerNetwork.send_message(message, "prop_position")
-	props_newposition.clear()
+	print("Send props update to horizon: ", message)
+	ServerNetwork.send_message(message, "prop_update")
+	props_update.clear()
 
 func create_planet(event: Dictionary) -> void:
 	# spawn planet
 	var planet_data = event["data"]["object_data"]
 
-	var spawnable_planet_instance = preload_planet_scene[planet_data["scenename"]].instantiate()
+	var spawnable_planet_instance = load("res://" + planet_data["scenename"]).instantiate()
 	spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
 		planet_data["position"]["x"],
 		planet_data["position"]["y"],
@@ -390,7 +365,6 @@ func create_planet(event: Dictionary) -> void:
 		spawnable_planet_instance.owner = get_tree().current_scene
 	)
 	universe_scene.add_child(spawnable_planet_instance)
-	# spawnable_planet_instance.connect("hs_server_prop_move", _on_prop_move)
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list["planets"][event["data"]["object_uuid"]] = spawnable_planet_instance
@@ -430,6 +404,7 @@ func create_generic_object(event: Dictionary) -> void:
 	var object_data = event["data"]["object_data"]
 	var prop_scene = load("res://" + object_data["scenename"])
 	var spawnable_prop_instance = prop_scene.instantiate()
+	spawnable_prop_instance.set_physics_process(false)
 	spawnable_prop_instance.spawn_position = create_vector3_with_conversion_hg(
 		object_data["position"]["x"],
 		object_data["position"]["y"],
@@ -445,19 +420,21 @@ func create_generic_object(event: Dictionary) -> void:
 		var parent = _search_parent_node(object_data["parent_id"])
 		spawnable_prop_instance.reparent(parent)
 
-	spawnable_prop_instance.position = Vector3(
-		object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"]
-	)
-	spawnable_prop_instance.global_rotation = Vector3(
-		object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"]
-	)
+	# spawnable_prop_instance.position = Vector3(
+	# 	object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"]
+	# )
+	# spawnable_prop_instance.global_rotation = Vector3(
+	# 	object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"]
+	# )
+	spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
+	spawnable_prop_instance.client_channel_data_update(object_data)
 
-	spawnable_prop_instance.connect("hs_server_prop_move", _on_prop_move)
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
 	if not props_list.has(event["data"]["object_type"]):
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
+	spawnable_prop_instance.set_physics_process(true)
 
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():

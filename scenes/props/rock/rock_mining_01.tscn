@@ -1,17 +1,8 @@
-[gd_scene load_steps=9 format=3 uid="uid://dtijoobxv67w2"]
+[gd_scene load_steps=5 format=3 uid="uid://dtijoobxv67w2"]
 
 [ext_resource type="Script" uid="uid://cynqji0v1gvlk" path="res://scenes/props/rock/rock_mining.gd" id="1_6o14g"]
 [ext_resource type="ArrayMesh" uid="uid://di1xi1wfxfsvl" path="res://assets/models/nature/rock_mining_001.mesh" id="1_yg06r"]
 [ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://scenes/props/rock/rock_material.tres" id="2_ty2b3"]
-[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/rock/Rock029_2K_Color.jpg" id="3_ducf2"]
-[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/rock/Rock029_2K_NormalGL.jpg" id="3_kvafs"]
-[ext_resource type="Texture2D" uid="uid://tlqwrtnp20lv" path="res://assets/textures/rock/Rock029_2K_Roughness.jpg" id="4_ty2b3"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kvafs"]
-albedo_texture = ExtResource("3_ducf2")
-roughness_texture = ExtResource("4_ty2b3")
-normal_enabled = true
-normal_texture = ExtResource("3_kvafs")
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_kvafs"]
 
@@ -19,23 +10,11 @@ normal_texture = ExtResource("3_kvafs")
 mass = 800.0
 script = ExtResource("1_6o14g")
 
-[node name="CSGCombiner3D" type="CSGCombiner3D" parent="."]
-unique_name_in_owner = true
+[node name="CSGMesh3D" type="CSGMesh3D" parent="."]
 material_override = ExtResource("2_ty2b3")
-operation = 2
 use_collision = true
-
-[node name="CSGMesh3D" type="CSGMesh3D" parent="CSGCombiner3D"]
-unique_name_in_owner = true
 mesh = ExtResource("1_yg06r")
-material = SubResource("StandardMaterial3D_kvafs")
-
-[node name="CSGBox3D" type="CSGBox3D" parent="CSGCombiner3D"]
-unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 0)
-visible = false
-operation = 2
-size = Vector3(5, 10, 10)
+material = ExtResource("2_ty2b3")
 
 [node name="Area3D" type="Area3D" parent="."]
 
