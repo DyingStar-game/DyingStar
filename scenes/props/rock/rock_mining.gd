@@ -1,8 +1,8 @@
 extends RigidBody3D
 
-const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
-
 signal hs_server_prop_update
+
+const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
 @export var uuid: String = ""
 
@@ -24,7 +24,7 @@ var blocs = [
 		"position": randf_range(0.0, 1.0),
 		"rotation_y": randf_range(-50.0, 50.0),
 		"rotation_z": randf_range(-50.0, 50.0),
-		"keep_side": 1,
+		"keep_side": 1, # when cut a rock, we have 2 parts, we must indicate which part we keep
 		"side2_uuid": ""
 	}
 ]
@@ -76,14 +76,14 @@ func _cut_rock(bloc: Dictionary) -> void:
 	var meshes = combiner.get_meshes()
 	var mesh: Mesh = meshes[1]
 	var collision_shape = combiner.bake_collision_shape()
-	
+
 	# update center of mass
 	var arraymesh = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var total = Vector3.ZERO
 	for vertice in arraymesh:
 		total += vertice
 	var meshcenter = total / arraymesh.size()
-	
+
 	var meshinstance = MeshInstance3D.new()
 	meshinstance.mesh = mesh
 	# add the material (1 = the cut part)
@@ -91,14 +91,11 @@ func _cut_rock(bloc: Dictionary) -> void:
 	meshinstance.set_surface_override_material(0, material)
 	meshinstance.set_surface_override_material(1, material)
 	add_child(meshinstance)
-	
+
 	var collisioninstance = CollisionShape3D.new()
 	collisioninstance.shape = collision_shape
-	add_child(collisioninstance) 
+	add_child(collisioninstance)
 
-	#meshinstance.center_of_mass = -meshcenter
-	#collisioninstance.center_of_mass = -meshcenter
-	
 	# send update for Horizon & clients
 	var message1 = {
 		"namespace": "props",
@@ -137,36 +134,6 @@ func _cut_rock(bloc: Dictionary) -> void:
 	sleeping = false
 	# can_sleep = false
 
-
-#####################################################################
-# Definitions
-######################################################################
-
-## Channel 0:
-# position
-# rotation
-# parent_id
-
-## Channel 1:
-# 
-
-## Channel 2:
-# weight
-# blocs: [
-#   {
-#	    fractured: bool,
-#       position: Vector3.ZERO,
-#       rotation: Vector3.UP,
-#	    keep_side: int # 1 = side1 (default value), 2 = side 2
-#       side2_uuid: string
-#   }
-# ]
-
-
-# when cut a rock, we have 2 parts, we must indicate which part we keep
-
-
-
 #####################################################################
 # Client part
 ######################################################################
@@ -176,6 +143,7 @@ func _client_ready() -> void:
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
+	has_parent = true
 
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("position"):
@@ -230,62 +198,46 @@ func _physics_process(_delta: float) -> void:
 			server_last_rotation = my_rotation
 
 func _server_create_side2_rock(bloc: Dictionary) -> void:
-		# we cut the bloc part 1, so now generate the bloc for the part 2
-		# var instance = load("res://scenes/props/rock/rock_mining_01.tscn").instantiate()
-		# instance.blocs = [
-		# 	{
-		# 		"fractured": true,
-		# 		"position": bloc.position,
-		# 		"rotation_y": bloc.rotation_y,
-		# 		"rotation_z": bloc.rotation_z,
-		# 		"keep_side": 2,
-		# 		"side2_uuid": "" # will put uuid given by the server
-		# 	}
-		# ]
-		# get_parent().add_child(instance)
-		# instance.reparent(get_parent())
-		# instance.position = position
-		# # send the new prop to Horizon
-		var parent = get_parent()
-		var bloc2_uuid = UUID_UTIL.v4()
-		# instance.uuid = bloc2_uuid
+	# send the new prop to Horizon because create item must not be done directly on godot server
+	var parent = get_parent()
+	var bloc2_uuid = UUID_UTIL.v4()
 
-		var message = {
-			"namespace": "props",
-			"event": "create_object",
-			"amessagenb": 1,
-			"data": [
-				{
-					"type": "miningrock",
-					"uuid": bloc2_uuid,
-					"position": {
-						"x": position[0],
-						"y": position[1],
-						"z": position[2]
-					},
-					"rotation": {
-						"x": rotation[0],
-						"y": rotation[1],
-						"z": rotation[2]
-					},
-					"blocs": [
-						{
-							"fractured": true,
-							"position": bloc.position,
-							"rotation_y": bloc.rotation_y,
-							"rotation_z": bloc.rotation_z,
-							"keep_side": 2,
-							"side2_uuid": bloc2_uuid
-						}
-					],
-					"scenename": "scenes/props/rock/rock_mining_01.tscn",
-					"parent_id": parent.uuid,
-				}
-			]
-		}
-		ServerNetwork.send_message(message, "devmodecreate_object")
+	var message = {
+		"namespace": "props",
+		"event": "create_object",
+		"amessagenb": 1,
+		"data": [
+			{
+				"type": "miningrock",
+				"uuid": bloc2_uuid,
+				"position": {
+					"x": position[0],
+					"y": position[1],
+					"z": position[2]
+				},
+				"rotation": {
+					"x": rotation[0],
+					"y": rotation[1],
+					"z": rotation[2]
+				},
+				"blocs": [
+					{
+						"fractured": true,
+						"position": bloc.position,
+						"rotation_y": bloc.rotation_y,
+						"rotation_z": bloc.rotation_z,
+						"keep_side": 2,
+						"side2_uuid": bloc2_uuid
+					}
+				],
+				"scenename": "scenes/props/rock/rock_mining_01.tscn",
+				"parent_id": parent.uuid,
+			}
+		]
+	}
+	ServerNetwork.send_message(message, "devmodecreate_object")
 
-
+### When the mining tool used by the user enter in the area zone, we break the rock
 func _on_area_3d_body_entered(body: Node3D) -> void:
 	if OS.has_feature("dedicated_server"):
 		# run cut the rock only for the player character enter in area zone

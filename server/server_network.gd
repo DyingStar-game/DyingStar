@@ -280,7 +280,7 @@ func _devmode_mapping_props_position(message: Dictionary):
 
 func _devmode_mapping_props_creation(message: Dictionary):
 	for data in message["data"]:
- 		# create into server (simalute Horizon send to me (server) the item to create)
+		# create into server (simalute Horizon send to me (server) the item to create)
 		NetworkOrchestrator.network_agent.create_generic_object({
 			"namespace": "server",
 			"event": "add_prop",

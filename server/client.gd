@@ -22,7 +22,9 @@ var props_list: Dictionary = {
 	"box4m": {},
 	"ship": {},
 }
+# We need it when a channel arrives before another in the case of this channel not have the scenename property
 var props_pre_creations: Dictionary = {}
+
 var my_player_uuid: String = ""
 
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
@@ -384,7 +386,7 @@ func create_planet(message: Dictionary) -> void:
 		# spawn planet
 		var spawnable_planet_instance = load("res://" + message["zone_data"]["scenename"]).instantiate()
 		spawnable_planet_instance.spawn_position = Vector3(
-			message["zone_data"]["position"]["x"], message["zone_data"]["position"]["y"], message["zone_data"]["position"]["z"]
+			message["zone_data"]["positions"][0]["x"], message["zone_data"]["positions"][0]["y"], message["zone_data"]["positions"][0]["z"]
 		)
 		spawnable_planet_instance.name = message["zone_data"]["name"]
 		spawnable_planet_instance.uuid = message["object_id"]
