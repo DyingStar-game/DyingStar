@@ -191,10 +191,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box("box_50cm", 1.5, 2.0)
+		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 
 	if event.is_action_pressed("spawn_4mbox"):
-		spawn_box("box_4m", 3.0, 6.0)
+		spawn_box("testbox/box_4m", "box", 3.0, 6.0)
+
+	if event.is_action_pressed("spawn_rock_mining"):
+		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
 
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
@@ -204,9 +207,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			astronaut.visible = true
 			$ExtCamera3D.make_current()
 
-func server_set_input(input_dir: Vector2, rotation: Vector3) -> void:
+func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	input_from_server["input_direction"] = input_dir
-	input_from_server["rotation"] = rotation
+	input_from_server["rotation"] = newrotation
 	new_input_from_server = true
 
 func _process(_delta: float) -> void:
@@ -412,7 +415,7 @@ func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
 
-func spawn_box(boxscene: String, coeffz: float, coeffy: float):
+func spawn_box(boxscene: String, type: String, coeffz: float, coeffy: float):
 	var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
 	# parent is for example the planet
 	var parent = get_parent();
@@ -426,13 +429,13 @@ func spawn_box(boxscene: String, coeffz: float, coeffy: float):
 		"client_action_requested",
 		{
 			"action": "spawn",
-			"entity": "box",
+			"entity": type,
 			"position": {
 				"x": item_spawn_position[0],
 				"y": item_spawn_position[1],
 				"z": item_spawn_position[2]
 			},
-			"scenename": "scenes/props/testbox/" + boxscene + ".tscn",
+			"scenename": "scenes/props/" + boxscene + ".tscn",
 			"parent_id": parentuuid,
 		}
 	)
