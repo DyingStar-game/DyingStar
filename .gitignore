@@ -36,3 +36,6 @@ mono_crash.*.json
 AkWwiseProjectData.asset
 IncrementalSoundBankData.xml
 *.windows.editor.profile.dll
+
+# Specific DyingStar
+client.ini

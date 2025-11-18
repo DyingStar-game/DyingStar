@@ -12,8 +12,8 @@ var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
 # For connection with Horizon server
-var websocket_url = "ws://192.168.20.174:7040" # "ws://127.0.0.1:7040"
-var socket = WebSocketPeer.new()
+var websocket_url: String = "ws://127.0.0.1:7040"
+var socket := WebSocketPeer.new()
 var player_entity
 var players_list: Dictionary = {}
 var props_list: Dictionary = {
@@ -40,6 +40,7 @@ func _ready() -> void:
 	set_process(false)
 
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
+	_load_client_ini_file()
 	universe_scene = receveid_universe_scene
 	var spawn_points_list: Array[Vector3] = universe_scene.spawn_points_list
 
@@ -65,6 +66,11 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		# yield a frame so we don't block the engine
 		await get_tree().process_frame
 
+	if socket.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
+		push_error("connect_to_url returned error: %d" % err)
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+		return
+
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		print("WebSocket OPEN")
 		set_process(true)
@@ -81,6 +87,16 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		push_error("Unable to connect (timeout or error). State: %d" % socket.get_ready_state())
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
+
+func _load_client_ini_file() -> void:
+	var config_file := ConfigFile.new()
+	var err := config_file.load("client.ini")
+	if err != OK:
+		print("No client.ini file found, using default settings.")
+		return
+
+	if config_file.has_section_key("network", "websocket_url"):
+		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
 	socket.poll()
