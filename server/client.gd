@@ -71,9 +71,6 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		return
 
-	print("Here we are :D")
-	print(err)
-	print(socket.get_ready_state())
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		print("WebSocket OPEN")
 		set_process(true)
