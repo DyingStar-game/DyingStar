@@ -108,6 +108,9 @@ func change_game_state(new_state) -> int:
 		GameStates.UNIVERSE_MENU:
 			current_state = new_state
 			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.UNIVERSE_MENU])
+		GameStates.CONNEXION_ERROR:
+			current_state = new_state
+			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.CONNEXION_ERROR])
 		GameStates.PLAYING:
 			match current_state:
 				GameStates.PAUSE_MENU:
