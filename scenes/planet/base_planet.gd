@@ -71,8 +71,9 @@ func update_planet():
 		clouds.hide()
 		
 	planet_terrain.trigger_update()
-
-	update_spawn_points()
+	
+	if Engine.is_editor_hint():
+		update_spawn_points()
 
 func update_spawn_points():
 	var planet_terrain: PlanetTerrain = $PlanetTerrain

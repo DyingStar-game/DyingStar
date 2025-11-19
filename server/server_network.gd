@@ -118,7 +118,6 @@ func send_message(message: Dictionary, message_type: String):
 ################################################################
 # devmode - mapping of messages to permit have
 # godot client speak directly with godot server without Horizon
-#
 # WARNING: some parts managed in Horizon can't works in devmode
 #
 # CAUTION: NOT TOUCH UNDER THIS LINE IF YOU DON'T KNOW
