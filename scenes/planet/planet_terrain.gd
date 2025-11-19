@@ -73,7 +73,7 @@ func _process(_delta: float) -> void:
 		for body in planet_gravity.get_overlapping_bodies():
 			if body is Player:
 				#prints("server position", body.name, body.global_position)
-				focus_positions.push_back(body.global_position)
+				focus_positions.push_back(snapped(body.global_position, Vector3.ONE * 0.001))
 				players_ids.push_back(body.name)
 		return
 

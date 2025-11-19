@@ -96,7 +96,7 @@ func _enter_tree() -> void:
 
 	if name.begins_with("remoteplayer"):
 		remote_player = true
-		global_position = spawn_position
+		position = spawn_position
 		$UserInterface.visible = false
 		$CameraPivot.visible = false
 
@@ -116,7 +116,7 @@ func _ready() -> void:
 
 
 
-	global_position = spawn_position
+	position = spawn_position
 	global_transform = Globals.align_with_y(global_transform, spawn_up)
 
 	NetworkOrchestrator.set_gameserver_name.connect(_set_gameserver_name)

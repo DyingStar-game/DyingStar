@@ -334,13 +334,18 @@ func create_player(event: Dictionary) -> void:
 		spawned_entity_instance.tree_entered.connect(func():
 			spawned_entity_instance.owner = get_tree().current_scene
 		)
-		universe_scene.add_child(spawned_entity_instance)
 		spawned_entity_instance.set_physics_process(false)
 
+		var parented = false
 		if player_data["parent_id"] != "":
 			var parent = _search_parent_node(player_data["parent_id"])
 			if parent != null:
-				spawned_entity_instance.reparent(parent)
+				parented = true
+				parent.add_child(spawned_entity_instance)
+		
+		if not parented:
+			universe_scene.add_child(spawned_entity_instance)
+			
 
 		spawned_entity_instance.client_uuid = my_player_uuid
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)

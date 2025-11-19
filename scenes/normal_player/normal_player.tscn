@@ -29,7 +29,7 @@ outline_color = Color(0, 0, 0, 1)
 
 [node name="NormalPlayer" type="CharacterBody3D" groups=["containable", "player"]]
 script = ExtResource("1_ll2l8")
-walk_speed = 500.0
+walk_speed = 5.0
 sprint_speed = 10.0
 metadata/client_uuid = ""
 
@@ -313,6 +313,6 @@ layout_mode = 1
 visible = false
 
 [node name="hammerdrill2" parent="." instance=ExtResource("14_fuv0x")]
-transform = Transform3D(5.406494717047727e-17, -2.874684233282234e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
+transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]
