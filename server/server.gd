@@ -355,9 +355,9 @@ func create_planet(event: Dictionary) -> void:
 
 	var spawnable_planet_instance = load("res://" + planet_data["scenename"]).instantiate()
 	spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
-		planet_data["positions"][0]["x"],
-		planet_data["positions"][0]["y"],
-		planet_data["positions"][0]["z"]
+		planet_data["position"]["x"],
+		planet_data["position"]["y"],
+		planet_data["position"]["z"]
 	)
 	spawnable_planet_instance.name = planet_data["name"]
 	spawnable_planet_instance.uuid = event["data"]["object_uuid"]
@@ -393,7 +393,7 @@ func create_player(event: Dictionary) -> void:
 		#spawned_entity_instance.reparent(planet)
 	spawned_entity_instance.reparent(spawn_planet)
 
-	
+	prints("position", spawn_transform.origin)
 	spawned_entity_instance.position = spawn_transform.origin
 	#spawned_entity_instance.position = Vector3(
 		#player_data["position"]["x"],
@@ -404,6 +404,7 @@ func create_player(event: Dictionary) -> void:
 	
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list[player_uuid] = spawned_entity_instance
+	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
 
 	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation

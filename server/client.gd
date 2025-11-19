@@ -402,7 +402,7 @@ func create_planet(message: Dictionary) -> void:
 		# spawn planet
 		var spawnable_planet_instance = load("res://" + message["zone_data"]["scenename"]).instantiate()
 		spawnable_planet_instance.spawn_position = Vector3(
-			message["zone_data"]["positions"][0]["x"], message["zone_data"]["positions"][0]["y"], message["zone_data"]["positions"][0]["z"]
+			message["zone_data"]["position"]["x"], message["zone_data"]["position"]["y"], message["zone_data"]["position"]["z"]
 		)
 		spawnable_planet_instance.name = message["zone_data"]["name"]
 		spawnable_planet_instance.uuid = message["object_id"]
