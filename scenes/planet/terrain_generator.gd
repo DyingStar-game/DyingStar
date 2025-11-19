@@ -86,7 +86,7 @@ class QuadtreeChunk:
 		center_local_3d: Vector3
 	) -> bool:
 		for pos: Vector3 in lod_centers:
-			var h := planet.get_height(planet.get_sphere_point(center_local_3d))
+			var h := planet.get_sphere_point(center_local_3d) * (planet.radius + 2000)
 			var distance := h.distance_to(pos)
 
 			if distance <= planet.radius * bounds.size.x * 0.7:

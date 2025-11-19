@@ -18,6 +18,8 @@ var has_parent: bool = false
 
 var bloc_yet_fractured: bool = false
 
+@onready var rock_shape = $CollisionShape3D
+
 var blocs = [
 	{
 		"fractured": false,
@@ -33,6 +35,11 @@ func _ready() -> void:
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
+	
+	await get_tree().process_frame
+
+	rock_shape.shape = item_rock_mesh.mesh.create_convex_shape(true)
+	
 	item_rock_mesh.reparent(combiner)
 
 	if OS.has_feature("dedicated_server"):
@@ -75,7 +82,9 @@ func _cut_rock(bloc: Dictionary) -> void:
 	# create the mesh and collision shape
 	var meshes = combiner.get_meshes()
 	var mesh: Mesh = meshes[1]
-	var collision_shape = combiner.bake_collision_shape()
+
+	if mesh.get_surface_count() == 0:
+		return
 
 	# update center of mass
 	var arraymesh = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -91,10 +100,8 @@ func _cut_rock(bloc: Dictionary) -> void:
 	meshinstance.set_surface_override_material(0, material)
 	meshinstance.set_surface_override_material(1, material)
 	add_child(meshinstance)
-
-	var collisioninstance = CollisionShape3D.new()
-	collisioninstance.shape = collision_shape
-	add_child(collisioninstance)
+	
+	rock_shape.shape = mesh.create_convex_shape(true)
 
 	# send update for Horizon & clients
 	var message1 = {
@@ -127,9 +134,8 @@ func _cut_rock(bloc: Dictionary) -> void:
 		_server_create_side2_rock(bloc)
 
 	meshinstance.position = -meshcenter
-	collisioninstance.position = -meshcenter
-	global_position = global_position + meshcenter
-	center_of_mass = meshcenter
+	rock_shape.position = -meshcenter
+	position += meshcenter
 	# disable freeze
 	sleeping = false
 	# can_sleep = false

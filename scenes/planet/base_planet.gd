@@ -97,7 +97,7 @@ func update_spawn_points():
 func get_spawn_point() -> Transform3D:
 	var planet_terrain: PlanetTerrain = $PlanetTerrain
 	var spawn_point = planet_terrain.get_node("PlayerSpawnPointsList").get_children().front() as Marker3D
-	return spawn_point.global_transform
+	return spawn_point.transform
 
 func _pack_textures(textures: Array[CompressedTexture2D]) -> Texture2DArray:
 	var tex_array = Texture2DArray.new()
