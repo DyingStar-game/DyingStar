@@ -25,7 +25,6 @@ height = 20.0
 
 [node name="EquirectangularGenerator" type="Node"]
 script = ExtResource("1_8ot6w")
-height = 512
 planet_distance = 1.3
 water_lvl = 0.5
 ocean_frac = 0.2
@@ -40,14 +39,11 @@ environment = SubResource("Environment_njsq8")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 155.0
-offset_top = 39.0
-offset_right = 155.0
-offset_bottom = 39.0
 grow_horizontal = 2
 grow_vertical = 2
 texture = ExtResource("2_xd5c1")
 stretch_mode = 5
+metadata/_edit_lock_ = true
 
 [node name="Planet" type="MeshInstance3D" parent="."]
 transform = Transform3D(-0.481952, 0, -0.876197, 0, 1, 0, 0.876197, 0, -0.481952, 0, 0, 0)

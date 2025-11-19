@@ -9,7 +9,7 @@
 render_priority = 0
 shader = ExtResource("1_vjfk0")
 shader_parameter/sun_size = 0.028
-shader_parameter/sun_brightness = 30.0
+shader_parameter/sun_brightness = 60.0
 shader_parameter/sun_color = Color(0.929688, 0.508341, 0.036083, 1)
 shader_parameter/sun_fade = 0.03
 

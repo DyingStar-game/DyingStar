@@ -108,6 +108,8 @@ func generate_maps():
 			#if plaque > 0.5:
 				#elevation = clamp(elevation, 0.2, 1.0)
 			
+			elevation *= smoothstep(PI/2, PI/2 - 0.5, abs(latitude))
+			
 			elevation = clamp(elevation, 0.0, 1.0)
 
 			# ---------- TEMPERATURE (GREEN) ----------

@@ -10,20 +10,20 @@ colors = PackedColorArray(0.7291667, 0.62602746, 0.42962608, 0, 0.5921569, 0.458
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_2vcvm"]
 width = 1024
-height = 1024
 generate_mipmaps = false
 noise = SubResource("FastNoiseLite_s0dqk")
 color_ramp = SubResource("Gradient_wr466")
 seamless = true
+seamless_blend_skirt = 0.762
 
 [resource]
 render_priority = 0
 shader = ExtResource("1_u6ra2")
 shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = SubResource("NoiseTexture2D_2vcvm")
-shader_parameter/albedo_texture_size = Vector2i(512, 512)
+shader_parameter/albedo_texture_size = Vector2i(0, 0)
 shader_parameter/proximity_fade_distance = 2973.479933536775
 shader_parameter/distance_fade_min = 0.665
 shader_parameter/distance_fade_max = 2.495
 shader_parameter/uv1_blend_sharpness = 8.2830003934425
-shader_parameter/uv1_scale = 0.091
+shader_parameter/uv1_scale = 1.0
