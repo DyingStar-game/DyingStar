@@ -10,6 +10,7 @@ var radius: int
 var min_height: float = 10000.0
 var max_height: float
 var resolution: int = 60
+var uv_scale: float = 300.0
 
 var terrain_settings: PlanetTerrainSettings
 
@@ -412,8 +413,8 @@ func blended_uv(n: Vector3) -> Vector2:
 	return uv_sphere.lerp(uv_cube, blend)
 
 func get_uv(point: Vector3) -> Vector2:
-	var uv_cube = get_cube_uv(point) * 300
-	var uv_pol = point_to_uv(point) * 300
+	var uv_cube = get_cube_uv(point) * uv_scale
+	var uv_pol = point_to_uv(point) * uv_scale
 	var uv = uv_pol
 	if abs(point.y) > .95:
 		uv = uv_cube

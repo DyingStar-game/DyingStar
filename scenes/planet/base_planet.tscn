@@ -115,16 +115,17 @@ script = ExtResource("1_lgys4")
 planet_settings = ExtResource("2_lgys4")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(-0.99556196460308, 0, -0.09410831331851437, 0, 1, 0, 0.09410831331851437, 0, -0.99556196460308, -4076503.527693874, 0, 0)
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -500000, 0, 0)
 light_color = Color(1, 0.9315436, 0.7966081, 1)
 shadow_enabled = true
-shadow_opacity = 0.91
+shadow_opacity = 0.96
 directional_shadow_split_1 = 0.001
 directional_shadow_split_2 = 0.09
 directional_shadow_split_3 = 0.389
 directional_shadow_blend_splits = true
 directional_shadow_fade_start = 0.699
 directional_shadow_max_distance = 8192.0
+metadata/_edit_lock_ = true
 
 [node name="PlanetTerrain" parent="." instance=ExtResource("3_5yiub")]
 
@@ -156,7 +157,7 @@ mesh = SubResource("SphereMesh_qugoe")
 surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 
 [node name="Atmosphere" parent="." node_paths=PackedStringArray("sun_object") instance=ExtResource("30_uvuua")]
-transform = Transform3D(-0.0014302068489236972, -0.0029995187308062966, -0.9999938999929531, 0, 0.9999949227340991, -0.002999521798556232, 0.9999989772536616, -4.289936619791051e-06, -0.0014301995873832315, 5287.879060608664, 12243.496987137478, 5837.811996419086)
+transform = Transform3D(-0.011552666620645207, -0.024220379376070873, -0.9996393108998343, 0, 0.9997060255614182, -0.02422199581351573, 0.999933265720244, -0.0002798286425202113, -0.011549270431961276, 5287.879060608664, 12243.496987137478, 5837.811996419086)
 material_override = SubResource("ShaderMaterial_1ndiy")
 cast_shadow = 0
 mesh = SubResource("BoxMesh_b3m25")

@@ -48,8 +48,9 @@ vec4 triplanar_texture(sampler2D p_sampler, vec3 p_weights, vec3 p_triplanar_pos
 }
 
 void fragment() {
-	vec4 albedo_tex = texture(texture_albedo, UV * 10.0 + vec2(TIME * 0.005, 0.0)); //triplanar_texture(texture_albedo, uv1_power_normal, uv1_triplanar_pos * 0.01);
-	ALBEDO = albedo.rgb * albedo_tex.rgb;
+	vec4 albedo_tex = texture(texture_albedo, UV * uv1_scale + vec2(TIME * 0.005, 0.0)); //triplanar_texture(texture_albedo, uv1_power_normal, uv1_triplanar_pos * 0.01);
+	vec4 albedo_detail_tex = texture(texture_albedo, UV * uv1_scale * 8.0 + vec2(TIME * 0.005, 0.0)); //triplanar_texture(texture_albedo, uv1_power_normal, uv1_triplanar_pos * 0.01);
+	ALBEDO = albedo_detail_tex.rgb * albedo.rgb * albedo_tex.rgb;
 
 	ALPHA *= albedo_tex.a * 1.5;
 
