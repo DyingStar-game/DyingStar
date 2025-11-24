@@ -18,8 +18,6 @@ var has_parent: bool = false
 
 var bloc_yet_fractured: bool = false
 
-@onready var rock_shape = $CollisionShape3D
-
 var blocs = [
 	{
 		"fractured": false,
@@ -31,15 +29,17 @@ var blocs = [
 	}
 ]
 
+@onready var rock_shape = $CollisionShape3D
+
 func _ready() -> void:
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
-	
+
 	await get_tree().process_frame
 
 	rock_shape.shape = item_rock_mesh.mesh.create_convex_shape(true)
-	
+
 	item_rock_mesh.reparent(combiner)
 
 	if OS.has_feature("dedicated_server"):
@@ -100,7 +100,7 @@ func _cut_rock(bloc: Dictionary) -> void:
 	meshinstance.set_surface_override_material(0, material)
 	meshinstance.set_surface_override_material(1, material)
 	add_child(meshinstance)
-	
+
 	rock_shape.shape = mesh.create_convex_shape(true)
 
 	# send update for Horizon & clients

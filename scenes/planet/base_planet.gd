@@ -21,7 +21,7 @@ func _enter_tree() -> void:
 	if not OS.has_feature("dedicated_server") and not Engine.is_editor_hint():
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
 
-func _physics_process(delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint(): return
 
 
@@ -69,9 +69,9 @@ func update_planet():
 		cloud_mesh.radius = cloud_mesh_radius
 	else:
 		clouds.hide()
-		
+
 	planet_terrain.trigger_update()
-	
+
 	if Engine.is_editor_hint():
 		update_spawn_points()
 

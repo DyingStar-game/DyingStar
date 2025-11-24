@@ -53,14 +53,14 @@ void vertex() {
 
 
 	_uv = UV * uv1_scale;
-	
+
 	// UV1 Triplanar: Enabled
 	uv1_power_normal = pow(abs(NORMAL), vec3(uv1_blend_sharpness));
-	
+
 	uv1_triplanar_pos = (VERTEX + offset_pos) * uv1_scale / 1000.0;
 	uv1_triplanar_pos_loc = VERTEX * uv1_scale / 1000.0;
 	uv1_triplanar_pos_loc *= vec3(1.0, -1.0, 1.0);
-	
+
 	uv1_power_normal /= dot(uv1_power_normal, vec3(1.0));
 	uv1_triplanar_pos *= vec3(1.0, -1.0, 1.0);
 }
@@ -173,7 +173,7 @@ void fragment() {
 	vec3 normal = sample_layers(biome_normal, _uv, ivec2(lower_layer, upper_layer), local_blend);
 	//vec3 biome_n = blend_normals(normal, terrain_n);
 	vec3 biome_n = terrain_n * smoothstep(0.0, 1.0, length(VERTEX) / 1000.0);
-	
+
 	vec3 ground_n = triplanar_texture_notile(ground_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
 	vec3 rock_n = triplanar_texture_notile(rock_normal, uv1_power_normal, uv1_triplanar_pos_loc * surface_uv_scale).rgb;
 	vec3 surface_n = mix(rock_n, ground_n, slope);

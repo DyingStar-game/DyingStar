@@ -342,10 +342,9 @@ func create_player(event: Dictionary) -> void:
 			if parent != null:
 				parented = true
 				parent.add_child(spawned_entity_instance)
-		
+
 		if not parented:
 			universe_scene.add_child(spawned_entity_instance)
-			
 
 		spawned_entity_instance.client_uuid = my_player_uuid
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)

@@ -173,7 +173,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 		var size := chunk.bounds.size.x
 		var offset := chunk.bounds.position
 		var resolution: int = chunk_res + skirt_indices
-		
+
 		#resolution = chunk_res - int(30 * exp(-(chunk.depth+1)/4)) + skirt_indices
 
 		var vertex_array := PackedVector3Array()
@@ -211,7 +211,7 @@ func visualize_quadtree(chunk: QuadtreeChunk):
 				normal_array[i] = Vector3.ZERO
 				uv_array[i] = planet.get_uv(sphere_p) #to_sphere_uv(point_on_plane.normalized())
 				color_array[i] = Color(planet.get_biome(sphere_p), 0.0, 0.0)
-				
+
 				# Track height extremes
 				var length := sphere_pos.length()
 				planet.min_height = min(planet.min_height, length)
@@ -359,7 +359,7 @@ func init_terrain():
 
 	axis_a = Vector3(normal.y, normal.z, normal.x).normalized()
 	axis_b = normal.cross(axis_a).normalized()
-	
+
 	planet.regenerate.connect(func(resolution):
 		chunk_resolution = resolution
 		for chunk in chunks_list:
@@ -370,7 +370,7 @@ func init_terrain():
 		if is_visible_status:
 			update_chunks.call_deferred()
 	)
-	
+
 	update_chunks()
 
 
@@ -433,7 +433,7 @@ func is_planet_ready() -> bool:
 	return planet.terrain_settings and planet.terrain_map_image
 
 func _process(_delta):
-	
+
 	#### EMPECHE LES COLLISIONS COTES SERVEUR
 	if Engine.is_editor_hint():
 		if not is_planet_ready():

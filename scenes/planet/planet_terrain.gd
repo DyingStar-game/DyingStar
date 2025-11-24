@@ -4,6 +4,8 @@ extends StaticBody3D
 
 signal regenerate()
 
+@export var planet_gravity: PhysicsGrid
+
 ## Base radius of the planet
 var radius: int
 
@@ -24,7 +26,6 @@ var focus_positions = []
 var players_ids: Array[String] = []
 
 @onready var occluder_instance_3d: OccluderInstance3D = $OccluderInstance3D
-@export var planet_gravity: PhysicsGrid
 
 func _ready() -> void:
 	setup.call_deferred()
@@ -223,9 +224,9 @@ func cubemap_uv_simple(direction: Vector3) -> Vector2:
 	if abs_dir.z > max_axis:
 		major_axis = 2
 		max_axis = abs_dir.z
-	
+
 	var uv = Vector2()
-	
+
 	match major_axis:
 		0:
 			if direction.x > 0.0:
@@ -242,9 +243,9 @@ func cubemap_uv_simple(direction: Vector3) -> Vector2:
 				uv = Vector2(direction.x, direction.y) / max_axis
 			else:
 				uv = Vector2(-direction.x, direction.y) / max_axis
-	
+
 	return uv * 0.5 + Vector2(0.5, 0.5)
-	
+
 
 func cubemap_project_seamless(direction: Vector3) -> Vector2:
 	var abs_dir = direction.abs()
@@ -281,12 +282,12 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 
 	# Map from [-1, 1] → [0, 1]
 	uv = uv * 0.5 + Vector2(0.5, 0.5)
-	
+
 	# --- Blend UV with adjacent faces near edges ---
 	var edge_blend = 0.005
 	var blend_uv = uv
 	var blend_weight = 0.0
-	
+
 	if uv.x < edge_blend or uv.x > 1.0 - edge_blend or uv.y < edge_blend or uv.y > 1.0 - edge_blend:
 		# Get neighboring directions
 		var eps = 0.001
@@ -308,7 +309,7 @@ func cubemap_project_seamless(direction: Vector3) -> Vector2:
 		# Distance from edge to control blend
 		var edge_dist = min(uv.x, uv.y, 1.0 - uv.x, 1.0 - uv.y)
 		blend_weight = smoothstep(edge_blend, 0.0, edge_dist)
-		
+
 		blend_uv = uv.lerp(avg_uv, blend_weight)
 
 	return blend_uv
@@ -434,25 +435,21 @@ func smooth_blend_axis(normalized_pos: Vector3) -> Array[Vector3]:
 	if abs_x >= abs_y and abs_x >= abs_z:
 		if x > 0.0:
 			return [Vector3.UP, Vector3.BACK]
-		else:
-			# -X face
-			return [Vector3.UP, Vector3.FORWARD]
+		# -X face
+		return [Vector3.UP, Vector3.FORWARD]
 
 	# +Y face (top)
-	elif abs_y >= abs_x and abs_y >= abs_z:
+	if abs_y >= abs_x and abs_y >= abs_z:
 		if y > 0.0:
 			return [Vector3.FORWARD, Vector3.LEFT]
-		else:
-			# -Y face (bottom)
-			return [Vector3.FORWARD, Vector3.LEFT]
+		# -Y face (bottom)
+		return [Vector3.FORWARD, Vector3.LEFT]
 
 	# +Z face
-	else:
-		if z > 0.0:
-			return [Vector3.UP, Vector3.LEFT]
-		else:
-			# -Z face
-			return [Vector3.UP, Vector3.RIGHT]
+	if z > 0.0:
+		return [Vector3.UP, Vector3.LEFT]
+	# -Z face
+	return [Vector3.UP, Vector3.RIGHT]
 
 func random_from_vec3(v: Vector3) -> float:
 	var seed_val = int(v.x * 374761393 + v.y * 668265263 + v.z * 2147483647) & 0x7fffffff
