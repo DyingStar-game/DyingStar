@@ -43,6 +43,7 @@ func _process(_delta: float) -> void:
 		peer.accept_stream(ServerNetwork.tcp_server.take_connection())
 
 	peer.poll()
+	peer.outbound_buffer_size = 1000000000  # 1 GB
 
 	var peer_state = peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
@@ -50,7 +51,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				#print("SERVER - Received packet: %s" % [packet_text])
+				# print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)
@@ -92,6 +93,9 @@ func dispatch_horizon_message(message: Dictionary):
 					"planet":
 						# spawn planet
 						NetworkOrchestrator.network_agent.create_planet(message)
+					"serverinfo":
+						# serverinfo for clients
+						NetworkOrchestrator.network_agent.set_serverinfo(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:

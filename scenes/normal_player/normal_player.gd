@@ -119,8 +119,6 @@ func _ready() -> void:
 	position = spawn_position
 	global_transform = Globals.align_with_y(global_transform, spawn_up)
 
-	NetworkOrchestrator.set_gameserver_name.connect(_set_gameserver_name)
-
 	client_uuid = Globals.player_uuid
 	self.set_meta("client_uuid", Globals.player_uuid)
 
@@ -410,9 +408,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
-
-func _set_gameserver_name(server_name: String):
-	label_server_name.text = "(" + server_name + ")"
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

@@ -72,11 +72,14 @@ var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.ts
 
 var debug_message_number: int = 0
 
+var serverinfo_uuid: String = ""
+
 func _enter_tree() -> void:
 	NetworkOrchestrator.load_server_config()
 
 func _ready() -> void:
 	set_process(false)
+	_send_metrics()
 
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
@@ -157,21 +160,29 @@ func player_action(message: Dictionary):
 
 
 func _send_metrics():
-	if servers_ticks_tasks.SendMetricsCurrent > 0:
-		servers_ticks_tasks.SendMetricsCurrent -= 1
-	else:
-		if NetworkOrchestrator.metrics_enabled == true:
-			var all_metrics = {
-				"currentplayers": players_list.size(),
-				"memory": Performance.get_monitor(Performance.MEMORY_STATIC),
-				"numberobjects": Performance.get_monitor(Performance.OBJECT_COUNT),
-				"timefps": Performance.get_monitor(Performance.TIME_FPS),
-			}
+	while true:
+		await get_tree().create_timer(1.0).timeout
+		if not serverinfo_uuid == "":
+			var nb_scenes = 0
 			for proptype in props_list.keys():
-				all_metrics["current" + proptype] = props_list[proptype].size()
-			NetworkOrchestrator.mqtt_client_metrics.publish("metrics/server/" + NetworkOrchestrator.server_name, JSON.stringify(all_metrics))
-		servers_ticks_tasks.SendMetricsCurrent = servers_ticks_tasks.SendMetricsReset
-
+				nb_scenes += props_list[proptype].size()
+			var message = {
+				"namespace": "props",
+				"event": "position",
+				"amessagenb": 0,
+				"data": [
+					{
+						"uuid": serverinfo_uuid,
+						"type": "serverinfo",
+						"fps": Performance.get_monitor(Performance.TIME_FPS),
+						"objects_number": Performance.get_monitor(Performance.OBJECT_COUNT),
+						"players_number": players_list.size(),
+						"scenes_number": nb_scenes,
+					}
+				]
+			}
+			# print("Send props update to horizon: ", message)
+			ServerNetwork.send_message(message, "prop_update")
 
 #########################
 # Props                 #
@@ -290,7 +301,7 @@ func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
 		return
 	debug_message_number = debug_message_number + 1
-	#print("Send players to horizon: ", players_newposition.values().size())
+	# print("Send players to horizon: ", players_newposition.values().size())
 	var message = {
 		"namespace": "players",
 		"event": "position",
@@ -345,7 +356,7 @@ func send_props_update_to_horizon():
 		"amessagenb": debug_message_number,
 		"data": props_update.values()
 	}
-	print("Send props update to horizon: ", message)
+	# print("Send props update to horizon: ", message)
 	ServerNetwork.send_message(message, "prop_update")
 	props_update.clear()
 
@@ -374,7 +385,7 @@ func create_player(event: Dictionary) -> void:
 	# var player_uuid = message["data"]["object_uuid"]
 	var player_uuid = event["data"]["object_data"]["connection_id"]
 
-	print("Player data received: %s" % player_data)
+	# print("Player data received: %s" % player_data)
 
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
@@ -409,6 +420,9 @@ func create_player(event: Dictionary) -> void:
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
+
+func set_serverinfo(event: Dictionary) -> void:
+	serverinfo_uuid = event["data"]["object_uuid"]
 
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops

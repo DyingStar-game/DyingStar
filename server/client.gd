@@ -33,11 +33,16 @@ var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
 # so we store the message in this case in the goal to process them later
 var pending_messages_parenting: Array[Dictionary] = []
 
+var network_events_received: int = 0
+var network_events_sent: int = 0
+
 func _enter_tree() -> void:
 	set_process(false)
 
 func _ready() -> void:
 	set_process(false)
+	Performance.add_custom_monitor("network/events_received", metric_get_network_events_received)
+	Performance.add_custom_monitor("network/events_sent", metric_get_network_events_sent)
 
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	_load_client_ini_file()
@@ -83,6 +88,7 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 				"password": "pass"
 			}
 		}))
+		network_events_sent += 1
 	else:
 		push_error("Unable to connect (timeout or error). State: %d" % socket.get_ready_state())
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
@@ -111,7 +117,8 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("< Client - Got text data from server: %s" % packet_text)
+				print("< Client - Got text data from server: %s" % packet_text)
+				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
 				if event.has("type"):
@@ -131,11 +138,15 @@ func _process(_delta: float) -> void:
 
 				elif event.has("object_type"):
 					if event["object_type"] == "GorcPlayer":
+						if event.has("event_type") and event["event_type"] == "gorc_zone_enter":
+							create_object(event)
 						# special case for player update
 						player_update(event)
 					elif event["event_type"] == "update_property":
-						print("< Client - Update generic object: %s" % event)
+						# print("< Client - Update generic object: %s" % event)
 						update_generic_object(event)
+					elif event["event_type"] == "gorc_zone_enter":
+						create_object(event)
 					else:
 						print("< Client - ERROR - Unknown object_type event: %s" % event["object_type"])
 				else:
@@ -193,12 +204,13 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 	if datas.has("action"):
 		match datas["action"]:
 			"spawn":
-				print("Request to spawn %s" % datas["entity"])
+				# print("Request to spawn %s" % datas["entity"])
 				socket.send_text(JSON.stringify({
 					"namespace": "props",
 					"event": "spawn_request",
 					"data": datas,
 				}))
+				network_events_sent += 1
 			"control":
 				if datas.has("entity"):
 					match datas["entity"]:
@@ -240,6 +252,7 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 			"uuid": player_entity.client_uuid
 		},
 	}))
+	network_events_sent += 1
 
 func _on_client_action_pressed(action: String) -> void:
 	socket.send_text(JSON.stringify({
@@ -250,6 +263,7 @@ func _on_client_action_pressed(action: String) -> void:
 			"uuid": player_entity.client_uuid
 		},
 	}))
+	network_events_sent += 1
 
 #########################################################################
 # Horizon server messages handling
@@ -309,8 +323,13 @@ func delete_object(event: Dictionary) -> void:
 				print("unknown object type for deletion")
 
 func create_player(event: Dictionary) -> void:
-	print("Create player: %s" % event)
-	var player_data = event["zone_data"]
+	# print("Create player: %s" % event)
+	var player_data = {}
+	
+	if event.has("zone_data"):
+		player_data = event["zone_data"]
+	else:
+		player_data = event["data"]
 
 	# Special code because received 2 times the gorc_zone_enter for the same player (my player)
 	if players_list.has(event["object_id"]):
@@ -376,8 +395,7 @@ func create_player(event: Dictionary) -> void:
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
 func create_planet(message: Dictionary) -> void:
-	print("Create planet: %s" % message)
-
+	# print("Create planet: %s" % message)
 	# {
 	#     "channel": 2,
 	#     "object_id": "3388a817-f3ef-421d-b10f-4325e105628e",
@@ -434,7 +452,7 @@ func create_planet(message: Dictionary) -> void:
 				pending_messages_parenting.erase(pending_message)
 
 func create_generic_object(event: Dictionary) -> void:
-	print("Create generic object: %s" % event)
+	# print("Create generic object: %s" % event)
 	# {
 	# 	"channel": 0,
 	# 	"data": {
@@ -475,7 +493,9 @@ func create_generic_object(event: Dictionary) -> void:
 	if not props_list.has(event["object_type"]):
 		props_list[event["object_type"]] = {}
 
-	if props_list[event["object_type"]].has(event["object_id"]):
+	if event["object_type"] == "serverinfo":
+		return
+	elif props_list[event["object_type"]].has(event["object_id"]):
 		var prop_instance = props_list[event["object_type"]][event["object_id"]]
 		prop_instance.client_channel_data_update(object_data)
 
@@ -543,7 +563,18 @@ func update_generic_object(event: Dictionary) -> void:
 	#     "player_id": "cc3de01c-bfa8-40d6-8315-611dc92505ec",
 	#     "timestamp": 1763283386
 	# }
-	if props_list.has(event["object_type"]):
+	if event["object_type"] == "serverinfo":
+		if event["data"].has("players_number"):
+			NetworkOrchestrator.set_gameserver_number_players.emit(event["data"]["players_number"])
+		if event["data"].has("fps"):
+			NetworkOrchestrator.set_gameserver_server_fps.emit(event["data"]["fps"])
+		if event["data"].has("objects_number"):
+			NetworkOrchestrator.set_gameserver_number_objects.emit(event["data"]["objects_number"])
+		if event["data"].has("scenes_number"):
+			NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["scenes_number"])
+		return
+
+	elif props_list.has(event["object_type"]):
 		if props_list[event["object_type"]].has(event["object_id"]):
 			var prop_instance = props_list[event["object_type"]][event["object_id"]]
 			prop_instance.client_channel_data_update(event["data"])
@@ -578,3 +609,13 @@ func player_update(message: Dictionary) -> void:
 				)
 		else:
 			print("Update Player but not found...")
+
+func metric_get_network_events_received():
+	var result = network_events_received
+	network_events_received = 0
+	return result
+
+func metric_get_network_events_sent():
+	var result = network_events_sent
+	network_events_sent = 0
+	return result
