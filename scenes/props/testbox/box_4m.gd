@@ -14,7 +14,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
 
 var server_last_position = Vector3.ZERO
-var server_last_global_rotation = Vector3.ZERO
+var server_last_rotation = Vector3.ZERO
 
 var has_parent: bool = false
 
@@ -27,19 +27,21 @@ func _ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
-		if server_last_position != position or server_last_global_rotation != global_rotation:
+		var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
+		var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+		if server_last_position != my_position or server_last_rotation != my_rotation:
 			emit_signal(
 				"hs_server_prop_update",
 				uuid,
 				{
-					"position": position,
-					"rotation": rotation,
+					"position": my_position,
+					"rotation": my_rotation,
 				},
 				"box",
 				has_parent
 			)
-			server_last_position = position
-			server_last_global_rotation = global_rotation
+			server_last_position = my_position
+			server_last_rotation = my_rotation
 
 func _on_box_entered(body: Node3D):
 	if body.is_in_group("containable"):
