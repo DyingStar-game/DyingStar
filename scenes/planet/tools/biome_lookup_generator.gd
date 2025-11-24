@@ -31,5 +31,5 @@ func generate_lookup_texture(defs: Array[BiomeDef]) -> ImageTexture:
 
 			var final_color = accum / total_weight
 			img.set_pixel(x, y, final_color)
-	
+
 	return ImageTexture.create_from_image(img)

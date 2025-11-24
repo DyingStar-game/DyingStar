@@ -31,7 +31,7 @@ func get_local_focus_positions():
 
 func _process(_delta: float) -> void:
 	if !planet_terrain: return
-	
+
 	var positions = get_local_focus_positions()
 	if not positions_changed(positions): return
 	focus_positions_last = positions

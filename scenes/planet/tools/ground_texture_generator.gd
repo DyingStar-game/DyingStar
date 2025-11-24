@@ -1,7 +1,7 @@
 @tool
-extends Node
-
 class_name GroundTextureGenerator
+
+extends Node
 
 @export_category("Resizing")
 @export var texture_resize = 2048
@@ -14,7 +14,6 @@ class_name GroundTextureGenerator
 @export_tool_button("Pack textures") var gen = generate_textures
 
 func generate_textures():
-	
 	var packed_images: Array[Image] = []
 	for texture_folder in DirAccess.get_directories_at(textures_folder):
 		prints("Packing textures for ", texture_folder)
@@ -22,34 +21,34 @@ func generate_textures():
 		var albedo: Image
 		var normal: Image
 		var roughness: Image
-		
+
 		var base_path = textures_folder + "/" + texture_folder + "/"
 		for file in texture_files:
 			if file.contains(".import"): continue
 			var filename_lower = file.to_lower()
-			
+
 			if filename_lower.contains("color"):
 				albedo = Image.load_from_file(base_path + file)
 			if filename_lower.contains("normal"):
 				normal = Image.load_from_file(base_path + file)
 			if filename_lower.contains("roughness"):
 				roughness = Image.load_from_file(base_path + file)
-			
+
 		if !albedo or !normal or !roughness:
 			printerr("missing texture map", albedo, normal, roughness)
 			continue
-		
+
 		var packed_image = pack_image(albedo, normal, roughness)
 		packed_image.compress(Image.COMPRESS_BPTC)
 		packed_image.save_png(base_path + texture_folder + "_packed.png")
-		
+
 		packed_images.push_back(packed_image)
-		
-	var texture2DArray = Texture2DArray.new()
-	texture2DArray.create_from_images(packed_images)
-	texture2DArray.take_over_path(output_resource_name)
-	ResourceSaver.save(texture2DArray, output_resource_name, ResourceSaver.FLAG_COMPRESS)
-	
+
+	var texture_2d_array = Texture2DArray.new()
+	texture_2d_array.create_from_images(packed_images)
+	texture_2d_array.take_over_path(output_resource_name)
+	ResourceSaver.save(texture_2d_array, output_resource_name, ResourceSaver.FLAG_COMPRESS)
+
 	print("Finished !")
 
 func resize_all_textures():
@@ -59,10 +58,10 @@ func resize_all_textures():
 			if file.contains(".import"): continue
 			var filename_lower = file.to_lower()
 			var base_path = textures_folder + "/" + texture_folder + "/"
-			
+
 			if filename_lower.contains("4K"):
 				file.replace("4K", "2K")
-			
+
 			if filename_lower.contains("color"):
 				resize_textures(base_path, file)
 			if filename_lower.contains("normal"):
@@ -75,11 +74,11 @@ func resize_textures(basepath: String, file: String):
 	#if img.get_size().x == texture_resize: return
 	prints("Resizing image", basepath + file)
 	img.resize(texture_resize, texture_resize, Image.INTERPOLATE_LANCZOS)
-	
+
 	var newfilename = file
 	if newfilename.contains("4K"):
 		file.replace("4K", "2K")
-		
+
 	img.save_jpg(basepath + newfilename, 1.0)
 
 func pack_image(albedo: Image, normal: Image, roughness: Image) -> Image:
@@ -92,7 +91,7 @@ func pack_image(albedo: Image, normal: Image, roughness: Image) -> Image:
 
 			# RGBA packing
 			packed.set_pixel(x, y, Color(n.r, n.g, a, r))
-	
+
 	packed.generate_mipmaps()
 	return packed
-	
+

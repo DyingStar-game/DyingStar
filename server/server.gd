@@ -383,11 +383,11 @@ func create_player(event: Dictionary) -> void:
 		spawned_entity_instance.owner = get_tree().current_scene
 	)
 	universe_scene.add_child(spawned_entity_instance)
-	
+
 	# TODO: move this to the backend later to decide where the player should be spawned
 	var spawn_planet = universe_scene.get_node("Sandbox") as Planet
 	var spawn_transform = spawn_planet.get_spawn_point()
-	
+
 	#if player_data["parent_id"] != "":
 		#var planet = _search_parent_node(player_data["parent_id"])
 		#spawned_entity_instance.reparent(planet)
@@ -400,15 +400,14 @@ func create_player(event: Dictionary) -> void:
 		#player_data["position"]["y"],
 		#player_data["position"]["z"]
 	#)
-	
-	
+
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list[player_uuid] = spawned_entity_instance
 	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
 
 	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
-	
+
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 
 func create_generic_object(event: Dictionary) -> void:

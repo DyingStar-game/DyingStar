@@ -24,6 +24,7 @@ extends Node
 @export var humid_frequency := 0.6
 
 @export_tool_button("Generate") var gen = generate_maps
+@export var noise: FastNoiseLite
 
 var noise_plaque := FastNoiseLite.new()
 var noise_continent := FastNoiseLite.new()
@@ -31,12 +32,7 @@ var noise_mountain := FastNoiseLite.new()
 var noise_temp := FastNoiseLite.new()
 var noise_humid := FastNoiseLite.new()
 
-
-@export var noise: FastNoiseLite
-
 func generate_maps():
-	
-	
 	noise_plaque.seed = seed
 	noise_plaque.frequency = 0.14
 	noise_plaque.noise_type = FastNoiseLite.TYPE_CELLULAR
@@ -46,8 +42,7 @@ func generate_maps():
 	noise_plaque.cellular_jitter = 1.15
 	noise_plaque.domain_warp_enabled = true
 	noise_plaque.domain_warp_amplitude = 2.0
-	
-	
+
 	# Continent noise (broad shapes)
 	noise_continent.seed = seed + 11
 	noise_continent.frequency = continent_frequency
@@ -80,7 +75,7 @@ func generate_maps():
 	for y in range(height):
 		var v = float(y) / height
 		var latitude = (v - 0.5) * PI  # -π/2 = south pole, +π/2 = north pole
-		
+
 		for x in range(width):
 			var u = float(x) / float(width)
 			var phi = u * TAU
@@ -93,13 +88,13 @@ func generate_maps():
 
 			var plaque = normalize_noise(noise_plaque.get_noise_3dv(nvec * scale * 10))
 			plaque = 0.0 if plaque < ocean_frac else water_lvl
-			
+
 			# ---------- ELEVATION (RED) ----------
 			var cont = normalize_noise(noise_continent.get_noise_3dv(nvec * scale))
-			
+
 			var mount = normalize_noise(noise_mountain.get_noise_3dv(nvec * scale * 3.0))
 			mount *= cont
-			
+
 			#mount = 0.3 + mount * 0.7
 
 			# continents + mountain detail
@@ -107,9 +102,9 @@ func generate_maps():
 			var elevation = 2.0 * mount * plaque + 0.2 * mount
 			#if plaque > 0.5:
 				#elevation = clamp(elevation, 0.2, 1.0)
-			
+
 			elevation *= smoothstep(PI/2, PI/2 - 0.5, abs(latitude))
-			
+
 			elevation = clamp(elevation, 0.0, 1.0)
 
 			# ---------- TEMPERATURE (GREEN) ----------
@@ -131,15 +126,15 @@ func generate_maps():
 #
 			#temperature = plaque * (temperature - (elevation * 0.3))
 			# Final color: R=elevation, G=temp, B=humidity
-			
+
 			var temp_hum = get_climate(latitude, elevation, planet_distance, planet_lum, greenhouse_factor, ocean_frac, atmo_pressure)
-			
+
 			var color = Color(elevation, temp_hum.x, temp_hum.y)
 			#var color = Color(0, temp_hum.x, 0)
 			image.set_pixel(x, y, color)
-	
+
 	#generate_rivers(image)
-	
+
 	print("saving texture..")
 	image.save_png("res://scenes/planet/terrain_map.png")
 	#var tex = ImageTexture.create_from_image(image)
@@ -196,10 +191,10 @@ func generate_rivers(image: Image):
 				peaks.push_back(Vector2(x,y))
 	peaks.shuffle()
 	peaks.resize(2000)
-	
+
 	for p in peaks:
 		if p == null: continue
-		
+
 		var curr_p = p
 		for i in 3000:
 			var new_p = find_slope(image, curr_p)
@@ -221,14 +216,14 @@ func find_slope(image: Image, p: Vector2) -> Vector2:
 			cos(i * 2 * PI / 8),
 			sin(i * 2 * PI / 8)
 		)
-		
+
 		var candidate = image.get_pixelv(offset)
 		if candidate.r < current_val.r and candidate.r < lowest_val:
 			lowest_val = candidate.r
 			lowest_pos = offset
-			
+
 	return lowest_pos
-		
+
 
 func normalize_noise(val: float) -> float:
 	return (val + 1.0) * 0.5
