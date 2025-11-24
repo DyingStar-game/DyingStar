@@ -5,6 +5,7 @@ extends CharacterBody3D
 signal hs_client_action_move
 signal hs_server_move
 signal hs_client_action_pressed
+signal display_debug(show: bool)
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -71,6 +72,8 @@ var is_parented: bool = false
 # to disable player input when piloting vehicule/ship
 var active = false
 
+var _display_debug:bool = false
+
 @onready var camera = $CameraPivot/Camera3D
 
 @onready var labelx: Label = $UserInterface/Debug/LabelXValue
@@ -92,8 +95,6 @@ var active = false
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
 
 func _enter_tree() -> void:
-	$UserInterface/LoadingScreen.hide()
-
 	if name.begins_with("remoteplayer"):
 		remote_player = true
 		position = spawn_position
@@ -102,6 +103,10 @@ func _enter_tree() -> void:
 
 	elif not OS.has_feature("dedicated_server"):
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
+	else:
+		# server side
+		$UserInterface.visible = false
+		$CameraPivot.visible = false
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
@@ -112,36 +117,38 @@ func _ready() -> void:
 		set_player_name(name)
 		return
 
-	$UserInterface/LoadingScreen.show()
+	if not OS.has_feature("dedicated_server"):
+		$UserInterface/LoadingScreen.show()
 
+		global_position = spawn_position
+		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
 
+		position = spawn_position
+		global_transform = Globals.align_with_y(global_transform, spawn_up)
 
-	position = spawn_position
-	global_transform = Globals.align_with_y(global_transform, spawn_up)
+		client_uuid = Globals.player_uuid
+		self.set_meta("client_uuid", Globals.player_uuid)
 
-	client_uuid = Globals.player_uuid
-	self.set_meta("client_uuid", Globals.player_uuid)
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		camera.current = false
+		$ExtCamera3D.current = false
 
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	camera.current = false
-	$ExtCamera3D.current = false
+		camera.make_current()
+		# hide player name label for me only
+		label_player_name.visible = false
+		label_server_name.visible = false
+		astronaut.visible = false
+		interact_label.hide()
+		connect_area_detect()
+		active = false
 
-	camera.make_current()
-	# hide player name label for me only
-	label_player_name.visible = false
-	label_server_name.visible = false
-	astronaut.visible = false
-	interact_label.hide()
-	connect_area_detect()
-	active = false
+		await get_tree().create_timer(5).timeout
 
-	await get_tree().create_timer(5).timeout
+		update_last_basis()
 
-	update_last_basis()
+		active = true
 
-	active = true
-
-	$UserInterface/LoadingScreen.hide()
+		$UserInterface/LoadingScreen.hide()
 
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
@@ -199,6 +206,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed("spawn_rock_mining"):
 		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
+
+	if event.is_action_pressed("debug_console"):
+		if _display_debug:
+			display_debug.emit(false)
+			_display_debug = false
+		else:
+			display_debug.emit(true)
+			_display_debug = true
 
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:

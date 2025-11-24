@@ -1,10 +1,11 @@
-[gd_scene load_steps=23 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=24 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/normal_player/player_ui.gd" id="3_kcm5r"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/normal_player/debug_label_settings.tres" id="4_dpwvv"]
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/normal_player/debug_server_fps.gd" id="4_sxi4m"]
+[ext_resource type="Script" uid="uid://csou6tk8ue6nt" path="res://scenes/normal_player/debug.gd" id="4_urqre"]
 [ext_resource type="Script" uid="uid://du8smr1o81j1c" path="res://scenes/normal_player/debug_server_nbplayers.gd" id="5_dpwvv"]
 [ext_resource type="Script" uid="uid://ndt5dgkjnqij" path="res://scenes/normal_player/debug_server_nbobjects.gd" id="7_q8cfn"]
 [ext_resource type="Script" uid="uid://boggy8s888bc5" path="res://scenes/normal_player/debug_server_nbscenes.gd" id="8_6hnll"]
@@ -98,10 +99,12 @@ mouse_filter = 2
 script = ExtResource("3_kcm5r")
 
 [node name="Debug" type="Control" parent="UserInterface"]
+visible = false
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 mouse_filter = 2
+script = ExtResource("4_urqre")
 
 [node name="server_bg" type="ColorRect" parent="UserInterface/Debug"]
 layout_mode = 0
@@ -358,4 +361,16 @@ visible = false
 [node name="hammerdrill2" parent="." instance=ExtResource("14_fuv0x")]
 transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 
+[connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/server_fps" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/server_nbplayers" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/server_nbobjects" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/server_nbscenes" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_fps" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_nbplayers" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_nbobjects" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_nbscenes" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_videomem" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_received" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_sent" method="_on_normal_player_display_debug"]
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]
