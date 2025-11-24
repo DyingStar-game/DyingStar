@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=30 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
@@ -7,13 +7,19 @@
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/normal_player/debug_server_fps.gd" id="4_sxi4m"]
 [ext_resource type="Script" uid="uid://csou6tk8ue6nt" path="res://scenes/normal_player/debug.gd" id="4_urqre"]
 [ext_resource type="Script" uid="uid://du8smr1o81j1c" path="res://scenes/normal_player/debug_server_nbplayers.gd" id="5_dpwvv"]
+[ext_resource type="Texture2D" uid="uid://c8j636ahpn23x" path="res://ui/ingame/debug/small_debug.png" id="5_y6iw5"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="6_5xss2"]
 [ext_resource type="Script" uid="uid://ndt5dgkjnqij" path="res://scenes/normal_player/debug_server_nbobjects.gd" id="7_q8cfn"]
+[ext_resource type="FontFile" uid="uid://g85u4kqolh7x" path="res://ui/Poppins-Bold.ttf" id="7_ty080"]
 [ext_resource type="Script" uid="uid://boggy8s888bc5" path="res://scenes/normal_player/debug_server_nbscenes.gd" id="8_6hnll"]
 [ext_resource type="PackedScene" uid="uid://dk4le3cck03bg" path="res://ui/direct_chat/direct_chat.tscn" id="8_ikqc6"]
+[ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="8_qgvuu"]
 [ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/normal_player/debug_client_fps.gd" id="9_2g0ng"]
+[ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/normal_player/debug_client_nbplayers.gd" id="10_udrf3"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="Script" uid="uid://du4vikoo7kath" path="res://scenes/normal_player/debug_client_nbobjects.gd" id="11_urqre"]
+[ext_resource type="Texture2D" uid="uid://cvj5f587f3j3d" path="res://ui/ingame/debug/big_debug.png" id="11_ykmr1"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 [ext_resource type="Script" uid="uid://cg10agjb1pncn" path="res://scenes/normal_player/debug_client_nbscenes.gd" id="12_y6iw5"]
 [ext_resource type="Script" uid="uid://bn70g6ek7ggox" path="res://scenes/normal_player/debug_client_videomem.gd" id="13_ykmr1"]
@@ -106,13 +112,9 @@ offset_bottom = 40.0
 mouse_filter = 2
 script = ExtResource("4_urqre")
 
-[node name="server_bg" type="ColorRect" parent="UserInterface/Debug"]
-layout_mode = 0
-offset_left = 1508.0
-offset_top = 48.0
-offset_right = 1879.0
-offset_bottom = 205.0
-color = Color(0, 0, 0, 0.690196)
+[node name="server_bg" type="Sprite2D" parent="UserInterface/Debug"]
+position = Vector2(1642, 125)
+texture = ExtResource("5_y6iw5")
 
 [node name="server_title" type="RichTextLabel" parent="UserInterface/Debug"]
 layout_mode = 0
@@ -121,15 +123,23 @@ offset_top = 56.0
 offset_right = 1681.0
 offset_bottom = 90.0
 scale = Vector2(1.0275318154091977, 1)
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
 bbcode_enabled = true
 text = "[b].: Server (godot) :.[/b]"
 
 [node name="server_fps" type="RichTextLabel" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 88.0
+offset_top = 94.0
 offset_right = 1687.0
-offset_bottom = 112.0
+offset_bottom = 118.0
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
 theme_override_font_sizes/normal_font_size = 14
 bbcode_enabled = true
 text = "Soon™"
@@ -139,9 +149,9 @@ script = ExtResource("4_sxi4m")
 [node name="server_nbplayers" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 112.0
+offset_top = 118.0
 offset_right = 1722.0
-offset_bottom = 135.0
+offset_bottom = 141.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_dpwvv")
@@ -149,9 +159,9 @@ script = ExtResource("5_dpwvv")
 [node name="server_nbobjects" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 136.0
+offset_top = 142.0
 offset_right = 1722.0
-offset_bottom = 159.0
+offset_bottom = 165.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("7_q8cfn")
@@ -159,28 +169,28 @@ script = ExtResource("7_q8cfn")
 [node name="server_nbscenes" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 160.0
+offset_top = 166.0
 offset_right = 1722.0
-offset_bottom = 183.0
+offset_bottom = 189.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("8_6hnll")
 
-[node name="client_bg" type="ColorRect" parent="UserInterface/Debug"]
-layout_mode = 0
-offset_left = 1508.0
-offset_top = 224.0
-offset_right = 1879.0
-offset_bottom = 520.0
-color = Color(0, 0, 0, 0.690196)
+[node name="client_bg" type="Sprite2D" parent="UserInterface/Debug"]
+position = Vector2(1642, 366)
+texture = ExtResource("11_ykmr1")
 
 [node name="client_title" type="RichTextLabel" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1524.0
 offset_top = 232.0
-offset_right = 1681.0
+offset_right = 1741.998116107768
 offset_bottom = 266.0
 scale = Vector2(1.0275318154091977, 1)
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
 bbcode_enabled = true
 text = "[b].: Client DyingStar :.[/b]"
 
@@ -190,6 +200,10 @@ offset_left = 1529.0
 offset_top = 264.0
 offset_right = 1687.0
 offset_bottom = 288.0
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
 theme_override_font_sizes/normal_font_size = 14
 bbcode_enabled = true
 text = "Soon™"
@@ -229,60 +243,60 @@ script = ExtResource("12_y6iw5")
 [node name="Labelx" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 361.0
+offset_top = 359.0
 offset_right = 1549.0
-offset_bottom = 384.0
+offset_bottom = 382.0
 text = "x: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labely" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 385.0
+offset_top = 383.0
 offset_right = 1549.0
-offset_bottom = 408.0
+offset_bottom = 406.0
 text = "y: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="Labelz" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 409.0
+offset_top = 407.0
 offset_right = 1549.0
-offset_bottom = 432.0
+offset_bottom = 430.0
 text = "z: "
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelXValue" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 361.0
+offset_top = 359.0
 offset_right = 1705.0
-offset_bottom = 384.0
+offset_bottom = 382.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelYValue" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 385.0
+offset_top = 383.0
 offset_right = 1705.0
-offset_bottom = 408.0
+offset_bottom = 406.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="LabelZValue" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 407.0
+offset_top = 405.0
 offset_right = 1705.0
-offset_bottom = 430.0
+offset_bottom = 428.0
 label_settings = ExtResource("4_dpwvv")
 
 [node name="client_videomem" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 432.0
+offset_top = 430.0
 offset_right = 1722.0
-offset_bottom = 455.0
+offset_bottom = 453.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("13_ykmr1")
@@ -290,9 +304,9 @@ script = ExtResource("13_ykmr1")
 [node name="client_messages_received" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 456.0
+offset_top = 454.0
 offset_right = 1722.0
-offset_bottom = 479.0
+offset_bottom = 477.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("14_ilbvb")
@@ -300,9 +314,9 @@ script = ExtResource("14_ilbvb")
 [node name="client_messages_sent" type="Label" parent="UserInterface/Debug"]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 480.0
+offset_top = 478.0
 offset_right = 1722.0
-offset_bottom = 503.0
+offset_bottom = 501.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("15_x3gq6")

@@ -9,6 +9,6 @@ func _on_normal_player_display_debug(show: bool) -> void:
 		while visible:
 			await get_tree().create_timer(1.0).timeout
 			var messages = Performance.get_custom_monitor('network/events_received')
-			text = str(messages) + " messages received / second"
+			text = str(messages) + " events received/second"
 	else:
 		visible = false
