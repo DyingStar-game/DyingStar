@@ -18,7 +18,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 func _enter_tree() -> void:
 	if Engine.is_editor_hint(): return
 	global_position = spawn_position
-	if not OS.has_feature("dedicated_server") and not Engine.is_editor_hint():
+	if not Engine.is_editor_hint():
 		$Atmosphere.sun_object = get_tree().current_scene.get_node("Star/DirectionalLight3D")
 
 func _physics_process(_delta: float) -> void:

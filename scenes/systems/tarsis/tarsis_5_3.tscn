@@ -1,4 +1,4 @@
-[gd_scene load_steps=52 format=3 uid="uid://583wdfl5isxb"]
+[gd_scene load_steps=51 format=3 uid="uid://583wdfl5isxb"]
 
 [ext_resource type="PackedScene" uid="uid://rv6ugxi8n8pe" path="res://scenes/planet/base_planet.tscn" id="1_x3g5b"]
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="2_gvpu1"]
@@ -8,8 +8,6 @@
 [ext_resource type="Texture2DArray" uid="uid://cyqpkcpjpn4tr" path="res://assets/textures/biomes_packed/sandbox_normal_array.res" id="5_i4q2j"]
 [ext_resource type="Texture2D" uid="uid://4djedg7r2hws" path="res://assets/materials/planet/biome_crater_albedo.png" id="5_w0eur"]
 [ext_resource type="Texture2D" uid="uid://bblqhxnfv840e" path="res://assets/materials/planet/biome_volcano_albedo.png" id="6_i4q2j"]
-[ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="6_pdq0p"]
-[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="7_4tymd"]
 [ext_resource type="Texture2D" uid="uid://b5wpurm1yw2nm" path="res://assets/materials/planet/biome_plateau_heightmap.png" id="7_eaiis"]
 [ext_resource type="Texture2D" uid="uid://c32kva5xh2tud" path="res://assets/materials/planet/biome_crater_heightmap.png" id="8_pdq0p"]
 [ext_resource type="Texture2D" uid="uid://kvb8oajkmrsf" path="res://assets/materials/planet/terrain_normal_normal.png" id="8_ul17d"]
@@ -46,13 +44,14 @@ shader_parameter/color_map = SubResource("GradientTexture1D_ul17d")
 shader_parameter/biome_color = ExtResource("4_w0eur")
 shader_parameter/biome_normal = ExtResource("5_i4q2j")
 shader_parameter/terrain_normal = ExtResource("8_ul17d")
-shader_parameter/surface_albedo = ExtResource("6_pdq0p")
-shader_parameter/surface_normal = ExtResource("7_4tymd")
 shader_parameter/noise = SubResource("NoiseTexture2D_tclvp")
 shader_parameter/notile_offset = 0.56
 shader_parameter/uv1_blend_sharpness = 8.0
 shader_parameter/uv1_scale = 1.0
 shader_parameter/uv_distance_scale = 1.0
+shader_parameter/surface_uv_scale = 100.0
+shader_parameter/terrain_normal_blend_offset = 0.9
+shader_parameter/terrain_normal_blend_fade = 0.1
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_d72ih"]
 frequency = 0.00039999999999999
@@ -119,8 +118,8 @@ metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="Resource" id="Resource_8bq2n"]
 script = ExtResource("2_gvpu1")
-radius = 1560000
-atmosphere_height = 60000
+radius = 1210666
+atmosphere_height = 1000
 terrain_material = SubResource("ShaderMaterial_eaiis")
 sea_level = 8900
 cloud_height = 18000
@@ -129,7 +128,7 @@ metadata/_custom_type_script = "uid://cnf71va5eumrg"
 
 [sub_resource type="SphereOccluder3D" id="SphereOccluder3D_v5pic"]
 resource_local_to_scene = true
-radius = 1560000.0
+radius = 1210666.0
 
 [sub_resource type="Gradient" id="Gradient_ge052"]
 offsets = PackedFloat32Array(0.503401, 0.57483)
@@ -189,10 +188,15 @@ shader_parameter/direction_profile_curve = SubResource("CurveTexture_utdev")
 shader_parameter/direction_profile_main_colors = SubResource("GradientTexture1D_24slt")
 shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_f8q4h")
 shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
-shader_parameter/sea_level = 1560000.0
-shader_parameter/atmosphere_radius = 1620000.0
+shader_parameter/sea_level = 1210666.0
+shader_parameter/atmosphere_radius = 1211666.0
 shader_parameter/atmosphere_density = 5.0
 shader_parameter/water_density_factor = -0.205
+
+[sub_resource type="BoxMesh" id="BoxMesh_6adhy"]
+resource_local_to_scene = true
+flip_faces = true
+size = Vector3(2544498.6, 2544498.6, 2544498.6)
 
 [sub_resource type="SphereMesh" id="SphereMesh_eldcm"]
 resource_local_to_scene = true
@@ -204,22 +208,18 @@ rings = 64
 [node name="Tarsis5_3" instance=ExtResource("1_x3g5b")]
 planet_settings = SubResource("Resource_8bq2n")
 
-[node name="PlanetTerrain" parent="." index="1"]
-radius = 1560000
-terrain_settings = SubResource("Resource_udjps")
-terrain_material = SubResource("ShaderMaterial_eaiis")
-
 [node name="OccluderInstance3D" parent="PlanetTerrain" index="6"]
 occluder = SubResource("SphereOccluder3D_v5pic")
 
 [node name="PlanetGravity" parent="PlanetTerrain" index="8"]
-gravity_point_unit_distance = 1560000.0
+gravity_point_unit_distance = 1210666.0
 
 [node name="Atmosphere" parent="." index="2"]
-transform = Transform3D(-0.0014302068489236972, -0.002999518730806298, -0.9999938999929535, 0, 0.9999949227340995, -0.0029995217985562335, 0.9999989772536616, -4.289936619791053e-06, -0.0014301995873832322, 5287.879060608664, 12243.496987137478, 5837.811996419086)
+transform = Transform3D(-0.011552666620645208, -0.024220379376070883, -0.9996393108998347, 0, 0.9997060255614186, -0.02422199581351574, 0.9999332657202441, -0.0002798286425202114, -0.011549270431961281, 5287.879060608664, 12243.496987137478, 5837.811996419086)
 material_override = SubResource("ShaderMaterial_b16d7")
-planet_radius = 1560000.0
-atmosphere_height = 60000.0
+mesh = SubResource("BoxMesh_6adhy")
+planet_radius = 1210666.0
+atmosphere_height = 1000.0
 
 [node name="Clouds" parent="." index="4"]
 visible = false

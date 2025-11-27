@@ -149,12 +149,19 @@ func _ready() -> void:
 		active = true
 
 		$UserInterface/LoadingScreen.hide()
+	else:
+		position = spawn_position
+		connect_area_detect()
+		update_last_basis()
 
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
 	self.set_meta("client_uuid", uuid)
 
 func connect_area_detect():
+	if OS.has_feature("dedicated_server"):
+		print("Connecting area detector on server side")
+	$AreaDetector.monitoring = true
 	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
@@ -283,8 +290,9 @@ func _physics_process(delta: float) -> void:
 			global_rotation = input_from_server["rotation"]
 
 			var sprint = null
-
+			# print("gravity parents:", gravity_parents.size())
 			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+			# print("gravity parents after:", gravity_parents.size())
 
 			if parent_gravity_area:
 				if parent_gravity_area.gravity_point:
@@ -410,6 +418,8 @@ func get_player_name():
 	pass
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
+	if OS.has_feature("dedicated_server"):
+		print("Connect on server side area entered yolo:", area.name)
 	if area.is_in_group("gravity"):
 		if area.name == "PlanetGravity":
 			var planet = area.get_parent().get_parent()
@@ -417,9 +427,16 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			call_deferred("reparent", planet)
 			is_parented = true
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
+		if OS.has_feature("dedicated_server"):
+			print("server side")
+			print("Added gravity parent:", area.name)
+			print("Added gravity parent2:", area)
 		gravity_parents.push_back(area)
+		if OS.has_feature("dedicated_server"):
+			print("gravity parents now:", gravity_parents.size())
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
+	pass
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
