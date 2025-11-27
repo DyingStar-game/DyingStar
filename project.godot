@@ -12,7 +12,7 @@ config_version=5
 
 config/name="DyingStar"
 config/version="0.0.1-dev"
-run/main_scene="uid://dpderfrunb8lr"
+run/main_scene="uid://dukklbrxw7j2t"
 config/features=PackedStringArray("4.5", "C#", "Double Precision", "GL Compatibility")
 boot_splash/image="uid://ck5w0cxx7uj4"
 config/icon="uid://bqoexxd6necib"
