@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3 uid="uid://dbhjkpit6n4ns"]
+
+[ext_resource type="ArrayMesh" uid="uid://ba8gix5kud3sd" path="res://assets/models/StorageBoxes/container_benne_1200x240x240.mesh" id="1_krsyi"]
+[ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_nyfv5"]
+[ext_resource type="Shape3D" uid="uid://dan4algu0s4uv" path="res://scenes/props/StorageBoxes/container_benne_1200x240x240.res" id="3_y0sjo"]
+
+[node name="ContainerBenne1200x240x240" type="Node3D"]
+script = ExtResource("1_nyfv5")
+
+[node name="ContainerBenne1200x240x240" type="MeshInstance3D" parent="."]
+mesh = ExtResource("1_krsyi")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="ContainerBenne1200x240x240"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ContainerBenne1200x240x240/StaticBody3D"]
+shape = ExtResource("3_y0sjo")

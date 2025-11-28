@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3 uid="uid://ddr43a2c4deep"]
+
+[ext_resource type="ArrayMesh" uid="uid://bxlw4o1ak522c" path="res://assets/models/StorageBoxes/container_liquid_1200x240x240.mesh" id="1_1wgpd"]
+[ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_kpms3"]
+[ext_resource type="Shape3D" uid="uid://cwrw3aaj7hcmv" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.res" id="3_wt53u"]
+
+[node name="ContainerLiquid1200x240x240" type="Node3D"]
+script = ExtResource("1_kpms3")
+
+[node name="ContainerLiquid1200x240x241" type="MeshInstance3D" parent="."]
+mesh = ExtResource("1_1wgpd")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="ContainerLiquid1200x240x241"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ContainerLiquid1200x240x241/StaticBody3D"]
+shape = ExtResource("3_wt53u")

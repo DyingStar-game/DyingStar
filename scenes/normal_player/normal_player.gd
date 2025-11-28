@@ -162,7 +162,7 @@ func connect_area_detect():
 	if OS.has_feature("dedicated_server"):
 		print("Connecting area detector on server side")
 	$AreaDetector.monitoring = true
-	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
+	#$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
 func get_current_gravity_parent() -> Node3D:
@@ -347,7 +347,7 @@ func _physics_process(delta: float) -> void:
 			"hs_server_move",
 			client_uuid,
 			# stepify tu prevent floating points with too many chars after coma
-			snapped(position, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(position, Vector3(0.001, 0.001, 0.001)),
 			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
 			null,
 			is_parented

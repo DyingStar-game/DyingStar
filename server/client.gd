@@ -28,10 +28,27 @@ var props_pre_creations: Dictionary = {}
 var my_player_uuid: String = ""
 
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
+var props_scene: Dictionary = {
+	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn': preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
+	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
+	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
+	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
+	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
+	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
+}
 
 # on client, Horizon messages can arrives in not right order when have parent_id for players
 # so we store the message in this case in the goal to process them later
 var pending_messages_parenting: Array[Dictionary] = []
+# same for generic objects
+var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 
 var network_events_received: int = 0
 var network_events_sent: int = 0
@@ -450,6 +467,22 @@ func create_planet(message: Dictionary) -> void:
 				)
 				create_player(pending_message)
 				pending_messages_parenting.erase(pending_message)
+		# planet created, now process pending messages for generic pobjects waiting for this planet as parent
+		for pending_message in pending_messages_generic_objects_parenting.duplicate():
+			var pending_object_data = {}
+			if pending_message.has("zone_data"):
+				pending_object_data = pending_message["zone_data"]
+			else:
+				pending_object_data = pending_message["object_data"]
+			if pending_object_data["parent_id"] == message["object_id"]:
+				print(
+					"Processing pending message for generic object %s now that parent_id %s is available" % [
+						pending_message["object_id"],
+						pending_object_data["parent_id"]
+					]
+				)
+				create_generic_object(pending_message)
+				pending_messages_generic_objects_parenting.erase(pending_message)
 
 func create_generic_object(event: Dictionary) -> void:
 	# print("Create generic object: %s" % event)
@@ -484,6 +517,7 @@ func create_generic_object(event: Dictionary) -> void:
 	# 	"player_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
 	# 	"timestamp": 1762519740
 	# }
+	print("Creating generic object: %s" % event)
 
 	var object_data = {}
 	if event.has("zone_data"):
@@ -503,22 +537,41 @@ func create_generic_object(event: Dictionary) -> void:
 		# the item not exists
 		if object_data.has("scenename"):
 			# event has scenename, so we can create it
-			var prop_scene = load("res://" + object_data["scenename"])
+
+			if object_data.has("parent_id"):
+				if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
+					# store pending message
+					pending_messages_generic_objects_parenting.append(event)
+					print("Pending message for object %s because parent_id %s not found yet" % [event["object_id"], object_data["parent_id"]])
+					return
+
+			var prop_scene: PackedScene
+			if props_scene.has(object_data["scenename"]):
+				prop_scene = props_scene[object_data["scenename"]]
+			else:
+				prop_scene = load("res://" + object_data["scenename"])
 			var prop_instance = prop_scene.instantiate()
 			prop_instance.tree_entered.connect(func():
 				prop_instance.owner = get_tree().current_scene
 			)
-			universe_scene.add_child(prop_instance)
-			prop_instance.set_physics_process(false)
-			if prop_instance is RigidBody3D:
-				prop_instance.freeze = true
-			prop_instance.uuid = event["object_id"]
 
 			if object_data.has("parent_id"):
 				if object_data["parent_id"] != "":
 					var parent = _search_parent_node(object_data["parent_id"])
 					if parent != null:
-						prop_instance.client_parent_change(parent)
+						parent.add_child(prop_instance)
+					else:
+						universe_scene.add_child(prop_instance)
+				else:
+					universe_scene.add_child(prop_instance)
+			else:
+				universe_scene.add_child(prop_instance)
+			prop_instance.set_physics_process(false)
+			if prop_instance is RigidBody3D:
+				prop_instance.freeze = true
+			prop_instance.uuid = event["object_id"]
+
+			props_list[event["object_type"]][event["object_id"]] = prop_instance
 
 			prop_instance.client_channel_data_update(object_data)
 			if props_pre_creations.has(event["object_id"]):
@@ -526,10 +579,30 @@ func create_generic_object(event: Dictionary) -> void:
 					prop_instance.client_channel_data_update(props_pre_creations[event["object_id"]]["channels"][channel])
 				props_pre_creations.erase(event["object_id"])
 
-			props_list[event["object_type"]][event["object_id"]] = prop_instance
+			# generic object created, now process pending messages for generic objects waiting for this generic object as parent
+			for pending_message in pending_messages_generic_objects_parenting.duplicate():
+				var pending_object_data = {}
+				if pending_message.has("zone_data"):
+					pending_object_data = pending_message["zone_data"]
+				else:
+					pending_object_data = pending_message["object_data"]
+				if pending_object_data["parent_id"] == event["object_id"]:
+					print(
+						"Processing pending message for generic object %s now that parent_id %s is available" % [
+							pending_message["object_id"],
+							pending_object_data["parent_id"]
+						]
+					)
+					create_generic_object(pending_message)
+					pending_messages_generic_objects_parenting.erase(pending_message)
 		else:
+			# TODO case yet created (channel 6 arrived before others), so now manage other channels
+			if props_list.has(event["object_type"]) and props_list[event["object_type"]].has(event["object_id"]):
+				var prop_instance = props_list[event["object_type"]][event["object_id"]]
+				prop_instance.client_channel_data_update(event["data"])
+
 			# event not has scenename, so we store it for later creation
-			if not props_pre_creations.has(event["object_id"]):
+			elif not props_pre_creations.has(event["object_id"]):
 				props_pre_creations[event["object_id"]] = {
 					"type": event["object_type"],
 					"channels": {

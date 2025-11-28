@@ -69,6 +69,21 @@ var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 
 var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
+var props_scene: Dictionary = {
+	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn': preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
+	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
+	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
+	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
+	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
+	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
+}
 
 var debug_message_number: int = 0
 
@@ -181,7 +196,7 @@ func _send_metrics():
 					}
 				]
 			}
-			# print("Send props update to horizon: ", message)
+			# print("Send server metrics to horizon: ", message)
 			ServerNetwork.send_message(message, "prop_update")
 
 #########################
@@ -430,7 +445,12 @@ func set_serverinfo(event: Dictionary) -> void:
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
 	var object_data = event["data"]["object_data"]
-	var prop_scene = load("res://" + object_data["scenename"])
+	var prop_scene: PackedScene
+	if props_scene.has(object_data["scenename"]):
+		prop_scene = props_scene[object_data["scenename"]]
+	else:
+		prop_scene = load("res://" + object_data["scenename"])
+
 	var spawnable_prop_instance = prop_scene.instantiate()
 	spawnable_prop_instance.set_physics_process(false)
 	spawnable_prop_instance.spawn_position = create_vector3_with_conversion_hg(
@@ -442,14 +462,21 @@ func create_generic_object(event: Dictionary) -> void:
 	spawnable_prop_instance.tree_entered.connect(func():
 		spawnable_prop_instance.owner = get_tree().current_scene
 	)
-	universe_scene.add_child(spawnable_prop_instance)
 
-	if object_data["parent_id"] != "":
-		var parent = _search_parent_node(object_data["parent_id"])
-		spawnable_prop_instance.reparent(parent)
+	if object_data.has("parent_id"):
+		if object_data["parent_id"] != "":
+			var parent = _search_parent_node(object_data["parent_id"])
+			if parent != null:
+				parent.add_child(spawnable_prop_instance)
+			else:
+				universe_scene.add_child(spawnable_prop_instance)
+		else:
+			universe_scene.add_child(spawnable_prop_instance)
+	else:
+		universe_scene.add_child(spawnable_prop_instance)
 
-	spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
 	spawnable_prop_instance.client_channel_data_update(object_data)
+	spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO

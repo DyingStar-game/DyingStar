@@ -16,3 +16,4 @@
 *.wav    binary
 *.res    binary
 *.dll    binary
+*.mesh   binary
