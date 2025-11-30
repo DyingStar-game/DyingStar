@@ -1,4 +1,4 @@
-[gd_scene load_steps=51 format=3 uid="uid://c5bmfgxy12mgg"]
+[gd_scene load_steps=52 format=3 uid="uid://c5bmfgxy12mgg"]
 
 [ext_resource type="PackedScene" uid="uid://rv6ugxi8n8pe" path="res://scenes/planet/base_planet.tscn" id="1_x3g5b"]
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="2_gvpu1"]
@@ -130,6 +130,10 @@ metadata/_custom_type_script = "uid://cnf71va5eumrg"
 resource_local_to_scene = true
 radius = 1966666.0
 
+[sub_resource type="SphereShape3D" id="SphereShape3D_d2ulv"]
+resource_local_to_scene = true
+radius = 2100000.0
+
 [sub_resource type="Gradient" id="Gradient_ge052"]
 offsets = PackedFloat32Array(0.503401, 0.57483)
 colors = PackedColorArray(0.0873382, 1.82897e-06, 0.450119, 1, 0, 0.791469, 0.587378, 1)
@@ -212,10 +216,14 @@ planet_settings = SubResource("Resource_8bq2n")
 occluder = SubResource("SphereOccluder3D_v5pic")
 
 [node name="PlanetGravity" parent="PlanetTerrain" index="8"]
+visible = true
 gravity_point_unit_distance = 1966666.0
 
+[node name="CollisionShape3D" parent="PlanetTerrain/PlanetGravity" index="0"]
+shape = SubResource("SphereShape3D_d2ulv")
+
 [node name="Atmosphere" parent="." index="2"]
-transform = Transform3D(-0.011552666620645208, -0.024220379376070883, -0.9996393108998347, 0, 0.9997060255614186, -0.02422199581351574, 0.9999332657202441, -0.0002798286425202114, -0.011549270431961281, 5287.879060608664, 12243.496987137478, 5837.811996419086)
+transform = Transform3D(-0.011552666620645207, -0.024220379376070883, -0.9996393108998347, 0, 0.9997060255614186, -0.02422199581351574, 0.999933265720244, -0.0002798286425202114, -0.011549270431961281, 5287.879060608664, 12243.496987137478, 5837.811996419086)
 material_override = SubResource("ShaderMaterial_b16d7")
 mesh = SubResource("BoxMesh_d2ulv")
 planet_radius = 1966666.0

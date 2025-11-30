@@ -1,5 +1,7 @@
 extends Node3D
 
+signal hs_server_prop_update
+
 @export var uuid: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO

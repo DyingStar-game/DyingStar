@@ -418,25 +418,16 @@ func get_player_name():
 	pass
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
-	if OS.has_feature("dedicated_server"):
-		print("Connect on server side area entered yolo:", area.name)
 	if area.is_in_group("gravity"):
 		if area.name == "PlanetGravity":
 			var planet = area.get_parent().get_parent()
 			#reparent(planet)
-			call_deferred("reparent", planet)
+			# call_deferred("reparent", planet)
 			is_parented = true
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
-		if OS.has_feature("dedicated_server"):
-			print("server side")
-			print("Added gravity parent:", area.name)
-			print("Added gravity parent2:", area)
 		gravity_parents.push_back(area)
-		if OS.has_feature("dedicated_server"):
-			print("gravity parents now:", gravity_parents.size())
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
-	pass
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)

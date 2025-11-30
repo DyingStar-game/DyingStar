@@ -37,7 +37,7 @@ var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
 	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
 	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
+	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
 	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
 	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
@@ -46,7 +46,7 @@ var props_scene: Dictionary = {
 
 # on client, Horizon messages can arrives in not right order when have parent_id for players
 # so we store the message in this case in the goal to process them later
-var pending_messages_parenting: Array[Dictionary] = []
+var pending_messages_player_parenting: Array[Dictionary] = []
 # same for generic objects
 var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 
@@ -102,7 +102,8 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			"event": "init",
 			"data": {
 				"login": GameOrchestrator.login_player_name,
-				"password": "pass"
+				"password": "pass",
+				"spawn_point": GameOrchestrator.requested_spawn_point + 1,
 			}
 		}))
 		network_events_sent += 1
@@ -354,7 +355,7 @@ func create_player(event: Dictionary) -> void:
 
 	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
 		# store pending message
-		pending_messages_parenting.append(event)
+		pending_messages_player_parenting.append(event)
 		print("Pending message for player %s because parent_id %s not found yet" % [event["object_id"], player_data["parent_id"]])
 		return
 
@@ -456,7 +457,7 @@ func create_planet(message: Dictionary) -> void:
 		spawnable_planet_instance.set_physics_process(false)
 		props_list["planet"][message["object_id"]] = spawnable_planet_instance
 		# planet created, now process pending messages for players waiting for this planet as parent
-		for pending_message in pending_messages_parenting.duplicate():
+		for pending_message in pending_messages_player_parenting.duplicate():
 			var pending_player_data = pending_message["zone_data"]
 			if pending_player_data["parent_id"] == message["object_id"]:
 				print(
@@ -466,7 +467,7 @@ func create_planet(message: Dictionary) -> void:
 					]
 				)
 				create_player(pending_message)
-				pending_messages_parenting.erase(pending_message)
+				pending_messages_player_parenting.erase(pending_message)
 		# planet created, now process pending messages for generic pobjects waiting for this planet as parent
 		for pending_message in pending_messages_generic_objects_parenting.duplicate():
 			var pending_object_data = {}
@@ -517,7 +518,7 @@ func create_generic_object(event: Dictionary) -> void:
 	# 	"player_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
 	# 	"timestamp": 1762519740
 	# }
-	print("Creating generic object: %s" % event)
+	# print("Creating generic object: %s" % event)
 
 	var object_data = {}
 	if event.has("zone_data"):
@@ -578,6 +579,19 @@ func create_generic_object(event: Dictionary) -> void:
 				for channel in props_pre_creations[event["object_id"]]["channels"]:
 					prop_instance.client_channel_data_update(props_pre_creations[event["object_id"]]["channels"][channel])
 				props_pre_creations.erase(event["object_id"])
+
+			# generic object created, now process pending messages for players waiting for this generic object as parent
+			for pending_message in pending_messages_player_parenting.duplicate():
+				var pending_player_data = pending_message["zone_data"]
+				if pending_player_data["parent_id"] == event["object_id"]:
+					print(
+						"Processing pending message for player %s now that parent_id %s is available" % [
+							pending_message["object_id"],
+							pending_player_data["parent_id"]
+						]
+					)
+					create_player(pending_message)
+					pending_messages_player_parenting.erase(pending_message)
 
 			# generic object created, now process pending messages for generic objects waiting for this generic object as parent
 			for pending_message in pending_messages_generic_objects_parenting.duplicate():
@@ -669,7 +683,7 @@ func delete_player(event: Dictionary) -> void:
 		print("Player to delete %s not found." % event)
 
 func player_update(message: Dictionary) -> void:
-	# print("Player update: %s" % message)
+	# print("[client] Player update: %s" % message)
 	if message["channel"] == 0:
 		var uuid = message["object_id"]
 		if players_list.has(uuid):

@@ -2,7 +2,7 @@
 
 [ext_resource type="ArrayMesh" uid="uid://ns7bdsgtqaed" path="res://assets/models/StorageBoxes/pallet_crate_120x80x100.mesh" id="1_epaii"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_ycnj0"]
-[ext_resource type="Shape3D" uid="uid://cpkuqpxosmeew" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.res" id="3_k2t6d"]
+[ext_resource type="Shape3D" uid="uid://bd78hkn8m62hb" path="res://scenes/props/StorageBoxes/pallet_generic_120x80x100.res" id="3_k2t6d"]
 
 [node name="PalletCrate120x80x100" type="Node3D"]
 script = ExtResource("1_ycnj0")
@@ -13,4 +13,5 @@ mesh = ExtResource("1_epaii")
 [node name="StaticBody3D" type="StaticBody3D" parent="PalletCrate120x80x100"]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PalletCrate120x80x100/StaticBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5500000000029104, 0)
 shape = ExtResource("3_k2t6d")

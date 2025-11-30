@@ -1,10 +1,9 @@
-[gd_scene load_steps=6 format=3 uid="uid://s8yuxd2tawwc"]
+[gd_scene load_steps=5 format=3 uid="uid://s8yuxd2tawwc"]
 
 [ext_resource type="Script" uid="uid://b6lxyooye64g2" path="res://scenes/props/city/sandbox_capital.gd" id="1_hvdt3"]
 [ext_resource type="ArrayMesh" uid="uid://brene1fknppr4" path="res://assets/models/placeholder/placeholder_sandbox_capital.mesh" id="1_s8fgf"]
 [ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="3_4sslq"]
 [ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="3_16y2p"]
-[ext_resource type="Shape3D" uid="uid://co7qe0r8h07um" path="res://scenes/props/city/city_polygon_shape_3d.res" id="4_khu6c"]
 
 [node name="SandoxCapital" type="Node3D"]
 script = ExtResource("1_hvdt3")
@@ -13,11 +12,6 @@ script = ExtResource("1_hvdt3")
 transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, -2.6185965327421328, 0, -0.6179497944572994)
 mesh = ExtResource("1_s8fgf")
 surface_material_override/0 = ExtResource("3_4sslq")
-
-[node name="StaticBody3D2" type="StaticBody3D" parent="PlaceholderSandboxCapital"]
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlaceholderSandboxCapital/StaticBody3D2"]
-shape = ExtResource("4_khu6c")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2500, 0)

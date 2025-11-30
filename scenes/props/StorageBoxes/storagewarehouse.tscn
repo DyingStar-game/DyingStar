@@ -10,9 +10,9 @@ script = ExtResource("1_gtaak")
 use_collision = true
 
 [node name="floor" type="CSGBox3D" parent="CSGCombiner3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5, -1)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5, -61)
 use_collision = true
-size = Vector3(50, 10, 62)
+size = Vector3(50, 10, 182)
 material = ExtResource("2_iygkj")
 
 [node name="vertical beams" type="Node3D" parent="CSGCombiner3D"]

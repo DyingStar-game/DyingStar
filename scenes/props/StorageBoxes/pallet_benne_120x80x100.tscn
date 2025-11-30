@@ -2,7 +2,7 @@
 
 [ext_resource type="ArrayMesh" uid="uid://df8rcowphxsds" path="res://assets/models/StorageBoxes/pallet_benne_120x80x100.mesh" id="1_60m2p"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_npol7"]
-[ext_resource type="Shape3D" uid="uid://babrdafj7w05e" path="res://scenes/props/StorageBoxes/pallet_benne_120x80x100.res" id="3_g2tyo"]
+[ext_resource type="Shape3D" uid="uid://bd78hkn8m62hb" path="res://scenes/props/StorageBoxes/pallet_generic_120x80x100.res" id="3_g2tyo"]
 
 [node name="PalletBenne120x80x100" type="Node3D"]
 script = ExtResource("1_npol7")
@@ -13,4 +13,5 @@ mesh = ExtResource("1_60m2p")
 [node name="StaticBody3D" type="StaticBody3D" parent="PalletBenne120x80x100"]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PalletBenne120x80x100/StaticBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5500000000029104, 0)
 shape = ExtResource("3_g2tyo")

@@ -78,7 +78,7 @@ var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
 	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
 	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
+	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
 	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
 	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
@@ -323,6 +323,7 @@ func send_players_newposition_to_horizon():
 		"amessagenb": debug_message_number,
 		"data": players_newposition.values()
 	}
+	# print("[server] Send players newposition to horizon")
 	ServerNetwork.send_message(message, "player_position")
 	players_newposition.clear()
 
@@ -396,6 +397,7 @@ func create_planet(event: Dictionary) -> void:
 	props_list["planets"][event["data"]["object_uuid"]] = spawnable_planet_instance
 
 func create_player(event: Dictionary) -> void:
+	prints("Creating player on server side: %s" % event)
 	var player_data = event["data"]["object_data"]
 	# var player_uuid = message["data"]["object_uuid"]
 	var player_uuid = event["data"]["object_data"]["connection_id"]
@@ -405,22 +407,27 @@ func create_player(event: Dictionary) -> void:
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
 
-	spawned_entity_instance.tree_entered.connect(func():
-		spawned_entity_instance.owner = get_tree().current_scene
-	)
-	universe_scene.add_child(spawned_entity_instance)
+	var parented = false
+	if player_data["parent_id"] != "":
+		var parent = _search_parent_node(player_data["parent_id"])
+		if parent != null:
+			parented = true
+			parent.add_child(spawned_entity_instance)
+
+	if not parented:
+		universe_scene.add_child(spawned_entity_instance)
 
 	# TODO: move this to the backend later to decide where the player should be spawned
 	# var spawn_planet = universe_scene.get_node("Sandbox") as Planet
 	# var spawn_transform = spawn_planet.get_spawn_point()
 
-	if player_data["parent_id"] != "":
-		var planet = _search_parent_node(player_data["parent_id"])
-		spawned_entity_instance.reparent(planet)
-		var spawn_transform = planet.get_spawn_point()
-
-		prints("position", spawn_transform.origin)
-		spawned_entity_instance.position = spawn_transform.origin
+	# if player_data["parent_id"] != "":
+	# 	var parent_obj = _search_parent_node(player_data["parent_id"])
+	# 	spawned_entity_instance.reparent(parent_obj)
+		#var spawn_transform = parent_obj.get_spawn_point()
+#
+		#prints("position", spawn_transform.origin)
+		#spawned_entity_instance.position = spawn_transform.origin
 
 	# spawned_entity_instance.reparent(spawn_planet)
 
