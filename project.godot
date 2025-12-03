@@ -197,7 +197,9 @@ locale/translations=PackedStringArray("res://tools/localization/localisation.en.
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=1
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
+anti_aliasing/quality/use_debanding=true
 occlusion_culling/use_occlusion_culling=true
 
 [wwise]
