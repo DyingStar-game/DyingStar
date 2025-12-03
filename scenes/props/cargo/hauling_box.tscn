@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3 uid="uid://dcinktod8m0x2"]
+
+[ext_resource type="PackedScene" uid="uid://dhmj25r7k7c26" path="res://assets/models/cargo/box.glb" id="2_j2geo"]
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/materials/painted_metal/paint_yellow_material.tres" id="3_hqfv2"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/materials/decals/ares_misc_decal_material.tres" id="4_6ad14"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_urcx6"]
+size = Vector3(0.3953384826854745, 0.4112716205195284, 0.4039184679659229)
+
+[node name="HaulingBox" type="RigidBody3D"]
+mass = 50.0
+continuous_cd = true
+
+[node name="boxmesh" parent="." instance=ExtResource("2_j2geo")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25432684811476347, 0)
+
+[node name="box" parent="boxmesh" index="0"]
+surface_material_override/0 = ExtResource("3_hqfv2")
+
+[node name="box_decals" parent="boxmesh" index="1"]
+surface_material_override/0 = ExtResource("4_6ad14")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03649002313613891, 0)
+visible = false
+shape = SubResource("BoxShape3D_urcx6")
+
+[editable path="boxmesh"]

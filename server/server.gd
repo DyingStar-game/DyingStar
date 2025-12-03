@@ -440,24 +440,21 @@ func create_player(event: Dictionary) -> void:
 		universe_scene.add_child(spawned_entity_instance)
 
 	# TODO: move this to the backend later to decide where the player should be spawned
-	# var spawn_planet = universe_scene.get_node("Sandbox") as Planet
-	# var spawn_transform = spawn_planet.get_spawn_point()
+	var spawn_planet = universe_scene.get_node("Sandbox") as Planet
+	if spawn_planet:
+		var spawn_transform = spawn_planet.get_spawn_point()
+		#if player_data["parent_id"] != "":
+			#var planet = _search_parent_node(player_data["parent_id"])
+			#spawned_entity_instance.reparent(planet)
+		spawned_entity_instance.reparent(spawn_planet)
 
-	# if player_data["parent_id"] != "":
-	# 	var parent_obj = _search_parent_node(player_data["parent_id"])
-	# 	spawned_entity_instance.reparent(parent_obj)
-		#var spawn_transform = parent_obj.get_spawn_point()
-#
-		#prints("position", spawn_transform.origin)
-		#spawned_entity_instance.position = spawn_transform.origin
-
-	# spawned_entity_instance.reparent(spawn_planet)
-
-	spawned_entity_instance.position = Vector3(
-		player_data["position"]["x"],
-		player_data["position"]["y"],
-		player_data["position"]["z"]
-	)
+		prints("position", spawn_transform.origin)
+		spawned_entity_instance.position = spawn_transform.origin
+	#spawned_entity_instance.position = Vector3(
+		#player_data["position"]["x"],
+		#player_data["position"]["y"],
+		#player_data["position"]["z"]
+	#)
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list[player_uuid] = spawned_entity_instance

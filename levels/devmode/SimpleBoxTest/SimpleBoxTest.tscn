@@ -1,14 +1,20 @@
-[gd_scene load_steps=13 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene load_steps=16 format=3 uid="uid://fxj147p5soqi"]
 
 [ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_m4ygx"]
-[ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_m4ygx"]
-[ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn" id="4_1uj1c"]
+[ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="2_jq82d"]
+[ext_resource type="PackedScene" uid="uid://3kj1xhfed62p" path="res://scenes/props/cargo/palette_canister.tscn" id="3_fsvra"]
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
+[ext_resource type="PackedScene" uid="uid://cvov1kmmfnwql" path="res://scenes/props/food/ares_biscuit.tscn" id="7_n25os"]
+[ext_resource type="PackedScene" uid="uid://4oc8xbhlgsvy" path="res://scenes/props/food/ares_nutrigris.tscn" id="8_erwq5"]
+[ext_resource type="PackedScene" uid="uid://dcinktod8m0x2" path="res://scenes/props/cargo/hauling_box.tscn" id="9_fsvra"]
+[ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/props/cargo/palette_container.tscn" id="9_wr7rr"]
+[ext_resource type="PackedScene" uid="uid://c60nvcsabtit3" path="res://scenes/props/testblock/test_wall.tscn" id="12_n25os"]
+[ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn" id="4_1uj1c"]
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
-size = Vector2(100, 100)
+size = Vector2(1000, 1000)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1k8n2"]
 size = Vector3(10000, 1, 1000)
@@ -23,6 +29,7 @@ sky_material = SubResource("ProceduralSkyMaterial_xqwsu")
 background_mode = 2
 sky = SubResource("Sky_0uuu0")
 ambient_light_source = 3
+tonemap_mode = 3
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_m4ygx"]
 size = Vector3(100, 50, 100)
@@ -31,6 +38,8 @@ size = Vector3(100, 50, 100)
 script = ExtResource("1_m4ygx")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8884438118347162, -0.131118655985894, 0.3289750394215779)
+material_override = ExtResource("2_jq82d")
 mesh = SubResource("PlaneMesh_xqwsu")
 surface_material_override/0 = ExtResource("2_m4ygx")
 
@@ -39,15 +48,19 @@ surface_material_override/0 = ExtResource("2_m4ygx")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 shape = SubResource("BoxShape3D_1k8n2")
+debug_fill = false
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 0, 20, 0)
+transform = Transform3D(0.9876883405951378, -0.09217063135576016, 0.12639748497848774, 0, 0.807990010040189, 0.5891964493377867, -0.15643446504023087, -0.5819424633309856, 0.798042312234043, 0, 20, 0)
+shadow_enabled = true
+shadow_bias = 0.02
+directional_shadow_split_1 = 0.012
+directional_shadow_split_2 = 0.07
+directional_shadow_split_3 = 0.247
+directional_shadow_blend_splits = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_le64j")
-
-[node name="DataPlanet" type="Node" parent="."]
-metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
 
 [node name="Area3D" type="Area3D" parent="." groups=["gravity"]]
 gravity_space_override = 3
@@ -64,3 +77,56 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.1473648
 
 [node name="ContainerLiquid1200x240x240" parent="." instance=ExtResource("6_bdj2j")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)
+[node name="ReflectionProbe" type="ReflectionProbe" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.130640787562172, 0.36461678428339406, 0.8266302659456572)
+
+[node name="PaletteContainerCanister" parent="." instance=ExtResource("3_fsvra")]
+transform = Transform3D(-0.2433103054893015, 0, 0.969948501335356, 0, 1, 0, -0.969948501335356, 0, -0.2433103054893015, -6.32984943381389, -0.131118655985894, -0.5865299627088385)
+
+[node name="PaletteContainerCanister2" parent="." instance=ExtResource("3_fsvra")]
+transform = Transform3D(-0.2433103054893015, 0, 0.969948501335356, 0, 1, 0, -0.969948501335356, 0, -0.2433103054893015, -6.32984943381389, 0.6904177885037995, -0.5865299627088385)
+
+[node name="AresBiscuit3" parent="." instance=ExtResource("7_n25os")]
+transform = Transform3D(0.00053234438250798, 0.9531588498070378, -0.3024697069856473, -0.9999998440358856, 0.00055850533160252, 0, 0.00016893094399973, 0.30246965981122725, 0.9531589984656372, -3.4492284256489385, 0.2699980275580897, 1.8592191039261663)
+
+[node name="AresBiscuit2" parent="." instance=ExtResource("7_n25os")]
+transform = Transform3D(0.00055228533208017, 0.9888629789062334, -0.1488277659900961, -0.999999844035885, 0.00055850533160252, 1.7048495617920522e-20, 8.31211007959616e-05, 0.14882774277830538, 0.9888631331333964, -3.536328959022129, 0.2761935749344633, 1.853749853416051)
+
+[node name="AresBiscuit" parent="." instance=ExtResource("7_n25os")]
+transform = Transform3D(0.00055228533208017, 0.8784919944211379, 0.4777567484807342, -0.9999998440358852, 0.00044546663622766, 0.00033687932770718, 8.312110079596166e-05, -0.4777568600213371, 0.8784921034326006, -3.4900304322569107, 0.2922474852642332, 1.8602262056664545)
+
+[node name="AresNutrigris" parent="." instance=ExtResource("8_erwq5")]
+transform = Transform3D(0.927777653668559, 0, 0.37313352215160633, 0, 1, 0, -0.37313352215160633, 0, 0.927777653668559, -3.472687109382494, 0.2882105944590998, 1.7468638297157608)
+
+[node name="PaletteContainer2" parent="." instance=ExtResource("9_wr7rr")]
+transform = Transform3D(0.46292478239862833, 0, 0.8863975664684455, 0, 1, 0, -0.8863975664684455, 0, 0.46292478239862833, -4.849892970008757, 0.8285043069802867, -0.6486725462928413)
+
+[node name="PaletteContainer3" parent="." instance=ExtResource("9_wr7rr")]
+transform = Transform3D(0.40407220832753327, 0, 0.914727090698264, 0, 1, 0, -0.914727090698264, 0, 0.40407220832753327, -4.849892970008757, -0.12466394901275656, -0.6465293198049276)
+
+[node name="box_50cm2" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.25881904510252074, 0, -0.9659258262890684, 0, 1, 0, 0.9659258262890684, 0, 0.25881904510252074, -3.4999797144748652, 0.11100709941214304, 1.823808406381615)
+
+[node name="box_50cm3" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.00617842624325776, 0, -0.999980913342428, 0, 1, 0, 0.999980913342428, 0, 0.00617842624325776, -2.95804985278182, 0.11100709941214304, 1.823808406381615)
+
+[node name="box_50cm4" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.08571254097360463, 0, -0.9963199086236548, 0, 1, 0, 0.9963199086236548, 0, 0.08571254097360463, -2.95804985278182, 0.5129450566541123, 1.823808406381615)
+
+[node name="box_50cm5" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(-0.3223648263420141, 0, -0.9466155073404848, 0, 1, 0, 0.9466155073404848, 0, -0.3223648263420141, -2.95804985278182, 0.11100704824279883, 2.3490231233322527)
+
+[node name="box_50cm6" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.9408512049116066, 0, -0.3388200262918034, 0, 1, 0, 0.3388200262918034, 0, 0.9408512049116066, -3.9970052723748943, 0.11100704824279883, -0.18760485137824567)
+
+[node name="box_50cm8" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.5460727187821097, 0, -0.8377377786646101, 0, 1, 0, 0.8377377786646101, 0, 0.5460727187821097, -3.5409463389089444, 0.11100704824279883, 0.0289884659843318)
+
+[node name="box_50cm7" parent="." instance=ExtResource("9_fsvra")]
+transform = Transform3D(0.969024352708552, 0, -0.2469651875422359, 0, 1, 0, 0.2469651875422359, 0, 0.969024352708552, -3.9970052723748943, 0.5100853703171813, -0.18760485137824567)
+
+[node name="TestWall" parent="." instance=ExtResource("12_n25os")]
+transform = Transform3D(0.9690243527085524, 0, -0.24696518754223595, 0, 1, 0, 0.24696518754223595, 0, 0.9690243527085524, -3.9970052723748943, 1.396666339113268, -2.7219206694197404)
+
+[node name="TestWall2" parent="." instance=ExtResource("12_n25os")]
+transform = Transform3D(-0.3942627243429509, 0, -0.9189977715934216, 0, 1, 0, 0.9189977715934216, 0, -0.3942627243429509, -1.9672668228741244, 1.3966663391132677, 2.146455102208465)
