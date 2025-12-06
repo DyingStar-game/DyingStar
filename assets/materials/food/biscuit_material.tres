@@ -5,7 +5,6 @@
 
 [resource]
 resource_name = "biscuit_material"
-cull_mode = 2
 albedo_texture = ExtResource("1_uxilt")
 normal_enabled = true
 normal_texture = ExtResource("2_af302")
