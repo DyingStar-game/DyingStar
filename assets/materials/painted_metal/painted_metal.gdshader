@@ -1,10 +1,11 @@
 
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_burley, specular_schlick_ggx;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
 uniform vec4 paint_color : source_color;
 uniform float paint_roughness: hint_range(0.0, 1.0, 0.01) = 0.34;
 uniform float paint_metallic: hint_range(0.0, 1.0, 0.01) = 1.0;
+uniform vec3 metal_color: source_color = vec3(0.7);
 uniform float metal_roughness: hint_range(0.0, 1.0, 0.01) = 0.2;
 
 uniform sampler2D scratch_texture: hint_default_black;
@@ -31,12 +32,10 @@ void vertex() {
 }
 
 void fragment() {
-
 	float scratch_value = triplanar_texture(scratch_texture, uv1_power_normal, uv1_triplanar_pos).r;
-	scratch_value = scratch_value;
 
-	float edge = COLOR.r + scratch_value * scratch_amount;
-	ALBEDO = mix(paint_color.rgb, vec3(0.7), edge);
-	METALLIC = mix(paint_metallic, 1.0, edge);
-	ROUGHNESS = mix(paint_roughness, metal_roughness, edge);
+	float metal_blend = COLOR.r + scratch_value * scratch_amount;
+	ALBEDO = mix(paint_color.rgb, metal_color, metal_blend);
+	METALLIC = mix(paint_metallic, 1.0, metal_blend);
+	ROUGHNESS = mix(paint_roughness, metal_roughness, metal_blend);
 }

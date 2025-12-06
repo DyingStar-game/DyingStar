@@ -5,7 +5,6 @@
 
 [resource]
 resource_name = "panel_trim"
-cull_mode = 2
 albedo_color = Color(0.37217352, 0.37217352, 0.37217352, 1)
 metallic = 1.0
 roughness = 0.5692521
