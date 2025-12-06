@@ -70,6 +70,8 @@ var input_from_server: Dictionary = {
 }
 var new_input_from_server: bool = false
 
+var target_position: Vector3
+
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
@@ -278,6 +280,7 @@ func _process(_delta: float) -> void:
 			input_direction = dir_vect
 		else:
 			input_direction = Vector2.ZERO
+			
 
 		# send move_direction
 		# if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
@@ -285,6 +288,8 @@ func _process(_delta: float) -> void:
 		# 	client_last_global_rotation = global_rotation
 		# 	emit_signal("hs_client_action_move", input_direction, global_rotation)
 		update_last_basis()
+		
+		position = lerp(position, target_position, 0.3)
 
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
