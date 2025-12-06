@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="PlanetSettings" load_steps=34 format=3 uid="uid://dndwamrx0yyd8"]
 
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="1_ec2n1"]
-[ext_resource type="Shader" path="res://scenes/planet/biome_terrainv2.gdshader" id="2_csqwb"]
+[ext_resource type="Shader" uid="uid://btsydfvxyvh77" path="res://scenes/planet/biome_terrainv2.gdshader" id="2_csqwb"]
 [ext_resource type="Texture2DArray" uid="uid://datt66mdctdku" path="res://assets/textures/biomes_packed/sandbox_albedo_array.res" id="3_ain3u"]
 [ext_resource type="Script" uid="uid://d0532xwig15xf" path="res://scenes/planet/noise_param.gd" id="3_dl7hi"]
 [ext_resource type="Texture2D" uid="uid://b7pwydv1ido3s" path="res://assets/materials/planet/biome_plateau_albedo.png" id="3_ydjwp"]

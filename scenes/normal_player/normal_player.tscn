@@ -28,7 +28,7 @@
 [ext_resource type="Script" uid="uid://bb431neb3d2jd" path="res://scenes/normal_player/debug_client_messages_sent.gd" id="15_x3gq6"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
-radius = 0.26542
+radius = 0.19835888
 height = 1.8
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_kcm5r"]

@@ -674,7 +674,7 @@ func player_update(message: Dictionary) -> void:
 		if players_list.has(uuid):
 			if message["event_type"] == "move":
 				var player = players_list[uuid]
-				player.position = Vector3(
+				player.target_position = Vector3(
 					message["data"]["new_position"]["x"],
 					message["data"]["new_position"]["y"],
 					message["data"]["new_position"]["z"]

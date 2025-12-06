@@ -1,6 +1,6 @@
 [gd_scene load_steps=16 format=3 uid="uid://fxj147p5soqi"]
 
-[ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_m4ygx"]
+[ext_resource type="Script" uid="uid://cbg5vhdodbobh" path="res://scenes/props/testbox/box_50_cm.gd" id="1_wr7rr"]
 [ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="2_jq82d"]
 [ext_resource type="PackedScene" uid="uid://3kj1xhfed62p" path="res://scenes/props/cargo/palette_canister.tscn" id="3_fsvra"]
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
@@ -35,7 +35,7 @@ tonemap_mode = 3
 size = Vector3(100, 50, 100)
 
 [node name="SimpleBoxTest" type="Node3D"]
-script = ExtResource("1_m4ygx")
+script = ExtResource("1_wr7rr")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8884438118347162, -0.131118655985894, 0.3289750394215779)
@@ -84,7 +84,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.130640787562172, 0.3646167
 transform = Transform3D(0.4088880028282684, 0, 0.9125845720496868, 0, 1, 0, -0.9125845720496868, 0, 0.4088880028282684, -6.32984943381389, -0.131118655985894, -0.5865299627088385)
 
 [node name="PaletteContainerCanister2" parent="." instance=ExtResource("3_fsvra")]
-transform = Transform3D(0.4088880028282684, 0, 0.9125845720496868, 0, 1, 0, -0.9125845720496868, 0, 0.4088880028282684, -6.32984943381389, 0.6904177885037995, -0.5865299627088385)
+transform = Transform3D(0.3010553348179729, 0, 0.9536066722593954, 0, 1, 0, -0.9536066722593954, 0, 0.3010553348179729, -6.32984943381389, 0.6904177885037995, -0.5865299627088385)
 
 [node name="AresBiscuit3" parent="." instance=ExtResource("7_n25os")]
 transform = Transform3D(0.00053234438250798, 0.9531588498070378, -0.3024697069856473, -0.9999998440358856, 0.00055850533160252, 0, 0.00016893094399973, 0.30246965981122725, 0.9531589984656372, -3.4492284256489385, 0.2699980275580897, 1.8592191039261663)
