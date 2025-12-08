@@ -53,6 +53,8 @@ var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 var network_events_received: int = 0
 var network_events_sent: int = 0
 
+var check_pending_objects_timer: int = 0
+
 func _enter_tree() -> void:
 	set_process(false)
 
@@ -123,6 +125,44 @@ func _load_client_ini_file() -> void:
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
+	if check_pending_objects_timer == 30:
+		# every 30 frames, check pending players parenting
+		for pending_message in pending_messages_player_parenting.duplicate():
+			var pending_player_data = {}
+			if pending_message.has("zone_data"):
+				pending_player_data = pending_message["zone_data"]
+			else:
+				pending_player_data = pending_message["data"]
+			if pending_player_data["parent_id"] != "" and _search_parent_node(pending_player_data["parent_id"]) != null:
+				print(
+					"Processing pending message for player %s now that parent_id %s is available" % [
+						pending_message["object_id"],
+						pending_player_data["parent_id"]
+					]
+				)
+				create_player(pending_message)
+				pending_messages_player_parenting.erase(pending_message)
+		for pending_message in pending_messages_generic_objects_parenting.duplicate():
+			var pending_object_data = {}
+			if pending_message.has("zone_data"):
+				pending_object_data = pending_message["zone_data"]
+			else:
+				pending_object_data = pending_message["object_data"]
+			if pending_object_data["parent_id"] != "" and _search_parent_node(pending_object_data["parent_id"]) != null:
+				print(
+					"Processing pending message for generic object %s now that parent_id %s is available" % [
+						pending_message["object_id"],
+						pending_object_data["parent_id"]
+					]
+				)
+				create_generic_object(pending_message)
+				pending_messages_generic_objects_parenting.erase(pending_message)
+		check_pending_objects_timer = 0
+	else:
+		check_pending_objects_timer += 1
+
+
+
 	socket.poll()
 
 	# get_ready_state() tells you what state the socket is in.
@@ -135,7 +175,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				#print("< Client - Got text data from server: %s" % packet_text)
+				# print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
@@ -394,20 +434,24 @@ func create_player(event: Dictionary) -> void:
 				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 			)
 			remote_player_instance.name = "remoteplayer" + event["object_id"]
-			players_list[event["object_id"]] = remote_player_instance
-
 			remote_player_instance.tree_entered.connect(func():
 				remote_player_instance.owner = get_tree().current_scene
 			)
-			universe_scene.add_child(remote_player_instance)
 			remote_player_instance.set_physics_process(false)
 
-			var parent = _search_parent_node(player_data["parent_id"])
-			remote_player_instance.reparent(parent)
-			remote_player_instance.position = Vector3(
-				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
-			)
+			var parented = false
+			if player_data["parent_id"] != "":
+				var parent = _search_parent_node(player_data["parent_id"])
+				if parent != null:
+					parented = true
+					parent.add_child(remote_player_instance)
+
+			if not parented:
+				universe_scene.add_child(remote_player_instance)
+
 			remote_player_instance.client_uuid = event["object_id"]
+
+			players_list[event["object_id"]] = remote_player_instance
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
@@ -605,8 +649,8 @@ func delete_player(event: Dictionary) -> void:
 		return
 	if players_list.has(event["object_id"]):
 		var remote_player = players_list[event["object_id"]]
-		remote_player.queue_free()
 		players_list.erase(event["object_id"])
+		remote_player.queue_free()
 		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() - 1)
 		print("Player %s has been removed." % event["object_id"])
 	else:

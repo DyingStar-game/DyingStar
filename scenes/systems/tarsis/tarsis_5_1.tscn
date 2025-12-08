@@ -140,7 +140,7 @@ radius = 850666.0
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_bvhs4"]
 resource_local_to_scene = true
-radius = 881666.0
+radius = 861666.0
 
 [sub_resource type="Gradient" id="Gradient_ge052"]
 offsets = PackedFloat32Array(0.503401, 0.57483)
@@ -226,7 +226,7 @@ occluder = SubResource("SphereOccluder3D_v5pic")
 
 [node name="PlanetGravity" parent="PlanetTerrain" index="8"]
 visible = true
-gravity_point_unit_distance = 850666.0
+gravity_point_unit_distance = 864100.0
 
 [node name="CollisionShape3D" parent="PlanetTerrain/PlanetGravity" index="0"]
 shape = SubResource("SphereShape3D_bvhs4")
