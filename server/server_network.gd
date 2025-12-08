@@ -11,7 +11,6 @@ var tcp_server = TCPServer.new()
 # Our connected peers list.
 var peer := WebSocketPeer.new()
 
-
 var devmode: bool = false
 var devscene: String = ""
 
@@ -44,6 +43,8 @@ func _process(_delta: float) -> void:
 
 	peer.poll()
 	peer.outbound_buffer_size = 1000000000  # 1 GB
+	peer.max_queued_packets = 1000000  # 1 million packets
+	peer.set_no_delay(true)
 
 	var peer_state = peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
@@ -59,7 +60,8 @@ func _process(_delta: float) -> void:
 						_devmode_horizon_mapping(message)
 			else:
 				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
-				peer.send(packet)
+				peer.send_text(packet)
+
 
 func dispatch_horizon_message(message: Dictionary):
 	# SERVER - Received packet:
@@ -113,9 +115,12 @@ func dispatch_horizon_message(message: Dictionary):
 func send_message(message: Dictionary, message_type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if not _devmode_mapping_send(message, message_type):
-			peer.send_text(JSON.stringify(message))
-
-
+			#print("server send message: ", message)
+			var error = peer.send_text(JSON.stringify(message))
+			if error != OK:
+				printerr("Failure send message in websocket!")
+				print("Failure send message in websocket!")
+				print("server send message: ", message)
 
 
 

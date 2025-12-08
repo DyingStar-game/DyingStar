@@ -333,7 +333,7 @@ func _enter_tree() -> void:
 	mutex = Mutex.new()
 
 func _ready():
-
+	set_process(false)
 	should_exit = false
 	my_name = name
 	is_visible_status = visible
@@ -351,6 +351,7 @@ func _ready():
 	planet = chunk_parent
 
 	init_terrain.call_deferred()
+	set_process(true)
 
 
 func init_terrain():

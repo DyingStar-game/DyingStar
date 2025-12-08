@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ck5cjdbjngm6a" path="res://ui/login_page/login_page.gd" id="1_ihlnx"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_rpukb"]
-[ext_resource type="Texture2D" uid="uid://bqoexxd6necib" path="res://icon.svg" id="4_fk6tm"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_rpukb"]
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
 
@@ -60,6 +60,7 @@ theme_override_constants/separation = 10
 layout_mode = 2
 size_flags_vertical = 10
 theme_override_colors/font_placeholder_color = Color(1, 0, 0, 1)
+theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
 placeholder_text = "NICKNAME"
 max_length = 32
@@ -77,26 +78,9 @@ clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
 text = "CONNECT"
-
-[node name="Logo" type="TextureRect" parent="."]
-self_modulate = Color(1, 1, 1, 0.392157)
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -145.0
-offset_top = -160.0
-offset_right = -17.0
-offset_bottom = -25.0
-grow_horizontal = 0
-grow_vertical = 0
-texture = ExtResource("4_fk6tm")
-expand_mode = 1
-stretch_mode = 5
 
 [node name="HTTPRequest" type="HTTPRequest" parent="."]
 

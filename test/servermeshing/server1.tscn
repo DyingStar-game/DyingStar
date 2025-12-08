@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://ccb0mbw5ct2yp"]
 
-[ext_resource type="Script" uid="uid://gc1ccoy5g5yn" path="res://server/server.gd" id="1_uu6ny"]
+[ext_resource type="Script" uid="uid://iednwyuemnor" path="res://server/server.gd" id="1_uu6ny"]
 [ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="2_7471y"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_5g5qb"]

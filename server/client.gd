@@ -135,7 +135,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("< Client - Got text data from server: %s" % packet_text)
+				#print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
@@ -158,6 +158,8 @@ func _process(_delta: float) -> void:
 					if event["object_type"] == "GorcPlayer":
 						if event.has("event_type") and event["event_type"] == "gorc_zone_enter":
 							create_object(event)
+						elif event.has("event_type") and event["event_type"] == "gorc_zone_exit":
+							delete_player(event)
 						# special case for player update
 						player_update(event)
 					elif event["event_type"] == "update_property":
@@ -317,9 +319,6 @@ func create_object(event: Dictionary) -> void:
 			# if event["channel"] == 2:
 			# 	set_player_name(event)
 
-		"planet":
-			# TODO the planet creation will use the create_generic_object (modification in planet gd script needed)
-			create_planet(event)
 		_:
 			# for all props
 			create_generic_object(event)
@@ -411,79 +410,6 @@ func create_player(event: Dictionary) -> void:
 			remote_player_instance.client_uuid = event["object_id"]
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
-
-func create_planet(message: Dictionary) -> void:
-	# print("Create planet: %s" % message)
-	# {
-	#     "channel": 2,
-	#     "object_id": "3388a817-f3ef-421d-b10f-4325e105628e",
-	#     "object_type": "planet",
-	#     "player_id": "105bb18d-cce5-448c-9d76-47f3dbba762d",
-	#     "timestamp": 1762005669,
-	#     "type": "gorc_zone_enter",
-	#     "zone_data": {
-	#         "name": "Sandbox",
-	#         "position": {
-	#             "x": 10000000,
-	#             "y": 0,
-	#             "z": 0
-	#         },
-	#         "rotation": {
-	#             "x": 0,
-	#             "y": 0,
-	#             "z": 0
-	#         },
-	#         "scenename": "tarsis_IV"
-	#     }
-	# }
-
-	# Here you can handle the planets data, e.g., spawn planets in the game world
-	if not props_list["planet"].has(message["object_id"]):
-		# spawn planet
-		var spawnable_planet_instance = load("res://" + message["zone_data"]["scenename"]).instantiate()
-		spawnable_planet_instance.spawn_position = Vector3(
-			message["zone_data"]["positions"][0]["x"], message["zone_data"]["positions"][0]["y"], message["zone_data"]["positions"][0]["z"]
-		)
-		spawnable_planet_instance.name = message["zone_data"]["name"]
-		spawnable_planet_instance.uuid = message["object_id"]
-		# get_tree().current_scene.add_child(spawnable_planet_instance, true)
-		# get_tree().current_scene.call_deferred("add_child", spawnable_planet_instance, true)
-		spawnable_planet_instance.tree_entered.connect(func():
-			spawnable_planet_instance.owner = get_tree().current_scene
-		)
-
-		universe_scene.add_child(spawnable_planet_instance)
-		universe_scene.assign_spawn_informations()
-		spawnable_planet_instance.set_physics_process(false)
-		props_list["planet"][message["object_id"]] = spawnable_planet_instance
-		# planet created, now process pending messages for players waiting for this planet as parent
-		for pending_message in pending_messages_player_parenting.duplicate():
-			var pending_player_data = pending_message["zone_data"]
-			if pending_player_data["parent_id"] == message["object_id"]:
-				print(
-					"Processing pending message for player %s now that parent_id %s is available" % [
-						pending_message["object_id"],
-						pending_player_data["parent_id"]
-					]
-				)
-				create_player(pending_message)
-				pending_messages_player_parenting.erase(pending_message)
-		# planet created, now process pending messages for generic pobjects waiting for this planet as parent
-		for pending_message in pending_messages_generic_objects_parenting.duplicate():
-			var pending_object_data = {}
-			if pending_message.has("zone_data"):
-				pending_object_data = pending_message["zone_data"]
-			else:
-				pending_object_data = pending_message["object_data"]
-			if pending_object_data["parent_id"] == message["object_id"]:
-				print(
-					"Processing pending message for generic object %s now that parent_id %s is available" % [
-						pending_message["object_id"],
-						pending_object_data["parent_id"]
-					]
-				)
-				create_generic_object(pending_message)
-				pending_messages_generic_objects_parenting.erase(pending_message)
 
 func create_generic_object(event: Dictionary) -> void:
 	# print("Create generic object: %s" % event)
@@ -582,7 +508,11 @@ func create_generic_object(event: Dictionary) -> void:
 
 			# generic object created, now process pending messages for players waiting for this generic object as parent
 			for pending_message in pending_messages_player_parenting.duplicate():
-				var pending_player_data = pending_message["zone_data"]
+				var pending_player_data = {}
+				if pending_message.has("zone_data"):
+					pending_player_data = pending_message["zone_data"]
+				else:
+					pending_player_data = pending_message["data"]
 				if pending_player_data["parent_id"] == event["object_id"]:
 					print(
 						"Processing pending message for player %s now that parent_id %s is available" % [
@@ -677,7 +607,7 @@ func delete_player(event: Dictionary) -> void:
 		var remote_player = players_list[event["object_id"]]
 		remote_player.queue_free()
 		players_list.erase(event["object_id"])
-		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
+		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() - 1)
 		print("Player %s has been removed." % event["object_id"])
 	else:
 		print("Player to delete %s not found." % event)
@@ -694,6 +624,12 @@ func player_update(message: Dictionary) -> void:
 					message["data"]["new_position"]["y"],
 					message["data"]["new_position"]["z"]
 				)
+				if uuid != my_player_uuid:
+					player.global_rotation = Vector3(
+						message["data"]["new_rotation"]["x"],
+						message["data"]["new_rotation"]["y"],
+						message["data"]["new_rotation"]["z"]
+					)
 		else:
 			print("Update Player but not found...")
 

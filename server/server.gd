@@ -273,39 +273,26 @@ func convert_value_to_universe(value: float, conversion: float) -> float:
 
 
 
-func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, is_parented = false):
+func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, _is_parented = false):
+	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
+	# 	print("move uuid:", client_uuid)
 	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
 		# Prevent write over reparent (because reparent will not sent to client)
 		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
 			return
-		if is_parented == true:
-			players_newposition[client_uuid] = {
-				"player_id": client_uuid,
-				"pos": {
-					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				}
+		players_newposition[client_uuid] = {
+			"player_id": client_uuid,
+			"pos": {
+				"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
+				"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
+				"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
+			},
+			"rot": {
+				"x": rotation[0],
+				"y": rotation[1],
+				"z": rotation[2]
 			}
-		else:
-			players_newposition[client_uuid] = {
-				"player_id": client_uuid,
-				"pos": {
-					"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
-				},
-				"rot": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				}
-			}
+		}
 
 		if reparent_uuid != null:
 			players_newposition[client_uuid]["reparent"] = reparent_uuid

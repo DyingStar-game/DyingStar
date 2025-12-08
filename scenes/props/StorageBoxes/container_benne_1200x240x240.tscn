@@ -2,16 +2,16 @@
 
 [ext_resource type="ArrayMesh" uid="uid://ba8gix5kud3sd" path="res://assets/models/StorageBoxes/container_benne_1200x240x240.mesh" id="1_krsyi"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_nyfv5"]
-[ext_resource type="Shape3D" uid="uid://4itq1wl63k45" path="res://scenes/props/StorageBoxes/container_generic_1200x240x240.res" id="3_y0sjo"]
 
-[node name="ContainerBenne1200x240x240" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_nyfv5"]
+size = Vector3(12, 2.4, 2.4)
+
+[node name="ContainerBenne1200x240x240" type="RigidBody3D"]
 script = ExtResource("1_nyfv5")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+shape = SubResource("BoxShape3D_nyfv5")
 
 [node name="ContainerBenne1200x240x240" type="MeshInstance3D" parent="."]
 mesh = ExtResource("1_krsyi")
-
-[node name="StaticBody3D" type="StaticBody3D" parent="ContainerBenne1200x240x240"]
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ContainerBenne1200x240x240/StaticBody3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
-shape = ExtResource("3_y0sjo")

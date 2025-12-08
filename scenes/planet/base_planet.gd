@@ -14,6 +14,9 @@ signal hs_server_prop_move
 @export var uuid: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO
+var spawn_rotation: Vector3 = Vector3.UP
+
+var has_parent: bool = false
 
 func _enter_tree() -> void:
 	if Engine.is_editor_hint(): return
@@ -114,3 +117,15 @@ func pack_biomes():
 
 	var biome_normal = _pack_textures(planet_settings.terrain_settings.biomes_normal)
 	ResourceSaver.save(biome_normal, "res://assets/textures/biomes_packed/"+ planet_id +"_normal_array.res")
+
+func client_parent_change(parent: Node) -> void:
+	reparent(parent)
+	has_parent = true
+
+func client_channel_data_update(data: Dictionary) -> void:
+	if data.has("positions"):
+		position = Vector3(
+			data["positions"][0]["x"],
+			data["positions"][0]["y"],
+			data["positions"][0]["z"]
+		)
