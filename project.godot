@@ -30,6 +30,8 @@ GameOrchestrator="*res://scenes/globals/game_orchestrator.gd"
 NetworkOrchestrator="*res://scenes/globals/network_orchestrator.gd"
 uuid="*res://addons/uuid/uuid.gd"
 Endtoend="*res://scenes/globals/endtoend.gd"
+WwiseRuntimeManager="*res://addons/Wwise/runtime/wwise_runtime_manager.gd"
+Obs="*res://tools/observability/obs.gd"
 ServerNetwork="*res://server/server_network.gd"
 
 [debug]
