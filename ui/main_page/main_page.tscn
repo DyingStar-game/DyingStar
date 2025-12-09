@@ -2,10 +2,10 @@
 
 [ext_resource type="Script" uid="uid://1l14ge8hbbo1" path="res://ui/main_page/main_page.gd" id="1_o7ao7"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
-[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="3_n4a6o"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_n3f7d"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_75xce"]
-font = ExtResource("3_n4a6o")
+font = ExtResource("3_n3f7d")
 font_size = 40
 
 [node name="MainPage" type="CanvasLayer"]
@@ -50,7 +50,7 @@ anchor_top = 0.696
 anchor_right = 0.5
 anchor_bottom = 0.696
 offset_left = -72.0
-offset_top = 115.32000000000005
+offset_top = 115.32000000000004
 offset_right = 79.0
 offset_bottom = 164.32000000000005
 
@@ -87,6 +87,7 @@ size_flags_vertical = 3
 
 [node name="Label" type="Label" parent="Control/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+theme_override_fonts/font = ExtResource("3_n3f7d")
 theme_override_font_sizes/font_size = 20
 text = "%%MAINPAGE_SPAWN_LOCATION"
 
@@ -94,6 +95,7 @@ text = "%%MAINPAGE_SPAWN_LOCATION"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_fonts/font = ExtResource("3_n3f7d")
 theme_override_font_sizes/font_size = 20
 
 [node name="EnterButton" type="Button" parent="Control/VBoxContainer"]
@@ -101,6 +103,7 @@ clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
+theme_override_fonts/font = ExtResource("3_n3f7d")
 theme_override_font_sizes/font_size = 32
 text = "%%MAINPAGE_ENTER"
 

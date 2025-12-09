@@ -11,7 +11,8 @@ radius = 5000.0
 [sub_resource type="SphereMesh" id="SphereMesh_25nq4"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_uuijx"]
-radius = 2180000.0
+resource_local_to_scene = true
+radius = 3000000.0
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_g6lbq"]
 

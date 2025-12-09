@@ -15,7 +15,6 @@ background_mode = 1
 background_color = Color(0.0260417, 0.0260417, 0.0260417, 1)
 sky = SubResource("Sky_gmgav")
 tonemap_mode = 3
-glow_enabled = true
 glow_normalized = true
 glow_intensity = 0.64
 glow_blend_mode = 1

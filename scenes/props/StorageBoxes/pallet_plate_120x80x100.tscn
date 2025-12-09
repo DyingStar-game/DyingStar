@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3 uid="uid://c04pcmnqsloek"]
+
+[ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_1deug"]
+[ext_resource type="ArrayMesh" uid="uid://m5iaprpajh6j" path="res://assets/models/StorageBoxes/pallet_plate_120x80x100.mesh" id="1_70euy"]
+
+[node name="PalletPlate120x80x100" type="Node3D"]
+script = ExtResource("1_1deug")
+
+[node name="PalletPlate120x80x100" type="MeshInstance3D" parent="."]
+mesh = ExtResource("1_70euy")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="PalletPlate120x80x100"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PalletPlate120x80x100/StaticBody3D"]

@@ -11,7 +11,6 @@ var tcp_server = TCPServer.new()
 # Our connected peers list.
 var peer := WebSocketPeer.new()
 
-
 var devmode: bool = false
 var devscene: String = ""
 
@@ -43,6 +42,9 @@ func _process(_delta: float) -> void:
 		peer.accept_stream(ServerNetwork.tcp_server.take_connection())
 
 	peer.poll()
+	peer.outbound_buffer_size = 1000000000  # 1 GB
+	peer.max_queued_packets = 1000000  # 1 million packets
+	peer.set_no_delay(true)
 
 	var peer_state = peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
@@ -50,7 +52,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				#print("SERVER - Received packet: %s" % [packet_text])
+				# print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)
@@ -58,7 +60,8 @@ func _process(_delta: float) -> void:
 						_devmode_horizon_mapping(message)
 			else:
 				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
-				peer.send(packet)
+				peer.send_text(packet)
+
 
 func dispatch_horizon_message(message: Dictionary):
 	# SERVER - Received packet:
@@ -92,6 +95,9 @@ func dispatch_horizon_message(message: Dictionary):
 					"planet":
 						# spawn planet
 						NetworkOrchestrator.network_agent.create_planet(message)
+					"serverinfo":
+						# serverinfo for clients
+						NetworkOrchestrator.network_agent.set_serverinfo(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:
@@ -109,9 +115,12 @@ func dispatch_horizon_message(message: Dictionary):
 func send_message(message: Dictionary, message_type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if not _devmode_mapping_send(message, message_type):
-			peer.send_text(JSON.stringify(message))
-
-
+			#print("server send message: ", message)
+			var error = peer.send_text(JSON.stringify(message))
+			if error != OK:
+				printerr("Failure send message in websocket!")
+				print("Failure send message in websocket!")
+				print("server send message: ", message)
 
 
 

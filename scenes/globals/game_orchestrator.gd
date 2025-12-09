@@ -23,10 +23,10 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 }
 
 const SPAWN_POINTS_LIST: Array[Dictionary] = [
-	{"label" : "PlanetA / SpawnPoint1", "node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "PlanetB / SpawnPoint1", "node_path" : "PlanetB/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "StationA / SpawnPoint1", "node_path" : "StationA/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "StationB / SpawnPoint1", "node_path" : "StationB/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Sandbox (planet 4) / surface", "point": 1, "node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Sandbox (planet 4) / space", "point": 2, "node_path" : "PlanetB/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Moon 1 / planet 5 / surface", "point": 3, "node_path" : "StationA/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Moon 1 / planet 5 / space", "point": 4, "node_path" : "StationB/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
 ]
 
 @export var levels: Array[PackedScene]
@@ -121,9 +121,9 @@ func change_game_state(new_state) -> int:
 						current_state = new_state
 						NetworkOrchestrator.create_client()
 						get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
-
-					printerr(error_string(ERR_FILE_BAD_PATH) + " (Aucune scène de jeu à ouvrir game_orchestrator.gd)")
-					return_state = ChangeStateReturns.ERROR
+					else:
+						printerr(error_string(ERR_FILE_BAD_PATH) + " (Aucune scène de jeu à ouvrir game_orchestrator.gd)")
+						return_state = ChangeStateReturns.ERROR
 		GameStates.PAUSE_MENU:
 			match  current_state:
 				GameStates.PLAYING:

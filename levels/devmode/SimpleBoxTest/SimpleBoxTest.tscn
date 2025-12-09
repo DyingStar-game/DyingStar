@@ -1,7 +1,11 @@
-[gd_scene load_steps=9 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene load_steps=13 format=3 uid="uid://fxj147p5soqi"]
 
 [ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_m4ygx"]
+[ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_m4ygx"]
+[ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn" id="4_1uj1c"]
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
+[ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
+[ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)
@@ -28,6 +32,7 @@ script = ExtResource("1_m4ygx")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 mesh = SubResource("PlaneMesh_xqwsu")
+surface_material_override/0 = ExtResource("2_m4ygx")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D"]
 
@@ -50,3 +55,12 @@ script = ExtResource("4_jq82d")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
 shape = SubResource("BoxShape3D_m4ygx")
+
+[node name="PalletLiquid120x80x100" parent="." instance=ExtResource("4_1uj1c")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.622590192634482, 9.147364821160409e-08, 0.6245682824668704)
+
+[node name="PalletCrate120x80x100" parent="." instance=ExtResource("5_w0ufy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.147364821160409e-08, -0.9447545420112791)
+
+[node name="ContainerLiquid1200x240x240" parent="." instance=ExtResource("6_bdj2j")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)

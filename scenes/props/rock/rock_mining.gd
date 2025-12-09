@@ -187,7 +187,7 @@ func _server_ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
-		var my_position = snapped(position, Vector3(0.0001, 0.0001, 0.0001))
+		var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
 		var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
 		if server_last_position != my_position or server_last_rotation != my_rotation:
 			emit_signal(

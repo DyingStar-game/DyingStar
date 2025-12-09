@@ -1,4 +1,4 @@
-[gd_scene load_steps=56 format=3 uid="uid://chmlrmdjjxfxb"]
+[gd_scene load_steps=58 format=3 uid="uid://chmlrmdjjxfxb"]
 
 [ext_resource type="PackedScene" uid="uid://rv6ugxi8n8pe" path="res://scenes/planet/base_planet.tscn" id="1_x3g5b"]
 [ext_resource type="Script" uid="uid://cnf71va5eumrg" path="res://scenes/planet/planet_settings.gd" id="2_gvpu1"]
@@ -127,13 +127,22 @@ metadata/_custom_type_script = "uid://c5xl5lwuo7n57"
 
 [sub_resource type="Resource" id="Resource_8bq2n"]
 script = ExtResource("2_gvpu1")
-radius = 1560000
+radius = 2118666
 atmosphere_height = 60000
 terrain_material = SubResource("ShaderMaterial_eaiis")
 sea_level = 8900
+has_clouds = true
 cloud_height = 18000
 terrain_settings = SubResource("Resource_udjps")
 metadata/_custom_type_script = "uid://cnf71va5eumrg"
+
+[sub_resource type="SphereOccluder3D" id="SphereOccluder3D_4gcts"]
+resource_local_to_scene = true
+radius = 2118666.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_4gcts"]
+resource_local_to_scene = true
+radius = 2500000.0
 
 [sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_4gcts"]
 data = PackedVector3Array(-100, -20, -75, -100, 20, -75, -100, -20, 75, -100, -20, -75, -100, -20, 75, 100, -20, -75, -100, -20, -75, 100, -20, -75, -100, 20, -75, -100, -20, 75, -100, 20, -75, -100, 14.75005561361072, -4.834905384537706, -100, 20, -75, -100, 19.96878345391062, -4.834905384537706, -100, 14.75005561361072, -4.834905384537706, -100, 20, -75, -100, 19.96878345391062, 5.165094615462294, -100, 19.96878345391062, -4.834905384537706, -100, -20, 75, -100, 14.75005561361072, -4.834905384537706, -100, 14.75005561361072, 5.165094615462294, -100, -20, 75, -100, 14.75005561361072, 5.165094615462294, -100, 20, 75, -100, 20, -75, -100, 20, 75, -100, 19.96878345391062, 5.165094615462294, -100, 20, 75, -100, 14.75005561361072, 5.165094615462294, -100, 19.96878345391062, 5.165094615462294, -100, -20, 75, -100, 20, 75, 100, 20, 75, -100, 20, -75, 100, 20, 75, -100, 20, 75, -100, -20, 75, 100, -20, 75, 100, -20, -75, -100, -20, 75, 100, 20, 75, 100, -20, 75, 100, -20, -75, 100, -20, 75, 100, 20, 75, -100, 20, -75, 100, -20, -75, 100, 20, -75, -100, 20, -75, 100, 20, -75, 100, 20, 75, 100, -20, -75, 100, 20, 75, 100, 20, -75, -128.04734229782787, 6.363721532561893, -4.834905384537706, -129.4797142366046, 11.15416103525942, -4.834905384537706, -128.04734229782787, 6.363721532561893, 5.165094615462294, -128.04734229782787, 6.363721532561893, -4.834905384537706, -128.04734229782787, 6.363721532561893, 5.165094615462294, -100, 14.75005561361072, -4.834905384537706, -128.04734229782787, 6.363721532561893, -4.834905384537706, -100, 19.96878345391062, -4.834905384537706, -129.4797142366046, 11.15416103525942, -4.834905384537706, -128.04734229782787, 6.363721532561893, -4.834905384537706, -100, 14.75005561361072, -4.834905384537706, -100, 19.96878345391062, -4.834905384537706, -129.4797142366046, 11.15416103525942, -4.834905384537706, -100, 19.96878345391062, -4.834905384537706, -100, 19.96878345391062, 5.165094615462294, -129.4797142366046, 11.15416103525942, -4.834905384537706, -129.4797142366046, 11.15416103525942, 5.165094615462294, -128.04734229782787, 6.363721532561893, 5.165094615462294, -128.04734229782787, 6.363721532561893, 5.165094615462294, -129.4797142366046, 11.15416103525942, 5.165094615462294, -100, 14.75005561361072, 5.165094615462294, -129.4797142366046, 11.15416103525942, -4.834905384537706, -100, 19.96878345391062, 5.165094615462294, -129.4797142366046, 11.15416103525942, 5.165094615462294, -128.04734229782787, 6.363721532561893, 5.165094615462294, -100, 14.75005561361072, 5.165094615462294, -100, 14.75005561361072, -4.834905384537706, -129.4797142366046, 11.15416103525942, 5.165094615462294, -100, 19.96878345391062, 5.165094615462294, -100, 14.75005561361072, 5.165094615462294)
@@ -196,31 +205,41 @@ shader_parameter/direction_profile_curve = SubResource("CurveTexture_utdev")
 shader_parameter/direction_profile_main_colors = SubResource("GradientTexture1D_24slt")
 shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_f8q4h")
 shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
-shader_parameter/sea_level = 1560000.0
-shader_parameter/atmosphere_radius = 1620000.0
+shader_parameter/sea_level = 2118666.0
+shader_parameter/atmosphere_radius = 2178666.0
 shader_parameter/atmosphere_density = 5.0
 shader_parameter/water_density_factor = -0.205
 
 [sub_resource type="BoxMesh" id="BoxMesh_kj6rk"]
 resource_local_to_scene = true
 flip_faces = true
-size = Vector3(3402000, 3402000, 3402000)
+size = Vector3(4575198.600000001, 4575198.600000001, 4575198.600000001)
 
 [sub_resource type="SphereMesh" id="SphereMesh_eldcm"]
 resource_local_to_scene = true
-radius = 2118000.0
-height = 4236000.0
+radius = 2136666.0
+height = 4273332.0
 radial_segments = 128
 rings = 64
 
 [node name="Tarsis4" instance=ExtResource("1_x3g5b")]
 planet_settings = SubResource("Resource_8bq2n")
 
+[node name="OccluderInstance3D" parent="PlanetTerrain" index="6"]
+occluder = SubResource("SphereOccluder3D_4gcts")
+
+[node name="PlanetGravity" parent="PlanetTerrain" index="8"]
+visible = true
+gravity_point_unit_distance = 2118666.0
+
+[node name="CollisionShape3D" parent="PlanetTerrain/PlanetGravity" index="0"]
+shape = SubResource("SphereShape3D_4gcts")
+
 [node name="PlayerSpawnPoint01" parent="PlanetTerrain/PlayerSpawnPointsList" index="0"]
-transform = Transform3D(-0.4229504901645166, -0.7436244053260321, 0.5178181405407697, -0.844242533444059, 0.11577751758826792, -0.5233068995771557, 0.32919208312708886, -0.6584970085160626, -0.67676750969727, -1170124.319578651, 182180.79990436413, -1036172.7755510815)
+transform = Transform3D(-0.42295061999122036, -0.7436240837914753, 0.5178184962458675, -0.8442425132304014, 0.11577741466204339, -0.5233069549591223, 0.32919196816365054, -0.6584973897134767, -0.6767671947110614, -2.730869131498498, 0.42517861436526994, -2.418256348007623)
 
 [node name="debug" parent="PlanetTerrain/RockSpawner" index="0"]
-transform = Transform3D(1, 0, 1.1102230246251563e-15, 0, 1, 0, -1.1102230246251563e-15, 0, 1, 55313.8870431605, -95422.10787753646, -1568162.8765160944)
+transform = Transform3D(1, 0, 1.1102230246251565e-15, 0, 1, 0, -1.1102230246251565e-15, 0, 1, 586941.767787108, 1224743.146209689, 1629565.0589299232)
 visible = true
 
 [node name="platform" type="CSGBox3D" parent="PlanetTerrain" index="12"]
@@ -235,19 +254,20 @@ use_collision = true
 size = Vector3(30.817184236399953, 5, 10)
 
 [node name="StaticBody3D" type="StaticBody3D" parent="PlanetTerrain/platform" index="1"]
-transform = Transform3D(1, 0, 6.9388939039072276e-18, -1.6653345369377348e-16, 0.9999999999999998, 0, -6.9388939039072276e-18, -6.9388939039072276e-18, 0.9999999999999996, 0, 0, 0)
+transform = Transform3D(1, 0, 6.938893903907225e-18, -1.6653345369377348e-16, 0.9999999999999998, 0, -6.938893903907225e-18, -6.938893903907225e-18, 0.9999999999999996, 0, 0, 0)
 
 [node name="CSGBakedCollisionShape3D" type="CollisionShape3D" parent="PlanetTerrain/platform/StaticBody3D" index="0"]
-transform = Transform3D(1.0000000000000002, 0, -6.9388939039072276e-18, -5.551115123125783e-17, 1.0000000000000002, 0, 6.9388939039072276e-18, 0, 1.0000000000000002, 0, 0, 0)
+transform = Transform3D(1.0000000000000002, 0, -6.938893903907225e-18, -5.551115123125783e-17, 1.0000000000000002, 0, 6.938893903907225e-18, 0, 1.0000000000000002, 0, 0, 0)
 shape = SubResource("ConcavePolygonShape3D_4gcts")
 
 [node name="Atmosphere" parent="." index="2"]
-transform = Transform3D(-0.011552666620645207, -0.024220379376070873, -0.9996393108998343, 0, 0.9997060255614182, -0.02422199581351573, 0.999933265720244, -0.0002798286425202113, -0.011549270431961276, 5287.879060608664, 12243.496987137478, 5837.811996419086)
+transform = Transform3D(-0.011552666620645207, -0.024220379376070873, -0.9996393108998338, 0, 0.9997060255614182, -0.02422199581351572, 0.999933265720244, -0.0002798286425202113, -0.011549270431961271, 5287.879060608664, 12243.496987137478, 5837.811996419086)
 material_override = SubResource("ShaderMaterial_b16d7")
 mesh = SubResource("BoxMesh_kj6rk")
-planet_radius = 1560000.0
+planet_radius = 2118666.0
 atmosphere_height = 60000.0
 
 [node name="Clouds" parent="." index="4"]
-visible = false
 mesh = SubResource("SphereMesh_eldcm")
+
+[editable path="PlanetTerrain"]

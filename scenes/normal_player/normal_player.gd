@@ -5,6 +5,7 @@ extends CharacterBody3D
 signal hs_client_action_move
 signal hs_server_move
 signal hs_client_action_pressed
+signal display_debug(show: bool)
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -71,6 +72,8 @@ var is_parented: bool = false
 # to disable player input when piloting vehicule/ship
 var active = false
 
+var _display_debug:bool = false
+
 @onready var camera = $CameraPivot/Camera3D
 
 @onready var labelx: Label = $UserInterface/Debug/LabelXValue
@@ -92,8 +95,6 @@ var active = false
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
 
 func _enter_tree() -> void:
-	$UserInterface/LoadingScreen.hide()
-
 	if name.begins_with("remoteplayer"):
 		remote_player = true
 		position = spawn_position
@@ -102,6 +103,10 @@ func _enter_tree() -> void:
 
 	elif not OS.has_feature("dedicated_server"):
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
+	else:
+		# server side
+		$UserInterface.visible = false
+		$CameraPivot.visible = false
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
@@ -112,45 +117,52 @@ func _ready() -> void:
 		set_player_name(name)
 		return
 
-	$UserInterface/LoadingScreen.show()
+	if not OS.has_feature("dedicated_server"):
+		$UserInterface/LoadingScreen.show()
 
+		global_position = spawn_position
+		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
 
+		position = spawn_position
+		global_transform = Globals.align_with_y(global_transform, spawn_up)
 
-	position = spawn_position
-	global_transform = Globals.align_with_y(global_transform, spawn_up)
+		client_uuid = Globals.player_uuid
+		self.set_meta("client_uuid", Globals.player_uuid)
 
-	NetworkOrchestrator.set_gameserver_name.connect(_set_gameserver_name)
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		camera.current = false
+		$ExtCamera3D.current = false
 
-	client_uuid = Globals.player_uuid
-	self.set_meta("client_uuid", Globals.player_uuid)
+		camera.make_current()
+		# hide player name label for me only
+		label_player_name.visible = false
+		label_server_name.visible = false
+		astronaut.visible = false
+		interact_label.hide()
+		connect_area_detect()
+		active = false
 
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	camera.current = false
-	$ExtCamera3D.current = false
+		await get_tree().create_timer(5).timeout
 
-	camera.make_current()
-	# hide player name label for me only
-	label_player_name.visible = false
-	label_server_name.visible = false
-	astronaut.visible = false
-	interact_label.hide()
-	connect_area_detect()
-	active = false
+		update_last_basis()
 
-	await get_tree().create_timer(5).timeout
+		active = true
 
-	update_last_basis()
-
-	active = true
-
-	$UserInterface/LoadingScreen.hide()
+		$UserInterface/LoadingScreen.hide()
+	else:
+		position = spawn_position
+		connect_area_detect()
+		update_last_basis()
 
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
 	self.set_meta("client_uuid", uuid)
 
 func connect_area_detect():
-	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
+	if OS.has_feature("dedicated_server"):
+		print("Connecting area detector on server side")
+	$AreaDetector.monitoring = true
+	#$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
 func get_current_gravity_parent() -> Node3D:
@@ -202,6 +214,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("spawn_rock_mining"):
 		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
 
+	if event.is_action_pressed("debug_console"):
+		if _display_debug:
+			display_debug.emit(false)
+			_display_debug = false
+		else:
+			display_debug.emit(true)
+			_display_debug = true
+
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
 			camera.make_current()
@@ -252,10 +272,10 @@ func _process(_delta: float) -> void:
 			input_direction = Vector2.ZERO
 
 		# send move_direction
-		if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
-			client_last_input_direction = input_direction
-			client_last_global_rotation = global_rotation
-			emit_signal("hs_client_action_move", input_direction, global_rotation)
+		# if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
+		# 	client_last_input_direction = input_direction
+		# 	client_last_global_rotation = global_rotation
+		# 	emit_signal("hs_client_action_move", input_direction, global_rotation)
 		update_last_basis()
 
 		labelx.text = str("%0.2f" % global_position[0])
@@ -270,8 +290,9 @@ func _physics_process(delta: float) -> void:
 			global_rotation = input_from_server["rotation"]
 
 			var sprint = null
-
+			# print("gravity parents:", gravity_parents.size())
 			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+			# print("gravity parents after:", gravity_parents.size())
 
 			if parent_gravity_area:
 				if parent_gravity_area.gravity_point:
@@ -326,7 +347,7 @@ func _physics_process(delta: float) -> void:
 			"hs_server_move",
 			client_uuid,
 			# stepify tu prevent floating points with too many chars after coma
-			snapped(position, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(position, Vector3(0.001, 0.001, 0.001)),
 			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
 			null,
 			is_parented
@@ -401,7 +422,7 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if area.name == "PlanetGravity":
 			var planet = area.get_parent().get_parent()
 			#reparent(planet)
-			call_deferred("reparent", planet)
+			# call_deferred("reparent", planet)
 			is_parented = true
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
 		gravity_parents.push_back(area)
@@ -410,9 +431,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
-
-func _set_gameserver_name(server_name: String):
-	label_server_name.text = "(" + server_name + ")"
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

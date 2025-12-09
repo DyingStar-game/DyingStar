@@ -1,12 +1,11 @@
 extends Node
 
-signal set_gameserver_name(server_name)
 signal set_player_global_position(pos, rot)
+
+signal set_gameserver_server_fps(fps)
 signal set_gameserver_number_players(number_players_server)
-signal set_gameserver_number_servers(nb_servers)
-signal set_gameserver_number_players_universe(nb_players)
-signal set_gameserver_serverzone(serverzone)
-signal set_gameserver_number_boxes50cm(number_boxes_server)
+signal set_gameserver_number_objects(number_objects_server)
+signal set_gameserver_number_scenes(number_scenes_server)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
@@ -184,10 +183,6 @@ func _on_entity_spawned(entity: Node) -> void:
 
 func update_all_text_client():
 	get_gameserver_number_players.rpc(network_agent.players_list.size())
-	get_server_name.rpc(server_name)
-	get_gameserver_number_servers.rpc(servers_list.size())
-	get_gameserver_number_players_universe.rpc(players_list.size() + network_agent.players_list.size())
-	get_gameserver_serverzone.rpc(network_agent.server_zone)
 
 ###################
 # Chat part       #
@@ -352,8 +347,6 @@ func _on_mqtt_sdo_received_message(topic, message):
 				"z_end": server.z_end,
 				"to_split_server_id": split
 			}
-		get_gameserver_number_servers.rpc(servers_list.size())
-		get_gameserver_serverzone.rpc(network_agent.server_zone)
 	elif topic == "sdo/serverschanges":
 		var push_players = false
 		var servers_received = JSON.parse_string(message)
@@ -429,9 +422,6 @@ func _on_mqtt_sdo_received_message(topic, message):
 			network_agent.transfer_players = false
 			network_agent.changing_zone = false
 
-		get_gameserver_number_servers.rpc(servers_list.size())
-		get_gameserver_serverzone.rpc(network_agent.server_zone)
-
 	elif topic == "sdo/players_list":
 		print("Playerlists received")
 		print(message)
@@ -444,7 +434,6 @@ func _on_mqtt_sdo_received_message(topic, message):
 			for player in players_received:
 				if int(player.server_id) != server_sdo_id:
 					network_agent.instantiate_player_remote(player, true, int(player.server_id))
-		get_gameserver_number_players_universe.rpc(players_list.size() + network_agent.players_list.size())
 	elif topic == "sdo/playerschanges":
 		# {
 		#   "add": [{"name": "playername01", "client_uuid": "", "x": "", "y": "", "z": ""}],
@@ -876,24 +865,8 @@ func change_server(position):
 	_change_server(position)
 
 @rpc("any_peer", "call_remote", "unreliable", 0)
-func get_server_name(remoteserver_name):
-	set_gameserver_name.emit(remoteserver_name)
-
-@rpc("any_peer", "call_remote", "unreliable", 0)
-func get_gameserver_number_players_universe(nb_players):
-	set_gameserver_number_players_universe.emit(nb_players)
-
-@rpc("any_peer", "call_remote", "unreliable", 0)
-func get_gameserver_number_servers(nb_servers):
-	set_gameserver_number_servers.emit(nb_servers)
-
-@rpc("any_peer", "call_remote", "unreliable", 0)
 func get_gameserver_number_players(number_players_server):
 	set_gameserver_number_players.emit(number_players_server)
-
-@rpc("any_peer", "call_remote", "unreliable", 0)
-func get_gameserver_serverzone(serverzone):
-	set_gameserver_serverzone.emit(serverzone)
 
 @rpc("any_peer", "call_remote", "unreliable", 0)
 func _position_player(pos, rot):

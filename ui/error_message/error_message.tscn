@@ -22,8 +22,8 @@ font = ExtResource("1_cusoq")
 font_size = 24
 font_color = Color(1, 1, 1, 0.701961)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_cfbt7"]
-bg_color = Color(0.226563, 0.0453125, 0.0453125, 1)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5vj24"]
+bg_color = Color(0.127604, 0.0255208, 0.0255208, 1)
 border_width_bottom = 2
 border_color = Color(0.8, 0.170613, 0.18653, 1)
 corner_radius_top_left = 10
@@ -34,8 +34,8 @@ expand_margin_top = 5.0
 expand_margin_right = 10.0
 expand_margin_bottom = 5.0
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5vj24"]
-bg_color = Color(0.127604, 0.0255208, 0.0255208, 1)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_cfbt7"]
+bg_color = Color(0.226563, 0.0453125, 0.0453125, 1)
 border_width_bottom = 2
 border_color = Color(0.8, 0.170613, 0.18653, 1)
 corner_radius_top_left = 10
@@ -119,10 +119,10 @@ layout_mode = 2
 size_flags_horizontal = 8
 theme_override_fonts/font = ExtResource("1_cusoq")
 theme_override_font_sizes/font_size = 24
-theme_override_styles/focus = SubResource("StyleBoxFlat_cfbt7")
-theme_override_styles/hover = SubResource("StyleBoxFlat_5vj24")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_cfbt7")
 theme_override_styles/normal = SubResource("StyleBoxFlat_5vj24")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_cfbt7")
+theme_override_styles/hover = SubResource("StyleBoxFlat_5vj24")
+theme_override_styles/focus = SubResource("StyleBoxFlat_cfbt7")
 text = "%%ERR_BACKTOMENU"
 
 [connection signal="pressed" from="ErrorMessage/VBox/ExitBtn" to="." method="_on_exit_btn_pressed"]
