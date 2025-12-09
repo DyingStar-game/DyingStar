@@ -13,5 +13,5 @@ func _process(_delta: float) -> void:
 	if camera:
 		$DirectionalLight3D.look_at(camera.global_position)
 
-func client_channel_data_update(data: Dictionary) -> void:
+func client_channel_data_update(_data: Dictionary) -> void:
 	pass

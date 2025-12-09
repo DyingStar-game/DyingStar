@@ -5,7 +5,7 @@ func _ready() -> void:
 
 func _set_gameserver_number_objects(number_objects_server):
 	text = str(int(number_objects_server)) + " objects"
-	
+
 func _disconnect():
 	pass
 
