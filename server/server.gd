@@ -70,18 +70,29 @@ var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
 var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 var props_scene: Dictionary = {
-	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn': preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
-	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn':
+		preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
+	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
-	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
-	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
-	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
+	'scenes/props/rock/rock_mining_01.tscn':
+		preload('res://scenes/props/rock/rock_mining_01.tscn'),
+	'scenes/props/testbox/box_50cm.tscn':
+		preload('res://scenes/props/testbox/box_50cm.tscn'),
+	'scenes/props/testbox/box_4m.tscn':
+		preload('res://scenes/props/testbox/box_4m.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 

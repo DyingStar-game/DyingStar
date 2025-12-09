@@ -29,18 +29,29 @@ var my_player_uuid: String = ""
 
 var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
 var props_scene: Dictionary = {
-	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn': preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
-	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn': preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn':
+		preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
+	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn':
+		preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
+	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
+	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn':
+		preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
-	'scenes/props/rock/rock_mining_01.tscn': preload('res://scenes/props/rock/rock_mining_01.tscn'),
-	'scenes/props/testbox/box_50cm.tscn': preload('res://scenes/props/testbox/box_50cm.tscn'),
-	'scenes/props/testbox/box_4m.tscn': preload('res://scenes/props/testbox/box_4m.tscn'),
+	'scenes/props/rock/rock_mining_01.tscn':
+		preload('res://scenes/props/rock/rock_mining_01.tscn'),
+	'scenes/props/testbox/box_50cm.tscn':
+		preload('res://scenes/props/testbox/box_50cm.tscn'),
+	'scenes/props/testbox/box_4m.tscn':
+		preload('res://scenes/props/testbox/box_4m.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 
@@ -382,7 +393,7 @@ func delete_object(event: Dictionary) -> void:
 func create_player(event: Dictionary) -> void:
 	# print("Create player: %s" % event)
 	var player_data = {}
-	
+
 	if event.has("zone_data"):
 		player_data = event["zone_data"]
 	else:
@@ -500,7 +511,7 @@ func create_generic_object(event: Dictionary) -> void:
 
 	if event["object_type"] == "serverinfo":
 		return
-	elif props_list[event["object_type"]].has(event["object_id"]):
+	if props_list[event["object_type"]].has(event["object_id"]):
 		var prop_instance = props_list[event["object_type"]][event["object_id"]]
 		prop_instance.client_channel_data_update(object_data)
 
@@ -635,7 +646,7 @@ func update_generic_object(event: Dictionary) -> void:
 			NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["scenes_number"])
 		return
 
-	elif props_list.has(event["object_type"]):
+	if props_list.has(event["object_type"]):
 		if props_list[event["object_type"]].has(event["object_id"]):
 			var prop_instance = props_list[event["object_type"]][event["object_id"]]
 			prop_instance.client_channel_data_update(event["data"])
