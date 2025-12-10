@@ -82,9 +82,11 @@ var active = false
 
 var _display_debug:bool = false
 
+# to interact with ui screens in the world
+var screen_interacting = false
+var screen_position: Vector3
 
-@onready var camera = $CameraPivot/Camera3D
-
+@onready var camera: Camera3D = $CameraPivot/Camera3D
 @onready var labelx: Label = $UserInterface/Debug/LabelXValue
 @onready var labely: Label = $UserInterface/Debug/LabelYValue
 @onready var labelz: Label = $UserInterface/Debug/LabelZValue
@@ -151,7 +153,7 @@ func _ready() -> void:
 		connect_area_detect()
 		active = false
 
-		await get_tree().create_timer(5).timeout
+		# await get_tree().create_timer(5).timeout
 
 		update_last_basis()
 
@@ -251,8 +253,16 @@ func _process(_delta: float) -> void:
 		interact_label.hide()
 		return
 
-	_handle_camera_motion()
-
+	if not screen_interacting:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		camera.rotation.z = lerp(camera.rotation.z, 0.0, 0.2)
+		camera.rotation.y = lerp(camera.rotation.y, 0.0, 0.2)
+		_handle_camera_motion()
+	else:
+		var target_transform = camera.global_transform.looking_at(screen_position, up_direction)
+		camera.global_transform = camera.global_transform.interpolate_with(target_transform, 0.2)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	
 	interact_label.hide()
 	can_interact = false
 	if interact_ray.is_colliding():
@@ -439,11 +449,20 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			is_parented = true
 			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
 		gravity_parents.push_back(area)
+	
+	if area.is_in_group("screen_area"):
+		var screen = area.get_parent_node_3d()
+		if screen:
+			screen_position = screen.global_position
+			screen_interacting = true
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
+	
+	if area.is_in_group("screen_area"):
+		screen_interacting = false
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

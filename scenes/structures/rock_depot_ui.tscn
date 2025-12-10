@@ -1,0 +1,128 @@
+[gd_scene load_steps=13 format=3 uid="uid://0nqpcxfh8upf"]
+
+[ext_resource type="FontFile" uid="uid://ccjaqbtg4s41b" path="res://assets/fonts/Xolonium/Xolonium-Regular.ttf" id="1_edn8y"]
+[ext_resource type="Script" uid="uid://dt6ragc62bn72" path="res://scenes/structures/rock_depot_ui.gd" id="1_geu3e"]
+[ext_resource type="Texture2D" uid="uid://3uydain4eirj" path="res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png" id="2_geu3e"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_75ksl"]
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+corner_detail = 5
+
+[sub_resource type="FontVariation" id="FontVariation_vptbq"]
+base_font = ExtResource("1_edn8y")
+variation_embolden = 0.61
+variation_transform = Transform2D(1, 0.415, 0, 1, 0, 0)
+
+[sub_resource type="LabelSettings" id="LabelSettings_8a0gq"]
+font = SubResource("FontVariation_vptbq")
+font_size = 80
+font_color = Color(1, 0.517061, 0.2733488, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_kxw7v"]
+base_font = ExtResource("1_edn8y")
+variation_embolden = 0.63
+
+[sub_resource type="LabelSettings" id="LabelSettings_q7ufo"]
+font = SubResource("FontVariation_kxw7v")
+font_size = 64
+font_color = Color(0.8098958, 0.8098958, 0.8098958, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_vptbq"]
+font = ExtResource("1_edn8y")
+font_size = 235
+font_color = Color(0.8098958, 0.8098958, 0.8098958, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_75ksl"]
+base_font = ExtResource("1_edn8y")
+variation_embolden = 0.31
+
+[sub_resource type="LabelSettings" id="LabelSettings_75ksl"]
+font = SubResource("FontVariation_75ksl")
+font_size = 55
+font_color = Color(0.5911458, 0.5911458, 0.5911458, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_q7ufo"]
+base_font = ExtResource("1_edn8y")
+variation_embolden = 0.73
+
+[node name="RockDepotUI" type="Panel"]
+custom_minimum_size = Vector2(1280, 720)
+anchors_preset = -1
+anchor_right = 0.6666666666666666
+anchor_bottom = 0.6666666666666666
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_75ksl")
+script = ExtResource("1_geu3e")
+metadata/_edit_use_anchors_ = true
+
+[node name="VB" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 41.0
+offset_top = 66.0
+offset_right = -43.0
+offset_bottom = -44.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="VB"]
+layout_mode = 2
+text = "Rock depot"
+label_settings = SubResource("LabelSettings_8a0gq")
+uppercase = true
+
+[node name="Splashscreen" type="VBoxContainer" parent="VB"]
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="VB/Splashscreen"]
+custom_minimum_size = Vector2(0, 500)
+layout_mode = 2
+text = "Place your rock fragments 
+on the right-hand conveyor."
+label_settings = SubResource("LabelSettings_q7ufo")
+horizontal_alignment = 1
+vertical_alignment = 1
+uppercase = true
+
+[node name="RockCounter" type="VBoxContainer" parent="VB"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 29
+
+[node name="VB" type="VBoxContainer" parent="VB/RockCounter"]
+layout_mode = 2
+theme_override_constants/separation = -51
+
+[node name="RockCount" type="Label" parent="VB/RockCounter/VB"]
+layout_mode = 2
+text = "5"
+label_settings = SubResource("LabelSettings_vptbq")
+horizontal_alignment = 1
+
+[node name="RockCountLabel" type="Label" parent="VB/RockCounter/VB"]
+layout_mode = 2
+text = "ROCK FRAGMENTS"
+label_settings = SubResource("LabelSettings_75ksl")
+horizontal_alignment = 1
+
+[node name="TriggerCollect" type="Button" parent="VB/RockCounter"]
+layout_mode = 2
+theme_override_fonts/font = SubResource("FontVariation_q7ufo")
+theme_override_font_sizes/font_size = 66
+text = "SEND"
+
+[node name="TextureRect" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 30.0
+offset_right = 224.0
+offset_bottom = 215.0
+texture = ExtResource("2_geu3e")
+expand_mode = 1
+stretch_mode = 4
+
+[connection signal="pressed" from="VB/RockCounter/TriggerCollect" to="." method="_on_trigger_collect_pressed"]

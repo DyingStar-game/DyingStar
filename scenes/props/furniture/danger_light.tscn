@@ -1,0 +1,52 @@
+[gd_scene load_steps=6 format=3 uid="uid://cynv06ddhi8kr"]
+
+[ext_resource type="PackedScene" uid="uid://d3vj7fliqdbcs" path="res://assets/models/furniture/danger_light.glb" id="1_35540"]
+[ext_resource type="Script" uid="uid://b18cd3jmysyt2" path="res://scenes/props/furniture/danger_light.gd" id="1_io5gy"]
+[ext_resource type="Material" uid="uid://cvigq2mjqo7w" path="res://assets/materials/painted_metal/paint_darkgrey_material.tres" id="2_mh5pe"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mh5pe"]
+metallic = 1.0
+roughness = 0.26
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_io5gy"]
+metallic = 1.0
+roughness = 0.27
+emission = Color(1, 0.98530304, 0.9696305, 1)
+emission_energy_multiplier = 1.55
+
+[node name="DangerLight" type="Node3D"]
+script = ExtResource("1_io5gy")
+
+[node name="danger_light" parent="." instance=ExtResource("1_35540")]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 0, 0, 0)
+
+[node name="light_frame" parent="danger_light" index="0"]
+material_override = ExtResource("2_mh5pe")
+
+[node name="light_glass" parent="danger_light" index="1"]
+material_override = SubResource("StandardMaterial3D_mh5pe")
+transparency = 0.16
+
+[node name="light_bulb" parent="danger_light" index="2"]
+transform = Transform3D(1, 0, 0, 0, -0.9792459099896254, 0.20267572071807355, 0, -0.20267572071807355, -0.9792459099896254, 0, 0, 0)
+material_override = SubResource("StandardMaterial3D_io5gy")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="danger_light/light_bulb" index="0"]
+transform = Transform3D(1, 0, 6.123233995736766e-17, -1.232595164407831e-32, 1, 6.123233995736766e-17, -6.123233995736766e-17, -6.123233995736765e-17, 1, -0.07012649091077575, -0.00044523465902798, -0.03137183368706895)
+visible = false
+light_color = Color(1, 0.42410576, 0.20728892, 1)
+light_energy = 100.0
+spot_range = 2.8040000000000003
+spot_angle = 70.0
+spot_angle_attenuation = 3.4822013
+
+[node name="SpotLight3D2" type="SpotLight3D" parent="danger_light/light_bulb" index="1"]
+transform = Transform3D(1, -2.465190328815662e-32, -6.123233995736766e-17, -1.232595164407831e-32, -1, 6.123233995736766e-17, -6.123233995736766e-17, -6.123233995736767e-17, -1, -0.07012649091077575, -0.00044523465902799, 0.03848868743257895)
+visible = false
+light_color = Color(1, 0.42410576, 0.20728892, 1)
+light_energy = 100.0
+spot_range = 2.8040000000000003
+spot_angle = 70.0
+spot_angle_attenuation = 3.4822013
+
+[editable path="danger_light"]

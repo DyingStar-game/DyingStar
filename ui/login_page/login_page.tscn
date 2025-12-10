@@ -116,5 +116,6 @@ popup/item_2/text = "es"
 popup/item_2/id = 2
 
 [connection signal="ready" from="." to="." method="_on_ready"]
+[connection signal="gui_input" from="FormPlacer/FormContainer/UserName" to="." method="_on_user_name_gui_input"]
 [connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/OnlineButton" to="." method="_on_button_pressed" binds= ["Online"]]
 [connection signal="item_selected" from="Node/HBoxContainer/OptionButton" to="Node" method="_on_option_button_item_selected"]

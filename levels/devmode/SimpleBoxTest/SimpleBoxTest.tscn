@@ -1,6 +1,6 @@
-[gd_scene load_steps=16 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene load_steps=17 format=3 uid="uid://fxj147p5soqi"]
 
-[ext_resource type="Script" uid="uid://cbg5vhdodbobh" path="res://scenes/props/testbox/box_50_cm.gd" id="1_wr7rr"]
+[ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_fsvra"]
 [ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="2_jq82d"]
 [ext_resource type="PackedScene" uid="uid://3kj1xhfed62p" path="res://scenes/props/cargo/palette_canister.tscn" id="3_fsvra"]
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" uid="uid://4oc8xbhlgsvy" path="res://scenes/props/food/ares_nutrigris.tscn" id="8_erwq5"]
 [ext_resource type="PackedScene" uid="uid://dcinktod8m0x2" path="res://scenes/props/cargo/hauling_box.tscn" id="9_fsvra"]
 [ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/props/cargo/palette_container.tscn" id="9_wr7rr"]
+[ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/structures/mining_depot.tscn" id="10_fsvra"]
 [ext_resource type="PackedScene" uid="uid://c60nvcsabtit3" path="res://scenes/props/testblock/test_wall.tscn" id="12_n25os"]
 [ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn" id="4_1uj1c"]
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
@@ -35,7 +36,7 @@ tonemap_mode = 3
 size = Vector3(100, 50, 100)
 
 [node name="SimpleBoxTest" type="Node3D"]
-script = ExtResource("1_wr7rr")
+script = ExtResource("1_fsvra")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8884438118347162, -0.131118655985894, 0.3289750394215779)
@@ -130,3 +131,6 @@ transform = Transform3D(0.9690243527085524, 0, -0.24696518754223595, 0, 1, 0, 0.
 
 [node name="TestWall2" parent="." instance=ExtResource("12_n25os")]
 transform = Transform3D(-0.3942627243429509, 0, -0.9189977715934216, 0, 1, 0, 0.9189977715934216, 0, -0.3942627243429509, -1.9672668228741244, 1.3966663391132677, 2.146455102208465)
+
+[node name="MiningDepot" parent="." instance=ExtResource("10_fsvra")]
+transform = Transform3D(0.8512510289075444, 0, 0.5247586929092714, 0, 1, 0, -0.5247586929092714, 0, 0.8512510289075444, 12.195723415152951, 0.6754013730587656, -8.980332017796714)

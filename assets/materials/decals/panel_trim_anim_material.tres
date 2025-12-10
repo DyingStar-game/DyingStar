@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3 uid="uid://ds1x4el0ic0p4"]
+
+[ext_resource type="Shader" uid="uid://cvndu8vv7cy1y" path="res://assets/materials/decals/animated_panel_trim.gdshader" id="1_5uba1"]
+[ext_resource type="Texture2D" uid="uid://rc1ha8s5x4sq" path="res://assets/textures/decals/wall_panels/wall_panels_displace.exr" id="2_5wi4i"]
+[ext_resource type="Texture2D" uid="uid://bkd2hcfntw0yh" path="res://assets/textures/decals/wall_panels/wall_panels_normal.png" id="3_q0v5b"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_5uba1")
+shader_parameter/albedo = Color(0.8373067, 0.85550904, 0.8828125, 1)
+shader_parameter/roughness = 0.3650000173375
+shader_parameter/specular = 0.47999998927104
+shader_parameter/metallic = 0.999999977648
+shader_parameter/texture_normal = ExtResource("3_q0v5b")
+shader_parameter/normal_scale = 1.000000807500001
+shader_parameter/texture_heightmap = ExtResource("2_5wi4i")
+shader_parameter/heightmap_scale = 5.000000997499999
+shader_parameter/heightmap_min_layers = 8
+shader_parameter/heightmap_max_layers = 32
+shader_parameter/heightmap_flip = Vector2(1, 1)
+shader_parameter/parralax = true

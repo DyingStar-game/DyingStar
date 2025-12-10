@@ -68,6 +68,8 @@ folder_colors={
 gravity=""
 containable=""
 player=""
+rock_mining=""
+screen_area=""
 
 [input]
 

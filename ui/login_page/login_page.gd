@@ -14,17 +14,19 @@ func _on_ready() -> void:
 	is_ready = true
 	allowed_chars_filter.compile(REGEX_ALLOWED_CHARS)
 	multiples_spaces_filter.compile(REGEX_MULTIPLE_SPACES)
+	username_edit.grab_focus()
 
 	username_edit.connect("text_changed", _on_username_changed)
 
 func _on_button_pressed(button_id: String) -> void:
 	# TODO Call HTTP request to auth server to authenticate
+	handle_login()
+	
+func handle_login():
 	if username_edit.get_text():
 		GameOrchestrator.login_player_name = username_edit.get_text()
-	match button_id:
-		"Online":
-			Globals.online_mode = true
-			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
+	Globals.online_mode = true
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
 
 func _on_username_changed(new_username: String) -> void:
 	var cursor_pos = username_edit.caret_column
@@ -37,3 +39,9 @@ func _on_username_changed(new_username: String) -> void:
 	if username_edit.text != cleaned_name:
 		username_edit.text = cleaned_name
 		username_edit.caret_column = cursor_pos
+
+
+func _on_user_name_gui_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.keycode == KEY_ENTER:
+			handle_login()
