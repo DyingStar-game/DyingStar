@@ -81,7 +81,7 @@ var _display_debug:bool = false
 @onready var labelz: Label = $UserInterface/Debug/LabelZValue
 @onready var label_player_name: Label3D = %LabelPlayerName
 @onready var label_server_name: Label3D = %Labelserver_name
-@onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
+@onready var player_animation: Node3D = $Placeholder_Collider/PlayerAnimation
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 @onready var interact_label: Label = $UserInterface/HUD/InteractLabel
 @onready var camera_pivot: Node3D = $CameraPivot
@@ -93,6 +93,7 @@ var _display_debug:bool = false
 @onready var is_inside_box4m: bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
+@onready var animation_tree = $AnimationTree
 
 func _enter_tree() -> void:
 	if name.begins_with("remoteplayer"):
@@ -137,7 +138,7 @@ func _ready() -> void:
 		# hide player name label for me only
 		label_player_name.visible = false
 		label_server_name.visible = false
-		astronaut.visible = false
+		# player_animation.visible = false
 		interact_label.hide()
 		connect_area_detect()
 		active = false
@@ -225,9 +226,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
 			camera.make_current()
-			astronaut.visible = false
+			# player_animation.visible = false
 		else:
-			astronaut.visible = true
+			# player_animation.visible = true
 			$ExtCamera3D.make_current()
 
 func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
@@ -257,6 +258,9 @@ func _process(_delta: float) -> void:
 
 
 	if not OS.has_feature("dedicated_server"):
+		# player part
+		if !active: return
+
 		var dir_vect = Vector3.ZERO
 		var sprint = null
 
@@ -267,21 +271,21 @@ func _process(_delta: float) -> void:
 			sprint = Input.is_action_pressed(SPRINT)
 
 		if dir_vect:
-			input_direction = dir_vect
+			input_direction = lerp(input_direction, dir_vect, 0.1)
 		else:
 			input_direction = Vector2.ZERO
-
 		# send move_direction
-		# if input_direction != client_last_input_direction or global_rotation != client_last_global_rotation:
-		# 	client_last_input_direction = input_direction
-		# 	client_last_global_rotation = global_rotation
-		# 	emit_signal("hs_client_action_move", input_direction, global_rotation)
+		var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+		if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
+			client_last_input_direction = input_direction
+			client_last_global_rotation = short_rotation
+			emit_signal("hs_client_action_move", input_direction, short_rotation)
 		update_last_basis()
+		animation_tree.set("parameters/BlendSpace2D/blend_position", input_direction / 1.0)
 
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
 		labelz.text = str("%0.2f" % global_position[2])
-
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
@@ -352,35 +356,6 @@ func _physics_process(delta: float) -> void:
 			null,
 			is_parented
 		)
-
-	else:
-		# player part
-		if !active: return
-
-		var dir_vect = Vector3.ZERO
-		var sprint = null
-
-		#apply_parent_movement()
-
-		if not direct_chat.can_write:
-			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-			sprint = Input.is_action_pressed(SPRINT)
-
-		if dir_vect:
-			input_direction = dir_vect
-		else:
-			input_direction = Vector2.ZERO
-		# send move_direction
-		var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
-		if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
-			client_last_input_direction = input_direction
-			client_last_global_rotation = short_rotation
-			emit_signal("hs_client_action_move", input_direction, short_rotation)
-		update_last_basis()
-
-		labelx.text = str("%0.2f" % global_position[0])
-		labely.text = str("%0.2f" % global_position[1])
-		labelz.text = str("%0.2f" % global_position[2])
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
