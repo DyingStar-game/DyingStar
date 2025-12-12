@@ -1,0 +1,80 @@
+[gd_scene load_steps=2 format=3 uid="uid://byct4ia54xqqk"]
+
+[ext_resource type="Script" uid="uid://bkk03s2b6f605" path="res://addons/dyingstar/main_panel.gd" id="1_m0dqi"]
+
+[node name="NewMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+script = ExtResource("1_m0dqi")
+metadata/_edit_vertical_guides_ = [99.0, 354.0]
+
+[node name="reload command" type="Button" parent="."]
+layout_mode = 0
+offset_right = 8.0
+offset_bottom = 8.0
+text = "Reload config"
+
+[node name="title devmode configuration" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_top = 48.0
+offset_right = 197.0
+offset_bottom = 88.0
+bbcode_enabled = true
+text = "[b][i]Devmode configuration[/i][/b]"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="devmoderoot" type="Control" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 200)
+anchors_preset = 0
+offset_left = 20.0
+offset_top = 100.0
+offset_right = 230.0
+offset_bottom = 403.0
+
+[node name="title Horizon configuration" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_left = 256.0
+offset_top = 48.0
+offset_right = 453.0
+offset_bottom = 88.0
+bbcode_enabled = true
+text = "[b][i]Horizon configuration[/i][/b]"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Horizon 1 client" type="Button" parent="."]
+layout_mode = 0
+offset_left = 292.0
+offset_top = 95.0
+offset_right = 414.0
+offset_bottom = 126.0
+text = "1 client"
+
+[node name="Horizon 2 clients" type="Button" parent="."]
+layout_mode = 0
+offset_left = 292.0
+offset_top = 135.0
+offset_right = 414.0
+offset_bottom = 166.0
+text = "2 clients"
+
+[node name="Horizon 3 clients" type="Button" parent="."]
+layout_mode = 0
+offset_left = 292.0
+offset_top = 175.0
+offset_right = 414.0
+offset_bottom = 206.0
+text = "3 clients"
+
+[connection signal="tree_entered" from="." to="." method="_on_tree_entered"]
+[connection signal="pressed" from="reload command" to="." method="_on_reload_command_pressed"]
+[connection signal="pressed" from="Horizon 1 client" to="." method="_on_horizon_clients_pressed" binds= [1]]
+[connection signal="pressed" from="Horizon 2 clients" to="." method="_on_horizon_clients_pressed" binds= [2]]
+[connection signal="pressed" from="Horizon 3 clients" to="." method="_on_horizon_clients_pressed" binds= [3]]

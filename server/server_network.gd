@@ -22,7 +22,7 @@ func _enter_tree() -> void:
 			var key_value = argument.split("=")
 			devscene = key_value[1]
 			devmode = true
-			port = 7040
+			port = 7041
 
 func _ready() -> void:
 	set_process(false)
