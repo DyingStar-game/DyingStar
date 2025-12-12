@@ -1,8 +1,0 @@
-[observability]
-enabled=true
-collectorHost="http://localhost:4357"
-environnement="dev"
-level="trace"
-
-[network]
-websocket_url="ws://127.0.0.1:7040"
