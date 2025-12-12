@@ -132,7 +132,9 @@ func _load_client_ini_file() -> void:
 		print("No client.ini file found, using default settings.")
 		return
 
-	if config_file.has_section_key("network", "websocket_url"):
+	if OS.has_feature("devmode"):
+		websocket_url = "ws://localhost:7041"
+	elif config_file.has_section_key("network", "websocket_url"):
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:

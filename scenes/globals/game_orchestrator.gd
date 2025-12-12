@@ -65,7 +65,10 @@ func _ready():
 		change_game_state(GameStates.SERVER_UNIVERS_CREATION)
 	else:
 		change_network_role(NetworkRole.PLAYER)
-		change_game_state(GameStates.HOME_MENU)
+		if OS.has_feature("devmode"):
+			change_game_state(GameStates.PLAYING)
+		else:
+			change_game_state(GameStates.HOME_MENU)
 
 func _notification(what):
 	match what:
