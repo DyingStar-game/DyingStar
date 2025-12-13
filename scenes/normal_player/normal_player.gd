@@ -10,6 +10,13 @@ signal display_debug(show: bool)
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
 
+enum Characters {SOLDIER, ALIEN}
+
+const CHARACTERS_SCENES_PATHS: Dictionary = {
+	Characters.SOLDIER : "res://assets/models/characters/soldier/Soldier.tscn",
+	Characters.ALIEN : "res://assets/models/characters/alien/Alien.tscn",
+}
+
 const MOVE_FORWARD: String = "move_forward"
 const MOVE_BACK: String = "move_back"
 const MOVE_LEFT: String = "move_left"
@@ -38,13 +45,6 @@ const PAUSE: String = "pause"
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
 
 @export var gravity = 0.0
-
-enum Characters {SOLDIER, ALIEN}
-
-const CHARACTERS_SCENES_PATHS: Dictionary = {
-	Characters.SOLDIER : "res://assets/models/characters/soldier/Soldier.tscn",
-	Characters.ALIEN : "res://assets/models/characters/alien/Alien.tscn",
-}
 
 var active_character: int = Characters.SOLDIER
 var character_instance: Node3D
@@ -134,7 +134,7 @@ func _ready() -> void:
 	if not OS.has_feature("dedicated_server"):
 		$UserInterface/LoadingScreen.show()
 		$UserInterface/PauseMenu.cycle_character.connect(_on_cycle_character)
-		
+
 		if collider.has_node("Character"):
 			character_instance = collider.get_node("Character")
 
@@ -379,7 +379,7 @@ func _physics_process(delta: float) -> void:
 		physics_tick += 1
 		if physics_tick >= 5:
 			var player_velocity: float = (global_position - last_position).length()
-			
+
 			if player_velocity > 1.0:
 				animation_tree.set("parameters/conditions/idle", false)
 				animation_tree.set("parameters/conditions/walk", false)
@@ -392,7 +392,7 @@ func _physics_process(delta: float) -> void:
 				animation_tree.set("parameters/conditions/walk", false)
 				animation_tree.set("parameters/conditions/run", false)
 				animation_tree.set("parameters/conditions/idle", true)
-			
+
 			last_position = global_position
 			physics_tick = 0
 
@@ -455,12 +455,12 @@ func _change_character(character: int) -> void:
 		character_instance.name = "old_character"
 		animation_tree.active = false
 		character_instance.queue_free()
-	
+
 	character_instance = load(CHARACTERS_SCENES_PATHS[character]).instantiate()
 	character_instance.name = "Character"
 	character_instance.translate(Vector3(0.0,-0.9,0.0))
 	character_instance.rotate_y(deg_to_rad(180.0))
-	
+
 	character_instance.tree_entered.connect(func():
 		character_instance.owner = self.owner if self.owner else self
 		active_character = character
