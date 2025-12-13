@@ -39,6 +39,16 @@ const PAUSE: String = "pause"
 
 @export var gravity = 0.0
 
+enum Characters {SOLDIER, ALIEN}
+
+const CHARACTERS_SCENES_PATHS: Dictionary = {
+	Characters.SOLDIER : "res://assets/models/characters/soldier/Soldier.tscn",
+	Characters.ALIEN : "res://assets/models/characters/alien/Alien.tscn",
+}
+
+var active_character: int = Characters.SOLDIER
+var character_instance: Node3D
+
 var client_uuid: String = ""
 
 var player_display_name: String = ""
@@ -64,6 +74,9 @@ var input_from_server: Dictionary = {
 }
 var new_input_from_server: bool = false
 
+var last_position: Vector3
+var physics_tick: int = 0
+
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
@@ -81,7 +94,6 @@ var _display_debug:bool = false
 @onready var labelz: Label = $UserInterface/Debug/LabelZValue
 @onready var label_player_name: Label3D = %LabelPlayerName
 @onready var label_server_name: Label3D = %Labelserver_name
-@onready var player_animation: Node3D = $Placeholder_Collider/PlayerAnimation
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 @onready var interact_label: Label = $UserInterface/HUD/InteractLabel
 @onready var camera_pivot: Node3D = $CameraPivot
@@ -93,7 +105,8 @@ var _display_debug:bool = false
 @onready var is_inside_box4m: bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
-@onready var animation_tree = $AnimationTree
+@onready var animation_tree: AnimationTree = $AnimationTree
+@onready var collider: CollisionShape3D = $Placeholder_Collider
 
 func _enter_tree() -> void:
 	if name.begins_with("remoteplayer"):
@@ -120,6 +133,10 @@ func _ready() -> void:
 
 	if not OS.has_feature("dedicated_server"):
 		$UserInterface/LoadingScreen.show()
+		$UserInterface/PauseMenu.cycle_character.connect(_on_cycle_character)
+		
+		if collider.has_node("Character"):
+			character_instance = collider.get_node("Character")
 
 		global_position = spawn_position
 		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
@@ -138,7 +155,6 @@ func _ready() -> void:
 		# hide player name label for me only
 		label_player_name.visible = false
 		label_server_name.visible = false
-		# player_animation.visible = false
 		interact_label.hide()
 		connect_area_detect()
 		active = false
@@ -226,9 +242,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if Input.is_action_just_pressed("ext_cam"):
 		if $ExtCamera3D.current:
 			camera.make_current()
-			# player_animation.visible = false
+			if collider.has_node("Character"):
+				collider.get_node("Character").hide()
 		else:
-			# player_animation.visible = true
+			if collider.has_node("Character"):
+				collider.get_node("Character").show()
 			$ExtCamera3D.make_current()
 
 func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
@@ -281,11 +299,12 @@ func _process(_delta: float) -> void:
 			client_last_global_rotation = short_rotation
 			emit_signal("hs_client_action_move", input_direction, short_rotation)
 		update_last_basis()
-		animation_tree.set("parameters/BlendSpace2D/blend_position", input_direction / 1.0)
+		#animation_tree.set("parameters/BlendSpace2D/blend_position", input_direction / 1.0)
 
 		labelx.text = str("%0.2f" % global_position[0])
 		labely.text = str("%0.2f" % global_position[1])
 		labelz.text = str("%0.2f" % global_position[2])
+
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
@@ -356,6 +375,26 @@ func _physics_process(delta: float) -> void:
 			null,
 			is_parented
 		)
+	else:
+		physics_tick += 1
+		if physics_tick >= 5:
+			var player_velocity: float = (global_position - last_position).length()
+			
+			if player_velocity > 1.0:
+				animation_tree.set("parameters/conditions/idle", false)
+				animation_tree.set("parameters/conditions/walk", false)
+				animation_tree.set("parameters/conditions/run", true)
+			if player_velocity > 0.1:
+				animation_tree.set("parameters/conditions/idle", false)
+				animation_tree.set("parameters/conditions/run", false)
+				animation_tree.set("parameters/conditions/walk", true)
+			else:
+				animation_tree.set("parameters/conditions/walk", false)
+				animation_tree.set("parameters/conditions/run", false)
+				animation_tree.set("parameters/conditions/idle", true)
+			
+			last_position = global_position
+			physics_tick = 0
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
@@ -406,6 +445,32 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
+
+func _on_cycle_character() -> void:
+	var next_character: int = (active_character + 1) % Characters.size()
+	_change_character(next_character)
+
+func _change_character(character: int) -> void:
+	if is_instance_valid(character_instance):
+		character_instance.name = "old_character"
+		animation_tree.active = false
+		character_instance.queue_free()
+	
+	character_instance = load(CHARACTERS_SCENES_PATHS[character]).instantiate()
+	character_instance.name = "Character"
+	character_instance.translate(Vector3(0.0,-0.9,0.0))
+	character_instance.rotate_y(deg_to_rad(180.0))
+	
+	character_instance.tree_entered.connect(func():
+		character_instance.owner = self.owner if self.owner else self
+		active_character = character
+		if collider.has_node("Character"):
+			if animation_tree.has_node(animation_tree.anim_player):
+				animation_tree.get_node(animation_tree.anim_player).set_root_node(collider.get_path())
+				animation_tree.active = true
+				animation_tree.set("parameters/conditions/walk", true)
+	, CONNECT_ONE_SHOT)
+	collider.add_child(character_instance)
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

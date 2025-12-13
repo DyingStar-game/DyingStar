@@ -1,5 +1,7 @@
 extends Control
 
+signal cycle_character
+
 var actual_page: Control = null
 
 @onready var main_pause_menu: Control = $PausePage
@@ -14,6 +16,9 @@ func _ready() -> void:
 	)
 	main_pause_menu.resume_game_button.pressed.connect(
 		_on_pause_menu_button_pressed.bind("resume_game_button")
+	)
+	main_pause_menu.cycle_character_button.pressed.connect(
+		_on_pause_menu_button_pressed.bind("cycle_character_button")
 	)
 
 	input_settings_menu.return_main_menu_button.pressed.connect(
@@ -60,5 +65,7 @@ func _on_pause_menu_button_pressed(button_pressed: String) -> void:
 			actual_page.visible = false
 			actual_page = main_pause_menu
 			actual_page.visible = true
+		"cycle_character_button":
+			cycle_character.emit()
 		_:
 			pass
