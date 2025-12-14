@@ -1,10 +1,13 @@
 extends RigidBody3D
 
 signal hs_server_prop_update
+signal hs_server_prop_delete
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
 @export var uuid: String = ""
+
+var type_name = "miningrock"
 
 var combiner: CSGCombiner3D
 
@@ -252,3 +255,11 @@ func _on_area_3d_body_entered(body: Node3D) -> void:
 				if bloc.fractured == false:
 					_cut_rock(bloc)
 					return
+
+func _exit_tree() -> void:
+	if GameOrchestrator.is_server():
+		emit_signal(
+			"hs_server_prop_delete",
+			uuid,
+			type_name
+		)

@@ -6,6 +6,7 @@ signal hs_client_action_move
 signal hs_server_move
 signal hs_client_action_pressed
 signal display_debug(show: bool)
+signal hs_server_player_update
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -53,6 +54,11 @@ var spawn_up: Vector3 = Vector3.UP
 
 var can_interact: bool = false
 
+var health: int = 100
+var stamina: int = 100
+var hunger: int = 100
+var thirst: int = 100
+var integrity: int = 3
 
 var gravity_parents: Array[Area3D]
 
@@ -73,6 +79,7 @@ var is_parented: bool = false
 var active = false
 
 var _display_debug:bool = false
+
 
 @onready var camera = $CameraPivot/Camera3D
 
@@ -197,13 +204,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if !active: return
 
 	if event.is_action_pressed(JUMP):
-		emit_signal("hs_client_action_pressed", JUMP)
+		client_send_action_to_server({"action": JUMP})
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
 
 	if event.is_action_pressed("toggle_flashlight"):
-		flashlight.visible = not flashlight.visible
+		client_send_action_to_server({"action": "toggle_flashlight"})
+		# flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("spawn_50cmbox"):
 		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
@@ -460,3 +468,53 @@ func spawn_box(boxscene: String, type: String, coeffz: float, coeffy: float):
 			"parent_id": parentuuid,
 		}
 	)
+
+# Send the properties of the player from godot server to horizon / client
+# for example, the health, stamina, etc...
+func server_send_properties_to_client(data: Dictionary):
+	emit_signal(
+		"hs_server_player_update",
+		client_uuid,
+		data,
+	)
+
+# Send action of the client to the server part (Horizon / godot server)
+# data example:
+# {
+#     "action": "jump"
+# }
+func client_send_action_to_server(data: Dictionary):
+	emit_signal(
+		"client_action_requested",
+		data,
+	)
+
+# receive the properties sent by the server part (Horizon / godot server)
+# this function is used to update the properties of the player onm client side
+func client_channel_data_update(data: Dictionary) -> void:
+	if data.has("position"):
+		position = Vector3(
+			data["position"]["x"],
+			data["position"]["y"],
+			data["position"]["z"]
+		)
+	if data.has("rotation"):
+		rotation = Vector3(
+			data["rotation"]["x"],
+			data["rotation"]["y"],
+			data["rotation"]["z"]
+		)
+	if data.has("action"):
+		match data["action"]:
+			JUMP:
+				is_jumping = true
+			"toggle_flashlight":
+				flashlight.visible = not flashlight.visible
+
+# receive properties from the client, often the actions
+func server_action_received(data: Dictionary) -> void:
+	match data["action"]:
+		JUMP:
+			is_jumping = true
+		"toggle_flashlight":
+			flashlight.visible = not flashlight.visible

@@ -3,10 +3,11 @@ class_name Box50cm
 extends RigidBody3D
 
 signal hs_server_prop_update
+signal hs_server_prop_delete
 
 @export var uuid: String = ""
 
-var type_name = "box50cm"
+var type_name = "box"
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
@@ -38,6 +39,14 @@ func _physics_process(_delta: float) -> void:
 			)
 			server_last_position = my_position
 			server_last_rotation = my_rotation
+
+func _exit_tree() -> void:
+	if GameOrchestrator.is_server():
+		emit_signal(
+			"hs_server_prop_delete",
+			uuid,
+			type_name
+		)
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)

@@ -178,11 +178,9 @@ func player_move(message: Dictionary):
 
 
 func player_action(message: Dictionary):
-	if players_list.has(message["data"]["uuid"]):
-		var player = players_list[message["data"]["uuid"]]
-		if message["data"]["action"] == "jump":
-			player.is_jumping = true
-			player.new_input_from_server = true
+	if players_list.has(message["player_id"]):
+		var player = players_list[message["player_id"]]
+		player.server_action_received(message["data"])
 
 
 func _send_metrics():
@@ -374,6 +372,32 @@ func send_props_update_to_horizon():
 	ServerNetwork.send_message(message, "prop_update")
 	props_update.clear()
 
+func _on_prop_delete(
+	uuid: String,
+	type: String
+):
+	debug_message_number = debug_message_number + 1
+	var message = {
+		"namespace": "props",
+		"event": "delete_object",
+		"amessagenb": debug_message_number,
+		"data": [
+			{
+				"uuid": uuid,
+				"type": type,
+			}
+		]
+	}
+	ServerNetwork.send_message(message, "prop_delete")
+	props_update.erase(uuid)
+	if props_list.has(type):
+		if props_list[type].has(uuid):
+			props_list[type].erase(uuid)
+	if props_list_last_movement.has(uuid):
+		props_list_last_movement.erase(uuid)
+	if props_list_last_rotation.has(uuid):
+		props_list_last_rotation.erase(uuid)
+
 func create_planet(event: Dictionary) -> void:
 	# spawn planet
 	var planet_data = event["data"]["object_data"]
@@ -443,6 +467,7 @@ func create_player(event: Dictionary) -> void:
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
+	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
 
 func set_serverinfo(event: Dictionary) -> void:
 	serverinfo_uuid = event["data"]["object_uuid"]
@@ -482,6 +507,7 @@ func create_generic_object(event: Dictionary) -> void:
 
 	spawnable_prop_instance.client_channel_data_update(object_data)
 	spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
+	spawnable_prop_instance.connect("hs_server_prop_delete", _on_prop_delete)
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
@@ -495,3 +521,15 @@ func _search_parent_node(parent_id: String) -> Node:
 		if props_list[proptype].has(parent_id):
 			return props_list[proptype][parent_id]
 	return null
+
+func _on_player_update(
+	client_uuid: String,
+	properties: Dictionary,
+):
+	var message = {
+		"namespace": "players",
+		"event": "update",
+		"uuid": client_uuid,
+		"data": properties
+	}
+	ServerNetwork.send_message(message, "player_update")

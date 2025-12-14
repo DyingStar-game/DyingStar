@@ -3,12 +3,13 @@ class_name Box4m
 extends RigidBody3D
 
 signal hs_server_prop_update
+signal hs_server_prop_delete
 
 @export var inside_space: World3D
 
 @export var uuid: String = ""
 
-var type_name = "box4m"
+var type_name = "box"
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
@@ -77,4 +78,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["rotation"]["x"],
 			data["rotation"]["y"],
 			data["rotation"]["z"]
+		)
+
+func _exit_tree() -> void:
+	if GameOrchestrator.is_server():
+		emit_signal(
+			"hs_server_prop_delete",
+			uuid,
+			type_name
 		)
