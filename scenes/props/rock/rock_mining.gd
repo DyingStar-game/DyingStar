@@ -200,7 +200,7 @@ func _physics_process(_delta: float) -> void:
 					"position": my_position,
 					"rotation": my_rotation,
 				},
-				"miningrock",
+				type_name,
 				has_parent
 			)
 			server_last_position = my_position
@@ -217,7 +217,7 @@ func _server_create_side2_rock(bloc: Dictionary) -> void:
 		"amessagenb": 1,
 		"data": [
 			{
-				"type": "miningrock",
+				"type": type_name,
 				"uuid": bloc2_uuid,
 				"position": {
 					"x": position[0],

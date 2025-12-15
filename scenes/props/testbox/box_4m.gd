@@ -38,7 +38,7 @@ func _physics_process(_delta: float) -> void:
 					"position": my_position,
 					"rotation": my_rotation,
 				},
-				"box",
+				type_name,
 				has_parent
 			)
 			server_last_position = my_position
