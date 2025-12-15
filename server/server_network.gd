@@ -110,7 +110,6 @@ func dispatch_horizon_message(message: Dictionary):
 			"move":
 				NetworkOrchestrator.network_agent.player_move(message)
 			"action":
-			"client_action":
 				NetworkOrchestrator.network_agent.player_action(message)
 
 func send_message(message: Dictionary, message_type: String):
@@ -441,7 +440,7 @@ func _devmode_horizon_mapping(message: Dictionary):
 							}
 						})
 					)
-				"action":
+				"client_action":
 					NetworkOrchestrator.network_agent.player_action({
 						"namespace": "player",
 						"event": "action",
