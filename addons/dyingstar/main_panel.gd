@@ -36,67 +36,65 @@ func _on_reload_command_pressed() -> void:
 
 func _on_button_pressed(file_name: String):
 	var editor = EditorInterface.get_editor_settings()
+	var actual_instance_config: Array = editor.get_project_metadata("debug_options", "run_instances_config")
+	var actual_launch_mode: String = actual_instance_config.back().arguments
+	
+	if actual_launch_mode.contains("--devmode="):
+		self.set_focus_mode(Control.FOCUS_ALL)
+		self.grab_focus()
+		self.set_focus_mode(Control.FOCUS_NONE)
+		return
+	
 	editor.set_project_metadata("debug_options", "run_instance_count", 2.0)
 	editor.set_project_metadata("debug_options", "multiple_instances_enabled", true)
 	editor.set_project_metadata("debug_options", "run_instances_config", [
+		{
+			"arguments": "",
+			"features": "devmode",
+			"override_args": false,
+			"override_features": false
+		},
 		{
 			"arguments": "--srvini=test/ini/srv1.ini --devmode=" + file_name,
 			"features": "dedicated_server",
 			"override_args": false,
 			"override_features": false
 		},
-		{
-			"arguments": "",
-			"features": "devmode",
-			"override_args": false,
-			"override_features": false
-		}
 	])
 	EditorInterface.restart_editor(true)
 
 
 func _on_horizon_clients_pressed(extra_arg_0: int) -> void:
 	var editor = EditorInterface.get_editor_settings()
+	var actual_instance_config: Array = editor.get_project_metadata("debug_options", "run_instances_config")
+	var actual_launch_mode: String = actual_instance_config.back().arguments	
 	var actual_instance_count: int = editor.get_project_metadata("debug_options", "run_instance_count")
 	var needed_instance_count: int = 1 + extra_arg_0
 	
-	if actual_instance_count == needed_instance_count:
+	if actual_instance_count == needed_instance_count and not actual_launch_mode.contains("--devmode="):
+		self.set_focus_mode(Control.FOCUS_ALL)
+		self.grab_focus()
+		self.set_focus_mode(Control.FOCUS_NONE)
 		return
 	
-	editor.set_project_metadata("debug_options", "run_instance_count", (1 + extra_arg_0))
+	editor.set_project_metadata("debug_options", "run_instance_count", needed_instance_count)
 	editor.set_project_metadata("debug_options", "multiple_instances_enabled", true)
-	var instances = [
-		{
-			"arguments": "--srvini=test/ini/srv1.ini",
-			"features": "dedicated_server",
-			"override_args": false,
-			"override_features": false
-		},
-		{
-			"arguments": "",
-			"features": "",
-			"override_args": false,
-			"override_features": false
-		}
-	]
-	if extra_arg_0 >= 2:
-		instances.append(
-			{
+	
+	var instances = []
+	print("\t")
+	for instance in range(extra_arg_0):
+		instances.append({
 				"arguments": "",
 				"features": "",
 				"override_args": false,
 				"override_features": false
-			}
-		)
-	if extra_arg_0 >= 3:
-		instances.append(
-			{
-				"arguments": "",
-				"features": "",
+			})
+	instances.append({
+				"arguments": "--srvini=test/ini/srv1.ini",
+				"features": "dedicated_server",
 				"override_args": false,
 				"override_features": false
-			}
-		)
+			})
 
 	editor.set_project_metadata("debug_options", "run_instances_config", instances)
 	EditorInterface.restart_editor(true)
