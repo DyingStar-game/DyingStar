@@ -3,8 +3,7 @@ extends Node
 enum ChangeStateReturns {OK, ERROR, NO_CHANGE}
 
 enum NetworkRole {PLAYER, SERVER}
-enum GameStates {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, TROLL, CONNEXION_ERROR}
-enum PlayingLevels {SYSTEM_SANDBOX}
+enum GameStates {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_PLAYING, DEV, CONNEXION_ERROR}
 
 const MAX_USERNAME_LENGTH: int = 32
 const MIN_USERNAME_LENGTH: int = 4
@@ -17,9 +16,9 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 	GameStates.GAME_MENU : "",
 	GameStates.PAUSE_MENU : "",
 	GameStates.PLAYING : "res://levels/system-sandbox/system_sandbox.tscn",
-	GameStates.SERVER_UNIVERS_CREATION : "res://scenes/universe_creation/universe_map.tscn",
 	GameStates.SERVER_PLAYING : "res://levels/system-sandbox/system_sandbox.tscn",
 	GameStates.CONNEXION_ERROR : "res://ui/error_message/error_message.tscn",
+	GameStates.DEV : "res://levels/devmode/dev_scene.tscn",
 }
 
 const SPAWN_POINTS_LIST: Array[Dictionary] = [
@@ -38,15 +37,11 @@ var distinguish_instances: Dictionary = {
 	NetworkRole.SERVER: {"instance_name": "Serveur", "instance_color": "aquamarine"},
 }
 
-var univers_creation_entities: Dictionary = {}
-
 var login_player_name: String = "I am an idiot !" :
 	set(receveid_name):
 		if not receveid_name.strip_edges().is_empty() and receveid_name.length() >= MIN_USERNAME_LENGTH :
 			login_player_name = receveid_name.left(MAX_USERNAME_LENGTH)
 var requested_spawn_point: int = 0
-
-@onready var game_is_paused: bool = false
 
 func _enter_tree() -> void:
 	get_tree().set_script(SCENE_TREE_EXTENDED_SCRIPT_PATH)
@@ -58,11 +53,27 @@ func _ready():
 		) != ProjectSettings.get_setting("application/run/main_scene") and not OS.has_feature("dedicated_server"):
 			return
 
+		get_tree().connect("scene_changed_custom", _on_scene_changed)
+
+		if OS.has_feature("dedicated_server"):
+			var arguments = OS.get_cmdline_args()
+			for argument in arguments:
+				if argument.begins_with("--devmode="):
+					change_network_role(NetworkRole.SERVER)
+					change_game_state(GameStates.DEV)
+					return
+		else:
+			if OS.has_feature("devmode"):
+
+				change_network_role(NetworkRole.PLAYER)
+				change_game_state(GameStates.DEV)
+				return
+
 	get_tree().connect("scene_changed_custom", _on_scene_changed)
 
 	if OS.has_feature("dedicated_server"):
 		change_network_role(NetworkRole.SERVER)
-		change_game_state(GameStates.SERVER_UNIVERS_CREATION)
+		change_game_state(GameStates.SERVER_PLAYING)
 	else:
 		change_network_role(NetworkRole.PLAYER)
 		if OS.has_feature("devmode"):
@@ -101,12 +112,9 @@ func change_game_state(new_state) -> int:
 		GameStates.HOME_MENU:
 			current_state = new_state
 			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.HOME_MENU])
-		GameStates.SERVER_UNIVERS_CREATION:
-			current_state = new_state
-			NetworkOrchestrator.create_server()
-			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.SERVER_UNIVERS_CREATION])
 		GameStates.SERVER_PLAYING:
 			current_state = new_state
+			NetworkOrchestrator.create_server()
 			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.SERVER_PLAYING])
 		GameStates.UNIVERSE_MENU:
 			current_state = new_state
@@ -132,8 +140,27 @@ func change_game_state(new_state) -> int:
 				GameStates.PLAYING:
 					Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 					current_state = new_state
+				GameStates.DEV:
+					Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+					current_state = new_state
 				_:
 					return_state = ChangeStateReturns.NO_CHANGE
+		GameStates.DEV:
+			match current_network_role:
+				GameOrchestrator.NetworkRole.SERVER:
+					current_state = new_state
+					NetworkOrchestrator.create_server()
+					get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.DEV])
+				GameOrchestrator.NetworkRole.PLAYER:
+					current_state = new_state
+					match current_state:
+						GameStates.PAUSE_MENU:
+							Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+						_:
+							NetworkOrchestrator.create_client()
+							get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.DEV])
+				_:
+					return_state = ChangeStateReturns.ERROR
 		_:
 			return_state = ChangeStateReturns.ERROR
 	return return_state
@@ -141,21 +168,11 @@ func change_game_state(new_state) -> int:
 func _on_scene_changed(changed_scene: Node) -> void:
 	var scene_path: String = changed_scene.scene_file_path
 
-	if scene_path == GAME_STATES_SCENES_PATHS[GameStates.PLAYING]:
+	if scene_path == GAME_STATES_SCENES_PATHS[GameStates.PLAYING] or scene_path == GAME_STATES_SCENES_PATHS[GameStates.DEV]:
+
 		match current_network_role:
 			NetworkRole.SERVER:
 				login_player_name = "AlfredThaddeusCranePennyworth"
-				var server_instance =  NetworkOrchestrator.start_server(changed_scene)
-				server_instance.connect("populated_universe", _on_populated_universe)
+				NetworkOrchestrator.start_server(changed_scene)
 			NetworkRole.PLAYER:
 				NetworkOrchestrator.start_client(changed_scene)
-	elif scene_path == GAME_STATES_SCENES_PATHS[GameStates.SERVER_UNIVERS_CREATION]:
-		changed_scene.connect("universe_data_retrieved", _on_universe_data_retrieved)
-		changed_scene.retrieve_universe_datas()
-
-func _on_universe_data_retrieved(datas: Dictionary) -> void:
-	univers_creation_entities = datas
-	change_game_state(GameStates.SERVER_PLAYING)
-
-func _on_populated_universe(current_scene: Node) -> void:
-	current_scene.assign_spawn_informations()
