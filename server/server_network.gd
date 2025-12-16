@@ -42,12 +42,12 @@ func _process(_delta: float) -> void:
 		peer.accept_stream(ServerNetwork.tcp_server.take_connection())
 
 	peer.poll()
-	peer.outbound_buffer_size = 1000000000  # 1 GB
-	peer.max_queued_packets = 1000000  # 1 million packets
-	peer.set_no_delay(true)
 
 	var peer_state = peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
+		peer.outbound_buffer_size = 1000000000  # 1 GB
+		peer.max_queued_packets = 1000000  # 1 million packets
+		peer.set_no_delay(true)
 		while peer.get_available_packet_count():
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
@@ -165,6 +165,12 @@ func _devmode_mapping_send(message: Dictionary, message_type: String):
 			"devmodecreate_object":
 				_devmode_mapping_props_creation(message)
 				return true
+			"prop_delete":
+				_devmode_mapping_props_deletion(message)
+				return true
+			"player_update":
+				_devmode_mapping_players_update(message)
+				return true
 			_:
 				print("DevMode - ERROR - No mapping for message type: %s" % message_type)
 	return false
@@ -235,6 +241,19 @@ func _devmode_mapping_players_position(message: Dictionary):
 				}
 			})
 		)
+
+func _devmode_mapping_players_update(message: Dictionary):
+	peer.send_text(
+		JSON.stringify({
+			"channel": 0,
+			"event_type": "update_player",
+			"object_id": message["uuid"],
+			"object_type": "GorcPlayer",
+			"player_id": message["uuid"],
+			"timestamp": int(Time.get_unix_time_from_system()),
+			"data": message["data"]
+		})
+	)
 
 func _devmode_mapping_props_position(message: Dictionary):
 	# Convert player position
@@ -312,6 +331,23 @@ func _devmode_mapping_props_creation(message: Dictionary):
 				}
 			)
 		)
+
+func _devmode_mapping_props_deletion(message: Dictionary):
+		# send to client
+		peer.send_text(
+			JSON.stringify(
+				{
+					"channel": 6,
+					"zone_data": message["data"],
+					"type": "gorc_zone_exit",
+					"object_id": message["data"]["uuid"],
+					"object_type": message["data"]["type"],
+					"player_id": message["data"]["uuid"],
+					"timestamp": int(Time.get_unix_time_from_system())
+				}
+			)
+		)
+
 
 ### Messages mapping from godot client to godot server in devmode (Horizon in non-devmode)
 func _devmode_horizon_mapping(message: Dictionary):
@@ -404,6 +440,13 @@ func _devmode_horizon_mapping(message: Dictionary):
 							}
 						})
 					)
+				"client_action":
+					NetworkOrchestrator.network_agent.player_action({
+						"namespace": "player",
+						"event": "action",
+						"player_id": "82203c32-7acc-47cb-9abe-34fc4ac1318e",
+						"data": message["data"],
+					})
 		"movement":
 			match message['event']:
 				"update_velocity":

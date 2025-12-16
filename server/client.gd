@@ -213,6 +213,8 @@ func _process(_delta: float) -> void:
 							create_object(event)
 						elif event.has("event_type") and event["event_type"] == "gorc_zone_exit":
 							delete_player(event)
+						elif event.has("event_type") and event["event_type"] == "update":
+							update_player(event)
 						# special case for player update
 						player_update(event)
 					elif event["event_type"] == "update_property":
@@ -220,6 +222,8 @@ func _process(_delta: float) -> void:
 						update_generic_object(event)
 					elif event["event_type"] == "gorc_zone_enter":
 						create_object(event)
+					elif event["event_type"] == "gorc_zone_exit":
+						delete_object(event)
 					else:
 						print("< Client - ERROR - Unknown object_type event: %s" % event["object_type"])
 				else:
@@ -274,28 +278,36 @@ func receive_chat_message(message: ChatMessage) -> void:
 ########################################################################
 
 func _on_client_action_requested(datas: Dictionary) -> void:
-	if datas.has("action"):
-		match datas["action"]:
-			"spawn":
-				# print("Request to spawn %s" % datas["entity"])
-				socket.send_text(JSON.stringify({
-					"namespace": "props",
-					"event": "spawn_request",
-					"data": datas,
-				}))
-				network_events_sent += 1
-			"control":
-				if datas.has("entity"):
-					match datas["entity"]:
-						"ship":
-							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
-							NetworkOrchestrator.request_control.rpc_id(1, player_instance.get_path(), ship_instance_path)
-			"release_control":
-				if datas.has("entity"):
-					match datas["entity"]:
-						"ship":
-							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
-							NetworkOrchestrator.request_release.rpc_id(peer_id, player_instance.get_path(), ship_instance_path)
+	socket.send_text(JSON.stringify({
+		"namespace": "player",
+		"event": "client_action",
+		"data": datas,
+	}))
+	network_events_sent += 1
+
+
+	# if datas.has("action"):
+	# 	match datas["action"]:
+	# 		"spawn":
+	# 			# print("Request to spawn %s" % datas["entity"])
+	# 			socket.send_text(JSON.stringify({
+	# 				"namespace": "props",
+	# 				"event": "spawn_request",
+	# 				"data": datas,
+	# 			}))
+	# 			network_events_sent += 1
+	# 		"control":
+	# 			if datas.has("entity"):
+	# 				match datas["entity"]:
+	# 					"ship":
+	# 						var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
+	# 						NetworkOrchestrator.request_control.rpc_id(1, player_instance.get_path(), ship_instance_path)
+	# 		"release_control":
+	# 			if datas.has("entity"):
+	# 				match datas["entity"]:
+	# 					"ship":
+	# 						var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
+	# 						NetworkOrchestrator.request_release.rpc_id(peer_id, player_instance.get_path(), ship_instance_path)
 
 func _on_message_from_player(message: ChatMessage) -> void:
 	var dictionnary_message = {
@@ -612,6 +624,14 @@ func create_generic_object(event: Dictionary) -> void:
 				}
 			else:
 				props_pre_creations[event["object_id"]]["channels"][event["channel"]] = object_data
+
+func update_player(event: Dictionary) -> void:
+	# print("Update player: %s" % event)
+	if players_list.has(event["object_id"]):
+		var player = players_list[event["object_id"]]
+		player.client_channel_data_update(event["data"])
+	else:
+		print("Update Player but not found...")
 
 func update_generic_object(event: Dictionary) -> void:
 	# type of messages:
