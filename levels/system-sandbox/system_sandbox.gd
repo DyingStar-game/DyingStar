@@ -21,10 +21,6 @@ func _ready() -> void:
 		for child in get_node("PlayerSpawnPointsList").get_children():
 			spawn_points_list.append(child.global_position)
 
-func assign_spawn_informations() -> void:
-	pass
-	#planet_center = get_node("Sandbox").global_position
-
 
 func _physics_process(_delta: float) -> void:
 	pass

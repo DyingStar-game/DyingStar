@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://wbf46n8pnkvl"]
+
+[ext_resource type="Script" uid="uid://vdmau1puibae" path="res://levels/devmode/dev_scene.gd" id="1_sdfi5"]
+
+[node name="DevScene" type="Node3D"]
+script = ExtResource("1_sdfi5")
