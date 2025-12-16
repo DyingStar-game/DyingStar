@@ -52,21 +52,19 @@ func _ready():
 			ResourceLoader.get_resource_uid(get_tree().current_scene.scene_file_path)
 		) != ProjectSettings.get_setting("application/run/main_scene") and not OS.has_feature("dedicated_server"):
 			return
-		
+
 		get_tree().connect("scene_changed_custom", _on_scene_changed)
-		
+
 		if OS.has_feature("dedicated_server"):
 			var arguments = OS.get_cmdline_args()
 			for argument in arguments:
 				if argument.begins_with("--devmode="):
-					var _dev_scene = argument.substr("--devmode=".length())
-					
 					change_network_role(NetworkRole.SERVER)
 					change_game_state(GameStates.DEV)
 					return
 		else:
 			if OS.has_feature("devmode"):
-				
+
 				change_network_role(NetworkRole.PLAYER)
 				change_game_state(GameStates.DEV)
 				return
@@ -171,7 +169,7 @@ func _on_scene_changed(changed_scene: Node) -> void:
 	var scene_path: String = changed_scene.scene_file_path
 
 	if scene_path == GAME_STATES_SCENES_PATHS[GameStates.PLAYING] or scene_path == GAME_STATES_SCENES_PATHS[GameStates.DEV]:
-		
+
 		match current_network_role:
 			NetworkRole.SERVER:
 				login_player_name = "AlfredThaddeusCranePennyworth"
