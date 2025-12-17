@@ -2,11 +2,14 @@ class_name Player
 
 extends CharacterBody3D
 
+const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+
 signal hs_client_action_move
 signal hs_server_move
 signal hs_client_action_pressed
 signal display_debug(show: bool)
 signal hs_server_player_update
+
 
 @warning_ignore("unused_signal")
 signal client_action_requested(datas: Dictionary)
@@ -83,7 +86,7 @@ var active = false
 var _display_debug:bool = false
 
 # to interact with ui screens in the world
-var screen_interacting = false
+var screen_interacting
 var screen_position: Vector3
 
 @onready var camera: Camera3D = $CameraPivot/Camera3D
@@ -224,7 +227,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		spawn_box("testbox/box_4m", "box", 3.0, 6.0)
 
 	if event.is_action_pressed("spawn_rock_mining"):
-		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
+		spawn_box("rock/rock_mining_01", "miningrock", 2, 1.2)
 
 	if event.is_action_pressed("debug_console"):
 		if _display_debug:
@@ -252,6 +255,8 @@ func _process(_delta: float) -> void:
 	if !active:
 		interact_label.hide()
 		return
+	
+	
 
 	if not screen_interacting:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -454,7 +459,7 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		var screen = area.get_parent_node_3d()
 		if screen:
 			screen_position = screen.global_position
-			screen_interacting = true
+			screen_interacting = screen
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
@@ -462,7 +467,7 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 			gravity_parents.erase(area)
 	
 	if area.is_in_group("screen_area"):
-		screen_interacting = false
+		screen_interacting = null
 
 func _set_player_global_position(pos, rot):
 	global_position = pos
@@ -537,8 +542,35 @@ func client_channel_data_update(data: Dictionary) -> void:
 
 # receive properties from the client, often the actions
 func server_action_received(data: Dictionary) -> void:
+	prints("player sent action", data)
 	match data["action"]:
 		JUMP:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
+		"screen_state":
+			screen_interacting.update_screen(data)
+		"spawn":
+			if !ServerNetwork.devmode:
+				return
+			
+			var message = {
+				"namespace": "props",
+				"event": "create_object",
+				"amessagenb": 1,
+				"data": [
+					{
+						"type": data["entity"],
+						"uuid": UUID_UTIL.new().as_string(),
+						"position": data["position"],
+						"rotation": {
+							"x": 0,
+							"y": 0,
+							"z": 0
+						},
+						"scenename": data["scenename"],
+						"parent_id": data["parent_id"],
+					}
+				]
+			}
+			ServerNetwork.send_message(message, "devmodecreate_object")

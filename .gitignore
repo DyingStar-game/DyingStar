@@ -24,6 +24,7 @@ mono_crash.*.json
 /.vs
 /build
 .DS_Store
+*.tmp
 
 # specific for Wwise Project
 

@@ -1,5 +1,6 @@
 extends Node
 
+
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
 var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
@@ -405,7 +406,7 @@ func delete_object(event: Dictionary) -> void:
 				print("unknown object type for deletion")
 
 func create_player(event: Dictionary) -> void:
-	# print("Create player: %s" % event)
+	#print("Create player: %s" % event)
 	var player_data = {}
 
 	if event.has("zone_data"):
@@ -550,7 +551,7 @@ func create_generic_object(event: Dictionary) -> void:
 			prop_instance.tree_entered.connect(func():
 				prop_instance.owner = get_tree().current_scene
 			)
-
+			
 			if object_data.has("parent_id"):
 				if object_data["parent_id"] != "":
 					var parent = _search_parent_node(object_data["parent_id"])
@@ -570,6 +571,7 @@ func create_generic_object(event: Dictionary) -> void:
 			props_list[event["object_type"]][event["object_id"]] = prop_instance
 
 			prop_instance.client_channel_data_update(object_data)
+			
 			if props_pre_creations.has(event["object_id"]):
 				for channel in props_pre_creations[event["object_id"]]["channels"]:
 					prop_instance.client_channel_data_update(props_pre_creations[event["object_id"]]["channels"][channel])
@@ -671,7 +673,8 @@ func update_generic_object(event: Dictionary) -> void:
 	if props_list.has(event["object_type"]):
 		if props_list[event["object_type"]].has(event["object_id"]):
 			var prop_instance = props_list[event["object_type"]][event["object_id"]]
-			prop_instance.client_channel_data_update(event["data"])
+			if is_instance_valid(prop_instance):
+				prop_instance.client_channel_data_update(event["data"])
 		else:
 			print("Update generic object but not found: %s" % event["object_id"])
 	else:

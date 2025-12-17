@@ -1,13 +1,15 @@
-[gd_scene load_steps=4 format=3 uid="uid://cc8s2k0q8cxf"]
+[gd_scene load_steps=5 format=3 uid="uid://cc8s2k0q8cxf"]
 
 [ext_resource type="ArrayMesh" uid="uid://ns7bdsgtqaed" path="res://assets/models/StorageBoxes/pallet_crate_120x80x100.mesh" id="1_epaii"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_ycnj0"]
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/materials/painted_metal/paint_yellow_material.tres" id="2_n72is"]
 [ext_resource type="Shape3D" uid="uid://bd78hkn8m62hb" path="res://scenes/props/StorageBoxes/pallet_generic_120x80x100.res" id="3_k2t6d"]
 
 [node name="PalletCrate120x80x100" type="Node3D"]
 script = ExtResource("1_ycnj0")
 
 [node name="PalletCrate120x80x100" type="MeshInstance3D" parent="."]
+material_override = ExtResource("2_n72is")
 mesh = ExtResource("1_epaii")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="PalletCrate120x80x100"]

@@ -1,10 +1,9 @@
-[gd_scene load_steps=34 format=3 uid="uid://rv6ugxi8n8pe"]
+[gd_scene load_steps=33 format=3 uid="uid://rv6ugxi8n8pe"]
 
 [ext_resource type="Script" uid="uid://bbnhmkthrguhh" path="res://scenes/planet/base_planet.gd" id="1_lgys4"]
 [ext_resource type="Resource" uid="uid://dndwamrx0yyd8" path="res://scenes/planet/sandbox_settings.tres" id="2_lgys4"]
 [ext_resource type="PackedScene" uid="uid://bcer07jbu28y1" path="res://scenes/planet/planet_terrain.tscn" id="3_5yiub"]
 [ext_resource type="Script" uid="uid://7pymoxifok1q" path="res://tools/spawn_points/player_spawn_points_list.gd" id="24_pkolm"]
-[ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="25_srdg2"]
 [ext_resource type="PackedScene" uid="uid://br2b6gumt3gyn" path="res://scenes/planet/asset_spawner.tscn" id="26_blt5l"]
 [ext_resource type="PackedScene" uid="uid://bebxtf0bt3hrm" path="res://scenes/props/rock/rock_small.tscn" id="27_b2x88"]
 [ext_resource type="PackedScene" uid="uid://4i1746c4272f" path="res://scenes/props/rock/rock_medium.tscn" id="28_hyyap"]
@@ -69,7 +68,7 @@ colors = PackedColorArray(1.49205e-06, 0.489553, 0.503481, 1, 0.00948865, 0.2322
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_tfj6s"]
 gradient = SubResource("Gradient_wsl8f")
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_1ndiy"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cl75f"]
 resource_local_to_scene = true
 render_priority = 1
 shader = ExtResource("31_q3myr")
@@ -85,7 +84,7 @@ shader_parameter/atmosphere_radius = 2180000.0
 shader_parameter/atmosphere_density = 5.0
 shader_parameter/water_density_factor = -0.205
 
-[sub_resource type="BoxMesh" id="BoxMesh_b3m25"]
+[sub_resource type="BoxMesh" id="BoxMesh_1ndiy"]
 resource_local_to_scene = true
 flip_faces = true
 size = Vector3(4578000, 4578000, 4578000)
@@ -134,12 +133,6 @@ transform = Transform3D(1, 0, -5.55112e-17, 0, 1, 0, 5.55112e-17, 0, 1, 0, 0, 0)
 script = ExtResource("24_pkolm")
 metadata/_custom_type_script = "uid://7pymoxifok1q"
 
-[node name="PlayerSpawnPoint01" type="Marker3D" parent="PlanetTerrain/PlayerSpawnPointsList"]
-transform = Transform3D(0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0)
-gizmo_extents = 2.5
-script = ExtResource("25_srdg2")
-metadata/_custom_type_script = "uid://3b53gu5cyf58"
-
 [node name="RockSpawner" parent="PlanetTerrain" node_paths=PackedStringArray("planet_terrain", "debugmesh") instance=ExtResource("26_blt5l")]
 transform = Transform3D(0.904889, 0, 0.425651, 0, 1, 0, -0.425651, 0, 0.904889, 0, 0, 0)
 planet_terrain = NodePath("..")
@@ -158,9 +151,9 @@ surface_material_override/0 = SubResource("StandardMaterial3D_642k6")
 
 [node name="Atmosphere" parent="." node_paths=PackedStringArray("sun_object") instance=ExtResource("30_uvuua")]
 transform = Transform3D(-0.011552666620645207, -0.024220379376070873, -0.9996393108998343, 0, 0.9997060255614182, -0.02422199581351573, 0.999933265720244, -0.0002798286425202113, -0.011549270431961276, 5287.879060608664, 12243.496987137478, 5837.811996419086)
-material_override = SubResource("ShaderMaterial_1ndiy")
+material_override = SubResource("ShaderMaterial_cl75f")
 cast_shadow = 0
-mesh = SubResource("BoxMesh_b3m25")
+mesh = SubResource("BoxMesh_1ndiy")
 planet_radius = 2100000.0
 atmosphere_height = 80000.0
 sun_object = NodePath("../DirectionalLight3D")

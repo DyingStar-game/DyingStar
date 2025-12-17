@@ -340,9 +340,9 @@ func _devmode_mapping_props_deletion(message: Dictionary):
 					"channel": 6,
 					"zone_data": message["data"],
 					"type": "gorc_zone_exit",
-					"object_id": message["data"]["uuid"],
-					"object_type": message["data"]["type"],
-					"player_id": message["data"]["uuid"],
+					"object_id": message["data"][0]["uuid"],
+					"object_type": message["data"][0]["type"],
+					"player_id": message["data"][0]["uuid"],
 					"timestamp": int(Time.get_unix_time_from_system())
 				}
 			)
