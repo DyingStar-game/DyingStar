@@ -10,20 +10,25 @@ var type_name = "mining_depot"
 
 signal hs_server_prop_update
 
-@warning_ignore("unused_signal")
-signal client_action_requested(datas: Dictionary)
-
 var spawn_position
 
 @onready var rock_depot_ui: Panel = %RockDepotUI
 @onready var danger_light_collect: Node3D = $DangerLightCollect
-@onready var conveyorbelt_001: MeshInstance3D = $miningdepot/conveyorbelt_001
+@onready var rock_conveyor: MeshInstance3D = $miningdepot/conveyorbelt_001
 @onready var rock_detector: Area3D = $RockDetector
 @onready var rock_collector: Area3D = $RockCollector
+
+@onready var box_spawn_origin: Marker3D = $BoxSpawnOrigin
+@onready var box_conveyorbelt: MeshInstance3D = $miningdepot/conveyorbelt_003
+@onready var danger_light_box: Node3D = $DangerLightBox
+@onready var box_detector: Area3D = $BoxDetector
+@onready var box_detector_end: Area3D = $BoxDetectorEnd
+
 
 var state := "idle"
 var rocks_on_conveyor := 0
 var rocks_collected := 0
+
 
 var active_player: Player
 
@@ -65,6 +70,9 @@ func _ready() -> void:
 			ServerNetwork.send_message(message, "devmodecreate_object")
 
 		queue_free()
+		
+	if GameOrchestrator.is_server():
+		box_detector.body_exited.connect(box_exited)
 
 func _process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
@@ -84,6 +92,13 @@ func _process(_delta: float) -> void:
 				#rock.global_position += (-rock_detector.global_basis.z * 0.5 * delta)
 			if conveyor_rocks.is_empty():
 				state = "idle"
+		
+		if state == "extract":
+			var bodies_on_conveyor = box_detector.get_overlapping_bodies()
+			var desired_velocity = box_detector.global_basis.z * 2
+			for body: RigidBody3D in bodies_on_conveyor:
+				var velocity_diff = desired_velocity - body.linear_velocity
+				body.apply_central_force(velocity_diff * body.mass * 10.0)
 
 		rocks_on_conveyor = conveyor_rocks.size()
 		server_prop_update({
@@ -102,16 +117,27 @@ func _process(_delta: float) -> void:
 			rock_depot_ui.get_node("VB/RockCounter").visible = rocks_on_conveyor > 0
 
 			danger_light_collect.enabled = false
-			conveyorbelt_001.set_instance_shader_parameter("animation_speed", 0.0)
+			danger_light_box.enabled = false
+			rock_conveyor.set_instance_shader_parameter("animation_speed", 0.0)
+			box_conveyorbelt.set_instance_shader_parameter("animation_speed", 0.0)
 		elif state == "collect":
 			danger_light_collect.enabled = true
-			conveyorbelt_001.set_instance_shader_parameter("animation_speed", 1.0)
+			rock_conveyor.set_instance_shader_parameter("animation_speed", 1.0)
+		elif state == "extract":
+			danger_light_box.enabled = true
+			box_conveyorbelt.set_instance_shader_parameter("animation_speed", -1.0)
+			
 
 func get_rocks_on_conveyor():
 	return filter_rocks(rock_detector.get_overlapping_bodies())
 
 func get_rocks_to_collect():
 	return filter_rocks(rock_collector.get_overlapping_bodies())
+
+func box_exited(_body: Node3D):
+	print("body exited")
+	if state == "extract" and box_detector.get_overlapping_bodies().is_empty():
+		state = "idle"
 
 func filter_rocks(entities: Array):
 	var filtered_rocks = []
@@ -160,10 +186,37 @@ func client_channel_data_update(_data: Dictionary) -> void:
 
 
 func handle_extract():
-	# create box and fill with rocks
 	
+	# create box and fill with rocks
+	var message = {
+		"namespace": "props",
+		"event": "create_object",
+		"amessagenb": 1,
+		"data": [
+			{
+				"type": "palette_container",
+				"uuid": UUID_UTIL.new().as_string(),
+				"position": {
+					"x": box_spawn_origin.position.x,
+					"y": box_spawn_origin.position.y,
+					"z": box_spawn_origin.position.z
+				},
+				"rotation": {
+					"x": 0,
+					"y": 0,
+					"z": 0
+				},
+				"content": {
+					"rock": rocks_collected
+				},
+				"scenename": "scenes/props/cargo/palette_container.tscn",
+				"parent_id": uuid,
+			}
+		]
+	}
+	ServerNetwork.send_message(message, "devmodecreate_object")
 	rocks_collected = 0
-	pass
+	
 
 func _on_rock_depot_ui_action_triggered(type: String) -> void:
 	if GameOrchestrator.is_server(): return
