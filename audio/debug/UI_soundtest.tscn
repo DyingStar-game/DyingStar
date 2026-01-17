@@ -24,15 +24,20 @@ expand_mode = 1
 stretch_mode = 6
 
 [node name="Control" type="Control" parent="."]
+layout_direction = 2
+layout_mode = 1
 anchors_preset = 0
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Control"]
+layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
 
 [node name="debug_btn" type="Button" parent="Control"]
 layout_mode = 0
-offset_left = 55.0
+offset_left = 70.0
 offset_top = 50.0
-offset_right = 222.0
+offset_right = 237.0
 offset_bottom = 197.0
 text = "DEBUG BTN"
 
@@ -71,8 +76,48 @@ offset_bottom = 197.0
 text = "CHANGE TO
 NONE BGM"
 
-[connection signal="pressed" from="Control/debug_btn" to="." method="_debug_btn_pressed"]
-[connection signal="pressed" from="Control/play_music_btn" to="." method="_start_music"]
-[connection signal="pressed" from="Control/play_music_sandbox" to="." method="_change_to_sandbox"]
-[connection signal="pressed" from="Control/play_music_menu" to="." method="_change_to_menu"]
-[connection signal="pressed" from="Control/play_music_none" to="." method="_change_to_none"]
+[node name="Control_test" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Control_test"]
+custom_minimum_size = Vector2(0, 36.635)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -161.5
+offset_top = -40.0
+offset_right = 161.5
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 19
+
+[node name="Button" type="Button" parent="Control_test/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Play"
+
+[node name="Button2" type="Button" parent="Control_test/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Option"
+
+[node name="Button3" type="Button" parent="Control_test/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Quit"
+
+[connection signal="pressed" from="Control/debug_btn" to="." method="on_button_pressed" binds= ["debug"]]
+[connection signal="pressed" from="Control/play_music_btn" to="." method="on_button_pressed" binds= ["start_music"]]
+[connection signal="pressed" from="Control/play_music_sandbox" to="." method="on_button_pressed" binds= ["sandbox"]]
+[connection signal="pressed" from="Control/play_music_menu" to="." method="on_button_pressed" binds= ["menu"]]
+[connection signal="pressed" from="Control/play_music_none" to="." method="on_button_pressed" binds= ["none"]]
