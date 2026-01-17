@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dpbekpf3okmhk"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "forest-tropical_forest"
+biome_index = 13
+display_name = "Tropical Forest"
+description = "A high-density vegetation ecosystem characterized by a closed canopy and multiple vegetation layers. Humidity is saturated."
+color = Color(0.102, 0.353, 0.063, 1)
+detail_texture_scale = 2.0
+elevation_max = 1500.0
+terrain_roughness = 0.95
+supports_vegetation = true
+default_vegetation_density = 0.9
+default_tree_type = "palm"
+wind_strength = 0.4
+movement_speed_factor = 0.6
+vehicle_traversable = false

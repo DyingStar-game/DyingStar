@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dc6ii63v2b56k"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "urban-mining_excavation"
+biome_index = 79
+display_name = "Urban - Mining Excavation"
+description = "Open-pit industrial excavation for mineral resource extraction. Features a stepped topography."
+category = "artificial"
+color = Color(0.353, 0.29, 0.227, 1)
+detail_texture_scale = 2.0
+elevation_min = -1000.0
+elevation_max = 2000.0
+terrain_roughness = 1.6
+movement_speed_factor = 0.7

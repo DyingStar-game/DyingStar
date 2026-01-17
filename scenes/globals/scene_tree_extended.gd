@@ -1,3 +1,4 @@
+class_name SceneTreeExtended
 extends SceneTree
 
 signal scene_changed_custom(new_scene: Node)

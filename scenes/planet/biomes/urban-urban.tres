@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://ctdto17pnr45i"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "urban-urban"
+biome_index = 81
+display_name = "Urban - Urban"
+description = "High-density surface of artificial structures and integrated infrastructure. The natural ground is completely sealed by synthetic or metallic coatings."
+category = "artificial"
+color = Color(0.439, 0.439, 0.439, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.3
+supports_vegetation = true
+default_vegetation_density = 0.05
+default_tree_type = "deciduous"
+wind_strength = 0.6

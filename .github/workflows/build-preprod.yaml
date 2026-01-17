@@ -1,0 +1,69 @@
+name: Build & Deploy to Preprod
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches:
+      - develop
+
+env:
+  HARBOR_REGISTRY: harbor.dyingstar-game.space
+  IMAGE_NAME: harbor.dyingstar-game.space/dyingstar/godotserver
+  IMAGE_TAG: develop
+  CHART_NAME: godotserver
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        if: github.event.pull_request.merged == true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache planet export data
+        id: cache-planet
+        uses: actions/cache@v4
+        with:
+          path: |
+            assets/qgis/export
+            assets/qgis/checksum.txt
+            assets/qgis/creationtime.txt
+          key: planet-export-${{ steps.date.outputs.date }}
+
+      - name: Download planet data
+        if: steps.cache-planet.outputs.cache-hit != 'true'
+        run: bash tools/download_planet_data.sh
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .docker/Dockerfile
+          push: ${{ github.event.pull_request.merged == true }}
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: ${{ github.event.pull_request.merged == true && format('type=registry,ref={0}:buildcache-preprod', env.IMAGE_NAME) || '' }}
+          cache-to: ${{ github.event.pull_request.merged == true && format('type=registry,ref={0}:buildcache-preprod,mode=max', env.IMAGE_NAME) || '' }}
+
+      - name: Trigger preprod deployment
+        if: github.event.pull_request.merged == true
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.KUBERNETES_REPO_TOKEN }}
+          repository: ${{ github.repository_owner }}/kubernetes
+          event-type: deploy-preprod
+          client-payload: '{"chart": "${{ env.CHART_NAME }}"}'

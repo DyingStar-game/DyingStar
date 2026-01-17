@@ -20,6 +20,10 @@ mono_crash.*.json
 # Blender-specific ignores
 *.blend1
 
+# Python
+__pycache__/
+*.pyc
+
 # specific for this project (build versions)
 /.vs
 /build
@@ -39,3 +43,14 @@ IncrementalSoundBankData.xml
 
 # Specific DyingStar
 client.ini
+
+# Prebaked chunk cache (copied locally to speed up Docker builds)
+chunk_cache/
+
+# Ignore planets definition files (must be exported or grab the archive)
+assets/qgis/.export/
+assets/qgis/export/
+assets/qgis/checksum.txt
+assets/qgis/creationtime.txt
+assets/qgis/export.tar.gz
+

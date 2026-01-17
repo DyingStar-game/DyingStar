@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bre2rrr372hwo"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dyclslu7hpuma" path="res://assets/_universe/environment/terrain/grass_ground.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "meadow_steppe-meadow"
+biome_index = 8
+display_name = "Meadow"
+description = "A temperate biome dominated by a continuous herbaceous layer and soils rich in organic matter, favored by regular but insufficient rainfall for the development of a dense forest cover."
+color = Color(0.49, 0.682, 0.322, 1)
+terrain_material_override = ExtResource("2")
+detail_texture_scale = 4.0
+elevation_max = 2000.0
+terrain_roughness = 0.7
+supports_vegetation = true
+default_vegetation_density = 0.15
+default_tree_type = "deciduous"
+wind_strength = 1.2

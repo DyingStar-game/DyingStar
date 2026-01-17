@@ -1,0 +1,35 @@
+[gd_scene format=3 uid="uid://dp7jq8olkxn3q"]
+
+[sub_resource type="StandardMaterial3D" id="mat_trunk"]
+albedo_color = Color(0.36, 0.22, 0.08, 1)
+roughness = 0.95
+
+[sub_resource type="CylinderMesh" id="mesh_trunk"]
+material = SubResource("mat_trunk")
+top_radius = 0.15
+bottom_radius = 0.3
+height = 5.0
+radial_segments = 6
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_canopy"]
+albedo_color = Color(0.08, 0.32, 0.06, 1)
+roughness = 0.85
+
+[sub_resource type="CylinderMesh" id="mesh_canopy"]
+material = SubResource("mat_canopy")
+top_radius = 0.0
+bottom_radius = 2.5
+height = 10.0
+radial_segments = 8
+rings = 1
+
+[node name="TreePine" type="Node3D" unique_id=2065997355]
+
+[node name="Trunk" type="MeshInstance3D" parent="." unique_id=650445168]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+mesh = SubResource("mesh_trunk")
+
+[node name="Canopy" type="MeshInstance3D" parent="." unique_id=1166082136]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10, 0)
+mesh = SubResource("mesh_canopy")

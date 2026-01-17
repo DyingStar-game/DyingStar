@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://b0ejqlhiwo0gb"]
+[gd_scene format=3 uid="uid://b0ejqlhiwo0gb"]
 
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_84msf"]
 [ext_resource type="Script" uid="uid://c2wb57c2srlse" path="res://ui/settings_page/settings_page.gd" id="1_tirmb"]
@@ -8,11 +8,11 @@
 font = ExtResource("2_tirmb")
 font_size = 100
 
-[node name="SettingsPage" type="CanvasLayer"]
+[node name="SettingsPage" type="CanvasLayer" unique_id=834952402]
 layer = 5
 script = ExtResource("1_tirmb")
 
-[node name="Control" type="Control" parent="."]
+[node name="Control" type="Control" parent="." unique_id=467537215]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -20,7 +20,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Background" type="TextureRect" parent="Control"]
+[node name="Background" type="TextureRect" parent="Control" unique_id=123250189]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -31,7 +31,7 @@ texture = ExtResource("1_84msf")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="MarginContainer" type="MarginContainer" parent="Control"]
+[node name="MarginContainer" type="MarginContainer" parent="Control" unique_id=795263451]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -43,28 +43,28 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer" unique_id=2028541173]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer" unique_id=1939448204]
 layout_mode = 2
 text = "Settings - General"
 label_settings = SubResource("LabelSettings_ug86k")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/MarginContainer/VBoxContainer" unique_id=1345639008]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer" unique_id=265301067]
 layout_mode = 2
 
-[node name="Generals" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Generals" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=166482080]
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Generals"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Generals" unique_id=36272843]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -76,13 +76,13 @@ label_settings = SubResource("LabelSettings_ug86k")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Graphics" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Graphics" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1476626543]
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Graphics"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Graphics" unique_id=1474280769]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -94,13 +94,13 @@ label_settings = SubResource("LabelSettings_ug86k")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Audio" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Audio" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1098832190]
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Audio"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Audio" unique_id=1772612594]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -112,13 +112,13 @@ label_settings = SubResource("LabelSettings_ug86k")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Controls" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Controls" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=439922285]
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Controls"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Controls" unique_id=2118793103]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -130,13 +130,13 @@ label_settings = SubResource("LabelSettings_ug86k")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Return" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Return" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=2077859452]
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Return"]
+[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Return" unique_id=1773331745]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -148,12 +148,12 @@ label_settings = SubResource("LabelSettings_ug86k")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer" unique_id=583741141]
 layout_mode = 2
 size_flags_horizontal = 3
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer"]
+[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer" unique_id=345904400]
 handle_input_locally = false
 size = Vector2i(1476, 939)
 render_target_update_mode = 4

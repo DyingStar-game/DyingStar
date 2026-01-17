@@ -1,9 +1,9 @@
-[gd_scene load_steps=3 format=3 uid="uid://c77xahaiy4r4r"]
+[gd_scene format=3 uid="uid://c77xahaiy4r4r"]
 
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_ewhk2"]
 [ext_resource type="Script" uid="uid://chsmswh73v0bl" path="res://ui/pause_page/pause_page.gd" id="1_ilyln"]
 
-[node name="PausePage" type="Control"]
+[node name="PausePage" type="Control" unique_id=372426929]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -13,7 +13,7 @@ grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("1_ilyln")
 
-[node name="TextureRect" type="TextureRect" parent="."]
+[node name="TextureRect" type="TextureRect" parent="." unique_id=1979214361]
 modulate = Color(1, 1, 1, 0.498039)
 layout_mode = 1
 anchors_preset = 15
@@ -23,7 +23,7 @@ grow_horizontal = 2
 grow_vertical = 2
 texture = ExtResource("1_ewhk2")
 
-[node name="CenterContainer" type="CenterContainer" parent="."]
+[node name="CenterContainer" type="CenterContainer" parent="." unique_id=299873530]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -31,12 +31,12 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Label" type="Label" parent="CenterContainer"]
+[node name="Label" type="Label" parent="CenterContainer" unique_id=274228834]
 layout_mode = 2
 theme_override_font_sizes/font_size = 30
 text = "%%PAUSEPAGE_TITLE"
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1073037169]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -48,23 +48,23 @@ theme_override_constants/margin_top = 25
 theme_override_constants/margin_right = 25
 theme_override_constants/margin_bottom = 25
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1951447394]
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 4
 theme_override_constants/separation = 10
 
-[node name="KeymappingButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="KeymappingButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_KEYMAPPING"
 
-[node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1161452463]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_QUITGAME"
 
-[node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer"]
+[node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_RESUMEGAME"

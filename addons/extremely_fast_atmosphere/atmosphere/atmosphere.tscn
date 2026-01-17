@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://bb0fma643hacs"]
+[gd_scene format=3 uid="uid://bb0fma643hacs"]
 
 [ext_resource type="Shader" uid="uid://dsu80023m2ier" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere_fbcosentino.gdshader" id="1_ge052"]
 [ext_resource type="Script" uid="uid://dke7hpi8qrng7" path="res://addons/extremely_fast_atmosphere/atmosphere/atmosphere.gd" id="2_f8q4h"]
@@ -63,15 +63,14 @@ shader_parameter/direction_profile_back_colors = SubResource("GradientTexture1D_
 shader_parameter/water_depth_profile_colors = SubResource("GradientTexture1D_tfj6s")
 shader_parameter/sea_level = 100.0
 shader_parameter/atmosphere_radius = 110.0
+shader_parameter/atmosphere_density = 0.2
 shader_parameter/water_density_factor = 0.0
 
 [sub_resource type="BoxMesh" id="BoxMesh_f8q4h"]
 flip_faces = true
 size = Vector3(250, 250, 250)
 
-[node name="Atmosphere" type="MeshInstance3D"]
+[node name="Atmosphere" type="MeshInstance3D" unique_id=381555422]
 material_override = SubResource("ShaderMaterial_ge052")
 mesh = SubResource("BoxMesh_f8q4h")
 script = ExtResource("2_f8q4h")
-planet_radius = null
-atmosphere_height = null

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cba6dwjvqdcpc"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "spatial-crater"
+biome_index = 36
+display_name = "Impact Crater"
+description = "Circular structure resulting from a meteorite impact. It consists of a central depression, a raised rim and a radial ejecta field."
+category = "barren"
+color = Color(0.502, 0.502, 0.447, 1)
+detail_texture_scale = 2.0
+elevation_min = -2000.0
+elevation_max = 5000.0
+terrain_roughness = 0.6
+wind_strength = 0.0
+movement_speed_factor = 0.8

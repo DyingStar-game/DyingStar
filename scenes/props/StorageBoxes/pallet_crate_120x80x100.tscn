@@ -1,17 +1,18 @@
-[gd_scene load_steps=4 format=3 uid="uid://cc8s2k0q8cxf"]
+[gd_scene format=3 uid="uid://cc8s2k0q8cxf"]
 
-[ext_resource type="ArrayMesh" uid="uid://ns7bdsgtqaed" path="res://assets/models/StorageBoxes/pallet_crate_120x80x100.mesh" id="1_epaii"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_ycnj0"]
-[ext_resource type="Shape3D" uid="uid://bd78hkn8m62hb" path="res://scenes/props/StorageBoxes/pallet_generic_120x80x100.res" id="3_k2t6d"]
+[ext_resource type="PackedScene" uid="uid://bqppe3gbg5ga4" path="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb" id="2_k2t6d"]
 
-[node name="PalletCrate120x80x100" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_ycnj0"]
+size = Vector3(1.2, 1, 0.8)
+
+[node name="PalletCrate120x80x100" type="RigidBody3D" unique_id=334021263]
+mass = 200.0
+freeze = true
 script = ExtResource("1_ycnj0")
 
-[node name="PalletCrate120x80x100" type="MeshInstance3D" parent="."]
-mesh = ExtResource("1_epaii")
+[node name="pallet_crate_120x80x100" parent="." unique_id=18375948 instance=ExtResource("2_k2t6d")]
 
-[node name="StaticBody3D" type="StaticBody3D" parent="PalletCrate120x80x100"]
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PalletCrate120x80x100/StaticBody3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5500000000029104, 0)
-shape = ExtResource("3_k2t6d")
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1091402362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_ycnj0")

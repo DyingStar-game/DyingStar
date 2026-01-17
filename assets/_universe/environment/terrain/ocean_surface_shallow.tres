@@ -1,0 +1,72 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://c5ygjrwr0g08s"]
+
+[ext_resource type="Shader" uid="uid://d4ctti60a1l31" path="res://assets/_universe/environment/terrain/ocean_surface.gdshader" id="1"]
+
+[sub_resource type="FastNoiseLite" id="fnl_n"]
+noise_type = 3
+frequency = 0.05
+
+[sub_resource type="NoiseTexture2D" id="normal_tex1"]
+noise = SubResource("fnl_n")
+seamless = true
+as_normal_map = true
+
+[sub_resource type="NoiseTexture2D" id="normal_tex2"]
+noise = SubResource("fnl_n")
+seamless = true
+as_normal_map = true
+
+[sub_resource type="FastNoiseLite" id="fnl_v"]
+noise_type = 2
+frequency = 0.025
+
+[sub_resource type="NoiseTexture2D" id="vertex_noise1"]
+noise = SubResource("fnl_v")
+seamless = true
+
+[sub_resource type="NoiseTexture2D" id="wobble_tex"]
+noise = SubResource("fnl_v")
+seamless = true
+
+[resource]
+resource_name = "OceanSurfaceShallow"
+render_priority = 1
+shader = ExtResource("1")
+shader_parameter/wave_speed = 0.06
+shader_parameter/height_scale = 0.4
+shader_parameter/amplitude1 = 2.0
+shader_parameter/amplitude2 = 0.5
+shader_parameter/vertex_noise_big = SubResource("vertex_noise1")
+shader_parameter/vertex_noise_big2 = SubResource("vertex_noise1")
+shader_parameter/v_noise_tile = 200
+shader_parameter/v_normal_scale = 1.0
+shader_parameter/surface_albedo = Color(0.1, 0.4, 0.55, 1)
+shader_parameter/high_color = Color(0.3, 0.6, 0.7, 1)
+shader_parameter/low_color = Color(0.04, 0.18, 0.35, 1)
+shader_parameter/wave_color_range = 2.0
+shader_parameter/roughness = 0.4
+shader_parameter/opacity = 0.7
+shader_parameter/edge_fade_power = 2.0
+shader_parameter/depth_fade_distance = 5.0
+shader_parameter/transmittence = 0.06
+shader_parameter/transmit_color = Color(0, 0.08, 0.18, 1)
+shader_parameter/foam_color = Color(0.9, 0.95, 1, 1)
+shader_parameter/foam_threshold = 1.0
+shader_parameter/foam_intensity = 1.3
+shader_parameter/normal_noise = SubResource("normal_tex1")
+shader_parameter/normal_noise2 = SubResource("normal_tex2")
+shader_parameter/normal_noise_size = 4.0
+shader_parameter/normal_noise_speed = 0.06
+shader_parameter/planet_radius = 1000.0
+shader_parameter/water_level_offset = 0.0
+shader_parameter/uv_scale = 120.0
+shader_parameter/wobble_noise = SubResource("wobble_tex")
+shader_parameter/wobble_power = 0.01
+shader_parameter/shine_strength = 0.15
+shader_parameter/shine_shininess = 16.0
+shader_parameter/shadow_val = 0.7
+shader_parameter/shadow_width = 0.2
+shader_parameter/shadow_color = Color(0.705, 0.705, 0.705, 1)
+shader_parameter/specular_smoothness = 0.199
+shader_parameter/specular_strength = 0.06
+shader_parameter/glossiness = 0.06

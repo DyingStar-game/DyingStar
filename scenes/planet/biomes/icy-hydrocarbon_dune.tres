@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dc2n0ajei310b"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-hydrocarbon_dune"
+biome_index = 48
+display_name = "Hydrocarbon Dune"
+description = "Hydrocarbon sand dunes (Titan)."
+category = "cryo"
+color = Color(0.353, 0.29, 0.227, 1)
+detail_texture_scale = 3.0
+elevation_max = 1000.0
+terrain_roughness = 0.7
+wind_strength = 1.5
+movement_speed_factor = 0.65
+damage_per_second = 0.5

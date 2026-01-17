@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dj0dm1cltty26"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-magmatic_crust"
+biome_index = 34
+display_name = "Magmatic Crust"
+description = "An unstable zone where a thin layer of solidified rock covers a shallow magma reservoir. It exhibits extremely high surface heat flow and risks of collapse."
+category = "volcanic"
+color = Color(0.227, 0.102, 0.039, 1)
+detail_texture_scale = 2.0
+elevation_max = 2000.0
+terrain_roughness = 0.6
+wind_strength = 0.3
+movement_speed_factor = 0.3
+damage_per_second = 5.0
+vehicle_traversable = false

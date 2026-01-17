@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://bvse7r4vhurjg"]
+
+[ext_resource type="Material" uid="uid://daasp6ff1twj5" path="res://assets/_universe/environment/terrain/ocean_surface.tres" id="ocean_mat"]
+[ext_resource type="Material" uid="uid://dvhgpg8q657en" path="res://assets/_universe/environment/terrain/swamp_water.tres" id="swamp_mat"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_swamp"]
+material = ExtResource("swamp_mat")
+radius = 5.0
+height = 10.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_ocean"]
+material = ExtResource("ocean_mat")
+radius = 5.0
+height = 10.0
+
+[node name="WaterShaderPreview" type="Node3D" unique_id=1599621419]
+
+[node name="SwampWater" type="MeshInstance3D" parent="." unique_id=237621738]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 0, 0)
+mesh = SubResource("SphereMesh_swamp")
+
+[node name="OceanWater" type="MeshInstance3D" parent="." unique_id=591832059]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 0, 0)
+mesh = SubResource("SphereMesh_ocean")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1680506389]
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 8, 18)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=795206655]
+transform = Transform3D(0.866025, -0.25, 0.433013, 0, 0.866025, 0.5, -0.5, -0.433013, 0.75, 0, 10, 0)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1206374046]
+
+[node name="Label_Swamp" type="Label3D" parent="." unique_id=1623446341]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, -6, 0)
+text = "Swamp Water"
+font_size = 48
+
+[node name="Label_Ocean" type="Label3D" parent="." unique_id=815219020]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, -6, 0)
+text = "Ocean Water"
+font_size = 48

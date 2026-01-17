@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cslosq7xmvywy"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://daasp6ff1twj5" path="res://assets/_universe/environment/terrain/ocean_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "maritime_river-ocean"
+biome_index = 0
+display_name = "Maritime River-Ocean"
+description = "A vast expanse of liquid water subject to natural currents."
+color = Color(0.102, 0.318, 0.463, 1)
+terrain_material_override = ExtResource("2")
+is_liquid = true
+elevation_min = -11000.0
+elevation_max = 0.0
+terrain_roughness = 0.3
+wind_strength = 1.5
+movement_speed_factor = 0.3

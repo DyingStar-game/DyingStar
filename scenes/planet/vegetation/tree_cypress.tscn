@@ -1,0 +1,101 @@
+[gd_scene format=3 uid="uid://b7ibnkcvyma8m"]
+
+[sub_resource type="StandardMaterial3D" id="mat_roots"]
+albedo_color = Color(0.25, 0.18, 0.1, 1)
+roughness = 0.95
+
+[sub_resource type="CylinderMesh" id="mesh_base"]
+material = SubResource("mat_roots")
+bottom_radius = 1.2
+height = 2.5
+radial_segments = 8
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_trunk"]
+albedo_color = Color(0.3, 0.22, 0.14, 1)
+roughness = 0.95
+
+[sub_resource type="CylinderMesh" id="mesh_trunk"]
+material = SubResource("mat_trunk")
+top_radius = 0.15
+height = 12.0
+radial_segments = 8
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_canopy"]
+albedo_color = Color(0.14, 0.3, 0.1, 1)
+roughness = 0.85
+
+[sub_resource type="SphereMesh" id="mesh_canopy_main"]
+material = SubResource("mat_canopy")
+radius = 4.0
+height = 3.5
+radial_segments = 10
+rings = 6
+
+[sub_resource type="StandardMaterial3D" id="mat_moss"]
+albedo_color = Color(0.3, 0.38, 0.2, 0.7)
+roughness = 0.9
+
+[node name="TreeCypress" type="Node3D" unique_id=813142916]
+
+[node name="Base" type="MeshInstance3D" parent="." unique_id=991799268]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+mesh = SubResource("mesh_base")
+
+[node name="Trunk" type="MeshInstance3D" parent="." unique_id=1486144717]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.5, 0)
+mesh = SubResource("mesh_trunk")
+
+[node name="Root1" type="MeshInstance3D" parent="." unique_id=2049660746]
+transform = Transform3D(0.8, 0.6, 0, -0.6, 0.8, 0, 0, 0, 1, 0.8, 0.6, 0)
+mesh = SubResource("mesh_base")
+
+[node name="Root2" type="MeshInstance3D" parent="." unique_id=2066825166]
+transform = Transform3D(0.8, 0.6, 0, -0.6, 0.8, 0, 0, 0, 1, -0.8, 0.6, 0)
+mesh = SubResource("mesh_base")
+
+[node name="Root3" type="MeshInstance3D" parent="." unique_id=534208094]
+transform = Transform3D(0.8, 0, 0.6, 0, 1, 0, -0.6, 0, 0.8, 0, 0.6, 0.8)
+mesh = SubResource("mesh_base")
+
+[node name="Root4" type="MeshInstance3D" parent="." unique_id=241814494]
+transform = Transform3D(0.8, 0, 0.6, 0, 1, 0, -0.6, 0, 0.8, 0, 0.6, -0.8)
+mesh = SubResource("mesh_base")
+
+[node name="Canopy" type="MeshInstance3D" parent="." unique_id=445730222]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15, 0)
+mesh = SubResource("mesh_canopy_main")
+
+[node name="CanopyLeft" type="MeshInstance3D" parent="." unique_id=846484528]
+transform = Transform3D(0.7, 0, 0, 0, 0.6, 0, 0, 0, 0.7, -2.5, 14, 1)
+mesh = SubResource("mesh_canopy_main")
+
+[node name="CanopyRight" type="MeshInstance3D" parent="." unique_id=26579171]
+transform = Transform3D(0.65, 0, 0, 0, 0.55, 0, 0, 0, 0.65, 2, 14.5, -1.5)
+mesh = SubResource("mesh_canopy_main")
+
+[node name="Moss1" type="MeshInstance3D" parent="." unique_id=1129464383]
+transform = Transform3D(0.15, 0, 0, 0, 1, 0, 0, 0, 0.15, -1.5, 12, 0.5)
+mesh = SubResource("mesh_trunk")
+surface_material_override/0 = SubResource("mat_moss")
+
+[node name="Moss2" type="MeshInstance3D" parent="." unique_id=1121222047]
+transform = Transform3D(0.12, 0, 0, 0, 0.8, 0, 0, 0, 0.12, 1.8, 11.5, -0.8)
+mesh = SubResource("mesh_trunk")
+surface_material_override/0 = SubResource("mat_moss")
+
+[node name="Moss3" type="MeshInstance3D" parent="." unique_id=1627003921]
+transform = Transform3D(0.1, 0, 0, 0, 0.7, 0, 0, 0, 0.1, 0.3, 12.5, 2)
+mesh = SubResource("mesh_trunk")
+surface_material_override/0 = SubResource("mat_moss")
+
+[node name="Moss4" type="MeshInstance3D" parent="." unique_id=469469772]
+transform = Transform3D(0.13, 0, 0, 0, 0.9, 0, 0, 0, 0.13, -2.5, 11, -1.2)
+mesh = SubResource("mesh_trunk")
+surface_material_override/0 = SubResource("mat_moss")
+
+[node name="Moss5" type="MeshInstance3D" parent="." unique_id=1196274178]
+transform = Transform3D(0.11, 0, 0, 0, 0.75, 0, 0, 0, 0.11, 2.5, 12, 1.5)
+mesh = SubResource("mesh_trunk")
+surface_material_override/0 = SubResource("mat_moss")

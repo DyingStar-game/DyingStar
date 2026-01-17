@@ -1,0 +1,18 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://cb71x6fqar6a0"]
+
+[ext_resource type="Texture2D" uid="uid://bbw224q3xquqt" path="res://assets/_universe/environment/terrain/path_grass_albedo.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://cjt7tvon7qxm2" path="res://assets/_universe/environment/terrain/path_grass_orm.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://c5p6qvcmrl036" path="res://assets/_universe/environment/terrain/path_grass_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://c4fpstdmwvp3n" path="res://assets/_universe/environment/terrain/path_grass_heightmap.png" id="4"]
+
+[resource]
+albedo_texture = ExtResource("1")
+orm_texture = ExtResource("2")
+normal_enabled = true
+normal_texture = ExtResource("3")
+heightmap_enabled = true
+heightmap_scale = 2.0
+heightmap_deep_parallax = true
+heightmap_min_layers = 8
+heightmap_max_layers = 32
+heightmap_texture = ExtResource("4")

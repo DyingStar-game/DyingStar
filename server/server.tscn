@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://bntvxoxexwhdr"]
+[gd_scene format=3 uid="uid://bntvxoxexwhdr"]
 
 [ext_resource type="Script" uid="uid://iednwyuemnor" path="res://server/server.gd" id="1_pcfvm"]
 
-[node name="Server" type="Node"]
+[node name="Server" type="Node" unique_id=698383565]
 script = ExtResource("1_pcfvm")

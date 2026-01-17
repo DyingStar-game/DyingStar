@@ -1,8 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://cu48gsma3y4i"]
+[gd_scene format=3 uid="uid://cu48gsma3y4i"]
 
 [ext_resource type="Script" uid="uid://dx1bw602pk8ac" path="res://scenes/globals/game_orchestrator.gd" id="1_xe57e"]
 [ext_resource type="PackedScene" uid="uid://drqxadtx316hs" path="res://levels/system-sandbox/system_sandbox.tscn" id="2_55nin"]
 
-[node name="GameOrchestrator" type="Node"]
+[node name="GameOrchestrator" type="Node" unique_id=1055281544]
 script = ExtResource("1_xe57e")
 levels = Array[PackedScene]([ExtResource("2_55nin")])

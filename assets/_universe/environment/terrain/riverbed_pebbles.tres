@@ -1,0 +1,14 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://dnaiicr2kmk73"]
+
+[ext_resource type="Texture2D" uid="uid://878kgxyemcx3" path="res://assets/_universe/environment/terrain/riverbed_pebbles_albedo.jpg" id="1"]
+[ext_resource type="Texture2D" uid="uid://c10ujf8270yih" path="res://assets/_universe/environment/terrain/riverbed_pebbles_normal.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://bhbehxfq660r2" path="res://assets/_universe/environment/terrain/riverbed_pebbles_heightmap.png" id="3"]
+
+[resource]
+albedo_texture = ExtResource("1")
+normal_enabled = true
+normal_scale = 1.5
+normal_texture = ExtResource("2")
+heightmap_enabled = true
+heightmap_scale = 3.0
+heightmap_texture = ExtResource("3")

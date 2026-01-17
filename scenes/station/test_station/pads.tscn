@@ -1,6 +1,6 @@
-[gd_scene load_steps=8 format=3 uid="uid://gxlfwbj17i1h"]
+[gd_scene format=3 uid="uid://gxlfwbj17i1h"]
 
-[ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="1_tluwj"]
+[ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/_universe/environment/terrain/material_basic_blue.tres" id="1_tluwj"]
 [ext_resource type="PackedScene" uid="uid://dumbqmrjvj582" path="res://scenes/grid/physics_grid.tscn" id="3_s7jgl"]
 [ext_resource type="Script" uid="uid://7pymoxifok1q" path="res://tools/spawn_points/player_spawn_points_list.gd" id="4_vy4lt"]
 [ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="5_ba5kc"]
@@ -12,77 +12,77 @@ size = Vector3(50, 9.512, 49.952)
 [sub_resource type="BoxShape3D" id="BoxShape3D_s7jgl"]
 size = Vector3(37.3423, 7.23497, 9.00781)
 
-[node name="Pads" type="CSGCombiner3D"]
+[node name="Pads" type="CSGCombiner3D" unique_id=1795433241]
 material_override = ExtResource("1_tluwj")
 use_collision = true
 
-[node name="PadA" type="CSGBox3D" parent="."]
+[node name="PadA" type="CSGBox3D" parent="." unique_id=71107997]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.687, -2.52708, 0)
 size = Vector3(50.2294, 1, 50)
 
-[node name="PadB" type="CSGBox3D" parent="."]
+[node name="PadB" type="CSGBox3D" parent="." unique_id=989073595]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42.4619, -2.52708, 0)
 size = Vector3(50.4785, 1, 50)
 
-[node name="Connection" type="CSGBox3D" parent="."]
+[node name="Connection" type="CSGBox3D" parent="." unique_id=1952224535]
 size = Vector3(35.5876, 10, 10)
 
-[node name="Tunnel" type="CSGCylinder3D" parent="Connection"]
+[node name="Tunnel" type="CSGCylinder3D" parent="Connection" unique_id=228945900]
 transform = Transform3D(-4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0, 0, 1, 0, 0, 0)
 operation = 2
 radius = 2.80176
 height = 41.043
 sides = 16
 
-[node name="TunnelBool" type="CSGBox3D" parent="Connection/Tunnel"]
+[node name="TunnelBool" type="CSGBox3D" parent="Connection/Tunnel" unique_id=1652435617]
 transform = Transform3D(-4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0, 1, 3.54462, 1.5494e-07, 0)
 operation = 2
 size = Vector3(35.5876, 3.03906, 10)
 
-[node name="GravityArea" parent="." instance=ExtResource("3_s7jgl")]
+[node name="GravityArea" parent="." unique_id=1880881871 instance=ExtResource("3_s7jgl")]
 gravity_space_override = 3
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="GravityArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GravityArea" unique_id=1693102912]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.6882, 2.51413, -0.00383949)
 shape = SubResource("BoxShape3D_bguhe")
 
-[node name="CollisionShape3D3" type="CollisionShape3D" parent="GravityArea"]
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="GravityArea" unique_id=135085114]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.792274, 0.590416, 0)
 shape = SubResource("BoxShape3D_s7jgl")
 
-[node name="CollisionShape3D2" type="CollisionShape3D" parent="GravityArea"]
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="GravityArea" unique_id=811166769]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 42.4024, 2.63792, 0)
 shape = SubResource("BoxShape3D_bguhe")
 
-[node name="SpotLight3D2" type="SpotLight3D" parent="."]
+[node name="SpotLight3D2" type="SpotLight3D" parent="." unique_id=534290705]
 transform = Transform3D(0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, 0.707107, -66.0114, -1.84836, 23.3273)
 light_energy = 10.0
 spot_range = 18.8188
 
-[node name="SpotLight3D3" type="SpotLight3D" parent="."]
+[node name="SpotLight3D3" type="SpotLight3D" parent="." unique_id=168680201]
 transform = Transform3D(-0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, -0.707107, -66.0114, -1.84836, -23.0833)
 light_energy = 10.0
 spot_range = 18.8188
 
-[node name="SpotLight3D4" type="SpotLight3D" parent="."]
+[node name="SpotLight3D4" type="SpotLight3D" parent="." unique_id=1108789048]
 transform = Transform3D(-0.707107, 0, 0.707107, 0, 1, 0, -0.707107, 0, -0.707107, 65.0611, -1.84836, -23.0833)
 light_energy = 10.0
 spot_range = 18.8188
 
-[node name="SpotLight3D5" type="SpotLight3D" parent="."]
+[node name="SpotLight3D5" type="SpotLight3D" parent="." unique_id=277128555]
 transform = Transform3D(0.707107, 0, 0.707107, 0, 1, 0, -0.707107, 0, 0.707107, 65.0611, -1.84836, 23.3273)
 light_energy = 10.0
 spot_range = 18.8188
 
-[node name="PlayerSpawnPointsList" type="Node3D" parent="."]
+[node name="PlayerSpawnPointsList" type="Node3D" parent="." unique_id=1241774305]
 script = ExtResource("4_vy4lt")
 metadata/_custom_type_script = "uid://7pymoxifok1q"
 
-[node name="PlayerSpawnPoint01" type="Marker3D" parent="PlayerSpawnPointsList"]
+[node name="PlayerSpawnPoint01" type="Marker3D" parent="PlayerSpawnPointsList" unique_id=873248542]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.5, 0, 0)
 gizmo_extents = 2.5
 script = ExtResource("5_ba5kc")
 metadata/_custom_type_script = "uid://3b53gu5cyf58"
 
-[node name="SpawnKiosk" parent="." instance=ExtResource("6_ba5kc")]
+[node name="SpawnKiosk" parent="." unique_id=509150247 instance=ExtResource("6_ba5kc")]
 transform = Transform3D(-0.661417, 0, 0.750019, 0, 1, 0, -0.750019, 0, -0.661417, -24.4169, -2, -11.2297)

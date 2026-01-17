@@ -1,0 +1,5 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://c2ln420ftln1y"]
+
+[resource]
+resource_name = "path_dirt"
+albedo_color = Color(0.45, 0.32, 0.2, 1)

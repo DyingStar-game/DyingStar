@@ -23,10 +23,13 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 }
 
 const SPAWN_POINTS_LIST: Array[Dictionary] = [
-	{"label" : "Sandbox (planet 4) / surface", "point": 1, "node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "Sandbox (planet 4) / space", "point": 2, "node_path" : "PlanetB/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "Moon 1 / planet 5 / surface", "point": 3, "node_path" : "StationA/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "Moon 1 / planet 5 / space", "point": 4, "node_path" : "StationB/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "City on Sandbox (planet 4)", "point": 1, "node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Point on Sandbox (planet 4)", "point": 5,
+		"node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint02"},
+	{"label" : "Storagehouse on moon 1 of Planet 5", "point": 2,
+		"node_path" : "PlanetB/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "Atmosphere on moon 1 of Planet 5", "point": 3, "node_path" : "StationA/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
+	{"label" : "On Gaea (planet 3)", "point": 4, "node_path" : "StationB/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
 ]
 
 @export var levels: Array[PackedScene]
@@ -49,14 +52,30 @@ var requested_spawn_point: int = 0
 @onready var game_is_paused: bool = false
 
 func _enter_tree() -> void:
+	# In editor mode, skip replacing the SceneTree script.
+	# In headless non-server mode (e.g. GUT test runner), also skip it:
+	# gut_cmdln.gd itself extends SceneTree and replacing its script mid-init
+	# causes the engine to hang. Dedicated-server headless is excluded here
+	# because it does need scene_tree_extended for change_scene_to_file.
+	if OS.has_feature("editor"):
+		return
+	if DisplayServer.get_name() == "headless" and not OS.has_feature("dedicated_server"):
+		return
 	get_tree().set_script(SCENE_TREE_EXTENDED_SCRIPT_PATH)
 
 func _ready():
 	if OS.has_feature("editor"):
+		var current := get_tree().current_scene
+		if current == null:
+			return
 		if ResourceUID.id_to_text(
-			ResourceLoader.get_resource_uid(get_tree().current_scene.scene_file_path)
+			ResourceLoader.get_resource_uid(current.scene_file_path)
 		) != ProjectSettings.get_setting("application/run/main_scene") and not OS.has_feature("dedicated_server"):
 			return
+	# In headless non-server mode (GUT) we skipped set_script, so
+	# scene_changed_custom does not exist. Nothing else to initialise either.
+	if DisplayServer.get_name() == "headless" and not OS.has_feature("dedicated_server"):
+		return
 
 	get_tree().connect("scene_changed_custom", _on_scene_changed)
 

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://ccgqbsoteayp7"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "meadow_steppe-terraformed_grass"
+biome_index = 77
+display_name = "Terraformed Grassland"
+description = "Artificial grassland ecosystem whose parameters have been modified to match a specific biological standard."
+category = "artificial"
+color = Color(0.376, 0.753, 0.251, 1)
+detail_texture_scale = 4.0
+elevation_max = 2000.0
+terrain_roughness = 0.5
+supports_vegetation = true
+default_vegetation_density = 0.3
+default_tree_type = "deciduous"

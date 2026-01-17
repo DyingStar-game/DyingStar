@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b05yjt2w5ynnr"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-cave"
+biome_index = 73
+display_name = "Cave"
+description = "A natural underground network. Depending on the planet, it may be adorned with ice stalactites, limestone, or even exotic crystals."
+category = "mineral"
+color = Color(0.439, 0.314, 0.627, 1)
+detail_texture_scale = 2.0
+elevation_min = -2000.0
+elevation_max = 1000.0
+terrain_roughness = 1.8
+wind_strength = 0.1
+movement_speed_factor = 0.5
+vehicle_traversable = false

@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://0fqkqlaa0osv"]
+[gd_scene format=3 uid="uid://0fqkqlaa0osv"]
 
 [ext_resource type="Script" uid="uid://drnvfkk8x2qh5" path="res://ui/settings_page/audio_page/audio_settings_page.gd" id="1_aa43r"]
 [ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="1_thild"]
@@ -7,7 +7,7 @@
 font = ExtResource("1_thild")
 font_size = 100
 
-[node name="AudioSettingsPage" type="Control"]
+[node name="AudioSettingsPage" type="Control" unique_id=1838798172]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -16,7 +16,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_aa43r")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=479680099]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -25,7 +25,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.218077, 0.254242, 0.417011, 1)
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1086010865]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -37,19 +37,19 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=634226041]
 layout_mode = 2
 
-[node name="General" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="General" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=476412951]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/General"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/General" unique_id=207347215]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "General"
 label_settings = SubResource("LabelSettings_aa43r")
 
-[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/General"]
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/General" unique_id=1987287576]
 custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -57,16 +57,16 @@ size_flags_vertical = 1
 step = 0.1
 value = 50.0
 
-[node name="Music" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="Music" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1488463565]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Music"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Music" unique_id=592891936]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Music"
 label_settings = SubResource("LabelSettings_aa43r")
 
-[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Music"]
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Music" unique_id=1962383320]
 custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -74,16 +74,16 @@ size_flags_vertical = 1
 step = 0.1
 value = 50.0
 
-[node name="SFX" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="SFX" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=948710341]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SFX"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SFX" unique_id=1694964006]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "SFX"
 label_settings = SubResource("LabelSettings_aa43r")
 
-[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/SFX"]
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/SFX" unique_id=460997283]
 custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -91,16 +91,16 @@ size_flags_vertical = 1
 step = 0.1
 value = 50.0
 
-[node name="VoIP" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="VoIP" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1898189953]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VoIP"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VoIP" unique_id=1912414303]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "VoIP"
 label_settings = SubResource("LabelSettings_aa43r")
 
-[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/VoIP"]
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/VoIP" unique_id=383556696]
 custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10

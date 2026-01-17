@@ -1,30 +1,30 @@
-[gd_scene load_steps=6 format=3 uid="uid://dtijoobxv67w2"]
+[gd_scene format=3 uid="uid://dtijoobxv67w2"]
 
 [ext_resource type="Script" uid="uid://cynqji0v1gvlk" path="res://scenes/props/rock/rock_mining.gd" id="1_6o14g"]
-[ext_resource type="ArrayMesh" uid="uid://di1xi1wfxfsvl" path="res://assets/models/nature/rock_mining_001.mesh" id="1_yg06r"]
+[ext_resource type="ArrayMesh" uid="uid://di1xi1wfxfsvl" path="res://assets/_universe/environment/terrain/rocks/rock_mining_001.mesh" id="1_yg06r"]
 [ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://scenes/props/rock/rock_material.tres" id="2_ty2b3"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_kvafs"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_ducf2"]
 
-[node name="RockMining01" type="RigidBody3D"]
+[node name="RockMining01" type="RigidBody3D" unique_id=525353877]
 mass = 800.0
 continuous_cd = true
 script = ExtResource("1_6o14g")
 
-[node name="CSGMesh3D" type="CSGMesh3D" parent="."]
+[node name="CSGMesh3D" type="CSGMesh3D" parent="." unique_id=40397429]
 material_override = ExtResource("2_ty2b3")
 mesh = ExtResource("1_yg06r")
 material = ExtResource("2_ty2b3")
 
-[node name="Area3D" type="Area3D" parent="."]
+[node name="Area3D" type="Area3D" parent="." unique_id=990237276]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=876014578]
 transform = Transform3D(2.43, 0, 0, 0, 2.43, 0, 0, 0, 2.43, 0.00938558976426251, 0.3480817962761856, -0.08526816556489342)
 shape = SubResource("SphereShape3D_kvafs")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415174348]
 shape = SubResource("SphereShape3D_ducf2")
 
 [connection signal="area_entered" from="Area3D" to="." method="_on_area_3d_area_entered"]

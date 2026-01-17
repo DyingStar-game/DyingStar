@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bpgbxv68yuom3"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "meadow_steppe-agriculture_land"
+biome_index = 82
+display_name = "Meadow Steppe - Agriculture Land"
+description = "Industrial agricultural production zone. Characterized by a geometric sectorization of the land."
+category = "artificial"
+color = Color(0.627, 0.753, 0.251, 1)
+detail_texture_scale = 4.0
+elevation_max = 1500.0
+terrain_roughness = 0.3
+supports_vegetation = true
+default_vegetation_density = 0.9
+movement_speed_factor = 0.8

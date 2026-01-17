@@ -1,178 +1,173 @@
-[gd_scene load_steps=3 format=3 uid="uid://bqki5tqoj5qm2"]
+[gd_scene format=3 uid="uid://bqki5tqoj5qm2"]
 
 [ext_resource type="Script" uid="uid://br35elyg0k0uw" path="res://scenes/props/StorageBoxes/storagewarehouse.gd" id="1_gtaak"]
-[ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_iygkj"]
 
-[node name="Storagewarehouse" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_iygkj"]
+size = Vector3(50, 10, 182)
+
+[node name="Storagewarehouse" type="RigidBody3D" unique_id=695965601]
 script = ExtResource("1_gtaak")
 
-[node name="CSGCombiner3D" type="CSGCombiner3D" parent="."]
+[node name="CSGCombiner3D" type="CSGCombiner3D" parent="." unique_id=1591403591]
 use_collision = true
 
-[node name="floor" type="CSGBox3D" parent="CSGCombiner3D"]
+[node name="floor" type="CSGBox3D" parent="CSGCombiner3D" unique_id=1573329554]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5, -61)
 use_collision = true
 size = Vector3(50, 10, 182)
-material = ExtResource("2_iygkj")
 
-[node name="vertical beams" type="Node3D" parent="CSGCombiner3D"]
+[node name="vertical beams" type="Node3D" parent="CSGCombiner3D" unique_id=2109017726]
 
-[node name="vertical beam 01" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 01" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=558676926]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, 29)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 02" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 02" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=254710792]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, 17)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 03" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 03" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=1230448931]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, 5)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 04" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 04" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=1237627349]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, -7)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 05" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 05" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=307899999]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, -19)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 06" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 06" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=235107586]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 6, -31)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 07" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 07" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=348559660]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, 29)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 08" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 08" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=653425582]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, 17)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 09" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 09" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=1542199654]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, 5)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 10" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 10" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=1530579356]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, -7)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 11" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 11" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=266105223]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, -19)
 size = Vector3(1, 12, 1)
 
-[node name="vertical beam 12" type="CSGBox3D" parent="CSGCombiner3D/vertical beams"]
+[node name="vertical beam 12" type="CSGBox3D" parent="CSGCombiner3D/vertical beams" unique_id=380290669]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 6, -31)
 size = Vector3(1, 12, 1)
 
-[node name="ceiling beams" type="Node3D" parent="CSGCombiner3D"]
+[node name="ceiling beams" type="Node3D" parent="CSGCombiner3D" unique_id=302835227]
 
-[node name="vertical beam 01" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 01" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=1068581880]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, 29)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 02" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 02" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=742576345]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, 29)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 03" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 03" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=1087474870]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, 17)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 04" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 04" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=666513713]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, 17)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 05" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 05" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=631942818]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, 5)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 06" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 06" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=951478945]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, 5)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 07" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 07" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=603605055]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, -7)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 08" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 08" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=726996326]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, -7)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 09" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 09" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=904901379]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, -19)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 10" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 10" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=964888891]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, -19)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 11" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 11" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=1048104266]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.094157847394277, 15.95893512110638, -31)
 size = Vector3(1, 26, 1)
 
-[node name="vertical beam 12" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams"]
+[node name="vertical beam 12" type="CSGBox3D" parent="CSGCombiner3D/ceiling beams" unique_id=1085740785]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.10828904342102, 15.97707511972648, -31)
 size = Vector3(1, 26, 1)
 
-[node name="ceiling" type="Node3D" parent="CSGCombiner3D"]
+[node name="ceiling" type="Node3D" parent="CSGCombiner3D" unique_id=547043871]
 
-[node name="ceiling 01" type="CSGBox3D" parent="CSGCombiner3D/ceiling"]
+[node name="ceiling 01" type="CSGBox3D" parent="CSGCombiner3D/ceiling" unique_id=1401734135]
 transform = Transform3D(0.3420201433256688, 0.9396926207859084, 0, -0.9396926207859084, 0.3420201433256688, 0, 0, 0, 1, -12.093999999997322, 16.777000000001863, -0.8270738024612037)
 size = Vector3(0.5, 26, 62)
-material = ExtResource("2_iygkj")
 
-[node name="ceiling 02" type="CSGBox3D" parent="CSGCombiner3D/ceiling"]
+[node name="ceiling 02" type="CSGBox3D" parent="CSGCombiner3D/ceiling" unique_id=1107235830]
 transform = Transform3D(-0.3420201433256687, -0.939692620785908, -1.2246467991473532e-16, -0.939692620785908, 0.3420201433256687, 0, 4.188538737676992e-17, 1.1507915602278498e-16, -1, 12.1079999999929, 16.777000000001863, -0.8270738024612037)
 size = Vector3(0.5, 26, 62)
-material = ExtResource("2_iygkj")
 
-[node name="wall" type="Node3D" parent="CSGCombiner3D"]
+[node name="wall" type="Node3D" parent="CSGCombiner3D" unique_id=503528017]
 
-[node name="wall a_01" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall a_01" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=611261735]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.63952998783899, 6, 23.015068370236943)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall b_01" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall b_01" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=2008035636]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.61456727734103, 6, 23.015068370236943)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall a_02" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall a_02" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=2070672671]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.63952998783899, 6, 11.106840484648608)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall b_02" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall b_02" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=1708001606]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.61456727734103, 6, 11.106840484648608)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall a_03" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall a_03" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=350514336]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.63952998783899, 6, -13.084095082717642)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall b_03" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall b_03" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=1438195038]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.61456727734103, 6, -13.084095082717642)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall a_04" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall a_04" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=1546099899]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.63952998783899, 6, -25.013938863112887)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
 
-[node name="wall b_04" type="CSGBox3D" parent="CSGCombiner3D/wall"]
+[node name="wall b_04" type="CSGBox3D" parent="CSGCombiner3D/wall" unique_id=2132364987]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.61456727734103, 6, -25.013938863112887)
 use_collision = true
 size = Vector3(0.2, 12, 13)
-material = ExtResource("2_iygkj")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=918780010]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5, -61)
+shape = SubResource("BoxShape3D_iygkj")

@@ -1,0 +1,60 @@
+[remap]
+
+importer="scene"
+importer_version=1
+type="PackedScene"
+uid="uid://b01xrsa73pp6v"
+path="res://.godot/imported/tree001.glb-cbd4a1eae6035ccf55bc4fbacfa00ead.scn"
+
+[deps]
+
+source_file="res://assets/_universe/environment/terrain/trees/tree001.glb"
+dest_files=["res://.godot/imported/tree001.glb-cbd4a1eae6035ccf55bc4fbacfa00ead.scn"]
+
+[params]
+
+nodes/root_type=""
+nodes/root_name=""
+nodes/root_script=null
+nodes/apply_root_scale=true
+nodes/root_scale=1.0
+nodes/import_as_skeleton_bones=false
+nodes/use_name_suffixes=true
+nodes/use_node_type_suffixes=true
+meshes/ensure_tangents=true
+meshes/generate_lods=false
+meshes/create_shadow_meshes=true
+meshes/light_baking=1
+meshes/lightmap_texel_size=0.2
+meshes/force_disable_compression=false
+skins/use_named_skins=true
+animation/import=true
+animation/fps=30
+animation/trimming=false
+animation/remove_immutable_tracks=true
+animation/import_rest_as_RESET=false
+import_script/path=""
+materials/extract=0
+materials/extract_format=0
+materials/extract_path=""
+_subresources={
+"nodes": {
+"PATH:Tree_LOD0": {
+"mesh_instance/visibility_range_end": 17.0
+},
+"PATH:Tree_LOD1": {
+"mesh_instance/visibility_range_begin": 15.0,
+"mesh_instance/visibility_range_end": 42.0
+},
+"PATH:Tree_LOD2": {
+"mesh_instance/visibility_range_begin": 40.0,
+"mesh_instance/visibility_range_end": 82.0
+},
+"PATH:Tree_LOD3": {
+"mesh_instance/visibility_range_begin": 80.0,
+"mesh_instance/visibility_range_end": 200.0
+}
+}
+}
+gltf/naming_version=2
+gltf/embedded_image_handling=1

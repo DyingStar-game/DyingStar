@@ -1,0 +1,27 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dvhgpg8q657en"]
+
+[ext_resource type="Shader" uid="uid://bu3wlenpoj548" path="res://assets/_universe/environment/terrain/swamp_water.gdshader" id="1"]
+
+[resource]
+resource_name = "SwampWater"
+render_priority = 1
+shader = ExtResource("1")
+shader_parameter/water_color_deep = Color(0.12, 0.18, 0.08, 1)
+shader_parameter/water_color_shallow = Color(0.22, 0.28, 0.14, 1)
+shader_parameter/water_depth_factor = 0.8
+shader_parameter/alpha = 0.55
+shader_parameter/wave_height = 0.08
+shader_parameter/wave_choppy = 0.3
+shader_parameter/wave_speed = 0.15
+shader_parameter/wave_frequency = 0.3
+shader_parameter/wave_octaves = 3
+shader_parameter/wave_scale = 120.0
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 0.35
+shader_parameter/specular_value = 0.4
+shader_parameter/fresnel_power = 3.0
+shader_parameter/normal_strength = 3.0
+shader_parameter/murk_color = Color(0.06, 0.09, 0.04, 1)
+shader_parameter/murk_intensity = 0.3
+shader_parameter/planet_radius = 1000.0
+shader_parameter/water_level_offset = 0.0

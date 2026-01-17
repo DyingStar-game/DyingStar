@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cfdwbjsqalwhf"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-snow"
+biome_index = 20
+display_name = "Snow"
+description = "Permanent blankets of snow ice that increase in density until they become firn ice."
+color = Color(0.91, 0.918, 0.929, 1)
+elevation_min = 1000.0
+terrain_roughness = 0.4
+wind_strength = 2.0
+movement_speed_factor = 0.6
+damage_per_second = 0.5

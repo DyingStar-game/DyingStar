@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://c3p15ryxqayoh"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-volcanic_basalt"
+biome_index = 27
+display_name = "Volcanic Geothermal Volcanic Basalt"
+description = "A plain of dense, dark, extrusive igneous rock. Rapid surface cooling creates a fine-grained rock, often structured into vast plateaus."
+category = "volcanic"
+color = Color(0.165, 0.165, 0.165, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.8
+wind_strength = 1.2
+movement_speed_factor = 0.9

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b0vxgotuldpr2"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-rocky_desert"
+biome_index = 6
+display_name = "Rocky Desert"
+description = "An arid expanse characterized by bare rock slabs and stone plateaus (mesas) sculpted by erosion. The topography is marked by badlands formations where geological strata are exposed."
+color = Color(0.627, 0.455, 0.31, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 1.4
+default_vegetation_density = 0.01
+wind_strength = 1.4
+movement_speed_factor = 0.75

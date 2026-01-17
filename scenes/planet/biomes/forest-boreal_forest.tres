@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cobkwgm5s3skp"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "forest-boreal_forest"
+biome_index = 12
+display_name = "Boreal Forest"
+description = "A vast belt of conifers adapted to cold climates. The soil is acidic and species biodiversity is reduced."
+color = Color(0.118, 0.29, 0.165, 1)
+detail_texture_scale = 2.0
+elevation_max = 2500.0
+terrain_roughness = 0.85
+supports_vegetation = true
+default_vegetation_density = 0.75
+default_tree_type = "conifer"
+wind_strength = 0.7
+movement_speed_factor = 0.75
+vehicle_traversable = false

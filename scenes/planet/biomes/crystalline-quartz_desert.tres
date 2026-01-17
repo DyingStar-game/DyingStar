@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dxmsm0gfmnmgt"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "crystalline-quartz_desert"
+biome_index = 74
+display_name = "Quartz Desert"
+description = "Arid expanse composed of pure silica grains. Unlike classic silica sand, the surface has a vitreous and semi-translucent appearance."
+category = "mineral"
+color = Color(0.816, 0.784, 0.722, 1)
+detail_texture_scale = 3.0
+elevation_max = 2000.0
+terrain_roughness = 0.5
+wind_strength = 1.5
+movement_speed_factor = 0.75

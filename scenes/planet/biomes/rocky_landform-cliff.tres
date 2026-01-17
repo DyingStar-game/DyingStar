@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cgxkypxkmcp8h"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-cliff"
+biome_index = 24
+display_name = "Cliff"
+description = "Rocky escarpment with a near-vertical slope resulting from tectonic processes or erosion."
+color = Color(0.431, 0.431, 0.431, 1)
+elevation_max = 8000.0
+terrain_roughness = 2.5
+wind_strength = 2.2
+movement_speed_factor = 0.2
+vehicle_traversable = false

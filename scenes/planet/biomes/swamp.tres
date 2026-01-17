@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bu5lbd8eucyo"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dvhgpg8q657en" path="res://assets/_universe/environment/terrain/swamp_water.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "wetland-swamp"
+biome_index = 16
+display_name = "Swamp"
+description = "A wooded or grassy wetland where stagnant water permanently saturates the soil. Characterized by fine sedimentation and high bacterial activity."
+color = Color(0.22, 0.3, 0.16, 1)
+detail_texture_scale = 2.0
+has_shallow_water = true
+shallow_water_material = ExtResource("2")
+elevation_max = 100.0
+terrain_roughness = 0.35
+supports_vegetation = true
+default_vegetation_density = 0.7
+default_tree_type = "cypress"
+wind_strength = 0.3
+movement_speed_factor = 0.35
+vehicle_traversable = false

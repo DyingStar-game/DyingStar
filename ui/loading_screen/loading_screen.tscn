@@ -1,13 +1,13 @@
-[gd_scene load_steps=3 format=3 uid="uid://50boh4okyk04"]
+[gd_scene format=3 uid="uid://50boh4okyk04"]
 
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="1_vxd2j"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_vxd2j"]
 font_size = 32
 
-[node name="LoadingScreen" type="CanvasLayer"]
+[node name="LoadingScreen" type="CanvasLayer" unique_id=1481411369]
 
-[node name="LoadingScreen" type="Control" parent="."]
+[node name="LoadingScreen" type="Control" parent="." unique_id=2125135189]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -15,7 +15,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="TextureRect" type="TextureRect" parent="LoadingScreen"]
+[node name="TextureRect" type="TextureRect" parent="LoadingScreen" unique_id=1529094889]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -26,7 +26,7 @@ texture = ExtResource("1_vxd2j")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Label" type="Label" parent="LoadingScreen/TextureRect"]
+[node name="Label" type="Label" parent="LoadingScreen/TextureRect" unique_id=248266015]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5

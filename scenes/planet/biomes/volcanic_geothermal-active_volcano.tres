@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bjjcgt3gk68uu"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://p27ho17b10bq" path="res://assets/_universe/environment/terrain/flowing_lava.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-active_volcano"
+biome_index = 26
+display_name = "Volcanic Geothermal Active Volcano"
+description = "A geological formation in the process of eruption or exhibiting significant internal magmatic activity. Characterized by emissions of tephra, gas and heat."
+category = "volcanic"
+color = Color(0.29, 0.173, 0.165, 1)
+terrain_material_override = ExtResource("2")
+detail_texture_scale = 2.0
+elevation_max = 5000.0
+terrain_roughness = 1.8
+wind_strength = 0.8
+movement_speed_factor = 0.5
+damage_per_second = 2.0
+vehicle_traversable = false

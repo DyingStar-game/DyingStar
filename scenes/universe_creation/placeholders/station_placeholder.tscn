@@ -1,8 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://c6504x37xchsk"]
+[gd_scene format=3 uid="uid://c6504x37xchsk"]
 
 [ext_resource type="ArrayMesh" uid="uid://bxr1uk3oiilfw" path="res://scenes/universe_creation/placeholders/station_placeholder.mesh" id="1_1bu7a"]
 [ext_resource type="Script" uid="uid://d3wrk6rostefw" path="res://scenes/universe_creation/placeholders/station_placeholder.gd" id="2_2rgjm"]
 
-[node name="StationPlaceholder" type="MeshInstance3D"]
+[node name="StationPlaceholder" type="MeshInstance3D" unique_id=1562494350]
 mesh = ExtResource("1_1bu7a")
 script = ExtResource("2_2rgjm")

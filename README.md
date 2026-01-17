@@ -1,5 +1,18 @@
 # DyingStar
 
+### Planet data
+
+For run the game, you need the planets data.
+
+See the file `assets/qgis/README.md` for this.
+
+
+### Code Organization
+
+See this [documentation page](https://developer.dyingstar-game.com/docs/creativeConcept/files_structure/)
+
+
+
 ### Controls
 - [Z][S][Q][D] = move
 - [Shift] = hold to sprint
@@ -7,12 +20,3 @@
 - [Space] = jump, hold near ledge while falling to grab
 
 
-### Code Organization
-
-- addons: Godot Addons
-- assets: Materials, Models, Music, Textures
-- levels: Game Levels
-- scenes: Other scenes
-- server: Server only script/scenes
-- test: Unit tests
-- ui: UI Scenes

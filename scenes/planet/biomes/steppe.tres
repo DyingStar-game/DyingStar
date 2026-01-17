@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://caqytf1onflst"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "meadow_steppe-steppe"
+biome_index = 10
+display_name = "Steppe"
+description = "Semi-arid plain covered with short grasses and shrubby plants, forming a transition zone between meadow and desert."
+color = Color(0.612, 0.627, 0.337, 1)
+detail_texture_scale = 3.0
+elevation_min = 200.0
+elevation_max = 2500.0
+terrain_roughness = 0.7
+supports_vegetation = true
+default_vegetation_density = 0.08
+wind_strength = 1.5

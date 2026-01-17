@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://dtcsox8hfg83s"]
+[gd_scene format=3 uid="uid://dtcsox8hfg83s"]
 
 [ext_resource type="Script" uid="uid://s8pbsagvb7ix" path="res://assets/models/spawn_kiosk/spawn_kiosk.gd" id="1_1t3ni"]
 [ext_resource type="ArrayMesh" uid="uid://2udj7wjyt5fu" path="res://assets/models/spawn_kiosk/kiosk_body.mesh" id="1_hh7gi"]
@@ -15,30 +15,30 @@ size = Vector3(1.5, 1.75, 0.6)
 [sub_resource type="BoxShape3D" id="BoxShape3D_1t3ni"]
 size = Vector3(1, 1.75, 1)
 
-[node name="SpawnKiosk" type="StaticBody3D"]
+[node name="SpawnKiosk" type="StaticBody3D" unique_id=1096407299]
 script = ExtResource("1_1t3ni")
 
-[node name="KioskBody" type="MeshInstance3D" parent="."]
+[node name="KioskBody" type="MeshInstance3D" parent="." unique_id=2132975864]
 mesh = ExtResource("1_hh7gi")
 surface_material_override/0 = ExtResource("2_8h5sf")
 
-[node name="KioskButton" type="MeshInstance3D" parent="."]
+[node name="KioskButton" type="MeshInstance3D" parent="." unique_id=822471716]
 mesh = ExtResource("2_2nllh")
 surface_material_override/0 = ExtResource("4_fv45p")
 
-[node name="KioskSign" type="MeshInstance3D" parent="."]
+[node name="KioskSign" type="MeshInstance3D" parent="." unique_id=266196457]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.46534, -0.14989)
 mesh = ExtResource("3_8h5sf")
 surface_material_override/0 = ExtResource("6_fv45p")
 
-[node name="KioskCollider" type="CollisionShape3D" parent="."]
+[node name="KioskCollider" type="CollisionShape3D" parent="." unique_id=789071060]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)
 shape = SubResource("BoxShape3D_fv45p")
 
-[node name="KioskInteractionArea" type="Area3D" parent="."]
+[node name="KioskInteractionArea" type="Area3D" parent="." unique_id=2027818845]
 script = ExtResource("8_bompr")
 label = "[F] Request your ship"
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="KioskInteractionArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="KioskInteractionArea" unique_id=1914130233]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)
 shape = SubResource("BoxShape3D_1t3ni")

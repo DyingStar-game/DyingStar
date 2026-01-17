@@ -1,0 +1,18 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://d3l2lg8y1l8yj"]
+
+[ext_resource type="Texture2D" uid="uid://b6418ltvfdvql" path="res://assets/_universe/environment/terrain/rocky_ground_albedo.png" id="albedo"]
+[ext_resource type="Texture2D" uid="uid://bbyt2tpmoqwrg" path="res://assets/_universe/environment/terrain/rocky_ground_normal.png" id="normal"]
+[ext_resource type="Texture2D" uid="uid://fgymuru1sjpk" path="res://assets/_universe/environment/terrain/rocky_ground_orm.png" id="orm"]
+[ext_resource type="Shader" uid="uid://dfiwt5xikfsqe" path="res://assets/_universe/environment/terrain/rocky_ground.gdshader" id="shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("shader")
+shader_parameter/albedo_texture = ExtResource("albedo")
+shader_parameter/normal_texture = ExtResource("normal")
+shader_parameter/orm_texture = ExtResource("orm")
+shader_parameter/roughness = 1.0
+shader_parameter/metallic = 0.0
+shader_parameter/normal_strength = 1.0
+shader_parameter/tile_scale = 0.125
+shader_parameter/triplanar_sharpness = 4.0

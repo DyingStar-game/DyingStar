@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://l7nqcsqc1y6s"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-dusty_plain"
+biome_index = 42
+display_name = "Dusty Plain"
+description = "Low-lying area covered with very fine particles (silt, clay). Susceptible to dust storms."
+category = "barren"
+color = Color(0.69, 0.659, 0.565, 1)
+elevation_min = -1000.0
+elevation_max = 1000.0
+terrain_roughness = 0.2
+wind_strength = 0.0
+movement_speed_factor = 0.7

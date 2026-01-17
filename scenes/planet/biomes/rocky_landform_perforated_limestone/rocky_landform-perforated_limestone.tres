@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b25jvknvkuljv"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-perforated_limestone"
+biome_index = 95
+color = Color(0.784, 0.722, 0.596, 1)

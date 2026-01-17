@@ -1,0 +1,13 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://ckix0jfdnlq44"]
+
+[ext_resource type="Texture2D" uid="uid://empwj7ja2j3f" path="res://assets/_universe/environment/terrain/forest_ground_leaves_albedo.jpg" id="1"]
+[ext_resource type="Texture2D" uid="uid://be24ajhyoidje" path="res://assets/_universe/environment/terrain/forest_ground_leaves_normal.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://4hqdsyav0ape" path="res://assets/_universe/environment/terrain/forest_ground_leaves_heightmap.png" id="3"]
+
+[resource]
+albedo_texture = ExtResource("1")
+normal_enabled = true
+normal_texture = ExtResource("2")
+heightmap_enabled = true
+heightmap_scale = 2.0
+heightmap_texture = ExtResource("3")

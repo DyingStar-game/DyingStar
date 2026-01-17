@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cwrufsfbqi3bw"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "crystalline-crystalline_fields"
+biome_index = 71
+display_name = "Crystalline Fields"
+description = "Areas covered with macro-crystals (quartz, selenite or fluorite). These formations are generally created in giant hydrothermal cavities whose roof has been eroded, exposing perfect geometric structures."
+category = "mineral"
+color = Color(0.627, 0.753, 0.878, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 1.5
+wind_strength = 0.8
+movement_speed_factor = 0.6
+damage_per_second = 0.5
+vehicle_traversable = false

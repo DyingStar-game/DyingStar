@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cc3n77iwd5kpp"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-sulfur_volcano"
+biome_index = 64
+display_name = "Sulfur Volcano"
+description = "Unlike terrestrial silicate volcanoes, these spew molten sulfur whose color changes according to the temperature (from yellow to black through blood red)."
+category = "toxic"
+color = Color(0.722, 0.627, 0.125, 1)
+detail_texture_scale = 2.0
+elevation_max = 5000.0
+terrain_roughness = 1.5
+wind_strength = 0.8
+movement_speed_factor = 0.5
+damage_per_second = 3.0
+vehicle_traversable = false

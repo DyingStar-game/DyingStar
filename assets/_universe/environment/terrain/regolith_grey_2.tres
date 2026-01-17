@@ -1,0 +1,11 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://0j1nxxxq4kpn"]
+
+[ext_resource type="Texture2D" uid="uid://c0t7d0bcwmliv" path="res://assets/_universe/environment/terrain/regolith_grey_2_albedo.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://b7gay453ihosf" path="res://assets/_universe/environment/terrain/regolith_grey_2_orm.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://b0aldu62eqxpf" path="res://assets/_universe/environment/terrain/regolith_grey_2_normal.png" id="3"]
+
+[resource]
+albedo_texture = ExtResource("1")
+orm_texture = ExtResource("2")
+normal_enabled = true
+normal_texture = ExtResource("3")

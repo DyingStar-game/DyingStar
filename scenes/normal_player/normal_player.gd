@@ -78,6 +78,8 @@ var is_parented: bool = false
 # to disable player input when piloting vehicule/ship
 var active = false
 
+var hands_item: Node3D = null
+
 var _display_debug:bool = false
 
 
@@ -137,8 +139,8 @@ func _ready() -> void:
 		self.set_meta("client_uuid", Globals.player_uuid)
 
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		camera.current = false
-		$ExtCamera3D.current = false
+		camera.current = true
+		$ExtCamera3D.current = true
 
 		camera.make_current()
 		# hide player name label for me only
@@ -154,6 +156,9 @@ func _ready() -> void:
 		update_last_basis()
 
 		active = true
+
+		display_debug.emit(true)
+		_display_debug = true
 
 		$UserInterface/LoadingScreen.hide()
 	else:
@@ -216,8 +221,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("spawn_50cmbox"):
 		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 
-	if event.is_action_pressed("spawn_4mbox"):
-		spawn_box("testbox/box_4m", "box", 3.0, 6.0)
+	if event.is_action_pressed("action"):
+		#  action key
+		client_send_action_to_server({"action": "action"})
 
 	if event.is_action_pressed("spawn_rock_mining"):
 		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
@@ -255,13 +261,14 @@ func _process(_delta: float) -> void:
 	can_interact = false
 	if interact_ray.is_colliding():
 		var collider = interact_ray.get_collider()
-		if collider.has_method("interact"):
-			interact_label.text = collider.label
-			interact_label.show()
-			can_interact = true
-			if Input.is_action_just_pressed("interact"):
-				collider.interact(self)
-				interact_label.hide()
+		if collider:
+			if collider.has_method("interact"):
+				interact_label.text = collider.label
+				interact_label.show()
+				can_interact = true
+				if Input.is_action_just_pressed("interact"):
+					collider.interact(self)
+					interact_label.hide()
 
 
 	if not OS.has_feature("dedicated_server"):
@@ -296,60 +303,84 @@ func _physics_process(delta: float) -> void:
 		if new_input_from_server:
 			input_direction = input_from_server["input_direction"]
 			global_rotation = input_from_server["rotation"]
-
-			var sprint = null
-			# print("gravity parents:", gravity_parents.size())
-			var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
-			# print("gravity parents after:", gravity_parents.size())
-
-			if parent_gravity_area:
-				if parent_gravity_area.gravity_point:
-					up_direction = parent_gravity_area.global_position.direction_to(global_position)
-				else:
-					up_direction = parent_gravity_area.global_basis.y
-
-				gravity = parent_gravity_area.gravity
-				motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
-			else:
-				# 0g movement
-				gravity = 0.0
-				camera_pivot.rotation.x = 0
-				motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-				var dir = Vector3(input_direction.x, 0, input_direction.y)
-
-				velocity += global_basis * dir * player_thruster_force * delta
-				velocity *= 0.98
-
-			var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
-
-			var speed = sprint_speed if sprint else walk_speed
-
-			if is_on_floor():
-				if input_direction:
-					velocity = move_direction * speed
-				else:
-					velocity = velocity.move_toward(Vector3.ZERO, speed)
-			else:
-				# "air" movement
-				if input_direction:
-					velocity += move_direction * speed * delta
-
-
-			if is_on_floor() and is_jumping:
-				velocity += up_direction * jump_height * gravity
-				is_jumping = false
-			# Add the gravity.
-			elif not is_on_floor():
-				velocity -= up_direction * gravity * 2.0 * delta
-				is_jumping = false
-
-			move_and_slide()
-			update_last_basis()
-
-			new_input_from_server = false
 		else:
-			move_and_slide()
-			update_last_basis()
+			# No new input this tick — keep last input but still apply gravity.
+			input_direction = Vector2.ZERO
+
+		var sprint = null
+		# print("gravity parents:", gravity_parents.size())
+		var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
+		# print("gravity parents after:", gravity_parents.size())
+
+		if parent_gravity_area:
+			if parent_gravity_area.gravity_point:
+				up_direction = parent_gravity_area.global_position.direction_to(global_position)
+			else:
+				up_direction = parent_gravity_area.global_basis.y
+
+			gravity = _compute_gravity(parent_gravity_area)
+			motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
+		else:
+			# 0g movement
+			gravity = 0.0
+			camera_pivot.rotation.x = 0
+			motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+			var dir = Vector3(input_direction.x, 0, input_direction.y)
+
+			# TODO sometimes the value is null on server side, not know why :/
+			player_thruster_force = 10
+			velocity += global_basis * dir * player_thruster_force * delta
+			velocity *= 0.98
+
+		var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
+
+		var speed = sprint_speed if sprint else walk_speed
+
+		if is_on_floor():
+			if input_direction:
+				velocity = move_direction * speed
+			else:
+				velocity = velocity.move_toward(Vector3.ZERO, speed)
+		else:
+			# "air" movement
+			if input_direction:
+				velocity += move_direction * speed * delta
+
+
+		if is_on_floor() and is_jumping:
+			velocity += up_direction * jump_height * gravity
+			is_jumping = false
+		# Add the gravity.
+		elif not is_on_floor():
+			velocity -= up_direction * gravity * 2.0 * delta
+			is_jumping = false
+
+		# Cap fall speed to avoid tunneling through ConcavePolygonShape3D
+		# terrain.  At 30 Hz physics with ~50 m chunk-vertex spacing,
+		# velocities above ~1500 m/s could cross multiple triangles per
+		# frame.  60 m/s is a generous "skydiver" terminal velocity that
+		# leaves a wide safety margin while still feeling like real gravity.
+		var _terminal_velocity: float = 60.0
+		if velocity.length() > _terminal_velocity:
+			velocity = velocity.normalized() * _terminal_velocity
+
+		move_and_slide()
+
+		# Anti-tunnel safety: at high gravity / low frame-rate the
+		# CharacterBody3D can still slip through ConcavePolygonShape3D
+		# triangles between physics ticks.  Sample the planet's
+		# heightmap (same data the collision mesh was generated from)
+		# at the player's current direction; if the player ended up
+		# below the surface, snap them back up and zero the radial
+		# velocity.  Only runs when the player is inside a planet
+		# gravity area, so flat / 0g zones are unaffected.
+		if parent_gravity_area and parent_gravity_area.gravity_point \
+				and parent_gravity_area.name == "PlanetGravity":
+			_snap_to_planet_surface_if_below(parent_gravity_area)
+
+		update_last_basis()
+
+		new_input_from_server = false
 
 		emit_signal(
 			"hs_server_move",
@@ -402,7 +433,7 @@ func _handle_camera_motion():
 		else:
 			up_direction = parent_gravity_area.global_basis.y
 
-		gravity = parent_gravity_area.gravity
+		gravity = _compute_gravity(parent_gravity_area)
 		orient_player()
 		global_basis = global_basis.rotated(global_basis.y, mouse_motion.x * camera_sensitivity)
 		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
@@ -415,6 +446,58 @@ func _handle_camera_motion():
 		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
 
 	mouse_motion = Vector2.ZERO
+
+## Returns surface gravity scaled by inverse-square distance from the area centre.
+## At the surface (dist == gravity_point_unit_distance) the result equals area.gravity.
+func _compute_gravity(area: Area3D) -> float:
+	if not area.gravity_point:
+		return area.gravity
+	var planet_radius := area.gravity_point_unit_distance
+	var dist := global_position.distance_to(area.global_position)
+	if dist <= 0.0:
+		return area.gravity
+	return area.gravity * (planet_radius / dist) * (planet_radius / dist)
+
+
+## Snap the player back above the planet surface if move_and_slide tunneled
+## through the collision mesh.  Samples the planet's heightmap (the same
+## source used to build the ConcavePolygonShape3D) at the player's current
+## body-frame direction, computes the surface radius there, and corrects
+## the position + radial velocity if the player is below it.
+##
+## [param area] is the planet's gravity Area3D.  Its grand-parent is the
+## Planet node; we walk up to find the PlanetTerrain / PlanetData.
+func _snap_to_planet_surface_if_below(area: Area3D) -> void:
+	var planet := area.get_parent().get_parent()
+	if planet == null or not is_instance_valid(planet):
+		return
+	if not planet.has_method("get") or planet.get("planet_data") == null:
+		return
+	var pdata = planet.planet_data
+	if pdata == null:
+		return
+	# Body-frame direction (planet rotates → must un-rotate world position).
+	var local_world: Vector3 = global_position - planet.global_position
+	if local_world.length_squared() < 1.0:
+		return
+	var local_body: Vector3 = planet.global_transform.basis.inverse() * local_world
+	var dir: Vector3 = local_body.normalized()
+	var player_dist: float = local_body.length()
+	var surface_alt: float = pdata.sample_height_for_direction(dir)
+	var surface_dist: float = pdata.radius + surface_alt
+	# Small clearance so the next physics tick doesn't immediately re-collide.
+	var clearance: float = 0.5
+	if player_dist < surface_dist + clearance:
+		var corrected_local: Vector3 = dir * (surface_dist + clearance)
+		var corrected_world: Vector3 = planet.global_position \
+				+ planet.global_transform.basis * corrected_local
+		global_position = corrected_world
+		# Zero the radial (downward) component of velocity; preserve any
+		# tangential motion the player had before tunneling.
+		var up_world: Vector3 = (planet.global_transform.basis * dir).normalized()
+		var radial_speed: float = velocity.dot(up_world)
+		if radial_speed < 0.0:
+			velocity -= up_world * radial_speed
 
 func orient_player():
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
@@ -432,7 +515,14 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			#reparent(planet)
 			# call_deferred("reparent", planet)
 			is_parented = true
-			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
+			emit_signal(
+				"hs_server_move",
+				client_uuid,
+				snapped(position, Vector3(0.001, 0.001, 0.001)),
+				snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+				planet.uuid,
+				is_parented
+			)
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -518,3 +608,32 @@ func server_action_received(data: Dictionary) -> void:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
+		"action":
+			print("action key pressed by player")
+			if hands_item != null:
+				# we have something in hands, so release it
+				print("player has an item in hands, dropping it")
+				hands_item.server_parent_change(get_parent())
+				hands_item.freeze = false
+				hands_item.send_properties_to_client(get_parent().uuid)
+				hands_item = null
+			else:
+				# generic action key pressed
+				print("action key pressed for collider")
+				var collider = interact_ray.get_collider()
+				if collider != null:
+					var parent_node = collider.get_parent()
+					if parent_node.has_method("interact"):
+						print("Collider has interact method")
+						var can_interact = parent_node.interact(self)
+						if can_interact:
+							print("collider 01")
+							parent_node.freeze = true
+							parent_node.server_parent_change(self)
+							parent_node.position = Vector3(0.0, 1.0, -1.0)
+							#  send reparent to client
+							parent_node.send_properties_to_client(self.client_uuid)
+							hands_item = parent_node
+
+			# TODO
+			# synchro head/camera

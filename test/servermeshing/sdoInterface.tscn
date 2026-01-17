@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://c1imu0qs6xvlp"]
+[gd_scene format=3 uid="uid://c1imu0qs6xvlp"]
 
 [ext_resource type="Script" uid="uid://d2ebavr6kjs4k" path="res://test/servermeshing/sdoInterface.gd" id="1_004tu"]
 
-[node name="SdoInterface" type="Node"]
+[node name="SdoInterface" type="Node" unique_id=275364923]
 script = ExtResource("1_004tu")

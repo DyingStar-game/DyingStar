@@ -1,3 +1,3 @@
 [gd_scene format=3 uid="uid://dpderfrunb8lr"]
 
-[node name="DummyStartScene" type="Node"]
+[node name="DummyStartScene" type="Node" unique_id=1064789640]

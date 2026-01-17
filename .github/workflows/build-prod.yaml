@@ -1,0 +1,62 @@
+name: Build Production Image
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  HARBOR_REGISTRY: harbor.dyingstar-game.space
+  IMAGE_NAME: harbor.dyingstar-game.space/dyingstar/godotserver
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract tag name
+        id: tag
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache planet export data
+        id: cache-planet
+        uses: actions/cache@v4
+        with:
+          path: |
+            assets/qgis/export
+            assets/qgis/checksum.txt
+            assets/qgis/creationtime.txt
+          key: planet-export-${{ steps.date.outputs.date }}
+
+      - name: Download planet data
+        if: steps.cache-planet.outputs.cache-hit != 'true'
+        run: bash tools/download_planet_data.sh
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.version }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-prod
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-prod,mode=max

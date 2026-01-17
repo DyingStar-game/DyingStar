@@ -70,8 +70,15 @@ var InputSender = GutUtils.InputSender
 # Need a reference to the instance that is running the tests.  This
 # is set by the gut class when it runs the test script.
 var gut: GutMain = null
-
-
+# Reference to the collected_script.gd instance that was used to create this.
+# This makes getting to meta data about the test easier.  This is set by
+# collected_script.get_new().
+var collected_script = null
+var wait_log_delay = .5 :
+	set(val):
+		if(_awaiter != null):
+			_awaiter.await_logger.wait_log_delay = val
+			wait_log_delay = val
 var _compare = GutUtils.Comparator.new()
 var _disable_strict_datatype_checks = false
 # Holds all the text for a test's fail/pass.  This is used for testing purposes
@@ -85,6 +92,7 @@ var _summary = {
 	tests = 0,
 	pending = 0
 }
+
 # This is used to watch signals so we can make assertions about them.
 var _signal_watcher = load('res://addons/gut/signal_watcher.gd').new()
 var _lgr = GutUtils.get_logger()
@@ -92,12 +100,21 @@ var _strutils = GutUtils.Strutils.new()
 var _awaiter = null
 var _was_ready_called = false
 
+# Used to track time/physics/idle frames during test method execution
+# They are set all together in reset_start_times
+var _unixtime_began_tracking := 0.0
+var _elapsed_msec_start := 0
+var _elapsed_usec_start := 0
+var _elapsed_physics_frames_start := 0
+var _elapsed_process_frames_start := 0
+
 # I haven't decided if we should be using _ready or not.  Right now gut.gd will
 # call this if _ready was not called (because it was overridden without a super
 # call).  Maybe gut.gd should just call _do_ready_stuff (after we rename it to
 # something better).  I'm leaving all this as it is until it bothers me more.
 func _do_ready_stuff():
 	_awaiter = GutUtils.Awaiter.new()
+	_awaiter.await_logger.wait_log_delay = wait_log_delay
 	add_child(_awaiter)
 	_was_ready_called = true
 
@@ -110,7 +127,12 @@ func _notification(what):
 	# Tests are never expected to re-enter the tree.  Tests are removed from the
 	# tree after they are run.
 	if(what == NOTIFICATION_EXIT_TREE):
+		# print(_strutils.type2str(self), ':  exit_tree')
 		_awaiter.queue_free()
+	elif(what == NOTIFICATION_PREDELETE):
+		# print(_strutils.type2str(self), ':  predelete')
+		if(is_instance_valid(_awaiter)):
+			_awaiter.queue_free()
 
 
 #region Private
@@ -230,12 +252,10 @@ func _fail_if_parameters_not_array(parameters):
 # A bunch of common checkes used when validating a double/method pair.  If
 # everything is ok then an empty string is returned, otherwise the message
 # is returned.
-func _get_bad_double_or_method_message(inst, method_name, what_you_cant_do):
+func _get_bad_method_message(inst, method_name, what_you_cant_do):
 	var to_return = ''
 
-	if(!GutUtils.is_double(inst)):
-		to_return = str("An instance of a Double was expected, you passed:  ", _str(inst))
-	elif(!inst.has_method(method_name)):
+	if(!inst.has_method(method_name)):
 		to_return = str("You cannot ", what_you_cant_do, " [", method_name, "] because the method does not exist.  ",
 			"This can happen if the method is virtual and not overloaded (i.e. _ready) ",
 			"or you have mistyped the name of the method.")
@@ -252,10 +272,14 @@ func _get_bad_double_or_method_message(inst, method_name, what_you_cant_do):
 func _fail_if_not_double_or_does_not_have_method(inst, method_name):
 	var to_return = OK
 
-	var msg = _get_bad_double_or_method_message(inst, method_name, 'spy on')
-	if(msg != ''):
-		_fail(msg)
+	if(!GutUtils.is_double(inst)):
+		_fail(str("An instance of a Double was expected, you passed:  ", _str(inst)))
 		to_return = ERR_INVALID_DATA
+	else:
+		var msg = _get_bad_method_message(inst, method_name, 'spy on')
+		if(msg != ''):
+			_fail(msg)
+			to_return = ERR_INVALID_DATA
 
 	return to_return
 
@@ -286,7 +310,7 @@ func _convert_spy_args(inst, method_name, parameters):
 				"3rd parameter to assert_called not supported when using a Callable."
 		elif(method_name != null):
 			to_return.invalid_message =\
-				"2nd parameter to assert_called not supported when using a Callable."
+				"2nd parameter to assert_called not supported when using a Callable.  Bind parameter values to the callable instead."
 		else:
 			if(inst.get_bound_arguments_count() > 0):
 				to_return.arguments = inst.get_bound_arguments()
@@ -304,23 +328,6 @@ func _get_typeof_string(the_type):
 		to_return += str(the_type)
 	return to_return
 
-
-# Validates the singleton_name is a string and exists.  Errors when conditions
-# are not met.  Returns true/false if singleton_name is valid or not.
-func _validate_singleton_name(singleton_name):
-	var is_valid = true
-	if(typeof(singleton_name) != TYPE_STRING):
-		_lgr.error("double_singleton requires a Godot singleton name, you passed " + _str(singleton_name))
-		is_valid = false
-	# Sometimes they have underscores in front of them, sometimes they do not.
-	# The doubler is smart enought of ind the right thing, so this has to be
-	# that smart as well.
-	elif(!ClassDB.class_exists(singleton_name) and !ClassDB.class_exists('_' + singleton_name)):
-		var txt = str("The singleton [", singleton_name, "] could not be found.  ",
-					"Check the GlobalScope page for a list of singletons.")
-		_lgr.error(txt)
-		is_valid = false
-	return is_valid
 
 
 # Checks the object for 'get_' and 'set_' methods for the specified property.
@@ -772,6 +779,45 @@ func compare_deep(v1, v2, max_differences=null):
 	if(max_differences != null):
 		result.max_differences = max_differences
 	return result
+
+
+## Resets the time/frame tracking statistics for the current test method
+func reset_start_times() -> void:
+	_unixtime_began_tracking = Time.get_unix_time_from_system()
+	_elapsed_msec_start = Time.get_ticks_msec()
+	_elapsed_usec_start = Time.get_ticks_usec()
+	_elapsed_physics_frames_start = Engine.get_physics_frames()
+	_elapsed_process_frames_start = Engine.get_process_frames()
+
+
+## Returns the number of seconds elapsed since test method began as a float.
+func get_elapsed_sec() -> float:
+	return Time.get_unix_time_from_system() - _unixtime_began_tracking
+
+
+## Returns the number of milliseconds elapsed since test method began as a float.
+func get_elapsed_msec() -> int:
+	return Time.get_ticks_msec() - _elapsed_msec_start
+
+
+## Returns the number of microseconds elapsed since test method began as a float.
+func get_elapsed_usec() -> int:
+	return Time.get_ticks_usec() - _elapsed_usec_start
+
+
+## Alias for [method GutTest.wait_process_frames]
+func get_elapsed_idle_frames() -> int:
+	return get_elapsed_process_frames()
+
+
+## Returns the number of process/idle frames elapsed since the test method began.
+func get_elapsed_process_frames() -> int:
+	return Engine.get_process_frames() - _elapsed_process_frames_start
+
+
+## Returns the number of physics frames elapsed since the test method began.
+func get_elapsed_physics_frames() -> int:
+	return Engine.get_physics_frames() - _elapsed_physics_frames_start
 
 
 # ----------------
@@ -1302,17 +1348,68 @@ func _can_make_signal_assertions(object, signal_name):
 	return !(_fail_if_not_watching(object) or _fail_if_does_not_have_signal(object, signal_name))
 
 
-# Check if an object is connected to a signal on another object. Returns True
-# if it is and false otherwise
-func _is_connected(signaler_obj, connect_to_obj, signal_name, method_name=""):
-	if(method_name != ""):
-		return signaler_obj.is_connected(signal_name,Callable(connect_to_obj,method_name))
+# Check if an object has any methods which are connected to the given signal.
+# If so, returns true, otherwise, returns false.
+func _is_connected_to_any(
+	signal_ref: Signal,
+	callback_parent: Object,
+):
+	var connections = signal_ref.get_object().get_signal_connection_list(signal_ref.get_name())
+	for conn in connections:
+		if(conn['callable'].get_object() == callback_parent):
+			return true
+	return false
+
+
+# Helper return type of _get_connection_info.
+# connected is true if the objects are actually connected and false otherwise.
+# The remaining parameters are used to display test information.
+class _ConnectionInfo:
+	var connected: bool = false
+	var signal_name: String = ""
+	var method_name: String = ""
+	var signal_object_name: String = ""
+	var method_object_name: String = ""
+
+
+# Helper function to parse parameters of assert_[not_]connected
+# Attempts to parse parameters as each of the four signatures
+# of assert_[not_]connected and return whether or not the signal/methods(s)
+# specified by the parameters are actually connected.
+func _get_connection_info(p1, p2, p3, p4) -> _ConnectionInfo:
+	var con_info = _ConnectionInfo.new()
+
+	if (p1 is Signal and p2 is Callable and p3 == null and p4 == null):
+		con_info.signal_name = p1.get_name()
+		con_info.method_name = p2.get_method()
+		con_info.signal_object_name = _str(p1.get_object())
+		con_info.method_object_name = _str(p2.get_object())
+		con_info.connected = p1.is_connected(p2)
+	elif (p1 is Signal and p2 is Object and p3 == null and p4 == null):
+		con_info.signal_name = p1.get_name()
+		con_info.signal_object_name = _str(p1.get_object())
+		con_info.method_object_name = _str(p2)
+		con_info.connected = _is_connected_to_any(p1, p2)
+	elif (p1 is Object and p2 is Object and p3 is String and p4 == null):
+		con_info.signal_name = p3
+		con_info.signal_object_name = _str(p1)
+		con_info.method_object_name = _str(p2)
+		if (p1.has_signal(p3)):
+			con_info.connected = _is_connected_to_any(Signal(p1, p3), p2)
+		else:
+			con_info.connected = false
+	elif (p1 is Object and p2 is Object and p3 is String and p4 is String):
+		con_info.signal_name = p3
+		con_info.method_name = p4
+		con_info.signal_object_name = _str(p1)
+		con_info.method_object_name = _str(p2)
+		if (p1.has_signal(p3) and p2.has_method(p4)):
+			con_info.connected = Signal(p1, p3).is_connected(Callable(p2, p4))
+		else:
+			con_info.connected = false
 	else:
-		var connections = signaler_obj.get_signal_connection_list(signal_name)
-		for conn in connections:
-			if(conn['signal'].get_name() == signal_name and conn['callable'].get_object() == connect_to_obj):
-				return true
-		return false
+		push_error("Signal connection assertion called with bad signature. Read Docstring for correct signature.")
+	return con_info
 
 
 ## Asserts that `signaler_obj` is connected to `connect_to_obj` on signal `signal_name`.  The method that is connected is optional.  If `method_name` is supplied then this will pass only if the signal is connected to the  method.  If it is not provided then any connection to the signal will cause a pass.
@@ -1330,7 +1427,7 @@ func _is_connected(signaler_obj, connect_to_obj, signal_name, method_name=""):
 ## class Connector:
 ##     func connect_this():
 ##         pass
-##     func  other_method():
+##     func other_method():
 ##         pass
 ##
 ## func test_assert_connected():
@@ -1352,22 +1449,23 @@ func _is_connected(signaler_obj, connect_to_obj, signal_name, method_name=""):
 ##     assert_connected(signaler, connector, 'other_signal')
 ##     assert_connected(signaler, foo, 'the_signal')
 ## [/codeblock]
-func assert_connected(p1, p2, p3=null, p4=""):
-	var sp := SignalAssertParameters.new(p1, p3)
-	var connect_to_obj = p2
-	var method_name = p4
+func assert_connected(p1, p2, p3=null, p4=null):
+	var conn_result = _get_connection_info(p1, p2, p3, p4)
+	var connected = conn_result.connected
+	var signal_name = conn_result.signal_name
+	var method_name = conn_result.method_name
+	var signal_object_name = conn_result.signal_object_name
+	var method_object_name = conn_result.method_object_name
 
-	if(connect_to_obj is  Callable):
-		method_name = connect_to_obj.get_method()
-		connect_to_obj = connect_to_obj.get_object()
-
-	var method_disp = ''
+	var method_disp = ""
 	if (method_name != ""):
 		method_disp = str(' using method: [', method_name, '] ')
-	var disp = str('Expected object ', _str(sp.object),\
-		' to be connected to signal: [', sp.signal_name, '] on ',\
-		_str(connect_to_obj), method_disp)
-	if(_is_connected(sp.object, connect_to_obj, sp.signal_name, method_name)):
+	else:
+		method_disp = str(" using method: [", p3, "] ")
+	var disp = str('Expected object ', signal_object_name,\
+		' to be connected to signal: [', signal_name, '] on ',\
+		method_object_name, method_disp)
+	if (connected):
 		_pass(disp)
 	else:
 		_fail(disp)
@@ -1376,22 +1474,23 @@ func assert_connected(p1, p2, p3=null, p4=""):
 ## The inverse of [method assert_connected].  See [method assert_connected] for parameter syntax.
 ## [br]
 ## This will fail with specific messages if the target object is connected to the specified signal on the source object.
-func assert_not_connected(p1, p2, p3=null, p4=""):
-	var sp := SignalAssertParameters.new(p1, p3)
-	var connect_to_obj = p2
-	var method_name = p4
+func assert_not_connected(p1, p2, p3=null, p4=null):
+	var conn_result = _get_connection_info(p1, p2, p3, p4)
+	var connected = conn_result.connected
+	var signal_name = conn_result.signal_name
+	var method_name = conn_result.method_name
+	var signal_object_name = conn_result.signal_object_name
+	var method_object_name = conn_result.method_object_name
 
-	if(connect_to_obj is  Callable):
-		method_name = connect_to_obj.get_method()
-		connect_to_obj = connect_to_obj.get_object()
-
-	var method_disp = ''
+	var method_disp = ""
 	if (method_name != ""):
 		method_disp = str(' using method: [', method_name, '] ')
-	var disp = str('Expected object ', _str(sp.object),\
-		' to not be connected to signal: [', sp.signal_name, '] on ',\
-		_str(sp.object), method_disp)
-	if(_is_connected(sp.object, connect_to_obj, sp.signal_name, method_name)):
+	else:
+		method_disp = str(" using method: [", p3, "] ")
+	var disp = str('Expected object ', signal_object_name,\
+		' to be not connected to signal: [', signal_name, '] on ',\
+		method_object_name, method_disp)
+	if (connected):
 		_fail(disp)
 	else:
 		_pass(disp)
@@ -1982,7 +2081,8 @@ func assert_not_freed(obj, title='something'):
 ## test when the assert is executed.  See the [wiki]Memory-Management[/wiki]
 ## page for more information.
 func assert_no_new_orphans(text=''):
-	var count = gut.get_orphan_counter().get_orphans_since('test')
+	var orphan_ids = gut.get_current_test_orphans()
+	var count = orphan_ids.size()
 	var msg = ''
 	if(text != ''):
 		msg = ':  ' + text
@@ -1990,6 +2090,7 @@ func assert_no_new_orphans(text=''):
 	# can happen with a misplaced assert_no_new_orphans.  Checking for > 0
 	# ensures this will not cause some weird failure.
 	if(count > 0):
+		msg += str("\n", _strutils.indent_text(gut.get_orphan_counter().get_orphan_list_text(orphan_ids), 1, '    '))
 		_fail(str('Expected no orphans, but found ', count, msg))
 	else:
 		_pass('No new orphans found.' + msg)
@@ -2107,6 +2208,223 @@ func assert_not_same(v1, v2, text=''):
 
 # ----------------
 #endregion
+#region Error Detection
+# ----------------
+var _error_type_check_methods = {
+	"push_error": "is_push_error",
+	"engine": "is_engine_error",
+	"push_warning":"is_push_warning"
+}
+
+# smells like GutTrackedError needs some more constants but I'm not ready to
+# make them yet
+func _is_error_of_type(err, error_type_name):
+	return err.call(_error_type_check_methods[error_type_name])
+
+
+func _assert_error_count(count, error_type_name, msg):
+	var consumed_count = 0
+	var errors = gut.error_tracker.get_errors_for_test()
+	var found = []
+	var disp = msg
+
+	for err in errors:
+		if(_is_error_of_type(err, error_type_name)):
+			if(consumed_count < count):
+				err.handled = true
+				consumed_count += 1
+			found.append(err)
+
+	if(disp != ''):
+		disp = str(':  ', disp)
+	else:
+		disp = '.'
+	disp = str("Expected ", count, " ", error_type_name, " errors.  Got ", found.size(), disp)
+	if(found.size() == count):
+		_pass(disp)
+		if(!_lgr.is_type_enabled(_lgr.types.passed)):
+			_lgr.expected_error(msg)
+	else:
+		_fail(disp)
+
+
+func _assert_error_text(text, error_type_name, msg):
+	var consumed_count = 0
+	var errors = gut.error_tracker.get_errors_for_test()
+	var found = []
+	var disp = msg
+
+	for err in errors:
+		if(!err.handled and _is_error_of_type(err, error_type_name) and err.contains_text(text)):
+			if(consumed_count == 0):
+				err.handled = true
+				consumed_count += 1
+			found.append(err)
+
+	disp = str("Expected ", error_type_name, " error containing '", text, "'.  ", msg)
+	if(consumed_count == 1):
+		_pass(disp)
+		if(!_lgr.is_type_enabled(_lgr.types.passed)):
+			_lgr.expected_error(disp)
+	else:
+		_fail(disp)
+
+
+## Get all the errors generated by the test up to this point.  Each error is an instance
+## of [GutTrackedError]. Setting the [member GutTrackedError.handled] [code]handled[/code] property of
+## an element in the array will prevent it from causing a test to fail.
+## [br][br]
+## This method allows you to inspect the details of any errors that occurred and
+## decide if it's the error you are expecting or not.
+## [br][br]
+## [codeblock]
+## func divide_them(a, b):
+##     return a / b
+##
+## func test_with_script_error():
+##     divide_them('one', 44)
+##     push_error('this is a push error')
+##     var errs = get_errors()
+##     assert_eq(errs.size(), 2, 'expected error count')
+##
+##     # Maybe inspect some properties of the errors here.
+##
+##     # Mark all the errors as handled.
+##     for e in errs:
+##         e.handled = true
+## [/codeblock]
+## See [GutTrackedError], [wiki]Error-Tracking[/wiki].
+func get_errors()->Array:
+	return gut.error_tracker.get_errors_for_test()
+
+
+## Asserts that a number of engine errors were generated by the test.
+## [br][br]
+## [b]Note:[/b]  Each error can only be asserted against once.
+## [codeblock]
+## func divide_them(a, b):
+##     return a / b
+##
+## func test_asserting_engine_error_count():
+##     divide_them('one', 44)
+##     assert_engine_error_count(1, "expecing a script error")
+##
+## func test_no_errors():
+##     assert_engine_error_count(0, 'should be no errors here')
+##
+## func test_this_fails_cannot_assert_an_error_twice():
+##     divide_them('one', 44)
+##     assert_engine_error_count(1, "expecing a script error")
+##     # this assert will fail because we already counted it.
+##     assert_engine_error_count(1, "expecing a script error")
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_engine_error_count(count:int, msg:=''):
+	_assert_error_count(count, "engine", msg)
+
+
+## Asserts that a single engine error containing [param text] (case insensitive) was generated
+## by the test.  If the expected error is found then this assert will pass and the
+## test will not fail from that engine error.
+## [br][br]
+## [b]Note:[/b]  Each error can only be asserted against once.
+## [codeblock]
+## func divide_them(a, b):
+##     return a / b
+##
+## func test_asserting_engine_error_text():
+##     divide_them('word', 91)
+##     assert_engine_error('invalid operands')
+##
+## func test_asserting_multipe_engine_error_texts():
+##     divide_them('foo', Node)
+##     divide_them(1729, 0)
+##     assert_engine_error('Division by zero')
+##     assert_engine_error('invalid operands')
+##
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_engine_error(text, msg=''):
+	var t = typeof(text)
+	if(t == TYPE_INT or t == TYPE_FLOAT):
+		_fail("Use assert_engine_error_count to assert counts.  I apologize.  One assert that does two different things was a bad idea.")
+	elif(t == TYPE_STRING):
+		_assert_error_text(text, 'engine', msg)
+	else:
+		_fail(str("Unexpected input:  ", text))
+
+
+## Asserts that a number of push_errors were generated by the test.
+## [br][br]
+## [b]Note:[/b]  Each error can only be asserted against once.
+## [codeblock]
+## func test_with_push_error():
+##     push_error("This is an error")
+##     assert_push_error(1, 'This test should have caused a push_error')
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_push_error_count(count : int, msg:=''):
+	_assert_error_count(count, "push_error", msg)
+
+
+## Asserts that a single push error containing [param text] (case insensitive) was generated
+## by the test.  If the expected error is found then this assert will pass and the
+## test will not fail from that push_error.
+## [br][br]
+## [b]Note:[/b]  Each error can only be asserted against once.
+## [codeblock]
+## func test_push_error_text():
+##     push_error("SpecialText")
+##     assert_push_error("CIALtex")
+##
+## func test_push_error_multiple_texts():
+##     push_error("Error One")
+##     push_error("Expception two")
+##     assert_push_error("one")
+##     assert_push_error("two")
+##
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_push_error(text, msg=''):
+	var t = typeof(text)
+	if(t == TYPE_INT or t == TYPE_FLOAT):
+		_fail("Use assert_push_error_count to assert counts.  I apologize.  One assert that does two different things was a bad idea.")
+	elif(t == TYPE_STRING):
+		_assert_error_text(text, 'push_error', msg)
+	else:
+		_fail(str("Unexpected input:  ", text))
+
+
+## Asserts that a number of push_warning were generated by the test.
+## [br][br]
+## [b]Note:[/b]  Each warning can only be asserted against once.
+## [codeblock]
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_push_warning_count(count : int, msg:=''):
+	_assert_error_count(count, "push_warning", msg)
+
+
+## Asserts that a single push warning containing [param text] (case insensitive)
+## was generated byt the test.
+## [br][br]
+## [b]Note:[/b]  Each warning can only be asserted against once.
+## [codeblock]
+## [/codeblock]
+## See [wiki]Error-Tracking[/wiki].
+func assert_push_warning(text : String, msg:=''):
+	_assert_error_text(text, 'push_warning', msg)
+
+
+## Prints all detected engine errors, push_error, and push_warning that were
+## generated by the test.
+func print_tracked_errors():
+	var errors = gut.error_tracker.get_errors_for_test()
+	for err in errors:
+		print(err.to_s())
+
+# ----------------
+#endregion
 #region Await Helpers
 # ----------------
 
@@ -2115,25 +2433,23 @@ func assert_not_same(v1, v2, text=''):
 ## will be printed when the await starts.[br]
 ## See [wiki]Awaiting[/wiki]
 func wait_seconds(time, msg=''):
-	_lgr.yield_msg(str('-- Awaiting ', time, ' second(s) -- ', msg))
-	_awaiter.wait_seconds(time)
+	_awaiter.wait_seconds(time, msg)
 	return _awaiter.timeout
 
 
 ## Use with await to wait for a signal to be emitted or a maximum amount of
 ## time.  Returns true if the signal was emitted, false if not.[br]
 ## See [wiki]Awaiting[/wiki]
-func wait_for_signal(sig : Signal, max_wait, msg=''):
+func wait_for_signal(sig : Signal, max_time, msg=''):
 	watch_signals(sig.get_object())
-	_lgr.yield_msg(str('-- Awaiting signal "', sig.get_name(), '" or for ', max_wait, ' second(s) -- ', msg))
-	_awaiter.wait_for_signal(sig, max_wait)
+	_awaiter.wait_for_signal(sig, max_time, msg)
 	await _awaiter.timeout
 	return !_awaiter.did_last_wait_timeout
 
 
 ## @deprecated
 ## Use wait_physics_frames or wait_process_frames
-## See [wiki]Awaiting[/wiki]
+## See [wiki]Awaiting[/wiki].
 func wait_frames(frames : int, msg=''):
 	_lgr.deprecated("wait_frames has been replaced with wait_physics_frames which is counted in _physics_process.  " +
 		"wait_process_frames has also been added which is counted in _process.")
@@ -2155,8 +2471,7 @@ func wait_physics_frames(x :int , msg=''):
 		_lgr.error(text)
 		x = 1
 
-	_lgr.yield_msg(str('-- Awaiting ', x, ' physics frame(s) -- ', msg))
-	_awaiter.wait_physics_frames(x)
+	_awaiter.wait_physics_frames(x, msg)
 	return _awaiter.timeout
 
 
@@ -2182,8 +2497,7 @@ func wait_process_frames(x : int, msg=''):
 		_lgr.error(text)
 		x = 1
 
-	_lgr.yield_msg(str('-- Awaiting ', x, ' idle frame(s) -- ', msg))
-	_awaiter.wait_process_frames(x)
+	_awaiter.wait_process_frames(x, msg)
 	return _awaiter.timeout
 
 
@@ -2213,7 +2527,7 @@ func wait_process_frames(x : int, msg=''):
 ##[/codeblock]
 ## See also [method wait_while][br]
 ## See [wiki]Awaiting[/wiki]
-func wait_until(callable, max_wait, p3='', p4=''):
+func wait_until(callable, max_time, p3='', p4=''):
 	var time_between = 0.0
 	var message = p4
 	if(typeof(p3) != TYPE_STRING):
@@ -2221,8 +2535,7 @@ func wait_until(callable, max_wait, p3='', p4=''):
 	else:
 		message = p3
 
-	_lgr.yield_msg(str("--Awaiting callable to return TRUE or ", max_wait, "s.  ", message))
-	_awaiter.wait_until(callable, max_wait, time_between)
+	_awaiter.wait_until(callable, max_time, time_between, message)
 	await _awaiter.timeout
 	return !_awaiter.did_last_wait_timeout
 
@@ -2250,7 +2563,7 @@ func wait_until(callable, max_wait, p3='', p4=''):
 ##
 ##[/codeblock]
 ## See [wiki]Awaiting[/wiki]
-func wait_while(callable, max_wait, p3='', p4=''):
+func wait_while(callable, max_time, p3='', p4=''):
 	var time_between = 0.0
 	var message = p4
 	if(typeof(p3) != TYPE_STRING):
@@ -2258,8 +2571,7 @@ func wait_while(callable, max_wait, p3='', p4=''):
 	else:
 		message = p3
 
-	_lgr.yield_msg(str("--Awaiting callable to return FALSE or ", max_wait, "s.  ", message))
-	_awaiter.wait_while(callable, max_wait, time_between)
+	_awaiter.wait_while(callable, max_time, time_between, message)
 	await _awaiter.timeout
 	return !_awaiter.did_last_wait_timeout
 
@@ -2328,7 +2640,10 @@ func get_summary_text():
 ## Create a Double of [param thing].  [param thing] should be a Class, script,
 ## or scene.  See [wiki]Doubles[/wiki]
 func double(thing, double_strat=null, not_used_anymore=null):
-	if(!_are_double_parameters_valid(thing, double_strat, not_used_anymore)):
+	if(GutUtils.is_singleton(thing)):
+		_lgr.error(str(thing, " is an Engine Singleton.  Use double_singleton to create a double of this instead."))
+		return null
+	elif(!_are_double_parameters_valid(thing, double_strat, not_used_anymore)):
 		return null
 
 	return _smart_double(thing, double_strat, false)
@@ -2337,28 +2652,55 @@ func double(thing, double_strat=null, not_used_anymore=null):
 ## Create a Partial Double of [param thing].  [param thing] should be a Class,
 ## script, or scene.  See [wiki]Partial-Doubles[/wiki]
 func partial_double(thing, double_strat=null, not_used_anymore=null):
-	if(!_are_double_parameters_valid(thing, double_strat, not_used_anymore)):
+	if(GutUtils.is_singleton(thing)):
+		_lgr.error(str(thing, " is an Engine Singleton.  Use partial_double_singleton to create a double of this instead."))
+		return null
+	elif(!_are_double_parameters_valid(thing, double_strat, not_used_anymore)):
 		return null
 
 	return _smart_double(thing, double_strat, true)
 
 
-## @internal
-func double_singleton(singleton_name):
-	return null
-	# var to_return = null
-	# if(_validate_singleton_name(singleton_name)):
-	# 	to_return = gut.get_doubler().double_singleton(singleton_name)
-	# return to_return
+## Creates a psuedo-double of an Engine Singleton.  These doubles wrap around
+## the singleton, and do not inherit from them.  These doubles do not replace
+## the Engine Singleton instance.  You must use a local reference to the Engine
+## Singleton that the double can be injected into.
+## [codeblock]
+##     class_name UsesTime
+##     var t := Time
+## [/codeblock]
+## [codeblock]
+##     extends GutTest
+##     func test_something():
+##         var dbl_time = partial_double_singleton(Time).new()
+##         var inst = UsesTime.new()
+##         inst.t = dbl_time
+## [/codeblock]
+## More information can be found at [wiki]Doubling-Singletons[/wiki]
+func double_singleton(singleton):
+	if(GutUtils.GodotSingletons.class_ref.has(singleton)):
+		return gut.get_doubler().double_singleton(singleton)
+	else:
+		var msg = str(singleton, " is not a known Engine Singleton.  Use double to create a double of this instead.  ",
+			"Known Singletons:  \n", "\n".join(GutUtils.GodotSingletons.names))
+		_lgr.error(msg)
+		return null
 
+## This creates a partial double of a singleton, where all methods are intially
+## stubbed to punch through to the Engine Singleton they wrap around.
+##
+## See [method double_singleton] and [wiki]Doubling-Singletons[/wiki] for
+## more information.
+func partial_double_singleton(singleton):
+	if(GutUtils.GodotSingletons.class_ref.has(singleton)):
+		return gut.get_doubler().partial_double_singleton(singleton)
+	else:
+		var msg = str(singleton, " is not a known Engine Singleton.  Use partial_double to create a double of this instead.  ",
+			"Known Singletons:  \n", "\n".join(GutUtils.GodotSingletons.names))
+		_lgr.error(msg)
 
-## @internal
-func partial_double_singleton(singleton_name):
-	return null
-	# var to_return = null
-	# if(_validate_singleton_name(singleton_name)):
-	# 	to_return = gut.get_doubler().partial_double_singleton(singleton_name)
-	# return to_return
+		return null
+
 
 
 ## This was implemented to allow the doubling of classes with static methods.
@@ -2388,11 +2730,9 @@ func stub(thing, p2=null, p3=null):
 		subpath = p2
 		method_name = p3
 
-	if(GutUtils.is_instance(thing)):
-		var msg = _get_bad_double_or_method_message(thing, method_name, 'stub')
-		if(msg != ''):
-			_lgr.error(msg)
-			return GutUtils.StubParams.new()
+	if(GutUtils.is_instance(thing) and !GutUtils.is_double(thing)):
+		_lgr.error(str("An instance of a Double was expected, you passed:  ", _str(thing)))
+		return GutUtils.StubParams.new()
 
 	var sp = null
 	if(typeof(thing) == TYPE_CALLABLE):
@@ -2402,9 +2742,16 @@ func stub(thing, p2=null, p3=null):
 	else:
 		sp = GutUtils.StubParams.new(thing, method_name, subpath)
 
+	if(GutUtils.is_instance(sp.stub_target)):
+		var msg = _get_bad_method_message(sp.stub_target, sp.stub_method, 'stub')
+		if(msg != ''):
+			_lgr.error(msg)
+			return GutUtils.StubParams.new()
+
 	sp.logger = _lgr
 	gut.get_stubber().add_stub(sp)
 	return sp
+
 
 # ----------------
 #endregion
@@ -2444,7 +2791,6 @@ func add_child_autoqfree(node, legible_unique_name=false):
 	# a bug sneaking its way in here.
 	super.add_child(node, legible_unique_name)
 	return node
-
 
 
 # ----------------

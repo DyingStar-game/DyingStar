@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://e3vewjye3gk8"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://bnapk8bbb8ip2" path="res://assets/_universe/environment/terrain/hot_flowing_lava.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-lava_river"
+biome_index = 86
+display_name = "Lava River"
+description = "An active flow channel transporting molten rock (extrusive magma). Unlike a stationary lava field, a river is characterized by a defined flow velocity"
+category = "volcanic"
+color = Color(0.8, 0.314, 0, 1)
+terrain_material_override = ExtResource("2")
+detail_texture_scale = 2.0
+elevation_max = 5000.0
+terrain_roughness = 1.5
+wind_strength = 0.5
+movement_speed_factor = 0.3
+damage_per_second = 5.0
+vehicle_traversable = false

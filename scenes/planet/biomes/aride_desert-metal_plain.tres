@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bgebmcliupx63"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-metal_plain"
+biome_index = 72
+display_name = "Metal Plain"
+description = "A biome whose surface is composed of native metals (iron, nickel or copper) or minerals with a metallic luster (pyrite, magnetite)."
+category = "mineral"
+color = Color(0.541, 0.541, 0.604, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.5
+movement_speed_factor = 0.9

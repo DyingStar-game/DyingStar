@@ -1,4 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://40vrf7beaa60"]
+[gd_scene format=3 uid="uid://40vrf7beaa60"]
 
 [ext_resource type="Script" uid="uid://nbuhkyxy5xp1" path="res://scenes/universe_creation/placeholders/planet_placeholder.gd" id="1_1k8ak"]
 
@@ -9,8 +9,8 @@ height = 200.0
 radial_segments = 16
 rings = 8
 
-[node name="Planet2" type="MeshInstance3D"]
+[node name="Planet2" type="MeshInstance3D" unique_id=412558228]
 mesh = SubResource("SphereMesh_1k8ak")
 script = ExtResource("1_1k8ak")
 radius = 100.0
-real_radius = 1e+12
+real_radius = 10000.0

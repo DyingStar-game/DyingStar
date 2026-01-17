@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://c1wbnyih8twgd"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "maritime_river-delta"
+biome_index = 3
+display_name = "Maritime River-Delta"
+description = "Alluvial wetland at the river mouth."
+color = Color(0.102, 0.431, 0.361, 1)
+detail_texture_scale = 2.0
+elevation_max = 50.0
+terrain_roughness = 0.4
+supports_vegetation = true
+default_vegetation_density = 0.4
+default_tree_type = "mangrove"
+wind_strength = 0.8
+movement_speed_factor = 0.5
+vehicle_traversable = false

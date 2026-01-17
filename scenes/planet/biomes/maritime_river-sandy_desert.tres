@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dpewmpiyr6bn3"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-sandy_desert"
+biome_index = 5
+display_name = "Sandy Desert"
+description = "A hyperarid region dominated by the accumulation of quartz or silicate grains. The topography is governed by the formation of natural dunes (barchans, seifs)."
+color = Color(0.831, 0.643, 0.216, 1)
+detail_texture_scale = 3.0
+elevation_max = 2000.0
+terrain_roughness = 0.6
+default_vegetation_density = 0.02
+default_tree_type = "cactus"
+wind_strength = 1.8
+movement_speed_factor = 0.7
