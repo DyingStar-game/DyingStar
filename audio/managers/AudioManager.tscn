@@ -1,16 +1,20 @@
-[gd_scene load_steps=3 format=3 uid="uid://cpqbwvymlhnme"]
+[gd_scene load_steps=4 format=3 uid="uid://cpqbwvymlhnme"]
 
 [ext_resource type="WwiseBank" uid="uid://bfvc27a2qtics" path="res://Wwise/resources/SoundBank/{8A024A37-ED1D-40A8-8C1F-9D6EDAF154A4}.tres" id="1_qildj"]
-[ext_resource type="WwiseEvent" uid="uid://4ia8qt6umc2c" path="res://Wwise/resources/Event/{C404976B-376F-4FFE-8A41-3B63F31B85DC}.tres" id="2_d24rj"]
+[ext_resource type="Script" uid="uid://63yefuh17dml" path="res://audio/managers/audio_manager.gd" id="1_yvnqn"]
+[ext_resource type="WwiseBank" uid="uid://c7nwborkqro7x" path="res://Wwise/resources/SoundBank/{460672E0-0F78-4727-8F6D-A7AFC72DEA5C}.tres" id="3_yvnqn"]
 
 [node name="AudioManager" type="Node"]
+script = ExtResource("1_yvnqn")
 
-[node name="AkBank" type="AkBank" parent="."]
+[node name="Loaded Banks" type="Node" parent="."]
+
+[node name="AkBank_Debugs_Audio" type="AkBank" parent="Loaded Banks"]
 bank = ExtResource("1_qildj")
 load_on = 1
 
-[node name="AkListener2D" type="AkListener2D" parent="."]
+[node name="AkBank_Music_Global" type="AkBank" parent="Loaded Banks"]
+bank = ExtResource("3_yvnqn")
+load_on = 1
 
-[node name="AkEvent2D" type="AkEvent2D" parent="."]
-event = ExtResource("2_d24rj")
-trigger_on = 1
+[node name="AkListener2D" type="AkListener2D" parent="."]

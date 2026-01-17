@@ -1,0 +1,7 @@
+[gd_resource type="WwiseBank" format=3 uid="uid://c7nwborkqro7x"]
+
+[resource]
+name = "Music_Global"
+id = 2880921812
+guid = "{460672E0-0F78-4727-8F6D-A7AFC72DEA5C}"
+dummy = true

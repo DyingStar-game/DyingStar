@@ -23,7 +23,12 @@ texture = ExtResource("2_vigpp")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Button" type="Button" parent="."]
+[node name="Control" type="Control" parent="."]
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="debug_btn" type="Button" parent="Control"]
 layout_mode = 0
 offset_left = 55.0
 offset_top = 50.0
@@ -31,4 +36,43 @@ offset_right = 222.0
 offset_bottom = 197.0
 text = "DEBUG BTN"
 
-[connection signal="pressed" from="Button" to="." method="_debug_btn_pressed"]
+[node name="play_music_btn" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 295.0
+offset_top = 50.0
+offset_right = 462.0
+offset_bottom = 197.0
+text = "PLAY MUSIC"
+
+[node name="play_music_sandbox" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 479.0
+offset_top = 50.0
+offset_right = 646.0
+offset_bottom = 197.0
+text = "CHANGE TO
+SANDBOX BGM"
+
+[node name="play_music_menu" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 662.0
+offset_top = 50.0
+offset_right = 829.0
+offset_bottom = 197.0
+text = "CHANGE TO
+MENU BGM"
+
+[node name="play_music_none" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 847.0
+offset_top = 50.0
+offset_right = 1014.0
+offset_bottom = 197.0
+text = "CHANGE TO
+NONE BGM"
+
+[connection signal="pressed" from="Control/debug_btn" to="." method="_debug_btn_pressed"]
+[connection signal="pressed" from="Control/play_music_btn" to="." method="_start_music"]
+[connection signal="pressed" from="Control/play_music_sandbox" to="." method="_change_to_sandbox"]
+[connection signal="pressed" from="Control/play_music_menu" to="." method="_change_to_menu"]
+[connection signal="pressed" from="Control/play_music_none" to="." method="_change_to_none"]
