@@ -17,17 +17,27 @@ var devscene: String = ""
 var sceneuuid: String = UUID_UTIL.v4()
 
 func _enter_tree() -> void:
+	var server_ini = "server.ini"
 	for argument in OS.get_cmdline_args():
 		if argument.contains("devmode="):
 			var key_value = argument.split("=")
 			devscene = key_value[1]
 			devmode = true
 			port = 7041
+		if argument.contains("srvini="):
+			var key_value = argument.split("=")
+			server_ini = key_value[1]
+	if devmode == false:
+		# load port from ini
+		var config = ConfigFile.new()
+		config.load(server_ini)
+		port = config.get_value("server", "port")
 
 func _ready() -> void:
 	set_process(false)
 
 func start_websocket_server():
+	print("Starting server socket on port %d..." % [port])
 	var err = tcp_server.listen(port)
 	if err == OK:
 		print("Server socket started.")
@@ -52,7 +62,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("SERVER - Received packet: %s" % [packet_text])
+				print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)

@@ -250,6 +250,9 @@ func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
 			return props_list[proptype][parent_id]
+	for player_id in players_list.keys():
+		if player_id == parent_id:
+			return players_list[player_id]
 	return null
 
 ########################################################################
@@ -527,6 +530,12 @@ func create_generic_object(event: Dictionary) -> void:
 		return
 	if props_list[event["object_type"]].has(event["object_id"]):
 		var prop_instance = props_list[event["object_type"]][event["object_id"]]
+		# manage special case for new parent
+		if object_data.has("parent_id"):
+			if object_data["parent_id"] != "":
+				var parent = _search_parent_node(object_data["parent_id"])
+				if parent != null:
+					prop_instance.client_parent_change(parent)
 		prop_instance.client_channel_data_update(object_data)
 
 	else:
@@ -572,6 +581,13 @@ func create_generic_object(event: Dictionary) -> void:
 			prop_instance.client_channel_data_update(object_data)
 			if props_pre_creations.has(event["object_id"]):
 				for channel in props_pre_creations[event["object_id"]]["channels"]:
+					# Special case for new parent_id
+					if props_pre_creations[event["object_id"]]["channels"][channel].has("parent_id"):
+						if props_pre_creations[event["object_id"]]["channels"][channel]["parent_id"] != "":
+							var parent = _search_parent_node(props_pre_creations[event["object_id"]]["channels"][channel]["parent_id"])
+							if parent != null:
+								prop_instance.client_parent_change(parent)
+
 					prop_instance.client_channel_data_update(props_pre_creations[event["object_id"]]["channels"][channel])
 				props_pre_creations.erase(event["object_id"])
 
@@ -612,6 +628,13 @@ func create_generic_object(event: Dictionary) -> void:
 			# TODO case yet created (channel 6 arrived before others), so now manage other channels
 			if props_list.has(event["object_type"]) and props_list[event["object_type"]].has(event["object_id"]):
 				var prop_instance = props_list[event["object_type"]][event["object_id"]]
+				# Special case for new parent_id
+				if event["data"].has("parent_id"):
+					if event["data"]["parent_id"] != "":
+						var parent = _search_parent_node(event["data"]["parent_id"])
+						if parent != null:
+							prop_instance.client_parent_change(parent)
+
 				prop_instance.client_channel_data_update(event["data"])
 
 			# event not has scenename, so we store it for later creation
@@ -671,6 +694,16 @@ func update_generic_object(event: Dictionary) -> void:
 	if props_list.has(event["object_type"]):
 		if props_list[event["object_type"]].has(event["object_id"]):
 			var prop_instance = props_list[event["object_type"]][event["object_id"]]
+			# Special case for new parent_id
+			if event["data"].has("parent_id"):
+				print("Generic object %s parent change to %s" % [event["object_id"], event["data"]["parent_id"]])
+				if event["data"]["parent_id"] != "":
+					print("Generic object %s parent not empty" % [event["object_id"]])
+					var parent = _search_parent_node(event["data"]["parent_id"])
+					print("Generic object %s parent found: %s" % [event["object_id"], parent])
+					if parent != null:
+						prop_instance.client_parent_change(parent)
+
 			prop_instance.client_channel_data_update(event["data"])
 		else:
 			print("Update generic object but not found: %s" % event["object_id"])

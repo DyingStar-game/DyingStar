@@ -19,8 +19,8 @@ var has_parent: bool = false
 
 @onready var is_inside_box4m: bool = false
 
-func _ready() -> void:
-	position = spawn_position
+#func _ready() -> void:
+	#position = spawn_position
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
@@ -39,6 +39,24 @@ func _physics_process(_delta: float) -> void:
 			)
 			server_last_position = my_position
 			server_last_rotation = my_rotation
+
+func send_properties_to_client(uuid: String) -> void:
+	var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
+	var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	emit_signal(
+		"hs_server_prop_update",
+		uuid,
+		{
+			"position": my_position,
+			"rotation": my_rotation,
+			"parent_id": uuid,
+			"weight": 200,
+		},
+		type_name,
+		has_parent
+	)	
+	server_last_position = my_position
+	server_last_rotation = my_rotation
 
 func _exit_tree() -> void:
 	if GameOrchestrator.is_server():
@@ -65,3 +83,6 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["rotation"]["y"],
 			data["rotation"]["z"]
 		)
+
+func interact(interactor: Node = null):
+	return true

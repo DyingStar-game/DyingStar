@@ -4,11 +4,6 @@ signal populated_universe
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
-# conversion of position to prevent collision problems when position is so far from origin
-const POSITION_CONVERSION_X = 0.0 #18999498785.9
-const POSITION_CONVERSION_Y = 0.0
-const POSITION_CONVERSION_Z = 0.0
-
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
 var datas_to_spawn_count: int = 0
@@ -269,19 +264,6 @@ func set_server_inactive(_newserver_id: int):
 # Horizon server part                              #
 #####################################################
 
-func create_vector3_with_conversion_hg(x: float, y: float, z: float) -> Vector3:
-	return Vector3(
-		x - POSITION_CONVERSION_X,
-		y - POSITION_CONVERSION_Y,
-		z - POSITION_CONVERSION_Z
-	)
-
-func convert_value_to_universe(value: float, conversion: float) -> float:
-	return value + conversion
-
-
-
-
 func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, _is_parented = false):
 	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
 	# 	print("move uuid:", client_uuid)
@@ -292,9 +274,9 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		players_newposition[client_uuid] = {
 			"player_id": client_uuid,
 			"pos": {
-				"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-				"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-				"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
+				"x": position[0],
+				"y": position[1],
+				"z": position[2],
 			},
 			"rot": {
 				"x": rotation[0],
@@ -337,18 +319,11 @@ func _on_prop_update(
 	var prop_entry = props_update[uuid]
 	for key in properties.keys():
 		if key == "position":
-			if is_parented == true:
-				prop_entry['position'] = {
-					"x": properties["position"][0],
-					"y": properties["position"][1],
-					"z": properties["position"][2]
-				}
-			else:
-				prop_entry['position'] = {
-					"x": convert_value_to_universe(properties["position"][0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(properties["position"][1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(properties["position"][2], POSITION_CONVERSION_Z)
-				}
+			prop_entry['position'] = {
+				"x": properties["position"][0],
+				"y": properties["position"][1],
+				"z": properties["position"][2]
+			}
 		elif key == "rotation":
 			prop_entry['rotation'] = {
 				"x": properties["rotation"][0],
@@ -403,7 +378,7 @@ func create_planet(event: Dictionary) -> void:
 	var planet_data = event["data"]["object_data"]
 
 	var spawnable_planet_instance = load("res://" + planet_data["scenename"]).instantiate()
-	spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
+	spawnable_planet_instance.spawn_position = Vector3(
 		planet_data["positions"][0]["x"],
 		planet_data["positions"][0]["y"],
 		planet_data["positions"][0]["z"]
@@ -483,7 +458,7 @@ func create_generic_object(event: Dictionary) -> void:
 
 	var spawnable_prop_instance = prop_scene.instantiate()
 	spawnable_prop_instance.set_physics_process(false)
-	spawnable_prop_instance.spawn_position = create_vector3_with_conversion_hg(
+	spawnable_prop_instance.spawn_position = Vector3(
 		object_data["position"]["x"],
 		object_data["position"]["y"],
 		object_data["position"]["z"]

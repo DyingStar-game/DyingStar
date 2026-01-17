@@ -137,8 +137,8 @@ func _ready() -> void:
 		self.set_meta("client_uuid", Globals.player_uuid)
 
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		camera.current = false
-		$ExtCamera3D.current = false
+		camera.current = true
+		$ExtCamera3D.current = true
 
 		camera.make_current()
 		# hide player name label for me only
@@ -216,8 +216,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("spawn_50cmbox"):
 		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 
-	if event.is_action_pressed("spawn_4mbox"):
-		spawn_box("testbox/box_4m", "box", 3.0, 6.0)
+	if event.is_action_pressed("action"):
+		#  action key
+		client_send_action_to_server({"action": "action"})
 
 	if event.is_action_pressed("spawn_rock_mining"):
 		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
@@ -317,6 +318,8 @@ func _physics_process(delta: float) -> void:
 				motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 				var dir = Vector3(input_direction.x, 0, input_direction.y)
 
+				# TODO sometimes the value is null on server side, not know why :/
+				player_thruster_force = 10
 				velocity += global_basis * dir * player_thruster_force * delta
 				velocity *= 0.98
 
@@ -518,3 +521,22 @@ func server_action_received(data: Dictionary) -> void:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
+		"action":
+			# generic action key pressed
+			print("action key pressed for collider")
+			var collider = interact_ray.get_collider()
+			if collider != null:
+				var parent_node = collider.get_parent()
+				if parent_node.has_method("interact"):
+					print("Collider has interact method")
+					var can_interact = parent_node.interact(self)
+					if can_interact:
+						print("collider 01")
+						parent_node.freeze = true
+						parent_node.reparent(self)
+						parent_node.position = Vector3(0.0, 1.0, -1.0)
+						#  send reparent to client
+						parent_node.send_properties_to_client(self.client_uuid)
+
+			# TODO
+			# synchro head/camera

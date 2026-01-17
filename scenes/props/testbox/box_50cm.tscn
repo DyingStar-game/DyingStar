@@ -16,5 +16,10 @@ script = ExtResource("1_o2evt")
 mesh = ExtResource("1_xngen")
 surface_material_override/0 = ExtResource("3_ovsim")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." groups=["carry"]]
+shape = SubResource("BoxShape3D_urcx6")
+
+[node name="Area3D" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" groups=["carry"]]
 shape = SubResource("BoxShape3D_urcx6")
