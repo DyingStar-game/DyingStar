@@ -60,7 +60,7 @@ shape = SubResource("BoxShape3D_m4ygx")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.622590192634482, 9.147364821160409e-08, 0.6245682824668704)
 
 [node name="PalletCrate120x80x100" parent="." instance=ExtResource("5_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.147364821160409e-08, -0.9447545420112792)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.147364821160409e-08, -0.9447545420112791)
 
 [node name="ContainerLiquid1200x240x240" parent="." instance=ExtResource("6_bdj2j")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)
