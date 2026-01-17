@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://v1hxi4ce7ydy"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "crystalline-salt_crystal_field"
+biome_index = 76
+display_name = "Salt Crystal Field"
+description = "Massive sedimentary deposit of halites. The biome is characterized by natural cubic formations and hopper-like structures rising from the ground."
+category = "mineral"
+color = Color(0.878, 0.847, 0.784, 1)
+detail_texture_scale = 2.0
+elevation_min = -500.0
+elevation_max = 1500.0
+terrain_roughness = 1.2
+movement_speed_factor = 0.7

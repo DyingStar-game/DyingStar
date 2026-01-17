@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b8yojt3mm3jtv"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-arachnoide"
+biome_index = 93
+display_name = "Arachnoide"
+description = "Radial fracture extending beyond the circular fracture"
+color = Color(0.416, 0.353, 0.314, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.7

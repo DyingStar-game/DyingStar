@@ -1,0 +1,20 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://c5dj5gobtgjsg"]
+
+[ext_resource type="Shader" uid="uid://qh11j5fy1gfp" path="res://assets/_universe/environment/terrain/lava_surface.gdshader" id="1"]
+
+[resource]
+resource_name = "LavaSurface"
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/lava_hot_color = Color(1, 0.35, 0.05, 1)
+shader_parameter/lava_cool_color = Color(0.15, 0.02, 0, 1)
+shader_parameter/crust_color = Color(0.08, 0.04, 0.02, 1)
+shader_parameter/crust_coverage = 0.55
+shader_parameter/flow_speed = 0.15
+shader_parameter/turbulence = 2.5
+shader_parameter/glow_intensity = 4.0
+shader_parameter/roughness_value = 0.85
+shader_parameter/wave_height = 0.3
+shader_parameter/normal_strength = 0.8
+shader_parameter/planet_radius = 1000.0
+shader_parameter/water_level_offset = 0.0

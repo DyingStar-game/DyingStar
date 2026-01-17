@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://e1ty56ds7fvb"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-valley_of_fire"
+biome_index = 90
+display_name = "Valley of Fire"
+description = "Ancient sand dune, composed of Aztec sandstone"
+color = Color(0.722, 0.353, 0.227, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.6

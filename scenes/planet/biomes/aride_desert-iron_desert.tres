@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dbhrulvp6ylui"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-iron_desert"
+biome_index = 54
+display_name = "Iron Desert"
+description = "A biome whose characteristic red color comes from the oxidation of iron dust. The atmosphere there is often thin and rich in dust."
+category = "martian"
+color = Color(0.753, 0.376, 0.227, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.7
+wind_strength = 1.5
+movement_speed_factor = 0.85

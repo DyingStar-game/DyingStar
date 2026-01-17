@@ -3,11 +3,13 @@ extends Node
 signal populated_universe
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
-
-# conversion of position to prevent collision problems when position is so far from origin
-const POSITION_CONVERSION_X = 0.0 #18999498785.9
-const POSITION_CONVERSION_Y = 0.0
-const POSITION_CONVERSION_Z = 0.0
+## Tick interval (frames) for the active-body chunk-pin sweep.
+const PIN_TICK_INTERVAL: int = 6
+## Prop type names in props_list that may contain RigidBody3D instances
+## we want to pin chunks for.  "planets" intentionally excluded.
+const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
+## Max number of [Pin] log entries before suppressing further output.
+const PIN_DEBUG_MAX: int = 200
 
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
@@ -28,6 +30,7 @@ var max_players_allowed = 40
 var players_list = {}
 var players_list_last_movement = {}
 var players_list_last_rotation = {}
+var players_list_creationdate = {}
 var players_list_temp_by_id = {}
 var players_list_currently_in_transfert = {}
 var changing_zone = false
@@ -99,6 +102,30 @@ var props_scene: Dictionary = {
 var debug_message_number: int = 0
 
 var serverinfo_uuid: String = ""
+var serverinfo_name: String = ""
+
+# on server, Horizon messages can arrives in not right order when have parent_id for players
+# so we store the message in this case in the goal to process them later
+var pending_messages_player_parenting: Array[Dictionary] = []
+# same for generic objects
+var pending_messages_generic_objects_parenting: Array[Dictionary] = []
+var pending_freeze_objects: Array[Dictionary] = []
+var check_pending_objects_timer: int = 0
+var check_out_of_zone_after_split: int = 0
+
+## True once manage_zone() has received an authoritative zone assignment
+## from Horizon.  Until then, planets keep zero resident chunks (only their
+## safety-net coarse mesh) so a 17-planet boot doesn't load 836k shapes.
+var _zone_initialized: bool = false
+
+## Tick counter for the active-body chunk-pin sweep.  Runs every
+## PIN_TICK_INTERVAL frames in _process to refresh which planet chunks
+## must stay resident because an awake RigidBody3D is sitting on them.
+var _pin_tick_counter: int = 0
+## Number of debug lines printed by the pin sweep so far (capped to keep
+## logs readable).  Reset/incremented in _pin_node_to_planet_chunk.
+var _pin_debug_logged: int = 0
+
 
 func _enter_tree() -> void:
 	NetworkOrchestrator.load_server_config()
@@ -110,6 +137,186 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
 	send_props_update_to_horizon()
+
+func _process(_delta: float) -> void:
+	if check_pending_objects_timer == 10:
+		# every 10 frames, check pending players parenting
+		for pending_message in pending_messages_player_parenting.duplicate():
+			if _search_parent_node(pending_message["data"]["object_data"]["parent_id"]) != null:
+				print(
+					"Processing pending message for player %s now that parent_id %s is available" % [
+						pending_message["data"]["object_data"]["parent_id"],
+						pending_message["data"]["object_uuid"]
+					]
+				)
+				create_player(pending_message)
+				pending_messages_player_parenting.erase(pending_message)
+
+		# generic object created, now process pending messages for generic objects waiting for this generic object as parent
+		for pending_message in pending_messages_generic_objects_parenting.duplicate():
+			if _search_parent_node(pending_message["data"]["object_data"]["parent_id"]) != null:
+				print(
+					"Processing pending message for generic object %s now that parent_id %s is available" % [
+						pending_message["data"]["object_uuid"],
+						pending_message["data"]["object_data"]["parent_id"]
+					]
+				)
+				create_generic_object(pending_message)
+				pending_messages_generic_objects_parenting.erase(pending_message)
+
+		# process pending freeze objects
+		for pending_message in pending_freeze_objects.duplicate():
+			var ret = freeze_object(pending_message, false)
+			if ret == true:
+				pending_freeze_objects.erase(pending_message)
+
+		check_pending_objects_timer = 0
+	else:
+		check_pending_objects_timer += 1
+
+	# Active-body chunk pinning.  At ~60 fps this fires every ~100 ms,
+	# refreshing which planet chunks must stay resident because an awake
+	# RigidBody3D is sitting on them.  See _refresh_active_body_pins().
+	_pin_tick_counter += 1
+	if _pin_tick_counter >= PIN_TICK_INTERVAL:
+		_pin_tick_counter = 0
+		_refresh_active_body_pins()
+
+
+## Sweep all RigidBody3D-based props, identify the planet chunk under
+## each awake body, and push the resulting per-planet pin set so those
+## chunks stay resident regardless of the zone's desired residency.
+##
+## Awake = (not sleeping) AND (not frozen).  Frozen / sleeping bodies do
+## not need collision and may be evicted with the rest of the zone churn.
+##
+## Players (CharacterBody3D) are ALWAYS pinned regardless of
+## _zone_initialized: in single-server / no-mesh deployments Horizon never
+## sends a manage_zone() event, so without this fallback the per-chunk
+## collision never loads and the player falls through onto the
+## safety-net coarse mesh ~hundreds of metres below the visible surface.
+func _refresh_active_body_pins() -> void:
+	if props_list["planets"].is_empty():
+		return
+	if _zone_initialized == false and players_list.is_empty():
+		return
+
+	# planet_node → Dictionary[chunk_key, true]
+	var pins_by_planet: Dictionary = {}
+	for puuid in props_list["planets"].keys():
+		pins_by_planet[puuid] = {}
+
+	# Pin chunks under each connected player so their surroundings have
+	# real collision even before (or without) a Horizon zone assignment.
+	for player_uuid in players_list.keys():
+		var player_node = players_list[player_uuid]
+		if not is_instance_valid(player_node):
+			continue
+		if not (player_node is Node3D):
+			continue
+		_pin_node_to_planet_chunk(player_node as Node3D, pins_by_planet)
+
+	if _zone_initialized:
+		for ptype in PIN_PROP_TYPES:
+			if not props_list.has(ptype):
+				continue
+			for body_uuid in props_list[ptype].keys():
+				var body = props_list[ptype][body_uuid]
+				if not is_instance_valid(body):
+					continue
+				if not (body is RigidBody3D):
+					continue
+				var rb: RigidBody3D = body
+				if rb.freeze:
+					continue
+				if rb.sleeping:
+					continue
+				_pin_node_to_planet_chunk(rb, pins_by_planet)
+
+	# Push pin set to each planet (empty array clears pins).
+	for puuid in pins_by_planet.keys():
+		var planet_node = props_list["planets"][puuid]
+		if planet_node == null or not is_instance_valid(planet_node):
+			continue
+		if not (planet_node is Planet):
+			continue
+		var planet: Planet = planet_node as Planet
+		if planet.planet_terrain == null:
+			continue
+		var keys := PackedStringArray()
+		for k in pins_by_planet[puuid].keys():
+			keys.append(k as String)
+		planet.planet_terrain.set_pinned_chunks(keys)
+
+
+## Find the closest planet to [param body] and add the chunk key under
+## the body's position to [param pins_by_planet][planet_uuid].  Skips when
+## the body is far above any planet (>radius * 1.5 from any centre).
+func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void:
+	var best_uuid := ""
+	var best_planet: Planet = null
+	var best_dist_sq := INF
+	var body_pos := body.global_position
+	for puuid in props_list["planets"].keys():
+		var pn = props_list["planets"][puuid]
+		if pn == null or not is_instance_valid(pn) or not (pn is Planet):
+			continue
+		var p: Planet = pn as Planet
+		if p.planet_data == null:
+			continue
+		var d_sq: float = body_pos.distance_squared_to(p.global_position)
+		# Skip planets clearly out of reach (1.5× radius gives margin for
+		# atmosphere / above-surface bodies that should still pin).
+		var max_r: float = p.planet_data.radius * 1.5
+		if d_sq > max_r * max_r:
+			continue
+		if d_sq < best_dist_sq:
+			best_dist_sq = d_sq
+			best_uuid = puuid
+			best_planet = p
+	if best_planet == null:
+		if _pin_debug_logged < PIN_DEBUG_MAX:
+			_pin_debug_logged += 1
+			print("[Pin] no planet near body at ", body_pos,
+				" (closest planets: ", _debug_closest_planets(body_pos, 3), ")")
+		return
+	var local := body_pos - best_planet.global_position
+	if local.length_squared() < 1.0e-6:
+		return
+	# Convert from world-frame to planet-LOCAL (body-frame) direction.
+	# vec2pix_nest expects the direction in the planet's own coordinate
+	# system; the planet rotates in orbit, so a world-frame direction would
+	# resolve to the WRONG tile and the actual tile under the player would
+	# never be pinned (player falls through to safety net).
+	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
+	var dir := local_body.normalized()
+	var nside: int = best_planet.planet_data.export_nside
+	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
+	var key := "hp_n%d_p%d" % [nside, ipix]
+	pins_by_planet[best_uuid][key] = true
+	if _pin_debug_logged < PIN_DEBUG_MAX:
+		_pin_debug_logged += 1
+		var alt: float = sqrt(best_dist_sq) - best_planet.planet_data.radius
+		print("[Pin] body at ", body_pos, " → planet '", best_planet.name,
+			"' alt=", alt, " m  key=", key)
+
+
+## Helper for debug log: list the N closest planets and their distances.
+func _debug_closest_planets(pos: Vector3, n: int) -> String:
+	var items: Array = []
+	for puuid in props_list["planets"].keys():
+		var pn = props_list["planets"][puuid]
+		if not is_instance_valid(pn) or not (pn is Planet):
+			continue
+		var p: Planet = pn as Planet
+		var d := pos.distance_to(p.global_position)
+		var r: float = p.planet_data.radius if p.planet_data else 0.0
+		items.append([d, p.name, r])
+	items.sort_custom(func(a, b): return a[0] < b[0])
+	var out := ""
+	for i in range(min(n, items.size())):
+		out += "%s d=%.0f r=%.0f; " % [items[i][1], items[i][0], items[i][2]]
+	return out
 
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 30
@@ -198,8 +405,8 @@ func _send_metrics():
 					{
 						"uuid": serverinfo_uuid,
 						"type": "serverinfo",
-						"fps": Performance.get_monitor(Performance.TIME_FPS),
-						"objects_number": Performance.get_monitor(Performance.OBJECT_COUNT),
+						"fps": int(Performance.get_monitor(Performance.TIME_FPS)),
+						"objects_number": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 						"players_number": players_list.size(),
 						"scenes_number": nb_scenes,
 					}
@@ -269,19 +476,6 @@ func set_server_inactive(_newserver_id: int):
 # Horizon server part                              #
 #####################################################
 
-func create_vector3_with_conversion_hg(x: float, y: float, z: float) -> Vector3:
-	return Vector3(
-		x - POSITION_CONVERSION_X,
-		y - POSITION_CONVERSION_Y,
-		z - POSITION_CONVERSION_Z
-	)
-
-func convert_value_to_universe(value: float, conversion: float) -> float:
-	return value + conversion
-
-
-
-
 func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, _is_parented = false):
 	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
 	# 	print("move uuid:", client_uuid)
@@ -289,12 +483,13 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		# Prevent write over reparent (because reparent will not sent to client)
 		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
 			return
-		players_newposition[client_uuid] = {
+
+		var prep = {
 			"player_id": client_uuid,
 			"pos": {
-				"x": convert_value_to_universe(position[0], POSITION_CONVERSION_X),
-				"y": convert_value_to_universe(position[1], POSITION_CONVERSION_Y),
-				"z": convert_value_to_universe(position[2], POSITION_CONVERSION_Z)
+				"x": position[0],
+				"y": position[1],
+				"z": position[2],
 			},
 			"rot": {
 				"x": rotation[0],
@@ -304,9 +499,16 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		}
 
 		if reparent_uuid != null:
-			players_newposition[client_uuid]["reparent"] = reparent_uuid
+			prep["reparent"] = reparent_uuid
 		players_list_last_movement[client_uuid] = position
 		players_list_last_rotation[client_uuid] = rotation
+		if _check_out_of_zone(client_uuid):
+			prep["out_of_zone"] = serverinfo_uuid
+			var player = players_list[client_uuid]
+			print("erase player (2): %s" % client_uuid)
+			players_list.erase(client_uuid)
+			player.queue_free()
+		players_newposition[client_uuid] = prep
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -327,7 +529,7 @@ func _on_prop_update(
 	uuid: String,
 	properties: Dictionary,
 	type: String,
-	is_parented = false
+	_is_parented = false
 ):
 	if not props_update.has(uuid):
 		props_update[uuid] = {
@@ -337,18 +539,11 @@ func _on_prop_update(
 	var prop_entry = props_update[uuid]
 	for key in properties.keys():
 		if key == "position":
-			if is_parented == true:
-				prop_entry['position'] = {
-					"x": properties["position"][0],
-					"y": properties["position"][1],
-					"z": properties["position"][2]
-				}
-			else:
-				prop_entry['position'] = {
-					"x": convert_value_to_universe(properties["position"][0], POSITION_CONVERSION_X),
-					"y": convert_value_to_universe(properties["position"][1], POSITION_CONVERSION_Y),
-					"z": convert_value_to_universe(properties["position"][2], POSITION_CONVERSION_Z)
-				}
+			prop_entry['position'] = {
+				"x": properties["position"][0],
+				"y": properties["position"][1],
+				"z": properties["position"][2]
+			}
 		elif key == "rotation":
 			prop_entry['rotation'] = {
 				"x": properties["rotation"][0],
@@ -401,30 +596,133 @@ func _on_prop_delete(
 func create_planet(event: Dictionary) -> void:
 	# spawn planet
 	var planet_data = event["data"]["object_data"]
+	var planet_uuid: String = event["data"]["object_uuid"]
+
+	# Guard: planet may already exist (Horizon re-sends initial_object for each
+	# connecting player). Creating a duplicate would load thousands of collision
+	# shapes again and exhaust Godot's physics RID pool.
+	if props_list["planets"].has(planet_uuid):
+		print("[server] create_planet: planet '%s' already spawned, skipping." % planet_uuid)
+		return
 
 	var spawnable_planet_instance = load("res://" + planet_data["scenename"]).instantiate()
-	spawnable_planet_instance.spawn_position = create_vector3_with_conversion_hg(
+	spawnable_planet_instance.spawn_position = Vector3(
 		planet_data["positions"][0]["x"],
 		planet_data["positions"][0]["y"],
 		planet_data["positions"][0]["z"]
 	)
 	spawnable_planet_instance.name = planet_data["name"]
-	spawnable_planet_instance.uuid = event["data"]["object_uuid"]
+	spawnable_planet_instance.uuid = planet_uuid
 	spawnable_planet_instance.tree_entered.connect(func():
 		spawnable_planet_instance.owner = get_tree().current_scene
 	)
 	universe_scene.add_child(spawnable_planet_instance)
-	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
-	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
-	props_list["planets"][event["data"]["object_uuid"]] = spawnable_planet_instance
+	props_list_last_movement[planet_uuid] = Vector3.ZERO
+	props_list_last_rotation[planet_uuid] = Vector3.ZERO
+	props_list["planets"][planet_uuid] = spawnable_planet_instance
+
+	# Once the planet's terrain reports its safety-net + collision root is
+	# ready, push the current zone's chunk residency.  If the zone hasn't
+	# been assigned yet, _push_zone_residency_to_planet is a no-op and the
+	# upcoming manage_zone() call will fan out residency to every planet.
+	var on_ready := func():
+		_push_zone_residency_to_planet(spawnable_planet_instance)
+	if spawnable_planet_instance.planet_terrain != null:
+		spawnable_planet_instance.planet_terrain.initial_chunks_ready.connect(
+			on_ready, CONNECT_ONE_SHOT)
+	else:
+		# Wait one frame for terrain to be assigned, then connect.
+		spawnable_planet_instance.ready.connect(func():
+			if spawnable_planet_instance.planet_terrain != null:
+				spawnable_planet_instance.planet_terrain.initial_chunks_ready.connect(
+					on_ready, CONNECT_ONE_SHOT))
+
+
+## Handle a biome update from Horizon.  Rebuilds collision shapes on the
+## affected planet's chunks.
+## Expected message format:
+##   { "namespace": "server", "event": "update_biome",
+##     "data": { "planet_uuid": "...",
+##               "biome_type": "cave"/"road"/...,
+##               "action": "add"/"remove",
+##               "geometry": { "type": "linear"/"polygon"/"point",
+##                             "vertices": [[lon,lat], ...],
+##                             "width": 10.0, "depth": 5.0 },
+##               "affected_chunks": ["hp_n64_p120", ...] (optional)
+##     } }
+func update_planet_biome(event: Dictionary) -> void:
+	var data: Dictionary = event.get("data", {})
+	var planet_uuid: String = data.get("planet_uuid", "")
+	if planet_uuid.is_empty():
+		push_warning("[server] update_planet_biome: missing planet_uuid")
+		return
+
+	if not props_list["planets"].has(planet_uuid):
+		push_warning("[server] update_planet_biome: planet '%s' not found" % planet_uuid)
+		return
+
+	var planet_node: Node = props_list["planets"][planet_uuid]
+	if not planet_node is Planet:
+		push_warning("[server] update_planet_biome: node is not a Planet")
+		return
+
+	var planet: Planet = planet_node as Planet
+	if planet.planet_terrain == null:
+		push_warning("[server] update_planet_biome: planet has no PlanetTerrain")
+		return
+
+	var biome_update := {
+		"biome_type": data.get("biome_type", ""),
+		"action": data.get("action", "add"),
+		"geometry": data.get("geometry", {}),
+	}
+
+	# Determine affected chunks: either provided by Horizon or computed via HEALPix.
+	var chunk_keys: Array = []
+	if data.has("affected_chunks") and not data["affected_chunks"].is_empty():
+		chunk_keys = data["affected_chunks"]
+	else:
+		var geometry: Dictionary = data.get("geometry", {})
+		var vertices: Array = geometry.get("vertices", [])
+		if vertices.is_empty():
+			push_warning("[server] update_planet_biome: no vertices and no affected_chunks")
+			return
+		var nside: int = planet.planet_data.export_nside
+		var affected_ipix := HEALPix.query_polygon_pixels(nside, vertices)
+		for ipix in affected_ipix:
+			chunk_keys.append("hp_n%d_p%d" % [nside, ipix])
+
+	print("[server] update_planet_biome: planet=%s chunks=%d biome=%s action=%s" % [
+		planet.name, chunk_keys.size(), biome_update.biome_type, biome_update.action])
+	planet.planet_terrain.rebuild_chunks(chunk_keys, biome_update)
+
 
 func create_player(event: Dictionary) -> void:
+	var player_uuid = ""
+	if event["data"]["object_data"].has("connection_id"):
+		player_uuid = event["data"]["object_data"]["connection_id"]
+	elif event["data"].has("object_uuid"):
+		player_uuid = event["data"]["object_uuid"]
+	else:
+		prints("ERROR: No player UUID found in event: %s" % event)
+		return
+
+	if players_list.has(player_uuid):
+		prints("Player already exists on server side: %s" % event)
+		return
+
 	prints("Creating player on server side: %s" % event)
+	prints("Y A RIEN LA? player_uuid : %s", player_uuid)
 	var player_data = event["data"]["object_data"]
-	# var player_uuid = message["data"]["object_uuid"]
-	var player_uuid = event["data"]["object_data"]["connection_id"]
+
+	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
+		# store pending message
+		pending_messages_player_parenting.append(event)
+		print("Pending message for player %s because parent_id %s not found yet" % [event["data"]["object_uuid"], player_data["parent_id"]])
+		return
 
 	# print("Player data received: %s" % player_data)
+	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 5000
 
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
@@ -439,20 +737,6 @@ func create_player(event: Dictionary) -> void:
 	if not parented:
 		universe_scene.add_child(spawned_entity_instance)
 
-	# TODO: move this to the backend later to decide where the player should be spawned
-	# var spawn_planet = universe_scene.get_node("Sandbox") as Planet
-	# var spawn_transform = spawn_planet.get_spawn_point()
-
-	# if player_data["parent_id"] != "":
-	# 	var parent_obj = _search_parent_node(player_data["parent_id"])
-	# 	spawned_entity_instance.reparent(parent_obj)
-		#var spawn_transform = parent_obj.get_spawn_point()
-#
-		#prints("position", spawn_transform.origin)
-		#spawned_entity_instance.position = spawn_transform.origin
-
-	# spawned_entity_instance.reparent(spawn_planet)
-
 	spawned_entity_instance.position = Vector3(
 		player_data["position"]["x"],
 		player_data["position"]["y"],
@@ -460,7 +744,7 @@ func create_player(event: Dictionary) -> void:
 	)
 
 	spawned_entity_instance.set_uuid(player_uuid)
-	players_list[player_uuid] = spawned_entity_instance
+	players_list.set(player_uuid, spawned_entity_instance)
 	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
 
 	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
@@ -468,13 +752,22 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
+	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 
-func set_serverinfo(event: Dictionary) -> void:
-	serverinfo_uuid = event["data"]["object_uuid"]
+func set_serverinfo(uuid: String) -> void:
+	serverinfo_uuid = uuid
 
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
 	var object_data = event["data"]["object_data"]
+
+	if object_data.has("parent_id"):
+		if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
+			# store pending message
+			pending_messages_generic_objects_parenting.append(event)
+			print("Pending message for object %s because parent_id %s not found yet" % [event["data"]["object_uuid"], object_data["parent_id"]])
+			return
+
 	var prop_scene: PackedScene
 	if props_scene.has(object_data["scenename"]):
 		prop_scene = props_scene[object_data["scenename"]]
@@ -483,7 +776,7 @@ func create_generic_object(event: Dictionary) -> void:
 
 	var spawnable_prop_instance = prop_scene.instantiate()
 	spawnable_prop_instance.set_physics_process(false)
-	spawnable_prop_instance.spawn_position = create_vector3_with_conversion_hg(
+	spawnable_prop_instance.spawn_position = Vector3(
 		object_data["position"]["x"],
 		object_data["position"]["y"],
 		object_data["position"]["z"]
@@ -506,20 +799,65 @@ func create_generic_object(event: Dictionary) -> void:
 		universe_scene.add_child(spawnable_prop_instance)
 
 	spawnable_prop_instance.client_channel_data_update(object_data)
-	spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
-	spawnable_prop_instance.connect("hs_server_prop_delete", _on_prop_delete)
+	if spawnable_prop_instance.has_signal("hs_server_prop_update"):
+		spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
+	else:
+		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_update (type=%s)" \
+			% [object_data["scenename"], spawnable_prop_instance.get_class()])
+	if spawnable_prop_instance.has_signal("hs_server_prop_delete"):
+		spawnable_prop_instance.connect("hs_server_prop_delete", _on_prop_delete)
+	else:
+		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_delete (type=%s)" \
+			% [object_data["scenename"], spawnable_prop_instance.get_class()])
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
 	if not props_list.has(event["data"]["object_type"]):
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
-	spawnable_prop_instance.set_physics_process(true)
+
+	# check if position in zone, if not, freeze it
+	var pos = spawnable_prop_instance.global_position
+	if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] \
+			or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] \
+			or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
+		#  we are out of zone, keep it frozen
+		spawnable_prop_instance.set_physics_process(false)
+		if is_instance_of(spawnable_prop_instance, RigidBody3D):
+			spawnable_prop_instance.freeze = true
+	else:
+		spawnable_prop_instance.set_physics_process(true)
+
+	for pending_message in pending_messages_player_parenting.duplicate():
+		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
+			print(
+				"Processing pending message for player %s now that parent_id %s is available" % [
+					event["data"]["object_uuid"],
+					pending_message["data"]["object_data"]["parent_id"]
+				]
+			)
+			pending_messages_player_parenting.erase(pending_message)
+			create_player(pending_message)
+
+	# generic object created, now process pending messages for generic objects waiting for this generic object as parent
+	for pending_message in pending_messages_generic_objects_parenting.duplicate():
+		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
+			print(
+				"Processing pending message for generic object %s now that parent_id %s is available" % [
+					pending_message["data"]["object_uuid"],
+					pending_message["data"]["object_data"]["parent_id"]
+				]
+			)
+			pending_messages_generic_objects_parenting.erase(pending_message)
+			create_generic_object(pending_message)
 
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
 			return props_list[proptype][parent_id]
+	for player_id in players_list.keys():
+		if player_id == parent_id:
+			return players_list[player_id]
 	return null
 
 func _on_player_update(
@@ -533,3 +871,123 @@ func _on_player_update(
 		"data": properties
 	}
 	ServerNetwork.send_message(message, "player_update")
+
+func freeze_object(event: Dictionary, append = true) -> bool:
+	# we will freeze scenes objects
+	print("Freeze object: %s" % event)
+	var object = event["data"]
+	if object["object_type"] == "planet":
+		if props_list["planets"].has(object["object_uuid"]):
+			var planet = props_list["planets"][object["object_uuid"]]
+			planet.set_physics_process(false)
+			return true
+		if append:
+			pending_freeze_objects.append(event)
+			return false
+		return false
+	if object["object_type"] == "player":
+		if players_list.has(object["object_uuid"]):
+			var player = players_list[object["object_uuid"]]
+			print("erase player (1): %s" % object["object_uuid"])
+			players_list.erase(object["object_uuid"])
+			player.queue_free()
+			return true
+		return false
+			# if append:
+			# 	pending_freeze_objects.append(event)
+			# else:
+			# 	return false
+	if object["object_type"] == "star":
+		# TODO not yet managed
+		return false
+	# other props
+	var found = false
+	for proptype in props_list.keys():
+		if props_list[proptype].has(object["object_uuid"]):
+			var prop = props_list[proptype][object["object_uuid"]]
+			prop.set_physics_process(false)
+			if is_instance_of(prop, RigidBody3D):
+				prop.freeze = true
+			found = true
+			break
+	if not found:
+		if append:
+			pending_freeze_objects.append(event)
+			return false
+		return false
+	return true
+
+func manage_zone(event: Dictionary) -> void:
+	var zone_data = event["data"]
+	server_zone["x_start"] = zone_data["min_x"]
+	server_zone["x_end"] = zone_data["max_x"]
+	server_zone["y_start"] = zone_data["min_y"]
+	server_zone["y_end"] = zone_data["max_y"]
+	server_zone["z_start"] = zone_data["min_z"]
+	server_zone["z_end"] = zone_data["max_z"]
+
+	set_serverinfo(event["server_uuid"])
+	serverinfo_name = event["server_name"]
+	check_out_of_zone_after_split = Time.get_ticks_msec() + 5000
+
+	# Push HEALPix chunk residency to every spawned planet so collision
+	# memory tracks our authoritative zone.  See _push_zone_residency_*.
+	_zone_initialized = true
+	_push_zone_residency_to_all()
+
+
+## Compute the authoritative zone AABB in world space.
+func _server_zone_aabb_world() -> AABB:
+	var pmin := Vector3(
+		server_zone["x_start"], server_zone["y_start"], server_zone["z_start"])
+	var pmax := Vector3(
+		server_zone["x_end"], server_zone["y_end"], server_zone["z_end"])
+	return AABB(pmin, pmax - pmin)
+
+
+## Push the current zone-derived chunk residency to one planet.
+## No-op when zone is not yet initialised or planet has no terrain.
+func _push_zone_residency_to_planet(planet_node: Node) -> void:
+	if not _zone_initialized:
+		return
+	if planet_node == null or not is_instance_valid(planet_node):
+		return
+	if not (planet_node is Planet):
+		return
+	var planet: Planet = planet_node as Planet
+	if planet.planet_terrain == null or planet.planet_data == null:
+		return
+	# Convert zone AABB from world → planet-local by subtracting planet origin.
+	var aabb_world := _server_zone_aabb_world()
+	var aabb_local := AABB(
+		aabb_world.position - planet.global_position, aabb_world.size)
+	var keys := planet.planet_data.chunks_in_aabb_world(aabb_local, 1)
+	planet.planet_terrain.set_resident_chunks(keys)
+
+
+## Push the current zone-derived chunk residency to every spawned planet.
+func _push_zone_residency_to_all() -> void:
+	if not _zone_initialized:
+		return
+	for planet_uuid in props_list["planets"].keys():
+		_push_zone_residency_to_planet(props_list["planets"][planet_uuid])
+
+func _check_out_of_zone(player_uuid: String = "") -> bool:
+	if Time.get_ticks_msec() < check_out_of_zone_after_split:
+		return false
+	# check players position
+	if players_list.has(player_uuid):
+		if not players_list_creationdate.has(player_uuid):
+			return false
+		if Time.get_ticks_msec() < players_list_creationdate[player_uuid]:
+			return false
+		#print("go...")
+		var pos = players_list[player_uuid].global_position
+		var magicnumber = 0.400
+		if pos[0] < (server_zone["x_start"] - magicnumber) or pos[0] > (server_zone["x_end"] + magicnumber) \
+				or pos[1] < (server_zone["y_start"] - magicnumber) or pos[1] > (server_zone["y_end"] + magicnumber) \
+				or pos[2] < (server_zone["z_start"] - magicnumber) or pos[2] > (server_zone["z_end"] + magicnumber):
+			print("====== Player %s is out of zone at position %s" % [player_uuid, pos])
+			print(server_zone)
+			return true
+	return false

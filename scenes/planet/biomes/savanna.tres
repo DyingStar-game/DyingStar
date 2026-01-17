@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dwky38pwy032d"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "meadow_steppe-savanna"
+biome_index = 9
+display_name = "Savanna"
+description = "A tropical or subtropical ecosystem characterized by a dry grassy carpet dotted with isolated trees. This biome is governed by a marked water seasonality (alternating dry and rainy seasons)."
+color = Color(0.722, 0.659, 0.29, 1)
+detail_texture_scale = 3.0
+elevation_max = 1500.0
+terrain_roughness = 0.6
+supports_vegetation = true
+default_vegetation_density = 0.2
+default_tree_type = "deciduous"
+movement_speed_factor = 0.95

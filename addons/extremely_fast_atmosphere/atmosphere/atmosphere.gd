@@ -20,8 +20,10 @@ extends MeshInstance3D
 
 func _init() -> void:
 	# Makes sure this atmosphere mesh and material are not shared if multiple planets are shown
-	material_override = material_override.duplicate()
-	mesh = mesh.duplicate()
+	if material_override and material_override is ShaderMaterial:
+		material_override = material_override.duplicate()
+	if mesh:
+		mesh = mesh.duplicate()
 
 
 func _ready() -> void:
@@ -29,6 +31,8 @@ func _ready() -> void:
 
 
 func _update_atmosphere():
+	if not material_override is ShaderMaterial:
+		return
 	var mat: ShaderMaterial = material_override
 	
 	var atmosphere_outer_radius: float = planet_radius + atmosphere_height

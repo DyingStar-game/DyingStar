@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://b7aajb2l3gvg5"]
+[gd_scene format=3 uid="uid://b7aajb2l3gvg5"]
 
 [ext_resource type="Script" uid="uid://ck5cjdbjngm6a" path="res://ui/login_page/login_page.gd" id="1_ihlnx"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_rpukb"]
@@ -6,7 +6,7 @@
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
 
-[node name="LoginUI" type="Control"]
+[node name="LoginUI" type="Control" unique_id=1482696383]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -15,7 +15,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_ihlnx")
 
-[node name="Background" type="TextureRect" parent="."]
+[node name="Background" type="TextureRect" parent="." unique_id=915204917]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -26,7 +26,7 @@ texture = ExtResource("2_rpukb")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="FormPlacer" type="Control" parent="."]
+[node name="FormPlacer" type="Control" parent="." unique_id=1488796350]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -39,7 +39,7 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="FormContainer" type="VBoxContainer" parent="FormPlacer"]
+[node name="FormContainer" type="VBoxContainer" parent="FormPlacer" unique_id=855683169]
 clip_contents = true
 layout_mode = 1
 anchors_preset = 8
@@ -56,9 +56,10 @@ grow_vertical = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="UserName" type="LineEdit" parent="FormPlacer/FormContainer"]
+[node name="UserName" type="LineEdit" parent="FormPlacer/FormContainer" unique_id=1978006684]
 layout_mode = 2
 size_flags_vertical = 10
+tooltip_text = "5 characters minimum"
 theme_override_colors/font_placeholder_color = Color(1, 0, 0, 1)
 theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
@@ -67,28 +68,30 @@ max_length = 32
 context_menu_enabled = false
 drag_and_drop_selection_enabled = false
 
-[node name="ButtonContainer" type="HBoxContainer" parent="FormPlacer/FormContainer"]
+[node name="ButtonContainer" type="HBoxContainer" parent="FormPlacer/FormContainer" unique_id=1381528450]
 clip_contents = true
 layout_mode = 2
 size_flags_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="OnlineButton" type="Button" parent="FormPlacer/FormContainer/ButtonContainer"]
+[node name="OnlineButton" type="Button" parent="FormPlacer/FormContainer/ButtonContainer" unique_id=334936276]
+unique_name_in_owner = true
 clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
+disabled = true
 text = "CONNECT"
 
-[node name="HTTPRequest" type="HTTPRequest" parent="."]
+[node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=855168485]
 
-[node name="Node" type="Node" parent="." node_paths=PackedStringArray("dropdown")]
+[node name="Node" type="Node" parent="." unique_id=1759833063 node_paths=PackedStringArray("dropdown")]
 script = ExtResource("5_rpukb")
 dropdown = NodePath("HBoxContainer/OptionButton")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Node"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Node" unique_id=326496036]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
@@ -96,14 +99,14 @@ offset_left = -175.0
 offset_bottom = 40.0
 grow_horizontal = 0
 
-[node name="TextureRect" type="TextureRect" parent="Node/HBoxContainer"]
+[node name="TextureRect" type="TextureRect" parent="Node/HBoxContainer" unique_id=1593759068]
 custom_minimum_size = Vector2(40, 0)
 layout_mode = 2
 texture = ExtResource("6_11evp")
 expand_mode = 1
 stretch_mode = 4
 
-[node name="OptionButton" type="OptionButton" parent="Node/HBoxContainer"]
+[node name="OptionButton" type="OptionButton" parent="Node/HBoxContainer" unique_id=861362562]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3

@@ -1,0 +1,16 @@
+# Optional configuration for tools/qgis/export_planet.py.
+# Copy to `export_config.ini` (same directory) and adjust as needed.
+# Values here are overridden by environment variables when both are set.
+
+[godot]
+# Absolute path to the Godot binary used for recipe JSON→binary conversion
+# and .planetpack packing. Must be a double-precision mono build (see
+# .github/copilot-instructions.md for the canonical path).
+#
+# Resolution order used by export_planet.py:
+#   1. $GODOT_BIN
+#   2. [godot] path in this file
+#   3. `godot` on PATH
+#   4. Hard-coded canonical fallback in export_planet.py
+#
+# path = /datas/developpement/sources/godotengine/godot-build-scripts/releases/4.6.1-stable/mono/Godot_v4.6.1-stable_mono_linux_x86_64/Godot_v4.6.1-stable_mono_linux.x86_64

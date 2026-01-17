@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bsu3uqdrtb1id"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-ice_plain"
+biome_index = 43
+display_name = "Ice Plain"
+description = "A flat expanse of massive ice. The albedo is very high, resulting in almost total reflection of stellar radiation."
+category = "cryo"
+color = Color(0.816, 0.91, 0.941, 1)
+elevation_max = 3000.0
+terrain_roughness = 0.2
+wind_strength = 2.0
+movement_speed_factor = 0.55
+damage_per_second = 0.3

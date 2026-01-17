@@ -1,9 +1,9 @@
-[gd_scene load_steps=2 format=3 uid="uid://berwvacmdiv1o"]
+[gd_scene format=3 uid="uid://berwvacmdiv1o"]
 
 [ext_resource type="PackedScene" uid="uid://ccb0mbw5ct2yp" path="res://test/servermeshing/server1.tscn" id="1_mj7mj"]
 
-[node name="Servermeshing" type="Node3D"]
+[node name="Servermeshing" type="Node3D" unique_id=1036434377]
 
-[node name="Server1" parent="." instance=ExtResource("1_mj7mj")]
+[node name="Server1" parent="." unique_id=390450868 instance=ExtResource("1_mj7mj")]
 
-[node name="Server2" parent="." instance=ExtResource("1_mj7mj")]
+[node name="Server2" parent="." unique_id=1686543174 instance=ExtResource("1_mj7mj")]

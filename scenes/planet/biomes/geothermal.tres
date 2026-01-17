@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b5tq8x2jdnw3a"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-geothermal"
+biome_index = 31
+display_name = "Volcanic Geothermal Geothermal"
+description = "A surface hydrothermal system comprising hot springs and pools saturated with dissolved minerals. The interaction between water and heat creates deposits and geysers."
+category = "volcanic"
+color = Color(0.416, 0.541, 0.416, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.9
+supports_vegetation = true
+default_vegetation_density = 0.15
+wind_strength = 0.5
+movement_speed_factor = 0.8
+damage_per_second = 0.3

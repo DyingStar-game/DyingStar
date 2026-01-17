@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://c4lh2ejw8853f"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-pressure_canyon"
+biome_index = 61
+display_name = "Pressure Canyon"
+description = "A deep rift where atmospheric pressure is higher than at the surface. Temperature increases with depth."
+category = "atmosphere"
+color = Color(0.29, 0.227, 0.165, 1)
+detail_texture_scale = 2.0
+elevation_min = -5000.0
+elevation_max = 0.0
+terrain_roughness = 1.8
+wind_strength = 0.3
+movement_speed_factor = 0.4
+damage_per_second = 3.0
+vehicle_traversable = false

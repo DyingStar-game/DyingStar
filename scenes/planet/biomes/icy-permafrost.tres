@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://df6mgeum0j8x3"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-permafrost"
+biome_index = 52
+display_name = "Permafrost"
+description = "Soil whose temperature remains below 0°C for years. Structured soils (frost polygons) are often found there, resulting from freeze-thaw cycles."
+category = "cryo"
+color = Color(0.541, 0.604, 0.541, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.7
+supports_vegetation = true
+default_vegetation_density = 0.05
+wind_strength = 1.5
+movement_speed_factor = 0.7

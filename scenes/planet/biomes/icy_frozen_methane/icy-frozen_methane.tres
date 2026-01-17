@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://drxlr3l6ad33o"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-frozen_methane"
+biome_index = 97
+color = Color(0.816, 0.855, 0.91, 1)

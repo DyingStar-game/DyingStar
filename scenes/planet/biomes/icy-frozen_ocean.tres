@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bkn4d8m2n1uvq"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-frozen_ocean"
+biome_index = 50
+display_name = "Frozen Ocean"
+description = "A thick ice pack of water ice overlying a liquid ocean maintained by tidal heating or thermal insulation."
+category = "cryo"
+color = Color(0.541, 0.69, 0.784, 1)
+detail_texture_scale = 2.0
+elevation_min = -5000.0
+elevation_max = 0.0
+terrain_roughness = 0.6
+wind_strength = 2.0
+movement_speed_factor = 0.5
+damage_per_second = 0.3

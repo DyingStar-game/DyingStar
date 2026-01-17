@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://dk4le3cck03bg"]
+[gd_scene format=3 uid="uid://dk4le3cck03bg"]
 
 [ext_resource type="Script" uid="uid://p7wkxaw77bvr" path="res://ui/direct_chat/direct_chat.gd" id="1_2gaj1"]
 
-[node name="DirectChat" type="PanelContainer" node_paths=PackedStringArray("input_field", "output_field")]
+[node name="DirectChat" type="PanelContainer" unique_id=114847019 node_paths=PackedStringArray("input_field", "output_field")]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
@@ -15,17 +15,17 @@ script = ExtResource("1_2gaj1")
 input_field = NodePath("MarginContainer/VBoxContainer/HBoxContainer/input_text")
 output_field = NodePath("MarginContainer/VBoxContainer/ScrollContainer/output_text")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1499819175]
 layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1744614801]
 layout_mode = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer" unique_id=229911467]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="output_text" type="RichTextLabel" parent="MarginContainer/VBoxContainer/ScrollContainer"]
+[node name="output_text" type="RichTextLabel" parent="MarginContainer/VBoxContainer/ScrollContainer" unique_id=1756243104]
 custom_minimum_size = Vector2(0, 150)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -33,16 +33,16 @@ size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1578436371]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 
-[node name="ChannelSelector" type="OptionButton" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="ChannelSelector" type="OptionButton" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=1399950158]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 
-[node name="input_text" type="LineEdit" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="input_text" type="LineEdit" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=820383164]
 layout_mode = 2
 size_flags_horizontal = 3
 keep_editing_on_text_submit = true

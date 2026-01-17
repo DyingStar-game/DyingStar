@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bsonas7ftqfsy"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "tar_basin"
+biome_index = 69
+display_name = "Tar Basin"
+description = "Depressions filled with heavy hydrocarbons (bitumen, asphalt). These basins are formidable natural traps."
+category = "toxic"
+color = Color(0.102, 0.102, 0.102, 1)
+is_liquid = true
+elevation_min = -200.0
+elevation_max = 500.0
+terrain_roughness = 0.1
+wind_strength = 0.2
+movement_speed_factor = 0.15
+damage_per_second = 1.0
+vehicle_traversable = false

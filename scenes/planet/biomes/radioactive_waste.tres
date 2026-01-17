@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b4l5ovww7s1g4"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "radioactive_waste"
+biome_index = 68
+display_name = "Radioactive Waste"
+description = "Irradiated contaminated zone."
+category = "toxic"
+color = Color(0.314, 0.627, 0.314, 1)
+detail_texture_scale = 2.0
+elevation_max = 2000.0
+terrain_roughness = 0.8
+wind_strength = 0.5
+movement_speed_factor = 0.7
+damage_per_second = 4.0

@@ -1,16 +1,18 @@
-[gd_scene load_steps=4 format=3 uid="uid://de3kbn5ahl71c"]
+[gd_scene format=3 uid="uid://de3kbn5ahl71c"]
 
-[ext_resource type="ArrayMesh" uid="uid://bmdke700x50wi" path="res://assets/models/StorageBoxes/container_plate_1200x240x30.mesh" id="1_ijr7q"]
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_oaklb"]
-[ext_resource type="Shape3D" uid="uid://xy05cpemqjak" path="res://scenes/props/StorageBoxes/container_plate_1200x240x30.res" id="3_jm2yu"]
+[ext_resource type="PackedScene" uid="uid://bjv6ascpidolr" path="res://assets/_universe/props/containers/container_plate_1200x240x30.glb" id="2_jm2yu"]
 
-[node name="ContainerPlate1200x240x30" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_oaklb"]
+size = Vector3(12, 0.3, 2.4)
+
+[node name="ContainerPlate1200x240x30" type="RigidBody3D" unique_id=922767873]
+mass = 1000.0
+freeze = true
 script = ExtResource("1_oaklb")
 
-[node name="ContainerPlate1200x240x30" type="MeshInstance3D" parent="."]
-mesh = ExtResource("1_ijr7q")
+[node name="container_plate_1200x240x30" parent="." unique_id=1869243644 instance=ExtResource("2_jm2yu")]
 
-[node name="StaticBody3D" type="StaticBody3D" parent="ContainerPlate1200x240x30"]
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ContainerPlate1200x240x30/StaticBody3D"]
-shape = ExtResource("3_jm2yu")
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=884342632]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.14999999999417923, 0)
+shape = SubResource("BoxShape3D_oaklb")

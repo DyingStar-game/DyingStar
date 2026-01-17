@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b31y7vqfhyxhy"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://chuu52okdiodw" path="res://assets/_universe/environment/terrain/river_water.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "maritime_river-river"
+biome_index = 85
+display_name = "River"
+description = "A permanent watercourse flowing in a defined natural channel, fed by surface or underground sources, permanently carrying water over a significant distance"
+color = Color(0.141, 0.443, 0.639, 1)
+terrain_material_override = ExtResource("2")
+is_liquid = true
+elevation_max = 5000.0
+terrain_roughness = 0.8
+wind_strength = 0.4
+movement_speed_factor = 0.25

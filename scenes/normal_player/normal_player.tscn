@@ -1,7 +1,7 @@
-[gd_scene load_steps=30 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
-[ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
+[ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/_universe/characters/humanoids/astronaut/astronaut.res" id="2_rulc8"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/normal_player/player_ui.gd" id="3_kcm5r"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/normal_player/debug_label_settings.tres" id="4_dpwvv"]
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/normal_player/debug_server_fps.gd" id="4_sxi4m"]
@@ -18,14 +18,18 @@
 [ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/normal_player/debug_client_nbplayers.gd" id="10_udrf3"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
+[ext_resource type="Script" uid="uid://3snlx7cgv5wk" path="res://scenes/normal_player/debug_universe_servers.gd" id="11_qgvuu"]
 [ext_resource type="Script" uid="uid://du4vikoo7kath" path="res://scenes/normal_player/debug_client_nbobjects.gd" id="11_urqre"]
 [ext_resource type="Texture2D" uid="uid://cvj5f587f3j3d" path="res://ui/ingame/debug/big_debug.png" id="11_ykmr1"]
+[ext_resource type="Script" uid="uid://67v8l5556qsa" path="res://scenes/normal_player/debug_universe_players.gd" id="12_5csap"]
 [ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 [ext_resource type="Script" uid="uid://cg10agjb1pncn" path="res://scenes/normal_player/debug_client_nbscenes.gd" id="12_y6iw5"]
 [ext_resource type="Script" uid="uid://bn70g6ek7ggox" path="res://scenes/normal_player/debug_client_videomem.gd" id="13_ykmr1"]
 [ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/models/equipments/tools/mining/hammerdrill.glb" id="14_fuv0x"]
 [ext_resource type="Script" uid="uid://ju3yguhgtybn" path="res://scenes/normal_player/debug_client_messages_received.gd" id="14_ilbvb"]
 [ext_resource type="Script" uid="uid://bb431neb3d2jd" path="res://scenes/normal_player/debug_client_messages_sent.gd" id="15_x3gq6"]
+[ext_resource type="Script" uid="uid://dsikncjeuwf73" path="res://scenes/normal_player/debug_serverbox_coordinates.gd" id="17_5csap"]
+[ext_resource type="Script" uid="uid://bfpote331tkhp" path="res://scenes/normal_player/debug_server_name.gd" id="18_e837o"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -39,60 +43,60 @@ font_size = 24
 outline_size = 2
 outline_color = Color(0, 0, 0, 1)
 
-[node name="NormalPlayer" type="CharacterBody3D" groups=["containable", "player"]]
+[node name="NormalPlayer" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
 script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
 metadata/client_uuid = ""
 
-[node name="Placeholder_Collider" type="CollisionShape3D" parent="."]
+[node name="Placeholder_Collider" type="CollisionShape3D" parent="." unique_id=1694334487]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)
 shape = SubResource("CapsuleShape3D_2jk7f")
 
-[node name="Astronaut" parent="Placeholder_Collider" instance=ExtResource("2_rulc8")]
+[node name="Astronaut" parent="Placeholder_Collider" unique_id=1509544063 instance=ExtResource("2_rulc8")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8999999999941792, 0)
 
-[node name="CameraPivot" type="Node3D" parent="."]
+[node name="CameraPivot" type="Node3D" parent="." unique_id=1090822478]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 
-[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=2070954965]
 far = 10000000000000.01
 
-[node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D"]
+[node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D" unique_id=1335224373]
 target_position = Vector3(0, 0, -3)
 collide_with_areas = true
 collide_with_bodies = false
 
-[node name="Torch" type="SpotLight3D" parent="CameraPivot/Camera3D"]
+[node name="Torch" type="SpotLight3D" parent="CameraPivot/Camera3D" unique_id=1256401590]
 light_energy = 2.0
 spot_range = 200.0
 spot_angle = 41.4246
 
-[node name="AreaDetector" type="Area3D" parent="."]
+[node name="AreaDetector" type="Area3D" parent="." unique_id=972717439]
 collision_layer = 4
 monitorable = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="AreaDetector"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="AreaDetector" unique_id=1523390027]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.702767, 0.0593262)
 shape = SubResource("BoxShape3D_kcm5r")
 
-[node name="ExtCamera3D" type="Camera3D" parent="."]
+[node name="ExtCamera3D" type="Camera3D" parent="." unique_id=382186473]
 transform = Transform3D(1, 0, 0, 0, 0.793608, 0.608429, 0, -0.608429, 0.793608, 0, 1.87897, 1.33817)
 
-[node name="LabelPlayerName" type="Label3D" parent="."]
+[node name="LabelPlayerName" type="Label3D" parent="." unique_id=957060553]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
 billboard = 1
 text = "Dummy"
 
-[node name="Labelserver_name" type="Label3D" parent="."]
+[node name="Labelserver_name" type="Label3D" parent="." unique_id=1244209041]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05, 0)
 billboard = 1
 text = "DummyServer"
 font_size = 24
 
-[node name="UserInterface" type="Control" parent="."]
+[node name="UserInterface" type="Control" parent="." unique_id=164397676]
 top_level = true
 layout_mode = 3
 anchors_preset = 15
@@ -104,7 +108,7 @@ pivot_offset = Vector2(576, 324)
 mouse_filter = 2
 script = ExtResource("3_kcm5r")
 
-[node name="Debug" type="Control" parent="UserInterface"]
+[node name="Debug" type="Control" parent="UserInterface" unique_id=1592637921]
 visible = false
 anchors_preset = 0
 offset_right = 40.0
@@ -112,16 +116,54 @@ offset_bottom = 40.0
 mouse_filter = 2
 script = ExtResource("4_urqre")
 
-[node name="server_bg" type="Sprite2D" parent="UserInterface/Debug"]
-position = Vector2(1642, 125)
+[node name="universe_bg" type="Sprite2D" parent="UserInterface/Debug" unique_id=452769176]
+position = Vector2(1642, 93)
 texture = ExtResource("5_y6iw5")
 
-[node name="server_title" type="RichTextLabel" parent="UserInterface/Debug"]
+[node name="universe_title" type="RichTextLabel" parent="UserInterface/Debug" unique_id=578060724]
 layout_mode = 0
 offset_left = 1524.0
-offset_top = 56.0
+offset_top = 26.0
 offset_right = 1681.0
-offset_bottom = 90.0
+offset_bottom = 60.0
+scale = Vector2(1.0275318154091977, 1)
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
+bbcode_enabled = true
+text = "[b].: Universe :.[/b]"
+
+[node name="universe_servers" type="Label" parent="UserInterface/Debug" unique_id=1270499825]
+layout_mode = 0
+offset_left = 1529.0
+offset_top = 64.0
+offset_right = 1722.0
+offset_bottom = 87.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("11_qgvuu")
+
+[node name="universe_players" type="Label" parent="UserInterface/Debug" unique_id=1262767953]
+layout_mode = 0
+offset_left = 1529.0
+offset_top = 88.0
+offset_right = 1722.0
+offset_bottom = 111.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("12_5csap")
+
+[node name="server_bg" type="Sprite2D" parent="UserInterface/Debug" unique_id=366153438]
+position = Vector2(1642, 271)
+texture = ExtResource("5_y6iw5")
+
+[node name="server_title" type="RichTextLabel" parent="UserInterface/Debug" unique_id=1525328548]
+layout_mode = 0
+offset_left = 1524.0
+offset_top = 202.0
+offset_right = 1681.0
+offset_bottom = 236.0
 scale = Vector2(1.0275318154091977, 1)
 theme_override_fonts/normal_font = ExtResource("6_5xss2")
 theme_override_fonts/bold_font = ExtResource("7_ty080")
@@ -130,12 +172,12 @@ theme_override_fonts/italics_font = ExtResource("9_5csap")
 bbcode_enabled = true
 text = "[b].: Server (godot) :.[/b]"
 
-[node name="server_fps" type="RichTextLabel" parent="UserInterface/Debug"]
+[node name="server_fps" type="RichTextLabel" parent="UserInterface/Debug" unique_id=1725868663]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 94.0
+offset_top = 240.0
 offset_right = 1687.0
-offset_bottom = 118.0
+offset_bottom = 264.0
 theme_override_fonts/normal_font = ExtResource("6_5xss2")
 theme_override_fonts/bold_font = ExtResource("7_ty080")
 theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
@@ -146,46 +188,84 @@ text = "Soon™"
 autowrap_mode = 0
 script = ExtResource("4_sxi4m")
 
-[node name="server_nbplayers" type="Label" parent="UserInterface/Debug"]
+[node name="server_nbplayers" type="Label" parent="UserInterface/Debug" unique_id=1331036912]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 118.0
+offset_top = 264.0
 offset_right = 1722.0
-offset_bottom = 141.0
+offset_bottom = 287.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("5_dpwvv")
 
-[node name="server_nbobjects" type="Label" parent="UserInterface/Debug"]
+[node name="server_nbobjects" type="Label" parent="UserInterface/Debug" unique_id=407515458]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 142.0
+offset_top = 288.0
 offset_right = 1722.0
-offset_bottom = 165.0
+offset_bottom = 311.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("7_q8cfn")
 
-[node name="server_nbscenes" type="Label" parent="UserInterface/Debug"]
+[node name="server_nbscenes" type="Label" parent="UserInterface/Debug" unique_id=1456568360]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 166.0
+offset_top = 312.0
 offset_right = 1722.0
-offset_bottom = 189.0
+offset_bottom = 335.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("8_6hnll")
 
-[node name="client_bg" type="Sprite2D" parent="UserInterface/Debug"]
-position = Vector2(1642, 366)
+[node name="serverbox_bg" type="Sprite2D" parent="UserInterface/Debug" unique_id=812528427]
+position = Vector2(1642, 512)
 texture = ExtResource("11_ykmr1")
 
-[node name="client_title" type="RichTextLabel" parent="UserInterface/Debug"]
+[node name="serverbox_title" type="RichTextLabel" parent="UserInterface/Debug" unique_id=238455583]
 layout_mode = 0
 offset_left = 1524.0
-offset_top = 232.0
+offset_top = 378.0
+offset_right = 1752.7033807380603
+offset_bottom = 412.0
+scale = Vector2(1.0275318154091977, 1)
+theme_override_fonts/normal_font = ExtResource("6_5xss2")
+theme_override_fonts/bold_font = ExtResource("7_ty080")
+theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
+theme_override_fonts/italics_font = ExtResource("9_5csap")
+bbcode_enabled = true
+text = "[b].: Server box (godot) :.[/b]"
+
+[node name="server_name" type="Label" parent="UserInterface/Debug" unique_id=823435326]
+layout_mode = 0
+offset_left = 1529.0
+offset_top = 417.0
+offset_right = 1722.0
+offset_bottom = 440.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("18_e837o")
+
+[node name="serverbox_coordinates" type="Label" parent="UserInterface/Debug" unique_id=808347218]
+layout_mode = 0
+offset_left = 1529.0
+offset_top = 441.0
+offset_right = 1759.0
+offset_bottom = 648.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("17_5csap")
+
+[node name="client_bg" type="Sprite2D" parent="UserInterface/Debug" unique_id=615768512]
+position = Vector2(1642, 819)
+texture = ExtResource("11_ykmr1")
+
+[node name="client_title" type="RichTextLabel" parent="UserInterface/Debug" unique_id=1462633746]
+layout_mode = 0
+offset_left = 1524.0
+offset_top = 685.0
 offset_right = 1741.998116107768
-offset_bottom = 266.0
+offset_bottom = 719.0
 scale = Vector2(1.0275318154091977, 1)
 theme_override_fonts/normal_font = ExtResource("6_5xss2")
 theme_override_fonts/bold_font = ExtResource("7_ty080")
@@ -194,12 +274,12 @@ theme_override_fonts/italics_font = ExtResource("9_5csap")
 bbcode_enabled = true
 text = "[b].: Client DyingStar :.[/b]"
 
-[node name="client_fps" type="RichTextLabel" parent="UserInterface/Debug"]
+[node name="client_fps" type="RichTextLabel" parent="UserInterface/Debug" unique_id=980651715]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 264.0
+offset_top = 717.0
 offset_right = 1687.0
-offset_bottom = 288.0
+offset_bottom = 741.0
 theme_override_fonts/normal_font = ExtResource("6_5xss2")
 theme_override_fonts/bold_font = ExtResource("7_ty080")
 theme_override_fonts/bold_italics_font = ExtResource("8_qgvuu")
@@ -210,118 +290,118 @@ text = "Soon™"
 autowrap_mode = 0
 script = ExtResource("9_2g0ng")
 
-[node name="client_nbplayers" type="Label" parent="UserInterface/Debug"]
+[node name="client_nbplayers" type="Label" parent="UserInterface/Debug" unique_id=1678560832]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 288.0
+offset_top = 741.0
 offset_right = 1722.0
-offset_bottom = 311.0
+offset_bottom = 764.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("10_udrf3")
 
-[node name="client_nbobjects" type="Label" parent="UserInterface/Debug"]
+[node name="client_nbobjects" type="Label" parent="UserInterface/Debug" unique_id=1037449024]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 312.0
+offset_top = 765.0
 offset_right = 1722.0
-offset_bottom = 335.0
+offset_bottom = 788.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("11_urqre")
 
-[node name="client_nbscenes" type="Label" parent="UserInterface/Debug"]
+[node name="client_nbscenes" type="Label" parent="UserInterface/Debug" unique_id=422583602]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 336.0
+offset_top = 789.0
 offset_right = 1722.0
-offset_bottom = 359.0
+offset_bottom = 812.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("12_y6iw5")
 
-[node name="Labelx" type="Label" parent="UserInterface/Debug"]
+[node name="Labelx" type="Label" parent="UserInterface/Debug" unique_id=1352917781]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 359.0
+offset_top = 812.0
 offset_right = 1549.0
-offset_bottom = 382.0
+offset_bottom = 835.0
 text = "x: "
 label_settings = ExtResource("4_dpwvv")
 
-[node name="Labely" type="Label" parent="UserInterface/Debug"]
+[node name="Labely" type="Label" parent="UserInterface/Debug" unique_id=572239759]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 383.0
+offset_top = 836.0
 offset_right = 1549.0
-offset_bottom = 406.0
+offset_bottom = 859.0
 text = "y: "
 label_settings = ExtResource("4_dpwvv")
 
-[node name="Labelz" type="Label" parent="UserInterface/Debug"]
+[node name="Labelz" type="Label" parent="UserInterface/Debug" unique_id=1399978032]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 407.0
+offset_top = 860.0
 offset_right = 1549.0
-offset_bottom = 430.0
+offset_bottom = 883.0
 text = "z: "
 label_settings = ExtResource("4_dpwvv")
 
-[node name="LabelXValue" type="Label" parent="UserInterface/Debug"]
+[node name="LabelXValue" type="Label" parent="UserInterface/Debug" unique_id=583248127]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 359.0
+offset_top = 812.0
 offset_right = 1705.0
-offset_bottom = 382.0
+offset_bottom = 835.0
 label_settings = ExtResource("4_dpwvv")
 
-[node name="LabelYValue" type="Label" parent="UserInterface/Debug"]
+[node name="LabelYValue" type="Label" parent="UserInterface/Debug" unique_id=1753435643]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 383.0
+offset_top = 836.0
 offset_right = 1705.0
-offset_bottom = 406.0
+offset_bottom = 859.0
 label_settings = ExtResource("4_dpwvv")
 
-[node name="LabelZValue" type="Label" parent="UserInterface/Debug"]
+[node name="LabelZValue" type="Label" parent="UserInterface/Debug" unique_id=1615705727]
 layout_mode = 0
 offset_left = 1545.0
-offset_top = 405.0
+offset_top = 858.0
 offset_right = 1705.0
-offset_bottom = 428.0
+offset_bottom = 881.0
 label_settings = ExtResource("4_dpwvv")
 
-[node name="client_videomem" type="Label" parent="UserInterface/Debug"]
+[node name="client_videomem" type="Label" parent="UserInterface/Debug" unique_id=674060971]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 430.0
+offset_top = 883.0
 offset_right = 1722.0
-offset_bottom = 453.0
+offset_bottom = 906.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("13_ykmr1")
 
-[node name="client_messages_received" type="Label" parent="UserInterface/Debug"]
+[node name="client_messages_received" type="Label" parent="UserInterface/Debug" unique_id=263124310]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 454.0
+offset_top = 907.0
 offset_right = 1722.0
-offset_bottom = 477.0
+offset_bottom = 930.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("14_ilbvb")
 
-[node name="client_messages_sent" type="Label" parent="UserInterface/Debug"]
+[node name="client_messages_sent" type="Label" parent="UserInterface/Debug" unique_id=1757977870]
 layout_mode = 0
 offset_left = 1529.0
-offset_top = 478.0
+offset_top = 931.0
 offset_right = 1722.0
-offset_bottom = 501.0
+offset_bottom = 954.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("15_x3gq6")
 
-[node name="HUD" type="Control" parent="UserInterface"]
+[node name="HUD" type="Control" parent="UserInterface" unique_id=1022627901]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -330,7 +410,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="CrosshairContainer" type="CenterContainer" parent="UserInterface/HUD"]
+[node name="CrosshairContainer" type="CenterContainer" parent="UserInterface/HUD" unique_id=64437671]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -339,12 +419,12 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Crosshair" type="Control" parent="UserInterface/HUD/CrosshairContainer"]
+[node name="Crosshair" type="Control" parent="UserInterface/HUD/CrosshairContainer" unique_id=995659398]
 unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
 
-[node name="InteractLabel" type="Label" parent="UserInterface/HUD"]
+[node name="InteractLabel" type="Label" parent="UserInterface/HUD" unique_id=2054616696]
 layout_mode = 1
 anchors_preset = 7
 anchor_left = 0.5
@@ -361,25 +441,30 @@ text = "Interact"
 label_settings = SubResource("LabelSettings_kcm5r")
 horizontal_alignment = 1
 
-[node name="DirectChat" parent="UserInterface" instance=ExtResource("8_ikqc6")]
+[node name="DirectChat" parent="UserInterface" unique_id=1650237508 instance=ExtResource("8_ikqc6")]
 visible = false
 layout_mode = 1
 mouse_filter = 1
 
-[node name="PauseMenu" parent="UserInterface" instance=ExtResource("11_edphc")]
+[node name="PauseMenu" parent="UserInterface" unique_id=1074791477 instance=ExtResource("11_edphc")]
 layout_mode = 1
 
-[node name="LoadingScreen" parent="UserInterface" instance=ExtResource("12_edphc")]
+[node name="LoadingScreen" parent="UserInterface" unique_id=195810916 instance=ExtResource("12_edphc")]
 visible = false
 
-[node name="hammerdrill2" parent="." instance=ExtResource("14_fuv0x")]
+[node name="hammerdrill2" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
 transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
+visible = false
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/universe_players" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_fps" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbplayers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbobjects" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbscenes" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/server_name" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/serverbox_coordinates" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_fps" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_nbplayers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_nbobjects" method="_on_normal_player_display_debug"]

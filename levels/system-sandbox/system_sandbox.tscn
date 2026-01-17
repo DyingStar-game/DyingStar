@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://drqxadtx316hs"]
+[gd_scene format=3 uid="uid://drqxadtx316hs"]
 
 [ext_resource type="Script" uid="uid://de1e8utjyqtod" path="res://levels/system-sandbox/system_sandbox.gd" id="1_6wdpo"]
 [ext_resource type="PackedScene" uid="uid://vsepjo7bgp7v" path="res://scenes/star/star.tscn" id="6_0y0hx"]
@@ -14,23 +14,26 @@ sky_material = SubResource("ProceduralSkyMaterial_swxq8")
 background_mode = 1
 background_color = Color(0.0260417, 0.0260417, 0.0260417, 1)
 sky = SubResource("Sky_gmgav")
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.65, 0.75, 1)
+ambient_light_energy = 0.35
 tonemap_mode = 3
+tonemap_white = 6.0
 glow_normalized = true
 glow_intensity = 0.64
-glow_blend_mode = 1
 
-[node name="SystemSandbox" type="Node3D" node_paths=PackedStringArray("spawn_node")]
+[node name="SystemSandbox" type="Node3D" unique_id=1170441495 node_paths=PackedStringArray("spawn_node")]
 script = ExtResource("1_6wdpo")
 spawn_node = NodePath("SmallProps")
 
-[node name="Star" parent="." instance=ExtResource("6_0y0hx")]
+[node name="Star" parent="." unique_id=735687915 instance=ExtResource("6_0y0hx")]
 custom_aabb = AABB(0, 0, 0, 0, 0, 0)
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2094000767]
 environment = SubResource("Environment_jp7ei")
 
-[node name="SmallProps" type="Node" parent="."]
+[node name="SmallProps" type="Node" parent="." unique_id=501379130]
 
-[node name="Players" type="Node" parent="SmallProps"]
+[node name="Players" type="Node" parent="SmallProps" unique_id=1521585155]
 
-[node name="Props" type="Node" parent="SmallProps"]
+[node name="Props" type="Node" parent="SmallProps" unique_id=1620384400]

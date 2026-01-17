@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://u2tn1134l70g"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-mining_cave"
+biome_index = 87
+display_name = "Mining Cave"
+description = "An artificial or natural cavity modified for mineral extraction. It is distinguished by fractured walls and supporting structures."
+category = "artificial"
+color = Color(0.541, 0.416, 0.29, 1)
+detail_texture_scale = 2.0
+elevation_min = -500.0
+elevation_max = 3000.0
+terrain_roughness = 2.0
+wind_strength = 0.0
+movement_speed_factor = 0.7
+vehicle_traversable = false

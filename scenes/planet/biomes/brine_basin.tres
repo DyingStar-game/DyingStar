@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://i8qg6xi6q7fk"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "brine_basin"
+biome_index = 70
+display_name = "Brine Basin"
+description = "Submarine or surface lakes with such high salinity that the liquid becomes much denser than the surrounding water. These areas are often devoid of oxygen."
+category = "toxic"
+color = Color(0.29, 0.478, 0.478, 1)
+is_liquid = true
+elevation_min = -500.0
+elevation_max = 500.0
+terrain_roughness = 0.2
+wind_strength = 0.3
+movement_speed_factor = 0.3
+damage_per_second = 1.5
+vehicle_traversable = false

@@ -1,0 +1,60 @@
+[remap]
+
+importer="scene"
+importer_version=1
+type="PackedScene"
+uid="uid://bqppe3gbg5ga4"
+path="res://.godot/imported/pallet_crate_120x80x100.glb-be761554f641d9aa58a108106b3f799e.scn"
+
+[deps]
+
+source_file="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb"
+dest_files=["res://.godot/imported/pallet_crate_120x80x100.glb-be761554f641d9aa58a108106b3f799e.scn"]
+
+[params]
+
+nodes/root_type=""
+nodes/root_name=""
+nodes/root_script=null
+nodes/apply_root_scale=true
+nodes/root_scale=1.0
+nodes/import_as_skeleton_bones=false
+nodes/use_name_suffixes=true
+nodes/use_node_type_suffixes=true
+meshes/ensure_tangents=true
+meshes/generate_lods=true
+meshes/create_shadow_meshes=true
+meshes/light_baking=1
+meshes/lightmap_texel_size=0.2
+meshes/force_disable_compression=false
+skins/use_named_skins=true
+animation/import=true
+animation/fps=30
+animation/trimming=false
+animation/remove_immutable_tracks=true
+animation/import_rest_as_RESET=false
+import_script/path=""
+materials/extract=0
+materials/extract_format=0
+materials/extract_path=""
+_subresources={
+"nodes": {
+"PATH:pallet_crate_120x80x100_LOD0": {
+"mesh_instance/visibility_range_end": 5.0
+},
+"PATH:pallet_crate_120x80x100_LOD1": {
+"mesh_instance/visibility_range_begin": 5.0,
+"mesh_instance/visibility_range_end": 20.0
+},
+"PATH:pallet_crate_120x80x100_LOD2": {
+"mesh_instance/visibility_range_begin": 20.0,
+"mesh_instance/visibility_range_end": 50.0
+},
+"PATH:pallet_crate_120x80x100_LOD3": {
+"mesh_instance/visibility_range_begin": 50.0,
+"mesh_instance/visibility_range_end": 80.0
+}
+}
+}
+gltf/naming_version=2
+gltf/embedded_image_handling=1

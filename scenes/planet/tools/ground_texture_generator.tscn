@@ -1,7 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://blyc0mmcjpjxo"]
-
-[ext_resource type="Script" uid="uid://dvo6trxspyeh1" path="res://scenes/planet/tools/ground_texture_generator.gd" id="1_1v7vn"]
-
-[node name="GroundTextureGenerator" type="Node"]
-script = ExtResource("1_1v7vn")
-texture_size = 2048

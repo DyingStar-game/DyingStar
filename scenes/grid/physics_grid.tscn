@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://dumbqmrjvj582"]
+[gd_scene format=3 uid="uid://dumbqmrjvj582"]
 
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="1_ude8t"]
 
-[node name="PhysicsGrid" type="Area3D" groups=["gravity"]]
+[node name="PhysicsGrid" type="Area3D" unique_id=297375512 groups=["gravity"]]
 script = ExtResource("1_ude8t")

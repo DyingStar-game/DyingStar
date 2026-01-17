@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://cn1e5bp50weao"]
+[gd_scene format=3 uid="uid://cn1e5bp50weao"]
 
 [ext_resource type="PackedScene" uid="uid://gxlfwbj17i1h" path="res://scenes/station/test_station/pads.tscn" id="1_53j1l"]
 [ext_resource type="Script" uid="uid://6o78vxj7r8mw" path="res://scenes/station/test_station/local_grid.gd" id="1_cd0cu"]
@@ -11,87 +11,87 @@ properties/1/path = NodePath(".:rotation")
 properties/1/spawn = true
 properties/1/replication_mode = 1
 
-[node name="TestStation" type="Node3D"]
+[node name="TestStation" type="Node3D" unique_id=952525351]
 script = ExtResource("1_cd0cu")
 
-[node name="StationMesh" type="CSGCombiner3D" parent="."]
+[node name="StationMesh" type="CSGCombiner3D" parent="." unique_id=1112675659]
 use_collision = true
 
-[node name="MainBody" type="CSGCylinder3D" parent="StationMesh"]
+[node name="MainBody" type="CSGCylinder3D" parent="StationMesh" unique_id=923438366]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, -1.25822, 1.25822)
 radius = 13.855
 height = 255.113
 sides = 32
 
-[node name="CSGCylinder3D6" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="CSGCylinder3D6" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=923250185]
 transform = Transform3D(-4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, -3.59989e-21, 1, 0, -95.0684, -5.96046e-06)
 radius = 6.1958
 height = 187.604
 
-[node name="CSGCylinder3D7" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="CSGCylinder3D7" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=675869180]
 transform = Transform3D(1.91069e-15, 4.37114e-08, -1, 1, -4.37114e-08, 3.59989e-21, -4.37114e-08, -1, -4.37114e-08, 0, -95.0684, -5.96046e-06)
 radius = 6.1958
 height = 187.604
 
-[node name="Ring1" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="Ring1" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=967287074]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -95.4879, -5.84126e-06)
 radius = 98.8682
 height = 14.0076
 sides = 32
 
-[node name="CSGCylinder3D3" type="CSGCylinder3D" parent="StationMesh/MainBody/Ring1"]
+[node name="CSGCylinder3D3" type="CSGCylinder3D" parent="StationMesh/MainBody/Ring1" unique_id=1562888411]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.37441, -2.38419e-07)
 operation = 2
 radius = 84.8149
 height = 68.7734
 sides = 32
 
-[node name="CSGCylinder3D4" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="CSGCylinder3D4" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=659812341]
 transform = Transform3D(-4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, -3.59989e-21, 1, 0, 91.5562, -4.05312e-06)
 radius = 6.1958
 height = 187.604
 
-[node name="CSGCylinder3D5" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="CSGCylinder3D5" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=1893991987]
 transform = Transform3D(1.91069e-15, 4.37114e-08, -1, 1, -4.37114e-08, 3.59989e-21, -4.37114e-08, -1, -4.37114e-08, 0, 91.5562, -4.05312e-06)
 radius = 6.1958
 height = 187.604
 
-[node name="Ring2" type="CSGCylinder3D" parent="StationMesh/MainBody"]
+[node name="Ring2" type="CSGCylinder3D" parent="StationMesh/MainBody" unique_id=1631862951]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 90.7745, -4.05312e-06)
 radius = 98.8682
 height = 14.7322
 sides = 32
 
-[node name="CSGCylinder3D3" type="CSGCylinder3D" parent="StationMesh/MainBody/Ring2"]
+[node name="CSGCylinder3D3" type="CSGCylinder3D" parent="StationMesh/MainBody/Ring2" unique_id=1370224774]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.37441, 0)
 operation = 2
 radius = 84.8149
 height = 64.2012
 sides = 32
 
-[node name="CorridorBool" type="CSGBox3D" parent="StationMesh"]
+[node name="CorridorBool" type="CSGBox3D" parent="StationMesh" unique_id=48956428]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0352602, 47.1802)
 operation = 2
 size = Vector3(41.3652, 6.25488, 7.07324)
 
-[node name="CorridorBool2" type="CSGBox3D" parent="StationMesh"]
+[node name="CorridorBool2" type="CSGBox3D" parent="StationMesh" unique_id=1193449920]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0352602, -2.8139)
 operation = 2
 size = Vector3(41.3652, 6.25488, 7.07324)
 
-[node name="CorridorBool3" type="CSGBox3D" parent="StationMesh"]
+[node name="CorridorBool3" type="CSGBox3D" parent="StationMesh" unique_id=675762719]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0352602, -50.5661)
 operation = 2
 size = Vector3(41.3652, 6.25488, 7.07324)
 
-[node name="PadGroup1" parent="." instance=ExtResource("1_53j1l")]
+[node name="PadGroup1" parent="." unique_id=872986781 instance=ExtResource("1_53j1l")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50.3401)
 
-[node name="PadGroup2" parent="." instance=ExtResource("1_53j1l")]
+[node name="PadGroup2" parent="." unique_id=234550649 instance=ExtResource("1_53j1l")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 47.124)
 
-[node name="PadGroup3" parent="." instance=ExtResource("1_53j1l")]
+[node name="PadGroup3" parent="." unique_id=56368251 instance=ExtResource("1_53j1l")]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0, -3.29602)
 
-[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="." unique_id=2017144919]
 replication_config = SubResource("SceneReplicationConfig_47354")

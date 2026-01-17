@@ -1,0 +1,15 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://bnapk8bbb8ip2"]
+
+[ext_resource type="Texture2D" uid="uid://7ckjw0pe8dfn" path="res://assets/_universe/environment/terrain/hot_flowing_lava_albedo.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://bqix2guc42e5h" path="res://assets/_universe/environment/terrain/hot_flowing_lava_orm.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://cotl4c05e67hw" path="res://assets/_universe/environment/terrain/hot_flowing_lava_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://1dfbjdt4xu4" path="res://assets/_universe/environment/terrain/hot_flowing_lava_emission.png" id="4"]
+
+[resource]
+albedo_texture = ExtResource("1")
+orm_texture = ExtResource("2")
+emission_enabled = true
+emission_energy_multiplier = 1.5
+emission_texture = ExtResource("4")
+normal_enabled = true
+normal_texture = ExtResource("3")

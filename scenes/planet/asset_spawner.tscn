@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://br2b6gumt3gyn"]
-
-[ext_resource type="Script" uid="uid://ct0jap4sahy8k" path="res://scenes/planet/asset_spawner.gd" id="1_ars7u"]
-
-[node name="AssetSpawner" type="Node3D"]
-script = ExtResource("1_ars7u")

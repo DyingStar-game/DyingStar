@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dblng0lkce4tf"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-corundum_sand_desert"
+biome_index = 92
+display_name = "Corundum Sand Desert"
+description = "Expanses where the ground is littered with fragments of raw sapphires or rubies, ranging from fine grains of sand to angular gravel, creating crystalline reflections under the starlight"
+color = Color(0.69, 0.471, 0.533, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.5

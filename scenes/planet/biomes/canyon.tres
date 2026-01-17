@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cavqcwmcds7ri"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "rocky_landform-canyon"
+biome_index = 25
+display_name = "Rocky Landform Canyon"
+description = "Deep gorge with steep walls carved by linear erosion of a watercourse in horizontal sedimentary strata."
+color = Color(0.541, 0.353, 0.227, 1)
+detail_texture_scale = 2.0
+elevation_min = -1000.0
+elevation_max = 3000.0
+terrain_roughness = 1.8
+supports_vegetation = true
+default_vegetation_density = 0.1
+default_tree_type = "deciduous"
+wind_strength = 0.5
+movement_speed_factor = 0.65
+vehicle_traversable = false

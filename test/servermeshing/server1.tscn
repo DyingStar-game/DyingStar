@@ -1,26 +1,26 @@
-[gd_scene load_steps=4 format=3 uid="uid://ccb0mbw5ct2yp"]
+[gd_scene format=3 uid="uid://ccb0mbw5ct2yp"]
 
 [ext_resource type="Script" uid="uid://iednwyuemnor" path="res://server/server.gd" id="1_uu6ny"]
-[ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/materials/material_basic_blue.tres" id="2_7471y"]
+[ext_resource type="Material" uid="uid://brpu7xylrg2l2" path="res://assets/_universe/environment/terrain/material_basic_blue.tres" id="2_7471y"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_5g5qb"]
 material = ExtResource("2_7471y")
 size = Vector2(100, 100)
 
-[node name="Server1" type="Node"]
+[node name="Server1" type="Node" unique_id=2113635600]
 script = ExtResource("1_uu6ny")
 
-[node name="Floor" type="Node3D" parent="."]
+[node name="Floor" type="Node3D" parent="." unique_id=825410474]
 
-[node name="FloorMesh" type="MeshInstance3D" parent="Floor"]
+[node name="FloorMesh" type="MeshInstance3D" parent="Floor" unique_id=614858485]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.17536, 0)
 mesh = SubResource("PlaneMesh_5g5qb")
 skeleton = NodePath("../..")
 
-[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=2104526455]
 _spawnable_scenes = PackedStringArray("uid://ccme8rxijtf2s")
 spawn_path = NodePath("../Players")
 spawn_limit = 120
 
-[node name="Players" type="Node3D" parent="."]
+[node name="Players" type="Node3D" parent="." unique_id=1246903030]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)

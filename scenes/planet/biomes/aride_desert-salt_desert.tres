@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://by3a7rn8cvd1f"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-salt_desert"
+biome_index = 7
+display_name = "Salt Desert"
+description = "An endorheic depression where the evaporation of runoff water leaves behind a crust of evaporites (sodium chloride, lithium, borates). The surface is a pure white crystalline plain, exhibiting extreme geometric flatness and a very high albedo."
+color = Color(0.91, 0.863, 0.784, 1)
+elevation_min = -100.0
+elevation_max = 1500.0
+terrain_roughness = 0.1

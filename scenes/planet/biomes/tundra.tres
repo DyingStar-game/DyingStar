@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://uae7ch3hcmr1"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-tundra"
+biome_index = 19
+display_name = "Tundra"
+description = "Polar biome defined by the absence of trees and the presence of frozen ground. Vegetation is limited to mosses, lichens, and dwarf shrubs."
+color = Color(0.561, 0.659, 0.71, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.6
+supports_vegetation = true
+default_vegetation_density = 0.1
+wind_strength = 1.8
+movement_speed_factor = 0.85

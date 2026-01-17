@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cm5als1qjb2ru"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-glacier"
+biome_index = 21
+display_name = "Glacier"
+description = "Continental ice mass resulting from the crystallization of snow. Under the effect of its own weight, the ice behaves like a viscous fluid, flowing and sculpting valleys."
+color = Color(0.784, 0.878, 0.941, 1)
+elevation_min = 500.0
+elevation_max = 8000.0
+terrain_roughness = 0.5
+wind_strength = 1.8
+movement_speed_factor = 0.5
+damage_per_second = 0.3
+vehicle_traversable = false

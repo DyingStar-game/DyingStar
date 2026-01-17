@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://d024rlwri7sqj"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dnaiicr2kmk73" path="res://assets/_universe/environment/terrain/riverbed_pebbles.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-dry_river_bed"
+biome_index = 56
+display_name = "Dry Riverbed"
+description = "A former dried-up channel. The soil is composed of rounded pebbles and stratified sediments."
+category = "martian"
+color = Color(0.541, 0.478, 0.353, 1)
+terrain_material_override = ExtResource("2")
+detail_texture_scale = 2.0
+elevation_min = -500.0
+elevation_max = 2000.0
+terrain_roughness = 0.5
+movement_speed_factor = 0.9

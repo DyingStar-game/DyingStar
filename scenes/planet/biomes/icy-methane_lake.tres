@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://cd63hn3huotpv"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://bp8m054c7hqg6" path="res://assets/_universe/environment/terrain/methane_lake_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-methane_lake"
+biome_index = 47
+display_name = "Methane Lake"
+description = "A liquid basin composed of a mixture of light hydrocarbons, primarily methane and ethane. Stable under cryogenic pressure and temperature conditions. The liquid has very low viscosity and surface tension, resulting in extremely slow and faint waves. Shorelines are sculpted by the erosion of hydrocarbons on a base of rock-hard water ice."
+category = "cryo"
+color = Color(0.165, 0.29, 0.416, 1)
+terrain_material_override = ExtResource("2")
+is_liquid = true
+elevation_min = -500.0
+elevation_max = 500.0
+terrain_roughness = 0.1
+wind_strength = 0.3
+movement_speed_factor = 0.25
+damage_per_second = 1.5
+vehicle_traversable = false

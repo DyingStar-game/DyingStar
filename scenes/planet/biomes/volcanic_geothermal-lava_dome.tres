@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://dq1xry4qmo7t1"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-lava_dome"
+biome_index = 94
+display_name = "Lava Dome"
+description = "A mass of lava whose high viscosity prevents it from flowing"
+category = "volcanic"
+color = Color(0.541, 0.188, 0.125, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.7

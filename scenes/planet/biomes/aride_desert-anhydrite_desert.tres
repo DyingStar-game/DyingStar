@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://de3wucn04solm"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "aride_desert-anhydrite_desert"
+biome_index = 89
+display_name = "Anhydrite Desert"
+description = "Composed of dehydrated calcium sulfate. These are white or greyish expanses, formed of hard mineral plates, often resulting from the evaporation of ancient marine basins"
+color = Color(0.784, 0.749, 0.69, 1)
+elevation_max = 2000.0
+terrain_roughness = 0.6
+movement_speed_factor = 0.9

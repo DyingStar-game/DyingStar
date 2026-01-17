@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bewcn2pjr67m5"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "icy-cryovolcanic"
+biome_index = 49
+display_name = "Cryovolcanic"
+description = "A geological formation found in cold worlds where magma is replaced by volatiles (water, ammonia, methane) in a liquid state. Eruptions occur when internal pressure forces these liquids through the icy crust, solidifying instantly upon contact with the atmosphere or a vacuum, creating domes of molten ice."
+category = "cryo"
+color = Color(0.69, 0.784, 0.847, 1)
+detail_texture_scale = 2.0
+elevation_max = 3000.0
+terrain_roughness = 0.9
+wind_strength = 0.5
+movement_speed_factor = 0.6
+damage_per_second = 0.5

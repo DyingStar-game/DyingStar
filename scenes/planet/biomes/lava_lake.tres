@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://jgvse80iujt4"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://c5dj5gobtgjsg" path="res://assets/_universe/environment/terrain/lava_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-lava_lake"
+biome_index = 29
+display_name = "Volcanic Geothermal Lava Lake"
+description = "A depression filled with liquid magma, kept molten by thermal convection. A semi-solid crust can form on the surface, constantly fractured by magma currents."
+category = "volcanic"
+color = Color(0.8, 0.2, 0, 1)
+terrain_material_override = ExtResource("2")
+is_liquid = true
+elevation_min = -500.0
+elevation_max = 3000.0
+terrain_roughness = 0.3
+wind_strength = 0.3
+movement_speed_factor = 0.1
+damage_per_second = 10.0
+vehicle_traversable = false

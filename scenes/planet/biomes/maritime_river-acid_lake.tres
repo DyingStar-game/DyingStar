@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://ckngmaj82clb5"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dusq10cyjuktq" path="res://assets/_universe/environment/terrain/acid_lake_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "maritime_river-acid_lake"
+biome_index = 65
+display_name = "Acid Lake"
+description = "Basins filled with a mixture of water and strong acids (sulfuric or hydrochloric), often located near volcanic areas."
+category = "toxic"
+color = Color(0.502, 0.627, 0.188, 1)
+terrain_material_override = ExtResource("2")
+is_liquid = true
+elevation_min = -500.0
+elevation_max = 2000.0
+terrain_roughness = 0.2
+wind_strength = 0.4
+movement_speed_factor = 0.2
+damage_per_second = 5.0
+vehicle_traversable = false

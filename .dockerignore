@@ -1,0 +1,27 @@
+# Exclude docker folder from build context
+.docker/
+
+# Exclude git folder
+.git/
+
+# Exclude build outputs (optional - remove if needed)
+build/
+
+# Exclude .godot (cache files, reimported during build via --import)
+.godot/
+
+# Python venv
+.venv/
+
+# blender files
+assets_blender/
+
+# Not needed for server export (but keep prebake script)
+tools/qgis/
+tools/localization/
+tools/observability/
+tools/spawn_points/
+tools/generate_biome_folders.py
+tools/generate_detail_textures.py
+docs/
+.github/

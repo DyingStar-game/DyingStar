@@ -37,3 +37,8 @@ func _on_username_changed(new_username: String) -> void:
 	if username_edit.text != cleaned_name:
 		username_edit.text = cleaned_name
 		username_edit.caret_column = cursor_pos
+
+	if new_username.length() >= 5:
+		%OnlineButton.disabled = false
+	else:
+		%OnlineButton.disabled = true

@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://nnywatggffut"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-pele_haire"
+biome_index = 96
+color = Color(0.541, 0.416, 0.125, 1)

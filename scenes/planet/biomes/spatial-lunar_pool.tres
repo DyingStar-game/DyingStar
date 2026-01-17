@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://c0lwvdtoqpv6p"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "spatial-lunar_pool"
+biome_index = 39
+display_name = "Lunar Pool"
+description = "Vast plains of dark basalt occupying giant impact basins. Unlike the highlands, the lunar seas are smoother and have few large craters."
+category = "barren"
+color = Color(0.29, 0.29, 0.353, 1)
+elevation_min = -2000.0
+elevation_max = 0.0
+terrain_roughness = 0.4
+wind_strength = 0.0
+movement_speed_factor = 0.95
