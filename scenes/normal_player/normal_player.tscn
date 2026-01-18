@@ -70,11 +70,6 @@ light_energy = 2.0
 spot_range = 200.0
 spot_angle = 41.4246
 
-[node name="WwiseListener" type="Node" parent="CameraPivot/Camera3D"]
-
-[node name="AkListener3D" type="AkListener3D" parent="CameraPivot/Camera3D/WwiseListener"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
-
 [node name="AreaDetector" type="Area3D" parent="."]
 collision_layer = 4
 monitorable = false
