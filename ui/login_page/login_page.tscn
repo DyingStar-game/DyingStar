@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://b7aajb2l3gvg5"]
+[gd_scene load_steps=7 format=3 uid="uid://b7aajb2l3gvg5"]
 
 [ext_resource type="Script" uid="uid://ck5cjdbjngm6a" path="res://ui/login_page/login_page.gd" id="1_ihlnx"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_rpukb"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_rpukb"]
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
+[ext_resource type="WwiseState" uid="uid://clhve5cf60fl7" path="res://Wwise/resources/State/{6CA0B5B9-79E0-43EF-B4D7-EC11836B892F}.tres" id="6_fk6tm"]
 
 [node name="LoginUI" type="Control"]
 layout_mode = 3
@@ -114,6 +115,12 @@ popup/item_1/text = "fr"
 popup/item_1/id = 1
 popup/item_2/text = "es"
 popup/item_2/id = 2
+
+[node name="Wwise" type="Node" parent="."]
+
+[node name="AkState" type="AkState" parent="Wwise"]
+state = ExtResource("6_fk6tm")
+trigger_on = 2
 
 [connection signal="ready" from="." to="." method="_on_ready"]
 [connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/OnlineButton" to="." method="_on_button_pressed" binds= ["Online"]]

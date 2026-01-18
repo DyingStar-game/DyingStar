@@ -1,0 +1,11 @@
+[gd_resource type="WwiseState" load_steps=2 format=3 uid="uid://cduakjjaem84r"]
+
+[ext_resource type="WwiseStateGroup" uid="uid://c528rxlodft4s" path="res://Wwise/resources/State Group/{5B3E6A62-109B-4FA8-9A6D-E2F3416C8B2E}.tres" id="1_puf6m"]
+
+[resource]
+group_ref = ExtResource("1_puf6m")
+group_id = 1585661381
+name = "sandbox"
+id = 222378406
+guid = "{03121227-16D7-49FE-A53E-E86931E4E0C5}"
+dummy = true
