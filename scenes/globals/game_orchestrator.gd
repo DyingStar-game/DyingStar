@@ -69,6 +69,7 @@ func _ready():
 			change_game_state(GameStates.PLAYING)
 		else:
 			change_game_state(GameStates.HOME_MENU)
+			
 
 func _notification(what):
 	match what:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene load_steps=15 format=3 uid="uid://fxj147p5soqi"]
 
 [ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_m4ygx"]
 [ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_m4ygx"]
@@ -6,7 +6,8 @@
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
-[ext_resource type="WwiseState" uid="uid://cduakjjaem84r" path="res://Wwise/resources/State/{03121227-16D7-49FE-A53E-E86931E4E0C5}.tres" id="7_w0ufy"]
+[ext_resource type="WwiseEvent" uid="uid://bbh4cl67s73ha" path="res://Wwise/resources/Event/{E6BDFDF1-1273-4E0B-A784-ED4B7004BDBE}.tres" id="8_bdj2j"]
+[ext_resource type="Script" uid="uid://63yefuh17dml" path="res://audio/managers/audio_manager.gd" id="8_wr7rr"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)
@@ -48,7 +49,6 @@ transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 
 environment = SubResource("Environment_le64j")
 
 [node name="DataPlanet" type="Node" parent="."]
-metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
 
 [node name="Area3D" type="Area3D" parent="." groups=["gravity"]]
 gravity_space_override = 3
@@ -63,10 +63,15 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.622590192634482, 9.1473648
 [node name="PalletCrate120x80x100" parent="." instance=ExtResource("5_w0ufy")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.147364821160409e-08, -0.9447545420112792)
 
+[node name="AkEvent3D" type="AkEvent3D" parent="PalletCrate120x80x100"]
+event = ExtResource("8_bdj2j")
+trigger_on = 2
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03932391527911694, 0.4073184816078157, -0.01335005998898397)
+
 [node name="ContainerLiquid1200x240x240" parent="." instance=ExtResource("6_bdj2j")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)
 
 [node name="Wwise" type="Node" parent="."]
+script = ExtResource("8_wr7rr")
 
-[node name="AkState_music" type="AkState" parent="Wwise"]
-state = ExtResource("7_w0ufy")
+[connection signal="ready" from="Wwise" to="Wwise" method="set_music_state" binds= ["sandbox"]]

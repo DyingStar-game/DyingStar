@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://50boh4okyk04"]
+[gd_scene load_steps=4 format=3 uid="uid://50boh4okyk04"]
 
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="1_vxd2j"]
+[ext_resource type="Script" uid="uid://bo5wvjixn6g1k" path="res://audio/debug/debug_audio.gd" id="2_5ijxv"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_vxd2j"]
 font_size = 32
@@ -41,3 +42,8 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Loading the Universe..."
 label_settings = SubResource("LabelSettings_vxd2j")
+
+[node name="Wwise" type="Node" parent="."]
+script = ExtResource("2_5ijxv")
+
+[connection signal="tree_exiting" from="Wwise" to="Wwise" method="audio_debug_button_pressed" binds= ["debug"]]

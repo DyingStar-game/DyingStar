@@ -1,11 +1,12 @@
-[gd_scene load_steps=7 format=3 uid="uid://b7aajb2l3gvg5"]
+[gd_scene load_steps=8 format=3 uid="uid://b7aajb2l3gvg5"]
 
 [ext_resource type="Script" uid="uid://ck5cjdbjngm6a" path="res://ui/login_page/login_page.gd" id="1_ihlnx"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_rpukb"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_rpukb"]
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
-[ext_resource type="WwiseState" uid="uid://clhve5cf60fl7" path="res://Wwise/resources/State/{6CA0B5B9-79E0-43EF-B4D7-EC11836B892F}.tres" id="6_fk6tm"]
+[ext_resource type="Script" uid="uid://63yefuh17dml" path="res://audio/managers/audio_manager.gd" id="6_fk6tm"]
+[ext_resource type="Script" uid="uid://bo5wvjixn6g1k" path="res://audio/debug/debug_audio.gd" id="7_fk6tm"]
 
 [node name="LoginUI" type="Control"]
 layout_mode = 3
@@ -117,11 +118,42 @@ popup/item_2/text = "es"
 popup/item_2/id = 2
 
 [node name="Wwise" type="Node" parent="."]
+script = ExtResource("6_fk6tm")
 
-[node name="AkState" type="AkState" parent="Wwise"]
-state = ExtResource("6_fk6tm")
-trigger_on = 2
+[node name="Control" type="Control" parent="Wwise"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 892.0
+offset_bottom = 320.0
+script = ExtResource("7_fk6tm")
+
+[node name="MarginContainer" type="MarginContainer" parent="Wwise/Control"]
+layout_mode = 1
+offset_right = 469.0
+offset_bottom = 151.0
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Wwise/Control/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="debug_audio" type="Button" parent="Wwise/Control/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "DEBUG AUDIO"
+
+[node name="debug_audio2" type="Button" parent="Wwise/Control/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "DEBUG"
+script = ExtResource("6_fk6tm")
 
 [connection signal="ready" from="." to="." method="_on_ready"]
 [connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/OnlineButton" to="." method="_on_button_pressed" binds= ["Online"]]
 [connection signal="item_selected" from="Node/HBoxContainer/OptionButton" to="Node" method="_on_option_button_item_selected"]
+[connection signal="tree_entered" from="Wwise" to="Wwise" method="set_music_state" binds= ["menu"]]
+[connection signal="pressed" from="Wwise/Control/MarginContainer/HBoxContainer/debug_audio" to="Wwise/Control" method="audio_debug_button_pressed" binds= ["debug"]]
+[connection signal="pressed" from="Wwise/Control/MarginContainer/HBoxContainer/debug_audio2" to="Wwise/Control/MarginContainer/HBoxContainer/debug_audio2" method="test_listener"]

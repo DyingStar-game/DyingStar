@@ -1,8 +1,9 @@
-[gd_scene load_steps=30 format=3 uid="uid://ccme8rxijtf2s"]
+[gd_scene load_steps=31 format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/models/astronaut/astronaut.res" id="2_rulc8"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/normal_player/player_ui.gd" id="3_kcm5r"]
+[ext_resource type="Script" uid="uid://63yefuh17dml" path="res://audio/managers/audio_manager.gd" id="3_ty080"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/normal_player/debug_label_settings.tres" id="4_dpwvv"]
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/normal_player/debug_server_fps.gd" id="4_sxi4m"]
 [ext_resource type="Script" uid="uid://csou6tk8ue6nt" path="res://scenes/normal_player/debug.gd" id="4_urqre"]
@@ -57,6 +58,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot"]
 far = 10000000000000.01
+script = ExtResource("3_ty080")
 
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D"]
 target_position = Vector3(0, 0, -3)
@@ -387,5 +389,6 @@ transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.46
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_videomem" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_received" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_sent" method="_on_normal_player_display_debug"]
+[connection signal="ready" from="CameraPivot/Camera3D" to="CameraPivot/Camera3D" method="set_audio_listener" flags=18]
 [connection signal="area_entered" from="AreaDetector" to="." method="_on_area_detector_area_entered"]
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]

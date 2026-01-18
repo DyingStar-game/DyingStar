@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://c77xahaiy4r4r"]
+[gd_scene load_steps=4 format=3 uid="uid://c77xahaiy4r4r"]
 
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_ewhk2"]
 [ext_resource type="Script" uid="uid://chsmswh73v0bl" path="res://ui/pause_page/pause_page.gd" id="1_ilyln"]
+[ext_resource type="Script" uid="uid://bo5wvjixn6g1k" path="res://audio/debug/debug_audio.gd" id="3_l7wor"]
 
 [node name="PausePage" type="Control"]
 layout_mode = 3
@@ -68,3 +69,36 @@ text = "%%PAUSEPAGE_QUITGAME"
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_RESUMEGAME"
+
+[node name="AudioDebug" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -369.0
+offset_top = -320.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 15
+script = ExtResource("3_l7wor")
+
+[node name="audio_test" type="Button" parent="AudioDebug"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "AUDIO TEST"
+
+[node name="start_music" type="Button" parent="AudioDebug"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "START MUSIC"
+
+[node name="stop_music" type="Button" parent="AudioDebug"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "STOP MUSIC"
+
+[connection signal="pressed" from="AudioDebug/audio_test" to="AudioDebug" method="audio_debug_button_pressed" binds= ["debug"]]
+[connection signal="pressed" from="AudioDebug/start_music" to="AudioDebug" method="audio_debug_button_pressed" binds= ["sandbox"]]
+[connection signal="pressed" from="AudioDebug/stop_music" to="AudioDebug" method="audio_debug_button_pressed" binds= ["none"]]

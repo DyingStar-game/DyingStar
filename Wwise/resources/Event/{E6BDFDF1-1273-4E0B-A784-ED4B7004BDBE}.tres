@@ -1,0 +1,8 @@
+[gd_resource type="WwiseEvent" format=3 uid="uid://bbh4cl67s73ha"]
+
+[resource]
+is_in_user_defined_sound_bank = true
+name = "start_wind"
+id = 1863965372
+guid = "{E6BDFDF1-1273-4E0B-A784-ED4B7004BDBE}"
+dummy = true

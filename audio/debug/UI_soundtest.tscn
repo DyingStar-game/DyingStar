@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://bo5wvjixn6g1k" path="res://audio/debug/debug_audio.gd" id="1_rjjtu"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_vigpp"]
 
-[node name="LoginUI" type="Control"]
+[node name="UI_Soundtest" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -71,8 +71,8 @@ offset_bottom = 197.0
 text = "CHANGE TO
 NONE BGM"
 
-[connection signal="pressed" from="Control/debug_btn" to="." method="_debug_btn_pressed"]
-[connection signal="pressed" from="Control/play_music_btn" to="." method="_start_music"]
-[connection signal="pressed" from="Control/play_music_sandbox" to="." method="_change_to_sandbox"]
-[connection signal="pressed" from="Control/play_music_menu" to="." method="_change_to_menu"]
-[connection signal="pressed" from="Control/play_music_none" to="." method="_change_to_none"]
+[connection signal="pressed" from="Control/debug_btn" to="." method="audio_debug_button_pressed" binds= ["debug"]]
+[connection signal="pressed" from="Control/play_music_btn" to="." method="audio_debug_button_pressed" binds= ["start_music"]]
+[connection signal="pressed" from="Control/play_music_sandbox" to="." method="audio_debug_button_pressed" binds= ["sandbox"]]
+[connection signal="pressed" from="Control/play_music_menu" to="." method="audio_debug_button_pressed" binds= ["menu"]]
+[connection signal="pressed" from="Control/play_music_none" to="." method="audio_debug_button_pressed" binds= ["None"]]
