@@ -17,4 +17,4 @@ load_on = 1
 bank = ExtResource("3_yvnqn")
 load_on = 2
 
-[node name="AkListener3D" type="AkListener3D" parent="."]
+[node name="AkListener2D" type="AkListener2D" parent="."]
