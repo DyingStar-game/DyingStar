@@ -2,7 +2,7 @@
 
 [resource]
 is_in_user_defined_sound_bank = true
-name = "play_bgm"
-id = 3126765036
+name = "play_bgm_test"
+id = 1464838723
 guid = "{B7DC265C-2CAA-4EA8-8FA4-6C66C8DB1998}"
 dummy = true

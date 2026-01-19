@@ -2,7 +2,7 @@
 
 [resource]
 is_in_user_defined_sound_bank = true
-name = "test_bip_100ms"
-id = 2818994661
+name = "bip_100ms_test"
+id = 307172085
 guid = "{C404976B-376F-4FFE-8A41-3B63F31B85DC}"
 dummy = true

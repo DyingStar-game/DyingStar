@@ -7,7 +7,7 @@ func _ready():
 		Wwise.suspend(false)
 
 func start_music():
-	Wwise.post_event("play_bgm", AudioManager)
+	Wwise.post_event("play_bgm_test", AudioManager)
 
 func set_music_state(bgm_state: String):
 	Wwise.set_state("background_music", bgm_state)

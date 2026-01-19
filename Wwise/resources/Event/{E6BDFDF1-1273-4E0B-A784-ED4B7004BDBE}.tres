@@ -2,7 +2,7 @@
 
 [resource]
 is_in_user_defined_sound_bank = true
-name = "start_wind"
-id = 1863965372
+name = "start_wind_test"
+id = 3830053171
 guid = "{E6BDFDF1-1273-4E0B-A784-ED4B7004BDBE}"
 dummy = true
