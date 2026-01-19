@@ -345,8 +345,11 @@ guid = "{797FC763-D417-43B8-97AA-746469B67B51}"
 id = 2182414867
 
 [sub_resource type="WwiseTreeObject" id="WwiseTreeObject_7f6pv"]
+path = "\\Busses\\Default Work Unit\\Master_Fader\\Ambience_Fader\\Amb"
 children = [SubResource("WwiseTreeObject_t5yhp"), SubResource("WwiseTreeObject_3v8cc")]
+type = 2
 name = "Amb"
+guid = "{1EAD1B75-8699-4569-8EBE-19C368C77FB5}"
 id = 1117531639
 
 [sub_resource type="WwiseTreeObject" id="WwiseTreeObject_2bj2c"]
