@@ -27,16 +27,15 @@ mono_crash.*.json
 
 # specific for Wwise Project
 
-*.backup
-*.cache
+.backup*
+.cache*
 *.akd
 *.prof
 *.validationcache
 *.wsettings
-**/Assets/Wwise/Editor/ProjectData/AkWwiseProjectData.asset
+AkWwiseProjectData.asset
 IncrementalSoundBankData.xml
 *.windows.editor.profile.dll
-**/WwiseProjectData.tres
 
 # Specific DyingStar
 client.ini
