@@ -48,8 +48,8 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -394.0
-offset_right = 394.0
+offset_left = -314.0
+offset_right = 314.0
 offset_bottom = 95.0
 grow_horizontal = 2
 theme_override_constants/separation = 40
@@ -92,67 +92,20 @@ size_flags_horizontal = 3
 text = "CHANGE TO
 NONE BGM"
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="Control/MarginContainer/Control/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 20
-
-[node name="debug_btn" type="Button" parent="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "START ENGINE"
-
-[node name="debug_btn2" type="Button" parent="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "STOP ENGINE"
-
-[node name="Sliders" type="VBoxContainer" parent="Control/MarginContainer/Control"]
+[node name="HSlider" type="HSlider" parent="Control/MarginContainer/Control"]
 layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 530.0
-offset_top = 154.0
-offset_right = -517.0
-offset_bottom = 302.0
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -205.0
+offset_top = 161.0
+offset_right = 208.0
+offset_bottom = 185.0
 grow_horizontal = 2
-theme_override_constants/separation = 20
-
-[node name="Music Fader" type="VBoxContainer" parent="Control/MarginContainer/Control/Sliders"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="Control/MarginContainer/Control/Sliders/Music Fader"]
-layout_mode = 2
-text = "Music Fader"
-
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/MarginContainer/Control/Sliders/Music Fader"]
-layout_mode = 2
-
-[node name="CheckButton" type="CheckButton" parent="Control/MarginContainer/Control/Sliders/Music Fader/HBoxContainer"]
-layout_mode = 2
-text = "mute"
-
-[node name="MusicSlider" type="HSlider" parent="Control/MarginContainer/Control/Sliders/Music Fader/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Engine Slider" type="VBoxContainer" parent="Control/MarginContainer/Control/Sliders"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="Control/MarginContainer/Control/Sliders/Engine Slider"]
-layout_mode = 2
-text = "Engine Slider"
-
-[node name="EngineSlider" type="HSlider" parent="Control/MarginContainer/Control/Sliders/Engine Slider"]
-layout_mode = 2
 
 [connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer/debug_btn" to="." method="audio_debug_button_pressed" binds= ["debug"]]
 [connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer2/play_music_btn" to="." method="audio_debug_button_pressed" binds= ["start_music"]]
 [connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer2/play_music_sandbox" to="." method="audio_debug_button_pressed" binds= ["sandbox"]]
 [connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer2/play_music_menu" to="." method="audio_debug_button_pressed" binds= ["menu"]]
 [connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer2/play_music_none" to="." method="audio_debug_button_pressed" binds= ["None"]]
-[connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer3/debug_btn" to="." method="audio_debug_button_pressed" binds= ["start_engine"]]
-[connection signal="pressed" from="Control/MarginContainer/Control/HBoxContainer3/HBoxContainer3/debug_btn2" to="." method="audio_debug_button_pressed" binds= ["stop_engine"]]
-[connection signal="toggled" from="Control/MarginContainer/Control/Sliders/Music Fader/HBoxContainer/CheckButton" to="." method="mute"]
-[connection signal="value_changed" from="Control/MarginContainer/Control/Sliders/Music Fader/HBoxContainer/MusicSlider" to="." method="slider_debug" binds= ["music"]]
-[connection signal="value_changed" from="Control/MarginContainer/Control/Sliders/Engine Slider/EngineSlider" to="." method="slider_debug" binds= ["engine"]]
+[connection signal="value_changed" from="Control/MarginContainer/Control/HSlider" to="." method="slider_debug"]

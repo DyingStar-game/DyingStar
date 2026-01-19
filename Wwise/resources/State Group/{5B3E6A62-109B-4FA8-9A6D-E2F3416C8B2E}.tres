@@ -1,7 +1,7 @@
 [gd_resource type="WwiseStateGroup" format=3 uid="uid://c528rxlodft4s"]
 
 [resource]
-name = "background_music"
-id = 1585661381
+name = "background_music_test"
+id = 90692012
 guid = "{5B3E6A62-109B-4FA8-9A6D-E2F3416C8B2E}"
 dummy = true
