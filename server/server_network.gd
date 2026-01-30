@@ -105,13 +105,30 @@ func dispatch_horizon_message(message: Dictionary):
 					"planet":
 						# spawn planet
 						NetworkOrchestrator.network_agent.create_planet(message)
-					"serverinfo":
-						# serverinfo for clients
-						NetworkOrchestrator.network_agent.set_serverinfo(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
+			"initial_object":
+				# force to pause all the objects while I load all
+				get_tree().paused = true
+				match message["data"]["object_type"]:
+					"planet":
+						# spawn planet
+						NetworkOrchestrator.network_agent.create_planet(message)
+					"player":
+						NetworkOrchestrator.network_agent.create_player(message)
+					_:
+						NetworkOrchestrator.network_agent.create_generic_object(message)
+			"initial_object_end":
+				#  Ok let's go, unpause to begin simulation
+				get_tree().paused = false
+			"freeze_object":
+				# freeze object in place (in case server split)
+				NetworkOrchestrator.network_agent.freeze_object(message)
+			"zone":
+				# zone management
+				NetworkOrchestrator.network_agent.manage_zone(message)
 
 	elif message['namespace'] == "player":
 		match message['event']:
@@ -125,7 +142,7 @@ func dispatch_horizon_message(message: Dictionary):
 func send_message(message: Dictionary, message_type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if not _devmode_mapping_send(message, message_type):
-			#print("server send message: ", message)
+			print("server send message: ", message)
 			var error = peer.send_text(JSON.stringify(message))
 			if error != OK:
 				printerr("Failure send message in websocket!")

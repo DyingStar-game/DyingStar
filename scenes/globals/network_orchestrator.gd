@@ -6,6 +6,9 @@ signal set_gameserver_server_fps(fps)
 signal set_gameserver_number_players(number_players_server)
 signal set_gameserver_number_objects(number_objects_server)
 signal set_gameserver_number_scenes(number_scenes_server)
+signal set_universe_servers(number_servers)
+signal set_universe_players(number_players)
+signal set_gameserver_coordinates(coordinates)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 

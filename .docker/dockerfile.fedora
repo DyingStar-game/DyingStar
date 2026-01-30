@@ -1,0 +1,54 @@
+FROM fedora:latest
+
+# Environment Variables
+ENV GODOT_VERSION "4.5.1"
+ENV GODOT_EXPORT_PRESET="Linux/X11"
+ENV GODOT_GAME_NAME "DyingStar"
+ENV HTTPS_GIT_REPO ""
+
+# Updates and installs to the server
+RUN dnf update -y
+RUN dnf install -y bash
+RUN dnf install -y wget
+RUN dnf install -y git
+RUN dnf install -y dotnet-sdk-8.0
+RUN dnf install -y dotnet-runtime-8.0
+RUN dnf install -y unzip
+RUN dnf install -y fontconfig
+# needed for wwise plugin
+RUN dnf install -y tbb
+
+RUN mkdir /godotbin
+WORKDIR /godotbin
+# Download Godot and export template, version is set from variables
+RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/linux-editor-mono-double.zip
+# RUN mkdir ~/.cache
+# RUN mkdir -p ~/.config/godot
+RUN mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double
+RUN unzip linux-editor-mono-double.zip
+# RUN mv godot.linuxbsd.editor.double.x86_64.mono /usr/local/bin/godot
+# RUN ls -l /usr/local/bin/ | grep godot
+# RUN chmod 755 /usr/local/bin/godot
+# RUN ldd /usr/local/bin/godot
+# RUN /usr/local/bin/godot --version
+# RUN mv godot.linuxbsd.template* ~/.local/share/godot/templates/${GODOT_VERSION}.stable
+RUN mv godot.linuxbsd.template_debug.double.x86_64.mono ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double/linux_debug.x86_64
+RUN mv godot.linuxbsd.template_release.double.x86_64.mono ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double/linux_release.x86_64
+RUN rm -f linux-editor-mono-double.zip
+
+# Make needed directories for container
+RUN mkdir /godotapp
+RUN mkdir /godotbuildspace
+
+# Move to the build space and export the .pck
+WORKDIR /godotbuildspace
+# RUN git clone ${HTTPS_GIT_REPO} .
+COPY . /godotbuildspace/
+RUN ls -l /godotbuildspace/
+WORKDIR /godotapp
+RUN /godotbin/godot.linuxbsd.editor.double.x86_64.mono --headless --path /godotbuildspace --export-release "dedicated server" dyingstar_server.x86_64
+
+# Change to the godotapp space, delete the source,  and run the app
+RUN rm -f -R /godotbuildspace
+RUN ls -la
+CMD ./dyingstar_server.x86_64

@@ -1,0 +1,72 @@
+############################################
+# ----------- BUILDER STAGE ----------------
+############################################
+FROM debian:bookworm-slim AS builder
+
+ENV GODOT_VERSION=4.5.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    unzip \
+    git \
+    ca-certificates \
+    libstdc++6 \
+    libicu72 \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+# Microsoft repo + .NET SDK (builder only)
+RUN wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    rm packages-microsoft-prod.deb && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        dotnet-sdk-8.0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Godot
+WORKDIR /godot
+RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/4.5.1-stable/linux-editor-mono-double.zip && \
+    unzip linux-editor-mono-double.zip && \
+    rm linux-editor-mono-double.zip && \
+    chmod +x godot.linuxbsd.editor.double.x86_64.mono
+
+# Export templates
+RUN mkdir -p /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double && \
+    mv godot.linuxbsd.template_debug.double.x86_64.mono \
+       /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double/linux_debug.x86_64 && \
+    mv godot.linuxbsd.template_release.double.x86_64.mono \
+       /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono.double/linux_release.x86_64
+
+# Project build
+WORKDIR /build
+COPY . .
+
+WORKDIR /out
+RUN /godot/godot.linuxbsd.editor.double.x86_64.mono \
+    --headless \
+    --path /build \
+    --verbose \
+    --export-release "dedicated server" /out/dyingstar_server.x86_64
+RUN cp /build/server.ini /out/server.ini
+RUN ls -la /out/
+
+############################################
+# ----------- RUNTIME STAGE ----------------
+############################################
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 \
+    libicu72 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /out/ .
+
+RUN ls -la /app/
+
+RUN chmod +x dyingstar_server.x86_64
+
+CMD ["./dyingstar_server.x86_64"]

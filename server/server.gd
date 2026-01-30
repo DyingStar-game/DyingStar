@@ -193,8 +193,8 @@ func _send_metrics():
 					{
 						"uuid": serverinfo_uuid,
 						"type": "serverinfo",
-						"fps": Performance.get_monitor(Performance.TIME_FPS),
-						"objects_number": Performance.get_monitor(Performance.OBJECT_COUNT),
+						"fps": int(Performance.get_monitor(Performance.TIME_FPS)),
+						"objects_number": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 						"players_number": players_list.size(),
 						"scenes_number": nb_scenes,
 					}
@@ -394,6 +394,9 @@ func create_planet(event: Dictionary) -> void:
 	props_list["planets"][event["data"]["object_uuid"]] = spawnable_planet_instance
 
 func create_player(event: Dictionary) -> void:
+	if players_list.has(event["data"]["object_data"]["connection_id"]):
+		prints("Player already exists on server side: %s" % event)
+		return
 	prints("Creating player on server side: %s" % event)
 	var player_data = event["data"]["object_data"]
 	# var player_uuid = message["data"]["object_uuid"]
@@ -444,8 +447,8 @@ func create_player(event: Dictionary) -> void:
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
 
-func set_serverinfo(event: Dictionary) -> void:
-	serverinfo_uuid = event["data"]["object_uuid"]
+func set_serverinfo(uuid: String) -> void:
+	serverinfo_uuid = uuid
 
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
@@ -508,3 +511,33 @@ func _on_player_update(
 		"data": properties
 	}
 	ServerNetwork.send_message(message, "player_update")
+
+func freeze_object(event: Dictionary) -> void:
+	# we will freeze scenes objects
+	var object = event["data"]
+	if object["object_type"] == "planet":
+		if props_list["planets"].has(object["object_uuid"]):
+			var planet = props_list["planets"][object["object_uuid"]]
+			planet.set_physics_process(false)
+	if object["object_type"] == "player":
+		if players_list.has(object["object_uuid"]):
+			var player = players_list[object["object_uuid"]]
+			players_list.erase(event["object_id"])
+			player.queue_free()
+	else:
+		# other props
+		for proptype in props_list.keys():
+			if props_list[proptype].has(object["object_uuid"]):
+				var prop = props_list[proptype][object["object_uuid"]]
+				prop.set_physics_process(false)
+
+func manage_zone(event: Dictionary) -> void:
+	var zone_data = event["data"]
+	server_zone["x_start"] = zone_data["min_x"]
+	server_zone["x_end"] = zone_data["max_x"]
+	server_zone["y_start"] = zone_data["min_y"]
+	server_zone["y_end"] = zone_data["max_y"]
+	server_zone["z_start"] = zone_data["min_z"]
+	server_zone["z_end"] = zone_data["max_z"]
+
+	set_serverinfo(event["server_uuid"])

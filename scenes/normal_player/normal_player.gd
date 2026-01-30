@@ -435,7 +435,14 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			#reparent(planet)
 			# call_deferred("reparent", planet)
 			is_parented = true
-			emit_signal("hs_server_move", client_uuid, position, global_rotation, planet.uuid, is_parented)
+			emit_signal(
+				"hs_server_move",
+				client_uuid,
+				snapped(position, Vector3(0.001, 0.001, 0.001)),
+				snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),				
+				planet.uuid,
+				is_parented
+			)
 		gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:

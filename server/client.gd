@@ -188,7 +188,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				# print("< Client - Got text data from server: %s" % packet_text)
+				print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
@@ -208,7 +208,7 @@ func _process(_delta: float) -> void:
 							print("< Client - ERROR - Unknown event type: %s" % event["type"])
 
 				elif event.has("object_type"):
-					if event["object_type"] == "GorcPlayer":
+					if event["object_type"] == "player":
 						if event.has("event_type") and event["event_type"] == "gorc_zone_enter":
 							create_object(event)
 						elif event.has("event_type") and event["event_type"] == "gorc_zone_exit":
@@ -281,11 +281,13 @@ func receive_chat_message(message: ChatMessage) -> void:
 ########################################################################
 
 func _on_client_action_requested(datas: Dictionary) -> void:
-	socket.send_text(JSON.stringify({
+	var message = JSON.stringify({
 		"namespace": "player",
 		"event": "client_action",
 		"data": datas,
-	}))
+	})
+	print("Client action requested to server: %s" % message)
+	socket.send_text(message)
 	network_events_sent += 1
 
 
@@ -324,7 +326,7 @@ func _on_message_from_player(message: ChatMessage) -> void:
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
 	# print("action move: %s - %s" % [move_direction, move_rotation])
-	socket.send_text(JSON.stringify({
+	var message = JSON.stringify({
 		"namespace": "movement",
 		"event": "update_velocity",
 		"data": {
@@ -339,18 +341,24 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 			},
 			"uuid": player_entity.client_uuid
 		},
-	}))
+	})
+	print("Client action move to server: %s" % message)
+
+	socket.send_text(message)
 	network_events_sent += 1
 
 func _on_client_action_pressed(action: String) -> void:
-	socket.send_text(JSON.stringify({
+	var message = JSON.stringify({
 		"namespace": "actions",
 		"event": "action_pressed",
 		"data": {
 			"action": action,
 			"uuid": player_entity.client_uuid
 		},
-	}))
+	})
+	print("Client action pressed to server: %s" % message)
+
+	socket.send_text(message)
 	network_events_sent += 1
 
 #########################################################################
@@ -381,8 +389,8 @@ func create_object(event: Dictionary) -> void:
 	#     }
 	# }
 	match event["object_type"]:
-		"GorcPlayer":
-			if event["channel"] == 0:
+		"player":
+			if int(event["channel"]) == 0:
 				create_player(event)
 			# if event["channel"] == 2:
 			# 	set_player_name(event)
@@ -392,22 +400,27 @@ func create_object(event: Dictionary) -> void:
 			create_generic_object(event)
 
 func delete_object(event: Dictionary) -> void:
-	# We delete only on the channel 6
-	if event["channel"] == 6:
+	if int(event["channel"]) == 0:
 		match event["object_type"]:
 			"GorcPlayer":
 				delete_player(event)
-			_:
-				if props_list.has(event["object_type"]):
-					var type = event["object_type"]
-					if props_list[type].has(event["object_id"]):
-						var prop_instance = props_list[type][event["object_id"]]
-						prop_instance.queue_free()
-						props_list[type].erase(event["object_id"])
-						return
-				print("unknown object type for deletion")
+
+	# We delete only on the channel 6
+	if int(event["channel"]) == 6:
+		if props_list.has(event["object_type"]):
+			var type = event["object_type"]
+			if props_list[type].has(event["object_id"]):
+				var prop_instance = props_list[type][event["object_id"]]
+				prop_instance.queue_free()
+				props_list[type].erase(event["object_id"])
+				return
+		print("unknown object type for deletion")
 
 func create_player(event: Dictionary) -> void:
+	# TODO have channel 0 (position , rotation) and 6 (parent_id)
+	# we are here with position. rotation but not parent_id
+
+
 	# print("Create player: %s" % event)
 	var player_data = {}
 
@@ -681,14 +694,22 @@ func update_generic_object(event: Dictionary) -> void:
 	#     "timestamp": 1763283386
 	# }
 	if event["object_type"] == "serverinfo":
-		if event["data"].has("players_number"):
-			NetworkOrchestrator.set_gameserver_number_players.emit(event["data"]["players_number"])
-		if event["data"].has("fps"):
-			NetworkOrchestrator.set_gameserver_server_fps.emit(event["data"]["fps"])
-		if event["data"].has("objects_number"):
-			NetworkOrchestrator.set_gameserver_number_objects.emit(event["data"]["objects_number"])
-		if event["data"].has("scenes_number"):
-			NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["scenes_number"])
+		if event["data"].has("godotserver"):
+			if event["data"]["godotserver"].has("players_number"):
+				NetworkOrchestrator.set_gameserver_number_players.emit(event["data"]["godotserver"]["players_number"])
+			if event["data"]["godotserver"].has("fps"):
+				NetworkOrchestrator.set_gameserver_server_fps.emit(event["data"]["godotserver"]["fps"])
+			if event["data"]["godotserver"].has("objects_number"):
+				NetworkOrchestrator.set_gameserver_number_objects.emit(event["data"]["godotserver"]["objects_number"])
+			if event["data"]["godotserver"].has("scenes_number"):
+				NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["godotserver"]["scenes_number"])
+			if event["data"]["godotserver"].has("zone"):
+				NetworkOrchestrator.set_gameserver_coordinates.emit(event["data"]["godotserver"]["zone"])
+		if event["data"].has("universe"):
+			if event["data"]["universe"].has("godotservers_number"):
+				NetworkOrchestrator.set_universe_servers.emit(event["data"]["universe"]["godotservers_number"])
+			if event["data"]["universe"].has("players_number"):
+				NetworkOrchestrator.set_universe_players.emit(event["data"]["universe"]["players_number"])
 		return
 
 	if props_list.has(event["object_type"]):
@@ -711,7 +732,7 @@ func update_generic_object(event: Dictionary) -> void:
 		print("Update generic object but type not found: %s" % event["object_type"])
 
 func delete_player(event: Dictionary) -> void:
-	if not event["channel"] == 0:
+	if not int(event["channel"]) == 0:
 		return
 	if players_list.has(event["object_id"]):
 		var remote_player = players_list[event["object_id"]]
@@ -723,22 +744,23 @@ func delete_player(event: Dictionary) -> void:
 		print("Player to delete %s not found." % event)
 
 func player_update(message: Dictionary) -> void:
-	# print("[client] Player update: %s" % message)
-	if message["channel"] == 0:
+	print("[client] Player update: %s" % message)
+	if int(message["channel"]) == 0:
 		var uuid = message["object_id"]
 		if players_list.has(uuid):
 			if message["event_type"] == "move":
+				# print("players UUIDs: %s" % players_list.keys())
 				var player = players_list[uuid]
 				player.position = Vector3(
-					message["data"]["new_position"]["x"],
-					message["data"]["new_position"]["y"],
-					message["data"]["new_position"]["z"]
+					message["data"]["position"]["x"],
+					message["data"]["position"]["y"],
+					message["data"]["position"]["z"]
 				)
 				if uuid != my_player_uuid:
 					player.global_rotation = Vector3(
-						message["data"]["new_rotation"]["x"],
-						message["data"]["new_rotation"]["y"],
-						message["data"]["new_rotation"]["z"]
+						message["data"]["rotation"]["x"],
+						message["data"]["rotation"]["y"],
+						message["data"]["rotation"]["z"]
 					)
 		else:
 			print("Update Player but not found...")

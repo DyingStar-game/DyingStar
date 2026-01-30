@@ -1,0 +1,8 @@
+version: '3'
+
+services:
+  godot:
+    build: .
+    ports:
+      - "9080:9080"
+    tty: true

@@ -1,0 +1,8 @@
+# Exclude docker folder from build context
+.docker/
+
+# Exclude git folder
+.git/
+
+# Exclude build outputs (optional - remove if needed)
+build/
