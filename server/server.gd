@@ -95,6 +95,15 @@ var debug_message_number: int = 0
 
 var serverinfo_uuid: String = ""
 
+# on server, Horizon messages can arrives in not right order when have parent_id for players
+# so we store the message in this case in the goal to process them later
+var pending_messages_player_parenting: Array[Dictionary] = []
+# same for generic objects
+var pending_messages_generic_objects_parenting: Array[Dictionary] = []
+var pending_freeze_objects: Array[Dictionary] = []
+var check_pending_objects_timer: int = 0
+
+
 func _enter_tree() -> void:
 	NetworkOrchestrator.load_server_config()
 
@@ -105,6 +114,42 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
 	send_props_update_to_horizon()
+
+func _process(_delta: float) -> void:
+	if check_pending_objects_timer == 10:
+		# every 10 frames, check pending players parenting
+		for pending_message in pending_messages_player_parenting.duplicate():
+			if _search_parent_node(pending_message["data"]["object_data"]["parent_id"]) != null:
+				print(
+					"Processing pending message for player %s now that parent_id %s is available" % [
+						pending_message["data"]["object_data"]["parent_id"],
+						pending_message["data"]["object_uuid"]
+					]
+				)
+				create_player(pending_message)
+				pending_messages_player_parenting.erase(pending_message)
+
+		# generic object created, now process pending messages for generic objects waiting for this generic object as parent
+		for pending_message in pending_messages_generic_objects_parenting.duplicate():
+			if _search_parent_node(pending_message["data"]["object_data"]["parent_id"]) != null:
+				print(
+					"Processing pending message for generic object %s now that parent_id %s is available" % [
+						pending_message["data"]["object_uuid"],
+						pending_message["data"]["object_data"]["parent_id"]
+					]
+				)
+				create_generic_object(pending_message)
+				pending_messages_generic_objects_parenting.erase(pending_message)
+		
+		# process pending freeze objects
+		for pending_message in pending_freeze_objects.duplicate():
+			var ret = freeze_object(pending_message, false)
+			if ret == true:
+				pending_freeze_objects.erase(pending_message)
+
+		check_pending_objects_timer = 0
+	else:
+		check_pending_objects_timer += 1
 
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 30
@@ -303,6 +348,7 @@ func send_players_newposition_to_horizon():
 	}
 	# print("[server] Send players newposition to horizon")
 	ServerNetwork.send_message(message, "player_position")
+	_check_out_of_zone()
 	players_newposition.clear()
 
 func _on_prop_update(
@@ -394,13 +440,27 @@ func create_planet(event: Dictionary) -> void:
 	props_list["planets"][event["data"]["object_uuid"]] = spawnable_planet_instance
 
 func create_player(event: Dictionary) -> void:
-	if players_list.has(event["data"]["object_data"]["connection_id"]):
+	var player_uuid = ""
+	if event["data"]["object_data"].has("connection_id"):
+		player_uuid = event["data"]["object_data"]["connection_id"]
+	elif event["data"].has("object_uuid"):
+		player_uuid = event["data"]["object_uuid"]
+	else:
+		prints("ERROR: No player UUID found in event: %s" % event)
+		return
+
+	if players_list.has(player_uuid):
 		prints("Player already exists on server side: %s" % event)
 		return
+
 	prints("Creating player on server side: %s" % event)
 	var player_data = event["data"]["object_data"]
-	# var player_uuid = message["data"]["object_uuid"]
-	var player_uuid = event["data"]["object_data"]["connection_id"]
+
+	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
+		# store pending message
+		pending_messages_player_parenting.append(event)
+		print("Pending message for player %s because parent_id %s not found yet" % [event["data"]["object_uuid"], player_data["parent_id"]])
+		return
 
 	# print("Player data received: %s" % player_data)
 
@@ -416,20 +476,6 @@ func create_player(event: Dictionary) -> void:
 
 	if not parented:
 		universe_scene.add_child(spawned_entity_instance)
-
-	# TODO: move this to the backend later to decide where the player should be spawned
-	# var spawn_planet = universe_scene.get_node("Sandbox") as Planet
-	# var spawn_transform = spawn_planet.get_spawn_point()
-
-	# if player_data["parent_id"] != "":
-	# 	var parent_obj = _search_parent_node(player_data["parent_id"])
-	# 	spawned_entity_instance.reparent(parent_obj)
-		#var spawn_transform = parent_obj.get_spawn_point()
-#
-		#prints("position", spawn_transform.origin)
-		#spawned_entity_instance.position = spawn_transform.origin
-
-	# spawned_entity_instance.reparent(spawn_planet)
 
 	spawned_entity_instance.position = Vector3(
 		player_data["position"]["x"],
@@ -453,6 +499,14 @@ func set_serverinfo(uuid: String) -> void:
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
 	var object_data = event["data"]["object_data"]
+
+	if object_data.has("parent_id"):
+		if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
+			# store pending message
+			pending_messages_generic_objects_parenting.append(event)
+			print("Pending message for object %s because parent_id %s not found yet" % [event["data"]["object_uuid"], object_data["parent_id"]])
+			return
+
 	var prop_scene: PackedScene
 	if props_scene.has(object_data["scenename"]):
 		prop_scene = props_scene[object_data["scenename"]]
@@ -492,12 +546,47 @@ func create_generic_object(event: Dictionary) -> void:
 	if not props_list.has(event["data"]["object_type"]):
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
-	spawnable_prop_instance.set_physics_process(true)
+
+	# check if position in zone, if not, freeze it
+	var pos = spawnable_prop_instance.global_position
+	if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
+		#  we are out of zone, keep it frozen
+		spawnable_prop_instance.set_physics_process(false)
+		if is_instance_of(spawnable_prop_instance, RigidBody3D):
+			spawnable_prop_instance.freeze = true
+	else:
+		spawnable_prop_instance.set_physics_process(true)
+
+	for pending_message in pending_messages_player_parenting.duplicate():
+		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
+			print(
+				"Processing pending message for player %s now that parent_id %s is available" % [
+					event["data"]["object_uuid"],
+					pending_message["data"]["object_data"]["parent_id"]
+				]
+			)
+			pending_messages_player_parenting.erase(pending_message)
+			create_player(pending_message)
+
+	# generic object created, now process pending messages for generic objects waiting for this generic object as parent
+	for pending_message in pending_messages_generic_objects_parenting.duplicate():
+		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
+			print(
+				"Processing pending message for generic object %s now that parent_id %s is available" % [
+					pending_message["data"]["object_uuid"],
+					pending_message["data"]["object_data"]["parent_id"]
+				]
+			)
+			pending_messages_generic_objects_parenting.erase(pending_message)
+			create_generic_object(pending_message)
 
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
 			return props_list[proptype][parent_id]
+	for player_id in players_list.keys():
+		if player_id == parent_id:
+			return players_list[player_id]
 	return null
 
 func _on_player_update(
@@ -512,24 +601,45 @@ func _on_player_update(
 	}
 	ServerNetwork.send_message(message, "player_update")
 
-func freeze_object(event: Dictionary) -> void:
+func freeze_object(event: Dictionary, append = true) -> bool:
 	# we will freeze scenes objects
 	var object = event["data"]
 	if object["object_type"] == "planet":
 		if props_list["planets"].has(object["object_uuid"]):
 			var planet = props_list["planets"][object["object_uuid"]]
 			planet.set_physics_process(false)
+		else:
+			if append:
+				pending_freeze_objects.append(event)
+			else:
+				return false
 	if object["object_type"] == "player":
 		if players_list.has(object["object_uuid"]):
 			var player = players_list[object["object_uuid"]]
-			players_list.erase(event["object_id"])
+			players_list.erase(object["object_uuid"])
 			player.queue_free()
+		else:
+			if append:
+				pending_freeze_objects.append(event)
+			else:
+				return false
 	else:
 		# other props
+		var found = false
 		for proptype in props_list.keys():
 			if props_list[proptype].has(object["object_uuid"]):
 				var prop = props_list[proptype][object["object_uuid"]]
 				prop.set_physics_process(false)
+				if is_instance_of(prop, RigidBody3D):
+					prop.freeze = true
+				found = true
+				break
+		if not found:
+			if append:
+				pending_freeze_objects.append(event)
+			else:
+				return false
+	return true
 
 func manage_zone(event: Dictionary) -> void:
 	var zone_data = event["data"]
@@ -541,3 +651,23 @@ func manage_zone(event: Dictionary) -> void:
 	server_zone["z_end"] = zone_data["max_z"]
 
 	set_serverinfo(event["server_uuid"])
+
+func _check_out_of_zone():
+	# check players position
+	for values in players_newposition.values():
+		if players_list.has(values["player_id"]):
+			var pos = players_list[values["player_id"]].global_position
+			if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
+				print("Player %s is out of zone at position %s" % [values["player_id"], pos])
+				# prepare a message for transfert player to another server
+				var message = {
+					"namespace": "players",
+					"event": "out_of_zone",
+					"amessagenb": 0,
+					"data": values["player_id"]
+				}
+				ServerNetwork.send_message(message, "transfer_player_out_of_zone")
+				# we delete it from this server to prevent send too many time the same message
+				var player = players_list[values["player_id"]]
+				players_list.erase(values["player_id"])
+				player.queue_free()

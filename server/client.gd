@@ -188,7 +188,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("< Client - Got text data from server: %s" % packet_text)
+				# print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
@@ -342,7 +342,7 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 			"uuid": player_entity.client_uuid
 		},
 	})
-	print("Client action move to server: %s" % message)
+	# print("Client action move to server: %s" % message)
 
 	socket.send_text(message)
 	network_events_sent += 1
@@ -744,7 +744,7 @@ func delete_player(event: Dictionary) -> void:
 		print("Player to delete %s not found." % event)
 
 func player_update(message: Dictionary) -> void:
-	print("[client] Player update: %s" % message)
+	# print("[client] Player update: %s" % message)
 	if int(message["channel"]) == 0:
 		var uuid = message["object_id"]
 		if players_list.has(uuid):

@@ -62,7 +62,7 @@ func _process(_delta: float) -> void:
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("SERVER - Received packet: %s" % [packet_text])
+				#print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					dispatch_horizon_message(message)
@@ -111,18 +111,21 @@ func dispatch_horizon_message(message: Dictionary):
 						NetworkOrchestrator.network_agent.create_generic_object(message)
 			"initial_object":
 				# force to pause all the objects while I load all
-				get_tree().paused = true
+				# get_tree().paused = true
 				match message["data"]["object_type"]:
 					"planet":
 						# spawn planet
 						NetworkOrchestrator.network_agent.create_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
+					"star":
+						print("Star object not yet managed")
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
 			"initial_object_end":
 				#  Ok let's go, unpause to begin simulation
-				get_tree().paused = false
+				# get_tree().paused = false
+				print("All initial objects loaded, starting simulation.")
 			"freeze_object":
 				# freeze object in place (in case server split)
 				NetworkOrchestrator.network_agent.freeze_object(message)
@@ -142,7 +145,7 @@ func dispatch_horizon_message(message: Dictionary):
 func send_message(message: Dictionary, message_type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		if not _devmode_mapping_send(message, message_type):
-			print("server send message: ", message)
+			#print("server send message: ", message)
 			var error = peer.send_text(JSON.stringify(message))
 			if error != OK:
 				printerr("Failure send message in websocket!")

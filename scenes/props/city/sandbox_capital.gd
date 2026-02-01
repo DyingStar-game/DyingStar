@@ -1,4 +1,4 @@
-extends Node3D
+extends RigidBody3D
 
 signal hs_server_prop_update
 signal hs_server_prop_delete

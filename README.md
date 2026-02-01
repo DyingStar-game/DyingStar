@@ -16,3 +16,10 @@
 - server: Server only script/scenes
 - test: Unit tests
 - ui: UI Scenes
+
+
+## Build docker image
+
+```sh
+docker build -f .docker/dockerfile -t godotserver .
+```

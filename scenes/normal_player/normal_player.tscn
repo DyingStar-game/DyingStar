@@ -108,7 +108,6 @@ mouse_filter = 2
 script = ExtResource("3_kcm5r")
 
 [node name="Debug" type="Control" parent="UserInterface"]
-visible = false
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
@@ -446,10 +445,13 @@ transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.46
 visible = false
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/universe_players" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_fps" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbplayers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbobjects" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbscenes" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/serverbox_coordinates" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_fps" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_nbplayers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_nbobjects" method="_on_normal_player_display_debug"]
@@ -457,8 +459,5 @@ visible = false
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_videomem" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_received" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_sent" method="_on_normal_player_display_debug"]
-[connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
-[connection signal="display_debug" from="." to="UserInterface/Debug/universe_players" method="_on_normal_player_display_debug"]
-[connection signal="display_debug" from="." to="UserInterface/Debug/serverbox_coordinates" method="_on_normal_player_display_debug"]
 [connection signal="area_entered" from="AreaDetector" to="." method="_on_area_detector_area_entered"]
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]
