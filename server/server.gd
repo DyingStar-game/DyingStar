@@ -316,7 +316,8 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		# Prevent write over reparent (because reparent will not sent to client)
 		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
 			return
-		players_newposition[client_uuid] = {
+
+		var prep = {
 			"player_id": client_uuid,
 			"pos": {
 				"x": position[0],
@@ -331,9 +332,15 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		}
 
 		if reparent_uuid != null:
-			players_newposition[client_uuid]["reparent"] = reparent_uuid
+			prep["reparent"] = reparent_uuid
 		players_list_last_movement[client_uuid] = position
 		players_list_last_rotation[client_uuid] = rotation
+		if _check_out_of_zone(client_uuid):
+			prep["out_of_zone"] = serverinfo_uuid
+			var player = players_list[client_uuid]
+			players_list.erase(client_uuid)
+			player.queue_free()
+		players_newposition[client_uuid] = prep
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -348,7 +355,6 @@ func send_players_newposition_to_horizon():
 	}
 	# print("[server] Send players newposition to horizon")
 	ServerNetwork.send_message(message, "player_position")
-	_check_out_of_zone()
 	players_newposition.clear()
 
 func _on_prop_update(
@@ -652,22 +658,12 @@ func manage_zone(event: Dictionary) -> void:
 
 	set_serverinfo(event["server_uuid"])
 
-func _check_out_of_zone():
+func _check_out_of_zone(player_uuid: String = "") -> bool:
 	# check players position
-	for values in players_newposition.values():
-		if players_list.has(values["player_id"]):
-			var pos = players_list[values["player_id"]].global_position
-			if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
-				print("Player %s is out of zone at position %s" % [values["player_id"], pos])
-				# prepare a message for transfert player to another server
-				var message = {
-					"namespace": "players",
-					"event": "out_of_zone",
-					"amessagenb": 0,
-					"data": values["player_id"]
-				}
-				ServerNetwork.send_message(message, "transfer_player_out_of_zone")
-				# we delete it from this server to prevent send too many time the same message
-				var player = players_list[values["player_id"]]
-				players_list.erase(values["player_id"])
-				player.queue_free()
+	if players_list.has(player_uuid):
+		#print("go...")
+		var pos = players_list[player_uuid].global_position
+		if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
+			print("Player %s is out of zone at position %s" % [player_uuid, pos])
+			return true
+	return false
