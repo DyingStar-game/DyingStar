@@ -56,13 +56,13 @@ func align_with_y(xform: Transform3D, new_y: Vector3) -> Transform3D:
 
 func _process(_delta: float) -> void:
 	var camera: Camera3D
-	if OS.has_feature("editor"):
-		if Engine.is_editor_hint():
-			camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
-			players_ids = ["editor"]
-			focus_positions = [camera.global_position + -camera.global_basis.z * 1]
+	# if OS.has_feature("editor"):
+	# 	if Engine.is_editor_hint():
+	# 		camera = EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
+	# 		players_ids = ["editor"]
+	# 		focus_positions = [camera.global_position + -camera.global_basis.z * 1]
 
-			return
+	# 		return
 
 	if GameOrchestrator.is_server():
 		focus_positions = []

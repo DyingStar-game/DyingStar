@@ -59,6 +59,7 @@ theme_override_constants/separation = 10
 [node name="UserName" type="LineEdit" parent="FormPlacer/FormContainer"]
 layout_mode = 2
 size_flags_vertical = 10
+tooltip_text = "5 characters minimum"
 theme_override_colors/font_placeholder_color = Color(1, 0, 0, 1)
 theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
@@ -74,12 +75,14 @@ size_flags_vertical = 2
 theme_override_constants/separation = 10
 
 [node name="OnlineButton" type="Button" parent="FormPlacer/FormContainer/ButtonContainer"]
+unique_name_in_owner = true
 clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 theme_override_fonts/font = ExtResource("3_rpukb")
 theme_override_font_sizes/font_size = 24
+disabled = true
 text = "CONNECT"
 
 [node name="HTTPRequest" type="HTTPRequest" parent="."]

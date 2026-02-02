@@ -94,6 +94,7 @@ var props_scene: Dictionary = {
 var debug_message_number: int = 0
 
 var serverinfo_uuid: String = ""
+var serverinfo_name: String = ""
 
 # on server, Horizon messages can arrives in not right order when have parent_id for players
 # so we store the message in this case in the goal to process them later
@@ -657,6 +658,7 @@ func manage_zone(event: Dictionary) -> void:
 	server_zone["z_end"] = zone_data["max_z"]
 
 	set_serverinfo(event["server_uuid"])
+	serverinfo_name = event["server_name"]
 
 func _check_out_of_zone(player_uuid: String = "") -> bool:
 	# check players position

@@ -9,6 +9,7 @@ signal set_gameserver_number_scenes(number_scenes_server)
 signal set_universe_servers(number_servers)
 signal set_universe_players(number_players)
 signal set_gameserver_coordinates(coordinates)
+signal set_gameserver_name(name)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 

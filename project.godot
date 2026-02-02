@@ -31,7 +31,6 @@ NetworkOrchestrator="*res://scenes/globals/network_orchestrator.gd"
 uuid="*res://addons/uuid/uuid.gd"
 Endtoend="*res://scenes/globals/endtoend.gd"
 ServerNetwork="*res://server/server_network.gd"
-WwiseRuntimeManager="*res://addons/Wwise/runtime/wwise_runtime_manager.gd"
 
 [debug]
 

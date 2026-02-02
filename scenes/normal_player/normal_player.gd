@@ -155,6 +155,9 @@ func _ready() -> void:
 
 		active = true
 
+		display_debug.emit(true)
+		_display_debug = true
+
 		$UserInterface/LoadingScreen.hide()
 	else:
 		position = spawn_position

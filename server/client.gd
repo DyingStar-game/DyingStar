@@ -705,6 +705,8 @@ func update_generic_object(event: Dictionary) -> void:
 				NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["godotserver"]["scenes_number"])
 			if event["data"]["godotserver"].has("zone"):
 				NetworkOrchestrator.set_gameserver_coordinates.emit(event["data"]["godotserver"]["zone"])
+			if event["data"]["godotserver"].has("name"):
+				NetworkOrchestrator.set_gameserver_name.emit(event["data"]["godotserver"]["name"])
 		if event["data"].has("universe"):
 			if event["data"]["universe"].has("godotservers_number"):
 				NetworkOrchestrator.set_universe_servers.emit(event["data"]["universe"]["godotservers_number"])
