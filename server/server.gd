@@ -23,6 +23,7 @@ var max_players_allowed = 40
 var players_list = {}
 var players_list_last_movement = {}
 var players_list_last_rotation = {}
+var players_list_creationdate = {}
 var players_list_temp_by_id = {}
 var players_list_currently_in_transfert = {}
 var changing_zone = false
@@ -103,6 +104,8 @@ var pending_messages_player_parenting: Array[Dictionary] = []
 var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 var pending_freeze_objects: Array[Dictionary] = []
 var check_pending_objects_timer: int = 0
+
+var check_out_of_zone_after_split:int = 0
 
 
 func _enter_tree() -> void:
@@ -470,6 +473,7 @@ func create_player(event: Dictionary) -> void:
 		return
 
 	# print("Player data received: %s" % player_data)
+	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 5000
 
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
@@ -499,6 +503,7 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
+	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 
 func set_serverinfo(uuid: String) -> void:
 	serverinfo_uuid = uuid
@@ -659,13 +664,22 @@ func manage_zone(event: Dictionary) -> void:
 
 	set_serverinfo(event["server_uuid"])
 	serverinfo_name = event["server_name"]
+	check_out_of_zone_after_split = Time.get_ticks_msec() + 5000
 
 func _check_out_of_zone(player_uuid: String = "") -> bool:
+	if Time.get_ticks_msec() < check_out_of_zone_after_split:
+		return false
 	# check players position
 	if players_list.has(player_uuid):
+		if not players_list_creationdate.has(player_uuid):
+			return false
+		if Time.get_ticks_msec() < players_list_creationdate[player_uuid]:
+			return false
 		#print("go...")
 		var pos = players_list[player_uuid].global_position
-		if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
-			print("Player %s is out of zone at position %s" % [player_uuid, pos])
+		var magicnumber = 0.400
+		if pos[0] < (server_zone["x_start"] - magicnumber) or pos[0] > (server_zone["x_end"] + magicnumber) or pos[1] < (server_zone["y_start"] - magicnumber) or pos[1] > (server_zone["y_end"] + magicnumber) or pos[2] < (server_zone["z_start"] - magicnumber) or pos[2] > (server_zone["z_end"] + magicnumber):
+			print("====== Player %s is out of zone at position %s" % [player_uuid, pos])
+			print(server_zone)
 			return true
 	return false
