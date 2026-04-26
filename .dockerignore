@@ -1,5 +1,7 @@
 # Exclude docker folder from build context
 .docker/
+# Re-include the runtime entrypoint wrapper (used by the runtime stage CMD).
+!.docker/run-server.sh
 
 # Exclude git folder
 .git/
