@@ -872,6 +872,14 @@ func _on_player_update(
 	}
 	ServerNetwork.send_message(message, "player_update")
 
+func remove_player(event: Dictionary) -> void:
+	var player_uuid = event["data"]["object_uuid"]
+	if players_list.has(player_uuid):
+		var player = players_list[player_uuid]
+		print("player has quit the game: %s" % player_uuid)
+		players_list.erase(player_uuid)
+		player.queue_free()
+
 func freeze_object(event: Dictionary, append = true) -> bool:
 	# we will freeze scenes objects
 	print("Freeze object: %s" % event)

@@ -135,6 +135,9 @@ func dispatch_horizon_message(message: Dictionary):
 			"update_biome":
 				# Terrain biome update (cave, road, etc.) — rebuild affected chunks
 				NetworkOrchestrator.network_agent.update_planet_biome(message)
+			"remove_player":
+				NetworkOrchestrator.network_agent.remove_player(message)
+
 
 	elif message['namespace'] == "player":
 		match message['event']:
