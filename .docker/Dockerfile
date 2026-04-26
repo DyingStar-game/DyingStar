@@ -101,6 +101,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libicu76 \
         libtbbmalloc2 \
         dotnet-runtime-8.0 \
+        gdb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -110,6 +111,16 @@ COPY --from=builder /out/ .
 # Avoids duplicating 10+ GiB across two layers (COPY + mv).
 COPY --from=builder /cache/ /root/.local/share/godot/app_userdata/DyingStar/chunk_cache/
 
-RUN chmod +x dyingstar_server.x86_64 && ls -la /app/
+# Entrypoint wrapper: runs the server under gdb so any crash (SIGSEGV/139)
+# prints a full backtrace of all threads to stdout instead of dying silently.
+# Set DEBUG_GDB=0 in the container env to bypass gdb (production default).
+COPY .docker/run-server.sh /app/run-server.sh
+RUN chmod +x dyingstar_server.x86_64 /app/run-server.sh && ls -la /app/
 
-CMD ["./dyingstar_server.x86_64"]
+# .NET diagnostics: enable mini-dumps on managed crashes (written to /tmp).
+ENV DOTNET_DbgEnableMiniDump=1 \
+    DOTNET_DbgMiniDumpType=2 \
+    DOTNET_DbgMiniDumpName=/tmp/coredump.%d.%t \
+    DOTNET_EnableDiagnostics=1
+
+CMD ["/app/run-server.sh"]
