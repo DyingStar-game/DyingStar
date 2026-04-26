@@ -87,11 +87,20 @@ RUN /godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSI
 ############################################
 FROM debian:trixie-slim
 
+# .NET runtime is required at runtime: the Godot Mono binary loads the CLR on
+# startup to execute C# assemblies. Without it the process crashes (SIGSEGV/139).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libstdc++6 \
-    libicu76 \
+    wget \
     ca-certificates \
-    libtbbmalloc2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb \
+    && dpkg -i packages-microsoft-prod.deb \
+    && rm packages-microsoft-prod.deb \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        libstdc++6 \
+        libicu76 \
+        libtbbmalloc2 \
+        dotnet-runtime-8.0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
