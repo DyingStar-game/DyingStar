@@ -1,0 +1,17 @@
+[configuration]
+entry_symbol = "livekit_library_init"
+compatibility_minimum = "4.6"
+
+[libraries]
+linux.x86_64 = "res://addons/godot-livekit/bin/libgodot-livekit.linux.x86_64.so"
+windows.x86_64 = "res://addons/godot-livekit/bin/libgodot-livekit.windows.x86_64.dll"
+;macos.arm64 = "res://addons/godot-livekit/bin/libgodot-livekit.macos.arm64.dylib"
+;macos.x86_64 = "res://addons/godot-livekit/bin/libgodot-livekit.macos.x86_64.dylib"
+;android.arm64 = "res://addons/godot-livekit/bin/libgodot-livekit.android.arm64.so"
+
+[dependencies]
+linux.x86_64 = {"res://addons/godot-livekit/bin/liblivekit_ffi.so": "", "res://addons/godot-livekit/bin/liblivekit.so": ""}
+windows.x86_64 = {"res://addons/godot-livekit/bin/livekit_ffi.dll": "", "res://addons/godot-livekit/bin/livekit.dll": ""}
+;macos.arm64 = {"res://addons/godot-livekit/bin/macos-arm64/liblivekit_ffi.dylib": "", "res://addons/godot-livekit/bin/macos-arm64/liblivekit.dylib": ""}
+;macos.x86_64 = {"res://addons/godot-livekit/bin/macos-x86_64/liblivekit_ffi.dylib": "", "res://addons/godot-livekit/bin/macos-x86_64/liblivekit.dylib": ""}
+;android.arm64 = {"res://addons/godot-livekit/bin/android-arm64/liblivekit_ffi.so": "", "res://addons/godot-livekit/bin/android-arm64/liblivekit.so": ""}

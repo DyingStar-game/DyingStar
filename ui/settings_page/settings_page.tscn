@@ -1,12 +1,13 @@
 [gd_scene format=3 uid="uid://b0ejqlhiwo0gb"]
 
-[ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_84msf"]
 [ext_resource type="Script" uid="uid://c2wb57c2srlse" path="res://ui/settings_page/settings_page.gd" id="1_tirmb"]
-[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="2_tirmb"]
+[ext_resource type="Texture2D" uid="uid://f3jn1wljcogi" path="res://ui/background_little_title.png" id="2_84msf"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_84msf"]
+[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="4_tirmb"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_ug86k"]
-font = ExtResource("2_tirmb")
-font_size = 100
+font = ExtResource("3_84msf")
+font_size = 48
 
 [node name="SettingsPage" type="CanvasLayer" unique_id=834952402]
 layer = 5
@@ -20,14 +21,14 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Background" type="TextureRect" parent="Control" unique_id=123250189]
+[node name="Background" type="TextureRect" parent="Control" unique_id=681003896]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-texture = ExtResource("1_84msf")
+texture = ExtResource("2_84msf")
 expand_mode = 1
 stretch_mode = 6
 
@@ -154,6 +155,10 @@ size_flags_horizontal = 3
 stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer" unique_id=345904400]
+transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1476, 939)
+size = Vector2i(1476, 968)
 render_target_update_mode = 4
+
+[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("4_tirmb")]
+root_path = NodePath("../Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer")

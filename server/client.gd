@@ -1,6 +1,7 @@
 extends Node
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
 var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -125,6 +126,34 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
 
+	_setup_microphone_to_record_bus()
+
+
+func _setup_microphone_to_record_bus() -> void:
+	# Make sure audio input is allowed (needed for AudioStreamMicrophone).
+	if not ProjectSettings.get_setting("audio/driver/enable_input", false):
+		ProjectSettings.set_setting("audio/driver/enable_input", true)
+		AudioServer.input_device = AudioServer.input_device # nudge the driver to re-init
+
+	# Ensure the "Record" bus exists.
+	var bus_idx := AudioServer.get_bus_index("Record")
+	if bus_idx < 0:
+		AudioServer.add_bus()
+		bus_idx = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(bus_idx, "Record")
+
+	# Spawn an AudioStreamPlayer routed to the Record bus playing the mic.
+	if has_node("MicrophoneInput"):
+		return
+	var mic_player := AudioStreamPlayer.new()
+	mic_player.name = "MicrophoneInput"
+	mic_player.stream = AudioStreamMicrophone.new()
+	mic_player.bus = "Record"
+	mic_player.autoplay = true
+	add_child(mic_player)
+	mic_player.play()
+
+
 func _load_client_ini_file() -> void:
 	var config_file := ConfigFile.new()
 	var err := config_file.load("client.ini")
@@ -188,7 +217,7 @@ func _process(_delta: float) -> void:
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
-				print("< Client - Got text data from server: %s" % packet_text)
+				# print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 
@@ -226,6 +255,17 @@ func _process(_delta: float) -> void:
 						delete_object(event)
 					else:
 						print("< Client - ERROR - Unknown object_type event: %s" % event["object_type"])
+				elif event.has("event_type"):
+					if event["event_type"]== 'livekit_token':
+						vocal_manage(event)
+					elif event["event_type"] == "livekit_subscribe":
+						vocal_subscribe_manage(event)
+						print("TODO")
+					elif event["event_type"] == "livekit_unsubscribe":
+						vocal_unsubscribe_manage(event)
+						print("TODO")
+					else:
+						print("< Client - ERROR - Unknown event_type: %s" % event["event_type"])
 				else:
 					print("< Client - ERROR - Unknown event format: %s" % packet_text)
 
@@ -796,3 +836,41 @@ func metric_get_network_events_sent():
 	var result = network_events_sent
 	network_events_sent = 0
 	return result
+
+func vocal_manage(event: Dictionary) -> void:
+	if get_node_or_null("LiveKitAudio") != null:
+		print("[livekit] Already connected, ignoring duplicate token")
+		return
+	# Message type:
+	# {
+	#   "event_type": "livekit_token",
+	#   "livekit_url": "ws://192.168.49.2:30188",
+	#   "room": "global_room",
+	#   "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAdWxsfQ.wzK7yErqGvFxZroIYXiy35cNaQ9R02gTpppk-hTLx5k"
+	# }
+	var livekit_node := LIVEKIT_SCRIPT.new()
+	livekit_node.name = "LiveKitAudio"
+	livekit_node.livekit_url = event["livekit_url"]
+	livekit_node.livekit_token = event["token"]
+	add_child(livekit_node)
+
+func vocal_subscribe_manage(event: Dictionary) -> void:
+	var lk: Node = get_node_or_null("LiveKitAudio")
+	if lk == null:
+		return
+	var uuid: String = event.get("participant_uuid", event.get("player_id", ""))
+	if uuid == "":
+		push_warning("[client] livekit_subscribe: missing participant_uuid")
+		return
+	lk.map_participant_to_player(event["participant_uuid"], event["player_id"])
+	lk.subscribe_participant(uuid)
+
+func vocal_unsubscribe_manage(event: Dictionary) -> void:
+	var lk: Node = get_node_or_null("LiveKitAudio")
+	if lk == null:
+		return
+	var uuid: String = event.get("participant_uuid", event.get("player_id", ""))
+	if uuid == "":
+		push_warning("[client] livekit_unsubscribe: missing participant_uuid")
+		return
+	lk.unsubscribe_participant(uuid)

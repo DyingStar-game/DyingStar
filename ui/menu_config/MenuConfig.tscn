@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://xy85b8xbi3ak" path="res://ui/menu_config/menu_config.gd" id="1_7wffm"]
 [ext_resource type="PackedScene" uid="uid://c8lapfbcseu04" path="res://ui/menu_config/input_button.tscn" id="1_ndumg"]
+[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="3_c8v1g"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7wffm"]
 
@@ -129,6 +130,9 @@ size_flags_horizontal = 4
 size_flags_vertical = 4
 theme_override_font_sizes/font_size = 24
 text = "%%RETURN"
+
+[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("3_c8v1g")]
+root_path = NodePath("../PanelContainer")
 
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/ResetButton" to="." method="_on_reset_button_pressed"]
 [connection signal="text_changed" from="PanelContainer/MarginContainer/VBoxContainer/SearchBar" to="." method="_on_text_edit_text_changed"]

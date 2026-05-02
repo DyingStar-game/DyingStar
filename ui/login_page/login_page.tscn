@@ -5,6 +5,7 @@
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_rpukb"]
 [ext_resource type="Script" uid="uid://buay8m0nclbm8" path="res://tools/localization/localization_manager.gd" id="5_rpukb"]
 [ext_resource type="Texture2D" uid="uid://blclfag4x3eho" path="res://assets/textures/Localizations/uk_flag.jpg" id="6_11evp"]
+[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="6_fk6tm"]
 
 [node name="LoginUI" type="Control" unique_id=1482696383]
 layout_mode = 3
@@ -117,6 +118,9 @@ popup/item_1/text = "fr"
 popup/item_1/id = 1
 popup/item_2/text = "es"
 popup/item_2/id = 2
+
+[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("6_fk6tm")]
+root_path = NodePath("../FormPlacer/FormContainer/ButtonContainer")
 
 [connection signal="ready" from="." to="." method="_on_ready"]
 [connection signal="pressed" from="FormPlacer/FormContainer/ButtonContainer/OnlineButton" to="." method="_on_button_pressed" binds= ["Online"]]

@@ -1,11 +1,16 @@
 [gd_scene format=3 uid="uid://0fqkqlaa0osv"]
 
 [ext_resource type="Script" uid="uid://drnvfkk8x2qh5" path="res://ui/settings_page/audio_page/audio_settings_page.gd" id="1_aa43r"]
-[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="1_thild"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_aa43r"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_aa43r"]
-font = ExtResource("1_thild")
-font_size = 100
+font = ExtResource("2_aa43r")
+font_size = 28
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aa43r"]
+bg_color = Color(0.9843137, 0.72156864, 0.105882354, 1)
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_aa43r"]
 
 [node name="AudioSettingsPage" type="Control" unique_id=1838798172]
 layout_mode = 3
@@ -16,14 +21,14 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_aa43r")
 
-[node name="ColorRect" type="ColorRect" parent="." unique_id=479680099]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1237944970]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.218077, 0.254242, 0.417011, 1)
+color = Color(0.18, 0.18, 0.18, 0.5647059)
 
 [node name="MarginContainer" type="MarginContainer" parent="." unique_id=1086010865]
 layout_mode = 1
@@ -54,6 +59,8 @@ custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
+theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -71,6 +78,8 @@ custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
+theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -88,6 +97,8 @@ custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
+theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -105,5 +116,107 @@ custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
+theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
+
+[node name="Microphone" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1571395218]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone" unique_id=667225259]
+layout_mode = 2
+text = "Microphone (device)"
+label_settings = SubResource("LabelSettings_aa43r")
+
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Microphone" unique_id=1342693969]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_focus_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_normal_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_focus_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0, 0, 0, 1)
+theme_override_fonts/font = ExtResource("2_aa43r")
+theme_override_styles/normal = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/hover = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/focus = SubResource("StyleBoxFlat_aa43r")
+alignment = 1
+fit_to_longest_item = false
+
+[node name="Speaker" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1912545109]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker" unique_id=107308438]
+layout_mode = 2
+text = "Speaker (device)"
+label_settings = SubResource("LabelSettings_aa43r")
+
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Speaker" unique_id=1219883642]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_focus_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_normal_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_focus_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_pressed_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0, 0, 0, 1)
+theme_override_fonts/font = ExtResource("2_aa43r")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/pressed_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/hover = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/hover_mirrored = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/focus = SubResource("StyleBoxFlat_aa43r")
+alignment = 1
+fit_to_longest_item = false
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=798906512]
+layout_mode = 2
+
+[node name="Microphone_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1651509629]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=1472948065]
+layout_mode = 2
+text = "Testing microphone"
+label_settings = SubResource("LabelSettings_aa43r")
+
+[node name="Button" type="Button" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=2050494609]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_aa43r")
+theme_override_font_sizes/font_size = 28
+text = "Test"
+
+[node name="Speaker_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=155813879]
+visible = false
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker_testing" unique_id=1006306348]
+layout_mode = 2
+text = "Testing speaker"
+label_settings = SubResource("LabelSettings_aa43r")
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1159019645]
+stream = SubResource("AudioStreamMicrophone_aa43r")
+
+[connection signal="pressed" from="MarginContainer/VBoxContainer/Microphone_testing/Button" to="." method="_on_button_pressed"]

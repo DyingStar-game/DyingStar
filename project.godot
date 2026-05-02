@@ -21,7 +21,8 @@ boot_splash/minimum_display_time=1000
 
 [audio]
 
-buses/default_bus_layout=""
+buses/default_bus_layout="uid://cd7poak5pgtx6"
+driver/enable_input=true
 
 [autoload]
 
@@ -60,7 +61,7 @@ import/use_multiple_threads=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/extremely_fast_atmosphere/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/uuid/plugin.cfg")
+enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/extremely_fast_atmosphere/plugin.cfg", "res://addons/godot-livekit/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/uuid/plugin.cfg")
 
 [file_customization]
 

@@ -30,6 +30,8 @@
 [ext_resource type="Script" uid="uid://bb431neb3d2jd" path="res://scenes/normal_player/debug_client_messages_sent.gd" id="15_x3gq6"]
 [ext_resource type="Script" uid="uid://dsikncjeuwf73" path="res://scenes/normal_player/debug_serverbox_coordinates.gd" id="17_5csap"]
 [ext_resource type="Script" uid="uid://bfpote331tkhp" path="res://scenes/normal_player/debug_server_name.gd" id="18_e837o"]
+[ext_resource type="Texture2D" uid="uid://ndwy7fky4xxu" path="res://ui/player_interface/volume-high-solid-full.svg" id="27_akued"]
+[ext_resource type="Texture2D" uid="uid://crlbs5i36jfp" path="res://ui/player_interface/microphone-solid-full.svg" id="28_2sxo3"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -42,6 +44,18 @@ size = Vector3(0.53418, 1.39465, 0.44873)
 font_size = 24
 outline_size = 2
 outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="InputEventKey" id="InputEventKey_akued"]
+keycode = 78
+
+[sub_resource type="Shortcut" id="Shortcut_2sxo3"]
+events = [SubResource("InputEventKey_akued")]
+
+[sub_resource type="InputEventKey" id="InputEventKey_2sxo3"]
+keycode = 77
+
+[sub_resource type="Shortcut" id="Shortcut_k55v7"]
+events = [SubResource("InputEventKey_2sxo3")]
 
 [node name="NormalPlayer" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
 script = ExtResource("1_ll2l8")
@@ -441,6 +455,32 @@ text = "Interact"
 label_settings = SubResource("LabelSettings_kcm5r")
 horizontal_alignment = 1
 
+[node name="Control" type="Control" parent="UserInterface/HUD" unique_id=1793293513]
+anchors_preset = 0
+offset_left = 22.0
+offset_top = 980.0
+offset_right = 323.0
+offset_bottom = 1068.0
+
+[node name="AudioContainer" type="GridContainer" parent="UserInterface/HUD/Control" unique_id=281237977]
+layout_mode = 0
+offset_left = 15.0
+offset_top = 14.0
+offset_right = 216.0
+offset_bottom = 71.0
+scale = Vector2(0.1, 0.1)
+columns = 2
+
+[node name="ButtonSpeaker" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1207755428]
+layout_mode = 2
+shortcut = SubResource("Shortcut_2sxo3")
+icon = ExtResource("27_akued")
+
+[node name="ButtonMicrophone" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1572359195]
+layout_mode = 2
+shortcut = SubResource("Shortcut_k55v7")
+icon = ExtResource("28_2sxo3")
+
 [node name="DirectChat" parent="UserInterface" unique_id=1650237508 instance=ExtResource("8_ikqc6")]
 visible = false
 layout_mode = 1
@@ -474,3 +514,5 @@ visible = false
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_sent" method="_on_normal_player_display_debug"]
 [connection signal="area_entered" from="AreaDetector" to="." method="_on_area_detector_area_entered"]
 [connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]
+[connection signal="pressed" from="UserInterface/HUD/Control/AudioContainer/ButtonSpeaker" to="UserInterface" method="_on_button_speaker_pressed"]
+[connection signal="pressed" from="UserInterface/HUD/Control/AudioContainer/ButtonMicrophone" to="UserInterface" method="_on_button_microphone_pressed"]
