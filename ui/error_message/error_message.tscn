@@ -1,8 +1,9 @@
 [gd_scene format=3 uid="uid://e3f2wl711yep"]
 
 [ext_resource type="Script" uid="uid://dpe7pqce1r38d" path="res://ui/error_message/error_message.gd" id="1_5vj24"]
-[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="1_cusoq"]
 [ext_resource type="Texture2D" uid="uid://disurq6a4omve" path="res://assets/textures/explosion-rays.svg" id="2_05o8w"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_5vj24"]
+[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="4_cfbt7"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_05o8w"]
 bg_color = Color(0.25, 0.0525, 0.0525, 0.937255)
@@ -14,12 +15,12 @@ corner_radius_bottom_right = 20
 corner_detail = 1
 
 [sub_resource type="LabelSettings" id="LabelSettings_2xb8d"]
-font = ExtResource("1_cusoq")
-font_size = 47
+font = ExtResource("2_5vj24")
+font_size = 42
 
 [sub_resource type="LabelSettings" id="LabelSettings_rlngi"]
-font = ExtResource("1_cusoq")
-font_size = 24
+font = ExtResource("2_5vj24")
+font_size = 20
 font_color = Color(1, 1, 1, 0.701961)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5vj24"]
@@ -117,12 +118,15 @@ texture = ExtResource("2_05o8w")
 [node name="ExitBtn" type="Button" parent="ErrorMessage/VBox" unique_id=1625566814]
 layout_mode = 2
 size_flags_horizontal = 8
-theme_override_fonts/font = ExtResource("1_cusoq")
-theme_override_font_sizes/font_size = 24
+theme_override_fonts/font = ExtResource("2_5vj24")
+theme_override_font_sizes/font_size = 18
 theme_override_styles/normal = SubResource("StyleBoxFlat_5vj24")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_cfbt7")
 theme_override_styles/hover = SubResource("StyleBoxFlat_5vj24")
 theme_override_styles/focus = SubResource("StyleBoxFlat_cfbt7")
 text = "%%ERR_BACKTOMENU"
+
+[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("4_cfbt7")]
+root_path = NodePath("../ErrorMessage/VBox")
 
 [connection signal="pressed" from="ErrorMessage/VBox/ExitBtn" to="." method="_on_exit_btn_pressed"]

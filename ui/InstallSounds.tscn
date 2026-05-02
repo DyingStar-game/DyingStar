@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dp6jm5jmika20"]
+
+[ext_resource type="Script" uid="uid://dfevcaxhapycx" path="res://ui/install_sounds.gd" id="1_682o0"]
+
+[node name="InstallSounds" type="Node" unique_id=121904692]
+script = ExtResource("1_682o0")

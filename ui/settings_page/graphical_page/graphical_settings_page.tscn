@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://6ysukgsaga26"]
 
 [ext_resource type="Script" uid="uid://dxp1gnukx0qma" path="res://ui/settings_page/graphical_page/graphical_settings_page.gd" id="1_6drnw"]
-[ext_resource type="FontFile" uid="uid://gshjh75aeopi" path="res://assets/fonts/Iceland/Iceland-Regular.ttf" id="2_pcucv"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_pcucv"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_aqojs"]
 font = ExtResource("2_pcucv")
-font_size = 100
+font_size = 28
 
 [node name="GraphicalSettingsPage" type="Control" unique_id=8020892]
 layout_mode = 3
@@ -16,14 +16,14 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_6drnw")
 
-[node name="ColorRect" type="ColorRect" parent="." unique_id=1177542788]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1813485883]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.219608, 0.254902, 0.415686, 1)
+color = Color(0.18, 0.18, 0.18, 0.5647059)
 
 [node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=564827412]
 layout_mode = 1
@@ -56,15 +56,17 @@ text = "Monitor"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor" unique_id=352335905]
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+alignment = 1
 selected = 0
-item_count = 3
+item_count = 2
 popup/item_0/text = "Fullscreen"
 popup/item_0/id = 0
 popup/item_1/text = "Windowed"
 popup/item_1/id = 1
-popup/item_2/id = 2
 
 [node name="DisplayMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=968190861]
 layout_mode = 2
@@ -76,15 +78,17 @@ text = "Display Mode"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode" unique_id=1121426514]
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+alignment = 1
 selected = 0
-item_count = 3
+item_count = 2
 popup/item_0/text = "Fullscreen"
 popup/item_0/id = 0
 popup/item_1/text = "Windowed"
 popup/item_1/id = 1
-popup/item_2/id = 2
 
 [node name="ScreenResolution" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=112671082]
 layout_mode = 2
@@ -96,8 +100,11 @@ text = "Screen Resolution"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution" unique_id=115248095]
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+alignment = 1
 selected = 2
 item_count = 6
 popup/item_0/text = "640 x 480"
@@ -123,6 +130,8 @@ text = "V-Sync"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync" unique_id=2015412763]
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
 text = "On"

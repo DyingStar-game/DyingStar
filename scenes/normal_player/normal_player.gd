@@ -161,6 +161,7 @@ func _ready() -> void:
 		_display_debug = true
 
 		$UserInterface/LoadingScreen.hide()
+		GameOrchestrator.stop_menu_music()
 	else:
 		position = spawn_position
 		connect_area_detect()

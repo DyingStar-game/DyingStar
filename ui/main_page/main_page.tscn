@@ -3,10 +3,12 @@
 [ext_resource type="Script" uid="uid://1l14ge8hbbo1" path="res://ui/main_page/main_page.gd" id="1_o7ao7"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_n3f7d"]
+[ext_resource type="Texture2D" uid="uid://dyarfnpyedkh" path="res://ui/button.png" id="3_n4a6o"]
+[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="5_75xce"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_75xce"]
 font = ExtResource("3_n3f7d")
-font_size = 40
+font_size = 24
 
 [node name="MainPage" type="CanvasLayer" unique_id=1075883328]
 script = ExtResource("1_o7ao7")
@@ -42,6 +44,10 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
+[node name="Button2" type="Sprite2D" parent="Control" unique_id=1577520521]
+position = Vector2(960, 891)
+texture = ExtResource("3_n4a6o")
+
 [node name="Button" type="Button" parent="Control" unique_id=1722532473]
 layout_mode = 1
 anchors_preset = -1
@@ -49,10 +55,11 @@ anchor_left = 0.5
 anchor_top = 0.696
 anchor_right = 0.5
 anchor_bottom = 0.696
-offset_left = -72.0
-offset_top = 115.32000000000004
-offset_right = 79.0
-offset_bottom = 164.32000000000005
+offset_left = -98.0
+offset_top = 114.32000000000004
+offset_right = 98.0
+offset_bottom = 163.32000000000005
+theme_type_variation = &"FlatButton"
 
 [node name="Label" type="Label" parent="Control/Button" unique_id=2114345280]
 layout_mode = 1
@@ -106,5 +113,11 @@ size_flags_vertical = 0
 theme_override_fonts/font = ExtResource("3_n3f7d")
 theme_override_font_sizes/font_size = 32
 text = "%%MAINPAGE_ENTER"
+
+[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("5_75xce")]
+root_path = NodePath("../Control/VBoxContainer")
+
+[node name="InstallSounds2" parent="." unique_id=1024203266 instance=ExtResource("5_75xce")]
+root_path = NodePath("../Control")
 
 [connection signal="pressed" from="Control/VBoxContainer/EnterButton" to="." method="_on_button_pressed"]
