@@ -1,0 +1,196 @@
+name: Build & Deploy Client
+
+on:
+  push:
+    branches:
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+
+env:
+  GODOT_VERSION: 4.6.1
+
+jobs:
+  build:
+    name: Build ${{ matrix.os_name }} client
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: "Linux"
+            os_name: linux
+            build_dir: build/dyingstar_linux
+            output_file: build/dyingstar_linux/DyingStar.x86_64
+            artifact_name: build-linux
+          - preset: "Windows Desktop"
+            os_name: windows
+            build_dir: build/windows_client
+            output_file: build/windows_client/DyingStar.exe
+            artifact_name: build-windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute version info
+        id: version
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            VERSION="PullRequest"
+          else
+            VERSION="$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up .NET 8.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+
+      - name: Install Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          wget -q -O /tmp/godot.zip \
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64.zip"
+          unzip /tmp/godot.zip -d ~/godot
+          rm /tmp/godot.zip
+          chmod +x ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64
+
+      - name: Cache export templates
+        id: cache-templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-stable-mono-double
+
+      - name: Install export templates
+        if: steps.cache-templates.outputs.cache-hit != 'true'
+        run: |
+          wget -q -O /tmp/templates.tpz \
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_mono_export_templates.tpz"
+          unzip /tmp/templates.tpz -d /tmp/godot-templates
+          rm /tmp/templates.tpz
+          TEMPLATES_DIR="$HOME/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable.mono.double"
+          mkdir -p "$TEMPLATES_DIR"
+          mv /tmp/godot-templates/templates/* "$TEMPLATES_DIR/"
+          rm -rf /tmp/godot-templates
+
+      - name: Get current date for planet cache key
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache planet export data
+        id: cache-planet
+        uses: actions/cache@v4
+        with:
+          path: |
+            assets/qgis/export
+            assets/qgis/checksum.txt
+            assets/qgis/creationtime.txt
+          key: planet-export-${{ steps.date.outputs.date }}
+
+      - name: Download planet data
+        if: steps.cache-planet.outputs.cache-hit != 'true'
+        run: bash tools/download_planet_data.sh
+
+      - name: Create build output directory
+        run: mkdir -p ${{ matrix.build_dir }}
+
+      - name: Export ${{ matrix.os_name }} client
+        run: |
+          ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
+            --headless \
+            --path "$GITHUB_WORKSPACE" \
+            --verbose \
+            --export-release "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}"
+
+      - name: Write version.json
+        run: |
+          echo '{"version":"${{ steps.version.outputs.version }}","releaseDate":"${{ steps.version.outputs.release_date }}"}' \
+            > "${{ matrix.build_dir }}/version.json"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.build_dir }}/
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+
+  deploy-testing:
+    name: Deploy to testing server
+    needs: build
+    if: github.ref_name == 'develop' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: dist/linux
+
+      - name: Download windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows
+          path: dist/windows
+
+      - name: Create zip archives
+        run: |
+          (cd dist/linux  && zip -r "$GITHUB_WORKSPACE/DyingStar-linux-testing.zip"   .)
+          (cd dist/windows && zip -r "$GITHUB_WORKSPACE/DyingStar-windows-testing.zip" .)
+
+      - name: Deploy via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "DyingStar-linux-testing.zip,DyingStar-windows-testing.zip"
+          target: ${{ secrets.DEPLOY_PATH }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: dist/linux
+
+      - name: Download windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows
+          path: dist/windows
+
+      - name: Create zip archives
+        run: |
+          TAG="${{ github.ref_name }}"
+          (cd dist/linux  && zip -r "$GITHUB_WORKSPACE/DyingStar-linux-${TAG}.zip"   .)
+          (cd dist/windows && zip -r "$GITHUB_WORKSPACE/DyingStar-windows-${TAG}.zip" .)
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            DyingStar-linux-${{ github.ref_name }}.zip
+            DyingStar-windows-${{ github.ref_name }}.zip
