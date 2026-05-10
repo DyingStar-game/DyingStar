@@ -3,7 +3,7 @@ extends Node
 enum ChangeStateReturns {OK, ERROR, NO_CHANGE}
 
 enum NetworkRole {PLAYER, SERVER}
-enum GameStates {HOME_MENU, UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, TROLL, CONNEXION_ERROR}
+enum GameStates {UNIVERSE_MENU, GAME_MENU, PAUSE_MENU, PLAYING, SERVER_UNIVERS_CREATION, SERVER_PLAYING, TROLL, CONNEXION_ERROR}
 enum PlayingLevels {SYSTEM_SANDBOX}
 
 const MAX_USERNAME_LENGTH: int = 32
@@ -12,7 +12,6 @@ const MIN_USERNAME_LENGTH: int = 4
 const SCENE_TREE_EXTENDED_SCRIPT_PATH = preload("res://scenes/globals/scene_tree_extended.gd")
 
 const GAME_STATES_SCENES_PATHS: Dictionary = {
-	GameStates.HOME_MENU : "res://ui/login_page/login_page.tscn",
 	GameStates.UNIVERSE_MENU : "res://ui/main_page/main_page.tscn",
 	GameStates.GAME_MENU : "",
 	GameStates.PAUSE_MENU : "",
@@ -46,10 +45,6 @@ var distinguish_instances: Dictionary = {
 
 var univers_creation_entities: Dictionary = {}
 
-var login_player_name: String = "I am an idiot !" :
-	set(receveid_name):
-		if not receveid_name.strip_edges().is_empty() and receveid_name.length() >= MIN_USERNAME_LENGTH :
-			login_player_name = receveid_name.left(MAX_USERNAME_LENGTH)
 var requested_spawn_point: int = 0
 
 var _menu_music_player: AudioStreamPlayer = null
@@ -94,7 +89,7 @@ func _ready():
 		if OS.has_feature("devmode"):
 			change_game_state(GameStates.PLAYING)
 		else:
-			change_game_state(GameStates.HOME_MENU)
+			change_game_state(GameStates.UNIVERSE_MENU)
 
 func menu_music() -> void:
 	if _menu_music_fade_tween != null and _menu_music_fade_tween.is_valid():
@@ -175,9 +170,6 @@ func change_game_state(new_state) -> int:
 	var return_state = ChangeStateReturns.OK
 
 	match new_state:
-		GameStates.HOME_MENU:
-			current_state = new_state
-			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.HOME_MENU])
 		GameStates.SERVER_UNIVERS_CREATION:
 			current_state = new_state
 			NetworkOrchestrator.create_server()
@@ -221,7 +213,6 @@ func _on_scene_changed(changed_scene: Node) -> void:
 	if scene_path == GAME_STATES_SCENES_PATHS[GameStates.PLAYING]:
 		match current_network_role:
 			NetworkRole.SERVER:
-				login_player_name = "AlfredThaddeusCranePennyworth"
 				var server_instance =  NetworkOrchestrator.start_server(changed_scene)
 				server_instance.connect("populated_universe", _on_populated_universe)
 			NetworkRole.PLAYER:

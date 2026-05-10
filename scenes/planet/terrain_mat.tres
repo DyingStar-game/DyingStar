@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://degky8mc31ncp"]
 
-[ext_resource type="Shader" uid="uid://cqo8jlsmx8n7n" path="res://scenes/planet/terrain.gdshader" id="1_3iebd"]
+[ext_resource type="Shader" uid="uid://bn66xtcmwvd6x" path="res://scenes/planet/terrain.gdshader" id="1_3iebd"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_pwywj"]
 noise_type = 0

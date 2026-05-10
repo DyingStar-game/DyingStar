@@ -4,13 +4,13 @@
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="script_terrain"]
+[ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="script_debug_export"]
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("script_data")
 planet_name = "tarsis_4"
 atmosphere_height = 50000.0
 surface_gravity = 7.77
-has_ocean = true
 chunk_export_depth = 6
 terrain_material = ExtResource("6_0lykg")
 max_quadtree_depth = 13
@@ -23,3 +23,6 @@ planet_data = SubResource("PlanetData_tarsis4")
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("script_terrain")
 editor_preview_depth = 14
+
+[node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
+script = ExtResource("script_debug_export")

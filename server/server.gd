@@ -387,7 +387,10 @@ func player_move(message: Dictionary):
 func player_action(message: Dictionary):
 	if players_list.has(message["player_id"]):
 		var player = players_list[message["player_id"]]
-		player.server_action_received(message["data"])
+		if message.has("object_data"):
+			player.server_action_received(message["object_data"])
+		else:
+			player.server_action_received(message["data"])
 
 
 func _send_metrics():
@@ -637,6 +640,11 @@ func create_planet(event: Dictionary) -> void:
 				spawnable_planet_instance.planet_terrain.initial_chunks_ready.connect(
 					on_ready, CONNECT_ONE_SHOT))
 
+func update_planet(event: Dictionary) -> void:
+	if props_list["planets"].has(event["object_uuid"]):
+		var planet = props_list["planets"][event["object_uuid"]]
+		# TODO update on server the data
+
 
 ## Handle a biome update from Horizon.  Rebuilds collision shapes on the
 ## affected planet's chunks.
@@ -742,6 +750,10 @@ func create_player(event: Dictionary) -> void:
 		player_data["position"]["y"],
 		player_data["position"]["z"]
 	)
+	# Derive the surface-normal "up" from the spawn position so the player is
+	# oriented correctly on the planet surface, not stuck with global Vector3.UP.
+	if not spawned_entity_instance.position.is_zero_approx():
+		spawned_entity_instance.spawn_up = spawned_entity_instance.global_position.normalized()
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
@@ -850,6 +862,13 @@ func create_generic_object(event: Dictionary) -> void:
 			)
 			pending_messages_generic_objects_parenting.erase(pending_message)
 			create_generic_object(pending_message)
+
+func update_generic_object(event: Dictionary) -> void:
+	var type = event["object_type"]
+	if props_list[type].has(event["object_uuid"]):
+		var object = props_list[type][event["object_uuid"]]
+		# TODO update on server the data
+
 
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
