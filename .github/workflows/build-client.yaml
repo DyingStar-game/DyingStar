@@ -118,6 +118,16 @@ jobs:
             --verbose \
             --export-release "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}"
 
+      - name: Copy and configure client.ini
+        run: |
+          cp client.ini "${{ matrix.build_dir }}/client.ini"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            WS_URL="ws://server.dyingstar-game.space:7040"
+          else
+            WS_URL="ws://server-preprod.dyingstar-game.space:7040"
+          fi
+          sed -i "s|websocket_url=.*|websocket_url=\"${WS_URL}\"|" "${{ matrix.build_dir }}/client.ini"
+
       - name: Write version.json
         run: |
           echo '{"version":"${{ steps.version.outputs.version }}","releaseDate":"${{ steps.version.outputs.release_date }}"}' \
