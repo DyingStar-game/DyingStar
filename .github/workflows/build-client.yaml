@@ -169,9 +169,11 @@ jobs:
         run: unzip -p DyingStar-linux-testing.zip version.json > version.json
 
       - name: Deploy via SCP
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           install -m 600 /dev/null /tmp/deploy_key
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > /tmp/deploy_key
           scp -i /tmp/deploy_key \
             -o StrictHostKeyChecking=no \
             -o BatchMode=yes \
