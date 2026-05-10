@@ -163,13 +163,16 @@ jobs:
           (cd dist/linux  && zip -r "$GITHUB_WORKSPACE/DyingStar-linux-testing.zip"   .)
           (cd dist/windows && zip -r "$GITHUB_WORKSPACE/DyingStar-windows-testing.zip" .)
 
+      - name: Copy version.json for deploy
+        run: cp dist/linux/version.json version.json
+
       - name: Deploy via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USERNAME }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "DyingStar-linux-testing.zip,DyingStar-windows-testing.zip"
+          source: "DyingStar-linux-testing.zip,DyingStar-windows-testing.zip,version.json"
           target: ${{ secrets.DEPLOY_PATH }}
 
   release:
