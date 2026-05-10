@@ -51,4 +51,4 @@ func hide_message():
 
 func _on_exit_btn_pressed() -> void:
 	exited.emit()
-	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.HOME_MENU)
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)

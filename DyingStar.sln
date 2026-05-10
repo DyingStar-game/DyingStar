@@ -1,6 +1,6 @@
 ﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DyingStar", "DyingStar.csproj", "{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DyingStar", "DyingStar.csproj", "{C3D73ABE-C67A-403F-9FE3-17F831F251D6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -9,11 +9,11 @@ Global
 	ExportRelease|Any CPU = ExportRelease|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
-		{0997AA1A-1A8E-4EF2-A7E1-34B54A259241}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{C3D73ABE-C67A-403F-9FE3-17F831F251D6}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -109,6 +109,15 @@ func dispatch_horizon_message(message: Dictionary):
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
+			"update_prop":
+				match message["data"]["object_type"]:
+					"planet":
+						# spawn planet
+						NetworkOrchestrator.network_agent.update_planet(message)
+					"player":
+						NetworkOrchestrator.network_agent.player_action(message)
+					_:
+						NetworkOrchestrator.network_agent.update_generic_object(message)
 			"initial_object":
 				# force to pause all the objects while I load all
 				# get_tree().paused = true

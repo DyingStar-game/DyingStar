@@ -65,6 +65,8 @@ var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 var network_events_received: int = 0
 var network_events_sent: int = 0
 
+var token: String = ""
+
 var check_pending_objects_timer: int = 0
 
 func _enter_tree() -> void:
@@ -72,6 +74,10 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	set_process(false)
+	for arg in OS.get_cmdline_args():
+		if arg.begins_with("--token="):
+			token = arg.substr(len("--token="))
+			break
 	Performance.add_custom_monitor("network/events_received", metric_get_network_events_received)
 	Performance.add_custom_monitor("network/events_sent", metric_get_network_events_sent)
 
@@ -115,8 +121,7 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			"namespace": "player",
 			"event": "init",
 			"data": {
-				"login": GameOrchestrator.login_player_name,
-				"password": "pass",
+				"token": token,
 				"spawn_point": GameOrchestrator.requested_spawn_point + 1,
 			}
 		}))
@@ -303,12 +308,12 @@ func on_connection_established() -> void:
 
 func request_spawn() -> void:
 	NetworkOrchestrator.set_player_uuid.rpc_id(
-		1, Globals.player_uuid, GameOrchestrator.login_player_name, GameOrchestrator.requested_spawn_point
+		1, Globals.player_uuid, "", GameOrchestrator.requested_spawn_point
 	)
 
 func complete_client_initialization(entity) -> void:
 	player_instance = entity
-	player_instance.player_display_name = GameOrchestrator.login_player_name
+	player_instance.player_display_name = ""
 	player_instance.label_player_name.text = player_instance.player_display_name
 	player_instance.direct_chat.connect("send_message", _on_message_from_player)
 	player_instance.connect("hs_client_action_move", _on_client_action_move)

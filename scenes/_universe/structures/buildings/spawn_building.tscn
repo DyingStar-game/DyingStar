@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://d14u2bcesufk6"]
+
+[ext_resource type="Script" uid="uid://2gv1i0qcoba4" path="res://scenes/_universe/structures/buildings/spawn_building.gd" id="1_5damd"]
+[ext_resource type="PackedScene" uid="uid://ctd45dqp5020v" path="res://assets/_universe/structures/buildings/building_apartment_001.glb" id="2_w6uy3"]
+
+[node name="SpawnBuilding" type="Node3D" unique_id=728646051]
+script = ExtResource("1_5damd")
+
+[node name="MultiMeshInstance3D" type="MultiMeshInstance3D" parent="." unique_id=439571947]
+
+[node name="building_apartment_001" parent="MultiMeshInstance3D" unique_id=1655042749 instance=ExtResource("2_w6uy3")]
+transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 0, 0, 0)
+mass = 10000.0
+freeze = true
