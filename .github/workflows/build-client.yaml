@@ -133,11 +133,15 @@ jobs:
           echo '{"version":"${{ steps.version.outputs.version }}","releaseDate":"${{ steps.version.outputs.release_date }}"}' \
             > "${{ matrix.build_dir }}/version.json"
 
+      - name: Create build zip
+        run: |
+          (cd "${{ matrix.build_dir }}" && zip -r "$GITHUB_WORKSPACE/${{ matrix.artifact_name }}.zip" .)
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.build_dir }}/
+          path: ${{ matrix.artifact_name }}.zip
           retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
   deploy-testing:
@@ -150,30 +154,32 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-linux
-          path: dist/linux
 
       - name: Download windows build
         uses: actions/download-artifact@v4
         with:
           name: build-windows
-          path: dist/windows
 
-      - name: Create zip archives
+      - name: Rename zip archives
         run: |
-          (cd dist/linux  && zip -r "$GITHUB_WORKSPACE/DyingStar-linux-testing.zip"   .)
-          (cd dist/windows && zip -r "$GITHUB_WORKSPACE/DyingStar-windows-testing.zip" .)
+          mv build-linux.zip DyingStar-linux-testing.zip
+          mv build-windows.zip DyingStar-windows-testing.zip
 
-      - name: Copy version.json for deploy
-        run: cp dist/linux/version.json version.json
+      - name: Extract version.json
+        run: unzip -p DyingStar-linux-testing.zip version.json > version.json
 
       - name: Deploy via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USERNAME }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "DyingStar-linux-testing.zip,DyingStar-windows-testing.zip,version.json"
-          target: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          install -m 600 /dev/null /tmp/deploy_key
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+          scp -i /tmp/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o BatchMode=yes \
+            DyingStar-linux-testing.zip \
+            DyingStar-windows-testing.zip \
+            version.json \
+            "${{ secrets.DEPLOY_USERNAME }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}"
+          rm -f /tmp/deploy_key
 
   release:
     name: Create GitHub Release
@@ -187,19 +193,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-linux
-          path: dist/linux
 
       - name: Download windows build
         uses: actions/download-artifact@v4
         with:
           name: build-windows
-          path: dist/windows
 
-      - name: Create zip archives
+      - name: Rename zip archives
         run: |
           TAG="${{ github.ref_name }}"
-          (cd dist/linux  && zip -r "$GITHUB_WORKSPACE/DyingStar-linux-${TAG}.zip"   .)
-          (cd dist/windows && zip -r "$GITHUB_WORKSPACE/DyingStar-windows-${TAG}.zip" .)
+          mv build-linux.zip "DyingStar-linux-${TAG}.zip"
+          mv build-windows.zip "DyingStar-windows-${TAG}.zip"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
