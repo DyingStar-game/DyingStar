@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- 2026-05-11 fix crash on bult game, because not buld with right dotnet version
 - 2026-05-10 add changelog file
 - 2026-05-10 fix log in /tmp (crash on windows)
 - 2026-05-10 fix ssh deploy
