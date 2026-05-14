@@ -111,7 +111,19 @@ jobs:
         run: mkdir -p ${{ matrix.build_dir }}
 
       - name: Export ${{ matrix.os_name }} client
+        env:
+          # The custom Godot build is double-precision. The official GodotSharp
+          # NuGet packages on nuget.org are single-precision and crash at runtime
+          # (Vector3/Transform3D layout mismatch). Point NuGet to the local
+          # double-precision nupkgs shipped with the editor zip — see NuGet.Config.
+          GODOT_SHARP_NUPKGS: /home/runner/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs
         run: |
+          # Drop any cached single-precision GodotSharp/Godot.NET.Sdk so they get
+          # restored from the local nupkg source instead.
+          rm -rf ~/.nuget/packages/godotsharp/${{ env.GODOT_VERSION }} \
+                 ~/.nuget/packages/godotsharpeditor/${{ env.GODOT_VERSION }} \
+                 ~/.nuget/packages/godot.net.sdk/${{ env.GODOT_VERSION }} \
+                 ~/.nuget/packages/godot.sourcegenerators/${{ env.GODOT_VERSION }}
           ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
             --headless \
             --path "$GITHUB_WORKSPACE" \
