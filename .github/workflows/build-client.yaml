@@ -48,10 +48,10 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
 
-      - name: Set up .NET 8.0
+      - name: Set up .NET 9.0
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Cache Godot binary
         id: cache-godot
