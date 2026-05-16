@@ -16,7 +16,11 @@ signal exited
 
 func _ready() -> void:
 	title_label.text = title
-	message_label.text = message
+	if GameOrchestrator.connexion_error_message != "":
+		message_label.text = GameOrchestrator.connexion_error_message
+		GameOrchestrator.connexion_error_message = ""
+	else:
+		message_label.text = message
 	exit_btn.text = exit_button_label
 
 	background.color.a = 0
