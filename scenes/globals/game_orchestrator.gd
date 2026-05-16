@@ -46,6 +46,7 @@ var distinguish_instances: Dictionary = {
 var univers_creation_entities: Dictionary = {}
 
 var requested_spawn_point: int = 0
+var connexion_error_message: String = ""
 
 var _menu_music_player: AudioStreamPlayer = null
 var _menu_music_fade_tween: Tween = null

@@ -108,6 +108,7 @@ label_settings = SubResource("LabelSettings_2xb8d")
 layout_mode = 2
 text = "%%ERR_NUM_1337_MSG"
 label_settings = SubResource("LabelSettings_rlngi")
+uppercase = true
 
 [node name="Icon" type="Sprite2D" parent="ErrorMessage/VBox/Panel/VBoxContainer" unique_id=512217157]
 modulate = Color(1, 1, 1, 0.690196)

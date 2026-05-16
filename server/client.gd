@@ -3,6 +3,8 @@ extends Node
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
+const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
+
 var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
 
 var client_peer: ENetMultiplayerPeer = null
@@ -101,8 +103,7 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 
 	print("Connecting to %s..." % websocket_url)
 	# Poll until socket becomes OPEN (or timeout). We must poll the client so it advances states.
-	var timeout_secs := 5.0
-	var deadline := Time.get_unix_time_from_system() + int(timeout_secs)
+	var deadline := Time.get_unix_time_from_system() + int(WEBSOCKET_CONNECT_TIMEOUT_SECS)
 	while socket.get_ready_state() != WebSocketPeer.STATE_OPEN and Time.get_unix_time_from_system() < deadline:
 		socket.poll()
 		# yield a frame so we don't block the engine
@@ -238,6 +239,14 @@ func _process(_delta: float) -> void:
 						"gorc_zone_exit":
 							# When an object exit from my zone (GorcPlayer, planet, miningrock...)
 							delete_object(event)
+						"error":
+							# when have error in server side
+							push_error(event["message"])
+							# close the connection
+							socket.close(1000, event["message"])
+							GameOrchestrator.connexion_error_message = event["message"]
+							GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+							return
 						_:
 							print("< Client - ERROR - Unknown event type: %s" % event["type"])
 
