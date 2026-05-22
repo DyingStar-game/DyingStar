@@ -86,10 +86,6 @@ func _ready() -> void:
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	_load_client_ini_file()
 	universe_scene = receveid_universe_scene
-	var spawn_points_list: Array[Vector3] = universe_scene.spawn_points_list
-
-	if spawn_points_list.size() > 0:
-		spawn_point = spawn_points_list.pick_random()
 
 	if Globals.player_uuid == "":
 		Globals.player_uuid = UUID_UTIL.v4()
@@ -123,7 +119,6 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			"event": "init",
 			"data": {
 				"token": token,
-				"spawn_point": GameOrchestrator.requested_spawn_point + 1,
 			}
 		}))
 		network_events_sent += 1
@@ -262,7 +257,8 @@ func _process(_delta: float) -> void:
 						player_update(event)
 					elif event["event_type"] == "update_property":
 						# print("< Client - Update generic object: %s" % event)
-						update_generic_object(event)
+						var new_event = _standardize_object(event)
+						update_generic_object(new_event)
 					elif event["event_type"] == "gorc_zone_enter":
 						create_object(event)
 					elif event["event_type"] == "gorc_zone_exit":
@@ -316,9 +312,10 @@ func on_connection_established() -> void:
 	request_spawn()
 
 func request_spawn() -> void:
-	NetworkOrchestrator.set_player_uuid.rpc_id(
-		1, Globals.player_uuid, "", GameOrchestrator.requested_spawn_point
-	)
+	pass
+	# NetworkOrchestrator.set_player_uuid.rpc_id(
+	# 	1, Globals.player_uuid, "", GameOrchestrator.requested_spawn_point
+	# )
 
 func complete_client_initialization(entity) -> void:
 	player_instance = entity
@@ -451,7 +448,8 @@ func create_object(event: Dictionary) -> void:
 
 		_:
 			# for all props
-			create_generic_object(event)
+			var new_event = _standardize_object(event)
+			create_generic_object(new_event)
 
 func delete_object(event: Dictionary) -> void:
 	if int(event["channel"]) == 0:
@@ -551,58 +549,27 @@ func create_player(event: Dictionary) -> void:
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
 func create_generic_object(event: Dictionary) -> void:
-	# print("Create generic object: %s" % event)
-	# {
-	# 	"channel": 0,
-	# 	"data": {
-	# 		"object_data": {
-	# 			"parent_id": "3388a817-f3ef-421d-b10f-4325e105628e",
-	# 			"position": {
-	# 				"x": -2203850,
-	# 				"y": 2,
-	# 				"z": 16.4841
-	# 			},
-	# 			"rotation": {
-	# 				"x": 0,
-	# 				"y": 0,
-	# 				"z": 0
-	# 			},
-	# 			"scenename": "scenes/props/testbox/box_50cm.tscn"
-	# 		},
-	# 		"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
-	# 		"object_type": "box50cm",
-	# 		"position": {
-	# 			"x": -2203850,
-	# 			"y": 2,
-	# 			"z": 16.4841
-	# 		}
-	# 	},
-	# 	"event_type": "gorc_create",
-	# 	"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
-	# 	"object_type": "box50cm",
-	# 	"player_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
-	# 	"timestamp": 1762519740
-	# }
-	# print("Creating generic object: %s" % event)
+	# for better readability, we store in variable couple key/values
+	var object_id = event["object_id"]
+	var object_type = event["object_type"]
+	var object_data = event["object_data"]
 
-	var object_data = {}
-	if event.has("zone_data"):
-		object_data = event["zone_data"]
-	else:
-		object_data = event["object_data"]
-	if not props_list.has(event["object_type"]):
-		props_list[event["object_type"]] = {}
+	if not props_list.has(object_type):
+		props_list[object_type] = {}
 
-	if event["object_type"] == "serverinfo":
+	# special case for serverinfo, not create object in godot for it
+	if object_type == "serverinfo":
 		return
-	if props_list[event["object_type"]].has(event["object_id"]):
-		var prop_instance = props_list[event["object_type"]][event["object_id"]]
+
+	if props_list[object_type].has(object_id):
+		var prop_instance = props_list[object_type][object_id]
 		# manage special case for new parent
 		if object_data.has("parent_id"):
 			if object_data["parent_id"] != "":
 				var parent = _search_parent_node(object_data["parent_id"])
 				if parent != null:
 					prop_instance.client_parent_change(parent)
+		print("client_channel_data_update (1) for existing object %s" % object_id)
 		prop_instance.client_channel_data_update(object_data)
 
 	else:
@@ -610,29 +577,26 @@ func create_generic_object(event: Dictionary) -> void:
 		if object_data.has("scenename"):
 			# event has scenename, so we can create it
 
-			if object_data.has("parent_id"):
-				if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
-					# store pending message
-					pending_messages_generic_objects_parenting.append(event)
-					print("Pending message for object %s because parent_id %s not found yet" % [event["object_id"], object_data["parent_id"]])
-					return
+			# for simplicity, merge props_pre_creations with event
+			if props_pre_creations.has(object_id):
+				for channel in props_pre_creations[object_id]["channels"]:
+					event["object_data"].merge(props_pre_creations[object_id]["channels"][channel])
+				props_pre_creations.erase(object_id)
 
-			# Channel 6 (scenename) carries no parent_id, but a previously received
-			# channel (e.g. channel 0 with position/rotation) may have one that isn't
-			# in the scene yet.  Defer creation until the parent arrives, injecting the
-			# parent_id into the pending event so the matching logic can find it later.
-			if props_pre_creations.has(event["object_id"]):
-				for _ch in props_pre_creations[event["object_id"]]["channels"]:
-					var pre_data: Dictionary = props_pre_creations[event["object_id"]]["channels"][_ch]
-					if pre_data.has("parent_id") and pre_data["parent_id"] != "":
-						if _search_parent_node(pre_data["parent_id"]) == null:
-							var pending_event := event.duplicate(true)
-							pending_event["zone_data"]["parent_id"] = pre_data["parent_id"]
-							pending_messages_generic_objects_parenting.append(pending_event)
-							print("Pending message for object %s (pre_creation) because parent_id %s not found yet" \
-								% [event["object_id"], pre_data["parent_id"]])
-							return
-						break
+			object_data = event["object_data"]
+
+			print("Object DATA")
+			print(object_data)
+
+			var parent = null
+			if object_data.has("parent_id"):
+				if object_data["parent_id"] != "":
+					parent = _search_parent_node(object_data["parent_id"])
+					if parent == null:
+						# store pending message because parent_id not yet created
+						pending_messages_generic_objects_parenting.append(event)
+						print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
+						return
 
 			var prop_scene: PackedScene
 			if props_scene.has(object_data["scenename"]):
@@ -644,36 +608,22 @@ func create_generic_object(event: Dictionary) -> void:
 				prop_instance.owner = get_tree().current_scene
 			)
 
-			if object_data.has("parent_id"):
-				if object_data["parent_id"] != "":
-					var parent = _search_parent_node(object_data["parent_id"])
-					if parent != null:
-						parent.add_child(prop_instance)
-					else:
-						universe_scene.add_child(prop_instance)
-				else:
-					universe_scene.add_child(prop_instance)
-			else:
-				universe_scene.add_child(prop_instance)
 			prop_instance.set_physics_process(false)
 			if prop_instance is RigidBody3D:
 				prop_instance.freeze = true
-			prop_instance.uuid = event["object_id"]
+			prop_instance.uuid = object_id
 
-			props_list[event["object_type"]][event["object_id"]] = prop_instance
-
+			print("client_channel_data_update (2) for existing object %s" % object_id)
 			prop_instance.client_channel_data_update(object_data)
-			if props_pre_creations.has(event["object_id"]):
-				for channel in props_pre_creations[event["object_id"]]["channels"]:
-					# Special case for new parent_id
-					if props_pre_creations[event["object_id"]]["channels"][channel].has("parent_id"):
-						if props_pre_creations[event["object_id"]]["channels"][channel]["parent_id"] != "":
-							var parent = _search_parent_node(props_pre_creations[event["object_id"]]["channels"][channel]["parent_id"])
-							if parent != null:
-								prop_instance.client_parent_change(parent)
 
-					prop_instance.client_channel_data_update(props_pre_creations[event["object_id"]]["channels"][channel])
-				props_pre_creations.erase(event["object_id"])
+			# client_channel_data_update must be called before parent for the position
+			if parent != null:
+				parent.add_child(prop_instance)
+			else:
+				print("ERROR PARENT ID NOT FOUND!!!!!!!!!! %s" % object_data["parent_id"])
+				universe_scene.add_child(prop_instance)
+
+			props_list[object_type][object_id] = prop_instance
 
 			# generic object created, now process pending messages for players waiting for this generic object as parent
 			for pending_message in pending_messages_player_parenting.duplicate():
@@ -695,42 +645,40 @@ func create_generic_object(event: Dictionary) -> void:
 			# generic object created, now process pending messages for generic objects waiting for this generic object as parent
 			for pending_message in pending_messages_generic_objects_parenting.duplicate():
 				var pending_object_data = {}
-				if pending_message.has("zone_data"):
-					pending_object_data = pending_message["zone_data"]
-				else:
-					pending_object_data = pending_message["object_data"]
-				if pending_object_data["parent_id"] == event["object_id"]:
+				pending_object_data = pending_message["object_data"]
+				if pending_object_data["parent_id"] == object_id:
 					print(
 						"Processing pending message for generic object %s now that parent_id %s is available" % [
 							pending_message["object_id"],
 							pending_object_data["parent_id"]
 						]
 					)
-					create_generic_object(pending_message)
 					pending_messages_generic_objects_parenting.erase(pending_message)
+					create_generic_object(pending_message)
 		else:
 			# TODO case yet created (channel 6 arrived before others), so now manage other channels
-			if props_list.has(event["object_type"]) and props_list[event["object_type"]].has(event["object_id"]):
-				var prop_instance = props_list[event["object_type"]][event["object_id"]]
+			if props_list.has(object_type) and props_list[object_type].has(object_id):
+				var prop_instance = props_list[object_type][object_id]
 				# Special case for new parent_id
-				if event["data"].has("parent_id"):
-					if event["data"]["parent_id"] != "":
-						var parent = _search_parent_node(event["data"]["parent_id"])
+				if object_data.has("parent_id"):
+					if object_data["parent_id"] != "":
+						var parent = _search_parent_node(object_data["parent_id"])
 						if parent != null:
 							prop_instance.client_parent_change(parent)
 
-				prop_instance.client_channel_data_update(event["data"])
+				print("client_channel_data_update (4) for existing object %s" % object_id)
+				prop_instance.client_channel_data_update(object_data)
 
 			# event not has scenename, so we store it for later creation
-			elif not props_pre_creations.has(event["object_id"]):
-				props_pre_creations[event["object_id"]] = {
-					"type": event["object_type"],
+			elif not props_pre_creations.has(object_id):
+				props_pre_creations[object_id] = {
+					"type": object_type,
 					"channels": {
 						event["channel"]: object_data
 					}
 				}
 			else:
-				props_pre_creations[event["object_id"]]["channels"][event["channel"]] = object_data
+				props_pre_creations[object_id]["channels"][event["channel"]] = object_data
 
 func update_player(event: Dictionary) -> void:
 	# print("Update player: %s" % event)
@@ -741,68 +689,51 @@ func update_player(event: Dictionary) -> void:
 		print("Update Player but not found...")
 
 func update_generic_object(event: Dictionary) -> void:
-	# type of messages:
-	# {
-	#     "channel": 6,
-	#     "data": {
-	#         "blocs": [
-	#             {
-	#                 "fractured": false,
-	#                 "keep_side": 1,
-	#                 "position": 0.956444825210478,
-	#                 "rotation_y": 33.6535922290459,
-	#                 "rotation_z": -14.3839705151433,
-	#                 "side2_uuid": ""
-	#             }
-	#         ],
-	#         "parent_id": "3388a817-f3ef-421d-b10f-4325e105628e",
-	#         "scenename": "scenes/props/rock/rock_mining_01.tscn"
-	#     },
-	#     "event_type": "update_property",
-	#     "object_id": "cc3de01c-bfa8-40d6-8315-611dc92505ec",
-	#     "object_type": "miningrock",
-	#     "player_id": "cc3de01c-bfa8-40d6-8315-611dc92505ec",
-	#     "timestamp": 1763283386
-	# }
-	if event["object_type"] == "serverinfo":
-		if event["data"].has("godotserver"):
-			if event["data"]["godotserver"].has("players_number"):
-				NetworkOrchestrator.set_gameserver_number_players.emit(event["data"]["godotserver"]["players_number"])
-			if event["data"]["godotserver"].has("fps"):
-				NetworkOrchestrator.set_gameserver_server_fps.emit(event["data"]["godotserver"]["fps"])
-			if event["data"]["godotserver"].has("objects_number"):
-				NetworkOrchestrator.set_gameserver_number_objects.emit(event["data"]["godotserver"]["objects_number"])
-			if event["data"]["godotserver"].has("scenes_number"):
-				NetworkOrchestrator.set_gameserver_number_scenes.emit(event["data"]["godotserver"]["scenes_number"])
-			if event["data"]["godotserver"].has("zone"):
-				NetworkOrchestrator.set_gameserver_coordinates.emit(event["data"]["godotserver"]["zone"])
-			if event["data"]["godotserver"].has("name"):
-				NetworkOrchestrator.set_gameserver_name.emit(event["data"]["godotserver"]["name"])
-		if event["data"].has("universe"):
-			if event["data"]["universe"].has("godotservers_number"):
-				NetworkOrchestrator.set_universe_servers.emit(event["data"]["universe"]["godotservers_number"])
-			if event["data"]["universe"].has("players_number"):
-				NetworkOrchestrator.set_universe_players.emit(event["data"]["universe"]["players_number"])
+	# for better readability, we store in variable couple key/values
+	var object_id = event["object_id"]
+	var object_type = event["object_type"]
+	var object_data = event["object_data"]
+
+	if object_type == "serverinfo":
+		if object_data.has("godotserver"):
+			if object_data["godotserver"].has("players_number"):
+				NetworkOrchestrator.set_gameserver_number_players.emit(object_data["godotserver"]["players_number"])
+			if object_data["godotserver"].has("fps"):
+				NetworkOrchestrator.set_gameserver_server_fps.emit(object_data["godotserver"]["fps"])
+			if object_data["godotserver"].has("objects_number"):
+				NetworkOrchestrator.set_gameserver_number_objects.emit(object_data["godotserver"]["objects_number"])
+			if object_data["godotserver"].has("scenes_number"):
+				NetworkOrchestrator.set_gameserver_number_scenes.emit(object_data["godotserver"]["scenes_number"])
+			if object_data["godotserver"].has("zone"):
+				NetworkOrchestrator.set_gameserver_coordinates.emit(object_data["godotserver"]["zone"])
+			if object_data["godotserver"].has("name"):
+				NetworkOrchestrator.set_gameserver_name.emit(object_data["godotserver"]["name"])
+		if object_data.has("universe"):
+			if object_data["universe"].has("godotservers_number"):
+				NetworkOrchestrator.set_universe_servers.emit(object_data["universe"]["godotservers_number"])
+			if object_data["universe"].has("players_number"):
+				NetworkOrchestrator.set_universe_players.emit(object_data["universe"]["players_number"])
 		return
 
-	if props_list.has(event["object_type"]):
-		if props_list[event["object_type"]].has(event["object_id"]):
-			var prop_instance = props_list[event["object_type"]][event["object_id"]]
+	if props_list.has(object_type):
+		if props_list[object_type].has(object_id):
+			var prop_instance = props_list[object_type][object_id]
 			# Special case for new parent_id
-			if event["data"].has("parent_id"):
-				print("Generic object %s parent change to %s" % [event["object_id"], event["data"]["parent_id"]])
-				if event["data"]["parent_id"] != "":
-					print("Generic object %s parent not empty" % [event["object_id"]])
-					var parent = _search_parent_node(event["data"]["parent_id"])
-					print("Generic object %s parent found: %s" % [event["object_id"], parent])
+			if object_data.has("parent_id"):
+				print("Generic object %s parent change to %s" % [object_id, object_data["parent_id"]])
+				if object_data["parent_id"] != "":
+					print("Generic object %s parent not empty" % [object_id])
+					var parent = _search_parent_node(object_data["parent_id"])
+					print("Generic object %s parent found: %s" % [object_id, parent])
 					if parent != null:
 						prop_instance.client_parent_change(parent)
 
-			prop_instance.client_channel_data_update(event["data"])
+			print("client_channel_data_update (5) for existing object %s" % object_id)
+			prop_instance.client_channel_data_update(object_data)
 		else:
-			print("Update generic object but not found: %s" % event["object_id"])
+			print("Update generic object but not found: %s" % object_id)
 	else:
-		print("Update generic object but type not found: %s" % event["object_type"])
+		print("Update generic object but type not found: %s" % object_type)
 
 func delete_player(event: Dictionary) -> void:
 	if not int(event["channel"]) == 0:
@@ -827,7 +758,10 @@ func player_update(message: Dictionary) -> void:
 				if not is_instance_valid(player):
 					players_list.erase(uuid)
 					return
-				player.position = Vector3(
+				# Server sends WORLD-space position (see normal_player.gd hs_server_move).
+				# Applying as global_position keeps the player in the right world
+				# location even when client/server have different parent transforms.
+				player.global_position = Vector3(
 					message["data"]["position"]["x"],
 					message["data"]["position"]["y"],
 					message["data"]["position"]["z"]
@@ -888,3 +822,57 @@ func vocal_unsubscribe_manage(event: Dictionary) -> void:
 		push_warning("[client] livekit_unsubscribe: missing participant_uuid")
 		return
 	lk.unsubscribe_participant(uuid)
+
+func _standardize_object(event: Dictionary) -> Dictionary:
+	var channel = 0
+	var object_id = ""
+	var object_type = ""
+	var player_id = ""
+	var timestamp = 0
+
+	if event.has("channel"):
+		channel = event["channel"]
+	else:
+		print("ERROR: event has no channel field: %s" % event)
+	
+	if event.has("object_id"):
+		object_id = event["object_id"]
+	else:
+		print("ERROR: event has no object_id field: %s" % event)
+
+	if event.has("object_type"):
+		object_type = event["object_type"]
+	else:
+		print("ERROR: event has no object_type field: %s" % event)
+
+	if event.has("player_id"):
+		player_id = event["player_id"]
+	else:
+		print("ERROR: event has no player_id field: %s" % event)
+
+	if event.has("timestamp"):
+		timestamp = event["timestamp"]
+	else:
+		print("ERROR: event has no timestamp field: %s" % event)
+
+	var new_event = {
+		"channel": channel,
+		"object_id": object_id,
+		"object_type": object_type,
+		"player_id": player_id,
+		"timestamp": timestamp,
+		"object_data": {},
+	}
+	if event.has("zone_data"):
+		new_event["object_data"] = event["zone_data"]
+	elif event.has("object_data"):
+		new_event["object_data"] = event["object_data"]
+	elif event.has("data"):
+		if event["data"].has("object_data"):
+			new_event["object_data"] = event["data"]["object_data"]
+		else:
+			new_event["object_data"] = event["data"]
+	else:
+		print("ERROR: event has no data field: %s" % event)
+
+	return new_event

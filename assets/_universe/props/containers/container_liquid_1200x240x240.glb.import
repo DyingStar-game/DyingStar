@@ -13,7 +13,7 @@ dest_files=["res://.godot/imported/container_liquid_1200x240x240.glb-9f3088a1d6a
 
 [params]
 
-nodes/root_type=""
+nodes/root_type="MeshInstance3D"
 nodes/root_name=""
 nodes/root_script=null
 nodes/apply_root_scale=true
@@ -22,7 +22,7 @@ nodes/import_as_skeleton_bones=false
 nodes/use_name_suffixes=true
 nodes/use_node_type_suffixes=true
 meshes/ensure_tangents=true
-meshes/generate_lods=true
+meshes/generate_lods=false
 meshes/create_shadow_meshes=true
 meshes/light_baking=1
 meshes/lightmap_texel_size=0.2
@@ -38,6 +38,11 @@ materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
 _subresources={
+"materials": {
+"@MATERIAL:0": {
+"use_external/path": "uid://p707b21svvtm"
+}
+},
 "nodes": {
 "PATH:container_liquid_1200x240x240_LOD0": {
 "mesh_instance/visibility_range_end": 15.0

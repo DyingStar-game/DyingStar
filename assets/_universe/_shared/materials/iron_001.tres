@@ -1,0 +1,19 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://p707b21svvtm"]
+
+[ext_resource type="Texture2D" uid="uid://cgwc354m0ux22" path="res://assets/_universe/props/furniture/iron_plate_0.5x0_metal_iron_041A_4K_Color.jpg" id="1_ayyom"]
+[ext_resource type="Texture2D" uid="uid://bgnamkyiouiyy" path="res://assets/_universe/props/furniture/iron_plate_0.5x0_metal_iron_041A_4K_Metalness-metal_iron_041A_4K_Roughness.png" id="2_xxyvx"]
+[ext_resource type="Texture2D" uid="uid://dxk6wkmspqjq1" path="res://assets/_universe/props/furniture/iron_plate_0.5x0_metal_iron_041A_4K_NormalGL.jpg" id="3_4cf06"]
+
+[resource]
+resource_name = "Material"
+cull_mode = 2
+albedo_texture = ExtResource("1_ayyom")
+metallic = 1.0
+metallic_specular = 1.0
+metallic_texture = ExtResource("2_xxyvx")
+metallic_texture_channel = 2
+roughness_texture = ExtResource("2_xxyvx")
+roughness_texture_channel = 1
+normal_enabled = true
+normal_texture = ExtResource("3_4cf06")
+uv1_triplanar = true

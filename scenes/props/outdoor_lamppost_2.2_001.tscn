@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://c7jjgmfdmsu85"]
+
+[ext_resource type="PackedScene" uid="uid://b21mkc12tx8va" path="res://assets/_universe/props/furniture/outdoor_lamppost_2.2m_001.glb" id="1_pk050"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="2_3u0aj"]
+
+[node name="OutdoorLamppost2_2001" type="Node3D" unique_id=1687823231]
+
+[node name="outdoor_lamppost_2_2m_001" parent="." unique_id=1650813234 instance=ExtResource("1_pk050")]
+
+[node name="outdoor_lamppost_LOD0" parent="outdoor_lamppost_2_2m_001" index="0" unique_id=533067764]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD1" parent="outdoor_lamppost_2_2m_001" index="1" unique_id=219309647]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD2" parent="outdoor_lamppost_2_2m_001" index="2" unique_id=903675395]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD3" parent="outdoor_lamppost_2_2m_001" index="3" unique_id=1251453731]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=210378545]
+transform = Transform3D(1, 0, 0, 0, 6.123233995736766e-17, 1, 0, -1, 6.123233995736766e-17, 0, 2.184606538898136, 0)
+light_energy = 60.0
+light_indirect_energy = 10.0
+spot_range = 60.0
+spot_angle = 80.0
+
+[editable path="outdoor_lamppost_2_2m_001"]

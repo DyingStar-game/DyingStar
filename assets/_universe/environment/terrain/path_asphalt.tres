@@ -16,3 +16,4 @@ heightmap_deep_parallax = true
 heightmap_min_layers = 8
 heightmap_max_layers = 32
 heightmap_texture = ExtResource("4")
+uv1_triplanar = true

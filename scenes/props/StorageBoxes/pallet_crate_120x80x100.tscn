@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_ycnj0"]
 [ext_resource type="PackedScene" uid="uid://bqppe3gbg5ga4" path="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb" id="2_k2t6d"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_k2t6d"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ycnj0"]
 size = Vector3(1.2, 1, 0.8)
@@ -11,8 +12,22 @@ mass = 200.0
 freeze = true
 script = ExtResource("1_ycnj0")
 
-[node name="pallet_crate_120x80x100" parent="." unique_id=18375948 instance=ExtResource("2_k2t6d")]
+[node name="pallet_crate_120x80x100" parent="." unique_id=584274319 instance=ExtResource("2_k2t6d")]
+
+[node name="pallet_crate_120x80x100_LOD0" parent="pallet_crate_120x80x100" index="0" unique_id=2073832944]
+surface_material_override/0 = ExtResource("3_k2t6d")
+
+[node name="pallet_crate_120x80x100_LOD1" parent="pallet_crate_120x80x100" index="1" unique_id=226276481]
+surface_material_override/0 = ExtResource("3_k2t6d")
+
+[node name="pallet_crate_120x80x100_LOD2" parent="pallet_crate_120x80x100" index="2" unique_id=1223761313]
+surface_material_override/0 = ExtResource("3_k2t6d")
+
+[node name="pallet_crate_120x80x100_LOD3" parent="pallet_crate_120x80x100" index="3" unique_id=1207645353]
+surface_material_override/0 = ExtResource("3_k2t6d")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1091402362]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 shape = SubResource("BoxShape3D_ycnj0")
+
+[editable path="pallet_crate_120x80x100"]
