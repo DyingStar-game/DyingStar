@@ -504,7 +504,7 @@ func transfert_player_to_another_server(uuid, server):
 	network_agent.players_list_currently_in_transfert[uuid] = int(network_agent.players_list[uuid].get_multiplayer_authority())
 	rpc_id(int(network_agent.players_list[uuid].get_multiplayer_authority()), "change_server", [server.ip, server.port])
 
-func _create_local_player_not_exists_in_universe(uuid, player_name, spawn_point, id):
+func _create_local_player_not_exists_in_universe(_uuid, _player_name, _spawn_point, _id):
 	pass
 	# var spawn_position: Vector3 = Vector3.ZERO
 	# var spawn_up: Vector3 = Vector3.UP

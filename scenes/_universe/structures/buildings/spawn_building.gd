@@ -4,15 +4,12 @@ signal hs_server_prop_update
 signal hs_server_prop_delete
 
 @export var uuid: String = ""
-var total: int = 1
-var available: int = 0
 @export var rows: int = 1 # 1 or 2
 @export var cols: int = 1 # from 1
 @export var floors: int = 1 # from 1
 @export var x_spacing: float = -5.16
 @export var z_spacing: float = 3.16
 @export var y_spacing: float = 3.25
-
 
 @export var apartments = [
 	{
@@ -23,6 +20,9 @@ var available: int = 0
 		"player_name": "player_test",
 	},
 ]
+
+var total: int = 1
+var available: int = 0
 
 var type_name = "spawnbuilding"
 
@@ -99,15 +99,15 @@ func _create_apartments():
 				$MultiMeshInstance3D.add_child(node_apart)
 
 	# update Area3D for reparent the player
-	var shapeArea = %CollisionShape3D as CollisionShape3D
+	var shape_area = %CollisionShape3D as CollisionShape3D
 	var new_shape := BoxShape3D.new()
 	new_shape.size = Vector3(
 		rows * abs(x_spacing),
 		floors * abs(y_spacing),
 		cols * abs(z_spacing)
 	)
-	shapeArea.shape = new_shape
-	shapeArea.position = Vector3(
+	shape_area.shape = new_shape
+	shape_area.position = Vector3(
 		-((rows * abs(x_spacing)) / 2.0),
 		((floors * abs(y_spacing)) / 2.0),
 		((cols * abs(z_spacing)) / 2.0),

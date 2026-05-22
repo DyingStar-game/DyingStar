@@ -69,12 +69,12 @@ func _on_participant_connected(participant):
 		_pending_subscriptions.erase(identity)
 		_subscribe_all_audio(participant)
 
-func _on_participant_disconnected(participant):
-	# print("[livekit] Left: ", participant.get_identity())
+func _on_participant_disconnected(_participant):
+	# print("[livekit] Left: ", _participant.get_identity())
 	pass
 
-func _on_track_published(publication, participant):
-	# print("[livekit] Track published by ", participant.get_identity(), ": ", publication.get_name())
+func _on_track_published(_publication, _participant):
+	# print("[livekit] Track published by ", _participant.get_identity(), ": ", _publication.get_name())
 	# Do not auto-subscribe — Horizon sends explicit livekit_subscribe events.
 	pass
 
@@ -138,7 +138,7 @@ func unsubscribe_participant(participant_uuid: String) -> void:
 				# print("[livekit]     -> set_subscribed(false) on ", participant_uuid)
 
 
-func _try_subscribe_publication(publication, participant) -> void:
+func _try_subscribe_publication(publication, _participant) -> void:
 	if publication == null:
 		return
 	if publication.has_method("set_subscribed"):
@@ -146,16 +146,16 @@ func _try_subscribe_publication(publication, participant) -> void:
 		# 	" pub=", publication.get_name() if publication.has_method("get_name") else "?")
 		publication.set_subscribed(true)
 
-func _on_track_unsubscribed(track, _publication, participant):
+func _on_track_unsubscribed(track, _publication, _participant):
 	var key: String = track.get_name()
-	# print("[livekit] Track unsubscribed from ", participant.get_identity(), ": ", key)
+	# print("[livekit] Track unsubscribed from ", _participant.get_identity(), ": ", key)
 	if _audio_bridges.has(key):
 		var bridge: Dictionary = _audio_bridges[key]
 		if is_instance_valid(bridge["player"]):
 			bridge["player"].queue_free()
 		_audio_bridges.erase(key)
 
-func _on_track_subscribed(track, publication, participant):
+func _on_track_subscribed(track, _publication, participant):
 	# print("[livekit] Track subscribed: ", track.get_name())
 	# print("[livekit] Track (publication) subscribed: ", publication.get_name())
 	# print("[livekit] Track (participant) subscribed: ", participant.get_identity())
@@ -304,8 +304,8 @@ func _process(delta: float) -> void:
 		# capture_frame(data, sample_rate, num_channels, samples_per_channel)
 		_mic_source.capture_frame(chunk, _mic_sample_rate, MIC_CHANNELS, _mic_chunk_samples)
 
-func _on_data_received(data, participant, _kind, _topic):
-	# print("[livekit] Data from ", participant.get_identity(), ": ", data.get_string_from_utf8())
+func _on_data_received(_data, _participant, _kind, _topic):
+	# print("[livekit] Data from ", _participant.get_identity(), ": ", _data.get_string_from_utf8())
 	pass
 
 # ---------------------------------------------------------------- mic publish

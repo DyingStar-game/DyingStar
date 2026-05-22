@@ -758,10 +758,7 @@ func player_update(message: Dictionary) -> void:
 				if not is_instance_valid(player):
 					players_list.erase(uuid)
 					return
-				# Server sends WORLD-space position (see normal_player.gd hs_server_move).
-				# Applying as global_position keeps the player in the right world
-				# location even when client/server have different parent transforms.
-				player.global_position = Vector3(
+				player.position = Vector3(
 					message["data"]["position"]["x"],
 					message["data"]["position"]["y"],
 					message["data"]["position"]["z"]
@@ -834,7 +831,7 @@ func _standardize_object(event: Dictionary) -> Dictionary:
 		channel = event["channel"]
 	else:
 		print("ERROR: event has no channel field: %s" % event)
-	
+
 	if event.has("object_id"):
 		object_id = event["object_id"]
 	else:
