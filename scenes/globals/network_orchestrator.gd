@@ -54,8 +54,8 @@ var universe_datas_spawner_node: MultiplayerSpawner = null
 var spawnable_planet_scene: PackedScene = preload("res://scenes/planet/base_planet.tscn")
 var spawnable_station_scene: PackedScene = null
 
-var players: Dictionary[int, Player] = {}
-var player_ship: Dictionary[int, Spaceship] = {}
+var players: Dictionary = {}
+var player_ship: Dictionary = {}
 
 var is_inside_box4m: bool = false
 
@@ -505,100 +505,101 @@ func transfert_player_to_another_server(uuid, server):
 	rpc_id(int(network_agent.players_list[uuid].get_multiplayer_authority()), "change_server", [server.ip, server.port])
 
 func _create_local_player_not_exists_in_universe(uuid, player_name, spawn_point, id):
-	var spawn_position: Vector3 = Vector3.ZERO
-	var spawn_up: Vector3 = Vector3.UP
-	if spawn_point >= 0 and spawn_point < GameOrchestrator.SPAWN_POINTS_LIST.size():
-		var spawn_point_node_path: String = GameOrchestrator.SPAWN_POINTS_LIST[spawn_point]["node_path"]
-		#if spawn_point_node_path == "":
-			#var parent_entity_spawn_position: Vector3 = universe_scene.get_node("PlanetA").global_position \
-			#	if randf() < 0.5 else universe_scene.get_node("PlanetB").global_position
-			#spawn_position = random_spawn_on_planet(parent_entity_spawn_position, 2000.0)
-			#spawn_up = (spawn_position - parent_entity_spawn_position).normalized()
-		if spawn_point_node_path.contains("PlayerSpawnPointsList"):
-			spawn_position = universe_scene.get_node(spawn_point_node_path).global_position
-			if spawn_point_node_path.contains("PlanetA"):
-				spawn_up = (spawn_position - universe_scene.get_node("PlanetA").global_position).normalized()
-			elif spawn_point_node_path.contains("PlanetB"):
-				spawn_up = (spawn_position - universe_scene.get_node("PlanetB").global_position).normalized()
-			elif spawn_point_node_path.contains("StationA"):
-				spawn_up = universe_scene.get_node(spawn_point_node_path).transform.basis.y.normalized()
-		else:
-			push_error("Invalid spawn point node path: ", spawn_point_node_path)
-		#else:
-			#var parent_entity_spawn_position: Vector3 = universe_scene.get_node(spawn_point_node_path).global_position
-			#spawn_position = random_spawn_on_planet(parent_entity_spawn_position, 2000.0)
-			#spawn_up = (spawn_position - parent_entity_spawn_position).normalized()
+	pass
+	# var spawn_position: Vector3 = Vector3.ZERO
+	# var spawn_up: Vector3 = Vector3.UP
+	# if spawn_point >= 0 and spawn_point < GameOrchestrator.SPAWN_POINTS_LIST.size():
+	# 	var spawn_point_node_path: String = GameOrchestrator.SPAWN_POINTS_LIST[spawn_point]["node_path"]
+	# 	#if spawn_point_node_path == "":
+	# 		#var parent_entity_spawn_position: Vector3 = universe_scene.get_node("PlanetA").global_position \
+	# 		#	if randf() < 0.5 else universe_scene.get_node("PlanetB").global_position
+	# 		#spawn_position = random_spawn_on_planet(parent_entity_spawn_position, 2000.0)
+	# 		#spawn_up = (spawn_position - parent_entity_spawn_position).normalized()
+	# 	if spawn_point_node_path.contains("PlayerSpawnPointsList"):
+	# 		spawn_position = universe_scene.get_node(spawn_point_node_path).global_position
+	# 		if spawn_point_node_path.contains("PlanetA"):
+	# 			spawn_up = (spawn_position - universe_scene.get_node("PlanetA").global_position).normalized()
+	# 		elif spawn_point_node_path.contains("PlanetB"):
+	# 			spawn_up = (spawn_position - universe_scene.get_node("PlanetB").global_position).normalized()
+	# 		elif spawn_point_node_path.contains("StationA"):
+	# 			spawn_up = universe_scene.get_node(spawn_point_node_path).transform.basis.y.normalized()
+	# 	else:
+	# 		push_error("Invalid spawn point node path: ", spawn_point_node_path)
+	# 	#else:
+	# 		#var parent_entity_spawn_position: Vector3 = universe_scene.get_node(spawn_point_node_path).global_position
+	# 		#spawn_position = random_spawn_on_planet(parent_entity_spawn_position, 2000.0)
+	# 		#spawn_up = (spawn_position - parent_entity_spawn_position).normalized()
 
-	small_props_spawner_node.spawn({
-		"entity": "player",
-		"player_scene_path": player_scene_path,
-		"player_name": player_name,
-		"player_spawn_position": spawn_position,
-		"player_spawn_up": Vector3.UP,
-		"authority_peer_id": id,
-		"uuid": uuid
-	})
+	# small_props_spawner_node.spawn({
+	# 	"entity": "player",
+	# 	"player_scene_path": player_scene_path,
+	# 	"player_name": player_name,
+	# 	"player_spawn_position": spawn_position,
+	# 	"player_spawn_up": Vector3.UP,
+	# 	"authority_peer_id": id,
+	# 	"uuid": uuid
+	# })
 
-	var player_to_add
-	var sp = universe_scene.get_node("SmallProps")
-	var children = sp.get_children()
-	for child in children:
-		# TODO pas ouf, trouver mieux...
-		if child.get_multiplayer_authority() == id:
-			player_to_add = child
-			break
+	# var player_to_add
+	# var sp = universe_scene.get_node("SmallProps")
+	# var children = sp.get_children()
+	# for child in children:
+	# 	# TODO pas ouf, trouver mieux...
+	# 	if child.get_multiplayer_authority() == id:
+	# 		player_to_add = child
+	# 		break
 
-	network_agent.players_list[uuid] = player_to_add
-	network_agent.players_list_temp_by_id[id] = player_to_add;
-	print("Nouveau player: ")
-	print(player_to_add)
+	# network_agent.players_list[uuid] = player_to_add
+	# network_agent.players_list_temp_by_id[id] = player_to_add;
+	# print("Nouveau player: ")
+	# print(player_to_add)
 
 
-	# network_agent.players_list[uuid].initValues.playername = player_name
+	# # network_agent.players_list[uuid].initValues.playername = player_name
 
-	# New player, check if must be in another server (check the zone)
-	var new_server = _search_another_server_for_coordinates(
-		network_agent.players_list[uuid].global_position[0],
-		network_agent.players_list[uuid].global_position[1],
-		network_agent.players_list[uuid].global_position[2]
-	)
-	if new_server != null:
-		transfert_player_to_another_server(uuid, new_server)
-		return
+	# # New player, check if must be in another server (check the zone)
+	# var new_server = _search_another_server_for_coordinates(
+	# 	network_agent.players_list[uuid].global_position[0],
+	# 	network_agent.players_list[uuid].global_position[1],
+	# 	network_agent.players_list[uuid].global_position[2]
+	# )
+	# if new_server != null:
+	# 	transfert_player_to_another_server(uuid, new_server)
+	# 	return
 
-	network_agent.players_list_temp_by_id[id] = uuid
-	var players_data = []
-	var position = network_agent.players_list[uuid].get_global_position()
-	var rotation = network_agent.players_list[uuid].get_global_rotation()
-	var data = ""
-	players_data.append({
-		"name": player_name,
-		"client_uuid": uuid,
-		"x": position[0],
-		"y": position[1],
-		"z": position[2],
-		"xr": rotation[0],
-		"yr": rotation[1],
-		"zr": rotation[2]
-	})
-	data = JSON.stringify({
-		"add": players_data,
-		"update": [],
-		"delete": [],
-		"server_id": server_sdo_id,
-	})
-	mqtt_client_sdo.publish("sdo/playerschanges", data)
-	network_agent.players_list_last_movement[uuid] = Vector3(0.0, 0.0, 0.0)
-	network_agent.players_list_last_rotation[uuid] = Vector3(0.0, 0.0, 0.0)
+	# network_agent.players_list_temp_by_id[id] = uuid
+	# var players_data = []
+	# var position = network_agent.players_list[uuid].get_global_position()
+	# var rotation = network_agent.players_list[uuid].get_global_rotation()
+	# var data = ""
+	# players_data.append({
+	# 	"name": player_name,
+	# 	"client_uuid": uuid,
+	# 	"x": position[0],
+	# 	"y": position[1],
+	# 	"z": position[2],
+	# 	"xr": rotation[0],
+	# 	"yr": rotation[1],
+	# 	"zr": rotation[2]
+	# })
+	# data = JSON.stringify({
+	# 	"add": players_data,
+	# 	"update": [],
+	# 	"delete": [],
+	# 	"server_id": server_sdo_id,
+	# })
+	# mqtt_client_sdo.publish("sdo/playerschanges", data)
+	# network_agent.players_list_last_movement[uuid] = Vector3(0.0, 0.0, 0.0)
+	# network_agent.players_list_last_rotation[uuid] = Vector3(0.0, 0.0, 0.0)
 
-	# Test for remote player
-	# var newPlayer = {
-	# 	"name": "player test",
-	# 	"client_uuid": "32726b4c-119e-4f69-87b1-2495bcabacd9",
-	# 	"x": 2146.6928710938,
-	# 	"y": 0.0000329,
-	# 	"z": 2154.9038085938
-	# }
+	# # Test for remote player
+	# # var newPlayer = {
+	# # 	"name": "player test",
+	# # 	"client_uuid": "32726b4c-119e-4f69-87b1-2495bcabacd9",
+	# # 	"x": 2146.6928710938,
+	# # 	"y": 0.0000329,
+	# # 	"z": 2154.9038085938
+	# # }
 
 func _create_local_player_come_from_another_server(uuid, player_name, id):
 	network_agent.players_list_currently_in_transfert[uuid] = true

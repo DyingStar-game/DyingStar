@@ -38,7 +38,6 @@ Obs="*res://tools/observability/obs.gd"
 [debug]
 
 file_logging/enable_file_logging=true
-; file_logging/log_path="/tmp/godot.log"
 gdscript/warnings/native_method_override=1
 ErrorManager="*res://ui/error_message/error_message.tscn"
 PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
@@ -81,6 +80,7 @@ gravity=""
 containable=""
 player=""
 carry=""
+spawn="spawn area (apartments)"
 
 [input]
 

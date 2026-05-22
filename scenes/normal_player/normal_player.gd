@@ -175,7 +175,7 @@ func connect_area_detect():
 	if OS.has_feature("dedicated_server"):
 		print("Connecting area detector on server side")
 	$AreaDetector.monitoring = true
-	#$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
+	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
 func get_current_gravity_parent() -> Node3D:
@@ -258,6 +258,27 @@ func _process(_delta: float) -> void:
 
 	_handle_camera_motion()
 
+	# DEBUG 15deg-offset: measure WORLD displacement direction vs facing
+	if not OS.has_feature("dedicated_server"):
+		var _cur_world: Vector3 = global_position
+		if has_meta("_dbg_last_world"):
+			var _last: Vector3 = get_meta("_dbg_last_world")
+			var _disp: Vector3 = _cur_world - _last
+			if _disp.length() > 0.05 and input_direction.length() > 0.01:
+				var _fwd_world: Vector3 = -global_transform.basis.z
+				var _disp_dir: Vector3 = _disp.normalized()
+				# project onto horizontal plane (perpendicular to up_direction) so vertical drift doesn't dominate
+				var _up: Vector3 = up_direction.normalized() if up_direction.length() > 0.01 else Vector3.UP
+				var _fwd_h: Vector3 = (_fwd_world - _up * _fwd_world.dot(_up)).normalized()
+				var _disp_h: Vector3 = (_disp_dir - _up * _disp_dir.dot(_up)).normalized()
+				# Signed angle: positive = displacement is to the LEFT of facing (around up axis)
+				var _cross: Vector3 = _fwd_h.cross(_disp_h)
+				var _sign: float = 1.0 if _cross.dot(_up) > 0.0 else -1.0
+				var _signed_angle_deg: float = rad_to_deg(_fwd_h.angle_to(_disp_h)) * _sign
+				print("[VISUAL-MOVE] input=", input_direction, " signed_angle_disp_vs_fwd_deg=", _signed_angle_deg, " disp_len=", _disp.length(), " fwd_h=", _fwd_h, " disp_h=", _disp_h, " parent=", get_parent().name)
+		set_meta("_dbg_last_world", _cur_world)
+	# END DEBUG
+
 	interact_label.hide()
 	can_interact = false
 	if interact_ray.is_colliding():
@@ -304,9 +325,29 @@ func _physics_process(delta: float) -> void:
 		if new_input_from_server:
 			input_direction = input_from_server["input_direction"]
 			global_rotation = input_from_server["rotation"]
-		else:
-			# No new input this tick — keep last input but still apply gravity.
-			input_direction = Vector2.ZERO
+			# DEBUG 15deg-offset: compare received rotation vs what global_rotation actually stores
+			var _recv_rot: Vector3 = input_from_server["rotation"]
+			var _stored_rot: Vector3 = global_rotation
+			var _delta: Vector3 = _stored_rot - _recv_rot
+			if _delta.length() > 0.001:
+				print("[ROT-DEBUG] recv=", _recv_rot, " stored=", _stored_rot, " delta_deg=", Vector3(rad_to_deg(_delta.x), rad_to_deg(_delta.y), rad_to_deg(_delta.z)), " parent=", get_parent().name, " is_parented=", is_parented)
+			# DEBUG: also log move_direction vs basis.z to see the angular offset
+			var _fwd_world: Vector3 = -global_transform.basis.z
+			var _move_dir: Vector3 = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized() if input_direction.length() > 0.01 else Vector3.ZERO
+			if input_direction.length() > 0.01:
+				var _angle: float = rad_to_deg(_fwd_world.angle_to(_move_dir))
+				var _p := get_parent()
+				var _p_name: String = _p.name if _p else "<none>"
+				var _p_basis_y_deg: float = 0.0
+				var _p_fwd_world: Vector3 = Vector3.ZERO
+				var _local_pos: Vector3 = position
+				var _world_pos: Vector3 = global_position
+				if _p and _p is Node3D:
+					var _pb: Basis = (_p as Node3D).global_transform.basis
+					_p_basis_y_deg = rad_to_deg((_pb.get_euler(EULER_ORDER_YXZ)).y)
+					_p_fwd_world = -_pb.z
+				print("[MOVE-DEBUG] input=", input_direction, " body_fwd=", _fwd_world, " move_dir=", _move_dir, " angle_fwd_to_move_deg=", _angle, " parent=", _p_name, " parent_yaw_deg=", _p_basis_y_deg, " parent_fwd=", _p_fwd_world, " local_pos=", _local_pos, " world_pos=", _world_pos)
+			# END DEBUG
 
 		var sprint = null
 		# print("gravity parents:", gravity_parents.size())
@@ -416,6 +457,21 @@ func _physics_process(delta: float) -> void:
 			client_last_input_direction = input_direction
 			client_last_global_rotation = short_rotation
 			emit_signal("hs_client_action_move", input_direction, short_rotation)
+			# DEBUG 15deg-offset: log what client SENDS vs current visual basis
+			var _client_fwd: Vector3 = -global_transform.basis.z
+			var _sent_basis := Basis.from_euler(short_rotation, EULER_ORDER_YXZ)
+			var _sent_fwd: Vector3 = -_sent_basis.z
+			var _angle_visual_vs_sent: float = rad_to_deg(_client_fwd.angle_to(_sent_fwd))
+			var _p := get_parent()
+			var _p_name: String = _p.name if _p else "<none>"
+			var _p_yaw_deg: float = 0.0
+			var _p_fwd_world: Vector3 = Vector3.ZERO
+			if _p and _p is Node3D:
+				var _pb: Basis = (_p as Node3D).global_transform.basis
+				_p_yaw_deg = rad_to_deg((_pb.get_euler(EULER_ORDER_YXZ)).y)
+				_p_fwd_world = -_pb.z
+			print("[CLIENT-SEND] input=", input_direction, " visual_fwd=", _client_fwd, " sent_fwd=", _sent_fwd, " angle_visual_vs_sent_deg=", _angle_visual_vs_sent, " up=", up_direction, " parent=", _p_name, " parent_yaw_deg=", _p_yaw_deg, " parent_fwd=", _p_fwd_world, " local_pos=", position, " world_pos=", global_position)
+			# END DEBUG
 		update_last_basis()
 
 		labelx.text = str("%0.2f" % global_position[0])
@@ -501,7 +557,14 @@ func _snap_to_planet_surface_if_below(area: Area3D) -> void:
 			velocity -= up_world * radial_speed
 
 func orient_player():
+	var _before_y: Vector3 = global_transform.basis.y
+	var _before_fwd: Vector3 = -global_transform.basis.z
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
+	var _after_fwd: Vector3 = -global_transform.basis.z
+	var _yaw_change_deg: float = rad_to_deg(_before_fwd.angle_to(_after_fwd))
+	var _up_misalignment_deg: float = rad_to_deg(_before_y.angle_to(up_direction))
+	if _up_misalignment_deg > 0.5 or _yaw_change_deg > 0.5:
+		print("[ORIENT] up_misalignment_deg=", _up_misalignment_deg, " fwd_change_deg=", _yaw_change_deg, " up_dir=", up_direction, " before_y=", _before_y)
 
 func set_player_name(player_name):
 	label_player_name.text = str(player_name)
@@ -525,11 +588,26 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 				is_parented
 			)
 		gravity_parents.push_back(area)
+	# elif area.is_in_group("spawn"):
+	# 	var parent = area.get_parent()
+	# 	is_parented = true
+	# 		emit_signal(
+	# 			"hs_server_move",
+	# 			client_uuid,
+	# 			snapped(position, Vector3(0.001, 0.001, 0.001)),
+	# 			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+	# 			parent.uuid,
+	# 			is_parented
+	# 		)
+	# 	gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
+	# elif area.is_in_group("spawn"):
+	# 	if gravity_parents.has(area):
+	# 		gravity_parents.erase(area)
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

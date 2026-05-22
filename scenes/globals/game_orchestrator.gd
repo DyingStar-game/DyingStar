@@ -21,16 +21,6 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 	GameStates.CONNEXION_ERROR : "res://ui/error_message/error_message.tscn",
 }
 
-const SPAWN_POINTS_LIST: Array[Dictionary] = [
-	{"label" : "City on Sandbox (planet 4)", "point": 1, "node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "Point on Sandbox (planet 4)", "point": 5,
-		"node_path" : "PlanetA/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint02"},
-	{"label" : "Storagehouse on moon 1 of Planet 5", "point": 2,
-		"node_path" : "PlanetB/PlanetTerrain/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "Atmosphere on moon 1 of Planet 5", "point": 3, "node_path" : "StationA/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-	{"label" : "On Gaea (planet 3)", "point": 4, "node_path" : "StationB/PadGroup1/PlayerSpawnPointsList/PlayerSpawnPoint01"},
-]
-
 const MENU_MUSIC_PATH: String = "res://assets/_universe/audio/music/DyingStart_testV1.mp3"
 const MENU_MUSIC_FADE_OUT_SECONDS: float = 5.0
 
@@ -45,7 +35,6 @@ var distinguish_instances: Dictionary = {
 
 var univers_creation_entities: Dictionary = {}
 
-var requested_spawn_point: int = 0
 var connexion_error_message: String = ""
 
 var _menu_music_player: AudioStreamPlayer = null

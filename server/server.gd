@@ -96,7 +96,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn':
 		preload('res://scenes/props/testbox/box_4m.tscn'),
-	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
+	'scenes/props/city/sandbox_capital.tscn':
+		preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 
 var debug_message_number: int = 0
@@ -566,7 +567,7 @@ func send_props_update_to_horizon():
 		"amessagenb": debug_message_number,
 		"data": props_update.values()
 	}
-	# print("Send props update to horizon: ", message)
+	print("Send props update to horizon: ", message)
 	ServerNetwork.send_message(message, "prop_update")
 	props_update.clear()
 
@@ -707,9 +708,7 @@ func update_planet_biome(event: Dictionary) -> void:
 
 func create_player(event: Dictionary) -> void:
 	var player_uuid = ""
-	if event["data"]["object_data"].has("connection_id"):
-		player_uuid = event["data"]["object_data"]["connection_id"]
-	elif event["data"].has("object_uuid"):
+	if event["data"].has("object_uuid"):
 		player_uuid = event["data"]["object_uuid"]
 	else:
 		prints("ERROR: No player UUID found in event: %s" % event)
@@ -810,7 +809,6 @@ func create_generic_object(event: Dictionary) -> void:
 	else:
 		universe_scene.add_child(spawnable_prop_instance)
 
-	spawnable_prop_instance.client_channel_data_update(object_data)
 	if spawnable_prop_instance.has_signal("hs_server_prop_update"):
 		spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
 	else:
@@ -821,6 +819,8 @@ func create_generic_object(event: Dictionary) -> void:
 	else:
 		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_delete (type=%s)" \
 			% [object_data["scenename"], spawnable_prop_instance.get_class()])
+	# Must be after signals in case call signals if modifications done in client_channel_data_update
+	spawnable_prop_instance.client_channel_data_update(object_data)
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
@@ -864,10 +864,10 @@ func create_generic_object(event: Dictionary) -> void:
 			create_generic_object(pending_message)
 
 func update_generic_object(event: Dictionary) -> void:
-	var type = event["object_type"]
-	if props_list[type].has(event["object_uuid"]):
-		var object = props_list[type][event["object_uuid"]]
-		# TODO update on server the data
+	var type = event["data"]["object_type"]
+	if props_list[type].has(event["data"]["object_uuid"]):
+		var object = props_list[type][event["data"]["object_uuid"]]
+		object.client_channel_data_update(event["data"]["object_data"])
 
 
 func _search_parent_node(parent_id: String) -> Node:

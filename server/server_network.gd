@@ -451,7 +451,6 @@ func _devmode_horizon_mapping(message: Dictionary):
 							"object_uuid": "82203c32-7acc-47cb-9abe-34fc4ac1318e",
 							"object_type": "player",
 							"object_data": {
-								"connection_id": "82203c32-7acc-47cb-9abe-34fc4ac1318e",
 								"parent_id": sceneuuid,
 								"position": {"x":0.0, "y": 1.0, "z":0.0},
 								"rotation": {"x":0.0, "y": 0.0, "z":0.0},

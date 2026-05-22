@@ -6,6 +6,7 @@
 size = Vector3(50, 10, 182)
 
 [node name="Storagewarehouse" type="RigidBody3D" unique_id=695965601]
+freeze = true
 script = ExtResource("1_gtaak")
 
 [node name="CSGCombiner3D" type="CSGCombiner3D" parent="." unique_id=1591403591]

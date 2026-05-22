@@ -36,7 +36,7 @@ var _mic_pending: PackedFloat32Array = PackedFloat32Array()
 var _pending_subscriptions: Array = []
 
 func _ready():
-	print("[livekit] Starting connection to ", livekit_url, "...")
+	# print("[livekit] Starting connection to ", livekit_url, "...")
 	room = LiveKitRoom.new()
 	room.connected.connect(_on_connected)
 	room.participant_connected.connect(_on_participant_connected)
@@ -52,7 +52,7 @@ func _ready():
 	room.connect_to_room(livekit_url, livekit_token, {"auto_subscribe": false})
 
 func _on_connected():
-	print("[livekit] Connected as: ", room.get_local_participant().get_identity())
+	# print("[livekit] Connected as: ", room.get_local_participant().get_identity())
 	_start_microphone_publish()
 
 func _on_connection_failed(reason: String) -> void:
@@ -62,19 +62,21 @@ func _on_disconnected(reason: String) -> void:
 	push_warning("[livekit] Disconnected: " + reason)
 
 func _on_participant_connected(participant):
-	print("[livekit] Joined: ", participant.get_identity())
+	# print("[livekit] Joined: ", participant.get_identity())
 	var identity: String = participant.get_identity()
 	if identity in _pending_subscriptions:
-		print("[livekit] Retrying pending subscription for ", identity)
+		# print("[livekit] Retrying pending subscription for ", identity)
 		_pending_subscriptions.erase(identity)
 		_subscribe_all_audio(participant)
 
 func _on_participant_disconnected(participant):
-	print("[livekit] Left: ", participant.get_identity())
+	# print("[livekit] Left: ", participant.get_identity())
+	pass
 
 func _on_track_published(publication, participant):
-	print("[livekit] Track published by ", participant.get_identity(), ": ", publication.get_name())
+	# print("[livekit] Track published by ", participant.get_identity(), ": ", publication.get_name())
 	# Do not auto-subscribe — Horizon sends explicit livekit_subscribe events.
+	pass
 
 func _subscribe_all_audio(participant) -> void:
 	if participant == null or not participant.has_method("get_track_publications"):
@@ -89,23 +91,23 @@ func _subscribe_all_audio(participant) -> void:
 		for pub in pubs:
 			_try_subscribe_publication(pub, participant)
 			count += 1
-	print("[livekit]     enumerated ", count, " publication(s) for ", participant.get_identity())
+	# print("[livekit]     enumerated ", count, " publication(s) for ", participant.get_identity())
 
 func _get_remote_participant(participant_uuid: String):
 	var remotes = room.get_remote_participants()
-	print("[livekit] Looking up participant UUID ", participant_uuid, " among ", remotes.size(), " remote(s)")
+	# print("[livekit] Looking up participant UUID ", participant_uuid, " among ", remotes.size(), " remote(s)")
 	if remotes is Dictionary:
-		print("[livekit] Remote participants: ", remotes.keys())
+		# print("[livekit] Remote participants: ", remotes.keys())
 		return remotes.get(participant_uuid, null)
 	if remotes is Array:
 		for p in remotes:
-			print("[livekit] Checking participant: ", p.get_identity() if typeof(p) == TYPE_OBJECT and p.has_method("get_identity") else "?")
+			# print("[livekit] Checking participant: ", p.get_identity() if typeof(p) == TYPE_OBJECT and p.has_method("get_identity") else "?")
 			if typeof(p) == TYPE_OBJECT and p.has_method("get_identity") and p.get_identity() == participant_uuid:
 				return p
 	return null
 
 func subscribe_participant(participant_uuid: String) -> void:
-	print("[livekit] subscribe_participant: ", participant_uuid)
+	# print("[livekit] subscribe_participant: ", participant_uuid)
 	var participant = _get_remote_participant(participant_uuid)
 	if participant == null:
 		push_warning("[livekit] subscribe_participant: participant not found yet, queuing for retry: " + participant_uuid)
@@ -115,7 +117,7 @@ func subscribe_participant(participant_uuid: String) -> void:
 	_subscribe_all_audio(participant)
 
 func unsubscribe_participant(participant_uuid: String) -> void:
-	print("[livekit] unsubscribe_participant: ", participant_uuid)
+	# print("[livekit] unsubscribe_participant: ", participant_uuid)
 	var participant = _get_remote_participant(participant_uuid)
 	if participant == null:
 		push_warning("[livekit] unsubscribe_participant: participant not found in room: " + participant_uuid)
@@ -128,25 +130,25 @@ func unsubscribe_participant(participant_uuid: String) -> void:
 			var pub = pubs[sid]
 			if pub != null and pub.has_method("set_subscribed"):
 				pub.set_subscribed(false)
-				print("[livekit]     -> set_subscribed(false) on ", participant_uuid)
+				# print("[livekit]     -> set_subscribed(false) on ", participant_uuid)
 	elif pubs is Array:
 		for pub in pubs:
 			if pub != null and pub.has_method("set_subscribed"):
 				pub.set_subscribed(false)
-				print("[livekit]     -> set_subscribed(false) on ", participant_uuid)
+				# print("[livekit]     -> set_subscribed(false) on ", participant_uuid)
 
 
 func _try_subscribe_publication(publication, participant) -> void:
 	if publication == null:
 		return
 	if publication.has_method("set_subscribed"):
-		print("[livekit]     -> set_subscribed(true) on ", participant.get_identity(),
-			" pub=", publication.get_name() if publication.has_method("get_name") else "?")
+		# print("[livekit]     -> set_subscribed(true) on ", participant.get_identity(),
+		# 	" pub=", publication.get_name() if publication.has_method("get_name") else "?")
 		publication.set_subscribed(true)
 
 func _on_track_unsubscribed(track, _publication, participant):
 	var key: String = track.get_name()
-	print("[livekit] Track unsubscribed from ", participant.get_identity(), ": ", key)
+	# print("[livekit] Track unsubscribed from ", participant.get_identity(), ": ", key)
 	if _audio_bridges.has(key):
 		var bridge: Dictionary = _audio_bridges[key]
 		if is_instance_valid(bridge["player"]):
@@ -154,9 +156,9 @@ func _on_track_unsubscribed(track, _publication, participant):
 		_audio_bridges.erase(key)
 
 func _on_track_subscribed(track, publication, participant):
-	print("[livekit] Track subscribed: ", track.get_name())
-	print("[livekit] Track (publication) subscribed: ", publication.get_name())
-	print("[livekit] Track (participant) subscribed: ", participant.get_identity())
+	# print("[livekit] Track subscribed: ", track.get_name())
+	# print("[livekit] Track (publication) subscribed: ", publication.get_name())
+	# print("[livekit] Track (participant) subscribed: ", participant.get_identity())
 
 	if track.get_kind() != LiveKitTrack.KIND_AUDIO:
 		return
@@ -222,11 +224,11 @@ func _on_track_subscribed(track, publication, participant):
 		"player": player,
 	}
 	_debug_frames_pushed[track.get_name()] = 0
-	print("[livekit] Bridge created for '%s' (participant: %s) — player type: %s, bus: %s" % [
-		track.get_name(), participant_id,
-		"AudioStreamPlayer3D" if player is AudioStreamPlayer3D else "AudioStreamPlayer",
-		player.bus
-	])
+	# print("[livekit] Bridge created for '%s' (participant: %s) — player type: %s, bus: %s" % [
+	# 	track.get_name(), participant_id,
+	# 	"AudioStreamPlayer3D" if player is AudioStreamPlayer3D else "AudioStreamPlayer",
+	# 	player.bus
+	# ])
 
 func _find_player_node(participant_id: String) -> Node:
 	if NetworkOrchestrator == null or NetworkOrchestrator.network_agent == null:
@@ -269,14 +271,14 @@ func _process(delta: float) -> void:
 				var player = bridge["player"]
 				var is_playing: bool = is_instance_valid(player) and player.playing
 				var frames_pushed: int = _debug_frames_pushed.get(key, 0)
-				print("[livekit][debug] Bridge '%s': playing=%s, frames_pushed_last_%ds=%d" % [
-					key, is_playing, int(_DEBUG_INTERVAL), frames_pushed
-				])
+				# print("[livekit][debug] Bridge '%s': playing=%s, frames_pushed_last_%ds=%d" % [
+				# 	key, is_playing, int(_DEBUG_INTERVAL), frames_pushed
+				# ])
 				_debug_frames_pushed[key] = 0
-		print("[livekit][debug] Mic peak amplitude last %ds: %.4f %s" % [
-			int(_DEBUG_INTERVAL), _debug_mic_peak,
-			"(SILENCE — mic may be muted or unavailable)" if _debug_mic_peak < 0.001 else "(signal OK)"
-		])
+		# print("[livekit][debug] Mic peak amplitude last %ds: %.4f %s" % [
+		# 	int(_DEBUG_INTERVAL), _debug_mic_peak,
+		# 	"(SILENCE — mic may be muted or unavailable)" if _debug_mic_peak < 0.001 else "(signal OK)"
+		# ])
 		_debug_mic_peak = 0.0
 
 	# Pump local mic frames from the Record bus → LiveKit.
@@ -303,7 +305,8 @@ func _process(delta: float) -> void:
 		_mic_source.capture_frame(chunk, _mic_sample_rate, MIC_CHANNELS, _mic_chunk_samples)
 
 func _on_data_received(data, participant, _kind, _topic):
-	print("[livekit] Data from ", participant.get_identity(), ": ", data.get_string_from_utf8())
+	# print("[livekit] Data from ", participant.get_identity(), ": ", data.get_string_from_utf8())
+	pass
 
 # ---------------------------------------------------------------- mic publish
 
@@ -318,7 +321,7 @@ func _start_microphone_publish() -> void:
 		AudioServer.set_bus_name(bus_idx, RECORD_BUS_NAME)
 		# Send to nothing — this is the key: mic audio goes nowhere locally.
 		AudioServer.set_bus_send(bus_idx, "")
-		print("[livekit] Created silent capture bus '%s' (no send)" % RECORD_BUS_NAME)
+		# print("[livekit] Created silent capture bus '%s' (no send)" % RECORD_BUS_NAME)
 
 	# Ensure the bus send is silent even if it pre-existed (e.g. in the .tres layout).
 	AudioServer.set_bus_send(bus_idx, "")
@@ -331,7 +334,7 @@ func _start_microphone_publish() -> void:
 		mic_player.bus = RECORD_BUS_NAME
 		add_child(mic_player)
 		mic_player.play()
-		print("[livekit] Capture source player started on bus '%s'" % RECORD_BUS_NAME)
+		# print("[livekit] Capture source player started on bus '%s'" % RECORD_BUS_NAME)
 
 	for i in AudioServer.get_bus_effect_count(bus_idx):
 		var fx := AudioServer.get_bus_effect(bus_idx, i)
@@ -357,7 +360,7 @@ func _start_microphone_publish() -> void:
 		return
 
 	_mic_publication = room.get_local_participant().publish_track(_mic_track, {})
-	print("[livekit] Microphone track published")
+	# print("[livekit] Microphone track published")
 
 func map_participant_to_player(participant_id: String, player_uuid: String) -> void:
 	mapping_participant_player[participant_id] = player_uuid
