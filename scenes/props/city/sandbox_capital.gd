@@ -73,7 +73,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["position"]["y"],
 			data["position"]["z"]
 		)
-		spawn_position = position 
+		spawn_position = position
 	if data.has("rotation"):
 		rotation = Vector3(
 			data["rotation"]["x"],

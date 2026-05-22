@@ -275,7 +275,8 @@ func _process(_delta: float) -> void:
 				var _cross: Vector3 = _fwd_h.cross(_disp_h)
 				var _sign: float = 1.0 if _cross.dot(_up) > 0.0 else -1.0
 				var _signed_angle_deg: float = rad_to_deg(_fwd_h.angle_to(_disp_h)) * _sign
-				print("[VISUAL-MOVE] input=", input_direction, " signed_angle_disp_vs_fwd_deg=", _signed_angle_deg, " disp_len=", _disp.length(), " fwd_h=", _fwd_h, " disp_h=", _disp_h, " parent=", get_parent().name)
+				print("[VISUAL-MOVE] input=", input_direction, " signed_angle_disp_vs_fwd_deg=", \
+					_signed_angle_deg, " disp_len=", _disp.length(), " fwd_h=", _fwd_h, " disp_h=", _disp_h, " parent=", get_parent().name)
 		set_meta("_dbg_last_world", _cur_world)
 	# END DEBUG
 
@@ -330,10 +331,13 @@ func _physics_process(delta: float) -> void:
 			var _stored_rot: Vector3 = global_rotation
 			var _delta: Vector3 = _stored_rot - _recv_rot
 			if _delta.length() > 0.001:
-				print("[ROT-DEBUG] recv=", _recv_rot, " stored=", _stored_rot, " delta_deg=", Vector3(rad_to_deg(_delta.x), rad_to_deg(_delta.y), rad_to_deg(_delta.z)), " parent=", get_parent().name, " is_parented=", is_parented)
+				print("[ROT-DEBUG] recv=", _recv_rot, " stored=", _stored_rot, " delta_deg=", \
+					Vector3(rad_to_deg(_delta.x), rad_to_deg(_delta.y), rad_to_deg(_delta.z)), \
+					" parent=", get_parent().name, " is_parented=", is_parented)
 			# DEBUG: also log move_direction vs basis.z to see the angular offset
 			var _fwd_world: Vector3 = -global_transform.basis.z
-			var _move_dir: Vector3 = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized() if input_direction.length() > 0.01 else Vector3.ZERO
+			var _move_dir: Vector3 = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized() \
+				if input_direction.length() > 0.01 else Vector3.ZERO
 			if input_direction.length() > 0.01:
 				var _angle: float = rad_to_deg(_fwd_world.angle_to(_move_dir))
 				var _p := get_parent()
@@ -346,7 +350,9 @@ func _physics_process(delta: float) -> void:
 					var _pb: Basis = (_p as Node3D).global_transform.basis
 					_p_basis_y_deg = rad_to_deg((_pb.get_euler(EULER_ORDER_YXZ)).y)
 					_p_fwd_world = -_pb.z
-				print("[MOVE-DEBUG] input=", input_direction, " body_fwd=", _fwd_world, " move_dir=", _move_dir, " angle_fwd_to_move_deg=", _angle, " parent=", _p_name, " parent_yaw_deg=", _p_basis_y_deg, " parent_fwd=", _p_fwd_world, " local_pos=", _local_pos, " world_pos=", _world_pos)
+				print("[MOVE-DEBUG] input=", input_direction, " body_fwd=", _fwd_world, " move_dir=", \
+					_move_dir, " angle_fwd_to_move_deg=", _angle, " parent=", _p_name, " parent_yaw_deg=", \
+					_p_basis_y_deg, " parent_fwd=", _p_fwd_world, " local_pos=", _local_pos, " world_pos=", _world_pos)
 			# END DEBUG
 
 		var sprint = null
@@ -470,7 +476,10 @@ func _physics_process(delta: float) -> void:
 				var _pb: Basis = (_p as Node3D).global_transform.basis
 				_p_yaw_deg = rad_to_deg((_pb.get_euler(EULER_ORDER_YXZ)).y)
 				_p_fwd_world = -_pb.z
-			print("[CLIENT-SEND] input=", input_direction, " visual_fwd=", _client_fwd, " sent_fwd=", _sent_fwd, " angle_visual_vs_sent_deg=", _angle_visual_vs_sent, " up=", up_direction, " parent=", _p_name, " parent_yaw_deg=", _p_yaw_deg, " parent_fwd=", _p_fwd_world, " local_pos=", position, " world_pos=", global_position)
+			print("[CLIENT-SEND] input=", input_direction, " visual_fwd=", _client_fwd, " sent_fwd=", _sent_fwd, \
+				" angle_visual_vs_sent_deg=", _angle_visual_vs_sent, " up=", up_direction, " parent=", _p_name, \
+				" parent_yaw_deg=", _p_yaw_deg, " parent_fwd=", _p_fwd_world, " local_pos=", position, " world_pos=", \
+				global_position)
 			# END DEBUG
 		update_last_basis()
 
@@ -564,7 +573,8 @@ func orient_player():
 	var _yaw_change_deg: float = rad_to_deg(_before_fwd.angle_to(_after_fwd))
 	var _up_misalignment_deg: float = rad_to_deg(_before_y.angle_to(up_direction))
 	if _up_misalignment_deg > 0.5 or _yaw_change_deg > 0.5:
-		print("[ORIENT] up_misalignment_deg=", _up_misalignment_deg, " fwd_change_deg=", _yaw_change_deg, " up_dir=", up_direction, " before_y=", _before_y)
+		print("[ORIENT] up_misalignment_deg=", _up_misalignment_deg, " fwd_change_deg=", _yaw_change_deg, \
+			" up_dir=", up_direction, " before_y=", _before_y)
 
 func set_player_name(player_name):
 	label_player_name.text = str(player_name)
