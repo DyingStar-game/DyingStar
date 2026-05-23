@@ -22,7 +22,7 @@ RUN wget https://packages.microsoft.com/config/debian/13/packages-microsoft-prod
     rm packages-microsoft-prod.deb && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        dotnet-sdk-8.0 \
+        dotnet-sdk-9.0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Godot
@@ -71,13 +71,60 @@ COPY . .
 # runtime stage can COPY each to its final destination without an
 # intermediate mv that would double the 10 GiB across layers.
 WORKDIR /out
+
+# ── Pre-export configuration ─────────────────────────────────────────────────
+# 1. Rewrite NuGet.Config to add the bundled double-precision GodotSharp nupkgs.
+#    The repo NuGet.Config only has nuget.org, which does not carry the custom
+#    Godot.NET.Sdk/GodotSharp double-precision packages.  Without this, Godot's
+#    internal `dotnet publish` (invoked automatically by --export-release via
+#    GodotTools) cannot resolve the SDK and exits with code 145 — producing no
+#    .NET assemblies dir and a server that crashes at runtime.
+#    This mirrors the "Configure NuGet for double-precision GodotSharp" step in
+#    build-client.yaml.
+#
+# 2. Strip the linux GDExtension entry from godot-livekit so it is not loaded
+#    during the headless import / export passes.  The .so requires libpipewire,
+#    libX11, and more display libs that are intentionally absent in the builder
+#    image.  A load failure prevents LiveKit GDScript types from being registered,
+#    which causes server/client.gd to fail with parse errors that propagate into
+#    the .NET build.  The addon is already excluded from the server PCK via
+#    exclude_filter in export_presets.cfg, so the shipped binary is unaffected.
+#
+# 3. Purge any cached Godot NuGet packages that may have been pulled from
+#    nuget.org in a previous (cached) build layer.  Those are single-precision
+#    variants and would cause a Vector3/Transform3D layout mismatch at runtime.
+RUN NUPKGS="/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs" \
+    && printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key="godot-double-precision" value="%s" />\n    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />\n  </packageSources>\n  <packageSourceMapping>\n    <packageSource key="godot-double-precision">\n      <package pattern="Godot.*" />\n      <package pattern="GodotSharp*" />\n    </packageSource>\n    <packageSource key="nuget.org">\n      <package pattern="*" />\n    </packageSource>\n  </packageSourceMapping>\n</configuration>\n' "$NUPKGS" > /build/NuGet.Config \
+    && sed -i '/^linux/d' /build/addons/godot-livekit/godot-livekit.gdextension \
+    && rm -rf /root/.nuget/packages/godotsharp \
+              /root/.nuget/packages/godotsharpeditor \
+              /root/.nuget/packages/godot.net.sdk \
+              /root/.nuget/packages/godot.sourcegenerators
+
+# ── Import + export ───────────────────────────────────────────────────────────
+# --import  : generates .godot/imported/ including CSV → .translation files.
+#             Runs with || true because obs.gd autoload will fail (it loads a
+#             C# class via load() at class-init time, but the C# assemblies do
+#             not exist yet).  Resource importing is independent of autoloads
+#             so translation files are still generated.
+# --export-release : compiles C# via `dotnet publish` (now using the correct
+#             NuGet source above), exports the PCK, and writes the binary + the
+#             data_DyingStar_linuxbsd_x86_64/ .NET assemblies directory.
+# Verification fails the build loudly if the .NET assemblies dir is absent,
+# so we never ship a broken image again.
 RUN /godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64 \
-    --headless \
-    --path /build \
-    --verbose \
-    --export-release dedicated_server /out/dyingstar_server.x86_64 \
+      --headless --path /build --import || true \
+    && /godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64 \
+        --headless \
+        --path /build \
+        --verbose \
+        --export-release dedicated_server /out/dyingstar_server.x86_64 \
     && cp /build/server.ini /out/server.ini \
     && (mv /root/.local/share/godot/app_userdata/DyingStar/chunk_cache /cache 2>/dev/null || mkdir -p /cache) \
+    && echo "[Docker] Verifying export outputs..." \
+    && test -f /out/dyingstar_server.x86_64 \
+    && test -d /out/data_DyingStar_linuxbsd_x86_64 \
+    && ls /out/data_DyingStar_linuxbsd_x86_64/ | head -20 \
     && rm -rf /godot /build /root/.local/share/godot \
     && ls -la /out/ /cache/
 
@@ -100,7 +147,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libstdc++6 \
         libicu76 \
         libtbbmalloc2 \
-        dotnet-runtime-8.0 \
+        dotnet-runtime-9.0 \
         gdb \
     && rm -rf /var/lib/apt/lists/*
 
