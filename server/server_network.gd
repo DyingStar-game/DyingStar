@@ -16,6 +16,9 @@ var devscene: String = ""
 
 var sceneuuid: String = UUID_UTIL.v4()
 
+# Track whether we have sent the check_server_started handshake to Horizon.
+var _peer_handshake_sent: bool = false
+
 func _enter_tree() -> void:
 	var server_ini = "server.ini"
 	for argument in OS.get_cmdline_args():
@@ -47,17 +50,34 @@ func start_websocket_server():
 	return true
 
 func _process(_delta: float) -> void:
-	while ServerNetwork.tcp_server.is_connection_available():
-		print("Peer connected (Horizon server).")
-		peer.accept_stream(ServerNetwork.tcp_server.take_connection())
+	var peer_state = peer.get_ready_state()
+	if peer_state == WebSocketPeer.STATE_CLOSED:
+		_peer_handshake_sent = false
+		if ServerNetwork.tcp_server.is_connection_available():
+			print("Peer connected (Horizon server).")
+			peer = WebSocketPeer.new()
+			peer.outbound_buffer_size = 1000000000  # 1 GB — must be set before accept_stream
+			peer.max_queued_packets = 1000000
+			peer.accept_stream(ServerNetwork.tcp_server.take_connection())
+			peer.set_no_delay(true)
+		# Drain any additional pending connections to avoid backlog
+		while ServerNetwork.tcp_server.is_connection_available():
+			var extra = ServerNetwork.tcp_server.take_connection()
+			extra.disconnect_from_host()
 
 	peer.poll()
 
-	var peer_state = peer.get_ready_state()
+	peer_state = peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
-		peer.outbound_buffer_size = 1000000000  # 1 GB
-		peer.max_queued_packets = 1000000  # 1 million packets
-		peer.set_no_delay(true)
+		if not _peer_handshake_sent:
+			_peer_handshake_sent = true
+			var handshake = {
+				"namespace": "gameserverplugin",
+				"event": "check_server_started",
+				"data": {}
+			}
+			peer.send_text(JSON.stringify(handshake))
+			print("Sent check_server_started to Horizon.")
 		while peer.get_available_packet_count():
 			var packet = peer.get_packet()
 			if peer.was_string_packet():
