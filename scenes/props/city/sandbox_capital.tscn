@@ -50,7 +50,7 @@ size = Vector3(48.28, 0.12, 6)
 material = ExtResource("5_khu6c")
 
 [node name="CSGBox3D7" type="CSGBox3D" parent="Roads" unique_id=1909466074]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.139999999999418, 0, -14.320000000006985)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.139999999999418, 0, -14.320000000006983)
 size = Vector3(48.28, 0.12, 6)
 material = ExtResource("5_khu6c")
 
@@ -79,21 +79,26 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.05000000000291, 0, 7)
 size = Vector3(6, 0.12, 111.08)
 material = ExtResource("5_khu6c")
 
+[node name="CSGBox3D8" type="CSGBox3D" parent="Roads" unique_id=1020196258]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.05000000000291, 0, 560.0122686947361)
+size = Vector3(6, 0.12, 1000.2823273129223)
+material = ExtResource("5_khu6c")
+
 [node name="ContainerLiquid1200x240x240" parent="." unique_id=1539448980 instance=ExtResource("6_wcgoa")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.179615095728444, 0.029154874174624812, 10.023877828812914)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.179615095728444, 0.02915487417462481, 10.023877828812914)
 freeze = true
 
 [node name="PalletCrate120x80x100" parent="." unique_id=334021263 instance=ExtResource("7_uow4d")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7309999999997672, 0, 11.775999999998021)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7309999999997672, 0, 11.77599999999802)
 
 [node name="PalletLiquid120x80x100" parent="." unique_id=391727648 instance=ExtResource("8_k2wr2")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.0789999999979045, 0, 11.775999999998021)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.0789999999979045, 0, 11.77599999999802)
 
 [node name="PalletPlate120x80x100" parent="." unique_id=404745465 instance=ExtResource("9_04krg")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.20100000000093132, 0, 12.998999999996158)
 
 [node name="PalletCrate120x80x101" parent="." unique_id=1101765439 instance=ExtResource("7_uow4d")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3090257940734134, 0.9971445386755879, 11.782113546476872)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3090257940734134, 0.997144538675588, 11.782113546476872)
 
 [node name="OutdoorLamppost2_2001" parent="." unique_id=1687823231 instance=ExtResource("10_uow4d")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.666978187461016, 0, 7.253344080235776)
@@ -106,3 +111,27 @@ transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473
 
 [node name="OutdoorLamppost2_2004" parent="." unique_id=131471193 instance=ExtResource("10_uow4d")]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -19.7141985649465, 0, 28.780430352562533)
+
+[node name="outdoor_lamppost_2_2m_001" parent="." unique_id=1437938073 instance=ExtResource("10_uow4d")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21.346999999994296, 0, 1060.778999999995)
+
+[node name="outdoor_lamppost_2_2m_002" parent="." unique_id=1993642381 instance=ExtResource("10_uow4d")]
+transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, 25.343606081717677, -2.7370208783850103e-06, 1060.7786334255186)
+
+[node name="outdoor_lamppost_2_2m_003" parent="." unique_id=406615683 instance=ExtResource("10_uow4d")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21.346999999994296, 0, 1096.7559532379885)
+
+[node name="outdoor_lamppost_2_2m_004" parent="." unique_id=962686851 instance=ExtResource("10_uow4d")]
+transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, 25.343606081717677, -2.7370208783850103e-06, 1096.755586663512)
+
+[node name="outdoor_lamppost_2_2m_005" parent="." unique_id=542151649 instance=ExtResource("10_uow4d")]
+transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, -21.3469999999943, 0, 1085.4604500564765)
+
+[node name="outdoor_lamppost_2_2m_006" parent="." unique_id=2098819023 instance=ExtResource("10_uow4d")]
+transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 25.34360608171767, -2.7370208783850103e-06, 1085.460083482)
+
+[node name="outdoor_lamppost_2_2m_007" parent="." unique_id=1908488998 instance=ExtResource("10_uow4d")]
+transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, -21.346999999994296, 0, 1121.4598195619385)
+
+[node name="outdoor_lamppost_2_2m_008" parent="." unique_id=1557590182 instance=ExtResource("10_uow4d")]
+transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 25.343606081717677, -2.7370208783850103e-06, 1121.459452987462)

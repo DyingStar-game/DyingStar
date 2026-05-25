@@ -598,26 +598,39 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 				is_parented
 			)
 		gravity_parents.push_back(area)
-	# elif area.is_in_group("spawn"):
-	# 	var parent = area.get_parent()
-	# 	is_parented = true
-	# 		emit_signal(
-	# 			"hs_server_move",
-	# 			client_uuid,
-	# 			snapped(position, Vector3(0.001, 0.001, 0.001)),
-	# 			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-	# 			parent.uuid,
-	# 			is_parented
-	# 		)
-	# 	gravity_parents.push_back(area)
+	elif area.is_in_group("spawn"):
+		var parent = area.get_parent()
+		print("TUTU: Entered spawn area, parent=", parent)
+		# is_parented = true
+		# emit_signal(
+		# 	"hs_server_move",
+		# 	client_uuid,
+		# 	snapped(position, Vector3(0.001, 0.001, 0.001)),
+		# 	snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		# 	parent.uuid,
+		# 	is_parented
+		# )
+		# gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
-	# elif area.is_in_group("spawn"):
-	# 	if gravity_parents.has(area):
-	# 		gravity_parents.erase(area)
+	elif area.is_in_group("spawn"):
+		print("TUTU: Exited spawn area for area ", area)
+		var new_parent = area.get_parent().get_parent()
+		print("TUTU: Reparenting to ", new_parent)
+		reparent(new_parent)
+		emit_signal(
+			"hs_server_move",
+			client_uuid,
+			snapped(position, Vector3(0.001, 0.001, 0.001)),
+			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			new_parent.uuid,
+			is_parented
+		)
+		# if gravity_parents.has(area):
+		# 	gravity_parents.erase(area)
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

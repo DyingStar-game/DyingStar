@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_eljka"]
 [ext_resource type="PackedScene" uid="uid://bw3andciinyj8" path="res://assets/_universe/props/containers/container_standard_1200x240x240_a.glb" id="2_hugvf"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_hugvf"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_eljka"]
 size = Vector3(12, 2.4, 2.4)
@@ -11,8 +12,22 @@ mass = 9000.0
 freeze = true
 script = ExtResource("1_eljka")
 
-[node name="container_standard_1200x240x240_a" parent="." unique_id=608217218 instance=ExtResource("2_hugvf")]
+[node name="container_standard_1200x240x240_a" parent="." unique_id=1543792511 instance=ExtResource("2_hugvf")]
+
+[node name="container_standard_1200x240x240_a_LOD0" parent="container_standard_1200x240x240_a" index="0" unique_id=946876042]
+surface_material_override/0 = ExtResource("3_hugvf")
+
+[node name="container_standard_1200x240x240_a_LOD1" parent="container_standard_1200x240x240_a" index="1" unique_id=1824265351]
+surface_material_override/0 = ExtResource("3_hugvf")
+
+[node name="container_standard_1200x240x240_a_LOD2" parent="container_standard_1200x240x240_a" index="2" unique_id=1889931901]
+surface_material_override/0 = ExtResource("3_hugvf")
+
+[node name="container_standard_1200x240x240_a_LOD3" parent="container_standard_1200x240x240_a" index="3" unique_id=272221499]
+surface_material_override/0 = ExtResource("3_hugvf")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1868462076]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
 shape = SubResource("BoxShape3D_eljka")
+
+[editable path="container_standard_1200x240x240_a"]

@@ -42,17 +42,19 @@ func client_parent_change(parent: Node) -> void:
 
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("position"):
-		position = Vector3(
+		spawn_position = Vector3(
 			data["position"]["x"],
 			data["position"]["y"],
 			data["position"]["z"]
 		)
+		position = spawn_position
 	if data.has("rotation"):
-		rotation = Vector3(
+		spawn_rotation = Vector3(
 			data["rotation"]["x"],
 			data["rotation"]["y"],
 			data["rotation"]["z"]
 		)
+		rotation = spawn_rotation
 
 func _exit_tree() -> void:
 	if GameOrchestrator.is_server():

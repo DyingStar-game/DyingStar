@@ -33,6 +33,7 @@ var server_last_position = Vector3.ZERO
 var server_last_rotation = Vector3.ZERO
 
 var has_parent: bool = false
+var _apartments_created: bool = false
 
 
 # Called when the node enters the scene tree for the first time.
@@ -63,6 +64,7 @@ func update_position_rotation() -> void:
 ## Aligns the building so its local +Y axis points away from the planet centre
 ## (i.e. along the surface normal at its position). An optional heading_rad
 ## rotates the building around that normal so you can control which way it faces.
+## required when directly on planet surface
 # func _align_to_surface(heading_rad: float = 0.0) -> void:
 # 	if OS.has_feature("dedicated_server"):
 # 		var up := spawn_position.normalized()
@@ -78,20 +80,23 @@ func update_position_rotation() -> void:
 
 
 func _create_apartments():
+	if _apartments_created:
+		return
+	_apartments_created = true
 	for f in range(floors):
 		for i in range(cols):
 			# Don't duplicate on itself the apartment 001
 			if f == 0 and i == 0:
 				continue
-			var node_apart = %"1-0-0".duplicate()
-			node_apart.name = str("1-", i, "-", f)
+			var node_apart = %"0-0-0".duplicate()
+			node_apart.name = str("0-", i, "-", f)
 			node_apart.position.z = i * z_spacing
 			node_apart.position.y = f * y_spacing
 			$MultiMeshInstance3D.add_child(node_apart)
 		if rows == 2:
 			for i in range(cols):
-				var node_apart = %"1-0-0".duplicate()
-				node_apart.name = str("2-", i, "-", f)
+				var node_apart = %"0-0-0".duplicate()
+				node_apart.name = str("1-", i, "-", f)
 				node_apart.rotation.y = 3.14159
 				node_apart.position.x = (x_spacing * 2.0)
 				node_apart.position.z = ((i + 1) * z_spacing)
@@ -114,14 +119,30 @@ func _create_apartments():
 	)
 
 
-func _fill_pseudo_plate():
-	pass
-	# create sprite3D
-	# add texture ViewportTexture
-	# assign my subviewport
-	# x: -2.601 y: 1.175, z: -0.788
-	# rot: x: 0.0, y: -90.0, z: 0.0
-	# scale: 0.18
+func _fill_pseudo_plate() -> void:
+	for apt in apartments:
+		var node_name := str(int(apt["row"]), "-", int(apt["col"]), "-", int(apt["floor"]))
+		var node_apart := $MultiMeshInstance3D.get_node_or_null(node_name)
+		if node_apart == null:
+			continue
+
+		var label3d := node_apart.get_node_or_null("Label3D") as Label3D
+		if label3d == null:
+			label3d = Label3D.new()
+			label3d.name = "Label3D"
+			label3d.position = Vector3(0.02, 1.22, 2.42)
+			label3d.rotation_degrees = Vector3(0.0, 90.0, 0.0)
+			label3d.pixel_size = 0.003
+			label3d.font = load("res://ui/Poppins-BoldItalic.ttf")
+			label3d.font_size = 12
+			label3d.outline_size = 8
+			label3d.modulate = Color(0.85, 1.0, 0.85, 1.0)
+			label3d.outline_modulate = Color(0.0, 0.8, 0.05, 0.75)
+			label3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label3d.double_sided = true
+			node_apart.add_child(label3d)
+
+		label3d.text = "HOME\n%s" % apt["player_name"]
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
@@ -176,7 +197,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("apartments"):
 		apartments = data["apartments"]
 		_create_apartments()
-		_fill_pseudo_plate()
+		if not GameOrchestrator.is_server():
+			_fill_pseudo_plate()
 
 func _exit_tree() -> void:
 	if GameOrchestrator.is_server():
