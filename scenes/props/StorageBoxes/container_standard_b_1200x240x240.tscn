@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/props/StorageBoxes/generic_storagebox.gd" id="1_l4mhx"]
 [ext_resource type="PackedScene" uid="uid://c4uuuppm3wcal" path="res://assets/_universe/props/containers/container_standard_1200x240x240_b.glb" id="2_t2qm4"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_t2qm4"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_l4mhx"]
 size = Vector3(12, 2.4, 2.4)
@@ -13,6 +14,20 @@ script = ExtResource("1_l4mhx")
 
 [node name="container_standard_1200x240x240_b" parent="." unique_id=1974814290 instance=ExtResource("2_t2qm4")]
 
+[node name="container_standard_1200x240x240_b_LOD0" parent="container_standard_1200x240x240_b" index="0" unique_id=2071897024]
+surface_material_override/0 = ExtResource("3_t2qm4")
+
+[node name="container_standard_1200x240x240_b_LOD1" parent="container_standard_1200x240x240_b" index="1" unique_id=366741239]
+surface_material_override/0 = ExtResource("3_t2qm4")
+
+[node name="container_standard_1200x240x240_b_LOD2" parent="container_standard_1200x240x240_b" index="2" unique_id=1458337447]
+surface_material_override/0 = ExtResource("3_t2qm4")
+
+[node name="container_standard_1200x240x240_b_LOD3" parent="container_standard_1200x240x240_b" index="3" unique_id=1899672809]
+surface_material_override/0 = ExtResource("3_t2qm4")
+
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2045439363]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
 shape = SubResource("BoxShape3D_l4mhx")
+
+[editable path="container_standard_1200x240x240_b"]

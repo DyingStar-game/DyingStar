@@ -8,10 +8,11 @@
 resource_name = "Material"
 cull_mode = 2
 albedo_texture = ExtResource("1_ayyom")
-metallic = 1.0
-metallic_specular = 1.0
+metallic = 0.75
+metallic_specular = 0.6
 metallic_texture = ExtResource("2_xxyvx")
 metallic_texture_channel = 2
+roughness = 0.55
 roughness_texture = ExtResource("2_xxyvx")
 roughness_texture_channel = 1
 normal_enabled = true

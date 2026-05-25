@@ -620,7 +620,7 @@ func create_generic_object(event: Dictionary) -> void:
 			if parent != null:
 				parent.add_child(prop_instance)
 			else:
-				print("ERROR PARENT ID NOT FOUND!!!!!!!!!! %s" % object_data["parent_id"])
+				print("ERROR PARENT ID NOT FOUND!!!!!!!!!! %s" % object_data)
 				universe_scene.add_child(prop_instance)
 
 			props_list[object_type][object_id] = prop_instance
