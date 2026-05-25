@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+- 2026-05-25 Fix spawn in appartments    
+- 2026-05-24 fix light of the universe
+- 2026-05-23 Fix godot server (many errors)
+- 2026-05-22 Manage apartments spawn
+- 2026-05-16 anhance server error messages
 - 2026-05-11 fix crash on bult game, because not buld with right dotnet version
+- 2026-05-10 Update to dotnet 9, remove login page because auth with JWT token.
 - 2026-05-10 add changelog file
 - 2026-05-10 fix log in /tmp (crash on windows)
 - 2026-05-10 fix ssh deploy
