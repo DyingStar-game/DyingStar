@@ -175,8 +175,10 @@ func connect_area_detect():
 	if OS.has_feature("dedicated_server"):
 		print("Connecting area detector on server side")
 	$AreaDetector.monitoring = true
-	$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
-	$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
+	if not $AreaDetector.area_entered.is_connected(_on_area_detector_area_entered):
+		$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
+	if not $AreaDetector.area_exited.is_connected(_on_area_detector_area_exited):
+		$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
 func get_current_gravity_parent() -> Node3D:
 	if gravity_parents.is_empty(): return null
@@ -598,9 +600,9 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 				is_parented
 			)
 		gravity_parents.push_back(area)
-	elif area.is_in_group("spawn"):
-		var parent = area.get_parent()
-		print("TUTU: Entered spawn area, parent=", parent)
+	# elif area.is_in_group("spawn"):
+	# 	var parent = area.get_parent()
+	# 	print("TUTU: Entered spawn area, parent=", parent)
 		# is_parented = true
 		# emit_signal(
 		# 	"hs_server_move",

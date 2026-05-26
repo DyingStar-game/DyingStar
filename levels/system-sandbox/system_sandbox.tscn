@@ -21,6 +21,9 @@ tonemap_mode = 3
 tonemap_white = 6.0
 glow_normalized = true
 glow_intensity = 0.64
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.0
+volumetric_fog_albedo = Color(0.78431374, 0.627451, 0.3764706, 1)
 
 [node name="SystemSandbox" type="Node3D" unique_id=1170441495 node_paths=PackedStringArray("spawn_node")]
 script = ExtResource("1_6wdpo")
