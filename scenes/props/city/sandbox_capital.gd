@@ -28,6 +28,7 @@ func _align_to_surface(heading_rad: float = 0.0) -> void:
 		print(position)
 		print(rotation)
 		print(scale)
+		return
 		var up := spawn_position.normalized()
 		if up.is_zero_approx():
 			return

@@ -14,6 +14,58 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_4sslq"]
 size = Vector3(5000, 50, 5000)
 
+[sub_resource type="Shader" id="Shader_uow4d"]
+code = "shader_type fog;
+
+uniform sampler2D noise_tex : repeat_enable;
+uniform float noise_scale : hint_range(0.0, 1.0, 0.0001) = 0.05;
+uniform float flatness : hint_range(0.0, 50.0, 0.1) = 15.0;
+uniform float density : hint_range(0.0, 6.0, 0.0001) = 2.0;
+uniform sampler2D grad_tex;
+uniform vec3 emission : source_color = vec3(0.8, 0.6, 0.3); // sandy color
+uniform float fog_speed : hint_range(-5.0, 5.0, 0.001) = 1.5;
+
+void fog() {
+    vec2 move_uv = vec2(0.1, 0.1) * TIME * fog_speed;
+
+    // Two layers of noise for detail
+    float detail_noise = texture(noise_tex, WORLD_POSITION.xz * noise_scale + move_uv * 0.5).r;
+    float noise = texture(noise_tex, WORLD_POSITION.xz * noise_scale + move_uv + detail_noise).r;
+
+    // Apply vertical flatness (keeps storm close to the ground)
+    DENSITY = mix(1.0, noise, UVW.y * flatness);
+    DENSITY *= step(0.0, -SDF) * density;
+
+    // Color from gradient
+    vec3 col = texture(grad_tex, vec2(DENSITY, 0.5)).rgb;
+    ALBEDO = col;
+    EMISSION = emission;
+}
+
+"
+
+[sub_resource type="Gradient" id="Gradient_04krg"]
+offsets = PackedFloat32Array(0, 0.50406504, 1)
+colors = PackedColorArray(3.2526734, 2.2426968, 0.71783006, 1, 1.5927306, 1.3102963, 0.8395721, 1, 0.8784314, 0.8, 0.6392157, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_yc6ci"]
+gradient = SubResource("Gradient_04krg")
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_4lkw2"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_lr8y8"]
+noise = SubResource("FastNoiseLite_4lkw2")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_3b5ap"]
+shader = SubResource("Shader_uow4d")
+shader_parameter/noise_tex = SubResource("NoiseTexture2D_lr8y8")
+shader_parameter/noise_scale = 0.05
+shader_parameter/flatness = 15.0
+shader_parameter/density = 0.09999999747
+shader_parameter/grad_tex = SubResource("GradientTexture1D_yc6ci")
+shader_parameter/emission = Color(0.8, 0.6, 0.3, 1)
+shader_parameter/fog_speed = 1.5
+
 [node name="SandoxCapital" type="StaticBody3D" unique_id=300574500]
 script = ExtResource("1_hvdt3")
 
@@ -135,3 +187,8 @@ transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473
 
 [node name="outdoor_lamppost_2_2m_008" parent="." unique_id=1557590182 instance=ExtResource("10_uow4d")]
 transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 25.343606081717677, -2.7370208783850103e-06, 1121.459452987462)
+
+[node name="FogVolume" type="FogVolume" parent="." unique_id=1570834981]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.19291496276855, 66.76164340795899, -113.61418764843752)
+size = Vector3(1638.7212916605677, 135.5232830842242, 279.4780060026578)
+material = SubResource("ShaderMaterial_3b5ap")
