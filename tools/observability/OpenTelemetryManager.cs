@@ -293,19 +293,24 @@ public partial class OpenTelemetryManager : Node
 
     public static void LogWithLevel(LogLevelType level, string section, string message, Godot.Collections.Dictionary tags = null, Exception ex = null)
     {
+        if (!_enabled || _logger == null)
+            return;
         if (level < CurrentLevel)
             return; // filtrage
         List<KeyValuePair<string, object>> kvTags = new();
 
-        foreach (var key in tags.Keys)
+        if (tags != null)
         {
-            kvTags.Add(new KeyValuePair<string, object>(key.ToString(), tags[key]));
+            foreach (var key in tags.Keys)
+            {
+                kvTags.Add(new KeyValuePair<string, object>(key.ToString(), tags[key]));
+            }
         }
         // Ajouter la section comme tag
         kvTags.Add(new KeyValuePair<string, object>("section", section));
 
         // Ajout du scope pour OpenTelemetry
-        using (_logger!.BeginScope(kvTags))
+        using (_logger.BeginScope(kvTags))
         {
             // Log sans section dans le message
             switch (level)
