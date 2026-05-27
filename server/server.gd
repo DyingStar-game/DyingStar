@@ -715,11 +715,22 @@ func create_player(event: Dictionary) -> void:
 		return
 
 	if players_list.has(player_uuid):
-		prints("Player already exists on server side: %s" % event)
-		return
+		# Player reconnecting — clean up stale instance and respawn
+		prints("Player reconnecting, removing stale instance: %s" % player_uuid)
+		var old_player = players_list[player_uuid]
+		players_list.erase(player_uuid)
+		players_list_last_movement.erase(player_uuid)
+		players_list_last_rotation.erase(player_uuid)
+		players_list_creationdate.erase(player_uuid)
+		if is_instance_valid(old_player):
+			old_player.queue_free()
+		# Clear any stale pending messages for this player
+		for msg in pending_messages_player_parenting.duplicate():
+			if msg["data"].get("object_uuid", "") == player_uuid:
+				pending_messages_player_parenting.erase(msg)
+		# Fall through to spawn the new instance
 
 	prints("Creating player on server side: %s" % event)
-	prints("Y A RIEN LA? player_uuid : %s", player_uuid)
 	var player_data = event["data"]["object_data"]
 
 	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
@@ -898,6 +909,10 @@ func remove_player(event: Dictionary) -> void:
 		print("player has quit the game: %s" % player_uuid)
 		players_list.erase(player_uuid)
 		player.queue_free()
+	# Clear any pending spawn messages for this player
+	for msg in pending_messages_player_parenting.duplicate():
+		if msg["data"].get("object_uuid", "") == player_uuid:
+			pending_messages_player_parenting.erase(msg)
 
 func freeze_object(event: Dictionary, append = true) -> bool:
 	# we will freeze scenes objects
