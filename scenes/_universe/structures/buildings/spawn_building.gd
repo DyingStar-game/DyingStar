@@ -41,6 +41,7 @@ func _ready() -> void:
 	# Buildings must not move: freeze so the physics engine never applies gravity
 	# or forces to this body (prevents the building — and any player child — from drifting).
 	position = spawn_position
+	rotation = spawn_rotation
 	# _align_to_surface(spawn_rotation.y)
 
 func update_position_rotation() -> void:
