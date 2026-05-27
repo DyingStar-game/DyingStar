@@ -638,30 +638,32 @@ func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
 
-func spawn_box(boxscene: String, type: String, coeffz: float, coeffy: float):
-	var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
-	# parent is for example the planet
-	var parent = get_parent();
-	var parentuuid = ""
-	if parent.name == "SystemSandbox":
-		parentuuid = ""
-	else:
-		parentuuid = parent.uuid
+func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float):
+	# disabled for the moment because take too many FPS on server
+	pass
+	# var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
+	# # parent is for example the planet
+	# var parent = get_parent();
+	# var parentuuid = ""
+	# if parent.name == "SystemSandbox":
+	# 	parentuuid = ""
+	# else:
+	# 	parentuuid = parent.uuid
 
-	emit_signal(
-		"client_action_requested",
-		{
-			"action": "spawn",
-			"entity": type,
-			"position": {
-				"x": item_spawn_position[0],
-				"y": item_spawn_position[1],
-				"z": item_spawn_position[2]
-			},
-			"scenename": "scenes/props/" + boxscene + ".tscn",
-			"parent_id": parentuuid,
-		}
-	)
+	# emit_signal(
+	# 	"client_action_requested",
+	# 	{
+	# 		"action": "spawn",
+	# 		"entity": type,
+	# 		"position": {
+	# 			"x": item_spawn_position[0],
+	# 			"y": item_spawn_position[1],
+	# 			"z": item_spawn_position[2]
+	# 		},
+	# 		"scenename": "scenes/props/" + boxscene + ".tscn",
+	# 		"parent_id": parentuuid,
+	# 	}
+	# )
 
 # Send the properties of the player from godot server to horizon / client
 # for example, the health, stamina, etc...
