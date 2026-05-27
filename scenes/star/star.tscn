@@ -20,8 +20,9 @@ surface_material_override/0 = SubResource("ShaderMaterial_goixn")
 script = ExtResource("2_e8616")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=223607816]
+visible = false
 light_color = Color(1, 0.959123, 0.80835, 1)
 light_energy = 1.8
 shadow_enabled = true
-omni_range = 1.0e+09
+omni_range = 1000000000.0
 omni_attenuation = 0.0

@@ -6,12 +6,11 @@ extends Area3D
 
 var _tween: Tween
 
-@onready var audio := $AudioStreamPlayer3D
+@onready var audio := $AudioStreamPlayer
 
 func _ready() -> void:
-	pass
-	#body_entered.connect(_on_body_entered)
-	#body_exited.connect(_on_body_exited)
+	body_entered.connect(_on_body_entered)
+	body_exited.connect(_on_body_exited)
 
 
 func _on_body_entered(body: Node3D) -> void:
