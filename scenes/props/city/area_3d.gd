@@ -4,10 +4,9 @@ extends Area3D
 @export var fade_out_duration := 3.0  # secondes pour descendre
 @export var target_volume_db := -50.0   # volume max quand dans la zone
 
-@onready var audio := $AudioStreamPlayer3D
-
 var _tween: Tween
 
+@onready var audio := $AudioStreamPlayer3D
 
 func _ready() -> void:
 	pass
@@ -39,8 +38,8 @@ func _start_fade(to_db: float, duration: float, stop_after := false) -> void:
 
 	_tween = create_tween()
 	_tween.tween_property(audio, "volume_db", to_db, duration)\
-		  .set_trans(Tween.TRANS_SINE)\
-		  .set_ease(Tween.EASE_IN_OUT)
+		.set_trans(Tween.TRANS_SINE)\
+		.set_ease(Tween.EASE_IN_OUT)
 
 	if stop_after:
 		_tween.tween_callback(audio.stop)
