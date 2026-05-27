@@ -16,32 +16,34 @@ var server_last_rotation = Vector3.ZERO
 var has_parent: bool = false
 
 func _ready() -> void:
-	position = spawn_position
-	_align_to_surface(spawn_rotation.y)
+	# DEBUG: alignment disabled to isolate movement drift.
+	if not GameOrchestrator.is_server():
+		return
+	if not spawn_position.is_zero_approx():
+		position = spawn_position
+	else:
+		spawn_position = position
+	# _align_to_surface(spawn_rotation.y)  # DISABLED
 
 ## Aligns the building so its local +Y axis points away from the planet centre
 ## (i.e. along the surface normal at its position). An optional heading_rad
 ## rotates the building around that normal so you can control which way it faces.
+## Must run on BOTH server and client so world basis stays consistent regardless
+## of parent (planet) rotation differences between simulations.
 func _align_to_surface(heading_rad: float = 0.0) -> void:
-	if OS.has_feature("dedicated_server"):
-		print("==========================================YOLO=")
-		print(position)
-		print(rotation)
-		print(scale)
+	# Use current local position as fallback so alignment still works
+	# when spawn_position was never assigned (e.g. server using .tscn placement).
+	var ref_pos := spawn_position if not spawn_position.is_zero_approx() else position
+	var up := ref_pos.normalized()
+	if up.is_zero_approx():
 		return
-		var up := spawn_position.normalized()
-		if up.is_zero_approx():
-			return
-		var forward := Vector3.FORWARD if abs(up.dot(Vector3.FORWARD)) < 0.99 else Vector3.RIGHT
-		var right := forward.cross(up).normalized()
-		var fwd := up.cross(right).normalized()
-		basis = Basis(right, up, -fwd)
-		if not is_zero_approx(heading_rad):
-			basis = basis.rotated(up, heading_rad)
-		print("==========================================Yipi=")
-		print(position)
-		print(rotation)
-		print(scale)
+	var forward := Vector3.FORWARD if abs(up.dot(Vector3.FORWARD)) < 0.99 else Vector3.RIGHT
+	var right := forward.cross(up).normalized()
+	var fwd := up.cross(right).normalized()
+	basis = Basis(right, up, -fwd)
+	if not is_zero_approx(heading_rad):
+		basis = basis.rotated(up, heading_rad)
+	if GameOrchestrator.is_server():
 		send_properties_to_client()
 
 func send_properties_to_client() -> void:
@@ -81,7 +83,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["rotation"]["y"],
 			data["rotation"]["z"]
 		)
-		_align_to_surface(spawn_rotation.y)
+		# DEBUG: alignment disabled.
+		# if GameOrchestrator.is_server():
+		# 	_align_to_surface(spawn_rotation.y)
 
 func _exit_tree() -> void:
 	if GameOrchestrator.is_server():

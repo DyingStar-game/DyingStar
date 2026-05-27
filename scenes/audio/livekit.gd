@@ -174,7 +174,7 @@ func _on_track_subscribed(track, _publication, participant):
 
 	var generator := AudioStreamGenerator.new()
 	generator.mix_rate = sample_rate
-	generator.buffer_length = 0.2
+	generator.buffer_length = 0.4
 
 	# Attach a positional 3D speaker to the matching player node so the voice
 	# is spatialized in the world. Fall back to a non-spatial player if the
@@ -217,6 +217,13 @@ func _on_track_subscribed(track, _publication, participant):
 		push_warning("[livekit] Failed to get generator playback for track: " + track.get_name())
 		player.queue_free()
 		return
+
+	# Pre-fill the buffer with silence so the generator starts without an
+	# immediate underrun while the first LiveKit frames arrive.
+	var silence := PackedVector2Array()
+	silence.resize(playback.get_frames_available())
+	silence.fill(Vector2.ZERO)
+	playback.push_buffer(silence)
 
 	_audio_bridges[track.get_name()] = {
 		"lk_stream": lk_stream,
@@ -319,12 +326,16 @@ func _start_microphone_publish() -> void:
 		AudioServer.add_bus()
 		bus_idx = AudioServer.bus_count - 1
 		AudioServer.set_bus_name(bus_idx, RECORD_BUS_NAME)
-		# Send to nothing — this is the key: mic audio goes nowhere locally.
+		# Send to nothing and mute — mic audio goes nowhere locally.
 		AudioServer.set_bus_send(bus_idx, "")
+		AudioServer.set_bus_mute(bus_idx, true)
 		# print("[livekit] Created silent capture bus '%s' (no send)" % RECORD_BUS_NAME)
 
 	# Ensure the bus send is silent even if it pre-existed (e.g. in the .tres layout).
+	# set_bus_send with "" is unreliable (may fall back to Master); muting is the
+	# guaranteed way to stop local playback while AudioEffectCapture still works.
 	AudioServer.set_bus_send(bus_idx, "")
+	AudioServer.set_bus_mute(bus_idx, true)
 
 	var mic_player: AudioStreamPlayer = get_node_or_null("_MicPlayer")
 	if mic_player == null:

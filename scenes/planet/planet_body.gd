@@ -261,11 +261,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["positions"][0]["z"]
 		)
 	if data.has("rotations"):
-		rotation = Vector3(
-			data["rotations"][0]["x"],
-			data["rotations"][0]["y"],
-			data["rotations"][0]["z"]
-		)
+		# NOTE: network sends rotations as quaternions {w, x, y, z}. Previously
+		# parsed wrongly as Euler (x, y, z) which caused a ~10° client-only tilt
+		# of the planet/system root, producing player movement drift relative to
+		# the server. The server does NOT currently apply these rotations to its
+		# own scene tree (the universe is loaded statically), so applying them on
+		# the client too produces a parent-basis mismatch and movement drift.
+		# Skip until orbital rotation is handled symmetrically on both sides.
+		pass
 
 ## Called by the network layer when the parent node changes.
 func client_parent_change(_new_parent: Node) -> void:
