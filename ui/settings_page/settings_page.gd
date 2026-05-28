@@ -22,6 +22,7 @@ func _ready() -> void:
 
 
 func open_settings(settings : PackedScene) -> void:
+	AudioManager.play_UI_sound(AudioManager.SOUND_UI_BUTTON)
 	for child in settings_container.get_children():
 		child.queue_free()
 	settings_container.add_child(settings.instantiate())

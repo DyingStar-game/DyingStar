@@ -3,7 +3,6 @@
 [ext_resource type="Script" uid="uid://c2wb57c2srlse" path="res://ui/settings_page/settings_page.gd" id="1_tirmb"]
 [ext_resource type="Texture2D" uid="uid://f3jn1wljcogi" path="res://ui/background_little_title.png" id="2_84msf"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_84msf"]
-[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="4_tirmb"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_ug86k"]
 font = ExtResource("3_84msf")
@@ -159,6 +158,3 @@ transparent_bg = true
 handle_input_locally = false
 size = Vector2i(1476, 968)
 render_target_update_mode = 4
-
-[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("4_tirmb")]
-root_path = NodePath("../Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer")
