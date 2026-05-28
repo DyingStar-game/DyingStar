@@ -2,7 +2,7 @@ extends Node
 
 signal volume_changed(bus_name: String, linear_value: float)
 
-var bus_names = ["Master", "Music", "SFX", "Voice"]
+var bus_names = ["Master", "Music", "SFX", "Voice", "Interface"]
 var bus_indices: Dictionary = {}
 var music_player: AudioStreamPlayer
 

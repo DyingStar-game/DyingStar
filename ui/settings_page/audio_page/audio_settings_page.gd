@@ -7,7 +7,8 @@ extends Control
 	"Master": $MarginContainer/VBoxContainer/General/HSlider,
 	"Music": $MarginContainer/VBoxContainer/Music/HSlider,
 	"SFX": $MarginContainer/VBoxContainer/SFX/HSlider,
-	"Voice": $MarginContainer/VBoxContainer/VoIP/HSlider
+	"Voice": $MarginContainer/VBoxContainer/VoIP/HSlider,
+	"Interface": $MarginContainer/VBoxContainer/Interface/HSlider
 }
 
 func _ready() -> void:

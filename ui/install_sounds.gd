@@ -16,7 +16,7 @@ func _ready() -> void:
 	for i in sounds.keys():
 		sounds[i].stream = load("res://assets/_universe/audio/sfx/ui/" + str(i))
 		# assign output mixer bus
-		sounds[i].bus = &"SFX"
+		sounds[i].bus = &"Interface"
 		# add them to the scene tree
 		add_child(sounds[i])
 

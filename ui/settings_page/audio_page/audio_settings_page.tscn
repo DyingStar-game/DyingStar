@@ -125,6 +125,29 @@ max_value = 1.0
 step = 0.01
 value = 0.2
 
+[node name="Interface" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=68530532]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Interface" unique_id=1968772401]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Interface"
+label_settings = SubResource("LabelSettings_aa43r")
+
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Interface" unique_id=693230257]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+size_flags_vertical = 1
+theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
+theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
+max_value = 1.0
+step = 0.01
+value = 0.2
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=798906512]
+layout_mode = 2
+
 [node name="Microphone" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1571395218]
 layout_mode = 2
 
@@ -191,9 +214,6 @@ theme_override_styles/hover_mirrored = SubResource("StyleBoxFlat_aa43r")
 theme_override_styles/focus = SubResource("StyleBoxFlat_aa43r")
 alignment = 1
 fit_to_longest_item = false
-
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=798906512]
-layout_mode = 2
 
 [node name="Microphone_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1651509629]
 layout_mode = 2
