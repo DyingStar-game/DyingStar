@@ -2,9 +2,14 @@ extends Node
 
 signal volume_changed(bus_name: String, linear_value: float)
 
+# Sons UI transverses au projet
+const SOUND_UI_BUTTON: AudioStream = preload("res://assets/_universe/audio/sfx/ui/button.mp3")
+const SOUND_UI_IMPORTANT: AudioStream = preload("res://assets/_universe/audio/sfx/ui/button_important.ogg")
+
 var bus_names = ["Master", "Music", "SFX", "Voice", "Interface"]
 var bus_indices: Dictionary = {}
 var music_player: AudioStreamPlayer
+var UI_sound_player: AudioStreamPlayer
 
 func _ready():
 	# Initialisation des indices de bus au démarrage
@@ -31,7 +36,7 @@ func set_bus_volume_linear(bus_name: String, linear_value: float):
 	volume_changed.emit(bus_name, clamped_value)
 
 # Joue une musique sur le bus "Music"
-func play_music(stream: AudioStream):
+func play_music(stream: AudioStream) -> void:
 	if not music_player:
 		music_player = AudioStreamPlayer.new()
 		music_player.bus = "Music"
@@ -40,3 +45,13 @@ func play_music(stream: AudioStream):
 	music_player.stream = stream
 	music_player.volume_linear = 0.2
 	music_player.play()
+
+# Joue un son d'UI sur le bus "Interface"
+func play_UI_sound(stream: AudioStream) -> void:
+	if not UI_sound_player:
+		UI_sound_player = AudioStreamPlayer.new()
+		UI_sound_player.bus = "Interface"
+		add_child(UI_sound_player)
+	
+	UI_sound_player.stream = stream
+	UI_sound_player.play() 

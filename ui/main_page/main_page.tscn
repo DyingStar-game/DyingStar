@@ -4,7 +4,6 @@
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_n3f7d"]
 [ext_resource type="Texture2D" uid="uid://dyarfnpyedkh" path="res://ui/button.png" id="3_n4a6o"]
-[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="5_75xce"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_75xce"]
 font = ExtResource("3_n3f7d")
@@ -96,11 +95,5 @@ size_flags_vertical = 0
 theme_override_fonts/font = ExtResource("3_n3f7d")
 theme_override_font_sizes/font_size = 32
 text = "%%MAINPAGE_ENTER"
-
-[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("5_75xce")]
-root_path = NodePath("../Control/VBoxContainer")
-
-[node name="InstallSounds2" parent="." unique_id=1024203266 instance=ExtResource("5_75xce")]
-root_path = NodePath("../Control")
 
 [connection signal="pressed" from="Control/VBoxContainer/EnterButton" to="." method="_on_button_pressed"]
