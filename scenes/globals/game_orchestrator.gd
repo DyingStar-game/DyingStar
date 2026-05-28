@@ -82,55 +82,8 @@ func _ready():
 			change_game_state(GameStates.UNIVERSE_MENU)
 
 func menu_music() -> void:
-	if _menu_music_fade_tween != null and _menu_music_fade_tween.is_valid():
-		_menu_music_fade_tween.kill()
-		_menu_music_fade_tween = null
-
-	if _menu_music_player != null and is_instance_valid(_menu_music_player):
-		_menu_music_player.volume_db = 0.0
-		if not _menu_music_player.playing:
-			_menu_music_player.play()
-		return
-
 	var stream: AudioStream = load(MENU_MUSIC_PATH)
-	if stream == null:
-		push_warning("menu_music: failed to load %s" % MENU_MUSIC_PATH)
-		return
-
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Master"
-	_menu_music_player.autoplay = false
-	_menu_music_player.volume_db = 0.0
-	add_child(_menu_music_player)
-	_menu_music_player.play()
-
-func stop_menu_music(fade_seconds: float = MENU_MUSIC_FADE_OUT_SECONDS) -> void:
-	if _menu_music_player == null or not is_instance_valid(_menu_music_player):
-		return
-
-	if _menu_music_fade_tween != null and _menu_music_fade_tween.is_valid():
-		_menu_music_fade_tween.kill()
-		_menu_music_fade_tween = null
-
-	var player := _menu_music_player
-	# Detach the reference now so a subsequent menu_music() call creates a fresh player
-	# instead of resurrecting the one being faded out.
-	_menu_music_player = null
-
-	if fade_seconds <= 0.0:
-		player.stop()
-		player.queue_free()
-		return
-
-	_menu_music_fade_tween = create_tween()
-	_menu_music_fade_tween.tween_property(player, "volume_db", -80.0, fade_seconds)
-	_menu_music_fade_tween.tween_callback(Callable(player, "stop"))
-	_menu_music_fade_tween.tween_callback(Callable(player, "queue_free"))
+	AudioManager.play_music(stream)
 
 func _notification(what):
 	match what:

@@ -34,6 +34,7 @@ uuid="*res://addons/uuid/uuid.gd"
 Endtoend="*res://scenes/globals/endtoend.gd"
 ServerNetwork="*res://server/server_network.gd"
 Obs="*res://tools/observability/obs.gd"
+AudioManager="*uid://dnt2qx6q7npxp"
 
 [debug]
 

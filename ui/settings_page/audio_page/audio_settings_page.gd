@@ -1,30 +1,40 @@
 extends Control
 
-@onready var general : HSlider = $MarginContainer/VBoxContainer/General/HSlider
-@onready var music : HSlider = $MarginContainer/VBoxContainer/Music/HSlider
-@onready var sfx : HSlider = $MarginContainer/VBoxContainer/SFX/HSlider
-@onready var voip : HSlider = $MarginContainer/VBoxContainer/VoIP/HSlider
 @onready var microphone_device = $MarginContainer/VBoxContainer/Microphone/OptionButton
 @onready var speaker_device = $MarginContainer/VBoxContainer/Speaker/OptionButton
 
-func _ready() -> void:
-	#general.value = 100.0
-	#music.value = 100.0
-	#sfx.value = 100.0
-	#voip.value = 100.0
+@onready var sliders = {
+	"Master": $MarginContainer/VBoxContainer/General/HSlider,
+	"Music": $MarginContainer/VBoxContainer/Music/HSlider,
+	"SFX": $MarginContainer/VBoxContainer/SFX/HSlider,
+	"Voice": $MarginContainer/VBoxContainer/VoIP/HSlider
+}
 
-	#general.value_changed.connect(_on_slider_value_changed.bind("Master"))
-	#music.value_changed.connect(_on_slider_value_changed.bind("music"))
-	#sfx.value_changed.connect(_on_slider_value_changed.bind("sfx"))
-	#voip.value_changed.connect(_on_slider_value_changed.bind("voip"))
+func _ready() -> void:
 	load_microphone_devices()
 	load_speaker_devices()
+	
+	# Initialise la position des sliders selon le volume actuel
+	for bus_name in sliders:
+		var slider = sliders[bus_name]
+		if slider:
+			slider.value = AudioManager.get_bus_volume_linear(bus_name)
+			# Connecter le signal pour la mise à jour en temps réel
+			slider.value_changed.connect(_on_slider_value_changed.bind(bus_name))
+	
+	# Écoute les changements externes (ex: si un autre menu change le volume)
+	AudioManager.volume_changed.connect(_on_audio_manager_volume_changed)
 
-# func _on_mute_button_pressed(mute : bool, bus : String) -> void:
-# 	pass
+func _on_slider_value_changed(new_value: float, bus_name: String):
+	# Mise à jour immédiate du bus audio
+	AudioManager.set_bus_volume_linear(bus_name, new_value)
 
-# func _on_slider_value_changed(volume : float, bus : String) -> void:
-# 	pass
+func _on_audio_manager_volume_changed(bus_name: String, linear_value: float):
+	# Mise à jour de l'UI si le volume change ailleurs
+	if sliders.has(bus_name):
+		var slider = sliders[bus_name]
+		if abs(slider.value - linear_value) > 0.01: # Évite les boucles infinies
+			slider.value = linear_value
 
 func load_microphone_devices() -> void:
 	var devices: PackedStringArray = AudioServer.get_input_device_list()
@@ -35,7 +45,6 @@ func load_speaker_devices() -> void:
 	var devices: PackedStringArray = AudioServer.get_output_device_list()
 	for device in devices:
 		speaker_device.add_item(device)
-
 
 func _on_button_pressed() -> void:
 	var bus_idx = AudioServer.get_bus_index("Record")
