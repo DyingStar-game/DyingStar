@@ -1886,8 +1886,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	_active_chunks[key] = info
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 	var _cache_tag := " [from cache]" if info.get("_from_disk_cache", false) else ""
-	print("[PlanetTerrain] _assemble_visual_chunk '%s' lod=%d res=%d took %.1f ms (active=%d)%s" % [
-		key, lod, res, _elapsed_ms, _active_chunks.size(), _cache_tag])
+	# print("[PlanetTerrain] _assemble_visual_chunk '%s' lod=%d res=%d took %.1f ms (active=%d)%s" % [
+	# 	key, lod, res, _elapsed_ms, _active_chunks.size(), _cache_tag])
 
 
 ## Create a server-side collision chunk.  No visual mesh is generated.
