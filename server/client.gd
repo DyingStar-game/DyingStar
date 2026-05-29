@@ -526,7 +526,8 @@ func create_player(event: Dictionary) -> void:
 			remote_player_instance.spawn_position = Vector3(
 				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 			)
-			remote_player_instance.name = "remoteplayer" + event["object_id"]
+			remote_player_instance.name = player_data["name"]
+			remote_player_instance.remote_player = true
 			remote_player_instance.tree_entered.connect(func():
 				remote_player_instance.owner = get_tree().current_scene
 			)
@@ -769,6 +770,10 @@ func player_update(message: Dictionary) -> void:
 						message["data"]["rotation"]["y"],
 						message["data"]["rotation"]["z"]
 					)
+					if message["data"].has("parent_id"):
+						var parent = _search_parent_node(message["data"]["parent_id"])
+						if parent != null and player.get_parent() != parent:
+							player.reparent(parent)
 		else:
 			print("Update Player but not found...")
 

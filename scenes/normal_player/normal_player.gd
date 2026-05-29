@@ -104,8 +104,7 @@ var _display_debug:bool = false
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
 
 func _enter_tree() -> void:
-	if name.begins_with("remoteplayer"):
-		remote_player = true
+	if remote_player:
 		position = spawn_position
 		$UserInterface.visible = false
 		$CameraPivot.visible = false

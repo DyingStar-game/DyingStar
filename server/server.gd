@@ -485,7 +485,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 	# 	print("move uuid:", client_uuid)
 	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
 		# Prevent write over reparent (because reparent will not sent to client)
-		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("reparent"):
+		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("parent_id"):
 			return
 
 		var prep = {
@@ -503,7 +503,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 		}
 
 		if reparent_uuid != null:
-			prep["reparent"] = reparent_uuid
+			prep["parent_id"] = reparent_uuid
 		players_list_last_movement[client_uuid] = position
 		players_list_last_rotation[client_uuid] = rotation
 		if _check_out_of_zone(client_uuid):

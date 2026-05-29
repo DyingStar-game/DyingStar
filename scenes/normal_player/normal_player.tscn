@@ -106,6 +106,7 @@ text = "Dummy"
 [node name="Labelserver_name" type="Label3D" parent="." unique_id=1244209041]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05, 0)
+visible = false
 billboard = 1
 text = "DummyServer"
 font_size = 24
