@@ -351,9 +351,9 @@ func _physics_process(delta: float) -> void:
 					var _pb: Basis = (_p as Node3D).global_transform.basis
 					_p_basis_y_deg = rad_to_deg((_pb.get_euler(EULER_ORDER_YXZ)).y)
 					_p_fwd_world = -_pb.z
-				print("[MOVE-DEBUG] input=", input_direction, " body_fwd=", _fwd_world, " move_dir=", \
-					_move_dir, " angle_fwd_to_move_deg=", _angle, " parent=", _p_name, " parent_yaw_deg=", \
-					_p_basis_y_deg, " parent_fwd=", _p_fwd_world, " local_pos=", _local_pos, " world_pos=", _world_pos)
+				# print("[MOVE-DEBUG] input=", input_direction, " body_fwd=", _fwd_world, " move_dir=", \
+				# 	_move_dir, " angle_fwd_to_move_deg=", _angle, " parent=", _p_name, " parent_yaw_deg=", \
+				# 	_p_basis_y_deg, " parent_fwd=", _p_fwd_world, " local_pos=", _local_pos, " world_pos=", _world_pos)
 			# END DEBUG
 
 		var sprint = null

@@ -65,6 +65,11 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_QUITGAME"
 
+[node name="ReturnMenuButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=8065788]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "%%PAUSEPAGE_RETURNMENU"
+
 [node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24

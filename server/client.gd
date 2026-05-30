@@ -308,6 +308,10 @@ func _search_parent_node(parent_id: String) -> Node:
 ########################################################################
 # TODO NetworkOrchestrator calls, not sure used with new system, needed to check it
 ########################################################################
+func disconnect_from_server() -> void:
+	set_process(false)
+	socket.close(1000, "client disconnected")
+
 func on_connection_established() -> void:
 	request_spawn()
 
