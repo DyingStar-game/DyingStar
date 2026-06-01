@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 2026-05-31 Add button in pause ui to return to menu (so disconnect with the server)
+- 2026-05-29 Fix pseudo on player and parent when change parent (server and client fix)
 - 2026-05-25 Fix spawn in appartments    
 - 2026-05-24 fix light of the universe
 - 2026-05-23 Fix godot server (many errors)
