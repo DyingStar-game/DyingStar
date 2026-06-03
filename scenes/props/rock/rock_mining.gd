@@ -169,6 +169,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 		)
 	if data.has("blocs"):
 		blocs = data["blocs"]
+		# _cut_rock() needs `combiner`, which is created in _ready(). When this
+		# rock is spawned from the network, client_channel_data_update() is called
+		# *before* the node enters the tree (see server/client.gd ~l.622), so
+		# _ready() hasn't run yet and `combiner` is still null -> crash.
+		# Wait until the node is ready before processing the blocs.
+		if not is_node_ready():
+			await ready
+			await get_tree().process_frame  # let _ready() finish reparenting the mesh into combiner
 		_calculate_blocs()
 
 #####################################################################
