@@ -24,7 +24,10 @@ var has_parent: bool = false
 # a non-empty parent_id that Horizon doesn't know is queued forever (never spawned).
 var created_parent_id: String = ""
 
-var bloc_yet_fractured: bool = false
+# Cut geometry: the mesh is rebuilt as "base mesh minus EVERY fractured fault", so a
+# rock can be cut along several faults (a half can be split again -> down to 4 pieces).
+var _base_mesh: Mesh = null
+var _mesh_instance: MeshInstance3D = null
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
@@ -40,6 +43,7 @@ var blocs = [
 func _ready() -> void:
 	add_to_group("miningrock")  # for proximity detection (aim mode)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
+	_base_mesh = item_rock_mesh.mesh   # keep a ref to rebuild cuts later
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
 
@@ -54,63 +58,70 @@ func _ready() -> void:
 	else:
 		_client_ready()
 
-func _calculate_blocs() -> void:
-	# create CSGbox3D
+## Rebuild the cut geometry from the current fault state (server + client). No cut
+## yet -> keep the initial full-rock combiner and just (re)show the veins.
+func _refresh_cuts() -> void:
 	for bloc in blocs:
-		# generate the CSB box for subtraction
-		bloc.instance = CSGBox3D.new()
-		# define the size
-		bloc.instance.size = Vector3(20.0, 20.0, 20.0)
-		# set the rotation, we must do before move to have the same cut on both parts of the rock
-		bloc.instance.rotation = Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))
-		# apply the first translation to have the box on the extreme right of the rock
-		bloc.instance.translate_object_local(Vector3(10.5, 0, 0))
-		# translate to the random position
-		bloc.instance.translate_object_local(Vector3(-bloc.position, 0.0, 0.0))
-		if int(bloc.keep_side) == 2:
-			# on bloc 2, we must move to the box x size to cut the another part
-			bloc.instance.translate_object_local(Vector3(-20.0, 0, 0))
-		bloc.instance.operation = CSGShape3D.OPERATION_SUBTRACTION
-		if bloc.fractured == true and bloc_yet_fractured == false:
-			_cut_rock(bloc)
+		if bloc.get("fractured", false):
+			_rebuild()
+			return
+	if not OS.has_feature("dedicated_server"):
+		_show_faults()
 
+## Build the CSG box that subtracts one fault's half from the rock (rock-local).
+func _make_cut_box(bloc: Dictionary) -> CSGBox3D:
+	var box := CSGBox3D.new()
+	box.size = Vector3(20.0, 20.0, 20.0)
+	# rotate before translating so the cut plane matches on both halves
+	box.rotation = Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))
+	box.translate_object_local(Vector3(10.5, 0, 0))        # box on the far right of the rock
+	box.translate_object_local(Vector3(-bloc.position, 0.0, 0.0))
+	if int(bloc.keep_side) == 2:
+		box.translate_object_local(Vector3(-20.0, 0, 0))   # cut the other half instead
+	box.operation = CSGShape3D.OPERATION_SUBTRACTION
+	return box
 
-# function to cut the rock
-func _cut_rock(bloc: Dictionary) -> void:
-	var create_part2_rock = false
-	if int(bloc.keep_side) == 1 and bloc.fractured == false:
-		create_part2_rock = true
-	# we set the bloc to fractured, needed for the server sync
-	bloc.fractured = true
-	# add to the combiner for the substration operation
-	combiner.add_child(bloc.instance)
-
-	await get_tree().process_frame
-	# create the mesh and collision shape
-	var meshes = combiner.get_meshes()
-	var mesh: Mesh = meshes[1]
-
-	if mesh.get_surface_count() == 0:
+## Rebuild the rock mesh = base mesh minus EVERY fractured fault. Always rebuilt from
+## scratch, so it is idempotent (replaying the same fault set changes nothing) and
+## supports several cuts on the same rock: a half can be split again -> down to 4 pieces.
+func _rebuild() -> void:
+	if _base_mesh == null:
 		return
-
-	# update center of mass
-	var arraymesh = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var total = Vector3.ZERO
-	for vertice in arraymesh:
-		total += vertice
-	var meshcenter = total / arraymesh.size()
-
-	var meshinstance = MeshInstance3D.new()
-	meshinstance.mesh = mesh
-	# Keep the textured + veins material on the cut piece (remaining faults only).
-	var material := _make_vein_material()
-	meshinstance.set_surface_override_material(0, material)
-	meshinstance.set_surface_override_material(1, material)
-	add_child(meshinstance)
-
+	# Bake "base - all fractured boxes" with a throwaway combiner (kept transient so we
+	# don't leave a live CSG node around for every rock).
+	var temp := CSGCombiner3D.new()
+	add_child(temp)
+	var base := CSGMesh3D.new()
+	base.mesh = _base_mesh
+	temp.add_child(base)
+	for bloc in blocs:
+		if bloc.get("fractured", false):
+			temp.add_child(_make_cut_box(bloc))
+	await get_tree().process_frame
+	var meshes = temp.get_meshes()
+	var mesh: Mesh = meshes[1] if meshes.size() > 1 else null
+	temp.queue_free()
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	# The first cut replaces the initial full-rock combiner with the baked mesh.
+	if combiner != null and is_instance_valid(combiner):
+		combiner.queue_free()
+		combiner = null
+	if _mesh_instance == null or not is_instance_valid(_mesh_instance):
+		_mesh_instance = MeshInstance3D.new()
+		add_child(_mesh_instance)
+	_mesh_instance.mesh = mesh
+	var material := _make_vein_material()   # remaining (un-fractured) faults stay visible
+	_mesh_instance.set_surface_override_material(0, material)
+	_mesh_instance.set_surface_override_material(1, material)
 	rock_shape.shape = mesh.create_convex_shape(true)
+	# No manual recenter: each piece keeps the rock's transform and occupies its own
+	# half of the original volume (Godot derives the rigid body's center of mass from
+	# the offset shape). This keeps both halves in place instead of teleporting them.
+	sleeping = false
 
-	# send update for Horizon & clients
+## Server: replicate the full fault state to Horizon & clients after a cut.
+func _replicate_blocs() -> void:
 	var message1 = {
 		"namespace": "props",
 		"event": "position",
@@ -119,35 +130,25 @@ func _cut_rock(bloc: Dictionary) -> void:
 			{
 				"type": "miningrock",
 				"uuid": uuid,
-				"blocs": [
-					{
-						"fractured": true,
-						"position": bloc.position,
-						"rotation_y": bloc.rotation_y,
-						"rotation_z": bloc.rotation_z,
-						"keep_side": 1,
-						"side2_uuid": ""
-					}
-				],
+				"blocs": _blocs_payload(),
 			}
 		]
 	}
 	ServerNetwork.send_message(message1, "prop_update")
 
-	bloc_yet_fractured = true
-	combiner.queue_free()
-
-	# Spawn the broken-off half as its own networked rock (side2), parented under
-	# the same GORC parent as us so Horizon can resolve it (see created_parent_id).
-	if int(bloc.keep_side) == 1 and OS.has_feature("dedicated_server") and create_part2_rock == true:
-		_server_create_side2_rock(bloc)
-
-	meshinstance.position = -meshcenter
-	rock_shape.position = -meshcenter
-	position += meshcenter
-	# disable freeze
-	sleeping = false
-	# can_sleep = false
+## Serializable copy of the faults (no CSG node refs) for network messages.
+func _blocs_payload() -> Array:
+	var out := []
+	for bloc in blocs:
+		out.append({
+			"fractured": bloc.get("fractured", false),
+			"position": bloc.position,
+			"rotation_y": bloc.rotation_y,
+			"rotation_z": bloc.rotation_z,
+			"keep_side": bloc.get("keep_side", 1),
+			"side2_uuid": bloc.get("side2_uuid", ""),
+		})
+	return out
 
 #####################################################################
 # Client part
@@ -159,6 +160,8 @@ func _client_ready() -> void:
 ## Show each not-yet-fractured fault as a red vein (a thin slice through the rock)
 ## at its cut plane, so faults are visible before perforating.
 func _show_faults() -> void:
+	if combiner == null or not is_instance_valid(combiner):
+		return   # already cut: the veins live on the rebuilt mesh instead
 	var mesh_node = combiner.get_child(0) if combiner.get_child_count() > 0 else null
 	if mesh_node is CSGMesh3D:
 		(mesh_node as CSGMesh3D).material = _make_vein_material()
@@ -204,15 +207,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 		)
 	if data.has("blocs"):
 		blocs = data["blocs"]
-		# _cut_rock() needs `combiner`, which is created in _ready(). When this
-		# rock is spawned from the network, client_channel_data_update() is called
-		# *before* the node enters the tree (see server/client.gd ~l.622), so
-		# _ready() hasn't run yet and `combiner` is still null -> crash.
+		# _rebuild() needs `_base_mesh`, set in _ready(). When this rock is spawned
+		# from the network, client_channel_data_update() is called *before* the node
+		# enters the tree (see server/client.gd ~l.622), so _ready() hasn't run yet.
 		# Wait until the node is ready before processing the blocs.
 		if not is_node_ready():
 			await ready
-			await get_tree().process_frame  # let _ready() finish reparenting the mesh into combiner
-		_calculate_blocs()
+			await get_tree().process_frame  # let _ready() finish setting up the mesh
+		_refresh_cuts()
 
 #####################################################################
 # Server part
@@ -224,32 +226,37 @@ func _server_ready() -> void:
 		"hs_server_prop_update",
 		uuid,
 		{
-			"blocs": blocs,
+			"blocs": _blocs_payload(),
 		},
 		"miningrock",
 		has_parent
 	)
-	_calculate_blocs()
+	_refresh_cuts()
 
 ## Server: perforate the fault nearest to `hit_local` (a rock-local point) and cut
-## along it. One cut per rock for V0 (the CSG combiner is freed after a cut).
+## along it. The remaining faults stay cuttable, so a rock can be split several times.
 func server_perforate(hit_local: Vector3) -> void:
-	if not OS.has_feature("dedicated_server") or bloc_yet_fractured:
+	if not OS.has_feature("dedicated_server"):
 		return
 	var best_i := -1
 	var best_d := INF
 	for i in blocs.size():
 		var bloc = blocs[i]
 		if bloc.get("fractured", false):
-			continue
+			continue   # already cut along this fault
 		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
 		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
 		var d: float = absf(n.dot(hit_local) - (0.5 - bloc.position))
 		if d < best_d:
 			best_d = d
 			best_i = i
-	if best_i >= 0:
-		_cut_rock(blocs[best_i])
+	if best_i < 0:
+		return
+	# Cut our half along the fault, then spawn the complementary half (side2).
+	blocs[best_i].fractured = true
+	await _rebuild()
+	_server_create_side2_rock(best_i)
+	_replicate_blocs()
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
@@ -269,9 +276,23 @@ func _physics_process(_delta: float) -> void:
 			server_last_position = my_position
 			server_last_rotation = my_rotation
 
-func _server_create_side2_rock(bloc: Dictionary) -> void:
-	# send the new prop to Horizon because create item must not be done directly on godot server
+func _server_create_side2_rock(cut_index: int) -> void:
+	# Create the complementary half as its own networked rock. It inherits ALL our
+	# faults (so it shows the remaining veins and can be split again), but the fault we
+	# just cut is flipped to keep_side 2 so its box removes the other half instead.
 	var bloc2_uuid = UUID_UTIL.v4()
+	var side2_blocs := []
+	for i in blocs.size():
+		var bloc = blocs[i]
+		var is_cut: bool = (i == cut_index)
+		side2_blocs.append({
+			"fractured": bloc.get("fractured", false),
+			"position": bloc.position,
+			"rotation_y": bloc.rotation_y,
+			"rotation_z": bloc.rotation_z,
+			"keep_side": 2 if is_cut else bloc.get("keep_side", 1),
+			"side2_uuid": bloc2_uuid if is_cut else bloc.get("side2_uuid", ""),
+		})
 
 	var message = {
 		"namespace": "props",
@@ -291,16 +312,7 @@ func _server_create_side2_rock(bloc: Dictionary) -> void:
 					"y": rotation[1],
 					"z": rotation[2]
 				},
-				"blocs": [
-					{
-						"fractured": true,
-						"position": bloc.position,
-						"rotation_y": bloc.rotation_y,
-						"rotation_z": bloc.rotation_z,
-						"keep_side": 2,
-						"side2_uuid": bloc2_uuid
-					}
-				],
+				"blocs": side2_blocs,
 				"scenename": "scenes/props/rock/rock_mining_01.tscn",
 				# Same parent as ourselves (a known GORC id, or "" for root): Horizon
 				# can resolve it, so the side2 is spawned instead of queued forever.
