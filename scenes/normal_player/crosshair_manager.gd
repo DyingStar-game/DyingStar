@@ -14,10 +14,10 @@ class_name CrosshairManager extends Control
 # A "style" is a Callable that receives the CanvasItem to draw on, centered on
 # Vector2.ZERO (= screen center if the manager is inside a CenterContainer).
 
-var _styles: Dictionary = {}   # name:String -> Callable(canvas: CanvasItem)
-var _current: String = ""
 ## Always-drawn base reticle, rendered under the current overlay ("" = none).
 var base_style: String = "dot"
+var _styles: Dictionary = {}   # name:String -> Callable(canvas: CanvasItem)
+var _current: String = ""
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
