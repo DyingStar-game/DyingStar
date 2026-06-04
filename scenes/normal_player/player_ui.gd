@@ -12,13 +12,13 @@ var microphone_status = true
 var bus_master_index = 0
 var bus_record_index = 0
 
-@onready var crosshair: Control = %Crosshair
-@onready var button_speaker = $HUD/Control/AudioContainer/ButtonSpeaker
-@onready var button_microphone = $HUD/Control/AudioContainer/ButtonMicrophone
-
 # Reticle manager: draws the permanent small dot (base) AND the on-demand
 # aim/overlay crosshairs. Single place responsible for all crosshair drawing.
 var crosshair_manager: CrosshairManager = null
+
+@onready var crosshair: Control = %Crosshair
+@onready var button_speaker = $HUD/Control/AudioContainer/ButtonSpeaker
+@onready var button_microphone = $HUD/Control/AudioContainer/ButtonMicrophone
 
 func _ready() -> void:
 	if not is_multiplayer_authority():
