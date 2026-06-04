@@ -500,6 +500,14 @@ visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
 script = ExtResource("33_2sxo3")
+aim_roll_deg = 0.0
+perforation_hammer_freq = 5.0
+bit_axis = Vector3(1, 0, 0)
+perforation_hammer_amplitude = 0.01
+perforation_shake_amplitude = 0.003
+equipment_hand_offset = Vector3(0.4, 1, 0.1)
+equipment_item_offset = Vector3(0, -0.15, -0.2)
+equipment_item_scale = 1.0
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
