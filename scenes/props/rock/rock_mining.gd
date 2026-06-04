@@ -19,6 +19,11 @@ var server_last_rotation = Vector3.ZERO
 
 var has_parent: bool = false
 
+# The parent we were created under (a valid GORC id, or "" for a root object).
+# Reused for the broken-off half (side2) so Horizon can resolve its parent too:
+# a non-empty parent_id that Horizon doesn't know is queued forever (never spawned).
+var created_parent_id: String = ""
+
 var bloc_yet_fractured: bool = false
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
@@ -132,12 +137,10 @@ func _cut_rock(bloc: Dictionary) -> void:
 	bloc_yet_fractured = true
 	combiner.queue_free()
 
-	# V0: skip spawning the broken-off half as a networked rock — it triggers
-	# "PARENT ID NOT FOUND" on Horizon and spams the server. The rock just loses
-	# the chunk along the fault. TODO: re-enable side2 (the mined chunk = loot)
-	# once prop parenting is sorted out.
-	#if int(bloc.keep_side) == 1 and OS.has_feature("dedicated_server") and create_part2_rock == true:
-	#	_server_create_side2_rock(bloc)
+	# Spawn the broken-off half as its own networked rock (side2), parented under
+	# the same GORC parent as us so Horizon can resolve it (see created_parent_id).
+	if int(bloc.keep_side) == 1 and OS.has_feature("dedicated_server") and create_part2_rock == true:
+		_server_create_side2_rock(bloc)
 
 	meshinstance.position = -meshcenter
 	rock_shape.position = -meshcenter
@@ -185,6 +188,8 @@ func client_parent_change(parent: Node) -> void:
 	has_parent = true
 
 func client_channel_data_update(data: Dictionary) -> void:
+	if data.has("parent_id"):
+		created_parent_id = str(data["parent_id"])
 	if data.has("position"):
 		position = Vector3(
 			data["position"]["x"],
@@ -266,7 +271,6 @@ func _physics_process(_delta: float) -> void:
 
 func _server_create_side2_rock(bloc: Dictionary) -> void:
 	# send the new prop to Horizon because create item must not be done directly on godot server
-	var parent = get_parent()
 	var bloc2_uuid = UUID_UTIL.v4()
 
 	var message = {
@@ -298,7 +302,9 @@ func _server_create_side2_rock(bloc: Dictionary) -> void:
 					}
 				],
 				"scenename": "scenes/props/rock/rock_mining_01.tscn",
-				"parent_id": parent.uuid,
+				# Same parent as ourselves (a known GORC id, or "" for root): Horizon
+				# can resolve it, so the side2 is spawned instead of queued forever.
+				"parent_id": created_parent_id,
 			}
 		]
 	}
