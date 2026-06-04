@@ -25,10 +25,18 @@ const PERFORATION_DURATION := 5.0
 @export_range(0.1, 1.0) var aim_speed_factor: float = 0.4
 ## Max distance (m) to a mining rock to be allowed to enter aim mode.
 @export var aim_rock_distance: float = 2.0
+## Roll correction (deg) to keep the tool upright while aiming (model-dependent).
+@export var aim_roll_deg: float = 0.0
 
 @export_group("Perforation")
 @export var perforation_hammer_freq: float = 10.0       # back-and-forth jabs per second
-@export var perforation_hammer_amplitude: float = 0.18  # depth of one jab (m)
+## Animate only the chisel/bit node (reciprocating) instead of the whole tool.
+@export var animate_bit_only: bool = true
+@export var bit_node_name: String = "hammerdrill_chiselflat"
+## Local axis the bit slides along.
+@export var bit_axis: Vector3 = Vector3(0, 0, 1)
+@export var bit_amplitude: float = 0.06
+@export var perforation_hammer_amplitude: float = 0.18  # whole-tool jab depth (m)
 @export var perforation_shake_amplitude: float = 0.025  # tremble (m)
 
 @export_group("Equipment placement")
@@ -50,8 +58,10 @@ var _camera: Camera3D = null
 var _camera_pivot: Node3D = null
 var _equipment_mount: EquipmentMount = null
 var _perforator: Node3D = null
+var _bit: Node3D = null
 var _perforation_t: float = 0.0
 var _perforator_rest_pos: Vector3 = Vector3.ZERO
+var _bit_rest: Vector3 = Vector3.ZERO
 var _rock_ray: RayCast3D = null
 var _crosshair_shown: bool = false
 var _last_head_sent: float = INF   # last camera pitch sent (throttle "head" sync)
@@ -60,6 +70,12 @@ var _last_head_sent: float = INF   # last camera pitch sent (throttle "head" syn
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_camera_pivot = camera_pivot
 	_camera = camera
+	# Aim raycast from the camera center (the crosshair direction). Created here so
+	# it exists on EVERY instance (remote players reconstruct the aim too).
+	_rock_ray = RayCast3D.new()
+	_rock_ray.target_position = Vector3(0.0, 0.0, -(aim_rock_distance + 2.0))
+	_rock_ray.collision_mask = 0xFFFFFFFF
+	_camera.add_child(_rock_ray)
 	_equipment_mount = EquipmentMount.new()
 	_equipment_mount.name = "EquipmentMount"
 	add_child(_equipment_mount)
@@ -73,10 +89,23 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_perforator.visible = false
 	_equipment_mount.hold(_perforator)
 	_perforator_rest_pos = _perforator.position
+	_bit = _perforator.get_node_or_null(bit_node_name)
+	if _bit:
+		_bit_rest = _bit.position
 
 func _process(delta: float) -> void:
-	# Perforation visual runs on EVERY instance (remote players too), driven by
-	# is_perforating (set by input locally, or by the replicated "perforating").
+	# Aim the held tool at the point under the crosshair on EVERY instance: the
+	# owner uses its real camera; remote players use the camera driven by the
+	# synced body rotation + "head" pitch -> the tool points where they aim, with
+	# no extra networking.
+	if _equipment_mount != null:
+		if _perforator != null and _perforator.visible and _camera != null:
+			_equipment_mount.aim_target = _aim_point()
+			_equipment_mount.aim_up = global_transform.basis.y
+			_equipment_mount.aim_roll_deg = aim_roll_deg
+		else:
+			_equipment_mount.aim_target = null
+	# Perforation visual runs on EVERY instance, driven by is_perforating.
 	_update_perforation_visual(delta)
 
 ## Owner only (called by the player's _process): aim mode, perforation control,
@@ -148,13 +177,22 @@ func _is_looking_at_rock() -> bool:
 	if _camera == null:
 		return false
 	if _rock_ray == null:
-		_rock_ray = RayCast3D.new()
-		_rock_ray.target_position = Vector3(0.0, 0.0, -(aim_rock_distance + 2.0))
-		_rock_ray.collision_mask = 0xFFFFFFFF
-		_camera.add_child(_rock_ray)
+		return false
 	_rock_ray.force_raycast_update()
 	var c = _rock_ray.get_collider()
 	return c != null and c.is_in_group("miningrock")
+
+## World point under the crosshair: camera-center raycast hit, else far forward.
+func _aim_point() -> Vector3:
+	if _camera == null:
+		return global_position
+	var origin: Vector3 = _camera.global_position
+	var fwd: Vector3 = -_camera.global_transform.basis.z
+	if _rock_ray != null:
+		_rock_ray.force_raycast_update()
+		if _rock_ray.is_colliding():
+			return _rock_ray.get_collision_point()
+	return origin + fwd * (aim_rock_distance + 2.0)
 
 ## Apply the perforating state locally (owner from input, remote from "perforating").
 func _apply_perforating(active: bool) -> void:
@@ -164,6 +202,8 @@ func _apply_perforating(active: bool) -> void:
 	_perforation_t = 0.0
 	if not active and _perforator:
 		_perforator.position = _perforator_rest_pos
+		if _bit:
+			_bit.position = _bit_rest
 
 ## Owner: set the perforating state AND replicate it so others see the animation.
 func _set_perforating(active: bool) -> void:
@@ -177,7 +217,12 @@ func _update_perforation_visual(delta: float) -> void:
 	if not is_perforating or _perforator == null:
 		return
 	_perforation_t += delta
-	# fast back-and-forth jabs along the aim (-Z) + random tremble
-	var hammer: float = absf(sin(_perforation_t * perforation_hammer_freq * TAU)) * perforation_hammer_amplitude
-	var shake := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
-	_perforator.position = _perforator_rest_pos - Vector3(0.0, 0.0, hammer) + shake
+	var phase: float = absf(sin(_perforation_t * perforation_hammer_freq * TAU))
+	if animate_bit_only and _bit:
+		# The chisel/bit reciprocates along its local axis; the body only trembles.
+		_bit.position = _bit_rest + bit_axis * (phase * bit_amplitude)
+		_perforator.position = _perforator_rest_pos + Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
+	else:
+		# Whole-tool jab along the aim (-Z) + tremble.
+		var shake := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
+		_perforator.position = _perforator_rest_pos - Vector3(0.0, 0.0, phase * perforation_hammer_amplitude) + shake
