@@ -1,8 +1,8 @@
 class_name CrosshairManager extends Control
 #
-# Reusable manager for on-demand aim crosshairs (overlays shown depending on the
-# context: aiming, weapon, tool...), IN ADDITION to the permanent small dot
-# (which stays handled separately in player_ui).
+# Reusable manager that owns ALL crosshair drawing: a permanent base reticle
+# (the small dot, drawn at all times via base_style) PLUS on-demand overlays shown
+# depending on the context (aiming, weapon, tool...) via set_style(), drawn on top.
 #
 # Usage:
 #   var cm := CrosshairManager.new()
@@ -16,10 +16,13 @@ class_name CrosshairManager extends Control
 
 var _styles: Dictionary = {}   # name:String -> Callable(canvas: CanvasItem)
 var _current: String = ""
+## Always-drawn base reticle, rendered under the current overlay ("" = none).
+var base_style: String = "dot"
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# built-in styles
+	register("dot", _draw_dot)
 	register("aim", _draw_aim_star)
 
 ## Register (or replace) a crosshair style.
@@ -38,10 +41,17 @@ func clear() -> void:
 	set_style("")
 
 func _draw() -> void:
+	# Always-on base reticle first, then the contextual overlay on top.
+	if base_style != "" and _styles.has(base_style):
+		_styles[base_style].call(self)
 	if _current != "" and _styles.has(_current):
 		_styles[_current].call(self)
 
 # ── Built-in styles ─────────────────────────────────────────────────────────
+
+## Permanent small dot reticle (always visible), centered on screen.
+func _draw_dot(canvas: CanvasItem) -> void:
+	canvas.draw_circle(Vector2.ZERO, 1.0, Color.WHITE)
 
 ## "Star/sun" crosshair: center dot + rays + 4 cardinal lines.
 func _draw_aim_star(canvas: CanvasItem) -> void:

@@ -514,6 +514,5 @@ visible = false
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_received" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/client_messages_sent" method="_on_normal_player_display_debug"]
 [connection signal="area_entered" from="AreaDetector" to="." method="_on_area_detector_area_entered"]
-[connection signal="draw" from="UserInterface/HUD/CrosshairContainer/Crosshair" to="UserInterface" method="_on_crosshair_draw"]
 [connection signal="pressed" from="UserInterface/HUD/Control/AudioContainer/ButtonSpeaker" to="UserInterface" method="_on_button_speaker_pressed"]
 [connection signal="pressed" from="UserInterface/HUD/Control/AudioContainer/ButtonMicrophone" to="UserInterface" method="_on_button_microphone_pressed"]
