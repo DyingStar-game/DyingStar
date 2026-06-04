@@ -16,12 +16,17 @@ var bus_record_index = 0
 @onready var button_speaker = $HUD/Control/AudioContainer/ButtonSpeaker
 @onready var button_microphone = $HUD/Control/AudioContainer/ButtonMicrophone
 
+# On-demand aim crosshair manager (overlays). The permanent small dot
+# (%Crosshair) stays handled separately and is always visible.
+var crosshair_manager: CrosshairManager = null
+
 func _ready() -> void:
 	if not is_multiplayer_authority():
 		hide()
 	else:
 		bus_master_index = AudioServer.get_bus_index("Master")
 		bus_record_index = AudioServer.get_bus_index("Record")
+		_setup_crosshair_manager()
 
 ## Use this method if you want to draw a custom crosshair. Remove if you want to use a custom image for the crosshair
 func _draw_crosshair() -> void:
@@ -30,6 +35,20 @@ func _draw_crosshair() -> void:
 
 func _on_crosshair_draw() -> void:
 	_draw_crosshair()
+
+
+# ── Aim crosshairs: delegated to CrosshairManager (reusable helper) ──────────
+# The manager is placed in the same centered container as the small dot
+# (CenterContainer) so its drawings are centered on screen.
+func _setup_crosshair_manager() -> void:
+	crosshair_manager = CrosshairManager.new()
+	crosshair_manager.name = "CrosshairManager"
+	crosshair.get_parent().add_child(crosshair_manager)
+
+## Enable/disable the aim crosshair (aim mode / right-click).
+func set_aiming(aiming: bool) -> void:
+	if crosshair_manager:
+		crosshair_manager.set_style("aim" if aiming else "")
 
 
 func _on_button_speaker_pressed() -> void:

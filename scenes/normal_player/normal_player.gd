@@ -35,6 +35,74 @@ const PAUSE: String = "pause"
 @export var fast_climb_speed: float = 8.0
 @export_range(0.0, 1.0) var view_bobbing_amount: float = 1.0
 @export_range(1.0, 10.0) var camera_sensitivity: float = 2.0
+
+# Aim mode (right-click): slow-down factors (1.0 = normal)
+@export_range(0.1, 1.0) var aim_sensitivity_factor: float = 0.4
+@export_range(0.1, 1.0) var aim_speed_factor: float = 0.4
+# Max distance (m) to a mining rock to be allowed to enter aim mode
+@export var aim_rock_distance: float = 2.0
+var is_aiming: bool = false
+
+# Perforation (left-click while aiming): jackhammer-style hammering ~5 s
+const PERFORATION_DURATION := 5.0
+@export var perforation_hammer_freq: float = 10.0       # back-and-forth jabs per second
+@export var perforation_hammer_amplitude: float = 0.18  # depth of one jab (m)
+@export var perforation_shake_amplitude: float = 0.025  # tremble (m)
+var is_perforating: bool = false
+var _perforation_t: float = 0.0
+var _perforator_rest_pos: Vector3 = Vector3.ZERO
+var _rock_ray: RayCast3D = null   # camera raycast to detect "looking at a rock"
+var _crosshair_shown: bool = false
+var _last_head_sent: float = INF   # last camera pitch sent to the server (throttle "head" sync)
+
+## True if a mining rock (group "miningrock") is within aim range.
+func _is_near_mining_rock() -> bool:
+	for r in get_tree().get_nodes_in_group("miningrock"):
+		if r is Node3D and global_position.distance_to((r as Node3D).global_position) <= aim_rock_distance:
+			return true
+	return false
+
+## True if the camera is currently looking at a mining rock (camera raycast).
+func _is_looking_at_rock() -> bool:
+	if camera == null:
+		return false
+	if _rock_ray == null:
+		_rock_ray = RayCast3D.new()
+		_rock_ray.target_position = Vector3(0.0, 0.0, -(aim_rock_distance + 2.0))
+		_rock_ray.collision_mask = 0xFFFFFFFF
+		camera.add_child(_rock_ray)
+	_rock_ray.force_raycast_update()
+	var c = _rock_ray.get_collider()
+	return c != null and c.is_in_group("miningrock")
+
+## Apply the perforating state locally (owner from input, remote from the
+## replicated "perforating" property). Resets the timer, and returns the tool to
+## its rest position when stopping.
+func _apply_perforating(active: bool) -> void:
+	if active == is_perforating:
+		return
+	is_perforating = active
+	_perforation_t = 0.0
+	if not active and perforator:
+		perforator.position = _perforator_rest_pos
+
+## Owner: set the perforating state AND replicate it so other players see the animation.
+func _set_perforating(active: bool) -> void:
+	if active == is_perforating:
+		return
+	_apply_perforating(active)
+	client_send_action_to_server({"action": "set_perforating", "perforating": active})
+
+## Advance and apply the jackhammer visual. Runs on EVERY instance while
+## perforating (remote players too), so the animation is seen by everyone.
+func _update_perforation_visual(delta: float) -> void:
+	if not is_perforating or perforator == null:
+		return
+	_perforation_t += delta
+	# fast back-and-forth jabs along the aim (-Z) + random tremble
+	var hammer: float = absf(sin(_perforation_t * perforation_hammer_freq * TAU)) * perforation_hammer_amplitude
+	var shake := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
+	perforator.position = _perforator_rest_pos - Vector3(0.0, 0.0, hammer) + shake
 @export_range(0.0, 0.5) var camera_start_deadzone: float = .2
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
 
@@ -103,6 +171,24 @@ var _display_debug:bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
 
+# Perforator V0 mining tool — equipped/unequipped with key 1/& (issue #117).
+# Instanced at runtime on every client/server instance, hidden until equipped.
+const PERFORATOR_SCENE := preload("res://assets/models/equipments/tools/mining/hammerdrill.glb")
+var perforator: Node3D = null
+## Generic hand mount that holds and aims the current equipment (see EquipmentMount).
+var equipment_mount: EquipmentMount = null
+
+## Equipment placement (tune in the inspector, applied on the next run).
+@export_group("Equipment placement")
+## Mount position on the body. This is the PIVOT the held item rotates around when aiming.
+@export var equipment_hand_offset: Vector3 = Vector3(0.4, 1.0, -0.4)
+## Held item offset inside the mount. Shift it so the item's grip sits on the pivot above.
+@export var equipment_item_offset: Vector3 = Vector3.ZERO
+## Held item base rotation, to make the model point forward (-Z).
+@export var equipment_item_rotation_deg: Vector3 = Vector3(0, -90, 0)
+## Held item uniform scale.
+@export var equipment_item_scale: float = 2.0
+
 func _enter_tree() -> void:
 	if remote_player:
 		position = spawn_position
@@ -118,6 +204,24 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
+
+	# Equipment mount: a generic hand mount attached to the player body (NOT the
+	# Astronaut model, which is hidden for the local first-person view) so held
+	# items show for self AND others. It aims whatever it holds where the camera
+	# looks; future tools/weapons attach here and inherit the aiming for free.
+	equipment_mount = EquipmentMount.new()
+	equipment_mount.name = "EquipmentMount"
+	add_child(equipment_mount)
+	equipment_mount.position = equipment_hand_offset  # the pivot the held item rotates around
+	equipment_mount.pitch_source = camera_pivot  # aim follows the camera pitch
+	# First item: the mining perforator (hidden until equipped with 1/&).
+	perforator = PERFORATOR_SCENE.instantiate()
+	perforator.position = equipment_item_offset  # shift the model so its grip sits on the pivot
+	perforator.rotation_degrees = equipment_item_rotation_deg  # model points forward (-Z)
+	perforator.scale = Vector3.ONE * equipment_item_scale
+	perforator.visible = false  # hidden until equipped with the 1/& key
+	equipment_mount.hold(perforator)
+	_perforator_rest_pos = perforator.position  # base for the perforation jab
 
 	if remote_player:
 		camera.current = false
@@ -220,6 +324,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		client_send_action_to_server({"action": "toggle_flashlight"})
 		# flashlight.visible = not flashlight.visible
 
+	if event.is_action_pressed("toggle_tool"):
+		if perforator:
+			var equipped := not perforator.visible
+			perforator.visible = equipped  # immediate local toggle (first-person view)
+			# Send the equipped tool as a STATE (not a one-shot event) so other clients
+			# always converge to the right state via the replicated "tools" property.
+			client_send_action_to_server({"action": "equip_tool", "tools": ("perforator" if equipped else "")})
+
 	if event.is_action_pressed("spawn_50cmbox"):
 		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 
@@ -252,12 +364,49 @@ func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	new_input_from_server = true
 
 func _process(_delta: float) -> void:
+	# Perforation visual runs on every instance (remote players too), driven by
+	# is_perforating (set by input locally, or by the replicated "perforating").
+	_update_perforation_visual(_delta)
 	if remote_player: return
 	if !active:
 		interact_label.hide()
 		return
 
+	# Aim mode (right-click): slow down only if the tool is equipped AND near a rock
+	var can_aim := perforator != null and perforator.visible and _is_near_mining_rock()
+	is_aiming = Input.is_action_pressed("aim") and can_aim
+	# The aim crosshair shows only while aiming AND looking at the rock
+	var looking := is_aiming and _is_looking_at_rock()
+	if looking != _crosshair_shown:
+		_crosshair_shown = looking
+		$UserInterface.set_aiming(looking)
+	if is_aiming:
+		mouse_motion *= aim_sensitivity_factor
+
+	# Perforation control (owner): start on left-click while aiming, stop on
+	# release or after PERFORATION_DURATION. The visual is handled by
+	# _update_perforation_visual (also on remote players via "perforating").
+	if is_perforating:
+		if not is_aiming or not Input.is_action_pressed("perforate"):
+			_set_perforating(false)  # released (aim or left-click) -> cancelled, no effect
+		elif _perforation_t >= PERFORATION_DURATION:
+			# animation end -> the fracture would trigger HERE (server-side, TODO)
+			_set_perforating(false)
+	elif looking and Input.is_action_just_pressed("perforate"):
+		_set_perforating(true)
+
+	if is_perforating:
+		mouse_motion = Vector2.ZERO  # mouse frozen during perforation
+
 	_handle_camera_motion()
+
+	# Replicate the camera pitch ("head") while a tool is equipped, so other players
+	# see where we aim. Throttled to meaningful changes to limit network traffic.
+	if perforator and perforator.visible:
+		var head_q: float = snappedf(camera_pivot.rotation.x, 0.02)
+		if head_q != _last_head_sent:
+			_last_head_sent = head_q
+			client_send_action_to_server({"action": "set_head", "head": head_q})
 
 	# DEBUG 15deg-offset: measure WORLD displacement direction vs facing
 	if not OS.has_feature("dedicated_server"):
@@ -384,6 +533,10 @@ func _physics_process(delta: float) -> void:
 		var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
 
 		var speed = sprint_speed if sprint else walk_speed
+		if is_aiming:
+			speed *= aim_speed_factor  # slowed down in aim mode
+		if is_perforating:
+			speed = 0.0  # frozen during perforation
 
 		if is_on_floor():
 			if input_direction:
@@ -621,17 +774,35 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 		print("TUTU: Exited spawn area for area ", area)
 		var new_parent = area.get_parent().get_parent()
 		print("TUTU: Reparenting to ", new_parent)
-		reparent(new_parent)
-		emit_signal(
-			"hs_server_move",
-			client_uuid,
-			snapped(position, Vector3(0.001, 0.001, 0.001)),
-			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			new_parent.uuid,
-			is_parented
-		)
+		# Deferred reparent + move sync: reparenting during the Area3D signal
+		# callback is illegal ("busy adding/removing children"), and area_exited
+		# can fire several times -> overlapping reparents crash the node while out
+		# of tree. The move event MUST be emitted AFTER the reparent so the local
+		# position is expressed in the new parent's frame; otherwise the server
+		# places us with the old local position under the new parent uuid and
+		# teleports us.
+		call_deferred("_safe_reparent_and_sync", new_parent)
 		# if gravity_parents.has(area):
 		# 	gravity_parents.erase(area)
+
+## Reparent guarded against invalid states (node/parent out of tree, already
+## parented, repeated area_exited events) to avoid a server segfault, then emit
+## the move so the server receives the position relative to the new parent.
+func _safe_reparent_and_sync(new_parent: Node) -> void:
+	if new_parent == null or not is_instance_valid(new_parent):
+		return
+	if not is_inside_tree() or not new_parent.is_inside_tree():
+		return
+	if get_parent() != new_parent:
+		reparent(new_parent)
+	emit_signal(
+		"hs_server_move",
+		client_uuid,
+		snapped(position, Vector3(0.001, 0.001, 0.001)),
+		snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		new_parent.uuid,
+		is_parented
+	)
 
 func _set_player_global_position(pos, rot):
 	global_position = pos
@@ -705,6 +876,16 @@ func client_channel_data_update(data: Dictionary) -> void:
 				is_jumping = true
 			"toggle_flashlight":
 				flashlight.visible = not flashlight.visible
+	# Replicated equipment state: show/hide the held tool on remote players.
+	if data.has("tools") and remote_player and perforator:
+		perforator.visible = str(data["tools"]) != ""
+	# Replicated camera pitch: orient the remote player's aim (EquipmentMount reads
+	# CameraPivot.rotation.x to aim the held tool).
+	if data.has("head") and remote_player:
+		camera_pivot.rotation.x = float(data["head"])
+	# Replicated perforation state: drive the jackhammer animation on remote players.
+	if data.has("perforating") and remote_player:
+		_apply_perforating(bool(data["perforating"]))
 
 # receive properties from the client, often the actions
 func server_action_received(data: Dictionary) -> void:
@@ -713,6 +894,19 @@ func server_action_received(data: Dictionary) -> void:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
+		"equip_tool":
+			# Authoritative tool state, then replicate it as a property ("tools") to
+			# nearby clients via the generic update path so they show/hide the tool.
+			var tool_id: String = data.get("tools", "")
+			if perforator:
+				perforator.visible = tool_id != ""
+			server_send_properties_to_client({"tools": tool_id})
+		"set_head":
+			# Replicate the camera pitch so others see where this player aims.
+			server_send_properties_to_client({"head": data.get("head", 0.0)})
+		"set_perforating":
+			# Replicate the perforation state so others see the jackhammer animation.
+			server_send_properties_to_client({"perforating": data.get("perforating", false)})
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:
