@@ -574,7 +574,7 @@ func create_generic_object(event: Dictionary) -> void:
 				var parent = _search_parent_node(object_data["parent_id"])
 				if parent != null:
 					prop_instance.client_parent_change(parent)
-		print("client_channel_data_update (1) for existing object %s" % object_id)
+		#print("client_channel_data_update (1) for existing object %s" % object_id)
 		prop_instance.client_channel_data_update(object_data)
 
 	else:
@@ -590,8 +590,8 @@ func create_generic_object(event: Dictionary) -> void:
 
 			object_data = event["object_data"]
 
-			print("Object DATA")
-			print(object_data)
+			#print("Object DATA")
+			#print(object_data)
 
 			var parent = null
 			if object_data.has("parent_id"):
@@ -618,7 +618,7 @@ func create_generic_object(event: Dictionary) -> void:
 				prop_instance.freeze = true
 			prop_instance.uuid = object_id
 
-			print("client_channel_data_update (2) for existing object %s" % object_id)
+			#print("client_channel_data_update (2) for existing object %s" % object_id)
 			prop_instance.client_channel_data_update(object_data)
 
 			# client_channel_data_update must be called before parent for the position
@@ -671,7 +671,7 @@ func create_generic_object(event: Dictionary) -> void:
 						if parent != null:
 							prop_instance.client_parent_change(parent)
 
-				print("client_channel_data_update (4) for existing object %s" % object_id)
+				#print("client_channel_data_update (4) for existing object %s" % object_id)
 				prop_instance.client_channel_data_update(object_data)
 
 			# event not has scenename, so we store it for later creation
@@ -733,7 +733,7 @@ func update_generic_object(event: Dictionary) -> void:
 					if parent != null:
 						prop_instance.client_parent_change(parent)
 
-			print("client_channel_data_update (5) for existing object %s" % object_id)
+			#print("client_channel_data_update (5) for existing object %s" % object_id)
 			prop_instance.client_channel_data_update(object_data)
 		else:
 			print("Update generic object but not found: %s" % object_id)
@@ -757,7 +757,22 @@ func player_update(message: Dictionary) -> void:
 	if int(message["channel"]) == 0:
 		var uuid = message["object_id"]
 		if players_list.has(uuid):
-			if message["event_type"] == "move":
+			if message["event_type"] == "update_property":
+				# Apply replicated gameplay state (equipped tool "tools", camera "head").
+				# Position/rotation are skipped here; they come from the "move" path.
+				var player_p = players_list[uuid]
+				if is_instance_valid(player_p):
+					var d: Dictionary = message["data"]
+					var props := {}
+					if d.has("tools"):
+						props["tools"] = d["tools"]
+					if d.has("head"):
+						props["head"] = d["head"]
+					if d.has("perforating"):
+						props["perforating"] = d["perforating"]
+					if not props.is_empty():
+						player_p.client_channel_data_update(props)
+			elif message["event_type"] == "move":
 				# print("players UUIDs: %s" % players_list.keys())
 				var player = players_list[uuid]
 				if not is_instance_valid(player):

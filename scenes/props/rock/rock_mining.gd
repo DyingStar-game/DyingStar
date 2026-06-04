@@ -35,6 +35,7 @@ var blocs = [
 @onready var rock_shape = $CollisionShape3D
 
 func _ready() -> void:
+	add_to_group("miningrock")  # for proximity detection (aim mode)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
