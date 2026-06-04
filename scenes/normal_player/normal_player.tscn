@@ -32,6 +32,7 @@
 [ext_resource type="Script" uid="uid://bfpote331tkhp" path="res://scenes/normal_player/debug_server_name.gd" id="18_e837o"]
 [ext_resource type="Texture2D" uid="uid://ndwy7fky4xxu" path="res://ui/player_interface/volume-high-solid-full.svg" id="27_akued"]
 [ext_resource type="Texture2D" uid="uid://crlbs5i36jfp" path="res://ui/player_interface/microphone-solid-full.svg" id="28_2sxo3"]
+[ext_resource type="Script" uid="uid://d2lihgny3jxwd" path="res://scenes/normal_player/mining_tool.gd" id="33_2sxo3"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -496,6 +497,9 @@ visible = false
 [node name="hammerdrill2" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
 transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 visible = false
+
+[node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
+script = ExtResource("33_2sxo3")
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
