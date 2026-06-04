@@ -21,15 +21,13 @@ var has_parent: bool = false
 
 var bloc_yet_fractured: bool = false
 
+# Predefined faults (fixed, not random) — shown as red veins; perforating a vein
+# cuts the rock along it. keep_side = which half we keep when cut (the other half
+# becomes a new rock).
 var blocs = [
-	{
-		"fractured": false,
-		"position": randf_range(0.0, 1.0),
-		"rotation_y": randf_range(-50.0, 50.0),
-		"rotation_z": randf_range(-50.0, 50.0),
-		"keep_side": 1, # when cut a rock, we have 2 parts, we must indicate which part we keep
-		"side2_uuid": ""
-	}
+	{ "fractured": false, "position": 0.35, "rotation_y": 18.0, "rotation_z": 12.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "position": 0.55, "rotation_y": -28.0, "rotation_z": 34.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "position": 0.70, "rotation_y": 42.0, "rotation_z": -22.0, "keep_side": 1, "side2_uuid": "" },
 ]
 
 @onready var rock_shape = $CollisionShape3D
@@ -99,8 +97,8 @@ func _cut_rock(bloc: Dictionary) -> void:
 
 	var meshinstance = MeshInstance3D.new()
 	meshinstance.mesh = mesh
-	# add the material (1 = the cut part)
-	var material = load("res://scenes/props/rock/rock_material.tres")
+	# Keep the textured + veins material on the cut piece (remaining faults only).
+	var material := _make_vein_material()
 	meshinstance.set_surface_override_material(0, material)
 	meshinstance.set_surface_override_material(1, material)
 	add_child(meshinstance)
@@ -134,8 +132,12 @@ func _cut_rock(bloc: Dictionary) -> void:
 	bloc_yet_fractured = true
 	combiner.queue_free()
 
-	if int(bloc.keep_side) == 1 and OS.has_feature("dedicated_server") and create_part2_rock == true:
-		_server_create_side2_rock(bloc)
+	# V0: skip spawning the broken-off half as a networked rock — it triggers
+	# "PARENT ID NOT FOUND" on Horizon and spams the server. The rock just loses
+	# the chunk along the fault. TODO: re-enable side2 (the mined chunk = loot)
+	# once prop parenting is sorted out.
+	#if int(bloc.keep_side) == 1 and OS.has_feature("dedicated_server") and create_part2_rock == true:
+	#	_server_create_side2_rock(bloc)
 
 	meshinstance.position = -meshcenter
 	rock_shape.position = -meshcenter
@@ -149,7 +151,34 @@ func _cut_rock(bloc: Dictionary) -> void:
 ######################################################################
 
 func _client_ready() -> void:
-	pass
+	_show_faults()
+
+## Show each not-yet-fractured fault as a red vein (a thin slice through the rock)
+## at its cut plane, so faults are visible before perforating.
+func _show_faults() -> void:
+	var mesh_node = combiner.get_child(0) if combiner.get_child_count() > 0 else null
+	if mesh_node is CSGMesh3D:
+		(mesh_node as CSGMesh3D).material = _make_vein_material()
+
+## Rock material that draws red veins where the surface is near a not-yet-fractured
+## fault plane (intersection only -> crack lines, nothing sticking out).
+func _make_vein_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://scenes/props/rock/rock_vein.gdshader")
+	mat.set_shader_parameter("albedo_tex", preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg"))
+	mat.set_shader_parameter("tex_scale", 1.0)
+	var normals: Array = []
+	var offsets: Array = []
+	for bloc in blocs:
+		if bloc.get("fractured", false):
+			continue
+		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
+		normals.append(r * Vector3(1.0, 0.0, 0.0))   # fault plane normal (rock-local)
+		offsets.append(0.5 - bloc.position)           # plane offset (rock-local)
+	mat.set_shader_parameter("plane_count", normals.size())
+	mat.set_shader_parameter("plane_normals", normals)
+	mat.set_shader_parameter("plane_offsets", offsets)
+	return mat
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
@@ -196,6 +225,26 @@ func _server_ready() -> void:
 		has_parent
 	)
 	_calculate_blocs()
+
+## Server: perforate the fault nearest to `hit_local` (a rock-local point) and cut
+## along it. One cut per rock for V0 (the CSG combiner is freed after a cut).
+func server_perforate(hit_local: Vector3) -> void:
+	if not OS.has_feature("dedicated_server") or bloc_yet_fractured:
+		return
+	var best_i := -1
+	var best_d := INF
+	for i in blocs.size():
+		var bloc = blocs[i]
+		if bloc.get("fractured", false):
+			continue
+		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
+		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
+		var d: float = absf(n.dot(hit_local) - (0.5 - bloc.position))
+		if d < best_d:
+			best_d = d
+			best_i = i
+	if best_i >= 0:
+		_cut_rock(blocs[best_i])
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
@@ -255,15 +304,10 @@ func _server_create_side2_rock(bloc: Dictionary) -> void:
 	}
 	ServerNetwork.send_message(message, "devmodecreate_object")
 
-### When the mining tool used by the user enter in the area zone, we break the rock
-func _on_area_3d_body_entered(body: Node3D) -> void:
-	if OS.has_feature("dedicated_server"):
-		# run cut the rock only for the player character enter in area zone
-		if body is CharacterBody3D:
-			for bloc in blocs:
-				if bloc.fractured == false:
-					_cut_rock(bloc)
-					return
+### Rock no longer breaks on body contact: the fracture is triggered by the mining
+### tool (perforation along the targeted fault), handled server-side via an action.
+func _on_area_3d_body_entered(_body: Node3D) -> void:
+	pass
 
 func _exit_tree() -> void:
 	if GameOrchestrator.is_server():

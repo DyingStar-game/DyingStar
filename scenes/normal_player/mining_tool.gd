@@ -65,6 +65,8 @@ var _bit_rest: Vector3 = Vector3.ZERO
 var _rock_ray: RayCast3D = null
 var _crosshair_shown: bool = false
 var _last_head_sent: float = INF   # last camera pitch sent (throttle "head" sync)
+var _target_rock_uuid: String = ""     # rock aimed when the perforation started
+var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
 
 ## Inject the player's camera rig and build the equipment mount + perforator.
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
@@ -126,9 +128,10 @@ func update_local(_delta: float) -> void:
 		if not is_aiming or not Input.is_action_pressed("perforate"):
 			_set_perforating(false)  # released -> cancelled, no effect
 		elif _perforation_t >= PERFORATION_DURATION:
-			# animation end -> the fracture would trigger HERE (server-side, TODO)
+			_emit_perforate()  # animation complete -> fracture the targeted rock
 			_set_perforating(false)
 	elif looking and Input.is_action_just_pressed("perforate"):
+		_capture_target()
 		_set_perforating(true)
 
 	# Replicate the camera pitch ("head") while a tool is equipped, so other
@@ -193,6 +196,27 @@ func _aim_point() -> Vector3:
 		if _rock_ray.is_colliding():
 			return _rock_ray.get_collision_point()
 	return origin + fwd * (aim_rock_distance + 2.0)
+
+## Capture the rock under the crosshair + the aim point (in the rock's local space)
+## when a perforation starts, so we can fracture exactly there at the end.
+func _capture_target() -> void:
+	_target_rock_uuid = ""
+	if _rock_ray == null or not _rock_ray.is_colliding():
+		return
+	var rock = _rock_ray.get_collider()
+	if rock != null and rock.is_in_group("miningrock") and "uuid" in rock:
+		_target_rock_uuid = str(rock.uuid)
+		_target_hit_local = (rock as Node3D).to_local(_rock_ray.get_collision_point())
+
+## Owner: ask the server to fracture the targeted rock at the captured point.
+func _emit_perforate() -> void:
+	if _target_rock_uuid == "":
+		return
+	sync_requested.emit({
+		"action": "perforate_rock",
+		"uuid": _target_rock_uuid,
+		"hit": {"x": _target_hit_local.x, "y": _target_hit_local.y, "z": _target_hit_local.z},
+	})
 
 ## Apply the perforating state locally (owner from input, remote from "perforating").
 func _apply_perforating(active: bool) -> void:

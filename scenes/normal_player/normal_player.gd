@@ -679,6 +679,15 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if remote_player:
 		mining_tool.apply_remote(data)
 
+## Find a spawned mining rock by its uuid (server-side).
+func _find_mining_rock(rock_uuid: String) -> Node:
+	if rock_uuid == "":
+		return null
+	for r in get_tree().get_nodes_in_group("miningrock"):
+		if "uuid" in r and str(r.uuid) == rock_uuid:
+			return r
+	return null
+
 # receive properties from the client, often the actions
 func server_action_received(data: Dictionary) -> void:
 	match data["action"]:
@@ -697,6 +706,12 @@ func server_action_received(data: Dictionary) -> void:
 		"set_perforating":
 			# Replicate the perforation state so others see the jackhammer animation.
 			server_send_properties_to_client({"perforating": data.get("perforating", false)})
+		"perforate_rock":
+			# Authoritative fracture: cut the targeted rock along the aimed fault.
+			var rock := _find_mining_rock(str(data.get("uuid", "")))
+			if rock and rock.has_method("server_perforate"):
+				var h: Dictionary = data.get("hit", {})
+				rock.server_perforate(Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)))
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:
