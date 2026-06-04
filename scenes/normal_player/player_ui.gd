@@ -16,8 +16,8 @@ var bus_record_index = 0
 @onready var button_speaker = $HUD/Control/AudioContainer/ButtonSpeaker
 @onready var button_microphone = $HUD/Control/AudioContainer/ButtonMicrophone
 
-# On-demand aim crosshair manager (overlays). The permanent small dot
-# (%Crosshair) stays handled separately and is always visible.
+# Reticle manager: draws the permanent small dot (base) AND the on-demand
+# aim/overlay crosshairs. Single place responsible for all crosshair drawing.
 var crosshair_manager: CrosshairManager = null
 
 func _ready() -> void:
@@ -27,15 +27,6 @@ func _ready() -> void:
 		bus_master_index = AudioServer.get_bus_index("Master")
 		bus_record_index = AudioServer.get_bus_index("Record")
 		_setup_crosshair_manager()
-
-## Use this method if you want to draw a custom crosshair. Remove if you want to use a custom image for the crosshair
-func _draw_crosshair() -> void:
-	crosshair.draw_circle(Vector2.ZERO, 1.0, Color.WHITE)
-
-
-func _on_crosshair_draw() -> void:
-	_draw_crosshair()
-
 
 # ── Aim crosshairs: delegated to CrosshairManager (reusable helper) ──────────
 # The manager is placed in the same centered container as the small dot
