@@ -5,6 +5,10 @@ signal hs_server_prop_delete
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
+# Speed (m/s) the two halves get pushed apart along the fault normal when cut, so they
+# don't stay stacked (especially on a horizontal cut).
+const SEPARATION_SPEED := 1.5
+
 @export var uuid: String = ""
 
 var type_name = "miningrock"
@@ -28,14 +32,18 @@ var created_parent_id: String = ""
 # rock can be cut along several faults (a half can be split again -> down to 4 pieces).
 var _base_mesh: Mesh = null
 var _mesh_instance: MeshInstance3D = null
+# Geometric center of the base mesh (its origin is not necessarily its middle), used
+# so a fault at position 0.5 sits in the true middle along its normal.
+var _mesh_center: Vector3 = Vector3.ZERO
+# Velocity to apply once when this piece spawns, to push it off the half it split from.
+var _spawn_kick: Vector3 = Vector3.ZERO
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
 # becomes a new rock).
 var blocs = [
-	{ "fractured": false, "position": 0.35, "rotation_y": 18.0, "rotation_z": 12.0, "keep_side": 1, "side2_uuid": "" },
-	{ "fractured": false, "position": 0.55, "rotation_y": -28.0, "rotation_z": 34.0, "keep_side": 1, "side2_uuid": "" },
-	{ "fractured": false, "position": 0.70, "rotation_y": 42.0, "rotation_z": -22.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "position": 0.5, "rotation_y": 0.0, "rotation_z": 8.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "position": 0.5, "rotation_y": 0.0, "rotation_z": 82.0, "keep_side": 1, "side2_uuid": "" },
 ]
 
 @onready var rock_shape = $CollisionShape3D
@@ -44,6 +52,8 @@ func _ready() -> void:
 	add_to_group("miningrock")  # for proximity detection (aim mode)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	_base_mesh = item_rock_mesh.mesh   # keep a ref to rebuild cuts later
+	if _base_mesh != null:
+		_mesh_center = _base_mesh.get_aabb().get_center()   # true middle of the rock
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
 
@@ -76,6 +86,10 @@ func _make_cut_box(bloc: Dictionary) -> CSGBox3D:
 	box.rotation = Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))
 	box.translate_object_local(Vector3(10.5, 0, 0))        # box on the far right of the rock
 	box.translate_object_local(Vector3(-bloc.position, 0.0, 0.0))
+	# Shift the cut plane onto the mesh center (along the fault normal) so position 0.5
+	# is the true middle even when the mesh origin is off-center.
+	var n: Vector3 = Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))) * Vector3(1.0, 0.0, 0.0)
+	box.translate_object_local(Vector3(n.dot(_mesh_center), 0.0, 0.0))
 	if int(bloc.keep_side) == 2:
 		box.translate_object_local(Vector3(-20.0, 0, 0))   # cut the other half instead
 	box.operation = CSGShape3D.OPERATION_SUBTRACTION
@@ -119,6 +133,10 @@ func _rebuild() -> void:
 	# half of the original volume (Godot derives the rigid body's center of mass from
 	# the offset shape). This keeps both halves in place instead of teleporting them.
 	sleeping = false
+	# Server only: kick this piece off the half it split from (set once on spawn).
+	if GameOrchestrator.is_server() and _spawn_kick != Vector3.ZERO:
+		linear_velocity += _spawn_kick
+		_spawn_kick = Vector3.ZERO
 
 ## Server: replicate the full fault state to Horizon & clients after a cut.
 func _replicate_blocs() -> void:
@@ -179,8 +197,9 @@ func _make_vein_material() -> ShaderMaterial:
 		if bloc.get("fractured", false):
 			continue
 		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
-		normals.append(r * Vector3(1.0, 0.0, 0.0))   # fault plane normal (rock-local)
-		offsets.append(0.5 - bloc.position)           # plane offset (rock-local)
+		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
+		normals.append(n)                                            # fault plane normal (rock-local)
+		offsets.append((0.5 - bloc.position) + n.dot(_mesh_center))  # plane offset, centered on the mesh
 	mat.set_shader_parameter("plane_count", normals.size())
 	mat.set_shader_parameter("plane_normals", normals)
 	mat.set_shader_parameter("plane_offsets", offsets)
@@ -193,6 +212,8 @@ func client_parent_change(parent: Node) -> void:
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("parent_id"):
 		created_parent_id = str(data["parent_id"])
+	if data.has("kick"):
+		_spawn_kick = Vector3(data["kick"]["x"], data["kick"]["y"], data["kick"]["z"])
 	if data.has("position"):
 		position = Vector3(
 			data["position"]["x"],
@@ -246,16 +267,23 @@ func server_perforate(hit_local: Vector3) -> void:
 			continue   # already cut along this fault
 		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
 		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
-		var d: float = absf(n.dot(hit_local) - (0.5 - bloc.position))
+		# Distance to the fault PLANE, centered on the mesh (must match _make_cut_box /
+		# _make_vein_material, otherwise we pick the wrong fault and the cut is a no-op).
+		var d: float = absf(n.dot(hit_local) - ((0.5 - bloc.position) + n.dot(_mesh_center)))
 		if d < best_d:
 			best_d = d
 			best_i = i
 	if best_i < 0:
 		return
-	# Cut our half along the fault, then spawn the complementary half (side2).
+	# Cut our half along the fault, then spawn the complementary half (side2). Push the
+	# two apart along the fault normal so they don't stay stacked.
 	blocs[best_i].fractured = true
+	var cut: Dictionary = blocs[best_i]
+	var n_local: Vector3 = Basis.from_euler(Vector3(0.0, deg_to_rad(cut.rotation_y), deg_to_rad(cut.rotation_z))) * Vector3(1.0, 0.0, 0.0)
+	var n_world: Vector3 = (global_transform.basis * n_local).normalized()
 	await _rebuild()
-	_server_create_side2_rock(best_i)
+	linear_velocity += -n_world * SEPARATION_SPEED   # our half is the -normal side
+	_server_create_side2_rock(best_i, n_world * SEPARATION_SPEED)
 	_replicate_blocs()
 
 func _physics_process(_delta: float) -> void:
@@ -276,11 +304,13 @@ func _physics_process(_delta: float) -> void:
 			server_last_position = my_position
 			server_last_rotation = my_rotation
 
-func _server_create_side2_rock(cut_index: int) -> void:
+func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 	# Create the complementary half as its own networked rock. It inherits ALL our
 	# faults (so it shows the remaining veins and can be split again), but the fault we
 	# just cut is flipped to keep_side 2 so its box removes the other half instead.
 	var bloc2_uuid = UUID_UTIL.v4()
+	# Nudge the spawn off our half + carry a kick so it separates instead of overlapping.
+	var spawn_pos: Vector3 = position + kick.normalized() * 0.2
 	var side2_blocs := []
 	for i in blocs.size():
 		var bloc = blocs[i]
@@ -303,9 +333,9 @@ func _server_create_side2_rock(cut_index: int) -> void:
 				"type": type_name,
 				"uuid": bloc2_uuid,
 				"position": {
-					"x": position[0],
-					"y": position[1],
-					"z": position[2]
+					"x": spawn_pos.x,
+					"y": spawn_pos.y,
+					"z": spawn_pos.z
 				},
 				"rotation": {
 					"x": rotation[0],
@@ -313,6 +343,7 @@ func _server_create_side2_rock(cut_index: int) -> void:
 					"z": rotation[2]
 				},
 				"blocs": side2_blocs,
+				"kick": {"x": kick.x, "y": kick.y, "z": kick.z},
 				"scenename": "scenes/props/rock/rock_mining_01.tscn",
 				# Same parent as ourselves (a known GORC id, or "" for root): Horizon
 				# can resolve it, so the side2 is spawned instead of queued forever.
