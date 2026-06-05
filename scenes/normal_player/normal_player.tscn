@@ -500,8 +500,10 @@ visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
 script = ExtResource("33_2sxo3")
-aim_roll_deg = 0.0
-perforation_hammer_freq = 5.0
+aim_sensitivity_factor = 0.25
+aim_speed_factor = 0.25
+aim_rock_distance = 1.5
+perforation_hammer_freq = 4.0
 bit_axis = Vector3(1, 0, 0)
 perforation_hammer_amplitude = 0.01
 perforation_shake_amplitude = 0.003

@@ -201,6 +201,8 @@ func _aim_point() -> Vector3:
 ## when a perforation starts, so we can fracture exactly there at the end.
 func _capture_target() -> void:
 	_target_rock_uuid = ""
+	if _rock_ray != null:
+		_rock_ray.force_raycast_update()   # fresh hit before capturing the target
 	if _rock_ray == null or not _rock_ray.is_colliding():
 		return
 	var rock = _rock_ray.get_collider()
