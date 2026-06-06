@@ -40,6 +40,15 @@ var has_parent: bool = false
 # a non-empty parent_id that Horizon doesn't know is queued forever (never spawned).
 var created_parent_id: String = ""
 
+# Predefined faults (fixed, not random) — shown as red veins; perforating a vein
+# cuts the rock along it. keep_side = which half we keep when cut (the other half
+# becomes a new rock). number = fault priority: when the aim point is on the crossing
+# of several faults, the LOWEST number is cut.
+var blocs = [
+	{ "fractured": false, "number": 1, "position": 0.5, "rotation_y": 0.0, "rotation_z": 8.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "number": 2, "position": 0.5, "rotation_y": 0.0, "rotation_z": 82.0, "keep_side": 1, "side2_uuid": "" },
+]
+
 # Cut geometry: the mesh is rebuilt as "base mesh minus EVERY fractured fault", so a
 # rock can be cut along several faults (a half can be split again -> down to 4 pieces).
 var _base_mesh: Mesh = null
@@ -49,15 +58,6 @@ var _mesh_instance: MeshInstance3D = null
 var _mesh_center: Vector3 = Vector3.ZERO
 # Velocity to apply once when this piece spawns, to push it off the half it split from.
 var _spawn_kick: Vector3 = Vector3.ZERO
-
-# Predefined faults (fixed, not random) — shown as red veins; perforating a vein
-# cuts the rock along it. keep_side = which half we keep when cut (the other half
-# becomes a new rock). number = fault priority: when the aim point is on the crossing
-# of several faults, the LOWEST number is cut.
-var blocs = [
-	{ "fractured": false, "number": 1, "position": 0.5, "rotation_y": 0.0, "rotation_z": 8.0, "keep_side": 1, "side2_uuid": "" },
-	{ "fractured": false, "number": 2, "position": 0.5, "rotation_y": 0.0, "rotation_z": 82.0, "keep_side": 1, "side2_uuid": "" },
-]
 
 @onready var rock_shape = $CollisionShape3D
 
