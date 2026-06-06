@@ -95,9 +95,6 @@ monitorable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.702767, 0.0593262)
 shape = SubResource("BoxShape3D_kcm5r")
 
-[node name="ExtCamera3D" type="Camera3D" parent="." unique_id=382186473]
-transform = Transform3D(1, 0, 0, 0, 0.793608, 0.608429, 0, -0.608429, 0.793608, 0, 1.87897, 1.33817)
-
 [node name="LabelPlayerName" type="Label3D" parent="." unique_id=957060553]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
@@ -510,6 +507,7 @@ perforation_shake_amplitude = 0.003
 equipment_hand_offset = Vector3(0.4, 1, 0.1)
 equipment_item_offset = Vector3(0, -0.15, -0.2)
 equipment_item_scale = 1.0
+bit_tip_offset = Vector3(-0.55, 0.24, 0)
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

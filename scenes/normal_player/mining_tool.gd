@@ -17,6 +17,8 @@ signal aiming_changed(aiming: bool)
 
 const PERFORATOR_SCENE := preload("res://assets/models/equipments/tools/mining/hammerdrill.glb")
 const PERFORATION_DURATION := 5.0
+## Brief "rejected" jab when perforating off a fault: the bit lunges and snaps back.
+const REJECT_DURATION := 0.3
 
 @export_group("Aim")
 ## Mouse-sensitivity factor while aiming (1.0 = normal).
@@ -27,6 +29,9 @@ const PERFORATION_DURATION := 5.0
 @export var aim_rock_distance: float = 2.0
 ## Roll correction (deg) to keep the tool upright while aiming (model-dependent).
 @export var aim_roll_deg: float = 0.0
+## Orient the tool toward the aimed rock (look_at). Uncheck to keep it on the camera
+## pitch only (no pointing at the rock).
+@export var orient_tool_at_rock: bool = true
 
 @export_group("Perforation")
 @export var perforation_hammer_freq: float = 10.0       # back-and-forth jabs per second
@@ -49,6 +54,19 @@ const PERFORATION_DURATION := 5.0
 ## Held item uniform scale.
 @export var equipment_item_scale: float = 2.0
 
+@export_group("Bit tip & reach")
+## Chisel tip position in the PERFORATOR's local space. Calibrate it with the gizmo
+## below: enable show_tip_gizmo, run, and adjust until the sphere sits on the tip.
+@export var bit_tip_offset: Vector3 = Vector3.ZERO
+## Show a small sphere at bit_tip_offset to calibrate it.
+@export var show_tip_gizmo: bool = false
+## Slide the perforator so the bit tip touches the rock at the aim point.
+@export var reach_enabled: bool = true
+## How fast the reach follows (higher = snappier).
+@export var reach_smooth: float = 12.0
+## Max forward extension (m), so the tool never flies off the hand.
+@export var reach_max: float = 1.2
+
 ## True while aiming (read by the player to slow the mouse/movement).
 var is_aiming: bool = false
 ## True during perforation (read by the player to freeze the mouse/movement).
@@ -67,6 +85,11 @@ var _crosshair_shown: bool = false
 var _last_head_sent: float = INF   # last camera pitch sent (throttle "head" sync)
 var _target_rock_uuid: String = ""     # rock aimed when the perforation started
 var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
+var _target_aim_dir: Vector3 = Vector3.ZERO    # perforation direction, in that rock's local space
+var _target_on_fault: bool = false     # whether that aim point is on a fault (cuttable)
+var _reject_t: float = -1.0            # >=0 while playing the off-fault "rejected" jab
+var _perforator_base: Vector3 = Vector3.ZERO  # rest pos or reach target (the animation jabs on top of this)
+var _tip_gizmo: MeshInstance3D = null  # debug sphere on the bit tip (calibration)
 
 ## Inject the player's camera rig and build the equipment mount + perforator.
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
@@ -91,9 +114,24 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_perforator.visible = false
 	_equipment_mount.hold(_perforator)
 	_perforator_rest_pos = _perforator.position
+	_perforator_base = _perforator_rest_pos
 	_bit = _perforator.get_node_or_null(bit_node_name)
 	if _bit:
 		_bit_rest = _bit.position
+	# Calibration gizmo: a small sphere at the bit tip, child of the perforator so it
+	# follows the model. Move bit_tip_offset until it sits exactly on the chisel point.
+	if show_tip_gizmo:
+		_tip_gizmo = MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.03
+		sphere.height = 0.06
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.2, 1.0, 0.3)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		sphere.material = mat
+		_tip_gizmo.mesh = sphere
+		_tip_gizmo.position = bit_tip_offset
+		_perforator.add_child(_tip_gizmo)
 
 func _process(delta: float) -> void:
 	# Aim the held tool at the point under the crosshair on EVERY instance: the
@@ -101,14 +139,44 @@ func _process(delta: float) -> void:
 	# synced body rotation + "head" pitch -> the tool points where they aim, with
 	# no extra networking.
 	if _equipment_mount != null:
-		if _perforator != null and _perforator.visible and _camera != null:
+		# Orient the tool toward the rock while perforating (both clicks) OR during the
+		# off-fault "rejected" jab, so the failed attempt looks the same (orient + plunge
+		# + snap back). During plain aiming it stays on the camera pitch.
+		if orient_tool_at_rock and (is_perforating or _reject_t >= 0.0) and _perforator != null and _perforator.visible and _camera != null:
 			_equipment_mount.aim_target = _aim_point()
 			_equipment_mount.aim_up = global_transform.basis.y
 			_equipment_mount.aim_roll_deg = aim_roll_deg
 		else:
-			_equipment_mount.aim_target = null
+			_equipment_mount.aim_target = null   # no look_at -> follow the camera pitch only
+	# Calibration: keep the gizmo on bit_tip_offset (tunable live via the remote inspector).
+	if _tip_gizmo != null:
+		_tip_gizmo.position = bit_tip_offset
+	# Place the perforator so the bit tip touches the rock at the aim point (full 3D).
+	_update_reach(delta)
+	if _perforator != null:
+		_perforator.position = _perforator_base   # default; the visuals jab on top of it
 	# Perforation visual runs on EVERY instance, driven by is_perforating.
 	_update_perforation_visual(delta)
+	# Off-fault "rejected" jab (owner-local feedback): the bit lunges out then snaps back.
+	_update_reject_visual(delta)
+
+## Lerp the perforator so the bit TIP lands exactly on the rock at the aim point — full
+## 3D (including the tip's lateral offset, not just depth). Only while actively aiming
+## (right-click) or perforating; otherwise it returns to its rest position.
+func _update_reach(delta: float) -> void:
+	var target := _perforator_rest_pos
+	# Reach ONLY while perforating (left-click), not during mere aiming — otherwise the
+	# tip slides on the surface as the crosshair moves. The player is frozen while
+	# perforating, so the tip stays put once engaged.
+	if reach_enabled and _equipment_mount != null and _perforator != null and _perforator.visible \
+			and (is_perforating or _reject_t >= 0.0):
+		var hit: Vector3 = _aim_point()
+		# Solve the perforator position so the tip (basis * bit_tip_offset) == hit.
+		target = _equipment_mount.to_local(hit) - (_perforator.basis * bit_tip_offset)
+		var off: Vector3 = target - _perforator_rest_pos
+		if off.length() > reach_max:
+			target = _perforator_rest_pos + off.normalized() * reach_max   # don't fly off the hand
+	_perforator_base = _perforator_base.lerp(target, clampf(reach_smooth * delta, 0.0, 1.0))
 
 ## Owner only (called by the player's _process): aim mode, perforation control,
 ## camera-pitch ("head") replication.
@@ -132,7 +200,10 @@ func update_local(_delta: float) -> void:
 			_set_perforating(false)
 	elif looking and Input.is_action_just_pressed("perforate"):
 		_capture_target()
-		_set_perforating(true)
+		if _target_rock_uuid != "" and _target_on_fault:
+			_set_perforating(true)            # on a fault -> real perforation
+		else:
+			_reject_t = 0.0                   # off a fault -> brief rejected jab, no cut
 
 	# Replicate the camera pitch ("head") while a tool is equipped, so other
 	# players see where we aim. Throttled to meaningful changes.
@@ -201,6 +272,7 @@ func _aim_point() -> Vector3:
 ## when a perforation starts, so we can fracture exactly there at the end.
 func _capture_target() -> void:
 	_target_rock_uuid = ""
+	_target_on_fault = false
 	if _rock_ray != null:
 		_rock_ray.force_raycast_update()   # fresh hit before capturing the target
 	if _rock_ray == null or not _rock_ray.is_colliding():
@@ -208,7 +280,15 @@ func _capture_target() -> void:
 	var rock = _rock_ray.get_collider()
 	if rock != null and rock.is_in_group("miningrock") and "uuid" in rock:
 		_target_rock_uuid = str(rock.uuid)
-		_target_hit_local = (rock as Node3D).to_local(_rock_ray.get_collision_point())
+		var hit_world: Vector3 = _rock_ray.get_collision_point()
+		_target_hit_local = (rock as Node3D).to_local(hit_world)
+		# Perforation direction (camera forward) in the rock's local space, so the server
+		# can recoil the pieces away from the bit.
+		var dir_world: Vector3 = -_camera.global_transform.basis.z if _camera != null else Vector3.FORWARD
+		_target_aim_dir = ((rock as Node3D).to_local(hit_world + dir_world) - _target_hit_local).normalized()
+		# Only a hit on a fault is cuttable; elsewhere the perforation just bounces off.
+		if rock.has_method("is_on_fault"):
+			_target_on_fault = rock.is_on_fault(_target_hit_local)
 
 ## Owner: ask the server to fracture the targeted rock at the captured point.
 func _emit_perforate() -> void:
@@ -218,6 +298,7 @@ func _emit_perforate() -> void:
 		"action": "perforate_rock",
 		"uuid": _target_rock_uuid,
 		"hit": {"x": _target_hit_local.x, "y": _target_hit_local.y, "z": _target_hit_local.z},
+		"dir": {"x": _target_aim_dir.x, "y": _target_aim_dir.y, "z": _target_aim_dir.z},
 	})
 
 ## Apply the perforating state locally (owner from input, remote from "perforating").
@@ -247,8 +328,27 @@ func _update_perforation_visual(delta: float) -> void:
 	if animate_bit_only and _bit:
 		# The chisel/bit reciprocates along its local axis; the body only trembles.
 		_bit.position = _bit_rest + bit_axis * (phase * bit_amplitude)
-		_perforator.position = _perforator_rest_pos + Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
+		_perforator.position = _perforator_base + Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
 	else:
 		# Whole-tool jab along the aim (-Z) + tremble.
 		var shake := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * perforation_shake_amplitude
-		_perforator.position = _perforator_rest_pos - Vector3(0.0, 0.0, phase * perforation_hammer_amplitude) + shake
+		_perforator.position = _perforator_base - Vector3(0.0, 0.0, phase * perforation_hammer_amplitude) + shake
+
+## Owner-local feedback when perforating off a fault: one quick out-and-back jab, then
+## the tool snaps back to rest. Nothing is sent to the server (no cut).
+func _update_reject_visual(delta: float) -> void:
+	if _reject_t < 0.0 or _perforator == null or is_perforating:
+		return
+	_reject_t += delta
+	if _reject_t >= REJECT_DURATION:
+		_reject_t = -1.0
+		_perforator_base = _perforator_rest_pos   # abrupt snap back to rest (no slow lerp)
+		_perforator.position = _perforator_rest_pos
+		if _bit:
+			_bit.position = _bit_rest
+		return
+	var jab: float = sin((_reject_t / REJECT_DURATION) * PI)   # 0 -> 1 -> 0
+	if _bit:
+		_bit.position = _bit_rest + bit_axis * (jab * bit_amplitude)
+	else:
+		_perforator.position = _perforator_base - Vector3(0.0, 0.0, jab * perforation_hammer_amplitude)

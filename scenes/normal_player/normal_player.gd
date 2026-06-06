@@ -132,7 +132,6 @@ func _ready() -> void:
 
 	if remote_player:
 		camera.current = false
-		$ExtCamera3D.current = false
 		set_player_name(name)
 		return
 
@@ -150,7 +149,6 @@ func _ready() -> void:
 
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		camera.current = true
-		$ExtCamera3D.current = true
 
 		camera.make_current()
 		# hide player name label for me only
@@ -251,14 +249,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			display_debug.emit(true)
 			_display_debug = true
-
-	if Input.is_action_just_pressed("ext_cam"):
-		if $ExtCamera3D.current:
-			camera.make_current()
-			astronaut.visible = false
-		else:
-			astronaut.visible = true
-			$ExtCamera3D.make_current()
 
 func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	input_from_server["input_direction"] = input_dir
@@ -711,7 +701,10 @@ func server_action_received(data: Dictionary) -> void:
 			var rock := _find_mining_rock(str(data.get("uuid", "")))
 			if rock and rock.has_method("server_perforate"):
 				var h: Dictionary = data.get("hit", {})
-				rock.server_perforate(Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)))
+				var dd: Dictionary = data.get("dir", {})
+				rock.server_perforate(
+					Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)),
+					Vector3(dd.get("x", 0.0), dd.get("y", 0.0), dd.get("z", 0.0)))
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:

@@ -9,6 +9,18 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 # don't stay stacked (especially on a horizontal cut).
 const SEPARATION_SPEED := 1.5
 
+# Speed (m/s) both pieces get pushed along the perforation direction (away from the bit
+# / the player), so the rock recoils where the drill hits.
+const PERFORATION_PUSH_SPEED := 2.5
+
+# How close (rock-local units) two fault distances must be to count as "the same
+# crossing": within this margin of the nearest fault, the LOWEST-numbered one is cut.
+const INTERSECTION_MARGIN := 0.06
+
+# Max distance (rock-local) from the aim point to a fault plane for the hit to count
+# as "on a fault". Aiming farther than this = not on a vein -> no cut.
+const FAULT_HIT_THRESHOLD := 0.05
+
 @export var uuid: String = ""
 
 var type_name = "miningrock"
@@ -40,10 +52,11 @@ var _spawn_kick: Vector3 = Vector3.ZERO
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
-# becomes a new rock).
+# becomes a new rock). number = fault priority: when the aim point is on the crossing
+# of several faults, the LOWEST number is cut.
 var blocs = [
-	{ "fractured": false, "position": 0.5, "rotation_y": 0.0, "rotation_z": 8.0, "keep_side": 1, "side2_uuid": "" },
-	{ "fractured": false, "position": 0.5, "rotation_y": 0.0, "rotation_z": 82.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "number": 1, "position": 0.5, "rotation_y": 0.0, "rotation_z": 8.0, "keep_side": 1, "side2_uuid": "" },
+	{ "fractured": false, "number": 2, "position": 0.5, "rotation_y": 0.0, "rotation_z": 82.0, "keep_side": 1, "side2_uuid": "" },
 ]
 
 @onready var rock_shape = $CollisionShape3D
@@ -160,6 +173,7 @@ func _blocs_payload() -> Array:
 	for bloc in blocs:
 		out.append({
 			"fractured": bloc.get("fractured", false),
+			"number": bloc.get("number", 0),
 			"position": bloc.position,
 			"rotation_y": bloc.rotation_y,
 			"rotation_z": bloc.rotation_z,
@@ -254,11 +268,28 @@ func _server_ready() -> void:
 	)
 	_refresh_cuts()
 
+## True if a rock-local point lies on a not-yet-fractured fault (close to its plane).
+## Used by the client to decide whether perforating there should do anything.
+func is_on_fault(hit_local: Vector3) -> bool:
+	for bloc in blocs:
+		if bloc.get("fractured", false):
+			continue
+		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
+		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
+		var d: float = absf(n.dot(hit_local) - ((0.5 - bloc.position) + n.dot(_mesh_center)))
+		if d <= FAULT_HIT_THRESHOLD:
+			return true
+	return false
+
 ## Server: perforate the fault nearest to `hit_local` (a rock-local point) and cut
-## along it. The remaining faults stay cuttable, so a rock can be split several times.
-func server_perforate(hit_local: Vector3) -> void:
+## along it. `push_dir_local` = perforation direction (rock-local) used to recoil the
+## pieces away from the bit. The remaining faults stay cuttable (several cuts possible).
+func server_perforate(hit_local: Vector3, push_dir_local: Vector3 = Vector3.ZERO) -> void:
 	if not OS.has_feature("dedicated_server"):
 		return
+	# Distance from the aim point to each un-fractured fault plane (centered on the mesh,
+	# must match _make_cut_box / _make_vein_material else we'd pick the wrong fault).
+	var dists: Dictionary = {}
 	var best_i := -1
 	var best_d := INF
 	for i in blocs.size():
@@ -267,23 +298,38 @@ func server_perforate(hit_local: Vector3) -> void:
 			continue   # already cut along this fault
 		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
 		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
-		# Distance to the fault PLANE, centered on the mesh (must match _make_cut_box /
-		# _make_vein_material, otherwise we pick the wrong fault and the cut is a no-op).
 		var d: float = absf(n.dot(hit_local) - ((0.5 - bloc.position) + n.dot(_mesh_center)))
+		dists[i] = d
 		if d < best_d:
 			best_d = d
 			best_i = i
 	if best_i < 0:
 		return
+	if best_d > FAULT_HIT_THRESHOLD:
+		return   # the aim point isn't on any fault -> nothing happens
+	# Intersection priority: when the aim point sits on the crossing of several faults
+	# (their distances are nearly tied), cut the one with the LOWEST number.
+	var best_number: int = int(blocs[best_i].get("number", 9999))
+	for i in dists:
+		if dists[i] <= best_d + INTERSECTION_MARGIN:
+			var num: int = int(blocs[i].get("number", 9999))
+			if num < best_number:
+				best_number = num
+				best_i = i
 	# Cut our half along the fault, then spawn the complementary half (side2). Push the
 	# two apart along the fault normal so they don't stay stacked.
 	blocs[best_i].fractured = true
 	var cut: Dictionary = blocs[best_i]
 	var n_local: Vector3 = Basis.from_euler(Vector3(0.0, deg_to_rad(cut.rotation_y), deg_to_rad(cut.rotation_z))) * Vector3(1.0, 0.0, 0.0)
 	var n_world: Vector3 = (global_transform.basis * n_local).normalized()
+	# Recoil both pieces away from the bit (along the perforation direction).
+	var push_world: Vector3 = Vector3.ZERO
+	if push_dir_local.length() > 0.0001:
+		push_world = (global_transform.basis * push_dir_local).normalized() * PERFORATION_PUSH_SPEED
 	await _rebuild()
-	linear_velocity += -n_world * SEPARATION_SPEED   # our half is the -normal side
-	_server_create_side2_rock(best_i, n_world * SEPARATION_SPEED)
+	# Our half: pushed along the perforation dir + away from the cut plane (-normal).
+	linear_velocity += push_world - n_world * SEPARATION_SPEED
+	_server_create_side2_rock(best_i, push_world + n_world * SEPARATION_SPEED)
 	_replicate_blocs()
 
 func _physics_process(_delta: float) -> void:
@@ -317,6 +363,7 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 		var is_cut: bool = (i == cut_index)
 		side2_blocs.append({
 			"fractured": bloc.get("fractured", false),
+			"number": bloc.get("number", 0),
 			"position": bloc.position,
 			"rotation_y": bloc.rotation_y,
 			"rotation_z": bloc.rotation_z,
