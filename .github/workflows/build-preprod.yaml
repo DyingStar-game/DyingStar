@@ -67,8 +67,8 @@ jobs:
           push: ${{ github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' }}
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           no-cache: ${{ github.event_name == 'workflow_dispatch' && inputs.no_cache == 'true' }}
-          cache-from: ${{ (github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch') && format('type=registry,ref={0}:buildcache-preprod', env.IMAGE_NAME) || '' }}
-          cache-to: ${{ (github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch') && format('type=registry,ref={0}:buildcache-preprod,mode=max', env.IMAGE_NAME) || '' }}
+          cache-from: ${{ (github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch') && 'type=gha,scope=buildcache-preprod' || '' }}
+          cache-to: ${{ (github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch') && 'type=gha,mode=max,scope=buildcache-preprod' || '' }}
 
       - name: Trigger preprod deployment
         if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
