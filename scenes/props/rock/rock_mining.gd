@@ -371,34 +371,30 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 			"side2_uuid": bloc2_uuid if is_cut else bloc.get("side2_uuid", ""),
 		})
 
-	var message = {
-		"namespace": "props",
-		"event": "create_object",
-		"amessagenb": 1,
-		"data": [
-			{
-				"type": type_name,
-				"uuid": bloc2_uuid,
-				"position": {
-					"x": spawn_pos.x,
-					"y": spawn_pos.y,
-					"z": spawn_pos.z
-				},
-				"rotation": {
-					"x": rotation[0],
-					"y": rotation[1],
-					"z": rotation[2]
-				},
-				"blocs": side2_blocs,
-				"kick": {"x": kick.x, "y": kick.y, "z": kick.z},
-				"scenename": "scenes/props/rock/rock_mining_01.tscn",
-				# Same parent as ourselves (a known GORC id, or "" for root): Horizon
-				# can resolve it, so the side2 is spawned instead of queued forever.
-				"parent_id": created_parent_id,
-			}
-		]
+	var data := {
+		"type": type_name,
+		"uuid": bloc2_uuid,
+		"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
+		"rotation": {"x": rotation[0], "y": rotation[1], "z": rotation[2]},
+		"blocs": side2_blocs,
+		"kick": {"x": kick.x, "y": kick.y, "z": kick.z},
+		"scenename": "scenes/props/rock/rock_mining_01.tscn",
+		# Same parent as ourselves (a known GORC id, or "" for root) so Horizon can
+		# resolve it instead of queuing the side2 forever.
+		"parent_id": created_parent_id,
 	}
-	ServerNetwork.send_message(message, "devmodecreate_object")
+	# 1) Register the side2 in Horizon (GORC) so the OTHER players receive it. Horizon
+	#    keeps spawn_in_gameserver=false: GORC is players-only, so it does NOT send the
+	#    object back to this game server — we create it ourselves just below.
+	ServerNetwork.send_message({
+		"namespace": "props", "event": "create_object", "amessagenb": 1, "data": [data],
+	}, "devmodecreate_object")
+	# 2) Create the side2 locally on THIS game server (Horizon won't, see above), so it
+	#    can be simulated and re-cut. Same path as a Horizon-spawned prop (instantiate +
+	#    miningrock group + props_list + hs_server_prop_update wiring).
+	NetworkOrchestrator.network_agent.create_generic_object({
+		"data": {"object_uuid": bloc2_uuid, "object_type": type_name, "object_data": data},
+	})
 
 ### Rock no longer breaks on body contact: the fracture is triggered by the mining
 ### tool (perforation along the targeted fault), handled server-side via an action.
