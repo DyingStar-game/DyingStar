@@ -62,6 +62,7 @@ events = [SubResource("InputEventKey_2sxo3")]
 script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
+carry_offset = Vector3(0, -0.6, -0.5)
 metadata/client_uuid = ""
 
 [node name="Placeholder_Collider" type="CollisionShape3D" parent="." unique_id=1694334487]
@@ -508,6 +509,7 @@ equipment_hand_offset = Vector3(0.4, 1, 0.1)
 equipment_item_offset = Vector3(0, -0.15, -0.2)
 equipment_item_scale = 1.0
 bit_tip_offset = Vector3(-0.55, 0.24, 0)
+stow_offset = Vector3(-0.16, 0.04, 0.3)
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

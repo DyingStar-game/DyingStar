@@ -763,13 +763,13 @@ func player_update(message: Dictionary) -> void:
 				var player_p = players_list[uuid]
 				if is_instance_valid(player_p):
 					var d: Dictionary = message["data"]
-					var props := {}
-					if d.has("tools"):
-						props["tools"] = d["tools"]
-					if d.has("head"):
-						props["head"] = d["head"]
-					if d.has("perforating"):
-						props["perforating"] = d["perforating"]
+					# Forward every replicated player property generically (tech-debt A):
+					# tools, head, perforating, carrying, ... No per-property whitelist.
+					# Position/rotation/velocity come from the "move" path, so skip them.
+					var props: Dictionary = d.duplicate()
+					props.erase("position")
+					props.erase("rotation")
+					props.erase("velocity")
 					if not props.is_empty():
 						player_p.client_channel_data_update(props)
 			elif message["event_type"] == "move":

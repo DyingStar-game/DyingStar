@@ -24,6 +24,9 @@ var aim_roll_deg: float = 0.0
 ## Aim-point smoothing speed (higher = snappier; smooths the depth jump when the
 ## crosshair moves from empty space to a near surface).
 var aim_smooth: float = 18.0
+## When false, the mount ignores pitch_source and keeps its rest orientation (a stowed
+## item that must NOT follow the camera). Aim mode (aim_target) still overrides this.
+var follow_pitch: bool = true
 var _smoothed_aim: Vector3 = Vector3.ZERO
 var _aim_init: bool = false
 
@@ -67,6 +70,9 @@ func _process(delta: float) -> void:
 				rotate_object_local(Vector3(0, 0, 1), deg_to_rad(aim_roll_deg))
 		return
 	_aim_init = false
+	if not follow_pitch:
+		basis = _rest_basis   # stowed: fixed orientation, no camera influence (#124)
+		return
 	if pitch_source == null:
 		return
 	# Pitch the whole mount around the body's right axis so the held item aims
