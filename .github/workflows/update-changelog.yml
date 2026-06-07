@@ -1,0 +1,54 @@
+name: Update Changelog
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  extract:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      entry_en: ${{ steps.parse.outputs.entry_en }}
+      entry_fr: ${{ steps.parse.outputs.entry_fr }}
+    steps:
+      - name: Parse changelog sections from PR body
+        id: parse
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re
+
+          body = os.environ.get('PR_BODY', '')
+
+          def extract(tag, text):
+              m = re.search(
+                  rf'<!--\s*{tag}\s*-->(.*?)<!--\s*/{tag}\s*-->',
+                  text,
+                  re.DOTALL | re.IGNORECASE,
+              )
+              return m.group(1).strip() if m else ''
+
+          entry_en = extract('CHANGELOG_EN', body)
+          entry_fr = extract('CHANGELOG_FR', body)
+
+          delimiter = 'GHADELIMITER'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+              fh.write(f'entry_en<<{delimiter}\n{entry_en}\n{delimiter}\n')
+              fh.write(f'entry_fr<<{delimiter}\n{entry_fr}\n{delimiter}\n')
+          PYEOF
+
+  changelog:
+    needs: [extract]
+    if: needs.extract.result == 'success' && needs.extract.outputs.entry_en != ''
+    uses: DyingStar-game/.github/.github/workflows/update-changelog.yml@main
+    with:
+      component: DyingStar
+      entry_en: ${{ needs.extract.outputs.entry_en }}
+      entry_fr: ${{ needs.extract.outputs.entry_fr }}
+      pr_number: ${{ github.event.pull_request.number }}
+      repo: ${{ github.repository }}
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

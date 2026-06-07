@@ -1,0 +1,35 @@
+name: Dispatch Release to Changelog
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: DyingStar-game
+          repositories: changelog
+
+      - name: Send release dispatch to changelog repo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          DATE=$(date -u +%Y-%m-%d)
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/DyingStar-game/changelog/dispatches \
+            --field event_type=release \
+            --field "client_payload[component]=DyingStar" \
+            --field "client_payload[version]=$VERSION" \
+            --field "client_payload[date]=$DATE"
