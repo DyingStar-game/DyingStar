@@ -67,6 +67,15 @@ const REJECT_DURATION := 0.3
 ## Max forward extension (m), so the tool never flies off the hand.
 @export var reach_max: float = 1.2
 
+@export_group("Stow")
+## Where the perforator slides to when stowed (player carrying an ore), relative to its
+## rest position. It stays VISIBLE there (just lowered) and lerps back on unstow.
+@export var stow_offset: Vector3 = Vector3(0.0, -0.5, 0.3)
+## How fast the perforator stows/unstows (higher = snappier).
+@export var stow_smooth: float = 10.0
+## Fixed rotation (deg) of the perforator while stowed — no camera influence (#124).
+@export var stow_rotation_deg: Vector3 = Vector3(5.0, -90.0, 95.1)
+
 ## True while aiming (read by the player to slow the mouse/movement).
 var is_aiming: bool = false
 ## True during perforation (read by the player to freeze the mouse/movement).
@@ -82,7 +91,6 @@ var _perforator_rest_pos: Vector3 = Vector3.ZERO
 var _bit_rest: Vector3 = Vector3.ZERO
 var _rock_ray: RayCast3D = null
 var _crosshair_shown: bool = false
-var _last_head_sent: float = INF   # last camera pitch sent (throttle "head" sync)
 var _target_rock_uuid: String = ""     # rock aimed when the perforation started
 var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
 var _target_aim_dir: Vector3 = Vector3.ZERO    # perforation direction, in that rock's local space
@@ -90,6 +98,8 @@ var _target_on_fault: bool = false     # whether that aim point is on a fault (c
 var _reject_t: float = -1.0            # >=0 while playing the off-fault "rejected" jab
 var _perforator_base: Vector3 = Vector3.ZERO  # rest pos or reach target (the animation jabs on top of this)
 var _tip_gizmo: MeshInstance3D = null  # debug sphere on the bit tip (calibration)
+var _equipped: bool = false  # logical "tool equipped" state (visibility also depends on stow)
+var _stowed: bool = false    # true while the perforator is stowed (player carrying an ore)
 
 ## Inject the player's camera rig and build the equipment mount + perforator.
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
@@ -111,10 +121,10 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_perforator.position = equipment_item_offset       # shift the model so its grip sits on the pivot
 	_perforator.rotation_degrees = equipment_item_rotation_deg
 	_perforator.scale = Vector3.ONE * equipment_item_scale
-	_perforator.visible = false
+	_perforator.visible = true   # always visible: stowed pose by default / at spawn (#124)
 	_equipment_mount.hold(_perforator)
 	_perforator_rest_pos = _perforator.position
-	_perforator_base = _perforator_rest_pos
+	_perforator_base = _perforator_rest_pos + stow_offset   # start in the stowed pose
 	_bit = _perforator.get_node_or_null(bit_node_name)
 	if _bit:
 		_bit_rest = _bit.position
@@ -142,23 +152,47 @@ func _process(delta: float) -> void:
 		# Orient the tool toward the rock while perforating (both clicks) OR during the
 		# off-fault "rejected" jab, so the failed attempt looks the same (orient + plunge
 		# + snap back). During plain aiming it stays on the camera pitch.
-		if orient_tool_at_rock and (is_perforating or _reject_t >= 0.0) and _perforator != null and _perforator.visible and _camera != null:
+		if not _perforator_active():
+			# Stowed (carrying or not equipped): fixed lowered pose, no camera influence.
+			_equipment_mount.aim_target = null
+			_equipment_mount.follow_pitch = false
+		elif orient_tool_at_rock and (is_perforating or _reject_t >= 0.0) and _camera != null:
 			_equipment_mount.aim_target = _aim_point()
 			_equipment_mount.aim_up = global_transform.basis.y
 			_equipment_mount.aim_roll_deg = aim_roll_deg
+			_equipment_mount.follow_pitch = true
 		else:
-			_equipment_mount.aim_target = null   # no look_at -> follow the camera pitch only
+			_equipment_mount.aim_target = null   # follow the camera pitch only
+			_equipment_mount.follow_pitch = true
 	# Calibration: keep the gizmo on bit_tip_offset (tunable live via the remote inspector).
 	if _tip_gizmo != null:
 		_tip_gizmo.position = bit_tip_offset
-	# Place the perforator so the bit tip touches the rock at the aim point (full 3D).
-	_update_reach(delta)
+	# Stow/unstow + reach drive where the perforator sits and its visibility. Runs on
+	# EVERY instance, so the stow lerp is seen by all players (issue #124).
+	_update_stow_and_reach(delta)
 	if _perforator != null:
 		_perforator.position = _perforator_base   # default; the visuals jab on top of it
 	# Perforation visual runs on EVERY instance, driven by is_perforating.
 	_update_perforation_visual(delta)
 	# Off-fault "rejected" jab (owner-local feedback): the bit lunges out then snaps back.
 	_update_reject_visual(delta)
+
+## Decide the perforator's rest target: stowed pose (carrying an ore) vs reach. The tool
+## STAYS visible at the stow pose (just lowered), it is not hidden — for everyone (#124).
+func _update_stow_and_reach(delta: float) -> void:
+	var active := _perforator_active()
+	if active:
+		_update_reach(delta)
+	else:
+		# Stowed (carrying OR not equipped): lerp to a fixed lowered pose.
+		var stow_target := _perforator_rest_pos + stow_offset
+		_perforator_base = _perforator_base.lerp(stow_target, clampf(stow_smooth * delta, 0.0, 1.0))
+	if _perforator != null:
+		# Visible to OTHER players when stowed (pose at spawn), but the local owner does
+		# NOT see his own stowed perforator (first-person clutter). Always visible when out.
+		_perforator.visible = active or not _is_owner()
+		# Orientation: item base rotation when out, fixed stow rotation when stowed.
+		_perforator.rotation_degrees = equipment_item_rotation_deg if active else stow_rotation_deg
 
 ## Lerp the perforator so the bit TIP lands exactly on the rock at the aim point — full
 ## 3D (including the tip's lateral offset, not just depth). Only while actively aiming
@@ -168,7 +202,7 @@ func _update_reach(delta: float) -> void:
 	# Reach ONLY while perforating (left-click), not during mere aiming — otherwise the
 	# tip slides on the surface as the crosshair moves. The player is frozen while
 	# perforating, so the tip stays put once engaged.
-	if reach_enabled and _equipment_mount != null and _perforator != null and _perforator.visible \
+	if reach_enabled and _equipment_mount != null and _perforator_active() \
 			and (is_perforating or _reject_t >= 0.0):
 		var hit: Vector3 = _aim_point()
 		# Solve the perforator position so the tip (basis * bit_tip_offset) == hit.
@@ -182,7 +216,7 @@ func _update_reach(delta: float) -> void:
 ## camera-pitch ("head") replication.
 func update_local(_delta: float) -> void:
 	# Aim mode: only if the tool is equipped AND near a rock.
-	var can_aim := _perforator != null and _perforator.visible and _is_near_mining_rock()
+	var can_aim := _perforator_active() and _is_near_mining_rock()
 	is_aiming = Input.is_action_pressed("aim") and can_aim
 	# The aim crosshair shows only while aiming AND looking at the rock.
 	var looking := is_aiming and _is_looking_at_rock()
@@ -205,37 +239,48 @@ func update_local(_delta: float) -> void:
 		else:
 			_reject_t = 0.0                   # off a fault -> brief rejected jab, no cut
 
-	# Replicate the camera pitch ("head") while a tool is equipped, so other
-	# players see where we aim. Throttled to meaningful changes.
-	if _perforator and _perforator.visible:
-		var head_q: float = snappedf(_camera_pivot.rotation.x, 0.02)
-		if head_q != _last_head_sent:
-			_last_head_sent = head_q
-			sync_requested.emit({"action": "set_head", "head": head_q})
+	# Camera pitch ("head") is now a generic player property sent by NormalPlayer
+	# (tech-debt A), not here — MiningTool only consumes it via apply_remote().
 
 ## Owner only: toggle the equipped tool and replicate the state.
 func toggle_equip() -> void:
 	if _perforator == null:
 		return
-	var equipped := not _perforator.visible
-	_perforator.visible = equipped  # immediate local toggle (first-person view)
+	_equipped = not _equipped  # visibility is derived in _process (also depends on stow)
 	# Send the equipped tool as a STATE (not a one-shot event) so other clients
 	# always converge to the right state via the replicated "tools" property.
-	sync_requested.emit({"action": "equip_tool", "tools": ("perforator" if equipped else "")})
+	sync_requested.emit({"action": "update_property", "tools": ("perforator" if _equipped else "")})
 
 ## Server (authoritative): apply the equipped-tool state. The player rebroadcasts it.
 func server_set_tool(tool_id: String) -> void:
-	if _perforator:
-		_perforator.visible = tool_id != ""
+	_equipped = tool_id != ""  # visibility is derived in _process (server doesn't render)
 
 ## Apply replicated state on remote players (tool visibility, camera aim, perforation).
 func apply_remote(data: Dictionary) -> void:
-	if data.has("tools") and _perforator:
-		_perforator.visible = str(data["tools"]) != ""
+	if data.has("tools"):
+		_equipped = str(data["tools"]) != ""
 	if data.has("head") and _camera_pivot:
 		_camera_pivot.rotation.x = float(data["head"])
 	if data.has("perforating"):
 		_apply_perforating(bool(data["perforating"]))
+	if data.has("carrying"):
+		set_stowed(bool(data["carrying"]))
+
+## Stow/unstow the perforator (player carrying an ore). The visual lerp runs in _process
+## on every instance, so it is visible to all players. Owner predicts it on the carry key;
+## remotes get it via the replicated "carrying" player property.
+func set_stowed(value: bool) -> void:
+	_stowed = value
+
+## The perforator can aim / reach only when equipped and not stowed.
+func _perforator_active() -> bool:
+	return _perforator != null and _equipped and not _stowed
+
+## True if this tool belongs to the LOCAL player (not a replicated remote player). Used
+## so the owner doesn't see his own stowed perforator while others still do.
+func _is_owner() -> bool:
+	var p = get_parent()
+	return not (p != null and "remote_player" in p and p.remote_player)
 
 # ── Internals ────────────────────────────────────────────────────────────────
 
@@ -317,7 +362,7 @@ func _set_perforating(active: bool) -> void:
 	if active == is_perforating:
 		return
 	_apply_perforating(active)
-	sync_requested.emit({"action": "set_perforating", "perforating": active})
+	sync_requested.emit({"action": "update_property", "perforating": active})
 
 ## Advance and apply the jackhammer visual (runs on every instance while perforating).
 func _update_perforation_visual(delta: float) -> void:

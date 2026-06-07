@@ -28,6 +28,11 @@ const PAUSE: String = "pause"
 @export var player_thruster_force = 10
 @export var sprint_speed: float = 5.0
 @export var crouch_speed: float = 1.5
+# Movement speed multiplier while carrying an ore (issue #124): slower with hands full.
+@export var carry_speed_factor: float = 0.5
+## Where a carried item floats, relative to the player body (issue #124): head height, a
+## bit below the eye line and ahead. Body-relative (yaw only, no camera pitch).
+@export var carry_offset: Vector3 = Vector3(0.0, -0.2, -1.2)
 @export var jump_height: float = 1.0
 @export var acceleration: float = 10.0
 @export var arm_length: float = 0.5
@@ -82,6 +87,12 @@ var active = false
 var hands_item: Node3D = null
 
 var _display_debug:bool = false
+
+# Last camera pitch ("head" player property) sent to the server, throttled.
+var _last_head_sent: float = INF
+# Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
+# (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
+var _owner_carrying: bool = false
 
 
 @onready var camera = $CameraPivot/Camera3D
@@ -238,6 +249,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("action"):
 		#  action key
 		client_send_action_to_server({"action": "action"})
+		_predict_carry_stow()
 
 	if event.is_action_pressed("spawn_rock_mining"):
 		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
@@ -315,6 +327,7 @@ func _process(_delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
+		_server_update_carried_item()
 		if new_input_from_server:
 			input_direction = input_from_server["input_direction"]
 			global_rotation = input_from_server["rotation"]
@@ -351,6 +364,8 @@ func _physics_process(delta: float) -> void:
 			speed *= mining_tool.aim_speed_factor  # slowed down in aim mode
 		if mining_tool.is_perforating:
 			speed = 0.0  # frozen during perforation
+		if hands_item != null:
+			speed *= carry_speed_factor  # carrying an ore slows you down (issue #124)
 
 		if is_on_floor():
 			if input_direction:
@@ -460,6 +475,13 @@ func _handle_camera_motion():
 		camera_pivot.rotation.x = 0
 		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
 		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
+
+	# Replicate the camera pitch ("head") to the server so others see where we look and
+	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).
+	var head_q := snappedf(camera_pivot.rotation.x, 0.02)
+	if head_q != _last_head_sent:
+		_last_head_sent = head_q
+		client_send_action_to_server({"action": "update_property", "head": head_q})
 
 	mouse_motion = Vector2.ZERO
 
@@ -678,6 +700,36 @@ func _find_mining_rock(rock_uuid: String) -> Node:
 			return r
 	return null
 
+## Server: keep the carried item floating in front of the body (yaw only, no camera
+## pitch), held by the middle of its geometry so it sits centered. A cut piece keeps the
+## original rock pivot, so we offset by its geometry center (deterministic -> clients
+## match without extra sync). (#124)
+func _server_update_carried_item() -> void:
+	if hands_item == null:
+		return
+	# Body-relative spot (head height + front) WITHOUT the camera pitch: a carried object
+	# follows the body yaw but not the up/down look (issue #124).
+	var carry_point: Vector3 = camera_pivot.position + carry_offset
+	var center: Vector3 = Vector3.ZERO
+	if hands_item.has_method("get_center_offset"):
+		center = hands_item.get_center_offset()
+	hands_item.position = carry_point - hands_item.basis * center
+
+## Owner-local: predict whether the carry key picks up or drops, to stow/unstow the
+## perforator right away. The server stays authoritative (it may reject, e.g. a piece
+## already taken); a mismatch self-corrects on the next interaction.
+func _predict_carry_stow() -> void:
+	if _owner_carrying:
+		_owner_carrying = false
+		mining_tool.set_stowed(false)
+		return
+	interact_ray.force_raycast_update()
+	var collider = interact_ray.get_collider()
+	var target = collider.get_parent() if collider != null else null
+	if target != null and target.has_method("interact") and target.interact(self):
+		_owner_carrying = true
+		mining_tool.set_stowed(true)
+
 # receive properties from the client, often the actions
 func server_action_received(data: Dictionary) -> void:
 	match data["action"]:
@@ -685,17 +737,19 @@ func server_action_received(data: Dictionary) -> void:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
-		"equip_tool":
-			# Authoritative tool state, then replicate it to nearby clients.
-			var tool_id: String = data.get("tools", "")
-			mining_tool.server_set_tool(tool_id)
-			server_send_properties_to_client({"tools": tool_id})
-		"set_head":
-			# Replicate the camera pitch so others see where this player aims.
-			server_send_properties_to_client({"head": data.get("head", 0.0)})
-		"set_perforating":
-			# Replicate the perforation state so others see the jackhammer animation.
-			server_send_properties_to_client({"perforating": data.get("perforating", false)})
+		"update_property":
+			# Generic player-property update (tech-debt A): apply the authoritative
+			# side-effects we know about, then replicate every property to nearby
+			# clients. Replaces the per-property equip_tool/set_head/set_perforating.
+			var props: Dictionary = data.duplicate()
+			props.erase("action")
+			if props.has("tools"):
+				mining_tool.server_set_tool(str(props["tools"]))
+			if props.has("head"):
+				# Apply on the server too so the interaction ray + carried item follow
+				# the gaze (planet only; in 0g the body orientation is used instead).
+				camera_pivot.rotation.x = float(props["head"])
+			server_send_properties_to_client(props)
 		"perforate_rock":
 			# Authoritative fracture: cut the targeted rock along the aimed fault.
 			var rock := _find_mining_rock(str(data.get("uuid", "")))
@@ -710,10 +764,15 @@ func server_action_received(data: Dictionary) -> void:
 			if hands_item != null:
 				# we have something in hands, so release it
 				print("player has an item in hands, dropping it")
+				# Generic: let the object know it is no longer carried (issue #124).
+				if hands_item.has_method("set_carried"):
+					hands_item.set_carried(false)
 				hands_item.server_parent_change(get_parent())
 				hands_item.freeze = false
 				hands_item.send_properties_to_client(get_parent().uuid)
 				hands_item = null
+				# Stop carrying on all clients (perforator comes back) (issue #124).
+				server_send_properties_to_client({"carrying": false})
 			else:
 				# generic action key pressed
 				print("action key pressed for collider")
@@ -731,6 +790,12 @@ func server_action_received(data: Dictionary) -> void:
 							#  send reparent to client
 							parent_node.send_properties_to_client(self.client_uuid)
 							hands_item = parent_node
+							# Generic: mark carriables (e.g. a fault-less ore) as taken so
+							# nobody else can grab them while in hands (issue #124).
+							if parent_node.has_method("set_carried"):
+								parent_node.set_carried(true)
+								# Mark as carrying on all clients (perforator stows) (issue #124).
+								server_send_properties_to_client({"carrying": true})
 
 			# TODO
 			# synchro head/camera

@@ -34,6 +34,11 @@ var server_last_position = Vector3.ZERO
 var server_last_rotation = Vector3.ZERO
 
 var has_parent: bool = false
+# True while we briefly leave the tree to reparent (carry/drop): tells _exit_tree NOT
+# to emit a delete (the object still exists, it just changed parent). Mirrors Box50cm.
+var server_reparenting: bool = false
+# True while carried by a player (issue #124), so nobody else can grab it meanwhile.
+var carried: bool = false
 
 # The parent we were created under (a valid GORC id, or "" for a root object).
 # Reused for the broken-off half (side2) so Horizon can resolve its parent too:
@@ -252,6 +257,66 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_refresh_cuts()
 
 #####################################################################
+# Carry / drop (issue #124) — carriable contract, same as Box50cm
+#####################################################################
+
+## A piece is "ore" (carriable) only once it has no fault left: every fault fractured
+## means it can't be split anymore.
+func is_fully_fractured() -> bool:
+	for bloc in blocs:
+		if not bloc.get("fractured", false):
+			return false
+	return true
+
+## Carriable contract (same shape as Box50cm.interact): the player asks the object
+## whether it can be picked up — it stays generic, the rule lives here. Only a
+## fault-less, not-already-carried piece can be carried.
+func interact(_interactor: Node = null) -> bool:
+	return is_fully_fractured() and not carried
+
+## Mark/unmark as carried so another player can't grab it while it is in hands.
+## A carried ore must not generate collision (issue #124): a frozen body acts like a
+## static wall in front of the player, so disable its body shape while carried.
+func set_carried(value: bool) -> void:
+	carried = value
+	if rock_shape:
+		rock_shape.disabled = value
+
+## Geometry center relative to the body origin: a cut piece keeps the original rock's
+## pivot, so its mesh sits off to one side. The carrier uses this to hold the ore by its
+## middle. Deterministic from `blocs`, so server and clients agree without extra sync.
+func get_center_offset() -> Vector3:
+	if _mesh_instance != null and is_instance_valid(_mesh_instance):
+		return _mesh_instance.get_aabb().get_center()
+	return _mesh_center
+
+## Reparent on the server (carry into hands / drop back to the world). server_reparenting
+## tells _exit_tree NOT to emit a delete while we momentarily leave the tree.
+func server_parent_change(parent: Node) -> void:
+	server_reparenting = true
+	reparent(parent)
+
+## Tell clients to reparent this piece (into the carrier's hands, or back to the world)
+## and where it sits. Same channel/shape Box50cm uses for carrying.
+func send_properties_to_client(parent_uuid: String) -> void:
+	var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
+	var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	emit_signal(
+		"hs_server_prop_update",
+		uuid,
+		{
+			"position": my_position,
+			"rotation": my_rotation,
+			"parent_id": parent_uuid,
+			"weight": 200,
+		},
+		type_name,
+		has_parent
+	)
+	server_last_position = my_position
+	server_last_rotation = my_rotation
+
+#####################################################################
 # Server part
 #####################################################################
 
@@ -401,8 +466,14 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 func _on_area_3d_body_entered(_body: Node3D) -> void:
 	pass
 
-func _exit_tree() -> void:
+func _enter_tree() -> void:
+	# Reparenting (carry/drop) finished re-adding us: clear the guard. Mirrors Box50cm.
 	if GameOrchestrator.is_server():
+		server_reparenting = false
+
+func _exit_tree() -> void:
+	# Don't delete on clients when we're only being reparented (carried/dropped).
+	if GameOrchestrator.is_server() and not server_reparenting:
 		emit_signal(
 			"hs_server_prop_delete",
 			uuid,
