@@ -1,0 +1,20 @@
+[gd_resource type="StandardMaterial3D" load_steps=4 format=3 uid="uid://c71fgaq3itr5i"]
+
+[ext_resource type="Texture2D" uid="uid://do5ypjlfrhjht" path="res://assets/textures/decals/ares_misc/ares_misc_decal_alpha.png" id="1_t6ofi"]
+[ext_resource type="Texture2D" uid="uid://cueehcqufmf2w" path="res://assets/textures/decals/ares_misc/ares_misc_decal_normal.png" id="3_2v5ff"]
+[ext_resource type="Texture2D" uid="uid://cnt5l5ppqjm0u" path="res://assets/textures/decals/ares_misc/ares_misc_decal_rough.png" id="3_t6ofi"]
+
+[resource]
+resource_name = "decal"
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+albedo_color = Color(0.5278701, 0.5364583, 0.51393193, 1)
+albedo_texture = ExtResource("1_t6ofi")
+metallic = 1.0
+metallic_texture_channel = 2
+roughness = 0.65
+roughness_texture = ExtResource("3_t6ofi")
+roughness_texture_channel = 1
+normal_enabled = true
+normal_texture = ExtResource("3_2v5ff")

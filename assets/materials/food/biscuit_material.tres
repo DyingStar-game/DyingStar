@@ -1,0 +1,10 @@
+[gd_resource type="StandardMaterial3D" load_steps=3 format=3 uid="uid://ho5sk1nm4wo2"]
+
+[ext_resource type="Texture2D" uid="uid://dy44a00ule6hl" path="res://assets/textures/food/ares_biscuit/food_biscuit_ration_albedo.png" id="1_uxilt"]
+[ext_resource type="Texture2D" uid="uid://vxxf6hupft15" path="res://assets/textures/food/ares_biscuit/food_biscuit_ration_normal.png" id="2_af302"]
+
+[resource]
+resource_name = "biscuit_material"
+albedo_texture = ExtResource("1_uxilt")
+normal_enabled = true
+normal_texture = ExtResource("2_af302")
