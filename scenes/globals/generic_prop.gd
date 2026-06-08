@@ -29,6 +29,8 @@ func _ready() -> void:
 	# back to the parent origin (the depot crate was spawning under the screen). (#124)
 	if spawn_position != Vector3.ZERO:
 		position = spawn_position
+	# So the carry pickup can resolve this prop by uuid (the client sends what it aims at).
+	add_to_group("carriable")
 
 func _physics_process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
