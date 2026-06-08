@@ -259,8 +259,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		mining_tool.toggle_equip()
 
 	if event.is_action_pressed("action"):
-		#  action key
-		client_send_action_to_server({"action": "action"})
+		# Pick up / drop. Send the uuid of the carriable under OUR crosshair so the server
+		# grabs exactly that one (its own ray can be slightly off and grab a neighbour).
+		var target_uuid := ""
+		interact_ray.force_raycast_update()
+		var hit = interact_ray.get_collider()
+		if hit != null:
+			var hp = hit.get_parent()
+			if hp != null and hp.has_method("interact") and "uuid" in hp:
+				target_uuid = str(hp.uuid)
+		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow()
 
 	if event.is_action_pressed("spawn_rock_mining"):
@@ -789,6 +797,16 @@ func _find_mining_rock(rock_uuid: String) -> Node:
 			return r
 	return null
 
+## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
+## exactly the object the client aimed at. (#124)
+func _find_carriable(target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	for n in get_tree().get_nodes_in_group("carriable"):
+		if "uuid" in n and str(n.uuid) == target_uuid:
+			return n
+	return null
+
 ## Server: keep the carried item floating in front of the body (yaw only, no camera
 ## pitch), held by the middle of its geometry so it sits centered. A cut piece keeps the
 ## original rock pivot, so we offset by its geometry center (deterministic -> clients
@@ -867,33 +885,25 @@ func server_action_received(data: Dictionary) -> void:
 				# Stop carrying on all clients (perforator comes back) (issue #124).
 				server_send_properties_to_client({"carrying": false})
 			else:
-				# generic action key pressed
-				print("action key pressed for collider")
-				# Refresh the ray with the current camera pitch (just applied from "head")
-				# so looking down at a low object matches the owner's prediction (issue #124).
-				interact_ray.force_raycast_update()
-				var collider = interact_ray.get_collider()
+				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its
+				# crosshair, so we grab exactly that one. (Our own server ray can be a hair
+				# off — pitch is throttled/lagged — and would grab the neighbour.) (#124)
+				var parent_node := _find_carriable(str(data.get("target_uuid", "")))
 				var picked_up := false
-				if collider != null:
-					var parent_node = collider.get_parent()
-					if parent_node.has_method("interact"):
-						print("Collider has interact method")
-						var can_interact = parent_node.interact(self)
-						if can_interact:
-							print("collider 01")
-							parent_node.freeze = true
-							parent_node.server_parent_change(self)
-							parent_node.position = Vector3(0.0, 1.0, -1.0)
-							#  send reparent to client
-							parent_node.send_properties_to_client(self.client_uuid)
-							hands_item = parent_node
-							picked_up = true
-							# Generic: mark carriables (e.g. a fault-less ore) as taken so
-							# nobody else can grab them while in hands (issue #124).
-							if parent_node.has_method("set_carried"):
-								parent_node.set_carried(true)
-							# Mark as carrying on all clients (perforator stows) (issue #124).
-							server_send_properties_to_client({"carrying": true})
+				if parent_node != null and parent_node.has_method("interact") and parent_node.interact(self):
+					parent_node.freeze = true
+					parent_node.server_parent_change(self)
+					parent_node.position = Vector3(0.0, 1.0, -1.0)
+					#  send reparent to client
+					parent_node.send_properties_to_client(self.client_uuid)
+					hands_item = parent_node
+					picked_up = true
+					# Generic: mark carriables (e.g. a fault-less ore) as taken so
+					# nobody else can grab them while in hands (issue #124).
+					if parent_node.has_method("set_carried"):
+						parent_node.set_carried(true)
+					# Mark as carrying on all clients (perforator stows) (issue #124).
+					server_send_properties_to_client({"carrying": true})
 				if not picked_up:
 					# Grabbed nothing: tell the owner to undo its optimistic stow (issue #124).
 					server_send_properties_to_client({"carrying": false})

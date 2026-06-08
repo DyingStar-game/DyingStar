@@ -69,6 +69,9 @@ var created_parent_id: String = ""
 # Ore distribution seed (the original rock's id), inherited by broken-off pieces so their
 # exterior stays continuous after a cut. Empty on the original -> it uses its own uuid.
 var ore_seed: String = ""
+# Cached per-piece ore fraction (measured by sampling the 3D field over this piece's
+# volume). -1 = not computed yet; invalidated whenever the mesh is rebuilt (a cut).
+var _purity := -1.0
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
@@ -93,6 +96,7 @@ var _spawn_kick: Vector3 = Vector3.ZERO
 
 func _ready() -> void:
 	add_to_group("miningrock")  # for proximity detection (aim mode)
+	add_to_group("carriable")  # so the carry pickup can resolve it by uuid (#124)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	_base_mesh = item_rock_mesh.mesh   # keep a ref to rebuild cuts later
 	if _base_mesh != null:
@@ -144,6 +148,8 @@ func _make_cut_box(bloc: Dictionary) -> CSGBox3D:
 func _rebuild() -> void:
 	if _base_mesh == null:
 		return
+	# The mesh (and thus the ore region inside it) changed: drop the cached purity.
+	_purity = -1.0
 	# Bake "base - all fractured boxes" with a throwaway combiner (kept transient so we
 	# don't leave a live CSG node around for every rock).
 	var temp := CSGCombiner3D.new()
@@ -251,9 +257,13 @@ func _show_faults() -> void:
 ## every client shows the same amount without replicating anything. A different uuid (the
 ## original and each broken-off piece) -> different richness -> the player compares.
 func ore_richness() -> float:
-	if uuid == "":
+	# Derive from the inherited ore seed (the original rock), NOT this piece's uuid, so the
+	# 3D ore field (its threshold) is identical for every piece of the same rock. Cutting
+	# then only REVEALS the ore; re-cutting a piece no longer changes the ore on its faces.
+	var s: String = ore_seed if ore_seed != "" else uuid
+	if s == "":
 		return 0.5
-	return float(absi(uuid.hash()) % 1000) / 1000.0
+	return float(absi(s.hash()) % 1000) / 1000.0
 
 ## Approximate volume of this piece (AABB of its mesh x a fill factor). Used by the mining
 ## depot to refine in volume (kg is meaningless in space — gravity varies).
@@ -267,9 +277,69 @@ func get_volume() -> float:
 		return 1.0
 	return box.size.x * box.size.y * box.size.z * VOLUME_FILL
 
-## Volume of ORE inside this piece = its volume x its richness (0..1).
+## Volume of ORE inside this piece = its volume x its MEASURED ore fraction (purity).
 func get_ore_volume() -> float:
-	return get_volume() * ore_richness()
+	return get_volume() * measured_purity()
+
+## Per-piece ore fraction (0..1), measured by sampling the SAME 3D ore field the shader
+## draws over this piece's volume. Because the field is shared by the whole rock (offset +
+## threshold from the seed), bigger/ore-dense regions read richer -> purity varies per
+## piece AND stays correlated with the ore you actually see on it. Cached (see _rebuild).
+func measured_purity() -> float:
+	if _purity >= 0.0:
+		return _purity
+	var box: AABB
+	if _mesh_instance != null and is_instance_valid(_mesh_instance) and _mesh_instance.mesh != null:
+		box = _mesh_instance.mesh.get_aabb()
+	elif _base_mesh != null:
+		box = _base_mesh.get_aabb()
+	else:
+		return ore_richness()  # not built yet: fall back to the rock's overall richness
+	var threshold := lerpf(ORE_T_POOR, ORE_T_RICH, ore_richness())
+	var offset := _ore_offset()
+	var n_side := 4
+	var total := 0.0
+	for ix in n_side:
+		for iy in n_side:
+			for iz in n_side:
+				var p := box.position + Vector3(
+					box.size.x * (float(ix) + 0.5) / n_side,
+					box.size.y * (float(iy) + 0.5) / n_side,
+					box.size.z * (float(iz) + 0.5) / n_side)
+				var nz := _fbm3((p + offset) * ORE_SCALE)
+				total += smoothstep(threshold, threshold + ORE_SOFTNESS, nz)
+	_purity = total / float(n_side * n_side * n_side)
+	return _purity
+
+# --- GDScript replica of rock_vein.gdshader's value-noise fbm (so the measured purity
+#     matches the ore the shader actually renders). Keep in sync with the shader. ---
+func _sfract(x: float) -> float:
+	return x - floor(x)
+
+func _hash3(p: Vector3) -> float:
+	var q := Vector3(_sfract(p.x * 0.3183099 + 0.1), _sfract(p.y * 0.3183099 + 0.1), _sfract(p.z * 0.3183099 + 0.1))
+	q *= 17.0
+	return _sfract(q.x * q.y * q.z * (q.x + q.y + q.z))
+
+func _vnoise3(x: Vector3) -> float:
+	var i := Vector3(floor(x.x), floor(x.y), floor(x.z))
+	var f := Vector3(_sfract(x.x), _sfract(x.y), _sfract(x.z))
+	f = f * f * (Vector3(3.0, 3.0, 3.0) - f * 2.0)
+	var x00 := lerpf(_hash3(i), _hash3(i + Vector3(1, 0, 0)), f.x)
+	var x10 := lerpf(_hash3(i + Vector3(0, 1, 0)), _hash3(i + Vector3(1, 1, 0)), f.x)
+	var x01 := lerpf(_hash3(i + Vector3(0, 0, 1)), _hash3(i + Vector3(1, 0, 1)), f.x)
+	var x11 := lerpf(_hash3(i + Vector3(0, 1, 1)), _hash3(i + Vector3(1, 1, 1)), f.x)
+	return lerpf(lerpf(x00, x10, f.y), lerpf(x01, x11, f.y), f.z)
+
+func _fbm3(p: Vector3) -> float:
+	var v := 0.0
+	var a := 0.5
+	var pp := p
+	for _i in 4:
+		v += a * _vnoise3(pp)
+		pp *= 2.0
+		a *= 0.5
+	return v
 
 ## Per-rock noise offset (deterministic from uuid) so each rock/piece shows a DIFFERENT
 ## ore distribution, identical on every client.
