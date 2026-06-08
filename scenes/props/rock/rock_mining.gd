@@ -21,6 +21,25 @@ const INTERSECTION_MARGIN := 0.06
 # as "on a fault". Aiming farther than this = not on a vein -> no cut.
 const FAULT_HIT_THRESHOLD := 0.05
 
+# Ore look (Cryptonite preset) + purity thresholds, validated in the ore bench. A piece's
+# richness drives ore_threshold: ORE_T_RICH = full of ore, ORE_T_POOR = almost none.
+const ORE_COLOR := Color(0.1, 0.8, 0.2)
+const ORE_SCALE := 6.0
+const ORE_SOFTNESS := 0.156
+const ORE_METALLIC := 1.0
+const ORE_ROUGHNESS := 0.059
+const ORE_EMISSION := 9.3
+const ORE_T_RICH := 0.40
+const ORE_T_POOR := 0.72
+# Exterior (uncut surface): a FEW TINY traces only, DECOUPLED from the real richness, so
+# the player must fracture once to see the actual ore inside (Kainan/DDURIEUX).
+const ORE_T_EXTERIOR := 0.7  # high threshold -> very few spots
+const ORE_SCALE_EXTERIOR := 14.0  # high scale -> tiny spots
+# Neutral fault grooves (validated in the bench): darken + carved bump.
+const GROOVE_WIDTH := 0.03
+const GROOVE_DARKNESS := 0.0
+const GROOVE_STRENGTH := 0.1
+
 @export var uuid: String = ""
 
 var type_name = "miningrock"
@@ -44,6 +63,10 @@ var carried: bool = false
 # Reused for the broken-off half (side2) so Horizon can resolve its parent too:
 # a non-empty parent_id that Horizon doesn't know is queued forever (never spawned).
 var created_parent_id: String = ""
+
+# Ore distribution seed (the original rock's id), inherited by broken-off pieces so their
+# exterior stays continuous after a cut. Empty on the original -> it uses its own uuid.
+var ore_seed: String = ""
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
@@ -135,6 +158,7 @@ func _rebuild() -> void:
 	temp.queue_free()
 	if mesh == null or mesh.get_surface_count() == 0:
 		return
+	mesh = _smooth_exterior(mesh)  # keep the exterior smooth (not faceted) after a cut
 	# The first cut replaces the initial full-rock combiner with the baked mesh.
 	if combiner != null and is_instance_valid(combiner):
 		combiner.queue_free()
@@ -143,9 +167,10 @@ func _rebuild() -> void:
 		_mesh_instance = MeshInstance3D.new()
 		add_child(_mesh_instance)
 	_mesh_instance.mesh = mesh
-	var material := _make_vein_material()   # remaining (un-fractured) faults stay visible
-	_mesh_instance.set_surface_override_material(0, material)
-	_mesh_instance.set_surface_override_material(1, material)
+	# Surface 0 = exterior (few tiny traces + fault grooves); surface 1 = cut faces (the
+	# real ore richness). Forces a first fracture to reveal the actual ore (Kainan).
+	_mesh_instance.set_surface_override_material(0, _make_exterior_material())
+	_mesh_instance.set_surface_override_material(1, _make_inner_material())
 	rock_shape.shape = mesh.create_convex_shape(true)
 	# No manual recenter: each piece keeps the rock's transform and occupies its own
 	# half of the original volume (Godot derives the rigid body's center of mass from
@@ -155,6 +180,21 @@ func _rebuild() -> void:
 	if GameOrchestrator.is_server() and _spawn_kick != Vector3.ZERO:
 		linear_velocity += _spawn_kick
 		_spawn_kick = Vector3.ZERO
+
+## A CSG boolean re-triangulates and flattens the exterior normals, so a cut rock looks
+## faceted vs the smooth uncut one. Recompute SMOOTH normals on the exterior (surface 0)
+## and keep the cut faces (surface 1) untouched (they stay flat).
+func _smooth_exterior(mesh: Mesh) -> Mesh:
+	if not (mesh is ArrayMesh) or mesh.get_surface_count() == 0:
+		return mesh
+	var st := SurfaceTool.new()
+	st.create_from(mesh, 0)
+	st.index()              # merge coincident verts so shared normals can be averaged
+	st.generate_normals()   # smooth normals -> the exterior is not faceted
+	var out: ArrayMesh = st.commit()
+	if mesh.get_surface_count() > 1:
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.surface_get_arrays(1))
+	return out
 
 ## Server: replicate the full fault state to Horizon & clients after a cut.
 func _replicate_blocs() -> void:
@@ -201,28 +241,68 @@ func _show_faults() -> void:
 		return   # already cut: the veins live on the rebuilt mesh instead
 	var mesh_node = combiner.get_child(0) if combiner.get_child_count() > 0 else null
 	if mesh_node is CSGMesh3D:
-		(mesh_node as CSGMesh3D).material = _make_vein_material()
+		(mesh_node as CSGMesh3D).material = _make_exterior_material()
 
 ## Rock material that draws red veins where the surface is near a not-yet-fractured
 ## fault plane (intersection only -> crack lines, nothing sticking out).
-func _make_vein_material() -> ShaderMaterial:
+## Per-piece ore richness (0..1) = ore quantity = value. Deterministic from the uuid, so
+## every client shows the same amount without replicating anything. A different uuid (the
+## original and each broken-off piece) -> different richness -> the player compares.
+func ore_richness() -> float:
+	if uuid == "":
+		return 0.5
+	return float(absi(uuid.hash()) % 1000) / 1000.0
+
+## Per-rock noise offset (deterministic from uuid) so each rock/piece shows a DIFFERENT
+## ore distribution, identical on every client.
+func _ore_offset() -> Vector3:
+	var s: String = ore_seed if ore_seed != "" else uuid   # pieces inherit the original seed
+	return Vector3(
+		float(absi((s + "x").hash()) % 100000) / 1000.0,
+		float(absi((s + "y").hash()) % 100000) / 1000.0,
+		float(absi((s + "z").hash()) % 100000) / 1000.0)
+
+## Build a rock material. ore_threshold/ore_scale set the ore amount/size; with_grooves
+## adds the neutral fault grooves (only the exterior surface shows them).
+func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_grooves: bool) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://scenes/props/rock/rock_vein.gdshader")
 	mat.set_shader_parameter("albedo_tex", preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg"))
 	mat.set_shader_parameter("tex_scale", 1.0)
+	mat.set_shader_parameter("ore_color", ORE_COLOR)
+	mat.set_shader_parameter("ore_scale", ore_scale_v)
+	mat.set_shader_parameter("ore_threshold", ore_threshold_v)
+	mat.set_shader_parameter("ore_softness", ORE_SOFTNESS)
+	mat.set_shader_parameter("ore_metallic", ORE_METALLIC)
+	mat.set_shader_parameter("ore_roughness", ORE_ROUGHNESS)
+	mat.set_shader_parameter("ore_emission", ORE_EMISSION)
+	mat.set_shader_parameter("noise_offset", _ore_offset())  # per-rock ore distribution
+	mat.set_shader_parameter("groove_width", GROOVE_WIDTH)
+	mat.set_shader_parameter("groove_darkness", GROOVE_DARKNESS)
+	mat.set_shader_parameter("groove_strength", GROOVE_STRENGTH)
 	var normals: Array = []
 	var offsets: Array = []
-	for bloc in blocs:
-		if bloc.get("fractured", false):
-			continue
-		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
-		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
-		normals.append(n)                                            # fault plane normal (rock-local)
-		offsets.append((0.5 - bloc.position) + n.dot(_mesh_center))  # plane offset, centered on the mesh
+	if with_grooves:
+		for bloc in blocs:
+			if bloc.get("fractured", false):
+				continue
+			var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
+			var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
+			normals.append(n)                                            # fault plane normal (rock-local)
+			offsets.append((0.5 - bloc.position) + n.dot(_mesh_center))  # plane offset, centered
 	mat.set_shader_parameter("plane_count", normals.size())
 	mat.set_shader_parameter("plane_normals", normals)
 	mat.set_shader_parameter("plane_offsets", offsets)
 	return mat
+
+## Exterior (uncut surface): a few tiny ore traces, DECOUPLED from the real richness, plus
+## the fault grooves. The player must fracture to reveal the actual ore inside (Kainan).
+func _make_exterior_material() -> ShaderMaterial:
+	return _make_rock_material(ORE_T_EXTERIOR, ORE_SCALE_EXTERIOR, true)
+
+## Inner faces (revealed by a cut): the REAL ore amount = this piece's richness.
+func _make_inner_material() -> ShaderMaterial:
+	return _make_rock_material(lerpf(ORE_T_POOR, ORE_T_RICH, ore_richness()), ORE_SCALE, false)
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
@@ -231,6 +311,8 @@ func client_parent_change(parent: Node) -> void:
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("parent_id"):
 		created_parent_id = str(data["parent_id"])
+	if data.has("ore_seed"):
+		ore_seed = str(data["ore_seed"])
 	if data.has("kick"):
 		_spawn_kick = Vector3(data["kick"]["x"], data["kick"]["y"], data["kick"]["z"])
 	if data.has("position"):
@@ -447,6 +529,8 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 		# Same parent as ourselves (a known GORC id, or "" for root) so Horizon can
 		# resolve it instead of queuing the side2 forever.
 		"parent_id": created_parent_id,
+		# Inherit our ore distribution seed so the piece's exterior stays continuous.
+		"ore_seed": ore_seed if ore_seed != "" else uuid,
 	}
 	# 1) Register the side2 in Horizon (GORC) so the OTHER players receive it. Horizon
 	#    keeps spawn_in_gameserver=false: GORC is players-only, so it does NOT send the
