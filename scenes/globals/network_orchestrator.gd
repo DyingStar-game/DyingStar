@@ -121,6 +121,32 @@ func start_client(changed_scene, ip = "127.0.0.1", port = 7051, server_changes: 
 	network_agent.start_client(changed_scene, ip, port)
 	return network_agent
 
+## Spawn a generic prop FROM the game server: register it in Horizon (so the OTHER
+## clients receive it) AND create it locally on this game server (so it has a
+## server-side physics body that simulates and replicates). Horizon's GORC is
+## players-only and does NOT echo the object back to the game server, so doing only
+## the Horizon call leaves the prop floating/inert (it has no server body until a
+## reconnect reloads it from persistence). Use this everywhere a prop is spawned
+## server-side (mining depot crate, rock side2, ...). `data` must hold "uuid"+"type".
+func spawn_prop_authoritative(data: Dictionary) -> void:
+	if not GameOrchestrator.is_server():
+		return
+	# 1) Register in Horizon (GORC) for the other clients.
+	ServerNetwork.send_message({
+		"namespace": "props",
+		"event": "create_object",
+		"amessagenb": 1,
+		"data": [data],
+	}, "devmodecreate_object")
+	# 2) Create it locally on this game server (Horizon won't echo it back).
+	network_agent.create_generic_object({
+		"data": {
+			"object_uuid": data["uuid"],
+			"object_type": data["type"],
+			"object_data": data,
+		},
+	})
+
 ## Load configuration from server.ini file
 func load_server_config():
 	var config = ConfigFile.new()

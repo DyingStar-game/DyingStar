@@ -94,6 +94,15 @@ var _last_head_sent: float = INF
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
 
+# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
+# by the screen's interaction Area; while set, the mouse is freed to click the screen.
+var screen_interacting = null
+# World position of that screen, so the camera can turn to face it while interacting.
+var screen_position: Vector3 = Vector3.ZERO
+
+# Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
+var _spawn_wheel: RadialMenu = null
+
 
 @onready var camera = $CameraPivot/Camera3D
 
@@ -148,6 +157,12 @@ func _ready() -> void:
 
 	if not OS.has_feature("dedicated_server"):
 		$UserInterface/LoadingScreen.show()
+
+		# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
+		_spawn_wheel = RadialMenu.new()
+		_spawn_wheel.title = "Spawn"
+		$UserInterface.add_child(_spawn_wheel)
+		_spawn_wheel.option_selected.connect(_on_spawn_selected)
 
 		global_position = spawn_position
 		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
@@ -243,16 +258,21 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_tool"):
 		mining_tool.toggle_equip()
 
-	if event.is_action_pressed("spawn_50cmbox"):
-		spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
-
 	if event.is_action_pressed("action"):
 		#  action key
 		client_send_action_to_server({"action": "action"})
 		_predict_carry_stow()
 
 	if event.is_action_pressed("spawn_rock_mining"):
-		spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
+		if _spawn_wheel:
+			_spawn_wheel.open([
+				{"text": "Rocher", "data": "rock"},
+				{"text": "Caisse", "data": "box"},
+				{"text": "Dépôt", "data": "depot"},
+			])
+	if event.is_action_released("spawn_rock_mining"):
+		if _spawn_wheel:
+			_spawn_wheel.confirm()
 
 	if event.is_action_pressed("debug_console"):
 		if _display_debug:
@@ -281,7 +301,23 @@ func _process(_delta: float) -> void:
 	if mining_tool.is_perforating:
 		mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
-	_handle_camera_motion()
+	# In front of a 3D screen (mining depot): free the mouse to click it + freeze the
+	# camera. Otherwise capture the mouse and move the camera normally.
+	# Free the mouse + freeze the camera while focused on UI (a 3D screen or the spawn wheel).
+	var ui_focus: bool = screen_interacting != null or (_spawn_wheel != null and _spawn_wheel.visible)
+	if ui_focus:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		mouse_motion = Vector2.ZERO
+		# Turn the camera toward a 3D screen so it's centered in view.
+		if screen_interacting and screen_position != camera.global_position:
+			var look: Transform3D = camera.global_transform.looking_at(screen_position, up_direction)
+			camera.global_transform = camera.global_transform.interpolate_with(look, 0.15)
+	else:
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		# Return the camera to the pivot's control after a screen interaction.
+		camera.rotation = camera.rotation.lerp(Vector3.ZERO, 0.2)
+		_handle_camera_motion()
 
 
 	interact_label.hide()
@@ -618,9 +654,55 @@ func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
 
+# Dev spawn wheel selection -> spawn the chosen prop in front of the player.
+func _on_spawn_selected(data) -> void:
+	match data:
+		"rock":
+			spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
+		"box":
+			spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
+		"depot":
+			_spawn_depot()
+
+# LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
+func _spawn_depot() -> void:
+	var spawn_pos: Vector3 = position + (-global_basis.z * 10.0)
+	var parent = get_parent()
+	var parentuuid = "" if parent.name == "SystemSandbox" else parent.uuid
+	emit_signal(
+		"client_action_requested",
+		{
+			"action": "spawn",
+			"entity": "mining_depot",
+			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
+			"scenename": "scenes/structures/mining_depot.tscn",
+			"parent_id": parentuuid,
+		}
+	)
+
 func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float):
-	# disabled for the moment because take too many FPS on server
-	pass
+	# LOCAL DEV (do not commit): re-enabled to spawn mining rocks for testing.
+	var item_spawn_position: Vector3 = position + (-global_basis.z * _coeffz) + global_basis.y * _coeffy
+	var parent = get_parent()
+	var parentuuid = ""
+	if parent.name == "SystemSandbox":
+		parentuuid = ""
+	else:
+		parentuuid = parent.uuid
+	emit_signal(
+		"client_action_requested",
+		{
+			"action": "spawn",
+			"entity": _type,
+			"position": {
+				"x": item_spawn_position[0],
+				"y": item_spawn_position[1],
+				"z": item_spawn_position[2]
+			},
+			"scenename": "scenes/props/" + _boxscene + ".tscn",
+			"parent_id": parentuuid,
+		}
+	)
 	# var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
 	# # parent is for example the planet
 	# var parent = get_parent();
@@ -690,6 +772,13 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# on remote players by the MiningTool component.
 	if remote_player:
 		mining_tool.apply_remote(data)
+	elif data.has("carrying"):
+		# Owner: reconcile the optimistic carry prediction with the server's verdict
+		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).
+		var server_carrying := bool(data["carrying"])
+		if server_carrying != _owner_carrying:
+			_owner_carrying = server_carrying
+			mining_tool.set_stowed(server_carrying)
 
 ## Find a spawned mining rock by its uuid (server-side).
 func _find_mining_rock(rock_uuid: String) -> Node:
@@ -737,6 +826,10 @@ func server_action_received(data: Dictionary) -> void:
 			is_jumping = true
 		"toggle_flashlight":
 			flashlight.visible = not flashlight.visible
+		"screen_state":
+			# A 3D screen (mining depot) button was pressed: route it to that screen.
+			if screen_interacting and screen_interacting.has_method("update_screen"):
+				screen_interacting.update_screen(data)
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative
 			# side-effects we know about, then replicate every property to nearby
@@ -776,7 +869,11 @@ func server_action_received(data: Dictionary) -> void:
 			else:
 				# generic action key pressed
 				print("action key pressed for collider")
+				# Refresh the ray with the current camera pitch (just applied from "head")
+				# so looking down at a low object matches the owner's prediction (issue #124).
+				interact_ray.force_raycast_update()
 				var collider = interact_ray.get_collider()
+				var picked_up := false
 				if collider != null:
 					var parent_node = collider.get_parent()
 					if parent_node.has_method("interact"):
@@ -790,12 +887,16 @@ func server_action_received(data: Dictionary) -> void:
 							#  send reparent to client
 							parent_node.send_properties_to_client(self.client_uuid)
 							hands_item = parent_node
+							picked_up = true
 							# Generic: mark carriables (e.g. a fault-less ore) as taken so
 							# nobody else can grab them while in hands (issue #124).
 							if parent_node.has_method("set_carried"):
 								parent_node.set_carried(true)
-								# Mark as carrying on all clients (perforator stows) (issue #124).
-								server_send_properties_to_client({"carrying": true})
+							# Mark as carrying on all clients (perforator stows) (issue #124).
+							server_send_properties_to_client({"carrying": true})
+				if not picked_up:
+					# Grabbed nothing: tell the owner to undo its optimistic stow (issue #124).
+					server_send_properties_to_client({"carrying": false})
 
 			# TODO
 			# synchro head/camera

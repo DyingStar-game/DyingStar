@@ -26,4 +26,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)
 visible = false
 shape = SubResource("BoxShape3D_t7ntl")
 
+[node name="Area3D" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)
+shape = SubResource("BoxShape3D_t7ntl")
+
 [editable path="palette_container"]

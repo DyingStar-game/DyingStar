@@ -39,6 +39,8 @@ const ORE_SCALE_EXTERIOR := 14.0  # high scale -> tiny spots
 const GROOVE_WIDTH := 0.03
 const GROOVE_DARKNESS := 0.0
 const GROOVE_STRENGTH := 0.1
+# Fraction of a piece's bounding box that is actually solid (rough volume estimate).
+const VOLUME_FILL := 0.5
 
 @export var uuid: String = ""
 
@@ -252,6 +254,22 @@ func ore_richness() -> float:
 	if uuid == "":
 		return 0.5
 	return float(absi(uuid.hash()) % 1000) / 1000.0
+
+## Approximate volume of this piece (AABB of its mesh x a fill factor). Used by the mining
+## depot to refine in volume (kg is meaningless in space — gravity varies).
+func get_volume() -> float:
+	var box: AABB
+	if _mesh_instance != null and is_instance_valid(_mesh_instance) and _mesh_instance.mesh != null:
+		box = _mesh_instance.mesh.get_aabb()
+	elif _base_mesh != null:
+		box = _base_mesh.get_aabb()
+	else:
+		return 1.0
+	return box.size.x * box.size.y * box.size.z * VOLUME_FILL
+
+## Volume of ORE inside this piece = its volume x its richness (0..1).
+func get_ore_volume() -> float:
+	return get_volume() * ore_richness()
 
 ## Per-rock noise offset (deterministic from uuid) so each rock/piece shows a DIFFERENT
 ## ore distribution, identical on every client.
@@ -532,18 +550,10 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 		# Inherit our ore distribution seed so the piece's exterior stays continuous.
 		"ore_seed": ore_seed if ore_seed != "" else uuid,
 	}
-	# 1) Register the side2 in Horizon (GORC) so the OTHER players receive it. Horizon
-	#    keeps spawn_in_gameserver=false: GORC is players-only, so it does NOT send the
-	#    object back to this game server — we create it ourselves just below.
-	ServerNetwork.send_message({
-		"namespace": "props", "event": "create_object", "amessagenb": 1, "data": [data],
-	}, "devmodecreate_object")
-	# 2) Create the side2 locally on THIS game server (Horizon won't, see above), so it
-	#    can be simulated and re-cut. Same path as a Horizon-spawned prop (instantiate +
-	#    miningrock group + props_list + hs_server_prop_update wiring).
-	NetworkOrchestrator.network_agent.create_generic_object({
-		"data": {"object_uuid": bloc2_uuid, "object_type": type_name, "object_data": data},
-	})
+	# Register the side2 in Horizon (other players) AND create it locally on this game
+	# server (so it can be simulated and re-cut). Horizon's GORC is players-only and does
+	# not echo it back here. See NetworkOrchestrator.spawn_prop_authoritative.
+	NetworkOrchestrator.spawn_prop_authoritative(data)
 
 ### Rock no longer breaks on body contact: the fracture is triggered by the mining
 ### tool (perforation along the targeted fault), handled server-side via an action.
