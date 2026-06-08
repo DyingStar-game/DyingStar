@@ -69,9 +69,6 @@ var created_parent_id: String = ""
 # Ore distribution seed (the original rock's id), inherited by broken-off pieces so their
 # exterior stays continuous after a cut. Empty on the original -> it uses its own uuid.
 var ore_seed: String = ""
-# Cached per-piece ore fraction (measured by sampling the 3D field over this piece's
-# volume). -1 = not computed yet; invalidated whenever the mesh is rebuilt (a cut).
-var _purity := -1.0
 
 # Predefined faults (fixed, not random) — shown as red veins; perforating a vein
 # cuts the rock along it. keep_side = which half we keep when cut (the other half
@@ -91,6 +88,9 @@ var _mesh_instance: MeshInstance3D = null
 var _mesh_center: Vector3 = Vector3.ZERO
 # Velocity to apply once when this piece spawns, to push it off the half it split from.
 var _spawn_kick: Vector3 = Vector3.ZERO
+# Cached per-piece ore fraction (sampled over the piece's volume). -1 = not computed yet;
+# invalidated whenever the mesh is rebuilt (a cut).
+var _purity := -1.0
 
 @onready var rock_shape = $CollisionShape3D
 

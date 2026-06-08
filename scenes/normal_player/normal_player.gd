@@ -86,19 +86,19 @@ var active = false
 
 var hands_item: Node3D = null
 
-var _display_debug:bool = false
+# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
+# by the screen's interaction Area; while set, the mouse is freed to click the screen.
+var screen_interacting = null
+# World position of that screen, so the camera can turn to face it while interacting.
+var screen_position: Vector3 = Vector3.ZERO
+
+var _display_debug: bool = false
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
-
-# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
-# by the screen's interaction Area; while set, the mouse is freed to click the screen.
-var screen_interacting = null
-# World position of that screen, so the camera can turn to face it while interacting.
-var screen_position: Vector3 = Vector3.ZERO
 
 # Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
 var _spawn_wheel: RadialMenu = null

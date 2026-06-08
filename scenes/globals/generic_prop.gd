@@ -4,9 +4,9 @@ extends RigidBody3D
 signal hs_server_prop_update
 signal hs_server_prop_delete
 
-var uuid: String = ""
-
 @export var type_name = "generic_prop"
+
+var uuid: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP

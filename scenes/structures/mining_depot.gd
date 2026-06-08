@@ -1,39 +1,16 @@
 extends StaticBody3D
 
+signal hs_server_prop_update
+
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const CRATE_SCENE = preload("res://scenes/props/cargo/palette_container.tscn")
 
-var uuid: String = ""
-var has_parent: bool = false
-
 @export var placeholder = false
 
+var uuid: String = ""
+var has_parent: bool = false
 var type_name = "mining_depot"
-
-signal hs_server_prop_update
-
-# Throttle: only replicate the depot state when it actually changes.
-var _last_sent_conveyor := -1
-var _last_sent_state := ""
-var _last_sent_ore := -1.0
-var _last_sent_extracted := -1.0
-var _last_sent_conv := -1.0
-
 var spawn_position
-
-@onready var rock_depot_ui: Panel = %RockDepotUI
-@onready var danger_light_collect: Node3D = $DangerLightCollect
-@onready var rock_conveyor: MeshInstance3D = $miningdepot/conveyorbelt_001
-@onready var rock_detector: Area3D = $RockDetector
-@onready var rock_collector: Area3D = $RockCollector
-
-@onready var box_spawn_origin: Marker3D = $BoxSpawnOrigin
-@onready var box_conveyorbelt: MeshInstance3D = $miningdepot/conveyorbelt_003
-@onready var danger_light_box: Node3D = $DangerLightBox
-@onready var box_detector: Area3D = $BoxDetector
-@onready var box_detector_end: Area3D = $BoxDetectorEnd
-
-
 var state := "idle"
 var rocks_on_conveyor := 0
 # Refining stats (volumes in m3). rock_volume = total rock processed; ore_volume = total
@@ -45,11 +22,27 @@ var extracted_volume := 0.0
 # Volume of rock + ore currently on the input conveyor (live preview for SEND).
 var conveyor_rock_volume := 0.0
 var conveyor_ore_volume := 0.0
+var active_player: Player
+
+# Throttle: only replicate the depot state when it actually changes.
+var _last_sent_conveyor := -1
+var _last_sent_state := ""
+var _last_sent_ore := -1.0
+var _last_sent_extracted := -1.0
+var _last_sent_conv := -1.0
 # Cached fillable volume of one crate (palette_container), read from its scene.
 var _crate_volume := -1.0
 
-
-var active_player: Player
+@onready var rock_depot_ui: Panel = %RockDepotUI
+@onready var danger_light_collect: Node3D = $DangerLightCollect
+@onready var rock_conveyor: MeshInstance3D = $miningdepot/conveyorbelt_001
+@onready var rock_detector: Area3D = $RockDetector
+@onready var rock_collector: Area3D = $RockCollector
+@onready var box_spawn_origin: Marker3D = $BoxSpawnOrigin
+@onready var box_conveyorbelt: MeshInstance3D = $miningdepot/conveyorbelt_003
+@onready var danger_light_box: Node3D = $DangerLightBox
+@onready var box_detector: Area3D = $BoxDetector
+@onready var box_detector_end: Area3D = $BoxDetectorEnd
 
 func _ready() -> void:
 	if placeholder:
@@ -91,7 +84,7 @@ func _ready() -> void:
 			ServerNetwork.send_message(message, "devmodecreate_object")
 
 		queue_free()
-		
+
 	if GameOrchestrator.is_server():
 		box_detector.body_exited.connect(box_exited)
 		rock_detector.body_exited.connect(_on_rock_exited)
@@ -112,7 +105,7 @@ func _process(_delta: float) -> void:
 	if GameOrchestrator.is_server():
 		var conveyor_rocks = get_rocks_on_conveyor()
 		var collect_rocks = get_rocks_to_collect()
-	
+
 		for rock in collect_rocks:
 			_collect_rock(rock)
 
@@ -125,7 +118,7 @@ func _process(_delta: float) -> void:
 				#rock.global_position += (-rock_detector.global_basis.z * 0.5 * delta)
 			if conveyor_rocks.is_empty():
 				state = "idle"
-		
+
 		if state == "extract":
 			var bodies_on_conveyor = box_detector.get_overlapping_bodies()
 			var desired_velocity = box_detector.global_basis.z * 2
@@ -200,7 +193,7 @@ func _process(_delta: float) -> void:
 		elif state == "extract":
 			danger_light_box.enabled = true
 			box_conveyorbelt.set_instance_shader_parameter("animation_speed", -1.0)
-			
+
 
 func get_rocks_on_conveyor():
 	return filter_rocks(rock_detector.get_overlapping_bodies())
