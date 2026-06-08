@@ -62,7 +62,7 @@ events = [SubResource("InputEventKey_2sxo3")]
 script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
-carry_offset = Vector3(0, -0.6, -0.5)
+carry_offset = Vector3(0, -0.8, -0.5)
 metadata/client_uuid = ""
 
 [node name="Placeholder_Collider" type="CollisionShape3D" parent="." unique_id=1694334487]
