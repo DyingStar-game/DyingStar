@@ -247,14 +247,17 @@ func _process(_delta: float) -> void:
 
 				elif event.has("object_type"):
 					if event["object_type"] == "player":
-						if event.has("event_type") and event["event_type"] == "gorc_zone_enter":
+						# Players replicate through the same generic paths as props:
+						# movement via "move", gameplay properties via "update_property".
+						var player_event_type = event.get("event_type", "")
+						if player_event_type == "gorc_zone_enter":
 							create_object(event)
-						elif event.has("event_type") and event["event_type"] == "gorc_zone_exit":
+						elif player_event_type == "gorc_zone_exit":
 							delete_player(event)
-						elif event.has("event_type") and event["event_type"] == "update":
-							update_player(event)
-						# special case for player update
-						player_update(event)
+						elif player_event_type == "move":
+							player_update(event)
+						elif player_event_type == "update_property":
+							update_generic_object(_standardize_object(event))
 					elif event["event_type"] == "update_property":
 						# print("< Client - Update generic object: %s" % event)
 						var new_event = _standardize_object(event)
@@ -578,30 +581,30 @@ func create_generic_object(event: Dictionary) -> void:
 		prop_instance.client_channel_data_update(object_data)
 
 	else:
-		# the item not exists
-		if object_data.has("scenename"):
-			# event has scenename, so we can create it
+		# The item does not exist yet. Merge any channel data buffered earlier so we decide
+		# instantiation with the full picture (replication channels can arrive in any order).
+		var merged: Dictionary = event["object_data"].duplicate()
+		if props_pre_creations.has(object_id):
+			for channel in props_pre_creations[object_id]["channels"]:
+				merged.merge(props_pre_creations[object_id]["channels"][channel])
 
-			# for simplicity, merge props_pre_creations with event
-			if props_pre_creations.has(object_id):
-				for channel in props_pre_creations[object_id]["channels"]:
-					event["object_data"].merge(props_pre_creations[object_id]["channels"][channel])
-				props_pre_creations.erase(object_id)
-
-			object_data = event["object_data"]
-
-			#print("Object DATA")
-			#print(object_data)
+		# A prop is only instantiated once we have BOTH its scene (scenename) AND its
+		# placement (parent_id) — these may travel on different replication channels. A
+		# client that only received the data channel (e.g. between two zone distances) must
+		# NOT spawn the prop at the world origin: buffer and wait for the other channel.
+		if merged.has("scenename") and merged.has("parent_id"):
+			props_pre_creations.erase(object_id)
+			object_data = merged
+			event["object_data"] = merged
 
 			var parent = null
-			if object_data.has("parent_id"):
-				if object_data["parent_id"] != "":
-					parent = _search_parent_node(object_data["parent_id"])
-					if parent == null:
-						# store pending message because parent_id not yet created
-						pending_messages_generic_objects_parenting.append(event)
-						print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
-						return
+			if object_data["parent_id"] != "":
+				parent = _search_parent_node(object_data["parent_id"])
+				if parent == null:
+					# parent object not created yet -> wait for it
+					pending_messages_generic_objects_parenting.append(event)
+					print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
+					return
 
 			var prop_scene: PackedScene
 			if props_scene.has(object_data["scenename"]):
@@ -618,14 +621,13 @@ func create_generic_object(event: Dictionary) -> void:
 				prop_instance.freeze = true
 			prop_instance.uuid = object_id
 
-			#print("client_channel_data_update (2) for existing object %s" % object_id)
+			# client_channel_data_update must be called before parent for the position
 			prop_instance.client_channel_data_update(object_data)
 
-			# client_channel_data_update must be called before parent for the position
 			if parent != null:
 				parent.add_child(prop_instance)
 			else:
-				print("ERROR PARENT ID NOT FOUND!!!!!!!!!! %s" % object_data)
+				# parent_id == "" -> root-level object, attach to the universe.
 				universe_scene.add_child(prop_instance)
 
 			props_list[object_type][object_id] = prop_instance
@@ -661,37 +663,14 @@ func create_generic_object(event: Dictionary) -> void:
 					pending_messages_generic_objects_parenting.erase(pending_message)
 					create_generic_object(pending_message)
 		else:
-			# TODO case yet created (channel 6 arrived before others), so now manage other channels
-			if props_list.has(object_type) and props_list[object_type].has(object_id):
-				var prop_instance = props_list[object_type][object_id]
-				# Special case for new parent_id
-				if object_data.has("parent_id"):
-					if object_data["parent_id"] != "":
-						var parent = _search_parent_node(object_data["parent_id"])
-						if parent != null:
-							prop_instance.client_parent_change(parent)
-
-				#print("client_channel_data_update (4) for existing object %s" % object_id)
-				prop_instance.client_channel_data_update(object_data)
-
-			# event not has scenename, so we store it for later creation
-			elif not props_pre_creations.has(object_id):
+			# Missing scenename or parent_id: buffer THIS channel's data and wait for the
+			# other channel (the merge above will then have everything to instantiate).
+			if not props_pre_creations.has(object_id):
 				props_pre_creations[object_id] = {
 					"type": object_type,
-					"channels": {
-						event["channel"]: object_data
-					}
+					"channels": {}
 				}
-			else:
-				props_pre_creations[object_id]["channels"][event["channel"]] = object_data
-
-func update_player(event: Dictionary) -> void:
-	# print("Update player: %s" % event)
-	if players_list.has(event["object_id"]):
-		var player = players_list[event["object_id"]]
-		player.client_channel_data_update(event["data"])
-	else:
-		print("Update Player but not found...")
+			props_pre_creations[object_id]["channels"][event["channel"]] = event["object_data"]
 
 func update_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
@@ -718,6 +697,23 @@ func update_generic_object(event: Dictionary) -> void:
 				NetworkOrchestrator.set_universe_servers.emit(object_data["universe"]["godotservers_number"])
 			if object_data["universe"].has("players_number"):
 				NetworkOrchestrator.set_universe_players.emit(object_data["universe"]["players_number"])
+		return
+
+	if object_type == "player":
+		# A player is just another replicated object. Apply the gameplay properties
+		# (tools, head, perforating, carrying, ...); position/rotation/velocity come
+		# from the dedicated "move" path, so skip them here.
+		if players_list.has(object_id):
+			var player_node = players_list[object_id]
+			if is_instance_valid(player_node):
+				var player_props: Dictionary = object_data.duplicate()
+				player_props.erase("position")
+				player_props.erase("rotation")
+				player_props.erase("velocity")
+				if not player_props.is_empty():
+					player_node.client_channel_data_update(player_props)
+		else:
+			print("Update player property but player not found: %s" % object_id)
 		return
 
 	if props_list.has(object_type):
@@ -753,27 +749,12 @@ func delete_player(event: Dictionary) -> void:
 		print("Player to delete %s not found." % event)
 
 func player_update(message: Dictionary) -> void:
-	# print("[client] Player update: %s" % message)
+	# Player movement only (position/rotation/parenting). Gameplay properties are
+	# replicated through the unified update_generic_object() path, like any prop.
 	if int(message["channel"]) == 0:
 		var uuid = message["object_id"]
 		if players_list.has(uuid):
-			if message["event_type"] == "update_property":
-				# Apply replicated gameplay state (equipped tool "tools", camera "head").
-				# Position/rotation are skipped here; they come from the "move" path.
-				var player_p = players_list[uuid]
-				if is_instance_valid(player_p):
-					var d: Dictionary = message["data"]
-					# Forward every replicated player property generically (tech-debt A):
-					# tools, head, perforating, carrying, ... No per-property whitelist.
-					# Position/rotation/velocity come from the "move" path, so skip them.
-					var props: Dictionary = d.duplicate()
-					props.erase("position")
-					props.erase("rotation")
-					props.erase("velocity")
-					if not props.is_empty():
-						player_p.client_channel_data_update(props)
-			elif message["event_type"] == "move":
-				# print("players UUIDs: %s" % players_list.keys())
+			if message["event_type"] == "move":
 				var player = players_list[uuid]
 				if not is_instance_valid(player):
 					players_list.erase(uuid)

@@ -563,7 +563,7 @@ func send_props_update_to_horizon():
 	debug_message_number = debug_message_number + 1
 	var message = {
 		"namespace": "props",
-		"event": "position",
+		"event": "update_object",
 		"amessagenb": debug_message_number,
 		"data": props_update.values()
 	}
@@ -894,11 +894,20 @@ func _on_player_update(
 	client_uuid: String,
 	properties: Dictionary,
 ):
-	var message = {
-		"namespace": "players",
-		"event": "update",
+	# Unified object-property replication: a player is sent as one prop-style entry
+	# {type, uuid, <properties>} on the shared "props/update_object" channel, exactly
+	# like a generic prop update. Horizon merges the whitelisted properties and
+	# broadcasts them to nearby clients.
+	var entry := {
+		"type": "player",
 		"uuid": client_uuid,
-		"data": properties
+	}
+	for key in properties.keys():
+		entry[key] = properties[key]
+	var message = {
+		"namespace": "props",
+		"event": "update_object",
+		"data": [entry]
 	}
 	ServerNetwork.send_message(message, "player_update")
 
