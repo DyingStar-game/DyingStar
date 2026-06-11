@@ -244,12 +244,19 @@ func update_local(_delta: float) -> void:
 
 ## Owner only: toggle the equipped tool and replicate the state.
 func toggle_equip() -> void:
-	if _perforator == null:
+	set_equipped(not _equipped)
+
+## Explicitly equip/unequip (used for tool exclusivity: selecting another tool stows this one).
+func set_equipped(on: bool) -> void:
+	if _perforator == null or _equipped == on:
 		return
-	_equipped = not _equipped  # visibility is derived in _process (also depends on stow)
+	_equipped = on  # visibility is derived in _process (also depends on stow)
 	# Send the equipped tool as a STATE (not a one-shot event) so other clients
 	# always converge to the right state via the replicated "tools" property.
 	sync_requested.emit({"action": "update_property", "tools": ("perforator" if _equipped else "")})
+
+func is_equipped() -> bool:
+	return _equipped
 
 ## Server (authoritative): apply the equipped-tool state. The player rebroadcasts it.
 func server_set_tool(tool_id: String) -> void:
