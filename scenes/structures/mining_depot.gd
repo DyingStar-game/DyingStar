@@ -6,6 +6,10 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const CRATE_SCENE = preload("res://scenes/props/cargo/palette_container.tscn")
 
 @export var placeholder = false
+## Optional explicit network id for a designer-placed depot. Leave EMPTY and it is derived
+## automatically from the depot's fixed position (stable across restarts, no setup needed).
+## Set a unique string only if you want a readable id or to keep identity when moving it.
+@export var stable_id: String = ""
 
 var uuid: String = ""
 var has_parent: bool = false
@@ -50,44 +54,57 @@ func _ready() -> void:
 			await get_tree().create_timer(1).timeout
 			var parent = get_parent()
 
-			var message = {
-				"namespace": "props",
-				"event": "create_object",
-				"amessagenb": 1,
-				"data": [
-					{
-						"type": type_name,
-						"uuid": UUID_UTIL.new().as_string(),
-						"position": {
-							"x": position[0],
-							"y": position[1],
-							"z": position[2]
-						},
-						"rotation": {
-							"x": rotation[0],
-							"y": rotation[1],
-							"z": rotation[2]
-						},
-						"data": {
-							"state": "idle",
-							"rocks_on_conveyor": 0,
-							"rock_volume": 0.0,
-							"ore_volume": 0.0,
-							"extracted_volume": 0.0,
-							"active_player": null
-						},
-						"scenename": "scenes/structures/mining_depot.tscn",
-						"parent_id": parent.uuid,
-					}
-				]
-			}
-			ServerNetwork.send_message(message, "devmodecreate_object")
+			# Spawn the real networked depot to replace this editor placeholder. Use
+			# spawn_prop_authoritative so it is registered in Horizon AND created locally on
+			# this game server (the server copy is what holds the collision and the detectors
+			# / collect / SEND logic). Sending only to Horizon would leave the server without
+			# a depot node, since Horizon does not echo create_object back.
+			# Deterministic, VALID-format uuid so this depot is always the SAME object across
+			# restarts (the database upserts by uuid -> no duplicate pile-up, and no delete is
+			# needed). Seed from the explicit stable_id, else from the fixed placement position
+			# so no manual setup is required.
+			var uuid_seed: String = stable_id if stable_id != "" \
+				else "%.3f,%.3f,%.3f" % [position.x, position.y, position.z]
+			var depot_uuid: String = _stable_uuid(uuid_seed)
+			# Designer-placed depot = world infrastructure: protect it from the admin cleanup
+			# tool (only player-spawned depots should be deletable).
+			NetworkOrchestrator.protected_prop_uuids[depot_uuid] = true
+			NetworkOrchestrator.spawn_prop_authoritative({
+				"type": type_name,
+				"uuid": depot_uuid,
+				"position": {
+					"x": position.x,
+					"y": position.y,
+					"z": position.z
+				},
+				"rotation": {
+					"x": rotation.x,
+					"y": rotation.y,
+					"z": rotation.z
+				},
+				"data": {
+					"state": "idle",
+					"rocks_on_conveyor": 0,
+					"rock_volume": 0.0,
+					"ore_volume": 0.0,
+					"extracted_volume": 0.0,
+					"active_player": null
+				},
+				"scenename": "scenes/structures/mining_depot.tscn",
+				"parent_id": parent.uuid,
+			})
 
 		queue_free()
 
 	if GameOrchestrator.is_server():
 		box_detector.body_exited.connect(box_exited)
 		rock_detector.body_exited.connect(_on_rock_exited)
+
+## Build a deterministic, valid-format uuid from a seed string. Same seed -> same uuid
+## across restarts, so the depot is upserted (not duplicated) and Horizon can resolve it.
+func _stable_uuid(uuid_seed: String) -> String:
+	var h: String = uuid_seed.sha256_text()
+	return "%s-%s-%s-%s-%s" % [h.substr(0, 8), h.substr(8, 4), h.substr(12, 4), h.substr(16, 4), h.substr(20, 12)]
 
 ## In collect mode, a rock that slides off the conveyor end (leaves the detector) is
 ## collected. Skip rocks a player just picked up (carried) so grabbing one off the belt
