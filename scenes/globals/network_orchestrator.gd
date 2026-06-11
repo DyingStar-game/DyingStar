@@ -68,6 +68,10 @@ var props_list = {
 	"ship": {}
 }
 
+# UUIDs of world/infrastructure props placed by designers (spawned from editor placeholders).
+# The admin cleanup tool refuses to delete these, so it only removes player-spawned clutter.
+var protected_prop_uuids: Dictionary = {}
+
 var client_change_server = null
 
 var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"

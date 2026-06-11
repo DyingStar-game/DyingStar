@@ -86,6 +86,9 @@ var active = false
 
 var hands_item: Node3D = null
 
+# Admin cleanup tool (key 2). Built at runtime for the local player only (see _ready).
+var admin_cleanup_tool: AdminCleanupTool = null
+
 # The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
 # by the screen's interaction Area; while set, the mouse is freed to click the screen.
 var screen_interacting = null
@@ -163,6 +166,12 @@ func _ready() -> void:
 		_spawn_wheel.title = "Spawn"
 		$UserInterface.add_child(_spawn_wheel)
 		_spawn_wheel.option_selected.connect(_on_spawn_selected)
+
+		# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
+		# targeted player-spawned prop (rock / box / depot) down to the database.
+		admin_cleanup_tool = AdminCleanupTool.new()
+		add_child(admin_cleanup_tool)
+		admin_cleanup_tool.setup(camera, self)
 
 		global_position = spawn_position
 		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
@@ -256,6 +265,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("toggle_tool"):
+		if admin_cleanup_tool != null:
+			admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
 		mining_tool.toggle_equip()
 
 	if event.is_action_pressed("action"):
@@ -744,6 +755,12 @@ func server_send_properties_to_client(data: Dictionary):
 		data,
 	)
 
+## Put the mining tool away. Used for tool exclusivity: selecting the admin cleanup tool
+## (key 2) stows the perforator before showing itself.
+func stow_mining_tool() -> void:
+	if mining_tool != null:
+		mining_tool.set_equipped(false)
+
 # Send action of the client to the server part (Horizon / godot server)
 # data example:
 # {
@@ -795,6 +812,22 @@ func _find_mining_rock(rock_uuid: String) -> Node:
 	for r in get_tree().get_nodes_in_group("miningrock"):
 		if "uuid" in r and str(r.uuid) == rock_uuid:
 			return r
+	return null
+
+## Find a player-spawned prop by uuid for the admin cleanup tool (server-side). Looks in the
+## prop registry (any type) first, then the "carriable" group (rocks/boxes), so it works
+## regardless of how the prop was registered.
+func _find_deletable_prop(target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	for ptype in NetworkOrchestrator.props_list.keys():
+		if NetworkOrchestrator.props_list[ptype].has(target_uuid):
+			var n = NetworkOrchestrator.props_list[ptype][target_uuid]
+			if is_instance_valid(n):
+				return n
+	for n in get_tree().get_nodes_in_group("carriable"):
+		if "uuid" in n and str(n.uuid) == target_uuid:
+			return n
 	return null
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
@@ -870,6 +903,27 @@ func server_action_received(data: Dictionary) -> void:
 				rock.server_perforate(
 					Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)),
 					Vector3(dd.get("x", 0.0), dd.get("y", 0.0), dd.get("z", 0.0)))
+		"delete_prop":
+			# Admin cleanup tool: permanently remove a player-spawned prop.
+			var del_type: String = str(data.get("type", ""))
+			var del_uuid: String = str(data.get("uuid", ""))
+			if del_uuid == "" or not (del_type in ["miningrock", "box", "mining_depot"]):
+				print("🗑️ Admin delete refused: type=%s uuid=%s" % [del_type, del_uuid])
+			elif NetworkOrchestrator.protected_prop_uuids.has(del_uuid):
+				# World infrastructure placed by designers (e.g. a depot in the city): keep it.
+				print("🗑️ Admin delete refused: %s is protected world infrastructure" % del_uuid)
+			else:
+				var prop := _find_deletable_prop(del_uuid)
+				if prop != null and is_instance_valid(prop):
+					# Held by this server: free it; _exit_tree replicates the delete to
+					# Horizon (GORC) and the database, like a rock dropped into a depot.
+					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
+					prop.queue_free()
+				elif NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
+					# Not held locally (e.g. loaded from the database): tell Horizon directly
+					# so it leaves the GORC and the database anyway.
+					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
+					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:
