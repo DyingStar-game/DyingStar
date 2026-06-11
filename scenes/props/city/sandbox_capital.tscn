@@ -13,6 +13,8 @@
 [ext_resource type="Script" uid="uid://5l13eh73avyv" path="res://scenes/props/city/area_3d.gd" id="11_04krg"]
 [ext_resource type="AudioStream" uid="uid://ciwe4yq6ux1pi" path="res://assets/_universe/audio/ambience/sandstorm_001.ogg" id="12_yc6ci"]
 [ext_resource type="AudioStream" uid="uid://jfgcabkqn6rm" path="res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg" id="13_yc6ci"]
+[ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/structures/mining_depot.tscn" id="14_4lkw2"]
+[ext_resource type="PackedScene" uid="uid://xud5xo51ir5r" path="res://scenes/spaceship/test_spaceship/test_spaceship.tscn" id="15_lr8y8"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4sslq"]
 size = Vector3(5000, 50, 5000)
@@ -90,6 +92,9 @@ debug_fill = false
 
 [node name="tree_01" parent="." unique_id=571341142 instance=ExtResource("3_4sslq")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.226101478604594, -0.5, 21.464000000007218)
+
+[node name="tree_02" parent="." unique_id=342366094 instance=ExtResource("3_4sslq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.175644109279991, -0.9999999999999928, 80.83497045085555)
 
 [node name="tree001" parent="." unique_id=2044165351 instance=ExtResource("4_khu6c")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.485970901456582, -0.5, 7.739022793261851)
@@ -195,9 +200,13 @@ transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473
 transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 25.343606081717677, -2.7370208783850103e-06, 1121.459452987462)
 
 [node name="FogVolume" type="FogVolume" parent="." unique_id=1570834981]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.19291496276855, 66.76164340795899, -113.61418764843752)
-size = Vector3(1638.7212916605677, 135.5232830842242, 279.4780060026578)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.19291496276855, 66.76164340795899, 231.46307270281363)
+size = Vector3(1638.7212916605677, 135.5232830842242, 306.89811270363225)
 material = SubResource("ShaderMaterial_3b5ap")
+
+[node name="MiningDepot" parent="." unique_id=1889403175 instance=ExtResource("14_4lkw2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.439176267583754, 2.3517123357506797, 88.31635010584525)
+placeholder = true
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1228311395 groups=["player"]]
 script = ExtResource("11_04krg")
@@ -219,3 +228,12 @@ volume_db = -20.0
 autoplay = true
 bus = &"Music"
 parameters/looping = true
+
+[node name="OutdoorLamppost2_2005" parent="." unique_id=1239394709 instance=ExtResource("10_uow4d")]
+transform = Transform3D(6.123436222361646e-17, 0, 1, 0, 1, 0, -1, 0, 6.123436222361646e-17, 7.822804687597224, 2.3986518313260676, 93.6169283414612)
+
+[node name="TestSpaceship" parent="." unique_id=2073676086 instance=ExtResource("15_lr8y8")]
+transform = Transform3D(0.9997293765358438, 0.02326314018470022, 0, -0.02326314018470022, 0.9997293765358438, 0, 0, 0, 1, -3.1358716406444245, 1.4188067656949395, 84.21842827799098)
+
+[node name="OutdoorLamppost2_2006" parent="." unique_id=550606329 instance=ExtResource("10_uow4d")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.862261152078986, 2.359688368788041, 82.97764537730104)
