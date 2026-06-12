@@ -362,6 +362,9 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(_seat_node):
 		_ride_seat(_seat_node)
 		return
+	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
+	# the mouse look stays immediate.
+	_interp.update_position(self, _delta)
 	if !active:
 		interact_label.hide()
 		return
@@ -493,6 +496,12 @@ func _enter_seat(seat: Node) -> void:
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
 ## local (relative to the parent); the rotation arrives global, so convert it to the parent's
 ## frame before handing it to the interpolator (which works in local space).
+## Owner on foot: feed our server-driven position so it is smoothed (position only — the
+## mouse look stays immediate). No client prediction yet, so this trades a touch of lag for
+## no saccades.
+func net_set_local_target(local_pos: Vector3) -> void:
+	_interp.set_position_target(self, local_pos)
+
 func net_set_target(local_pos: Vector3, global_rot: Vector3) -> void:
 	var target_basis := Basis.from_euler(global_rot)
 	var parent := get_parent()
