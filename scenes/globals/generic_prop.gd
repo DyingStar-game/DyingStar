@@ -33,17 +33,7 @@ func _ready() -> void:
 	add_to_group("carriable")
 
 func _physics_process(_delta: float) -> void:
-	if GameOrchestrator.is_server():
-	# this part send the position or rotation if changed since last frame
-		var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
-		var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
-		if server_last_position != my_position or server_last_rotation != my_rotation:
-			server_prop_update({
-				"position": my_position,
-				"rotation": my_rotation,
-			})
-			server_last_position = my_position
-			server_last_rotation = my_rotation
+	PropNet.server_tick(self)
 
 func _exit_tree() -> void:
 	# Don't delete on clients when only reparenting (carried/dropped).

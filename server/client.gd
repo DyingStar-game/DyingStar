@@ -470,6 +470,11 @@ func delete_object(event: Dictionary) -> void:
 			var type = event["object_type"]
 			if props_list[type].has(event["object_id"]):
 				var prop_instance = props_list[type][event["object_id"]]
+				# A carried object is parented to a player and follows it locally; its GORC zone
+				# position goes stale while carried, so ignore this despawn (otherwise it vanishes
+				# from the carrier's hands over distance). It is freed with its player anyway.
+				if is_instance_valid(prop_instance) and prop_instance.get_parent() is Player:
+					return
 				prop_instance.queue_free()
 				props_list[type].erase(event["object_id"])
 				return

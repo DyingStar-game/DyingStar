@@ -27,22 +27,7 @@ func _ready() -> void:
 	global_rotation = spawn_rotation
 
 func _physics_process(_delta: float) -> void:
-	if GameOrchestrator.is_server():
-		var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
-		var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
-		if server_last_position != my_position or server_last_rotation != my_rotation:
-			emit_signal(
-				"hs_server_prop_update",
-				uuid,
-				{
-					"position": my_position,
-					"rotation": my_rotation,
-				},
-				type_name,
-				has_parent
-			)
-			server_last_position = my_position
-			server_last_rotation = my_rotation
+	PropNet.server_tick(self)
 
 func _on_box_entered(body: Node3D):
 	if body.is_in_group("containable"):
