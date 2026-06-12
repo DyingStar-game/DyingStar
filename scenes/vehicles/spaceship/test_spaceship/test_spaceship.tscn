@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://xud5xo51ir5r"]
 
-[ext_resource type="Script" uid="uid://bpb1urve1pqnj" path="res://scenes/spaceship/test_spaceship/test_spaceship.gd" id="1_f1s04"]
+[ext_resource type="Script" uid="uid://bpb1urve1pqnj" path="res://scenes/vehicles/spaceship/test_spaceship/test_spaceship.gd" id="1_f1s04"]
 [ext_resource type="Material" uid="uid://wm1k35sl1iwp" path="res://assets/_universe/environment/terrain/material_basic_orange.tres" id="1_vvggs"]
-[ext_resource type="Script" uid="uid://di4o647k2wjid" path="res://scenes/spaceship/test_spaceship/ship_console.gd" id="2_xjcjc"]
+[ext_resource type="Script" uid="uid://di4o647k2wjid" path="res://scenes/vehicles/spaceship/test_spaceship/ship_console.gd" id="2_xjcjc"]
 [ext_resource type="PackedScene" uid="uid://dumbqmrjvj582" path="res://scenes/grid/physics_grid.tscn" id="3_xjcjc"]
 
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_xjcjc"]

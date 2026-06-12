@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://byhcqktcsxi3a"]
 
-[ext_resource type="PackedScene" path="res://scenes/vehicles/truck.tscn" id="1_truck"]
+[ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/vehicles/trucks/truck.tscn" id="1_truck"]
 [ext_resource type="Script" uid="uid://df6u1bya48i1b" path="res://scenes/vehicles/vehicle_chase_camera.gd" id="2_cam"]
 [ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="3_rock_col"]
 [ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="4_rock_nrm"]
@@ -42,11 +42,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00465867923564067, -0.46794
 use_collision = true
 size = Vector3(200, 1, 200)
 material = SubResource("GroundMat")
-
-[node name="Truck" parent="." unique_id=50737037 instance=ExtResource("1_truck")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.234556453146084, 1.2512828014527466, 6.443387884400508)
-engine_power = 570.0
-bed_wall_height = 0.9
 
 [node name="ChaseCamera" type="Camera3D" parent="." unique_id=1217017246]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, 9)
@@ -124,3 +119,6 @@ material = SubResource("ObstacleMat")
 
 [node name="Pilot" parent="." unique_id=199814292 instance=ExtResource("6_s0cy6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1012223481225103, 0)
+
+[node name="Truck" parent="." unique_id=1579985098 instance=ExtResource("1_truck")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5163345308978675, 5.40948152275489)

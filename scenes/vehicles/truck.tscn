@@ -1,8 +1,0 @@
-[gd_scene format=3 uid="uid://p8lbfuk68g7s"]
-
-[ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/vehicles/vehicle.gd" id="1_vehicle"]
-
-[node name="Truck" type="VehicleBody3D" unique_id=1579985098]
-mass = 1000.0
-script = ExtResource("1_vehicle")
-engine_power = 570.0

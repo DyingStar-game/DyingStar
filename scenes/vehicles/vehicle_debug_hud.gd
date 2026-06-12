@@ -1,9 +1,11 @@
 class_name VehicleDebugHud
 extends CanvasLayer
 
-## Bench-only debug HUD: shows the parent vehicle's speed (km/h), wheel RPM (tachometer
-## proxy) and current drive mode. Spawned by Vehicle when debug_hud is on. This is
-## a dev overlay — the real in-cab dashboard (GDD) comes later.
+## Vehicle dashboard overlay: speed (km/h), motor RPM, transmission, powertrain, weight /
+## payload. Used both as the bench dev overlay (spawned when debug_hud is on) and as the
+## in-game driver HUD (shown by Vehicle.set_driver_hud on enter). The shortcut hints adapt to
+## the mode: bench exposes the debug keys (T spawn rock, N cycle traction), in-game only the
+## keys the networked control path handles. The real in-cab dashboard (GDD) comes later.
 
 var _vehicle: Vehicle = null
 var _label: Label = null
@@ -32,8 +34,15 @@ func _process(_delta: float) -> void:
 	elif overloaded:
 		warn = "   ⚠ SURCHARGE"
 	_label.add_theme_color_override("font_color", Color(1, 0.3, 0.2) if overloaded else Color(1, 1, 1))
+	# In-game (networked replica) the bench debug keys are off, so only advertise what the
+	# player -> server control path handles. An empty uuid means the local bench.
+	var in_game: bool = _vehicle.uuid != ""
+	var trans_suffix := "" if in_game else "   (N)"
+	var keys := (
+		"[Y] sortir   [Espace] freiner   [R] redresser" if in_game
+		else "[T] rocher   [N] traction   [Espace] freiner   [R] redresser")
 	_label.text = (
-		"Vitesse : %3.0f km/h\nMoteur : %5.0f tr/min\n%sTransmission : %s   (N)\n"
-		+ "Poids total : %.0f kg\nCharge : %.0f / %.0f kg%s\n[T] rocher   [R] redresser") % [
-		speed, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(),
-		total, cargo, _vehicle.max_payload, warn]
+		"Vitesse : %3.0f km/h\nMoteur : %5.0f tr/min\n%sTransmission : %s%s\nMotorisation : %s\n"
+		+ "Poids total : %.0f kg\nCharge : %.0f / %.0f kg%s\n%s") % [
+		speed, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(), trans_suffix,
+		_vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn, keys]
