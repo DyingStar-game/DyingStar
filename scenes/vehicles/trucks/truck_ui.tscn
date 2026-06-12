@@ -1,0 +1,204 @@
+[gd_scene format=3 uid="uid://eymb64nygadx"]
+
+[ext_resource type="Script" uid="uid://dmbf0ejtu5n8e" path="res://scenes/vehicles/vehicle_dashboard.gd" id="1_nctt3"]
+[ext_resource type="FontFile" uid="uid://ccjaqbtg4s41b" path="res://assets/fonts/Xolonium/Xolonium-Regular.ttf" id="2_77xpl"]
+[ext_resource type="Texture2D" uid="uid://3uydain4eirj" path="res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png" id="3_jrjvv"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_75ksl"]
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+corner_detail = 5
+
+[sub_resource type="Gradient" id="Gradient_geu3e"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.17833333, 0.80333334)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_qtvga"]
+gradient = SubResource("Gradient_geu3e")
+width = 512
+height = 128
+fill_from = Vector2(0.27011494252873564, 0.0057471264367816)
+fill_to = Vector2(0.4367816091954023, 0.02298850574712643)
+repeat = 1
+
+[sub_resource type="FontVariation" id="FontVariation_kxw7v"]
+base_font = ExtResource("2_77xpl")
+variation_embolden = 0.63
+
+[sub_resource type="LabelSettings" id="LabelSettings_q7ufo"]
+font = SubResource("FontVariation_kxw7v")
+font_size = 100
+font_color = Color(0.8098958, 0.8098958, 0.8098958, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_nctt3"]
+font_size = 50
+
+[sub_resource type="LabelSettings" id="LabelSettings_vptbq"]
+font = ExtResource("2_77xpl")
+font_size = 235
+font_color = Color(0.8098958, 0.8098958, 0.8098958, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_75ksl"]
+base_font = ExtResource("2_77xpl")
+variation_embolden = 0.31
+
+[sub_resource type="LabelSettings" id="LabelSettings_75ksl"]
+font = SubResource("FontVariation_75ksl")
+font_size = 55
+font_color = Color(0.5911458, 0.5911458, 0.5911458, 1)
+
+[sub_resource type="FontVariation" id="FontVariation_q7ufo"]
+base_font = ExtResource("2_77xpl")
+variation_embolden = 0.73
+
+[node name="vehicule_UI" type="Panel" unique_id=957292936]
+custom_minimum_size = Vector2(1400, 720)
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_75ksl")
+script = ExtResource("1_nctt3")
+metadata/_edit_use_anchors_ = true
+
+[node name="TextureRect2" type="TextureRect" parent="." unique_id=1556553685]
+modulate = Color(0.26822916, 0.26822916, 0.26822916, 1)
+layout_mode = 1
+anchors_preset = -1
+anchor_left = -0.009895833333333333
+anchor_top = 0.0027777777777777775
+anchor_right = 1.0058184523809526
+anchor_bottom = 0.11574074074074074
+texture = SubResource("GradientTexture2D_qtvga")
+expand_mode = 1
+stretch_mode = 1
+metadata/_edit_use_anchors_ = true
+
+[node name="speed" type="Label" parent="." unique_id=1795226927]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 0
+offset_left = 115.0
+offset_top = 302.0
+offset_right = 619.0
+offset_bottom = 873.0
+text = "45 Km/h"
+label_settings = SubResource("LabelSettings_q7ufo")
+horizontal_alignment = 1
+vertical_alignment = 1
+uppercase = true
+
+[node name="RPM" type="Label" parent="." unique_id=1607867822]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 0
+offset_left = 1283.0
+offset_top = 299.0
+offset_right = 1787.0
+offset_bottom = 870.0
+text = "1958 RPM"
+label_settings = SubResource("LabelSettings_q7ufo")
+horizontal_alignment = 1
+vertical_alignment = 1
+uppercase = true
+
+[node name="Load" type="Label" parent="." unique_id=635994537]
+layout_mode = 0
+offset_left = 716.0
+offset_top = 975.0
+offset_right = 1216.0
+offset_bottom = 1046.5
+text = "Charge"
+label_settings = SubResource("LabelSettings_nctt3")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Overloaded" type="Label" parent="." unique_id=1570827736]
+layout_mode = 0
+offset_left = 309.0
+offset_top = 169.0
+offset_right = 1630.0
+offset_bottom = 240.5
+text = "overloaded"
+label_settings = SubResource("LabelSettings_nctt3")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Elec_THerm" type="Label" parent="." unique_id=556447191]
+layout_mode = 0
+offset_left = 1254.0
+offset_top = 976.0
+offset_right = 1653.0
+offset_bottom = 1047.5
+text = "Electrique"
+label_settings = SubResource("LabelSettings_nctt3")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Transmission" type="Label" parent="." unique_id=1450128450]
+layout_mode = 0
+offset_left = 259.0
+offset_top = 980.0
+offset_right = 658.0
+offset_bottom = 1051.5
+text = "4x4"
+label_settings = SubResource("LabelSettings_nctt3")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="VB" type="VBoxContainer" parent="." unique_id=131133817]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 38.5
+offset_top = 62.5
+offset_right = -40.5
+offset_bottom = 1.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Metrics" type="VBoxContainer" parent="VB" unique_id=1140167809]
+visible = false
+layout_mode = 2
+
+[node name="Battery" type="VBoxContainer" parent="VB" unique_id=813366366]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 29
+
+[node name="VB" type="VBoxContainer" parent="VB/Battery" unique_id=864542686]
+layout_mode = 2
+theme_override_constants/separation = -51
+
+[node name="RockCount" type="Label" parent="VB/Battery/VB" unique_id=103966222]
+layout_mode = 2
+text = "5"
+label_settings = SubResource("LabelSettings_vptbq")
+horizontal_alignment = 1
+
+[node name="RockCountLabel" type="Label" parent="VB/Battery/VB" unique_id=1637336048]
+layout_mode = 2
+text = "ROCK FRAGMENTS"
+label_settings = SubResource("LabelSettings_75ksl")
+horizontal_alignment = 1
+
+[node name="TriggerCollect" type="Button" parent="VB/Battery" unique_id=1862706612]
+layout_mode = 2
+theme_override_fonts/font = SubResource("FontVariation_q7ufo")
+theme_override_font_sizes/font_size = 66
+text = "SEND"
+
+[node name="TextureRect" type="TextureRect" parent="." unique_id=1171561382]
+modulate = Color(0.8697917, 0.8697917, 0.8697917, 1)
+layout_mode = 0
+offset_left = 40.0
+offset_top = 30.0
+offset_right = 224.0
+offset_bottom = 215.0
+texture = ExtResource("3_jrjvv")
+expand_mode = 1
+stretch_mode = 4
+
+[connection signal="pressed" from="VB/Battery/TriggerCollect" to="." method="_on_trigger_collect_pressed"]
