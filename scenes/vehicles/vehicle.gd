@@ -16,6 +16,12 @@ extends VehicleBody3D
 ## All generated nodes are transient (no owner) so the .tscn stays minimal: it only holds
 ## this node + script, and the blockout is rebuilt on load.
 
+## Server-authoritative networking (in-game): the game server simulates the physics and
+## replicates position/rotation to the clients, which show a frozen copy. In bench mode
+## (no uuid assigned) the vehicle drives locally instead. (GenericProp contract.)
+signal hs_server_prop_update
+signal hs_server_prop_delete
+
 ## Which wheels receive engine force: FRONT = FWD, REAR = RWD, ALL = 4x4.
 enum DriveMode {FRONT, REAR, ALL}
 ## Powertrain: ELECTRIC = single-speed instant torque; THERMAL = gearbox with auto-shift.
@@ -172,6 +178,16 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## Show a translucent box marking the cargo bay zone.
 @export var debug_show_cargo_bay: bool = true
 
+# Networking (GenericProp contract). uuid is set by the prop spawn pipeline; an EMPTY uuid
+# means bench / standalone mode (the vehicle drives locally instead of being replicated).
+var uuid: String = ""
+var type_name: String = "vehicle"
+var spawn_position: Vector3 = Vector3.ZERO
+var spawn_rotation: Vector3 = Vector3.ZERO
+var has_parent: bool = false
+## Replicated: client_uuid of the player currently driving ("" = free). Set server-side.
+var pilot_uuid: String = ""
+
 var _steer_target: float = 0.0
 var _wheels: Array[VehicleWheel3D] = []
 var _throttle: float = 0.0
@@ -183,18 +199,42 @@ var _view: ViewMode = ViewMode.CHASE
 var _empty_mass: float = 0.0
 var _locked_cargo: Dictionary = {}
 var _cargo_area: Area3D = null
+var _net_last_position: Vector3 = Vector3.ZERO
+var _net_last_rotation: Vector3 = Vector3.ZERO
+var _net_throttle: float = 0.0  # pilot input relayed by the server (networked)
+var _net_steer: float = 0.0
+var _net_brake: bool = false
+var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
+var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
+var _client_speed_kmh: float = 0.0  # client: speed derived from position delta
+var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 
 func _ready() -> void:
 	_empty_mass = mass
 	_rebuild()
-	if not Engine.is_editor_hint():
-		add_to_group("vehicle")  # so a pilot can find and enter us
-		if debug_hud:
-			add_child(VehicleDebugHud.new())
+	if Engine.is_editor_hint():
+		return
+	add_to_group("vehicle")  # so a pilot can find and enter us
+	if _is_networked():
+		# Replicated prop: place it where the server spawned it (client_channel_data_update
+		# also applies position/rotation, this is the initial fallback).
+		if spawn_position != Vector3.ZERO:
+			position = spawn_position
+		if spawn_rotation != Vector3.ZERO:
+			rotation = spawn_rotation
+	elif debug_hud:
+		# Bench / standalone only: on-screen debug overlay.
+		add_child(VehicleDebugHud.new())
+
+## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
+func _is_networked() -> bool:
+	return uuid != ""
 
 func _unhandled_input(event: InputEvent) -> void:
 	if Engine.is_editor_hint():
 		return
+	if _is_networked():
+		return  # in-game: the bench debug/pilot keys are off; control goes via the player + server
 	# While driving: leave with the exit action, toggle cab/chase view with F4.
 	if _pilot != null:
 		if event.is_action_pressed("exit"):
@@ -547,15 +587,153 @@ func _solid_material(color: Color) -> StandardMaterial3D:
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
+	if _is_networked():
+		# Server-authoritative: only the game server simulates + replicates. Every client
+		# shows a frozen copy positioned by client_channel_data_update.
+		if not GameOrchestrator.is_server():
+			_update_wheels_visual(delta)  # client: visual roll + steer
+			return
+		_update_cargo()
+		if _pilot != null:
+			_apply_drive(delta)
+		_replicate_transform()
+		return
+	# Bench / standalone: drive locally.
 	_update_cargo()  # absorb settled cargo into the truck (always, even when not driving)
 	if _pilot != null:
 		_apply_drive(delta)
 
+## Server: replicate position/rotation to clients when they change (same shape as a rock).
+## Client: the replica is frozen (no physics), so roll + steer the wheels visually from
+## the replicated speed (position delta) and steer angle.
+func _update_wheels_visual(delta: float) -> void:
+	var vel: Vector3 = global_position - _wheel_last_pos
+	_wheel_last_pos = global_position
+	var fwd_speed: float = vel.dot(-global_transform.basis.z) / maxf(delta, 0.0001)
+	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
+	_client_speed_kmh = absf(fwd_speed) * 3.6
+	for wheel in _wheels:
+		if wheel.use_as_steering:
+			wheel.rotation.y = _net_steering
+		if wheel.get_child_count() > 0:
+			wheel.get_child(0).rotate_object_local(Vector3.UP, -spin)
+
+## Speed shown on the HUD: physics speed on the server/bench, position-derived on a client
+## replica (which is frozen, so linear_velocity is 0 there).
+func get_display_speed_kmh() -> float:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _client_speed_kmh
+	return linear_velocity.length() * 3.6
+
+## Show/hide the driver HUD. Called by the local pilot client on enter/exit (reliable,
+## no dependency on pilot_uuid replication).
+func set_driver_hud(show: bool) -> void:
+	if show and _hud == null:
+		_hud = VehicleDebugHud.new()
+		add_child(_hud)
+	elif not show and _hud != null:
+		_hud.queue_free()
+		_hud = null
+
+func _replicate_transform() -> void:
+	var my_pos: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
+	var my_rot: Vector3 = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	if my_pos == _net_last_position and my_rot == _net_last_rotation:
+		return
+	_net_last_position = my_pos
+	_net_last_rotation = my_rot
+	var data := {"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001)}
+	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
+
+## Server: tell the clients to despawn this vehicle when it leaves the world.
+func _exit_tree() -> void:
+	if Engine.is_editor_hint():
+		return
+	if _is_networked() and GameOrchestrator.is_server():
+		emit_signal("hs_server_prop_delete", uuid, type_name)
+
+## Client: apply the replicated state (position/rotation/pilot) from the server.
+func client_channel_data_update(data: Dictionary) -> void:
+	if data.has("position"):
+		position = Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
+	if data.has("rotation"):
+		rotation = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
+	if data.has("steering"):
+		_net_steering = float(data["steering"])
+	if data.has("pilot_uuid"):
+		pilot_uuid = str(data["pilot_uuid"])
+
+## Client: reparent under the prop's parent (e.g. the planet/city) when spawned.
+func client_parent_change(parent: Node) -> void:
+	reparent(parent)
+	has_parent = true
+
+# ------------------------------------------------------------------------------
+# Networked enter / exit (server-authoritative). The pilot is replicated as pilot_uuid;
+# seating/camera/driving are added in the following sub-bricks.
+# ------------------------------------------------------------------------------
+## Server: a player takes the wheel. Stores the pilot, replicates it, freezes the player's
+## own movement (active = false). Refuses if already occupied.
+func server_enter(player: Node) -> void:
+	if _pilot != null:
+		return
+	_pilot = player
+	pilot_uuid = str(player.client_uuid) if "client_uuid" in player else ""
+	if "piloting" in player:
+		player.piloting = true  # server-side walk lock
+		player._pilot_vehicle = self  # the player rides our seat each frame (server)
+	if player.has_method("set_seated"):
+		player.set_seated(true)  # drop the player's collision so it can't shove the truck
+	print("🚚 Vehicle %s: pilot ENTER (%s)" % [uuid, pilot_uuid])
+	_replicate_pilot()
+
+## Server: the pilot leaves. Clears the pilot, replicates it, re-enables player movement.
+func server_exit(player: Node) -> void:
+	if _pilot != player:
+		return
+	_pilot = null
+	pilot_uuid = ""
+	if "piloting" in player:
+		player.piloting = false
+		player._pilot_vehicle = null
+	if player.has_method("set_seated"):
+		player.set_seated(false)  # restore the player's collision
+	print("🚚 Vehicle %s: pilot EXIT" % uuid)
+	_replicate_pilot()
+
+## World transform of the driver's EYE point (same place as the bench cab camera). The
+## seated player positions itself so its own camera lands exactly here -> matches the bench.
+func seat_global_transform() -> Transform3D:
+	var eye_local: Vector3 = Vector3(
+		-body_width * 0.25,
+		body_height * 0.5 + cab_height * 0.6,
+		-(body_length * 0.5 - cab_length * 0.45))
+	return Transform3D(global_transform.basis, to_global(eye_local))
+
+## Server: replicate the current pilot (occupied state) to all clients.
+func _replicate_pilot() -> void:
+	emit_signal("hs_server_prop_update", uuid, {"pilot_uuid": pilot_uuid}, type_name, has_parent)
+
 ## Read WASD and apply traction / steering / brake. The forward force comes from the chosen
 ## powertrain (electric or thermal). Reused later by the pilot path.
+## Server: store the pilot's relayed driving input (throttle/steer in [-1,1], brake).
+func set_drive_input(throttle: float, steer: float, braking: bool) -> void:
+	_net_throttle = clampf(throttle, -1.0, 1.0)
+	_net_steer = clampf(steer, -1.0, 1.0)
+	_net_brake = braking
+
 func _apply_drive(delta: float) -> void:
-	var throttle_in: float = Input.get_axis("move_back", "move_forward")  # W = forward
-	var turn: float = Input.get_axis("move_right", "move_left")           # A = left
+	var throttle_in: float
+	var turn: float
+	var braking: bool
+	if _is_networked():
+		throttle_in = _net_throttle  # forward axis sent by the pilot client
+		turn = _net_steer            # steer axis
+		braking = _net_brake
+	else:
+		throttle_in = Input.get_axis("move_back", "move_forward")  # bench: local input
+		turn = Input.get_axis("move_right", "move_left")
+		braking = Input.is_physical_key_pressed(KEY_SPACE)
 	# Ramp the applied torque toward the throttle (tempers the launch on any powertrain).
 	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
 	var forward_kmh: float = _forward_speed_kmh()
@@ -575,7 +753,7 @@ func _apply_drive(delta: float) -> void:
 	engine_force = -force
 	_steer_target = turn * deg_to_rad(max_steer_deg)
 	steering = move_toward(steering, _steer_target, steer_speed * delta)
-	brake = brake_force if (immobilized or Input.is_physical_key_pressed(KEY_SPACE)) else 0.0
+	brake = brake_force if (immobilized or braking) else 0.0
 
 	# IRL a powered wheel keeps spinning once it leaves the ground. VehicleWheel3D stops the
 	# visual with no contact, so spin powered airborne wheels ourselves (about their axle).

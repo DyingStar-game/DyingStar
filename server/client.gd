@@ -55,6 +55,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn':
 		preload('res://scenes/props/testbox/box_4m.tscn'),
+	'scenes/vehicles/truck.tscn':
+		preload('res://scenes/vehicles/truck.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 
