@@ -21,7 +21,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _vehicle == null:
 		return
-	var speed: float = _vehicle.linear_velocity.length() * 3.6
+	var speed: float = _vehicle.get_display_speed_kmh()
 	var rpm: float = _vehicle.get_engine_rpm()
 	var total: float = _vehicle.mass
 	var cargo: float = _vehicle.get_cargo_mass()
