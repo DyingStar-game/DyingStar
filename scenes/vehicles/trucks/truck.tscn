@@ -19,11 +19,11 @@ role = 0
 sit_point = NodePath("SitPoint")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatDriver" unique_id=1010304140]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09099592327084327, 0.0011249184999999606, 0.020946249558212227)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09099592327084328, 0.00112491849999996, 0.02094624955821222)
 shape = SubResource("BoxShape3D_seat")
 
 [node name="SitPoint" type="Marker3D" parent="SeatDriver" unique_id=1846020284]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.39, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.3899999999994179, -0.35000000000582077)
 
 [node name="SeatPassenger" type="Area3D" parent="." unique_id=418211017 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, -1.625)
@@ -32,8 +32,8 @@ script = ExtResource("3_seat")
 sit_point = NodePath("SitPoint")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPassenger" unique_id=1477251655]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08952626967411748, 0.054008394000000015, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08952626967411748, 0.05400839400000001, 0)
 shape = SubResource("BoxShape3D_seat")
 
 [node name="SitPoint" type="Marker3D" parent="SeatPassenger" unique_id=1273635299]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.39, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.3899999999994179, -0.35000000000582077)

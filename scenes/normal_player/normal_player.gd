@@ -985,17 +985,29 @@ func _find_deletable_prop(target_uuid: String) -> Node:
 	for n in get_tree().get_nodes_in_group("carriable"):
 		if "uuid" in n and str(n.uuid) == target_uuid:
 			return n
+<<<<<<< HEAD
 	# Fallback: scan the tree for ANY node carrying this uuid (depots / persisted props that
 	# aren't in props_list nor the carriable group). The node has a collision body, so it IS
 	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
 	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
 
 ## Recursive search for a node whose `uuid` matches (server-side helper).
+=======
+	# Fallback: any node in the tree carrying this uuid (e.g. a vehicle, which is in neither
+	# props_list nor the carriable group). The allowlist + protected check upstream keep it safe.
+	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
+
+## Depth-first search for a node exposing the given uuid (server-side delete fallback).
+>>>>>>> 2988faa4db (Let the admin Zap delete vehicles and depot crates; move bench debug out of Vehicle)
 func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
 		return node
 	for child in node.get_children():
+<<<<<<< HEAD
 		var found: Node = _find_node_by_uuid(child, target_uuid)
+=======
+		var found := _find_node_by_uuid(child, target_uuid)
+>>>>>>> 2988faa4db (Let the admin Zap delete vehicles and depot crates; move bench debug out of Vehicle)
 		if found != null:
 			return found
 	return null
@@ -1077,7 +1089,7 @@ func server_action_received(data: Dictionary) -> void:
 			# Admin cleanup tool: permanently remove a player-spawned prop.
 			var del_type: String = str(data.get("type", ""))
 			var del_uuid: String = str(data.get("uuid", ""))
-			if del_uuid == "" or not (del_type in ["miningrock", "box", "mining_depot"]):
+			if del_uuid == "" or not (del_type in ["miningrock", "box", "mining_depot", "palette_container", "vehicle"]):
 				print("🗑️ Admin delete refused: type=%s uuid=%s" % [del_type, del_uuid])
 			elif NetworkOrchestrator.protected_prop_uuids.has(del_uuid):
 				# World infrastructure placed by designers (e.g. a depot in the city): keep it.
@@ -1088,9 +1100,14 @@ func server_action_received(data: Dictionary) -> void:
 				# (e.g. the depot), and the GORC delete alone leaves a collision ghost.
 				var prop := _find_deletable_prop(del_uuid)
 				if prop != null and is_instance_valid(prop):
-					print("🗑️ Admin delete: freeing node %s %s" % [del_type, del_uuid])
+					# Held by this server: free it; _exit_tree replicates the delete to
+					# Horizon (GORC) and the database, like a rock dropped into a depot.
+					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
 					prop.queue_free()
 				if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
+					# Not held locally (e.g. loaded from the database): tell Horizon directly
+					# so it leaves the GORC and the database anyway.
+					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
 					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
 		"spawn_vehicle":
 			# Server-authoritative vehicle: spawn it in Horizon (all clients) AND locally

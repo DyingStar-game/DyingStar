@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="4_rock_nrm"]
 [ext_resource type="Texture2D" uid="uid://tlqwrtnp20lv" path="res://assets/textures/grounds/rock/Rock029_2K_Roughness.jpg" id="5_rock_rgh"]
 [ext_resource type="PackedScene" path="res://scenes/vehicles/bench_pilot.tscn" id="6_s0cy6"]
+[ext_resource type="Script" uid="uid://cyuutto7dxqrd" path="res://scenes/vehicles/vehicle_bench_debug.gd" id="20_benchdbg"]
 
 [sub_resource type="BoxShape3D" id="GravityBox"]
 size = Vector3(400, 200, 400)
@@ -122,3 +123,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1012223481225103, 0)
 
 [node name="Truck" parent="." unique_id=1579985098 instance=ExtResource("1_truck")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5163345308978675, 5.40948152275489)
+
+[node name="BenchDebug" type="Node" parent="Truck" unique_id=609570213]
+script = ExtResource("20_benchdbg")
