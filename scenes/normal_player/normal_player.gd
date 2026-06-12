@@ -111,15 +111,20 @@ var _owner_carrying: bool = false
 # Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
 var _spawn_wheel: RadialMenu = null
 
-# Owner: uuid of the vehicle we're currently driving ("" = on foot). Set when we enter.
-var _driving_vehicle_uuid: String = ""
-# Owner: the local vehicle replica we ride (snap our transform to its seat each frame).
-var _driving_vehicle_node: Node3D = null
+# Owner: uuid of the vehicle we are seated in ("" = on foot). Set when we take a seat.
+var _seat_vehicle_uuid: String = ""
+# Owner: the local vehicle replica (for the driver HUD / messages).
+var _seat_vehicle_node: Node3D = null
+# The VehicleSeat we occupy (driver or passenger); we ride its sit point each frame. Set
+# on the client when we enter, on the server by Vehicle.server_enter. Null = on foot.
+var _seat_node: Node3D = null
+# True when our seat is the driver seat (drive input + HUD + R). Passenger = just rides.
+var _seat_is_driver: bool = false
+# The VehicleSeat box the local player stands in (set by VehicleSeat); E takes that seat.
+var _nearby_seat: Node = null
 var _last_throttle: float = INF  # last drive input sent (to send only on change)
 var _last_steer: float = INF
 var _last_brake: bool = false
-# Server: the vehicle we're seated in; we ride its seat each frame. Null = on foot.
-var _pilot_vehicle: Node3D = null
 var _seated_saved: bool = false
 var _saved_collision_layer: int = 1
 var _saved_collision_mask: int = 1
@@ -270,27 +275,31 @@ func update_last_basis() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
-	if event.is_action_pressed("exit") and _driving_vehicle_uuid != "":
-		# Leave the vehicle we are driving.
-		client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _driving_vehicle_uuid})
+	if event.is_action_pressed("exit") and _seat_vehicle_uuid != "":
+		# Leave the seat we occupy (driver or passenger).
+		client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _seat_vehicle_uuid})
 		active = true  # walking again
 		set_seated(false)
-		_driving_vehicle_uuid = ""
-		if is_instance_valid(_driving_vehicle_node) and _driving_vehicle_node.has_method("set_driver_hud"):
-			_driving_vehicle_node.set_driver_hud(false)
-		_driving_vehicle_node = null
+		camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
+		if _seat_is_driver and is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("set_driver_hud"):
+			_seat_vehicle_node.set_driver_hud(false)
+		_seat_vehicle_uuid = ""
+		_seat_vehicle_node = null
+		_seat_node = null
+		_seat_is_driver = false
 
-	if _driving_vehicle_uuid != "" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
-		# Reset the vehicle upright (server-authoritative).
-		client_send_action_to_server({"action": "reset_vehicle", "target_uuid": _driving_vehicle_uuid})
+	if _seat_is_driver and _seat_vehicle_uuid != "" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+		# Reset the vehicle upright (server-authoritative; driver only).
+		client_send_action_to_server({"action": "reset_vehicle", "target_uuid": _seat_vehicle_uuid})
+
+	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		mouse_motion = -event.relative * 0.001
 
 	if !active: return
 
 	if event.is_action_pressed(JUMP):
 		client_send_action_to_server({"action": JUMP})
-
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		mouse_motion = -event.relative * 0.001
 
 	if event.is_action_pressed("toggle_flashlight"):
 		client_send_action_to_server({"action": "toggle_flashlight"})
@@ -302,28 +311,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		mining_tool.toggle_equip()
 
 	if event.is_action_pressed("action"):
+		# Standing in a seat box (on foot)? E takes that seat (driver left, passenger right).
+		if _seat_vehicle_uuid == "" and is_instance_valid(_nearby_seat):
+			_enter_seat(_nearby_seat)
+			return
+		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
+		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
 		interact_ray.force_raycast_update()
 		var hit = interact_ray.get_collider()
-		var veh := _hit_vehicle(hit)
-		if veh != null:
-			# Aiming at a vehicle: ask the server to let us drive it.
-			_driving_vehicle_uuid = str(veh.uuid)
-			_driving_vehicle_node = veh
-			if veh.has_method("set_driver_hud"):
-				veh.set_driver_hud(true)  # show the driver HUD (local pilot)
-			client_send_action_to_server({"action": "enter_vehicle", "target_uuid": _driving_vehicle_uuid})
-			active = false  # lock walking while we drive
-			set_seated(true)
-		else:
-			# Pick up / drop. Send the uuid of the carriable under OUR crosshair so the server
-			# grabs exactly that one (its own ray can be slightly off and grab a neighbour).
-			var target_uuid := ""
-			if hit != null:
-				var hp = hit.get_parent()
-				if hp != null and hp.has_method("interact") and "uuid" in hp:
-					target_uuid = str(hp.uuid)
-			client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
-			_predict_carry_stow()
+		var target_uuid := ""
+		if hit != null:
+			var hp = hit.get_parent()
+			if hp != null and hp.has_method("interact") and "uuid" in hp:
+				target_uuid = str(hp.uuid)
+		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
+		_predict_carry_stow()
 
 	if event.is_action_pressed("spawn_rock_mining"):
 		if _spawn_wheel:
@@ -396,6 +398,11 @@ func _process(_delta: float) -> void:
 					collider.interact(self)
 					interact_label.hide()
 
+	# Standing in a seat box (on foot): tell the player what E will do.
+	if is_instance_valid(_nearby_seat) and _seat_vehicle_uuid == "":
+		interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
+		interact_label.show()
+
 
 	if not OS.has_feature("dedicated_server"):
 		var dir_vect = Vector3.ZERO
@@ -436,7 +443,7 @@ func _send_drive_input() -> void:
 	_last_brake = braking
 	client_send_action_to_server({
 		"action": "vehicle_input",
-		"target_uuid": _driving_vehicle_uuid,
+		"target_uuid": _seat_vehicle_uuid,
 		"throttle": throttle,
 		"steer": steer,
 		"brake": braking,
@@ -456,21 +463,46 @@ func set_seated(seated: bool) -> void:
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
 
-func _ride_seat(veh: Node3D) -> void:
-	var eye: Transform3D = veh.seat_global_transform()
+## Take the seat we are standing in: tell the server, lock walking, start riding locally.
+func _enter_seat(seat: Node) -> void:
+	var veh: Node = seat.vehicle()
+	if veh == null or not ("uuid" in veh):
+		return
+	_seat_node = seat
+	_seat_vehicle_node = veh
+	_seat_vehicle_uuid = str(veh.uuid)
+	_seat_is_driver = seat.is_driver_seat()
+	client_send_action_to_server({
+		"action": "enter_vehicle",
+		"target_uuid": _seat_vehicle_uuid,
+		"seat": seat.name,
+	})
+	active = false  # lock walking while seated
+	set_seated(true)
+	if _seat_is_driver and veh.has_method("set_driver_hud"):
+		veh.set_driver_hud(true)
+
+func _ride_seat(seat: Node3D) -> void:
+	var eye: Transform3D = seat.sit_transform()
 	global_transform.basis = eye.basis
 	global_position = eye.origin - eye.basis * camera_pivot.position
-	camera_pivot.rotation.x = 0
+	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the
+	# vehicle forward, so the view is no longer locked straight ahead.
+	camera_pivot.rotation.y += mouse_motion.x * camera_sensitivity
+	camera_pivot.rotation.x = clampf(
+		camera_pivot.rotation.x + mouse_motion.y * camera_sensitivity,
+		deg_to_rad(-80.0), deg_to_rad(80.0))
+	mouse_motion = Vector2.ZERO
 	velocity = Vector3.ZERO
 
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
 		_server_update_carried_item()
-		if piloting and is_instance_valid(_pilot_vehicle):
+		if piloting and is_instance_valid(_seat_node):
 			# Seated in a vehicle: ride its seat. Server-authoritative; the emitted
 			# position replicates so the player follows the vehicle (camera rides too).
-			_ride_seat(_pilot_vehicle)
+			_ride_seat(_seat_node)
 			new_input_from_server = false
 			var seat_p: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
 			var seat_r: Vector3 = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
@@ -575,10 +607,12 @@ func _physics_process(delta: float) -> void:
 
 	else:
 		# player part
-		if is_instance_valid(_driving_vehicle_node):
-			# Seated: ride the vehicle seat locally (smooth driver view, faces forward).
-			_ride_seat(_driving_vehicle_node)
-			_send_drive_input()
+		if is_instance_valid(_seat_node):
+			# Seated: ride our seat locally (smooth view, faces forward). Only the driver feeds
+			# drive input; a passenger just rides along.
+			_ride_seat(_seat_node)
+			if _seat_is_driver:
+				_send_drive_input()
 			return
 		if !active: return
 
@@ -921,13 +955,6 @@ func client_channel_data_update(data: Dictionary) -> void:
 
 ## Find a spawned mining rock by its uuid (server-side).
 ## Walk up from a raycast hit to the vehicle node it belongs to (group "vehicle"), else null.
-func _hit_vehicle(hit) -> Node:
-	var node = hit
-	while node != null and not (node.is_in_group("vehicle") and "uuid" in node):
-		node = node.get_parent()
-	return node
-
-## Find a vehicle (group "vehicle") by its uuid (server-side).
 func _find_vehicle(target_uuid: String) -> Node:
 	if target_uuid == "":
 		return null
@@ -1078,13 +1105,13 @@ func server_action_received(data: Dictionary) -> void:
 					"z": float(v_pos.get("z", 0.0))
 				},
 				"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
-				"scenename": "scenes/vehicles/truck.tscn",
+				"scenename": "scenes/vehicles/trucks/truck.tscn",
 				"parent_id": str(data.get("parent_id", "")),
 			})
 		"enter_vehicle":
 			var veh := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
-				veh.server_enter(self)
+				veh.server_enter(self, str(data.get("seat", "")))
 		"exit_vehicle":
 			var veh_out := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):

@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://p8lbfuk68g7s"]
+
+[ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/vehicles/vehicle.gd" id="1_vehicle"]
+[ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/vehicles/vehicle_seat.gd" id="3_seat"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
+size = Vector3(0.8699799106043429, 1.889733397892087, 1.1162902846483576)
+
+[node name="Truck" type="VehicleBody3D" unique_id=1579985098]
+mass = 1000.0
+script = ExtResource("1_vehicle")
+engine_power = 570.0
+
+[node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.625)
+collision_layer = 0
+script = ExtResource("3_seat")
+role = 0
+sit_point = NodePath("SitPoint")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SeatDriver" unique_id=1010304140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09099592327084327, 0.0011249184999999606, 0.020946249558212227)
+shape = SubResource("BoxShape3D_seat")
+
+[node name="SitPoint" type="Marker3D" parent="SeatDriver" unique_id=1846020284]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.39, 0)
+
+[node name="SeatPassenger" type="Area3D" parent="." unique_id=418211017 node_paths=PackedStringArray("sit_point")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, -1.625)
+collision_layer = 0
+script = ExtResource("3_seat")
+sit_point = NodePath("SitPoint")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPassenger" unique_id=1477251655]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08952626967411748, 0.054008394000000015, 0)
+shape = SubResource("BoxShape3D_seat")
+
+[node name="SitPoint" type="Marker3D" parent="SeatPassenger" unique_id=1273635299]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.39, 0)

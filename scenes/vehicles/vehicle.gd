@@ -94,6 +94,18 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 		cab_height = v
 		_rebuild_deferred()
 
+## Cabin cutout (windshield / door opening) carved from the body. It is a CSG subtraction
+## added INSIDE the generated body combiner (a sibling CSGBox under the vehicle root would
+## not cut — CSG only combines within one CSGCombiner). Tunable live.
+@export var cab_cutout_size: Vector3 = Vector3(2.255, 0.969, 0.744):
+	set(v):
+		cab_cutout_size = v
+		_rebuild_deferred()
+@export var cab_cutout_offset: Vector3 = Vector3(-0.017, 1.454, -2.062):
+	set(v):
+		cab_cutout_offset = v
+		_rebuild_deferred()
+
 @export_group("Bed")
 @export var bed_wall_height: float = 0.7:
 	set(v):
@@ -191,7 +203,6 @@ var pilot_uuid: String = ""
 var _steer_target: float = 0.0
 var _wheels: Array[VehicleWheel3D] = []
 var _throttle: float = 0.0
-var _current_gear: int = 0
 var _pilot: Node3D = null
 var _chase_cam: Node3D = null
 var _cab_cam: Camera3D = null
@@ -208,6 +219,7 @@ var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
 var _client_speed_kmh: float = 0.0  # client: speed derived from position delta
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
+var _powertrain := VehiclePowertrain.new()
 
 func _ready() -> void:
 	_empty_mass = mass
@@ -215,6 +227,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	add_to_group("vehicle")  # so a pilot can find and enter us
+	_sync_powertrain()
 	if _is_networked():
 		# Replicated prop: place it where the server spawned it (client_channel_data_update
 		# also applies position/rotation, this is the initial fallback).
@@ -515,6 +528,13 @@ func _build_body_visual() -> void:
 	_add_box(body, Vector3(body_width, bed_wall_height, wall),
 		Vector3(0.0, top + bed_wall_height * 0.5, bed_z + bed_len * 0.5 - wall * 0.5), paint)  # tailgate
 
+	# Cabin cutout: a subtraction box INSIDE this combiner so it actually carves the body.
+	var cut := CSGBox3D.new()
+	cut.operation = CSGShape3D.OPERATION_SUBTRACTION
+	cut.size = cab_cutout_size
+	cut.position = cab_cutout_offset
+	body.add_child(cut)
+
 func _add_box(parent: Node, box_size: Vector3, pos: Vector3, mat: Material) -> void:
 	var b := CSGBox3D.new()
 	b.size = box_size
@@ -672,45 +692,69 @@ func client_parent_change(parent: Node) -> void:
 # Networked enter / exit (server-authoritative). The pilot is replicated as pilot_uuid;
 # seating/camera/driving are added in the following sub-bricks.
 # ------------------------------------------------------------------------------
-## Server: a player takes the wheel. Stores the pilot, replicates it, freezes the player's
-## own movement (active = false). Refuses if already occupied.
-func server_enter(player: Node) -> void:
-	if _pilot != null:
+## Server: a player takes a seat (by node name). Refuses if the seat is unknown or taken.
+## The driver seat becomes the pilot (control + HUD); passengers just ride along.
+func server_enter(player: Node, seat_name: String = "") -> void:
+	var seat: Node = _find_seat(seat_name)
+	if seat == null or not seat.is_free():
 		return
-	_pilot = player
-	pilot_uuid = str(player.client_uuid) if "client_uuid" in player else ""
+	seat.occupant_uuid = str(player.client_uuid) if "client_uuid" in player else ""
 	if "piloting" in player:
 		player.piloting = true  # server-side walk lock
-		player._pilot_vehicle = self  # the player rides our seat each frame (server)
+		player._seat_node = seat  # the player rides this seat each frame (server)
 	if player.has_method("set_seated"):
 		player.set_seated(true)  # drop the player's collision so it can't shove the truck
-	print("🚚 Vehicle %s: pilot ENTER (%s)" % [uuid, pilot_uuid])
-	_replicate_pilot()
+	if seat.is_driver_seat():
+		_pilot = player
+		pilot_uuid = str(player.client_uuid) if "client_uuid" in player else ""
+		_replicate_pilot()
+		print("🚚 Vehicle %s: DRIVER enter (%s)" % [uuid, pilot_uuid])
+	else:
+		print("🚚 Vehicle %s: passenger enter (%s)" % [uuid, seat_name])
 
-## Server: the pilot leaves. Clears the pilot, replicates it, re-enables player movement.
+## Server: the player leaves whatever seat it occupies; frees the seat (and the pilot if it
+## was the driver seat).
 func server_exit(player: Node) -> void:
-	if _pilot != player:
+	var seat: Node = _find_seat_of(player)
+	if seat == null:
 		return
-	_pilot = null
-	pilot_uuid = ""
+	seat.occupant_uuid = ""
 	if "piloting" in player:
 		player.piloting = false
-		player._pilot_vehicle = null
+		player._seat_node = null
 	if player.has_method("set_seated"):
 		player.set_seated(false)  # restore the player's collision
-	print("🚚 Vehicle %s: pilot EXIT" % uuid)
-	_replicate_pilot()
+	if seat.is_driver_seat() and _pilot == player:
+		_pilot = null
+		pilot_uuid = ""
+		_replicate_pilot()
+	print("🚚 Vehicle %s: seat exit" % uuid)
 
-## World transform of the driver's EYE point (same place as the bench cab camera). The
-## seated player positions itself so its own camera lands exactly here -> matches the bench.
-func seat_global_transform() -> Transform3D:
-	var eye_local: Vector3 = Vector3(
-		-body_width * 0.25,
-		body_height * 0.5 + cab_height * 0.6,
-		-(body_length * 0.5 - cab_length * 0.45))
-	return Transform3D(global_transform.basis, to_global(eye_local))
+## All seats of this vehicle (designer-placed VehicleSeat children).
+func _seats() -> Array:
+	var out: Array = []
+	for c in get_children():
+		if c is VehicleSeat:
+			out.append(c)
+	return out
 
-## Server: replicate the current pilot (occupied state) to all clients.
+## Find a seat by its node name (the client sends which box it used).
+func _find_seat(seat_name: String) -> Node:
+	for seat in _seats():
+		if seat.name == seat_name:
+			return seat
+	return null
+
+## The seat currently occupied by the given player (by client_uuid).
+func _find_seat_of(player: Node) -> Node:
+	var who: String = str(player.client_uuid) if "client_uuid" in player else ""
+	if who == "":
+		return null
+	for seat in _seats():
+		if seat.occupant_uuid == who:
+			return seat
+	return null
+
 func _replicate_pilot() -> void:
 	emit_signal("hs_server_prop_update", uuid, {"pilot_uuid": pilot_uuid}, type_name, has_parent)
 
@@ -738,11 +782,8 @@ func _apply_drive(delta: float) -> void:
 	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
 	var forward_kmh: float = _forward_speed_kmh()
 
-	var force: float = 0.0
-	if propulsion_type == PropulsionType.ELECTRIC:
-		force = _electric_force(forward_kmh)
-	else:
-		force = _thermal_force(forward_kmh)
+	_sync_powertrain()  # pick up any live inspector tweak (bench tuning)
+	var force: float = _powertrain.force(_throttle, forward_kmh)
 
 	# Overloaded past the hard limit: the vehicle can't move — kill the drive and hold it.
 	var immobilized: bool = is_immobilized()
@@ -762,69 +803,37 @@ func _apply_drive(delta: float) -> void:
 			if wheel.use_as_traction and not wheel.is_in_contact() and wheel.get_child_count() > 0:
 				wheel.get_child(0).rotate_object_local(Vector3.UP, -signf(_throttle) * 25.0 * delta)
 
-## ELECTRIC powertrain: single-speed, full torque up to base_speed then taper (constant power).
-func _electric_force(forward_kmh: float) -> float:
-	if _throttle > 0.001:
-		var factor: float = 1.0
-		if forward_kmh > base_speed_kmh:
-			factor = clampf((max_speed_kmh - forward_kmh) / maxf(max_speed_kmh - base_speed_kmh, 0.1), 0.0, 1.0)
-		return _throttle * engine_power * factor
-	if _throttle < -0.001:
-		var rev: float = clampf((reverse_max_kmh + forward_kmh) / maxf(reverse_max_kmh, 0.1), 0.0, 1.0)
-		return _throttle * engine_power * rev
-	return 0.0
-
-## THERMAL powertrain: automatic gearbox; low gears pull harder, taper near top speed.
-func _thermal_force(forward_kmh: float) -> float:
-	if _throttle > 0.001:
-		_update_gear(forward_kmh)
-		var ratio: float = _gear_ratio(_current_gear)
-		var top_factor: float = 1.0
-		if _current_gear >= gear_ratios.size() - 1:
-			top_factor = clampf((max_speed_kmh - forward_kmh) / maxf(max_speed_kmh * 0.1, 0.1), 0.0, 1.0)
-		return _throttle * engine_power * ratio * top_factor
-	if _throttle < -0.001:
-		_current_gear = 0
-		var rev: float = clampf((reverse_max_kmh + forward_kmh) / maxf(reverse_max_kmh * 0.2, 0.1), 0.0, 1.0)
-		return _throttle * engine_power * reverse_ratio * rev
-	return 0.0
-
-func _gear_ratio(gear: int) -> float:
-	if gear_ratios.is_empty():
-		return 1.0
-	return gear_ratios[clampi(gear, 0, gear_ratios.size() - 1)]
-
-## Automatic shifting (THERMAL): up near the redline, down when the engine bogs down.
-func _update_gear(forward_kmh: float) -> void:
-	var rpm: float = _gearbox_rpm(forward_kmh, _current_gear)
-	if rpm > shift_up_rpm and _current_gear < gear_ratios.size() - 1:
-		_current_gear += 1
-	elif rpm < shift_down_rpm and _current_gear > 0:
-		_current_gear -= 1
-
-## Engine RPM for a given speed and gear (THERMAL): redline at max_speed in the top gear.
-func _gearbox_rpm(forward_kmh: float, gear: int) -> float:
-	if gear_ratios.is_empty():
-		return idle_rpm
-	var top: float = gear_ratios[gear_ratios.size() - 1]
-	var rpm: float = redline_rpm * (absf(forward_kmh) / maxf(max_speed_kmh, 0.1)) * (_gear_ratio(gear) / top)
-	return clampf(rpm, idle_rpm, redline_rpm)
-
 ## Forward speed in km/h (positive when driving toward the cab, -Z).
 func _forward_speed_kmh() -> float:
 	return -global_transform.basis.z.dot(linear_velocity) * 3.6
 
 ## Engine/motor RPM for the gauge (depends on the powertrain).
+## Copy the inspector powertrain settings into the helper (cheap; lets values be tuned
+## live in the bench). The gearbox state (current gear) is preserved across syncs.
+func _sync_powertrain() -> void:
+	_powertrain.type = VehiclePowertrain.Type.ELECTRIC if propulsion_type == PropulsionType.ELECTRIC else VehiclePowertrain.Type.THERMAL
+	_powertrain.engine_power = engine_power
+	_powertrain.max_speed_kmh = max_speed_kmh
+	_powertrain.reverse_max_kmh = reverse_max_kmh
+	_powertrain.base_speed_kmh = base_speed_kmh
+	_powertrain.motor_max_rpm = motor_max_rpm
+	_powertrain.gear_ratios = gear_ratios
+	_powertrain.shift_up_rpm = shift_up_rpm
+	_powertrain.shift_down_rpm = shift_down_rpm
+	_powertrain.reverse_ratio = reverse_ratio
+	_powertrain.idle_rpm = idle_rpm
+	_powertrain.redline_rpm = redline_rpm
+
 func get_engine_rpm() -> float:
-	if propulsion_type == PropulsionType.ELECTRIC:
-		return motor_max_rpm * clampf(absf(_forward_speed_kmh()) / maxf(max_speed_kmh, 0.1), 0.0, 1.0)
-	return _gearbox_rpm(_forward_speed_kmh(), _current_gear)
+	return _powertrain.engine_rpm(_forward_speed_kmh())
 
 ## HUD label: the current gear (THERMAL) or empty (ELECTRIC has no gears).
 func get_gear_label() -> String:
-	if propulsion_type == PropulsionType.THERMAL:
-		return "Rapport : %d\n" % (_current_gear + 1)
-	return ""
+	return _powertrain.gear_label()
+
+## HUD label of the powertrain (electric or thermal).
+func get_propulsion_name() -> String:
+	return "Électrique" if propulsion_type == PropulsionType.ELECTRIC else "Thermique"
 
 ## Human-readable label of the current drive mode (for the debug HUD).
 func get_drive_mode_name() -> String:

@@ -5,7 +5,7 @@ const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
 const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
 
-var ship_scene_path: String = "res://scenes/spaceship/test_spaceship/test_spaceship.tscn"
+var ship_scene_path: String = "res://scenes/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
 var client_peer: ENetMultiplayerPeer = null
 var peer_id: int = -1
@@ -55,8 +55,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn':
 		preload('res://scenes/props/testbox/box_4m.tscn'),
-	'scenes/vehicles/truck.tscn':
-		preload('res://scenes/vehicles/truck.tscn'),
+	'scenes/vehicles/trucks/truck.tscn':
+		preload('res://scenes/vehicles/trucks/truck.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 

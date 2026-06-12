@@ -99,7 +99,7 @@ var props_scene: Dictionary = {
 	'scenes/props/city/sandbox_capital.tscn':
 		preload('res://scenes/props/city/sandbox_capital.tscn'),
 	'scenes/vehicles/truck.tscn':
-		preload('res://scenes/vehicles/truck.tscn'),
+		preload('res://scenes/vehicles/trucks/truck.tscn'),
 }
 
 var debug_message_number: int = 0
