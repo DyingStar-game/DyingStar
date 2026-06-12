@@ -772,7 +772,7 @@ func player_update(message: Dictionary) -> void:
 					message["data"]["position"]["z"]
 				)
 				if uuid == my_player_uuid:
-					player.position = ppos
+					player.net_set_local_target(ppos)
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
 					var prot := Vector3(

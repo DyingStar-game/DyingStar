@@ -33,6 +33,20 @@ func update(node: Node3D, delta: float) -> void:
 	node.position = node.position.lerp(_pos, f)
 	node.transform.basis = node.transform.basis.slerp(_basis, f)
 
+## Position-only variant: smooth the position toward the target but leave rotation untouched —
+## for a locally-controlled entity whose look must stay immediate (the local player on foot:
+## smooth the server-driven position while mouse-look stays responsive).
+func set_position_target(node: Node3D, local_pos: Vector3) -> void:
+	_pos = local_pos
+	if not _has:
+		node.position = local_pos
+		_has = true
+
+func update_position(node: Node3D, delta: float) -> void:
+	if not _has:
+		return
+	node.position = node.position.lerp(_pos, clampf(speed * delta, 0.0, 1.0))
+
 ## Apply the latest target immediately (no smoothing). Use when smoothing would hurt — e.g. the
 ## object the local player is actively controlling (a driver wants responsiveness, not lag).
 func snap_to(node: Node3D) -> void:
