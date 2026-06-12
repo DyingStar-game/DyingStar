@@ -104,6 +104,7 @@ var _display_debug: bool = false
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
+var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
@@ -353,7 +354,14 @@ func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	new_input_from_server = true
 
 func _process(_delta: float) -> void:
-	if remote_player: return
+	if remote_player:
+		_interp.update(self, _delta)  # entity interpolation: glide between server updates
+		return
+	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
+	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
+	if is_instance_valid(_seat_node):
+		_ride_seat(_seat_node)
+		return
 	if !active:
 		interact_label.hide()
 		return
@@ -482,6 +490,20 @@ func _enter_seat(seat: Node) -> void:
 	if _seat_is_driver and veh.has_method("set_driver_hud"):
 		veh.set_driver_hud(true)
 
+## Feed a REMOTE player its latest server transform (entity interpolation). The position is
+## local (relative to the parent); the rotation arrives global, so convert it to the parent's
+## frame before handing it to the interpolator (which works in local space).
+func net_set_target(local_pos: Vector3, global_rot: Vector3) -> void:
+	var target_basis := Basis.from_euler(global_rot)
+	var parent := get_parent()
+	if parent is Node3D:
+		target_basis = (parent as Node3D).global_basis.inverse() * target_basis
+	_interp.set_target(self, local_pos, target_basis)
+
+## Re-snap the interpolation after a reparent (the local frame changed).
+func net_reset_interp() -> void:
+	_interp.snap_next()
+
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
 	global_transform.basis = eye.basis
@@ -608,9 +630,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		# player part
 		if is_instance_valid(_seat_node):
-			# Seated: ride our seat locally (smooth view, faces forward). Only the driver feeds
-			# drive input; a passenger just rides along.
-			_ride_seat(_seat_node)
+			# Seated: the camera ride is done in _process (synced with the vehicle interpolation);
+			# here we only relay drive input (driver) and skip walking.
 			if _seat_is_driver:
 				_send_drive_input()
 			return

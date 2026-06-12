@@ -214,6 +214,7 @@ var _net_brake: bool = false
 var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
 var _client_speed_kmh: float = 0.0  # client: speed derived from position delta
+var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
 
@@ -235,6 +236,16 @@ func _ready() -> void:
 ## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
 func _is_networked() -> bool:
 	return uuid != ""
+
+## True when the local client drives this vehicle. The driver is NOT interpolated (lerp would
+## add input lag — "floaty at the wheel"); only observed copies are smoothed.
+func _is_local_driver() -> bool:
+	if pilot_uuid == "":
+		return false
+	var agent = NetworkOrchestrator.network_agent
+	if agent == null or agent.player_entity == null:
+		return false
+	return str(agent.player_entity.client_uuid) == pilot_uuid
 
 func _unhandled_input(event: InputEvent) -> void:
 	if Engine.is_editor_hint():
@@ -592,14 +603,27 @@ func _solid_material(color: Color) -> StandardMaterial3D:
 # ------------------------------------------------------------------------------
 # Driving (runtime only)
 # ------------------------------------------------------------------------------
+## Client replica: physics is off (server-authoritative), so smoothly interpolate toward the
+## latest replicated transform here every render frame — otherwise the truck, and any rider's
+## camera glued to a seat, would step at the network rate. Then animate the wheels.
+func _process(delta: float) -> void:
+	if Engine.is_editor_hint():
+		return
+	if not _is_networked() or GameOrchestrator.is_server():
+		return
+	if _is_local_driver():
+		_interp.snap_to(self)  # we drive it: stay responsive, no smoothing lag
+	else:
+		_interp.update(self, delta)  # passenger / remote viewer: smooth
+	_update_wheels_visual(delta)
+
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 	if _is_networked():
-		# Server-authoritative: only the game server simulates + replicates. Every client
-		# shows a frozen copy positioned by client_channel_data_update.
+		# Server-authoritative: only the game server simulates + replicates. The client replica
+		# has physics off; its smoothing + wheels are done in _process.
 		if not GameOrchestrator.is_server():
-			_update_wheels_visual(delta)  # client: visual roll + steer
 			return
 		_update_cargo()
 		if _pilot != null:
@@ -663,9 +687,11 @@ func _exit_tree() -> void:
 ## Client: apply the replicated state (position/rotation/pilot) from the server.
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("position"):
-		position = Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
-	if data.has("rotation"):
-		rotation = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
+		var pos := Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
+		var rot := rotation
+		if data.has("rotation"):
+			rot = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
+		_interp.set_target(self, pos, Basis.from_euler(rot))
 	if data.has("steering"):
 		_net_steering = float(data["steering"])
 	if data.has("pilot_uuid"):

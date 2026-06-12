@@ -766,13 +766,16 @@ func player_update(message: Dictionary) -> void:
 				if not is_instance_valid(player):
 					players_list.erase(uuid)
 					return
-				player.position = Vector3(
+				var ppos := Vector3(
 					message["data"]["position"]["x"],
 					message["data"]["position"]["y"],
 					message["data"]["position"]["z"]
 				)
-				if uuid != my_player_uuid:
-					player.global_rotation = Vector3(
+				if uuid == my_player_uuid:
+					player.position = ppos
+				else:
+					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
+					var prot := Vector3(
 						message["data"]["rotation"]["x"],
 						message["data"]["rotation"]["y"],
 						message["data"]["rotation"]["z"]
@@ -781,6 +784,8 @@ func player_update(message: Dictionary) -> void:
 						var parent = _search_parent_node(message["data"]["parent_id"])
 						if parent != null and player.get_parent() != parent:
 							player.reparent(parent)
+							player.net_reset_interp()
+					player.net_set_target(ppos, prot)
 		else:
 			print("Update Player but not found...")
 
