@@ -828,6 +828,19 @@ func _find_deletable_prop(target_uuid: String) -> Node:
 	for n in get_tree().get_nodes_in_group("carriable"):
 		if "uuid" in n and str(n.uuid) == target_uuid:
 			return n
+	# Fallback: scan the tree for ANY node carrying this uuid (depots / persisted props that
+	# aren't in props_list nor the carriable group). The node has a collision body, so it IS
+	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
+	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
+
+## Recursive search for a node whose `uuid` matches (server-side helper).
+func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
+	if "uuid" in node and str(node.uuid) == target_uuid:
+		return node
+	for child in node.get_children():
+		var found: Node = _find_node_by_uuid(child, target_uuid)
+		if found != null:
+			return found
 	return null
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
@@ -913,16 +926,14 @@ func server_action_received(data: Dictionary) -> void:
 				# World infrastructure placed by designers (e.g. a depot in the city): keep it.
 				print("🗑️ Admin delete refused: %s is protected world infrastructure" % del_uuid)
 			else:
+				# Free the node (removes its collision body) AND tell Horizon to drop it from the
+				# GORC + database. Both are needed: queue_free alone may not replicate the delete
+				# (e.g. the depot), and the GORC delete alone leaves a collision ghost.
 				var prop := _find_deletable_prop(del_uuid)
 				if prop != null and is_instance_valid(prop):
-					# Held by this server: free it; _exit_tree replicates the delete to
-					# Horizon (GORC) and the database, like a rock dropped into a depot.
-					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
+					print("🗑️ Admin delete: freeing node %s %s" % [del_type, del_uuid])
 					prop.queue_free()
-				elif NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
-					# Not held locally (e.g. loaded from the database): tell Horizon directly
-					# so it leaves the GORC and the database anyway.
-					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
+				if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
 					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
 		"action":
 			print("action key pressed by player")
