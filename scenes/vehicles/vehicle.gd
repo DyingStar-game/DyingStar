@@ -169,10 +169,6 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 	set(v):
 		debug_color_driven_wheels = v
 		_rebuild_deferred()
-## Bench: mass (kg) of each rock spawned into the bed with T.
-@export var cargo_rock_mass: float = 150.0
-## Bench: spawn the on-screen debug HUD (speed / motor / weight). Off for the in-game truck.
-@export var debug_hud: bool = true
 
 @export_group("Cargo")
 ## Max payload (kg) before the vehicle is overloaded (GDD load limiter). Empty 1 t + this =
@@ -235,9 +231,6 @@ func _ready() -> void:
 			position = spawn_position
 		if spawn_rotation != Vector3.ZERO:
 			rotation = spawn_rotation
-	elif debug_hud:
-		# Bench / standalone only: on-screen debug overlay.
-		add_child(VehicleDebugHud.new())
 
 ## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
 func _is_networked() -> bool:
@@ -258,12 +251,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_apply_view()
 		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 			reset_upright()
-	# Bench debug keys: N = cycle FWD/RWD/4x4, T = drop a mining rock in the bed.
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_N:
-			drive_mode = (int(drive_mode) + 1) % 3
-		elif event.keycode == KEY_T:
-			_spawn_cargo_rock()
 
 ## Show only the settings relevant to the chosen powertrain in the inspector.
 func _validate_property(property: Dictionary) -> void:
@@ -475,13 +462,14 @@ func is_overloaded() -> bool:
 func is_immobilized() -> bool:
 	return get_cargo_mass() > max_payload * overload_immobilize
 
-## Bench: drop a real mining rock above the bed so it falls in and loads the truck. Reuses
-## the actual rock_mining scene (T key). In game this is replaced by the real mining flow.
-func _spawn_cargo_rock() -> void:
+## Drop a real mining rock above the bed so it falls in and loads the truck (bench load
+## test, reusing the actual rock_mining scene). Called by the bench debug node; in game the
+## real mining flow replaces it.
+func spawn_cargo_rock(rock_mass: float) -> void:
 	var rock := ROCK_SCENE.instantiate()
 	rock.uuid = UUID_UTIL.v4()
 	if "mass" in rock:
-		rock.mass = cargo_rock_mass
+		rock.mass = rock_mass
 	rock.add_to_group("cargo")
 	# Drop point: above the bed centre, with a small random offset so rocks pile naturally.
 	var top: float = body_height * 0.5
