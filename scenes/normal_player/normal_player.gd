@@ -1015,29 +1015,17 @@ func _find_deletable_prop(target_uuid: String) -> Node:
 	for n in get_tree().get_nodes_in_group("carriable"):
 		if "uuid" in n and str(n.uuid) == target_uuid:
 			return n
-<<<<<<< HEAD
 	# Fallback: scan the tree for ANY node carrying this uuid (depots / persisted props that
 	# aren't in props_list nor the carriable group). The node has a collision body, so it IS
 	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
 	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
 
 ## Recursive search for a node whose `uuid` matches (server-side helper).
-=======
-	# Fallback: any node in the tree carrying this uuid (e.g. a vehicle, which is in neither
-	# props_list nor the carriable group). The allowlist + protected check upstream keep it safe.
-	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
-
-## Depth-first search for a node exposing the given uuid (server-side delete fallback).
->>>>>>> 2988faa4db (Let the admin Zap delete vehicles and depot crates; move bench debug out of Vehicle)
 func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
 		return node
 	for child in node.get_children():
-<<<<<<< HEAD
 		var found: Node = _find_node_by_uuid(child, target_uuid)
-=======
-		var found := _find_node_by_uuid(child, target_uuid)
->>>>>>> 2988faa4db (Let the admin Zap delete vehicles and depot crates; move bench debug out of Vehicle)
 		if found != null:
 			return found
 	return null
