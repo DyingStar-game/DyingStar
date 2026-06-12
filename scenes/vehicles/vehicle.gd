@@ -213,7 +213,8 @@ var _net_steer: float = 0.0
 var _net_brake: bool = false
 var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
-var _client_speed_kmh: float = 0.0  # client: speed derived from position delta
+var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the server
+var _net_last_speed: float = 0.0  # server: last replicated speed (km/h), change detection
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
@@ -643,18 +644,18 @@ func _update_wheels_visual(delta: float) -> void:
 	_wheel_last_pos = global_position
 	var fwd_speed: float = vel.dot(-global_transform.basis.z) / maxf(delta, 0.0001)
 	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
-	_client_speed_kmh = absf(fwd_speed) * 3.6
 	for wheel in _wheels:
 		if wheel.use_as_steering:
 			wheel.rotation.y = _net_steering
 		if wheel.get_child_count() > 0:
 			wheel.get_child(0).rotate_object_local(Vector3.UP, -spin)
 
-## Speed shown on the HUD: physics speed on the server/bench, position-derived on a client
-## replica (which is frozen, so linear_velocity is 0 there).
+## Speed shown on the HUD: real physics speed on the server/bench; on a client replica (frozen,
+## linear_velocity is 0) use the speed replicated by the server — deriving it from the
+## interpolated position gave wrong/jumpy readings.
 func get_display_speed_kmh() -> float:
 	if _is_networked() and not GameOrchestrator.is_server():
-		return _client_speed_kmh
+		return _net_speed
 	return linear_velocity.length() * 3.6
 
 ## Show/hide the driver HUD. Called by the local pilot client on enter/exit (reliable,
@@ -670,11 +671,13 @@ func set_driver_hud(show: bool) -> void:
 func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
-	if my_pos == _net_last_position and my_rot == _net_last_rotation:
+	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
+	if my_pos == _net_last_position and my_rot == _net_last_rotation and my_speed == _net_last_speed:
 		return
 	_net_last_position = my_pos
 	_net_last_rotation = my_rot
-	var data := {"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001)}
+	_net_last_speed = my_speed
+	var data := {"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001), "speed": my_speed}
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
 ## Server: tell the clients to despawn this vehicle when it leaves the world.
@@ -694,6 +697,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_interp.set_target(self, pos, Basis.from_euler(rot))
 	if data.has("steering"):
 		_net_steering = float(data["steering"])
+	if data.has("speed"):
+		_net_speed = float(data["speed"])
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
 
