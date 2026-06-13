@@ -92,6 +92,8 @@ size = Vector3(0.2317254395602504, 0.9081811614742036, 1.4966181594172667)
 mass = 1000.0
 script = ExtResource("1_vehicle")
 engine_power = 570.0
+debug_color_driven_wheels = false
+debug_show_cargo_bay = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.625)
