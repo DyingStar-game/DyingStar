@@ -21,9 +21,9 @@ const INTERSECTION_MARGIN := 0.06
 # as "on a fault". Aiming farther than this = not on a vein -> no cut.
 const FAULT_HIT_THRESHOLD := 0.05
 
-# Ore look (Cryptonite preset) + purity thresholds, validated in the ore bench. A piece's
-# richness drives ore_threshold: ORE_T_RICH = full of ore, ORE_T_POOR = almost none.
-const ORE_COLOR := Color(0.1, 0.8, 0.2)
+# Ore look (orange/gold preset, matched to the ore bench preview) + purity thresholds. A
+# piece's richness drives ore_threshold: ORE_T_RICH = full of ore, ORE_T_POOR = almost none.
+const ORE_COLOR := Color(0.9207721, 0.5759338, 1.1551381e-06, 1)
 const ORE_SCALE := 6.0
 const ORE_SOFTNESS := 0.156
 const ORE_METALLIC := 1.0
