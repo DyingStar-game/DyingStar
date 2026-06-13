@@ -19,6 +19,7 @@ mesh = ExtResource("1_yg06r")
 material = ExtResource("2_ty2b3")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=990237276]
+monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=876014578]
 transform = Transform3D(2.43, 0, 0, 0, 2.43, 0, 0, 0, 2.43, 0.00938558976426251, 0.3480817962761856, -0.08526816556489342)
@@ -27,5 +28,4 @@ shape = SubResource("SphereShape3D_kvafs")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415174348]
 shape = SubResource("SphereShape3D_ducf2")
 
-[connection signal="area_entered" from="Area3D" to="." method="_on_area_3d_area_entered"]
-[connection signal="body_entered" from="Area3D" to="." method="_on_area_3d_body_entered"]
+
