@@ -36,6 +36,8 @@ var player
 ## 2D Label is rock-steady.
 var _name_tag: Label = null
 
+var _conversation_text: Label = null
+
 ## Audio SFX state (the exported knobs live on the Player facade — see its "Audio SFX" group).
 ## False until the first replicated update has been digested: the state a REMOTE player arrives with
 ## (torch already on…) is a snapshot, not something that just happened, and must stay silent.
@@ -71,6 +73,7 @@ func setup() -> void:
 	if player.remote_player:
 		player.camera.current = false
 		_setup_name_tag(str(player.name))
+		_setup_conversation_text()
 		return
 
 	# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
@@ -314,7 +317,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		player.input_direction = Vector2.ZERO
 	# send move_direction
-	var short_rotation = snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+	# Send the body's LOCAL rotation (relative to the planet), not global: the planet spins on the client
+	# but is static on the server, so a world-frame rotation would be applied in the wrong frame and tilt
+	# the body. Local rotation is frame-invariant — same convention as the local position above.
+	var short_rotation = snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001))
 	if player.input_direction != player.client_last_input_direction or short_rotation != player.client_last_global_rotation:
 		player.client_last_input_direction = player.input_direction
 		player.client_last_global_rotation = short_rotation
@@ -792,6 +798,44 @@ func _input_locked() -> bool:
 func _ui_focus() -> bool:
 	return player.screen_interacting != null or _input_locked()
 
+# LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
+func _spawn_depot() -> void:
+	var spawn_pos: Vector3 = player.position + (-player.global_basis.z * 10.0)
+	var parent = player.get_parent()
+	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
+	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
+	player.emit_signal(
+		"client_action_requested",
+		{
+			"action": "spawn",
+			"entity": "mining_depot",
+			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
+			"scenename": "scenes/structures/mining_depot.tscn",
+			"parent_id": parentuuid,
+		}
+	)
+
+func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float):
+	# LOCAL DEV (do not commit): re-enabled to spawn mining rocks for testing.
+	var item_spawn_position: Vector3 = player.position + (-player.global_basis.z * _coeffz) + player.global_basis.y * _coeffy
+	var parent = player.get_parent()
+	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
+	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
+	player.emit_signal(
+		"client_action_requested",
+		{
+			"action": "spawn",
+			"entity": _type,
+			"position": {
+				"x": item_spawn_position[0],
+				"y": item_spawn_position[1],
+				"z": item_spawn_position[2]
+			},
+			"scenename": "scenes/props/" + _boxscene + ".tscn",
+			"parent_id": parentuuid,
+		}
+	)
+
 ## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
 ## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
 ## and its layer are children of the BODY (player), so they follow it and free with it.
@@ -807,6 +851,26 @@ func _setup_name_tag(player_name: String) -> void:
 	_name_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_name_tag)
 
+func _setup_conversation_text() -> void:
+	var layer := CanvasLayer.new()
+	player.add_child(layer)
+	_conversation_text = Label.new()
+	_conversation_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_conversation_text.add_theme_font_size_override("font_size", 15)
+	_conversation_text.add_theme_color_override("font_color", Color.GREEN)
+	_conversation_text.add_theme_color_override("font_outline_color", Color.BLACK)
+	_conversation_text.add_theme_constant_override("outline_size", 6)
+	_conversation_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_conversation_text.visible = false  # nothing said yet
+	layer.add_child(_conversation_text)
+	# Italic, by slanting the label's OWN font rather than swapping in Poppins-Italic: this keeps the
+	# same typeface as the name tag above it and only leans the glyphs. Same slant as the other UI
+	# (see rock_depot_ui.tscn). Done after add_child so the theme lookup sees the real inherited font.
+	var italic := FontVariation.new()
+	italic.base_font = _conversation_text.get_theme_font("font")
+	italic.variation_transform = Transform2D(Vector2(1.0, 0.415), Vector2(0.0, 1.0), Vector2.ZERO)
+	_conversation_text.add_theme_font_override("font", italic)
+
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.
 func _update_name_tag() -> void:
@@ -818,9 +882,16 @@ func _update_name_tag() -> void:
 	if cam == null or cam.is_position_behind(head) \
 			or player.global_position.distance_to(cam.global_position) > NAME_TAG_MAX_DISTANCE:
 		_name_tag.visible = false
+		if _conversation_text != null:
+			_conversation_text.visible = false
 		return
 	_name_tag.visible = true
 	_name_tag.position = cam.unproject_position(head) - _name_tag.size * 0.5
+	# Conversation line rides just under the name tag, sharing its visibility rules.
+	if _conversation_text != null and not _conversation_text.text.is_empty():
+		_conversation_text.visible = true
+		_conversation_text.position = _name_tag.position \
+				+ Vector2(_name_tag.size.x * 0.5 - _conversation_text.size.x * 0.5, _name_tag.size.y)
 
 ## Set the remote player's name tag text (no-op until the tag exists).
 func set_player_name(player_name) -> void:
@@ -915,6 +986,21 @@ func client_channel_data_update(data: Dictionary) -> void:
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
 			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose
+		if data.has("conversation"):
+			print("RECU!!!")
+			if _conversation_text == null:
+				_conversation_text.visible = false
+			else:
+				# null = the server's "done talking" marker, sent once the dialog queue drains. Guard it:
+				# str(null) is the literal "<null>", which would hang that text over the NPC's head.
+				var line = data["conversation"]
+				_conversation_text.text = "" if line == null else str(line)
+				# Empty text must not leave an invisible-but-present bubble; _update_name_tag re-shows it
+				# as soon as there is something to read again.
+				if _conversation_text.text.is_empty():
+					_conversation_text.visible = false
+				else:
+					_conversation_text.visible = true
 	elif data.has("carrying"):
 		# Owner: reconcile the optimistic carry prediction with the server's verdict
 		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).

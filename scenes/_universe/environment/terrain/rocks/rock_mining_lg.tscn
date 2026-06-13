@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://cynqji0v1gvlk" path="res://scenes/_universe/environment/terrain/rocks/rock_mining.gd" id="1_script"]
 [ext_resource type="ArrayMesh" uid="uid://qs2ropifk3ww" path="res://assets/_universe/environment/terrain/rocks/rock_large.res" id="2_mesh"]
 [ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://assets/_universe/environment/terrain/rocks/rock_material.tres" id="3_mat"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_area"]
 radius = 5.5
@@ -15,6 +16,11 @@ collision_mask = 15
 mass = 5000.0
 continuous_cd = true
 script = ExtResource("1_script")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "miningrock"
+enable_carry = true
 
 [node name="CSGMesh3D" type="CSGMesh3D" parent="."]
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)

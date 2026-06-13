@@ -9,6 +9,8 @@
 [ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/_universe/props/containers/box_50cm.tscn" id="7_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn" id="8_bdj2j"]
 
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
+
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)
 
@@ -31,6 +33,11 @@ size = Vector3(100, 50, 100)
 
 [node name="SimpleBoxTest" type="Node3D" unique_id=54903359]
 script = ExtResource("1_m4ygx")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "city"
+enable_carry = false
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1592737462]
 mesh = SubResource("PlaneMesh_xqwsu")

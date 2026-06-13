@@ -83,6 +83,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
 	'scenes/_universe/structures/industrial/mines/mining_depot.tscn':
 		preload('res://scenes/_universe/structures/industrial/mines/mining_depot.tscn'),
+	'scenes/_universe/structures/industrial/cargo_depot.tscn':
+		preload('res://scenes/_universe/structures/industrial/cargo_depot.tscn'),
 	# 'scenes/_universe/structures/urban/cities/sandbox_capital.tscn':
 	# 	preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
 }
@@ -396,7 +398,7 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 		"event": "client_action",
 		"data": datas,
 	})
-	print("Client action requested to server: %s" % message)
+	# print("Client action requested to server: %s" % message)
 	socket.send_text(message)
 	network_events_sent += 1
 
@@ -562,6 +564,10 @@ func _flush_pending_parent_delete() -> void:
 ## whitelisted player property is covered automatically — just handle it in client_channel_data_update,
 ## nothing to change here.
 func _apply_player_gameplay_props(player_node: Node, data: Dictionary) -> void:
+	# TEMP DEBUG (dialog): pairs with the "[dialog] -> wire" print on the server. If that one fires and
+	# this one never does, Horizon is dropping the property. Remove with its server-side twin.
+	if data.has("conversation"):
+		print("[dialog] <- horizon: ", data["conversation"], " valid_node=", is_instance_valid(player_node))
 	if not is_instance_valid(player_node):
 		return
 	var props: Dictionary = data.duplicate()
@@ -701,6 +707,11 @@ func create_generic_object(event: Dictionary) -> void:
 
 	if props_list[object_type].has(object_id):
 		var prop_instance = props_list[object_type][object_id]
+		# Address the networking through the PropSync component when present; fall back to the root for
+		# props not yet migrated (incremental). get_parent()/tree ops stay on the root body.
+		var net = PropSync.of(prop_instance)
+		if net == null:
+			net = prop_instance
 		# manage special case for new parent (only when it actually changes — parent_id rides the
 		# 30/s zone-0 channel, so reapplying it every frame would churn the carry).
 		if object_data.has("parent_id"):
@@ -710,11 +721,11 @@ func create_generic_object(event: Dictionary) -> void:
 				# where it is — do NOT detach a bed-riding crate just because its truck wasn't found
 				# for one frame (GORC zone churn at speed), or it stops following the truck.
 				if parent != null and prop_instance.get_parent() != parent:
-					prop_instance.client_parent_change(parent)
+					net.client_parent_change(parent)
 			elif prop_instance.get_parent() != universe_scene:
-				prop_instance.client_parent_change(universe_scene)
+				net.client_parent_change(universe_scene)
 		#print("client_channel_data_update (1) for existing object %s" % object_id)
-		prop_instance.client_channel_data_update(object_data)
+		net.client_channel_data_update(object_data)
 
 	else:
 		# The item does not exist yet. Merge any channel data buffered earlier so we decide
@@ -754,6 +765,11 @@ func create_generic_object(event: Dictionary) -> void:
 					% [object_data["scenename"], object_id])
 				return
 			var prop_instance = prop_scene.instantiate()
+			# Address networking via the PropSync component when present; fall back to the root
+			# (incremental migration). Physics/freeze stay on the root body.
+			var net = PropSync.of(prop_instance)
+			if net == null:
+				net = prop_instance
 			prop_instance.tree_entered.connect(func():
 				prop_instance.owner = get_tree().current_scene
 			)
@@ -761,10 +777,10 @@ func create_generic_object(event: Dictionary) -> void:
 			prop_instance.set_physics_process(false)
 			if prop_instance is RigidBody3D:
 				prop_instance.freeze = true
-			prop_instance.uuid = object_id
+			net.uuid = object_id
 
 			# client_channel_data_update must be called before parent for the position
-			prop_instance.client_channel_data_update(object_data)
+			net.client_channel_data_update(object_data)
 
 			if parent != null:
 				parent.add_child(prop_instance)
@@ -862,20 +878,25 @@ func update_generic_object(event: Dictionary) -> void:
 			if not is_instance_valid(prop_instance):
 				props_list[object_type].erase(object_id)
 				return
+			# Address networking via the PropSync component when present; fall back to the root
+			# (incremental migration). get_parent()/tree ops stay on the root body.
+			var net = PropSync.of(prop_instance)
+			if net == null:
+				net = prop_instance
 			# Reparent ONLY when the parent actually changes. parent_id rides zone 0 (30/s), so without
 			# this guard we'd reparent every prop every frame (spam + churn that fights the carry).
 			if object_data.has("parent_id"):
 				if object_data["parent_id"] != "":
 					var parent = _search_parent_node(object_data["parent_id"])
 					if parent != null and prop_instance.get_parent() != parent:
-						prop_instance.client_parent_change(parent)
+						net.client_parent_change(parent)
 				elif prop_instance.get_parent() != universe_scene:
 					# parent_id "" -> dropped to the world root. Reparent, else it stays stuck under
 					# its old parent (truck/player) on the client (it was never moved back).
-					prop_instance.client_parent_change(universe_scene)
+					net.client_parent_change(universe_scene)
 
 			#print("client_channel_data_update (5) for existing object %s" % object_id)
-			prop_instance.client_channel_data_update(object_data)
+			net.client_channel_data_update(object_data)
 		else:
 			print("Update generic object but not found: %s" % object_id)
 	else:

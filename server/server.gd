@@ -126,6 +126,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
+	'scenes/_universe/structures/industrial/cargo_depot.tscn':
+		preload('res://scenes/_universe/structures/industrial/cargo_depot.tscn'),
 }
 
 var debug_message_number: int = 0
@@ -409,8 +411,8 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	if best_planet == null:
 		if _pin_debug_logged < PIN_DEBUG_MAX:
 			_pin_debug_logged += 1
-			print("[Pin] no planet near body at ", body_pos,
-				" (closest planets: ", _debug_closest_planets(body_pos, 3), ")")
+			# print("[Pin] no planet near body at ", body_pos,
+			# 	" (closest planets: ", _debug_closest_planets(body_pos, 3), ")")
 		return
 	var local := body_pos - best_planet.global_position
 	if local.length_squared() < 1.0e-6:
@@ -451,8 +453,8 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	if _pin_debug_logged < PIN_DEBUG_MAX:
 		_pin_debug_logged += 1
 		var alt: float = sqrt(best_dist_sq) - best_planet.planet_data.radius
-		print("[Pin] body at ", body_pos, " → planet '", best_planet.name,
-			"' alt=", alt, " m  nside=", nside, " chunks=", pin_ipix.size())
+		# print("[Pin] body at ", body_pos, " → planet '", best_planet.name,
+		# 	"' alt=", alt, " m  key=", key)
 
 
 ## Helper for debug log: list the N closest planets and their distances.
@@ -913,6 +915,9 @@ func create_player(event: Dictionary) -> void:
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
 
+	if player_data.has("is_npc") and player_data["is_npc"] == true:
+		spawned_entity_instance.is_npc = true
+
 	var parented = false
 	if player_data["parent_id"] != "":
 		var parent = _search_parent_node(player_data["parent_id"])
@@ -951,6 +956,18 @@ func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
 	var object_data = event["data"]["object_data"]
 
+	# Idempotency guard: a prop can be requested twice for the SAME uuid — e.g. a designer-placed
+	# mining_depot is both echoed from persistence (Horizon) AND self-spawned by its in-scene
+	# placeholder with the same deterministic uuid. Creating it twice leaves two overlapping bodies at
+	# the same (planet-scale) spot. Never create a uuid we already have.
+	var _existing_uuid = event["data"].get("object_uuid", "")
+	var _existing_type = event["data"].get("object_type", "")
+	if _existing_uuid != "" and props_list.has(_existing_type) \
+			and props_list[_existing_type].has(_existing_uuid) \
+			and is_instance_valid(props_list[_existing_type][_existing_uuid]):
+		push_warning("[Server] create_generic_object: skipping duplicate uuid=%s type=%s (already created)" % [_existing_uuid, _existing_type])
+		return
+
 	if object_data.has("parent_id"):
 		if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
 			# store pending message
@@ -972,9 +989,15 @@ func create_generic_object(event: Dictionary) -> void:
 		return
 
 	var spawnable_prop_instance = prop_scene.instantiate()
+	# Address the networking through the PropSync component when the prop has one; fall back to the root
+	# for props not yet migrated to the component (so migration is incremental). Body-level ops
+	# (physics/freeze/transform/props_list) stay on the root; only the contract (uuid/signals/data) moves.
+	var net = PropSync.of(spawnable_prop_instance)
+	if net == null:
+		net = spawnable_prop_instance
 	spawnable_prop_instance.set_physics_process(false)
-	spawnable_prop_instance.client_channel_data_update(object_data)
-	spawnable_prop_instance.uuid = event["data"]["object_uuid"]
+	net.client_channel_data_update(object_data)
+	net.uuid = event["data"]["object_uuid"]
 	spawnable_prop_instance.tree_entered.connect(func():
 		spawnable_prop_instance.owner = get_tree().current_scene
 	)
@@ -984,6 +1007,8 @@ func create_generic_object(event: Dictionary) -> void:
 			var parent = _search_parent_node(object_data["parent_id"])
 			if parent != null:
 				parent.add_child(spawnable_prop_instance)
+				if parent.has_method("request_nav_rebake"):
+					parent.request_nav_rebake()
 			else:
 				universe_scene.add_child(spawnable_prop_instance)
 		else:
@@ -991,18 +1016,18 @@ func create_generic_object(event: Dictionary) -> void:
 	else:
 		universe_scene.add_child(spawnable_prop_instance)
 
-	if spawnable_prop_instance.has_signal("hs_server_prop_update"):
-		spawnable_prop_instance.connect("hs_server_prop_update", _on_prop_update)
+	if net.has_signal("hs_server_prop_update"):
+		net.connect("hs_server_prop_update", _on_prop_update)
 	else:
 		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_update (type=%s)" \
 			% [object_data["scenename"], spawnable_prop_instance.get_class()])
-	if spawnable_prop_instance.has_signal("hs_server_prop_delete"):
-		spawnable_prop_instance.connect("hs_server_prop_delete", _on_prop_delete)
+	if net.has_signal("hs_server_prop_delete"):
+		net.connect("hs_server_prop_delete", _on_prop_delete)
 	else:
 		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_delete (type=%s)" \
 			% [object_data["scenename"], spawnable_prop_instance.get_class()])
 	# Must be after signals in case call signals if modifications done in client_channel_data_update
-	spawnable_prop_instance.client_channel_data_update(object_data)
+	net.client_channel_data_update(object_data)
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
@@ -1057,7 +1082,10 @@ func update_generic_object(event: Dictionary) -> void:
 	var type = event["data"]["object_type"]
 	if props_list[type].has(event["data"]["object_uuid"]):
 		var object = props_list[type][event["data"]["object_uuid"]]
-		object.client_channel_data_update(event["data"]["object_data"])
+		var net = PropSync.of(object)
+		if net == null:
+			net = object
+		net.client_channel_data_update(event["data"]["object_data"])
 
 
 func _search_parent_node(parent_id: String) -> Node:
@@ -1088,10 +1116,19 @@ func _on_player_update(
 		"event": "update_object",
 		"data": [entry]
 	}
+	# TEMP DEBUG (dialog): prove whether the line reaches the websocket, i.e. whether the gap is
+	# server-side or Horizon-side. Remove once the conversation replication is settled.
+	if entry.has("conversation"):
+		print("[dialog] -> wire: ", JSON.stringify(message))
 	ServerNetwork.send_message(message, "player_update")
 
 func remove_player(event: Dictionary) -> void:
 	var player_uuid = event["data"]["object_uuid"]
+	# Self-healing backstop: if this (PNJ) player owned a depot's reception role, free it so the
+	# role never stays stuck on a gone owner. The depots register in the "cargo_depots" group.
+	for depot in get_tree().get_nodes_in_group("cargo_depots"):
+		if depot.has_method("clear_reception_owner_if"):
+			depot.clear_reception_owner_if(player_uuid)
 	if players_list.has(player_uuid):
 		var player = players_list[player_uuid]
 		print("player has quit the game: %s" % player_uuid)

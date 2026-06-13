@@ -1,6 +1,8 @@
 extends StaticBody3D
 
-signal hs_server_prop_update
+## Networked mining depot. Networking (uuid, replication, reparent, delete) lives in the PropSync child
+## node (type_name "mining_depot", non-carriable); machine state is applied via apply_prop_data(), and
+## server-side state updates go out via server_prop_update() which forwards to the PropSync component.
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## The crate the depot packs its ore into. It replicates as the "crate_container" TYPE (that def is
@@ -15,11 +17,17 @@ const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
 ## Set a unique string only if you want a readable id or to keep identity when moving it.
 @export var stable_id: String = ""
 
-var uuid: String = ""
-var has_parent: bool = false
-var type_name = "mining_depot"
-var spawn_position
+var type_name = "mining_depot"  # kept for the placeholder self-spawn; PropSync carries the networked copy
 var state := "idle"
+
+var uuid: String:
+	get:
+		var s := PropSync.of(self)
+		return s.uuid if s != null else ""
+	set(value):
+		var s := PropSync.of(self)
+		if s != null:
+			s.uuid = value
 var rocks_on_conveyor := 0
 # Refining stats (volumes in m3). rock_volume = total rock processed; ore_volume = total
 # ore obtained from it; extracted_volume = ore already packed into crates. Available ore
@@ -116,10 +124,17 @@ func _ready() -> void:
 			})
 
 		queue_free()
+		return  # placeholder is done; don't wire detectors on the node we just freed
 
 	if GameOrchestrator.is_server():
-		box_detector.body_exited.connect(box_exited)
-		rock_detector.body_exited.connect(_on_rock_exited)
+		if box_detector != null:
+			box_detector.body_exited.connect(box_exited)
+		else:
+			push_warning("[mining_depot] $BoxDetector missing, skipped body_exited connect")
+		if rock_detector != null:
+			rock_detector.body_exited.connect(_on_rock_exited)
+		else:
+			push_warning("[mining_depot] $RockDetector missing, skipped body_exited connect")
 
 ## Build a deterministic, valid-format uuid from a seed string. Same seed -> same uuid
 ## across restarts, so the depot is upserted (not duplicated) and Horizon can resolve it.
@@ -272,44 +287,16 @@ func _collect_rock(rock: Node) -> void:
 		ore_volume += rock.get_ore_volume()
 	rock.queue_free()
 
+# Server-side state update: forward to the PropSync component, preserving the {"data": ...} envelope
+# that the client half (apply_prop_data) expects. PropSync emits it with the depot's uuid/type_name.
 func server_prop_update(data):
-	server_send_properties_to_client({
-		"data": data
-	})
+	var s := PropSync.of(self)
+	if s != null:
+		s.server_prop_update({"data": data})
 
-
-# Send the properties of the entity from godot server to horizon / client
-func server_send_properties_to_client(data: Dictionary):
-	emit_signal(
-		"hs_server_prop_update",
-		uuid,
-		data,
-		type_name,
-		has_parent
-	)
-
-# Reparent on the client when the prop is spawned under a parent (e.g. the planet).
-func client_parent_change(parent: Node) -> void:
-	reparent(parent)
-	has_parent = true
-
-# receive the properties sent by the server part (Horizon / godot server)
-# this function is used to update the properties of the entity on client side
-func client_channel_data_update(_data: Dictionary) -> void:
-	# sync position + rotation on spawn
-	if _data.has("position"):
-		position = Vector3(
-			_data["position"]["x"],
-			_data["position"]["y"],
-			_data["position"]["z"]
-		)
-	if _data.has("rotation"):
-		rotation = Vector3(
-			_data["rotation"]["x"],
-			_data["rotation"]["y"],
-			_data["rotation"]["z"]
-		)
-
+# PropSync applies the replicated transform, then calls this with the full payload so the depot can
+# apply its own machine state. Replaces the old client_channel_data_update override.
+func apply_prop_data(_data: Dictionary) -> void:
 	# sync state from server with client (guard: a generic spawn may omit "data")
 	if _data.has("data"):
 		var metadata = _data["data"]

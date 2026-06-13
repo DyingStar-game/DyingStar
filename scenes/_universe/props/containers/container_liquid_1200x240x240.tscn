@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_kpms3"]
 [ext_resource type="PackedScene" uid="uid://c8vdlxx3q061o" path="res://assets/_universe/props/containers/container_liquid_1200x240x240.glb" id="2_kpms3"]
 [ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_wt53u"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_wt53u"]
 size = Vector3(12, 2.4, 2.4)
@@ -11,6 +12,11 @@ size = Vector3(12, 2.4, 2.4)
 collision_layer = 8
 collision_mask = 15
 script = ExtResource("1_kpms3")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "box"
+enable_carry = false
 
 [node name="container_liquid_1200x240x241" parent="." unique_id=202993910 instance=ExtResource("2_kpms3")]
 

@@ -2,6 +2,7 @@
 
 [ext_resource type="Shader" uid="uid://durhtjxk5p1iv" path="res://scenes/_universe/environment/space/star.gdshader" id="1_vjfk0"]
 [ext_resource type="Script" uid="uid://dp07n642aeivi" path="res://scenes/_universe/environment/space/star.gd" id="2_e8616"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_7jski"]
 
@@ -18,3 +19,9 @@ custom_aabb = AABB(-5000, -5000, -5000, 5000, 5000, 5000)
 mesh = SubResource("QuadMesh_7jski")
 surface_material_override/0 = SubResource("ShaderMaterial_goixn")
 script = ExtResource("2_e8616")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "star"
+enable_carry = false
+

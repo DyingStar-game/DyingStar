@@ -74,6 +74,8 @@ events = [SubResource("InputEventKey_2sxo3")]
 collision_layer = 2
 collision_mask = 15
 script = ExtResource("1_ll2l8")
+walk_speed = 5.0
+sprint_speed = 10.0
 carry_offset = Vector3(0, -1, -0.995)
 sfx_torch_on = ExtResource("2_genst")
 sfx_torch_on_distance = 5.0
@@ -555,6 +557,8 @@ sfx_perforate_end = ExtResource("44_iwuka")
 sfx_perforate_fail = ExtResource("45_hyqqp")
 sfx_equip = ExtResource("44_ttakn")
 sfx_unequip = ExtResource("44_ttakn")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="." unique_id=1679147716]
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

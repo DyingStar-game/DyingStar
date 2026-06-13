@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_npol7"]
 [ext_resource type="PackedScene" uid="uid://cyqghrp2p6v83" path="res://assets/_universe/props/containers/pallet_benne_120x80x100.glb" id="2_g2tyo"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_npol7"]
 size = Vector3(1.2, 1, 0.8)
@@ -12,6 +13,11 @@ collision_mask = 15
 mass = 200.0
 freeze = true
 script = ExtResource("1_npol7")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "box"
+enable_carry = false
 
 [node name="pallet_benne_120x80x100" parent="." unique_id=1487787210 instance=ExtResource("2_g2tyo")]
 

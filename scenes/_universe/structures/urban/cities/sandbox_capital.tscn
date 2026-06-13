@@ -27,6 +27,7 @@
 [ext_resource type="PackedScene" uid="uid://dqbngk5x7vnma" path="res://assets/_universe/structures/buildings/habitat_square_container.glb" id="26_0ulh1"]
 [ext_resource type="PackedScene" uid="uid://dxajkuw7y5byw" path="res://scenes/_universe/props/containers/test_containers_6x2.6.tscn" id="27_w88le"]
 [ext_resource type="PackedScene" uid="uid://bk3qu7kpd2xa8" path="res://scenes/_universe/props/containers/test_containers_12x2.6.tscn" id="28_npgr1"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
 rayleigh_coefficient = 2.5
@@ -113,8 +114,12 @@ resource_name = "metal"
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
 size = Vector3(0.44462238568098655, 1.6645963120454326, 0.6993179991577563)
 
-[node name="SandoxCapital" type="StaticBody3D" unique_id=300574500]
+[node name="SandoxCapital" type="StaticBody3D" unique_id=300574500 groups=["navigation_mesh"]]
 script = ExtResource("1_hvdt3")
+
+[node name="PropSync" type="Node" parent="." unique_id=63681902]
+script = ExtResource("propsync_ds")
+type_name = "city"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=745429944]
 environment = SubResource("Environment_sky")
@@ -122,7 +127,7 @@ environment = SubResource("Environment_sky")
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1121.2927777104087, -24.999999999999886, 0.8867248943877541)
 calculate_tangents = false
-use_collision = true
+use_collision = false
 size = Vector3(2755.928776162543, 50, 5000)
 material = ExtResource("3_16y2p")
 
@@ -170,8 +175,8 @@ size = Vector3(48.28, 0.12, 6)
 material = ExtResource("5_khu6c")
 
 [node name="CSGBox3D5" type="CSGBox3D" parent="Roads" unique_id=1709112232]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.820000000006985, 0, -32.63999999999942)
-size = Vector3(48.28, 0.12, 6)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.87971656798618, 0, -32.63999999999942)
+size = Vector3(71.67942722873318, 0.12, 6)
 material = ExtResource("5_khu6c")
 
 [node name="CSGBox3D4" type="CSGBox3D" parent="Roads" unique_id=928542230]

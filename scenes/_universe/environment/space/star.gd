@@ -1,9 +1,17 @@
 extends MeshInstance3D
 
-signal hs_server_prop_update
-signal hs_server_prop_delete
+## Networked star (client-side display object). All networking lives in the PropSync child node
+## (type_name "star", non-carriable) — see the scene. The body exposes `uuid` so it can be resolved as
+## a networked parent by uuid.
 
-@export var uuid: String = ""
+var uuid: String:
+	get:
+		var s := PropSync.of(self)
+		return s.uuid if s != null else ""
+	set(value):
+		var s := PropSync.of(self)
+		if s != null:
+			s.uuid = value
 
 var spawn_position: Vector3 = Vector3.ZERO
 

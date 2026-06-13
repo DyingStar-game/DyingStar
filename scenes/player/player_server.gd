@@ -46,6 +46,10 @@ const CARRY_FREE_ROTATE_GAIN := 6.0
 ## Dev spawn wheel: how far above / below the aimed point we look for the ground (m). Generous enough
 ## for a slope or a step in front of us, short enough that a miss means "there really is nothing here".
 const GROUND_SEARCH := 30.0
+## Seconds a dialog line stays up before the queue releases the next one (see _server_update_dialog).
+const _DIALOG_LINE_INTERVAL := 4.0
+## Max distance (m) between the player and a shelf for a drop to snap into it (see _shelf_for_drop).
+const _SHELF_DROP_RANGE := 4.0
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -99,6 +103,87 @@ var _stepping: bool = false
 var _step_start: Vector3 = Vector3.ZERO
 var _step_end: Vector3 = Vector3.ZERO
 var _step_time: float = 0.0
+
+# Dialog — a "dialog" action does NOT go on the wire straight away: the AI can push a whole
+# conversation in one burst, and replicating it as fast as it arrives would leave only the last line
+# on screen. Lines queue here instead and _server_update_dialog releases the OLDEST one every
+# _DIALOG_LINE_INTERVAL seconds, so they read one after the other.
+## Lines still waiting to be said, oldest first (FIFO).
+var _dialog_queue: Array[String] = []
+## Seconds left before the current line is replaced by the next one (or cleared).
+var _dialog_timer: float = 0.0
+## True while a line is on the clients' screens, i.e. while we still owe them a clearing null. This is
+## what stops the empty queue from re-sending that null every 2 s forever.
+var _dialog_active: bool = false
+
+# NPC — the `is_npc` flag and `npc_go_to_position` target live on the Player facade (set by server.gd
+# / external AI); everything below is server-only working state owned by this role.
+var _npc_path_retry_timer: float = 0.0
+## Throttle for the temporary _NPC_DEBUG report.
+var _npc_debug_timer: float = 0.0
+var _npc_prev_pos: Vector3 = Vector3.ZERO
+var _npc_stuck_timer: float = 0.0
+## Runtime-baked navigation coverage for this NPC, driven straight through the NavigationServer rather
+## than a NavigationRegion3D node — a node would inherit its parent's transform and drag the mesh out to
+## the planet's coordinates, which is exactly what must not happen (see _npc_to_nav). RID() until the
+## NPC first receives a destination.
+var _npc_nav_region: RID = RID()
+## The last successfully baked mesh (kept for diagnostics; the server holds its own copy).
+var _npc_nav_mesh: NavigationMesh = null
+## Current path, in NAV SPACE, and how far along it we are. Replaces NavigationAgent3D, which cannot be
+## used here: it starts every query from its parent's global_position — the very 1e10 coordinate that
+## breaks the navigation server's polygon connectivity.
+var _npc_path: PackedVector3Array = PackedVector3Array()
+var _npc_path_idx: int = 0
+## Surface-aligned frame the region is baked in and parented to (see _npc_surface_frame). Re-anchored on
+## the NPC at each bake so Recast's hard-coded +Y-is-up holds on a curved planet.
+var _npc_nav_frame: Node3D = null
+## Private navigation map holding ONLY this NPC's runtime bake (see _ensure_npc_nav_region).
+var _npc_nav_map: RID = RID()
+## World-space center of the last bake; we re-bake once the NPC wanders past _NPC_NAV_REBAKE_DIST of it.
+var _npc_nav_bake_center = null
+## World-space goal the last bake was sized to hold; a goal that moves away from it forces a re-bake.
+var _npc_nav_bake_goal = null
+## True while an async bake is in flight, so we don't queue a second one on top.
+var _npc_nav_baking: bool = false
+
+## Half-extent (m) of the cube baked around the NPC. Kept small so baking planet-scale terrain stays
+## cheap; the NPC re-bakes as it travels.
+const _NPC_NAV_HALF_EXTENT: float = 30.0
+## Distance (m) from the last bake center past which we bake a fresh region ahead of the NPC.
+const _NPC_NAV_REBAKE_DIST: float = 18.0
+## Furthest the bake box reaches toward the goal. A goal beyond this is aimed at through the box edge:
+## the NPC walks there, the next bake carries it further. Bounds the voxelized volume.
+const _NPC_NAV_MAX_EXTENT: float = 60.0
+## Slack (m) around the NPC↔goal box, so neither endpoint lands on an eroded border of the mesh.
+const _NPC_NAV_GOAL_MARGIN: float = 4.0
+## Vertical half-height (m) of the bake box around the NPC/goal. Both stand on the ground, so a taller
+## box only voxelizes empty sky (and the box is per-NPC, per-rebake — it has to stay cheap).
+const _NPC_NAV_VERTICAL: float = 8.0
+## How close (m, measured in the ground plane) the NPC must get to a path waypoint before we move on to
+## the next one. Roughly the body radius — tighter makes it wobble around corners.
+const _NPC_WAYPOINT_REACHED: float = 0.5
+## Ground-plane distance to the GOAL under which the NPC counts as arrived (and we notify the brain).
+## Deliberately looser than _NPC_WAYPOINT_REACHED: the goal can sit slightly off the navmesh, so the last
+## reachable waypoint may stop us a bit short — this must forgive that gap, or arrival never fires.
+const _NPC_ARRIVED_DIST: float = 1.5
+## NPC ground speed (m/s). Deliberately its OWN value, not player.walk_speed — a player's walk_speed is
+## tuned for the owner (5 m/s in the scene) and made NPCs sprint; NPCs walk at this steady pace instead.
+const _NPC_WALK_SPEED: float = 2.0
+## How sharply the body turns toward the walk direction (exponential smoothing rate, 1/s). ~8 settles a
+## 90° turn in about half a second; higher snaps, lower feels like a boat.
+const _NPC_TURN_SHARPNESS: float = 8.0
+## Furthest the stuck recovery may teleport an NPC onto the navmesh. Kept ~a body width: the snap skips
+## collision, so anything beyond "the mesh I'm already standing on" tunnels it through walls.
+const _NPC_STUCK_SNAP_MAX: float = 1.5
+## Group the bake TRAVERSES for source geometry. The NPC's own parent is added to it automatically (see
+## _ensure_npc_nav_region) — this is not a scene-authoring hook, it exists because GROUPS_WITH_CHILDREN
+## is the only source mode that lets us walk the world while emitting geometry in a different frame.
+const _NPC_NAV_SOURCE_GROUP: StringName = &"npc_nav_source"
+## Physics layers the bake voxelizes: world | vehicle | prop — everything solid EXCEPT the player layer,
+## which must stay out or the NPC (and every other player standing nearby) would bake its own capsule in
+## as an obstacle. Same set the line-of-sight rays treat as solid.
+const _NPC_NAV_COLLISION_MASK: int = Globals.MASK_OBSTACLE
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -332,6 +417,85 @@ func server_action_received(data: Dictionary) -> void:
 					if not inside_d:  # operated ON FOOT -> play the reach-out gesture for everyone
 						_emote_count += 1
 						player.server_send_properties_to_client({"action": "emote:interact:%d" % _emote_count})
+		"npc_go_to_position":
+			# Server-authoritative: set the NPC's target position (the AI sets it on the Player facade,
+			# then this role drives the body toward it). The AI can change it at any time, and the NPC
+			# will re-path to it.
+			player.is_npc = true
+			if player.is_npc:
+				# Walking owns the body orientation (_npc_face): drop any pending facing goal.
+				player.npc_face_position = null
+				var pos: Dictionary = data.get("position", {})
+				var ref_uuid = data.get("uuid", null)
+				var npc_position = Vector3(pos.get("x", 0.0), pos.get("y", 0.0), pos.get("z", 0.0))
+				if ref_uuid == null or str(ref_uuid) == "":
+					# No reference given: the position already is in the NPC's own referential.
+					player.npc_go_to_position = npc_position
+				else:
+					# The position is local to the referenced object (a building, a vehicle, ...):
+					# rebase it onto the NPC parent's referential so the target and the body share a frame.
+					var ref_node := _find_node_by_uuid(get_tree().get_root(), str(ref_uuid))
+					if ref_node is Node3D:
+						var world_pos: Vector3 = (ref_node as Node3D).global_transform * npc_position
+						var npc_parent = player.get_parent()
+						player.npc_go_to_position = (npc_parent as Node3D).global_transform.affine_inverse() * world_pos \
+								if npc_parent is Node3D else world_pos
+					else:
+						push_warning("npc_go_to_position: no Node3D found for uuid %s" % str(ref_uuid))
+		"npc_face_position":
+			# Server-authoritative: pivot the STANDING NPC toward a point. Same payload contract
+			# as npc_go_to_position ({uuid, position}: position local to the referenced object).
+			# The turn itself runs in _npc_update_face_target — around the body's own up axis, so
+			# it stays upright in any gravity frame; the brain sending absolute Euler rotations
+			# is exactly what used to lay the body down.
+			if player.is_npc:
+				var fpos: Dictionary = data.get("position", {})
+				var fref = data.get("uuid", null)
+				var face_position = Vector3(fpos.get("x", 0.0), fpos.get("y", 0.0), fpos.get("z", 0.0))
+				if fref == null or str(fref) == "":
+					player.npc_face_position = face_position
+				else:
+					var fref_node := _find_node_by_uuid(get_tree().get_root(), str(fref))
+					if fref_node is Node3D:
+						var face_world: Vector3 = (fref_node as Node3D).global_transform * face_position
+						var face_parent = player.get_parent()
+						player.npc_face_position = (face_parent as Node3D).global_transform.affine_inverse() * face_world \
+								if face_parent is Node3D else face_world
+					else:
+						push_warning("npc_face_position: no Node3D found for uuid %s" % str(fref))
+		"npc_arrived_ack":
+			# The brain confirms it consumed the arrival notice. npc_arrived is a MERGED property (a
+			# state, not an event), so it stays true until cleared — reset it and replicate the clear,
+			# otherwise the next journey would start with a stale npc_arrived == true. See
+			# _npc_notify_arrived.
+			if player.is_npc:
+				player.server_send_properties_to_client({"npc_arrived": false})
+		"claim_reception":
+			# A magasinier PNJ asks to take the reception role at a depot ({uuid: depot}). The depot
+			# grants it only when free (atomic on this single-threaded server); the PNJ learns the
+			# outcome from the replicated reception_owner property, so no reply is sent here.
+			if player.is_npc:
+				var depot_uuid = data.get("uuid", null)
+				if depot_uuid != null and str(depot_uuid) != "":
+					var depot := _find_node_by_uuid(get_tree().get_root(), str(depot_uuid))
+					if depot != null and depot.has_method("try_claim_reception"):
+						depot.try_claim_reception(player.client_uuid)
+					else:
+						push_warning("claim_reception: no depot with try_claim_reception for uuid %s" % str(depot_uuid))
+		"release_reception":
+			# The owning PNJ hands the reception role back (going off-shift, to a meal…). No-op on the
+			# depot unless this PNJ is the current owner.
+			if player.is_npc:
+				var rel_uuid = data.get("uuid", null)
+				if rel_uuid != null and str(rel_uuid) != "":
+					var rel_depot := _find_node_by_uuid(get_tree().get_root(), str(rel_uuid))
+					if rel_depot != null and rel_depot.has_method("release_reception"):
+						rel_depot.release_reception(player.client_uuid)
+		"dialog":
+			# Queue only — _server_update_dialog owns the pacing and the actual send.
+			var text = data.get("text", null)
+			if text != null and str(text) != "":
+				_dialog_queue.append(str(text))
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
@@ -351,6 +515,12 @@ func server_action_received(data: Dictionary) -> void:
 					var prev_parent = parent_node.get_parent()
 					if prev_parent.has_method("release_cargo"):
 						prev_parent.release_cargo(parent_node)
+					# If it was stored in a shelf slot, free that slot (the crate is parented to the world,
+					# not the shelf, so the release goes through the meta the shelf left on it, not prev_parent).
+					if parent_node.has_meta("shelf_ref"):
+						var stored_shelf = parent_node.get_meta("shelf_ref")
+						if is_instance_valid(stored_shelf) and stored_shelf.has_method("release_slot"):
+							stored_shelf.release_slot(parent_node)
 					# Carry it as a real DYNAMIC body so the physics engine owns its position: it then collides
 					# NATURALLY with the ground, walls and vehicles (blocked by them) and pushes lighter props —
 					# no manual clamping. Gravity is off + no sleeping while held; the carrier is excepted so it
@@ -502,6 +672,10 @@ func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:
 ## Recursive search for a node whose `uuid` matches (server-side helper).
 func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
+		# The uuid now lives on the PropSync component (a plain Node); callers
+		# want the spatial host, so hop to its Node3D parent.
+		if node is PropSync:
+			return node.get_parent()
 		return node
 	for child in node.get_children():
 		var found: Node = _find_node_by_uuid(child, target_uuid)
@@ -564,18 +738,28 @@ func _physics_process(delta: float) -> void:
 	if _stepping:
 		_server_update_step(delta)  # a smooth step-up glide is in progress
 		return
+	# Before the seat / NPC early-returns below: an NPC returns out of this function, and an NPC is
+	# precisely who does the talking.
+	_server_update_dialog(delta)
 	if player.piloting and is_instance_valid(player._seat_node):
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
 		player.new_input_from_server = false
 		var seat_p: Vector3 = snapped(player.position, Vector3(0.001, 0.001, 0.001))
-		var seat_r: Vector3 = snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+		var seat_r: Vector3 = snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001))
 		player.emit_signal("hs_server_move", player.client_uuid, seat_p, seat_r, null, player.is_parented)
 		return
+
+	# NPC: server-driven pathfinding replaces client input. Runs in its own branch because an NPC never
+	# sets new_input_from_server (that flag only fires for real replicated client input).
+	if player.is_npc:
+		_npc_physics_process(delta)
+		return
+
 	if player.new_input_from_server:
 		player.input_direction = player.input_from_server["input_direction"]
-		player.global_rotation = player.input_from_server["rotation"]
+		player.rotation = player.input_from_server["rotation"]  # LOCAL rotation (planet-relative), see player_client send
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
@@ -588,7 +772,7 @@ func _physics_process(delta: float) -> void:
 			"hs_server_move",
 			player.client_uuid,
 			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-			snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
 			null,
 			player.is_parented)
 		return
@@ -708,7 +892,7 @@ func _physics_process(delta: float) -> void:
 		"hs_server_move",
 		player.client_uuid,
 		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
 		null,
 		player.is_parented
 	)
@@ -850,6 +1034,601 @@ func _server_eva_move(delta: float) -> void:
 	else:
 		player.velocity = Vector3.ZERO
 	player.global_position += player.velocity * delta
+
+## NPC server tick: keep the body on the floor under gravity, then steer it along the nav path toward
+## player.npc_go_to_position (baking walkable coverage around it on demand) with stuck recovery. Drives
+## the body from the NavigationAgent3D instead of replicated client input. Gravity-frame aware: "down"
+## is player.up_direction (radial on a planet), so steering happens in the ground plane, not world XZ.
+func _npc_physics_process(delta: float) -> void:
+	# Gravity, mirroring the non-NPC setup so the NPC settles onto whatever body it stands on.
+	var grav_area: Node3D = player.get_current_gravity_parent()
+	if grav_area:
+		if grav_area.gravity_point:
+			player.up_direction = grav_area.global_position.direction_to(player.global_position)
+		else:
+			player.up_direction = grav_area.global_basis.y
+		player.gravity = player._compute_gravity(grav_area)
+	else:
+		player.up_direction = Vector3.UP
+		player.gravity = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
+	# Apply gravity ALWAYS (even on the floor) so the capsule stays pressed onto the terrain trimesh and
+	# is_on_floor() stays true — this is the SAME fix the on-foot path uses (see the "Add gravity ALWAYS"
+	# block above). Gating gravity on "not is_on_floor()" and zeroing the downward velocity on the floor
+	# makes a near-zero-motion move_and_slide lose floor contact for a tick, drop one dose of gravity,
+	# re-contact, zero again — the ~1 cm idle "dance" that made every NPC bob in place forever.
+	player.velocity -= player.up_direction * player.gravity * 2.0 * delta
+
+	var _vertical: Vector3 = player.up_direction * player.velocity.dot(player.up_direction)
+
+	# No destination: bleed off horizontal speed, keep gravity, turn toward a
+	# pending facing goal, replicate.
+	if player.npc_go_to_position == null:
+		var _horiz: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
+		player.velocity = _horiz + _vertical
+		player.move_and_slide()
+		_npc_update_face_target(delta)
+		_npc_emit_move()
+		return
+
+	# Make sure there is baked coverage around / ahead of us to path on.
+	_ensure_npc_nav_region()
+
+	if _NPC_DEBUG:
+		_npc_debug_timer -= delta
+		if _npc_debug_timer <= 0.0:
+			_npc_debug_timer = 2.0
+			_npc_debug_report()
+
+	# Re-issue the route periodically: the mesh may still have been baking last time, the goal can move,
+	# and the bake box re-centres as we travel.
+	_npc_path_retry_timer -= delta
+	if _npc_path_retry_timer <= 0.0:
+		_npc_path_retry_timer = 1.0
+		_npc_repath()
+
+	var _next = _npc_next_path_point()
+	if _next == null:
+		# No more waypoints. This fires BOTH on real arrival AND when there is simply no route yet (mesh
+		# still baking / goal genuinely unreachable), so we can't treat it as "arrived" on its own — gate
+		# on the actual ground-plane distance to the goal before notifying.
+		if _npc_ground_dist_to_goal() <= _NPC_ARRIVED_DIST:
+			_npc_notify_arrived()
+		# Either way, bleed off horizontal speed and hold (gravity still owns the vertical axis).
+		var _idle: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
+		player.velocity = _idle + _vertical
+		player.move_and_slide()
+		_npc_emit_move()
+		return
+
+	# Steer toward the next path point in the ground plane; gravity owns the vertical axis.
+	var _to_dest: Vector3 = (_next as Vector3) - player.global_position
+	_to_dest -= player.up_direction * _to_dest.dot(player.up_direction)
+	var _direction := _to_dest.normalized()
+	_npc_face(_direction, delta)
+	player.velocity = _direction * _NPC_WALK_SPEED + _vertical
+	player.move_and_slide()
+
+	_npc_update_stuck(delta)
+	_npc_emit_move()
+
+## NPC pathing diagnostics — prints every 2 s while an NPC has a goal it has not reached (mesh/island
+## reachability, bake box, reparent frames...). Costs several nav queries per report: keep off outside
+## debugging sessions.
+const _NPC_DEBUG: bool = false
+
+## Dump why the NPC is (not) pathing. The decisive numbers are `target off navmesh` — the target is not
+## on any baked polygon, so map_get_path can only return a PARTIAL path and the NPC stops at the nearest
+## reachable spot (a wall) — and `up vs +Y`: Recast always bakes assuming +Y is up IN THE REGION'S FRAME,
+## so on a planet, ground far from where radial up meets +Y rasterizes as an unwalkable slope.
+func _npc_debug_report() -> void:
+	var map: RID = _npc_map()
+	var target: Vector3 = _npc_target_global()
+	var near_npc := _npc_from_nav(NavigationServer3D.map_get_closest_point(map, _npc_to_nav(player.global_position)))
+	var near_target := _npc_from_nav(NavigationServer3D.map_get_closest_point(map, _npc_to_nav(target)))
+	var polys: int = 0
+	if _npc_nav_mesh != null:
+		polys = _npc_nav_mesh.get_polygon_count()
+	var path := NavigationServer3D.map_get_path(map, _npc_to_nav(player.global_position), _npc_to_nav(target), true)
+	var path_end_gap := -1.0
+	if path.size() > 0:
+		path_end_gap = _npc_from_nav(path[path.size() - 1]).distance_to(target)
+	var parent_name: String = str(player.get_parent().name) if player.get_parent() else "<none>"
+	# Recast's up is +Y IN THE FRAME IT BAKES IN — so measure against the bake frame's +Y, not the world's.
+	# (Measuring against Vector3.UP is meaningless here: the planet is tilted in the universe, so it reads
+	# ~65 deg even when the bake frame is perfectly aligned with the ground.)
+	var up_err: float = 0.0
+	if _npc_nav_frame != null:
+		up_err = rad_to_deg(player.up_direction.angle_to(_npc_nav_frame.global_transform.basis.y))
+	# Is the goal actually inside the region we baked? If not it lands on another region, or none, and
+	# the path query returns a stub.
+	var goal_in_box := "n/a"
+	if _npc_nav_frame != null and _npc_nav_mesh != null:
+		goal_in_box = "yes" if _npc_nav_mesh.filter_baking_aabb.has_point(_npc_to_nav(target)) else "NO <-- goal outside our bake box"
+	print("    goal inside our bake box: %s" % goal_in_box)
+	print("[NPC %s] parent=%s  goal(parent-local)=%s  goal(global)=%s" % [
+			player.name, parent_name, player.npc_go_to_position, target])
+	print("    npc_pos=%s  dist_to_goal=%.2f  regions_in_map=%d  our_navmesh_polys=%d" % [
+			player.global_position, player.global_position.distance_to(target),
+			NavigationServer3D.map_get_regions(map).size(), polys])
+	print("    navmesh under NPC : %.2f m away   |   navmesh under GOAL: %.2f m away %s" % [
+			near_npc.distance_to(player.global_position), near_target.distance_to(target),
+			"  <-- GOAL IS OFF THE NAVMESH (partial path -> stops at wall)" if near_target.distance_to(target) > 1.0 else ""])
+	# What is the NPC physically standing on, and where is its nearest navmesh relative to that? A mesh
+	# well BELOW the NPC means the surface it stands on produced NO navmesh (no collider on it, so a
+	# STATIC_COLLIDERS bake cannot see it) and the NPC snapped down to whatever lies underneath — which,
+	# inside a building, is a patch fenced in by that building's own shell and >agent_max_climb (0.4 m)
+	# below the doorway, hence an island it can never leave.
+	# Raycast rather than slide collisions: a resting body reports no slides, so slides read "airborne"
+	# for a stationary NPC. This asks the physics world directly what surface is under it, and whether
+	# that surface is even in the layer mask the bake voxelizes.
+	var _floor_desc := "<nothing within 3 m>"
+	var _space = player.get_world_3d().direct_space_state
+	var _q := PhysicsRayQueryParameters3D.create(
+			player.global_position + player.up_direction * 0.5,
+			player.global_position - player.up_direction * 3.0)
+	_q.collision_mask = _NPC_NAV_COLLISION_MASK
+	_q.exclude = [player.get_rid()]
+	var _hit: Dictionary = _space.intersect_ray(_q)
+	if not _hit.is_empty():
+		var _cn = _hit.collider
+		_floor_desc = "%s [%s] layer=%s  %.2f m below the NPC" % [_cn.name, _cn.get_class(),
+				str(_cn.collision_layer) if "collision_layer" in _cn else "?",
+				(player.global_position - _hit.position).dot(player.up_direction)]
+	var _off: Vector3 = near_npc - player.global_position
+	var _vert: float = _off.dot(player.up_direction)
+	var _horiz: float = (_off - player.up_direction * _vert).length()
+	print("    standing on: %s" % _floor_desc)
+	print("    nearest navmesh is %.2f m %s the NPC and %.2f m sideways  (agent_max_climb=0.40) %s" % [
+			absf(_vert), "BELOW" if _vert < 0.0 else "ABOVE", _horiz,
+			"  <-- NPC is not on its own navmesh" if absf(_vert) > 0.4 else ""])
+	print("    path_points=%d  path_ends_%.2f m_from_goal %s" % [path.size(), path_end_gap,
+			"  <-- PARTIAL PATH" if path_end_gap > 1.0 else ""])
+	# Which region actually owns the mesh under each end? "Both on mesh" means nothing if they are on
+	# two DIFFERENT regions — a query across unconnected regions returns exactly this 2-point stub.
+	var our_rid: RID = _npc_nav_region
+	var own_npc: RID = NavigationServer3D.map_get_closest_point_owner(map, _npc_to_nav(player.global_position))
+	var own_goal: RID = NavigationServer3D.map_get_closest_point_owner(map, _npc_to_nav(target))
+	print("    mesh owner: NPC=%s  GOAL=%s" % [
+			"ours" if own_npc == our_rid else "OTHER REGION", "ours" if own_goal == our_rid else "OTHER REGION"])
+	# Sample the straight line NPC->goal. Two DIFFERENT questions, and only the second one matters:
+	#   coverage    — is there mesh near this point? (proximity; blind to a wall splitting the mesh)
+	#   reachable   — can the NPC actually WALK there? (connectivity; this is what pathing needs)
+	# Mesh can be continuous by proximity and still be two islands with a wall between them.
+	var _steps := 24
+	var _map_line := ""
+	var _reach_line := ""
+	var _first_block := -1.0
+	var _last_ok := 0.0
+	for i in _steps + 1:
+		var _p: Vector3 = player.global_position.lerp(target, float(i) / float(_steps))
+		var _c := _npc_from_nav(NavigationServer3D.map_get_closest_point(map, _npc_to_nav(_p)))
+		var _o := NavigationServer3D.map_get_closest_point_owner(map, _npc_to_nav(_p))
+		if _c.distance_to(_p) > 1.5:
+			_map_line += "X"          # no navmesh here at all
+		elif _o == our_rid:
+			_map_line += "."          # our baked mesh
+		else:
+			_map_line += "o"          # a different region's mesh
+		var _pth := NavigationServer3D.map_get_path(map, _npc_to_nav(player.global_position), _npc_to_nav(_c), true)
+		var _ok: bool = _pth.size() > 0 and _npc_from_nav(_pth[_pth.size() - 1]).distance_to(_c) < 1.0
+		_reach_line += "." if _ok else "X"
+		if _ok:
+			_last_ok = player.global_position.distance_to(_p)
+		elif _first_block < 0.0:
+			_first_block = player.global_position.distance_to(_p)
+	print("    coverage    ('.'=ours 'o'=other 'X'=none)   over %.0f m: %s" % [
+			player.global_position.distance_to(target), _map_line])
+	print("    REACHABILITY('.'=can walk 'X'=cannot)        over %.0f m: %s" % [
+			player.global_position.distance_to(target), _reach_line])
+	if _first_block >= 0.0:
+		print("    NPC can walk out to %.1f m; first UNREACHABLE point is %.1f m away  <-- the barrier is there" % [
+				_last_ok, _first_block])
+	# Navmesh height along the route, relative to the NPC (measured along up). A STEP larger than
+	# agent_max_climb splits the mesh into islands you cannot walk between — mesh exists on both sides, so
+	# coverage looks perfect while reachability dies. This is the shape of a doorway sill / a building
+	# floor sitting proud of the terrain outside it.
+	var _prof := ""
+	var _prev := 0.0
+	var _max_step := 0.0
+	var _step_at := 0.0
+	for i in _steps + 1:
+		var _p: Vector3 = player.global_position.lerp(target, float(i) / float(_steps))
+		var _c := _npc_from_nav(NavigationServer3D.map_get_closest_point(map, _npc_to_nav(_p)))
+		var _dy: float = (_c - player.global_position).dot(player.up_direction)
+		if i > 0 and absf(_dy - _prev) > _max_step:
+			_max_step = absf(_dy - _prev)
+			_step_at = player.global_position.distance_to(_p)
+		_prev = _dy
+		_prof += "%+.1f " % _dy
+	print("    navmesh height along route (m, rel. NPC): %s" % _prof)
+	# Where does the baked mesh actually live, and how big is the island the NPC is standing on? The
+	# route samples only look along one line; a ring shows the island's true size in every direction.
+	if _npc_nav_mesh != null:
+		var _vs := _npc_nav_mesh.get_vertices()
+		if _vs.size() > 0:
+			var _vb := AABB(_vs[0], Vector3.ZERO)
+			for _v in _vs:
+				_vb = _vb.expand(_v)
+			print("    navmesh lives at (nav space) pos=%s size=%s  [must be near 0,0,0 - NPC is at %s]" % [
+					_vb.position.round(), _vb.size.round(), _npc_to_nav(player.global_position).round()])
+	var _ring := ""
+	var _island := 0.0
+	for _r in [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]:
+		var _hits := 0
+		for _a in 8:
+			var _dir: Vector3 = Vector3.RIGHT.rotated(Vector3.UP, TAU * float(_a) / 8.0)
+			var _wp: Vector3 = player.global_position + (_npc_nav_frame.global_transform.basis * _dir) * _r
+			var _cc := _npc_from_nav(NavigationServer3D.map_get_closest_point(map, _npc_to_nav(_wp)))
+			var _pp := NavigationServer3D.map_get_path(map, _npc_to_nav(player.global_position), _npc_to_nav(_cc), true)
+			if _pp.size() > 0 and _npc_from_nav(_pp[_pp.size() - 1]).distance_to(_cc) < 1.0:
+				_hits += 1
+		_ring += "%dm:%d/8  " % [int(_r), _hits]
+		if _hits > 0:
+			_island = _r
+	print("    reachable ring around NPC: %s  -> island reaches ~%.0f m" % [_ring, _island])
+	print("    biggest step %.2f m at %.1f m from the NPC (agent_max_climb=%.2f) %s" % [
+			_max_step, _step_at, 0.4,
+			"  <-- OVER max climb: this is what splits the mesh" if _max_step > 0.4 else ""])
+	print("    up_direction=%s  angle_vs_BAKE_FRAME_up=%.1f deg %s" % [player.up_direction, up_err,
+			"  <-- bake frame is not aligned to the ground; it rasterizes as a slope" if up_err > 30.0 else ""])
+
+## The NPC destination in GLOBAL space. player.npc_go_to_position is stored in the NPC PARENT's frame
+## (so a destination stays glued to the planet it was given on, instead of drifting when the planet moves
+## or the origin rebases), but NavigationAgent3D.target_position and every global_position comparison are
+## world-space — so convert on each read rather than caching a global that goes stale.
+func _npc_target_global() -> Vector3:
+	var _parent = player.get_parent()
+	if _parent is Node3D:
+		return (_parent as Node3D).global_transform * player.npc_go_to_position
+	return player.npc_go_to_position
+
+## Ground-plane distance from the body to the goal. Height is projected out (gravity owns the vertical
+## axis, and the goal may sit a bit above/below the exact ground the NPC settles on) so it can't gate
+## arrival. Caller must have already checked player.npc_go_to_position != null.
+func _npc_ground_dist_to_goal() -> float:
+	var _d: Vector3 = _npc_target_global() - player.global_position
+	_d -= player.up_direction * _d.dot(player.up_direction)
+	return _d.length()
+
+## The NPC reached its destination: clear the goal (so _npc_physics_process stops re-baking / re-pathing
+## and idles) and tell the brain, ONCE. Clearing the goal is what makes this edge-triggered — the arrival
+## branch can't be reached again until a new npc_go_to_position arrives.
+##
+## npc_arrived goes out as a MERGED property, i.e. a sticky state, not a one-shot event: it stays true on
+## the brain's side until the brain acks it with the "npc_arrived_ack" action, which resets it to false
+## (see server_action_received). Without that ack the next journey would begin with a stale true.
+func _npc_notify_arrived() -> void:
+	player.npc_go_to_position = null
+	player.server_send_properties_to_client({"npc_arrived": true})
+
+# Constant angular speed of the stand-and-face turn (rad/s): half a turn per second, a calm human
+# pivot. The walk turn (_npc_face) keeps its own exponential smoothing.
+const _NPC_FACE_TURN_SPEED: float = PI
+
+## Pivot the standing NPC toward player.npc_face_position at constant speed, rotating around its own
+## up axis so the body stays upright in any gravity frame (a planet included). Cleared once aligned.
+## Runs from the no-destination branch of _npc_physics_process; _npc_emit_move right after it
+## replicates each step, so clients see the same smooth turn.
+func _npc_update_face_target(delta: float) -> void:
+	if player.npc_face_position == null:
+		return
+	var _parent = player.get_parent()
+	var target: Vector3 = (_parent as Node3D).global_transform * player.npc_face_position \
+			if _parent is Node3D else player.npc_face_position
+	var up: Vector3 = player.up_direction
+	# Both the goal direction and the current forward, projected on the ground plane: facing is a
+	# yaw-only affair, the head pitch handles the vertical component.
+	var to: Vector3 = target - player.global_position
+	to = to - up * to.dot(up)
+	var fwd: Vector3 = -player.global_basis.z
+	fwd = fwd - up * fwd.dot(up)
+	if to.length_squared() < 0.0001 or fwd.length_squared() < 0.0001:
+		# Standing on (or gimbal-locked against) the target: nothing sane to face.
+		player.npc_face_position = null
+		return
+	to = to.normalized()
+	fwd = fwd.normalized()
+	var ang: float = fwd.signed_angle_to(to, up)
+	var max_step: float = _NPC_FACE_TURN_SPEED * delta
+	if absf(ang) <= max_step:
+		player.global_basis = Basis.looking_at(to, up).orthonormalized()
+		player.npc_face_position = null
+		return
+	player.global_basis = Basis.looking_at(fwd.rotated(up, clampf(ang, -max_step, max_step)), up) \
+			.orthonormalized()
+
+## Turn the NPC's body toward its walk direction (a real player's rotation comes from client input,
+## which an NPC has none of). -Z faces the direction — the same convention the input path uses
+## (forward input is Vector3(0,0,-1) through global_basis) — with the body kept upright along
+## up_direction, so it works on a planet where "up" is radial. Smoothed with an exponential factor so
+## corners turn naturally instead of snapping; frame-rate independent.
+func _npc_face(direction: Vector3, delta: float) -> void:
+	if direction.length_squared() < 0.0001:
+		return
+	var _target := Basis.looking_at(direction, player.up_direction)
+	var _t: float = 1.0 - exp(-_NPC_TURN_SHARPNESS * delta)
+	player.global_basis = player.global_basis.orthonormalized().slerp(_target, _t)
+
+## If the NPC barely moves for 3 s it is wedged (e.g. off the baked mesh or inside geometry): try to get
+## it going again.
+func _npc_update_stuck(delta: float) -> void:
+	if player.global_position.distance_to(_npc_prev_pos) < 0.05:
+		_npc_stuck_timer += delta
+		if _npc_stuck_timer >= 3.0:
+			_npc_try_unstick()
+			_npc_stuck_timer = 0.0
+			_npc_prev_pos = player.global_position
+	else:
+		_npc_stuck_timer = 0.0
+		_npc_prev_pos = player.global_position
+
+## Nudge a wedged NPC back onto the navmesh. This ASSIGNS global_position, i.e. it moves the body with no
+## collision test whatsoever — the one and only way an NPC can end up on the far side of a solid wall. So
+## every snap is gated: an unchecked one teleports the NPC THROUGH the hab it is leaning on, which both
+## looks like "the NPC walked through the wall" and hides the pathing bug that wedged it in the first
+## place. When in doubt, leave it stuck — a visibly stuck NPC is a bug report; a tunnelling one is a
+## mystery.
+func _npc_try_unstick() -> void:
+	_npc_repath()
+	var _nav_map: RID = _npc_map()
+	# A query against a map that has not synced yet (or holds no region) does NOT fail loudly — it
+	# quietly returns Vector3.ZERO. Snapping to that teleports the NPC to the world origin.
+	if NavigationServer3D.map_get_iteration_id(_nav_map) == 0:
+		return
+	# Bias the search below the NPC (along -up) so we land on ground mesh rather than a roof directly
+	# overhead that is also horizontally walkable.
+	var _ground_search: Vector3 = player.global_position - player.up_direction * 50.0
+	var _nearest_nav := NavigationServer3D.map_get_closest_point(_nav_map, _npc_to_nav(_ground_search))
+	if _nearest_nav == Vector3.ZERO:
+		return  # query failed; see above
+	var _nearest := _npc_from_nav(_nearest_nav)
+	var _gap: float = player.global_position.distance_to(_nearest)
+	# Only accept mesh we are essentially standing on already. A far snap means the NPC is pressed
+	# against geometry its path wrongly crosses, and the nearest mesh is THROUGH that geometry.
+	if _gap > 0.3 and _gap <= _NPC_STUCK_SNAP_MAX:
+		player.global_position = _nearest + player.up_direction * 0.05
+	elif _gap > _NPC_STUCK_SNAP_MAX:
+		push_warning("NPC %s wedged %.1f m off the navmesh; refusing to snap (it would tunnel through geometry)"
+				% [player.name, _gap])
+
+## Replicate the NPC's authoritative pose to clients (same signal the input path uses).
+func _npc_emit_move() -> void:
+	player.emit_signal(
+		"hs_server_move",
+		player.client_uuid,
+		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
+		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		null,
+		player.is_parented,
+	)
+
+## Bake a bounded navigation region around the NPC so its agent has ground to path on, creating it on
+## first need and re-baking ahead of the NPC once it travels past _NPC_NAV_REBAKE_DIST of the last bake
+## center. Baking is async on a worker thread; until it finishes the agent simply has no path.
+##
+## The bake reads the REAL physics geometry of the world: every static collider under the PLANET
+## (terrain chunk bodies, the city, building walls and floors, props) whose layer is in
+## _NPC_NAV_COLLISION_MASK — see _npc_nav_world_root for why the planet and not the NPC's own parent.
+## We drive the parse ourselves instead of NavigationRegion3D.bake_navigation_mesh() because the latter
+## parses from the region node, which would only ever see the region's own (empty) children.
+##
+## Two things are deliberately decoupled here, which GROUPS_WITH_CHILDREN is what makes possible (it
+## walks the group but emits geometry in the parse root's frame):
+##   • WHAT is parsed — the whole planet, via _NPC_NAV_SOURCE_GROUP.
+##   • WHICH FRAME it is baked in — _npc_nav_frame, aligned to the ground under the NPC, because Recast
+##     hard-codes +Y as up in whatever frame it bakes in.
+func _ensure_npc_nav_region() -> void:
+	if _npc_nav_baking:
+		return
+	var _root: Node3D = _npc_nav_world_root()
+	if _root == null:
+		return
+	if _npc_nav_frame != null and _npc_nav_frame.get_parent() != _root:
+		_npc_nav_frame.get_parent().remove_child(_npc_nav_frame)  # NPC changed world (planet)
+		_root.add_child(_npc_nav_frame)
+		_root.add_to_group(_NPC_NAV_SOURCE_GROUP)
+		_npc_nav_bake_center = null  # force a re-bake in the new world
+	var _pos: Vector3 = player.global_position
+	var _goal: Vector3 = _npc_target_global()
+	# Re-bake when the NPC has travelled, AND when the goal itself moves — the box is built around both,
+	# so a new goal invalidates it just as much as a new position does.
+	if _npc_nav_region != RID() and _npc_nav_bake_center != null and _npc_nav_bake_goal != null \
+			and _pos.distance_to(_npc_nav_bake_center) < _NPC_NAV_REBAKE_DIST \
+			and _goal.distance_to(_npc_nav_bake_goal) < _NPC_NAV_REBAKE_DIST:
+		return  # still well inside the current baked area
+	if _npc_nav_frame == null:
+		_npc_nav_frame = Node3D.new()
+		_npc_nav_frame.name = "NpcNavFrame"
+		_root.add_child(_npc_nav_frame)
+		# Group the NPC's own parent: "every collider in the world this NPC lives in", picked up
+		# automatically with no scene authoring. Idempotent, so every NPC can do this.
+		_root.add_to_group(_NPC_NAV_SOURCE_GROUP)
+	if _npc_nav_region == RID():
+		var _mesh := NavigationMesh.new()
+		# These four together decide whether DOORWAYS bake open, and standard apartment doors are 1.0 m
+		# wide x 2.0 m tall (apartment_ares_worker_001 trimesh), so the margins are thin:
+		#   width  — Recast erodes ceil(agent_radius / cell_size) voxels of walkable space off EACH side
+		#            of a door. The old 0.4 / 0.25 pair eroded 0.5 m per side: the whole 1.0 m door, so
+		#            interiors baked as sealed islands and NPCs walked into the door frame and stopped.
+		#            0.3 / 0.1 erodes 0.3 m per side, leaving a 0.4 m = 4-cell strip.
+		#   phase  — the strip must survive ANY grid alignment. Apartment units tile every 3.16 m, a
+		#            non-integer number of voxels, so each unit's door sits at a different sub-voxel
+		#            phase. At 0.3/0.125 the strip was ONE marginal voxel: in a real spawn building,
+		#            units 0-0-0 and 0-2-0 baked open while 0-1-0 sealed (measured). 4 cells is
+		#            phase-proof.
+		#   height — the mesh floats ~2*cell_height above the floor and that headroom is taken off every
+		#            opening: at cell_height 0.25 a door must be 2.3 m tall to pass, at 0.1 only 1.9 m.
+		# agent_radius 0.3 still covers the real capsule (0.265 m) — do NOT shrink the radius below it to
+		# widen doors; shrink cell_size instead. The private map is configured from these same values
+		# below, so map and mesh always rasterize on the same grid.
+		_mesh.cell_size = 0.1
+		_mesh.cell_height = 0.1
+		_mesh.agent_radius = 0.3
+		_mesh.agent_height = 1.8
+		_mesh.agent_max_climb = 0.4
+		_mesh.agent_max_slope = 45.0
+		# Static colliders only, never MESH_INSTANCES/BOTH: we want exactly what the NPC body hits, not
+		# decorative meshes it can walk through. CSG buildings ARE covered — a use_collision CSG root is
+		# parsed like any other static collider (verified: it contributes its faces).
+		_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+		_mesh.geometry_collision_mask = _NPC_NAV_COLLISION_MASK
+		# Traversal from the group (the whole world under the NPC's parent), coordinates from the parse
+		# root (the surface frame). ROOT_NODE_CHILDREN can't do this: it would tie both to one node.
+		_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+		_mesh.geometry_source_group_name = _NPC_NAV_SOURCE_GROUP
+		_npc_nav_mesh = _mesh
+		# A private map holding only this NPC's bake. On the shared world map our region would also sit
+		# alongside the designer-authored ones (the city / depot navmesh), which overlap ours and can win
+		# the destination-polygon-by-proximity lookup for a region we have no connection to.
+		_npc_nav_map = NavigationServer3D.map_create()
+		NavigationServer3D.map_set_cell_size(_npc_nav_map, _mesh.cell_size)
+		NavigationServer3D.map_set_cell_height(_npc_nav_map, _mesh.cell_height)
+		NavigationServer3D.map_set_active(_npc_nav_map, true)
+		# IDENTITY, and driven through the server rather than a node: the mesh is baked in
+		# _npc_nav_frame's space and must STAY near the origin. Parent it to anything out at the planet's
+		# coordinates and the server's 21-bit PointKeys overflow, no polygons connect, and the NPC cannot
+		# walk across flat ground. See _npc_to_nav.
+		_npc_nav_region = NavigationServer3D.region_create()
+		NavigationServer3D.region_set_map(_npc_nav_region, _npc_nav_map)
+		NavigationServer3D.region_set_transform(_npc_nav_region, Transform3D.IDENTITY)
+		NavigationServer3D.region_set_enabled(_npc_nav_region, true)
+
+	# Re-anchor the bake frame on the NPC, +Y along its local up. Only ever moved here, immediately before
+	# a bake: nav space is defined by this frame, so moving it without re-baking would silently shift
+	# every existing path point off the ground it was baked for.
+	_npc_nav_frame.transform = _npc_surface_frame(_root)
+	# The box must hold the NPC *and* its goal. Sizing it around the NPC alone deadlocks: the goal falls
+	# outside, so it lands on some OTHER region (or none), a query across two unconnected regions returns
+	# a 2-point stub, the NPC never moves — and because the box follows the NPC, it never grows to reach
+	# the goal either. That is the "NPC always walks into the wall": measured goal 56 m out vs a ±30 m box.
+	var _half := Vector3.ONE * _NPC_NAV_HALF_EXTENT
+	var _box := AABB(-_half, _half * 2.0)  # the NPC is at the frame's origin by construction
+	var _goal_f: Vector3 = _npc_nav_frame.global_transform.affine_inverse() * _goal
+	if _goal_f.length() > _NPC_NAV_MAX_EXTENT:
+		# Too far to voxelize in one bake: aim at the box edge, walk, re-bake from there.
+		_goal_f = _goal_f.normalized() * _NPC_NAV_MAX_EXTENT
+	_box = _box.expand(_goal_f).grow(_NPC_NAV_GOAL_MARGIN)
+	# Flatten the box vertically around the two ground-level endpoints — it spans up to ~120 m
+	# horizontally now, and voxelizing that much sky at cell_height would cost far more than it buys.
+	_box.position.y = minf(0.0, _goal_f.y) - _NPC_NAV_VERTICAL
+	_box.size.y = (maxf(0.0, _goal_f.y) + _NPC_NAV_VERTICAL) - _box.position.y
+	# Bake into a COPY and publish it when done, so the live mesh is never half-written.
+	var _mesh_next: NavigationMesh = _npc_nav_mesh.duplicate()
+	_mesh_next.filter_baking_aabb = _box
+	_npc_nav_bake_center = _pos
+	_npc_nav_bake_goal = _goal
+	_npc_nav_baking = true
+	var _src := NavigationMeshSourceGeometryData3D.new()
+	NavigationServer3D.parse_source_geometry_data(_mesh_next, _src, _npc_nav_frame)
+	NavigationServer3D.bake_from_source_geometry_data_async(
+			_mesh_next, _src, _on_npc_nav_bake_finished.bind(_mesh_next))
+
+## The map every NPC nav query must go through: this NPC's private one once it exists. Falls back to the
+## world map before the first bake.
+func _npc_map() -> RID:
+	if _npc_nav_map != RID():
+		return _npc_nav_map
+	return player.get_world_3d().navigation_map
+
+## World point → NAV SPACE, and back. EVERY navigation query and result must go through these.
+##
+## The navigation server cannot work at this game's coordinates. It connects polygons by quantizing each
+## vertex into a PointKey — floor(pos / cell_size) packed into a 21-bit signed bitfield — which saturates
+## around ±262 km at cell_size 0.25. Our planet sits ~1.26e10 out, so every key overflows, no two polygons
+## are ever found to share an edge, and the mesh degenerates into 557 disconnected islands: flat ground
+## the NPC cannot walk two metres across. Measured on identical geometry: reachable 56.4 m at the origin,
+## 16.4 m at 1.26e10, and 0 m with the real terrain's polygon count.
+##
+## So the mesh is baked in _npc_nav_frame's space (±60 m of the NPC), the region is registered at IDENTITY
+## so it LIVES near the origin where the keys still resolve, and we convert on the way in and out.
+func _npc_to_nav(world_point: Vector3) -> Vector3:
+	if _npc_nav_frame == null:
+		return world_point
+	return _npc_nav_frame.global_transform.affine_inverse() * world_point
+
+func _npc_from_nav(nav_point: Vector3) -> Vector3:
+	if _npc_nav_frame == null:
+		return nav_point
+	return _npc_nav_frame.global_transform * nav_point
+
+## Ask the server for a fresh route to the goal, in nav space. Cheap enough to re-issue on a timer.
+func _npc_repath() -> void:
+	_npc_path = PackedVector3Array()
+	_npc_path_idx = 0
+	if _npc_nav_map == RID() or _npc_nav_frame == null or player.npc_go_to_position == null:
+		return
+	if NavigationServer3D.map_get_iteration_id(_npc_nav_map) == 0:
+		return  # map not synced yet; queries would silently return nothing
+	_npc_path = NavigationServer3D.map_get_path(_npc_nav_map,
+			_npc_to_nav(player.global_position), _npc_to_nav(_npc_target_global()), true)
+
+## Next point to steer at, in WORLD space, or null when there is no usable path left. Consumes waypoints
+## we have already reached.
+func _npc_next_path_point():
+	while _npc_path_idx < _npc_path.size():
+		var _p: Vector3 = _npc_from_nav(_npc_path[_npc_path_idx])
+		# Compare in the ground plane: gravity owns the vertical axis, so height must not gate arrival.
+		var _d: Vector3 = _p - player.global_position
+		_d -= player.up_direction * _d.dot(player.up_direction)
+		if _d.length() > _NPC_WAYPOINT_REACHED:
+			return _p
+		_npc_path_idx += 1
+	return null
+
+## Release the private navigation map with the NPC (it is a raw server RID: nothing else frees it).
+func _exit_tree() -> void:
+	if _npc_nav_region != RID():
+		NavigationServer3D.free_rid(_npc_nav_region)
+		_npc_nav_region = RID()
+	if _npc_nav_map != RID():
+		NavigationServer3D.free_rid(_npc_nav_map)
+		_npc_nav_map = RID()
+
+## The node the bake TRAVERSES for source geometry: the whole world the NPC can walk around in.
+##
+## Emphatically NOT player.get_parent(). A player is parented to the APARTMENT it spawned in (the spawn
+## event sends parent_id == spawn_appartment_id, e.g. "tarsis_4-1002"), so grouping the parent parses
+## that one apartment's collider and nothing else — measured: 38 polys of apartment floor, identical
+## under every bake setting, leaving the NPC able to walk only as far as its own wall. The planet is the
+## node that actually holds the terrain chunks AND the city (the city spawns with the planet as parent).
+func _npc_nav_world_root() -> Node3D:
+	# <planet>/<body>/PlanetGravity — the same hop Player itself uses to identify its planet.
+	var _grav: Node3D = player.get_current_gravity_parent()
+	if _grav != null and _grav.get_parent() != null:
+		var _planet: Node = _grav.get_parent().get_parent()
+		if _planet is Node3D and "planet_terrain" in _planet:
+			return _planet as Node3D
+	# In space, or no gravity area registered yet: fall back to the whole scene. Broader parse than we
+	# want, but correct — better than silently baking one room.
+	return get_tree().get_current_scene() as Node3D
+
+## The frame the navmesh is baked in, expressed in the NPC parent's space: origin on the NPC, +Y along
+## its up direction (radial on a planet). Recast ALWAYS treats +Y as up in whatever frame it bakes in.
+## The planet's +Y is its axis, so away from the poles it diverges from the ground normal under the NPC
+## and flat ground would rasterize as a slope past agent_max_slope. It also defines NAV SPACE: the origin
+## rides the NPC, which is what keeps the baked mesh near (0,0,0) — see _npc_to_nav.
+func _npc_surface_frame(root: Node3D) -> Transform3D:
+	var _up: Vector3 = (root.global_transform.basis.inverse() * player.up_direction).normalized()
+	if not _up.is_normalized():
+		_up = Vector3.UP  # no gravity frame yet
+	# Any two axes perpendicular to up will do — the navmesh only cares which way is up.
+	var _fwd: Vector3 = Vector3.FORWARD
+	if absf(_up.dot(_fwd)) > 0.9:
+		_fwd = Vector3.RIGHT  # degenerate: up is (anti)parallel to the reference axis
+	var _x: Vector3 = _fwd.cross(_up).normalized()
+	var _z: Vector3 = _x.cross(_up).normalized()
+	return Transform3D(Basis(_x, _up, _z), root.global_transform.affine_inverse() * player.global_position)
+
+## Bake worker finished: publish the fresh mesh to the NavigationServer, clear the flag and re-issue the
+## target so the agent paths on it.
+func _on_npc_nav_bake_finished(baked: NavigationMesh) -> void:
+	_npc_nav_baking = false
+	if _npc_nav_region == RID() or not is_instance_valid(player):
+		return
+	_npc_nav_mesh = baked
+	NavigationServer3D.region_set_navigation_mesh(_npc_nav_region, baked)
+	# The path we were following was baked against the previous mesh; re-issue it against the new one.
+	_npc_repath()
 
 ## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
 ## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
@@ -999,6 +1778,18 @@ func _server_drop_carried_item() -> void:
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
+		# Drop ONTO a shelf slot -> snap the crate into the nearest free slot and freeze it there. The
+		# crate stays a normal resting world prop (parented to the world node, not the shelf, which never
+		# moves), so its replication rides the ordinary settled-prop path; the shelf only tracks the slot.
+		print(player.hands_item)
+		var shelf = _shelf_for_drop(player.hands_item.global_position)
+		if shelf != null:
+			var shelf_parent = player.get_parent()
+			player.hands_item.server_parent_change(shelf_parent)  # out of the player, into the world
+			shelf.store_at_nearest_slot(player.hands_item, str(shelf_parent.uuid) if "uuid" in shelf_parent else "")
+			player.hands_item = null
+			player.server_send_properties_to_client({"carrying": false})
+			return
 	var drop_parent = player.get_parent()
 	player.hands_item.server_parent_change(drop_parent)
 	player.hands_item.freeze = false
@@ -1041,12 +1832,16 @@ func _server_update_carried_item(_delta: float) -> void:
 	if eye.distance_to(item.global_position) > carry_reach:
 		call_deferred("_server_drop_carried_item")
 		return
-	# Body-relative hold spot (head height + front) — yaw only (issue #124) — to world, offset by the
-	# geometry center so the object sits centered on that spot.
+	# Hold spot ON the camera ray (crosshair-aligned): carry_offset is CAMERA-space (-Z = carry distance
+	# along the gaze), so the box stays centered on the crosshair dot at ANY head pitch — the same ray
+	# the InteractRay shoots. (It used to be body-relative, yaw only, plus an artificial vertical pitch
+	# "lift", which made the box slide off the crosshair as the head pitched.) The server has the
+	# replicated "head" pitch on camera_pivot. Offset by the geometry center so the object sits centered
+	# on that spot.
 	var center: Vector3 = Vector3.ZERO
 	if item.has_method("get_center_offset"):
 		center = item.get_center_offset()
-	var hold_world: Vector3 = player.to_global(player.camera_pivot.position + player.carry_offset) \
+	var hold_world: Vector3 = player.camera_pivot.global_transform * player.carry_offset \
 			- item.global_basis * center
 	# Camera pitch raises/lowers the hold spot along the VERTICAL (up_direction) only — look up/down to
 	# place the object higher/lower (e.g. stacking). The server has the replicated "head" pitch, so the
@@ -1105,6 +1900,32 @@ func _server_update_carried_item(_delta: float) -> void:
 	# NB: angular velocity is NOT zeroed here — the body keeps the spin a bump imparts (heavily damped,
 	# see _CARRY_ANGULAR_DAMP), so a carried object reacts to knocks instead of being rigidly locked.
 
+## Drain the dialog queue: release the OLDEST pending line every _DIALOG_LINE_INTERVAL seconds, then
+## clear the bubble with a single null once nothing is left to say.
+##
+## The timer is only spent while there is something to do, so a silent NPC costs one is_empty() check
+## per tick and, more importantly, an idle queue leaves the timer at/below zero — the FIRST line of a
+## new conversation therefore goes out on the very next tick instead of making the player wait 2 s for
+## a greeting. Subsequent lines are properly spaced because sending a line rearms the timer.
+func _server_update_dialog(delta: float) -> void:
+	if _dialog_queue.is_empty() and not _dialog_active:
+		return  # nothing to say, and the clearing null has already gone out
+	_dialog_timer -= delta
+	if _dialog_timer > 0.0:
+		return  # the current line has not had its time on screen yet
+	print("2 seconds?")
+	if _dialog_queue.is_empty():
+		# Said everything: wipe the bubble. _dialog_active going false means this branch is not
+		# reachable again until a new line is queued, so the null is sent ONCE, not every 2 s.
+		print("end")
+		player.server_send_properties_to_client({"conversation": null})
+		_dialog_active = false
+		return
+	print(_dialog_queue)
+	player.server_send_properties_to_client({"conversation": _dialog_queue.pop_front()})
+	_dialog_active = true
+	_dialog_timer = _DIALOG_LINE_INTERVAL
+
 ## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
 ## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
 ## the client just displays it. Throttled so it's cheap (one ray per player, not per object).
@@ -1125,6 +1946,8 @@ func _compute_carry_prompt() -> String:
 	if player.hands_item != null:
 		if _cargo_bed_for_drop(player.hands_item.global_position) != null:
 			return "cargo"  # dropping here loads it into the bed (sticks)
+		#if _shelf_for_drop(player.hands_item.global_position) != null:
+			#return "cargo"  # dropping here snaps it into a shelf slot (sticks)
 		return "drop"
 	if _stance != 0:
 		return ""  # standing only: no "pick up" prompt while crouched or prone
@@ -1142,6 +1965,25 @@ func _cargo_bed_for_drop(world_point: Vector3) -> Vehicle:
 	for v in get_tree().get_nodes_in_group("vehicle"):
 		if v is Vehicle and v.is_point_in_loading_zone(world_point):
 			return v
+	return null
+
+## Which shelf should swallow a crate dropped at this world point: any shelf with a free slot within
+## snap range of it (see shelf.gd). Returns the shelf node (StaticBody3D) so the caller can store into
+## it, or null when no shelf slot is in reach.
+func _shelf_for_drop(world_point: Vector3) -> Node:
+	var nearest: Node = null
+	var nearest_dist_sq := INF
+	for s in get_tree().get_nodes_in_group("shelf"):
+		if not (s is Node3D) or not s.has_method("can_store"):
+			continue
+		if s.global_position.distance_squared_to(player.global_position) > _SHELF_DROP_RANGE * _SHELF_DROP_RANGE:
+			continue
+		var dist_sq: float = s.global_position.distance_squared_to(world_point)
+		if dist_sq < nearest_dist_sq:
+			nearest_dist_sq = dist_sq
+			nearest = s
+	if nearest != null and nearest.can_store(world_point):
+		return nearest
 	return null
 
 ## Safety net for CharacterBody tunnelling through the thin trimesh terrain on
@@ -1185,6 +2027,7 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 	if not player.is_inside_tree() or not destination.is_inside_tree():
 		return
 	if player.get_parent() != destination:
+		player.npc_goal_keep_world(destination)
 		player.reparent(destination)
 	# Test without parent, to have the planet gorc enter on client side.
 	# The offset goes through the destination's BASIS, so it really is expressed in that node's frame:
@@ -1195,7 +2038,7 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 		"hs_server_move",
 		player.client_uuid,
 		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
 		str(destination.uuid) if "uuid" in destination else "",
 		player.is_parented
 	)

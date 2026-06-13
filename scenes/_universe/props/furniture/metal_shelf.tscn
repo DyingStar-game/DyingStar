@@ -1,0 +1,64 @@
+[gd_scene format=3 uid="uid://dcqjbt0wlc32s"]
+
+[ext_resource type="Script" uid="uid://xrv28sa3c5vp" path="res://scenes/_universe/props/furniture/shelf.gd" id="1_834ad"]
+[ext_resource type="PackedScene" uid="uid://032p2gkwx1gj" path="res://assets/_universe/props/furniture/metal_shelf.glb" id="1_uo1ch"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_2suer"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(0.05237688000852358, 3.002, 0.04731000749688974)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3av62"]
+size = Vector3(0.7067923090796739, 0.03227362131565314, 1.999584622007205)
+
+[node name="MetalShelf" type="StaticBody3D" unique_id=572971291]
+script = ExtResource("1_834ad")
+shelf_tiers = 6
+shelf_horizontal_capacity = 4
+shelf_slots = Array[Vector3]([Vector3(0, 0.542, -0.736), Vector3(0, 0.542, -0.267), Vector3(0, 0.542, 0.253), Vector3(0, 0.542, 0.746), Vector3(0, 1.048, -0.736), Vector3(0, 1.048, -0.267), Vector3(0, 1.048, 0.253), Vector3(0, 1.048, 0.746), Vector3(0, 1.545, -0.736), Vector3(0, 1.545, -0.267), Vector3(0, 1.545, 0.253), Vector3(0, 1.545, 0.746), Vector3(0, 2.042, -0.736), Vector3(0, 2.042, -0.267), Vector3(0, 2.042, 0.253), Vector3(0, 2.042, 0.746), Vector3(0, 2.549, -0.736), Vector3(0, 2.549, -0.267), Vector3(0, 2.549, 0.253), Vector3(0, 2.549, 0.746), Vector3(0, 3.049, -0.736), Vector3(0, 3.049, -0.267), Vector3(0, 3.049, 0.253), Vector3(0, 3.049, 0.746)])
+
+[node name="PropSync" type="Node" parent="." unique_id=750972916]
+script = ExtResource("2_2suer")
+type_name = "shelf"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="Sketchfab_Scene" parent="." unique_id=1051277883 instance=ExtResource("1_uo1ch")]
+
+[node name="Support1" type="CollisionShape3D" parent="." unique_id=542981120]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.33502263855189085, 1.4980000000068685, 0.9973467886447906)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="Support2" type="CollisionShape3D" parent="." unique_id=1326569373]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33633546380261903, 1.4980000000068685, 0.9973467886447906)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="Support3" type="CollisionShape3D" parent="." unique_id=207574416]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.33502263855189085, 1.4980000000068685, -0.9974078607970268)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="Support4" type="CollisionShape3D" parent="." unique_id=187870734]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33633546380261903, 1.4980000000068685, -0.9974078607970268)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="Tier1" type="CollisionShape3D" parent="." unique_id=776934652]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 0.25082836020737886, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="Tier2" type="CollisionShape3D" parent="." unique_id=852071664]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 0.7478421328949829, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="Tier3" type="CollisionShape3D" parent="." unique_id=209380722]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 1.2513106299032055, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="Tier4" type="CollisionShape3D" parent="." unique_id=1419720227]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 1.7483244025908098, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="Tier5" type="CollisionShape3D" parent="." unique_id=946771872]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 2.248565537438724, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="Tier6" type="CollisionShape3D" parent="." unique_id=1733934026]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0021368712, 2.7455793101263275, -0.00044956803)
+shape = SubResource("BoxShape3D_3av62")
