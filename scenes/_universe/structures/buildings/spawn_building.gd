@@ -1,9 +1,9 @@
 extends StaticBody3D
 
-signal hs_server_prop_update
-signal hs_server_prop_delete
+## Networked spawn building. Networking (uuid, replication, reparent, delete) lives in the PropSync
+## child node (type_name "spawnbuilding", non-carriable); custom state (apartments/slots) is applied via
+## apply_prop_data(). The body exposes `uuid` so it can be resolved as a networked parent by uuid.
 
-@export var uuid: String = ""
 @export var rows: int = 1 # 1 or 2
 @export var cols: int = 1 # from 1
 @export var floors: int = 1 # from 1
@@ -24,60 +24,16 @@ signal hs_server_prop_delete
 var total: int = 1
 var available: int = 0
 
-var type_name = "spawnbuilding"
-
-var spawn_position: Vector3 = Vector3.ZERO
-var spawn_rotation: Vector3 = Vector3.ZERO
-
-var server_last_position = Vector3.ZERO
-var server_last_rotation = Vector3.ZERO
-
-var has_parent: bool = false
 var _apartments_created: bool = false
 
-
-# Called when the node enters the scene tree for the first time.
-func _ready() -> void:
-	# Buildings must not move: freeze so the physics engine never applies gravity
-	# or forces to this body (prevents the building — and any player child — from drifting).
-	position = spawn_position
-	rotation = spawn_rotation
-	# _align_to_surface(spawn_rotation.y)
-
-func update_position_rotation() -> void:
-	if GameOrchestrator.is_server():
-		var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
-		var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
-		if server_last_position != my_position or server_last_rotation != my_rotation:
-			emit_signal(
-				"hs_server_prop_update",
-				uuid,
-				{
-					"position": my_position,
-					"rotation": my_rotation,
-				},
-				type_name,
-				has_parent
-			)
-			server_last_position = my_position
-			server_last_rotation = my_rotation
-
-## Aligns the building so its local +Y axis points away from the planet centre
-## (i.e. along the surface normal at its position). An optional heading_rad
-## rotates the building around that normal so you can control which way it faces.
-## required when directly on planet surface
-# func _align_to_surface(heading_rad: float = 0.0) -> void:
-# 	if OS.has_feature("dedicated_server"):
-# 		var up := spawn_position.normalized()
-# 		if up.is_zero_approx():
-# 			return
-# 		var forward := Vector3.FORWARD if abs(up.dot(Vector3.FORWARD)) < 0.99 else Vector3.RIGHT
-# 		var right := forward.cross(up).normalized()
-# 		var fwd := up.cross(right).normalized()
-# 		basis = Basis(right, up, -fwd)
-# 		if not is_zero_approx(heading_rad):
-# 			basis = basis.rotated(up, heading_rad)
-# 		update_position_rotation()
+var uuid: String:
+	get:
+		var s := PropSync.of(self)
+		return s.uuid if s != null else ""
+	set(value):
+		var s := PropSync.of(self)
+		if s != null:
+			s.uuid = value
 
 
 func _create_apartments():
@@ -145,29 +101,9 @@ func _fill_pseudo_plate() -> void:
 
 		label3d.text = "HOME\n%s" % apt["player_name"]
 
-func client_parent_change(parent: Node) -> void:
-	reparent(parent)
-	has_parent = true
-
-func client_channel_data_update(data: Dictionary) -> void:
-	# print("DATA UPDATE: %s" % data)
-	if data.has("position"):
-		spawn_position = Vector3(
-			data["position"]["x"],
-			data["position"]["y"],
-			data["position"]["z"]
-		)
-		position = spawn_position
-
-	if data.has("rotation"):
-		spawn_rotation = Vector3(
-			data["rotation"]["x"],
-			data["rotation"]["y"],
-			data["rotation"]["z"]
-		)
-		rotation = spawn_rotation
-		# _align_to_surface(spawn_rotation.y)
-
+## PropSync applies the replicated transform, then calls this with the full payload so the building can
+## apply its own (non-transform) fields. Replaces the old client_channel_data_update override.
+func apply_prop_data(data: Dictionary) -> void:
 	if data.has("name"):
 		name = data["name"]
 
@@ -200,11 +136,3 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_create_apartments()
 		if not GameOrchestrator.is_server():
 			_fill_pseudo_plate()
-
-func _exit_tree() -> void:
-	if GameOrchestrator.is_server():
-		emit_signal(
-			"hs_server_prop_delete",
-			uuid,
-			type_name
-		)

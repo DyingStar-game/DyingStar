@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://d01f76c0qpc0d" path="res://scenes/_universe/props/containers/box_4m.gd" id="1_ealuu"]
 [ext_resource type="Material" uid="uid://bxvng5yhb4rki" path="res://assets/_universe/props/containers/box_4m.material" id="3_3xnib"]
 [ext_resource type="Shape3D" uid="uid://csg45728c5gy4" path="res://scenes/_universe/props/containers/Box4mInsideCollider2.shape" id="3_ealuu"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_0fj0l"]
 size = Vector3(4, 4, 4)
@@ -23,6 +24,11 @@ properties/1/replication_mode = 1
 collision_layer = 8
 collision_mask = 15
 script = ExtResource("1_ealuu")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "box"
+enable_carry = false
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=676976134]
 mesh = ExtResource("1_82nol")

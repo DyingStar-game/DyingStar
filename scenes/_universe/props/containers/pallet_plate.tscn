@@ -3,6 +3,8 @@
 [ext_resource type="Script" path="res://scenes/_universe/props/containers/carryable_storagebox.gd" id="1_plate"]
 [ext_resource type="PackedScene" uid="uid://cn8vnqwq13uir" path="res://assets/_universe/props/containers/pallet_plate_120x80x15.glb" id="2_plate"]
 
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_plate"]
 size = Vector3(1.2, 0.15, 0.8)
 
@@ -13,6 +15,11 @@ mass = 80.0
 script = ExtResource("1_plate")
 type_name = "box"
 carriable = false
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_1")
+type_name = "box"
+enable_carry = true
 
 [node name="pallet_plate_120x80x15" parent="." unique_id=780003002 instance=ExtResource("2_plate")]
 

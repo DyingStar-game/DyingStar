@@ -1,7 +1,10 @@
 extends RigidBody3D
 
-signal hs_server_prop_update
-signal hs_server_prop_delete
+## Networked, carriable, fracturable mining rock. All networking (uuid, replication, reparent, delete,
+## bed-ride) lives in the PropSync child node (type_name "miningrock", enable_carry = true). Custom state
+## (blocs/cut geometry, ore, mineral) is applied via apply_prop_data(); server-side updates go out via
+## the PropSync component. The body keeps the carry contract (interact / set_carried / uuid / carried)
+## and the custom server_parent_change / send_properties_to_client that other systems call on it.
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
@@ -47,7 +50,6 @@ const MINERALS := {
 	"cryptonite": preload("res://assets/_universe/_shared/materials/minerals/cryptonite/cryptonite.tres"),
 }
 
-@export var uuid: String = ""
 ## Which mineral this rock shows (gold, cryptonite, ...). Default = gold for now; per-rock
 ## attribution + replication come later. The ore FIELD (amount/dispersion) stays below.
 @export var mineral: MineralDef = GOLD_MINERAL
@@ -59,26 +61,28 @@ const MINERALS := {
 @export_range(0.0, 1.0) var groove_darkness: float = 0.0
 @export var groove_strength: float = 0.1
 
-var type_name = "miningrock"
+var type_name = "miningrock"  # kept for internal blocs/side2 payloads; PropSync carries the networked copy
 
 var combiner: CSGCombiner3D
 
-var spawn_position: Vector3 = Vector3.ZERO
-var spawn_rotation: Vector3 = Vector3.UP
+# uuid / carried are read by mining_tool / player / vehicle on the body; forward to the PropSync child.
+var uuid: String:
+	get:
+		var s := PropSync.of(self)
+		return s.uuid if s != null else ""
+	set(value):
+		var s := PropSync.of(self)
+		if s != null:
+			s.uuid = value
 
-var server_last_position = Vector3.ZERO
-var server_last_rotation = Vector3.ZERO
-# Last parent_id replicated + frames left to keep resending it after a change (PropNet), so a
-# single lost drop/settle message can't strand this piece under its old parent on clients.
-var server_last_parent_id: String = ""
-var server_parent_resend: int = 0
-
-var has_parent: bool = false
-# True while we briefly leave the tree to reparent (carry/drop): tells _exit_tree NOT
-# to emit a delete (the object still exists, it just changed parent). Mirrors CarriableBox.
-var server_reparenting: bool = false
-# True while carried by a player (issue #124), so nobody else can grab it meanwhile.
-var carried: bool = false
+var carried: bool:
+	get:
+		var s := PropSync.of(self)
+		return s.carried if s != null else false
+	set(value):
+		var s := PropSync.of(self)
+		if s != null:
+			s.carried = value
 
 # The parent we were created under (a valid GORC id, or "" for a root object).
 # Reused for the broken-off half (side2) so Horizon can resolve its parent too:
@@ -121,17 +125,19 @@ var _purity := -1.0
 # Mass (kg) of a WHOLE uncut rock — the GameDesigner value set on the RigidBody in the scene,
 # captured at _ready. A cut piece weighs this scaled by its volume ratio (see _refresh_mass).
 var _full_rock_mass: float = 0.0
-# Last replicated LOCAL pose, re-asserted every render frame while riding a vehicle bed (see _process).
-var _ride_local_pos: Vector3 = Vector3.ZERO
-var _ride_local_rot: Vector3 = Vector3.ZERO
-
 @onready var rock_shape = $CollisionShape3D
 
 func _ready() -> void:
 	add_to_group("miningrock")  # for proximity detection (aim mode)
 	add_to_group("carriable")  # so the carry pickup can resolve it by uuid (#124)
 	_full_rock_mass = mass  # GameDesigner value from the scene = the whole-rock mass (before scaling)
-	var item_rock_mesh = get_child(0) as CSGMesh3D
+	# Find the rock's CSGMesh3D child by TYPE, not by index: the scene also holds a PropSync
+	# networking node (and possibly others), so get_child(0) is no longer guaranteed to be the mesh.
+	var item_rock_mesh: CSGMesh3D = null
+	for _child in get_children():
+		if _child is CSGMesh3D:
+			item_rock_mesh = _child
+			break
 	# Bake any uniform scale set on the mesh node into a scale-1 mesh, so every cut /
 	# collision / ore computation below works in true-size local space. The small variant
 	# is scale 1 (no-op); medium/large scale their mesh node (x4 / x10) for their size.
@@ -527,28 +533,9 @@ func _make_exterior_material() -> ShaderMaterial:
 func _make_inner_material() -> ShaderMaterial:
 	return _make_rock_material(lerpf(ORE_T_POOR, ORE_T_RICH, ore_richness()), ORE_SCALE, false)
 
-func client_parent_change(parent: Node) -> void:
-	reparent(parent)
-	has_parent = true
-	PropNet.apply_ride_freeze_mode(self)  # KINEMATIC under a vehicle so the piece rides the truck
-	_apply_carry_collision_exception(parent)
-
-## Client: if WE (the local player) are the new parent, we're carrying this piece — ignore
-## collisions between us and it so our own move_and_slide isn't blocked. Otherwise clear any
-## stale exception so it stays solid to us (on the ground or carried by someone else).
-func _apply_carry_collision_exception(parent: Node) -> void:
-	if GameOrchestrator.is_server():
-		return
-	var agent = NetworkOrchestrator.network_agent
-	var local_player = agent.player_entity if agent != null and "player_entity" in agent else null
-	if local_player == null or not (local_player is PhysicsBody3D):
-		return
-	if parent == local_player:
-		add_collision_exception_with(local_player)
-	else:
-		remove_collision_exception_with(local_player)
-
-func client_channel_data_update(data: Dictionary) -> void:
+# PropSync applies the replicated transform and the reparent/carry-collision handling; this then
+# applies the rock's own (non-transform) fields. Replaces the old client_channel_data_update override.
+func apply_prop_data(data: Dictionary) -> void:
 	if data.has("parent_id"):
 		created_parent_id = str(data["parent_id"])
 	if data.has("ore_seed"):
@@ -557,7 +544,6 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_set_mineral(str(data["mineral_id"]))
 	if data.has("kick"):
 		_spawn_kick = Vector3(data["kick"]["x"], data["kick"]["y"], data["kick"]["z"])
-	PropNet.apply_client_transform(self, data)  # position/rotation (+ remembers the local ride pose)
 	# Always re-derive the cut geometry from the replicated blocs (idempotent): a "skip if
 	# unchanged" guard desyncs the mesh from blocs when a rebuild is interrupted mid-flap
 	# (GORC churn), leaving the rock visually whole forever.
@@ -604,47 +590,35 @@ func get_center_offset() -> Vector3:
 		return _mesh_instance.get_aabb().get_center()
 	return _mesh_center
 
-## Reparent on the server (carry into hands / drop back to the world). server_reparenting
-## tells _exit_tree NOT to emit a delete while we momentarily leave the tree.
+## Reparent on the server (carry into hands / drop back to the world) via the PropSync component, which
+## sets its reparent guard so the momentary tree-exit isn't seen as a despawn.
 func server_parent_change(parent: Node) -> void:
-	server_reparenting = true
-	reparent(parent)
+	var s := PropSync.of(self)
+	if s != null:
+		s.server_parent_change(parent)
 
 ## Tell clients to reparent this piece (into the carrier's hands, or back to the world)
-## and where it sits. Same channel/shape CarriableBox uses for carrying.
+## and where it sits. Same channel/shape Box50cm uses for carrying — routed through PropSync.
 func send_properties_to_client(parent_uuid: String) -> void:
-	var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
-	var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
-	emit_signal(
-		"hs_server_prop_update",
-		uuid,
-		{
-			"position": my_position,
-			"rotation": my_rotation,
-			"parent_id": parent_uuid,
-			"weight": mass,
-		},
-		type_name,
-		has_parent
-	)
-	server_last_position = my_position
-	server_last_rotation = my_rotation
+	var s := PropSync.of(self)
+	if s == null:
+		return
+	s.server_prop_update({
+		"position": snapped(position, Vector3(0.001, 0.001, 0.001)),
+		"rotation": snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		"parent_id": parent_uuid,
+		"weight": mass,
+	})
 
 #####################################################################
 # Server part
 #####################################################################
 
 func _server_ready() -> void:
-	# send blocs to Horizon
-	emit_signal(
-		"hs_server_prop_update",
-		uuid,
-		{
-			"blocs": _blocs_payload(),
-		},
-		"miningrock",
-		has_parent
-	)
+	# send blocs to Horizon (through the PropSync component)
+	var s := PropSync.of(self)
+	if s != null:
+		s.server_prop_update({"blocs": _blocs_payload()})
 	_refresh_cuts()
 
 ## True if a rock-local point lies on a not-yet-fractured fault (close to its plane).
@@ -711,12 +685,6 @@ func server_perforate(hit_local: Vector3, push_dir_local: Vector3 = Vector3.ZERO
 	_server_create_side2_rock(best_i, push_world + n_world * SEPARATION_SPEED)
 	_replicate_blocs()
 
-func _physics_process(_delta: float) -> void:
-	PropNet.server_tick(self)
-
-func _process(_delta: float) -> void:
-	PropNet.ride_pin(self)  # hold the constant local bed pose at render rate (no jitter)
-
 # The replicated scene path (registry key, no res:// prefix) of THIS rock variant, so a
 # broken-off half spawns the SAME scene (small/medium/large) instead of a hardcoded one.
 func _scene_name() -> String:
@@ -770,17 +738,3 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 ### tool (perforation along the targeted fault), handled server-side via an action.
 func _on_area_3d_body_entered(_body: Node3D) -> void:
 	pass
-
-func _enter_tree() -> void:
-	# Reparenting (carry/drop) finished re-adding us: clear the guard. Mirrors CarriableBox.
-	if GameOrchestrator.is_server():
-		server_reparenting = false
-
-func _exit_tree() -> void:
-	# Don't delete on clients when we're only being reparented (carried/dropped).
-	if GameOrchestrator.is_server() and not server_reparenting:
-		emit_signal(
-			"hs_server_prop_delete",
-			uuid,
-			type_name
-		)

@@ -10,8 +10,8 @@ func _ready() -> void:
 	if GameOrchestrator.is_server():
 		set_physics_process(true)
 
-func client_channel_data_update(data: Dictionary) -> void:
-	super.client_channel_data_update(data)
-
+## PropSync applies the replicated transform, then calls this with the full payload so we can pick up
+## our own (non-transform) fields. Replaces the old client_channel_data_update override.
+func apply_prop_data(data: Dictionary) -> void:
 	if "content" in data:
 		content = data["content"]

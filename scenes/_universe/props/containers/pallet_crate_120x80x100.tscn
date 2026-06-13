@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_ycnj0"]
 [ext_resource type="PackedScene" uid="uid://bqppe3gbg5ga4" path="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb" id="2_k2t6d"]
 [ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_k2t6d"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ycnj0"]
 size = Vector3(1.2, 1, 0.8)
@@ -13,6 +14,11 @@ collision_mask = 15
 mass = 200.0
 freeze = true
 script = ExtResource("1_ycnj0")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "box"
+enable_carry = false
 
 [node name="pallet_crate_120x80x100" parent="." unique_id=584274319 instance=ExtResource("2_k2t6d")]
 

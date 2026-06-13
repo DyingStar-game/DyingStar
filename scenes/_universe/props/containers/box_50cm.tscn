@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://c7v5g1523rj0r" path="res://scenes/_universe/props/containers/carryable_storagebox.gd" id="1_o2evt"]
 [ext_resource type="ArrayMesh" uid="uid://cqspqet04e0fj" path="res://assets/_universe/props/containers/Box50cm.mesh" id="1_xngen"]
 [ext_resource type="Material" uid="uid://cc7amvqxedibt" path="res://assets/_universe/props/containers/box_50cm.material" id="3_ovsim"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_urcx6"]
 size = Vector3(0.5, 0.5, 0.5)
@@ -13,6 +14,11 @@ collision_mask = 15
 mass = 15.0
 continuous_cd = true
 script = ExtResource("1_o2evt")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_1")
+type_name = "box"
+enable_carry = true
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=217248518]
 mesh = ExtResource("1_xngen")

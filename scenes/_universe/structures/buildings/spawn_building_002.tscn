@@ -5,6 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://b7xrk0cprkj1q" path="res://assets/_universe/structures/buildings/building_apartment_001_concrete_wall_albedo.png" id="3_17gf7"]
 [ext_resource type="Texture2D" uid="uid://d18v1s487ex3b" path="res://assets/_universe/structures/buildings/building_apartment_001_concrete_wall_normal.png" id="4_ig2qq"]
 [ext_resource type="Texture2D" uid="uid://c18nry2rakjmg" path="res://assets/_universe/structures/buildings/building_apartment_001_concrete_wall_rough.png" id="5_i48je"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jc3i8"]
 albedo_texture = ExtResource("3_17gf7")
@@ -32,6 +33,11 @@ size = Vector3(8.43586326904915, 0.2, 12.36057878158772)
 [node name="SpawnBuilding002" type="StaticBody3D" unique_id=1469314982]
 collision_mask = 0
 script = ExtResource("1_8ev56")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "spawnbuilding"
+enable_carry = false
 cols = 5
 x_spacing = -8.15
 z_spacing = 11.41

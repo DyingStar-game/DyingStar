@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_nyfv5"]
 [ext_resource type="PackedScene" uid="uid://g4d670sy5626" path="res://assets/_universe/props/containers/container_benne_1200x240x240.glb" id="2_nyfv5"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_nyfv5"]
 size = Vector3(12, 2.4, 2.4)
@@ -12,6 +13,11 @@ collision_mask = 15
 mass = 8000.0
 freeze = true
 script = ExtResource("1_nyfv5")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_ds")
+type_name = "box"
+enable_carry = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=925483459]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)

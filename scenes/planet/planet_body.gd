@@ -110,6 +110,18 @@ func _ready() -> void:
 # ------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	# The spin is applied on CLIENTS ONLY — the dedicated server keeps a STATIC collision frame. Physics at
+	# astronomic coordinates needs a stable frame: rotating the planet-sized StaticBody collision teleports
+	# it in Jolt every refresh and breaks CharacterBody contact for every body on the surface (the "everyone
+	# bobs" dance). The server therefore never spins. This works WITHOUT desyncing orientation because
+	# player/prop rotation is replicated in the planet-LOCAL frame (see player.gd net_set_target /
+	# player_server.gd apply+broadcast / player_client.gd send) — a frame-invariant quantity, exactly like
+	# positions — so the server (static) and every client (spun) agree on where a body faces. The spin
+	# itself is a pure function of absolute time, so all clients land on the SAME orientation: a space
+	# observer sees the planet turning and a surface body co-rotates with the ground. Day/night is
+	# client-side (PlayerSunLight, player world pos vs the fixed star). Orbital position is separate.
+	if OS.has_feature("dedicated_server"):
+		return
 	if Engine.is_editor_hint() or rotation_period_hours <= 0.0:
 		return
 	# Refresh at a few Hz rather than every tick: the planet carries the terrain colliders and every

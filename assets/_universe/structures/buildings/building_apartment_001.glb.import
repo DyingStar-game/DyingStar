@@ -13,7 +13,7 @@ dest_files=["res://.godot/imported/building_apartment_001.glb-d196cdc7b1e84feab9
 
 [params]
 
-nodes/root_type="RigidBody3D"
+nodes/root_type="MeshInstance3D"
 nodes/root_name=""
 nodes/root_script=null
 mesh_library/use_node_names_as_mesh_names=false

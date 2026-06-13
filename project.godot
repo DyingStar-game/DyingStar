@@ -84,6 +84,7 @@ containable=""
 player=""
 spawn="spawn area (apartments)"
 teleporter=""
+navigation_mesh=""
 
 [input]
 
@@ -300,6 +301,11 @@ locale/translations=PackedStringArray("res://tools/localization/localisation.en.
 3d_physics/layer_4="prop"
 3d_physics/layer_5="zone"
 3d_physics/layer_6="interactable"
+
+[navigation]
+
+pathfinding/max_threads=-1
+3d/merge_rasterizer_cell_scale=0.25
 
 [physics]
 

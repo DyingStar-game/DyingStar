@@ -129,9 +129,10 @@ const TELEPORT_TARGETS := {
 @export var player_thruster_force = 10
 
 @export_subgroup("Carry & interaction")
-## Where a carried item floats, relative to the player body (issue #124): head height, a
-## bit below the eye line and ahead. Body-relative (yaw only, no camera pitch).
-@export var carry_offset: Vector3 = Vector3(0.0, -1.0, -1.5)
+## Where a carried item floats, relative to the CAMERA pivot (issue #124): -Z is the carry distance
+## along the gaze, so the item stays centered on the crosshair at any head pitch. Keep X/Y at 0 for
+## exact crosshair alignment. (The actual value is overridden per scene, e.g. player.tscn.)
+@export var carry_offset: Vector3 = Vector3(0.0, 0.0, -1.5)
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
 ## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
 @export var interact_ray_length: float = 1.5
@@ -283,6 +284,20 @@ var client_last_global_rotation = Vector3.ZERO
 
 var is_parented: bool = false
 
+# NPC (server-authoritative). Set on spawn by server.gd; PlayerServer reads these to drive movement.
+## True when this Player is a server-controlled NPC instead of a networked client.
+var is_npc: bool = false
+## Destination the NPC walks toward, or null when it has no goal. Set by external AI / spawn logic
+## (consume-only here: PlayerServer only reads it). A Vector3 in the NPC PARENT's frame — the same frame
+## as `position` — NOT world space: read it through PlayerServer._npc_target_global(), because the
+## navigation agent it feeds wants a global point.
+var npc_go_to_position = null
+## Point the standing NPC turns to face, or null when it has no facing goal. Same frame convention as
+## npc_go_to_position (NPC PARENT's frame). PlayerServer pivots the body toward it around its own up
+## axis at a calm human speed, then clears it once aligned. Walking overrides it (the body faces the
+## walk direction), so a new npc_go_to_position drops it.
+var npc_face_position = null
+
 # to disable player input when piloting vehicule/ship
 var active = false
 # Server-authoritative: true while seated in a vehicle. Blocks walking on the SERVER (which
@@ -389,6 +404,9 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 # Mining gameplay (perforator equip, aim, perforation) is encapsulated in the
 # MiningTool component (scene child). Networking stays here (see _ready wiring).
 @onready var mining_tool: MiningTool = $MiningTool
+## Server-only pathfinding agent, driven by PlayerServer when this body is an NPC. Present on every
+## Player instance (it lives in player.tscn) but only used on the dedicated server.
+@onready var navigation_agent_3d: NavigationAgent3D = $NavigationAgent3D
 
 func _enter_tree() -> void:
 	if remote_player:
@@ -483,11 +501,12 @@ func net_set_local_target(local_pos: Vector3) -> void:
 	_interp.set_position_target(self, local_pos)
 
 
-func net_set_target(local_pos: Vector3, global_rot: Vector3) -> void:
-	var target_basis := Basis.from_euler(global_rot)
-	var parent := get_parent()
-	if parent is Node3D:
-		target_basis = (parent as Node3D).global_basis.inverse() * target_basis
+func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
+	# rotation is replicated in the planet-LOCAL frame (see player_client send / player_server broadcast),
+	# so apply it directly as the local basis — do NOT convert through the parent's global basis. The parent
+	# (planet) spins on the client but is static on the server; converting through it would re-introduce the
+	# spin offset and tilt remote bodies. Local rotation is frame-invariant, exactly like the local position.
+	var target_basis := Basis.from_euler(local_rot)
 	_interp.set_target(self, local_pos, target_basis)
 
 ## Re-snap the interpolation after a reparent (the local frame changed).
@@ -546,7 +565,7 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 				"hs_server_move",
 				client_uuid,
 				snapped(position, Vector3(0.001, 0.001, 0.001)),
-				snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+				snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
 				planet.uuid,
 				is_parented
 			)
@@ -629,6 +648,19 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 		# if gravity_parents.has(area):
 		# 	gravity_parents.erase(area)
 
+## npc_go_to_position is stored in the PARENT's frame (see PlayerServer). reparent() preserves the
+## BODY's world position but silently changes what those stored goal coordinates mean — walking out of
+## the spawn building reparents building→planet, and the unconverted goal sent the NPC to a wrong world
+## point. Call this immediately BEFORE any reparent of an NPC: it re-expresses the goal in the incoming
+## parent's frame so the WORLD destination the AI asked for stays the same.
+func npc_goal_keep_world(new_parent: Node) -> void:
+	if not is_npc or npc_go_to_position == null:
+		return
+	var old_parent = get_parent()
+	if old_parent is Node3D and new_parent is Node3D:
+		var goal_world: Vector3 = (old_parent as Node3D).global_transform * npc_go_to_position
+		npc_go_to_position = (new_parent as Node3D).global_transform.affine_inverse() * goal_world
+
 ## Reparent guarded against invalid states (node/parent out of tree, already
 ## parented, repeated area_exited events) to avoid a server segfault, then emit
 ## the move so the server receives the position relative to the new parent.
@@ -639,12 +671,13 @@ func _safe_reparent_and_sync(new_parent: Node) -> void:
 	if not is_inside_tree() or not new_parent.is_inside_tree():
 		return
 	if get_parent() != new_parent:
+		npc_goal_keep_world(new_parent)
 		reparent(new_parent)
 		emit_signal(
 			"hs_server_move",
 			client_uuid,
 			snapped(position, Vector3(0.001, 0.001, 0.001)),
-			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
 			# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
 			str(new_parent.uuid) if "uuid" in new_parent else "",
 			true

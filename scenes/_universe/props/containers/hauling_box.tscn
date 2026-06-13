@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://dhmj25r7k7c26" path="res://assets/_universe/props/containers/box.glb" id="2_j2geo"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="3_hqfv2"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="4_6ad14"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_urcx6"]
 size = Vector3(0.3953384826854745, 0.4112716205195284, 0.4039184679659229)
@@ -14,16 +15,20 @@ collision_mask = 15
 mass = 50.0
 continuous_cd = true
 script = ExtResource("1_haul")
-type_name = "crate_container"
 id_short_display = true
+
+[node name="PropSync" type="Node" parent="." unique_id=1673367311]
+script = ExtResource("propsync_1")
+type_name = "crate_container"
+enable_carry = true
 
 [node name="boxmesh" parent="." unique_id=1100122273 instance=ExtResource("2_j2geo")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25432684811476347, 0)
 
-[node name="box" parent="boxmesh" index="0" unique_id=1623152151]
+[node name="box" parent="boxmesh" index="0" unique_id=204194740]
 surface_material_override/0 = ExtResource("3_hqfv2")
 
-[node name="box_decals" parent="boxmesh" index="1" unique_id=885319987]
+[node name="box_decals" parent="boxmesh" index="1" unique_id=1470786904]
 surface_material_override/0 = ExtResource("4_6ad14")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415410391]
@@ -47,7 +52,7 @@ font_size = 30
 outline_size = 0
 
 [node name="IdFrameBack" type="Label3D" parent="." unique_id=771122335 groups=["prop_id_label"]]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.06967657874970228, -0.19018414121822622)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.06967657874970228, -0.19018414121822624)
 pixel_size = 0.0005
 modulate = Color(0.09, 0.09, 0.09, 1)
 text = "ARES-HAUL-XXXXXXXX"

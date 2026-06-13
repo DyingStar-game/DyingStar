@@ -3,6 +3,8 @@
 [ext_resource type="Script" path="res://scenes/_universe/props/containers/carryable_storagebox.gd" id="1_crate"]
 [ext_resource type="PackedScene" uid="uid://bqppe3gbg5ga4" path="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb" id="2_crate"]
 
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_crate"]
 size = Vector3(1.2, 1, 0.8)
 
@@ -13,6 +15,11 @@ mass = 200.0
 script = ExtResource("1_crate")
 type_name = "box"
 carriable = false
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_1")
+type_name = "box"
+enable_carry = true
 
 [node name="pallet_crate_120x80x100" parent="." unique_id=780000002 instance=ExtResource("2_crate")]
 
