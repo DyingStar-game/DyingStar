@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://fxj147p5soqi"]
+[gd_scene format=3 uid="uid://fxj147p5soqi"]
 
 [ext_resource type="Script" uid="uid://bguwknfgm463x" path="res://levels/devmode/SimpleBoxTest/simple_box_test.gd" id="1_m4ygx"]
 [ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_m4ygx"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
 [ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/props/testbox/box_50cm.tscn" id="7_w0ufy"]
+[ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/props/rock/rock_mining_01.tscn" id="8_bdj2j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)
@@ -28,58 +29,46 @@ ambient_light_source = 3
 [sub_resource type="BoxShape3D" id="BoxShape3D_m4ygx"]
 size = Vector3(100, 50, 100)
 
-[node name="SimpleBoxTest" type="Node3D"]
+[node name="SimpleBoxTest" type="Node3D" unique_id=54903359]
 script = ExtResource("1_m4ygx")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1592737462]
 mesh = SubResource("PlaneMesh_xqwsu")
 surface_material_override/0 = ExtResource("2_m4ygx")
 
-[node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D"]
+[node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D" unique_id=1663636628]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D" unique_id=608377004]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 shape = SubResource("BoxShape3D_1k8n2")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2003784867]
 transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 0, 20, 0)
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=670560332]
 environment = SubResource("Environment_le64j")
 
-[node name="DataPlanet" type="Node" parent="."]
+[node name="DataPlanet" type="Node" parent="." unique_id=400465058]
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
 
-[node name="Area3D" type="Area3D" parent="." groups=["gravity"]]
+[node name="Area3D" type="Area3D" parent="." unique_id=708588488 groups=["gravity"]]
 gravity_space_override = 3
 script = ExtResource("4_jq82d")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1386348906]
 shape = SubResource("BoxShape3D_m4ygx")
 
-[node name="PalletLiquid120x80x100" parent="." instance=ExtResource("4_1uj1c")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.622590192634482, 9.147364821160409e-08, 0.6245682824668704)
+[node name="PalletLiquid120x80x100" parent="." unique_id=1168125104 instance=ExtResource("4_1uj1c")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.703731769385667, 9.147364821160409e-08, -2.5019927579967858)
 
-[node name="PalletCrate120x80x100" parent="." instance=ExtResource("5_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.408846799152517, 9.147364821160409e-08, -0.9447545420112792)
+[node name="PalletCrate120x80x100" parent="." unique_id=834719290 instance=ExtResource("5_w0ufy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2302968384118245, 9.147364821160409e-08, -2.49872982105125)
 
-[node name="ContainerLiquid1200x240x240" parent="." instance=ExtResource("6_bdj2j")]
+[node name="ContainerLiquid1200x240x240" parent="." unique_id=732764926 instance=ExtResource("6_bdj2j")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)
 
-[node name="box_50cm" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.2413228662517195, 1.4256433264896695, -0.940671208729605)
+[node name="box_50cm6" parent="." unique_id=1842183148 instance=ExtResource("7_w0ufy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.735164876670789, 0.2534957252035914, -2.7383454924542456)
 
-[node name="box_50cm6" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.2413228662517195, 1.9426793335489547, -0.940671208729605)
-
-[node name="box_50cm2" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(-0.9963824715083254, 0, -0.08498217737244182, 0, 1, 0, 0.08498217737244182, 0, -0.9963824715083254, -11.03902261777635, 0.4541092641372315, -0.89921582742164)
-
-[node name="box_50cm3" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(-0.9963824715083254, 0, -0.08498217737244182, 0, 1, 0, 0.08498217737244182, 0, -0.9963824715083254, -12.616585249601092, 0.6574659588307408, -0.89921582742164)
-
-[node name="box_50cm4" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(-0.9963824715083254, 0, -0.08498217737244182, 0, 1, 0, 0.08498217737244182, 0, -0.9963824715083254, -14.24209256725082, 0.6574659588307408, -0.89921582742164)
-
-[node name="box_50cm5" parent="." instance=ExtResource("7_w0ufy")]
-transform = Transform3D(-0.9963824715083254, 0, -0.08498217737244182, 0, 1, 0, 0.08498217737244182, 0, -0.9963824715083254, -14.24209256725082, 1.4583401875747837, -0.89921582742164)
+[node name="RockMining01" parent="." unique_id=525353877 instance=ExtResource("8_bdj2j")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.266701659982466, 0.019420739792025077, -2.469626312868717)

@@ -10,4 +10,3 @@ func _process(delta: float) -> void:
 
 	$danger_light/light_bulb/SpotLight3D.visible = enabled
 	$danger_light/light_bulb/SpotLight3D2.visible = enabled
-

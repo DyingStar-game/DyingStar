@@ -305,6 +305,7 @@ material_override = ExtResource("3_vptbq")
 instance_shader_parameters/animation_speed = 0.0
 
 [node name="door" parent="miningdepot" index="15" unique_id=590761947]
+transform = Transform3D(1.1779184, 0, 0, 0, 1.1779184, 0, 0, 0, 1.1779184, 3.2296023, 3.2643256, -2.5604084)
 material_override = SubResource("StandardMaterial3D_8a0gq")
 
 [node name="screen_001" parent="miningdepot" index="16" unique_id=1301817355]
