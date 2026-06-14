@@ -456,7 +456,8 @@ func _update_cargo() -> void:
 	if _cargo_area == null:
 		return
 	for body in _cargo_area.get_overlapping_bodies():
-		if body == self or _locked_cargo.has(body):
+		# Never swallow another vehicle as cargo (drivers WILL ram a truck into a bed).
+		if body == self or body is Vehicle or _locked_cargo.has(body):
 			continue
 		if body is RigidBody3D and body.mass > 0.0 and not body.freeze:
 			if body.linear_velocity.length() < cargo_settle_speed:
