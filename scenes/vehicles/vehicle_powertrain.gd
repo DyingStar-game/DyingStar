@@ -44,7 +44,7 @@ func engine_rpm(forward_kmh: float) -> float:
 ## HUD label: the current gear (THERMAL) or empty (ELECTRIC has no gears).
 func gear_label() -> String:
 	if type == Type.THERMAL:
-		return "Rapport : %d\n" % (current_gear + 1)
+		return "Gear: %d\n" % (current_gear + 1)
 	return ""
 
 ## ELECTRIC powertrain: single-speed, full torque up to base_speed then taper (constant power).

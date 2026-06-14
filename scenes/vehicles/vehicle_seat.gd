@@ -26,7 +26,10 @@ func _ready() -> void:
 	# The player's physics body (CharacterBody3D) sits on collision layer 1, so scan that
 	# layer. Set here so every seat auto-detects the player — no per-vehicle mask setup.
 	collision_mask = 1
-	if Engine.is_editor_hint():
+	# The "press E here" body detection is CLIENT-ONLY (it sets the local player's prompt). The
+	# server is authoritative via occupant_uuid (server_enter); running it there would also crash,
+	# since the server's network_agent has no player_entity.
+	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
 		return
 	# Detect the local player walking into the box (depot pattern), so it knows which seat its
 	# E will take. Wired here so a vehicle scene only needs the node, not a manual connection.
@@ -66,4 +69,4 @@ func _on_body_exited(body: Node3D) -> void:
 ## remote players' bodies, which also exist on this client).
 func _is_local_player(body: Node) -> bool:
 	var agent = NetworkOrchestrator.network_agent
-	return agent != null and body == agent.player_entity
+	return agent != null and "player_entity" in agent and body == agent.player_entity
