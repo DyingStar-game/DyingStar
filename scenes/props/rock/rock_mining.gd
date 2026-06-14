@@ -21,8 +21,9 @@ const INTERSECTION_MARGIN := 0.06
 # as "on a fault". Aiming farther than this = not on a vein -> no cut.
 const FAULT_HIT_THRESHOLD := 0.05
 
-# Ore look (Cryptonite preset) + purity thresholds, validated in the ore bench. A piece's
-# richness drives ore_threshold: ORE_T_RICH = full of ore, ORE_T_POOR = almost none.
+# Legacy ore look — FALLBACK only, used when no MineralDef is assigned (see `mineral`). The
+# real look now comes from MineralDef (.tres). Purity thresholds below drive ore_threshold:
+# ORE_T_RICH = full of ore, ORE_T_POOR = almost none.
 const ORE_COLOR := Color(0.1, 0.8, 0.2)
 const ORE_SCALE := 6.0
 const ORE_SOFTNESS := 0.156
@@ -35,14 +36,20 @@ const ORE_T_POOR := 0.72
 # the player must fracture once to see the actual ore inside (Kainan/DDURIEUX).
 const ORE_T_EXTERIOR := 0.7  # high threshold -> very few spots
 const ORE_SCALE_EXTERIOR := 14.0  # high scale -> tiny spots
-# Neutral fault grooves (validated in the bench): darken + carved bump.
-const GROOVE_WIDTH := 0.03
-const GROOVE_DARKNESS := 0.0
-const GROOVE_STRENGTH := 0.1
 # Fraction of a piece's bounding box that is actually solid (rough volume estimate).
 const VOLUME_FILL := 0.5
 
 @export var uuid: String = ""
+## Which mineral this rock shows (gold, cryptonite, ...). Default = gold for now; per-rock
+## attribution + replication come later. The ore FIELD (amount/dispersion) stays below.
+@export var mineral: MineralDef = preload("res://assets/materials/minerals/gold/gold.tres")
+
+@export_group("Fault look")
+## Neutral fault grooves — they deliberately do NOT reveal the mineral. Width of the crack,
+## darkening at its bottom (0 = black) and carved depth (negative = raised instead of dug).
+@export var groove_width: float = 0.03
+@export_range(0.0, 1.0) var groove_darkness: float = 0.0
+@export var groove_strength: float = 0.1
 
 var type_name = "miningrock"
 
@@ -357,17 +364,16 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 	mat.shader = preload("res://scenes/props/rock/rock_vein.gdshader")
 	mat.set_shader_parameter("albedo_tex", preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg"))
 	mat.set_shader_parameter("tex_scale", 1.0)
-	mat.set_shader_parameter("ore_color", ORE_COLOR)
+	# Ore LOOK (texture / colour / metalness) comes from the mineral; the ore FIELD
+	# (amount, distribution) stays per-rock so fracture & purity behaviour is unchanged.
+	_apply_mineral(mat)
 	mat.set_shader_parameter("ore_scale", ore_scale_v)
 	mat.set_shader_parameter("ore_threshold", ore_threshold_v)
 	mat.set_shader_parameter("ore_softness", ORE_SOFTNESS)
-	mat.set_shader_parameter("ore_metallic", ORE_METALLIC)
-	mat.set_shader_parameter("ore_roughness", ORE_ROUGHNESS)
-	mat.set_shader_parameter("ore_emission", ORE_EMISSION)
 	mat.set_shader_parameter("noise_offset", _ore_offset())  # per-rock ore distribution
-	mat.set_shader_parameter("groove_width", GROOVE_WIDTH)
-	mat.set_shader_parameter("groove_darkness", GROOVE_DARKNESS)
-	mat.set_shader_parameter("groove_strength", GROOVE_STRENGTH)
+	mat.set_shader_parameter("groove_width", groove_width)
+	mat.set_shader_parameter("groove_darkness", groove_darkness)
+	mat.set_shader_parameter("groove_strength", groove_strength)
 	var normals: Array = []
 	var offsets: Array = []
 	if with_grooves:
@@ -382,6 +388,26 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 	mat.set_shader_parameter("plane_normals", normals)
 	mat.set_shader_parameter("plane_offsets", offsets)
 	return mat
+
+## Push the mineral's LOOK onto the shader (texture or flat colour + metalness). Falls back to
+## the legacy hardcoded preset when no mineral is assigned, so a rock still renders.
+func _apply_mineral(mat: ShaderMaterial) -> void:
+	if mineral != null:
+		mat.set_shader_parameter("ore_use_texture", mineral.use_texture)
+		mat.set_shader_parameter("ore_albedo_tex", mineral.albedo_tex)
+		mat.set_shader_parameter("ore_normal_tex", mineral.normal_tex)
+		mat.set_shader_parameter("ore_tex_scale", mineral.tex_scale)
+		mat.set_shader_parameter("ore_normal_strength", mineral.normal_strength)
+		mat.set_shader_parameter("ore_color", mineral.color)
+		mat.set_shader_parameter("ore_metallic", mineral.metallic)
+		mat.set_shader_parameter("ore_roughness", mineral.roughness)
+		mat.set_shader_parameter("ore_emission", mineral.emission)
+	else:
+		mat.set_shader_parameter("ore_use_texture", false)
+		mat.set_shader_parameter("ore_color", ORE_COLOR)
+		mat.set_shader_parameter("ore_metallic", ORE_METALLIC)
+		mat.set_shader_parameter("ore_roughness", ORE_ROUGHNESS)
+		mat.set_shader_parameter("ore_emission", ORE_EMISSION)
 
 ## Exterior (uncut surface): a few tiny ore traces, DECOUPLED from the real richness, plus
 ## the fault grooves. The player must fracture to reveal the actual ore inside (Kainan).
