@@ -191,13 +191,22 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 @export var overload_immobilize: float = 1.2
 ## Size of the cargo bay box. Any massive body that comes to rest inside is absorbed into
 ## the truck (its mass is added once). Defaults roughly match the bed; tune to taste.
-@export var cargo_bay_size: Vector3 = Vector3(2.0, 1.5, 3.1)
+@export var cargo_bay_size: Vector3 = Vector3(2.0, 1.5, 3.1):
+	set(v):
+		cargo_bay_size = v
+		_rebuild_deferred()
 ## Centre of the cargo bay box, relative to the vehicle origin.
-@export var cargo_bay_offset: Vector3 = Vector3(0.0, 1.0, 0.75)
+@export var cargo_bay_offset: Vector3 = Vector3(0.0, 1.0, 0.75):
+	set(v):
+		cargo_bay_offset = v
+		_rebuild_deferred()
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
 ## Show a translucent box marking the cargo bay zone.
-@export var debug_show_cargo_bay: bool = true
+@export var debug_show_cargo_bay: bool = true:
+	set(v):
+		debug_show_cargo_bay = v
+		_rebuild_deferred()
 
 # Networking (GenericProp contract). uuid is set by the prop spawn pipeline; an EMPTY uuid
 # means bench / standalone mode (the vehicle drives locally instead of being replicated).
@@ -349,6 +358,10 @@ func _build_cargo_area() -> void:
 	var area := Area3D.new()
 	area.name = "CargoBay"
 	area.set_meta(GENERATED, true)
+	# Detect cargo via the MASK only; keep this zone off every collision layer so it doesn't eat
+	# the player's interact ray (collide_with_areas) — otherwise you can't aim at a crate inside it.
+	area.collision_layer = 0
+	area.monitorable = false
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = cargo_bay_size
@@ -469,8 +482,9 @@ func _lock_cargo(body: RigidBody3D) -> void:
 	_locked_cargo[body] = body.mass
 	body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	body.freeze = true
-	body.collision_layer = 0
-	body.collision_mask = 0
+	# Keep the crate's collision LAYER (so the carry ray can still target it for retrieval); just
+	# stop the truck body and the crate from fighting each other where they overlap in the bed.
+	add_collision_exception_with(body)
 	# Reparent into the bed WITHOUT the prop's _exit_tree firing a delete (server_parent_change
 	# sets server_reparenting), then replicate the reparent so clients ride it in the bed. A raw
 	# reparent() made the prop vanish in-game (its _exit_tree deleted it from Horizon).
@@ -480,6 +494,15 @@ func _lock_cargo(body: RigidBody3D) -> void:
 			body.send_properties_to_client(str(uuid))
 	else:
 		body.reparent(self)
+	_refresh_mass()
+
+## Release a crate from the bed back into the world / a player's hands (carry retrieval): stop
+## ignoring it and drop it from the load. The caller (the carry pickup) then takes ownership.
+func release_cargo(body: Node) -> void:
+	if not _locked_cargo.has(body):
+		return
+	remove_collision_exception_with(body)
+	_locked_cargo.erase(body)
 	_refresh_mass()
 
 func _refresh_mass() -> void:
@@ -669,11 +692,12 @@ func _physics_process(delta: float) -> void:
 		# has physics off; its smoothing + wheels are done in _process.
 		if not GameOrchestrator.is_server():
 			return
+		_release_vanished_occupants()  # free seats whose player disconnected (node freed)
 		_update_cargo()
 		# Keep the body awake while handbraked so _integrate_forces keeps cancelling drift — a
 		# parked truck that fell asleep would roll on a slope (the brake alone can't hold a skid).
 		can_sleep = not _handbrake
-		if _pilot != null:
+		if is_instance_valid(_pilot):
 			_apply_drive(delta)
 		elif _handbrake:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
@@ -786,6 +810,8 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 	if seat == null or not seat.is_free():
 		return
 	seat.occupant_uuid = str(player.client_uuid) if "client_uuid" in player else ""
+	seat.occupant = player  # kept so we can free the seat if the player disconnects (node freed)
+	seat.occupant_mass = _player_mass(player)
 	if "piloting" in player:
 		player.piloting = true  # server-side walk lock
 		player._seat_node = seat  # the player rides this seat each frame (server)
@@ -808,6 +834,8 @@ func server_exit(player: Node) -> void:
 	if seat == null:
 		return
 	seat.occupant_uuid = ""
+	seat.occupant = null
+	seat.occupant_mass = 0.0
 	if "piloting" in player:
 		player.piloting = false
 		player._seat_node = null
@@ -860,6 +888,27 @@ func _find_seat_of(player: Node) -> Node:
 
 func _replicate_pilot() -> void:
 	emit_signal("hs_server_prop_update", uuid, {"pilot_uuid": pilot_uuid}, type_name, has_parent)
+
+## Free any seat whose occupant vanished (a player who disconnected while seated has their node
+## freed by the network layer). Without this the seat stays "taken" forever and a freed _pilot
+## would crash the drive code. Cheap: a couple of seats per vehicle, checked each server tick.
+func _release_vanished_occupants() -> void:
+	var changed := false
+	for seat in _seats():
+		if seat.occupant_uuid == "" or is_instance_valid(seat.occupant):
+			continue
+		_occupant_mass = maxf(0.0, _occupant_mass - seat.occupant_mass)
+		seat.occupant_uuid = ""
+		seat.occupant = null
+		seat.occupant_mass = 0.0
+		changed = true
+		if seat.is_driver_seat():
+			_pilot = null
+			pilot_uuid = ""
+			_replicate_pilot()
+		print("🚚 Vehicle %s: freed a seat whose occupant disconnected" % uuid)
+	if changed:
+		_refresh_mass()
 
 ## Read WASD and apply traction / steering / brake. The forward force comes from the chosen
 ## powertrain (electric or thermal). Reused later by the pilot path.

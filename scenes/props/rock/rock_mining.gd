@@ -60,6 +60,10 @@ var spawn_rotation: Vector3 = Vector3.UP
 
 var server_last_position = Vector3.ZERO
 var server_last_rotation = Vector3.ZERO
+# Last parent_id replicated + frames left to keep resending it after a change (PropNet), so a
+# single lost drop/settle message can't strand this piece under its old parent on clients.
+var server_last_parent_id: String = ""
+var server_parent_resend: int = 0
 
 var has_parent: bool = false
 # True while we briefly leave the tree to reparent (carry/drop): tells _exit_tree NOT
@@ -421,6 +425,22 @@ func _make_inner_material() -> ShaderMaterial:
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
 	has_parent = true
+	_apply_carry_collision_exception(parent)
+
+## Client: if WE (the local player) are the new parent, we're carrying this piece — ignore
+## collisions between us and it so our own move_and_slide isn't blocked. Otherwise clear any
+## stale exception so it stays solid to us (on the ground or carried by someone else).
+func _apply_carry_collision_exception(parent: Node) -> void:
+	if GameOrchestrator.is_server():
+		return
+	var agent = NetworkOrchestrator.network_agent
+	var local_player = agent.player_entity if agent != null and "player_entity" in agent else null
+	if local_player == null or not (local_player is PhysicsBody3D):
+		return
+	if parent == local_player:
+		add_collision_exception_with(local_player)
+	else:
+		remove_collision_exception_with(local_player)
 
 func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("parent_id"):
@@ -471,12 +491,10 @@ func interact(_interactor: Node = null) -> bool:
 	return is_fully_fractured() and not carried
 
 ## Mark/unmark as carried so another player can't grab it while it is in hands.
-## A carried ore must not generate collision (issue #124): a frozen body acts like a
-## static wall in front of the player, so disable its body shape while carried.
+## A carried ore KEEPS its collision (solid to the world and other players); the carrier adds a
+## collision exception with it instead, so it isn't blocked by the piece it carries (issue #124).
 func set_carried(value: bool) -> void:
 	carried = value
-	if rock_shape:
-		rock_shape.disabled = value
 
 ## Geometry center relative to the body origin: a cut piece keeps the original rock's
 ## pivot, so its mesh sits off to one side. The carrier uses this to hold the ore by its

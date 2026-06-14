@@ -53,6 +53,19 @@ func _ready() -> void:
 		if GameOrchestrator.is_server():
 			await get_tree().create_timer(1).timeout
 			var parent = get_parent()
+			# Find the real networked parent up the tree (skip grouping / test-zone folder nodes
+			# that have no uuid), so grouping the placeholder under a folder doesn't break placement.
+			var net_parent: Node = parent
+			while net_parent != null and not ("uuid" in net_parent):
+				net_parent = net_parent.get_parent()
+			var parent_uuid: String = str(net_parent.uuid) if net_parent != null else ""
+			# Express the placement in that parent's frame (global if there is no networked parent),
+			# so the depot lands at the SAME world spot whatever the scene grouping.
+			var place_xform: Transform3D = global_transform
+			if net_parent is Node3D:
+				place_xform = (net_parent as Node3D).global_transform.affine_inverse() * global_transform
+			var place_pos: Vector3 = place_xform.origin
+			var place_rot: Vector3 = place_xform.basis.get_euler()
 
 			# Spawn the real networked depot to replace this editor placeholder. Use
 			# spawn_prop_authoritative so it is registered in Horizon AND created locally on
@@ -64,7 +77,7 @@ func _ready() -> void:
 			# needed). Seed from the explicit stable_id, else from the fixed placement position
 			# so no manual setup is required.
 			var uuid_seed: String = stable_id if stable_id != "" \
-				else "%.3f,%.3f,%.3f" % [position.x, position.y, position.z]
+				else "%.3f,%.3f,%.3f" % [global_position.x, global_position.y, global_position.z]
 			var depot_uuid: String = _stable_uuid(uuid_seed)
 			# Designer-placed depot = world infrastructure: protect it from the admin cleanup
 			# tool (only player-spawned depots should be deletable).
@@ -73,14 +86,14 @@ func _ready() -> void:
 				"type": type_name,
 				"uuid": depot_uuid,
 				"position": {
-					"x": position.x,
-					"y": position.y,
-					"z": position.z
+					"x": place_pos.x,
+					"y": place_pos.y,
+					"z": place_pos.z
 				},
 				"rotation": {
-					"x": rotation.x,
-					"y": rotation.y,
-					"z": rotation.z
+					"x": place_rot.x,
+					"y": place_rot.y,
+					"z": place_rot.z
 				},
 				"data": {
 					"state": "idle",
@@ -91,7 +104,7 @@ func _ready() -> void:
 					"active_player": null
 				},
 				"scenename": "scenes/structures/mining_depot.tscn",
-				"parent_id": parent.uuid,
+				"parent_id": parent_uuid,
 			})
 
 		queue_free()

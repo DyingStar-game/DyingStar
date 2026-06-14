@@ -334,12 +334,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
 		interact_ray.force_raycast_update()
-		var hit = interact_ray.get_collider()
-		var target_uuid := ""
-		if hit != null:
-			var hp = hit.get_parent()
-			if hp != null and hp.has_method("interact") and "uuid" in hp:
-				target_uuid = str(hp.uuid)
+		var aim := _aimed_carriable()
+		var target_uuid := str(aim.uuid) if aim != null else ""
 		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow()
 
@@ -432,6 +428,18 @@ func _process(_delta: float) -> void:
 		else:
 			interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
 		interact_label.show()
+
+	# Carry/drop prompt (no other prompt showing). Carrying -> E drops; hands free and aiming at a
+	# grabbable prop -> E carries it. interact() is the same rule the server uses to allow the grab.
+	if not interact_label.visible:
+		if _owner_carrying:
+			interact_label.text = "[E] Drop"
+			interact_label.show()
+		else:
+			var aim := _aimed_carriable()
+			if aim != null and aim.interact():
+				interact_label.text = "[E] Carry"
+				interact_label.show()
 
 
 	if not OS.has_feature("dedicated_server"):
@@ -889,7 +897,8 @@ func _safe_reparent_and_sync(new_parent: Node) -> void:
 		client_uuid,
 		snapped(position, Vector3(0.001, 0.001, 0.001)),
 		snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		new_parent.uuid,
+		# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
+		str(new_parent.uuid) if "uuid" in new_parent else "",
 		is_parented
 	)
 
@@ -914,7 +923,8 @@ func _on_spawn_selected(data) -> void:
 func _spawn_truck() -> void:
 	var spawn_pos: Vector3 = position + (-global_basis.z * 8.0) + global_basis.y * 1.0
 	var parent = get_parent()
-	var parentuuid = "" if parent.name == "SystemSandbox" else parent.uuid
+	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
+	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
 	client_send_action_to_server({
 		"action": "spawn_vehicle",
 		"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
@@ -925,7 +935,8 @@ func _spawn_truck() -> void:
 func _spawn_depot() -> void:
 	var spawn_pos: Vector3 = position + (-global_basis.z * 10.0)
 	var parent = get_parent()
-	var parentuuid = "" if parent.name == "SystemSandbox" else parent.uuid
+	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
+	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
 	emit_signal(
 		"client_action_requested",
 		{
@@ -941,11 +952,8 @@ func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float)
 	# LOCAL DEV (do not commit): re-enabled to spawn mining rocks for testing.
 	var item_spawn_position: Vector3 = position + (-global_basis.z * _coeffz) + global_basis.y * _coeffy
 	var parent = get_parent()
-	var parentuuid = ""
-	if parent.name == "SystemSandbox":
-		parentuuid = ""
-	else:
-		parentuuid = parent.uuid
+	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
+	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
 	emit_signal(
 		"client_action_requested",
 		{
@@ -1088,6 +1096,22 @@ func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 		var found: Node = _find_node_by_uuid(child, target_uuid)
 		if found != null:
 			return found
+	return null
+
+## The carriable prop under the crosshair, or null. Checks the hit body itself AND its parent:
+## a prop's collision can be the root (which carries interact(), e.g. a crate in a truck bed where
+## get_parent() is the vehicle) or a child shape (parent carries interact()). (#124)
+func _aimed_carriable() -> Node:
+	if not interact_ray.is_colliding():
+		return null
+	var hit = interact_ray.get_collider()
+	if hit == null:
+		return null
+	if hit.has_method("interact") and "uuid" in hit:
+		return hit
+	var p = hit.get_parent()
+	if p != null and p.has_method("interact") and "uuid" in p:
+		return p
 	return null
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
@@ -1234,9 +1258,12 @@ func server_action_received(data: Dictionary) -> void:
 				# Generic: let the object know it is no longer carried (issue #124).
 				if hands_item.has_method("set_carried"):
 					hands_item.set_carried(false)
-				hands_item.server_parent_change(get_parent())
+				hands_item.remove_collision_exception_with(self)  # it can collide with us again
+				var drop_parent := get_parent()
+				hands_item.server_parent_change(drop_parent)
 				hands_item.freeze = false
-				hands_item.send_properties_to_client(get_parent().uuid)
+				# Robust to the scene layout: a parent without a uuid (grouping/test-zone node) = "".
+				hands_item.send_properties_to_client(str(drop_parent.uuid) if "uuid" in drop_parent else "")
 				hands_item = null
 				# Stop carrying on all clients (perforator comes back) (issue #124).
 				server_send_properties_to_client({"carrying": false})
@@ -1247,7 +1274,15 @@ func server_action_received(data: Dictionary) -> void:
 				var parent_node := _find_carriable(str(data.get("target_uuid", "")))
 				var picked_up := false
 				if parent_node != null and parent_node.has_method("interact") and parent_node.interact(self):
+					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
+					var prev_parent := parent_node.get_parent()
+					if prev_parent is Vehicle and prev_parent.has_method("release_cargo"):
+						prev_parent.release_cargo(parent_node)
 					parent_node.freeze = true
+					parent_node.add_collision_exception_with(self)  # solid to others, not the carrier
+					# Make sure its replication is active: a crate that sat in a bed may have had its
+					# _physics_process paused, which would stop PropNet from replicating a later drop.
+					parent_node.set_physics_process(true)
 					parent_node.server_parent_change(self)
 					parent_node.position = Vector3(0.0, 1.0, -1.0)
 					#  send reparent to client

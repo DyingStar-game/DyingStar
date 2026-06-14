@@ -163,7 +163,7 @@ size = Vector2(1.5, 0.95)
 size = Vector3(0.2317254395602504, 0.9081811614742036, 1.4966181594172667)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ke7ee"]
-size = Vector3(0.8475183838172597, 1.5159430815429005, 1.258038524483709)
+size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cywas"]
 size = Vector3(1.6661057030960365, 0.142747382725247, 5.571124174060969)
@@ -256,6 +256,7 @@ debug_fill = false
 [node name="miningdepot" parent="." unique_id=2001283544 instance=ExtResource("1_x63ok")]
 
 [node name="platform" parent="miningdepot" index="0" unique_id=459582021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9539688, -0.48168185, 0.010096626745741402)
 material_override = SubResource("StandardMaterial3D_8a0gq")
 
 [node name="ramps" parent="miningdepot" index="1" unique_id=1767211288]
@@ -343,11 +344,11 @@ shape = SubResource("BoxShape3D_7mukx")
 debug_color = Color(0.70196074, 0.31287596, 0.24275212, 0.41960785)
 
 [node name="ScreenDetector" type="Area3D" parent="miningdepot/Gui3D" unique_id=1958200926 groups=["screen_area"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5530165457661793, -0.9505507095903476, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7200000000011642, -0.9510000000009313, 0)
 input_ray_pickable = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="miningdepot/Gui3D/ScreenDetector" unique_id=383350684]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07624082, 0.25797153, -0.00753310322761535)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11795276670711519, 0.25797153000000006, -0.0075331032276153495)
 shape = SubResource("BoxShape3D_ke7ee")
 
 [node name="BoxSpawnOrigin" type="Marker3D" parent="." unique_id=1419126176]

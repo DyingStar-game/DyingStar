@@ -13,6 +13,10 @@ var spawn_rotation: Vector3 = Vector3.UP
 
 var server_last_position = Vector3.ZERO
 var server_last_rotation = Vector3.ZERO
+# Last parent_id replicated + how many more frames to keep resending it after a change, so a
+# single lost drop/settle message can't strand this prop under its old parent on clients (PropNet).
+var server_last_parent_id: String = ""
+var server_parent_resend: int = 0
 
 var has_parent: bool = false
 var carried: bool = false             # carried by a player (issue #124)
@@ -58,6 +62,22 @@ func server_prop_update(data: Dictionary):
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
 	has_parent = true
+	_apply_carry_collision_exception(parent)
+
+## Client: if WE (the local player) are the new parent, we're carrying this prop — ignore
+## collisions between us and it so our own move_and_slide isn't blocked. Otherwise clear any
+## stale exception so it stays solid to us (on the ground or carried by someone else).
+func _apply_carry_collision_exception(parent: Node) -> void:
+	if GameOrchestrator.is_server():
+		return
+	var agent = NetworkOrchestrator.network_agent
+	var local_player = agent.player_entity if agent != null and "player_entity" in agent else null
+	if local_player == null or not (local_player is PhysicsBody3D):
+		return
+	if parent == local_player:
+		add_collision_exception_with(local_player)
+	else:
+		remove_collision_exception_with(local_player)
 
 # receive the update from server, in this example, we manage position and rotation properties
 func client_channel_data_update(data: Dictionary) -> void:
@@ -80,10 +100,8 @@ func interact(_interactor: Node = null) -> bool:
 
 func set_carried(value: bool) -> void:
 	carried = value
-	# A carried prop generates no collision (a frozen body would block the carrier).
-	for c in get_children():
-		if c is CollisionShape3D:
-			c.disabled = value
+	# A carried prop KEEPS its collision (solid to the world and other players); the carrier
+	# adds a collision exception with it instead, so it isn't blocked by what it carries.
 
 func server_parent_change(parent: Node) -> void:
 	server_reparenting = true

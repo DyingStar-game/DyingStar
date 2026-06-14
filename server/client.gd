@@ -578,12 +578,15 @@ func create_generic_object(event: Dictionary) -> void:
 
 	if props_list[object_type].has(object_id):
 		var prop_instance = props_list[object_type][object_id]
-		# manage special case for new parent
+		# manage special case for new parent (only when it actually changes — parent_id rides the
+		# 30/s zone-0 channel, so reapplying it every frame would churn the carry).
 		if object_data.has("parent_id"):
 			if object_data["parent_id"] != "":
 				var parent = _search_parent_node(object_data["parent_id"])
-				if parent != null:
+				if parent != null and prop_instance.get_parent() != parent:
 					prop_instance.client_parent_change(parent)
+			elif prop_instance.get_parent() != universe_scene:
+				prop_instance.client_parent_change(universe_scene)
 		#print("client_channel_data_update (1) for existing object %s" % object_id)
 		prop_instance.client_channel_data_update(object_data)
 
@@ -726,15 +729,17 @@ func update_generic_object(event: Dictionary) -> void:
 	if props_list.has(object_type):
 		if props_list[object_type].has(object_id):
 			var prop_instance = props_list[object_type][object_id]
-			# Special case for new parent_id
+			# Reparent ONLY when the parent actually changes. parent_id rides zone 0 (30/s), so without
+			# this guard we'd reparent every prop every frame (spam + churn that fights the carry).
 			if object_data.has("parent_id"):
-				print("Generic object %s parent change to %s" % [object_id, object_data["parent_id"]])
 				if object_data["parent_id"] != "":
-					print("Generic object %s parent not empty" % [object_id])
 					var parent = _search_parent_node(object_data["parent_id"])
-					print("Generic object %s parent found: %s" % [object_id, parent])
-					if parent != null:
+					if parent != null and prop_instance.get_parent() != parent:
 						prop_instance.client_parent_change(parent)
+				elif prop_instance.get_parent() != universe_scene:
+					# parent_id "" -> dropped to the world root. Reparent, else it stays stuck under
+					# its old parent (truck/player) on the client (it was never moved back).
+					prop_instance.client_parent_change(universe_scene)
 
 			#print("client_channel_data_update (5) for existing object %s" % object_id)
 			prop_instance.client_channel_data_update(object_data)

@@ -9,6 +9,12 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
 size = Vector3(0.8699799106043429, 1.889733397892087, 1.1162902846483576)
 
+[sub_resource type="QuadMesh" id="QuadMesh_h8en7"]
+size = Vector2(1.5, 0.95)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_urxpd"]
+size = Vector3(0.2317254395602504, 0.9081811614742036, 1.4966181594172667)
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0ukuj"]
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_wbdvv"]
@@ -82,12 +88,6 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_lj7vy")
 
-[sub_resource type="QuadMesh" id="QuadMesh_h8en7"]
-size = Vector2(1.5, 0.95)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_urxpd"]
-size = Vector3(0.2317254395602504, 0.9081811614742036, 1.4966181594172667)
-
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 mass = 1000.0
 script = ExtResource("1_vehicle")
@@ -97,6 +97,7 @@ handbrake_release_speed = null
 wheel_visual_drop = 0.26
 motor_max_rpm = 3000.0
 debug_color_driven_wheels = false
+debug_show_cargo_bay = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.625)
@@ -125,21 +126,11 @@ shape = SubResource("BoxShape3D_seat")
 [node name="SitPoint" type="Marker3D" parent="SeatPassenger" unique_id=1273635299]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.799259690764528, 0.4925056898217868, -0.35000000000582077)
 
-[node name="screen" type="MeshInstance3D" parent="." unique_id=1870179503]
-transform = Transform3D(3.663081934606527e-17, 0, 0.2906572408545101, -0.35143766769152013, 0.20390232887818477, 1.0454802841958167e-17, -0.48413878604461746, -0.1480132576926291, 1.440248448462935e-17, -0.30728380455130244, 1.082950559708889, -2.2902095473902624)
-material_override = ExtResource("3_lpt68")
-mesh = SubResource("ArrayMesh_tuoiw")
-
-[node name="screen_001" type="MeshInstance3D" parent="." unique_id=1356869307]
-transform = Transform3D(3.663081934606527e-17, 0, 0.2906572408545101, -0.35143766769152013, 0.20390232887818477, 1.0454802841958167e-17, -0.48413878604461746, -0.1480132576926291, 1.440248448462935e-17, -0.30728380455130244, 1.082950559708889, -2.2902095473902624)
-material_override = SubResource("StandardMaterial3D_tuoiw")
-mesh = SubResource("ArrayMesh_j0cs4")
-
 [node name="Gui3D" parent="." unique_id=438346037 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area") instance=ExtResource("4_nd433")]
 transform = Transform3D(-1.8369095e-16, 0, 1, 0, 1, 0, -1, 0, -1.8369095e-16, 0.8808829, 1.5104302, -3.460434821199259)
 visible = false
 node_viewport = NodePath("SubViewport")
-node_quad = NodePath("../screen_001")
+node_quad = NodePath("../Node3D/screen_001")
 node_area = NodePath("ScreenMesh/TouchScreen")
 
 [node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=2131469253]
@@ -163,3 +154,15 @@ transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00057834386825561, 0, 0)
 shape = SubResource("BoxShape3D_urxpd")
 debug_color = Color(0.70196074, 0.31287596, 0.24275212, 0.41960785)
+
+[node name="Node3D" type="Node3D" parent="." unique_id=1506017023]
+
+[node name="screen" type="MeshInstance3D" parent="Node3D" unique_id=1870179503]
+transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932205, -2.2902095473902624)
+material_override = ExtResource("3_lpt68")
+mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="screen_001" type="MeshInstance3D" parent="Node3D" unique_id=1356869307]
+transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932205, -2.2902095473902624)
+material_override = SubResource("StandardMaterial3D_tuoiw")
+mesh = SubResource("ArrayMesh_j0cs4")
