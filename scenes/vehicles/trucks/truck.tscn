@@ -91,7 +91,12 @@ size = Vector3(0.2317254395602504, 0.9081811614742036, 1.4966181594172667)
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 mass = 1000.0
 script = ExtResource("1_vehicle")
-engine_power = 570.0
+engine_power = 850.0
+max_speed_kmh = 55.0
+handbrake_release_speed = null
+wheel_visual_drop = 0.26
+motor_max_rpm = 3000.0
+debug_color_driven_wheels = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.625)
@@ -145,7 +150,6 @@ size_2d_override_stretch = true
 render_target_update_mode = 4
 
 [node name="VehiculeDashboard" parent="Gui3D/SubViewport" unique_id=957292936 instance=ExtResource("5_d2vf6")]
-anchors_preset = 15
 
 [node name="ScreenMesh" type="MeshInstance3D" parent="Gui3D" unique_id=1688130196]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -0.1049409435543579, 0, 0.00330258909847298)

@@ -55,6 +55,14 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 @export var torque_response: float = 2.5
 ## Brake force per wheel (hand brake = jump action for now).
 @export var brake_force: float = 30.0
+## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
+## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
+## just re-settles). Kept dynamic, never frozen.
+@export var handbrake_hold: float = 30.0
+## Parking-brake "static friction": horizontal speed (m/s) below which the engaged hand brake
+## FULLY cancels motion each frame — a heavy parked truck must NOT move from a player bump or a
+## gentle slope. Above it (a genuine vehicle ramming) it's only damped, so a real hit still pushes.
+@export var handbrake_release_speed: float = 2.0
 ## Maximum steering angle of the front wheels, in degrees.
 @export var max_steer_deg: float = 30.0
 ## How fast the steering reaches its target angle (higher = snappier).
@@ -121,6 +129,10 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 	set(v):
 		wheel_width = v
 		_rebuild_deferred()
+## CLIENT-replica visual only: how far to drop the wheel meshes below their hub. On a replica the
+## physics is off, so VehicleWheel3D never lowers the wheels to the suspension contact — they'd
+## float at the hub. This drops the visual to ~ground level. Tune so the replica's wheels touch.
+@export_range(0.0, 1.5, 0.01) var wheel_visual_drop: float = 0.5
 ## Distance between the front and rear axles.
 @export var wheelbase: float = 3.0:
 	set(v):
@@ -147,8 +159,9 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## ELECTRIC only. Full torque from a standstill up to this speed (constant-torque region),
 ## then torque tapers to zero at max_speed_kmh (constant-power region) — the real EV curve.
 @export var base_speed_kmh: float = 25.0
-## ELECTRIC only. Motor RPM at top speed (single-speed reduction — gauge only, no gears).
-@export var motor_max_rpm: float = 9000.0
+## ELECTRIC only. Motor RPM shown on the gauge at top speed (single-speed reduction, no gears).
+## RPM = motor_max_rpm * (speed / max_speed_kmh). Slider so the gauge feel is easy to tune.
+@export_range(0.0, 12000.0, 100.0) var motor_max_rpm: float = 4500.0
 
 @export_group("Thermal gearbox")
 ## THERMAL only. Per-gear torque multiplier, 1st to last (1st = strongest/slowest). Shifts
@@ -204,6 +217,7 @@ var _chase_cam: Node3D = null
 var _cab_cam: Camera3D = null
 var _view: ViewMode = ViewMode.CHASE
 var _empty_mass: float = 0.0
+var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
 var _locked_cargo: Dictionary = {}
 var _cargo_area: Area3D = null
 var _net_last_position: Vector3 = Vector3.ZERO
@@ -215,6 +229,12 @@ var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
 var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the server
 var _net_last_speed: float = 0.0  # server: last replicated speed (km/h), change detection
+var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
+var _net_last_cargo_mass: float = -1.0  # server: last replicated cargo load (kg), change detection
+var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), change detection
+var _handbrake: bool = false  # server: hand brake engaged (holds the vehicle until throttle)
+var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
+var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
@@ -450,18 +470,31 @@ func _lock_cargo(body: RigidBody3D) -> void:
 	body.freeze = true
 	body.collision_layer = 0
 	body.collision_mask = 0
-	body.reparent(self)
+	# Reparent into the bed WITHOUT the prop's _exit_tree firing a delete (server_parent_change
+	# sets server_reparenting), then replicate the reparent so clients ride it in the bed. A raw
+	# reparent() made the prop vanish in-game (its _exit_tree deleted it from Horizon).
+	if body.has_method("server_parent_change"):
+		body.server_parent_change(self)
+		if body.has_method("send_properties_to_client"):
+			body.send_properties_to_client(str(uuid))
+	else:
+		body.reparent(self)
 	_refresh_mass()
 
 func _refresh_mass() -> void:
-	var total := _empty_mass
-	for body in _locked_cargo:
-		total += _locked_cargo[body]
-	mass = total
+	mass = _empty_mass + get_cargo_mass()
 
-## Total mass (kg) of the cargo locked in the bed (HUD + load limiter).
+## Body mass (kg) of a seated player, added to the truck's weight while they ride.
+func _player_mass(player: Node) -> float:
+	return float(player.mass) if "mass" in player else 75.0
+
+## Total PAYLOAD (kg) the truck is carrying = bed cargo + seated players. This is what the load
+## limiter (max_payload / OVERLOADED) checks and what the dashboard "Load" shows. On the client
+## replica the bed isn't simulated, so use the value replicated from the server.
 func get_cargo_mass() -> float:
-	var total := 0.0
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _net_cargo_mass
+	var total := _occupant_mass
 	for body in _locked_cargo:
 		total += _locked_cargo[body]
 	return total
@@ -473,6 +506,16 @@ func is_overloaded() -> bool:
 ## True when the cargo is so far over the limit that the vehicle can no longer move (GDD).
 func is_immobilized() -> bool:
 	return get_cargo_mass() > max_payload * overload_immobilize
+
+## Server: the pilot toggles the hand brake (long press at low speed, relayed as an action).
+func toggle_handbrake() -> void:
+	_handbrake = not _handbrake
+
+## True when the hand brake is engaged — server state, or the replicated one on a client (HUD).
+func is_handbraked() -> bool:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _net_handbrake
+	return _handbrake
 
 ## Drop a real mining rock above the bed so it falls in and loads the truck (bench load
 ## test, reusing the actual rock_mining scene). Called by the bench debug node; in game the
@@ -612,10 +655,9 @@ func _process(delta: float) -> void:
 		return
 	if not _is_networked() or GameOrchestrator.is_server():
 		return
-	if _is_local_driver():
-		_interp.snap_to(self)  # we drive it: stay responsive, no smoothing lag
-	else:
-		_interp.update(self, delta)  # passenger / remote viewer: smooth
+	# Smooth for everyone, driver included: the driver is parented to the vehicle, so the camera
+	# rides the smoothly-interpolated body (no per-frame world jitter). Server stays authoritative.
+	_interp.update(self, delta)
 	_update_wheels_visual(delta)
 
 func _physics_process(delta: float) -> void:
@@ -627,14 +669,21 @@ func _physics_process(delta: float) -> void:
 		if not GameOrchestrator.is_server():
 			return
 		_update_cargo()
+		# Keep the body awake while handbraked so _integrate_forces keeps cancelling drift — a
+		# parked truck that fell asleep would roll on a slope (the brake alone can't hold a skid).
+		can_sleep = not _handbrake
 		if _pilot != null:
 			_apply_drive(delta)
+		elif _handbrake:
+			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
 	_update_cargo()  # absorb settled cargo into the truck (always, even when not driving)
 	if _pilot != null:
 		_apply_drive(delta)
+	elif _handbrake:
+		_hold_handbrake(delta)
 
 ## Server: replicate position/rotation to clients when they change (same shape as a rock).
 ## Client: the replica is frozen (no physics), so roll + steer the wheels visually from
@@ -648,7 +697,9 @@ func _update_wheels_visual(delta: float) -> void:
 		if wheel.use_as_steering:
 			wheel.rotation.y = _net_steering
 		if wheel.get_child_count() > 0:
-			wheel.get_child(0).rotate_object_local(Vector3.UP, -spin)
+			var tire: Node3D = wheel.get_child(0)
+			tire.position.y = -wheel_visual_drop  # replica has no suspension → drop to ~ground
+			tire.rotate_object_local(Vector3.UP, -spin)
 
 ## Speed shown on the HUD: real physics speed on the server/bench; on a client replica (frozen,
 ## linear_velocity is 0) use the speed replicated by the server — deriving it from the
@@ -672,12 +723,22 @@ func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
 	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
-	if my_pos == _net_last_position and my_rot == _net_last_rotation and my_speed == _net_last_speed:
+	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)
+	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
+	if my_pos == _net_last_position and my_rot == _net_last_rotation \
+			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
+			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass:
 		return
 	_net_last_position = my_pos
 	_net_last_rotation = my_rot
 	_net_last_speed = my_speed
-	var data := {"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001), "speed": my_speed}
+	_net_last_cargo_mass = my_cargo
+	_net_last_handbrake = _handbrake
+	_net_last_mass = my_mass
+	var data := {
+		"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001),
+		"speed": my_speed, "cargo_mass": my_cargo, "handbrake": _handbrake, "mass": my_mass,
+	}
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
 ## Server: tell the clients to despawn this vehicle when it leaves the world.
@@ -699,6 +760,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_net_steering = float(data["steering"])
 	if data.has("speed"):
 		_net_speed = float(data["speed"])
+	if data.has("cargo_mass"):
+		_net_cargo_mass = float(data["cargo_mass"])
+	if data.has("mass"):
+		mass = float(data["mass"])  # replica: show the server's real total weight on the HUD
+	if data.has("handbrake"):
+		_net_handbrake = bool(data["handbrake"])
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
 
@@ -723,6 +790,8 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 		player._seat_node = seat  # the player rides this seat each frame (server)
 	if player.has_method("set_seated"):
 		player.set_seated(true)  # drop the player's collision so it can't shove the truck
+	_occupant_mass += _player_mass(player)  # the seated player adds their weight to the truck
+	_refresh_mass()
 	if seat.is_driver_seat():
 		_pilot = player
 		pilot_uuid = str(player.client_uuid) if "client_uuid" in player else ""
@@ -743,11 +812,25 @@ func server_exit(player: Node) -> void:
 		player._seat_node = null
 	if player.has_method("set_seated"):
 		player.set_seated(false)  # restore the player's collision
+	_occupant_mass = maxf(0.0, _occupant_mass - _player_mass(player))  # they take their weight back
+	_refresh_mass()
 	if seat.is_driver_seat() and _pilot == player:
 		_pilot = null
 		pilot_uuid = ""
 		_replicate_pilot()
+		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
+		# the parked truck still even with no driver. It releases on throttle when someone drives.
+	# Put the player back on the ground beside the vehicle, on the side of the seat it used.
+	if player is Node3D:
+		(player as Node3D).global_position = _exit_position_for_seat(seat)
 	print("🚚 Vehicle %s: seat exit" % uuid)
+
+## Drop position beside the vehicle, on the side of the given seat (left vs right, derived from
+## the seat's local X so any layout works), raised so the player lands on the ground on exit.
+func _exit_position_for_seat(seat: Node) -> Vector3:
+	var seat_local: Vector3 = to_local((seat as Node3D).global_position)
+	var side: float = -1.0 if seat_local.x <= 0.0 else 1.0
+	return to_global(Vector3(side * (body_width * 0.5 + 1.0), 1.0, seat_local.z))
 
 ## All seats of this vehicle (designer-placed VehicleSeat children).
 func _seats() -> Array:
@@ -797,6 +880,9 @@ func _apply_drive(delta: float) -> void:
 		throttle_in = Input.get_axis("move_back", "move_forward")  # bench: local input
 		turn = Input.get_axis("move_right", "move_left")
 		braking = Input.is_physical_key_pressed(KEY_SPACE)
+	# Hand brake holds the vehicle until the pilot presses the throttle again.
+	if _handbrake and absf(throttle_in) > 0.05:
+		_handbrake = false
 	# Ramp the applied torque toward the throttle (tempers the launch on any powertrain).
 	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
 	var forward_kmh: float = _forward_speed_kmh()
@@ -806,14 +892,14 @@ func _apply_drive(delta: float) -> void:
 
 	# Overloaded past the hard limit: the vehicle can't move — kill the drive and hold it.
 	var immobilized: bool = is_immobilized()
-	if immobilized:
+	if immobilized or _handbrake:
 		force = 0.0
 
 	# VehicleBody3D drives toward +Z for a positive engine_force; our cab faces -Z, so negate.
 	engine_force = -force
 	_steer_target = turn * deg_to_rad(max_steer_deg)
 	steering = move_toward(steering, _steer_target, steer_speed * delta)
-	brake = brake_force if (immobilized or braking) else 0.0
+	brake = brake_force if (immobilized or braking or _handbrake) else 0.0
 
 	# IRL a powered wheel keeps spinning once it leaves the ground. VehicleWheel3D stops the
 	# visual with no contact, so spin powered airborne wheels ourselves (about their axle).
@@ -821,6 +907,35 @@ func _apply_drive(delta: float) -> void:
 		for wheel in _wheels:
 			if wheel.use_as_traction and not wheel.is_in_contact() and wheel.get_child_count() > 0:
 				wheel.get_child(0).rotate_object_local(Vector3.UP, -signf(_throttle) * 25.0 * delta)
+
+## Cancel the hand-brake drift HERE (after the physics step), NOT in _physics_process — setting
+## linear_velocity before the step fought the wheel suspension and made the body sink onto its
+## chassis. We damp only the HORIZONTAL drift (in the body's plane) and keep the vertical, so the
+## suspension keeps holding the truck up. Stays DYNAMIC: a collision impulse is far bigger than
+## handbrake_hold * step, so a hit still pushes it (it then re-settles).
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if not _handbrake:
+		return
+	var up: Vector3 = global_transform.basis.y
+	var v: Vector3 = state.linear_velocity
+	var v_up: Vector3 = up * v.dot(up)
+	var v_flat: Vector3 = v - v_up
+	# Static-friction style: a small horizontal speed (a player bump, slope creep) is killed
+	# outright so the parked 2 t truck doesn't budge; a large one (a real ramming) is only damped,
+	# so a genuine hit still pushes it. Vertical is kept so the suspension holds the truck up.
+	if v_flat.length() < handbrake_release_speed:
+		v_flat = Vector3.ZERO
+	else:
+		v_flat = v_flat.move_toward(Vector3.ZERO, handbrake_hold * state.step)
+	state.linear_velocity = v_up + v_flat
+	state.angular_velocity = state.angular_velocity.move_toward(Vector3.ZERO, handbrake_hold * state.step)
+
+## Parked hand brake with no driver: lock the wheels + kill the drive. The drift cancel (and the
+## velocity threshold that keeps it pushable by a real hit) is in _integrate_forces, which keeps
+## firing because we hold the body awake (see _physics_process). From _physics_process.
+func _hold_handbrake(_delta: float) -> void:
+	engine_force = 0.0
+	brake = brake_force
 
 ## Forward speed in km/h (positive when driving toward the cab, -Z).
 func _forward_speed_kmh() -> float:
@@ -844,7 +959,9 @@ func _sync_powertrain() -> void:
 	_powertrain.redline_rpm = redline_rpm
 
 func get_engine_rpm() -> float:
-	return _powertrain.engine_rpm(_forward_speed_kmh())
+	# Base it on the DISPLAY speed (replicated) so the gauge works on the client replica too —
+	# there linear_velocity is 0 (physics off). RPM uses |speed|, so the magnitude is fine.
+	return _powertrain.engine_rpm(get_display_speed_kmh())
 
 ## HUD label: the current gear (THERMAL) or empty (ELECTRIC has no gears).
 func get_gear_label() -> String:
@@ -852,14 +969,14 @@ func get_gear_label() -> String:
 
 ## HUD label of the powertrain (electric or thermal).
 func get_propulsion_name() -> String:
-	return "Électrique" if propulsion_type == PropulsionType.ELECTRIC else "Thermique"
+	return "Electric" if propulsion_type == PropulsionType.ELECTRIC else "Thermal"
 
 ## Human-readable label of the current drive mode (for the debug HUD).
 func get_drive_mode_name() -> String:
 	match drive_mode:
 		DriveMode.FRONT:
-			return "FWD (avant)"
+			return "FWD"
 		DriveMode.REAR:
-			return "RWD (arrière)"
+			return "RWD"
 		_:
 			return "4x4"

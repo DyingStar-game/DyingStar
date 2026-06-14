@@ -22,9 +22,16 @@ const PAUSE: String = "pause"
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
+# Hand brake: a long press on the brake (Space) at low speed toggles the vehicle's hand brake.
+const HANDBRAKE_HOLD_SECS: float = 0.4
+const HANDBRAKE_MAX_KMH: float = 3.0
+
 @export_group("Controls map names")
 
 @export_group("Customizable player stats")
+## Body mass (kg) added to a vehicle's total weight when seated. Mass is gravity-independent
+## (75 kg everywhere); only the WEIGHT changes with gravity. CharacterBody3D has no built-in mass.
+@export var mass: float = 75.0
 @export var walk_back_speed: float = 1.5
 @export var walk_speed: float = 2.5
 @export var player_thruster_force = 10
@@ -126,6 +133,8 @@ var _nearby_seat: Node = null
 var _last_throttle: float = INF  # last drive input sent (to send only on change)
 var _last_steer: float = INF
 var _last_brake: bool = false
+var _space_held_time: float = 0.0  # driver: how long the brake (Space) has been held
+var _handbrake_sent: bool = false  # driver: hand brake toggle already fired for this hold
 var _seated_saved: bool = false
 var _saved_collision_layer: int = 1
 var _saved_collision_mask: int = 1
@@ -282,6 +291,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		active = true  # walking again
 		set_seated(false)
 		camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
+		# Un-parent from the vehicle, back into the world (the server repositions us beside it).
+		if is_instance_valid(_seat_vehicle_node) and get_parent() == _seat_vehicle_node:
+			var world: Node = _seat_vehicle_node.get_parent()
+			if world != null:
+				reparent(world)
+				net_reset_interp()
 		if _seat_is_driver and is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("set_driver_hud"):
 			_seat_vehicle_node.set_driver_hud(false)
 		_seat_vehicle_uuid = ""
@@ -360,6 +375,7 @@ func _process(_delta: float) -> void:
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(_seat_node):
+		interact_label.hide()  # seated: clear any leftover "[E] Drive/Passenger Seat" prompt
 		_ride_seat(_seat_node)
 		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
@@ -409,9 +425,12 @@ func _process(_delta: float) -> void:
 					collider.interact(self)
 					interact_label.hide()
 
-	# Standing in a seat box (on foot): tell the player what E will do.
+	# Standing in a seat box (on foot): tell the player what E will do, or that it's taken.
 	if is_instance_valid(_nearby_seat) and _seat_vehicle_uuid == "":
-		interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
+		if _seat_is_taken(_nearby_seat):
+			interact_label.text = "Driver seat taken"
+		else:
+			interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
 		interact_label.show()
 
 
@@ -460,6 +479,23 @@ func _send_drive_input() -> void:
 		"brake": braking,
 	})
 
+## Driver: a long press on Space at low speed toggles the vehicle's hand brake (once per hold).
+func _update_handbrake_input(delta: float) -> void:
+	if not Input.is_physical_key_pressed(KEY_SPACE):
+		_space_held_time = 0.0
+		_handbrake_sent = false
+		return
+	_space_held_time += delta
+	if _handbrake_sent or _space_held_time < HANDBRAKE_HOLD_SECS:
+		return
+	var speed_kmh: float = 999.0
+	if is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("get_display_speed_kmh"):
+		speed_kmh = _seat_vehicle_node.get_display_speed_kmh()
+	if speed_kmh > HANDBRAKE_MAX_KMH:
+		return
+	_handbrake_sent = true
+	client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": _seat_vehicle_uuid})
+
 ## Disable our collision while seated so we don't shove the vehicle's physics body.
 func set_seated(seated: bool) -> void:
 	if seated:
@@ -474,11 +510,21 @@ func set_seated(seated: bool) -> void:
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
 
+## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
+## replicated (via the vehicle's pilot_uuid); a passenger seat reads as free for now.
+func _seat_is_taken(seat: Node) -> bool:
+	if seat == null or not seat.is_driver_seat():
+		return false
+	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
+	return veh != null and "pilot_uuid" in veh and str(veh.pilot_uuid) != ""
+
 ## Take the seat we are standing in: tell the server, lock walking, start riding locally.
 func _enter_seat(seat: Node) -> void:
 	var veh: Node = seat.vehicle()
 	if veh == null or not ("uuid" in veh):
 		return
+	if _seat_is_taken(seat):
+		return  # driver seat already occupied (server-replicated) — don't enter optimistically
 	_seat_node = seat
 	_seat_vehicle_node = veh
 	_seat_vehicle_uuid = str(veh.uuid)
@@ -490,6 +536,11 @@ func _enter_seat(seat: Node) -> void:
 	})
 	active = false  # lock walking while seated
 	set_seated(true)
+	# Ride by transform inheritance: parent to the vehicle so we move WITH it (no jitter). The
+	# vehicle stays server-authoritative; this is the local camera ride.
+	if veh is Node3D and get_parent() != veh:
+		reparent(veh)
+		net_reset_interp()
 	if _seat_is_driver and veh.has_method("set_driver_hud"):
 		veh.set_driver_hud(true)
 
@@ -515,8 +566,16 @@ func net_reset_interp() -> void:
 
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
-	global_transform.basis = eye.basis
-	global_position = eye.origin - eye.basis * camera_pivot.position
+	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
+	if veh != null and get_parent() == veh:
+		# Parented to the vehicle: ride in LOCAL space so we move WITH it by transform
+		# inheritance (no per-frame world fight against the parent's smoothing) — kills the jitter.
+		var local_eye: Transform3D = (veh as Node3D).global_transform.affine_inverse() * eye
+		transform.basis = local_eye.basis
+		transform.origin = local_eye.origin - local_eye.basis * camera_pivot.position
+	else:
+		global_transform.basis = eye.basis
+		global_position = eye.origin - eye.basis * camera_pivot.position
 	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the
 	# vehicle forward, so the view is no longer locked straight ahead.
 	camera_pivot.rotation.y += mouse_motion.x * camera_sensitivity
@@ -643,6 +702,7 @@ func _physics_process(delta: float) -> void:
 			# here we only relay drive input (driver) and skip walking.
 			if _seat_is_driver:
 				_send_drive_input()
+				_update_handbrake_input(delta)
 			return
 		if !active: return
 
@@ -1162,6 +1222,10 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_r := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_r != null and veh_r._pilot == self and veh_r.has_method("reset_upright"):
 				veh_r.reset_upright()
+		"vehicle_handbrake":
+			var veh_h := _find_vehicle(str(data.get("target_uuid", "")))
+			if veh_h != null and veh_h._pilot == self and veh_h.has_method("toggle_handbrake"):
+				veh_h.toggle_handbrake()
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:

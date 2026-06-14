@@ -30,19 +30,20 @@ func _process(_delta: float) -> void:
 	var overloaded: bool = _vehicle.is_overloaded()
 	var warn := ""
 	if _vehicle.is_immobilized():
-		warn = "   ⛔ IMMOBILISÉ"
+		warn = "   ⛔ IMMOBILIZED"
 	elif overloaded:
-		warn = "   ⚠ SURCHARGE"
+		warn = "   ⚠ OVERLOADED"
+	var handbrake := "   🅿 HANDBRAKE" if _vehicle.is_handbraked() else ""
 	_label.add_theme_color_override("font_color", Color(1, 0.3, 0.2) if overloaded else Color(1, 1, 1))
 	# In-game (networked replica) the bench debug keys are off, so only advertise what the
 	# player -> server control path handles. An empty uuid means the local bench.
 	var in_game: bool = _vehicle.uuid != ""
 	var trans_suffix := "" if in_game else "   (N)"
 	var keys := (
-		"[Y] sortir   [Espace] freiner   [R] redresser" if in_game
-		else "[T] rocher   [N] traction   [Espace] freiner   [R] redresser")
+		"[Y] exit   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip" if in_game
+		else "[T] rock   [N] drive mode   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip")
 	_label.text = (
-		"Vitesse : %3.0f km/h\nMoteur : %5.0f tr/min\n%sTransmission : %s%s\nMotorisation : %s\n"
-		+ "Poids total : %.0f kg\nCharge : %.0f / %.0f kg%s\n%s") % [
-		speed, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(), trans_suffix,
+		"Speed: %3.0f km/h%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
+		+ "Total weight: %.0f kg\nLoad: %.0f / %.0f kg%s\n%s") % [
+		speed, handbrake, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(), trans_suffix,
 		_vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn, keys]
