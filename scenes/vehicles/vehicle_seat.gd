@@ -20,6 +20,10 @@ enum Role {DRIVER, PASSENGER}
 
 ## Server-authoritative occupant (a player's client_uuid). "" = free.
 var occupant_uuid: String = ""
+## The occupant's player node, kept so the vehicle can tell when a player vanished (disconnect)
+## and free the seat. occupant_mass is what that player added to the truck, to subtract back.
+var occupant: Node = null
+var occupant_mass: float = 0.0
 
 func _ready() -> void:
 	add_to_group("vehicle_seat")

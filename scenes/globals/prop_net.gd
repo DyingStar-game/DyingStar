@@ -18,6 +18,7 @@ static func server_tick(prop: Node) -> void:
 	var pos: Vector3 = snapped(prop.position, Vector3(0.001, 0.001, 0.001))
 	var rot: Vector3 = snapped(prop.rotation, Vector3(0.0001, 0.0001, 0.0001))
 	var carrier: Node = prop.get_parent()
+	var tracks_parent: bool = "server_last_parent_id" in prop
 	if carrier is Player:
 		prop.emit_signal(
 			"hs_server_prop_update",
@@ -25,13 +26,38 @@ static func server_tick(prop: Node) -> void:
 			{"position": pos, "rotation": rot, "parent_id": str(carrier.client_uuid)},
 			prop.type_name,
 			true)
+		if tracks_parent:
+			prop.server_last_parent_id = str(carrier.client_uuid)
+			prop.server_parent_resend = 0
 		return
-	if prop.server_last_position != pos or prop.server_last_rotation != rot:
+	if carrier is Vehicle:
+		# Loaded in a bed: its LOCAL position is constant, so the change-throttle below would never
+		# resend -> Horizon's GORC entry goes stale and later updates (e.g. a retrieve+drop) get
+		# dropped. Keep it fresh by re-sending position + parent_id every frame, like carrying.
 		prop.emit_signal(
 			"hs_server_prop_update",
 			prop.uuid,
-			{"position": pos, "rotation": rot},
+			{"position": pos, "rotation": rot, "parent_id": str(carrier.uuid)},
 			prop.type_name,
-			prop.has_parent)
+			true)
+		if tracks_parent:
+			prop.server_last_parent_id = str(carrier.uuid)
+			prop.server_parent_resend = 0
+		return
+	# Not carried. Detect a parent change (dropped to the world, settled into a bed) and resend the
+	# parent_id for a few frames: a single lost drop/settle message must not leave the prop stuck
+	# under its old parent on clients, and at huge planet coordinates the position throttle below can
+	# suppress any other resend. parent_id only travels when it actually changes (no per-frame spam).
+	var pid: String = (str(carrier.uuid) if (carrier != null and "uuid" in carrier) else "")
+	if tracks_parent and pid != prop.server_last_parent_id:
+		prop.server_last_parent_id = pid
+		prop.server_parent_resend = 10
+	var resend_parent: bool = tracks_parent and prop.server_parent_resend > 0
+	if prop.server_last_position != pos or prop.server_last_rotation != rot or resend_parent:
+		var data: Dictionary = {"position": pos, "rotation": rot}
+		if resend_parent:
+			data["parent_id"] = pid
+			prop.server_parent_resend -= 1
+		prop.emit_signal("hs_server_prop_update", prop.uuid, data, prop.type_name, prop.has_parent)
 		prop.server_last_position = pos
 		prop.server_last_rotation = rot

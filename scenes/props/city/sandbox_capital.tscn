@@ -210,10 +210,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.19291496276855, 66.76164
 size = Vector3(1638.7212916605677, 135.5232830842242, 306.89811270363225)
 material = SubResource("ShaderMaterial_3b5ap")
 
-[node name="MiningDepot" parent="." unique_id=1889403175 instance=ExtResource("14_4lkw2")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.439176267583754, 2.3517123357506797, 88.31635010584525)
-placeholder = true
-
 [node name="Area3D" type="Area3D" parent="." unique_id=1228311395 groups=["player"]]
 script = ExtResource("11_04krg")
 target_volume_db = -30.0
@@ -235,12 +231,6 @@ autoplay = true
 bus = &"Music"
 parameters/looping = true
 
-[node name="OutdoorLamppost2_2005" parent="." unique_id=1239394709 instance=ExtResource("10_uow4d")]
-transform = Transform3D(6.123436222361646e-17, 0, 1, 0, 1, 0, -1, 0, 6.123436222361646e-17, 7.822804687597224, 2.3986518313260676, 93.6169283414612)
-
-[node name="OutdoorLamppost2_2006" parent="." unique_id=550606329 instance=ExtResource("10_uow4d")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.862261152078986, 2.359688368788041, 82.97764537730104)
-
 [node name="Ramp Test Zone" type="Node3D" parent="." unique_id=1918257768]
 
 [node name="Sign_Ramp" type="CSGBox3D" parent="Ramp Test Zone" unique_id=339405881]
@@ -254,78 +244,102 @@ text = "Zone de test
 Rampe"
 font_size = 25
 
-[node name="Node3D" type="Node3D" parent="Ramp Test Zone" unique_id=1896374786]
+[node name="Ramp5" type="Node3D" parent="Ramp Test Zone" unique_id=1896374786]
 
-[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Node3D" unique_id=917812999]
+[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Ramp5" unique_id=917812999]
 transform = Transform3D(5.855425899235435e-17, 1, 0, 2.5460997760938166e-17, 0, 1, 1, -5.855425899235437e-17, -2.546099776093817e-17, 6.404213595732221, 0.0647294928676323, 129.6153754121903)
 text = "Pente 12°"
 font_size = 100
 
-[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Node3D" unique_id=931145488 instance=ExtResource("10_uow4d")]
+[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Ramp5" unique_id=931145488 instance=ExtResource("10_uow4d")]
 transform = Transform3D(-1, 0, 1.2112260603285547e-16, 0, 1, 1.2730498880469083e-17, -1.2112260603285547e-16, 1.2730498880469085e-17, -1, 7.444362397220026, -0.06368266690311497, 132.5073749457498)
 
-[node name="DangerLightBox" parent="Ramp Test Zone/Node3D" unique_id=841267721 instance=ExtResource("16_47dne")]
+[node name="DangerLightBox" parent="Ramp Test Zone/Ramp5" unique_id=841267721 instance=ExtResource("16_47dne")]
 transform = Transform3D(0.9781476007338056, -1.1394447605966131e-17, -0.20791169081775931, 0.20791169081775931, 4.716136900847245e-17, 0.9781476007338056, -1.3400516156310428e-18, -1, 4.849981881064978e-17, 35.91299557211116, 6.183317464645585, 129.5827924521981)
 enabled = true
 
-[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Node3D" unique_id=1202562727]
+[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Ramp5" unique_id=1202562727]
 transform = Transform3D(6.123032e-17, -0.8910065241883679, -0.45399049973954686, 0, -0.45399049973954686, 0.8910065241883679, -1, -5.455661254091335e-17, -2.779798252780227e-17, 19.62062444127508, 8.220065387072173, 129.6153754121903)
 spot_range = 8.224049
 spot_angle = 89.99
 
-[node name="Rampe_12" type="CSGBox3D" parent="Ramp Test Zone/Node3D" unique_id=464973059]
+[node name="Rampe_12" type="CSGBox3D" parent="Ramp Test Zone/Ramp5" unique_id=464973059]
 transform = Transform3D(6.123032e-17, -0.20791169081775931, 0.9781476007338056, 0, 0.9781476007338056, 0.20791169081775931, -1, -1.2730498880469083e-17, 5.98922883417366e-17, 21.79822125523968, 2.9387532665840994, 129.6153754121903)
 material_override = SubResource("ShaderMaterial_3pv0l")
 use_collision = true
 size = Vector3(4, 0.5, 30)
 material = ExtResource("20_g2xcy")
 
-[node name="Node3D2" type="Node3D" parent="Ramp Test Zone" unique_id=466494529]
+[node name="Ramp10" type="Node3D" parent="Ramp Test Zone" unique_id=466494529]
 
-[node name="Rampe_10" type="CSGBox3D" parent="Ramp Test Zone/Node3D2" unique_id=400744106]
+[node name="Rampe_10" type="CSGBox3D" parent="Ramp Test Zone/Ramp10" unique_id=400744106]
 transform = Transform3D(6.123032e-17, -0.17364817766693033, 0.984807753012208, 0, 0.984807753012208, 0.17364817766693033, -1, -1.0632533085029995e-17, 6.030009158161442e-17, 21.817013892574565, 2.3722571684802434, 120.06739759480439)
 material_override = SubResource("ShaderMaterial_3pv0l")
 use_collision = true
 size = Vector3(4, 0.5, 30)
 material = ExtResource("19_vaq7g")
 
-[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Node3D2" unique_id=64698103]
+[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Ramp10" unique_id=64698103]
 transform = Transform3D(-8.249538386117887e-17, 0.9998788158903285, -0.015567708044358752, 1.2060018316322883e-16, 0.015567708044358752, 0.9998788158903285, 1, 8.06079182899523e-17, -1.2186983238836413e-16, 6.334190694490024, 0.09761631353060274, 120.06739759480439)
 text = "Pente 10°"
 font_size = 100
 
-[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Node3D2" unique_id=635444026 instance=ExtResource("10_uow4d")]
+[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Ramp10" unique_id=635444026 instance=ExtResource("10_uow4d")]
 transform = Transform3D(-0.9999999999999999, 0, 1.2153040927273328e-16, 0, 0.9999999999999999, 1.0632533085029995e-17, -1.2153040927273328e-16, 1.0632533085029995e-17, -1, 7.367115514582721, -0.12740731227577307, 122.95939712836389)
 
-[node name="DangerLightBox" parent="Ramp Test Zone/Node3D2" unique_id=293144058 instance=ExtResource("16_47dne")]
+[node name="DangerLightBox" parent="Ramp Test Zone/Ramp10" unique_id=293144058 instance=ExtResource("16_47dne")]
 transform = Transform3D(0.984807753012208, -9.704298519006013e-18, -0.17364817766693033, 0.17364817766693033, 4.966720733373556e-17, 0.984807753012208, -9.322483757532308e-19, -1, 5.059778460608887e-17, 36.03642352783194, 5.122246345969259, 120.03481463481221)
 enabled = true
 
-[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Node3D2" unique_id=587990453]
+[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Ramp10" unique_id=587990453]
 transform = Transform3D(6.123032e-17, -0.9063077870366499, -0.4226182617406995, 0, -0.4226182617406995, 0.9063077870366499, -1, -5.549351372618897e-17, -2.5877050428451456e-17, 19.825058746686185, 7.726349089149127, 120.06739759480439)
 spot_range = 8.224049
 spot_angle = 89.99
 
-[node name="Node3D3" type="Node3D" parent="Ramp Test Zone" unique_id=42894132]
+[node name="Ramp12" type="Node3D" parent="Ramp Test Zone" unique_id=42894132]
 
-[node name="CSGBox3D" type="CSGBox3D" parent="Ramp Test Zone/Node3D3" unique_id=1837986822]
+[node name="CSGBox3D" type="CSGBox3D" parent="Ramp Test Zone/Ramp12" unique_id=1837986822]
 transform = Transform3D(6.123032e-17, -0.17395755557285325, 0.9847531512308644, 0, 0.9847531512308644, 0.17395755557285325, -1, -1.0651476392496269e-17, 6.029674829719625e-17, 21.994046355345162, 2.5083121583594385, 110.29301876756638)
+use_collision = true
 size = Vector3(4, 0.2, 30)
 material = ExtResource("16_a2whl")
 
-[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Node3D3" unique_id=224538594]
+[node name="Label3D" type="Label3D" parent="Ramp Test Zone/Ramp12" unique_id=224538594]
 transform = Transform3D(-7.194179054300576e-17, 0.9961672681478451, -0.08746870223605369, 1.2199127660437309e-16, 0.08746870223605369, 0.9961672681478451, 1, 6.099563830218654e-17, -1.2781637180818118e-16, 6.390114833647257, 0.0972575931008306, 110.29301876756638)
 text = "Pente 5°"
 font_size = 100
 
-[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Node3D3" unique_id=1732295820 instance=ExtResource("10_uow4d")]
+[node name="OutdoorLamppost2_2005" parent="Ramp Test Zone/Ramp12" unique_id=1732295820 instance=ExtResource("10_uow4d")]
 transform = Transform3D(-0.9999999506519783, -0.00031415926019123797, 1.2222998502419448e-16, -0.00031415926019123797, 0.9999999506519783, 5.3560901959521604e-18, -1.2223166165772e-16, 5.3176902499713156e-18, -1, 7.392213327540999, -0.1325422096927431, 113.18501830112588)
 
-[node name="DangerLightBox" parent="Ramp Test Zone/Node3D3" unique_id=257104562 instance=ExtResource("16_47dne")]
+[node name="DangerLightBox" parent="Ramp Test Zone/Ramp12" unique_id=257104562 instance=ExtResource("16_47dne")]
 transform = Transform3D(0.9851183269910428, -5.123071552455654e-18, -0.1718775198400559, 0.1718775198400559, 5.563972499123873e-17, 0.9851183269910428, 4.5163862592663795e-18, -1, 5.569225363001004e-17, 36.19292219332728, 5.124210994758235, 110.2604358075742)
 enabled = true
 
-[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Node3D3" unique_id=1847057749]
+[node name="SpotLight3D" type="SpotLight3D" parent="Ramp Test Zone/Ramp12" unique_id=1847057749]
 transform = Transform3D(6.123032e-17, -0.9395851256187389, -0.3423153395862047, 0, -0.3423153395862047, 0.9395851256187389, -1, -5.753109573948521e-17, -2.096007699340655e-17, 20.48513281768604, 6.609660576623848, 110.29301876756638)
 spot_range = 8.224049
 spot_angle = 89.99
+
+[node name="Mining test Zone" type="Node3D" parent="." unique_id=419391246]
+
+[node name="MiningDepot" parent="Mining test Zone" unique_id=1889403175 instance=ExtResource("14_4lkw2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.439176267583754, 2.3517123357506797, 88.31635010584525)
+placeholder = true
+
+[node name="OutdoorLamppost2_2005" parent="Mining test Zone" unique_id=1239394709 instance=ExtResource("10_uow4d")]
+transform = Transform3D(6.123436222361646e-17, 0, 1, 0, 1, 0, -1, 0, 6.123436222361646e-17, 7.822804687597224, 2.3986518313260676, 93.6169283414612)
+
+[node name="OutdoorLamppost2_2006" parent="Mining test Zone" unique_id=550606329 instance=ExtResource("10_uow4d")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.862261152078986, 2.359688368788041, 82.97764537730104)
+
+[node name="Sign_Ramp" type="CSGBox3D" parent="Mining test Zone" unique_id=1734817137]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, 6.968059494806134, 0.7379370289984281, 88.35454224167727)
+size = Vector3(1, 0.5, 0.1)
+
+[node name="Label3D" type="Label3D" parent="Mining test Zone/Sign_Ramp" unique_id=518656997]
+transform = Transform3D(-1, 1.2246064e-16, 1.71536e-32, 1.224606353822377e-16, 1, 0, -4.591235121303105e-49, 0, -1, 0.004136012337443859, 0.010219451424017749, -0.0534855244709785)
+modulate = Color(0.8391672, 0.55991113, 0.23282835, 1)
+text = "Zone de test 
+Minage"
+font_size = 25

@@ -76,6 +76,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8999999999941792, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=2070954965]
+fov = 90.0
 far = 10000000000000.01
 
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D" unique_id=1335224373]
