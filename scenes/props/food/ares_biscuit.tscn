@@ -1,0 +1,24 @@
+[gd_scene load_steps=5 format=3 uid="uid://cvov1kmmfnwql"]
+
+[ext_resource type="PackedScene" uid="uid://62owkh6ghwx1" path="res://assets/models/food/food_biscuit.glb" id="1_qdpmo"]
+[ext_resource type="Material" uid="uid://ho5sk1nm4wo2" path="res://assets/materials/food/biscuit_material.tres" id="2_7ul2k"]
+[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/materials/decals/ares_logo_decal_material.tres" id="3_6ebdc"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_6ebdc"]
+size = Vector3(0.01929482309742525, 0.07858140991402252, 0.09955566330063448)
+
+[node name="AresBiscuit" type="RigidBody3D"]
+mass = 0.05
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_6ebdc")
+
+[node name="food_biscuit" parent="." instance=ExtResource("1_qdpmo")]
+
+[node name="biscuits" parent="food_biscuit" index="0"]
+surface_material_override/0 = ExtResource("2_7ul2k")
+
+[node name="decal" parent="food_biscuit" index="1"]
+surface_material_override/0 = ExtResource("3_6ebdc")
+
+[editable path="food_biscuit"]
