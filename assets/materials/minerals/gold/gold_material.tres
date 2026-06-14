@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ciygceyikv12a"]
+
+[ext_resource type="Texture2D" uid="uid://b7hetueajcgru" path="res://assets/textures/minerals/gold/gold_albedo.png" id="1_alb"]
+[ext_resource type="Texture2D" uid="uid://tmoad1l7oxy6" path="res://assets/textures/minerals/gold/gold_normal.png" id="2_nrm"]
+
+[resource]
+albedo_texture = ExtResource("1_alb")
+metallic = 1.0
+roughness = 0.14
+normal_enabled = true
+normal_texture = ExtResource("2_nrm")

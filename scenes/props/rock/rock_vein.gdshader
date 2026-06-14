@@ -19,6 +19,15 @@ uniform float ore_roughness = 0.059;
 uniform float ore_emission = 9.3;
 uniform vec3 noise_offset = vec3(0.0);   // per-rock offset so each rock's ore differs
 
+// Ore texture (optional): when ore_use_texture, the ore is drawn with a triplanar texture
+// (local space, like the rock) tinted by ore_color, instead of a flat color. Driven per
+// mineral by MineralDef (gold, ...). Same noise field, so volume/dispersion/persistence keep.
+uniform bool ore_use_texture = false;
+uniform sampler2D ore_albedo_tex : source_color, hint_default_white;
+uniform sampler2D ore_normal_tex : hint_normal;
+uniform float ore_tex_scale = 1.0;
+uniform float ore_normal_strength = 1.0;
+
 // ── Neutral fault grooves (carved cracks) ────────────────────────────────────
 uniform int plane_count = 0;
 uniform vec3 plane_normals[8];
@@ -77,7 +86,17 @@ void fragment() {
 	// the pattern per rock so they don't all look identical.
 	float n = _fbm((v_local + noise_offset) * ore_scale);
 	float ore = smoothstep(ore_threshold, ore_threshold + ore_softness, n);
-	col = mix(col, ore_color, ore);
+
+	// Ore look: a flat color, or a triplanar texture (local space, like the rock) tinted by
+	// ore_color. Same noise mask, so the ore keeps its volume / cut faces / persistence.
+	vec3 ore_col = ore_color;
+	if (ore_use_texture) {
+		vec3 op = v_local * ore_tex_scale;
+		ore_col = (texture(ore_albedo_tex, op.zy).rgb * bw.x
+		         + texture(ore_albedo_tex, op.xz).rgb * bw.y
+		         + texture(ore_albedo_tex, op.xy).rgb * bw.z) * ore_color;
+	}
+	col = mix(col, ore_col, ore);
 
 	// Neutral fault grooves: crack mask + cross-groove gradient.
 	float crack = 0.0;
@@ -93,7 +112,18 @@ void fragment() {
 	ALBEDO = col;
 	METALLIC = ore * ore_metallic;
 	ROUGHNESS = mix(0.9, ore_roughness, ore);
-	EMISSION = ore_color * ore * ore_emission;
+	EMISSION = ore_col * ore * ore_emission;
+
+	// Ore relief: triplanar normal map (local space) blended in over the ore pockets.
+	if (ore_use_texture && ore > 0.001 && ore_normal_strength > 0.0) {
+		vec3 np = v_local * ore_tex_scale;
+		vec3 onx = texture(ore_normal_tex, np.zy).xyz * 2.0 - 1.0;
+		vec3 ony = texture(ore_normal_tex, np.xz).xyz * 2.0 - 1.0;
+		vec3 onz = texture(ore_normal_tex, np.xy).xyz * 2.0 - 1.0;
+		vec3 on_local = normalize(onx * bw.x + ony * bw.y + onz * bw.z);
+		vec3 on_view = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(on_local, 0.0)).xyz);
+		NORMAL = normalize(mix(NORMAL, on_view, clamp(ore * ore_normal_strength, 0.0, 1.0)));
+	}
 
 	// Carve the groove by tilting the normal toward the crack center (fake bump map).
 	if (crack > 0.001) {
