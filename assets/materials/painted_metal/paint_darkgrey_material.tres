@@ -1,15 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://cvigq2mjqo7w"]
-
-[ext_resource type="Shader" uid="uid://bdb0hrfumlpwd" path="res://assets/materials/painted_metal/painted_metal.gdshader" id="1_27bcl"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cvigq2mjqo7w"]
 
 [resource]
 resource_name = "metal"
-render_priority = 0
-shader = ExtResource("1_27bcl")
-shader_parameter/paint_color = Color(0.25260416, 0.249722, 0.24844372, 1)
-shader_parameter/paint_roughness = 0.20999999530608
-shader_parameter/paint_metallic = 0.0
-shader_parameter/metal_color = Color(0.7, 0.7, 0.7, 1)
-shader_parameter/metal_roughness = 0.249999994412
-shader_parameter/scratch_amount = 0.2
-shader_parameter/uv1_blend_sharpness = 1.0
