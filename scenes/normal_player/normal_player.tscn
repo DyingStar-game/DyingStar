@@ -87,7 +87,7 @@ collide_with_bodies = false
 [node name="Torch" type="SpotLight3D" parent="CameraPivot/Camera3D" unique_id=1256401590]
 visible = false
 light_energy = 2.0
-spot_range = 55.0
+spot_range = 25.0
 spot_angle = 41.4246
 
 [node name="AreaDetector" type="Area3D" parent="." unique_id=972717439]
