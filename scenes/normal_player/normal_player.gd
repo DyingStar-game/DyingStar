@@ -285,10 +285,9 @@ func update_last_basis() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
-	# Disembark with Y (exit) OR E (action): same as embarking with E, the single action key.
-	if _seat_vehicle_uuid != "" and (event.is_action_pressed("exit") or event.is_action_pressed("action")):
+	# Leave the seat we occupy (driver or passenger) with Y.
+	if _seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
 		_leave_vehicle()
-		return
 
 	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
 		# Reset the vehicle upright (server-authoritative; driver only).
@@ -546,7 +545,7 @@ func _enter_seat(seat: Node) -> void:
 		veh.set_driver_hud(true)
 
 ## Leave the seat we occupy (driver or passenger): tell the server, walk again, un-parent back into
-## the world, and drop the driver HUD. Triggered by both Y (exit) and E (action) — see _unhandled_input.
+## the world, and drop the driver HUD. Triggered by Y (exit) — see _unhandled_input.
 func _leave_vehicle() -> void:
 	client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _seat_vehicle_uuid})
 	active = true  # walking again
