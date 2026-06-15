@@ -1,13 +1,15 @@
 extends Control
 
 var actual_page: Control = null
+## The full settings menu (general / graphics / audio / controls) — reused from the main menu.
+var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
 @onready var main_pause_menu: Control = $PausePage
 @onready var input_settings_menu: Control = $InputSettings
 
 func _ready() -> void:
-	main_pause_menu.keymapping_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("keymapping_button")
+	main_pause_menu.settings_button.pressed.connect(
+		_on_pause_menu_button_pressed.bind("settings_button")
 	)
 	main_pause_menu.quit_game_button.pressed.connect(
 		_on_pause_menu_button_pressed.bind("quit_game_button")
@@ -48,10 +50,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_pause_menu_button_pressed(button_pressed: String) -> void:
 
 	match  button_pressed:
-		"keymapping_button":
-			actual_page.visible = false
-			actual_page = input_settings_menu
-			actual_page.visible = true
+		"settings_button":
+			# Open the full settings menu (general/graphics/audio/controls) as an overlay; its own
+			# Return button frees it and brings the pause menu back. DRY: same page as the main menu.
+			add_child(settings_scene.instantiate())
 		"quit_game_button":
 			get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
 		"return_menu_button":

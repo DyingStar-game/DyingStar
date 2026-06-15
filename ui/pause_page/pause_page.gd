@@ -1,6 +1,6 @@
 extends Control
 
-@onready var keymapping_button: Button = $MarginContainer/VBoxContainer/KeymappingButton
+@onready var settings_button: Button = $MarginContainer/VBoxContainer/SettingsButton
 @onready var quit_game_button: Button = $MarginContainer/VBoxContainer/QuitGameButton
 @onready var return_menu_button: Button = $MarginContainer/VBoxContainer/ReturnMenuButton
 @onready var resume_game_button: Button = $MarginContainer/VBoxContainer/ResumeGameButton
