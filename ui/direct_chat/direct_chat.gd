@@ -46,59 +46,135 @@ func _ready():
 	visible = false
 	is_shown = visible
 
-	# Adding different channels to the selector
-	for channel_name in ChannelE.keys():
-		channel_selector.add_item(channel_name)
-	logg("selection du canal par défautl: " + str(ChannelE.keys()[0]))
-	channel_selector.selected = 0
+	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
+	_refresh_channels()
+
+	# Bind the UI to the chat transport for the local player only (not remote copies,
+	# not the headless server). The owning Player's remote_player flag is the reliable
+	# local/remote signal here (clients talk to Horizon over WebSocket, not Godot's
+	# multiplayer peer, so is_multiplayer_authority() is not usable).
+	if _is_local():
+		send_message.connect(ChatNetwork.publish_message)
+		ChatNetwork.message_received.connect(receive_message_from_server)
+		ChatNetwork.channels_changed.connect(_refresh_channels)
+		ChatNetwork.ensure_connected()
+
+## True only for the local player's chat (not remote player copies, not the server).
+func _is_local() -> bool:
+	return not OS.has_feature("dedicated_server") and owner is Player and not owner.remote_player
 
 func _on_visibility_changed() -> void:
 	pass
 
-func _on_input_text_text_submitted(message: String) -> void:
-	if message.strip_edges() == "":
+## Rebuild the channel dropdown: every channel is listed, but the ones with no
+## active topic (GROUP/ALLIANCE/REGION/DM, whose gameplay systems don't exist yet)
+## are greyed out. They light up automatically once ChatNetwork.set_id_provider()
+## is called for them — this is the multi-channel extension point.
+func _refresh_channels() -> void:
+	channel_selector.clear()
+	var active: Array = ChatNetwork.active_channels()
+	for channel in ChannelE.values():
+		if channel == ChannelE.UNSPECIFIED:
+			continue
+		var index: int = channel_selector.item_count
+		# Use the enum value as the item id so get_selected_id() returns the channel.
+		channel_selector.add_item(ChannelE.keys()[channel], channel)
+		if not (channel in active):
+			channel_selector.set_item_disabled(index, true)
+			channel_selector.set_item_tooltip(index, "À venir")
+	var general_index: int = channel_selector.get_item_index(ChannelE.GENERAL)
+	if general_index != -1:
+		channel_selector.select(general_index)
+
+## Select the next ACTIVE (non-greyed) channel, wrapping around. Inactive channels
+## are skipped so the player never lands on a channel they cannot post to.
+func _cycle_channel() -> void:
+	var count: int = channel_selector.item_count
+	if count == 0:
 		return
-	var channel = channel_selector.get_selected_id()
-	var chat_message = ChatMessage.new(message,channel)
-	emit_signal("send_message", chat_message)
-	#send_message_to_server(nt)
+	var current: int = channel_selector.selected
+	for offset in range(1, count + 1):
+		var next: int = (current + offset) % count
+		if not channel_selector.is_item_disabled(next):
+			channel_selector.select(next)
+			return
+
+func _on_input_text_text_submitted(message: String) -> void:
+	# Enter inside the input line: send (when not empty), then leave write mode.
+	if message.strip_edges() != "":
+		var chat_message = ChatMessage.new(message, channel_selector.get_selected_id())
+		send_message.emit(chat_message)
 	input_field.text = ""
+	_stop_writing()
+
+## TAB, while typing, cycles the chat channel. It is caught here (in _input, before
+## the GUI focus system) so it does NOT move keyboard focus. TAB is intentionally a
+## fixed key (a text-field convention), not a rebindable InputMap action.
+func _input(event: InputEvent) -> void:
+	if not _is_local() or not can_write:
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
+		_cycle_channel()
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event):
-	if not is_multiplayer_authority(): return
+	if not _is_local(): return
 
-	if is_shown:
+	if not is_shown:
+		# F12 reveals the chat.
 		if event.is_action_pressed("toggle_chat"):
-			visible = false
-			is_shown = false
-			mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_show_chat()
+			get_viewport().set_input_as_handled()
+		return
 
-		if event.is_action_pressed("pause"):
-			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
+	# Chat is visible.
+	if event.is_action_pressed("toggle_chat"):
+		_hide_chat()
+		get_viewport().set_input_as_handled()
+		return
 
-		if not can_write:
-			if event.is_action_pressed("write_in_chat"):
-				can_write = true
-				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-				input_field.grab_focus()
-		else:
-			if event.is_action_pressed("write_in_chat"):
-				input_field.release_focus()
-				can_write = false
-				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if event.is_action_pressed("pause"):
+		_stop_writing()
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
+		return
 
-			if event is InputEventMouseButton:
-				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-				input_field.release_focus()
-				can_write = false
-
+	if not can_write:
+		# Enter opens the input line for typing.
+		if event.is_action_pressed("write_in_chat"):
+			_start_writing()
 			get_viewport().set_input_as_handled()
 	else:
-		if event.is_action_pressed("toggle_chat"):
-			visible = true
-			is_shown = true
-			mouse_filter = Control.MOUSE_FILTER_STOP
-			get_viewport().set_input_as_handled()
+		# While writing, Enter is consumed by the LineEdit (-> _on_input_text_text_submitted,
+		# which sends and closes). A mouse click cancels writing without sending.
+		if event is InputEventMouseButton:
+			_stop_writing()
+		get_viewport().set_input_as_handled()
+
+## Show the chat panel (messages visible, not yet in write mode).
+func _show_chat() -> void:
+	visible = true
+	is_shown = true
+	mouse_filter = Control.MOUSE_FILTER_STOP
+
+## Hide the chat panel, making sure we are not left stuck in write mode.
+func _hide_chat() -> void:
+	_stop_writing()
+	visible = false
+	is_shown = false
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+## Focus the input line: the player can type and the mouse is freed.
+func _start_writing() -> void:
+	can_write = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	input_field.grab_focus()
+
+## Leave write mode: release the input line and recapture the mouse for gameplay.
+func _stop_writing() -> void:
+	if input_field.has_focus():
+		input_field.release_focus()
+	can_write = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 # Receives a message from the server
 func receive_message_from_server(receveid_message: ChatMessage) -> void:

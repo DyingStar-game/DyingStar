@@ -330,11 +330,9 @@ func complete_client_initialization(entity) -> void:
 	player_instance = entity
 	player_instance.player_display_name = ""
 	player_instance.label_player_name.text = player_instance.player_display_name
-	player_instance.direct_chat.connect("send_message", _on_message_from_player)
 	player_instance.connect("hs_client_action_move", _on_client_action_move)
-
-func receive_chat_message(message: ChatMessage) -> void:
-	player_instance.direct_chat.receive_message_from_server(message)
+	# Chat is wired directly to the broker by the ChatNetwork autoload (see
+	# direct_chat.gd / chat_network.gd) — no game-server relay here anymore.
 
 ########################################################################
 # Signal connections
@@ -373,15 +371,6 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 						"ship":
 							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
 							NetworkOrchestrator.request_release.rpc_id(peer_id, player_instance.get_path(), ship_instance_path)
-
-func _on_message_from_player(message: ChatMessage) -> void:
-	var dictionnary_message = {
-		"content": message.content,
-		"author": player_instance.player_display_name,
-		"channel": message.channel,
-		"creation_schedule": message.creation_schedule
-	}
-	NetworkOrchestrator.send_chat_message_to_server.rpc_id(1, dictionnary_message)
 
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
