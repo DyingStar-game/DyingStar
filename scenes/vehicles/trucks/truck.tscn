@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/vehicles/vehicle_seat.gd" id="3_seat"]
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
 [ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/vehicles/trucks/truck_ui.tscn" id="5_d2vf6"]
+[ext_resource type="PackedScene" path="res://scenes/vehicles/rear_camera.tscn" id="6_nd433"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
 size = Vector3(0.8699799106043429, 1.889733397892087, 1.1162902846483576)
@@ -88,6 +89,8 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_lj7vy")
 
+[sub_resource type="QuadMesh" id="QuadMesh_nd433"]
+
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 mass = 1000.0
 script = ExtResource("1_vehicle")
@@ -169,32 +172,44 @@ mesh = SubResource("ArrayMesh_j0cs4")
 [node name="Retro" type="Node3D" parent="." unique_id=241733783]
 
 [node name="RetroL" type="MeshInstance3D" parent="Retro" unique_id=655497253]
-transform = Transform3D(-0.3170223113008912, -0.21367460653674272, 1.5092741815829104e-17, -1.762937452191217e-33, 1.5427620320199737e-17, 0.29065724085451006, -0.507341751251217, 0.13351871290609493, -9.430991796991935e-18, -1.1450000000040745, 1.8429999999934807, -2.1999999999970896)
+transform = Transform3D(-0.3170223113008912, -0.21367460653674272, 1.50927418158291e-17, -1.762937452191217e-33, 1.542762032019973e-17, 0.29065724085451006, -0.507341751251217, 0.13351871290609493, -9.430991796991935e-18, -1.1450000000040743, 1.8429999999934807, -2.1999999999970896)
 material_override = ExtResource("3_lpt68")
 mesh = SubResource("ArrayMesh_tuoiw")
 
+[node name="RetroL_Screen" type="MeshInstance3D" parent="Retro/RetroL" unique_id=715380985]
+transform = Transform3D(0.006401082002568531, 1.5336793744598217e-18, -0.17883126698222424, 0.9127150305674673, 3.2804069000799227e-16, 0.007070612281882688, -1.4534978370346534e-16, 1.5482153435332782, -3.7529676327875183e-19, -0.1089776533347564, -0.0002305112055487335, 0)
+mesh = SubResource("QuadMesh_nd433")
+
 [node name="RetroD" type="MeshInstance3D" parent="Retro" unique_id=949377116]
-transform = Transform3D(-0.31702231130089115, 0.21367460653674272, -1.50927418158291e-17, 0, 1.5427620320199737e-17, 0.29065724085451006, 0.5073417512512172, 0.1335187129060949, -9.430991796991932e-18, 1.1116747671982483, 1.8429999999934807, -2.1385892980616505)
+transform = Transform3D(0.31702231130089137, -0.21367460653674278, 1.5092741815829098e-17, 0, 1.5427620320199744e-17, 0.2906572408545101, -0.5073417512512173, -0.13351871290609502, 9.430991796991936e-18, 1.1116747671982483, 1.8429999999934807, -2.1385892980616505)
 material_override = ExtResource("3_lpt68")
 mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="RetroD_Screen" type="MeshInstance3D" parent="Retro/RetroD" unique_id=934713954]
+transform = Transform3D(0.006401082002568531, 1.533679374459797e-18, -0.17883126698222426, 0.9127150305674676, 3.280406900079923e-16, 0.007070612281882688, -1.4534978370346534e-16, 1.548215343533278, -3.7529676327875183e-19, -0.10897765333475684, -0.0002305112055482894, 0)
+mesh = SubResource("QuadMesh_nd433")
 
 [node name="Recul" type="Node3D" parent="." unique_id=683381723]
 
 [node name="Recul" type="MeshInstance3D" parent="Recul" unique_id=1075437571]
-transform = Transform3D(3.6630819346065263e-17, 0, -0.29065724085451006, 0, 0.2519604813750204, 0, 0.5982464361993399, 0, 1.7797035196745698e-17, 0, 1.796158528473477, -1.6413238987596117)
+transform = Transform3D(3.6630819346065263e-17, 0, -0.29065724085451006, 0, 0.2519604813750204, 0, 0.5982464361993399, 0, 1.7797035196745695e-17, 0, 1.796158528473477, -1.6413238987596117)
 material_override = ExtResource("3_lpt68")
 mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="Recul_Screen" type="MeshInstance3D" parent="Recul" unique_id=946437510]
+transform = Transform3D(0.4448829333770059, 0, 0, 0, 0.24538884339518696, 0, 0, 0, 1, -0.008833235432546549, 1.7960000000020955, -1.7033350191500347)
+mesh = SubResource("QuadMesh_nd433")
 
 [node name="Light" type="Node3D" parent="." unique_id=2071163623]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0)
 
 [node name="SpotLight3DL" type="SpotLight3D" parent="Light" unique_id=850312889 groups=["vehicle_light"]]
-transform = Transform3D(1, 0, 0, 0, 0.9365560045835761, 0.35051797425873754, 0, -0.35051797425873765, 0.9365560045835759, -0.6999999999970896, 0, -2.1999999999970896)
+transform = Transform3D(1, 0, 0, 0, 0.936556004583576, 0.35051797425873754, 0, -0.35051797425873765, 0.936556004583576, -0.6999999999970896, 0, -2.1999999999970896)
 spot_range = 150.0
 spot_angle = 37.0
 
 [node name="SpotLight3DR" type="SpotLight3D" parent="Light" unique_id=889490272 groups=["vehicle_light"]]
-transform = Transform3D(1, 0, 0, 0, 0.9612616959383189, 0.27563735581699916, 0, -0.27563735581699916, 0.9612616959383189, 0.6999999999970896, 0, -2.1999999999970896)
+transform = Transform3D(1, 0, 0, 0, 0.9612616959383188, 0.27563735581699916, 0, -0.27563735581699916, 0.9612616959383188, 0.6999999999970896, 0, -2.1999999999970896)
 spot_range = 150.0
 spot_angle = 37.0
 
@@ -209,7 +224,22 @@ spot_range = 10.0
 spot_angle = 37.0
 
 [node name="RearSpotLight3DR2" type="SpotLight3D" parent="Light" unique_id=1027222496 groups=["vehicle_light"]]
-transform = Transform3D(-1, 3.3754725728429654e-17, -1.1771671805321395e-16, 0, 0.9612616959383189, 0.27563735581699916, 1.2246064e-16, 0.27563735581699916, -0.9612616959383189, -0.6999999999970896, 0, 2.269941584191669)
+transform = Transform3D(-1, 3.3754725728429654e-17, -1.1771671805321395e-16, 0, 0.9612616959383188, 0.27563735581699916, 1.2246064e-16, 0.27563735581699916, -0.9612616959383188, -0.6999999999970896, 0, 2.269941584191669)
 light_color = Color(1, 0.039215688, 0.0627451, 1)
 spot_range = 10.0
 spot_angle = 37.0
+
+[node name="RearCamera_Rear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -2.4651903e-32, 1.2246064e-16, 6.123031769111884e-17, 0.8660254037844387, 0.5, -1.0605402120460136e-16, 0.5, -0.8660254037844387, -0.0005934056118874764, 2.216733946285466, -0.831925203098164)
+screen = NodePath("../Recul/Recul_Screen")
+mirror = true
+
+[node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -3.698526287045973e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.6000000000058208, 1.8000000000029104, -1.8999999999941792)
+screen = NodePath("../Retro/RetroL/RetroL_Screen")
+resolution = Vector2i(200, 320)
+
+[node name="RearCamera_RetroR" parent="." unique_id=86175484 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -2.4651903e-32, 1.2246064e-16, 6.123031769111884e-17, 0.8660254037844387, 0.5, -1.0605402120460136e-16, 0.5, -0.8660254037844387, 1.630042590852213, 1.8000000000029104, -1.8999999999941792)
+screen = NodePath("../Retro/RetroD/RetroD_Screen")
+resolution = Vector2i(200, 320)
