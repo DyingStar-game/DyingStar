@@ -60,11 +60,13 @@ func ensure_connected() -> void:
 	_client.broker_connection_failed.connect(_on_broker_connection_failed)
 
 	# Auth: reuse the game JWT (set on the client network agent from --token=).
-	# The broker is anonymous in local dev, so an empty token is fine for now.
+	# mosquitto-go-auth (jwt backend) reads the token from the MQTT USERNAME and just
+	# needs the password to be non-empty. The anonymous dev broker ignores both, so an
+	# empty token (local dev) is fine — we simply connect without credentials then.
 	var token := _player_token()
 	if token != "":
-		_client.user = Globals.player_uuid if Globals.player_uuid != "" else "player"
-		_client.pswd = token
+		_client.user = token
+		_client.pswd = "jwt"
 	if Globals.player_uuid != "":
 		_client.client_id = "ds-" + Globals.player_uuid
 
