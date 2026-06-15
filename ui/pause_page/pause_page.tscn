@@ -55,25 +55,25 @@ size_flags_horizontal = 0
 size_flags_vertical = 4
 theme_override_constants/separation = 10
 
-[node name="KeymappingButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
+[node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "%%PAUSEPAGE_KEYMAPPING"
+text = "%%PAUSEPAGE_RESUMEGAME"
 
-[node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1161452463]
+[node name="SettingsButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "%%PAUSEPAGE_QUITGAME"
+text = "%%PAUSEPAGE_SETTINGS"
 
 [node name="ReturnMenuButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=8065788]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_RETURNMENU"
 
-[node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
+[node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1161452463]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "%%PAUSEPAGE_RESUMEGAME"
+text = "%%PAUSEPAGE_QUITGAME"
 
 [node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("3_l7wor")]
 root_path = NodePath("../MarginContainer")

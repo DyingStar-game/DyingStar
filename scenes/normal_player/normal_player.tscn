@@ -126,9 +126,14 @@ script = ExtResource("3_kcm5r")
 
 [node name="Debug" type="Control" parent="UserInterface" unique_id=1592637921]
 visible = false
-anchors_preset = 0
-offset_right = 40.0
-offset_bottom = 40.0
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -1920.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 0
 mouse_filter = 2
 script = ExtResource("4_urqre")
 

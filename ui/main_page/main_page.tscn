@@ -48,6 +48,10 @@ theme_override_constants/margin_bottom = 20
 position = Vector2(960, 891)
 texture = ExtResource("3_n4a6o")
 
+[node name="Button3" type="Sprite2D" parent="Control" unique_id=1577520522]
+position = Vector2(960, 947)
+texture = ExtResource("3_n4a6o")
+
 [node name="Button" type="Button" parent="Control" unique_id=1722532473]
 layout_mode = 1
 anchors_preset = -1
@@ -69,6 +73,31 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "Settings"
+label_settings = SubResource("LabelSettings_75xce")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="QuitButton" type="Button" parent="Control" unique_id=1722532474]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.696
+anchor_right = 0.5
+anchor_bottom = 0.696
+offset_left = -98.0
+offset_top = 170.32000000000004
+offset_right = 98.0
+offset_bottom = 219.32000000000005
+theme_type_variation = &"FlatButton"
+
+[node name="Label" type="Label" parent="Control/QuitButton" unique_id=2114345281]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Quit"
 label_settings = SubResource("LabelSettings_75xce")
 horizontal_alignment = 1
 vertical_alignment = 1
