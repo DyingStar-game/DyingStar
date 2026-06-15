@@ -285,24 +285,10 @@ func update_last_basis() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
-	if event.is_action_pressed("exit") and _seat_vehicle_uuid != "":
-		# Leave the seat we occupy (driver or passenger).
-		client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _seat_vehicle_uuid})
-		active = true  # walking again
-		set_seated(false)
-		camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
-		# Un-parent from the vehicle, back into the world (the server repositions us beside it).
-		if is_instance_valid(_seat_vehicle_node) and get_parent() == _seat_vehicle_node:
-			var world: Node = _seat_vehicle_node.get_parent()
-			if world != null:
-				reparent(world)
-				net_reset_interp()
-		if _seat_is_driver and is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("set_driver_hud"):
-			_seat_vehicle_node.set_driver_hud(false)
-		_seat_vehicle_uuid = ""
-		_seat_vehicle_node = null
-		_seat_node = null
-		_seat_is_driver = false
+	# Disembark with Y (exit) OR E (action): same as embarking with E, the single action key.
+	if _seat_vehicle_uuid != "" and (event.is_action_pressed("exit") or event.is_action_pressed("action")):
+		_leave_vehicle()
+		return
 
 	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
 		# Reset the vehicle upright (server-authoritative; driver only).
@@ -344,7 +330,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow()
 
-	if event.is_action_pressed("spawn_rock_mining"):
+	if event.is_action_pressed("spawn_wheel"):
 		if _spawn_wheel:
 			_spawn_wheel.open([
 				{"text": "Rocher", "data": "rock"},
@@ -352,7 +338,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				{"text": "Dépôt", "data": "depot"},
 				{"text": "Camion", "data": "truck"},
 			])
-	if event.is_action_released("spawn_rock_mining"):
+	if event.is_action_released("spawn_wheel"):
 		if _spawn_wheel:
 			_spawn_wheel.confirm()
 
@@ -558,6 +544,26 @@ func _enter_seat(seat: Node) -> void:
 		net_reset_interp()
 	if _seat_is_driver and veh.has_method("set_driver_hud"):
 		veh.set_driver_hud(true)
+
+## Leave the seat we occupy (driver or passenger): tell the server, walk again, un-parent back into
+## the world, and drop the driver HUD. Triggered by both Y (exit) and E (action) — see _unhandled_input.
+func _leave_vehicle() -> void:
+	client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _seat_vehicle_uuid})
+	active = true  # walking again
+	set_seated(false)
+	camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
+	# Un-parent from the vehicle, back into the world (the server repositions us beside it).
+	if is_instance_valid(_seat_vehicle_node) and get_parent() == _seat_vehicle_node:
+		var world: Node = _seat_vehicle_node.get_parent()
+		if world != null:
+			reparent(world)
+			net_reset_interp()
+	if _seat_is_driver and is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("set_driver_hud"):
+		_seat_vehicle_node.set_driver_hud(false)
+	_seat_vehicle_uuid = ""
+	_seat_vehicle_node = null
+	_seat_node = null
+	_seat_is_driver = false
 
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
 ## local (relative to the parent); the rotation arrives global, so convert it to the parent's
