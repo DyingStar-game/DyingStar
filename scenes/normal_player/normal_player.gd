@@ -308,6 +308,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Reset the vehicle upright (server-authoritative; driver only).
 		client_send_action_to_server({"action": "reset_vehicle", "target_uuid": _seat_vehicle_uuid})
 
+	if _seat_is_driver and _seat_vehicle_uuid != "" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
+		# Toggle the vehicle head lights (server-authoritative; driver only).
+		client_send_action_to_server({"action": "vehicle_lights", "target_uuid": _seat_vehicle_uuid})
+
 	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
@@ -317,9 +321,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(JUMP):
 		client_send_action_to_server({"action": JUMP})
 
-	if event.is_action_pressed("toggle_flashlight"):
+	if event.is_action_pressed("toggle_flashlight") and _seat_vehicle_uuid == "":
+		# On foot only: L toggles the player's flashlight. In a vehicle, L drives the head lights
+		# instead (see the KEY_L driver handler above), so the two never fire at once.
 		client_send_action_to_server({"action": "toggle_flashlight"})
-		# flashlight.visible = not flashlight.visible
 
 	if event.is_action_pressed("toggle_tool"):
 		if admin_cleanup_tool != null:
@@ -1033,12 +1038,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["rotation"]["y"],
 			data["rotation"]["z"]
 		)
+	if data.has("flashlight"):
+		flashlight.visible = bool(data["flashlight"])  # replicated torch state (owner + remotes)
 	if data.has("action"):
 		match data["action"]:
 			JUMP:
 				is_jumping = true
-			"toggle_flashlight":
-				flashlight.visible = not flashlight.visible
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	if remote_player:
@@ -1160,7 +1165,10 @@ func server_action_received(data: Dictionary) -> void:
 		JUMP:
 			is_jumping = true
 		"toggle_flashlight":
+			# Server-authoritative: flip the state and replicate it so the owner AND other players
+			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			flashlight.visible = not flashlight.visible
+			server_send_properties_to_client({"flashlight": flashlight.visible})
 		"screen_state":
 			# A 3D screen (mining depot) button was pressed: route it to that screen.
 			if screen_interacting and screen_interacting.has_method("update_screen"):
@@ -1250,6 +1258,10 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_h := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_h != null and veh_h._pilot == self and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
+		"vehicle_lights":
+			var veh_l := _find_vehicle(str(data.get("target_uuid", "")))
+			if veh_l != null and veh_l._pilot == self and veh_l.has_method("toggle_headlights"):
+				veh_l.toggle_headlights()
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:

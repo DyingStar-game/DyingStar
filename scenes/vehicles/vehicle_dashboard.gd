@@ -7,7 +7,7 @@ extends Panel
 ## about it (the screen is just another child). Put this script on the UI scene's root.
 ##
 ## Expects these child Labels (rename here if your scene differs):
-## speed, RPM, Load, Overloaded, Elec_THerm, Transmission, hanbreak.
+## speed, RPM, Load, Overloaded, Elec_THerm, Transmission, hanbreak, Light.
 
 var _vehicle: Vehicle = null
 
@@ -18,6 +18,7 @@ var _vehicle: Vehicle = null
 @onready var _powertrain: Label = $Elec_THerm
 @onready var _transmission: Label = $Transmission
 @onready var _handbrake: Label = $hanbreak
+@onready var _light: Label = $Light
 
 func _ready() -> void:
 	_vehicle = _find_vehicle()
@@ -32,6 +33,7 @@ func _process(_delta: float) -> void:
 	_powertrain.text = _vehicle.get_propulsion_name()
 	_transmission.text = _vehicle.get_drive_mode_name()
 	_handbrake.text = "HANDBRAKE" if _vehicle.is_handbraked() else ""
+	_light.text = "LIGHTS" if _vehicle.is_headlights_on() else ""
 
 ## Walk up the tree (through the SubViewport) to the owning Vehicle.
 func _find_vehicle() -> Vehicle:

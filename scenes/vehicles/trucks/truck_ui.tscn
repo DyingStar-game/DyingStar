@@ -284,4 +284,15 @@ texture = ExtResource("3_jrjvv")
 expand_mode = 1
 stretch_mode = 4
 
+[node name="Light" type="Label" parent="." unique_id=143848626]
+layout_mode = 0
+offset_left = 305.0
+offset_top = 415.0
+offset_right = 1626.0
+offset_bottom = 525.0
+text = "Light ON"
+label_settings = SubResource("LabelSettings_7dvew")
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [connection signal="pressed" from="VB/Battery/TriggerCollect" to="." method="_on_trigger_collect_pressed"]

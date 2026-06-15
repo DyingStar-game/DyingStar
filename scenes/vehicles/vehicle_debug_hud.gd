@@ -40,7 +40,7 @@ func _process(_delta: float) -> void:
 	var in_game: bool = _vehicle.uuid != ""
 	var trans_suffix := "" if in_game else "   (N)"
 	var keys := (
-		"[Y] exit   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip" if in_game
+		"[Y] exit   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip   [L] lights" if in_game
 		else "[T] rock   [N] drive mode   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip")
 	_label.text = (
 		"Speed: %3.0f km/h%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
