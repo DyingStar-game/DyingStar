@@ -93,7 +93,6 @@ mass = 1000.0
 script = ExtResource("1_vehicle")
 engine_power = 850.0
 max_speed_kmh = 55.0
-handbrake_release_speed = null
 wheel_visual_drop = 0.26
 motor_max_rpm = 3000.0
 debug_color_driven_wheels = false
@@ -158,11 +157,59 @@ debug_color = Color(0.70196074, 0.31287596, 0.24275212, 0.41960785)
 [node name="Node3D" type="Node3D" parent="." unique_id=1506017023]
 
 [node name="screen" type="MeshInstance3D" parent="Node3D" unique_id=1870179503]
-transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932205, -2.2902095473902624)
+transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932203, -2.2902095473902624)
 material_override = ExtResource("3_lpt68")
 mesh = SubResource("ArrayMesh_tuoiw")
 
 [node name="screen_001" type="MeshInstance3D" parent="Node3D" unique_id=1356869307]
-transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932205, -2.2902095473902624)
+transform = Transform3D(3.6630819346065263e-17, 0, 0.29065724085451006, 0.17880044975726603, 0.24044399929679136, -5.319075392642577e-18, -0.5709020910732509, 0.07530449772023325, 1.6983577325215963e-17, -0.30728380455130244, 1.8425419393932203, -2.2902095473902624)
 material_override = SubResource("StandardMaterial3D_tuoiw")
 mesh = SubResource("ArrayMesh_j0cs4")
+
+[node name="Retro" type="Node3D" parent="." unique_id=241733783]
+
+[node name="RetroL" type="MeshInstance3D" parent="Retro" unique_id=655497253]
+transform = Transform3D(-0.3170223113008912, -0.21367460653674272, 1.5092741815829104e-17, -1.762937452191217e-33, 1.5427620320199737e-17, 0.29065724085451006, -0.507341751251217, 0.13351871290609493, -9.430991796991935e-18, -1.1450000000040745, 1.8429999999934807, -2.1999999999970896)
+material_override = ExtResource("3_lpt68")
+mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="RetroD" type="MeshInstance3D" parent="Retro" unique_id=949377116]
+transform = Transform3D(-0.31702231130089115, 0.21367460653674272, -1.50927418158291e-17, 0, 1.5427620320199737e-17, 0.29065724085451006, 0.5073417512512172, 0.1335187129060949, -9.430991796991932e-18, 1.1116747671982483, 1.8429999999934807, -2.1385892980616505)
+material_override = ExtResource("3_lpt68")
+mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="Recul" type="Node3D" parent="." unique_id=683381723]
+
+[node name="Recul" type="MeshInstance3D" parent="Recul" unique_id=1075437571]
+transform = Transform3D(3.6630819346065263e-17, 0, -0.29065724085451006, 0, 0.2519604813750204, 0, 0.5982464361993399, 0, 1.7797035196745698e-17, 0, 1.796158528473477, -1.6413238987596117)
+material_override = ExtResource("3_lpt68")
+mesh = SubResource("ArrayMesh_tuoiw")
+
+[node name="Light" type="Node3D" parent="." unique_id=2071163623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0)
+
+[node name="SpotLight3DL" type="SpotLight3D" parent="Light" unique_id=850312889 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.9365560045835761, 0.35051797425873754, 0, -0.35051797425873765, 0.9365560045835759, -0.6999999999970896, 0, -2.1999999999970896)
+spot_range = 150.0
+spot_angle = 37.0
+
+[node name="SpotLight3DR" type="SpotLight3D" parent="Light" unique_id=889490272 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.9612616959383189, 0.27563735581699916, 0, -0.27563735581699916, 0.9612616959383189, 0.6999999999970896, 0, -2.1999999999970896)
+spot_range = 150.0
+spot_angle = 37.0
+
+[node name="Cabin" type="OmniLight3D" parent="Light" unique_id=1138993396 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0759039289246832, -2.0053647138837216)
+light_energy = 0.3
+
+[node name="RearSpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=1571705372 groups=["vehicle_light"]]
+transform = Transform3D(-1, 4.292465384061989e-17, -1.1469124339235464e-16, 0, 0.9365560045835758, 0.3505179742587379, 1.2246064e-16, 0.3505179742587379, -0.9365560045835758, 0.6999999999970896, 0, 2.269941584191669)
+light_color = Color(1, 0.039215688, 0.0627451, 1)
+spot_range = 10.0
+spot_angle = 37.0
+
+[node name="RearSpotLight3DR2" type="SpotLight3D" parent="Light" unique_id=1027222496 groups=["vehicle_light"]]
+transform = Transform3D(-1, 3.3754725728429654e-17, -1.1771671805321395e-16, 0, 0.9612616959383189, 0.27563735581699916, 1.2246064e-16, 0.27563735581699916, -0.9612616959383189, -0.6999999999970896, 0, 2.269941584191669)
+light_color = Color(1, 0.039215688, 0.0627451, 1)
+spot_range = 10.0
+spot_angle = 37.0

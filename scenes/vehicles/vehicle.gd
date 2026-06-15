@@ -34,6 +34,8 @@ const GENERATED := "vehicle_generated"
 # Bench: the real mining rock scene, reused to test loading the bed.
 const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_01.tscn")
 const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
+## Group a dev adds to any Light3D in their vehicle scene to make it a head light (drop-in, no code).
+const LIGHT_GROUP := "vehicle_light"
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -63,6 +65,10 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## FULLY cancels motion each frame — a heavy parked truck must NOT move from a player bump or a
 ## gentle slope. Above it (a genuine vehicle ramming) it's only damped, so a real hit still pushes.
 @export var handbrake_release_speed: float = 2.0
+## Once the hand brake has the vehicle below this speed (m/s) it is FROZEN (static) so it can't
+## creep at all — a dynamic body keeps drifting slowly even with the drift cancel. Throttle
+## releases the hand brake and unfreezes it.
+@export var park_freeze_speed: float = 0.4
 ## Maximum steering angle of the front wheels, in degrees.
 @export var max_steer_deg: float = 30.0
 ## How fast the steering reaches its target angle (higher = snappier).
@@ -202,6 +208,9 @@ const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 		_rebuild_deferred()
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
+## Tilt (degrees from upright) past which the bed unlocks and spills its load — a rollover drops
+## the cargo (GDD: the lock releases on a certain inclination). 0 disables.
+@export var cargo_unlock_tilt_deg: float = 65.0
 ## Show a translucent box marking the cargo bay zone.
 @export var debug_show_cargo_bay: bool = true:
 	set(v):
@@ -244,6 +253,8 @@ var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), cha
 var _handbrake: bool = false  # server: hand brake engaged (holds the vehicle until throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
+var _headlights_on: bool = false  # server: head lights on/off
+var _net_last_headlights: bool = false  # server: last replicated head lights, change detection
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
@@ -255,6 +266,7 @@ func _ready() -> void:
 		return
 	add_to_group("vehicle")  # so a pilot can find and enter us
 	_sync_powertrain()
+	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
 	if _is_networked():
 		# Replicated prop: place it where the server spawned it (client_channel_data_update
 		# also applies position/rotation, this is the initial fallback).
@@ -505,6 +517,31 @@ func release_cargo(body: Node) -> void:
 	_locked_cargo.erase(body)
 	_refresh_mass()
 
+## Spill the whole load when the vehicle tips past cargo_unlock_tilt_deg (GDD: the bed lock
+## releases on a rollover). Each piece becomes a free dynamic prop again, back in the world.
+func _check_rollover_unlock() -> void:
+	if _locked_cargo.is_empty() or cargo_unlock_tilt_deg <= 0.0:
+		return
+	if global_transform.basis.y.dot(Vector3.UP) > cos(deg_to_rad(cargo_unlock_tilt_deg)):
+		return  # still upright enough
+	for body in _locked_cargo.keys():
+		_spill_cargo(body)
+
+## Drop one locked piece back into the world (un-freeze, reparent, replicate) — no new carrier.
+func _spill_cargo(body: Node) -> void:
+	release_cargo(body)  # remove from the load + stop ignoring it
+	if body is RigidBody3D:
+		(body as RigidBody3D).freeze = false
+	if body.has_method("set_carried"):
+		body.set_carried(false)
+	var world: Node = get_parent()
+	if body.has_method("server_parent_change"):
+		body.server_parent_change(world)
+		if body.has_method("send_properties_to_client"):
+			body.send_properties_to_client(str(world.uuid) if "uuid" in world else "")
+	elif body is Node3D:
+		(body as Node3D).reparent(world)
+
 func _refresh_mass() -> void:
 	mass = _empty_mass + get_cargo_mass()
 
@@ -694,21 +731,22 @@ func _physics_process(delta: float) -> void:
 			return
 		_release_vanished_occupants()  # free seats whose player disconnected (node freed)
 		_update_cargo()
-		# Keep the body awake while handbraked so _integrate_forces keeps cancelling drift — a
-		# parked truck that fell asleep would roll on a slope (the brake alone can't hold a skid).
-		can_sleep = not _handbrake
+		_check_rollover_unlock()  # spill the load if the truck is tipped over
 		if is_instance_valid(_pilot):
 			_apply_drive(delta)
 		elif _handbrake:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
+		_apply_park_freeze()  # freeze once stopped so a parked truck can't creep
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
 	_update_cargo()  # absorb settled cargo into the truck (always, even when not driving)
+	_check_rollover_unlock()
 	if _pilot != null:
 		_apply_drive(delta)
 	elif _handbrake:
 		_hold_handbrake(delta)
+	_apply_park_freeze()
 
 ## Server: replicate position/rotation to clients when they change (same shape as a rock).
 ## Client: the replica is frozen (no physics), so roll + steer the wheels visually from
@@ -752,7 +790,8 @@ func _replicate_transform() -> void:
 	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
 	if my_pos == _net_last_position and my_rot == _net_last_rotation \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
-			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass:
+			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
+			and _headlights_on == _net_last_headlights:
 		return
 	_net_last_position = my_pos
 	_net_last_rotation = my_rot
@@ -760,9 +799,11 @@ func _replicate_transform() -> void:
 	_net_last_cargo_mass = my_cargo
 	_net_last_handbrake = _handbrake
 	_net_last_mass = my_mass
+	_net_last_headlights = _headlights_on
 	var data := {
 		"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001),
 		"speed": my_speed, "cargo_mass": my_cargo, "handbrake": _handbrake, "mass": my_mass,
+		"headlights": _headlights_on,
 	}
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
@@ -791,6 +832,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 		mass = float(data["mass"])  # replica: show the server's real total weight on the HUD
 	if data.has("handbrake"):
 		_net_handbrake = bool(data["handbrake"])
+	if data.has("headlights"):
+		set_headlights(bool(data["headlights"]))  # mirror the head lights on this replica
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
 
@@ -980,12 +1023,48 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	state.linear_velocity = v_up + v_flat
 	state.angular_velocity = state.angular_velocity.move_toward(Vector3.ZERO, handbrake_hold * state.step)
 
-## Parked hand brake with no driver: lock the wheels + kill the drive. The drift cancel (and the
-## velocity threshold that keeps it pushable by a real hit) is in _integrate_forces, which keeps
-## firing because we hold the body awake (see _physics_process). From _physics_process.
+## Parked hand brake with no driver: lock the wheels + kill the drive. The drift cancel during the
+## stop is in _integrate_forces; once stopped, _apply_park_freeze freezes the body. From _physics_process.
 func _hold_handbrake(_delta: float) -> void:
 	engine_force = 0.0
 	brake = brake_force
+
+## Freeze the vehicle once the hand brake has it nearly stopped, so a parked truck can't creep
+## (a dynamic RigidBody keeps drifting slowly on a slope even with the drift cancel; a fresh
+## sleeping one doesn't). Throttle clears _handbrake in _apply_drive, which unfreezes it here.
+func _apply_park_freeze() -> void:
+	var should_freeze: bool = _handbrake and linear_velocity.length() < park_freeze_speed
+	if should_freeze != freeze:
+		freeze = should_freeze
+
+## Head lights — drop-in like seats: add any Light3D(s) to the group "vehicle_light" anywhere under
+## the vehicle scene (no code). The driver toggles them (L); the state is replicated so every client
+## sees them. Lights are found by group, filtered to this vehicle's own descendants.
+func _headlights() -> Array:
+	var out: Array = []
+	# May be called from client_channel_data_update BEFORE the node is in the tree (spawn): no tree
+	# yet -> no lights. set_headlights still records _headlights_on, applied again in _ready().
+	if not is_inside_tree():
+		return out
+	for n in get_tree().get_nodes_in_group(LIGHT_GROUP):
+		if n is Node3D and is_ancestor_of(n):
+			out.append(n)
+	return out
+
+## Apply the head-light state to every vehicle_light node (runs on the server AND each client replica).
+func set_headlights(on: bool) -> void:
+	_headlights_on = on
+	for light in _headlights():
+		(light as Node3D).visible = on
+
+## Server: flip the head lights; _replicate_transform then pushes the new state to clients.
+func toggle_headlights() -> void:
+	set_headlights(not _headlights_on)
+
+## True when the head lights are on — server state, or the replicated state on a client replica
+## (the dashboard reads this). set_headlights keeps _headlights_on in sync on both sides.
+func is_headlights_on() -> bool:
+	return _headlights_on
 
 ## Forward speed in km/h (positive when driving toward the cab, -Z).
 func _forward_speed_kmh() -> float:
