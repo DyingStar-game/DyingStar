@@ -52,8 +52,8 @@ func setup(camera: Camera3D, player: Node) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _camera == null:
 		return
-	# Key 2 toggles the tool on/off (physical key, so it works on AZERTY too).
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_2:
+	# The "zapette" action toggles the tool on/off (remappable in the settings; default key 2).
+	if event.is_action_pressed("zapette"):
 		set_active(not _active)
 		return
 	# Left click deletes the current target while the tool is active.

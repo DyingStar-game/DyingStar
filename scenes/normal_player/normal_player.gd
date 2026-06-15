@@ -304,11 +304,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_seat_node = null
 		_seat_is_driver = false
 
-	if _seat_is_driver and _seat_vehicle_uuid != "" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
 		# Reset the vehicle upright (server-authoritative; driver only).
 		client_send_action_to_server({"action": "reset_vehicle", "target_uuid": _seat_vehicle_uuid})
 
-	if _seat_is_driver and _seat_vehicle_uuid != "" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
+	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_lights"):
 		# Toggle the vehicle head lights (server-authoritative; driver only).
 		client_send_action_to_server({"action": "vehicle_lights", "target_uuid": _seat_vehicle_uuid})
 
@@ -322,8 +322,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		client_send_action_to_server({"action": JUMP})
 
 	if event.is_action_pressed("toggle_flashlight") and _seat_vehicle_uuid == "":
-		# On foot only: L toggles the player's flashlight. In a vehicle, L drives the head lights
-		# instead (see the KEY_L driver handler above), so the two never fire at once.
+		# On foot only: toggle_flashlight (L) lights the player's torch. In a vehicle the
+		# vehicle_lights action (also L) drives the head lights, so the two never fire at once.
 		client_send_action_to_server({"action": "toggle_flashlight"})
 
 	if event.is_action_pressed("toggle_tool"):
@@ -478,7 +478,7 @@ func _process(_delta: float) -> void:
 func _send_drive_input() -> void:
 	var throttle: float = Input.get_axis("move_back", "move_forward")
 	var steer: float = Input.get_axis("move_right", "move_left")
-	var braking: bool = Input.is_physical_key_pressed(KEY_SPACE)
+	var braking: bool = Input.is_action_pressed("brake")
 	if throttle == _last_throttle and steer == _last_steer and braking == _last_brake:
 		return
 	_last_throttle = throttle
@@ -492,9 +492,9 @@ func _send_drive_input() -> void:
 		"brake": braking,
 	})
 
-## Driver: a long press on Space at low speed toggles the vehicle's hand brake (once per hold).
+## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
 func _update_handbrake_input(delta: float) -> void:
-	if not Input.is_physical_key_pressed(KEY_SPACE):
+	if not Input.is_action_pressed("brake"):
 		_space_held_time = 0.0
 		_handbrake_sent = false
 		return
