@@ -394,10 +394,12 @@ func _process(_delta: float) -> void:
 	if mining_tool.is_perforating:
 		mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
-	# In front of a 3D screen (mining depot): free the mouse to click it + freeze the
-	# camera. Otherwise capture the mouse and move the camera normally.
-	# Free the mouse + freeze the camera while focused on UI (a 3D screen or the spawn wheel).
-	var ui_focus: bool = screen_interacting != null or (_spawn_wheel != null and _spawn_wheel.visible)
+	# Free the mouse + freeze the camera whenever the player isn't in direct control: focused on a
+	# 3D screen, the spawn wheel, OR the pause menu is open. Otherwise capture the mouse and move the
+	# camera. (Without the pause case, this would re-capture every frame and hide the menu cursor.)
+	var ui_focus: bool = screen_interacting != null \
+		or (_spawn_wheel != null and _spawn_wheel.visible) \
+		or GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
 	if ui_focus:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		mouse_motion = Vector2.ZERO
