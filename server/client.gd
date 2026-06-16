@@ -441,8 +441,6 @@ func create_object(event: Dictionary) -> void:
 		"player":
 			if int(event["channel"]) == 0:
 				create_player(event)
-			# if event["channel"] == 2:
-			# 	set_player_name(event)
 
 		_:
 			# for all props
@@ -495,6 +493,10 @@ func create_player(event: Dictionary) -> void:
 		return
 
 	if event["object_id"] == my_player_uuid:
+		# The server (Horizon) provides our display name (a generated pseudo when the
+		# token is bypassed in dev). It is the single source of truth for the player
+		# name — chat author, labels, HOME plates, future character screens.
+		Globals.player_name = str(player_data.get("name", Globals.player_name))
 		# await get_tree().create_timer(1).timeout
 		var spawned_entity_instance = player_scene.instantiate()
 		spawned_entity_instance.spawn_position = Vector3(
