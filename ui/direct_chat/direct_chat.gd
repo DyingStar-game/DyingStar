@@ -37,14 +37,23 @@ var forced_colors := {
 }
 
 @onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
+@onready var input_bar: HBoxContainer = $MarginContainer/VBoxContainer/HBoxContainer
 
 func _enter_tree() -> void:
 	if not OS.has_feature("dedicated_server"):
 		connect("visibility_changed", _on_visibility_changed)
 
 func _ready():
-	visible = false
+	# Shown by default (F12 still toggles it). MOUSE_FILTER_IGNORE so the always-visible
+	# panel never steals the mouse/look from gameplay; its children (input field, channel
+	# selector) still receive clicks while writing.
+	visible = true
 	is_shown = visible
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# The input bar (channel selector + text field) stays hidden until the player
+	# presses Enter to write; the message log is always visible.
+	input_bar.visible = false
 
 	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
 	_refresh_channels()
@@ -107,14 +116,19 @@ func _on_input_text_text_submitted(message: String) -> void:
 	input_field.text = ""
 	_stop_writing()
 
-## TAB, while typing, cycles the chat channel. It is caught here (in _input, before
-## the GUI focus system) so it does NOT move keyboard focus. TAB is intentionally a
-## fixed key (a text-field convention), not a rebindable InputMap action.
+## While typing, TAB cycles the channel and Escape closes the input. Both are caught
+## here (in _input, before the GUI focus system) — otherwise the focused input field
+## consumes TAB (focus change) and Escape before _unhandled_input sees them. TAB is a
+## fixed text-field key (not a rebindable action).
 func _input(event: InputEvent) -> void:
 	if not _is_local() or not can_write:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
 		_cycle_channel()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("pause"):
+		# Escape while typing closes the input (cancels writing) without pausing.
+		_stop_writing()
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event):
@@ -133,8 +147,8 @@ func _unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
 
+	# Escape while typing is handled in _input (closes the input). Here it pauses.
 	if event.is_action_pressed("pause"):
-		_stop_writing()
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
 		return
 
@@ -154,7 +168,7 @@ func _unhandled_input(event):
 func _show_chat() -> void:
 	visible = true
 	is_shown = true
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 ## Hide the chat panel, making sure we are not left stuck in write mode.
 func _hide_chat() -> void:
@@ -166,6 +180,7 @@ func _hide_chat() -> void:
 ## Focus the input line: the player can type and the mouse is freed.
 func _start_writing() -> void:
 	can_write = true
+	input_bar.visible = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	input_field.grab_focus()
 
@@ -174,6 +189,7 @@ func _stop_writing() -> void:
 	if input_field.has_focus():
 		input_field.release_focus()
 	can_write = false
+	input_bar.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 # Receives a message from the server
