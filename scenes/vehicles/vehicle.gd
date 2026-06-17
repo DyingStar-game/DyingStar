@@ -457,6 +457,11 @@ func _seat_position() -> Vector3:
 ## and roll, lift it a touch and zero the velocities so it settles upright.
 func reset_upright() -> void:
 	var up := Vector3.UP  # bench: world up (later: gravity-up from the planet)
+	# Only flip a genuinely tipped-over vehicle (more than ~60° from upright). If it is already
+	# roughly upright, do nothing — otherwise spamming R keeps lifting it (+1 m each call) and
+	# the truck flies away.
+	if global_transform.basis.y.dot(up) > 0.5:
+		return
 	var forward := -global_transform.basis.z
 	forward = (forward - up * forward.dot(up))  # flatten onto the horizontal plane
 	if forward.length() < 0.01:
