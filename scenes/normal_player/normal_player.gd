@@ -297,6 +297,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Toggle the vehicle head lights (server-authoritative; driver only).
 		client_send_action_to_server({"action": "vehicle_lights", "target_uuid": _seat_vehicle_uuid})
 
+	if event.is_action_pressed("toggle_flashlight"):
+		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
+		# sit before the walk guard. By default it shares the L key with vehicle_lights, so one
+		# press toggles both the torch and the head lights; rebind it to a separate key in
+		# Settings > Controls to control the torch independently.
+		client_send_action_to_server({"action": "toggle_flashlight"})
+
 	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
@@ -305,11 +312,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed(JUMP):
 		client_send_action_to_server({"action": JUMP})
-
-	if event.is_action_pressed("toggle_flashlight") and _seat_vehicle_uuid == "":
-		# On foot only: toggle_flashlight (L) lights the player's torch. In a vehicle the
-		# vehicle_lights action (also L) drives the head lights, so the two never fire at once.
-		client_send_action_to_server({"action": "toggle_flashlight"})
 
 	if event.is_action_pressed("toggle_tool"):
 		if admin_cleanup_tool != null:
