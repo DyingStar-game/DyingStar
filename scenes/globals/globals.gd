@@ -1,5 +1,10 @@
 extends Node
 
+## Collision layer (bit 5 = 16) reserved for vehicle interaction zones (seats, cargo bay). These
+## zones are MONITORABLE-only (they never monitor); the player's AreaDetector is the single monitor
+## that scans this layer. Kept off the interact ray's mask (layer 1) so it never eats the carry aim.
+const VEHICLE_ZONE_LAYER := 16
+
 var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false
