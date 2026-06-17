@@ -25,6 +25,8 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 # Hand brake: a long press on the brake (Space) at low speed toggles the vehicle's hand brake.
 const HANDBRAKE_HOLD_SECS: float = 0.4
 const HANDBRAKE_MAX_KMH: float = 3.0
+## Hide a remote player's name tag beyond this distance from the local camera.
+const NAME_TAG_MAX_DISTANCE: float = 25.0
 
 @export_group("Controls map names")
 
@@ -130,6 +132,11 @@ var _seat_node: Node3D = null
 var _seat_is_driver: bool = false
 # The VehicleSeat box the local player stands in (set by VehicleSeat); E takes that seat.
 var _nearby_seat: Node = null
+# Remote player's name tag, drawn in 2D screen space (see _setup_name_tag) instead of a 3D
+# billboard: at planetary world coordinates the GPU renders in single precision, so a 3D label
+# shimmers as the camera moves. Projecting the head to the screen on the CPU (double precision)
+# and drawing a plain 2D Label is rock-steady.
+var _name_tag: Label = null
 var _last_throttle: float = INF  # last drive input sent (to send only on change)
 var _last_steer: float = INF
 var _last_brake: bool = false
@@ -145,8 +152,6 @@ var _saved_collision_mask: int = 1
 @onready var labelx: Label = $UserInterface/Debug/LabelXValue
 @onready var labely: Label = $UserInterface/Debug/LabelYValue
 @onready var labelz: Label = $UserInterface/Debug/LabelZValue
-@onready var label_player_name: Label3D = %LabelPlayerName
-@onready var label_server_name: Label3D = %Labelserver_name
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 @onready var interact_label: Label = $UserInterface/HUD/InteractLabel
@@ -188,7 +193,7 @@ func _ready() -> void:
 
 	if remote_player:
 		camera.current = false
-		set_player_name(name)
+		_setup_name_tag(str(name))
 		return
 
 	if not OS.has_feature("dedicated_server"):
@@ -219,9 +224,7 @@ func _ready() -> void:
 		camera.current = true
 
 		camera.make_current()
-		# hide player name label for me only
-		label_player_name.visible = false
-		label_server_name.visible = false
+		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
 		connect_area_detect()
@@ -357,6 +360,7 @@ func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 func _process(_delta: float) -> void:
 	if remote_player:
 		_interp.update(self, _delta)  # entity interpolation: glide between server updates
+		_update_name_tag()
 		return
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
@@ -840,10 +844,40 @@ func orient_player():
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
 
 func set_player_name(player_name):
-	label_player_name.text = str(player_name)
+	if _name_tag != null:
+		_name_tag.text = str(player_name)
 
 func get_player_name():
 	pass
+
+## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
+## (immune to the 3D camera), and _update_name_tag positions it over the head every frame.
+func _setup_name_tag(player_name: String) -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	_name_tag = Label.new()
+	_name_tag.text = player_name
+	_name_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_name_tag.add_theme_font_size_override("font_size", 15)
+	_name_tag.add_theme_color_override("font_outline_color", Color.BLACK)
+	_name_tag.add_theme_constant_override("outline_size", 6)
+	_name_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_name_tag)
+
+## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
+## centered over the head and hidden when the player is behind the camera.
+func _update_name_tag() -> void:
+	if _name_tag == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	var head: Vector3 = global_position + global_transform.basis.y * 2.2
+	# Hide when behind the camera or farther than the cutoff (too far to read anyway).
+	if cam == null or cam.is_position_behind(head) \
+			or global_position.distance_to(cam.global_position) > NAME_TAG_MAX_DISTANCE:
+		_name_tag.visible = false
+		return
+	_name_tag.visible = true
+	_name_tag.position = cam.unproject_position(head) - _name_tag.size * 0.5
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
