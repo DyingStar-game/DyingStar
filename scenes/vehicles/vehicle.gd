@@ -516,8 +516,18 @@ func get_bed_mass() -> float:
 	var total := 0.0
 	for player in _bed_players:
 		if is_instance_valid(player) and player._seat_vehicle_uuid == "":
-			total += _player_mass(player)
+			total += _player_mass(player) + _carried_mass(player)  # the walker AND what they hold
 	return total
+
+## Mass (kg) of the prop a bed walker carries in their hands (a carriable with a real mass, e.g. a
+## mining rock), so a porter standing in the bed adds their load too. 0 when hands are empty.
+func _carried_mass(player: Node) -> float:
+	if not ("hands_item" in player):
+		return 0.0
+	var item = player.hands_item
+	if is_instance_valid(item) and item is RigidBody3D:
+		return maxf(0.0, (item as RigidBody3D).mass)
+	return 0.0
 
 ## Lock a settled body into the bed: freeze it, drop its collision, ride rigidly with the
 ## truck, and fold its mass into the vehicle. Same idea as carried props (#124).
