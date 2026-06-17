@@ -42,7 +42,7 @@ IncrementalSoundBankData.xml
 *.windows.editor.profile.dll
 
 # Specific DyingStar
-client.ini
+#client.ini
 
 # Prebaked chunk cache (copied locally to speed up Docker builds)
 chunk_cache/
