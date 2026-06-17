@@ -39,7 +39,6 @@ var metrics_password = ""
 var metrics_verbose_level = 2
 
 var mqtt = preload("res://addons/mqtt/mqtt.tscn")
-var mqtt_client
 var mqtt_client_sdo
 var mqtt_client_metrics
 
@@ -218,83 +217,9 @@ func _on_entity_spawned(entity: Node) -> void:
 func update_all_text_client():
 	get_gameserver_number_players.rpc(network_agent.players_list.size())
 
-###################
-# Chat part       #
-
-func connect_chat_mqtt():
-	mqtt_client = mqtt.instantiate()
-	GameOrchestrator.get_tree().get_current_scene().add_child(mqtt_client)
-
-	mqtt_client.broker_connected.connect(_on_mqtt_broker_connected)
-	mqtt_client.broker_connection_failed.connect(_on_mqtt_broker_connection_failed)
-	mqtt_client.received_message.connect(_on_mqtt_received_message)
-	mqtt_client.verbose_level = server_mqtt_verbose_level
-	#mqtt_client.connect_to_broker("tcp://", "192.168.20.158", 1883)
-	mqtt_client.connect_to_broker("ws://", server_mqtt_url, server_mqtt_port)
-
-func _on_mqtt_received_message(topic, message):
-	if topic == "chat/GENERAL":
-		var chat_data = JSON.parse_string(message)
-		var chat_message = ChatMessage.new(chat_data.msg, 0, chat_data.pseudo, 0.0)
-		var chat_message_for_rpc: Dictionary = {
-			"content": chat_message["content"],
-			"author": chat_message["author"],
-			"channel": chat_message["channel"],
-			"creation_schedule": chat_message["creation_schedule"]
-		}
-		receive_chat_message_from_server.rpc(chat_message_for_rpc)
-	else:
-		print(topic)
-		print(message)
-
-func _on_mqtt_broker_connected():
-	print("[chat] MQTT chat connected")
-	mqtt_client.subscribe("chat/GENERAL")
-	mqtt_client.publish("test", "I'm here NOW")
-
-func _on_mqtt_broker_connection_failed():
-	print("[chat] MQTT chat failed to connecte :(")
-
-@rpc("any_peer", "call_remote", "unreliable")
-func send_chat_message_to_server(message: Dictionary) -> void:
-
-	if not GameOrchestrator.is_server():
-		return
-
-	####################
-	# TRAITER LE MESSAGE SI BESOIN
-	####################
-
-	###################
-	# ENVOI VIA MQTT
-	var channel_name: String = ""
-	if message.has("channel"):
-		match message["channel"]:
-			0:
-				channel_name = "GENERAL"
-				mqtt_client.publish("chat/" + channel_name, JSON.stringify({
-					"pseudo": message["author"],
-					"msg": message["content"],
-				}))
-
-	###################
-	# ENVOI VIA LE SERVEUR LOCAL
-	#receive_chat_message_from_server.rpc(message)
-	###################
-
-# Receives a message from the server
-@rpc("authority", "call_remote", "unreliable")
-func receive_chat_message_from_server(message: Dictionary) -> void:
-	if not GameOrchestrator.is_server():
-		var chat_message = ChatMessage.new(
-			message["content"],
-			message["channel"],
-			message["author"],
-			message["creation_schedule"]
-		)
-		network_agent.receive_chat_message(chat_message)
-
-#endregion
+# Chat transport now lives in the dedicated ChatNetwork autoload
+# (scenes/globals/chat_network.gd): clients connect DIRECTLY to the MQTT broker,
+# so the old server-relay path that used to live here was removed.
 
 #########################
 # SDO / server meshing  #

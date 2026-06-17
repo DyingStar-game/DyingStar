@@ -330,11 +330,9 @@ func complete_client_initialization(entity) -> void:
 	player_instance = entity
 	player_instance.player_display_name = ""
 	player_instance.label_player_name.text = player_instance.player_display_name
-	player_instance.direct_chat.connect("send_message", _on_message_from_player)
 	player_instance.connect("hs_client_action_move", _on_client_action_move)
-
-func receive_chat_message(message: ChatMessage) -> void:
-	player_instance.direct_chat.receive_message_from_server(message)
+	# Chat is wired directly to the broker by the ChatNetwork autoload (see
+	# direct_chat.gd / chat_network.gd) — no game-server relay here anymore.
 
 ########################################################################
 # Signal connections
@@ -373,15 +371,6 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 						"ship":
 							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
 							NetworkOrchestrator.request_release.rpc_id(peer_id, player_instance.get_path(), ship_instance_path)
-
-func _on_message_from_player(message: ChatMessage) -> void:
-	var dictionnary_message = {
-		"content": message.content,
-		"author": player_instance.player_display_name,
-		"channel": message.channel,
-		"creation_schedule": message.creation_schedule
-	}
-	NetworkOrchestrator.send_chat_message_to_server.rpc_id(1, dictionnary_message)
 
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
@@ -452,8 +441,6 @@ func create_object(event: Dictionary) -> void:
 		"player":
 			if int(event["channel"]) == 0:
 				create_player(event)
-			# if event["channel"] == 2:
-			# 	set_player_name(event)
 
 		_:
 			# for all props
@@ -506,6 +493,10 @@ func create_player(event: Dictionary) -> void:
 		return
 
 	if event["object_id"] == my_player_uuid:
+		# The server (Horizon) provides our display name (a generated pseudo when the
+		# token is bypassed in dev). It is the single source of truth for the player
+		# name — chat author, labels, HOME plates, future character screens.
+		Globals.player_name = str(player_data.get("name", Globals.player_name))
 		# await get_tree().create_timer(1).timeout
 		var spawned_entity_instance = player_scene.instantiate()
 		spawned_entity_instance.spawn_position = Vector3(

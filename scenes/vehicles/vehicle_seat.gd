@@ -27,18 +27,16 @@ var occupant_mass: float = 0.0
 
 func _ready() -> void:
 	add_to_group("vehicle_seat")
-	# The player's physics body (CharacterBody3D) sits on collision layer 1, so scan that
-	# layer. Set here so every seat auto-detects the player — no per-vehicle mask setup.
-	collision_mask = 1
-	# The "press E here" body detection is CLIENT-ONLY (it sets the local player's prompt). The
-	# server is authoritative via occupant_uuid (server_enter); running it there would also crash,
-	# since the server's network_agent has no player_entity.
-	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
-		return
-	# Detect the local player walking into the box (depot pattern), so it knows which seat its
-	# E will take. Wired here so a vehicle scene only needs the node, not a manual connection.
-	body_entered.connect(_on_body_entered)
-	body_exited.connect(_on_body_exited)
+	# PASSIVE zone: the seat no longer MONITORS. A monitoring Area3D runs a full broad-phase
+	# overlap pass every physics frame for whatever falls inside it — wasted CPU, and on the
+	# server it ran for EVERY seat of EVERY vehicle even though nothing was wired there. Instead
+	# the seat is only MONITORABLE, on the dedicated vehicle-zone layer, and the player's own
+	# AreaDetector (the single monitor) reports when it walks in. One monitor per player, not one
+	# per seat. This makes the detection work identically on client and server.
+	monitoring = false
+	monitorable = true
+	collision_layer = Globals.VEHICLE_ZONE_LAYER
+	collision_mask = 0
 
 func is_free() -> bool:
 	return occupant_uuid == ""
@@ -60,17 +58,3 @@ func sit_transform() -> Transform3D:
 ## The Vehicle that owns this seat (the seat is placed under the vehicle in the scene).
 func vehicle() -> Node:
 	return get_parent()
-
-func _on_body_entered(body: Node3D) -> void:
-	if body is Player and _is_local_player(body):
-		body._nearby_seat = self
-
-func _on_body_exited(body: Node3D) -> void:
-	if body is Player and _is_local_player(body) and body._nearby_seat == self:
-		body._nearby_seat = null
-
-## True for the client's own avatar (we only react to the local player's box entry, not to
-## remote players' bodies, which also exist on this client).
-func _is_local_player(body: Node) -> bool:
-	var agent = NetworkOrchestrator.network_agent
-	return agent != null and "player_entity" in agent and body == agent.player_entity
