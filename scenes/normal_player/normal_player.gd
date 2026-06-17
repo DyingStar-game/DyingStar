@@ -116,6 +116,15 @@ var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated mov
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
 
+# Created lazily: a body-only ray for the server's carry line-of-sight checks (a node, so
+# force_raycast_update works in any context — direct_space_state is only valid during physics).
+var _los_ray: RayCast3D = null
+
+# Carry prompt, decided by the SERVER (it owns the collisions) and replicated to the owner:
+# "" / "carry" / "drop". The client only displays it — it never computes reachability itself.
+var _carry_prompt: String = ""
+var _carry_prompt_timer: float = 0.0  # server-side throttle
+
 # Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
 var _spawn_wheel: RadialMenu = null
 
@@ -327,7 +336,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var aim := _aimed_carriable()
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
-		_predict_carry_stow()
+		_predict_carry_stow(aim)
 
 	if event.is_action_pressed("spawn_wheel"):
 		if _spawn_wheel:
@@ -421,17 +430,15 @@ func _process(_delta: float) -> void:
 			interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
 		interact_label.show()
 
-	# Carry/drop prompt (no other prompt showing). Carrying -> E drops; hands free and aiming at a
-	# grabbable prop -> E carries it. interact() is the same rule the server uses to allow the grab.
+	# Carry/drop prompt (no other prompt showing). The SERVER decides it (it owns the collisions
+	# and re-checks reachability + line of sight) and replicates _carry_prompt; we only display.
 	if not interact_label.visible:
-		if _owner_carrying:
+		if _carry_prompt == "drop":
 			interact_label.text = "[E] Drop"
 			interact_label.show()
-		else:
-			var aim := _aimed_carriable()
-			if aim != null and aim.interact():
-				interact_label.text = "[E] Carry"
-				interact_label.show()
+		elif _carry_prompt == "carry":
+			interact_label.text = "[E] Carry"
+			interact_label.show()
 
 
 	if not OS.has_feature("dedicated_server"):
@@ -609,6 +616,7 @@ func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
 		_server_update_carried_item()
+		_server_update_carry_prompt(delta)
 		if piloting and is_instance_valid(_seat_node):
 			# Seated in a vehicle: ride its seat. Server-authoritative; the emitted
 			# position replicates so the player follows the vehicle (camera rides too).
@@ -1047,6 +1055,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 		)
 	if data.has("flashlight"):
 		flashlight.visible = bool(data["flashlight"])  # replicated torch state (owner + remotes)
+	if data.has("carry_prompt") and not remote_player:
+		_carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
 	if data.has("action"):
 		match data["action"]:
 			JUMP:
@@ -1119,12 +1129,60 @@ func _aimed_carriable() -> Node:
 	var hit = interact_ray.get_collider()
 	if hit == null:
 		return null
+	var prop: Node = null
 	if hit.has_method("interact") and "uuid" in hit:
-		return hit
-	var p = hit.get_parent()
-	if p != null and p.has_method("interact") and "uuid" in p:
-		return p
-	return null
+		prop = hit
+	else:
+		var p = hit.get_parent()
+		if p != null and p.has_method("interact") and "uuid" in p:
+			prop = p
+	if prop == null:
+		return null
+	# NOTE: no line-of-sight check here — the client has no wall collision (collisions are
+	# server-side), so it can't tell a wall is in the way. The SERVER re-checks line of sight
+	# before granting the grab (see server_action_received / _is_blocked_by_geometry).
+	# Don't offer a prop already carried by ANOTHER player (it IS reparented under them on our
+	# client, so its parent is that Player — this is knowable without collision).
+	var prop_parent = prop.get_parent()
+	if prop_parent is Player and prop_parent != self:
+		return null
+	return prop
+
+## True if any solid body (wall, building, city — Static OR Rigid) sits between the eye and
+## the prop. Server-authoritative: the carry handler calls this before granting a pickup, so a
+## thin wall can't be exploited to grab through it. Meant to run on the SERVER, which owns the
+## collisions (the client has none → its result would always be "clear"). We ignore ourselves,
+## the prop, and the prop's holder (a vehicle bed / depot / the ground it rests on) — reaching
+## the prop must not be blocked by the very thing holding it; walls are separate bodies.
+func _is_blocked_by_geometry(prop: Node) -> bool:
+	if not (prop is Node3D):
+		return false
+	_ensure_los_ray()
+	# top_level → target_position is a world-space delta (no parent transform to fight).
+	_los_ray.global_position = interact_ray.global_position
+	_los_ray.target_position = prop.global_position - _los_ray.global_position
+	_los_ray.clear_exceptions()
+	_los_ray.add_exception(self)
+	if prop is CollisionObject3D:
+		_los_ray.add_exception(prop)
+	var holder = prop.get_parent()
+	if holder is CollisionObject3D:
+		_los_ray.add_exception(holder)
+	_los_ray.force_raycast_update()
+	return _los_ray.is_colliding()
+
+## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
+## _process / input / server alike — direct_space_state is only valid during physics).
+func _ensure_los_ray() -> void:
+	if _los_ray != null:
+		return
+	_los_ray = RayCast3D.new()
+	_los_ray.enabled = false
+	_los_ray.top_level = true  # ignore the player's transform → target_position is a world delta
+	_los_ray.collide_with_areas = false
+	_los_ray.collide_with_bodies = true
+	_los_ray.collision_mask = 0xFFFFFFFF
+	add_child(_los_ray)
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
 ## exactly the object the client aimed at. (#124)
@@ -1151,18 +1209,43 @@ func _server_update_carried_item() -> void:
 		center = hands_item.get_center_offset()
 	hands_item.position = carry_point - hands_item.basis * center
 
+## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
+## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
+## the client just displays it. Throttled so it's cheap (one ray per player, not per object).
+func _server_update_carry_prompt(delta: float) -> void:
+	_carry_prompt_timer -= delta
+	if _carry_prompt_timer > 0.0:
+		return
+	_carry_prompt_timer = 0.1
+	var state := _compute_carry_prompt()
+	if state != _carry_prompt:
+		_carry_prompt = state
+		server_send_properties_to_client({"carry_prompt": state})
+
+## What E would do right now (server side): drop if we hold something, else carry if we aim
+## at a grabbable prop that is reachable (not carried by another, clear line of sight).
+func _compute_carry_prompt() -> String:
+	if hands_item != null:
+		return "drop"
+	interact_ray.force_raycast_update()
+	var prop := _aimed_carriable()
+	if prop != null and prop.has_method("interact") and prop.interact(self) \
+			and not _is_blocked_by_geometry(prop):
+		return "carry"
+	return ""
+
 ## Owner-local: predict whether the carry key picks up or drops, to stow/unstow the
 ## perforator right away. The server stays authoritative (it may reject, e.g. a piece
 ## already taken); a mismatch self-corrects on the next interaction.
-func _predict_carry_stow() -> void:
+func _predict_carry_stow(aim: Node) -> void:
 	if _owner_carrying:
 		_owner_carrying = false
 		mining_tool.set_stowed(false)
 		return
-	interact_ray.force_raycast_update()
-	var collider = interact_ray.get_collider()
-	var target = collider.get_parent() if collider != null else null
-	if target != null and target.has_method("interact") and target.interact(self):
+	# Predict with the SAME validated target we send the server (it already passed the
+	# line-of-sight + not-carried-by-another checks), so the optimistic stow can't flicker
+	# into a brief "[E] Drop" when the grab is actually blocked (wall / another player's prop).
+	if aim != null and aim.interact():
 		_owner_carrying = true
 		mining_tool.set_stowed(true)
 
@@ -1292,7 +1375,11 @@ func server_action_received(data: Dictionary) -> void:
 				# off — pitch is throttled/lagged — and would grab the neighbour.) (#124)
 				var parent_node := _find_carriable(str(data.get("target_uuid", "")))
 				var picked_up := false
-				if parent_node != null and parent_node.has_method("interact") and parent_node.interact(self):
+				# Server-authoritative: same gate as the client — grabbable (not already carried)
+				# AND a clear line of sight, so a thin wall can't be exploited to grab through it.
+				var can_grab: bool = parent_node != null and parent_node.has_method("interact") \
+						and parent_node.interact(self) and not _is_blocked_by_geometry(parent_node)
+				if can_grab:
 					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
 					var prev_parent := parent_node.get_parent()
 					if prev_parent is Vehicle and prev_parent.has_method("release_cargo"):
