@@ -1,16 +1,26 @@
 extends Node
 
-const CONFIG_FILEPATH : String = "res://settings.ini"
+# user:// is writable in an exported build (res:// is packed read-only), so settings actually
+# persist between sessions there.
+const CONFIG_FILEPATH : String = "user://settings.ini"
 var config : ConfigFile = ConfigFile.new()
 
 func _ready() -> void:
-	if !OS.has_feature("dedicated_server"):
-		load_settings()
+	if OS.has_feature("dedicated_server"):
+		return
+	# First run (no file yet): write the defaults so there is something to load.
+	if config.load(CONFIG_FILEPATH) != OK:
+		initialize_settings()
+		save_settings()
+	# Re-apply the saved settings to the window on startup (this is what was missing: they were
+	# loaded but never applied, so they appeared not to persist).
+	apply_settings()
 
 func initialize_settings():
 	config.set_value("video", "fullscreen", false)
 	config.set_value("video", "v_sync", false)
 	config.set_value("video", "screen_shake", true)
+	config.set_value("video", "dev_mode", false)
 
 func save_settings():
 	config.save(CONFIG_FILEPATH)
@@ -26,18 +36,23 @@ func load_settings():
 			settings[key] = config.get_value(section, key)
 	return settings
 
+## Apply the saved settings to the window. V-Sync always applies; the window's monitor /
+## resolution / fullscreen are SKIPPED in dev mode, so running several instances at once doesn't
+## force them all to the saved fullscreen/resolution (see the Dev mode checkbox in Video settings).
 func apply_settings():
-	var settings = load_settings()
-	match settings.fullscreen:
-		false:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		true:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-	match settings.v_sync:
-		false:
-			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-		true:
-			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	var vsync: bool = config.get_value("video", "v_sync", false)
+	DisplayServer.window_set_vsync_mode(
+		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+	if config.get_value("video", "dev_mode", false):
+		return
+	if config.has_section_key("video", "monitor"):
+		DisplayServer.window_set_current_screen(int(config.get_value("video", "monitor")))
+	if config.get_value("video", "fullscreen", false):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		if config.has_section_key("video", "resolution"):
+			_apply_window_size(config.get_value("video", "resolution"))
 
 func save_video_settings(key, value):
 	config.set_value("video", key, value)
@@ -65,6 +80,15 @@ func set_vsync(on: bool) -> void:
 		DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED)
 	save_video_settings("v_sync", on)
 	save_settings()
+
+## Dev mode: persist the flag. It is read on startup by apply_settings, which then skips forcing
+## the monitor / resolution / fullscreen — handy when launching several instances at once.
+func set_dev_mode(on: bool) -> void:
+	save_video_settings("dev_mode", on)
+	save_settings()
+
+func is_dev_mode() -> bool:
+	return config.get_value("video", "dev_mode", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)
