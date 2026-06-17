@@ -102,12 +102,16 @@ var _spawn_kick: Vector3 = Vector3.ZERO
 # Cached per-piece ore fraction (sampled over the piece's volume). -1 = not computed yet;
 # invalidated whenever the mesh is rebuilt (a cut).
 var _purity := -1.0
+# Mass (kg) of a WHOLE uncut rock — the GameDesigner value set on the RigidBody in the scene,
+# captured at _ready. A cut piece weighs this scaled by its volume ratio (see _refresh_mass).
+var _full_rock_mass: float = 0.0
 
 @onready var rock_shape = $CollisionShape3D
 
 func _ready() -> void:
 	add_to_group("miningrock")  # for proximity detection (aim mode)
 	add_to_group("carriable")  # so the carry pickup can resolve it by uuid (#124)
+	_full_rock_mass = mass  # GameDesigner value from the scene = the whole-rock mass (before scaling)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
 	_base_mesh = item_rock_mesh.mesh   # keep a ref to rebuild cuts later
 	if _base_mesh != null:
@@ -118,6 +122,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	rock_shape.shape = item_rock_mesh.mesh.create_convex_shape(true)
+	_refresh_mass()  # whole rock keeps the GD mass (volume ratio 1); cuts scale it down
 
 	item_rock_mesh.reparent(combiner)
 
@@ -191,6 +196,7 @@ func _rebuild() -> void:
 	_mesh_instance.set_surface_override_material(0, _make_exterior_material())
 	_mesh_instance.set_surface_override_material(1, _make_inner_material())
 	rock_shape.shape = mesh.create_convex_shape(true)
+	_refresh_mass()  # a smaller piece weighs less (scaled by its volume vs the whole rock)
 	# No manual recenter: each piece keeps the rock's transform and occupies its own
 	# half of the original volume (Godot derives the rigid body's center of mass from
 	# the offset shape). This keeps both halves in place instead of teleporting them.
@@ -287,6 +293,21 @@ func get_volume() -> float:
 	else:
 		return 1.0
 	return box.size.x * box.size.y * box.size.z * VOLUME_FILL
+
+## Volume of a WHOLE uncut rock (the base mesh every piece keeps a ref to). Used as the reference
+## so a cut piece's mass scales by how much of the original rock it represents.
+func _full_volume() -> float:
+	if _base_mesh == null:
+		return 0.0
+	var box := _base_mesh.get_aabb()
+	return box.size.x * box.size.y * box.size.z * VOLUME_FILL
+
+## Set the rigid body mass from the piece's volume: the GameDesigner whole-rock mass for an uncut
+## rock, scaled down by the volume ratio for a cut piece. This is what the truck bed counts as cargo.
+func _refresh_mass() -> void:
+	var full := _full_volume()
+	if full > 0.0 and _full_rock_mass > 0.0:
+		mass = maxf(1.0, _full_rock_mass * (get_volume() / full))
 
 ## Volume of ORE inside this piece = its volume x its MEASURED ore fraction (purity).
 func get_ore_volume() -> float:
@@ -522,7 +543,7 @@ func send_properties_to_client(parent_uuid: String) -> void:
 			"position": my_position,
 			"rotation": my_rotation,
 			"parent_id": parent_uuid,
-			"weight": 200,
+			"weight": mass,
 		},
 		type_name,
 		has_parent
