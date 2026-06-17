@@ -278,7 +278,7 @@ func cleanupsockets(retval=false):
 	brokerconnectmode = BCM_NOCONNECTION
 	return retval
 
-func connect_to_broker(brokerprotocol, brokerserver, brokerport): #brokerurl):
+func connect_to_broker(brokerprotocol, brokerserver, brokerport, brokerwspath = "/"): #brokerurl):
 	assert (brokerconnectmode == BCM_NOCONNECTION)
 	#var brokermatch = regexbrokerurl.search(brokerurl)
 	#if brokermatch == null:
@@ -293,7 +293,7 @@ func connect_to_broker(brokerprotocol, brokerserver, brokerport): #brokerurl):
 	#if brokercomponents[3]:
 		#brokerport = int(brokercomponents[3].substr(1)) 
 	#var brokerpath = brokercomponents[4] if brokercomponents[4] else ""
-	var brokerpath = "/"
+	var brokerpath = brokerwspath  # WebSocket path from the caller (e.g. "/mqtt"); "/" by default
 	 
 	common_name = null	
 	if iswebsocket:

@@ -73,13 +73,15 @@ func ensure_connected() -> void:
 	var proto := "ws://"
 	var host := "127.0.0.1"
 	var port := 9001
+	var path := "/"
 	var parsed := _parse_broker_url(url)
 	if not parsed.is_empty():
 		proto = parsed["proto"]
 		host = parsed["host"]
 		port = parsed["port"]
-	print("[chat] connecting to broker %s%s:%d" % [proto, host, port])
-	_client.connect_to_broker(proto, host, port)
+		path = parsed["path"]
+	print("[chat] connecting to broker %s%s:%d%s" % [proto, host, port, path])
+	_client.connect_to_broker(proto, host, port, path)
 
 ## Publish a message on its channel's topic. The author is stamped here from the
 ## local player identity so the UI never has to know it. Ignored if the channel is
@@ -186,6 +188,12 @@ func _parse_broker_url(url: String) -> Dictionary:
 		return {}
 	var proto := url.substr(0, sep + 3)
 	var rest := url.substr(sep + 3)
+	# Split off an optional path (e.g. ".../mqtt") before reading host:port.
+	var path := "/"
+	var slash := rest.find("/")
+	if slash != -1:
+		path = rest.substr(slash)
+		rest = rest.substr(0, slash)
 	var colon := rest.rfind(":")
 	if colon == -1:
 		return {}
@@ -193,4 +201,5 @@ func _parse_broker_url(url: String) -> Dictionary:
 		"proto": proto,
 		"host": rest.substr(0, colon),
 		"port": int(rest.substr(colon + 1)),
+		"path": path,
 	}
