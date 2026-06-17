@@ -128,8 +128,11 @@ var _seat_vehicle_node: Node3D = null
 var _seat_node: Node3D = null
 # True when our seat is the driver seat (drive input + HUD + R). Passenger = just rides.
 var _seat_is_driver: bool = false
-# The VehicleSeat box the local player stands in (set by VehicleSeat); E takes that seat.
+# The VehicleSeat box the player stands in (set by our own AreaDetector); E takes that seat.
 var _nearby_seat: Node = null
+# The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
+# for the bed-walker weight (server) and to load a crate we drop while standing in it.
+var _in_vehicle_bed: Node = null
 var _last_throttle: float = INF  # last drive input sent (to send only on change)
 var _last_steer: float = INF
 var _last_brake: bool = false
@@ -251,6 +254,9 @@ func connect_area_detect():
 	if OS.has_feature("dedicated_server"):
 		print("Connecting area detector on server side")
 	$AreaDetector.monitoring = true
+	# Also scan the vehicle-zone layer so this single monitor detects seats and cargo bays (which
+	# are monitorable-only). The seats/bed no longer monitor — the player does the looking now.
+	$AreaDetector.collision_mask |= Globals.VEHICLE_ZONE_LAYER
 	if not $AreaDetector.area_entered.is_connected(_on_area_detector_area_entered):
 		$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	if not $AreaDetector.area_exited.is_connected(_on_area_detector_area_exited):
@@ -863,6 +869,17 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 				is_parented
 			)
 		gravity_parents.push_back(area)
+	elif area.is_in_group("vehicle_seat"):
+		# Our own monitor walked into a seat box: remember it so E takes that seat (client prompt).
+		_nearby_seat = area
+	elif area.is_in_group("vehicle_cargo"):
+		# We stepped into a bed on foot: add our weight to the load (server-authoritative), remember
+		# the bed so a dropped crate loads onto this truck, and RIDE it (become a child of the truck
+		# so we don't slide). Reparent is deferred — it's illegal inside an Area3D signal callback.
+		var veh := area.get_parent()
+		if veh is Vehicle:
+			_in_vehicle_bed = veh
+			veh.add_bed_player(self)
 	# elif area.is_in_group("spawn"):
 	# 	var parent = area.get_parent()
 	# 	print("TUTU: Entered spawn area, parent=", parent)
@@ -881,6 +898,15 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
+	elif area.is_in_group("vehicle_seat"):
+		if _nearby_seat == area:
+			_nearby_seat = null
+	elif area.is_in_group("vehicle_cargo"):
+		var veh := area.get_parent()
+		if veh is Vehicle:
+			if _in_vehicle_bed == veh:
+				_in_vehicle_bed = null
+			veh.remove_bed_player(self)
 	elif area.is_in_group("spawn"):
 		print("TUTU: Exited spawn area for area ", area)
 		var new_parent = area.get_parent().get_parent()
@@ -1138,6 +1164,20 @@ func _find_carriable(target_uuid: String) -> Node:
 			return n
 	return null
 
+## Make a carried prop pass through (or collide again with) every vehicle. A carried prop is
+## frozen, which the physics solver treats as immovable / infinite mass — letting it touch a
+## vehicle would shove or flip the (much heavier) truck, bypassing its real mass. So while it is
+## held it ignores vehicles; cargo is loaded by DROPPING it into the bed, not by ramming.
+func _carry_ignore_vehicles(prop: Node, ignore: bool) -> void:
+	if prop == null:
+		return
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is CollisionObject3D and v != prop:
+			if ignore:
+				prop.add_collision_exception_with(v)
+			else:
+				prop.remove_collision_exception_with(v)
+
 ## Server: keep the carried item floating in front of the body (yaw only, no camera
 ## pitch), held by the middle of its geometry so it sits centered. A cut piece keeps the
 ## original rock pivot, so we offset by its geometry center (deterministic -> clients
@@ -1280,6 +1320,15 @@ func server_action_received(data: Dictionary) -> void:
 				if hands_item.has_method("set_carried"):
 					hands_item.set_carried(false)
 				hands_item.remove_collision_exception_with(self)  # it can collide with us again
+				_carry_ignore_vehicles(hands_item, false)  # restore normal collision with vehicles
+				# Drop INTO a bed we are standing in -> load it onto that truck (the bed no longer
+				# polls for cargo; the carrier, who knows it is in the bed, hands it over directly).
+				if is_instance_valid(_in_vehicle_bed) and _in_vehicle_bed is Vehicle \
+						and hands_item is RigidBody3D:
+					_in_vehicle_bed.lock_dropped_cargo(hands_item)
+					hands_item = null
+					server_send_properties_to_client({"carrying": false})
+					return
 				var drop_parent := get_parent()
 				hands_item.server_parent_change(drop_parent)
 				hands_item.freeze = false
@@ -1301,6 +1350,7 @@ func server_action_received(data: Dictionary) -> void:
 						prev_parent.release_cargo(parent_node)
 					parent_node.freeze = true
 					parent_node.add_collision_exception_with(self)  # solid to others, not the carrier
+					_carry_ignore_vehicles(parent_node, true)  # a held (frozen) crate must not shove a truck
 					# Make sure its replication is active: a crate that sat in a bed may have had its
 					# _physics_process paused, which would stop PropNet from replicating a later drop.
 					parent_node.set_physics_process(true)

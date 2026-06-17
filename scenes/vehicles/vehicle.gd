@@ -237,6 +237,7 @@ var _view: ViewMode = ViewMode.CHASE
 var _empty_mass: float = 0.0
 var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
 var _locked_cargo: Dictionary = {}
+var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
 var _net_last_position: Vector3 = Vector3.ZERO
 var _net_last_rotation: Vector3 = Vector3.ZERO
@@ -370,10 +371,15 @@ func _build_cargo_area() -> void:
 	var area := Area3D.new()
 	area.name = "CargoBay"
 	area.set_meta(GENERATED, true)
-	# Detect cargo via the MASK only; keep this zone off every collision layer so it doesn't eat
-	# the player's interact ray (collide_with_areas) — otherwise you can't aim at a crate inside it.
-	area.collision_layer = 0
-	area.monitorable = false
+	area.add_to_group("vehicle_cargo")
+	# PASSIVE zone (same rule as the seats): the bed never MONITORS. It is MONITORABLE-only, on the
+	# dedicated vehicle-zone layer, so the player's AreaDetector reports when a walker steps in (for
+	# the load weight) and crates are locked at DROP time instead of polled every frame. The zone
+	# layer is off the interact ray's mask (layer 1) so it never eats the carry aim.
+	area.collision_layer = Globals.VEHICLE_ZONE_LAYER
+	area.collision_mask = 0
+	area.monitoring = false
+	area.monitorable = true
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = cargo_bay_size
@@ -480,18 +486,38 @@ func _apply_view() -> void:
 	elif _chase_cam != null and _chase_cam.has_method("make_current"):
 		_chase_cam.make_current()
 
-## Absorb any massive body that has come to rest in the cargo bay: lock it to the truck and
-## add its mass once (no double-count on the suspension, no spill). Runtime only.
-func _update_cargo() -> void:
-	if _cargo_area == null:
+## Load a crate the player just dropped while standing in this bed. Replaces the old per-frame
+## bay polling: the bed no longer monitors, so the carrier (the single monitor that knows it is in
+## the bed) hands the crate straight to the truck. Server-authoritative; ignores non-cargo bodies.
+func lock_dropped_cargo(body: Node) -> void:
+	if body == null or body is Vehicle or _locked_cargo.has(body):
 		return
-	for body in _cargo_area.get_overlapping_bodies():
-		# Never swallow another vehicle as cargo (drivers WILL ram a truck into a bed).
-		if body == self or body is Vehicle or _locked_cargo.has(body):
-			continue
-		if body is RigidBody3D and body.mass > 0.0 and not body.freeze:
-			if body.linear_velocity.length() < cargo_settle_speed:
-				_lock_cargo(body)
+	if body is RigidBody3D and body.mass > 0.0:
+		_lock_cargo(body)
+
+## A player walked into the bed on foot: count them in the load (and let them ride). Seated players
+## are handled by _occupant_mass, so they are skipped in get_bed_mass — no double-count.
+func add_bed_player(player: Node) -> void:
+	if player == null or _bed_players.has(player):
+		return
+	_bed_players[player] = true
+	_refresh_mass()
+
+## A player left the bed (walked out, or sat down / was removed): drop them from the bed load.
+func remove_bed_player(player: Node) -> void:
+	if not _bed_players.has(player):
+		return
+	_bed_players.erase(player)
+	_refresh_mass()
+
+## Live weight (kg) of the on-foot players standing in the bed. Computed each call so a player who
+## sat down (now in _occupant_mass) or vanished is skipped without needing an exit event.
+func get_bed_mass() -> float:
+	var total := 0.0
+	for player in _bed_players:
+		if is_instance_valid(player) and player._seat_vehicle_uuid == "":
+			total += _player_mass(player)
+	return total
 
 ## Lock a settled body into the bed: freeze it, drop its collision, ride rigidly with the
 ## truck, and fold its mass into the vehicle. Same idea as carried props (#124).
@@ -560,7 +586,7 @@ func _player_mass(player: Node) -> float:
 func get_cargo_mass() -> float:
 	if _is_networked() and not GameOrchestrator.is_server():
 		return _net_cargo_mass
-	var total := _occupant_mass
+	var total := _occupant_mass + get_bed_mass()
 	for body in _locked_cargo:
 		total += _locked_cargo[body]
 	return total
@@ -734,8 +760,7 @@ func _physics_process(delta: float) -> void:
 		# has physics off; its smoothing + wheels are done in _process.
 		if not GameOrchestrator.is_server():
 			return
-		_release_vanished_occupants()  # free seats whose player disconnected (node freed)
-		_update_cargo()
+		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_check_rollover_unlock()  # spill the load if the truck is tipped over
 		if is_instance_valid(_pilot):
 			_apply_drive(delta)
@@ -745,7 +770,6 @@ func _physics_process(delta: float) -> void:
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
-	_update_cargo()  # absorb settled cargo into the truck (always, even when not driving)
 	_check_rollover_unlock()
 	if _pilot != null:
 		_apply_drive(delta)
@@ -955,6 +979,11 @@ func _release_vanished_occupants() -> void:
 			pilot_uuid = ""
 			_replicate_pilot()
 		print("🚚 Vehicle %s: freed a seat whose occupant disconnected" % uuid)
+	# Drop bed walkers whose node was freed (disconnect) — their AreaDetector can't fire an exit.
+	for player in _bed_players.keys():
+		if not is_instance_valid(player):
+			_bed_players.erase(player)
+			changed = true
 	if changed:
 		_refresh_mass()
 

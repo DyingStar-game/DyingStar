@@ -38,9 +38,6 @@
 radius = 0.26542
 height = 1.8
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_kcm5r"]
-size = Vector3(0.53418, 1.39465, 0.44873)
-
 [sub_resource type="LabelSettings" id="LabelSettings_kcm5r"]
 font_size = 24
 outline_size = 2
@@ -95,8 +92,8 @@ collision_layer = 4
 monitorable = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="AreaDetector" unique_id=1523390027]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.702767, 0.0593262)
-shape = SubResource("BoxShape3D_kcm5r")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)
+shape = SubResource("CapsuleShape3D_2jk7f")
 
 [node name="LabelPlayerName" type="Label3D" parent="." unique_id=957060553]
 unique_name_in_owner = true
