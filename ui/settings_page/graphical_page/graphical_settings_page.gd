@@ -12,12 +12,14 @@ const RESOLUTIONS: Array[Vector2i] = [
 @onready var _display_mode: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/DisplayMode/OptionButton
 @onready var _resolution: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution/OptionButton
 @onready var _vsync: Button = $ScrollContainer/MarginContainer/VBoxContainer/VSync/Button
+@onready var _dev_mode: Button = $ScrollContainer/MarginContainer/VBoxContainer/DevMode/Button
 
 func _ready() -> void:
 	_init_monitor()
 	_init_display_mode()
 	_init_resolution()
 	_init_vsync()
+	_init_dev_mode()
 	_monitor.item_selected.connect(func(i: int) -> void: SettingsManager.set_monitor(i))
 	# DisplayMode item id 0 = Fullscreen, 1 = Windowed (as authored in the scene).
 	_display_mode.item_selected.connect(
@@ -25,6 +27,7 @@ func _ready() -> void:
 	_resolution.item_selected.connect(
 		func(i: int) -> void: SettingsManager.set_resolution(_resolution.get_item_metadata(i)))
 	_vsync.toggled.connect(func(on: bool) -> void: SettingsManager.set_vsync(on))
+	_dev_mode.toggled.connect(_on_dev_mode_toggled)
 
 ## List the real monitors and pre-select the one the window is on.
 func _init_monitor() -> void:
@@ -56,3 +59,13 @@ func _init_resolution() -> void:
 func _init_vsync() -> void:
 	_vsync.toggle_mode = true
 	_vsync.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
+
+## Reflect the saved dev-mode flag (it has no live DisplayServer state — it only gates startup).
+func _init_dev_mode() -> void:
+	_dev_mode.toggle_mode = true
+	_dev_mode.button_pressed = SettingsManager.is_dev_mode()
+	_dev_mode.text = "On" if _dev_mode.button_pressed else "Off"
+
+func _on_dev_mode_toggled(on: bool) -> void:
+	_dev_mode.text = "On" if on else "Off"
+	SettingsManager.set_dev_mode(on)

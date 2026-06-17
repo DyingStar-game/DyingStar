@@ -95,20 +95,6 @@ monitorable = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)
 shape = SubResource("CapsuleShape3D_2jk7f")
 
-[node name="LabelPlayerName" type="Label3D" parent="." unique_id=957060553]
-unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
-billboard = 1
-text = "Dummy"
-
-[node name="Labelserver_name" type="Label3D" parent="." unique_id=1244209041]
-unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.05, 0)
-visible = false
-billboard = 1
-text = "DummyServer"
-font_size = 24
-
 [node name="UserInterface" type="Control" parent="." unique_id=164397676]
 top_level = true
 layout_mode = 3
@@ -123,13 +109,10 @@ script = ExtResource("3_kcm5r")
 
 [node name="Debug" type="Control" parent="UserInterface" unique_id=1592637921]
 visible = false
-anchors_preset = 1
+anchors_preset = 0
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -1920.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
 grow_horizontal = 0
 mouse_filter = 2
 script = ExtResource("4_urqre")

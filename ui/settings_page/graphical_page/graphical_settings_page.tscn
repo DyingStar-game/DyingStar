@@ -135,3 +135,20 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 text = "On"
+
+[node name="DevMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Dev mode (ignore resolution/fullscreen)"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "Off"
