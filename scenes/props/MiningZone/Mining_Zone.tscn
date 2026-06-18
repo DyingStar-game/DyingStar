@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://y76cnowlemud"]
+
+[ext_resource type="Script" path="res://scenes/props/MiningZone/mining_zone.gd" id="1_zone"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_trigger"]
+radius = 1000.0
+
+[node name="MiningZone" type="Node3D"]
+script = ExtResource("1_zone")
+trigger_area = NodePath("TriggerArea")
+
+[node name="TriggerArea" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 4294967295
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TriggerArea"]
+shape = SubResource("SphereShape3D_trigger")
