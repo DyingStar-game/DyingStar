@@ -105,6 +105,9 @@ var _purity := -1.0
 # Mass (kg) of a WHOLE uncut rock — the GameDesigner value set on the RigidBody in the scene,
 # captured at _ready. A cut piece weighs this scaled by its volume ratio (see _refresh_mass).
 var _full_rock_mass: float = 0.0
+# Last replicated LOCAL pose, re-asserted every render frame while riding a vehicle bed (see _process).
+var _ride_local_pos: Vector3 = Vector3.ZERO
+var _ride_local_rot: Vector3 = Vector3.ZERO
 
 @onready var rock_shape = $CollisionShape3D
 
@@ -258,6 +261,8 @@ func _blocs_payload() -> Array:
 
 func _client_ready() -> void:
 	_show_faults()
+	# Created already under a vehicle (piece loaded before we arrived): ride it (KINEMATIC).
+	PropNet.apply_ride_freeze_mode(self)
 
 ## Show each not-yet-fractured fault as a red vein (a thin slice through the rock)
 ## at its cut plane, so faults are visible before perforating.
@@ -446,6 +451,7 @@ func _make_inner_material() -> ShaderMaterial:
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
 	has_parent = true
+	PropNet.apply_ride_freeze_mode(self)  # KINEMATIC under a vehicle so the piece rides the truck
 	_apply_carry_collision_exception(parent)
 
 ## Client: if WE (the local player) are the new parent, we're carrying this piece — ignore
@@ -470,18 +476,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 		ore_seed = str(data["ore_seed"])
 	if data.has("kick"):
 		_spawn_kick = Vector3(data["kick"]["x"], data["kick"]["y"], data["kick"]["z"])
-	if data.has("position"):
-		position = Vector3(
-			data["position"]["x"],
-			data["position"]["y"],
-			data["position"]["z"]
-		)
-	if data.has("rotation"):
-		rotation = Vector3(
-			data["rotation"]["x"],
-			data["rotation"]["y"],
-			data["rotation"]["z"]
-		)
+	PropNet.apply_client_transform(self, data)  # position/rotation (+ remembers the local ride pose)
 	if data.has("blocs"):
 		blocs = data["blocs"]
 		# _rebuild() needs `_base_mesh`, set in _ready(). When this rock is spawned
@@ -634,6 +629,9 @@ func server_perforate(hit_local: Vector3, push_dir_local: Vector3 = Vector3.ZERO
 
 func _physics_process(_delta: float) -> void:
 	PropNet.server_tick(self)
+
+func _process(_delta: float) -> void:
+	PropNet.ride_pin(self)  # hold the constant local bed pose at render rate (no jitter)
 
 func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 	# Create the complementary half as its own networked rock. It inherits ALL our

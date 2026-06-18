@@ -574,6 +574,9 @@ func create_generic_object(event: Dictionary) -> void:
 		if object_data.has("parent_id"):
 			if object_data["parent_id"] != "":
 				var parent = _search_parent_node(object_data["parent_id"])
+				# Only reparent when the new parent is KNOWN. If it isn't resolved yet, leave the prop
+				# where it is — do NOT detach a bed-riding crate just because its truck wasn't found
+				# for one frame (GORC zone churn at speed), or it stops following the truck.
 				if parent != null and prop_instance.get_parent() != parent:
 					prop_instance.client_parent_change(parent)
 			elif prop_instance.get_parent() != universe_scene:

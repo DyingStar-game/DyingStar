@@ -123,7 +123,8 @@ var _owner_carrying: bool = false
 var _los_ray: RayCast3D = null
 
 # Carry prompt, decided by the SERVER (it owns the collisions) and replicated to the owner:
-# "" / "carry" / "drop". The client only displays it — it never computes reachability itself.
+# "" / "carry" / "drop" / "cargo" (cargo = dropping here loads it onto a truck). The client only
+# displays it — it never computes reachability itself.
 var _carry_prompt: String = ""
 var _carry_prompt_timer: float = 0.0  # server-side throttle
 
@@ -447,6 +448,9 @@ func _process(_delta: float) -> void:
 	if not interact_label.visible:
 		if _carry_prompt == "drop":
 			interact_label.text = "[E] Drop"
+			interact_label.show()
+		elif _carry_prompt == "cargo":
+			interact_label.text = "[E] Cargo"  # dropping here loads it onto the truck (sticks)
 			interact_label.show()
 		elif _carry_prompt == "carry":
 			interact_label.text = "[E] Carry"
@@ -1145,6 +1149,15 @@ func _find_vehicle(target_uuid: String) -> Node:
 			return v
 	return null
 
+## Which truck bed should swallow a crate dropped at this world point: any truck whose designer
+## loading zone contains it. Same rule whether we stand in the bed or reach over from outside — the
+## zone (not the player's position) decides whether loading is allowed.
+func _cargo_bed_for_drop(world_point: Vector3) -> Vehicle:
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is Vehicle and v.is_point_in_loading_zone(world_point):
+			return v
+	return null
+
 func _find_mining_rock(rock_uuid: String) -> Node:
 	if rock_uuid == "":
 		return null
@@ -1298,10 +1311,13 @@ func _server_update_carry_prompt(delta: float) -> void:
 		_carry_prompt = state
 		server_send_properties_to_client({"carry_prompt": state})
 
-## What E would do right now (server side): drop if we hold something, else carry if we aim
-## at a grabbable prop that is reachable (not carried by another, clear line of sight).
+## What E would do right now (server side): if we hold something, "cargo" when the drop would load
+## it onto a truck (it sticks), else "drop"; if our hands are empty, "carry" when we aim at a
+## grabbable prop that is reachable (not carried by another, clear line of sight).
 func _compute_carry_prompt() -> String:
 	if hands_item != null:
+		if _cargo_bed_for_drop(hands_item.global_position) != null:
+			return "cargo"  # dropping here loads it into the bed (sticks)
 		return "drop"
 	interact_ray.force_raycast_update()
 	var prop := _aimed_carriable()
@@ -1438,14 +1454,16 @@ func server_action_received(data: Dictionary) -> void:
 					hands_item.set_carried(false)
 				hands_item.remove_collision_exception_with(self)  # it can collide with us again
 				_carry_ignore_vehicles(hands_item, false)  # restore normal collision with vehicles
-				# Drop INTO a bed we are standing in -> load it onto that truck (the bed no longer
-				# polls for cargo; the carrier, who knows it is in the bed, hands it over directly).
-				if is_instance_valid(_in_vehicle_bed) and _in_vehicle_bed is Vehicle \
-						and hands_item is RigidBody3D:
-					_in_vehicle_bed.lock_dropped_cargo(hands_item)
-					hands_item = null
-					server_send_properties_to_client({"carrying": false})
-					return
+				# Drop INTO a bed -> load it onto that truck (the bed no longer polls for cargo). We
+				# load it if we are standing in the bed, OR if we drop it from outside but it lands
+				# inside a nearby truck's cargo bay (e.g. reaching over the side wall).
+				if hands_item is RigidBody3D:
+					var bed := _cargo_bed_for_drop(hands_item.global_position)
+					if bed != null:
+						bed.lock_dropped_cargo(hands_item)
+						hands_item = null
+						server_send_properties_to_client({"carrying": false})
+						return
 				var drop_parent := get_parent()
 				hands_item.server_parent_change(drop_parent)
 				hands_item.freeze = false

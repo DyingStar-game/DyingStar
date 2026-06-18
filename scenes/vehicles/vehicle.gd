@@ -31,6 +31,8 @@ enum ViewMode {CHASE, CAB}
 
 # Meta marker put on every node we generate, so a rebuild can clear the old ones.
 const GENERATED := "vehicle_generated"
+# Thickness of the generated bed floor / walls (m). Shared by the collider and the cargo-rest math.
+const BED_WALL_THICKNESS := 0.08
 # Bench: the real mining rock scene, reused to test loading the bed.
 const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_01.tscn")
 const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
@@ -206,6 +208,11 @@ const LIGHT_GROUP := "vehicle_light"
 	set(v):
 		cargo_bay_offset = v
 		_rebuild_deferred()
+## Designer-placed box (a CollisionShape3D with a BoxShape3D) marking WHERE a dropped item is allowed
+## to load/stick. Drop a crate inside it (from in the bed or reaching over) and it loads. Leave unset
+## to fall back to the cargo_bay box. Its physics collision is turned off at runtime — it is only a
+## zone marker. (The truck wires its "Cargo_loading_zone" node here.)
+@export var cargo_loading_zone: CollisionShape3D
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
 ## Tilt (degrees from upright) past which the bed unlocks and spills its load — a rollover drops
@@ -236,9 +243,13 @@ var _cab_cam: Camera3D = null
 var _view: ViewMode = ViewMode.CHASE
 var _empty_mass: float = 0.0
 var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
-var _locked_cargo: Dictionary = {}
+var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed into the load
+var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
+var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
+var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
+var _cargo_debug_markers: Dictionary = {}  # RigidBody3D cargo -> its MeshInstance3D envelope
 var _net_last_position: Vector3 = Vector3.ZERO
 var _net_last_rotation: Vector3 = Vector3.ZERO
 var _net_throttle: float = 0.0  # pilot input relayed by the server (networked)
@@ -266,6 +277,10 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	add_to_group("vehicle")  # so a pilot can find and enter us
+	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
+	if not OS.has_feature("dedicated_server"):
+		_cargo_debug = SettingsManager.is_cargo_debug()  # dev aid: green envelope on locked cargo
+		SettingsManager.cargo_debug_changed.connect(_on_cargo_debug_changed)
 	_sync_powertrain()
 	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
 	if _is_networked():
@@ -345,7 +360,7 @@ func _build_collision() -> void:
 	# (collision-less) visual. These add to the VehicleBody3D compound collider.
 	var bed_len: float = body_length - cab_length
 	var bed_z: float = (body_length - bed_len) * 0.5
-	var wall: float = 0.08
+	var wall: float = BED_WALL_THICKNESS
 	_add_collision_box(Vector3(body_width, wall, bed_len), Vector3(0.0, top + wall * 0.5, bed_z))
 	_add_collision_box(Vector3(wall, bed_wall_height, bed_len),
 		Vector3(body_width * 0.5 - wall * 0.5, top + bed_wall_height * 0.5, bed_z))
@@ -495,6 +510,27 @@ func lock_dropped_cargo(body: Node) -> void:
 	if body is RigidBody3D and body.mass > 0.0:
 		_lock_cargo(body)
 
+## Resolve the designer loading zone (explicit @export, else a child named "Cargo_loading_zone") and
+## turn OFF its physics collision: a CollisionShape3D under this VehicleBody3D would otherwise be a
+## real (huge) collider. We only read its box to test where loading is allowed.
+func _setup_loading_zone() -> void:
+	if cargo_loading_zone == null:
+		cargo_loading_zone = get_node_or_null("Cargo_loading_zone") as CollisionShape3D
+	if cargo_loading_zone != null:
+		cargo_loading_zone.disabled = true
+
+## True when a world point is inside the loading zone (where a dropped item is allowed to stick).
+## Uses the designer's Cargo_loading_zone box if set, else falls back to the cargo_bay box (blockout).
+func is_point_in_loading_zone(world_point: Vector3) -> bool:
+	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
+		var local := cargo_loading_zone.global_transform.affine_inverse() * world_point
+		var half: Vector3 = (cargo_loading_zone.shape as BoxShape3D).size * 0.5
+		return absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z
+	var bay := to_local(world_point) - cargo_bay_offset
+	return absf(bay.x) <= cargo_bay_size.x * 0.5 \
+		and absf(bay.y) <= cargo_bay_size.y * 0.5 \
+		and absf(bay.z) <= cargo_bay_size.z * 0.5
+
 ## A player walked into the bed on foot: count them in the load (and let them ride). Seated players
 ## are handled by _occupant_mass, so they are skipped in get_bed_mass — no double-count.
 func add_bed_player(player: Node) -> void:
@@ -539,15 +575,139 @@ func _lock_cargo(body: RigidBody3D) -> void:
 	# stop the truck body and the crate from fighting each other where they overlap in the bed.
 	add_collision_exception_with(body)
 	# Reparent into the bed WITHOUT the prop's _exit_tree firing a delete (server_parent_change
-	# sets server_reparenting), then replicate the reparent so clients ride it in the bed. A raw
-	# reparent() made the prop vanish in-game (its _exit_tree deleted it from Horizon).
+	# sets server_reparenting). A raw reparent() made the prop vanish in-game (its _exit_tree
+	# deleted it from Horizon).
 	if body.has_method("server_parent_change"):
 		body.server_parent_change(self)
-		if body.has_method("send_properties_to_client"):
-			body.send_properties_to_client(str(uuid))
 	else:
 		body.reparent(self)
+	# Rest it on the bed floor: it was frozen at hand height, so without this it would hang in the
+	# air. Keep its X/Z, lower it until its underside sits on the floor, THEN replicate that pose.
+	_settle_on_bed_floor(body)
+	_locked_cargo_local[body] = body.transform  # rest pose, re-asserted each frame so it rides rigidly
+	if body.has_method("send_properties_to_client"):
+		body.send_properties_to_client(str(uuid))
 	_refresh_mass()
+
+## Place a just-locked body INTO the cargo bay: shift its X/Z so its WHOLE footprint fits inside the
+## cargo_bay (an item dropped from far / over the rim ends up entirely in the bay, not poking out),
+## then rest its lowest collision point on the bed floor. Uses the real collision AABB, so it works
+## for any pivot (a cut ore piece keeps the original rock's off-centre pivot) and any size.
+func _settle_on_bed_floor(body: Node3D) -> void:
+	var col := body as CollisionObject3D
+	if col == null:
+		return
+	var bounds := _collision_aabb(body, global_transform.affine_inverse() * col.global_transform)
+	if bounds.size == Vector3.ZERO:
+		return  # no collision shape found: leave it where it is
+	var mn := bounds.position
+	var mx := bounds.end
+	var local := to_local(body.global_position)
+	# Fit the whole item inside the cargo bay footprint (centred if it is wider than the bay).
+	local.x += _fit_shift(mn.x, mx.x, cargo_bay_offset.x - cargo_bay_size.x * 0.5, cargo_bay_offset.x + cargo_bay_size.x * 0.5)
+	local.z += _fit_shift(mn.z, mx.z, cargo_bay_offset.z - cargo_bay_size.z * 0.5, cargo_bay_offset.z + cargo_bay_size.z * 0.5)
+	local.y += _bed_floor_local_y() - mn.y  # rest the underside on the floor
+	body.global_position = to_global(local)
+
+## Translation along one axis so the span [item_min, item_max] fits inside [bay_min, bay_max]
+## (centred when the item is wider than the bay).
+static func _fit_shift(item_min: float, item_max: float, bay_min: float, bay_max: float) -> float:
+	if item_max - item_min >= bay_max - bay_min:
+		return (bay_min + bay_max) * 0.5 - (item_min + item_max) * 0.5
+	if item_min < bay_min:
+		return bay_min - item_min
+	if item_max > bay_max:
+		return bay_max - item_max
+	return 0.0
+
+## Local Y of the bed floor's top surface (where cargo rests), matching the generated floor box.
+func _bed_floor_local_y() -> float:
+	return body_height * 0.5 + BED_WALL_THICKNESS
+
+## AABB of a body's OWN collision shapes (covers CollisionShape3D / CollisionPolygon3D alike, and
+## ignores child Area3D shapes — those belong to a separate CollisionObject3D, e.g. the rock mining
+## sphere), expressed in `frame_from_body`: pass IDENTITY for body-local, or this vehicle's
+## (global⁻¹ × body.global) for vehicle-local. Zero-size when the body has no collision.
+func _collision_aabb(body: Node3D, frame_from_body: Transform3D) -> AABB:
+	var col := body as CollisionObject3D
+	if col == null:
+		return AABB()
+	var bounds := AABB()
+	var started := false
+	for owner_id in col.get_shape_owners():
+		var owner_xform: Transform3D = col.shape_owner_get_transform(owner_id)  # relative to body
+		for i in col.shape_owner_get_shape_count(owner_id):
+			var shape: Shape3D = col.shape_owner_get_shape(owner_id, i)
+			if shape == null:
+				continue
+			var debug_mesh := shape.get_debug_mesh()
+			if debug_mesh == null:
+				continue
+			var aabb := debug_mesh.get_aabb()
+			for c in 8:
+				var corner := aabb.position + Vector3(
+					aabb.size.x if (c & 1) else 0.0,
+					aabb.size.y if (c & 2) else 0.0,
+					aabb.size.z if (c & 4) else 0.0)
+				var point: Vector3 = frame_from_body * (owner_xform * corner)
+				if not started:
+					bounds = AABB(point, Vector3.ZERO)
+					started = true
+				else:
+					bounds = bounds.expand(point)
+	return bounds
+
+# ------------------------------------------------------------------------------
+# Cargo debug envelope (Settings > General > Cargo debug). Dev aid only, off by default.
+# ------------------------------------------------------------------------------
+## React live to the Settings toggle: draw or clear the green envelopes without a restart.
+func _on_cargo_debug_changed(on: bool) -> void:
+	_cargo_debug = on
+	if on:
+		_refresh_cargo_debug()
+	else:
+		for body in _cargo_debug_markers.keys():
+			if is_instance_valid(_cargo_debug_markers[body]):
+				_cargo_debug_markers[body].queue_free()
+		_cargo_debug_markers.clear()
+
+## Keep one green envelope per REALLY-locked cargo. A locked crate is reparented under the vehicle
+## (server and client), so the body's direct RigidBody3D children ARE the stuck cargo — an item just
+## resting loose in the bed stays a child of the world, so it gets no envelope (that is the point).
+func _refresh_cargo_debug() -> void:
+	var stuck := {}
+	for child in get_children():
+		if child is RigidBody3D:
+			stuck[child] = true
+			if not _cargo_debug_markers.has(child):
+				_cargo_debug_markers[child] = _make_cargo_marker(child)
+	for body in _cargo_debug_markers.keys():
+		if not stuck.has(body) or not is_instance_valid(body):
+			if is_instance_valid(_cargo_debug_markers[body]):
+				_cargo_debug_markers[body].queue_free()
+			_cargo_debug_markers.erase(body)
+
+## Build a translucent green box matching the body's collision bounds, parented to it so it rides.
+func _make_cargo_marker(body: Node3D) -> MeshInstance3D:
+	var bounds := _body_local_aabb(body)
+	var marker := MeshInstance3D.new()
+	marker.set_meta(GENERATED, true)
+	var box := BoxMesh.new()
+	box.size = bounds.size + Vector3.ONE * 0.05  # a hair bigger so it reads as a wrap, not z-fight
+	marker.mesh = box
+	marker.position = bounds.get_center()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.0, 1.0, 0.0, 0.25)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	marker.material_override = mat
+	body.add_child(marker)
+	return marker
+
+## A body's collision AABB in its OWN local frame (for the debug envelope mesh).
+func _body_local_aabb(body: Node3D) -> AABB:
+	return _collision_aabb(body, Transform3D.IDENTITY)
 
 ## Release a crate from the bed back into the world / a player's hands (carry retrieval): stop
 ## ignoring it and drop it from the load. The caller (the carry pickup) then takes ownership.
@@ -556,7 +716,18 @@ func release_cargo(body: Node) -> void:
 		return
 	remove_collision_exception_with(body)
 	_locked_cargo.erase(body)
+	_locked_cargo_local.erase(body)
 	_refresh_mass()
+
+## Server: hold every locked crate at its rest LOCAL pose each physics frame, so it rides the truck
+## rigidly (a KINEMATIC child can drift relative to a moving parent body). Keeps the replicated local
+## position constant -> clients stay perfectly stuck. Skips a crate that vanished (freed elsewhere).
+func _pin_locked_cargo() -> void:
+	for body in _locked_cargo_local.keys():
+		if is_instance_valid(body):
+			(body as Node3D).transform = _locked_cargo_local[body]
+		else:
+			_locked_cargo_local.erase(body)
 
 ## Spill the whole load when the vehicle tips past cargo_unlock_tilt_deg (GDD: the bed lock
 ## releases on a rollover). Each piece becomes a free dynamic prop again, back in the world.
@@ -662,7 +833,7 @@ func _build_body_visual() -> void:
 	# Open bed behind the cab: a floor + four low side walls (loadable by hand, GDD 6.1).
 	var bed_len: float = body_length - cab_length
 	var bed_z: float = (body_length - bed_len) * 0.5
-	var wall: float = 0.08
+	var wall: float = BED_WALL_THICKNESS
 	_add_box(body, Vector3(body_width, wall, bed_len), Vector3(0.0, top + wall * 0.5, bed_z), paint)  # floor
 	_add_box(body, Vector3(wall, bed_wall_height, bed_len),
 		Vector3(body_width * 0.5 - wall * 0.5, top + bed_wall_height * 0.5, bed_z), paint)  # right wall
@@ -761,6 +932,11 @@ func _process(delta: float) -> void:
 	# rides the smoothly-interpolated body (no per-frame world jitter). Server stays authoritative.
 	_interp.update(self, delta)
 	_update_wheels_visual(delta)
+	if _cargo_debug:
+		_cargo_debug_accum += delta
+		if _cargo_debug_accum >= 0.5:  # cheap periodic refresh; this only runs when the toggle is ON
+			_cargo_debug_accum = 0.0
+			_refresh_cargo_debug()
 
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint():
@@ -772,6 +948,7 @@ func _physics_process(delta: float) -> void:
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_check_rollover_unlock()  # spill the load if the truck is tipped over
+		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
 		if is_instance_valid(_pilot):
 			_apply_drive(delta)
 		elif _handbrake:
@@ -781,6 +958,7 @@ func _physics_process(delta: float) -> void:
 		return
 	# Bench / standalone: drive locally.
 	_check_rollover_unlock()
+	_pin_locked_cargo()
 	if _pilot != null:
 		_apply_drive(delta)
 	elif _handbrake:
