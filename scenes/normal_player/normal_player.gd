@@ -186,7 +186,9 @@ func _enter_tree() -> void:
 	if remote_player:
 		position = spawn_position
 		$UserInterface.visible = false
-		$CameraPivot.visible = false
+		# Don't hide CameraPivot: its Torch (SpotLight3D) lives under it, and a hidden ancestor would
+		# keep a remote player's flashlight dark even when its replicated state is ON. The camera is
+		# made non-current in _ready, so it never renders for us anyway.
 
 	elif not OS.has_feature("dedicated_server"):
 		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
