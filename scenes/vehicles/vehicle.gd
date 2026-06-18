@@ -34,7 +34,7 @@ const GENERATED := "vehicle_generated"
 # Thickness of the generated bed floor / walls (m). Shared by the collider and the cargo-rest math.
 const BED_WALL_THICKNESS := 0.08
 # Bench: the real mining rock scene, reused to test loading the bed.
-const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_01.tscn")
+const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_small.tscn")
 const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## Group a dev adds to any Light3D in their vehicle scene to make it a head light (drop-in, no code).
 const LIGHT_GROUP := "vehicle_light"
