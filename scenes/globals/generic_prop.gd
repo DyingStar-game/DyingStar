@@ -22,9 +22,9 @@ var has_parent: bool = false
 var carried: bool = false             # carried by a player (issue #124)
 var server_reparenting: bool = false  # briefly leaving the tree to reparent (carry/drop)
 
-# Client-side smoothing used ONLY while this prop rides a vehicle bed (parent is a Vehicle): the
-# server resends its constant LOCAL bed position every frame, so glide instead of stepping at 30 Hz.
-var _interp := NetInterpolator.new()
+# Last replicated LOCAL pose, re-asserted every render frame while riding a vehicle bed (see _process).
+var _ride_local_pos: Vector3 = Vector3.ZERO
+var _ride_local_rot: Vector3 = Vector3.ZERO
 
 func _enter_tree() -> void:
 	if GameOrchestrator.is_server():
@@ -39,18 +39,14 @@ func _ready() -> void:
 		position = spawn_position
 	# So the carry pickup can resolve this prop by uuid (the client sends what it aims at).
 	add_to_group("carriable")
+	# Created already under a vehicle (cargo loaded before we arrived): ride it (KINEMATIC).
+	PropNet.apply_ride_freeze_mode(self)
 
 func _physics_process(_delta: float) -> void:
 	PropNet.server_tick(self)
 
-## Client: glide a bed-riding crate toward its replicated local position (the truck itself is
-## interpolated in its own _process, so the crate rides the smooth truck AND smooths its own 30 Hz
-## updates). Free crates keep the direct snap in client_channel_data_update — nothing to smooth.
-func _process(delta: float) -> void:
-	if GameOrchestrator.is_server():
-		return
-	if get_parent() is Vehicle:
-		_interp.update_position(self, delta)
+func _process(_delta: float) -> void:
+	PropNet.ride_pin(self)  # hold the constant local bed pose at render rate (no jitter)
 
 func _exit_tree() -> void:
 	# Don't delete on clients when only reparenting (carried/dropped).
@@ -75,8 +71,7 @@ func server_prop_update(data: Dictionary):
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)
 	has_parent = true
-	# The local frame just changed: re-snap so the bed smoothing doesn't glide from the old space.
-	_interp.snap_next()
+	PropNet.apply_ride_freeze_mode(self)  # KINEMATIC under a vehicle so it rides the moving truck
 	_apply_carry_collision_exception(parent)
 
 ## Client: if WE (the local player) are the new parent, we're carrying this prop — ignore
@@ -96,24 +91,7 @@ func _apply_carry_collision_exception(parent: Node) -> void:
 
 # receive the update from server, in this example, we manage position and rotation properties
 func client_channel_data_update(data: Dictionary) -> void:
-	# Riding a bed (parent is a Vehicle): smooth the (constant) local position so it doesn't step.
-	var riding: bool = get_parent() is Vehicle
-	if data.has("position"):
-		var local_pos := Vector3(
-			data["position"]["x"],
-			data["position"]["y"],
-			data["position"]["z"]
-		)
-		if riding:
-			_interp.set_position_target(self, local_pos)
-		else:
-			position = local_pos
-	if data.has("rotation"):
-		rotation = Vector3(
-			data["rotation"]["x"],
-			data["rotation"]["y"],
-			data["rotation"]["z"]
-		)
+	PropNet.apply_client_transform(self, data)
 
 # ── Carry contract (issue #124): any generic prop becomes pickable with E ──
 func interact(_interactor: Node = null) -> bool:

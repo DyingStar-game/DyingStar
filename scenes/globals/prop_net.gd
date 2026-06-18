@@ -7,6 +7,40 @@ extends RefCounted
 ##
 ## A prop using server_tick MUST expose: `uuid`, `type_name`, `has_parent`,
 ## `server_last_position`, `server_last_rotation` and the `hs_server_prop_update` signal.
+## A prop using the client ride helpers (apply_client_transform / ride_pin) MUST also expose
+## `_ride_local_pos` and `_ride_local_rot`.
+
+## Client: match the freeze mode to the prop's parent. A bed-riding crate must be KINEMATIC so the
+## frozen body follows the moving truck through the scene tree (a STATIC frozen body instead gets its
+## world transform rewritten every physics frame, so it stays put while the truck drives off — the
+## "cargo left behind at speed" bug). Resting in the world stays STATIC.
+static func apply_ride_freeze_mode(prop: RigidBody3D) -> void:
+	if GameOrchestrator.is_server():
+		return  # the server sets KINEMATIC itself on lock; this is the client replica's parenting
+	prop.freeze_mode = (
+		RigidBody3D.FREEZE_MODE_KINEMATIC if prop.get_parent() is Vehicle
+		else RigidBody3D.FREEZE_MODE_STATIC)
+
+## Client: apply a replicated LOCAL pose (position/rotation) and remember it so ride_pin can hold it.
+## Call from a prop's client_channel_data_update (shared by every networked prop).
+static func apply_client_transform(prop: Node3D, data: Dictionary) -> void:
+	if data.has("position"):
+		prop.position = Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
+		prop._ride_local_pos = prop.position
+	if data.has("rotation"):
+		prop.rotation = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
+		prop._ride_local_rot = prop.rotation
+
+## Client: while riding a bed, re-assert the constant LOCAL pose every render frame. The crate is a
+## physics body, so it otherwise refreshes only at the (slower) physics tick and lags the truck,
+## which is interpolated at render rate -> visible jitter. Call from a prop's _process; the parent
+## (truck) runs first, so a direct set (no lerp) tracks it exactly.
+static func ride_pin(prop: Node3D) -> void:
+	if GameOrchestrator.is_server():
+		return
+	if prop.get_parent() is Vehicle:
+		prop.position = prop._ride_local_pos
+		prop.rotation = prop._ride_local_rot
 
 ## Call from a prop's _physics_process. Replicates position/rotation when they change. While
 ## the prop is CARRIED (parented to a Player), re-sends position + parent_id every frame so
