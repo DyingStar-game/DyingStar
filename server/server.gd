@@ -92,6 +92,10 @@ var props_scene: Dictionary = {
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
 	'scenes/props/rock/rock_mining_small.tscn':
 		preload('res://scenes/props/rock/rock_mining_small.tscn'),
+	'scenes/props/rock/rock_mining_medium.tscn':
+		preload('res://scenes/props/rock/rock_mining_medium.tscn'),
+	'scenes/props/rock/rock_mining_large.tscn':
+		preload('res://scenes/props/rock/rock_mining_large.tscn'),
 	'scenes/props/testbox/box_50cm.tscn':
 		preload('res://scenes/props/testbox/box_50cm.tscn'),
 	'scenes/props/testbox/box_4m.tscn':

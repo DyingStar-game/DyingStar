@@ -291,11 +291,15 @@ func _is_owner() -> bool:
 
 # ── Internals ────────────────────────────────────────────────────────────────
 
-## True if a mining rock (group "miningrock") is within aim range.
+## True if a mining rock (group "miningrock") is within aim range. Distance is measured to
+## the rock's SURFACE (center distance minus its radius), so big variants — whose center is
+## metres deep — are reachable like the small one (which has a ~0 radius -> unchanged).
 func _is_near_mining_rock() -> bool:
 	for r in get_tree().get_nodes_in_group("miningrock"):
-		if r is Node3D and global_position.distance_to((r as Node3D).global_position) <= aim_rock_distance:
-			return true
+		if r is Node3D:
+			var radius: float = r.aim_radius() if r.has_method("aim_radius") else 0.0
+			if global_position.distance_to((r as Node3D).global_position) - radius <= aim_rock_distance:
+				return true
 	return false
 
 ## True if the camera is currently looking at a mining rock (camera raycast).
