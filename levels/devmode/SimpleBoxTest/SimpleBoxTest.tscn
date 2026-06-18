@@ -7,7 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
 [ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/props/testbox/box_50cm.tscn" id="7_w0ufy"]
-[ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/props/rock/rock_mining_01.tscn" id="8_bdj2j"]
+[ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/props/rock/rock_mining_small.tscn" id="8_bdj2j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
 size = Vector2(100, 100)

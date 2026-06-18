@@ -1022,7 +1022,7 @@ func _on_fov_changed(fov: float) -> void:
 func _on_spawn_selected(data) -> void:
 	match data:
 		"rock":
-			spawn_box("rock/rock_mining_01", "miningrock", 5.5, 1.2)
+			spawn_box("rock/rock_mining_small", "miningrock", 5.5, 1.2)
 		"box":
 			spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 		"depot":

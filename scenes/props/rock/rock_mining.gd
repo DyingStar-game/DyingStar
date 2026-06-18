@@ -633,6 +633,13 @@ func _physics_process(_delta: float) -> void:
 func _process(_delta: float) -> void:
 	PropNet.ride_pin(self)  # hold the constant local bed pose at render rate (no jitter)
 
+# The replicated scene path (registry key, no res:// prefix) of THIS rock variant, so a
+# broken-off half spawns the SAME scene (small/medium/large) instead of a hardcoded one.
+func _scene_name() -> String:
+	if scene_file_path != "":
+		return scene_file_path.trim_prefix("res://")
+	return "scenes/props/rock/rock_mining_small.tscn"
+
 func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 	# Create the complementary half as its own networked rock. It inherits ALL our
 	# faults (so it shows the remaining veins and can be split again), but the fault we
@@ -661,7 +668,7 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 		"rotation": {"x": rotation[0], "y": rotation[1], "z": rotation[2]},
 		"blocs": side2_blocs,
 		"kick": {"x": kick.x, "y": kick.y, "z": kick.z},
-		"scenename": "scenes/props/rock/rock_mining_01.tscn",
+		"scenename": _scene_name(),
 		# Same parent as ourselves (a known GORC id, or "" for root) so Horizon can
 		# resolve it instead of queuing the side2 forever.
 		"parent_id": created_parent_id,

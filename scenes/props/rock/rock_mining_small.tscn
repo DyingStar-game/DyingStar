@@ -8,7 +8,7 @@
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_ducf2"]
 
-[node name="RockMining01" type="RigidBody3D" unique_id=525353877]
+[node name="RockMiningSmall" type="RigidBody3D" unique_id=525353877]
 mass = 800.0
 continuous_cd = true
 script = ExtResource("1_6o14g")
