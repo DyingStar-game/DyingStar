@@ -1,5 +1,8 @@
 extends Node
 
+## Emitted when a debug toggle changes, so live systems (e.g. vehicles) react without a restart.
+signal cargo_debug_changed(on: bool)
+
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
 const CONFIG_FILEPATH : String = "user://settings.ini"
@@ -21,6 +24,7 @@ func initialize_settings():
 	config.set_value("video", "v_sync", false)
 	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
+	config.set_value("general", "cargo_debug", false)
 
 func save_settings():
 	config.save(CONFIG_FILEPATH)
@@ -89,6 +93,16 @@ func set_dev_mode(on: bool) -> void:
 
 func is_dev_mode() -> bool:
 	return config.get_value("video", "dev_mode", false)
+
+## Cargo debug: draw a green envelope around items REALLY locked into a vehicle bed (dev aid). Lives
+## under [general]; emits so vehicles toggle their markers live.
+func set_cargo_debug(on: bool) -> void:
+	config.set_value("general", "cargo_debug", on)
+	save_settings()
+	cargo_debug_changed.emit(on)
+
+func is_cargo_debug() -> bool:
+	return config.get_value("general", "cargo_debug", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)
