@@ -97,6 +97,14 @@ var _mesh_instance: MeshInstance3D = null
 # Geometric center of the base mesh (its origin is not necessarily its middle), used
 # so a fault at position 0.5 sits in the true middle along its normal.
 var _mesh_center: Vector3 = Vector3.ZERO
+# Half-size of the CSG subtraction box used to cut a fault, in rock-local units. Must reach
+# past the rock surface from the center plane, so it scales with the rock (floored at 10 to
+# keep the small variant's proven behavior). Computed once from the base mesh AABB.
+var _cut_box_half: float = 10.0
+# Uniform scale baked into the mesh (1 for small, >1 for medium/large). The fault-hit
+# tolerances (FAULT_HIT_THRESHOLD / INTERSECTION_MARGIN) are in rock-local units, so they
+# must be multiplied by this to stay proportional — otherwise a big rock is uncuttable.
+var _fault_scale: float = 1.0
 # Velocity to apply once when this piece spawns, to push it off the half it split from.
 var _spawn_kick: Vector3 = Vector3.ZERO
 # Cached per-piece ore fraction (sampled over the piece's volume). -1 = not computed yet;
@@ -116,9 +124,20 @@ func _ready() -> void:
 	add_to_group("carriable")  # so the carry pickup can resolve it by uuid (#124)
 	_full_rock_mass = mass  # GameDesigner value from the scene = the whole-rock mass (before scaling)
 	var item_rock_mesh = get_child(0) as CSGMesh3D
+	# Bake any uniform scale set on the mesh node into a scale-1 mesh, so every cut /
+	# collision / ore computation below works in true-size local space. The small variant
+	# is scale 1 (no-op); medium/large scale their mesh node (x4 / x10) for their size.
+	if item_rock_mesh != null and not item_rock_mesh.scale.is_equal_approx(Vector3.ONE):
+		var s: Vector3 = item_rock_mesh.scale
+		_fault_scale = maxf(s.x, maxf(s.y, s.z))
+		item_rock_mesh.mesh = _scaled_mesh(item_rock_mesh.mesh, s)
+		item_rock_mesh.scale = Vector3.ONE
 	_base_mesh = item_rock_mesh.mesh   # keep a ref to rebuild cuts later
 	if _base_mesh != null:
 		_mesh_center = _base_mesh.get_aabb().get_center()   # true middle of the rock
+		# Box big enough to cover the rock from its center plane (diagonal), floored at the
+		# small variant's original 10 so its cuts are bit-for-bit unchanged.
+		_cut_box_half = maxf(10.0, _base_mesh.get_aabb().size.length())
 	combiner = CSGCombiner3D.new()
 	add_child(combiner)
 
@@ -134,6 +153,23 @@ func _ready() -> void:
 	else:
 		_client_ready()
 
+## Return a copy of `src` with every vertex multiplied by `s` (uniform scale), so a
+## mesh authored small can be baked to its true size at scale 1. Normals/UVs are kept as
+## is (a uniform positive scale preserves normal direction). Used for medium/large variants.
+func _scaled_mesh(src: Mesh, s: Vector3) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for surf in src.get_surface_count():
+		var arrays: Array = src.surface_get_arrays(surf)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in verts.size():
+			verts[i] *= s
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var mat: Material = src.surface_get_material(surf)
+		if mat != null:
+			out.surface_set_material(surf, mat)
+	return out
+
 ## Rebuild the cut geometry from the current fault state (server + client). No cut
 ## yet -> keep the initial full-rock combiner and just (re)show the veins.
 func _refresh_cuts() -> void:
@@ -147,17 +183,17 @@ func _refresh_cuts() -> void:
 ## Build the CSG box that subtracts one fault's half from the rock (rock-local).
 func _make_cut_box(bloc: Dictionary) -> CSGBox3D:
 	var box := CSGBox3D.new()
-	box.size = Vector3(20.0, 20.0, 20.0)
+	box.size = Vector3(2.0 * _cut_box_half, 2.0 * _cut_box_half, 2.0 * _cut_box_half)
 	# rotate before translating so the cut plane matches on both halves
 	box.rotation = Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))
-	box.translate_object_local(Vector3(10.5, 0, 0))        # box on the far right of the rock
+	box.translate_object_local(Vector3(_cut_box_half + 0.5, 0, 0))  # box on the far right of the rock
 	box.translate_object_local(Vector3(-bloc.position, 0.0, 0.0))
 	# Shift the cut plane onto the mesh center (along the fault normal) so position 0.5
 	# is the true middle even when the mesh origin is off-center.
 	var n: Vector3 = Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z))) * Vector3(1.0, 0.0, 0.0)
 	box.translate_object_local(Vector3(n.dot(_mesh_center), 0.0, 0.0))
 	if int(bloc.keep_side) == 2:
-		box.translate_object_local(Vector3(-20.0, 0, 0))   # cut the other half instead
+		box.translate_object_local(Vector3(-2.0 * _cut_box_half, 0, 0))   # cut the other half instead
 	box.operation = CSGShape3D.OPERATION_SUBTRACTION
 	return box
 
@@ -286,6 +322,15 @@ func ore_richness() -> float:
 	if s == "":
 		return 0.5
 	return float(absi(s.hash()) % 1000) / 1000.0
+
+## Approximate outer radius of the rock (world units, mesh baked to true size at node
+## scale 1). Tools measure distance to the SURFACE (center - radius) instead of the center,
+## which is mandatory for the big variants whose center sits several metres inside the rock.
+func aim_radius() -> float:
+	if _base_mesh == null:
+		return 0.0
+	var ab: AABB = _base_mesh.get_aabb()
+	return maxf(ab.size.x, maxf(ab.size.y, ab.size.z)) * 0.5
 
 ## Approximate volume of this piece (AABB of its mesh x a fill factor). Used by the mining
 ## depot to refine in volume (kg is meaningless in space — gravity varies).
@@ -572,7 +617,7 @@ func is_on_fault(hit_local: Vector3) -> bool:
 		var r := Basis.from_euler(Vector3(0.0, deg_to_rad(bloc.rotation_y), deg_to_rad(bloc.rotation_z)))
 		var n: Vector3 = r * Vector3(1.0, 0.0, 0.0)
 		var d: float = absf(n.dot(hit_local) - ((0.5 - bloc.position) + n.dot(_mesh_center)))
-		if d <= FAULT_HIT_THRESHOLD:
+		if d <= FAULT_HIT_THRESHOLD * _fault_scale:
 			return true
 	return false
 
@@ -600,13 +645,13 @@ func server_perforate(hit_local: Vector3, push_dir_local: Vector3 = Vector3.ZERO
 			best_i = i
 	if best_i < 0:
 		return
-	if best_d > FAULT_HIT_THRESHOLD:
+	if best_d > FAULT_HIT_THRESHOLD * _fault_scale:
 		return   # the aim point isn't on any fault -> nothing happens
 	# Intersection priority: when the aim point sits on the crossing of several faults
 	# (their distances are nearly tied), cut the one with the LOWEST number.
 	var best_number: int = int(blocs[best_i].get("number", 9999))
 	for i in dists:
-		if dists[i] <= best_d + INTERSECTION_MARGIN:
+		if dists[i] <= best_d + INTERSECTION_MARGIN * _fault_scale:
 			var num: int = int(blocs[i].get("number", 9999))
 			if num < best_number:
 				best_number = num

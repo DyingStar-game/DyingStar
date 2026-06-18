@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://cynqji0v1gvlk" path="res://scenes/props/rock/rock_mining.gd" id="1_script"]
+[ext_resource type="ArrayMesh" uid="uid://cxl8l75u4r1bg" path="res://assets/_universe/environment/terrain/rocks/rock_medium.res" id="2_mesh"]
+[ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://scenes/props/rock/rock_material.tres" id="3_mat"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_area"]
+radius = 3.5
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_body"]
+
+[node name="RockMiningMedium" type="RigidBody3D"]
+mass = 2000.0
+continuous_cd = true
+script = ExtResource("1_script")
+
+[node name="CSGMesh3D" type="CSGMesh3D" parent="."]
+transform = Transform3D(1.2, 0, 0, 0, 1.2, 0, 0, 0, 1.2, 0, 0, 0)
+material_override = ExtResource("3_mat")
+mesh = ExtResource("2_mesh")
+material = ExtResource("3_mat")
+
+[node name="Area3D" type="Area3D" parent="."]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("SphereShape3D_area")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape3D_body")

@@ -361,6 +361,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _spawn_wheel:
 			_spawn_wheel.open([
 				{"text": "Rocher", "data": "rock"},
+				{"text": "Rocher M", "data": "rock_medium"},
+				{"text": "Rocher L", "data": "rock_large"},
 				{"text": "Caisse", "data": "box"},
 				{"text": "Dépôt", "data": "depot"},
 				{"text": "Camion", "data": "truck"},
@@ -1023,6 +1025,10 @@ func _on_spawn_selected(data) -> void:
 	match data:
 		"rock":
 			spawn_box("rock/rock_mining_small", "miningrock", 5.5, 1.2)
+		"rock_medium":
+			spawn_box("rock/rock_mining_medium", "miningrock", 6.0, 4.0)
+		"rock_large":
+			spawn_box("rock/rock_mining_large", "miningrock", 9.0, 6.0)
 		"box":
 			spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
 		"depot":
