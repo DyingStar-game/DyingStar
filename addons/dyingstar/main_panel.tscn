@@ -90,6 +90,15 @@ layout_mode = 2
 size_flags_vertical = 0
 text = "3 clients"
 
+[node name="ServerPropsStatus" type="RichTextLabel" parent="MarginContainer/VBoxContainer" unique_id=771530112]
+layout_mode = 2
+size_flags_vertical = 0
+bbcode_enabled = true
+text = ""
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
 [connection signal="tree_entered" from="." to="." method="_on_tree_entered"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/reload command" to="." method="_on_reload_command_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2/Horizon 1 client" to="." method="_on_horizon_clients_pressed" binds= [1]]
