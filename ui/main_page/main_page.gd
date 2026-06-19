@@ -9,8 +9,8 @@ var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page
 
 @onready var settings_button : Button = $Control/Button
 @onready var quit_button : Button = $Control/QuitButton
-@onready var settings_bg : Sprite2D = $Control/Button2
-@onready var quit_bg : Sprite2D = $Control/Button3
+@onready var settings_bg : TextureRect = $Control/Button2
+@onready var quit_bg : TextureRect = $Control/Button3
 
 func _ready() -> void:
 	settings_button.pressed.connect(_on_settings_pressed)
@@ -20,7 +20,7 @@ func _ready() -> void:
 	is_ready = true
 
 ## Lighten a button's background sprite while the mouse is over it (hover feedback).
-func _add_hover_highlight(button: Button, bg: Sprite2D) -> void:
+func _add_hover_highlight(button: Button, bg: TextureRect) -> void:
 	button.mouse_entered.connect(func() -> void: bg.modulate = HOVER_TINT)
 	button.mouse_exited.connect(func() -> void: bg.modulate = Color.WHITE)
 

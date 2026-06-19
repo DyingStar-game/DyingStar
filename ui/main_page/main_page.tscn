@@ -44,13 +44,35 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="Button2" type="Sprite2D" parent="Control" unique_id=1577520521]
-position = Vector2(960, 891)
+[node name="Button2" type="TextureRect" parent="Control" unique_id=1577520521]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.696
+anchor_right = 0.5
+anchor_bottom = 0.696
+offset_left = -98.0
+offset_top = 114.32000000000004
+offset_right = 98.0
+offset_bottom = 163.32000000000005
 texture = ExtResource("3_n4a6o")
+expand_mode = 1
+stretch_mode = 0
 
-[node name="Button3" type="Sprite2D" parent="Control" unique_id=1577520522]
-position = Vector2(960, 947)
+[node name="Button3" type="TextureRect" parent="Control" unique_id=1577520522]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.696
+anchor_right = 0.5
+anchor_bottom = 0.696
+offset_left = -98.0
+offset_top = 170.32000000000004
+offset_right = 98.0
+offset_bottom = 219.32000000000005
 texture = ExtResource("3_n4a6o")
+expand_mode = 1
+stretch_mode = 0
 
 [node name="Button" type="Button" parent="Control" unique_id=1722532473]
 layout_mode = 1

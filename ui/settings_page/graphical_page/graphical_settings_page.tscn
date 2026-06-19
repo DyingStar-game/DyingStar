@@ -152,3 +152,58 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "Off"
+
+[node name="MaxFps" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "FPS Limit"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+alignment = 1
+item_count = 6
+popup/item_0/text = "Unlimited"
+popup/item_0/id = 0
+popup/item_1/text = "30"
+popup/item_1/id = 30
+popup/item_2/text = "60"
+popup/item_2/id = 60
+popup/item_3/text = "120"
+popup/item_3/id = 120
+popup/item_4/text = "144"
+popup/item_4/id = 144
+popup/item_5/text = "240"
+popup/item_5/id = 240
+
+[node name="Fov" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Field of View"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+size_flags_vertical = 1
+min_value = 50.0
+max_value = 150.0
+step = 1.0
+value = 100.0
+
+[node name="Value" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+text = "100"
+label_settings = SubResource("LabelSettings_aqojs")
+horizontal_alignment = 1
