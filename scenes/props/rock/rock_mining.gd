@@ -38,11 +38,19 @@ const ORE_T_EXTERIOR := 0.7  # high threshold -> very few spots
 const ORE_SCALE_EXTERIOR := 14.0  # high scale -> tiny spots
 # Fraction of a piece's bounding box that is actually solid (rough volume estimate).
 const VOLUME_FILL := 0.5
+# Registry id -> MineralDef, so a replicated mineral_id (string) resolves to its resource on
+# every client/server. Keep in sync with assets/materials/minerals/.
+const GOLD_MINERAL := preload("res://assets/materials/minerals/gold/gold.tres")
+const MINERALS := {
+	"gold": GOLD_MINERAL,
+	"iron": preload("res://assets/materials/minerals/iron/iron.tres"),
+	"cryptonite": preload("res://assets/materials/minerals/cryptonite/cryptonite.tres"),
+}
 
 @export var uuid: String = ""
 ## Which mineral this rock shows (gold, cryptonite, ...). Default = gold for now; per-rock
 ## attribution + replication come later. The ore FIELD (amount/dispersion) stays below.
-@export var mineral: MineralDef = preload("res://assets/materials/minerals/gold/gold.tres")
+@export var mineral: MineralDef = GOLD_MINERAL
 
 @export_group("Fault look")
 ## Neutral fault grooves — they deliberately do NOT reveal the mineral. Width of the crack,
@@ -464,6 +472,32 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 	mat.set_shader_parameter("plane_offsets", offsets)
 	return mat
 
+## Resolve a replicated mineral_id to its MineralDef and (re)apply the look. Safe to call
+## before _ready (the look is then built with it); after _ready on a client, it rebuilds the
+## displayed material so the rock switches mineral live.
+func _set_mineral(id: String) -> void:
+	if not MINERALS.has(id):
+		return
+	var m: MineralDef = MINERALS[id]
+	if m == mineral:
+		return
+	mineral = m
+	if not OS.has_feature("dedicated_server"):
+		_reskin_current_mineral()
+
+## Re-apply the mineral look to whatever geometry exists (the uncut combiner mesh, or the cut
+## MeshInstance's two surfaces) WITHOUT rebuilding geometry. Rebuilding here would race the
+## blocs-driven _rebuild() on the same frame and duplicate the mesh. No-op before the mesh
+## exists — _client_ready then builds the look with the mineral already set.
+func _reskin_current_mineral() -> void:
+	if combiner != null and is_instance_valid(combiner) and combiner.get_child_count() > 0:
+		var mesh_node = combiner.get_child(0)
+		if mesh_node is CSGMesh3D:
+			(mesh_node as CSGMesh3D).material = _make_exterior_material()
+	if _mesh_instance != null and is_instance_valid(_mesh_instance):
+		_mesh_instance.set_surface_override_material(0, _make_exterior_material())
+		_mesh_instance.set_surface_override_material(1, _make_inner_material())
+
 ## Push the mineral's LOOK onto the shader (texture or flat colour + metalness). Falls back to
 ## the legacy hardcoded preset when no mineral is assigned, so a rock still renders.
 func _apply_mineral(mat: ShaderMaterial) -> void:
@@ -519,9 +553,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 		created_parent_id = str(data["parent_id"])
 	if data.has("ore_seed"):
 		ore_seed = str(data["ore_seed"])
+	if data.has("mineral_id"):
+		_set_mineral(str(data["mineral_id"]))
 	if data.has("kick"):
 		_spawn_kick = Vector3(data["kick"]["x"], data["kick"]["y"], data["kick"]["z"])
 	PropNet.apply_client_transform(self, data)  # position/rotation (+ remembers the local ride pose)
+	# Always re-derive the cut geometry from the replicated blocs (idempotent): a "skip if
+	# unchanged" guard desyncs the mesh from blocs when a rebuild is interrupted mid-flap
+	# (GORC churn), leaving the rock visually whole forever.
 	if data.has("blocs"):
 		blocs = data["blocs"]
 		# _rebuild() needs `_base_mesh`, set in _ready(). When this rock is spawned
@@ -719,6 +758,8 @@ func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 		"parent_id": created_parent_id,
 		# Inherit our ore distribution seed so the piece's exterior stays continuous.
 		"ore_seed": ore_seed if ore_seed != "" else uuid,
+		# Inherit our mineral so the broken-off half shows the same ore (not the default gold).
+		"mineral_id": str(mineral.id) if mineral != null else "",
 	}
 	# Register the side2 in Horizon (other players) AND create it locally on this game
 	# server (so it can be simulated and re-cut). Horizon's GORC is players-only and does
