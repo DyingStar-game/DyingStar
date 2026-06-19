@@ -239,6 +239,7 @@ func _ready() -> void:
 		camera.current = true
 
 		camera.make_current()
+		_force_temp_sky_environment()
 		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
@@ -993,6 +994,33 @@ func _safe_reparent_and_sync(new_parent: Node) -> void:
 func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
+
+## TEMPORARY (until the planet sun/atmosphere system is fixed): build a physical-sky environment
+## directly on the player camera. A Camera3D's own environment overrides any rival WorldEnvironment
+## (the scene's WorldEnvironment doesn't apply in-game here -> black sky), so this is what reliably
+## shows the sky to every player. The PhysicalSky reacts to the DirectionalLight, so the day/night
+## sun tint applies. Keep these values in sync with the WorldEnvironment in sandbox_capital.tscn.
+## Remove this whole helper once the real sun/atmosphere system is in place.
+func _force_temp_sky_environment() -> void:
+	var sky_material := PhysicalSkyMaterial.new()
+	sky_material.rayleigh_coefficient = 2.5
+	sky_material.mie_coefficient = 0.02
+	sky_material.mie_eccentricity = 0.85
+	sky_material.turbidity = 12.0
+	sky_material.sun_disk_scale = 3.0
+	sky_material.ground_color = Color(0.35, 0.28, 0.22)
+	sky_material.energy_multiplier = 1.2
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.glow_enabled = true
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.002
+	camera.environment = env
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
