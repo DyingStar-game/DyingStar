@@ -12,16 +12,16 @@ script = ExtResource("1_kpms3")
 
 [node name="container_liquid_1200x240x241" parent="." unique_id=202993910 instance=ExtResource("2_kpms3")]
 
-[node name="container_liquid_1200x240x240_LOD0" parent="container_liquid_1200x240x241" index="0" unique_id=1536248696]
+[node name="container_liquid_1200x240x240_LOD0" parent="container_liquid_1200x240x241" index="0" unique_id=2106213716]
 surface_material_override/0 = ExtResource("3_wt53u")
 
-[node name="container_liquid_1200x240x240_LOD1" parent="container_liquid_1200x240x241" index="1" unique_id=2001634132]
+[node name="container_liquid_1200x240x240_LOD1" parent="container_liquid_1200x240x241" index="1" unique_id=760992413]
 surface_material_override/0 = ExtResource("3_wt53u")
 
-[node name="container_liquid_1200x240x240_LOD2" parent="container_liquid_1200x240x241" index="2" unique_id=93228134]
+[node name="container_liquid_1200x240x240_LOD2" parent="container_liquid_1200x240x241" index="2" unique_id=191603953]
 surface_material_override/0 = ExtResource("3_wt53u")
 
-[node name="container_liquid_1200x240x240_LOD3" parent="container_liquid_1200x240x241" index="3" unique_id=271756722]
+[node name="container_liquid_1200x240x240_LOD3" parent="container_liquid_1200x240x241" index="3" unique_id=93168179]
 surface_material_override/0 = ExtResource("3_wt53u")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2122268384]

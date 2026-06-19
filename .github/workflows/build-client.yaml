@@ -9,7 +9,7 @@ on:
   pull_request:
 
 env:
-  GODOT_VERSION: 4.6.1
+  GODOT_VERSION: 4.7
 
 jobs:
   build:

@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://brgyw75mdxugt" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="3_rock_col"]
 [ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="4_rock_nrm"]
 [ext_resource type="Texture2D" uid="uid://tlqwrtnp20lv" path="res://assets/textures/grounds/rock/Rock029_2K_Roughness.jpg" id="5_rock_rgh"]
-[ext_resource type="PackedScene" path="res://scenes/vehicles/bench_pilot.tscn" id="6_s0cy6"]
+[ext_resource type="PackedScene" uid="uid://bqi8fylp75hjh" path="res://scenes/vehicles/bench_pilot.tscn" id="6_s0cy6"]
 [ext_resource type="Script" uid="uid://cyuutto7dxqrd" path="res://scenes/vehicles/vehicle_bench_debug.gd" id="20_benchdbg"]
 
 [sub_resource type="BoxShape3D" id="GravityBox"]

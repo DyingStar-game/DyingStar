@@ -32,8 +32,3 @@ func _exit_tree() -> void:
 
 func _get_plugin_name():
 	return "DyingStar"
-
-
-func _get_plugin_icon():
-	# Must return some kind of Texture for the icon.
-	pass

@@ -1,12 +1,9 @@
-[gd_resource type="Resource" script_class="MineralDef" format=3]
+[gd_resource type="Resource" script_class="MineralDef" format=3 uid="uid://biofo54213ahf"]
 
 [ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/props/rock/mineral_def.gd" id="1_script"]
 
 [resource]
 script = ExtResource("1_script")
 id = &"cryptonite"
-use_texture = false
-color = Color(0.1, 0.8, 0.2, 1)
-metallic = 1.0
 roughness = 0.059
 emission = 9.3

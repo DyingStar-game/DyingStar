@@ -15,7 +15,7 @@ points = PackedVector3Array(-0.25, -0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, 
 script = ExtResource("1_q3s3a")
 
 [node name="cube" type="MeshInstance3D" parent="." unique_id=1686868046]
-transform = Transform3D(0.306323, 0, 0.257227, 0, 0.4, 0, -0.257227, 0, 0.306323, 0, 0.23749369687726632, 0)
+transform = Transform3D(0.306323, 0, 0.257227, 0, 0.4, 0, -0.257227, 0, 0.306323, 0, -0.1050852908695712, 0)
 mesh = SubResource("BoxMesh_7amvq")
 surface_material_override/0 = SubResource("StandardMaterial3D_q3s3a")
 

@@ -25,13 +25,11 @@ script = ExtResource("1_jub4r")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 987.859, 133.398, -103.862)
 mesh = SubResource("SphereMesh_5ouan")
 real_coordinates = Vector3(98785.90000000001, 13339.8, -10386.199999999999)
-real_radius = 10000.0
 
 [node name="PlanetB" parent="." unique_id=851719861 instance=ExtResource("1_pn8fr")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 568.956, 69.9265, 158.21)
 mesh = SubResource("SphereMesh_cfu4f")
 real_coordinates = Vector3(56895.6, 6992.6500000000005, 15821)
-real_radius = 10000.0
 
 [node name="StationA" parent="." unique_id=624715177 instance=ExtResource("3_5ouan")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 870.85, 149.616, -103.862)

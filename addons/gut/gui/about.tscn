@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dqbkylpsatcqm"]
 
-[ext_resource type="Script" path="res://addons/gut/gui/about.gd" id="1_bg86c"]
+[ext_resource type="Script" uid="uid://g7qu8ihdt3pd" path="res://addons/gut/gui/about.gd" id="1_bg86c"]
 [ext_resource type="PackedScene" uid="uid://bjkn8mhx2fmt1" path="res://addons/gut/gui/GutLogo.tscn" id="3_kpic4"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_q8rky"]

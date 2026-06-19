@@ -14,16 +14,16 @@ script = ExtResource("1_eljka")
 
 [node name="container_standard_1200x240x240_a" parent="." unique_id=1543792511 instance=ExtResource("2_hugvf")]
 
-[node name="container_standard_1200x240x240_a_LOD0" parent="container_standard_1200x240x240_a" index="0" unique_id=946876042]
+[node name="container_standard_1200x240x240_a_LOD0" parent="container_standard_1200x240x240_a" index="0" unique_id=1343065182]
 surface_material_override/0 = ExtResource("3_hugvf")
 
-[node name="container_standard_1200x240x240_a_LOD1" parent="container_standard_1200x240x240_a" index="1" unique_id=1824265351]
+[node name="container_standard_1200x240x240_a_LOD1" parent="container_standard_1200x240x240_a" index="1" unique_id=37268461]
 surface_material_override/0 = ExtResource("3_hugvf")
 
-[node name="container_standard_1200x240x240_a_LOD2" parent="container_standard_1200x240x240_a" index="2" unique_id=1889931901]
+[node name="container_standard_1200x240x240_a_LOD2" parent="container_standard_1200x240x240_a" index="2" unique_id=901761632]
 surface_material_override/0 = ExtResource("3_hugvf")
 
-[node name="container_standard_1200x240x240_a_LOD3" parent="container_standard_1200x240x240_a" index="3" unique_id=272221499]
+[node name="container_standard_1200x240x240_a_LOD3" parent="container_standard_1200x240x240_a" index="3" unique_id=2026710637]
 surface_material_override/0 = ExtResource("3_hugvf")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1868462076]

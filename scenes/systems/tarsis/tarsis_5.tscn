@@ -5,7 +5,6 @@
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="3_lysij"]
 
 [sub_resource type="CompressedTexture2D" id="CompressedTexture2D_e5mub"]
-load_path = "res://.godot/imported/tarsis_4_colormap.png-401dca08660a8b60067b825941e42e20.s3tc.ctex"
 
 [sub_resource type="Resource" id="Resource_7kead"]
 script = ExtResource("3_lysij")

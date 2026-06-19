@@ -27,5 +27,3 @@ shape = SubResource("SphereShape3D_kvafs")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415174348]
 shape = SubResource("SphereShape3D_ducf2")
-
-

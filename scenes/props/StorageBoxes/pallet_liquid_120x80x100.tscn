@@ -15,16 +15,16 @@ script = ExtResource("1_om8a3")
 [node name="pallet_liquid_120x80x100" parent="." unique_id=1331169499 instance=ExtResource("2_48ujq")]
 material_overlay = ExtResource("3_48ujq")
 
-[node name="pallet_liquid_120x80x100_LOD0" parent="pallet_liquid_120x80x100" index="0" unique_id=1541915701]
+[node name="pallet_liquid_120x80x100_LOD0" parent="pallet_liquid_120x80x100" index="0" unique_id=1686699630]
 surface_material_override/0 = ExtResource("3_48ujq")
 
-[node name="pallet_liquid_120x80x100_LOD1" parent="pallet_liquid_120x80x100" index="1" unique_id=1222116197]
+[node name="pallet_liquid_120x80x100_LOD1" parent="pallet_liquid_120x80x100" index="1" unique_id=955399914]
 surface_material_override/0 = ExtResource("3_48ujq")
 
-[node name="pallet_liquid_120x80x100_LOD2" parent="pallet_liquid_120x80x100" index="2" unique_id=1569017392]
+[node name="pallet_liquid_120x80x100_LOD2" parent="pallet_liquid_120x80x100" index="2" unique_id=1878614081]
 surface_material_override/0 = ExtResource("3_48ujq")
 
-[node name="pallet_liquid_120x80x100_LOD3" parent="pallet_liquid_120x80x100" index="3" unique_id=737693343]
+[node name="pallet_liquid_120x80x100_LOD3" parent="pallet_liquid_120x80x100" index="3" unique_id=605421365]
 surface_material_override/0 = ExtResource("3_48ujq")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1760090678]
