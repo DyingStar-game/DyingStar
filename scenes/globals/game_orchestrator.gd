@@ -103,7 +103,7 @@ func menu_music() -> void:
 	_menu_music_player = AudioStreamPlayer.new()
 	_menu_music_player.name = "MenuMusicPlayer"
 	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Master"
+	_menu_music_player.bus = "Music"  # so the Audio settings Music slider controls it
 	_menu_music_player.autoplay = false
 	_menu_music_player.volume_db = 0.0
 	add_child(_menu_music_player)

@@ -218,5 +218,3 @@ label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1159019645]
 stream = SubResource("AudioStreamMicrophone_aa43r")
-
-[connection signal="pressed" from="MarginContainer/VBoxContainer/Microphone_testing/Button" to="." method="_on_button_pressed"]

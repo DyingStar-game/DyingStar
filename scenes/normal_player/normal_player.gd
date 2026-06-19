@@ -240,6 +240,9 @@ func _ready() -> void:
 
 		camera.make_current()
 		_force_temp_sky_environment()
+		# Apply the saved field of view, and follow live changes from the settings menu.
+		camera.fov = SettingsManager.get_fov()
+		SettingsManager.fov_changed.connect(_on_fov_changed)
 		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
@@ -1021,6 +1024,10 @@ func _force_temp_sky_environment() -> void:
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.002
 	camera.environment = env
+
+## Live camera FOV update from the settings menu (local player only).
+func _on_fov_changed(fov: float) -> void:
+	camera.fov = fov
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
