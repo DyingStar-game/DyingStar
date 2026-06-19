@@ -49,8 +49,8 @@ const SPAWN_DROP := 2.0
 @export_range(0.0, 1.0) var richness: float = 0.5
 ## How tightly rock richness hugs the target (smaller = tighter spread around `richness`).
 @export_range(0.0, 0.5) var richness_spread: float = 0.12
-## Which mineral this zone yields. Replication of this comes in step 3b (Horizon def); for
-## now it is informational and every rock still renders the default mineral.
+## Which mineral this zone yields (must match a key in rock_mining.gd MINERALS: gold, iron,
+## cryptonite, ...). Replicated per rock via the ore channel and applied on every client.
 @export var mineral_id: String = "gold"
 
 @export_group("Detection")
@@ -78,10 +78,14 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_physics_process(false)  # the editor runs @tool scripts; no server logic there
 		return
+	# Always use our OWN TriggerArea child unless trigger_area is explicitly set to one of our
+	# descendants. Prevents accidentally wiring a sibling area (e.g. the ambience Area3D), which
+	# both mis-triggers the zone AND disables that area's monitoring on clients.
+	var own_trigger: Area3D = get_node_or_null("TriggerArea") as Area3D
+	if trigger_area == null or (own_trigger != null and not is_ancestor_of(trigger_area)):
+		trigger_area = own_trigger
 	if trigger_area == null:
-		trigger_area = get_node_or_null("TriggerArea")
-	if trigger_area == null:
-		push_warning("MiningZone: no trigger_area assigned, zone disabled.")
+		push_warning("MiningZone: no TriggerArea found, zone disabled.")
 		set_physics_process(false)
 		return
 	# Only the server detects players, raycasts and spawns; clients do nothing.
@@ -165,6 +169,7 @@ func _build_spawn_queue() -> void:
 			"scenename": _pick_scene(rng),
 			"parent_id": parent_uuid,
 			"ore_seed": _ore_seed_for_richness(seed_str, made),
+			"mineral_id": mineral_id,
 		})
 		made += 1
 

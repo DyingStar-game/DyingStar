@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MineralDef" format=3 uid="uid://dy81i0qbytwih"]
+
+[ext_resource type="Texture2D" uid="uid://lha7jekg5khj" path="res://assets_blender/_universe/_shared/materials/metals/metal_iron_041A_4K_Roughness.jpg" id="1_qu6xp"]
+[ext_resource type="Texture2D" uid="uid://tmoad1l7oxy6" path="res://assets/textures/minerals/gold/gold_normal.png" id="2_jddbm"]
+[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/props/rock/mineral_def.gd" id="3_fa1if"]
+
+[resource]
+script = ExtResource("3_fa1if")
+id = &"iron"
+use_texture = true
+albedo_tex = ExtResource("1_qu6xp")
+color = Color(1, 1, 1, 1)
+normal_tex = ExtResource("2_jddbm")
+metallic = 0.638
+emission = 0.01
