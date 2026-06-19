@@ -14,16 +14,16 @@ script = ExtResource("1_l4mhx")
 
 [node name="container_standard_1200x240x240_b" parent="." unique_id=1974814290 instance=ExtResource("2_t2qm4")]
 
-[node name="container_standard_1200x240x240_b_LOD0" parent="container_standard_1200x240x240_b" index="0" unique_id=2071897024]
+[node name="container_standard_1200x240x240_b_LOD0" parent="container_standard_1200x240x240_b" index="0" unique_id=293641703]
 surface_material_override/0 = ExtResource("3_t2qm4")
 
-[node name="container_standard_1200x240x240_b_LOD1" parent="container_standard_1200x240x240_b" index="1" unique_id=366741239]
+[node name="container_standard_1200x240x240_b_LOD1" parent="container_standard_1200x240x240_b" index="1" unique_id=70155096]
 surface_material_override/0 = ExtResource("3_t2qm4")
 
-[node name="container_standard_1200x240x240_b_LOD2" parent="container_standard_1200x240x240_b" index="2" unique_id=1458337447]
+[node name="container_standard_1200x240x240_b_LOD2" parent="container_standard_1200x240x240_b" index="2" unique_id=942187111]
 surface_material_override/0 = ExtResource("3_t2qm4")
 
-[node name="container_standard_1200x240x240_b_LOD3" parent="container_standard_1200x240x240_b" index="3" unique_id=1899672809]
+[node name="container_standard_1200x240x240_b_LOD3" parent="container_standard_1200x240x240_b" index="3" unique_id=1470036689]
 surface_material_override/0 = ExtResource("3_t2qm4")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2045439363]

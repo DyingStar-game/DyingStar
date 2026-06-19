@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://cjkcxmpcfv2n1"]
+[gd_scene format=3 uid="uid://cjkcxmpcfv2n1"]
 
 [ext_resource type="PackedScene" uid="uid://drbfy20lnxnl0" path="res://ui/menu_config/MenuConfig.tscn" id="1_menucfg"]
 
@@ -19,10 +19,5 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.18, 0.18, 0.18, 0.5647059)
 
-[node name="MenuConfig" parent="." instance=ExtResource("1_menucfg")]
+[node name="MenuConfig" parent="." unique_id=594929588 instance=ExtResource("1_menucfg")]
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2

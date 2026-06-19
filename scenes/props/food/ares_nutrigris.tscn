@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://4oc8xbhlgsvy"]
+[gd_scene format=3 uid="uid://4oc8xbhlgsvy"]
 
 [ext_resource type="PackedScene" uid="uid://dl1t2htqdgwiv" path="res://assets/models/food/food_nutrigris.glb" id="1_lvp3x"]
 [ext_resource type="Material" uid="uid://dm3whpo6oqrbh" path="res://assets/materials/food/nutrigris_material.tres" id="2_ug831"]
@@ -7,18 +7,18 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_we4ba"]
 size = Vector3(0.07536498880108411, 0.04786435311507375, 0.07499082461072248)
 
-[node name="AresNutrigris" type="RigidBody3D"]
+[node name="AresNutrigris" type="RigidBody3D" unique_id=659628100]
 mass = 0.05
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=133609069]
 shape = SubResource("BoxShape3D_we4ba")
 
-[node name="food_nutrigris" parent="." instance=ExtResource("1_lvp3x")]
+[node name="food_nutrigris" parent="." unique_id=1719606230 instance=ExtResource("1_lvp3x")]
 
-[node name="nutrigris" parent="food_nutrigris" index="0"]
+[node name="nutrigris" parent="food_nutrigris" index="0" unique_id=1482922499]
 surface_material_override/0 = ExtResource("2_ug831")
 
-[node name="decal_001" parent="food_nutrigris" index="1"]
+[node name="decal_001" parent="food_nutrigris" index="1" unique_id=16790012]
 surface_material_override/0 = ExtResource("3_we4ba")
 
 [editable path="food_nutrigris"]

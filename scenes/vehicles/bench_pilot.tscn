@@ -1,6 +1,6 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://bqi8fylp75hjh"]
 
-[ext_resource type="Script" path="res://scenes/vehicles/bench_pilot.gd" id="1_pilot"]
+[ext_resource type="Script" uid="uid://dc62e4d5gu0v0" path="res://scenes/vehicles/bench_pilot.gd" id="1_pilot"]
 
 [sub_resource type="CapsuleShape3D" id="PilotShape"]
 radius = 0.4
@@ -13,12 +13,12 @@ height = 1.8
 [sub_resource type="StandardMaterial3D" id="PilotMat"]
 albedo_color = Color(0.2, 0.5, 0.9, 1)
 
-[node name="BenchPilot" type="CharacterBody3D"]
+[node name="BenchPilot" type="CharacterBody3D" unique_id=624368051]
 script = ExtResource("1_pilot")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=355664423]
 shape = SubResource("PilotShape")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=270019038]
 mesh = SubResource("PilotMesh")
 surface_material_override/0 = SubResource("PilotMat")

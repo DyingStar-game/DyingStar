@@ -136,16 +136,16 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 text = "On"
 
-[node name="DevMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+[node name="DevMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1344832484]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode"]
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode" unique_id=1727925090]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Dev mode (ignore resolution/fullscreen)"
 label_settings = SubResource("LabelSettings_aqojs")
 
-[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode"]
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode" unique_id=1344302373]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -153,16 +153,16 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "Off"
 
-[node name="MaxFps" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+[node name="MaxFps" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=670723310]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps"]
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps" unique_id=1799468495]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "FPS Limit"
 label_settings = SubResource("LabelSettings_aqojs")
 
-[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps"]
+[node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps" unique_id=978430751]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -182,26 +182,25 @@ popup/item_4/id = 144
 popup/item_5/text = "240"
 popup/item_5/id = 240
 
-[node name="Fov" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+[node name="Fov" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=438250652]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=2036814975]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Field of View"
 label_settings = SubResource("LabelSettings_aqojs")
 
-[node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+[node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=933020062]
 custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
 min_value = 50.0
 max_value = 150.0
-step = 1.0
 value = 100.0
 
-[node name="Value" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov"]
+[node name="Value" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=1096675366]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 text = "100"

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dj5ve0bq7xa5j"]
 
-[ext_resource type="Script" path="res://addons/gut/gui/ShortcutDialog.gd" id="1_qq8qn"]
+[ext_resource type="Script" uid="uid://dc5jgemxslgvl" path="res://addons/gut/gui/ShortcutDialog.gd" id="1_qq8qn"]
 [ext_resource type="PackedScene" uid="uid://sfb1fw8j6ufu" path="res://addons/gut/gui/ShortcutButton.tscn" id="2_i3wie"]
 
 [node name="ShortcutDialog" type="ConfirmationDialog" unique_id=1776753623]

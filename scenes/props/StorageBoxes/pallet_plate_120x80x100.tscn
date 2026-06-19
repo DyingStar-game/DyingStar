@@ -14,16 +14,16 @@ script = ExtResource("1_1deug")
 
 [node name="pallet_plate_120x80x15" parent="." unique_id=813337902 instance=ExtResource("2_1deug")]
 
-[node name="pallet_plate_120x80x15_LOD0" parent="pallet_plate_120x80x15" index="0" unique_id=1983248887]
+[node name="pallet_plate_120x80x15_LOD0" parent="pallet_plate_120x80x15" index="0" unique_id=1121812628]
 surface_material_override/0 = ExtResource("3_786n3")
 
-[node name="pallet_plate_120x80x15_LOD1" parent="pallet_plate_120x80x15" index="1" unique_id=331401294]
+[node name="pallet_plate_120x80x15_LOD1" parent="pallet_plate_120x80x15" index="1" unique_id=1135043230]
 surface_material_override/0 = ExtResource("3_786n3")
 
-[node name="pallet_plate_120x80x15_LOD2" parent="pallet_plate_120x80x15" index="2" unique_id=1322265119]
+[node name="pallet_plate_120x80x15_LOD2" parent="pallet_plate_120x80x15" index="2" unique_id=2067997627]
 surface_material_override/0 = ExtResource("3_786n3")
 
-[node name="pallet_plate_120x80x15_LOD3" parent="pallet_plate_120x80x15" index="3" unique_id=109077767]
+[node name="pallet_plate_120x80x15_LOD3" parent="pallet_plate_120x80x15" index="3" unique_id=1287790523]
 surface_material_override/0 = ExtResource("3_786n3")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1839857339]

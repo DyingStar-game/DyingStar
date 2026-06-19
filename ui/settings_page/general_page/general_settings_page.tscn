@@ -1,13 +1,13 @@
-[gd_scene load_steps=4 format=3 uid="uid://dxxwu5jg8wjap"]
+[gd_scene format=3 uid="uid://dxxwu5jg8wjap"]
 
-[ext_resource type="Script" path="res://ui/settings_page/general_page/general_settings_page.gd" id="1_gen"]
+[ext_resource type="Script" uid="uid://bf143sn8as1lk" path="res://ui/settings_page/general_page/general_settings_page.gd" id="1_gen"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_pcucv"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_gen"]
 font = ExtResource("2_pcucv")
 font_size = 28
 
-[node name="GeneralSettingsPage" type="Control"]
+[node name="GeneralSettingsPage" type="Control" unique_id=2034301496]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -16,7 +16,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_gen")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1108702689]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -25,7 +25,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.18, 0.18, 0.18, 0.5647059)
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
+[node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=1112105783]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -34,7 +34,7 @@ grow_horizontal = 2
 grow_vertical = 2
 horizontal_scroll_mode = 0
 
-[node name="MarginContainer" type="MarginContainer" parent="ScrollContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="ScrollContainer" unique_id=1792918100]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -43,19 +43,19 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer/MarginContainer" unique_id=257727327]
 layout_mode = 2
 
-[node name="CargoDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+[node name="CargoDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1017380227]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug"]
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug" unique_id=1600079272]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Cargo debug (green envelope on locked items)"
 label_settings = SubResource("LabelSettings_gen")
 
-[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug"]
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug" unique_id=1547335572]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10

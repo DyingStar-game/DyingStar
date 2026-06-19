@@ -14,7 +14,7 @@ config/name="DyingStar"
 config/version="0.0.1-dev"
 run/main_scene="uid://dpderfrunb8lr"
 run/main_loop_type="SceneTreeExtended"
-config/features=PackedStringArray("4.6", "C#", "Double Precision", "GL Compatibility")
+config/features=PackedStringArray("4.7", "C#", "Double Precision", "GL Compatibility")
 boot_splash/image="uid://ck5w0cxx7uj4"
 config/icon="uid://bqoexxd6necib"
 boot_splash/minimum_display_time=1000
@@ -48,6 +48,7 @@ PersistanceManager="*res://server/persistance_manager/PersistanceManager.cs"
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
+window/hdr/request_hdr_output=true
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
@@ -245,6 +246,6 @@ jolt_physics_3d/limits/max_body_pairs=131072
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
-reflections/sky_reflections/roughness_layers=8
+viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true

@@ -6,8 +6,8 @@
 [ext_resource type="PackedScene" uid="uid://bvrqqgjpyouse" path="res://addons/gut/gui/ResizeHandle.tscn" id="4_xrhva"]
 
 [node name="Min" type="Panel" unique_id=2324944]
-clip_contents = true
 custom_minimum_size = Vector2(280, 145)
+clip_contents = true
 offset_right = 280.0
 offset_bottom = 145.0
 theme = ExtResource("1_farmq")

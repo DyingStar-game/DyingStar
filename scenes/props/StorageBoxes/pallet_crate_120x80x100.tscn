@@ -14,16 +14,16 @@ script = ExtResource("1_ycnj0")
 
 [node name="pallet_crate_120x80x100" parent="." unique_id=584274319 instance=ExtResource("2_k2t6d")]
 
-[node name="pallet_crate_120x80x100_LOD0" parent="pallet_crate_120x80x100" index="0" unique_id=2073832944]
+[node name="pallet_crate_120x80x100_LOD0" parent="pallet_crate_120x80x100" index="0" unique_id=1106447407]
 surface_material_override/0 = ExtResource("3_k2t6d")
 
-[node name="pallet_crate_120x80x100_LOD1" parent="pallet_crate_120x80x100" index="1" unique_id=226276481]
+[node name="pallet_crate_120x80x100_LOD1" parent="pallet_crate_120x80x100" index="1" unique_id=996619326]
 surface_material_override/0 = ExtResource("3_k2t6d")
 
-[node name="pallet_crate_120x80x100_LOD2" parent="pallet_crate_120x80x100" index="2" unique_id=1223761313]
+[node name="pallet_crate_120x80x100_LOD2" parent="pallet_crate_120x80x100" index="2" unique_id=321523895]
 surface_material_override/0 = ExtResource("3_k2t6d")
 
-[node name="pallet_crate_120x80x100_LOD3" parent="pallet_crate_120x80x100" index="3" unique_id=1207645353]
+[node name="pallet_crate_120x80x100_LOD3" parent="pallet_crate_120x80x100" index="3" unique_id=1980706135]
 surface_material_override/0 = ExtResource("3_k2t6d")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1091402362]

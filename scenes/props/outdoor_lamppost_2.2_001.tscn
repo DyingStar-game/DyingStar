@@ -10,19 +10,19 @@ size = Vector3(0.2979846285795702, 2.210542026400617, 0.25893124825574887)
 
 [node name="outdoor_lamppost_2_2m_001" parent="." unique_id=1650813234 instance=ExtResource("1_pk050")]
 
-[node name="outdoor_lamppost_LOD0" parent="outdoor_lamppost_2_2m_001" index="0" unique_id=1024295265]
+[node name="outdoor_lamppost_LOD0" parent="outdoor_lamppost_2_2m_001" index="0" unique_id=725481018]
 surface_material_override/0 = ExtResource("2_3u0aj")
 surface_material_override/1 = ExtResource("2_3u0aj")
 
-[node name="outdoor_lamppost_LOD1" parent="outdoor_lamppost_2_2m_001" index="1" unique_id=1273871110]
+[node name="outdoor_lamppost_LOD1" parent="outdoor_lamppost_2_2m_001" index="1" unique_id=1961401215]
 surface_material_override/0 = ExtResource("2_3u0aj")
 surface_material_override/1 = ExtResource("2_3u0aj")
 
-[node name="outdoor_lamppost_LOD2" parent="outdoor_lamppost_2_2m_001" index="2" unique_id=1566781162]
+[node name="outdoor_lamppost_LOD2" parent="outdoor_lamppost_2_2m_001" index="2" unique_id=2033479859]
 surface_material_override/0 = ExtResource("2_3u0aj")
 surface_material_override/1 = ExtResource("2_3u0aj")
 
-[node name="outdoor_lamppost_LOD3" parent="outdoor_lamppost_2_2m_001" index="3" unique_id=609741367]
+[node name="outdoor_lamppost_LOD3" parent="outdoor_lamppost_2_2m_001" index="3" unique_id=2089532800]
 surface_material_override/0 = ExtResource("2_3u0aj")
 surface_material_override/1 = ExtResource("2_3u0aj")
 
