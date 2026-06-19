@@ -5,7 +5,7 @@ extends DirectionalLight3D
 ## below the horizon. Client-side visual only for now (not multiplayer-synced).
 
 ## Duration of a full day+night cycle, in seconds. Default 1800 = 30 minutes.
-@export var cycle_seconds: float = 900.0
+@export var cycle_seconds: float = 1800.0
 ## Lateral tilt of the sun's arc (degrees) so it doesn't pass straight overhead.
 @export var tilt_deg: float = 20.0
 ## Where in the cycle to start: 0 = noon, 0.25 = sunset, 0.5 = midnight, 0.75 = sunrise.
