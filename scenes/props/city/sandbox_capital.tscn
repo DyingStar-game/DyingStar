@@ -18,6 +18,28 @@
 [ext_resource type="Material" uid="uid://0j1nxxxq4kpn" path="res://assets/_universe/environment/terrain/regolith_grey_2.tres" id="16_a2whl"]
 [ext_resource type="Material" uid="uid://cfw4xedexidi0" path="res://assets/_universe/environment/terrain/regolith_grey_simple.tres" id="19_vaq7g"]
 [ext_resource type="Material" uid="uid://bnthx4tb3gfkk" path="res://assets/_universe/environment/terrain/biome_plateau.tres" id="20_g2xcy"]
+[ext_resource type="Script" uid="uid://drq4elme1rpmp" path="res://scenes/props/city/day_night_cycle.gd" id="21_daync"]
+
+[sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
+rayleigh_coefficient = 2.5
+mie_coefficient = 0.02
+mie_eccentricity = 0.85
+turbidity = 12.0
+sun_disk_scale = 3.0
+ground_color = Color(0.35, 0.28, 0.22, 1)
+energy_multiplier = 1.2
+
+[sub_resource type="Sky" id="Sky_sky"]
+sky_material = SubResource("PhysicalSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_sky"]
+background_mode = 2
+sky = SubResource("Sky_sky")
+ambient_light_source = 3
+reflected_light_source = 2
+glow_enabled = true
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.002
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4sslq"]
 size = Vector3(5000, 50, 5000)
@@ -82,6 +104,13 @@ resource_name = "metal"
 
 [node name="SandoxCapital" type="StaticBody3D" unique_id=300574500]
 script = ExtResource("1_hvdt3")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=745429944]
+environment = SubResource("Environment_sky")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=3328540]
+transform = Transform3D(0.98947682487041, -0.08731608772312702, -0.11537553410103409, 0.12091758007516032, 0.06107901082644468, 0.9907816577153772, -0.07946415464307723, -0.9943064191994286, 0.07099431572788668, 0, 0, 0)
+script = ExtResource("21_daync")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -25, 0)
