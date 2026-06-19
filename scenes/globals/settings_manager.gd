@@ -2,10 +2,16 @@ extends Node
 
 ## Emitted when a debug toggle changes, so live systems (e.g. vehicles) react without a restart.
 signal cargo_debug_changed(on: bool)
+## Emitted when the camera field of view changes, so the active player camera updates live.
+signal fov_changed(fov: float)
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
 const CONFIG_FILEPATH : String = "user://settings.ini"
+## Audio settings key -> the audio bus it drives. Sliders are 0..100 (linear), applied as dB.
+const AUDIO_BUSES : Dictionary = {
+	"general": "Master", "music": "Music", "sfx": "SFX", "voip": "VoIP",
+}
 var config : ConfigFile = ConfigFile.new()
 
 func _ready() -> void:
@@ -22,9 +28,13 @@ func _ready() -> void:
 func initialize_settings():
 	config.set_value("video", "fullscreen", false)
 	config.set_value("video", "v_sync", false)
+	config.set_value("video", "max_fps", 144)
+	config.set_value("video", "fov", 100.0)
 	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
 	config.set_value("general", "cargo_debug", false)
+	for key in AUDIO_BUSES:
+		config.set_value("audio", key, 100.0)
 
 func save_settings():
 	config.save(CONFIG_FILEPATH)
@@ -47,6 +57,9 @@ func apply_settings():
 	var vsync: bool = config.get_value("video", "v_sync", false)
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+	# Cap the framerate (0 = unlimited). Default 144 so an uncapped GPU doesn't render 500+ fps.
+	Engine.max_fps = int(config.get_value("video", "max_fps", 144))
+	apply_audio_settings()
 	if config.get_value("video", "dev_mode", false):
 		return
 	if config.has_section_key("video", "monitor"):
@@ -83,6 +96,63 @@ func set_vsync(on: bool) -> void:
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED)
 	save_video_settings("v_sync", on)
+	save_settings()
+
+## Camera field of view (degrees). Persisted + emitted so the active player camera updates live;
+## a freshly spawned camera reads get_fov() on its own.
+func set_fov(fov: float) -> void:
+	save_video_settings("fov", fov)
+	save_settings()
+	fov_changed.emit(fov)
+
+func get_fov() -> float:
+	return config.get_value("video", "fov", 100.0)
+
+## Cap the framerate at `fps` (0 = unlimited). Applied live via Engine.max_fps + persisted.
+func set_max_fps(fps: int) -> void:
+	Engine.max_fps = fps
+	save_video_settings("max_fps", fps)
+	save_settings()
+
+# ── Audio (single source of truth for the audio settings page) ──
+
+## Apply the saved bus volumes + input/output devices on startup.
+func apply_audio_settings() -> void:
+	for key in AUDIO_BUSES:
+		_apply_bus_volume(key, config.get_value("audio", key, 100.0))
+	var mic: String = config.get_value("audio", "microphone", "")
+	if mic != "" and mic in AudioServer.get_input_device_list():
+		AudioServer.input_device = mic
+	var speaker: String = config.get_value("audio", "speaker", "")
+	if speaker != "" and speaker in AudioServer.get_output_device_list():
+		AudioServer.output_device = speaker
+
+## Convert a 0..100 slider value to dB and apply it to the mapped bus (skipped if the bus is
+## absent from the layout). 0 -> -80 dB (effectively silent) since linear_to_db(0) is -inf.
+func _apply_bus_volume(key: String, value: float) -> void:
+	var idx: int = AudioServer.get_bus_index(AUDIO_BUSES.get(key, ""))
+	if idx < 0:
+		return
+	# value 0 -> mute the bus (guaranteed silence); otherwise unmute and set the volume in dB.
+	AudioServer.set_bus_mute(idx, value <= 0.0)
+	if value > 0.0:
+		AudioServer.set_bus_volume_db(idx, linear_to_db(value / 100.0))
+
+func set_audio_volume(key: String, value: float) -> void:
+	_apply_bus_volume(key, value)
+	config.set_value("audio", key, value)
+	save_settings()
+
+func get_audio_volume(key: String) -> float:
+	return config.get_value("audio", key, 100.0)
+
+## kind = "microphone" (input) or "speaker" (output).
+func set_audio_device(kind: String, device: String) -> void:
+	if kind == "microphone":
+		AudioServer.input_device = device
+	else:
+		AudioServer.output_device = device
+	config.set_value("audio", kind, device)
 	save_settings()
 
 ## Dev mode: persist the flag. It is read on startup by apply_settings, which then skips forcing

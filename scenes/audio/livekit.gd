@@ -190,7 +190,7 @@ func _on_track_subscribed(track, _publication, participant):
 		var p3d := AudioStreamPlayer3D.new()
 		p3d.name = speaker_name
 		p3d.stream = generator
-		p3d.bus = "Master"
+		p3d.bus = "VoIP"  # so the Audio settings VoIP slider controls voice-chat volume
 		# Inverse-distance model: volume = unit_size / max(distance, unit_size)
 		# Full volume within ~2 m, half at 4 m, barely audible at ~80 m, silent beyond 150 m.
 		p3d.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
@@ -207,7 +207,7 @@ func _on_track_subscribed(track, _publication, participant):
 		var p2d := AudioStreamPlayer.new()
 		p2d.name = speaker_name
 		p2d.stream = generator
-		p2d.bus = "Master"
+		p2d.bus = "VoIP"  # so the Audio settings VoIP slider controls voice-chat volume
 		add_child(p2d)
 		player = p2d
 	player.play()

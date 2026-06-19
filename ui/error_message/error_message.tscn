@@ -72,11 +72,18 @@ grow_vertical = 2
 color = Color(0, 0, 0, 0.8)
 
 [node name="VBox" type="VBoxContainer" parent="ErrorMessage" unique_id=1671313246]
-layout_mode = 0
-offset_left = 710.0
-offset_top = 465.0
-offset_right = 750.0
-offset_bottom = 505.0
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -115.0
+offset_right = 250.0
+offset_bottom = 115.0
+grow_horizontal = 2
+grow_vertical = 2
 pivot_offset = Vector2(250, 100)
 theme_override_constants/separation = 30
 alignment = 2
