@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://8ukrbr5j4lhl"]
+
+[ext_resource type="Texture2D" uid="uid://lha7jekg5khj" path="res://assets_blender/_universe/_shared/materials/metals/metal_iron_041A_4K_Roughness.jpg" id="1_oa1le"]
+[ext_resource type="Texture2D" uid="uid://tmoad1l7oxy6" path="res://assets/textures/minerals/gold/gold_normal.png" id="2_dv0vy"]
+
+[resource]
+albedo_texture = ExtResource("1_oa1le")
+metallic = 1.0
+roughness = 0.14
+normal_enabled = true
+normal_texture = ExtResource("2_dv0vy")
