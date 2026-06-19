@@ -76,8 +76,12 @@ func _ready() -> void:
 			# restarts (the database upserts by uuid -> no duplicate pile-up, and no delete is
 			# needed). Seed from the explicit stable_id, else from the fixed placement position
 			# so no manual setup is required.
+			# Seed from the STABLE local placement (parent frame) + parent uuid, NOT global_position:
+			# the parent is a moving world frame, so global_position differs every restart -> a new
+			# uuid each time -> the DB (upsert by uuid) never dedups -> depots pile up. place_pos is
+			# fixed in the parent's frame, so the same depot keeps the same uuid across restarts.
 			var uuid_seed: String = stable_id if stable_id != "" \
-				else "%.3f,%.3f,%.3f" % [global_position.x, global_position.y, global_position.z]
+				else "%s|%.3f,%.3f,%.3f" % [parent_uuid, place_pos.x, place_pos.y, place_pos.z]
 			var depot_uuid: String = _stable_uuid(uuid_seed)
 			# Designer-placed depot = world infrastructure: protect it from the admin cleanup
 			# tool (only player-spawned depots should be deletable).
