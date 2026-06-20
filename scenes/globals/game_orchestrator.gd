@@ -24,6 +24,8 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 const MENU_MUSIC_PATH: String = "res://assets/_universe/audio/music/DyingStart_testV1.mp3"
 const MENU_MUSIC_FADE_OUT_SECONDS: float = 5.0
 
+const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
+
 @export var levels: Array[PackedScene]
 
 var current_network_role = null
@@ -54,6 +56,7 @@ func _enter_tree() -> void:
 		return
 	get_tree().set_script(SCENE_TREE_EXTENDED_SCRIPT_PATH)
 
+
 func _ready():
 	if OS.has_feature("editor"):
 		var current := get_tree().current_scene
@@ -79,6 +82,8 @@ func _ready():
 		if OS.has_feature("devmode"):
 			change_game_state(GameStates.PLAYING)
 		else:
+			var instance = LOADING_SCENE.instantiate()
+			get_tree().root.add_child.call_deferred(instance)
 			change_game_state(GameStates.UNIVERSE_MENU)
 
 func menu_music() -> void:
@@ -181,8 +186,14 @@ func change_game_state(new_state) -> int:
 				_:
 					if GameOrchestrator.GAME_STATES_SCENES_PATHS[GameOrchestrator.GameStates.PLAYING]:
 						current_state = new_state
-						NetworkOrchestrator.create_client()
-						get_tree().call_deferred("change_scene_to_file",GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
+						var loading_node: Node = get_tree().root.get_node_or_null("Loading")
+						if loading_node:
+							var loading_screen: Node = loading_node.get_node_or_null("LoadingScreen")
+							if loading_screen:
+								loading_screen.visible = true
+						# create_client() blocks the main thread for a few seconds, so run it (and the
+						# scene change) only after the splash has actually painted one frame.
+						_start_playing_deferred()
 					else:
 						printerr(error_string(ERR_FILE_BAD_PATH) + " (Aucune scène de jeu à ouvrir game_orchestrator.gd)")
 						return_state = ChangeStateReturns.ERROR
@@ -196,6 +207,14 @@ func change_game_state(new_state) -> int:
 		_:
 			return_state = ChangeStateReturns.ERROR
 	return return_state
+
+## Wait for the loading splash to paint one frame, then run the blocking client creation and swap
+## to the PLAYING scene. Kept separate so change_game_state() stays synchronous (returns its int).
+func _start_playing_deferred() -> void:
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	NetworkOrchestrator.create_client()
+	get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
 
 func _on_scene_changed(changed_scene: Node) -> void:
 	var scene_path: String = changed_scene.scene_file_path

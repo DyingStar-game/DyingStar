@@ -44,54 +44,56 @@ static func ride_pin(prop: Node3D) -> void:
 
 ## Call from a prop's _physics_process. Replicates position/rotation when they change. While
 ## the prop is CARRIED (parented to a Player), re-sends position + parent_id every frame so
-## Horizon recomputes its global from the carrier's current position (otherwise the prop's
+## Horizon recomputes its global from the parent's current position (otherwise the prop's
 ## GORC zone goes stale and it despawns for everyone over distance).
 static func server_tick(prop: Node) -> void:
 	if not GameOrchestrator.is_server():
 		return
-	var pos: Vector3 = snapped(prop.position, Vector3(0.001, 0.001, 0.001))
-	var rot: Vector3 = snapped(prop.rotation, Vector3(0.0001, 0.0001, 0.0001))
-	var carrier: Node = prop.get_parent()
+	var pos: Vector3 = snapped(prop.position, Vector3(0.005, 0.005, 0.005))  # 5 mm precision is enough for a prop
+	var rot: Vector3 = snapped(prop.rotation, Vector3(0.01, 0.01, 0.01)) # it's precision at 0.57 degrees
+	var parent: Node = prop.get_parent()
+	# verify if the object has the server_last_parent_id property
 	var tracks_parent: bool = "server_last_parent_id" in prop
-	if carrier is Player:
-		prop.emit_signal(
-			"hs_server_prop_update",
-			prop.uuid,
-			{"position": pos, "rotation": rot, "parent_id": str(carrier.client_uuid)},
-			prop.type_name,
-			true)
-		if tracks_parent:
-			prop.server_last_parent_id = str(carrier.client_uuid)
-			prop.server_parent_resend = 0
+	if parent is Player:
+		if not tracks_parent:
+			printerr("Prop %s %s has no server_last_parent_id property but parented to player" % [prop.type_name, prop.uuid])
+		if prop.server_last_position != pos or prop.server_last_rotation != rot or prop.server_last_parent_id != str(parent.client_uuid):
+			prop.emit_signal(
+				"hs_server_prop_update",
+				prop.uuid,
+				{"position": pos, "rotation": rot, "parent_id": str(parent.client_uuid)},
+				prop.type_name,
+				true)
+			prop.server_last_parent_id = str(parent.client_uuid)
 		return
-	if carrier is Vehicle:
+	if parent is Vehicle:
 		# Loaded in a bed: its LOCAL position is constant, so the change-throttle below would never
 		# resend -> Horizon's GORC entry goes stale and later updates (e.g. a retrieve+drop) get
 		# dropped. Keep it fresh by re-sending position + parent_id every frame, like carrying.
-		prop.emit_signal(
-			"hs_server_prop_update",
-			prop.uuid,
-			{"position": pos, "rotation": rot, "parent_id": str(carrier.uuid)},
-			prop.type_name,
-			true)
-		if tracks_parent:
-			prop.server_last_parent_id = str(carrier.uuid)
-			prop.server_parent_resend = 0
+		if not tracks_parent:
+			printerr("Prop %s %s has no server_last_parent_id property but parented to Vehicle" % [prop.type_name, prop.uuid])
+		if prop.server_last_position != pos or prop.server_last_rotation != rot or prop.server_last_parent_id != str(parent.client_uuid):
+			prop.emit_signal(
+				"hs_server_prop_update",
+				prop.uuid,
+				{"position": pos, "rotation": rot, "parent_id": str(parent.uuid)},
+				prop.type_name,
+				true)
+			prop.server_last_parent_id = str(parent.uuid)
 		return
 	# Not carried. Detect a parent change (dropped to the world, settled into a bed) and resend the
 	# parent_id for a few frames: a single lost drop/settle message must not leave the prop stuck
 	# under its old parent on clients, and at huge planet coordinates the position throttle below can
 	# suppress any other resend. parent_id only travels when it actually changes (no per-frame spam).
-	var pid: String = (str(carrier.uuid) if (carrier != null and "uuid" in carrier) else "")
-	if tracks_parent and pid != prop.server_last_parent_id:
-		prop.server_last_parent_id = pid
-		prop.server_parent_resend = 10
-	var resend_parent: bool = tracks_parent and prop.server_parent_resend > 0
+	var parent_id: String = (str(parent.uuid) if (parent != null and "uuid" in parent) else "")
+	var resend_parent: bool = false
+	if tracks_parent and parent_id != prop.server_last_parent_id:
+		prop.server_last_parent_id = parent_id
+		resend_parent = true
 	if prop.server_last_position != pos or prop.server_last_rotation != rot or resend_parent:
 		var data: Dictionary = {"position": pos, "rotation": rot}
 		if resend_parent:
-			data["parent_id"] = pid
-			prop.server_parent_resend -= 1
+			data["parent_id"] = parent_id
 		prop.emit_signal("hs_server_prop_update", prop.uuid, data, prop.type_name, prop.has_parent)
 		prop.server_last_position = pos
 		prop.server_last_rotation = rot

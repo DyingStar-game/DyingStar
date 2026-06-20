@@ -6,6 +6,7 @@
 font_size = 32
 
 [node name="LoadingScreen" type="CanvasLayer" unique_id=1481411369]
+layer = 100
 
 [node name="LoadingScreen" type="Control" parent="." unique_id=2125135189]
 layout_mode = 3
