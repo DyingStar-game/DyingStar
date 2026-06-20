@@ -212,8 +212,6 @@ func _ready() -> void:
 		return
 
 	if not OS.has_feature("dedicated_server"):
-		$UserInterface/LoadingScreen.show()
-
 		# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
 		_spawn_wheel = RadialMenu.new()
 		_spawn_wheel.title = "Spawn"
@@ -258,7 +256,10 @@ func _ready() -> void:
 		display_debug.emit(true)
 		_display_debug = true
 
-		$UserInterface/LoadingScreen.hide()
+		var loading_node = get_tree().root.get_node("Loading")
+		if loading_node:
+			loading_node.queue_free()
+
 		GameOrchestrator.stop_menu_music()
 	else:
 		position = spawn_position
@@ -932,19 +933,6 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if veh is Vehicle:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
-	# elif area.is_in_group("spawn"):
-	# 	var parent = area.get_parent()
-	# 	print("TUTU: Entered spawn area, parent=", parent)
-		# is_parented = true
-		# emit_signal(
-		# 	"hs_server_move",
-		# 	client_uuid,
-		# 	snapped(position, Vector3(0.001, 0.001, 0.001)),
-		# 	snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		# 	parent.uuid,
-		# 	is_parented
-		# )
-		# gravity_parents.push_back(area)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
@@ -960,9 +948,9 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 				_in_vehicle_bed = null
 			veh.remove_bed_player(self)
 	elif area.is_in_group("spawn"):
-		print("TUTU: Exited spawn area for area ", area)
+		if not OS.has_feature("dedicated_server"):
+			return
 		var new_parent = area.get_parent().get_parent()
-		print("TUTU: Reparenting to ", new_parent)
 		# Deferred reparent + move sync: reparenting during the Area3D signal
 		# callback is illegal ("busy adding/removing children"), and area_exited
 		# can fire several times -> overlapping reparents crash the node while out
@@ -978,20 +966,21 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 ## parented, repeated area_exited events) to avoid a server segfault, then emit
 ## the move so the server receives the position relative to the new parent.
 func _safe_reparent_and_sync(new_parent: Node) -> void:
+	print("YOLO REPARENT")
 	if new_parent == null or not is_instance_valid(new_parent):
 		return
 	if not is_inside_tree() or not new_parent.is_inside_tree():
 		return
 	if get_parent() != new_parent:
 		reparent(new_parent)
-	emit_signal(
-		"hs_server_move",
-		client_uuid,
-		snapped(position, Vector3(0.001, 0.001, 0.001)),
-		snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
-		str(new_parent.uuid) if "uuid" in new_parent else "",
-		is_parented
+		emit_signal(
+			"hs_server_move",
+			client_uuid,
+			snapped(position, Vector3(0.001, 0.001, 0.001)),
+			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
+			str(new_parent.uuid) if "uuid" in new_parent else "",
+			true
 	)
 
 func _set_player_global_position(pos, rot):
@@ -1264,11 +1253,15 @@ func _aimed_carriable() -> Node:
 ## the prop. Server-authoritative: the carry handler calls this before granting a pickup, so a
 ## thin wall can't be exploited to grab through it. Meant to run on the SERVER, which owns the
 ## collisions (the client has none → its result would always be "clear"). We ignore ourselves,
-## the prop, and the prop's holder (a vehicle bed / depot / the ground it rests on) — reaching
+## the prop, and the prop's parent (a vehicle bed / depot / the ground it rests on) — reaching
 ## the prop must not be blocked by the very thing holding it; walls are separate bodies.
 func _is_blocked_by_geometry(prop: Node) -> bool:
 	if not (prop is Node3D):
 		return false
+	if "type_name" in prop:
+		# add this because have problems with detection of small props
+		if prop.type_name == "miningrock":
+			return false;
 	_ensure_los_ray()
 	# top_level → target_position is a world-space delta (no parent transform to fight).
 	_los_ray.global_position = interact_ray.global_position
@@ -1277,10 +1270,18 @@ func _is_blocked_by_geometry(prop: Node) -> bool:
 	_los_ray.add_exception(self)
 	if prop is CollisionObject3D:
 		_los_ray.add_exception(prop)
-	var holder = prop.get_parent()
-	if holder is CollisionObject3D:
-		_los_ray.add_exception(holder)
+		#var all_nodes = prop.find_children("*", "CollisionObject3D", true, false)
+		#for node in all_nodes:
+			#_los_ray.add_exception(node)
+	var parent = prop.get_parent()
+	if parent is CollisionObject3D:
+		_los_ray.add_exception(parent)
+		#var all_nodes = parent.find_children("*", "CollisionObject3D", true, false)
+		#for node in all_nodes:
+			#_los_ray.add_exception(node)
 	_los_ray.force_raycast_update()
+	if _los_ray.is_colliding():
+		print(_los_ray.get_collider().owner)
 	return _los_ray.is_colliding()
 
 ## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
@@ -1432,6 +1433,7 @@ func server_action_received(data: Dictionary) -> void:
 					# Held by this server: free it; _exit_tree replicates the delete to
 					# Horizon (GORC) and the database, like a rock dropped into a depot.
 					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
+					_reparent_children_of_prop(prop) # reparent all children to the paremtn of this scene that will be deleted
 					prop.queue_free()
 				if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
 					# Not held locally (e.g. loaded from the database): tell Horizon directly
@@ -1548,3 +1550,16 @@ func server_action_received(data: Dictionary) -> void:
 
 			# TODO
 			# synchro head/camera
+
+func _reparent_children_of_prop(prop: Node) -> void:
+	if prop == null or not is_instance_valid(prop):
+		return
+	var parent = prop.get_parent()
+	for child in prop.get_children():
+		if is_instance_valid(child):
+			if child.has_method("client_parent_change"):
+				child.server_parent_change(parent)
+			elif child.has_method("_safe_reparent_and_sync"):
+				child._safe_reparent_and_sync(parent)
+			else:
+				print("WARNING: child %s of prop %s has no client_parent_change method" % [child.name, prop.name])

@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://n3ccwn4p052v"]
+
+[ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="1_5txd7"]
+
+[node name="Loading" type="Node2D" unique_id=490434533]
+
+[node name="LoadingScreen" parent="." unique_id=1481411369 instance=ExtResource("1_5txd7")]
+visible = false

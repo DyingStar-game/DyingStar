@@ -57,6 +57,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/testbox/box_4m.tscn'),
 	'scenes/vehicles/trucks/truck.tscn':
 		preload('res://scenes/vehicles/trucks/truck.tscn'),
+	'scenes/structures/mining_depot.tscn':
+		preload('res://scenes/structures/mining_depot.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 
@@ -108,6 +110,7 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		await get_tree().process_frame
 
 	if socket.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
+		remove_loading_node()
 		push_error("connect_to_url returned error: %d" % err)
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		return
@@ -125,6 +128,7 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		}))
 		network_events_sent += 1
 	else:
+		remove_loading_node()
 		push_error("Unable to connect (timeout or error). State: %d" % socket.get_ready_state())
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
@@ -771,6 +775,12 @@ func player_update(message: Dictionary) -> void:
 					message["data"]["position"]["z"]
 				)
 				if uuid == my_player_uuid:
+					if message["data"].has("parent_id"):
+						var parent = _search_parent_node(message["data"]["parent_id"])
+						if parent != null and player.get_parent() != parent:
+							player.reparent(parent)
+							player.reset_physics_interpolation()
+							player.net_reset_interp()
 					player.net_set_local_target(ppos)
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
@@ -783,10 +793,17 @@ func player_update(message: Dictionary) -> void:
 						var parent = _search_parent_node(message["data"]["parent_id"])
 						if parent != null and player.get_parent() != parent:
 							player.reparent(parent)
+							player.reset_physics_interpolation()
 							player.net_reset_interp()
 					player.net_set_target(ppos, prot)
 		else:
 			print("Update Player but not found...")
+			if uuid == my_player_uuid:
+				print("My player seems deleted...")
+				# Disconnect from server with error
+				push_error("Fatal error, my player deleted on client side: 7001")
+				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+
 
 func metric_get_network_events_received():
 	var result = network_events_received
@@ -889,3 +906,8 @@ func _standardize_object(event: Dictionary) -> Dictionary:
 		print("ERROR: event has no data field: %s" % event)
 
 	return new_event
+
+func remove_loading_node():
+	var loading_node = get_tree().root.get_node("Loading")
+	if loading_node:
+		loading_node.queue_free()

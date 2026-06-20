@@ -22,7 +22,6 @@
 [ext_resource type="Script" uid="uid://du4vikoo7kath" path="res://scenes/normal_player/debug_client_nbobjects.gd" id="11_urqre"]
 [ext_resource type="Texture2D" uid="uid://cvj5f587f3j3d" path="res://ui/ingame/debug/big_debug.png" id="11_ykmr1"]
 [ext_resource type="Script" uid="uid://67v8l5556qsa" path="res://scenes/normal_player/debug_universe_players.gd" id="12_5csap"]
-[ext_resource type="PackedScene" uid="uid://50boh4okyk04" path="res://ui/loading_screen/loading_screen.tscn" id="12_edphc"]
 [ext_resource type="Script" uid="uid://cg10agjb1pncn" path="res://scenes/normal_player/debug_client_nbscenes.gd" id="12_y6iw5"]
 [ext_resource type="Script" uid="uid://bn70g6ek7ggox" path="res://scenes/normal_player/debug_client_videomem.gd" id="13_ykmr1"]
 [ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/models/equipments/tools/mining/hammerdrill.glb" id="14_fuv0x"]
@@ -475,9 +474,6 @@ mouse_filter = 1
 
 [node name="PauseMenu" parent="UserInterface" unique_id=1074791477 instance=ExtResource("11_edphc")]
 layout_mode = 1
-
-[node name="LoadingScreen" parent="UserInterface" unique_id=195810916 instance=ExtResource("12_edphc")]
-visible = false
 
 [node name="hammerdrill2" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
 transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)

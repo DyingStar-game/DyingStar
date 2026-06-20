@@ -59,6 +59,10 @@ const LIGHT_GROUP := "vehicle_light"
 @export var torque_response: float = 2.5
 ## Brake force per wheel (hand brake = jump action for now).
 @export var brake_force: float = 30.0
+## Engine braking + rolling resistance: brake force applied per wheel when coasting (no throttle,
+## no brake). VehicleWheel3D models neither, so without this the truck rolls forever on the flat.
+## Keep it well below brake_force — it should bleed speed off gently, not stop the truck dead.
+@export var engine_brake: float = 6.0
 ## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
 ## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
 ## just re-settles). Kept dynamic, never frozen.
@@ -267,6 +271,7 @@ var _net_handbrake: bool = false  # client: replicated hand brake state (for the
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
 var _headlights_on: bool = false  # server: head lights on/off
 var _net_last_headlights: bool = false  # server: last replicated head lights, change detection
+var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer angle (rad)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
@@ -1000,28 +1005,43 @@ func set_driver_hud(show: bool) -> void:
 		_hud = null
 
 func _replicate_transform() -> void:
-	var my_pos: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
-	var my_rot: Vector3 = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
+	var my_rot: Vector3 = snapped(rotation, Vector3(0.01, 0.01, 0.01))
 	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
 	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)
 	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
+	var my_steering: float = snappedf(steering, 0.01)
 	if my_pos == _net_last_position and my_rot == _net_last_rotation \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
-			and _headlights_on == _net_last_headlights:
+			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering:
 		return
-	_net_last_position = my_pos
-	_net_last_rotation = my_rot
-	_net_last_speed = my_speed
-	_net_last_cargo_mass = my_cargo
-	_net_last_handbrake = _handbrake
-	_net_last_mass = my_mass
-	_net_last_headlights = _headlights_on
-	var data := {
-		"position": my_pos, "rotation": my_rot, "steering": snapped(steering, 0.001),
-		"speed": my_speed, "cargo_mass": my_cargo, "handbrake": _handbrake, "mass": my_mass,
-		"headlights": _headlights_on,
-	}
+	var data: Dictionary = {}
+	if my_pos != _net_last_position:
+		data["position"] = my_pos
+		_net_last_position = my_pos
+	if my_rot != _net_last_rotation:
+		data["rotation"] = my_rot
+		_net_last_rotation = my_rot
+	if my_speed != _net_last_speed:
+		data["speed"] = my_speed
+		_net_last_speed = my_speed
+	if my_cargo != _net_last_cargo_mass:
+		data["cargo_mass"] = my_cargo
+		_net_last_cargo_mass = my_cargo
+	if _handbrake != _net_last_handbrake:
+		data["handbrake"] = _handbrake
+		_net_last_handbrake = _handbrake
+	if my_mass != _net_last_mass:
+		data["mass"] = my_mass
+		_net_last_mass = my_mass
+	if _headlights_on != _net_last_headlights:
+		data["headlights"] = _headlights_on
+		_net_last_headlights = _headlights_on
+	if my_steering != _net_last_steering:
+		data["steering"] = my_steering
+		_net_last_steering = my_steering
+
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
 ## Server: tell the clients to despawn this vehicle when it leaves the world.
@@ -1214,7 +1234,15 @@ func _apply_drive(delta: float) -> void:
 	engine_force = -force
 	_steer_target = turn * deg_to_rad(max_steer_deg)
 	steering = move_toward(steering, _steer_target, steer_speed * delta)
-	brake = brake_force if (immobilized or braking or _handbrake) else 0.0
+	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
+	# speed instead of rolling forever — VehicleWheel3D models neither on its own.
+	var coasting: bool = absf(throttle_in) < 0.05 and not braking
+	if immobilized or braking or _handbrake:
+		brake = brake_force
+	elif coasting and absf(forward_kmh) > 0.1:
+		brake = engine_brake
+	else:
+		brake = 0.0
 
 	# IRL a powered wheel keeps spinning once it leaves the ground. VehicleWheel3D stops the
 	# visual with no contact, so spin powered airborne wheels ourselves (about their axle).
