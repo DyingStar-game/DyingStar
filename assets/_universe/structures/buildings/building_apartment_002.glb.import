@@ -42,19 +42,19 @@ materials/extract_path=""
 _subresources={
 "nodes": {
 "PATH:hab_LOD0": {
-"mesh_instance/visibility_range_begin": 200.0,
-"mesh_instance/visibility_range_end": 400.0
+"mesh_instance/visibility_range_end": 50.0
 },
 "PATH:hab_LOD1": {
-"mesh_instance/visibility_range_end": 30.0
+"mesh_instance/visibility_range_begin": 50.0,
+"mesh_instance/visibility_range_end": 100.0
 },
 "PATH:hab_LOD2": {
-"mesh_instance/visibility_range_begin": 30.0,
-"mesh_instance/visibility_range_end": 80.0
+"mesh_instance/visibility_range_begin": 100.0,
+"mesh_instance/visibility_range_end": 200.0
 },
 "PATH:hab_LOD3": {
-"mesh_instance/visibility_range_begin": 80.0,
-"mesh_instance/visibility_range_end": 200.0
+"mesh_instance/visibility_range_begin": 200.0,
+"mesh_instance/visibility_range_end": 500.0
 }
 }
 }
