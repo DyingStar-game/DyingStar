@@ -16,9 +16,21 @@ var last_event_time := -1.0
 
 
 func _ready() -> void:
-	node_area.mouse_entered.connect(_mouse_entered_area)
-	node_area.mouse_exited.connect(_mouse_exited_area)
-	node_area.input_event.connect(_mouse_input_event)
+	# Show the SubViewport on the screen mesh BY CODE, so the screen can be any mesh — e.g. one from
+	# the vehicle's GLB model (named ScreenFront, etc.) — without setting up a ViewportTexture
+	# material by hand. Only when the mesh has no material_override yet, so scenes that set their own
+	# (like the mining depot) keep theirs untouched. The mesh still needs 0..1 UVs and its front face
+	# (blue normal) toward the viewer, like the camera screens.
+	if node_quad != null and node_viewport != null and node_quad.material_override == null:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_texture = node_viewport.get_texture()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_BACK
+		node_quad.material_override = mat
+	if node_area != null:
+		node_area.mouse_entered.connect(_mouse_entered_area)
+		node_area.mouse_exited.connect(_mouse_exited_area)
+		node_area.input_event.connect(_mouse_input_event)
 
 func _mouse_entered_area() -> void:
 	is_mouse_inside = true

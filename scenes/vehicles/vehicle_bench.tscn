@@ -47,6 +47,7 @@ material = SubResource("GroundMat")
 [node name="ChaseCamera" type="Camera3D" parent="." unique_id=1217017246]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, 9)
 current = true
+fov = 115.5
 script = ExtResource("2_cam")
 target_path = NodePath("../Pilot")
 

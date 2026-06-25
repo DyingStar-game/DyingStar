@@ -38,6 +38,9 @@ const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_small.tscn")
 const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## Group a dev adds to any Light3D in their vehicle scene to make it a head light (drop-in, no code).
 const LIGHT_GROUP := "vehicle_light"
+## Group put (in Godot) on the instanced real 3D model (GLB) root. Its presence (or real wheels)
+## switches off the procedural blockout — the model provides body/wheels/steering wheel/doors.
+const MODEL_GROUP := "vehicle_model"
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -88,6 +91,11 @@ const LIGHT_GROUP := "vehicle_light"
 # cargo physically loads the bed on top). No duplicate here, to avoid two mass fields.
 # The vehicle only drives while a pilot is aboard (enter with E) — no force-drive flag, so
 # walking around on foot can never move the wheels.
+## Center of mass, as an offset (m) from the wheelbase center (average of the wheel positions). We pin
+## the COM ourselves instead of letting the RigidBody derive it from the collision shapes — otherwise
+## the col_ pieces (a big cab box, thin bed pieces) drag it forward and the truck nose-dives. Default
+## (0,0,0) = balanced on the wheels; lower Y (negative) for roll stability, shift Z for a weight bias.
+@export var center_of_mass_offset: Vector3 = Vector3.ZERO
 
 # --- Dimensions (meters) — changing one rebuilds the blockout -----------------
 @export_group("Body")
@@ -167,6 +175,26 @@ const LIGHT_GROUP := "vehicle_light"
 ## (~5600 N at 2.3 t) with margin for bumps/landings, or the bed bottoms out when full.
 @export var suspension_max_force: float = 15000.0
 
+# --- Real 3D model (Blender GLB) — all OPTIONAL drop-ins -----------------------
+# When a real model is present (a child in group "vehicle_model", or wheel meshes named below),
+# the procedural blockout VISUAL is skipped; collisions/cameras/cargo + invisible VehicleWheel3D
+# physics are still built. The designer ships the GLB; gameplay nodes (seats, cargo, cameras,
+# door handles) are placed in Godot. Names are matched case-insensitively, ignoring _LODx.
+@export_group("Real 3D model")
+## Spin axis of a real wheel mesh, in the mesh's local space (its axle). Blender +Y-up export
+## usually leaves the axle on local X. Flip/change if real wheels spin around the wrong axis.
+@export var real_wheel_spin_axis: Vector3 = Vector3.RIGHT
+## Steering wheel cosmetic ratio: how many radians the volant turns per radian of front-wheel
+## steer (real cars ~8-16 lock-to-lock). Cosmetic only — does not affect driving.
+@export var steering_wheel_ratio: float = 8.0
+## The steering wheel's OWN local axis it spins about (its disc/column axis). Intrinsic to the mesh,
+## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
+@export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
+## Door fallback ONLY (when a door has no Blender animation clip): instant hinge angle in degrees…
+@export var door_open_angle_deg: float = 75.0
+## …about this local axis (the door's hinge). The real swing is authored in Blender.
+@export var door_hinge_axis: Vector3 = Vector3.UP
+
 @export_group("Electric")
 ## ELECTRIC only. Full torque from a standstill up to this speed (constant-torque region),
 ## then torque tapers to zero at max_speed_kmh (constant-power region) — the real EV curve.
@@ -244,7 +272,7 @@ var _throttle: float = 0.0
 var _pilot: Node3D = null
 var _chase_cam: Node3D = null
 var _cab_cam: Camera3D = null
-var _view: ViewMode = ViewMode.CHASE
+var _view: ViewMode = ViewMode.CAB  # bench (F6) enters in first-person cab view, like in-game (F5); F4 toggles to chase
 var _empty_mass: float = 0.0
 var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
 var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed into the load
@@ -275,6 +303,16 @@ var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
+# Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
+var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
+var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
+var _steering_wheel: Node3D = null          # GLB "steering_wheel" mesh that turns with the steer angle
+var _steering_wheel_rest: Basis = Basis.IDENTITY  # its closed/centered orientation
+var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door open/close clips)
+var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
+var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
+var _net_doors: Dictionary = {}             # CLIENT: replicated door state
+var _sw_logged: bool = false                # TEMP DEBUG: log the steering wheel update once
 
 func _ready() -> void:
 	_empty_mass = mass
@@ -288,6 +326,13 @@ func _ready() -> void:
 		SettingsManager.cargo_debug_changed.connect(_on_cargo_debug_changed)
 	_sync_powertrain()
 	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
+	# Real-model drop-ins (no-op when the vehicle uses the blockout): reparent the GLB wheel meshes
+	# under the physics wheels, find the steering wheel + the GLB AnimationPlayer, and start closed.
+	_attach_real_wheel_meshes()
+	_discover_steering_wheel()
+	_anim = _find_anim_player()
+	_attach_door_handles()  # make each handle ride its door so look-at works open OR closed
+	_apply_center_of_mass()  # pin COM to the wheelbase, so collision shapes can't make the truck nose-dive
 	if _is_networked():
 		# Replicated prop: place it where the server spawned it (client_channel_data_update
 		# also applies position/rotation, this is the initial fallback).
@@ -341,6 +386,7 @@ func _rebuild_deferred() -> void:
 
 ## Clear previously generated children, then rebuild collision + visual body + wheels.
 func _rebuild() -> void:
+	_detach_real_wheel_meshes()  # runtime: restore GLB wheel meshes to the model BEFORE freeing their wheels
 	for child in get_children():
 		if child.has_meta(GENERATED):
 			remove_child(child)
@@ -349,7 +395,8 @@ func _rebuild() -> void:
 	_cargo_area = null
 	_cab_cam = null
 	_build_collision()
-	_build_body_visual()
+	if not _has_real_model():
+		_build_body_visual()  # procedural blockout only when there is no real GLB model
 	_build_wheels()
 	_build_cargo_area()
 	_build_cameras()
@@ -358,23 +405,80 @@ func _rebuild() -> void:
 # Build helpers
 # ------------------------------------------------------------------------------
 func _build_collision() -> void:
+	# Best: collision authored in the model (meshes named "col_*") — it matches the real shape exactly.
+	# If the model ships any, use them and skip the parametric boxes entirely.
+	if _build_model_collision():
+		return
+	# Otherwise (blockout, or a model with no col_ meshes yet) build the parametric boxes. A real GLB is
+	# placed wherever it visually fits — usually offset from the vehicle origin (and so are the wheels,
+	# which come from the model). The generated collision must sit UNDER the model, not at the origin, or
+	# it overhangs the body and you bump an invisible wall. So follow the model's own local placement;
+	# the blockout stays at origin (base = 0). Box DIMENSIONS come from the Body / Cab / Bed exports.
+	var base: Vector3 = _collision_base_offset()
 	var top: float = body_height * 0.5
 	# Chassis box.
-	_add_collision_box(Vector3(body_width, body_height, body_length), Vector3.ZERO)
+	_add_collision_box(Vector3(body_width, body_height, body_length), base)
 	# Bed floor + 4 walls, so cargo rests inside the bed instead of falling through the
 	# (collision-less) visual. These add to the VehicleBody3D compound collider.
 	var bed_len: float = body_length - cab_length
 	var bed_z: float = (body_length - bed_len) * 0.5
 	var wall: float = BED_WALL_THICKNESS
-	_add_collision_box(Vector3(body_width, wall, bed_len), Vector3(0.0, top + wall * 0.5, bed_z))
+	_add_collision_box(Vector3(body_width, wall, bed_len), base + Vector3(0.0, top + wall * 0.5, bed_z))
 	_add_collision_box(Vector3(wall, bed_wall_height, bed_len),
-		Vector3(body_width * 0.5 - wall * 0.5, top + bed_wall_height * 0.5, bed_z))
+		base + Vector3(body_width * 0.5 - wall * 0.5, top + bed_wall_height * 0.5, bed_z))
 	_add_collision_box(Vector3(wall, bed_wall_height, bed_len),
-		Vector3(-(body_width * 0.5 - wall * 0.5), top + bed_wall_height * 0.5, bed_z))
+		base + Vector3(-(body_width * 0.5 - wall * 0.5), top + bed_wall_height * 0.5, bed_z))
 	_add_collision_box(Vector3(body_width, bed_wall_height, wall),
-		Vector3(0.0, top + bed_wall_height * 0.5, bed_z - bed_len * 0.5 + wall * 0.5))
+		base + Vector3(0.0, top + bed_wall_height * 0.5, bed_z - bed_len * 0.5 + wall * 0.5))
 	_add_collision_box(Vector3(body_width, bed_wall_height, wall),
-		Vector3(0.0, top + bed_wall_height * 0.5, bed_z + bed_len * 0.5 - wall * 0.5))
+		base + Vector3(0.0, top + bed_wall_height * 0.5, bed_z + bed_len * 0.5 - wall * 0.5))
+
+## Local offset the generated collision is built around: the real model's own placement (so the
+## collision sits under the visible body + wheels), or zero for the procedural blockout.
+func _collision_base_offset() -> Vector3:
+	var mr := _find_model_root()
+	if mr is Node3D:
+		return (mr as Node3D).position
+	return Vector3.ZERO
+
+## Pin the center of mass instead of letting the RigidBody auto-derive it from the collision shapes.
+## Auto-COM follows the col_ volumes (a big cab box pulls it forward → the truck nose-dives); we want
+## it balanced on the wheels regardless of how the collision was modeled. Default = the wheelbase
+## centre (average wheel position) + center_of_mass_offset. Only the COLLISION shapes ever affect
+## inertia/COM in Godot — the visual meshes never do — so this fully decouples handling from the body
+## art. Run after the wheels exist (they come from _rebuild).
+func _apply_center_of_mass() -> void:
+	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	var com := center_of_mass_offset
+	if not _wheels.is_empty():
+		var sum := Vector3.ZERO
+		for w in _wheels:
+			sum += (w as Node3D).position
+		com = sum / float(_wheels.size()) + center_of_mass_offset
+	center_of_mass = com
+
+## Build collision from "col_*" meshes authored in the GLB (the artist shapes the volumes in Blender).
+## Each becomes ONE convex shape — a moving VehicleBody3D needs convex, so a hollow bed is made of
+## several convex pieces (col_bed_floor, col_bed_left, col_cab…), not one concave mesh (a single mesh's
+## convex hull would fill the bed). Each piece is placed at its spot in the model and hidden in game
+## (collision-only). Returns true if at least one was found → the parametric boxes are skipped.
+func _build_model_collision() -> bool:
+	var root := _find_model_root()
+	if root == null:
+		return false
+	var found := false
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not _strip_lod(mi.name).begins_with("col_"):
+			continue
+		var col := CollisionShape3D.new()
+		col.set_meta(GENERATED, true)
+		col.shape = mi.mesh.create_convex_shape()
+		col.transform = global_transform.affine_inverse() * mi.global_transform
+		add_child(col)
+		mi.visible = false  # collision-only mesh: never rendered (hidden in the editor AND in game)
+		found = true
+	return found
 
 func _add_collision_box(box_size: Vector3, pos: Vector3) -> void:
 	var shape := CollisionShape3D.new()
@@ -421,16 +525,35 @@ func _build_cargo_area() -> void:
 		ghost.material_override = mat
 		add_child(ghost)
 
-## First-person cab camera (looks forward out the windshield). Inactive until you drive in
-## cab view. The 3rd-person view reuses the shared orbit camera (found in _ready).
+## First-person cab camera (the driver's eye). It sits on the driver seat's SitPoint — the same
+## "eye point" convention F5 uses — so it follows the real model (not the blockout). Falls back to
+## a blockout-derived spot if there is no driver seat. Inactive until you drive in cab view.
 func _build_cameras() -> void:
 	_cab_cam = Camera3D.new()
 	_cab_cam.set_meta(GENERATED, true)
-	_cab_cam.position = Vector3(
-		-body_width * 0.25,
-		body_height * 0.5 + cab_height * 0.6,
-		-(body_length * 0.5 - cab_length * 0.45))
 	add_child(_cab_cam)
+	var seat := _driver_seat()
+	if seat != null:
+		# Eye = the driver SitPoint (Marker3D), in the vehicle's local space (seat is a direct child).
+		var marker: Node3D = seat.sit_point
+		if marker == null:
+			marker = seat.get_node_or_null("SitPoint") as Node3D
+		if marker != null:
+			_cab_cam.transform = seat.transform * marker.transform
+		else:
+			_cab_cam.transform = seat.transform
+	else:
+		_cab_cam.position = Vector3(
+			-body_width * 0.25,
+			body_height * 0.5 + cab_height * 0.6,
+			-(body_length * 0.5 - cab_length * 0.45))
+
+## The driver seat (a VehicleSeat child with role DRIVER), or null.
+func _driver_seat() -> VehicleSeat:
+	for c in get_children():
+		if c is VehicleSeat and (c as VehicleSeat).is_driver_seat():
+			return c
+	return null
 
 # ------------------------------------------------------------------------------
 # Enter / exit (pilot)
@@ -864,47 +987,56 @@ func _add_box(parent: Node, box_size: Vector3, pos: Vector3, mat: Material) -> v
 	parent.add_child(b)
 
 func _build_wheels() -> void:
-	# Front wheels at -Z (steering), all wheels drive (4x4). The wheel NODE is the TOP
-	# suspension mount: VehicleWheel3D makes the wheel hang below it by ~suspension_rest and
-	# places the visual automatically. Mount it near the chassis center (not the bottom),
-	# otherwise the wheel sits too low and spawns penetrating the ground -> the body is
-	# launched into the air.
-	var hub_y: float = 0.0
-	var half_track: float = track_width * 0.5
-	var half_base: float = wheelbase * 0.5
-	var layout := {
-		"WheelFL": [Vector3(half_track, hub_y, -half_base), true],
-		"WheelFR": [Vector3(-half_track, hub_y, -half_base), true],
-		"WheelRL": [Vector3(half_track, hub_y, half_base), false],
-		"WheelRR": [Vector3(-half_track, hub_y, half_base), false],
-	}
-	for wheel_name in layout:
-		var pos: Vector3 = layout[wheel_name][0]
-		var is_front: bool = layout[wheel_name][1]
-		var wheel := VehicleWheel3D.new()
-		wheel.name = wheel_name
-		wheel.set_meta(GENERATED, true)
-		wheel.position = pos
-		wheel.use_as_steering = is_front
-		var traction := true
-		match drive_mode:
-			DriveMode.FRONT:
-				traction = is_front
-			DriveMode.REAR:
-				traction = not is_front
-			DriveMode.ALL:
-				traction = true
-		wheel.use_as_traction = traction
-		wheel.wheel_radius = wheel_radius
-		wheel.wheel_rest_length = suspension_rest
-		wheel.suspension_stiffness = suspension_stiffness
-		wheel.suspension_max_force = suspension_max_force
-		wheel.damping_compression = 0.5
-		wheel.damping_relaxation = 0.7
-		wheel.wheel_friction_slip = 3.0
-		add_child(wheel)
-		_wheels.append(wheel)
+	# The wheel NODE is the TOP suspension mount: VehicleWheel3D makes the wheel hang below it by
+	# ~suspension_rest and places the visual automatically. Mount it near the chassis center, else
+	# it spawns penetrating the ground -> the body is launched into the air.
+	var real := _real_wheel_data()
+	if real.is_empty():
+		# Procedural blockout: 4 wheels from dimensions, with CSG tire visuals. Front = steering.
+		var hub_y: float = 0.0
+		var half_track: float = track_width * 0.5
+		var half_base: float = wheelbase * 0.5
+		var layout := {
+			"WheelFL": [Vector3(half_track, hub_y, -half_base), true],
+			"WheelFR": [Vector3(-half_track, hub_y, -half_base), true],
+			"WheelRL": [Vector3(half_track, hub_y, half_base), false],
+			"WheelRR": [Vector3(-half_track, hub_y, half_base), false],
+		}
+		for wheel_name in layout:
+			_make_wheel(wheel_name, layout[wheel_name][0], bool(layout[wheel_name][1]), true)
+		return
+	# Real model: one physics wheel per GLB wheel mesh, placed at the mesh's local position, with NO
+	# CSG tire (the GLB mesh is reparented under it at runtime by _attach_real_wheel_meshes).
+	for w in real:
+		_make_wheel(str(w["name"]), w["pos"], bool(w["is_front"]), false)
 
+## Create one VehicleWheel3D (the shared per-wheel setup, DRY for both blockout and real wheels).
+## with_csg_tire adds the procedural cylinder visual (blockout only). Returns the wheel.
+func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire: bool) -> VehicleWheel3D:
+	var wheel := VehicleWheel3D.new()
+	wheel.name = wheel_name
+	wheel.set_meta(GENERATED, true)
+	wheel.position = pos
+	wheel.use_as_steering = is_front
+	var traction := true
+	match drive_mode:
+		DriveMode.FRONT:
+			traction = is_front
+		DriveMode.REAR:
+			traction = not is_front
+		DriveMode.ALL:
+			traction = true
+	wheel.use_as_traction = traction
+	wheel.wheel_radius = wheel_radius
+	wheel.wheel_rest_length = suspension_rest
+	wheel.suspension_stiffness = suspension_stiffness
+	wheel.suspension_max_force = suspension_max_force
+	wheel.damping_compression = 0.5
+	wheel.damping_relaxation = 0.7
+	wheel.wheel_friction_slip = 3.0
+	add_child(wheel)
+	_wheels.append(wheel)
+	if with_csg_tire:
 		# Tire visual: a cylinder whose axis is along X (the axle).
 		var tire := CSGCylinder3D.new()
 		tire.radius = wheel_radius
@@ -916,11 +1048,273 @@ func _build_wheels() -> void:
 			tire_color = Color(0.1, 0.8, 0.2)  # green = powered wheel
 		tire.material = _solid_material(tire_color)
 		wheel.add_child(tire)
+	return wheel
 
 func _solid_material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	return mat
+
+# ------------------------------------------------------------------------------
+# Real 3D model (Blender GLB) drop-ins — wheels, steering wheel, doors. All OPTIONAL:
+# every function below no-ops when the vehicle uses the procedural blockout.
+# ------------------------------------------------------------------------------
+## True when a real model is plugged in (a child in group "vehicle_model", or wheel meshes named
+## like a wheel). Switches the procedural blockout visual off in _rebuild().
+func _has_real_model() -> bool:
+	if _find_model_root() != null:
+		return true
+	return not _real_wheel_data().is_empty()
+
+## The instanced GLB root (designer puts it in group "vehicle_model"), or null. Filtered to our own
+## descendants so two vehicles never see each other's model.
+func _find_model_root() -> Node:
+	if not is_inside_tree():
+		return null
+	for n in get_tree().get_nodes_in_group(MODEL_GROUP):
+		if n is Node3D and is_ancestor_of(n):
+			return n
+	return null
+
+## Strip a trailing "_LODn" so part discovery is LOD-agnostic; returns the name lowercased.
+func _strip_lod(node_name: String) -> String:
+	var low := node_name.to_lower()
+	var i := low.rfind("_lod")
+	if i != -1 and low.length() >= i + 5 and low[i + 4].is_valid_int():
+		return low.substr(0, i)
+	return low
+
+## Find wheel meshes in the model and classify each front (steering) or not. Returns an array of
+## {name, node, pos (local to the vehicle), is_front}. Empty when there is no real model. Convention:
+## a wheel node's name contains "wheel"; "front"/"_f" in the name = front axle, else the axle with
+## the smallest local Z steers.
+func _real_wheel_data() -> Array:
+	var root := _find_model_root()
+	if root == null:
+		return []
+	var found: Array = []
+	var seen := {}  # stripped name -> true, so LOD siblings count once
+	# 1) Preferred: nodes explicitly marked VehicleWheel3D in the model (common vehicle import
+	# setup). They sit under the model so the physics ignores them — we re-create a direct-child
+	# wheel at their place and reparent their visual mesh. The volant ("steering") is NOT a wheel.
+	for n in root.find_children("*", "VehicleWheel3D", true, false):
+		var b := _strip_lod(n.name)
+		if "steering" in b or seen.has(b):
+			continue
+		seen[b] = true
+		found.append(_wheel_entry(n, _first_mesh_child(n), b))
+	# 2) Else: plain meshes named "*wheel*" (the "dumb model" convention).
+	if found.is_empty():
+		for n in root.find_children("*", "MeshInstance3D", true, false):
+			var b := _strip_lod(n.name)
+			if not ("wheel" in b) or ("steering" in b) or seen.has(b):
+				continue
+			seen[b] = true
+			found.append(_wheel_entry(n, n, b))
+	_classify_front(found)
+	return found
+
+## Build one wheel entry: anchor = the node giving the wheel POSITION, visual = the mesh to reparent
+## under the physics wheel, base = the LOD-stripped lowercased name.
+func _wheel_entry(anchor: Node, visual: Node, base: String) -> Dictionary:
+	var pos: Vector3 = (global_transform.affine_inverse() * (anchor as Node3D).global_transform).origin
+	var is_front := ("front" in base) or ("_f_" in base) or base.ends_with("_f") or base.begins_with("front")
+	return {"name": String(anchor.name), "visual": visual, "pos": pos, "is_front": is_front}
+
+## First MeshInstance3D child of a node (the visual of a VehicleWheel3D marker), or the node itself.
+func _first_mesh_child(n: Node) -> Node3D:
+	for c in n.get_children():
+		if c is MeshInstance3D:
+			return c
+	return n as Node3D
+
+## When no wheel is named front/rear, the axle nearest the cab (smallest local Z) is the steering one.
+func _classify_front(found: Array) -> void:
+	var any_front := false
+	for w in found:
+		if w["is_front"]:
+			any_front = true
+	if any_front or found.is_empty():
+		return
+	var min_z: float = INF
+	for w in found:
+		min_z = minf(min_z, (w["pos"] as Vector3).z)
+	for w in found:
+		w["is_front"] = absf((w["pos"] as Vector3).z - min_z) < 0.5
+
+## The physics wheel whose local position is closest to pos (match a GLB mesh to its wheel).
+func _wheel_at(pos: Vector3) -> VehicleWheel3D:
+	var best: VehicleWheel3D = null
+	var best_d: float = INF
+	for wheel in _wheels:
+		var d: float = wheel.position.distance_to(pos)
+		if d < best_d:
+			best_d = d
+			best = wheel
+	return best
+
+## Runtime: reparent each GLB wheel mesh under its physics wheel so it rides suspension/steer/spin.
+## Records each mesh's original parent + transform so _detach can restore it before a rebuild.
+func _attach_real_wheel_meshes() -> void:
+	if Engine.is_editor_hint():
+		return
+	for w in _real_wheel_data():
+		var mesh := w["visual"] as Node3D
+		var wheel := _wheel_at(w["pos"])
+		if mesh == null or wheel == null:
+			continue
+		_real_wheel_rest[mesh] = [mesh.get_parent(), mesh.transform]
+		mesh.reparent(wheel)
+		mesh.position = Vector3.ZERO  # the wheel node is the hub; the mesh sits on it
+		_real_wheel_meshes.append(mesh)
+
+## Runtime: put the GLB wheel meshes back under the model (saved transform) BEFORE a rebuild frees
+## the physics wheels — otherwise the designer's meshes would be orphaned/freed by the sweep.
+func _detach_real_wheel_meshes() -> void:
+	if Engine.is_editor_hint():
+		return
+	for mesh in _real_wheel_meshes:
+		if not is_instance_valid(mesh):
+			continue
+		var rest = _real_wheel_rest.get(mesh)
+		if rest == null:
+			continue
+		var parent := rest[0] as Node
+		if is_instance_valid(parent):
+			mesh.reparent(parent)
+			mesh.transform = rest[1]
+	_real_wheel_meshes.clear()
+	_real_wheel_rest.clear()
+
+## Spin a wheel's visual child about its axle. The blockout CSG tire spins about local UP (it was
+## rotated 90° about Z); a real GLB wheel spins about real_wheel_spin_axis. One helper for both.
+func _spin_wheel_visual(wheel: VehicleWheel3D, angle: float) -> void:
+	if wheel.get_child_count() == 0:
+		return
+	var visual: Node3D = wheel.get_child(0)
+	var axis: Vector3 = Vector3.UP if visual is CSGCylinder3D else real_wheel_spin_axis.normalized()
+	visual.rotate_object_local(axis, angle)
+
+## Find the steering-wheel mesh in the model (name "steering_wheel") and capture its rest basis.
+func _discover_steering_wheel() -> void:
+	var root := _find_model_root()
+	if root == null:
+		return
+	for n in root.find_children("*", "Node3D", true, false):
+		if "steering" in _strip_lod(n.name):
+			# Spin the visual mesh: a child mesh if "steering" is a VehicleWheel3D wrapper, else itself.
+			_steering_wheel = _first_mesh_child(n) if (n is VehicleWheel3D) else (n as Node3D)
+			_steering_wheel_rest = _steering_wheel.transform.basis
+			return
+
+## Turn the steering wheel mesh to match the steer angle (cosmetic). No-op if there is none.
+## Rotates in the wheel's OWN LOCAL frame (post-multiply), so the axis is intrinsic to the mesh (its
+## disc/column axis) and a tilted column still spins in-plane, whatever its placement in the cab.
+## (transform.basis = … on a Node3D does nothing — transform returns a copy; copy-modify-assign.)
+func _update_steering_wheel(angle: float) -> void:
+	if _steering_wheel == null:
+		return
+	if not _sw_logged and absf(angle) > 0.05:  # TEMP DEBUG
+		_sw_logged = true
+		print("[veh-sw] update angle=", angle, " axis=", steering_wheel_axis, " ratio=", steering_wheel_ratio)
+	var t := _steering_wheel.transform
+	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * steering_wheel_ratio)
+	_steering_wheel.transform = t
+
+## The GLB's AnimationPlayer (door open/close clips), or null (then doors use the code tween).
+func _find_anim_player() -> AnimationPlayer:
+	var root := _find_model_root()
+	if root == null:
+		return null
+	for n in root.find_children("*", "AnimationPlayer", true, false):
+		return n as AnimationPlayer
+	return null
+
+## SERVER: flip a door's open state; _replicate_transform then pushes it to clients. A door handle
+## is operated on foot by anyone nearby (not gated on the driver).
+func server_toggle_door(door_id: String) -> void:
+	if door_id == "":
+		return
+	_door_state[door_id] = not is_door_open(door_id)
+	_apply_door(door_id, _door_state[door_id])
+
+## A seat may be boarded/left only through an open door: true when the seat is gated by a door that is
+## currently shut. A seat with no door_id is never blocked. Used by server_enter/server_exit (the
+## client gates this too, but the server is the source of truth — never trust the client).
+func _seat_door_blocked(seat: Node) -> bool:
+	return "door_id" in seat and str(seat.door_id) != "" and not is_door_open(str(seat.door_id))
+
+## True if the door is open — server reads _door_state, a client replica reads replicated _net_doors.
+func is_door_open(door_id: String) -> bool:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return bool(_net_doors.get(door_id, false))
+	return bool(_door_state.get(door_id, false))
+
+## The GLB mesh node of a door (the one Blender animates / we swing), found by name == door_id,
+## LOD- and case-insensitive. Null without a real model or when no mesh matches.
+func _door_mesh(door_id: String) -> Node3D:
+	var root := _find_model_root()
+	if root == null:
+		return null
+	var want := door_id.to_lower()
+	for n in root.find_children("*", "Node3D", true, false):
+		if _strip_lod(n.name).to_lower() == want:
+			return n as Node3D
+	return null
+
+## Runtime: re-parent each door handle UNDER its door mesh, keeping its world placement, so the handle
+## swings WITH the door (the GLB door rotates on open/close; a handle left on the body would stay at
+## the shut position and the player's look-at ray would miss it once the door is open). No-op without a
+## real model or when the matching door mesh is absent — the handle then just stays where it was placed.
+func _attach_door_handles() -> void:
+	for n in find_children("*", "VehicleDoorHandle", true, false):
+		var handle := n as VehicleDoorHandle
+		var door := _door_mesh(handle.door_id)
+		if door != null and handle.get_parent() != door:
+			handle.reparent(door, true)
+
+## The VehicleDoorHandle that drives a given door_id (for its per-door open angle / reverse), or null.
+func _door_handle(door_id: String) -> VehicleDoorHandle:
+	# Search our own descendants (no get_tree(): this can run before the vehicle is in the tree,
+	# and we only ever want THIS vehicle's handles anyway).
+	for n in find_children("*", "VehicleDoorHandle", true, false):
+		if (n as VehicleDoorHandle).door_id == door_id:
+			return n
+	return null
+
+## Play a door open/close: a named Blender clip "<door_id>_open"/"_close" if the GLB has one, else a
+## code hinge-swing fallback. Runs on the server (logical) and every client (visible swing). The
+## per-door open angle / reverse come from the door's VehicleDoorHandle (falls back to the exports).
+func _apply_door(door_id: String, open: bool) -> void:
+	var handle := _door_handle(door_id)
+	var reverse: bool = handle.reverse if handle != null else false
+	var clip := door_id + ("_open" if open else "_close")
+	if _anim != null and _anim.has_animation(clip):
+		if reverse:
+			_anim.play_backwards(clip)
+		else:
+			_anim.play(clip)
+		return
+	var angle: float = handle.open_angle_deg if handle != null else door_open_angle_deg
+	_snap_door(door_id, open, angle, reverse)
+
+## Fallback for a door with no Blender clip: set the mesh named door_id to its open/closed hinge
+## angle instantly (the proper swing is authored in Blender). transform.basis = … on a Node3D is a
+## no-op (transform returns a copy), so copy-modify-assign.
+func _snap_door(door_id: String, open: bool, angle_deg: float, reverse: bool) -> void:
+	var door := _door_mesh(door_id)
+	if door == null:
+		return
+	if not door.has_meta("rest_basis"):
+		door.set_meta("rest_basis", door.transform.basis)
+	var rest: Basis = door.get_meta("rest_basis")
+	var target: Basis = rest
+	if open:
+		var a: float = -angle_deg if reverse else angle_deg
+		target = rest.rotated(door_hinge_axis.normalized(), deg_to_rad(a))
+	var t := door.transform
+	t.basis = target
+	door.transform = t
 
 # ------------------------------------------------------------------------------
 # Driving (runtime only)
@@ -982,9 +1376,9 @@ func _update_wheels_visual(delta: float) -> void:
 		if wheel.use_as_steering:
 			wheel.rotation.y = _net_steering
 		if wheel.get_child_count() > 0:
-			var tire: Node3D = wheel.get_child(0)
-			tire.position.y = -wheel_visual_drop  # replica has no suspension → drop to ~ground
-			tire.rotate_object_local(Vector3.UP, -spin)
+			wheel.get_child(0).position.y = -wheel_visual_drop  # replica has no suspension → drop to ~ground
+			_spin_wheel_visual(wheel, -spin)
+	_update_steering_wheel(_net_steering)  # turn the volant on the replica too (no-op if absent)
 
 ## Speed shown on the HUD: real physics speed on the server/bench; on a client replica (frozen,
 ## linear_velocity is 0) use the speed replicated by the server — deriving it from the
@@ -1014,7 +1408,8 @@ func _replicate_transform() -> void:
 	if my_pos == _net_last_position and my_rot == _net_last_rotation \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
-			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering:
+			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering \
+			and _door_state == _net_last_doors:
 		return
 	var data: Dictionary = {}
 	if my_pos != _net_last_position:
@@ -1041,6 +1436,9 @@ func _replicate_transform() -> void:
 	if my_steering != _net_last_steering:
 		data["steering"] = my_steering
 		_net_last_steering = my_steering
+	if _door_state != _net_last_doors:
+		data["doors"] = _door_state.duplicate()
+		_net_last_doors = _door_state.duplicate()
 
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
@@ -1073,6 +1471,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 		set_headlights(bool(data["headlights"]))  # mirror the head lights on this replica
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
+	if data.has("doors"):
+		var new_doors: Dictionary = data["doors"]
+		for door_id in new_doors:  # animate only the doors whose state actually changed
+			if bool(new_doors[door_id]) != bool(_net_doors.get(door_id, false)):
+				_apply_door(str(door_id), bool(new_doors[door_id]))
+		_net_doors = new_doors
 
 ## Client: reparent under the prop's parent (e.g. the planet/city) when spawned.
 func client_parent_change(parent: Node) -> void:
@@ -1087,7 +1491,7 @@ func client_parent_change(parent: Node) -> void:
 ## The driver seat becomes the pilot (control + HUD); passengers just ride along.
 func server_enter(player: Node, seat_name: String = "") -> void:
 	var seat: Node = _find_seat(seat_name)
-	if seat == null or not seat.is_free():
+	if seat == null or not seat.is_free() or _seat_door_blocked(seat):
 		return
 	seat.occupant_uuid = str(player.client_uuid) if "client_uuid" in player else ""
 	seat.occupant = player  # kept so we can free the seat if the player disconnects (node freed)
@@ -1111,7 +1515,7 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 ## was the driver seat).
 func server_exit(player: Node) -> void:
 	var seat: Node = _find_seat_of(player)
-	if seat == null:
+	if seat == null or _seat_door_blocked(seat):
 		return
 	seat.occupant_uuid = ""
 	seat.occupant = null
@@ -1248,8 +1652,9 @@ func _apply_drive(delta: float) -> void:
 	# visual with no contact, so spin powered airborne wheels ourselves (about their axle).
 	if absf(_throttle) > 0.01:
 		for wheel in _wheels:
-			if wheel.use_as_traction and not wheel.is_in_contact() and wheel.get_child_count() > 0:
-				wheel.get_child(0).rotate_object_local(Vector3.UP, -signf(_throttle) * 25.0 * delta)
+			if wheel.use_as_traction and not wheel.is_in_contact():
+				_spin_wheel_visual(wheel, -signf(_throttle) * 25.0 * delta)
+	_update_steering_wheel(steering)  # turn the volant (server/bench); a replica does it in _update_wheels_visual
 
 ## Cancel the hand-brake drift HERE (after the physics step), NOT in _physics_process — setting
 ## linear_velocity before the step fought the wheel suspension and made the body sink onto its

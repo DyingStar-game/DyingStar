@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://3uydain4eirj" path="res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png" id="3_jrjvv"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_75ksl"]
-bg_color = Color(0.1, 0.1, 0.1, 0.6)
+bg_color = Color(0.15487596, 0.154876, 0.15487587, 1)
 corner_detail = 5
 
 [sub_resource type="Gradient" id="Gradient_geu3e"]

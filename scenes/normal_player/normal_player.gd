@@ -311,9 +311,12 @@ func update_last_basis() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if remote_player: return
-	# Leave the seat we occupy (driver or passenger) with Y.
+	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
+	# (open it first by looking at its handle). A seat with no door_id leaves directly.
 	if _seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
-		_leave_vehicle()
+		if _seat_door_open(_seat_node):
+			_leave_vehicle()
+		return
 
 	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
 		# Reset the vehicle upright (server-authoritative; driver only).
@@ -334,6 +337,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_motion = -event.relative * 0.001
 
+	# Seated (driver/passenger): E open/closes a door by LOOKING at its handle. Must run BEFORE the
+	# walk guard — seated players have active = false, so the on-foot action block below never runs.
+	if _seat_vehicle_uuid != "" and event.is_action_pressed("action"):
+		interact_ray.force_raycast_update()
+		var seated_handle := _aimed_door_handle()
+		if seated_handle != null:
+			_toggle_door(seated_handle)
+		return  # seated: E only operates doors, never carry
+
 	if !active: return
 
 	if event.is_action_pressed(JUMP):
@@ -345,13 +357,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		mining_tool.toggle_equip()
 
 	if event.is_action_pressed("action"):
-		# Standing in a seat box (on foot)? E takes that seat (driver left, passenger right).
-		if _seat_vehicle_uuid == "" and is_instance_valid(_nearby_seat):
-			_enter_seat(_nearby_seat)
+		interact_ray.force_raycast_update()
+		# On foot, looking at a door handle from a boarding zone: open/close that door (server-auth).
+		# Priority over boarding, so aiming at the handle in the zone operates the door.
+		var handle := _aimed_door_handle()
+		if handle != null and is_instance_valid(_nearby_seat):
+			_toggle_door(handle)
+			return
+		# Standing in a seat box: E boards — but only once the seat's gating door is open (open it
+		# first by looking at the handle). A seat with no door_id boards directly.
+		if is_instance_valid(_nearby_seat):
+			if _seat_door_open(_nearby_seat):
+				_enter_seat(_nearby_seat)
 			return
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
-		interact_ray.force_raycast_update()
 		var aim := _aimed_carriable()
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
@@ -392,8 +412,14 @@ func _process(_delta: float) -> void:
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(_seat_node):
-		interact_label.hide()  # seated: clear any leftover "[E] Drive/Passenger Seat" prompt
 		_ride_seat(_seat_node)
+		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
+		# LOOKING at its handle — the handle rides the door now, so aiming works open or closed.
+		interact_label.hide()
+		var seated_handle := _aimed_door_handle()
+		if seated_handle != null:
+			interact_label.text = _door_prompt(seated_handle)
+			interact_label.show()
 		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
@@ -444,10 +470,20 @@ func _process(_delta: float) -> void:
 					collider.interact(self)
 					interact_label.hide()
 
-	# Standing in a seat box (on foot): tell the player what E will do, or that it's taken.
-	if is_instance_valid(_nearby_seat) and _seat_vehicle_uuid == "":
+	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: E opens/closes it.
+	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
+	if not interact_label.visible and (is_instance_valid(_nearby_seat) or _seat_vehicle_uuid != ""):
+		var aimed_handle := _aimed_door_handle()
+		if aimed_handle != null:
+			interact_label.text = _door_prompt(aimed_handle)
+			interact_label.show()
+
+	# Standing in a seat box (on foot): board, or say it's taken / that the door must be opened first.
+	if not interact_label.visible and is_instance_valid(_nearby_seat) and _seat_vehicle_uuid == "":
 		if _seat_is_taken(_nearby_seat):
 			interact_label.text = "Driver seat taken"
+		elif not _seat_door_open(_nearby_seat):
+			interact_label.text = "Open the door first (aim at the handle)"
 		else:
 			interact_label.text = "[E] Drive Seat" if _nearby_seat.is_driver_seat() else "[E] Passenger Seat"
 		interact_label.show()
@@ -1255,6 +1291,41 @@ func _aimed_carriable() -> Node:
 		return null
 	return prop
 
+## The vehicle door handle under the crosshair (a VehicleDoorHandle Area3D on the interact layer),
+## or null. Look-at detection; the actual open/close is server-authoritative (sent on E).
+func _aimed_door_handle() -> VehicleDoorHandle:
+	if not interact_ray.is_colliding():
+		return null
+	var hit = interact_ray.get_collider()
+	return hit if hit is VehicleDoorHandle else null
+
+## Tell the server to open/close the door this handle drives (server-authoritative, replicated back).
+func _toggle_door(handle: VehicleDoorHandle) -> void:
+	var veh = handle.vehicle()
+	if veh == null:
+		return
+	client_send_action_to_server({
+		"action": "vehicle_door",
+		"target_uuid": str(veh.uuid),
+		"door_id": handle.door_id,
+	})
+
+## Prompt for a door handle under the crosshair: close it if open, else open it.
+func _door_prompt(handle: VehicleDoorHandle) -> String:
+	var veh = handle.vehicle()
+	var is_open: bool = veh != null and veh.has_method("is_door_open") and veh.is_door_open(handle.door_id)
+	return "[E] Close door" if is_open else "[E] Open door"
+
+## True if a seat may be boarded right now: it has no gating door, or its door_id is currently open.
+## Lets a vehicle require "open the door first" before E enters (the door is opened via its handle).
+func _seat_door_open(seat) -> bool:
+	if seat == null or not ("door_id" in seat) or str(seat.door_id) == "":
+		return true
+	var veh = seat.vehicle()
+	if veh == null or not veh.has_method("is_door_open"):
+		return true
+	return veh.is_door_open(str(seat.door_id))
+
 ## True if any solid body (wall, building, city — Static OR Rigid) sits between the eye and
 ## the prop. Server-authoritative: the carry handler calls this before granting a pickup, so a
 ## thin wall can't be exploited to grab through it. Meant to run on the SERVER, which owns the
@@ -1489,6 +1560,11 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_l := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_l != null and veh_l._pilot == self and veh_l.has_method("toggle_headlights"):
 				veh_l.toggle_headlights()
+		"vehicle_door":
+			# A door handle is operated on foot by anyone nearby - NOT gated on the driver.
+			var veh_d := _find_vehicle(str(data.get("target_uuid", "")))
+			if veh_d != null and veh_d.has_method("server_toggle_door"):
+				veh_d.server_toggle_door(str(data.get("door_id", "")))
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:
