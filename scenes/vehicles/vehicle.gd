@@ -1352,6 +1352,8 @@ func _physics_process(delta: float) -> void:
 			_apply_drive(delta)
 		elif _handbrake:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
+		else:
+			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
 		_apply_park_freeze()  # freeze once stopped so a parked truck can't creep
 		_replicate_transform()
 		return
@@ -1362,6 +1364,8 @@ func _physics_process(delta: float) -> void:
 		_apply_drive(delta)
 	elif _handbrake:
 		_hold_handbrake(delta)
+	else:
+		_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
 	_apply_park_freeze()
 
 ## Server: replicate position/rotation to clients when they change (same shape as a rock).
@@ -1530,6 +1534,13 @@ func server_exit(player: Node) -> void:
 	if seat.is_driver_seat() and _pilot == player:
 		_pilot = null
 		pilot_uuid = ""
+		# Clear the last drive input + stop powering NOW, so the empty truck can't keep driving on a
+		# stale throttle (driver bailed "en marche") nor lurch when the next driver boards.
+		_net_throttle = 0.0
+		_net_steer = 0.0
+		_net_brake = false
+		_throttle = 0.0
+		engine_force = 0.0
 		_replicate_pilot()
 		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
 		# the parked truck still even with no driver. It releases on throttle when someone drives.
@@ -1677,6 +1688,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		v_flat = v_flat.move_toward(Vector3.ZERO, handbrake_hold * state.step)
 	state.linear_velocity = v_up + v_flat
 	state.angular_velocity = state.angular_velocity.move_toward(Vector3.ZERO, handbrake_hold * state.step)
+
+## No driver aboard (the pilot left — possibly bailing "en marche" with the throttle still held): cut
+## the drive. engine_force PERSISTS from the last _apply_drive, so without this the empty truck keeps
+## powering itself and rolls forever. Then bleed speed like coasting (VehicleWheel3D has no rolling
+## resistance of its own). The hand-brake case is handled separately by the caller. From _physics_process.
+func _coast_no_driver() -> void:
+	engine_force = 0.0
+	brake = engine_brake if linear_velocity.length() > 0.1 else 0.0
 
 ## Parked hand brake with no driver: lock the wheels + kill the drive. The drift cancel during the
 ## stop is in _integrate_forces; once stopped, _apply_park_freeze freezes the body. From _physics_process.
