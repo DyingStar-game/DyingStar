@@ -16,6 +16,8 @@ const MOVE_BACK: String = "move_back"
 const MOVE_LEFT: String = "move_left"
 const MOVE_RIGHT: String = "move_right"
 const JUMP: String = "jump"
+## Seconds with no gravity area before we treat it as real 0g (ignores brief reparent gaps).
+const ZERO_G_GRACE: float = 0.2
 const CROUCH: String = "crouch"
 const SPRINT: String = "sprint"
 const PAUSE: String = "pause"
@@ -113,6 +115,11 @@ var _display_debug: bool = false
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
+# Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
+# gravity areas for a frame or two while the body re-enters PlanetGravity; we only switch to the 0g
+# control scheme (which zeroes the camera pitch) after the gravity has really been gone this long,
+# so that blip doesn't snap the look back to the horizon.
+var _no_gravity_time: float = 0.0
 var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
@@ -827,6 +834,7 @@ func _handle_camera_motion():
 	var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
 
 	if parent_gravity_area:
+		_no_gravity_time = 0.0
 		if parent_gravity_area.gravity_point:
 			up_direction = parent_gravity_area.global_position.direction_to(global_position)
 		else:
@@ -838,11 +846,15 @@ func _handle_camera_motion():
 		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
 		camera_pivot.rotation_degrees.x = clamp(camera_pivot.rotation_degrees.x, -80, 80)
 	else:
-		# 0g movement
-		gravity = 0.0
-		camera_pivot.rotation.x = 0
-		rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
-		rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
+		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
+		# it as real 0g after ZERO_G_GRACE, so the camera pitch survives the transition.
+		_no_gravity_time += get_process_delta_time()
+		if _no_gravity_time >= ZERO_G_GRACE:
+			# 0g movement
+			gravity = 0.0
+			camera_pivot.rotation.x = 0
+			rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
+			rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
 
 	# Replicate the camera pitch ("head") to the server so others see where we look and
 	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).
