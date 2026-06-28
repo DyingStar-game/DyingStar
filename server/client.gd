@@ -477,6 +477,22 @@ func delete_object(event: Dictionary) -> void:
 				return
 		print("unknown object type for deletion")
 
+## Apply a player's gameplay state on the client — flashlight, equipped tool, head/helmet, carrying,
+## etc. ONE shared path used both when a player is first created (late-join: the full current state
+## rides the gorc_zone_enter snapshot) and on every later delta, so the two never drift. Position /
+## rotation / velocity ride the dedicated "move" path, so they are skipped here. SOLID/DRY: any NEW
+## whitelisted player property is covered automatically — just handle it in client_channel_data_update,
+## nothing to change here.
+func _apply_player_gameplay_props(player_node: Node, data: Dictionary) -> void:
+	if not is_instance_valid(player_node):
+		return
+	var props: Dictionary = data.duplicate()
+	props.erase("position")
+	props.erase("rotation")
+	props.erase("velocity")
+	if not props.is_empty():
+		player_node.client_channel_data_update(props)
+
 func create_player(event: Dictionary) -> void:
 	# TODO have channel 0 (position , rotation) and 6 (parent_id)
 	# we are here with position. rotation but not parent_id
@@ -559,6 +575,11 @@ func create_player(event: Dictionary) -> void:
 			remote_player_instance.client_uuid = event["object_id"]
 
 			players_list[event["object_id"]] = remote_player_instance
+
+	# Late-join: apply the player's CURRENT full state right after creating it (torch on, tool out,
+	# helmet off, …), not just position/name/parent — the whole state rides the gorc_zone_enter
+	# snapshot. Same path as the live deltas below, so future properties are covered for free.
+	_apply_player_gameplay_props(players_list.get(event["object_id"], null), player_data)
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
@@ -716,14 +737,7 @@ func update_generic_object(event: Dictionary) -> void:
 		# (tools, head, perforating, carrying, ...); position/rotation/velocity come
 		# from the dedicated "move" path, so skip them here.
 		if players_list.has(object_id):
-			var player_node = players_list[object_id]
-			if is_instance_valid(player_node):
-				var player_props: Dictionary = object_data.duplicate()
-				player_props.erase("position")
-				player_props.erase("rotation")
-				player_props.erase("velocity")
-				if not player_props.is_empty():
-					player_node.client_channel_data_update(player_props)
+			_apply_player_gameplay_props(players_list[object_id], object_data)
 		else:
 			print("Update player property but player not found: %s" % object_id)
 		return
