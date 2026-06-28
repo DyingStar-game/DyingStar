@@ -74,10 +74,6 @@ const MODEL_GROUP := "vehicle_model"
 ## FULLY cancels motion each frame — a heavy parked truck must NOT move from a player bump or a
 ## gentle slope. Above it (a genuine vehicle ramming) it's only damped, so a real hit still pushes.
 @export var handbrake_release_speed: float = 2.0
-## Once the hand brake has the vehicle below this speed (m/s) it is FROZEN (static) so it can't
-## creep at all — a dynamic body keeps drifting slowly even with the drift cancel. Throttle
-## releases the hand brake and unfreezes it.
-@export var park_freeze_speed: float = 0.4
 ## Maximum steering angle of the front wheels, in degrees.
 @export var max_steer_deg: float = 30.0
 ## How fast the steering reaches its target angle (higher = snappier).
@@ -294,7 +290,7 @@ var _net_last_speed: float = 0.0  # server: last replicated speed (km/h), change
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
 var _net_last_cargo_mass: float = -1.0  # server: last replicated cargo load (kg), change detection
 var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), change detection
-var _handbrake: bool = false  # server: hand brake engaged (holds the vehicle until throttle)
+var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
 var _headlights_on: bool = false  # server: head lights on/off
@@ -333,6 +329,14 @@ func _ready() -> void:
 	_anim = _find_anim_player()
 	_attach_door_handles()  # make each handle ride its door so look-at works open OR closed
 	_apply_center_of_mass()  # pin COM to the wheelbase, so collision shapes can't make the truck nose-dive
+	# Late-join replay: a client replica receives the current door state into _net_doors via
+	# client_channel_data_update BEFORE this node is in the tree — where _apply_door can't find the
+	# model yet and no-ops. Now that the model + AnimationPlayer are ready, replay it so a player who
+	# joins after a door was opened sees it open. (The code-swing fallback snaps instantly; a Blender
+	# clip plays its open animation once.)
+	if _is_networked() and not GameOrchestrator.is_server():
+		for door_id in _net_doors:
+			_apply_door(str(door_id), bool(_net_doors[door_id]))
 	if _is_networked():
 		# Replicated prop: place it where the server spawned it (client_channel_data_update
 		# also applies position/rotation, this is the initial fallback).
@@ -1354,7 +1358,6 @@ func _physics_process(delta: float) -> void:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
 		else:
 			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
-		_apply_park_freeze()  # freeze once stopped so a parked truck can't creep
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
@@ -1366,7 +1369,6 @@ func _physics_process(delta: float) -> void:
 		_hold_handbrake(delta)
 	else:
 		_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
-	_apply_park_freeze()
 
 ## Server: replicate position/rotation to clients when they change (same shape as a rock).
 ## Client: the replica is frozen (no physics), so roll + steer the wheels visually from
@@ -1697,19 +1699,12 @@ func _coast_no_driver() -> void:
 	engine_force = 0.0
 	brake = engine_brake if linear_velocity.length() > 0.1 else 0.0
 
-## Parked hand brake with no driver: lock the wheels + kill the drive. The drift cancel during the
-## stop is in _integrate_forces; once stopped, _apply_park_freeze freezes the body. From _physics_process.
+## Parked hand brake with no driver: kill the drive + brake the wheels. The truck is held still by the
+## drift cancel in _integrate_forces — we do NOT freeze the body: freezing a VehicleBody3D collapses
+## the wheel suspension so the wheels sink into the ground. The brake + drift cancel hold it just fine.
 func _hold_handbrake(_delta: float) -> void:
 	engine_force = 0.0
 	brake = brake_force
-
-## Freeze the vehicle once the hand brake has it nearly stopped, so a parked truck can't creep
-## (a dynamic RigidBody keeps drifting slowly on a slope even with the drift cancel; a fresh
-## sleeping one doesn't). Throttle clears _handbrake in _apply_drive, which unfreezes it here.
-func _apply_park_freeze() -> void:
-	var should_freeze: bool = _handbrake and linear_velocity.length() < park_freeze_speed
-	if should_freeze != freeze:
-		freeze = should_freeze
 
 ## Head lights — drop-in like seats: add any Light3D(s) to the group "vehicle_light" anywhere under
 ## the vehicle scene (no code). The driver toggles them (L); the state is replicated so every client
