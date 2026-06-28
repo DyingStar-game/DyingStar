@@ -308,7 +308,6 @@ var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door op
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
 var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
-var _sw_logged: bool = false                # TEMP DEBUG: log the steering wheel update once
 
 func _ready() -> void:
 	_empty_mass = mass
@@ -1218,9 +1217,6 @@ func _discover_steering_wheel() -> void:
 func _update_steering_wheel(angle: float) -> void:
 	if _steering_wheel == null:
 		return
-	if not _sw_logged and absf(angle) > 0.05:  # TEMP DEBUG
-		_sw_logged = true
-		print("[veh-sw] update angle=", angle, " axis=", steering_wheel_axis, " ratio=", steering_wheel_ratio)
 	var t := _steering_wheel.transform
 	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * steering_wheel_ratio)
 	_steering_wheel.transform = t
