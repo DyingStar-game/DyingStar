@@ -212,6 +212,7 @@ _data = {
 }
 
 [node name="MiningDepot" type="StaticBody3D" unique_id=1889403175]
+collision_mask = 0
 script = ExtResource("1_7mukx")
 
 [node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=279414307]
@@ -245,6 +246,7 @@ visible = false
 shape = SubResource("ConcavePolygonShape3D_l8wts")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="." unique_id=1157212695]
+collision_mask = 0
 physics_material_override = SubResource("PhysicsMaterial_l8wts")
 
 [node name="CollisionShape3D5" type="CollisionShape3D" parent="StaticBody3D" unique_id=181864667]
@@ -344,6 +346,7 @@ debug_color = Color(0.70196074, 0.31287596, 0.24275212, 0.41960785)
 
 [node name="ScreenDetector" type="Area3D" parent="miningdepot/Gui3D" unique_id=1958200926 groups=["screen_area"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7200000000011642, -0.9510000000009312, 0)
+collision_mask = 2
 input_ray_pickable = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="miningdepot/Gui3D/ScreenDetector" unique_id=383350684]

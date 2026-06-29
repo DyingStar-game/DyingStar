@@ -156,8 +156,11 @@ var _last_brake: bool = false
 var _space_held_time: float = 0.0  # driver: how long the brake (Space) has been held
 var _handbrake_sent: bool = false  # driver: hand brake toggle already fired for this hold
 var _seated_saved: bool = false
-var _saved_collision_layer: int = 1
-var _saved_collision_mask: int = 1
+# Fallback walking-state collision (the scene sets layer=player / mask=MASK_SOLID; set_seated saves
+# the real values before zeroing). Kept in sync with Globals so a restore-before-save can't fall back
+# to the wrong layer.
+var _saved_collision_layer: int = 1 << (Globals.LAYER_PLAYER - 1)
+var _saved_collision_mask: int = Globals.MASK_SOLID
 
 
 @onready var camera = $CameraPivot/Camera3D

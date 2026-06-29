@@ -27,8 +27,8 @@ func set_driving(vehicle: Node3D) -> void:
 ## Called by the vehicle when we step out: walk again.
 func set_walking() -> void:
 	_vehicle = null
-	collision_layer = 1
-	collision_mask = 1
+	collision_layer = 1 << (Globals.LAYER_PLAYER - 1)  # player
+	collision_mask = Globals.MASK_SOLID  # world | player | vehicle | prop
 	set_physics_process(true)
 
 func _unhandled_input(event: InputEvent) -> void:

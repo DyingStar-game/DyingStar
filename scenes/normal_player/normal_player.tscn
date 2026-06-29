@@ -55,6 +55,8 @@ keycode = 77
 events = [SubResource("InputEventKey_2sxo3")]
 
 [node name="NormalPlayer" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
+collision_layer = 2
+collision_mask = 15
 script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
