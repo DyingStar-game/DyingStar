@@ -10,6 +10,8 @@ radius = 3.5
 [sub_resource type="SphereShape3D" id="SphereShape3D_body"]
 
 [node name="RockMiningMedium" type="RigidBody3D"]
+collision_layer = 8
+collision_mask = 15
 mass = 2000.0
 continuous_cd = true
 script = ExtResource("1_script")

@@ -8,6 +8,8 @@
 size = Vector3(12, 2.4, 2.4)
 
 [node name="ContainerLiquid1200x240x240" type="RigidBody3D" unique_id=1769169717]
+collision_layer = 8
+collision_mask = 15
 script = ExtResource("1_kpms3")
 
 [node name="container_liquid_1200x240x241" parent="." unique_id=202993910 instance=ExtResource("2_kpms3")]

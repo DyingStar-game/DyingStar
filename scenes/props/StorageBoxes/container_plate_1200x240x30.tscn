@@ -7,6 +7,8 @@
 size = Vector3(12, 0.3, 2.4)
 
 [node name="ContainerPlate1200x240x30" type="RigidBody3D" unique_id=922767873]
+collision_layer = 8
+collision_mask = 15
 mass = 1000.0
 freeze = true
 script = ExtResource("1_oaklb")

@@ -8,6 +8,8 @@
 size = Vector3(0.5, 0.5, 0.5)
 
 [node name="box_50cm" type="RigidBody3D" unique_id=188699454 groups=["containable"]]
+collision_layer = 8
+collision_mask = 15
 mass = 15.0
 continuous_cd = true
 script = ExtResource("1_o2evt")

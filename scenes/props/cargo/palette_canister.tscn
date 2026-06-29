@@ -8,6 +8,8 @@
 size = Vector3(0.6678779286044119, 0.8347990335498707, 1.0182035127832023)
 
 [node name="PaletteCanister" type="RigidBody3D" unique_id=956024196]
+collision_layer = 8
+collision_mask = 15
 mass = 500.0
 
 [node name="palette_canister" parent="." unique_id=849765929 instance=ExtResource("1_0xiy0")]

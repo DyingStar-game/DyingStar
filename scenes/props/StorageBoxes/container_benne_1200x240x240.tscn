@@ -7,6 +7,8 @@
 size = Vector3(12, 2.4, 2.4)
 
 [node name="ContainerBenne1200x240x240" type="RigidBody3D" unique_id=42250377]
+collision_layer = 8
+collision_mask = 15
 mass = 8000.0
 freeze = true
 script = ExtResource("1_nyfv5")
