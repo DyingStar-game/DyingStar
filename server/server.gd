@@ -334,10 +334,16 @@ func _freeze_culled_body(rb: RigidBody3D) -> void:
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
 	rb.freeze = true
+	# OCS: drop the body out of Jolt's broadphase entirely. freeze=true alone keeps it registered
+	# (residual per-step cost), so we also disable its own collision shapes and stop its script tick.
+	rb.set_physics_process(false)
+	_set_body_shapes_disabled(rb, true)
 	rb.set_meta("_culled_frozen", true)
 	rb.remove_meta("_settle_ticks")
 
 func _unfreeze_culled_body(rb: RigidBody3D) -> void:
+	_set_body_shapes_disabled(rb, false)
+	rb.set_physics_process(true)
 	rb.freeze = false
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
@@ -345,6 +351,15 @@ func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
 	if "server_last_position" in rb:
 		rb.server_last_position = Vector3.INF
+
+## Enable/disable the body's OWN collision shapes (direct CollisionShape3D/Polygon children) so it
+## leaves/re-enters Jolt's broadphase. Child Area3D shapes (interaction zones) are left untouched.
+func _set_body_shapes_disabled(rb: RigidBody3D, disabled: bool) -> void:
+	for c in rb.get_children():
+		if c is CollisionShape3D:
+			(c as CollisionShape3D).disabled = disabled
+		elif c is CollisionPolygon3D:
+			(c as CollisionPolygon3D).disabled = disabled
 
 
 ## Find the closest planet to [param body] and add the chunk key under
