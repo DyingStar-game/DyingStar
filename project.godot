@@ -36,6 +36,7 @@ Endtoend="*res://scenes/globals/endtoend.gd"
 ServerNetwork="*res://server/server_network.gd"
 Obs="*res://tools/observability/obs.gd"
 GameRecorder="*res://scenes/globals/game_recorder.gd"
+PhysicsMetrics="*res://scenes/globals/physics_metrics.gd"
 
 [debug]
 
@@ -234,6 +235,14 @@ locale/translation_remaps={
 "res://assets/textures/Localizations/uk_flag.jpg": PackedStringArray("res://assets/textures/Localizations/es_flag.jpg:es", "res://assets/textures/Localizations/fr_flag.jpg:fr")
 }
 locale/translations=PackedStringArray("res://tools/localization/localisation.en.translation", "res://tools/localization/localisation.es.translation", "res://tools/localization/localisation.fr.translation")
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="player"
+3d_physics/layer_3="vehicle"
+3d_physics/layer_4="prop"
+3d_physics/layer_5="zone"
 
 [physics]
 

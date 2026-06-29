@@ -1,8 +1,22 @@
 extends Node
 
-## Collision layer (bit 5 = 16) reserved for vehicle interaction zones (seats, cargo bay). These
-## zones are MONITORABLE-only (they never monitor); the player's AreaDetector is the single monitor
-## that scans this layer. Kept off the interact ray's mask (layer 1) so it never eats the carry aim.
+## 3D physics collision layers (named in Project Settings → Layer Names → 3D Physics).
+## `layer` = what I am; `mask` = what I scan. A pair is tested only if A.layer ∩ B.mask OR
+## B.layer ∩ A.mask. Statics scan nothing (mask = 0); the movers scan `world`. Variants of one
+## layer are told apart by GROUP (is_in_group), never by a dedicated layer.
+## Indices are 1-based to match set_collision_layer_value / set_collision_mask_value.
+const LAYER_WORLD := 1
+const LAYER_PLAYER := 2
+const LAYER_VEHICLE := 3
+const LAYER_PROP := 4
+const LAYER_ZONE := 5
+
+## Precomputed bitmasks (bit = 1 << (index - 1)).
+const MASK_SOLID := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3)  # world | player | vehicle | prop
+const MASK_PROBE := (1 << 4)  # zone
+
+## Back-compat alias: vehicle interaction zones (seats, cargo) sit on the `zone` layer (value 16).
+## These zones are MONITORABLE-only; the player's AreaDetector is the single monitor scanning `zone`.
 const VEHICLE_ZONE_LAYER := 16
 
 var player_name: String = "I am an idiot !"
