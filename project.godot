@@ -36,7 +36,6 @@ Endtoend="*res://scenes/globals/endtoend.gd"
 ServerNetwork="*res://server/server_network.gd"
 Obs="*res://tools/observability/obs.gd"
 GameRecorder="*res://scenes/globals/game_recorder.gd"
-PhysicsMetrics="*res://scenes/globals/physics_metrics.gd"
 
 [debug]
 
