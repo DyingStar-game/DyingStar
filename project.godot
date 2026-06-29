@@ -243,6 +243,7 @@ locale/translations=PackedStringArray("res://tools/localization/localisation.en.
 3d_physics/layer_3="vehicle"
 3d_physics/layer_4="prop"
 3d_physics/layer_5="zone"
+3d_physics/layer_6="interactable"
 
 [physics]
 

@@ -23,6 +23,7 @@ mesh = ExtResource("2_mesh")
 material = ExtResource("3_mat")
 
 [node name="Area3D" type="Area3D" parent="."]
+collision_layer = 32
 monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]

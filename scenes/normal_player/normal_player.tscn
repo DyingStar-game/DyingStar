@@ -79,6 +79,7 @@ far = 10000000000000.01
 
 [node name="InteractRay" type="RayCast3D" parent="CameraPivot/Camera3D" unique_id=1335224373]
 target_position = Vector3(0, 0, -3)
+collision_mask = 32
 collide_with_areas = true
 collide_with_bodies = false
 

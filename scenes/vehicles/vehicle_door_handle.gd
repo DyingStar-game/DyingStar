@@ -21,12 +21,13 @@ extends Area3D
 
 func _ready() -> void:
 	add_to_group("vehicle_door_handle")
-	# PASSIVE, on the interact layer (1) so the player's look-at ray (collide_with_areas) detects it.
-	# monitorable-only: it never runs its own overlap pass. (NOT on VEHICLE_ZONE_LAYER, which the ray
-	# ignores — that layer is for the proximity zones like seats/cargo.)
+	add_to_group("interactable")  # generic: look-at + E targets via the InteractRay (scans `zone`)
+	# PASSIVE detection zone on the `zone` layer so the player's look-at ray (collide_with_areas)
+	# detects it. monitorable-only: it never runs its own overlap pass. The carry placement/LOS ray
+	# scans solids only (not `zone`), so a handle never blocks carry aim.
 	monitoring = false
 	monitorable = true
-	collision_layer = 1
+	collision_layer = 1 << (Globals.LAYER_INTERACTABLE - 1)  # interactable (InteractRay), NOT zone (seats)
 	collision_mask = 0
 
 ## The Vehicle that owns this handle (placed somewhere under the vehicle in the scene).

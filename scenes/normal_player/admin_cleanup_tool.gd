@@ -31,12 +31,9 @@ var _target: Node = null
 func setup(camera: Camera3D, player: Node) -> void:
 	_camera = camera
 	_player = player
-	# Aim ray fired forward from the camera centre (the crosshair direction).
-	_ray = RayCast3D.new()
-	_ray.target_position = Vector3(0.0, 0.0, -REACH)
-	_ray.collision_mask = 0xFFFFFFFF
-	_ray.enabled = true
-	_camera.add_child(_ray)
+	# Aim ray fired forward from the camera centre. Deletable targets sit on world (depot), prop
+	# (rocks/boxes) and vehicle — never player; the filter (DELETABLE) refines by type.
+	_ray = Globals.make_camera_ray(_camera, REACH, Globals.MASK_OBSTACLE)
 	# Unshaded vertex-coloured line, drawn in world space (top_level) each frame.
 	_line_mat = StandardMaterial3D.new()
 	_line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
