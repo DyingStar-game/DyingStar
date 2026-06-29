@@ -18,7 +18,6 @@ const PIN_DEBUG_MAX: int = 200
 const SETTLE_EPS: float = 0.05       # m of net drift below which a body counts as "not moving"
 const SETTLE_TICKS: int = 15         # consecutive still ticks (~1.5 s at the pin cadence) before freezing
 const ACTIVE_RADIUS: float = 60.0    # m: keep bodies dynamic within this of any player
-const FREEZE_DEBUG: bool = true      # server console: periodic frozen/active counts (dev aid)
 
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
@@ -138,7 +137,6 @@ var _zone_initialized: bool = false
 ## PIN_TICK_INTERVAL frames in _process to refresh which planet chunks
 ## must stay resident because an awake RigidBody3D is sitting on them.
 var _pin_tick_counter: int = 0
-var _freeze_dbg_accum: int = 0  # throttles the FREEZE_DEBUG console line
 ## Number of debug lines printed by the pin sweep so far (capped to keep
 ## logs readable).  Reset/incremented in _pin_node_to_planet_chunk.
 var _pin_debug_logged: int = 0
@@ -274,8 +272,6 @@ func _refresh_active_body_pins() -> void:
 func _cull_settled_bodies() -> void:
 	if not GameOrchestrator.is_server():
 		return  # server-only: it owns the authoritative bodies
-	var frozen_count := 0
-	var active_count := 0
 	for ptype in props_list.keys():
 		if ptype == "planets" or not (props_list[ptype] is Dictionary):
 			continue
@@ -291,11 +287,8 @@ func _cull_settled_bodies() -> void:
 				if rb.freeze and rb.get_meta("_culled_frozen", false):
 					_unfreeze_culled_body(rb)
 				rb.set_meta("_settle_ticks", 0)
-				active_count += 1
 				continue
 			if rb.freeze:
-				if rb.get_meta("_culled_frozen", false):
-					frozen_count += 1
 				continue  # already frozen (by us or by design), far → leave
 			# Settle detection: drift from a reference point. Jitter oscillates within SETTLE_EPS so it
 			# still counts as still; a real move pushes past it and resets the reference.
@@ -309,17 +302,6 @@ func _cull_settled_bodies() -> void:
 			rb.set_meta("_settle_ticks", ticks)
 			if ticks >= SETTLE_TICKS:
 				_freeze_culled_body(rb)
-				frozen_count += 1
-			else:
-				active_count += 1
-	if FREEZE_DEBUG:
-		_freeze_dbg_accum += 1
-		if _freeze_dbg_accum >= 20:  # ~every 2 s at the pin cadence
-			_freeze_dbg_accum = 0
-			prints("[FREEZE] frozen=%d active=%d physics=%.1fms (idle-loop fps=%.0f, NOT the bottleneck)" % [
-				frozen_count, active_count,
-				Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
-				Performance.get_monitor(Performance.TIME_FPS)])
 
 ## True if any connected player is within [param radius] of [param pos].
 func _player_within(pos: Vector3, radius: float) -> bool:
