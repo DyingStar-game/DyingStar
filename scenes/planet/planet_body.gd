@@ -203,6 +203,9 @@ func _setup_gravity() -> void:
 	_gravity_area = Area3D.new()
 	_gravity_area.name = "PlanetGravity"
 	_gravity_area.add_to_group("gravity")
+	# Sit on the `zone` layer so the player's AreaDetector (which scans `zone`) detects it and
+	# applies gravity to the player; routed by the "gravity" group.
+	_gravity_area.collision_layer = 1 << (Globals.LAYER_ZONE - 1)
 	_gravity_area.gravity_space_override = Area3D.SPACE_OVERRIDE_REPLACE
 	_gravity_area.gravity_point = true
 	_gravity_area.gravity = planet_data.surface_gravity
