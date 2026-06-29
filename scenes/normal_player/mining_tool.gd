@@ -105,12 +105,10 @@ var _stowed: bool = false    # true while the perforator is stowed (player carry
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_camera_pivot = camera_pivot
 	_camera = camera
-	# Aim raycast from the camera center (the crosshair direction). Created here so
-	# it exists on EVERY instance (remote players reconstruct the aim too).
-	_rock_ray = RayCast3D.new()
-	_rock_ray.target_position = Vector3(0.0, 0.0, -(aim_rock_distance + 2.0))
-	_rock_ray.collision_mask = 0xFFFFFFFF
-	_camera.add_child(_rock_ray)
+	# Aim raycast from the camera center (the crosshair direction). Created here so it exists on EVERY
+	# instance (remote players reconstruct the aim too). Hits rocks (bodies on `prop`; the caller
+	# filters to the "miningrock" group).
+	_rock_ray = Globals.make_camera_ray(_camera, aim_rock_distance + 2.0, 1 << (Globals.LAYER_PROP - 1))
 	_equipment_mount = EquipmentMount.new()
 	_equipment_mount.name = "EquipmentMount"
 	add_child(_equipment_mount)

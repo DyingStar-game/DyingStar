@@ -29,6 +29,7 @@ visible = false
 shape = SubResource("BoxShape3D_t7ntl")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=965548746]
+collision_layer = 32
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=483378707]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)

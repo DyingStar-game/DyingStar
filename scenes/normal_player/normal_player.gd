@@ -1375,7 +1375,7 @@ func _ensure_los_ray() -> void:
 	_los_ray.top_level = true  # ignore the player's transform → target_position is a world delta
 	_los_ray.collide_with_areas = false
 	_los_ray.collide_with_bodies = true
-	_los_ray.collision_mask = 0xFFFFFFFF
+	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
 	add_child(_los_ray)
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
