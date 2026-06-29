@@ -6,6 +6,8 @@
 size = Vector3(50, 10, 182)
 
 [node name="Storagewarehouse" type="RigidBody3D" unique_id=695965601]
+collision_layer = 8
+collision_mask = 15
 freeze = true
 script = ExtResource("1_gtaak")
 

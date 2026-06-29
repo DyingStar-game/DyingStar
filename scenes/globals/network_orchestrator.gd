@@ -56,8 +56,6 @@ var spawnable_station_scene: PackedScene = null
 var players: Dictionary = {}
 var player_ship: Dictionary = {}
 
-var is_inside_box4m: bool = false
-
 var server_sdo_id = 0
 var players_list = {}
 var servers_list = {}
@@ -699,13 +697,6 @@ func spawn_prop(proptype,data: Dictionary ) -> void:
 	network_agent.props_list_last_movement[proptype][uuid] = spawn_position
 	network_agent.props_list_last_rotation[proptype][uuid] = Vector3.ZERO
 	publish_sdo_newprop(proptype, uuid, spawn_position, spawn_rotation)
-
-	# specal case for box50cm
-	if proptype == "box50cm" and is_inside_box4m:
-		prop_instance.set_collision_layer_value(1, false)
-		prop_instance.set_collision_layer_value(2, true)
-		prop_instance.set_collision_mask_value(1, false)
-		prop_instance.set_collision_mask_value(2, true)
 
 # @rpc("authority", "call_remote", "reliable")
 # func spawn_planet(planet_datas: Dictionary) -> void:

@@ -20,32 +20,14 @@ var server_last_rotation = Vector3.ZERO
 var has_parent: bool = false
 
 func _ready() -> void:
-	$Area3D.body_entered.connect(_on_box_entered)
-	$Area3D.body_exited.connect(_on_box_exited)
-
+	# A 4 m hauling box is a normal `prop` body (collision set in the .tscn). The old "contained"
+	# layer-swap (moving inside items onto a private layer) was removed — items rest inside on its
+	# colliders like any other prop.
 	global_position = spawn_position
 	global_rotation = spawn_rotation
 
 func _physics_process(_delta: float) -> void:
 	PropNet.server_tick(self)
-
-func _on_box_entered(body: Node3D):
-	if body.is_in_group("containable"):
-		if not body.is_inside_box4m:
-			body.set_collision_layer_value(1, false)
-			body.set_collision_layer_value(2, true)
-			body.set_collision_mask_value(1, false)
-			body.set_collision_mask_value(2, true)
-			body.is_inside_box4m = true
-
-func _on_box_exited(body: Node3D):
-	if body.is_in_group("containable"):
-		if body.is_inside_box4m:
-			body.set_collision_layer_value(2, false)
-			body.set_collision_layer_value(1, true)
-			body.set_collision_mask_value(2, false)
-			body.set_collision_mask_value(1, true)
-			body.is_inside_box4m = false
 
 func client_parent_change(parent: Node) -> void:
 	reparent(parent)

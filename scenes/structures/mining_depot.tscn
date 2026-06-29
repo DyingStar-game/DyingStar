@@ -357,6 +357,7 @@ shape = SubResource("BoxShape3D_ke7ee")
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 4.040174807122646, 0.914861297012593, -2.6002636587563273)
 
 [node name="RockDetector" type="Area3D" parent="." unique_id=1984882986]
+collision_mask = 8
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -0.2741005707315467, 1.0766338231052774, 2.630822158377826)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="RockDetector" unique_id=857884112]
@@ -365,6 +366,7 @@ shape = SubResource("BoxShape3D_cywas")
 debug_color = Color(0.70196074, 0.32014543, 0.27115196, 0.41960785)
 
 [node name="BoxDetector" type="Area3D" parent="." unique_id=824689863]
+collision_mask = 8
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -0.27410057073154703, 1.0766338231052774, -2.601417988734338)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="BoxDetector" unique_id=793879247]
@@ -373,6 +375,7 @@ shape = SubResource("BoxShape3D_n332y")
 debug_color = Color(0.70196074, 0.32014543, 0.27115196, 0.41960785)
 
 [node name="RockCollector" type="Area3D" parent="." unique_id=1806926985]
+collision_mask = 8
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.354821632366431, -0.0510717205387774, 2.630822158377826)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="RockCollector" unique_id=1883484052]

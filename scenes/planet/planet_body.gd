@@ -207,6 +207,9 @@ func _setup_gravity() -> void:
 	_gravity_area.gravity_point = true
 	_gravity_area.gravity = planet_data.surface_gravity
 	_gravity_area.gravity_point_unit_distance = planet_data.radius
+	# Apply gravity to every solid RigidBody (world|player|vehicle|prop). Without this the area
+	# defaults to scanning `world` only, so props/vehicles on their own layers would float.
+	_gravity_area.collision_mask = Globals.MASK_SOLID
 
 	# The gravity sphere covers the terrain plus the configurable gravity_reach.
 	# gravity_reach is independent of atmosphere_height — even airless bodies

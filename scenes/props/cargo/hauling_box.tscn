@@ -8,6 +8,8 @@
 size = Vector3(0.3953384826854745, 0.4112716205195284, 0.4039184679659229)
 
 [node name="HaulingBox" type="RigidBody3D" unique_id=2012639776]
+collision_layer = 8
+collision_mask = 15
 mass = 50.0
 continuous_cd = true
 

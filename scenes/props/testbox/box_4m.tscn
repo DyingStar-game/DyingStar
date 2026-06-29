@@ -20,6 +20,8 @@ properties/1/spawn = true
 properties/1/replication_mode = 1
 
 [node name="RigidBody3D" type="RigidBody3D" unique_id=1909729381]
+collision_layer = 8
+collision_mask = 15
 script = ExtResource("1_ealuu")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=676976134]
@@ -30,15 +32,15 @@ surface_material_override/0 = ExtResource("3_3xnib")
 shape = SubResource("BoxShape3D_0fj0l")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=2130911442]
-collision_mask = 3
+collision_mask = 0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1573058816]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0643543)
 shape = SubResource("BoxShape3D_3xnib")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="." unique_id=1723092257]
-collision_layer = 2
-collision_mask = 2
+collision_layer = 1
+collision_mask = 0
 
 [node name="CollisionShapeInside" type="CollisionShape3D" parent="StaticBody3D" unique_id=1922354121]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.375)

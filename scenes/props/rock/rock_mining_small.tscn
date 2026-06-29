@@ -9,6 +9,8 @@
 [sub_resource type="SphereShape3D" id="SphereShape3D_ducf2"]
 
 [node name="RockMiningSmall" type="RigidBody3D" unique_id=525353877]
+collision_layer = 8
+collision_mask = 15
 mass = 800.0
 continuous_cd = true
 script = ExtResource("1_6o14g")

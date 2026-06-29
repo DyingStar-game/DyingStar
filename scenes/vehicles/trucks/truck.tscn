@@ -18,6 +18,8 @@ size = Vector3(1.6587069341703682, 0.851504158613352, 1.9680689896658805)
 size = Vector3(0.3371703098891885, 0.1044873444532186, 0.17418536227137338)
 
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
+collision_layer = 4
+collision_mask = 15
 mass = 1000.0
 script = ExtResource("1_vehicle")
 engine_power = 850.0

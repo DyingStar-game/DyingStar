@@ -3,4 +3,5 @@
 [ext_resource type="Script" uid="uid://2e1cf4ehx8s5" path="res://scenes/grid/grid.gd" id="1_ude8t"]
 
 [node name="PhysicsGrid" type="Area3D" unique_id=297375512 groups=["gravity"]]
+collision_mask = 15
 script = ExtResource("1_ude8t")

@@ -8,6 +8,8 @@
 size = Vector3(1.2, 0.15, 0.8)
 
 [node name="PalletPlate120x80x100" type="RigidBody3D" unique_id=404745465]
+collision_layer = 8
+collision_mask = 15
 mass = 80.0
 freeze = true
 script = ExtResource("1_1deug")
