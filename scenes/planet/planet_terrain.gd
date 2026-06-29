@@ -205,6 +205,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		planet_data.set_server_mode(true)
 		_collision_body = StaticBody3D.new()
 		_collision_body.name = "PlanetCollision"
+		# Static terrain: it IS the `world` layer and scans nothing (mask 0) — the moving bodies
+		# (player/vehicle/prop) find it via their own mask, so it never initiates a collision test.
+		_collision_body.collision_layer = 0
+		_collision_body.set_collision_layer_value(Globals.LAYER_WORLD, true)
+		_collision_body.collision_mask = 0
 		add_child(_collision_body)
 
 		var base_sphere := SphereShape3D.new()

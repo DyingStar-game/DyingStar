@@ -30,6 +30,7 @@ size = Vector3(8.43586326904915, 0.2, 12.36057878158772)
 [sub_resource type="BoxShape3D" id="BoxShape3D_htkwp"]
 
 [node name="SpawnBuilding002" type="StaticBody3D" unique_id=1469314982]
+collision_mask = 0
 script = ExtResource("1_8ev56")
 cols = 5
 x_spacing = -8.15
