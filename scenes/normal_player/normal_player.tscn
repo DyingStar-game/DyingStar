@@ -89,7 +89,7 @@ spot_range = 25.0
 spot_angle = 41.4246
 
 [node name="AreaDetector" type="Area3D" parent="." unique_id=972717439]
-collision_layer = 4
+collision_layer = 0
 monitorable = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="AreaDetector" unique_id=1523390027]

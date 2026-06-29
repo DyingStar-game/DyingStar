@@ -277,9 +277,10 @@ func connect_area_detect():
 	if OS.has_feature("dedicated_server"):
 		print("Connecting area detector on server side")
 	$AreaDetector.monitoring = true
-	# Also scan the vehicle-zone layer so this single monitor detects seats and cargo bays (which
-	# are monitorable-only). The seats/bed no longer monitor — the player does the looking now.
-	$AreaDetector.collision_mask |= Globals.VEHICLE_ZONE_LAYER
+	# The single active monitor: scan ONLY the `zone` layer, where every passive detection zone lives
+	# (seats, cargo bay, gravity, spawn). They are monitorable-only; the player does all the looking.
+	# Behaviour is routed by group (gravity / spawn / vehicle_seat / vehicle_cargo).
+	$AreaDetector.collision_mask = Globals.MASK_PROBE
 	if not $AreaDetector.area_entered.is_connected(_on_area_detector_area_entered):
 		$AreaDetector.area_entered.connect(_on_area_detector_area_entered)
 	if not $AreaDetector.area_exited.is_connected(_on_area_detector_area_exited):

@@ -71,6 +71,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7682015, 0.12580767, -8.35
 size = Vector3(8.411511875608085, 1.2516153675724129, 1.9243328839802416)
 
 [node name="Area3D" type="Area3D" parent="." unique_id=847501629 groups=["spawn"]]
+collision_layer = 16
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=422968087]
 unique_name_in_owner = true

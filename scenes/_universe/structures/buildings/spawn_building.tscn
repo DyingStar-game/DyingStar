@@ -77,6 +77,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01499999999941792, 2.69902
 shape = SubResource("BoxShape3D_q87qf")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1669198076 groups=["spawn"]]
+collision_layer = 16
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1057822611]
 unique_name_in_owner = true
