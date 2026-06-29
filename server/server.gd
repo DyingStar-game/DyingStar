@@ -11,6 +11,15 @@ const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
 ## Max number of [Pin] log entries before suppressing further output.
 const PIN_DEBUG_MAX: int = 200
 
+## Physics activity freeze (Part A — server FPS): a body that has SETTLED (negligible drift, so it
+## stops jittering) AND is far from every player is frozen, so Jolt stops simulating it. It unfreezes
+## as soon as a player comes within ACTIVE_RADIUS, so it stays pushable/mineable. Only bodies WE froze
+## are unfrozen (design-frozen props — storage boxes, carried, in a bed — are left alone).
+const SETTLE_EPS: float = 0.05       # m of net drift below which a body counts as "not moving"
+const SETTLE_TICKS: int = 15         # consecutive still ticks (~1.5 s at the pin cadence) before freezing
+const ACTIVE_RADIUS: float = 60.0    # m: keep bodies dynamic within this of any player
+const FREEZE_DEBUG: bool = true      # server console: periodic frozen/active counts (dev aid)
+
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
 var datas_to_spawn_count: int = 0
@@ -129,6 +138,7 @@ var _zone_initialized: bool = false
 ## PIN_TICK_INTERVAL frames in _process to refresh which planet chunks
 ## must stay resident because an awake RigidBody3D is sitting on them.
 var _pin_tick_counter: int = 0
+var _freeze_dbg_accum: int = 0  # throttles the FREEZE_DEBUG console line
 ## Number of debug lines printed by the pin sweep so far (capped to keep
 ## logs readable).  Reset/incremented in _pin_node_to_planet_chunk.
 var _pin_debug_logged: int = 0
@@ -188,6 +198,7 @@ func _process(_delta: float) -> void:
 	if _pin_tick_counter >= PIN_TICK_INTERVAL:
 		_pin_tick_counter = 0
 		_refresh_active_body_pins()
+		_cull_settled_bodies()
 
 
 ## Sweep all RigidBody3D-based props, identify the planet chunk under
@@ -254,6 +265,86 @@ func _refresh_active_body_pins() -> void:
 		for k in pins_by_planet[puuid].keys():
 			keys.append(k as String)
 		planet.planet_terrain.set_pinned_chunks(keys)
+
+
+## Physics activity freeze (Part A): freeze props that have SETTLED and are far from every player so
+## Jolt stops simulating them (kills the resting-pile jitter cost); unfreeze them the moment a player
+## comes within ACTIVE_RADIUS so they stay pushable/mineable. Only bodies WE froze are unfrozen —
+## design-frozen props (storage boxes, carried, bed-loaded) and vehicles are left alone.
+func _cull_settled_bodies() -> void:
+	if not GameOrchestrator.is_server():
+		return  # server-only: it owns the authoritative bodies
+	var frozen_count := 0
+	var active_count := 0
+	for ptype in props_list.keys():
+		if ptype == "planets" or not (props_list[ptype] is Dictionary):
+			continue
+		for body_uuid in props_list[ptype].keys():
+			var body = props_list[ptype][body_uuid]
+			if not is_instance_valid(body) or not (body is RigidBody3D) or body is Vehicle:
+				continue
+			var rb: RigidBody3D = body
+			var parent := rb.get_parent()
+			if parent is Player or parent is Vehicle:
+				continue  # carried / loaded in a bed — keep it dynamic
+			if _player_within(rb.global_position, ACTIVE_RADIUS):
+				if rb.freeze and rb.get_meta("_culled_frozen", false):
+					_unfreeze_culled_body(rb)
+				rb.set_meta("_settle_ticks", 0)
+				active_count += 1
+				continue
+			if rb.freeze:
+				if rb.get_meta("_culled_frozen", false):
+					frozen_count += 1
+				continue  # already frozen (by us or by design), far → leave
+			# Settle detection: drift from a reference point. Jitter oscillates within SETTLE_EPS so it
+			# still counts as still; a real move pushes past it and resets the reference.
+			var ref: Vector3 = rb.get_meta("_settle_ref", rb.global_position)
+			var ticks: int = rb.get_meta("_settle_ticks", 0)
+			if rb.global_position.distance_to(ref) < SETTLE_EPS:
+				ticks += 1
+			else:
+				ticks = 0
+				rb.set_meta("_settle_ref", rb.global_position)
+			rb.set_meta("_settle_ticks", ticks)
+			if ticks >= SETTLE_TICKS:
+				_freeze_culled_body(rb)
+				frozen_count += 1
+			else:
+				active_count += 1
+	if FREEZE_DEBUG:
+		_freeze_dbg_accum += 1
+		if _freeze_dbg_accum >= 20:  # ~every 2 s at the pin cadence
+			_freeze_dbg_accum = 0
+			prints("[FREEZE] frozen=%d active=%d physics=%.1fms (idle-loop fps=%.0f, NOT the bottleneck)" % [
+				frozen_count, active_count,
+				Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+				Performance.get_monitor(Performance.TIME_FPS)])
+
+## True if any connected player is within [param radius] of [param pos].
+func _player_within(pos: Vector3, radius: float) -> bool:
+	var r2 := radius * radius
+	for puuid in players_list.keys():
+		var p = players_list[puuid]
+		if is_instance_valid(p) and p is Node3D and pos.distance_squared_to((p as Node3D).global_position) < r2:
+			return true
+	return false
+
+func _freeze_culled_body(rb: RigidBody3D) -> void:
+	rb.linear_velocity = Vector3.ZERO
+	rb.angular_velocity = Vector3.ZERO
+	rb.freeze = true
+	rb.set_meta("_culled_frozen", true)
+	rb.remove_meta("_settle_ticks")
+
+func _unfreeze_culled_body(rb: RigidBody3D) -> void:
+	rb.freeze = false
+	rb.linear_velocity = Vector3.ZERO
+	rb.angular_velocity = Vector3.ZERO
+	rb.remove_meta("_culled_frozen")
+	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
+	if "server_last_position" in rb:
+		rb.server_last_position = Vector3.INF
 
 
 ## Find the closest planet to [param body] and add the chunk key under
