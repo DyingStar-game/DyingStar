@@ -74,10 +74,6 @@ const MODEL_GROUP := "vehicle_model"
 ## FULLY cancels motion each frame — a heavy parked truck must NOT move from a player bump or a
 ## gentle slope. Above it (a genuine vehicle ramming) it's only damped, so a real hit still pushes.
 @export var handbrake_release_speed: float = 2.0
-## Maximum steering angle of the front wheels, in degrees.
-@export var max_steer_deg: float = 30.0
-## How fast the steering reaches its target angle (higher = snappier).
-@export var steer_speed: float = 4.0
 ## Driven wheels: FRONT (FWD), REAR (RWD) or ALL (4x4).
 @export var drive_mode: DriveMode = DriveMode.ALL:
 	set(v):
@@ -92,6 +88,28 @@ const MODEL_GROUP := "vehicle_model"
 ## the col_ pieces (a big cab box, thin bed pieces) drag it forward and the truck nose-dives. Default
 ## (0,0,0) = balanced on the wheels; lower Y (negative) for roll stability, shift Z for a weight bias.
 @export var center_of_mass_offset: Vector3 = Vector3.ZERO
+
+@export_group("Steering")
+## Maximum steering angle of the front wheels, in degrees.
+@export var max_steer_deg: float = 30.0
+## How fast the wheels turn toward the held direction, in rad/s. Lower = more progressive
+## (the wheels + steering wheel build up their angle instead of snapping to full lock).
+@export var steer_speed: float = 1.6
+## How fast the wheels return to centre when the pilot releases the key, in rad/s. A bit
+## snappier than steer_speed so the truck straightens up promptly, like a real self-centring wheel.
+@export var steer_return_speed: float = 3.0
+## Above this forward speed (km/h) the steering lock shrinks (down to steer_min_ratio of max) so
+## the truck can't snap-turn at speed — agile when slow, stable when fast. Set 0 to disable.
+@export var steer_speed_falloff_kmh: float = 80.0
+## Fraction of the max steer angle still available at/above steer_speed_falloff_kmh.
+@export var steer_min_ratio: float = 0.35
+@export_subgroup("Steering wheel (visual)")
+## Steering wheel cosmetic ratio: how many radians the volant turns per radian of front-wheel
+## steer (real cars ~8-16 lock-to-lock). Cosmetic only — does not affect driving.
+@export var steering_wheel_ratio: float = 8.0
+## The steering wheel's OWN local axis it spins about (its disc/column axis). Intrinsic to the mesh,
+## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
+@export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
 
 # --- Dimensions (meters) — changing one rebuilds the blockout -----------------
 @export_group("Body")
@@ -180,12 +198,6 @@ const MODEL_GROUP := "vehicle_model"
 ## Spin axis of a real wheel mesh, in the mesh's local space (its axle). Blender +Y-up export
 ## usually leaves the axle on local X. Flip/change if real wheels spin around the wrong axis.
 @export var real_wheel_spin_axis: Vector3 = Vector3.RIGHT
-## Steering wheel cosmetic ratio: how many radians the volant turns per radian of front-wheel
-## steer (real cars ~8-16 lock-to-lock). Cosmetic only — does not affect driving.
-@export var steering_wheel_ratio: float = 8.0
-## The steering wheel's OWN local axis it spins about (its disc/column axis). Intrinsic to the mesh,
-## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
-@export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
 ## Door fallback ONLY (when a door has no Blender animation clip): instant hinge angle in degrees…
 @export var door_open_angle_deg: float = 75.0
 ## …about this local axis (the door's hinge). The real swing is authored in Blender.
@@ -1645,8 +1657,17 @@ func _apply_drive(delta: float) -> void:
 
 	# VehicleBody3D drives toward +Z for a positive engine_force; our cab faces -Z, so negate.
 	engine_force = -force
-	_steer_target = turn * deg_to_rad(max_steer_deg)
-	steering = move_toward(steering, _steer_target, steer_speed * delta)
+	# Speed-sensitive lock: shrink the max steer angle the faster we go (stable at speed, agile slow).
+	var lock_deg: float = max_steer_deg
+	if steer_speed_falloff_kmh > 0.0:
+		var speed_t: float = clampf(absf(forward_kmh) / steer_speed_falloff_kmh, 0.0, 1.0)
+		lock_deg = lerpf(max_steer_deg, max_steer_deg * steer_min_ratio, speed_t)
+	_steer_target = turn * deg_to_rad(lock_deg)
+	# Turning toward a held direction is progressive; releasing (or crossing centre) recentres a bit
+	# snappier so the wheels don't feel sluggish coming back straight.
+	var recentring: bool = absf(turn) < 0.01 or signf(turn) != signf(steering)
+	var steer_rate: float = steer_return_speed if recentring else steer_speed
+	steering = move_toward(steering, _steer_target, steer_rate * delta)
 	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
 	# speed instead of rolling forever — VehicleWheel3D models neither on its own.
 	var coasting: bool = absf(throttle_in) < 0.05 and not braking
