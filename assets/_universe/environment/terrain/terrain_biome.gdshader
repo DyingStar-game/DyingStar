@@ -1,5 +1,8 @@
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+// cull_disabled (matches rocky_ground.gdshader): HEALPix terrain + skirt geometry
+// can appear back-facing to the camera, so cull_back would punch black holes in the
+// surface and leave only skirts visible. Double-sided rendering avoids that.
+render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 
 // Terrain biome shader — uses vertex COLOR as base albedo.
 // Supports:

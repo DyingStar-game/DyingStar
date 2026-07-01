@@ -11,8 +11,41 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | File | Runs In | Purpose |
 |---|---|---|
 | `setup_planet_project.py` | QGIS Python Console | Creates a new QGIS project with all the standard layers (contours, biomes, roads, POI, water) pre-configured |
-| `export_planet.py` | QGIS Python Console | Exports all layers to GeoJSON + generates heightmap, biome raster, and far-LOD color map |
+| `export_elevation.py` | QGIS Python Console | **Elevation-only**: one raw float32 (`.r32`) heightmap tile per HEALPix chunk, for the standard mesh terrain (no recipes/voxels). See below. |
+| `export_planet.py` | QGIS Python Console | Full pipeline: exports all layers to GeoJSON + heightmap, biome raster, far-LOD color map, recipes |
 | `qgis_planet_importer.gd` | Godot Editor | Reads the exported files and generates terrain textures, biome maps, and POI markers for your Planet node |
+
+---
+
+## Elevation-only mesh pipeline (`export_elevation.py`)
+
+A focused exporter that feeds the existing mesh terrain (`scenes/planet/`) directly
+from QGIS contour lines — no recipe `.planetpack`, no voxels.
+
+1. **Edit config** at the top of `export_elevation.py` (or set the QGIS project
+   variables `planet_name` / `planet_radius_m`):
+   - `PLANET_RADIUS = 6_356_000` (metres)
+   - `NSIDE = 64` → 12·64² = **49152 chunks** (`chunk_export_depth = 6`)
+   - `TILE_RES = 25` (samples per chunk edge)
+   - `EXPORT_DIR` → your `assets/qgis/.export` path
+2. **Run** in the QGIS Python Console:
+   ```python
+   exec(open('…/tools/qgis/export_elevation.py').read())
+   ```
+   Output: `<EXPORT_DIR>/<planet>_chunks/face_{0..11}/f{ipix}.r32` + `manifest.json`.
+3. **Wire the planet in Godot**: on the planet's `PlanetData` set
+   `chunk_heightmaps_dir = "assets/qgis/.export/<planet>_chunks"` (relative to
+   `res://`). `PlanetTerrain.initialize()` reads `manifest.json` and auto-applies
+   `radius`, `export_nside`, `chunk_heightmap_res`, `height_offset`, `max_height`.
+   No other fields need setting for elevation.
+
+**Format note:** tiles are raw float32 (`FORMAT_RF`), normalized `[0,1]` over
+`[elev_min, elev_max]`, loaded losslessly via `Image.create_from_data`. (16-bit PNG
+is avoided because Godot downsamples it to 8-bit on import → terracing.) Decode is
+`elev = pixel.r * max_height + height_offset`.
+
+> When `chunk_heightmaps_dir` is empty, the terrain falls back to the recipe
+> pipeline (`export_planet.py`) as before — the two are mutually exclusive per planet.
 
 ---
 

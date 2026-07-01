@@ -21,6 +21,9 @@ class_name PlanetChunk
 ## [param u_min] / [param u_max] — horizontal bounds on the face (−1 … 1)
 ## [param v_min] / [param v_max] — vertical bounds on the face (−1 … 1)
 ## [param resolution] — number of quads per edge (vertex count = res + 1)
+# One-shot guard for the corundum-override debug print (temporary).
+static var _corundum_logged := false
+
 ## Bitmask constants for LOD-stitching edges (reserved for future use).
 const STITCH_LEFT   := 1
 const STITCH_RIGHT  := 2
@@ -309,6 +312,26 @@ static func generate_mesh(
 	# Ensure the detail texture array is built so the shader has it.
 	data.get_detail_texture_array()
 
+	# ── Corundum whole-planet override ─────────────────────────────
+	# When enabled, every vertex is coloured / detailed as the
+	# aride_desert-corundum_plateau biome regardless of its real biome.
+	# (Phase 2 will also carve the procedural crack network here.)
+	var _corundum_bd: BiomeDefinition = null
+	# Mesh vertex spacing (m) for this chunk — used to LOD-fade the crack carve
+	# so mid-distance chunks don't alias the crack pattern into a spiky mess.
+	var _crack_vtx_spacing := 0.0
+	if data.corundum_override_whole_planet:
+		_corundum_bd = data.get_biome_by_type(
+				ArideDesertCorundumPlateauTerrain.BIOME_TYPE)
+		if hp_mode and res > 0:
+			_crack_vtx_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
+					* data.radius / float(res)
+		if not _corundum_logged:
+			_corundum_logged = true
+			print("[PlanetChunk] corundum override ACTIVE on planet=%s  bd=%s  spacing=%.0f width=%.0f depth=%.0f" % [
+				data.planet_name, str(_corundum_bd != null),
+				data.crack_spacing_m, data.crack_width_m, data.crack_depth_m])
+
 	# ── Recipe crater data ─────────────────────────────────────────
 	# Craters from recipes are too small to resolve in the recipe heightmap
 	# (sub-pixel at 128px / ~60km chunks).  Fetch cached recipe crater data
@@ -338,6 +361,15 @@ static func generate_mesh(
 	var _chunk_compact_craters: Array = []
 	if has_crater_overlap and not data.craters_baked:
 		_chunk_compact_craters = _cr_arr
+
+	# Record per-vertex height so the edge skirt can be sized from the steepest
+	# single cell (the actual LOD-seam mismatch), not the whole-chunk relief.
+	# Whole-chunk relief × exaggeration produced kilometre-deep skirt walls →
+	# massive overdraw. The seam between a chunk and a 2× coarser neighbour is
+	# only ~a couple of cells of slope, so a small multiple of the max cell step
+	# covers it cheaply.
+	var _chunk_heights := PackedFloat32Array()
+	_chunk_heights.resize((res + 1) * (res + 1))
 
 	# --- vertices -----------------------------------------------------------
 	for yi in res + 1:
@@ -673,6 +705,18 @@ static func generate_mesh(
 						_cl_drop = RockyLandformCliffTerrain.DROP_M
 					height -= RockyLandformCliffTerrain.height_offset(_cl_dist_m, _cl_drop)
 
+			# ── Corundum crack network ─────────────────────────────
+			# Pure function of dir + PlanetData params → identical on the
+			# server collision path (see generate_collision_shape).
+			# Offset (≤ 0) is reused below to stain the crack interiors.
+			var _crack_off := 0.0
+			if _corundum_bd:
+				_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset(
+					dir, data.radius, data.crack_spacing_m,
+					data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+				height += _crack_off
+
+			_chunk_heights[idx] = height
 			vertices[idx] = _world_to_local(dir * (data.radius + height), cc_f32, _wp_f32)
 			normals[idx]  = dir  # placeholder — overwritten below
 			uvs[idx]      = PlanetData.direction_to_uv(dir)
@@ -683,7 +727,14 @@ static func generate_mesh(
 			# boundaries at ~6 m spacing, making expensive multi-sample
 			# jittering unnecessary.
 			var base_col := Color(0.45, 0.35, 0.25)  # fallback
-			if bd:
+			if _corundum_bd:
+				# Milky-white ↔ iron-yellow mottling ("iron impurities"),
+				# then darken/stain the interiors of the cracks.
+				base_col = ArideDesertCorundumPlateauTerrain.iron_tint(
+					dir, data.radius, _corundum_bd.color)
+				base_col = ArideDesertCorundumPlateauTerrain.crack_stain(
+					base_col, _crack_off, data.crack_depth_m)
+			elif bd:
 				base_col = bd.color
 			elif not zone_color_hex.is_empty():
 				base_col = Color(zone_color_hex)
@@ -692,7 +743,8 @@ static func generate_mesh(
 			colors[idx] = base_col
 
 			# Detail texture info → UV2.
-			var detail_layer := data.get_detail_layer(bd)
+			var _detail_bd: BiomeDefinition = _corundum_bd if _corundum_bd else bd
+			var detail_layer := data.get_detail_layer(_detail_bd)
 			var detail_scale := data.get_detail_scale_for_layer(detail_layer)
 			uv2s[idx] = Vector2(float(detail_layer), detail_scale)
 
@@ -781,6 +833,17 @@ static func generate_mesh(
 					h_r = data.sample_height_for_direction(dir_r, _export_ipix)
 					h_b = data.sample_height_for_direction(dir_b, _export_ipix)
 					h_t = data.sample_height_for_direction(dir_t, _export_ipix)
+				# Carve the crack network into the gradient samples too, so the
+				# near-vertical crack walls get correct (sharp) shading normals.
+				if _corundum_bd:
+					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
+						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+					h_r += ArideDesertCorundumPlateauTerrain.crack_offset(
+						dir_r, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+					h_b += ArideDesertCorundumPlateauTerrain.crack_offset(
+						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+					h_t += ArideDesertCorundumPlateauTerrain.crack_offset(
+						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
 				var world_l := dir_l * (data.radius + h_l)
 				var world_r := dir_r * (data.radius + h_r)
 				var world_b := dir_b * (data.radius + h_b)
@@ -846,7 +909,27 @@ static func generate_mesh(
 	# (so the skirt overlaps slightly with the neighbour's terrain), then
 	# drop toward the planet centre.  The outward nudge ensures micro-gaps
 	# between adjacent chunks are always covered by overlapping skirts.
-	var skirt_drop := data.max_height * 0.5 + absf(data.height_offset) + 10.0  # metres below surface
+	# Skirt depth = a small multiple of the steepest single-cell height step, which
+	# is what actually has to be bridged where this chunk meets a coarser-LOD
+	# neighbour. Sizing from whole-chunk relief (× exaggeration) produced
+	# kilometre-deep walls and crushing overdraw; the seam mismatch is only a
+	# couple of cells of slope, so max_step × 6 (+ margin) covers it cheaply.
+	var _max_step := 0.0
+	var _stride := res + 1
+	for _yi in res + 1:
+		for _xi in res + 1:
+			var _i := _yi * _stride + _xi
+			var _hc := _chunk_heights[_i]
+			if _xi > 0:
+				_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - 1]))
+			if _yi > 0:
+				_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - _stride]))
+	var skirt_drop := maxf(_max_step * 6.0 + 25.0, 40.0)  # metres below surface
+	# Corundum cracks create ~crack_depth single-cell steps, which would inflate
+	# skirt_drop into kilometre-tall walls (overdraw + dark vertical faces at LOD
+	# seams).  A LOD-seam mismatch never exceeds the crack depth, so cap it there.
+	if _corundum_bd:
+		skirt_drop = minf(skirt_drop, data.crack_depth_m * 1.5 + 40.0)
 	var skirt_nudge := 0.1  # metres along surface, outward from chunk interior
 	var edge_indices_list: Array[int] = []
 	# Bottom edge (yi == 0, all xi)
@@ -901,7 +984,9 @@ static func generate_mesh(
 		normals.append(normals[ei])
 		uvs.append(uvs[ei])
 		uv2s.append(uv2s[ei])
-		colors.append(colors[ei])
+		# Debug: paint skirt curtains bright magenta so they can be told apart
+		# from real terrain / crack interiors in-game.
+		colors.append(Color.MAGENTA if data.debug_color_skirts else colors[ei])
 		skirt_offsets.append(surface_offset.x)
 		skirt_offsets.append(surface_offset.y)
 		skirt_offsets.append(surface_offset.z)
@@ -2080,8 +2165,17 @@ static func generate_collision_shape(
 
 	var grid_dirs: Array[PackedVector3Array] = []
 	var _export_ipix: int = -1
+	# Collision-grid vertex spacing (m) — feeds the crack LOD fade.  The server
+	# collision grid is ~397 m/vertex, far coarser than a ~500 m crack, so the
+	# fade zeroes the carve here (and skips the expensive Voronoi), which is what
+	# keeps the server framerate up.  Cracks are carved only where the grid is
+	# fine enough to actually represent them.
+	var _col_crack_spacing := 0.0
 	if hp_mode:
 		grid_dirs = HEALPix.get_pixel_grid(hp_nside, hp_ipix, res)
+		if res > 0:
+			_col_crack_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
+					* data.radius / float(res)
 		if hp_nside >= data.export_nside:
 			_export_ipix = hp_ipix
 			var _ns := hp_nside
@@ -2396,6 +2490,16 @@ static func generate_collision_shape(
 								_cl_drop = RockyLandformCliffTerrain.DROP_M
 							height -= RockyLandformCliffTerrain.height_offset(_cl_dist, _cl_drop)
 						break
+
+			# ── Corundum crack network (collision) ─────────────────
+			# Same pure crack_offset() and params as the visual mesh, with the
+			# same LOD fade keyed on this grid's spacing — so where the collision
+			# grid is fine enough it matches the client, and where it's too coarse
+			# it fades to flat (and skips the Voronoi → server stays fast).
+			if data.corundum_override_whole_planet:
+				height += ArideDesertCorundumPlateauTerrain.crack_offset(
+					dir, data.radius, data.crack_spacing_m,
+					data.crack_width_m, data.crack_depth_m, _col_crack_spacing)
 
 			# ── Write final vertex position ────────────────────────
 			if not _is_hole_vertex:
