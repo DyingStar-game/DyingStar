@@ -1313,7 +1313,24 @@ func _aimed_door_handle() -> VehicleDoorHandle:
 	if not interact_ray.is_colliding():
 		return null
 	var hit = interact_ray.get_collider()
-	return hit if hit is VehicleDoorHandle else null
+	var handle := hit as VehicleDoorHandle
+	if handle == null:
+		return null
+	# Only the box on our current side counts: outdoor on foot, indoor when seated in this vehicle.
+	# Aiming at the far-side box (the one you can't reach from where you are) is ignored.
+	if not _door_side_matches(handle):
+		return null
+	return handle
+
+## True when the handle box under the crosshair is on the player's side (outdoor on foot, indoor when
+## seated in that vehicle). "" side (no boxes assigned) always matches, so an un-configured handle works.
+func _door_side_matches(handle: VehicleDoorHandle) -> bool:
+	var side := handle.aimed_side(interact_ray.get_collision_point())
+	if side == "":
+		return true
+	var veh = handle.vehicle()
+	var inside: bool = veh != null and "uuid" in veh and _seat_vehicle_uuid == str(veh.uuid)
+	return side == ("indoor" if inside else "outdoor")
 
 ## Tell the server to open/close the door this handle drives (server-authoritative, replicated back).
 func _toggle_door(handle: VehicleDoorHandle) -> void:
@@ -1324,6 +1341,7 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 		"action": "vehicle_door",
 		"target_uuid": str(veh.uuid),
 		"door_id": handle.door_id,
+		"side": handle.aimed_side(interact_ray.get_collision_point()),
 	})
 
 ## Prompt for a door handle under the crosshair: close it if open, else open it.
@@ -1342,40 +1360,66 @@ func _seat_door_open(seat) -> bool:
 		return true
 	return veh.is_door_open(str(seat.door_id))
 
-## True if any solid body (wall, building, city — Static OR Rigid) sits between the eye and
-## the prop. Server-authoritative: the carry handler calls this before granting a pickup, so a
-## thin wall can't be exploited to grab through it. Meant to run on the SERVER, which owns the
-## collisions (the client has none → its result would always be "clear"). We ignore ourselves,
-## the prop, and the prop's parent (a vehicle bed / depot / the ground it rests on) — reaching
-## the prop must not be blocked by the very thing holding it; walls are separate bodies.
-func _is_blocked_by_geometry(prop: Node) -> bool:
-	if not (prop is Node3D):
-		return false
-	if "type_name" in prop:
-		# add this because have problems with detection of small props
-		if prop.type_name == "miningrock":
-			return false;
+## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
+## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
+## sit in open air (door handles): the box on the near side is clear, the one behind the body is not.
+func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 	_ensure_los_ray()
 	# top_level → target_position is a world-space delta (no parent transform to fight).
 	_los_ray.global_position = interact_ray.global_position
-	_los_ray.target_position = prop.global_position - _los_ray.global_position
+	_los_ray.target_position = target - _los_ray.global_position
 	_los_ray.clear_exceptions()
 	_los_ray.add_exception(self)
-	if prop is CollisionObject3D:
-		_los_ray.add_exception(prop)
-		#var all_nodes = prop.find_children("*", "CollisionObject3D", true, false)
-		#for node in all_nodes:
-			#_los_ray.add_exception(node)
-	var parent = prop.get_parent()
-	if parent is CollisionObject3D:
-		_los_ray.add_exception(parent)
-		#var all_nodes = parent.find_children("*", "CollisionObject3D", true, false)
-		#for node in all_nodes:
-			#_los_ray.add_exception(node)
+	for node in exceptions:
+		if node is CollisionObject3D:
+			_los_ray.add_exception(node)
 	_los_ray.force_raycast_update()
-	if _los_ray.is_colliding():
-		print(_los_ray.get_collider().owner)
 	return _los_ray.is_colliding()
+
+## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
+## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
+## has no collisions, so its answer would always be "clear" and be trivially cheatable.
+func _can_see(target: Node) -> bool:
+	if not (target is Node3D):
+		return false
+	# Door handle: pick the box for the side the player is on — seated in this vehicle → indoor box,
+	# on foot → outdoor box — then require a clear sightline to it. The vehicle's own collision is a
+	# coarse CONVEX hull that encloses the boxes, so we exclude it (it can't self-block); FOREIGN walls
+	# still block. Choosing the box by seated-state is what stops opening a door you can't see.
+	if target.has_method("side_shape"):
+		var veh: Node = target.vehicle() if target.has_method("vehicle") else null
+		var inside: bool = veh != null and veh.has_method("is_occupied_by") and veh.is_occupied_by(self)
+		var box: Node3D = target.side_shape(inside)
+		if box == null:
+			return true  # handle without assigned boxes: don't lock the door
+		return not _line_of_sight_blocked(box.global_position, [veh])
+	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
+	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
+	return _first_solid_hit_is(target)
+
+## True if a MASK_OBSTACLE ray from the eye toward `target` hits `target` ITSELF first (nothing solid
+## in front of it). We only ignore ourselves; whatever the target rests in/on is NOT excluded, so you
+## can't grab an object through the side of the bed it sits in — you must actually see it.
+func _first_solid_hit_is(target: Node3D) -> bool:
+	_ensure_los_ray()
+	_los_ray.global_position = interact_ray.global_position
+	var to_target: Vector3 = target.global_position - _los_ray.global_position
+	# Aim a touch past the centre so a thin/small target is still crossed by the ray.
+	_los_ray.target_position = to_target * 1.05
+	_los_ray.clear_exceptions()
+	_los_ray.add_exception(self)
+	_los_ray.force_raycast_update()
+	if not _los_ray.is_colliding():
+		return false
+	var c: Object = _los_ray.get_collider()
+	return c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target)))
+
+## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
+## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
+func _is_blocked_by_geometry(prop: Node) -> bool:
+	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
+		return false
+	return not _can_see(prop)
 
 ## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
 ## _process / input / server alike — direct_space_state is only valid during physics).
@@ -1578,9 +1622,18 @@ func server_action_received(data: Dictionary) -> void:
 				veh_l.toggle_headlights()
 		"vehicle_door":
 			# A door handle is operated on foot by anyone nearby - NOT gated on the driver.
+			# Server-authoritative so a client can't forge opening a door it can't use: (1) the box it
+			# aimed at must match the player's side (outdoor on foot, indoor when seated in this vehicle),
+			# and (2) that box must have a clear sightline (see _can_see). Both run on the server.
 			var veh_d := _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_d != null and veh_d.has_method("server_toggle_door"):
-				veh_d.server_toggle_door(str(data.get("door_id", "")))
+				var handle_d: Node3D = veh_d.get_door_handle(str(data.get("door_id", ""))) \
+						if veh_d.has_method("get_door_handle") else null
+				var inside_d: bool = veh_d.has_method("is_occupied_by") and veh_d.is_occupied_by(self)
+				var claimed_side: String = str(data.get("side", ""))
+				var side_ok: bool = claimed_side == "" or claimed_side == ("indoor" if inside_d else "outdoor")
+				if side_ok and (handle_d == null or _can_see(handle_d)):
+					veh_d.server_toggle_door(str(data.get("door_id", "")))
 		"action":
 			print("action key pressed by player")
 			if hands_item != null:

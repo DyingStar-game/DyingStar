@@ -1250,6 +1250,26 @@ func server_toggle_door(door_id: String) -> void:
 	_door_state[door_id] = not is_door_open(door_id)
 	_apply_door(door_id, _door_state[door_id])
 
+## The VehicleDoorHandle node driving `door_id` on THIS vehicle (or null). Used server-side to
+## line-of-sight-check a door toggle against the handle's real position (it rides its door at runtime).
+func get_door_handle(door_id: String) -> Node3D:
+	for h in get_tree().get_nodes_in_group("vehicle_door_handle"):
+		if h is Node3D and "door_id" in h and str(h.door_id) == door_id and h.has_method("vehicle") \
+				and h.vehicle() == self:
+			return h
+	return null
+
+## True if `player` currently occupies a seat of THIS vehicle (driver or passenger). Server-authoritative
+## (reads seat occupancy, set by server_enter/server_exit) — used to tell whether a player operating a
+## door handle is inside (seated) or outside (on foot).
+func is_occupied_by(player: Node) -> bool:
+	if _pilot == player:
+		return true
+	for c in get_children():
+		if c is VehicleSeat and (c as VehicleSeat).occupant == player:
+			return true
+	return false
+
 ## A seat may be boarded/left only through an open door: true when the seat is gated by a door that is
 ## currently shut. A seat with no door_id is never blocked. Used by server_enter/server_exit (the
 ## client gates this too, but the server is the source of truth — never trust the client).
