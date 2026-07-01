@@ -62,7 +62,7 @@ import/use_multiple_threads=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/extremely_fast_atmosphere/plugin.cfg", "res://addons/godot-livekit/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/uuid/plugin.cfg")
+enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/extremely_fast_atmosphere/plugin.cfg", "res://addons/godot-livekit/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/planet_tools/plugin.cfg", "res://addons/uuid/plugin.cfg")
 
 [file_customization]
 

@@ -50,6 +50,17 @@ const CAM_HISTORY_SIZE := 10
 			_editor_goto_cooldown = 0.0
 			_generate_editor_preview()
 
+## Number of chunk rings displayed around the centre chunk in the editor
+## preview. 0 = only the centre chunk, 1 = 3×3, 2 = 5×5, N = (2N+1)×(2N+1).
+## Higher values give a larger contiguous surface for placing items, at the
+## cost of more mesh generation. Rings are grown by HEALPix neighbour walk.
+@export_range(0, 8) var editor_preview_rings: int = 1:
+	set(value):
+		editor_preview_rings = value
+		if Engine.is_editor_hint() and _initialized:
+			_editor_goto_cooldown = 0.0
+			_generate_editor_preview()
+
 ## When enabled, the editor preview also scatters vegetation (trees,
 ## grass) on the visible chunks — gives a near-runtime WYSIWYG view.
 @export var editor_preview_vegetation: bool = false:
@@ -62,6 +73,40 @@ const CAM_HISTORY_SIZE := 10
 ## Maximum concurrent mesh-generation worker tasks.
 ## Set to 4 so all 4 HEALPix children of a split pixel compute in parallel.
 @export_range(1, 8) var max_mesh_tasks: int = 4
+
+## ── Editor navigation ─────────────────────────────────────────────
+## Longitude (degrees) used by the "Go to lon/lat" button below.
+@export var editor_goto_lon: float = 0.0
+## Latitude (degrees) used by the "Go to lon/lat" button below.
+@export var editor_goto_lat: float = 0.0
+## Inspector button: recenter the editor preview on the lon/lat above,
+## update the x/y/z fields to match, and drop a focus marker (press F in the
+## viewport to fly to it).
+@export_tool_button("Go to lon/lat") var _goto_lonlat_action = _goto_lonlat
+## Planet-local X/Y/Z used by the "Go to coordinates" button below. Any point
+## in space is projected onto the surface along its direction from the centre.
+@export var editor_goto_x: float = 0.0
+@export var editor_goto_y: float = 0.0
+@export var editor_goto_z: float = 0.0
+## Inspector button: recenter the editor preview on the x/y/z above, update
+## the lon/lat fields to match, and drop a focus marker.
+@export_tool_button("Go to coordinates") var _goto_coords_action = _goto_coordinates
+## When enabled, the editor camera fly speed and near/far clip planes are
+## auto-tuned to the planet radius on load — essential for large planets,
+## where the default 4 km far plane clips the whole surface.
+@export var editor_auto_tune_camera: bool = true
+## Inspector button: re-apply the camera auto-tune to the current planet now.
+@export_tool_button("Tune camera to planet scale") var _tune_camera_action = _auto_tune_editor_camera
+
+## ── Editor placement (used by the "Planet Tools" editor plugin) ───
+## When snapping selected objects to the surface, also rotate them so their
+## +Y axis points along the surface normal (radially outward). Disable to snap
+## position only and keep the current rotation.
+@export var editor_snap_align_to_normal: bool = true
+## Extra height (metres) above the sampled surface for snapped objects — raise
+## it if the object's origin sits above its base, lower it if it sits below.
+## Read by the "Planet Tools" editor plugin's "Snap to surface" action.
+@export var editor_snap_height_offset: float = 0.0
 
 var planet_data: PlanetData
 var is_server: bool = false
@@ -166,15 +211,34 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	planet_data = data
 	is_server = server_mode
 
+	# File mode: apply the chunk manifest (radius / export nside / tile res /
+	# height range) before anything reads these values below.
+	if data.chunk_heightmaps_dir != "":
+		data.apply_chunk_manifest()
+
 	# Initialize chunk disk cache (skipped in editor mode)
 	if not Engine.is_editor_hint():
 		# v13: collision col_res raised to _recipe_resolution to match the
 		# heightmap that sample_height_for_direction returns; older caches
 		# (v12 and earlier) stored coarse 16x16 grids that were tens to
 		# hundreds of metres off from the visual mesh.
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_v13" % [
+		# v14: skirt depth now derives from per-chunk relief (was global
+		# max_height) — invalidates meshes baked with kilometre-tall skirts.
+		# v15: relief-based skirt finalised.
+		# v16: terrain_exaggeration added to the key so changing it re-bakes.
+		# v17: skirt depth now from steepest cell step (was whole-chunk relief).
+		# v18: corundum crack override + params in the key so toggling/tuning
+		#      the crack network re-bakes both visual meshes and collision.
+		# v19: corundum iron-impurity vertex colouring baked into the mesh.
+		# v20: crack carve LOD-fades by vertex spacing (kills the LOD1 alias band).
+		# v21: stronger LOD fade (gone by 0.5·width) + capped corundum skirt drop.
+		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d" % [
+			int(data.corundum_override_whole_planet), data.crack_spacing_m,
+			data.crack_width_m, data.crack_depth_m,
+			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v23%s" % [
 			data.planet_name, data.export_nside, data.radius,
-			data.max_height, data.height_offset]
+			data.max_height, data.height_offset, data.terrain_exaggeration, _cor]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.
 		var _cache_base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR \
@@ -197,6 +261,8 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_initialized = true
 		_populate_biome_entries()
 		_print_biome_locations()
+		if editor_auto_tune_camera:
+			_auto_tune_editor_camera()
 		_generate_editor_preview()
 		return
 
@@ -417,6 +483,15 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 	var cached_shape: ConcavePolygonShape3D = null
 	if _chunk_cache and _chunk_cache.has_collision(key, 0):
 		cached_shape = _chunk_cache.load_collision(key, 0)
+
+	# File mode: skip recipe phase-0. The shape task lazily loads the .r32 tile
+	# via load_chunk_heightmap() while sampling collision heights.
+	if planet_data.chunk_heightmaps_dir != "":
+		if cached_shape != null:
+			_server_assemble_chunk(key, planet_data.export_nside, ipix, cached_shape)
+		else:
+			_server_submit_shape_task(key, ipix, col_res)
+		return
 
 	# Fast-path: both image and shape already available — assemble now.
 	if planet_data.is_chunk_cached(key):
@@ -903,20 +978,14 @@ func _get_editor_camera_local() -> Vector3:
 
 
 ## Generate an editor preview centred on the editor camera.
-## Spawns the centre HEALPix pixel + up to 8 neighbours at the configured
-## [member editor_preview_depth].
+## Spawns the centre HEALPix pixel plus [member editor_preview_rings] rings of
+## neighbours at the configured [member editor_preview_depth].
 ## When [member editor_preview_vegetation] is enabled, tree and grass
 ## MultiMeshes are also generated on those chunks.
 ## Called only in the Godot editor (@tool mode).
 ## [param center_local]: if not [constant Vector3.INF], use this planet-local
 ## position as the preview centre instead of the editor camera.
 func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
-	# Synchronously remove previous preview meshes.
-	for child in _chunks_node.get_children():
-		_chunks_node.remove_child(child)
-		child.free()
-	_active_chunks.clear()
-
 	var depth := editor_preview_depth
 	var nside := HEALPix.depth_to_nside(depth)
 	var res := planet_data.chunk_resolution
@@ -931,18 +1000,51 @@ func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
 	var cam_dir := ref_local.normalized()
 	var center_ipix := HEALPix.vec2pix_nest(nside, cam_dir)
 
-	# ── Build pixel set: centre + 8 neighbours ────────────────────
-	var pixels := [center_ipix]
-	var neighbors := HEALPix.get_neighbors_nest(nside, center_ipix)
-	for dir_name in neighbors:
-		var nb: int = neighbors[dir_name]
-		if nb >= 0 and not pixels.has(nb):
-			pixels.append(nb)
+	# ── Build pixel set: centre + N rings of neighbours ───────────
+	# BFS outward: each ring adds the 8-neighbourhood of the previous
+	# frontier, producing a roughly (2N+1)×(2N+1) patch of chunks.
+	var pixel_set := {center_ipix: true}
+	var frontier := [center_ipix]
+	for _ring in editor_preview_rings:
+		var next_frontier: Array = []
+		for p in frontier:
+			var nbrs := HEALPix.get_neighbors_nest(nside, p)
+			for dir_name in nbrs:
+				var nb: int = nbrs[dir_name]
+				if nb >= 0 and not pixel_set.has(nb):
+					pixel_set[nb] = true
+					next_frontier.append(nb)
+		frontier = next_frontier
+	var pixels := pixel_set.keys()
 
+	# ── Reuse: keep chunks already built, free the rest ───────────
+	# Chunk keys are deterministic per (nside, ipix), so a chunk that
+	# stays in the patch — or a preview that just re-centres a chunk or
+	# two away — is reused as-is instead of being recomputed. Changing the
+	# depth changes nside → new keys → full rebuild, which is correct.
+	var want_veg := editor_preview_vegetation
+	var desired := {}
 	for ipix in pixels:
+		desired["editor_hp_n%d_p%d" % [nside, ipix]] = ipix
+
+	for old_key in _active_chunks.keys():
+		var old: Dictionary = _active_chunks[old_key]
+		# Drop chunks no longer in the patch, or whose vegetation state
+		# no longer matches the current toggle.
+		if not desired.has(old_key) or old.get("veg", false) != want_veg:
+			_free_editor_chunk(old)
+			_active_chunks.erase(old_key)
+
+	var reused := _active_chunks.size()
+	var built := 0
+
+	for key in desired:
+		if _active_chunks.has(key):
+			continue  # already built and still valid — skip recompute
+		var ipix: int = desired[key]
+		built += 1
 		var chunk_center := PlanetChunk.snap_to_f32(
 			HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
-		var key := "editor_hp_n%d_p%d" % [nside, ipix]
 
 		# ── Terrain mesh ──────────────────────────────────────
 		var mesh := PlanetChunk.generate_mesh_healpix(
@@ -958,10 +1060,10 @@ func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
 			fposmod(chunk_center.y, _wrap),
 			fposmod(chunk_center.z, _wrap)))
 		_chunks_node.add_child(mi)
-		var info: Dictionary = {"key": key, "mesh_instance": mi}
+		var info: Dictionary = {"key": key, "mesh_instance": mi, "veg": want_veg}
 
 		# ── Vegetation (trees + grass) ────────────────────────
-		if editor_preview_vegetation:
+		if want_veg:
 			var _ed_info := {"nside": nside, "ipix": ipix}
 			var _ed_pz := _get_chunk_populate_zones(_ed_info)
 			var _ed_has_forest := _zones_have_biome(_ed_pz, ForestTemperateForestTerrain.BIOME_TYPE)
@@ -998,8 +1100,19 @@ func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
 
 		_active_chunks[key] = info
 
-	print("[PlanetTerrain] Editor preview: HEALPix nside=%d center_ipix=%d chunks=%d veg=%s" % [
-		nside, center_ipix, _active_chunks.size(), editor_preview_vegetation])
+	print("[PlanetTerrain] Editor preview: HEALPix nside=%d center_ipix=%d chunks=%d (built=%d reused=%d) veg=%s" % [
+		nside, center_ipix, _active_chunks.size(), built, reused, editor_preview_vegetation])
+
+
+## Remove and free the nodes of a single editor-preview chunk (terrain mesh
+## plus any vegetation MultiMeshInstances). Used by the reuse diff in
+## [method _generate_editor_preview].
+func _free_editor_chunk(info: Dictionary) -> void:
+	for node_key in ["mesh_instance", "forest", "meadow"]:
+		var n = info.get(node_key)
+		if n and is_instance_valid(n):
+			_chunks_node.remove_child(n)
+			n.free()
 
 
 ## Print the 3D world positions of all biome zone centroids so you know
@@ -1119,8 +1232,55 @@ func _goto_selected_biome() -> void:
 			or _editor_selected_biome_idx >= _editor_biome_entries.size():
 		return
 	var entry: Dictionary = _editor_biome_entries[_editor_selected_biome_idx]
-	var biome_local: Vector3 = entry.dir * planet_data.radius
-	var world_pos: Vector3 = entry.world_pos
+	_editor_goto_surface_point(entry.dir, "biome: %s" % entry.label)
+
+
+## Teleport the editor preview to the [member editor_goto_lon] /
+## [member editor_goto_lat] surface point, and update the x/y/z fields to the
+## matching surface coordinates. Bound to the "Go to lon/lat" inspector button.
+func _goto_lonlat() -> void:
+	if not _initialized:
+		return
+	var dir := HEALPix.lonlat2vec(editor_goto_lon, editor_goto_lat)
+	# Sync x/y/z to the surface point in that direction.
+	var surface: Vector3 = dir * planet_data.radius
+	editor_goto_x = surface.x
+	editor_goto_y = surface.y
+	editor_goto_z = surface.z
+	notify_property_list_changed()
+	_editor_goto_surface_point(
+		dir, "lon=%.4f lat=%.4f" % [editor_goto_lon, editor_goto_lat])
+
+
+## Teleport the editor preview to the [member editor_goto_x] /
+## [member editor_goto_y] / [member editor_goto_z] point (projected onto the
+## surface along its direction from the planet centre), and update the lon/lat
+## fields to match. Bound to the "Go to coordinates" inspector button.
+func _goto_coordinates() -> void:
+	if not _initialized:
+		return
+	var pos := Vector3(editor_goto_x, editor_goto_y, editor_goto_z)
+	if pos.length_squared() < 1.0:
+		push_warning("[PlanetTerrain] Go to coordinates: x/y/z is at the "
+			+ "planet centre — cannot derive a direction.")
+		return
+	var dir := pos.normalized()
+	# Sync lon/lat to this direction.
+	var lonlat := HEALPix.vec2lonlat(dir)
+	editor_goto_lon = lonlat.x
+	editor_goto_lat = lonlat.y
+	notify_property_list_changed()
+	_editor_goto_surface_point(
+		dir, "x=%.0f y=%.0f z=%.0f (lon=%.4f lat=%.4f)" % [
+			editor_goto_x, editor_goto_y, editor_goto_z, lonlat.x, lonlat.y])
+
+
+## Recenter the editor preview on a surface point (unit [param dir]) and drop
+## a focus marker the user can frame with F. Shared by the biome dropdown and
+## the "Go to lon/lat" button.
+func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
+	var surface_local: Vector3 = dir * planet_data.radius
+	var world_pos: Vector3 = dir * (planet_data.radius + 200.0)
 
 	# Create or move the focus marker so the user can press F to frame it.
 	if not _editor_biome_focus or not is_instance_valid(_editor_biome_focus):
@@ -1131,13 +1291,13 @@ func _goto_selected_biome() -> void:
 		_editor_biome_focus.owner = null
 	_editor_biome_focus.position = world_pos
 
-	# Generate preview centred on this biome (not on the camera).
-	_generate_editor_preview(biome_local)
+	# Generate preview centred on this point (not on the camera).
+	_generate_editor_preview(surface_local)
 
 	# Prevent camera tracking from overwriting the preview for 3 seconds,
 	# giving the user time to press F to fly to it.
 	_editor_goto_cooldown = 3.0
-	_editor_last_cam_local = biome_local
+	_editor_last_cam_local = surface_local
 
 	# Select the marker so the user can press F to frame it.
 	var ei = Engine.get_singleton("EditorInterface")
@@ -1145,8 +1305,79 @@ func _goto_selected_biome() -> void:
 		ei.get_selection().clear()
 		ei.get_selection().add_node(_editor_biome_focus)
 
-	print("[PlanetTerrain] Go to biome: %s — world=(%d, %d, %d) — press F to frame" % [
-		entry.label, int(world_pos.x), int(world_pos.y), int(world_pos.z)])
+	print("[PlanetTerrain] Go to %s — world=(%d, %d, %d) — press F to frame" % [
+		label, int(world_pos.x), int(world_pos.y), int(world_pos.z)])
+
+
+## Auto-tune the editor 3D viewport camera to the planet's scale: a far clip
+## plane that clears the whole planet, a small near plane for surface detail,
+## and a freelook fly speed proportional to the radius. Applied on load (when
+## [member editor_auto_tune_camera] is set) and via the inspector button.
+func _auto_tune_editor_camera() -> void:
+	if not Engine.is_editor_hint():
+		return
+	var ei = Engine.get_singleton("EditorInterface")
+	if ei == null:
+		return
+	var es = ei.get_editor_settings()
+	if es == null:
+		return
+	var r: float = planet_data.radius if planet_data else 1000.0
+	# Far plane must clear the far side of the planet plus atmosphere; near
+	# plane stays small so surface geometry doesn't clip when flying low.
+	var z_far: float = maxf(r * 4.0, 100000.0)
+	var fly_speed: float = maxf(r * 0.02, 100.0)
+	es.set_setting("editors/3d/default_z_near", 0.5)
+	es.set_setting("editors/3d/default_z_far", z_far)
+	es.set_setting("editors/3d/freelook/freelook_base_speed", fly_speed)
+	print("[PlanetTerrain] Camera tuned to radius=%.0f — z_far=%.0f, fly_speed=%.0f" % [
+		r, z_far, fly_speed])
+
+
+## Compute the global transform that places [param n3] on the planet surface
+## directly below it (radially, toward the planet centre). Samples the terrain
+## heightmap along the object's own direction from the centre — no physics
+## raycast needed, so it works even though the editor preview chunks have no
+## collision, and it follows the sphere's true "down" instead of global −Y.
+## When [member editor_snap_align_to_normal] is set, the object is also
+## rotated so its +Y points along the surface normal (heading preserved).
+## Returns the object's current transform unchanged if it sits at the planet
+## centre (no direction to snap along). Pure — does not mutate [param n3];
+## the "Planet Tools" editor plugin applies the result through UndoRedo.
+func compute_surface_transform(n3: Node3D) -> Transform3D:
+	var xform := n3.global_transform
+	if planet_data == null:
+		return xform
+	var planet_center := global_position
+	var local_pos := n3.global_position - planet_center
+	if local_pos.length_squared() < 1.0:
+		return xform  # at the planet centre — no radial direction
+	var dir := local_pos.normalized()
+	var h := planet_data.sample_height_for_direction(dir)
+	var surface_pos := planet_center \
+		+ dir * (planet_data.radius + h + editor_snap_height_offset)
+
+	if not editor_snap_align_to_normal:
+		# Position only — preserve the current rotation and scale.
+		xform.origin = surface_pos
+		return xform
+
+	# Rotate so +Y points along the surface normal, keeping the object's
+	# current heading (its −Z) projected onto the tangent plane so it doesn't
+	# spin unpredictably. Preserve the object's global scale.
+	var gscale := n3.global_transform.basis.get_scale()
+	var y_axis := dir
+	var z_axis := n3.global_transform.basis.z
+	z_axis = z_axis - y_axis * z_axis.dot(y_axis)
+	if z_axis.length_squared() < 1e-6:
+		z_axis = y_axis.cross(Vector3.RIGHT)
+		if z_axis.length_squared() < 1e-6:
+			z_axis = y_axis.cross(Vector3.BACK)
+	z_axis = z_axis.normalized()
+	var x_axis := y_axis.cross(z_axis).normalized()
+	z_axis = x_axis.cross(y_axis).normalized()
+	var basis := Basis(x_axis, y_axis, z_axis).scaled(gscale)
+	return Transform3D(basis, surface_pos)
 
 
 # ------------------------------------------------------------------
@@ -1354,6 +1585,25 @@ func _try_create_or_defer(info: Dictionary) -> void:
 	var export_key := "hp_n%d_p%d" % [epd_nside, export_ipix]
 	var chunk_center: Vector3 = info.center
 	var cam_dist_sq: float = chunk_center.distance_squared_to(_last_local_cam)
+
+	# ── File mode: per-chunk .r32 elevation tiles, no recipe pipeline ──
+	# load_chunk_heightmap() lazily loads the exported tile (on the worker
+	# thread for client meshes, on the calling thread for server collision)
+	# while sampling heights, so we create the chunk directly instead of
+	# waiting on a recipe-generation task.
+	if planet_data.chunk_heightmaps_dir != "":
+		if is_server:
+			_create_chunk(info)
+			return
+		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
+		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod):
+			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod)
+			if cached_mesh:
+				info["_from_disk_cache"] = true
+				_assemble_queue.append({"info": info, "mesh": cached_mesh})
+				return
+		_queue_mesh_task(info)
+		return
 
 	if is_server:
 		# Server: keep old immediate + rebuild behavior (no visual concern).

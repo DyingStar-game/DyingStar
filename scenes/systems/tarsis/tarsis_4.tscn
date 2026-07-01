@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://dvwggfmy7o52p"]
 
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="6_0lykg"]
+[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/props/StorageBoxes/storagewarehouse.tscn" id="6_7jf1i"]
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="script_debug_export"]
@@ -14,6 +15,11 @@ surface_gravity = 7.77
 chunk_export_depth = 6
 terrain_material = ExtResource("6_0lykg")
 max_quadtree_depth = 13
+corundum_override_whole_planet = true
+crack_spacing_m = 4000.0
+crack_width_m = 500.0
+crack_depth_m = 150.0
+chunk_heightmaps_dir = "assets/qgis/.export/tarsis_4_chunks"
 roads_geojson = "assets/qgis/.export/tarsis_4_roads_buffered.json"
 
 [node name="Tarsis4" type="Node3D" unique_id=134586975]
@@ -22,7 +28,17 @@ planet_data = SubResource("PlanetData_tarsis4")
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("script_terrain")
-editor_preview_depth = 14
+editor_preview_depth = 13
+editor_preview_rings = 3
+editor_goto_lon = -39.591128622733216
+editor_goto_lat = 24.80582295875351
+editor_goto_x = 4450039.0
+editor_goto_y = 2668990.0
+editor_goto_z = -3680232.0
+editor_snap_height_offset = null
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("script_debug_export")
+
+[node name="Storagewarehouse" parent="." unique_id=695965601 instance=ExtResource("6_7jf1i")]
+transform = Transform3D(0.5914825805936532, 0.6996656768921495, 0.4007696313760846, -0.7942655445330378, 0.41995916646175446, 0.4390632565728839, 0.13889061027265323, -0.5780157775388131, 0.8041188713705775, 4451007.479484161, 2671620.8222507075, -3677116.9918082017)

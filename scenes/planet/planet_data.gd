@@ -17,6 +17,11 @@ var radius: float = 1000.0
 var max_height: float = 1000.0
 ## Elevation offset in meters (negative when craters dig below sea-level).
 var height_offset: float = 0.0
+## Vertical exaggeration applied to sampled elevation. Real planetary relief is
+## ~0.1% of the radius (Earth-like) and reads as flat at true 1:1 scale; raise
+## this (e.g. 3–8) to make terrain visually dramatic. Applies to both the visual
+## mesh and collision, so they stay consistent. 1.0 = true scale.
+@export var terrain_exaggeration: float = 1.0
 ## Atmosphere shell thickness in meters (0 = no atmosphere).
 @export var atmosphere_height: float = 0.0
 ## Surface gravity in m/s² (Earth = 9.8).
@@ -71,6 +76,33 @@ var export_nside: int = 32
 @export var chunk_resolution: int = 32
 ## Maximum quadtree subdivision depth. Higher = smaller finest chunks.
 @export var max_quadtree_depth: int = 14
+
+@export_group("Corundum override")
+## TEMPORARY whole-planet switch for the "milky corundum with iron" look +
+## procedural blocky crack network.  When true, every chunk is rendered with
+## the aride_desert-corundum_plateau material (and, once Phase 2 lands, carved
+## with the crack network) regardless of its actual biome.  Later this can be
+## turned OFF and the same logic driven by the QGIS corundum_plateau biome
+## polygon instead — no code change, just flip this flag.
+@export var corundum_override_whole_planet: bool = false
+## Approximate size of a monolithic block between cracks, in metres.
+@export var crack_spacing_m: float = 90.0
+## Width of each carved crack at the surface, in metres.
+@export var crack_width_m: float = 14.0
+## Depth each crack is carved below the plateau surface, in metres.
+@export var crack_depth_m: float = 22.0
+## DEBUG: paint chunk skirt curtains bright magenta to distinguish them from
+## real terrain / crack interiors when diagnosing dark-band artifacts.
+@export var debug_color_skirts: bool = false
+
+## Directory of per-chunk elevation tiles exported by tools/qgis/export_elevation.py.
+## When non-empty, load_chunk_heightmap() reads raw float32 (.r32) tiles directly
+## from disk instead of generating heightmaps from recipes. Layout inside the dir:
+## "face_{face}/f{ipix}.r32" (face = ipix / export_nside²). Path is relative to
+## res://, e.g. "assets/qgis/.export/tarsis_5_chunks".
+@export var chunk_heightmaps_dir: String = ""
+## Samples per edge of each exported .r32 tile (matches TILE_RES in the exporter).
+@export var chunk_heightmap_res: int = 25
 
 @export_group("Roads")
 ## Path to a GeoJSON file with road polygons (buffered from LineStrings).
@@ -359,7 +391,13 @@ func load_chunk_heightmap(ipix: int) -> Image:
 	var key := "hp_n%d_p%d" % [export_nside, ipix]
 	# Server fast path: cache is read-only after preload, skip mutex + LRU.
 	if _server_no_evict:
-		return _chunk_images.get(key) as Image
+		var cached := _chunk_images.get(key) as Image
+		if cached != null:
+			return cached
+		# File mode: lazily load the exported tile (thread-safe via mutex).
+		if chunk_heightmaps_dir != "":
+			return _file_load_and_cache(key, ipix)
+		return null
 	_cache_mutex.lock()
 	if _chunk_images.has(key):
 		# LRU touch: move to end of order list
@@ -371,9 +409,102 @@ func load_chunk_heightmap(ipix: int) -> Image:
 		_cache_mutex.unlock()
 		return result
 	_cache_mutex.unlock()
+	# File mode: load the per-chunk elevation tile (.r32) directly from disk.
+	if chunk_heightmaps_dir != "":
+		return _file_load_and_cache(key, ipix)
 	# Not cached yet — return null so callers fall back to global heightmap.
 	# The async recipe pipeline in PlanetTerrain will generate and cache it.
 	return null
+
+
+## Load a per-chunk elevation tile (.r32) and insert it into the image cache.
+## Thread-safe; safe to call from WorkerThreadPool mesh/collision tasks.
+## Returns null if the tile is missing/malformed (caller falls back to global).
+func _file_load_and_cache(key: String, ipix: int) -> Image:
+	var img := _read_r32_tile(ipix)
+	if img == null:
+		return null
+	_cache_mutex.lock()
+	# Another thread may have loaded the same tile while we read from disk.
+	if _chunk_images.has(key):
+		var existing := _chunk_images[key] as Image
+		_cache_mutex.unlock()
+		return existing
+	_chunk_images[key] = img
+	_cache_order.append(key)
+	_cache_bytes += img.get_width() * img.get_height() * 4
+	_cache_mutex.unlock()
+	if not _server_no_evict:
+		_evict_lru()
+	return img
+
+
+## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
+## Image. Tiles are normalized [0,1]; sample_height_for_direction() converts the
+## sample to metres via height_offset + value*max_height.
+func _read_r32_tile(ipix: int) -> Image:
+	@warning_ignore("integer_division")
+	var face := ipix / (export_nside * export_nside)
+	var base := chunk_heightmaps_dir
+	if not base.begins_with("res://") and not base.begins_with("user://") \
+			and not base.begins_with("/"):
+		base = "res://" + base
+	var path := "%s/face_%d/f%d.r32" % [base, face, ipix]
+	if not FileAccess.file_exists(path):
+		return null
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return null
+	var bytes := f.get_buffer(f.get_length())
+	f.close()
+	var res := chunk_heightmap_res
+	var expected := res * res * 4
+	if bytes.size() != expected:
+		if not _chunk_format_logged:
+			push_warning("[PlanetData] r32 tile %s: size %d != expected %d (res=%d)"
+					% [path, bytes.size(), expected, res])
+			_chunk_format_logged = true
+		return null
+	return Image.create_from_data(res, res, false, Image.FORMAT_RF, bytes)
+
+
+## Load chunk_heightmaps_dir/manifest.json (written by export_elevation.py) and
+## apply radius, export N_side, tile resolution, and the height normalization
+## range (height_offset / max_height) so they match the exporter exactly.
+## Call once after chunk_heightmaps_dir is set (PlanetTerrain.initialize does).
+## Returns true on success; false if file-mode is off or the manifest is missing.
+func apply_chunk_manifest() -> bool:
+	if chunk_heightmaps_dir == "":
+		return false
+	var base := chunk_heightmaps_dir
+	if not base.begins_with("res://") and not base.begins_with("user://") \
+			and not base.begins_with("/"):
+		base = "res://" + base
+	var path := base + "/manifest.json"
+	if not FileAccess.file_exists(path):
+		push_warning("[PlanetData] chunk manifest not found: %s" % path)
+		return false
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(data) != TYPE_DICTIONARY:
+		push_warning("[PlanetData] invalid chunk manifest: %s" % path)
+		return false
+	if data.has("radius"):
+		radius = float(data["radius"])
+	if data.has("chunk_export_depth"):
+		chunk_export_depth = int(data["chunk_export_depth"])  # setter sets export_nside
+	elif data.has("nside"):
+		export_nside = int(data["nside"])
+	if data.has("tile_res"):
+		chunk_heightmap_res = int(data["tile_res"])
+	if data.has("height_offset"):
+		height_offset = float(data["height_offset"])
+	if data.has("max_height"):
+		max_height = float(data["max_height"])
+	print("[PlanetData] chunk manifest applied: radius=%.0f export_nside=%d "
+			% [radius, export_nside]
+			+ "tile_res=%d height_offset=%.1f max_height=%.1f"
+			% [chunk_heightmap_res, height_offset, max_height])
+	return true
 
 
 ## Returns true if the recipe image for [param export_key] is cached.
@@ -922,7 +1053,7 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 			_precomp_face, _precomp_xy)
 	var h := _sample_image_bilinear_healpix(img, local_uv.x, local_uv.y, ipix,
 			_cached_neighbors)
-	return h * max_height + height_offset
+	return (h * max_height + height_offset) * terrain_exaggeration
 
 
 ## Sample height at a tile boundary vertex.  Uses vec2pix_nest to detect
