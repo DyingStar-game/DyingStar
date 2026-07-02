@@ -232,17 +232,25 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v19: corundum iron-impurity vertex colouring baked into the mesh.
 		# v20: crack carve LOD-fades by vertex spacing (kills the LOD1 alias band).
 		# v21: stronger LOD fade (gone by 0.5·width) + capped corundum skirt drop.
+		# v24: crack GEOMETRY now gated on the corundum override flag (not the
+		#      biome definition), so runtime client meshes carve cracks even
+		#      when biome defs are unavailable — invalidates flat-baked meshes.
 		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d" % [
 			int(data.corundum_override_whole_planet), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
 			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v23%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v24%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration, _cor]
 		# Server collision shapes live in a dedicated folder so they don't
-		# mix with client visual-mesh cache entries.
-		var _cache_base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR \
-				if server_mode else ChunkDiskCache.BASE_DIR
+		# mix with client visual-mesh cache entries.  Server-only suffix
+		# "_colrel1": collision faces are now chunk-local (float32-safe) with
+		# the shape offset applied on the node — invalidates absolute-face
+		# caches without forcing a client visual re-bake.
+		var _cache_base := ChunkDiskCache.BASE_DIR
+		if server_mode:
+			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
+			_cache_version += "_colrel1"
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s" % [
@@ -271,11 +279,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		planet_data.set_server_mode(true)
 		_collision_body = StaticBody3D.new()
 		_collision_body.name = "PlanetCollision"
-		# Static terrain: it IS the `world` layer and scans nothing (mask 0) — the moving bodies
-		# (player/vehicle/prop) find it via their own mask, so it never initiates a collision test.
-		_collision_body.collision_layer = 0
+		# Terrain IS the `world` layer (layer 1) and scans world | player |
+		# vehicle | prop (masks 1–4 = Globals.MASK_SOLID).
+		_collision_body.collision_layer = Globals.LAYER_WORLD
 		_collision_body.set_collision_layer_value(Globals.LAYER_WORLD, true)
-		_collision_body.collision_mask = 0
+		_collision_body.collision_mask = Globals.MASK_SOLID
 		add_child(_collision_body)
 
 		var base_sphere := SphereShape3D.new()
@@ -391,6 +399,24 @@ func _apply_residency() -> void:
 	for k in _pinned_chunks.keys():
 		effective[k as String] = true
 
+	# Fine collision chunks (deeper nside, pinned under active bodies) carve
+	# the cracks the coarse export chunks flatten.  Drop the coarse export
+	# chunk beneath each fine pin so its flat plateau doesn't overlay — and
+	# block — the carved canyon underneath it.
+	var export_nside := planet_data.export_nside
+	for k in _pinned_chunks.keys():
+		var kn := _parse_nside_from_key(k as String)
+		if kn > export_nside:
+			var kip := _parse_ipix_from_key(k as String)
+			if kip >= 0:
+				# NESTED ipix: parent export tile = ipix >> 2·log2(nside/export).
+				var parent := kip
+				var ns := kn
+				while ns > export_nside:
+					parent >>= 2
+					ns >>= 1
+				effective.erase("hp_n%d_p%d" % [export_nside, parent])
+
 	# Unload chunks no longer in effective set (and not pinned).
 	for k in _server_collision_chunks.keys().duplicate():
 		if not effective.has(k):
@@ -486,9 +512,13 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 
 	# File mode: skip recipe phase-0. The shape task lazily loads the .r32 tile
 	# via load_chunk_heightmap() while sampling collision heights.
+	var key_nside := _parse_nside_from_key(key)
+	if key_nside <= 0:
+		key_nside = planet_data.export_nside
+
 	if planet_data.chunk_heightmaps_dir != "":
 		if cached_shape != null:
-			_server_assemble_chunk(key, planet_data.export_nside, ipix, cached_shape)
+			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
 		return
@@ -496,7 +526,7 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 	# Fast-path: both image and shape already available — assemble now.
 	if planet_data.is_chunk_cached(key):
 		if cached_shape != null:
-			_server_assemble_chunk(key, planet_data.export_nside, ipix, cached_shape)
+			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
 		return
@@ -539,7 +569,9 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 ## The heightmap image MUST already be stored in planet_data before calling.
 func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
 	var pd := planet_data
-	var nside := planet_data.export_nside
+	var nside := _parse_nside_from_key(key)
+	if nside <= 0:
+		nside = planet_data.export_nside
 	var result_ref: Array = [null]
 	var task_entry := {
 		"phase": 1, "task_id": -1, "result_ref": result_ref,
@@ -579,7 +611,9 @@ func _server_poll_chunk_tasks() -> void:
 		var phase: int = entry["phase"]
 		var ipix: int = entry["ipix"]
 		var col_res: int = entry["col_res"]
-		var nside := planet_data.export_nside
+		var nside := _parse_nside_from_key(key)
+		if nside <= 0:
+			nside = planet_data.export_nside
 
 		if phase == 0:
 			var arr: Array = entry["result_ref"][0] as Array \
@@ -613,15 +647,26 @@ func _server_poll_chunk_tasks() -> void:
 	_server_drain_chunk_queue()
 
 
+## Chunk-local origin that server collision faces are rebased against
+## (see [method PlanetChunk.generate_collision_shape]).  The CollisionShape3D
+## is offset by exactly this value — applied in double precision by the node
+## transform — so the small float32 faces land back on the visual surface.
+func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
+	return PlanetChunk.snap_to_f32(
+		HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
+
+
 ## Attach [param shape] to the collision body and spawn chunk features.
 ## Must be called on the main thread only.  No-op if already assembled.
 func _server_assemble_chunk(key: String, nside: int, ipix: int,
 		shape: ConcavePolygonShape3D) -> void:
 	if _server_collision_chunks.has(key):
 		return  # Race guard: assembled by another path.
+	var col_origin := _chunk_collision_origin(nside, ipix)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.name = key + "_col"
+	col.position = col_origin  # faces are chunk-local; place them in world
 	_collision_body.add_child(col)
 	_server_collision_chunks[key] = col
 	var faces: PackedVector3Array = shape.get_faces()
@@ -629,7 +674,7 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 		var dmin: float = INF
 		var dmax: float = -INF
 		for v in faces:
-			var d := v.length()
+			var d := (v + col_origin).length()
 			if d < dmin: dmin = d
 			if d > dmax: dmax = d
 		@warning_ignore("integer_division")
@@ -639,7 +684,11 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 			" body_global=", _collision_body.global_position,
 			" body_layer=", _collision_body.collision_layer,
 			" body_mask=", _collision_body.collision_mask)
-	_spawn_chunk_features(key, nside, ipix)
+	# Chunk features (caves/fumaroles/etc.) are keyed at export granularity;
+	# only spawn them for coarse export-nside chunks so fine collision
+	# sub-chunks pinned under bodies don't duplicate them.
+	if nside == planet_data.export_nside:
+		_spawn_chunk_features(key, nside, ipix)
 
 
 ## Parse the trailing ipix from a chunk key "hp_nN_pP".  Returns -1 on error.
@@ -651,6 +700,19 @@ static func _parse_ipix_from_key(key: String) -> int:
 	if not p_part.begins_with("p"):
 		return -1
 	return int(p_part.substr(1))
+
+
+## Parse the nside from a chunk key "hp_nN_pP".  Returns 0 on error so callers
+## can fall back to export_nside.  Lets fine (deeper-nside) collision chunks
+## pinned under active bodies coexist with the coarse export-nside residency.
+static func _parse_nside_from_key(key: String) -> int:
+	var parts := key.split("_")
+	if parts.size() < 2:
+		return 0
+	var n_part: String = parts[1]
+	if not n_part.begins_with("n"):
+		return 0
+	return int(n_part.substr(1))
 
 
 ## Spawn cave/fumarole/volcano collision nodes from this chunk's populate
@@ -709,15 +771,17 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 		return
 
 	var col_res := maxi(planet_data._recipe_resolution, planet_data.chunk_resolution)
-	var nside: int = planet_data.export_nside
 
 	for key in chunk_keys:
-		# Parse ipix from key "hp_nN_pP".
+		# Parse ipix/nside from key "hp_nN_pP".
 		var parts := (key as String).split("_")
 		if parts.size() < 3:
 			push_warning("[PlanetTerrain] rebuild_chunks: invalid key '%s'" % key)
 			continue
 		var ipix := int(parts[2].substr(1))
+		var nside := _parse_nside_from_key(key)
+		if nside <= 0:
+			nside = planet_data.export_nside
 
 		# Inject biome modification into PlanetData.
 		planet_data.inject_biome_feature(nside, ipix, biome_update)
@@ -763,6 +827,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 			var col := CollisionShape3D.new()
 			col.shape = shape
 			col.name = key + "_col"
+			col.position = _chunk_collision_origin(nside, ipix)
 			_collision_body.add_child(col)
 			_server_collision_chunks[key] = col
 			# Update disk cache.
@@ -2173,6 +2238,7 @@ func _create_chunk(info: Dictionary) -> void:
 			var col := CollisionShape3D.new()
 			col.shape = shape
 			col.name = key + "_col"
+			col.position = _chunk_collision_origin(info.nside, info.ipix)
 			_collision_body.add_child(col)
 			info["collision_shape"] = col
 			# Save to disk if generated with real recipe heights

@@ -35,7 +35,6 @@ editor_goto_lat = 24.80582295875351
 editor_goto_x = 4450039.0
 editor_goto_y = 2668990.0
 editor_goto_z = -3680232.0
-editor_snap_height_offset = null
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("script_debug_export")

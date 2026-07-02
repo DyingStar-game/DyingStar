@@ -707,10 +707,13 @@ static func generate_mesh(
 
 			# ── Corundum crack network ─────────────────────────────
 			# Pure function of dir + PlanetData params → identical on the
-			# server collision path (see generate_collision_shape).
+			# server collision path (see generate_collision_shape).  Gate the
+			# GEOMETRY on the override flag (not the biome definition) so the
+			# visual carve always matches collision — the biome definition is
+			# only needed below for the crack COLOUR staining.
 			# Offset (≤ 0) is reused below to stain the crack interiors.
 			var _crack_off := 0.0
-			if _corundum_bd:
+			if data.corundum_override_whole_planet:
 				_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset(
 					dir, data.radius, data.crack_spacing_m,
 					data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
@@ -835,7 +838,7 @@ static func generate_mesh(
 					h_t = data.sample_height_for_direction(dir_t, _export_ipix)
 				# Carve the crack network into the gradient samples too, so the
 				# near-vertical crack walls get correct (sharp) shading normals.
-				if _corundum_bd:
+				if data.corundum_override_whole_planet:
 					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
 						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
 					h_r += ArideDesertCorundumPlateauTerrain.crack_offset(
@@ -2505,19 +2508,29 @@ static func generate_collision_shape(
 			if not _is_hole_vertex:
 				grid[yi * (res + 1) + xi] = dir * (data.radius + height)
 
-	# Build triangle face array (3 vertices per triangle, packed sequentially)
+	# Build triangle face array (3 vertices per triangle, packed sequentially).
+	# Rebase vertices onto a chunk-local origin BEFORE packing into the
+	# float32 PackedVector3Array.  At absolute planet scale (~6,000,000 m)
+	# float32 has ~0.5 m ULP, which quantises the collision triangles and
+	# displaces them from the client visual mesh — the mesh is likewise built
+	# relative to this same snapped origin.  grid[] holds double-precision
+	# Vector3s, so the subtraction is exact and only the small local offset is
+	# stored as float32.  The caller offsets the CollisionShape3D by col_origin
+	# in double precision (see PlanetTerrain._chunk_collision_origin).
+	var col_origin := snap_to_f32(HEALPix.pix2vec_nest(hp_nside, hp_ipix) * data.radius) \
+			if hp_mode else Vector3.ZERO
 	var faces := PackedVector3Array()
 	faces.resize(res * res * 6)
 	var fi := 0
 	for yi in res:
 		for xi in res:
 			var i := yi * (res + 1) + xi
-			faces[fi]     = grid[i]
-			faces[fi + 1] = grid[i + res + 1]
-			faces[fi + 2] = grid[i + 1]
-			faces[fi + 3] = grid[i + 1]
-			faces[fi + 4] = grid[i + res + 1]
-			faces[fi + 5] = grid[i + res + 2]
+			faces[fi]     = grid[i]           - col_origin
+			faces[fi + 1] = grid[i + res + 1] - col_origin
+			faces[fi + 2] = grid[i + 1]       - col_origin
+			faces[fi + 3] = grid[i + 1]       - col_origin
+			faces[fi + 4] = grid[i + res + 1] - col_origin
+			faces[fi + 5] = grid[i + res + 2] - col_origin
 			fi += 6
 
 	var shape := ConcavePolygonShape3D.new()

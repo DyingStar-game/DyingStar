@@ -48,7 +48,7 @@ volumetric_fog_enabled = true
 volumetric_fog_density = 0.002
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4sslq"]
-size = Vector3(5000, 50, 5000)
+size = Vector3(2751.2187755276545, 50, 5000)
 
 [sub_resource type="Shader" id="Shader_uow4d"]
 code = "shader_type fog;
@@ -103,7 +103,7 @@ shader_parameter/emission = Color(0.8, 0.6, 0.3, 1)
 shader_parameter/fog_speed = 1.5
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4lkw2"]
-size = Vector3(1638.72, 135.52, 279.48)
+size = Vector3(690.5352568304834, 135.52, 279.48)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_3pv0l"]
 resource_name = "metal"
@@ -119,14 +119,19 @@ transform = Transform3D(0.98947682487041, -0.08731608772312702, -0.1153755341010
 script = ExtResource("21_daync")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.014541725714408926, -25, 0.12286245959299436)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1122.0500031514955, -25, 0.12286245959299436)
 calculate_tangents = false
 use_collision = true
-size = Vector3(5000, 50, 5000)
+size = Vector3(2755.928776162543, 50, 5000)
 material = ExtResource("3_16y2p")
 
+[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1930928826]
+transform = Transform3D(0.7071067811865476, -0.7071067811865475, 0, 0.7071067811865475, 0.7071067811865476, 0, 0, 0, 1, -252.62343885606333, -70.84747955145684, 0)
+use_collision = true
+size = Vector3(100, 100, 4000)
+
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1898782427]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -25, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1124.3906, -25, 0)
 visible = false
 shape = SubResource("BoxShape3D_4sslq")
 debug_fill = false
@@ -241,8 +246,8 @@ transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473
 transform = Transform3D(-1, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473532e-16, 0, -1, 25.343606081717677, -2.7370208783850103e-06, 1121.459452987462)
 
 [node name="FogVolume" type="FogVolume" parent="." unique_id=1570834981]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.19291496276855, 66.76164340795899, 317.1437686789682)
-size = Vector3(1638.7212916605677, 135.5232830842242, 306.89811270363225)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95.7138843536377, 66.76164340795899, 317.1437686789682)
+size = Vector3(756.9077583118269, 135.5232830842242, 306.89811270363225)
 material = SubResource("ShaderMaterial_3b5ap")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1228311395 groups=["player"]]
@@ -250,7 +255,7 @@ script = ExtResource("11_04krg")
 target_volume_db = -30.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1780676571]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -345.1929999999993, 66.76200000000244, -113.6140000000014)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128.89931567382882, 66.76200000000244, -113.6140000000014)
 shape = SubResource("BoxShape3D_4lkw2")
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="Area3D" unique_id=368341154]
@@ -383,56 +388,56 @@ font_size = 25
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.26620059517154, 2.5510017e-06, -58.60664520379942)
 
 [node name="Label3D" type="Label3D" parent="conteneur" unique_id=528161112]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.0190572692985427)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.019057269298543)
 text = "Version A - 100%"
 
 [node name="conteneur2" parent="." unique_id=1522665469 instance=ExtResource("20_cnlw1")]
 transform = Transform3D(1.1, 0, 0, 0, 1, 0, 0, 0, 1.1, -37.512188895198946, 5.1020033e-06, -70.05122675534474)
 
 [node name="Label3D" type="Label3D" parent="conteneur2" unique_id=1008621411]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.0190572692985427)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.019057269298543)
 text = "Version A - 110%"
 
 [node name="conteneur3" parent="." unique_id=1848854428 instance=ExtResource("20_cnlw1")]
-transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.2, -37.445478617888924, 1.0204007e-05, -80.9089333247592)
+transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.2, -37.44547861788893, 1.0204007e-05, -80.9089333247592)
 
 [node name="Label3D" type="Label3D" parent="conteneur3" unique_id=296504763]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.0190572692985427)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.019057269298543)
 text = "Version A - 120%"
 
 [node name="habitat_6x2_6" parent="." unique_id=1682025266 instance=ExtResource("21_0ulh1")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30.225096899470373, -4.357462e-07, -58.30769921735191)
 
 [node name="Label3D" type="Label3D" parent="habitat_6x2_6" unique_id=903676351]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.4956402663802066)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.4956402663802066)
 text = "Version B - 100%"
 
 [node name="habitat_6x2_7" parent="." unique_id=579648745 instance=ExtResource("21_0ulh1")]
 transform = Transform3D(1.1, 0, 0, 0, 1, 0, 0, 0, 1.1, -30.0063467888607, -8.714924e-07, -71.00783173533988)
 
 [node name="Label3D" type="Label3D" parent="habitat_6x2_7" unique_id=620388614]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.4956402663802066)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.4956402663802066)
 text = "Version B - 110%"
 
 [node name="habitat_6x2_8" parent="." unique_id=1584936419 instance=ExtResource("21_0ulh1")]
 transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.2, -29.238505650302283, -1.7429848e-06, -85.43172476118096)
 
 [node name="Label3D" type="Label3D" parent="habitat_6x2_8" unique_id=421335168]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639423, 0.8170247422715334, 1.4956402663802066)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.4956402663802066)
 text = "Version B - 120%"
 
 [node name="habitat_12x2_6" parent="." unique_id=930852458 instance=ExtResource("22_1kput")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -23.44061537404923, 0.005761267264460912, -58.17809018626246)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -23.44061537404923, 0.00576126726446091, -58.17809018626246)
 
 [node name="Label3D" type="Label3D" parent="habitat_12x2_6" unique_id=970298354]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4177530676957097, 0.8170247422715334, 3.084989304053728)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4177530676957095, 0.8170247422715334, 3.084989304053728)
 text = "Version C - 100%"
 
 [node name="habitat_lateraux" parent="." unique_id=1888031408 instance=ExtResource("23_w88le")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.474463344271498, 0.09353362306319468, -56.883440360979876)
 
 [node name="Label3D" type="Label3D" parent="habitat_lateraux" unique_id=1576958194]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45090388644331725, 0.8170247422715334, 2.068302047016644)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4509038864433173, 0.8170247422715334, 2.068302047016644)
 text = "Version D - 100%"
 
 [node name="habitat_superpose" parent="." unique_id=516422882 instance=ExtResource("24_npgr1")]
