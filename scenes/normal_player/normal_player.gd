@@ -684,6 +684,12 @@ func _ride_seat(seat: Node3D) -> void:
 	mouse_motion = Vector2.ZERO
 	velocity = Vector3.ZERO
 
+## On planets, "grounded" (for friction / jump / gravity) is derived from the
+## heightmap: the player is on the ground within this radial band of the
+## crack-aware surface. The polygon terrain collision tunnels, so is_on_floor()
+## from it is unreliable and would leave the player sliding / unable to jump.
+const PLANET_GROUND_BAND := 0.5
+
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
@@ -729,6 +735,28 @@ func _physics_process(delta: float) -> void:
 			velocity += global_basis * dir * player_thruster_force * delta
 			velocity *= 0.98
 
+		# Grounded state.
+		#  • Ascending (jumping) → never grounded, so the walk logic can't
+		#    erase the climb. up_direction is only meaningful inside gravity.
+		#  • Solid surfaces (CSG floors, props, station decks) report reliably
+		#    via is_on_floor().
+		#  • The planet terrain trimesh tunnels, so is_on_floor() misses it —
+		#    fall back to the crack-aware heightmap band there.
+		var _on_planet: bool = parent_gravity_area != null \
+			and parent_gravity_area.gravity_point \
+			and parent_gravity_area.name == "PlanetGravity"
+		var _ascending: bool = parent_gravity_area != null \
+			and velocity.dot(up_direction) >= 1.0
+		var grounded: bool
+		if _ascending:
+			grounded = false
+		else:
+			grounded = is_on_floor()
+			if not grounded and _on_planet:
+				var _surf: Dictionary = _planet_surface_info(parent_gravity_area)
+				grounded = _surf.get("valid", false) \
+					and _surf["altitude"] <= PLANET_GROUND_BAND
+
 		var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
 
 		var speed = sprint_speed if sprint else walk_speed
@@ -739,7 +767,7 @@ func _physics_process(delta: float) -> void:
 		if hands_item != null:
 			speed *= carry_speed_factor  # carrying an ore slows you down (issue #124)
 
-		if is_on_floor():
+		if grounded:
 			if input_direction:
 				velocity = move_direction * speed
 			else:
@@ -750,13 +778,13 @@ func _physics_process(delta: float) -> void:
 				velocity += move_direction * speed * delta
 
 
-		if is_on_floor() and is_jumping:
+		if grounded and is_jumping:
 			velocity += up_direction * jump_height * gravity
-			is_jumping = false
-		# Add the gravity.
-		elif not is_on_floor():
-			velocity -= up_direction * gravity * 2.0 * delta
-			is_jumping = false
+		is_jumping = false
+		# Gravity always pulls toward the surface. When grounded, the anti-sink
+		# snapback catches the tiny per-tick descent so the player settles ON
+		# the ground (altitude ~0) instead of floating at the band edge.
+		velocity -= up_direction * gravity * 2.0 * delta
 
 		# Cap fall speed to avoid tunneling through ConcavePolygonShape3D
 		# terrain.  At 30 Hz physics with ~50 m chunk-vertex spacing,
@@ -881,45 +909,70 @@ func _compute_gravity(area: Area3D) -> float:
 	return area.gravity * (planet_radius / dist) * (planet_radius / dist)
 
 
-## Snap the player back above the planet surface if move_and_slide tunneled
-## through the collision mesh.  Samples the planet's heightmap (the same
-## source used to build the ConcavePolygonShape3D) at the player's current
-## body-frame direction, computes the surface radius there, and corrects
-## the position + radial velocity if the player is below it.
-##
-## [param area] is the planet's gravity Area3D.  Its grand-parent is the
-## Planet node; we walk up to find the PlanetTerrain / PlanetData.
-func _snap_to_planet_surface_if_below(area: Area3D) -> void:
+## Compute the player's contact info against the crack-aware planet surface.
+## CPU / double-precision, so correct at any distance from the world origin.
+## Returns { valid, altitude, surface_dist, dir_body, up_world, planet_pos,
+## planet_basis }; [code]altitude[/code] is the player's signed radial height
+## above the surface (negative = below).  { valid = false } off a heightmap
+## planet.  [param area] is the planet's gravity Area3D (grand-parent = Planet).
+func _planet_surface_info(area: Area3D) -> Dictionary:
+	if area == null:
+		return {"valid": false}
 	var planet := area.get_parent().get_parent()
 	if planet == null or not is_instance_valid(planet):
-		return
+		return {"valid": false}
 	if not planet.has_method("get") or planet.get("planet_data") == null:
-		return
+		return {"valid": false}
 	var pdata = planet.planet_data
 	if pdata == null:
-		return
-	# Body-frame direction (planet rotates → must un-rotate world position).
+		return {"valid": false}
+	# Body-frame direction (planet may be rotated → un-rotate world position).
 	var local_world: Vector3 = global_position - planet.global_position
 	if local_world.length_squared() < 1.0:
-		return
-	var local_body: Vector3 = planet.global_transform.basis.inverse() * local_world
+		return {"valid": false}
+	var planet_basis: Basis = planet.global_transform.basis
+	var local_body: Vector3 = planet_basis.inverse() * local_world
 	var dir: Vector3 = local_body.normalized()
 	var player_dist: float = local_body.length()
+	# The heightmap has no crack network — the corundum cracks are carved
+	# procedurally on top (same on the visual mesh and the collision). Add the
+	# full-depth crack offset (vtx_spacing 0 = no LOD fade) so ground contact
+	# follows the crack floor and the player can descend into a canyon.
 	var surface_alt: float = pdata.sample_height_for_direction(dir)
+	if pdata.corundum_override_whole_planet:
+		surface_alt += ArideDesertCorundumPlateauTerrain.crack_offset(
+			dir, pdata.radius, pdata.crack_spacing_m,
+			pdata.crack_width_m, pdata.crack_depth_m, 0.0)
 	var surface_dist: float = pdata.radius + surface_alt
-	# Small clearance so the next physics tick doesn't immediately re-collide.
-	var clearance: float = 0.5
-	if player_dist < surface_dist + clearance:
-		var corrected_local: Vector3 = dir * (surface_dist + clearance)
-		var corrected_world: Vector3 = planet.global_position \
-				+ planet.global_transform.basis * corrected_local
-		global_position = corrected_world
-		# Zero the radial (downward) component of velocity; preserve any
-		# tangential motion the player had before tunneling.
-		var up_world: Vector3 = (planet.global_transform.basis * dir).normalized()
-		var radial_speed: float = velocity.dot(up_world)
-		if radial_speed < 0.0:
-			velocity -= up_world * radial_speed
+	return {
+		"valid": true,
+		"altitude": player_dist - surface_dist,
+		"surface_dist": surface_dist,
+		"dir_body": dir,
+		"up_world": (planet_basis * dir).normalized(),
+		"planet_pos": planet.global_position,
+		"planet_basis": planet_basis,
+	}
+
+
+## Anti-sink: the trimesh terrain is thin/one-sided, so the CharacterBody sinks
+## through it under gravity.  Catch it the instant the player dips below the
+## surface and clamp them back ONTO it (no lift), cancelling downward velocity
+## so they settle instead of oscillating.  Grounding for movement/jump comes
+## from the heightmap band (see _physics_process), not this.
+func _snap_to_planet_surface_if_below(area: Area3D) -> void:
+	var info := _planet_surface_info(area)
+	if not info.get("valid", false):
+		return
+	if info["altitude"] >= 0.0:
+		return  # at or above the surface — polygon collision handles it
+	var corrected_local: Vector3 = info["dir_body"] * info["surface_dist"]
+	global_position = info["planet_pos"] + info["planet_basis"] * corrected_local
+	# Zero the radial (downward) component of velocity; keep tangential motion.
+	var up_world: Vector3 = info["up_world"]
+	var radial_speed: float = velocity.dot(up_world)
+	if radial_speed < 0.0:
+		velocity -= up_world * radial_speed
 
 func orient_player():
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)

@@ -1432,6 +1432,33 @@ func sample_height_at(dir: Vector3) -> float:
 	return _sample_image_bilinear(img, uv.x, uv.y) * max_height + height_offset
 
 
+## HEALPix nside for server COLLISION chunks pinned under active bodies.
+## Normally the export nside, but for planets whose visual mesh carries fine
+## sub-features (the corundum crack network) it is refined so the collision
+## grid samples the terrain at the SAME vertex spacing the client uses at its
+## finest LOD — otherwise the coarse collision quantises the crack walls and
+## they land tens to hundreds of metres away from the rendered cracks.
+##
+## Client finest spacing = pixel_side(max_quadtree_nside) / chunk_resolution.
+## Collision spacing      = pixel_side(nside)            / col_res.
+## Equal when nside = max_quadtree_nside · chunk_resolution / col_res.
+##
+## Only applied in file (chunk-heightmap) mode, whose shape task re-resolves
+## the export tiles per vertex.
+func collision_detail_nside(col_res: int) -> int:
+	if chunk_heightmaps_dir == "" or not corundum_override_whole_planet:
+		return export_nside
+	if col_res <= 0:
+		return export_nside
+	var max_nside := 1 << max_quadtree_depth
+	var target: float = float(max_nside) * float(chunk_resolution) / float(col_res)
+	# Round up to a power of two, clamped to [export_nside, max_quadtree_nside].
+	var ns := export_nside
+	while ns < target and ns < max_nside:
+		ns <<= 1
+	return ns
+
+
 ## Sample the biome map and return the biome colour.
 ## Priority: 1) biomemap texture pixel  2) BiomeQuery → BiomeDefinition.color
 ## 3) fallback base colour (gray-brown, suits most rocky planets).

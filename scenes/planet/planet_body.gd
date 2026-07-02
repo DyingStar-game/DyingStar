@@ -52,6 +52,15 @@ func _ready() -> void:
 		# Load runtime overrides from the QGIS-exported planet JSON (if set).
 		if not planet_data.planet_json.is_empty():
 			planet_data.load_from_planet_json()
+		# Apply the chunk manifest here too (radius / max_height / etc.) so those
+		# values are correct BEFORE _setup_planet builds things that depend on
+		# them — gravity area, far-LOD sphere, water sphere. Otherwise they use
+		# the default radius (1000 m) and, e.g., the gravity sphere ends up far
+		# smaller than the planet, leaving the surface with no gravity.
+		# apply_chunk_manifest() is idempotent; PlanetTerrain.initialize() also
+		# calls it.
+		if not planet_data.chunk_heightmaps_dir.is_empty():
+			planet_data.apply_chunk_manifest()
 		# Pre-build the detail texture array so it's ready for chunk generation.
 		planet_data.get_detail_texture_array()
 		if Engine.is_editor_hint() and not planet_data.changed.is_connected(_on_planet_data_changed):

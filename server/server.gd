@@ -385,15 +385,30 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	# never be pinned (player falls through to safety net).
 	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
 	var dir := local_body.normalized()
-	var nside: int = best_planet.planet_data.export_nside
+	var pd = best_planet.planet_data
+	# Collision detail nside: finer than export on crack planets so the pinned
+	# chunks under the body actually resolve the cracks (see PlanetData).
+	var col_res: int = maxi(pd._recipe_resolution, pd.chunk_resolution)
+	var nside: int = pd.collision_detail_nside(col_res)
 	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
-	var key := "hp_n%d_p%d" % [nside, ipix]
-	pins_by_planet[best_uuid][key] = true
+	# Pin the chunk under the body. At the fine collision nside (crack planets)
+	# each chunk is small, so also pin the neighbour ring for a walkable margin
+	# that streams as the body moves. Coarse export chunks are ~100 km — one
+	# already covers the body amply, so no ring there.
+	var pin_ipix := {ipix: true}
+	if nside > pd.export_nside:
+		var nbrs := HEALPix.get_neighbors_nest(nside, ipix)
+		for _dn in nbrs:
+			var nb: int = nbrs[_dn]
+			if nb >= 0:
+				pin_ipix[nb] = true
+	for pi in pin_ipix:
+		pins_by_planet[best_uuid]["hp_n%d_p%d" % [nside, pi]] = true
 	if _pin_debug_logged < PIN_DEBUG_MAX:
 		_pin_debug_logged += 1
 		var alt: float = sqrt(best_dist_sq) - best_planet.planet_data.radius
 		print("[Pin] body at ", body_pos, " → planet '", best_planet.name,
-			"' alt=", alt, " m  key=", key)
+			"' alt=", alt, " m  nside=", nside, " chunks=", pin_ipix.size())
 
 
 ## Helper for debug log: list the N closest planets and their distances.
