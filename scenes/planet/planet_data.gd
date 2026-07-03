@@ -1669,6 +1669,15 @@ func get_biome_by_type(btype: String) -> BiomeDefinition:
 	return _biome_by_type.get(btype)
 
 
+## Force the biome cache to build now, on the calling thread.
+## MUST be called on the main thread during setup, before any WorkerThreadPool
+## chunk-generation task runs — otherwise concurrent workers race the lazy
+## _build_biome_cache() and some receive null lookups (see planet_body._ready).
+func warm_biome_cache() -> void:
+	if not _biome_cache_built:
+		_build_biome_cache()
+
+
 ## Return the terrain_material_override from the first liquid BiomeDefinition,
 ## or null if none exists.  Used by PlanetChunk to add per-chunk water surfaces.
 func get_liquid_material() -> Material:

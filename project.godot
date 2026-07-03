@@ -255,6 +255,7 @@ jolt_physics_3d/limits/max_body_pairs=131072
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/anisotropic_filtering_level=4
 viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
