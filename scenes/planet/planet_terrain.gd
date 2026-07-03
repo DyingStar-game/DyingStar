@@ -126,6 +126,14 @@ var _editor_selected_biome_idx: int = -1
 ## Marker node placed at the selected biome so the user can press F to frame it.
 var _editor_biome_focus: Node3D = null
 
+## Camera altitude above the ACTUAL (crack-aware) terrain surface, sampled
+## once per LOD update in _update_terrain and reused by every _traverse call.
+## Metrics measured against sea level are wrong on high terrain: tarsis_4's
+## plateau sits ~5.6 km above the sea-level radius, which inflated every
+## distance by that much and stopped the quadtree from ever reaching its
+## finest depth (so the render could never match the always-finest collision).
+var _cam_alt_above_surface: float = 0.0
+
 var _chunks_node: Node3D
 var _collision_body: StaticBody3D
 var _chunk_cache: ChunkDiskCache
@@ -235,22 +243,24 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v24: crack GEOMETRY now gated on the corundum override flag (not the
 		#      biome definition), so runtime client meshes carve cracks even
 		#      when biome defs are unavailable — invalidates flat-baked meshes.
+		# v25: crack depth no longer LOD-ramped (full depth wherever drawn) so
+		#      the visual crack floor matches the full-depth physics floor.
 		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d" % [
 			int(data.corundum_override_whole_planet), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
 			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v24%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v25%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration, _cor]
 		# Server collision shapes live in a dedicated folder so they don't
-		# mix with client visual-mesh cache entries.  Server-only suffix
-		# "_colrel1": collision faces are now chunk-local (float32-safe) with
-		# the shape offset applied on the node — invalidates absolute-face
-		# caches without forcing a client visual re-bake.
+		# mix with client visual-mesh cache entries.  Server-only suffix:
+		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
+		# sided (backface_collision) so bodies can't fall through the surface.
+		# Bumping it invalidates stale shapes without a client visual re-bake.
 		var _cache_base := ChunkDiskCache.BASE_DIR
 		if server_mode:
 			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
-			_cache_version += "_colrel1"
+			_cache_version += "_colrel1_colbf2_grid8k"
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s" % [
@@ -310,6 +320,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var safety_faces := planet_data.load_safety_mesh_faces()
 		if safety_faces.size() >= 3:
 			var safety_shape := ConcavePolygonShape3D.new()
+			safety_shape.backface_collision = true  # solid from both sides (see chunk shape)
 			safety_shape.set_faces(safety_faces)
 			var safety_col := CollisionShape3D.new()
 			safety_col.shape = safety_shape
@@ -454,7 +465,12 @@ func _load_chunk(key: String) -> void:
 	if ipix < 0:
 		push_warning("[PlanetTerrain] _load_chunk: invalid key '%s'" % key)
 		return
-	var col_res := maxi(planet_data._recipe_resolution, planet_data.chunk_resolution)
+	var _nside := _parse_nside_from_key(key)
+	if _nside <= 0:
+		_nside = planet_data.export_nside
+	# Fine (crack) chunks match the visual's finest LOD grid (chunk_resolution);
+	# coarse export chunks keep the denser recipe resolution.
+	var col_res := planet_data.collision_col_res_for(_nside)
 
 	# Dedup against the backlog queue.
 	for entry in _server_chunk_queue:
@@ -663,6 +679,7 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 	if _server_collision_chunks.has(key):
 		return  # Race guard: assembled by another path.
 	var col_origin := _chunk_collision_origin(nside, ipix)
+	shape.backface_collision = true  # solid from both sides (cached shapes too)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.name = key + "_col"
@@ -770,8 +787,6 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 		push_warning("[PlanetTerrain] rebuild_chunks called before collision loaded.")
 		return
 
-	var col_res := maxi(planet_data._recipe_resolution, planet_data.chunk_resolution)
-
 	for key in chunk_keys:
 		# Parse ipix/nside from key "hp_nN_pP".
 		var parts := (key as String).split("_")
@@ -782,6 +797,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 		var nside := _parse_nside_from_key(key)
 		if nside <= 0:
 			nside = planet_data.export_nside
+		var col_res := planet_data.collision_col_res_for(nside)
 
 		# Inject biome modification into PlanetData.
 		planet_data.inject_biome_feature(nside, ipix, biome_update)
@@ -915,6 +931,14 @@ func _update_terrain() -> void:
 	_last_local_cam = local_cam
 	var cam_dist := local_cam.length()
 
+	# Altitude above the real terrain surface (crack-aware), NOT sea level —
+	# see _cam_alt_above_surface. One heightmap sample per update (0.25 s).
+	if cam_dist > 0.0:
+		var _cam_surf_r: float = planet_data.crack_aware_surface_dist(local_cam / cam_dist)
+		_cam_alt_above_surface = maxf(cam_dist - _cam_surf_r, 0.0)
+	else:
+		_cam_alt_above_surface = 0.0
+
 	# Skip terrain entirely when the camera is deep inside the planet body.
 	# This avoids rendering useless LOD4 shells for a gas-giant parent while
 	# the player stands on a moon far inside that giant's radius.
@@ -928,9 +952,11 @@ func _update_terrain() -> void:
 			inside_planet_body.far_lod_sphere.visible = false
 		return
 
-	# Clamp: treat "under surface" as "on surface" to avoid degenerate
+	# Altitude above the actual terrain (not sea level — high plateaus would
+	# otherwise inflate this by their elevation). Already clamped ≥ 0, which
+	# also treats "under surface" as "on surface" to avoid degenerate
 	# quadtree subdivision when the player spawns slightly below ground.
-	var surface_distance := maxf(cam_dist - planet_data.radius, 0.0)
+	var surface_distance := _cam_alt_above_surface
 	var planet_lod := planet_data.get_lod_level(surface_distance)
 
 	# Update camera history ring-buffer for look-ahead prefetch.
@@ -1461,7 +1487,19 @@ func _traverse(nside: int, ipix: int, depth: int,
 	var corner_b: Vector3 = corners[2] * planet_data.radius  # NE
 	var chunk_diag: float = corner_a.distance_to(corner_b)
 
-	var dist := local_cam.distance_to(center_pos)
+	# LOD distance = max(surface distance to the chunk, camera altitude above
+	# the ACTUAL terrain surface).  Straight-line distance to the sea-level
+	# chunk centre is wrong twice over: cracks/valleys put the camera below
+	# the centres, and high terrain (tarsis_4's plateau is ~5.6 km above the
+	# sea-level radius) inflates EVERY distance by its elevation — so the
+	# quadtree never reached its finest depth and the render sat coarser than
+	# the always-finest collision (player under the displayed floor).  The
+	# surface (horizontal) distance ignores the radial gap entirely; the
+	# terrain-relative altitude still coarsens the view from high up / space.
+	var _cam_r := local_cam.length()
+	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
+	var _surface_dist := (_cam_dir_l - center_dir).length() * planet_data.radius
+	var dist := maxf(_surface_dist, _cam_alt_above_surface)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
