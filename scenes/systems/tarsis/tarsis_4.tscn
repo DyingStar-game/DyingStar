@@ -2,6 +2,7 @@
 
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="6_0lykg"]
 [ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/props/StorageBoxes/storagewarehouse.tscn" id="6_7jf1i"]
+[ext_resource type="PackedScene" uid="uid://bn1lq4a5rqcgr" path="res://scenes/_universe/structures/industrial/wind_valley.tscn" id="7_5a8bp"]
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="script_debug_export"]
@@ -17,7 +18,7 @@ terrain_material = ExtResource("6_0lykg")
 max_quadtree_depth = 13
 corundum_override_whole_planet = true
 crack_spacing_m = 4000.0
-crack_width_m = 300.0
+crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
 chunk_heightmaps_dir = "assets/qgis/.export/tarsis_4_chunks"
@@ -42,3 +43,9 @@ script = ExtResource("script_debug_export")
 
 [node name="Storagewarehouse" parent="." unique_id=695965601 instance=ExtResource("6_7jf1i")]
 transform = Transform3D(0.5914825805936532, 0.6996656768921495, 0.4007696313760846, -0.7942655445330378, 0.41995916646175446, 0.4390632565728839, 0.13889061027265323, -0.5780157775388131, 0.8041188713705775, 4451007.479484161, 2671620.8222507075, -3677116.9918082017)
+
+[node name="WindValley" parent="." unique_id=707189428 instance=ExtResource("7_5a8bp")]
+transform = Transform3D(0.7120372904691428, 0.6993693709640071, 0.06233281590599549, -0.4806184292215191, 0.4207496288605367, 0.7693995550468952, 0.5118679736748541, -0.577799474533449, 0.6357192342181169, 4450115.231, 2673450.856, -3676740.64)
+
+[node name="WindValley2" parent="." unique_id=1712405474 instance=ExtResource("7_5a8bp")]
+transform = Transform3D(0.7120372904691428, 0.6993693709640071, 0.06233281590599549, -0.4806184292215191, 0.4207496288605367, 0.7693995550468952, 0.5118679736748541, -0.577799474533449, 0.6357192342181169, 4450011.935176476, 2673520.579702834, -3676814.89709943)

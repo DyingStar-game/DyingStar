@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://bn1lq4a5rqcgr"]
+
+[ext_resource type="PackedScene" uid="uid://0gamjtedxv7l" path="res://assets/_universe/structures/industrial/wind_valley.glb" id="1_k0kj7"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(164.18556743721433, 147.9630270028174, 10)
+
+[node name="WindValley" type="RigidBody3D" unique_id=707189428]
+freeze = true
+
+[node name="wind_valley" parent="." unique_id=2880022 instance=ExtResource("1_k0kj7")]
+
+[node name="FANE" parent="wind_valley" index="1" unique_id=374318335]
+transform = Transform3D(10, 0, 0, 0, 6.123233995736767e-16, -10, 0, 10.000000000000002, 6.123233995736766e-16, 0.05072917, 27.849522, 0.18137093)
+
+[node name="AnimationPlayer" parent="wind_valley" index="2" unique_id=978294243]
+autoplay = &"FANEAction"
+playback_auto_capture = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=133780019]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.24577522, -3.398594, 0)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[editable path="wind_valley"]
