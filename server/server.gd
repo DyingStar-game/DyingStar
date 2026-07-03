@@ -153,6 +153,71 @@ func _physics_process(_delta: float) -> void:
 	send_players_newposition_to_horizon()
 	send_props_update_to_horizon()
 
+
+## Anti-tunnel for free rigid-body props/vehicles: the thin terrain trimesh
+## lets them sink through under gravity (same reason the player needs a
+## heightmap snapback).  Every physics frame, any awake, un-parented rigid body
+## that has dropped below the crack-aware surface is pushed back onto it and its
+## downward velocity cancelled — mirroring the player's clamp.
+func _clamp_free_bodies_to_surface() -> void:
+	if props_list["planets"].is_empty():
+		return
+	for ptype in PIN_PROP_TYPES:
+		if not props_list.has(ptype):
+			continue
+		for body_uuid in props_list[ptype].keys():
+			var body = props_list[ptype][body_uuid]
+			if not is_instance_valid(body) or not (body is RigidBody3D):
+				continue
+			var rb: RigidBody3D = body
+			if rb.freeze or rb.sleeping:
+				continue
+			# Skip bodies riding a vehicle / carried by a player.
+			var parent := rb.get_parent()
+			if parent is Vehicle or parent is Player:
+				continue
+			_clamp_body_to_planet_surface(rb)
+
+
+## Push one rigid body back onto the crack-aware surface of the nearest planet
+## if it has sunk below it.  Uses the planet body-frame direction so it is
+## correct regardless of the planet's world position / rotation.
+func _clamp_body_to_planet_surface(rb: RigidBody3D) -> void:
+	var body_pos := rb.global_position
+	var best_planet: Planet = null
+	var best_dsq: float = INF
+	for puuid in props_list["planets"].keys():
+		var pn = props_list["planets"][puuid]
+		if not is_instance_valid(pn) or not (pn is Planet):
+			continue
+		var p: Planet = pn as Planet
+		if p.planet_data == null:
+			continue
+		var dsq: float = body_pos.distance_squared_to(p.global_position)
+		var max_r: float = p.planet_data.radius * 1.5
+		if dsq > max_r * max_r:
+			continue
+		if dsq < best_dsq:
+			best_dsq = dsq
+			best_planet = p
+	if best_planet == null:
+		return
+	var local: Vector3 = body_pos - best_planet.global_position
+	if local.length_squared() < 1.0:
+		return
+	var planet_basis: Basis = best_planet.global_transform.basis
+	var local_body: Vector3 = planet_basis.inverse() * local
+	var dir: Vector3 = local_body.normalized()
+	var body_dist: float = local_body.length()
+	var surface_dist: float = best_planet.planet_data.crack_aware_surface_dist(dir)
+	if body_dist >= surface_dist:
+		return  # at or above the surface — the polygon collision handles it
+	rb.global_position = best_planet.global_position + planet_basis * (dir * surface_dist)
+	var up_world: Vector3 = (planet_basis * dir).normalized()
+	var radial: float = rb.linear_velocity.dot(up_world)
+	if radial < 0.0:
+		rb.linear_velocity -= up_world * radial
+
 func _process(_delta: float) -> void:
 	if check_pending_objects_timer == 10:
 		# every 10 frames, check pending players parenting
@@ -386,22 +451,29 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
 	var dir := local_body.normalized()
 	var pd = best_planet.planet_data
-	# Collision detail nside: finer than export on crack planets so the pinned
-	# chunks under the body actually resolve the cracks (see PlanetData).
-	var col_res: int = maxi(pd._recipe_resolution, pd.chunk_resolution)
-	var nside: int = pd.collision_detail_nside(col_res)
+	# Collision detail nside: the client's FINEST LOD nside on crack planets, so
+	# the pinned collision is built on the SAME grid the visual renders (see
+	# PlanetData.collision_detail_nside); export nside otherwise.
+	var nside: int = pd.collision_detail_nside()
 	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
 	# Pin the chunk under the body. At the fine collision nside (crack planets)
-	# each chunk is small, so also pin the neighbour ring for a walkable margin
-	# that streams as the body moves. Coarse export chunks are ~100 km — one
-	# already covers the body amply, so no ring there.
+	# each chunk is small (~sub-km), so pin 2 neighbour rings for a walkable
+	# margin that streams as the body moves. Coarse export chunks are ~100 km —
+	# one already covers the body amply, so no ring there.
 	var pin_ipix := {ipix: true}
 	if nside > pd.export_nside:
-		var nbrs := HEALPix.get_neighbors_nest(nside, ipix)
-		for _dn in nbrs:
-			var nb: int = nbrs[_dn]
-			if nb >= 0:
-				pin_ipix[nb] = true
+		# BFS outward 2 rings over the HEALPix neighbour graph.
+		var frontier: Array = [ipix]
+		for _ring in 2:
+			var next_frontier: Array = []
+			for p in frontier:
+				var nbrs := HEALPix.get_neighbors_nest(nside, p)
+				for _dn in nbrs:
+					var nb: int = nbrs[_dn]
+					if nb >= 0 and not pin_ipix.has(nb):
+						pin_ipix[nb] = true
+						next_frontier.append(nb)
+			frontier = next_frontier
 	for pi in pin_ipix:
 		pins_by_planet[best_uuid]["hp_n%d_p%d" % [nside, pi]] = true
 	if _pin_debug_logged < PIN_DEBUG_MAX:

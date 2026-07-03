@@ -2534,6 +2534,12 @@ static func generate_collision_shape(
 			fi += 6
 
 	var shape := ConcavePolygonShape3D.new()
+	# Collide from BOTH sides. Unlike the visual mesh, the collision faces get
+	# no winding correction, so their one-sided front can end up facing inward
+	# (toward the planet centre) — leaving bodies to fall straight through the
+	# surface from above. Double-sided collision makes the terrain solid
+	# regardless of triangle winding.
+	shape.backface_collision = true
 	shape.set_faces(faces)
 	return shape
 

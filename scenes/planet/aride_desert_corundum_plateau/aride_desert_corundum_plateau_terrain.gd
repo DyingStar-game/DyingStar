@@ -45,17 +45,15 @@ static func crack_offset(dir: Vector3, radius: float,
 		vtx_spacing_m: float = 0.0) -> float:
 	if spacing_m <= 0.0 or width_m <= 0.0 or depth_m <= 0.0:
 		return 0.0
-	# LOD fade: full carve while vertices resolve the crack (spacing ≤ ¼ width),
-	# ramping to nothing as spacing reaches width.  Also lets coarse LODs skip
-	# the expensive Voronoi entirely.
-	# Full carve while ≥ ~3 vertices span the crack (spacing ≤ 0.15·width),
-	# fully gone by spacing = 0.5·width (< 2 vertices → would only alias).
-	var att := 1.0
-	if vtx_spacing_m > 0.0:
-		att = clampf((width_m * 0.5 - vtx_spacing_m) / (width_m * 0.35), 0.0, 1.0)
-		if att <= 0.0:
-			return 0.0
-		att = att * att * (3.0 - 2.0 * att)    # smoothstep
+	# LOD: skip the crack entirely once the mesh is too coarse to represent it
+	# (fewer than ~2 vertices across its width — it would only alias) and to let
+	# coarse LODs avoid the expensive Voronoi.  But do NOT ramp the DEPTH with
+	# LOD: a partial depth leaves the visual crack floor metres above the
+	# full-depth PHYSICS floor (which always samples at full depth), so the
+	# player ends up standing below the rendered surface.  Wherever the crack
+	# IS drawn, it is drawn at full depth — so visual and physics agree.
+	if vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5:
+		return 0.0
 	# Surface point expressed in Voronoi-cell units (1 cell ≈ spacing_m).
 	var p := dir * (radius / spacing_m)
 	var edge_cells := _voronoi_edge_distance(p)
@@ -65,7 +63,7 @@ static func crack_offset(dir: Vector3, radius: float,
 		return 0.0
 	var t := d_m / half                        # 0 at crack centre, 1 at rim
 	var t2 := t * t
-	return -depth_m * (1.0 - t2 * t2) * att     # flat floor, steep walls (1 − t⁴)
+	return -depth_m * (1.0 - t2 * t2)          # flat floor, steep walls (1 − t⁴)
 
 
 ## Deterministic per-cell jitter in [0,1)³ — the classic fract(sin(dot))
