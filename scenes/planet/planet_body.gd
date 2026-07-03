@@ -63,6 +63,15 @@ func _ready() -> void:
 			planet_data.apply_chunk_manifest()
 		# Pre-build the detail texture array so it's ready for chunk generation.
 		planet_data.get_detail_texture_array()
+		# Warm the biome cache on the MAIN thread before any chunk mesh task
+		# runs.  Chunk meshes are generated on WorkerThreadPool threads, which
+		# all call get_biome_by_type() concurrently; that lazily runs
+		# _build_biome_cache(), which CLEARS then repopulates its dictionaries.
+		# A worker hitting it mid-build gets null → the corundum override is
+		# lost → those chunks bake detail_scale=0 and render untextured
+		# (non-deterministic patches, different every launch).  Building it
+		# here once, single-threaded, makes the later worker access read-only.
+		planet_data.warm_biome_cache()
 		if Engine.is_editor_hint() and not planet_data.changed.is_connected(_on_planet_data_changed):
 			planet_data.changed.connect(_on_planet_data_changed)
 		_setup_planet()
