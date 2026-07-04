@@ -683,7 +683,7 @@ func send_props_update_to_horizon():
 		"amessagenb": debug_message_number,
 		"data": props_update.values()
 	}
-	print("Send props update to horizon: ", message)
+	# print("Send props update to horizon: ", message)
 	ServerNetwork.send_message(message, "prop_update")
 	props_update.clear()
 

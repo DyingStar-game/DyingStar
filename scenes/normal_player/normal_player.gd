@@ -29,6 +29,9 @@ const HANDBRAKE_HOLD_SECS: float = 0.4
 const HANDBRAKE_MAX_KMH: float = 3.0
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
+## How far below the crack-aware terrain surface counts as a fall-through
+## (see _catch_if_below_surface).
+const _SURFACE_CATCH_MARGIN := 3.0
 
 @export_group("Controls map names")
 
@@ -881,7 +884,6 @@ func _compute_gravity(area: Area3D) -> float:
 ## surface (a real fall-through) — normal standing rests on the polygon
 ## collision within the margin, so this never fires then and doesn't affect
 ## is_on_floor / jumping.  [param area] is the planet gravity Area3D.
-const _SURFACE_CATCH_MARGIN := 3.0
 func _catch_if_below_surface(area: Area3D) -> void:
 	var planet := area.get_parent().get_parent()
 	if planet == null or not is_instance_valid(planet):

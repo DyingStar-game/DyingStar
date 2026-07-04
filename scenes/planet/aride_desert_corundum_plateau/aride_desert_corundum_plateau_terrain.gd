@@ -16,6 +16,14 @@ const BIOME_INDEX := 91
 ## Category tag for grouping.
 const CATEGORY := "terrestrial"
 
+## Feature size of the large iron-rich blotches, in metres.
+const IRON_BLOTCH_M := 2800.0
+## Feature size of the finer iron streaks, in metres.
+const IRON_STREAK_M := 700.0
+## Iron-poor tone (cool milky white) and iron-rich tone (warm ochre-yellow).
+const MILKY := Color(0.905, 0.880, 0.820)
+const IRON  := Color(0.815, 0.680, 0.410)
+
 
 # ── Procedural crack network ───────────────────────────────────────
 # The plateau is fractured into monolithic blocks by a network of deep,
@@ -115,14 +123,7 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 # Milky corundum stained with iron gives a white↔yellow mottling.  We bake
 # this into the vertex colour (albedo) as a pure function of direction, so
 # it needs no shader change and only affects the corundum surface.
-
-## Feature size of the large iron-rich blotches, in metres.
-const IRON_BLOTCH_M := 2800.0
-## Feature size of the finer iron streaks, in metres.
-const IRON_STREAK_M := 700.0
-## Iron-poor tone (cool milky white) and iron-rich tone (warm ochre-yellow).
-const MILKY := Color(0.905, 0.880, 0.820)
-const IRON  := Color(0.815, 0.680, 0.410)
+# Tuning constants (IRON_BLOTCH_M, MILKY, …) live in the constants section.
 
 ## Blend a corundum surface colour between milky-white and iron-yellow using
 ## two octaves of value noise.  [param base] (the biome colour) is folded in

@@ -15,21 +15,22 @@ class_name PlanetChunk
 ##   Overlay: RoadTerrain (biome-adaptive road textures)
 
 
-## Generate a visual [ArrayMesh] for one terrain chunk.
-## [param data] — planet configuration (heightmap, radius, etc.)
-## [param face] — cube face index 0–5
-## [param u_min] / [param u_max] — horizontal bounds on the face (−1 … 1)
-## [param v_min] / [param v_max] — vertical bounds on the face (−1 … 1)
-## [param resolution] — number of quads per edge (vertex count = res + 1)
-# One-shot guard for the corundum-override debug print (temporary).
-static var _corundum_logged := false
-
 ## Bitmask constants for LOD-stitching edges (reserved for future use).
 const STITCH_LEFT   := 1
 const STITCH_RIGHT  := 2
 const STITCH_BOTTOM := 4
 const STITCH_TOP    := 8
 
+# One-shot guard for the corundum-override debug print (temporary).
+static var _corundum_logged := false
+
+
+## Generate a visual [ArrayMesh] for one terrain chunk.
+## [param data] — planet configuration (heightmap, radius, etc.)
+## [param face] — cube face index 0–5
+## [param u_min] / [param u_max] — horizontal bounds on the face (−1 … 1)
+## [param v_min] / [param v_max] — vertical bounds on the face (−1 … 1)
+## [param resolution] — number of quads per edge (vertex count = res + 1)
 static func generate_mesh(
 		data: PlanetData,
 		face: int,
