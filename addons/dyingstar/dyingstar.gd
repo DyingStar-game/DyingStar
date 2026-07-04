@@ -250,6 +250,7 @@ func _report(action: String, res: Dictionary) -> void:
 	var dlg := AcceptDialog.new()
 	dlg.title = "DyingStar"
 	dlg.dialog_text = msg
+	dlg.exclusive = false  # exclusive dialogs collide with the Save-Scene modal -> editor crash
 	EditorInterface.get_base_control().add_child(dlg)
 	dlg.popup_centered()
 	dlg.confirmed.connect(dlg.queue_free)
@@ -270,10 +271,14 @@ func _refresh_defs() -> void:
 	_defs_loading = true
 	_defs_abort = false
 	_refresh_menu_state()
-	# Blocking modal with a progress bar: the designer sees the download and can't touch anything else.
+	# Progress modal with a progress bar: the designer sees the download.
+	# NOTE: must NOT be exclusive. An exclusive modal here collides with the
+	# editor's own exclusive Save-Scene ProgressDialog if the user saves while
+	# this async GitHub fetch is still pending (20s timeout), corrupting the
+	# exclusive-window bookkeeping and crashing the editor (SIGSEGV on save).
 	var dlg := AcceptDialog.new()
 	dlg.title = "DyingStar — Network definitions"
-	dlg.exclusive = true
+	dlg.exclusive = false
 	var vbox := VBoxContainer.new()
 	vbox.custom_minimum_size = Vector2(440, 0)
 	var lbl := Label.new()
@@ -335,6 +340,7 @@ func _propose_cached() -> void:
 	var n := ServerPropsIO.load_network_defs().size()
 	var cd := ConfirmationDialog.new()
 	cd.title = "DyingStar — Network definitions"
+	cd.exclusive = false  # exclusive dialogs collide with the Save-Scene modal -> editor crash
 	cd.dialog_text = "Could not reach GitHub.\nUse the previously cached definitions (%d types)?" % n
 	cd.get_ok_button().text = "Use cached"
 	cd.get_cancel_button().text = "Disable"

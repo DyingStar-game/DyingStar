@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://0gamjtedxv7l"
-path="res://.godot/imported/wind_valley.glb-67418e198db5e32e41e0dd509f9e807b.scn"
+uid="uid://btgke3btm5ma7"
+path="res://.godot/imported/wind_valley_fan.glb-1605ee93c62185ecd57dc0c78f9a3c66.scn"
 
 [deps]
 
-source_file="res://assets/_universe/structures/industrial/wind_valley.glb"
-dest_files=["res://.godot/imported/wind_valley.glb-67418e198db5e32e41e0dd509f9e807b.scn"]
+source_file="res://assets/_universe/structures/industrial/wind_valley_fan.glb"
+dest_files=["res://.godot/imported/wind_valley_fan.glb-1605ee93c62185ecd57dc0c78f9a3c66.scn"]
 
 [params]
 
@@ -41,7 +41,7 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={
 "animations": {
-"FANEAction": {
+"FANEAction_003": {
 "save_to_file/enabled": false,
 "save_to_file/fallback_path": "",
 "save_to_file/keep_custom_tracks": "",
@@ -2096,6 +2096,11 @@ _subresources={
 "slice_99/save_to_file/path": "",
 "slice_99/start_frame": 0,
 "slices/amount": 0
+}
+},
+"nodes": {
+"PATH:FAN_EXPORT": {
+"mesh_instance/visibility_range_end": 3000.0
 }
 }
 }
