@@ -1,3 +1,4 @@
+# gdlint: disable=max-public-methods
 @tool
 class_name PlanetData
 extends Resource
