@@ -1,24 +1,58 @@
 [gd_scene format=3 uid="uid://bn1lq4a5rqcgr"]
 
-[ext_resource type="PackedScene" uid="uid://0gamjtedxv7l" path="res://assets/_universe/structures/industrial/wind_valley.glb" id="1_k0kj7"]
+[ext_resource type="PackedScene" uid="uid://bdxjibeoa055g" path="res://assets/_universe/structures/industrial/wind_valley_bridge.glb" id="1_p27tt"]
+[ext_resource type="PackedScene" uid="uid://btgke3btm5ma7" path="res://assets/_universe/structures/industrial/wind_valley_fan.glb" id="2_svp04"]
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
-size = Vector3(164.18556743721433, 147.9630270028174, 10)
+[sub_resource type="BoxShape3D" id="BoxShape3D_p27tt"]
+size = Vector3(299.36741340111166, 65.56090138369495, 10)
 
-[node name="WindValley" type="RigidBody3D" unique_id=707189428]
+[sub_resource type="BoxShape3D" id="BoxShape3D_dagjk"]
+size = Vector3(49.65505270586982, 37.93089269361008, 10)
+
+[node name="WindValley" type="RigidBody3D" unique_id=444361552]
 freeze = true
 
-[node name="wind_valley" parent="." unique_id=2880022 instance=ExtResource("1_k0kj7")]
+[node name="wind_valley_bridge" parent="." unique_id=164632456 instance=ExtResource("1_p27tt")]
 
-[node name="FANE" parent="wind_valley" index="1" unique_id=374318335]
-transform = Transform3D(10, 0, 0, 0, 6.123233995736767e-16, -10, 0, 10.000000000000002, 6.123233995736766e-16, 0.05072917, 27.849522, 0.18137093)
+[node name="wind_valley_fan" parent="." unique_id=418803296 instance=ExtResource("2_svp04")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 92, 0)
 
-[node name="AnimationPlayer" parent="wind_valley" index="2" unique_id=978294243]
-autoplay = &"FANEAction"
-playback_auto_capture = false
+[node name="FAN_EXPORT" parent="wind_valley_fan" index="0" unique_id=1369926639]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=133780019]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.24577522, -3.398594, 0)
-shape = SubResource("BoxShape3D_gy7pr")
+[node name="AnimationPlayer" parent="wind_valley_fan" index="1" unique_id=109183559]
+autoplay = &"FANEAction_003"
 
-[editable path="wind_valley"]
+[node name="wind_valley_fan_little1" parent="." unique_id=407842810 instance=ExtResource("2_svp04")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 72, 74, 0)
+
+[node name="FAN_EXPORT" parent="wind_valley_fan_little1" index="0" unique_id=1369926639]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="AnimationPlayer" parent="wind_valley_fan_little1" index="1" unique_id=109183559]
+autoplay = &"FANEAction_003"
+
+[node name="wind_valley_fan_little2" parent="." unique_id=2032810050 instance=ExtResource("2_svp04")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -72, 74, 0)
+
+[node name="FAN_EXPORT" parent="wind_valley_fan_little2" index="0" unique_id=1369926639]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="AnimationPlayer" parent="wind_valley_fan_little2" index="1" unique_id=109183559]
+autoplay = &"FANEAction_003"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=676848505]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.20795058873046912, 97.19756434875488, 0)
+shape = SubResource("BoxShape3D_p27tt")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=1771692447]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 124.3454246520996, 19.57107295879385, 0)
+shape = SubResource("BoxShape3D_dagjk")
+
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="." unique_id=1455292531]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -124.76487067397392, 19.57107295879385, 0)
+shape = SubResource("BoxShape3D_dagjk")
+
+[editable path="wind_valley_fan"]
+[editable path="wind_valley_fan_little1"]
+[editable path="wind_valley_fan_little2"]
