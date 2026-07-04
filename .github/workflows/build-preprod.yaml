@@ -50,6 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            assets/qgis/.export
             assets/qgis/export
             assets/qgis/checksum.txt
             assets/qgis/creationtime.txt
