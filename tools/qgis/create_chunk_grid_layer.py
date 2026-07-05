@@ -4,7 +4,7 @@ QGIS tool: Create a vector layer showing all exported HEALPix chunk boundaries.
 Run in the QGIS Python console:
     exec(open('tools/qgis/create_chunk_grid_layer.py').read())
 
-For each chunk in assets/qgis/.export/<planet>_chunks/base_<depth>/,
+For each chunk in assets/qgis/export/<planet>_chunks/base_<depth>/,
 a polygon is drawn showing the exact boundary of that HEALPix tile.
 Each feature is labelled with its pixel index and recipe filename
 (e.g. "hp_n64_p24576").
@@ -26,7 +26,7 @@ _project = QgsProject.instance()
 _proj_name = QgsExpressionContextUtils.projectScope(_project).variable("planet_name")
 PLANET_NAME = str(_proj_name) if _proj_name else "tarsis_4"
 
-EXPORT_DIR = "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/.export"
+EXPORT_DIR = "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/export"
 
 # Number of edge samples used to trace each chunk boundary polygon.
 # 8 gives smooth-enough curves; increase for higher fidelity at the poles.

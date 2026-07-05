@@ -98,7 +98,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            assets/qgis/.export
             assets/qgis/export
             assets/qgis/checksum.txt
             assets/qgis/creationtime.txt
@@ -107,6 +106,9 @@ jobs:
       - name: Download planet data
         if: steps.cache-planet.outputs.cache-hit != 'true'
         run: bash tools/download_planet_data.sh
+
+      - name: Delete blender files
+        run: rm -fr assets_blender
 
       - name: Create build output directory
         run: mkdir -p ${{ matrix.build_dir }}
