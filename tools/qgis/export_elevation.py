@@ -64,7 +64,7 @@ PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_5"
 PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
 
 EXPORT_DIR = os.path.expanduser(
-    "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/.export"
+    "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/export"
 )
 
 # HEALPix tiling. nside=64 → 12·64² = 49152 chunks (chunk_export_depth=6).
