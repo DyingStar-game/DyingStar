@@ -18,6 +18,12 @@ var radius: float = 1000.0
 var max_height: float = 1000.0
 ## Elevation offset in meters (negative when craters dig below sea-level).
 var height_offset: float = 0.0
+## DEBUG: counts height samples that fell back to the equirect global heightmap
+## because the per-chunk .r32 tile was missing/unreadable AT SAMPLE TIME. A
+## non-zero count at runtime means chunks are being built from the fallback map
+## instead of the real elevation tiles → high plateaus collapse toward sea level
+## (the tarsis_4 "terrain 3-6 km below the props" symptom).
+var _height_fallback_hits: int = 0
 ## Vertical exaggeration applied to sampled elevation. Real planetary relief is
 ## ~0.1% of the radius (Earth-like) and reads as flat at true 1:1 scale; raise
 ## this (e.g. 3–8) to make terrain visually dramatic. Applies to both the visual
@@ -1047,6 +1053,14 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		ipix = HEALPix.vec2pix_nest(export_nside, dir)
 	var img := load_chunk_heightmap(ipix)
 	if img == null:
+		# DEBUG: the per-chunk tile is not available at sample time — this vertex
+		# gets its elevation from the equirect global map, which is a different
+		# (usually flatter) surface. If this fires while building the plateau
+		# chunks, that is why the runtime terrain sits kilometres below the props.
+		_height_fallback_hits += 1
+		if _height_fallback_hits <= 8 or _height_fallback_hits % 4096 == 0:
+			print("[PlanetData][DBG] height fallback → equirect map: export_ipix=%d hits=%d (per-chunk .r32 missing/unreadable at sample time)" % [
+				ipix, _height_fallback_hits])
 		return sample_height_at(dir)
 
 	# Get local UV within the pixel

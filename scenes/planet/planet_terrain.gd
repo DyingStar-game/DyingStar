@@ -2237,9 +2237,17 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 						_chunks_node.add_child(volc_node)
 						info["volcanic"] = volc_node
 
-	# Save terrain mesh to disk cache for future restarts
+	# Save terrain mesh to disk cache for future restarts — but ONLY if the
+	# chunk's export elevation tile is actually available. If the .r32 tile was
+	# missing/unreadable when the mesh was built, generate_mesh sampled the flat
+	# equirect fallback, collapsing high plateaus toward sea level (the tarsis_4
+	# "terrain 3-6 km below the props" bug). Persisting such a mesh makes the bad
+	# bake "valid" forever, while the editor (fresh regen) and server collision
+	# (already guarded in _create_chunk) stay correct. Skip the write so the
+	# chunk regenerates once the tile is resident. Mirrors the server guard.
 	if _chunk_cache and mesh and not info.get("_from_disk_cache", false):
-		_chunk_cache.save_mesh(key, lod, mesh)
+		if planet_data.load_chunk_heightmap(_get_export_ipix(info)) != null:
+			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
