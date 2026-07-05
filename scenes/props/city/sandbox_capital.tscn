@@ -25,6 +25,11 @@
 [ext_resource type="PackedScene" uid="uid://cksw50yr7oxjk" path="res://assets/_universe/structures/buildings/habitat_lateraux.glb" id="23_w88le"]
 [ext_resource type="PackedScene" uid="uid://duue5eopb7mmw" path="res://assets/_universe/structures/buildings/habitat_superpose.glb" id="24_npgr1"]
 [ext_resource type="PackedScene" uid="uid://cnx8oldx8vdmb" path="res://assets/_universe/structures/buildings/habitat_test.glb" id="25_drqvg"]
+[ext_resource type="PackedScene" uid="uid://dqbngk5x7vnma" path="res://assets/_universe/structures/buildings/habitat_square_container.glb" id="26_0ulh1"]
+[ext_resource type="PackedScene" uid="uid://1duahfpbqy11" path="res://assets/_universe/props/containers/test_containers_6x3.glb" id="27_1kput"]
+[ext_resource type="PackedScene" uid="uid://dt51615ectfkm" path="res://assets/_universe/props/containers/test_containers_6x2.6.glb" id="28_w88le"]
+[ext_resource type="PackedScene" uid="uid://dpthn0id3t7fw" path="res://assets/_universe/props/containers/test_containers_12x3.glb" id="29_npgr1"]
+[ext_resource type="PackedScene" uid="uid://155jmhky57a" path="res://assets/_universe/props/containers/test_containers_12x2.6.glb" id="30_drqvg"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
 rayleigh_coefficient = 2.5
@@ -453,3 +458,22 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.50574892710938, 0.048277401
 [node name="Label3D" type="Label3D" parent="habitat_test" unique_id=1468892080]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.178825757467437, 0.8170247422715334, 3.3413143328217245)
 text = "Version F - 100%"
+
+[node name="habitat_square_container" parent="." unique_id=522735573 instance=ExtResource("26_0ulh1")]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -42.76304548533846, 1.3000007621732883, -58.557916064822734)
+
+[node name="Label3D" type="Label3D" parent="habitat_square_container" unique_id=486302794]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.3283107377782457, -0.41813909033715335, 0.5638479982708873)
+text = "Bardock house"
+
+[node name="test_containers_6x3" parent="." unique_id=1660164005 instance=ExtResource("27_1kput")]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.800196672945404, 0.019703429667854433, -59.661777808016815)
+
+[node name="test_containers_6x2_6" parent="." unique_id=1506572370 instance=ExtResource("28_w88le")]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -52.70120928786536, 0.025766149460252574, -59.63421526922031)
+
+[node name="test_containers_12x3" parent="." unique_id=1810295763 instance=ExtResource("29_npgr1")]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -56.23854836468538, 0, -62.39906948006749)
+
+[node name="test_containers_12x2_6" parent="." unique_id=1438531769 instance=ExtResource("30_drqvg")]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.897769999938944, 8.6148286726484e-08, -62.72873142771385)

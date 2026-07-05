@@ -21,8 +21,8 @@ crack_spacing_m = 4000.0
 crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
-chunk_heightmaps_dir = "assets/qgis/.export/tarsis_4_chunks"
-roads_geojson = "assets/qgis/.export/tarsis_4_roads_buffered.json"
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
+roads_geojson = "assets/qgis/export/tarsis_4_roads_buffered.json"
 
 [node name="Tarsis4" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")
