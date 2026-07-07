@@ -4,6 +4,8 @@ extends Node
 signal cargo_debug_changed(on: bool)
 ## Emitted when the camera field of view changes, so the active player camera updates live.
 signal fov_changed(fov: float)
+## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
+signal show_debug_changed(on: bool)
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
@@ -33,6 +35,8 @@ func initialize_settings():
 	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
 	config.set_value("general", "cargo_debug", false)
+	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
+	config.set_value("general", "show_debug", true)
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
 
@@ -173,6 +177,17 @@ func set_cargo_debug(on: bool) -> void:
 
 func is_cargo_debug() -> bool:
 	return config.get_value("general", "cargo_debug", false)
+
+## Show/hide the in-game debug panels (server/client FPS, coords, counts…). Persisted under [general];
+## emits so the HUD toggles live and the settings menu stays in sync with the toggle_debug key.
+## Default true (early alpha).
+func set_show_debug(on: bool) -> void:
+	config.set_value("general", "show_debug", on)
+	save_settings()
+	show_debug_changed.emit(on)
+
+func is_show_debug() -> bool:
+	return config.get_value("general", "show_debug", true)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)

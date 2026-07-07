@@ -55,10 +55,28 @@ func create_action_list():
 
 func format_input_label(event: InputEvent) -> String:
 	if event is InputEventKey:
-		var keycode = DisplayServer.keyboard_get_keycode_from_physical(event.physical_keycode)
-		return OS.get_keycode_string(keycode)
+		# Show the modifiers too, so an "Alt + ²" binding doesn't read as a bare key.
+		var mods := ""
+		if event.ctrl_pressed: mods += "Ctrl + "
+		if event.alt_pressed: mods += "Alt + "
+		if event.shift_pressed: mods += "Shift + "
+		if event.meta_pressed: mods += "Meta + "
+		return mods + _physical_key_name(event.physical_keycode)
 
 	return event.as_text()
+
+## Human key name for a physical keycode: prefer the label printed on the key in the active layout
+## (e.g. "²" on an AZERTY row), and fall back to the layout keycode name (e.g. "Apostrophe") when the
+## key has no printable label. Physical keycodes keep bindings layout-independent; this only affects
+## how they READ in the Controls list.
+func _physical_key_name(physical_keycode: int) -> String:
+	var label := DisplayServer.keyboard_get_label_from_physical(physical_keycode)
+	if label != 0:
+		var label_text := OS.get_keycode_string(label)
+		if label_text.strip_edges() != "":
+			return label_text
+	var keycode := DisplayServer.keyboard_get_keycode_from_physical(physical_keycode)
+	return OS.get_keycode_string(keycode)
 
 func _on_input_button_pressed(b, a):
 	if !is_remapping:
@@ -141,7 +159,14 @@ func import_input_map() -> void:
 			input_event.button_index = int(ev_str.split("_")[1])
 		else:
 			input_event = InputEventKey.new()
-			input_event.physical_keycode = OS.find_keycode_from_string(ev_str)
+			# find_keycode_from_string encodes modifiers in the high bits; split them back out so a
+			# saved "Alt + ²" reloads WITH its Alt (else remapped modifier bindings lose the modifier).
+			var kc: int = OS.find_keycode_from_string(ev_str)
+			input_event.physical_keycode = kc & KEY_CODE_MASK
+			input_event.alt_pressed = (kc & KEY_MASK_ALT) != 0
+			input_event.ctrl_pressed = (kc & KEY_MASK_CTRL) != 0
+			input_event.shift_pressed = (kc & KEY_MASK_SHIFT) != 0
+			input_event.meta_pressed = (kc & KEY_MASK_META) != 0
 		print("ev : " + ev_str + " for " + action_name)
 		InputMap.action_add_event(action_name, input_event)
 
