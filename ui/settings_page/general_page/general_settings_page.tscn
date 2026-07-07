@@ -46,6 +46,23 @@ theme_override_constants/margin_bottom = 20
 [node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer/MarginContainer" unique_id=257727327]
 layout_mode = 2
 
+[node name="ShowDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=771001101]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShowDebug" unique_id=771001102]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Show debug panels (in-game — default Alt+²)"
+label_settings = SubResource("LabelSettings_gen")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/ShowDebug" unique_id=771001103]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "On"
+
 [node name="CargoDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1017380227]
 layout_mode = 2
 

@@ -258,6 +258,9 @@ func _ready() -> void:
 		# Apply the saved field of view, and follow live changes from the settings menu.
 		camera.fov = SettingsManager.get_fov()
 		SettingsManager.fov_changed.connect(_on_fov_changed)
+		# Debug panels: follow live the settings-menu "Show debug panels" toggle.
+		if not SettingsManager.show_debug_changed.is_connected(_on_show_debug_changed):
+			SettingsManager.show_debug_changed.connect(_on_show_debug_changed)
 		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
@@ -270,8 +273,9 @@ func _ready() -> void:
 
 		active = true
 
-		display_debug.emit(true)
-		_display_debug = true
+		# Initial visibility from the saved setting (default true — early alpha).
+		_display_debug = SettingsManager.is_show_debug()
+		display_debug.emit(_display_debug)
 
 		var loading_node = get_tree().root.get_node("Loading")
 		if loading_node:
@@ -409,13 +413,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _spawn_wheel:
 			_spawn_wheel.confirm()
 
-	if event.is_action_pressed("debug_console"):
-		if _display_debug:
-			display_debug.emit(false)
-			_display_debug = false
-		else:
-			display_debug.emit(true)
-			_display_debug = true
+	if event.is_action_pressed("toggle_debug"):
+		_display_debug = not _display_debug
+		display_debug.emit(_display_debug)
+		SettingsManager.set_show_debug(_display_debug)  # persist + keep the settings menu in sync
 
 func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	input_from_server["input_direction"] = input_dir
@@ -1092,6 +1093,11 @@ func _force_temp_sky_environment() -> void:
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
 	camera.fov = fov
+
+## Live update from the settings menu "Show debug panels" toggle (kept in sync with the toggle_debug key).
+func _on_show_debug_changed(on: bool) -> void:
+	_display_debug = on
+	display_debug.emit(on)
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
