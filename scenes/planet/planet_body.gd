@@ -42,7 +42,6 @@ var _gravity_area: Area3D
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain if has_node("PlanetTerrain") else null
 @onready var far_lod_sphere: MeshInstance3D = $FarLODSphere if has_node("FarLODSphere") else null
 
-
 func _ready() -> void:
 	if not Engine.is_editor_hint():
 		print("[Planet] _ready: name=%s  spawn_position=%s" % [name, spawn_position])

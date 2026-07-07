@@ -116,6 +116,10 @@ var screen_position: Vector3 = Vector3.ZERO
 
 var _display_debug: bool = false
 
+## Consecutive server ticks this player has been settled (no input, on floor,
+## no velocity) — used to throttle idle physics to every 10th tick.
+var _idle_settled_ticks: int = 0
+
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
 # Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
@@ -655,6 +659,7 @@ func _leave_vehicle() -> void:
 func net_set_local_target(local_pos: Vector3) -> void:
 	_interp.set_position_target(self, local_pos)
 
+
 func net_set_target(local_pos: Vector3, global_rot: Vector3) -> void:
 	var target_basis := Basis.from_euler(global_rot)
 	var parent := get_parent()
@@ -707,6 +712,24 @@ func _physics_process(delta: float) -> void:
 			if piloting:
 				input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
+		# Server-side "sleep" for settled players — the CharacterBody analogue
+		# of RigidBody sleeping. An idle player standing on the floor does not
+		# need 60 physics ticks/s: once quasi-still for 0.5 s, run the full
+		# move_and_slide only every 10th tick (6 Hz keeps the floor contact
+		# honest — if the chunk under the player unloads, the fall starts
+		# within 10 ticks). Any client packet, input, or residual velocity
+		# resets the counter instantly. With N players/vehicles idle around a
+		# base this removes ~90% of their per-tick physics cost and, combined
+		# with the position dedup in _on_player_move, all their network
+		# traffic.
+		if not new_input_from_server and input_direction == Vector2.ZERO \
+				and is_on_floor() and velocity.length_squared() < 0.0001:
+			_idle_settled_ticks += 1
+			if _idle_settled_ticks > 30 and (_idle_settled_ticks % 10) != 0:
+				return
+		else:
+			_idle_settled_ticks = 0
+
 		var sprint = null
 		# print("gravity parents:", gravity_parents.size())
 		var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
@@ -756,8 +779,16 @@ func _physics_process(delta: float) -> void:
 		if is_on_floor() and is_jumping:
 			velocity += up_direction * jump_height * gravity
 			is_jumping = false
-		# Add the gravity.
-		elif not is_on_floor():
+		# Add the gravity — ALWAYS, including while standing on the floor. The
+		# floor contact absorbs it (move_and_slide cancels the into-floor
+		# component) and keeps the capsule firmly pressed onto the terrain
+		# trimesh so is_on_floor() stays true. Gating this on
+		# "not is_on_floor()" made the contact flicker when idle: the idle
+		# branch zeroes velocity → a zero-motion slide loses the floor → next
+		# tick one dose of gravity sinks the body ~9 mm → depenetration pushes
+		# it back → permanent ~1 cm "dancing", broadcast to every client at
+		# full tick rate (the position changes > the 1 mm dedup snap).
+		else:
 			velocity -= up_direction * gravity * 2.0 * delta
 			is_jumping = false
 
@@ -778,6 +809,7 @@ func _physics_process(delta: float) -> void:
 		if parent_gravity_area and parent_gravity_area.gravity_point \
 				and parent_gravity_area.name == "PlanetGravity":
 			_catch_if_below_surface(parent_gravity_area)
+
 
 		update_last_basis()
 

@@ -292,6 +292,9 @@ var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off 
 var _cargo_debug_markers: Dictionary = {}  # RigidBody3D cargo -> its MeshInstance3D envelope
 var _net_last_position: Vector3 = Vector3.ZERO
 var _net_last_rotation: Vector3 = Vector3.ZERO
+## Consecutive server ticks the pilotless vehicle has been quasi-still — after
+## 30 (0.5 s) the body is put to sleep to stop suspension micro-jitter.
+var _idle_still_ticks: int = 0
 var _net_throttle: float = 0.0  # pilot input relayed by the server (networked)
 var _net_steer: float = 0.0
 var _net_brake: bool = false
@@ -1380,6 +1383,31 @@ func _physics_process(delta: float) -> void:
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_check_rollover_unlock()  # spill the load if the truck is tipped over
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
+		# Settle & sleep an idle vehicle. Wheel-suspension micro-forces on the
+		# terrain trimesh otherwise keep the body awake forever, wandering by
+		# millimetres every tick — replicated to every client as endless
+		# "dancing". Once quasi-still with no pilot, put the body to sleep
+		# explicitly and skip the drive/brake force application (any force
+		# re-wakes it). A pilot entering, or a real collision, wakes it again.
+		if not is_instance_valid(_pilot) \
+				and linear_velocity.length_squared() < 0.01 \
+				and angular_velocity.length_squared() < 0.01:
+			_idle_still_ticks += 1
+			# A full second quasi-still before freezing: the suspension needs
+			# time to finish settling, or the pose is frozen with one side
+			# still compressed (a wheel visually sunk into the ground).
+			if _idle_still_ticks >= 60:
+				if not sleeping:
+					linear_velocity = Vector3.ZERO
+					angular_velocity = Vector3.ZERO
+					engine_force = 0.0
+					sleeping = true
+				_replicate_transform()  # still replicate doors/headlights/etc.
+				return
+		else:
+			_idle_still_ticks = 0
+			if sleeping and is_instance_valid(_pilot):
+				sleeping = false  # pilot back on board: resume simulation
 		if is_instance_valid(_pilot):
 			_apply_drive(delta)
 		elif _handbrake:
@@ -1485,6 +1513,16 @@ func _exit_tree() -> void:
 
 ## Client: apply the replicated state (position/rotation/pilot) from the server.
 func client_channel_data_update(data: Dictionary) -> void:
+	# The SERVER simulates this vehicle — never apply channel updates there.
+	# Horizon routes our own prop broadcasts back to us: the first echo
+	# snap-teleports the body (_interp.set_target snaps on first call) and
+	# every echoed property write (mass, …) re-wakes the RigidBody, so it can
+	# never sleep and micro-wanders forever (the vehicle half of the "dancing"
+	# bug). Replica smoothing/HUD state below is for CLIENTS only.
+	# NOTE for future multi-zone: a vehicle frozen by another zone's server
+	# would also be skipped here — revisit ownership then.
+	if _is_networked() and GameOrchestrator.is_server():
+		return
 	if data.has("position"):
 		var pos := Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
 		var rot := rotation

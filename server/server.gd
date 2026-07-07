@@ -141,6 +141,10 @@ var _pin_tick_counter: int = 0
 ## logs readable).  Reset/incremented in _pin_node_to_planet_chunk.
 var _pin_debug_logged: int = 0
 
+## Counter to throttle Horizon position/prop updates to every 2nd physics
+## frame (30 messages/sec at 60 FPS physics).
+var _horizon_update_counter: int = 0
+
 
 func _enter_tree() -> void:
 	NetworkOrchestrator.load_server_config()
@@ -150,12 +154,15 @@ func _ready() -> void:
 	_send_metrics()
 
 func _physics_process(_delta: float) -> void:
-	send_players_newposition_to_horizon()
-	send_props_update_to_horizon()
+	_horizon_update_counter += 1
+	if _horizon_update_counter >= 2:
+		_horizon_update_counter = 0
+		send_players_newposition_to_horizon()
+		send_props_update_to_horizon()
 
 func _process(_delta: float) -> void:
-	if check_pending_objects_timer == 10:
-		# every 10 frames, check pending players parenting
+	if check_pending_objects_timer == 20:
+		# every 20 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
 			if _search_parent_node(pending_message["data"]["object_data"]["parent_id"]) != null:
 				print(
@@ -436,8 +443,8 @@ func _debug_closest_planets(pos: Vector3, n: int) -> String:
 	return out
 
 func start_server(receveid_universe_scene: Node) -> void:
-	Engine.physics_ticks_per_second = 30
-	Engine.max_fps = 30
+	Engine.physics_ticks_per_second = 60
+	Engine.max_fps = 60
 
 	universe_scene = receveid_universe_scene
 	# entities_spawn_node = receveid_player_spawn_node
@@ -486,13 +493,21 @@ func instantiate_player(message: Dictionary):
 	# print("Remnote player spawned with position: ", player_to_add.global_position)
 
 func player_move(message: Dictionary):
-	# print("================")
-	# print(message["data"]["uuid"])
-	# print(players_list.keys())
 	if players_list.has(message["player_id"]):
-		# print("YEAH!")
+		# Input sanity guard: genuine client input (movement/update_velocity,
+		# see client.gd _on_client_action_move) is a 2D direction with
+		# components in [-1, 1] and NO "z" key. Anything else (a malformed or
+		# misrouted message carrying a 3D world position) would be NORMALIZED
+		# by the walk code into a full-speed movement command — reject it.
+		var pos_data: Dictionary = message["data"]["pos"]
+		if pos_data.has("z"):
+			return
+		var input_x := float(pos_data["x"])
+		var input_y := float(pos_data["y"])
+		if absf(input_x) > 1.5 or absf(input_y) > 1.5:
+			return
 		var player = players_list[message["player_id"]]
-		player.input_from_server.input_direction = Vector2(float(message["data"]["pos"]["x"]), float(message["data"]["pos"]["y"]))
+		player.input_from_server.input_direction = Vector2(input_x, input_y)
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
 		)
@@ -1123,6 +1138,19 @@ func _push_zone_residency_to_planet(planet_node: Node) -> void:
 		return
 	var planet: Planet = planet_node as Planet
 	if planet.planet_terrain == null or planet.planet_data == null:
+		return
+	# Fine-collision planets (file-mode crack planets like tarsis_4) get ALL
+	# their collision from the per-body pin system at collision_detail_nside
+	# (n8192). Do NOT also blanket the zone with coarse export-nside (n64)
+	# chunks: both attach shapes to the SAME PlanetCollision body, and where a
+	# coarse ~100 km facet crosses the fine surface the two floors sit within
+	# capsule height — a body lands on the lower floor and is silently
+	# depenetrated out of the upper one a few ticks later, forever. That was
+	# the player/vehicle "dancing" around the base, and why the vehicle could
+	# never fall asleep. An empty desired set also unloads any coarse chunks
+	# attached earlier (pins are preserved — see _apply_residency).
+	if planet.planet_data.collision_detail_nside() > planet.planet_data.export_nside:
+		planet.planet_terrain.set_resident_chunks(PackedStringArray())
 		return
 	# Convert zone AABB from world → planet-local by subtracting planet origin.
 	var aabb_world := _server_zone_aabb_world()

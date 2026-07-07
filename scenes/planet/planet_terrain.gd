@@ -38,6 +38,10 @@ const MAX_ASSEMBLE_PER_FRAME := 8
 const MAX_SERVER_CHUNK_TASKS := 4
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
+## Tolerance (m) for validating cached chunk geometry against the live surface
+## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
+## is 3000-6000 m off.
+const _CACHE_GEOM_TOLERANCE_M := 1500.0
 
 ## ── Editor preview settings ───────────────────────────────────────
 ## Quadtree depth for editor preview chunks. Higher = smaller chunks,
@@ -145,7 +149,7 @@ var _update_timer: float = 0.0
 var _initialized: bool = false
 
 ## Server fixed-collision mode: all export-nside chunks loaded at startup.
-## Maps chunk_key → CollisionShape3D for rebuild support.
+## Maps chunk_key → per-chunk StaticBody3D (see _make_chunk_collision_body).
 var _server_collision_chunks: Dictionary = {}
 ## True once _server_load_prebaked_collision() has finished.
 var _server_collision_loaded: bool = false
@@ -284,7 +288,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_generate_editor_preview()
 		return
 
-	# Server collision body with a base sphere for rough physics
+	# Server FALLBACK collision body (BaseSphere + SafetyNet only).
+	# Terrain chunks each get their OWN small StaticBody3D at the chunk origin
+	# (see _make_chunk_collision_body) — required for Jolt float32 narrowphase.
+	# The two planet-wide fallback shapes stay here: they sit 100-200 m BELOW
+	# the playable surface and only catch bodies that already fell through
+	# everything, so contact noise on them is harmless.
 	if is_server:
 		planet_data.set_server_mode(true)
 		_collision_body = StaticBody3D.new()
@@ -485,8 +494,8 @@ func _load_chunk(key: String) -> void:
 ## discarded when the task completes.
 func _unload_chunk(key: String) -> void:
 	if _server_collision_chunks.has(key):
-		var col: CollisionShape3D = _server_collision_chunks[key]
-		col.queue_free()
+		var body: Node = _server_collision_chunks[key]
+		body.queue_free()
 		_server_collision_chunks.erase(key)
 	if _server_feature_nodes.has(key):
 		for n in _server_feature_nodes[key]:
@@ -531,6 +540,12 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 	var key_nside := _parse_nside_from_key(key)
 	if key_nside <= 0:
 		key_nside = planet_data.export_nside
+
+	# Discard a cached shape that was baked from fallback heights (see
+	# _cached_geom_valid) — regenerating is far cheaper than a player
+	# bouncing forever between a wrong collision floor and the real surface.
+	if cached_shape != null and not _cached_shape_valid(cached_shape, key_nside, ipix, key):
+		cached_shape = null
 
 	if planet_data.chunk_heightmaps_dir != "":
 		if cached_shape != null:
@@ -672,22 +687,48 @@ func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
 		HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
 
 
-## Attach [param shape] to the collision body and spawn chunk features.
-## Must be called on the main thread only.  No-op if already assembled.
+## Create a dedicated StaticBody3D for one chunk, positioned AT the chunk
+## origin, with the shape at ZERO local offset.
+##
+## One small body per chunk instead of offset shapes on a single planet-wide
+## body is REQUIRED for Jolt: Jolt's narrowphase runs in float32 relative to a
+## body's origin (its double-precision mode only covers body POSITIONS).
+## Shapes offset 6,356 km inside one planet-sized body put the contact math at
+## float32 ULP ≈ 0.5 m — standing players/vehicles perpetually "danced" on
+## centimetre-scale contact noise and vehicles never slept.  With the body
+## origin at the chunk centre the narrowphase only ever sees ±~400 m values
+## (ULP ≈ 60 µm).  A/B proof: scratchpad per_chunk_body_test.gd (2026-07-07).
+## Also helps GodotPhysics' broadphase (many small AABBs vs one planet-sized).
+func _make_chunk_collision_body(key: String, nside: int, ipix: int,
+		shape: ConcavePolygonShape3D) -> StaticBody3D:
+	shape.backface_collision = true  # solid from both sides (cached shapes too)
+	var body := StaticBody3D.new()
+	body.name = key + "_body"
+	# Same identity as the legacy shared PlanetCollision body.
+	body.collision_layer = Globals.LAYER_WORLD
+	body.set_collision_layer_value(Globals.LAYER_WORLD, true)
+	body.collision_mask = Globals.MASK_SOLID
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.name = key + "_col"
+	body.add_child(col)
+	body.position = _chunk_collision_origin(nside, ipix)
+	return body
+
+
+## Attach [param shape] to its own chunk collision body and spawn chunk
+## features.  Must be called on the main thread only.  No-op if already
+## assembled.
 func _server_assemble_chunk(key: String, nside: int, ipix: int,
 		shape: ConcavePolygonShape3D) -> void:
 	if _server_collision_chunks.has(key):
 		return  # Race guard: assembled by another path.
-	var col_origin := _chunk_collision_origin(nside, ipix)
-	shape.backface_collision = true  # solid from both sides (cached shapes too)
-	var col := CollisionShape3D.new()
-	col.shape = shape
-	col.name = key + "_col"
-	col.position = col_origin  # faces are chunk-local; place them in world
-	_collision_body.add_child(col)
-	_server_collision_chunks[key] = col
+	var body := _make_chunk_collision_body(key, nside, ipix, shape)
+	add_child(body)
+	_server_collision_chunks[key] = body
 	var faces: PackedVector3Array = shape.get_faces()
 	if faces.size() > 0:
+		var col_origin := _chunk_collision_origin(nside, ipix)
 		var dmin: float = INF
 		var dmax: float = -INF
 		for v in faces:
@@ -698,9 +739,9 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 		var tri_count: int = faces.size() / 3
 		print("[PlanetTerrain] loaded chunk ", key, " tris=", tri_count,
 			" alt_min=", dmin - planet_data.radius, " alt_max=", dmax - planet_data.radius,
-			" body_global=", _collision_body.global_position,
-			" body_layer=", _collision_body.collision_layer,
-			" body_mask=", _collision_body.collision_mask)
+			" body_global=", body.global_position,
+			" body_layer=", body.collision_layer,
+			" body_mask=", body.collision_mask)
 	# Chunk features (caves/fumaroles/etc.) are keyed at export granularity;
 	# only spawn them for coarse export-nside chunks so fine collision
 	# sub-chunks pinned under bodies don't duplicate them.
@@ -830,22 +871,19 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 			var rf: Array = result[4] if result.size() > 4 else []
 			planet_data.store_chunk_image(key, img, craters, pz, lf, rf)
 
-		# Remove old collision shape.
+		# Remove old chunk collision body.
 		if _server_collision_chunks.has(key):
-			var old_col: CollisionShape3D = _server_collision_chunks[key]
-			old_col.queue_free()
+			var old_body: Node = _server_collision_chunks[key]
+			old_body.queue_free()
 			_server_collision_chunks.erase(key)
 
-		# Regenerate collision shape.
+		# Regenerate collision shape on its own chunk body.
 		var shape := PlanetChunk.generate_collision_shape_healpix(
 			planet_data, nside, ipix, col_res)
 		if shape:
-			var col := CollisionShape3D.new()
-			col.shape = shape
-			col.name = key + "_col"
-			col.position = _chunk_collision_origin(nside, ipix)
-			_collision_body.add_child(col)
-			_server_collision_chunks[key] = col
+			var body := _make_chunk_collision_body(key, nside, ipix, shape)
+			add_child(body)
+			_server_collision_chunks[key] = body
 			# Update disk cache.
 			if _chunk_cache:
 				_chunk_cache.save_collision(key, 0, shape)
@@ -1701,7 +1739,7 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
 		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod):
 			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod)
-			if cached_mesh:
+			if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 				info["_from_disk_cache"] = true
 				_assemble_queue.append({"info": info, "mesh": cached_mesh})
 				return
@@ -1725,7 +1763,7 @@ func _try_create_or_defer(info: Dictionary) -> void:
 	# ── Client: check disk cache first ──────────────────────────────
 	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod):
 		var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod)
-		if cached_mesh:
+		if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 			info["_from_disk_cache"] = true
 			# Still trigger recipe generation for vegetation height sampling
 			if not planet_data.is_chunk_cached(export_key):
@@ -1744,6 +1782,48 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		_recipe_waiters[export_key] = {}
 	_recipe_waiters[export_key][info.key] = info
 	_submit_recipe_if_needed(export_key, export_ipix, cam_dist_sq)
+
+
+## Sanity-check cached chunk geometry against the live analytic surface.
+## A chunk baked while the per-chunk .r32 elevation tiles were unreadable was
+## built from the flat equirect fallback — its surface sits kilometres away
+## from the real one (the tarsis_4 "3-6 km" bug). The cache version hash can't
+## capture that failure, so validate at LOAD time: reconstruct one vertex's
+## planet-local radial distance and compare it to the crack-aware surface in
+## that direction. Tolerance is generous (cracks are ~200 m deep; the failure
+## mode is 3000-6000 m), so legitimate geometry never trips it.
+## [param first_vertex] is a vertex in chunk-local space, [param origin] the
+## chunk origin in planet-local space (mesh: info.center / collision:
+## _chunk_collision_origin).
+func _cached_geom_valid(first_vertex: Vector3, origin: Vector3, key: String) -> bool:
+	var p := origin + first_vertex
+	var r := p.length()
+	if r <= 0.0:
+		return false
+	var surf: float = planet_data.crack_aware_surface_dist(p / r)
+	if absf(r - surf) <= _CACHE_GEOM_TOLERANCE_M:
+		return true
+	print("[PlanetTerrain] cache STALE for '%s': cached radial=%.0fm vs live surface=%.0fm — discarding, will regenerate" % [
+		key, r, surf])
+	return false
+
+
+## Mesh variant of _cached_geom_valid: pulls the first vertex out of the mesh.
+func _cached_mesh_valid(mesh: ArrayMesh, info: Dictionary) -> bool:
+	if mesh.get_surface_count() == 0:
+		return false
+	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	if verts.is_empty():
+		return false
+	return _cached_geom_valid(Vector3(verts[0]), info.center, info.key)
+
+
+## Collision variant of _cached_geom_valid: pulls the first face vertex.
+func _cached_shape_valid(shape: ConcavePolygonShape3D, nside: int, ipix: int, key: String) -> bool:
+	var faces := shape.get_faces()
+	if faces.is_empty():
+		return false
+	return _cached_geom_valid(Vector3(faces[0]), _chunk_collision_origin(nside, ipix), key)
 
 
 ## Submit a recipe task if one isn't already in-flight or deferred.
@@ -2271,6 +2351,9 @@ func _create_chunk(info: Dictionary) -> void:
 		# Check disk cache first
 		if _chunk_cache:
 			shape = _chunk_cache.load_collision(key, lod)
+			# Reject shapes baked from fallback heights (see _cached_geom_valid).
+			if shape != null and not _cached_shape_valid(shape, info.nside, info.ipix, key):
+				shape = null
 			_col_from_cache = shape != null
 		if shape == null:
 			@warning_ignore("integer_division")
@@ -2281,12 +2364,9 @@ func _create_chunk(info: Dictionary) -> void:
 				col_res
 			)
 		if shape:
-			var col := CollisionShape3D.new()
-			col.shape = shape
-			col.name = key + "_col"
-			col.position = _chunk_collision_origin(info.nside, info.ipix)
-			_collision_body.add_child(col)
-			info["collision_shape"] = col
+			var body := _make_chunk_collision_body(key, info.nside, info.ipix, shape)
+			add_child(body)
+			info["collision_shape"] = body  # freed by _remove_chunk
 			# Save to disk if generated with real recipe heights
 			if not _col_from_cache and _chunk_cache:
 				var _epd := planet_data.export_nside
