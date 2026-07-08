@@ -1463,10 +1463,21 @@ func _first_solid_hit_is(target: Node3D) -> bool:
 	_los_ray.clear_exceptions()
 	_los_ray.add_exception(self)
 	_los_ray.force_raycast_update()
+	# Float32 precision at astronomic world coordinates makes this physics ray imprecise (same limit as
+	# the door LOS / Jolt "dancing" bug): far from the origin it can miss the target or catch a body well
+	# off the eye->target segment, so a grab is refused until you are almost inside the prop. The client
+	# already aimed at it; validate in DOUBLE precision. A miss, or a hit BEYOND the target, counts as
+	# visible; only a solid genuinely CLOSER than the target (a wall / bed side in front) blocks the grab.
 	if not _los_ray.is_colliding():
-		return false
+		return true
 	var c: Object = _los_ray.get_collider()
-	return c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target)))
+	if c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target))):
+		return true
+	if c is Node3D:
+		var target_dist: float = _los_ray.global_position.distance_to(target.global_position)
+		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		return hit_dist > target_dist
+	return false
 
 ## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
 ## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
