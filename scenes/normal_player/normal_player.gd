@@ -33,6 +33,21 @@ const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## (see _catch_if_below_surface).
 const _SURFACE_CATCH_MARGIN := 3.0
 
+# Dev spawn wheel: data key -> spawn params. Crates replicate as the "box" type (box_def.json) unless
+# they carry their own type (palette_container); only the scene differs — one table drives both the
+# wheel submenus and the spawn (DRY).
+const SPAWN_PROPS := {
+	"rock": {"scene": "rock/rock_mining_small", "type": "miningrock", "z": 5.5, "y": 1.2},
+	"rock_medium": {"scene": "rock/rock_mining_medium", "type": "miningrock", "z": 6.0, "y": 4.0},
+	"rock_large": {"scene": "rock/rock_mining_large", "type": "miningrock", "z": 9.0, "y": 6.0},
+	"box": {"scene": "testbox/box_50cm", "type": "box", "z": 1.5, "y": 2.0},
+	"palette_container": {"scene": "cargo/palette_container", "type": "palette_container", "z": 2.5, "y": 2.0},
+	"pallet_plate": {"scene": "cargo/pallet_plate", "type": "box", "z": 2.5, "y": 2.0},
+	"pallet_crate": {"scene": "cargo/pallet_crate", "type": "box", "z": 2.5, "y": 2.0},
+	"pallet_benne": {"scene": "cargo/pallet_benne", "type": "box", "z": 2.5, "y": 2.0},
+	"pallet_liquid": {"scene": "cargo/pallet_liquid", "type": "box", "z": 2.5, "y": 2.0},
+}
+
 @export_group("Controls map names")
 
 @export_group("Customizable player stats")
@@ -398,10 +413,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("spawn_wheel"):
 		if _spawn_wheel:
 			_spawn_wheel.open([
-				{"text": "Rocher", "data": "rock"},
-				{"text": "Rocher M", "data": "rock_medium"},
-				{"text": "Rocher L", "data": "rock_large"},
-				{"text": "Caisse", "data": "box"},
+				{"text": "Rocher", "submenu": [
+					{"text": "S", "data": "rock"},
+					{"text": "M", "data": "rock_medium"},
+					{"text": "L", "data": "rock_large"},
+				]},
+				{"text": "Caisse", "submenu": [
+					{"text": "50cm", "data": "box"},
+					{"text": "Ares", "data": "palette_container"},
+					{"text": "Palet", "data": "pallet_plate"},
+					{"text": "Cube", "data": "pallet_crate"},
+					{"text": "Benne", "data": "pallet_benne"},
+					{"text": "Liquid", "data": "pallet_liquid"},
+				]},
 				{"text": "Dépôt", "data": "depot"},
 				{"text": "Camion", "data": "truck"},
 			])
@@ -1095,19 +1119,13 @@ func _on_fov_changed(fov: float) -> void:
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
-	match data:
-		"rock":
-			spawn_box("rock/rock_mining_small", "miningrock", 5.5, 1.2)
-		"rock_medium":
-			spawn_box("rock/rock_mining_medium", "miningrock", 6.0, 4.0)
-		"rock_large":
-			spawn_box("rock/rock_mining_large", "miningrock", 9.0, 6.0)
-		"box":
-			spawn_box("testbox/box_50cm", "box", 1.5, 2.0)
-		"depot":
-			_spawn_depot()
-		"truck":
-			_spawn_truck()
+	if SPAWN_PROPS.has(data):
+		var p: Dictionary = SPAWN_PROPS[data]
+		spawn_box(p["scene"], p["type"], p["z"], p["y"])
+	elif data == "depot":
+		_spawn_depot()
+	elif data == "truck":
+		_spawn_truck()
 
 # Spawn a networked truck (server-authoritative vehicle prop) in front of the player. The
 # server simulates its physics and replicates it to every client (B1 vehicle networking).
