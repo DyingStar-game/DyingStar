@@ -124,7 +124,7 @@ transform = Transform3D(0.98947682487041, -0.08731608772312702, -0.1153755341010
 script = ExtResource("21_daync")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1122.0500031514955, -25, 0.12286245959299436)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1121.2927777104087, -24.999999999999886, 0.8867248943877541)
 calculate_tangents = false
 use_collision = true
 size = Vector3(2755.928776162543, 50, 5000)
@@ -204,15 +204,23 @@ freeze = true
 
 [node name="PalletCrate120x80x100" parent="." unique_id=334021263 instance=ExtResource("7_uow4d")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7309999999997672, 0, 11.77599999999802)
+collision_layer = 1
+collision_mask = 1
 
 [node name="PalletLiquid120x80x100" parent="." unique_id=391727648 instance=ExtResource("8_k2wr2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.0789999999979045, 0, 11.77599999999802)
+collision_layer = 1
+collision_mask = 1
 
 [node name="PalletPlate120x80x100" parent="." unique_id=404745465 instance=ExtResource("9_04krg")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.20100000000093132, 0, 12.998999999996158)
+collision_layer = 1
+collision_mask = 1
 
 [node name="PalletCrate120x80x101" parent="." unique_id=1101765439 instance=ExtResource("7_uow4d")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3090257940734134, 0.997144538675588, 11.782113546476872)
+collision_layer = 1
+collision_mask = 1
 
 [node name="OutdoorLamppost2_2001" parent="." unique_id=1687823231 instance=ExtResource("10_uow4d")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.666978187461016, 0, 7.253344080235776)
@@ -467,13 +475,34 @@ transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995
 text = "Bardock house"
 
 [node name="test_containers_6x3" parent="." unique_id=1660164005 instance=ExtResource("27_1kput")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.800196672945404, 0.019703429667854433, -59.661777808016815)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.80000000000291, 0, -58.86813561357434)
+
+[node name="6 x 3" type="Label3D" parent="test_containers_6x3" unique_id=89500634]
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -2.2301881891089224, 2.191275217228347, 0.7484304193873044)
+text = "6 X 3
+"
 
 [node name="test_containers_6x2_6" parent="." unique_id=1506572370 instance=ExtResource("28_w88le")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -52.70120928786536, 0.025766149460252574, -59.63421526922031)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -52.70100000000093, 0, -58.92596138691648)
+
+[node name="6 x 2_6" type="Label3D" parent="test_containers_6x2_6" unique_id=749010631]
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -2.3076913668692853, 2.191275217228347, 0.7484304193873044)
+text = "6 X 2.6
+"
 
 [node name="test_containers_12x3" parent="." unique_id=1810295763 instance=ExtResource("29_npgr1")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -56.23854836468538, 0, -62.39906948006749)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -56.2390000000014, 0, -62)
+
+[node name="12 x 3" type="Label3D" parent="test_containers_12x3" unique_id=855453656]
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -5.18519853556618, 2.191275217228347, 0.7484304193873115)
+text = "12 x 3
+
+"
 
 [node name="test_containers_12x2_6" parent="." unique_id=1438531769 instance=ExtResource("30_drqvg")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.897769999938944, 8.6148286726484e-08, -62.72873142771385)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.89800000000105, 0, -62)
+
+[node name="12 x 2_6" type="Label3D" parent="test_containers_12x2_6" unique_id=1769561631]
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -5.18519853556618, 2.191275217228347, 0.7484304193873115)
+text = "12 x 2.6
+"

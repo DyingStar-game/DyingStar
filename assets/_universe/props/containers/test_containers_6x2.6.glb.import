@@ -42,7 +42,6 @@ materials/extract_path=""
 _subresources={
 "nodes": {
 "PATH:Cube_002": {
-"generate/physics": true,
 "mesh_instance/visibility_range_end": 600.0,
 "physics/shape_type": 2
 }
