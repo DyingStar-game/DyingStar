@@ -1413,7 +1413,20 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 		if node is CollisionObject3D:
 			_los_ray.add_exception(node)
 	_los_ray.force_raycast_update()
-	return _los_ray.is_colliding()
+	if not _los_ray.is_colliding():
+		return false
+	# Float32 precision at astronomic world coordinates (the same limit behind the Jolt "dancing" bug)
+	# makes the PHYSICS raycast origin imprecise by tens of metres this far out, so it can report a body
+	# well off the true eye->box segment as a hit and lock a door that is actually clear. Validate in
+	# DOUBLE precision: a real obstruction sits BETWEEN the eye and the door box, so ignore any collider
+	# whose accurate position is farther from the eye than the box itself (+ a small size margin).
+	var c: Object = _los_ray.get_collider()
+	if c is Node3D:
+		var box_dist: float = _los_ray.global_position.distance_to(target)
+		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		if hit_dist > box_dist + 2.0:
+			return false
+	return true
 
 ## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
 ## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
@@ -1431,6 +1444,8 @@ func _can_see(target: Node) -> bool:
 		var box: Node3D = target.side_shape(inside)
 		if box == null:
 			return true  # handle without assigned boxes: don't lock the door
+		# Exclude the vehicle's coarse convex self-hull (it encloses the boxes, can't self-block); FOREIGN
+		# walls still block.
 		return not _line_of_sight_blocked(box.global_position, [veh])
 	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
 	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
