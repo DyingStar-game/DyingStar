@@ -182,12 +182,10 @@ func _process(_delta: float) -> void:
 
 
 	var dir_vect = Vector3.ZERO
-	var sprint = null
 
 
 	if not player.direct_chat.can_write:
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
-		sprint = Input.is_action_pressed(player.SPRINT)
 
 	if dir_vect:
 		player.input_direction = dir_vect
@@ -220,12 +218,10 @@ func _physics_process(delta: float) -> void:
 	if !player.active: return
 
 	var dir_vect = Vector3.ZERO
-	var sprint = null
 
 
 	if not player.direct_chat.can_write:
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
-		sprint = Input.is_action_pressed(player.SPRINT)
 
 	if dir_vect:
 		player.input_direction = dir_vect

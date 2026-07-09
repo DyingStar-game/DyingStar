@@ -30,7 +30,7 @@ var props_pre_creations: Dictionary = {}
 
 var my_player_uuid: String = ""
 
-var player_scene = preload("res://scenes/normal_player/normal_player.tscn")
+var player_scene = preload("res://scenes/player/player.tscn")
 var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
 		preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),

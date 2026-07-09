@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://blh7wxp5bcv5h"]
+
+[ext_resource type="Script" uid="uid://cted52dwq1uty" path="res://scenes/player/mining_preview.gd" id="1_prev"]
+
+[node name="MiningPreview" type="Node3D" unique_id=369096768]
+script = ExtResource("1_prev")
+hand_offset = Vector3(0.4, 1, 0.1)
+item_offset = Vector3(-0.2, -0.16, -0.1)
+item_rotation_deg = Vector3(5, -90, 95.1)
+item_scale = 1.0
+bit_tip_offset = Vector3(-0.55, 0.24, 0)
+play_animation = false
+hammer_freq = 5.0
+bit_axis = Vector3(0, 0, 0)
+hammer_amplitude = 0.01
+shake_amplitude = 0.003
+aim_mode = false
+aim_point = Vector3(0, 0.8, -2.6)
+aim_roll_deg = 0.0
