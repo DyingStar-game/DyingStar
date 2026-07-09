@@ -31,29 +31,28 @@ steering_wheel_axis = Vector3(0, -1, 0)
 bed_wall_height = 0.6
 wheel_radius = 0.05
 wheel_visual_drop = 0.02
-real_wheel_spin_axis = Vector3(0, 1, 0)
 motor_max_rpm = 3000.0
 debug_color_driven_wheels = false
-cargo_bay_size = Vector3(1.8, 0.6, 2.9)
-cargo_bay_offset = Vector3(0, 0.4, 0.75)
+cargo_bay_size = Vector3(1.6, 0.6, 1.9)
+cargo_bay_offset = Vector3(0, 0.4, 1.05)
 debug_show_cargo_bay = false
 
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
 
-[node name="Col_cabin" parent="Model" index="12" unique_id=1893118231]
+[node name="Col_cabin" parent="Model" index="7" unique_id=353603685]
 visible = false
 
-[node name="Col_bed" parent="Model" index="13" unique_id=2036259373]
+[node name="Col_bed" parent="Model" index="8" unique_id=673651608]
 visible = false
 
-[node name="Col_bed_left" parent="Model" index="14" unique_id=667201349]
+[node name="Col_bed_left" parent="Model" index="9" unique_id=657040893]
 visible = false
 
-[node name="Col_bed_right" parent="Model" index="15" unique_id=847818137]
+[node name="Col_bed_right" parent="Model" index="10" unique_id=210058591]
 visible = false
 
-[node name="Col_bed_rear" parent="Model" index="16" unique_id=393553607]
+[node name="Col_bed_rear" parent="Model" index="11" unique_id=1852206083]
 visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
@@ -142,7 +141,7 @@ transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.6343371992
 screen = NodePath("../Model/Screen_Rear")
 
 [node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
-transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true
