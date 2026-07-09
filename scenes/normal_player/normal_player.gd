@@ -1282,15 +1282,6 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_owner_carrying = server_carrying
 			mining_tool.set_stowed(server_carrying)
 
-## Find a spawned mining rock by its uuid (server-side).
-## Walk up from a raycast hit to the vehicle node it belongs to (group "vehicle"), else null.
-func _find_vehicle(target_uuid: String) -> Node:
-	if target_uuid == "":
-		return null
-	for v in get_tree().get_nodes_in_group("vehicle"):
-		if "uuid" in v and str(v.uuid) == target_uuid:
-			return v
-	return null
 
 ## Which truck bed should swallow a crate dropped at this world point: any truck whose designer
 ## loading zone contains it. Same rule whether we stand in the bed or reach over from outside — the
@@ -1301,42 +1292,8 @@ func _cargo_bed_for_drop(world_point: Vector3) -> Vehicle:
 			return v
 	return null
 
-func _find_mining_rock(rock_uuid: String) -> Node:
-	if rock_uuid == "":
-		return null
-	for r in get_tree().get_nodes_in_group("miningrock"):
-		if "uuid" in r and str(r.uuid) == rock_uuid:
-			return r
-	return null
 
-## Find a player-spawned prop by uuid for the admin cleanup tool (server-side). Looks in the
-## prop registry (any type) first, then the "carriable" group (rocks/boxes), so it works
-## regardless of how the prop was registered.
-func _find_deletable_prop(target_uuid: String) -> Node:
-	if target_uuid == "":
-		return null
-	for ptype in NetworkOrchestrator.props_list.keys():
-		if NetworkOrchestrator.props_list[ptype].has(target_uuid):
-			var n = NetworkOrchestrator.props_list[ptype][target_uuid]
-			if is_instance_valid(n):
-				return n
-	for n in get_tree().get_nodes_in_group("carriable"):
-		if "uuid" in n and str(n.uuid) == target_uuid:
-			return n
-	# Fallback: scan the tree for ANY node carrying this uuid (depots / persisted props that
-	# aren't in props_list nor the carriable group). The node has a collision body, so it IS
-	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
-	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
 
-## Recursive search for a node whose `uuid` matches (server-side helper).
-func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
-	if "uuid" in node and str(node.uuid) == target_uuid:
-		return node
-	for child in node.get_children():
-		var found: Node = _find_node_by_uuid(child, target_uuid)
-		if found != null:
-			return found
-	return null
 
 ## The carriable prop under the crosshair, or null. Checks the hit body itself AND its parent:
 ## a prop's collision can be the root (which carries interact(), e.g. a crate in a truck bed where
@@ -1519,29 +1476,7 @@ func _ensure_los_ray() -> void:
 	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
 	add_child(_los_ray)
 
-## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
-## exactly the object the client aimed at. (#124)
-func _find_carriable(target_uuid: String) -> Node:
-	if target_uuid == "":
-		return null
-	for n in get_tree().get_nodes_in_group("carriable"):
-		if "uuid" in n and str(n.uuid) == target_uuid:
-			return n
-	return null
 
-## Make a carried prop pass through (or collide again with) every vehicle. A carried prop is
-## frozen, which the physics solver treats as immovable / infinite mass — letting it touch a
-## vehicle would shove or flip the (much heavier) truck, bypassing its real mass. So while it is
-## held it ignores vehicles; cargo is loaded by DROPPING it into the bed, not by ramming.
-func _carry_ignore_vehicles(prop: Node, ignore: bool) -> void:
-	if prop == null:
-		return
-	for v in get_tree().get_nodes_in_group("vehicle"):
-		if v is CollisionObject3D and v != prop:
-			if ignore:
-				prop.add_collision_exception_with(v)
-			else:
-				prop.remove_collision_exception_with(v)
 
 ## Server: keep the carried item floating in front of the body (yaw only, no camera
 ## pitch), held by the middle of its geometry so it sits centered. A cut piece keeps the
@@ -1605,16 +1540,3 @@ func _predict_carry_stow(aim: Node) -> void:
 func server_action_received(data: Dictionary) -> void:
 	# Server authority: delegate to the PlayerServer role (only the dedicated server receives this).
 	_role.server_action_received(data)
-
-func _reparent_children_of_prop(prop: Node) -> void:
-	if prop == null or not is_instance_valid(prop):
-		return
-	var parent = prop.get_parent()
-	for child in prop.get_children():
-		if is_instance_valid(child):
-			if child.has_method("client_parent_change"):
-				child.server_parent_change(parent)
-			elif child.has_method("_safe_reparent_and_sync"):
-				child._safe_reparent_and_sync(parent)
-			else:
-				print("WARNING: child %s of prop %s has no client_parent_change method" % [child.name, prop.name])

@@ -50,7 +50,7 @@ func server_action_received(data: Dictionary) -> void:
 			player.server_send_properties_to_client(props)
 		"perforate_rock":
 			# Authoritative fracture: cut the targeted rock along the aimed fault.
-			var rock = player._find_mining_rock(str(data.get("uuid", "")))
+			var rock = _find_mining_rock(str(data.get("uuid", "")))
 			if rock and rock.has_method("server_perforate"):
 				var h: Dictionary = data.get("hit", {})
 				var dd: Dictionary = data.get("dir", {})
@@ -70,10 +70,10 @@ func server_action_received(data: Dictionary) -> void:
 				# Free the node (removes its collision body) AND tell Horizon to drop it from the GORC +
 				# database. Both are needed: queue_free alone may not replicate the delete, and the GORC
 				# delete alone leaves a collision ghost.
-				var prop = player._find_deletable_prop(del_uuid)
+				var prop = _find_deletable_prop(del_uuid)
 				if prop != null and is_instance_valid(prop):
 					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
-					player._reparent_children_of_prop(prop)
+					_reparent_children_of_prop(prop)
 					prop.queue_free()
 				if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
 					# Not held locally (e.g. loaded from the database): tell Horizon directly.
@@ -96,37 +96,37 @@ func server_action_received(data: Dictionary) -> void:
 				"parent_id": str(data.get("parent_id", "")),
 			})
 		"enter_vehicle":
-			var veh = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
 				veh.server_enter(player, str(data.get("seat", "")))
 		"exit_vehicle":
-			var veh_out = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_out = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):
 				veh_out.server_exit(player)
 		"vehicle_input":
-			var veh_in = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_in = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_in != null and veh_in._pilot == player and veh_in.has_method("set_drive_input"):
 				veh_in.set_drive_input(
 					float(data.get("throttle", 0.0)),
 					float(data.get("steer", 0.0)),
 					bool(data.get("brake", false)))
 		"reset_vehicle":
-			var veh_r = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_r = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_r != null and veh_r._pilot == player and veh_r.has_method("reset_upright"):
 				veh_r.reset_upright()
 		"vehicle_handbrake":
-			var veh_h = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_h = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
 		"vehicle_lights":
-			var veh_l = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_l = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_l != null and veh_l._pilot == player and veh_l.has_method("toggle_headlights"):
 				veh_l.toggle_headlights()
 		"vehicle_door":
 			# A door handle is operated on foot by anyone nearby - NOT gated on the driver. Server-
 			# authoritative: (1) the box it aimed at must match the player's side (outdoor on foot, indoor
 			# when seated in this vehicle), and (2) that box must have a clear sightline (see _can_see).
-			var veh_d = player._find_vehicle(str(data.get("target_uuid", "")))
+			var veh_d = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_d != null and veh_d.has_method("server_toggle_door"):
 				var handle_d: Node3D = veh_d.get_door_handle(str(data.get("door_id", ""))) \
 						if veh_d.has_method("get_door_handle") else null
@@ -144,7 +144,7 @@ func server_action_received(data: Dictionary) -> void:
 				if player.hands_item.has_method("set_carried"):
 					player.hands_item.set_carried(false)
 				player.hands_item.remove_collision_exception_with(player)  # it can collide with us again
-				player._carry_ignore_vehicles(player.hands_item, false)  # restore collision with vehicles
+				_carry_ignore_vehicles(player.hands_item, false)  # restore collision with vehicles
 				# Drop INTO a bed -> load it onto that truck. We load it if we stand in the bed, OR if we
 				# drop it from outside but it lands inside a nearby truck's cargo bay.
 				if player.hands_item is RigidBody3D:
@@ -165,7 +165,7 @@ func server_action_received(data: Dictionary) -> void:
 			else:
 				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its crosshair, so we
 				# grab exactly that one (our own server ray can be a hair off — pitch is throttled). (#124)
-				var parent_node = player._find_carriable(str(data.get("target_uuid", "")))
+				var parent_node = _find_carriable(str(data.get("target_uuid", "")))
 				var picked_up := false
 				# Server-authoritative: same gate as the client — grabbable (not already carried) AND a
 				# clear line of sight, so a thin wall can't be exploited to grab through it.
@@ -178,7 +178,7 @@ func server_action_received(data: Dictionary) -> void:
 						prev_parent.release_cargo(parent_node)
 					parent_node.freeze = true
 					parent_node.add_collision_exception_with(player)  # solid to others, not the carrier
-					player._carry_ignore_vehicles(parent_node, true)  # a held (frozen) crate must not shove a truck
+					_carry_ignore_vehicles(parent_node, true)  # a held (frozen) crate must not shove a truck
 					# Make sure its replication is active: a crate that sat in a bed may have had its
 					# _physics_process paused, which would stop PropNet from replicating a later drop.
 					parent_node.set_physics_process(true)
@@ -197,3 +197,87 @@ func server_action_received(data: Dictionary) -> void:
 				if not picked_up:
 					# Grabbed nothing: tell the owner to undo its optimistic stow (issue #124).
 					player.server_send_properties_to_client({"carrying": false})
+
+## Find a spawned mining rock by its uuid (server-side).
+## Walk up from a raycast hit to the vehicle node it belongs to (group "vehicle"), else null.
+func _find_vehicle(target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if "uuid" in v and str(v.uuid) == target_uuid:
+			return v
+	return null
+
+func _find_mining_rock(rock_uuid: String) -> Node:
+	if rock_uuid == "":
+		return null
+	for r in get_tree().get_nodes_in_group("miningrock"):
+		if "uuid" in r and str(r.uuid) == rock_uuid:
+			return r
+	return null
+
+## Find a player-spawned prop by uuid for the admin cleanup tool (server-side). Looks in the
+## prop registry (any type) first, then the "carriable" group (rocks/boxes), so it works
+## regardless of how the prop was registered.
+func _find_deletable_prop(target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	for ptype in NetworkOrchestrator.props_list.keys():
+		if NetworkOrchestrator.props_list[ptype].has(target_uuid):
+			var n = NetworkOrchestrator.props_list[ptype][target_uuid]
+			if is_instance_valid(n):
+				return n
+	for n in get_tree().get_nodes_in_group("carriable"):
+		if "uuid" in n and str(n.uuid) == target_uuid:
+			return n
+	# Fallback: scan the tree for ANY node carrying this uuid (depots / persisted props that
+	# aren't in props_list nor the carriable group). The node has a collision body, so it IS
+	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
+	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
+
+## Recursive search for a node whose `uuid` matches (server-side helper).
+func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
+	if "uuid" in node and str(node.uuid) == target_uuid:
+		return node
+	for child in node.get_children():
+		var found: Node = _find_node_by_uuid(child, target_uuid)
+		if found != null:
+			return found
+	return null
+
+## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
+## exactly the object the client aimed at. (#124)
+func _find_carriable(target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	for n in get_tree().get_nodes_in_group("carriable"):
+		if "uuid" in n and str(n.uuid) == target_uuid:
+			return n
+	return null
+
+## Make a carried prop pass through (or collide again with) every vehicle. A carried prop is
+## frozen, which the physics solver treats as immovable / infinite mass — letting it touch a
+## vehicle would shove or flip the (much heavier) truck, bypassing its real mass. So while it is
+## held it ignores vehicles; cargo is loaded by DROPPING it into the bed, not by ramming.
+func _carry_ignore_vehicles(prop: Node, ignore: bool) -> void:
+	if prop == null:
+		return
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is CollisionObject3D and v != prop:
+			if ignore:
+				prop.add_collision_exception_with(v)
+			else:
+				prop.remove_collision_exception_with(v)
+
+func _reparent_children_of_prop(prop: Node) -> void:
+	if prop == null or not is_instance_valid(prop):
+		return
+	var parent = prop.get_parent()
+	for child in prop.get_children():
+		if is_instance_valid(child):
+			if child.has_method("client_parent_change"):
+				child.server_parent_change(parent)
+			elif child.has_method("_safe_reparent_and_sync"):
+				child._safe_reparent_and_sync(parent)
+			else:
+				print("WARNING: child %s of prop %s has no client_parent_change method" % [child.name, prop.name])
