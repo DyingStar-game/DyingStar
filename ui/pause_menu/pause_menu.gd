@@ -41,10 +41,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			main_pause_menu.visible = false
 			actual_page = null
 
-		if event is InputEventMouseButton and actual_page == main_pause_menu:
-			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
-			visible = false
-
+		# Only "pause" (Esc) or the Resume button leaves the pause menu — a click in the void must not
+		# resume the game (it used to un-pause on ANY mouse button).
 		get_viewport().set_input_as_handled()
 
 func _on_pause_menu_button_pressed(button_pressed: String) -> void:
