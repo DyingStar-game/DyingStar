@@ -262,34 +262,12 @@ func get_current_gravity_parent() -> Node3D:
 	if gravity_parents.is_empty(): return null
 	return gravity_parents.back()
 
-func apply_parent_movement() -> void:
-	var gravity_parent = get_current_gravity_parent()
-	if !gravity_parent: return
-
-	var current_basis = gravity_parent.global_transform.basis
-	var delta_rot = current_basis * last_basis.inverse()
-
-	# rotate the position with the planet
-	var local_pos = global_position - gravity_parent.global_position
-	global_position = gravity_parent.global_position + delta_rot * local_pos
-
-	# rotate the orientation too
-	global_transform.basis = delta_rot * global_transform.basis
-
-	#print(surface_motion)
-
-
 func update_last_basis() -> void:
 	var gravity_parent = get_current_gravity_parent()
 	if !gravity_parent: return
 
 	last_basis = gravity_parent.global_transform.basis
 
-
-func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
-	input_from_server["input_direction"] = input_dir
-	input_from_server["rotation"] = newrotation
-	new_input_from_server = true
 
 ## Disable our collision while seated so we don't shove the vehicle's physics body.
 func set_seated(seated: bool) -> void:
@@ -348,9 +326,6 @@ func _ride_seat(seat: Node3D) -> void:
 	mouse_motion = Vector2.ZERO
 	velocity = Vector3.ZERO
 
-func should_listen_input() -> bool:
-	return not (direct_chat.is_shown || MenuConfig.is_shown)
-
 ## Returns surface gravity scaled by inverse-square distance from the area centre.
 ## At the surface (dist == gravity_point_unit_distance) the result equals area.gravity.
 func _compute_gravity(area: Area3D) -> float:
@@ -367,9 +342,6 @@ func _compute_gravity(area: Area3D) -> float:
 
 func orient_player():
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
-
-func get_player_name():
-	pass
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
