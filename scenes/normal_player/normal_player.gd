@@ -27,8 +27,6 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 # Hand brake: a long press on the brake (Space) at low speed toggles the vehicle's hand brake.
 const HANDBRAKE_HOLD_SECS: float = 0.4
 const HANDBRAKE_MAX_KMH: float = 3.0
-## Hide a remote player's name tag beyond this distance from the local camera.
-const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## How far below the crack-aware terrain surface counts as a fall-through
 ## (see _catch_if_below_surface).
 const _SURFACE_CATCH_MARGIN := 3.0
@@ -172,11 +170,6 @@ var _seat_node: Node3D = null
 var _seat_is_driver: bool = false
 # The VehicleSeat box the player stands in (set by our own AreaDetector); E takes that seat.
 var _nearby_seat: Node = null
-# Remote player's name tag, drawn in 2D screen space (see _setup_name_tag) instead of a 3D
-# billboard: at planetary world coordinates the GPU renders in single precision, so a 3D label
-# shimmers as the camera moves. Projecting the head to the screen on the CPU (double precision)
-# and drawing a plain 2D Label is rock-steady.
-var _name_tag: Label = null
 # The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
 # for the bed-walker weight (server) and to load a crate we drop while standing in it.
 var _in_vehicle_bed: Node = null
@@ -250,7 +243,7 @@ func _ready() -> void:
 
 	if remote_player:
 		camera.current = false
-		_setup_name_tag(str(name))
+		(_role as PlayerClient)._setup_name_tag(str(name))
 		return
 
 	if not OS.has_feature("dedicated_server"):
@@ -436,41 +429,8 @@ func _compute_gravity(area: Area3D) -> float:
 func orient_player():
 	global_transform = global_transform.interpolate_with(Globals.align_with_y(global_transform, up_direction), 0.3)
 
-func set_player_name(player_name):
-	if _name_tag != null:
-		_name_tag.text = str(player_name)
-
 func get_player_name():
 	pass
-
-## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
-## (immune to the 3D camera), and _update_name_tag positions it over the head every frame.
-func _setup_name_tag(player_name: String) -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	_name_tag = Label.new()
-	_name_tag.text = player_name
-	_name_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_name_tag.add_theme_font_size_override("font_size", 15)
-	_name_tag.add_theme_color_override("font_outline_color", Color.BLACK)
-	_name_tag.add_theme_constant_override("outline_size", 6)
-	_name_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_name_tag)
-
-## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
-## centered over the head and hidden when the player is behind the camera.
-func _update_name_tag() -> void:
-	if _name_tag == null:
-		return
-	var cam := get_viewport().get_camera_3d()
-	var head: Vector3 = global_position + global_transform.basis.y * 2.2
-	# Hide when behind the camera or farther than the cutoff (too far to read anyway).
-	if cam == null or cam.is_position_behind(head) \
-			or global_position.distance_to(cam.global_position) > NAME_TAG_MAX_DISTANCE:
-		_name_tag.visible = false
-		return
-	_name_tag.visible = true
-	_name_tag.position = cam.unproject_position(head) - _name_tag.size * 0.5
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
@@ -580,48 +540,28 @@ func client_send_action_to_server(data: Dictionary):
 	)
 
 # receive the properties sent by the server part (Horizon / godot server)
-# this function is used to update the properties of the player onm client side
+# this function is used to update the properties of the player on the client side. Only a client ever
+# receives channel data for a player (server/client.gd), so we delegate to the PlayerClient role.
 func client_channel_data_update(data: Dictionary) -> void:
-	if data.has("position"):
-		position = Vector3(
-			data["position"]["x"],
-			data["position"]["y"],
-			data["position"]["z"]
-		)
-	if data.has("rotation"):
-		rotation = Vector3(
-			data["rotation"]["x"],
-			data["rotation"]["y"],
-			data["rotation"]["z"]
-		)
-	if data.has("flashlight"):
-		flashlight.visible = bool(data["flashlight"])  # replicated torch state (owner + remotes)
-	if data.has("carry_prompt") and not remote_player:
-		_carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
-	if data.has("action"):
-		match data["action"]:
-			JUMP:
-				is_jumping = true
-	# Replicated mining state (tool visibility, camera aim, perforation) is applied
-	# on remote players by the MiningTool component.
-	if remote_player:
-		mining_tool.apply_remote(data)
-	elif data.has("carrying"):
-		# Owner: reconcile the optimistic carry prediction with the server's verdict
-		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).
-		var server_carrying := bool(data["carrying"])
-		if server_carrying != _owner_carrying:
-			_owner_carrying = server_carrying
-			mining_tool.set_stowed(server_carrying)
+	_role.client_channel_data_update(data)
 
 
 
 
 
 
-## The carriable prop under the crosshair, or null. Checks the hit body itself AND its parent:
-## a prop's collision can be the root (which carries interact(), e.g. a crate in a truck bed where
-## get_parent() is the vehicle) or a child shape (parent carries interact()). (#124)
+
+
+
+
+
+
+
+
+## The carriable prop under the crosshair, or null. Shared by the SERVER (carry-prompt decision in
+## PlayerServer._compute_carry_prompt) and the CLIENT (picking the target uuid to send). Checks the
+## hit body itself AND its parent: a prop's collision can be the root (which carries interact(), e.g. a
+## crate in a truck bed where get_parent() is the vehicle) or a child shape (parent carries interact()).
 func _aimed_carriable() -> Node:
 	if not interact_ray.is_colliding():
 		return null
@@ -646,32 +586,6 @@ func _aimed_carriable() -> Node:
 	if prop_parent is Player and prop_parent != self:
 		return null
 	return prop
-
-
-
-
-
-
-
-
-
-
-
-
-## Owner-local: predict whether the carry key picks up or drops, to stow/unstow the
-## perforator right away. The server stays authoritative (it may reject, e.g. a piece
-## already taken); a mismatch self-corrects on the next interaction.
-func _predict_carry_stow(aim: Node) -> void:
-	if _owner_carrying:
-		_owner_carrying = false
-		mining_tool.set_stowed(false)
-		return
-	# Predict with the SAME validated target we send the server (it already passed the
-	# line-of-sight + not-carried-by-another checks), so the optimistic stow can't flicker
-	# into a brief "[E] Drop" when the grab is actually blocked (wall / another player's prop).
-	if aim != null and aim.interact():
-		_owner_carrying = true
-		mining_tool.set_stowed(true)
 
 # receive properties from the client, often the actions
 func server_action_received(data: Dictionary) -> void:
