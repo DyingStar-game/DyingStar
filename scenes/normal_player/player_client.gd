@@ -143,6 +143,80 @@ func _process(_delta: float) -> void:
 	player.labely.text = str("%0.2f" % player.global_position[1])
 	player.labelz.text = str("%0.2f" % player.global_position[2])
 
+## Fixed-step OWNER input sampling: relay drive input while seated, else sample walking input and
+## emit the move only on change. Runs on this role's own child node → only on a client (never the
+## server); the remote guard keeps a replicated avatar from sampling local input.
+func _physics_process(delta: float) -> void:
+	if player.remote_player: return
+	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
+	if is_instance_valid(player._seat_node):
+		# Seated: relay drive input (driver only) and skip walking.
+		if player._seat_is_driver:
+			_send_drive_input()
+			_update_handbrake_input(delta)
+		return
+	if !player.active: return
+
+	var dir_vect = Vector3.ZERO
+	var sprint = null
+
+	#apply_parent_movement()
+
+	if not player.direct_chat.can_write:
+		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
+		sprint = Input.is_action_pressed(player.SPRINT)
+
+	if dir_vect:
+		player.input_direction = dir_vect
+	else:
+		player.input_direction = Vector2.ZERO
+	# send move_direction
+	var short_rotation = snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+	if player.input_direction != player.client_last_input_direction or short_rotation != player.client_last_global_rotation:
+		player.client_last_input_direction = player.input_direction
+		player.client_last_global_rotation = short_rotation
+		player.emit_signal("hs_client_action_move", player.input_direction, short_rotation)
+	player.update_last_basis()
+
+	player.labelx.text = str("%0.2f" % player.global_position[0])
+	player.labely.text = str("%0.2f" % player.global_position[1])
+	player.labelz.text = str("%0.2f" % player.global_position[2])
+
+## Owner: send our driving input to the server (only when it changes; the server holds it).
+func _send_drive_input() -> void:
+	var throttle: float = Input.get_axis("move_back", "move_forward")
+	var steer: float = Input.get_axis("move_right", "move_left")
+	var braking: bool = Input.is_action_pressed("brake")
+	if throttle == player._last_throttle and steer == player._last_steer and braking == player._last_brake:
+		return
+	player._last_throttle = throttle
+	player._last_steer = steer
+	player._last_brake = braking
+	player.client_send_action_to_server({
+		"action": "vehicle_input",
+		"target_uuid": player._seat_vehicle_uuid,
+		"throttle": throttle,
+		"steer": steer,
+		"brake": braking,
+	})
+
+## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
+func _update_handbrake_input(delta: float) -> void:
+	if not Input.is_action_pressed("brake"):
+		player._space_held_time = 0.0
+		player._handbrake_sent = false
+		return
+	player._space_held_time += delta
+	if player._handbrake_sent or player._space_held_time < player.HANDBRAKE_HOLD_SECS:
+		return
+	var speed_kmh: float = 999.0
+	if is_instance_valid(player._seat_vehicle_node) and player._seat_vehicle_node.has_method("get_display_speed_kmh"):
+		speed_kmh = player._seat_vehicle_node.get_display_speed_kmh()
+	if speed_kmh > player.HANDBRAKE_MAX_KMH:
+		return
+	player._handbrake_sent = true
+	player.client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": player._seat_vehicle_uuid})
+
 func _unhandled_input(event: InputEvent) -> void:
 	if player.remote_player: return
 	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
