@@ -233,74 +233,13 @@ func _ready() -> void:
 	mining_tool.aiming_changed.connect($UserInterface.set_aiming)
 
 	# Strategy: pick this player's behaviour ONCE — authority on the dedicated server, presentation
-	# (owner + remote) on a client. The role is a child node driving this body; logic moves into it
-	# incrementally. Empty for now, so behaviour is unchanged.
+	# (owner + remote) on a client. The role is a child node driving this body; each role's setup()
+	# runs its own spawn-time init (server placement vs owner tools/camera vs remote name tag).
 	_role = PlayerServer.new() if OS.has_feature("dedicated_server") else PlayerClient.new()
 	_role.name = "Role"
 	_role.player = self
 	add_child(_role)
 	_role.setup()
-
-	if remote_player:
-		camera.current = false
-		(_role as PlayerClient)._setup_name_tag(str(name))
-		return
-
-	if not OS.has_feature("dedicated_server"):
-		# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
-		_spawn_wheel = RadialMenu.new()
-		_spawn_wheel.title = "Spawn"
-		$UserInterface.add_child(_spawn_wheel)
-		# The spawn-wheel handlers live on the client role (created just above; it IS a PlayerClient here).
-		_spawn_wheel.option_selected.connect((_role as PlayerClient)._on_spawn_selected)
-
-		# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
-		# targeted player-spawned prop (rock / box / depot) down to the database.
-		admin_cleanup_tool = AdminCleanupTool.new()
-		add_child(admin_cleanup_tool)
-		admin_cleanup_tool.setup(camera, self)
-
-		global_position = spawn_position
-		look_at(global_transform.origin + Vector3.FORWARD, spawn_up)
-
-		position = spawn_position
-		global_transform = Globals.align_with_y(global_transform, spawn_up)
-
-		client_uuid = Globals.player_uuid
-		self.set_meta("client_uuid", Globals.player_uuid)
-
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		camera.current = true
-
-		camera.make_current()
-		(_role as PlayerClient)._force_temp_sky_environment()
-		# Apply the saved field of view, and follow live changes from the settings menu.
-		camera.fov = SettingsManager.get_fov()
-		SettingsManager.fov_changed.connect((_role as PlayerClient)._on_fov_changed)
-		# our own name tag is never created (only remote players get one)
-		astronaut.visible = false
-		interact_label.hide()
-		connect_area_detect()
-		active = false
-
-		await get_tree().create_timer(5).timeout
-
-		update_last_basis()
-
-		active = true
-
-		display_debug.emit(true)
-		_display_debug = true
-
-		var loading_node = get_tree().root.get_node("Loading")
-		if loading_node:
-			loading_node.queue_free()
-
-		GameOrchestrator.stop_menu_music()
-	else:
-		position = spawn_position
-		connect_area_detect()
-		update_last_basis()
 
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid

@@ -21,9 +21,64 @@ var player
 ## 2D Label is rock-steady.
 var _name_tag: Label = null
 
-## One-time init, called by Player._ready() once `player` is wired and both are in the tree.
+## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
+## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
+## the camera, then go live after a short delay. (This is the former client/remote branches of _ready.)
 func setup() -> void:
-	pass
+	if player.remote_player:
+		player.camera.current = false
+		_setup_name_tag(str(player.name))
+		return
+
+	# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
+	player._spawn_wheel = RadialMenu.new()
+	player._spawn_wheel.title = "Spawn"
+	player.get_node("UserInterface").add_child(player._spawn_wheel)
+	player._spawn_wheel.option_selected.connect(_on_spawn_selected)
+
+	# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
+	# targeted player-spawned prop (rock / box / depot) down to the database.
+	player.admin_cleanup_tool = AdminCleanupTool.new()
+	player.add_child(player.admin_cleanup_tool)
+	player.admin_cleanup_tool.setup(player.camera, player)
+
+	player.global_position = player.spawn_position
+	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
+
+	player.position = player.spawn_position
+	player.global_transform = Globals.align_with_y(player.global_transform, player.spawn_up)
+
+	player.client_uuid = Globals.player_uuid
+	player.set_meta("client_uuid", Globals.player_uuid)
+
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	player.camera.current = true
+
+	player.camera.make_current()
+	_force_temp_sky_environment()
+	# Apply the saved field of view, and follow live changes from the settings menu.
+	player.camera.fov = SettingsManager.get_fov()
+	SettingsManager.fov_changed.connect(_on_fov_changed)
+	# our own name tag is never created (only remote players get one)
+	player.astronaut.visible = false
+	player.interact_label.hide()
+	player.connect_area_detect()
+	player.active = false
+
+	await get_tree().create_timer(5).timeout
+
+	player.update_last_basis()
+
+	player.active = true
+
+	player.display_debug.emit(true)
+	player._display_debug = true
+
+	var loading_node = get_tree().root.get_node("Loading")
+	if loading_node:
+		loading_node.queue_free()
+
+	GameOrchestrator.stop_menu_music()
 
 ## Per-frame client work: REMOTE avatar interpolation + name tag, or the OWNER's seat ride / camera /
 ## HUD prompts / mouse capture / input sampling. Runs on this role's own child node, so the engine
