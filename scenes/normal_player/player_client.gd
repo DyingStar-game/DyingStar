@@ -70,7 +70,7 @@ func _process(_delta: float) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		# Return the camera to the pivot's control after a screen interaction.
 		player.camera.rotation = player.camera.rotation.lerp(Vector3.ZERO, 0.2)
-		player._handle_camera_motion()
+		_handle_camera_motion()
 
 
 	player.interact_label.hide()
@@ -216,6 +216,44 @@ func _update_handbrake_input(delta: float) -> void:
 		return
 	player._handbrake_sent = true
 	player.client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": player._seat_vehicle_uuid})
+
+## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
+## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
+## the transform ops (global_basis / rotate_object_local) go through player, not this role node.
+func _handle_camera_motion() -> void:
+	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+
+	if parent_gravity_area:
+		player._no_gravity_time = 0.0
+		if parent_gravity_area.gravity_point:
+			player.up_direction = parent_gravity_area.global_position.direction_to(player.global_position)
+		else:
+			player.up_direction = parent_gravity_area.global_basis.y
+
+		player.gravity = player._compute_gravity(parent_gravity_area)
+		player.orient_player()
+		player.global_basis = player.global_basis.rotated(player.global_basis.y, player.mouse_motion.x * player.camera_sensitivity)
+		player.camera_pivot.rotate_object_local(Vector3.RIGHT, player.mouse_motion.y * player.camera_sensitivity)
+		player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
+	else:
+		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
+		# it as real 0g after ZERO_G_GRACE, so the camera pitch survives the transition.
+		player._no_gravity_time += player.get_process_delta_time()
+		if player._no_gravity_time >= player.ZERO_G_GRACE:
+			# 0g movement
+			player.gravity = 0.0
+			player.camera_pivot.rotation.x = 0
+			player.rotate_object_local(Vector3.UP, player.mouse_motion.x * player.camera_sensitivity)
+			player.rotate_object_local(Vector3.RIGHT, player.mouse_motion.y * player.camera_sensitivity)
+
+	# Replicate the camera pitch ("head") to the server so others see where we look and
+	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).
+	var head_q := snappedf(player.camera_pivot.rotation.x, 0.02)
+	if head_q != player._last_head_sent:
+		player._last_head_sent = head_q
+		player.client_send_action_to_server({"action": "update_property", "head": head_q})
+
+	player.mouse_motion = Vector2.ZERO
 
 func _unhandled_input(event: InputEvent) -> void:
 	if player.remote_player: return
