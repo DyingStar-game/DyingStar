@@ -157,6 +157,11 @@ var _los_ray: RayCast3D = null
 var _carry_prompt: String = ""
 var _carry_prompt_timer: float = 0.0  # server-side throttle
 
+# Behaviour strategy for this player (Strategy pattern), created once at spawn: PlayerServer on the
+# dedicated server, PlayerClient on a client (owner + remote). Role-specific logic lives there; this
+# body stays a thin facade over the shared nodes/state. Typed as Node — GDScript duck-types the calls.
+var _role: Node = null
+
 # Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
 var _spawn_wheel: RadialMenu = null
 
@@ -237,6 +242,15 @@ func _ready() -> void:
 	mining_tool.setup(camera_pivot, camera)
 	mining_tool.sync_requested.connect(client_send_action_to_server)
 	mining_tool.aiming_changed.connect($UserInterface.set_aiming)
+
+	# Strategy: pick this player's behaviour ONCE — authority on the dedicated server, presentation
+	# (owner + remote) on a client. The role is a child node driving this body; logic moves into it
+	# incrementally. Empty for now, so behaviour is unchanged.
+	_role = PlayerServer.new() if OS.has_feature("dedicated_server") else PlayerClient.new()
+	_role.name = "Role"
+	_role.player = self
+	add_child(_role)
+	_role.setup()
 
 	if remote_player:
 		camera.current = false
