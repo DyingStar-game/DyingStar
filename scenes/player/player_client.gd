@@ -59,6 +59,9 @@ func setup() -> void:
 	# Apply the saved field of view, and follow live changes from the settings menu.
 	player.camera.fov = SettingsManager.get_fov()
 	SettingsManager.fov_changed.connect(_on_fov_changed)
+	# Debug panels: follow live the settings-menu "Show debug panels" toggle.
+	if not SettingsManager.show_debug_changed.is_connected(_on_show_debug_changed):
+		SettingsManager.show_debug_changed.connect(_on_show_debug_changed)
 	# our own name tag is never created (only remote players get one)
 	player.astronaut.visible = false
 	player.interact_label.hide()
@@ -71,8 +74,9 @@ func setup() -> void:
 
 	player.active = true
 
-	player.display_debug.emit(true)
-	player._display_debug = true
+	# Initial visibility from the saved setting (default true — early alpha).
+	player._display_debug = SettingsManager.is_show_debug()
+	player.display_debug.emit(player._display_debug)
 
 	var loading_node = get_tree().root.get_node("Loading")
 	if loading_node:
@@ -403,13 +407,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if player._spawn_wheel:
 			player._spawn_wheel.confirm()
 
-	if event.is_action_pressed("debug_console"):
-		if player._display_debug:
-			player.display_debug.emit(false)
-			player._display_debug = false
-		else:
-			player.display_debug.emit(true)
-			player._display_debug = true
+	if event.is_action_pressed("toggle_debug"):
+		player._display_debug = not player._display_debug
+		player.display_debug.emit(player._display_debug)
+		SettingsManager.set_show_debug(player._display_debug)  # persist + keep the settings menu in sync
 
 ## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
 ## replicated (via the vehicle's pilot_uuid); a passenger seat reads as free for now.
@@ -549,6 +550,11 @@ func _force_temp_sky_environment() -> void:
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
 	player.camera.fov = fov
+
+## Live update from the settings menu "Show debug panels" toggle (kept in sync with the toggle_debug key).
+func _on_show_debug_changed(on: bool) -> void:
+	player._display_debug = on
+	player.display_debug.emit(on)
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
