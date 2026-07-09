@@ -2,6 +2,8 @@ class_name PlayerClient
 extends Node
 
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
+## Hide a remote player's name tag beyond this distance from the local camera.
+const NAME_TAG_MAX_DISTANCE: float = 25.0
 
 ## Client-side logic for a player — runs on every client instance, never on the server. Covers the
 ## OWNER (local input, camera, HUD prompts, prediction) and a REMOTE avatar (interpolation, name tag).
@@ -13,6 +15,12 @@ const JUMP: String = "jump"  # kept in sync with Player.JUMP
 ## break global script compilation. Untyped duck-typing still reaches every Player member.
 var player
 
+## Remote player's name tag, drawn in 2D screen space (see _setup_name_tag) instead of a 3D billboard:
+## at planetary world coordinates the GPU renders in single precision, so a 3D label shimmers as the
+## camera moves. Projecting the head to the screen on the CPU (double precision) and drawing a plain
+## 2D Label is rock-steady.
+var _name_tag: Label = null
+
 ## One-time init, called by Player._ready() once `player` is wired and both are in the tree.
 func setup() -> void:
 	pass
@@ -23,7 +31,7 @@ func setup() -> void:
 func _process(_delta: float) -> void:
 	if player.remote_player:
 		player._interp.update(player, _delta)  # entity interpolation: glide between server updates
-		player._update_name_tag()
+		_update_name_tag()
 		return
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
@@ -321,7 +329,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var aim = player._aimed_carriable()
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
-		player._predict_carry_stow(aim)
+		_predict_carry_stow(aim)
 
 	if event.is_action_pressed("spawn_wheel"):
 		if player._spawn_wheel:
@@ -553,3 +561,88 @@ func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float)
 			"parent_id": parentuuid,
 		}
 	)
+
+## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
+## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
+## and its layer are children of the BODY (player), so they follow it and free with it.
+func _setup_name_tag(player_name: String) -> void:
+	var layer := CanvasLayer.new()
+	player.add_child(layer)
+	_name_tag = Label.new()
+	_name_tag.text = player_name
+	_name_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_name_tag.add_theme_font_size_override("font_size", 15)
+	_name_tag.add_theme_color_override("font_outline_color", Color.BLACK)
+	_name_tag.add_theme_constant_override("outline_size", 6)
+	_name_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_name_tag)
+
+## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
+## centered over the head and hidden when the player is behind the camera.
+func _update_name_tag() -> void:
+	if _name_tag == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	var head: Vector3 = player.global_position + player.global_transform.basis.y * 2.2
+	# Hide when behind the camera or farther than the cutoff (too far to read anyway).
+	if cam == null or cam.is_position_behind(head) \
+			or player.global_position.distance_to(cam.global_position) > NAME_TAG_MAX_DISTANCE:
+		_name_tag.visible = false
+		return
+	_name_tag.visible = true
+	_name_tag.position = cam.unproject_position(head) - _name_tag.size * 0.5
+
+## Set the remote player's name tag text (no-op until the tag exists).
+func set_player_name(player_name) -> void:
+	if _name_tag != null:
+		_name_tag.text = str(player_name)
+
+## Owner-local: predict whether the carry key picks up or drops, to stow/unstow the
+## perforator right away. The server stays authoritative (it may reject, e.g. a piece
+## already taken); a mismatch self-corrects on the next interaction.
+func _predict_carry_stow(aim: Node) -> void:
+	if player._owner_carrying:
+		player._owner_carrying = false
+		player.mining_tool.set_stowed(false)
+		return
+	# Predict with the SAME validated target we send the server (it already passed the
+	# line-of-sight + not-carried-by-another checks), so the optimistic stow can't flicker
+	# into a brief "[E] Drop" when the grab is actually blocked (wall / another player's prop).
+	if aim != null and aim.interact():
+		player._owner_carrying = true
+		player.mining_tool.set_stowed(true)
+
+## Apply a server->client property update (position, rotation, torch, carry prompt, mining state,
+## carry reconciliation). Only a client receives this for a player; the Player facade delegates here.
+func client_channel_data_update(data: Dictionary) -> void:
+	if data.has("position"):
+		player.position = Vector3(
+			data["position"]["x"],
+			data["position"]["y"],
+			data["position"]["z"]
+		)
+	if data.has("rotation"):
+		player.rotation = Vector3(
+			data["rotation"]["x"],
+			data["rotation"]["y"],
+			data["rotation"]["z"]
+		)
+	if data.has("flashlight"):
+		player.flashlight.visible = bool(data["flashlight"])  # replicated torch state (owner + remotes)
+	if data.has("carry_prompt") and not player.remote_player:
+		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
+	if data.has("action"):
+		match data["action"]:
+			JUMP:
+				player.is_jumping = true
+	# Replicated mining state (tool visibility, camera aim, perforation) is applied
+	# on remote players by the MiningTool component.
+	if player.remote_player:
+		player.mining_tool.apply_remote(data)
+	elif data.has("carrying"):
+		# Owner: reconcile the optimistic carry prediction with the server's verdict
+		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).
+		var server_carrying := bool(data["carrying"])
+		if server_carrying != player._owner_carrying:
+			player._owner_carrying = server_carrying
+			player.mining_tool.set_stowed(server_carrying)
