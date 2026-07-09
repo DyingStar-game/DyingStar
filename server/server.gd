@@ -76,9 +76,9 @@ var servers_ticks_tasks = {
 var players_newposition: Dictionary = {}
 var props_update: Dictionary = {}
 
-var player_scene_path: String = "res://scenes/normal_player/normal_player.tscn"
+var player_scene_path: String = "res://scenes/player/player.tscn"
 
-var player_scene: PackedScene = preload("res://scenes/normal_player/normal_player.tscn")
+var player_scene: PackedScene = preload("res://scenes/player/player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
 var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
