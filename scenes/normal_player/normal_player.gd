@@ -358,42 +358,6 @@ func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	input_from_server["rotation"] = newrotation
 	new_input_from_server = true
 
-## Seat the player so its OWN camera lands on the vehicle's cab-eye point (faces forward).
-## Owner: send our driving input to the server (only when it changes; the server holds it).
-func _send_drive_input() -> void:
-	var throttle: float = Input.get_axis("move_back", "move_forward")
-	var steer: float = Input.get_axis("move_right", "move_left")
-	var braking: bool = Input.is_action_pressed("brake")
-	if throttle == _last_throttle and steer == _last_steer and braking == _last_brake:
-		return
-	_last_throttle = throttle
-	_last_steer = steer
-	_last_brake = braking
-	client_send_action_to_server({
-		"action": "vehicle_input",
-		"target_uuid": _seat_vehicle_uuid,
-		"throttle": throttle,
-		"steer": steer,
-		"brake": braking,
-	})
-
-## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
-func _update_handbrake_input(delta: float) -> void:
-	if not Input.is_action_pressed("brake"):
-		_space_held_time = 0.0
-		_handbrake_sent = false
-		return
-	_space_held_time += delta
-	if _handbrake_sent or _space_held_time < HANDBRAKE_HOLD_SECS:
-		return
-	var speed_kmh: float = 999.0
-	if is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("get_display_speed_kmh"):
-		speed_kmh = _seat_vehicle_node.get_display_speed_kmh()
-	if speed_kmh > HANDBRAKE_MAX_KMH:
-		return
-	_handbrake_sent = true
-	client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": _seat_vehicle_uuid})
-
 ## Disable our collision while seated so we don't shove the vehicle's physics body.
 func set_seated(seated: bool) -> void:
 	if seated:
@@ -450,46 +414,6 @@ func _ride_seat(seat: Node3D) -> void:
 		deg_to_rad(-80.0), deg_to_rad(80.0))
 	mouse_motion = Vector2.ZERO
 	velocity = Vector3.ZERO
-
-func _physics_process(delta: float) -> void:
-	if remote_player: return
-	if OS.has_feature("dedicated_server"):
-		return  # server tick now runs in PlayerServer._physics_process
-	# player part (CLIENT-OWNER input sampling; migrates to PlayerClient in step 3)
-	# player part
-	if is_instance_valid(_seat_node):
-		# Seated: the camera ride is done in _process (synced with the vehicle interpolation);
-		# here we only relay drive input (driver) and skip walking.
-		if _seat_is_driver:
-			_send_drive_input()
-			_update_handbrake_input(delta)
-		return
-	if !active: return
-
-	var dir_vect = Vector3.ZERO
-	var sprint = null
-
-	#apply_parent_movement()
-
-	if not direct_chat.can_write:
-		dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-		sprint = Input.is_action_pressed(SPRINT)
-
-	if dir_vect:
-		input_direction = dir_vect
-	else:
-		input_direction = Vector2.ZERO
-	# send move_direction
-	var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
-	if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
-		client_last_input_direction = input_direction
-		client_last_global_rotation = short_rotation
-		emit_signal("hs_client_action_move", input_direction, short_rotation)
-	update_last_basis()
-
-	labelx.text = str("%0.2f" % global_position[0])
-	labely.text = str("%0.2f" % global_position[1])
-	labelz.text = str("%0.2f" % global_position[2])
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
