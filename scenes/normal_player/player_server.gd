@@ -23,9 +23,13 @@ var _idle_settled_ticks: int = 0
 var _los_ray: RayCast3D = null
 var _carry_prompt_timer: float = 0.0
 
-## One-time init, called by Player._ready() once `player` is wired and both are in the tree.
+## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
+## Server placement: sit the body at its spawn position and start monitoring detection zones.
+## (This is the former dedicated-server branch of Player._ready.)
 func setup() -> void:
-	pass
+	player.position = player.spawn_position
+	player.connect_area_detect()
+	player.update_last_basis()
 
 ## Authoritative dispatcher for a client action, called by the network layer through Player (only the
 ## dedicated server ever receives it). Every branch reads/writes the shared body via `player`.
