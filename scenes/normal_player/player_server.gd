@@ -19,6 +19,9 @@ var player
 
 ## Server-only: consecutive quasi-still ticks, used to throttle move_and_slide for idle players.
 var _idle_settled_ticks: int = 0
+## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
+var _los_ray: RayCast3D = null
+var _carry_prompt_timer: float = 0.0
 
 ## One-time init, called by Player._ready() once `player` is wired and both are in the tree.
 func setup() -> void:
@@ -136,7 +139,7 @@ func server_action_received(data: Dictionary) -> void:
 				var inside_d: bool = veh_d.has_method("is_occupied_by") and veh_d.is_occupied_by(player)
 				var claimed_side: String = str(data.get("side", ""))
 				var side_ok: bool = claimed_side == "" or claimed_side == ("indoor" if inside_d else "outdoor")
-				if side_ok and (handle_d == null or player._can_see(handle_d)):
+				if side_ok and (handle_d == null or _can_see(handle_d)):
 					veh_d.server_toggle_door(str(data.get("door_id", "")))
 		"action":
 			print("action key pressed by player")
@@ -151,7 +154,7 @@ func server_action_received(data: Dictionary) -> void:
 				# Drop INTO a bed -> load it onto that truck. We load it if we stand in the bed, OR if we
 				# drop it from outside but it lands inside a nearby truck's cargo bay.
 				if player.hands_item is RigidBody3D:
-					var bed = player._cargo_bed_for_drop(player.hands_item.global_position)
+					var bed = _cargo_bed_for_drop(player.hands_item.global_position)
 					if bed != null:
 						bed.lock_dropped_cargo(player.hands_item)
 						player.hands_item = null
@@ -173,7 +176,7 @@ func server_action_received(data: Dictionary) -> void:
 				# Server-authoritative: same gate as the client — grabbable (not already carried) AND a
 				# clear line of sight, so a thin wall can't be exploited to grab through it.
 				var can_grab: bool = parent_node != null and parent_node.has_method("interact") \
-						and parent_node.interact(player) and not player._is_blocked_by_geometry(parent_node)
+						and parent_node.interact(player) and not _is_blocked_by_geometry(parent_node)
 				if can_grab:
 					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
 					var prev_parent = parent_node.get_parent()
@@ -291,8 +294,8 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
-	player._server_update_carried_item()
-	player._server_update_carry_prompt(delta)
+	_server_update_carried_item()
+	_server_update_carry_prompt(delta)
 	if player.piloting and is_instance_valid(player._seat_node):
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
@@ -377,7 +380,7 @@ func _physics_process(delta: float) -> void:
 	# Safety net: catch a fast fall that tunneled clearly below the planet surface.
 	if parent_gravity_area and parent_gravity_area.gravity_point \
 			and parent_gravity_area.name == "PlanetGravity":
-		player._catch_if_below_surface(parent_gravity_area)
+		_catch_if_below_surface(parent_gravity_area)
 
 	player.update_last_basis()
 	player.new_input_from_server = false
@@ -390,3 +393,185 @@ func _physics_process(delta: float) -> void:
 		null,
 		player.is_parented
 	)
+
+## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
+## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
+## sit in open air (door handles): the box on the near side is clear, the one behind the body is not.
+func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
+	_ensure_los_ray()
+	# top_level → target_position is a world-space delta (no parent transform to fight).
+	_los_ray.global_position = player.interact_ray.global_position
+	_los_ray.target_position = target - _los_ray.global_position
+	_los_ray.clear_exceptions()
+	_los_ray.add_exception(player)
+	for node in exceptions:
+		if node is CollisionObject3D:
+			_los_ray.add_exception(node)
+	_los_ray.force_raycast_update()
+	if not _los_ray.is_colliding():
+		return false
+	# Float32 precision at astronomic world coordinates (the same limit behind the Jolt "dancing" bug)
+	# makes the PHYSICS raycast origin imprecise by tens of metres this far out, so it can report a body
+	# well off the true eye->box segment as a hit and lock a door that is actually clear. Validate in
+	# DOUBLE precision: a real obstruction sits BETWEEN the eye and the door box, so ignore any collider
+	# whose accurate position is farther from the eye than the box itself (+ a small size margin).
+	var c: Object = _los_ray.get_collider()
+	if c is Node3D:
+		var box_dist: float = _los_ray.global_position.distance_to(target)
+		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		if hit_dist > box_dist + 2.0:
+			return false
+	return true
+
+## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
+## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
+## has no collisions, so its answer would always be "clear" and be trivially cheatable.
+func _can_see(target: Node) -> bool:
+	if not (target is Node3D):
+		return false
+	# Door handle: pick the box for the side the player is on — seated in this vehicle → indoor box,
+	# on foot → outdoor box — then require a clear sightline to it. The vehicle's own collision is a
+	# coarse CONVEX hull that encloses the boxes, so we exclude it (it can't self-block); FOREIGN walls
+	# still block. Choosing the box by seated-state is what stops opening a door you can't see.
+	if target.has_method("side_shape"):
+		var veh: Node = target.vehicle() if target.has_method("vehicle") else null
+		var inside: bool = veh != null and veh.has_method("is_occupied_by") and veh.is_occupied_by(player)
+		var box: Node3D = target.side_shape(inside)
+		if box == null:
+			return true  # handle without assigned boxes: don't lock the door
+		# Exclude the vehicle's coarse convex self-hull (it encloses the boxes, can't self-block); FOREIGN
+		# walls still block.
+		return not _line_of_sight_blocked(box.global_position, [veh])
+	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
+	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
+	return _first_solid_hit_is(target)
+
+## True if a MASK_OBSTACLE ray from the eye toward `target` hits `target` ITSELF first (nothing solid
+## in front of it). We only ignore ourselves; whatever the target rests in/on is NOT excluded, so you
+## can't grab an object through the side of the bed it sits in — you must actually see it.
+func _first_solid_hit_is(target: Node3D) -> bool:
+	_ensure_los_ray()
+	_los_ray.global_position = player.interact_ray.global_position
+	var to_target: Vector3 = target.global_position - _los_ray.global_position
+	# Aim a touch past the centre so a thin/small target is still crossed by the ray.
+	_los_ray.target_position = to_target * 1.05
+	_los_ray.clear_exceptions()
+	_los_ray.add_exception(player)
+	_los_ray.force_raycast_update()
+	# Float32 precision at astronomic world coordinates makes this physics ray imprecise (same limit as
+	# the door LOS / Jolt "dancing" bug): far from the origin it can miss the target or catch a body well
+	# off the eye->target segment, so a grab is refused until you are almost inside the prop. The client
+	# already aimed at it; validate in DOUBLE precision. A miss, or a hit BEYOND the target, counts as
+	# visible; only a solid genuinely CLOSER than the target (a wall / bed side in front) blocks the grab.
+	if not _los_ray.is_colliding():
+		return true
+	var c: Object = _los_ray.get_collider()
+	if c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target))):
+		return true
+	if c is Node3D:
+		var target_dist: float = _los_ray.global_position.distance_to(target.global_position)
+		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		return hit_dist > target_dist
+	return false
+
+## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
+## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
+func _is_blocked_by_geometry(prop: Node) -> bool:
+	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
+		return false
+	return not _can_see(prop)
+
+## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
+## _process / input / server alike — direct_space_state is only valid during physics).
+func _ensure_los_ray() -> void:
+	if _los_ray != null:
+		return
+	_los_ray = RayCast3D.new()
+	_los_ray.enabled = false
+	_los_ray.top_level = true  # ignore the player's transform → target_position is a world delta
+	_los_ray.collide_with_areas = false
+	_los_ray.collide_with_bodies = true
+	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
+	add_child(_los_ray)
+
+## Server: keep the carried item floating in front of the body (yaw only, no camera
+## pitch), held by the middle of its geometry so it sits centered. A cut piece keeps the
+## original rock pivot, so we offset by its geometry center (deterministic -> clients
+## match without extra sync). (#124)
+func _server_update_carried_item() -> void:
+	if player.hands_item == null:
+		return
+	# Body-relative spot (head height + front) WITHOUT the camera pitch: a carried object
+	# follows the body yaw but not the up/down look (issue #124).
+	var carry_point: Vector3 = player.camera_pivot.position + player.carry_offset
+	var center: Vector3 = Vector3.ZERO
+	if player.hands_item.has_method("get_center_offset"):
+		center = player.hands_item.get_center_offset()
+	player.hands_item.position = carry_point - player.hands_item.basis * center
+
+## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
+## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
+## the client just displays it. Throttled so it's cheap (one ray per player, not per object).
+func _server_update_carry_prompt(delta: float) -> void:
+	_carry_prompt_timer -= delta
+	if _carry_prompt_timer > 0.0:
+		return
+	_carry_prompt_timer = 0.1
+	var state := _compute_carry_prompt()
+	if state != player._carry_prompt:
+		player._carry_prompt = state
+		player.server_send_properties_to_client({"carry_prompt": state})
+
+## What E would do right now (server side): if we hold something, "cargo" when the drop would load
+## it onto a truck (it sticks), else "drop"; if our hands are empty, "carry" when we aim at a
+## grabbable prop that is reachable (not carried by another, clear line of sight).
+func _compute_carry_prompt() -> String:
+	if player.hands_item != null:
+		if _cargo_bed_for_drop(player.hands_item.global_position) != null:
+			return "cargo"  # dropping here loads it into the bed (sticks)
+		return "drop"
+	player.interact_ray.force_raycast_update()
+	var prop = player._aimed_carriable()
+	if prop != null and prop.has_method("interact") and prop.interact(player) \
+			and not _is_blocked_by_geometry(prop):
+		return "carry"
+	return ""
+
+## Which truck bed should swallow a crate dropped at this world point: any truck whose designer
+## loading zone contains it. Same rule whether we stand in the bed or reach over from outside — the
+## zone (not the player's position) decides whether loading is allowed.
+func _cargo_bed_for_drop(world_point: Vector3) -> Vehicle:
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if v is Vehicle and v.is_point_in_loading_zone(world_point):
+			return v
+	return null
+
+## Safety net for CharacterBody tunnelling through the thin trimesh terrain on
+## a fast fall.  Only acts when the player is CLEARLY below the crack-aware
+## surface (a real fall-through) — normal standing rests on the polygon
+## collision within the margin, so this never fires then and doesn't affect
+## is_on_floor / jumping.  [param area] is the planet gravity Area3D.
+func _catch_if_below_surface(area: Area3D) -> void:
+	var planet := area.get_parent().get_parent()
+	if planet == null or not is_instance_valid(planet):
+		return
+	if not planet.has_method("get") or planet.get("planet_data") == null:
+		return
+	var pdata = planet.planet_data
+	if pdata == null:
+		return
+	var local_world: Vector3 = player.global_position - planet.global_position
+	if local_world.length_squared() < 1.0:
+		return
+	var planet_basis: Basis = planet.global_transform.basis
+	var local_body: Vector3 = planet_basis.inverse() * local_world
+	var dir: Vector3 = local_body.normalized()
+	var player_dist: float = local_body.length()
+	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
+	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
+		return  # at/near or above the surface — the collision handles it
+	player.global_position = planet.global_position + planet_basis * (dir * surface_dist)
+	var up_world: Vector3 = (planet_basis * dir).normalized()
+	var radial: float = player.velocity.dot(up_world)
+	if radial < 0.0:
+		player.velocity -= up_world * radial
