@@ -258,7 +258,8 @@ func _ready() -> void:
 		_spawn_wheel = RadialMenu.new()
 		_spawn_wheel.title = "Spawn"
 		$UserInterface.add_child(_spawn_wheel)
-		_spawn_wheel.option_selected.connect(_on_spawn_selected)
+		# The spawn-wheel handlers live on the client role (created just above; it IS a PlayerClient here).
+		_spawn_wheel.option_selected.connect((_role as PlayerClient)._on_spawn_selected)
 
 		# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
 		# targeted player-spawned prop (rock / box / depot) down to the database.
@@ -279,10 +280,10 @@ func _ready() -> void:
 		camera.current = true
 
 		camera.make_current()
-		_force_temp_sky_environment()
+		(_role as PlayerClient)._force_temp_sky_environment()
 		# Apply the saved field of view, and follow live changes from the settings menu.
 		camera.fov = SettingsManager.get_fov()
-		SettingsManager.fov_changed.connect(_on_fov_changed)
+		SettingsManager.fov_changed.connect((_role as PlayerClient)._on_fov_changed)
 		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
@@ -551,121 +552,6 @@ func _safe_reparent_and_sync(new_parent: Node) -> void:
 func _set_player_global_position(pos, rot):
 	global_position = pos
 	global_rotation = rot
-
-## TEMPORARY (until the planet sun/atmosphere system is fixed): build a physical-sky environment
-## directly on the player camera. A Camera3D's own environment overrides any rival WorldEnvironment
-## (the scene's WorldEnvironment doesn't apply in-game here -> black sky), so this is what reliably
-## shows the sky to every player. The PhysicalSky reacts to the DirectionalLight, so the day/night
-## sun tint applies. Keep these values in sync with the WorldEnvironment in sandbox_capital.tscn.
-## Remove this whole helper once the real sun/atmosphere system is in place.
-func _force_temp_sky_environment() -> void:
-	var sky_material := PhysicalSkyMaterial.new()
-	sky_material.rayleigh_coefficient = 2.5
-	sky_material.mie_coefficient = 0.02
-	sky_material.mie_eccentricity = 0.85
-	sky_material.turbidity = 12.0
-	sky_material.sun_disk_scale = 3.0
-	sky_material.ground_color = Color(0.35, 0.28, 0.22)
-	sky_material.energy_multiplier = 1.2
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.glow_enabled = true
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.002
-	camera.environment = env
-
-## Live camera FOV update from the settings menu (local player only).
-func _on_fov_changed(fov: float) -> void:
-	camera.fov = fov
-
-# Dev spawn wheel selection -> spawn the chosen prop in front of the player.
-func _on_spawn_selected(data) -> void:
-	if SPAWN_PROPS.has(data):
-		var p: Dictionary = SPAWN_PROPS[data]
-		spawn_box(p["scene"], p["type"], p["z"], p["y"])
-	elif data == "depot":
-		_spawn_depot()
-	elif data == "truck":
-		_spawn_truck()
-
-# Spawn a networked truck (server-authoritative vehicle prop) in front of the player. The
-# server simulates its physics and replicates it to every client (B1 vehicle networking).
-func _spawn_truck() -> void:
-	var spawn_pos: Vector3 = position + (-global_basis.z * 8.0) + global_basis.y * 1.0
-	var parent = get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	client_send_action_to_server({
-		"action": "spawn_vehicle",
-		"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-		"parent_id": parentuuid,
-	})
-
-# LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
-func _spawn_depot() -> void:
-	var spawn_pos: Vector3 = position + (-global_basis.z * 10.0)
-	var parent = get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	emit_signal(
-		"client_action_requested",
-		{
-			"action": "spawn",
-			"entity": "mining_depot",
-			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-			"scenename": "scenes/structures/mining_depot.tscn",
-			"parent_id": parentuuid,
-		}
-	)
-
-func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float):
-	# LOCAL DEV (do not commit): re-enabled to spawn mining rocks for testing.
-	var item_spawn_position: Vector3 = position + (-global_basis.z * _coeffz) + global_basis.y * _coeffy
-	var parent = get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	emit_signal(
-		"client_action_requested",
-		{
-			"action": "spawn",
-			"entity": _type,
-			"position": {
-				"x": item_spawn_position[0],
-				"y": item_spawn_position[1],
-				"z": item_spawn_position[2]
-			},
-			"scenename": "scenes/props/" + _boxscene + ".tscn",
-			"parent_id": parentuuid,
-		}
-	)
-	# var item_spawn_position: Vector3 = position + (-global_basis.z * coeffz) + global_basis.y * coeffy
-	# # parent is for example the planet
-	# var parent = get_parent();
-	# var parentuuid = ""
-	# if parent.name == "SystemSandbox":
-	# 	parentuuid = ""
-	# else:
-	# 	parentuuid = parent.uuid
-
-	# emit_signal(
-	# 	"client_action_requested",
-	# 	{
-	# 		"action": "spawn",
-	# 		"entity": type,
-	# 		"position": {
-	# 			"x": item_spawn_position[0],
-	# 			"y": item_spawn_position[1],
-	# 			"z": item_spawn_position[2]
-	# 		},
-	# 		"scenename": "scenes/props/" + boxscene + ".tscn",
-	# 		"parent_id": parentuuid,
-	# 	}
-	# )
 
 # Send the properties of the player from godot server to horizon / client
 # for example, the health, stamina, etc...
