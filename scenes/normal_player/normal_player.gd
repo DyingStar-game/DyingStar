@@ -418,41 +418,6 @@ func _ride_seat(seat: Node3D) -> void:
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)
 
-func _handle_camera_motion():
-	var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
-
-	if parent_gravity_area:
-		_no_gravity_time = 0.0
-		if parent_gravity_area.gravity_point:
-			up_direction = parent_gravity_area.global_position.direction_to(global_position)
-		else:
-			up_direction = parent_gravity_area.global_basis.y
-
-		gravity = _compute_gravity(parent_gravity_area)
-		orient_player()
-		global_basis = global_basis.rotated(global_basis.y, mouse_motion.x * camera_sensitivity)
-		camera_pivot.rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-		camera_pivot.rotation_degrees.x = clamp(camera_pivot.rotation_degrees.x, -80, 80)
-	else:
-		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
-		# it as real 0g after ZERO_G_GRACE, so the camera pitch survives the transition.
-		_no_gravity_time += get_process_delta_time()
-		if _no_gravity_time >= ZERO_G_GRACE:
-			# 0g movement
-			gravity = 0.0
-			camera_pivot.rotation.x = 0
-			rotate_object_local(Vector3.UP, mouse_motion.x  * camera_sensitivity)
-			rotate_object_local(Vector3.RIGHT, mouse_motion.y  * camera_sensitivity)
-
-	# Replicate the camera pitch ("head") to the server so others see where we look and
-	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).
-	var head_q := snappedf(camera_pivot.rotation.x, 0.02)
-	if head_q != _last_head_sent:
-		_last_head_sent = head_q
-		client_send_action_to_server({"action": "update_property", "head": head_q})
-
-	mouse_motion = Vector2.ZERO
-
 ## Returns surface gravity scaled by inverse-square distance from the area centre.
 ## At the surface (dist == gravity_point_unit_distance) the result equals area.gravity.
 func _compute_gravity(area: Area3D) -> float:
