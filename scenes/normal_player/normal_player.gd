@@ -132,8 +132,6 @@ var screen_position: Vector3 = Vector3.ZERO
 var _display_debug: bool = false
 
 ## Consecutive server ticks this player has been settled (no input, on floor,
-## no velocity) — used to throttle idle physics to every 10th tick.
-var _idle_settled_ticks: int = 0
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
@@ -734,171 +732,42 @@ func _ride_seat(seat: Node3D) -> void:
 func _physics_process(delta: float) -> void:
 	if remote_player: return
 	if OS.has_feature("dedicated_server"):
-		_server_update_carried_item()
-		_server_update_carry_prompt(delta)
-		if piloting and is_instance_valid(_seat_node):
-			# Seated in a vehicle: ride its seat. Server-authoritative; the emitted
-			# position replicates so the player follows the vehicle (camera rides too).
-			_ride_seat(_seat_node)
-			new_input_from_server = false
-			var seat_p: Vector3 = snapped(position, Vector3(0.001, 0.001, 0.001))
-			var seat_r: Vector3 = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
-			emit_signal("hs_server_move", client_uuid, seat_p, seat_r, null, is_parented)
-			return
-		if new_input_from_server:
-			input_direction = input_from_server["input_direction"]
-			global_rotation = input_from_server["rotation"]
-			if piloting:
-				input_direction = Vector2.ZERO  # seated in a vehicle: no walking
+		return  # server tick now runs in PlayerServer._physics_process
+	# player part (CLIENT-OWNER input sampling; migrates to PlayerClient in step 3)
+	# player part
+	if is_instance_valid(_seat_node):
+		# Seated: the camera ride is done in _process (synced with the vehicle interpolation);
+		# here we only relay drive input (driver) and skip walking.
+		if _seat_is_driver:
+			_send_drive_input()
+			_update_handbrake_input(delta)
+		return
+	if !active: return
 
-		# Server-side "sleep" for settled players — the CharacterBody analogue
-		# of RigidBody sleeping. An idle player standing on the floor does not
-		# need 60 physics ticks/s: once quasi-still for 0.5 s, run the full
-		# move_and_slide only every 10th tick (6 Hz keeps the floor contact
-		# honest — if the chunk under the player unloads, the fall starts
-		# within 10 ticks). Any client packet, input, or residual velocity
-		# resets the counter instantly. With N players/vehicles idle around a
-		# base this removes ~90% of their per-tick physics cost and, combined
-		# with the position dedup in _on_player_move, all their network
-		# traffic.
-		if not new_input_from_server and input_direction == Vector2.ZERO \
-				and is_on_floor() and velocity.length_squared() < 0.0001:
-			_idle_settled_ticks += 1
-			if _idle_settled_ticks > 30 and (_idle_settled_ticks % 10) != 0:
-				return
-		else:
-			_idle_settled_ticks = 0
+	var dir_vect = Vector3.ZERO
+	var sprint = null
 
-		var sprint = null
-		# print("gravity parents:", gravity_parents.size())
-		var parent_gravity_area: Area3D = gravity_parents.back() if not gravity_parents.is_empty() else null
-		# print("gravity parents after:", gravity_parents.size())
+	#apply_parent_movement()
 
-		if parent_gravity_area:
-			if parent_gravity_area.gravity_point:
-				up_direction = parent_gravity_area.global_position.direction_to(global_position)
-			else:
-				up_direction = parent_gravity_area.global_basis.y
+	if not direct_chat.can_write:
+		dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
+		sprint = Input.is_action_pressed(SPRINT)
 
-			gravity = _compute_gravity(parent_gravity_area)
-			motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
-		else:
-			# 0g movement
-			gravity = 0.0
-			camera_pivot.rotation.x = 0
-			motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-			var dir = Vector3(input_direction.x, 0, input_direction.y)
-
-			# TODO sometimes the value is null on server side, not know why :/
-			player_thruster_force = 10
-			velocity += global_basis * dir * player_thruster_force * delta
-			velocity *= 0.98
-
-		var move_direction = (global_transform.basis * Vector3(input_direction.x, 0, input_direction.y)).normalized()
-
-		var speed = sprint_speed if sprint else walk_speed
-		if mining_tool.is_aiming:
-			speed *= mining_tool.aim_speed_factor  # slowed down in aim mode
-		if mining_tool.is_perforating:
-			speed = 0.0  # frozen during perforation
-		if hands_item != null:
-			speed *= carry_speed_factor  # carrying an ore slows you down (issue #124)
-
-		if is_on_floor():
-			if input_direction:
-				velocity = move_direction * speed
-			else:
-				velocity = velocity.move_toward(Vector3.ZERO, speed)
-		else:
-			# "air" movement
-			if input_direction:
-				velocity += move_direction * speed * delta
-
-
-		if is_on_floor() and is_jumping:
-			velocity += up_direction * jump_height * gravity
-			is_jumping = false
-		# Add the gravity — ALWAYS, including while standing on the floor. The
-		# floor contact absorbs it (move_and_slide cancels the into-floor
-		# component) and keeps the capsule firmly pressed onto the terrain
-		# trimesh so is_on_floor() stays true. Gating this on
-		# "not is_on_floor()" made the contact flicker when idle: the idle
-		# branch zeroes velocity → a zero-motion slide loses the floor → next
-		# tick one dose of gravity sinks the body ~9 mm → depenetration pushes
-		# it back → permanent ~1 cm "dancing", broadcast to every client at
-		# full tick rate (the position changes > the 1 mm dedup snap).
-		else:
-			velocity -= up_direction * gravity * 2.0 * delta
-			is_jumping = false
-
-		# Cap fall speed to avoid tunneling through ConcavePolygonShape3D
-		# terrain.  At 30 Hz physics with ~50 m chunk-vertex spacing,
-		# velocities above ~1500 m/s could cross multiple triangles per
-		# frame.  60 m/s is a generous "skydiver" terminal velocity that
-		# leaves a wide safety margin while still feeling like real gravity.
-		var _terminal_velocity: float = 60.0
-		if velocity.length() > _terminal_velocity:
-			velocity = velocity.normalized() * _terminal_velocity
-
-		move_and_slide()
-
-		# Safety net: a CharacterBody can tunnel through the thin trimesh terrain
-		# on a fast fall (move_and_slide has no CCD). Catch it if it ends up
-		# clearly below the surface so it can't fall to the planet centre.
-		if parent_gravity_area and parent_gravity_area.gravity_point \
-				and parent_gravity_area.name == "PlanetGravity":
-			_catch_if_below_surface(parent_gravity_area)
-
-
-		update_last_basis()
-
-		new_input_from_server = false
-
-		emit_signal(
-			"hs_server_move",
-			client_uuid,
-			# stepify tu prevent floating points with too many chars after coma
-			snapped(position, Vector3(0.001, 0.001, 0.001)),
-			snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			null,
-			is_parented
-		)
-
+	if dir_vect:
+		input_direction = dir_vect
 	else:
-		# player part
-		if is_instance_valid(_seat_node):
-			# Seated: the camera ride is done in _process (synced with the vehicle interpolation);
-			# here we only relay drive input (driver) and skip walking.
-			if _seat_is_driver:
-				_send_drive_input()
-				_update_handbrake_input(delta)
-			return
-		if !active: return
+		input_direction = Vector2.ZERO
+	# send move_direction
+	var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+	if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
+		client_last_input_direction = input_direction
+		client_last_global_rotation = short_rotation
+		emit_signal("hs_client_action_move", input_direction, short_rotation)
+	update_last_basis()
 
-		var dir_vect = Vector3.ZERO
-		var sprint = null
-
-		#apply_parent_movement()
-
-		if not direct_chat.can_write:
-			dir_vect = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_FORWARD, MOVE_BACK)
-			sprint = Input.is_action_pressed(SPRINT)
-
-		if dir_vect:
-			input_direction = dir_vect
-		else:
-			input_direction = Vector2.ZERO
-		# send move_direction
-		var short_rotation = snapped(global_rotation, Vector3(0.0001, 0.0001, 0.0001))
-		if input_direction != client_last_input_direction or short_rotation != client_last_global_rotation:
-			client_last_input_direction = input_direction
-			client_last_global_rotation = short_rotation
-			emit_signal("hs_client_action_move", input_direction, short_rotation)
-		update_last_basis()
-
-		labelx.text = str("%0.2f" % global_position[0])
-		labely.text = str("%0.2f" % global_position[1])
-		labelz.text = str("%0.2f" % global_position[2])
+	labelx.text = str("%0.2f" % global_position[0])
+	labely.text = str("%0.2f" % global_position[1])
+	labelz.text = str("%0.2f" % global_position[2])
 
 func should_listen_input() -> bool:
 	return not (direct_chat.is_shown || MenuConfig.is_shown)

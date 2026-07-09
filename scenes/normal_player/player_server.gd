@@ -17,6 +17,9 @@ const JUMP: String = "jump"
 ## break global script compilation. Untyped duck-typing still reaches every Player member.
 var player
 
+## Server-only: consecutive quasi-still ticks, used to throttle move_and_slide for idle players.
+var _idle_settled_ticks: int = 0
+
 ## One-time init, called by Player._ready() once `player` is wired and both are in the tree.
 func setup() -> void:
 	pass
@@ -281,3 +284,109 @@ func _reparent_children_of_prop(prop: Node) -> void:
 				child._safe_reparent_and_sync(parent)
 			else:
 				print("WARNING: child %s of prop %s has no client_parent_change method" % [child.name, prop.name])
+
+
+## Server physics tick — applies replicated input, gravity, carry float + throttled carry prompt, then
+## replicates the position. Runs on THIS role's own child node, so the engine calls it only on the
+## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
+## Player facade for now (2d) and are reached via `player.`.
+func _physics_process(delta: float) -> void:
+	player._server_update_carried_item()
+	player._server_update_carry_prompt(delta)
+	if player.piloting and is_instance_valid(player._seat_node):
+		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
+		# the player follows the vehicle (camera rides too).
+		player._ride_seat(player._seat_node)
+		player.new_input_from_server = false
+		var seat_p: Vector3 = snapped(player.position, Vector3(0.001, 0.001, 0.001))
+		var seat_r: Vector3 = snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001))
+		player.emit_signal("hs_server_move", player.client_uuid, seat_p, seat_r, null, player.is_parented)
+		return
+	if player.new_input_from_server:
+		player.input_direction = player.input_from_server["input_direction"]
+		player.global_rotation = player.input_from_server["rotation"]
+		if player.piloting:
+			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
+
+	# Server-side "sleep" for settled players: once quasi-still for ~0.5 s, run the full move_and_slide
+	# only every 10th tick (6 Hz keeps the floor contact honest). Any input/velocity resets the counter.
+	if not player.new_input_from_server and player.input_direction == Vector2.ZERO \
+			and player.is_on_floor() and player.velocity.length_squared() < 0.0001:
+		_idle_settled_ticks += 1
+		if _idle_settled_ticks > 30 and (_idle_settled_ticks % 10) != 0:
+			return
+	else:
+		_idle_settled_ticks = 0
+
+	var sprint = null
+	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+
+	if parent_gravity_area:
+		if parent_gravity_area.gravity_point:
+			player.up_direction = parent_gravity_area.global_position.direction_to(player.global_position)
+		else:
+			player.up_direction = parent_gravity_area.global_basis.y
+		player.gravity = player._compute_gravity(parent_gravity_area)
+		player.motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
+	else:
+		# 0g movement
+		player.gravity = 0.0
+		player.camera_pivot.rotation.x = 0
+		player.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+		var dir = Vector3(player.input_direction.x, 0, player.input_direction.y)
+		player.player_thruster_force = 10
+		player.velocity += player.global_basis * dir * player.player_thruster_force * delta
+		player.velocity *= 0.98
+
+	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
+
+	var speed = player.sprint_speed if sprint else player.walk_speed
+	if player.mining_tool.is_aiming:
+		speed *= player.mining_tool.aim_speed_factor  # slowed down in aim mode
+	if player.mining_tool.is_perforating:
+		speed = 0.0  # frozen during perforation
+	if player.hands_item != null:
+		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
+
+	if player.is_on_floor():
+		if player.input_direction:
+			player.velocity = move_direction * speed
+		else:
+			player.velocity = player.velocity.move_toward(Vector3.ZERO, speed)
+	else:
+		# "air" movement
+		if player.input_direction:
+			player.velocity += move_direction * speed * delta
+
+	if player.is_on_floor() and player.is_jumping:
+		player.velocity += player.up_direction * player.jump_height * player.gravity
+		player.is_jumping = false
+	# Add gravity ALWAYS (even on the floor) so the capsule stays pressed onto the terrain trimesh and
+	# is_on_floor() stays true — gating it on "not is_on_floor()" caused a ~1 cm idle "dancing".
+	else:
+		player.velocity -= player.up_direction * player.gravity * 2.0 * delta
+		player.is_jumping = false
+
+	# Cap fall speed to avoid tunneling through the thin trimesh terrain (move_and_slide has no CCD).
+	var _terminal_velocity: float = 60.0
+	if player.velocity.length() > _terminal_velocity:
+		player.velocity = player.velocity.normalized() * _terminal_velocity
+
+	player.move_and_slide()
+
+	# Safety net: catch a fast fall that tunneled clearly below the planet surface.
+	if parent_gravity_area and parent_gravity_area.gravity_point \
+			and parent_gravity_area.name == "PlanetGravity":
+		player._catch_if_below_surface(parent_gravity_area)
+
+	player.update_last_basis()
+	player.new_input_from_server = false
+
+	player.emit_signal(
+		"hs_server_move",
+		player.client_uuid,
+		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
+		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		null,
+		player.is_parented
+	)
