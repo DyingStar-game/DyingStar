@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://blh7wxp5bcv5h"]
 
-[ext_resource type="Script" uid="uid://cted52dwq1uty" path="res://scenes/player/mining_preview.gd" id="1_prev"]
+[ext_resource type="Script" uid="uid://cted52dwq1uty" path="res://scenes/mining/mining_preview.gd" id="1_prev"]
 
 [node name="MiningPreview" type="Node3D" unique_id=369096768]
 script = ExtResource("1_prev")
