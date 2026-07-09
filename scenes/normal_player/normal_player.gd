@@ -408,59 +408,6 @@ func set_seated(seated: bool) -> void:
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
 
-## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
-## replicated (via the vehicle's pilot_uuid); a passenger seat reads as free for now.
-func _seat_is_taken(seat: Node) -> bool:
-	if seat == null or not seat.is_driver_seat():
-		return false
-	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
-	return veh != null and "pilot_uuid" in veh and str(veh.pilot_uuid) != ""
-
-## Take the seat we are standing in: tell the server, lock walking, start riding locally.
-func _enter_seat(seat: Node) -> void:
-	var veh: Node = seat.vehicle()
-	if veh == null or not ("uuid" in veh):
-		return
-	if _seat_is_taken(seat):
-		return  # driver seat already occupied (server-replicated) — don't enter optimistically
-	_seat_node = seat
-	_seat_vehicle_node = veh
-	_seat_vehicle_uuid = str(veh.uuid)
-	_seat_is_driver = seat.is_driver_seat()
-	client_send_action_to_server({
-		"action": "enter_vehicle",
-		"target_uuid": _seat_vehicle_uuid,
-		"seat": seat.name,
-	})
-	active = false  # lock walking while seated
-	set_seated(true)
-	# Ride by transform inheritance: parent to the vehicle so we move WITH it (no jitter). The
-	# vehicle stays server-authoritative; this is the local camera ride.
-	if veh is Node3D and get_parent() != veh:
-		reparent(veh)
-		net_reset_interp()
-	if _seat_is_driver and veh.has_method("set_driver_hud"):
-		veh.set_driver_hud(true)
-
-## Leave the seat we occupy (driver or passenger): tell the server, walk again, un-parent back into
-## the world, and drop the driver HUD. Triggered by Y (exit) — see _unhandled_input.
-func _leave_vehicle() -> void:
-	client_send_action_to_server({"action": "exit_vehicle", "target_uuid": _seat_vehicle_uuid})
-	active = true  # walking again
-	set_seated(false)
-	camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
-	# Un-parent from the vehicle, back into the world (the server repositions us beside it).
-	if is_instance_valid(_seat_vehicle_node) and get_parent() == _seat_vehicle_node:
-		var world: Node = _seat_vehicle_node.get_parent()
-		if world != null:
-			reparent(world)
-			net_reset_interp()
-	if _seat_is_driver and is_instance_valid(_seat_vehicle_node) and _seat_vehicle_node.has_method("set_driver_hud"):
-		_seat_vehicle_node.set_driver_hud(false)
-	_seat_vehicle_uuid = ""
-	_seat_vehicle_node = null
-	_seat_node = null
-	_seat_is_driver = false
 
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
 ## local (relative to the parent); the rotation arrives global, so convert it to the parent's
@@ -925,58 +872,6 @@ func _aimed_carriable() -> Node:
 		return null
 	return prop
 
-## The vehicle door handle under the crosshair (a VehicleDoorHandle Area3D on the interact layer),
-## or null. Look-at detection; the actual open/close is server-authoritative (sent on E).
-func _aimed_door_handle() -> VehicleDoorHandle:
-	if not interact_ray.is_colliding():
-		return null
-	var hit = interact_ray.get_collider()
-	var handle := hit as VehicleDoorHandle
-	if handle == null:
-		return null
-	# Only the box on our current side counts: outdoor on foot, indoor when seated in this vehicle.
-	# Aiming at the far-side box (the one you can't reach from where you are) is ignored.
-	if not _door_side_matches(handle):
-		return null
-	return handle
-
-## True when the handle box under the crosshair is on the player's side (outdoor on foot, indoor when
-## seated in that vehicle). "" side (no boxes assigned) always matches, so an un-configured handle works.
-func _door_side_matches(handle: VehicleDoorHandle) -> bool:
-	var side := handle.aimed_side(interact_ray.get_collision_point())
-	if side == "":
-		return true
-	var veh = handle.vehicle()
-	var inside: bool = veh != null and "uuid" in veh and _seat_vehicle_uuid == str(veh.uuid)
-	return side == ("indoor" if inside else "outdoor")
-
-## Tell the server to open/close the door this handle drives (server-authoritative, replicated back).
-func _toggle_door(handle: VehicleDoorHandle) -> void:
-	var veh = handle.vehicle()
-	if veh == null:
-		return
-	client_send_action_to_server({
-		"action": "vehicle_door",
-		"target_uuid": str(veh.uuid),
-		"door_id": handle.door_id,
-		"side": handle.aimed_side(interact_ray.get_collision_point()),
-	})
-
-## Prompt for a door handle under the crosshair: close it if open, else open it.
-func _door_prompt(handle: VehicleDoorHandle) -> String:
-	var veh = handle.vehicle()
-	var is_open: bool = veh != null and veh.has_method("is_door_open") and veh.is_door_open(handle.door_id)
-	return "[E] Close door" if is_open else "[E] Open door"
-
-## True if a seat may be boarded right now: it has no gating door, or its door_id is currently open.
-## Lets a vehicle require "open the door first" before E enters (the door is opened via its handle).
-func _seat_door_open(seat) -> bool:
-	if seat == null or not ("door_id" in seat) or str(seat.door_id) == "":
-		return true
-	var veh = seat.vehicle()
-	if veh == null or not veh.has_method("is_door_open"):
-		return true
-	return veh.is_door_open(str(seat.door_id))
 
 
 
