@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ccme8rxijtf2s"]
 
-[ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/normal_player.gd" id="1_ll2l8"]
+[ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/normal_player/player.gd" id="1_ll2l8"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/_universe/characters/humanoids/astronaut/astronaut.res" id="2_rulc8"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/normal_player/player_ui.gd" id="3_kcm5r"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/normal_player/debug_label_settings.tres" id="4_dpwvv"]

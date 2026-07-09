@@ -184,7 +184,6 @@ func _process(_delta: float) -> void:
 	var dir_vect = Vector3.ZERO
 	var sprint = null
 
-	#apply_parent_movement()
 
 	if not player.direct_chat.can_write:
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
@@ -223,7 +222,6 @@ func _physics_process(delta: float) -> void:
 	var dir_vect = Vector3.ZERO
 	var sprint = null
 
-	#apply_parent_movement()
 
 	if not player.direct_chat.can_write:
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
