@@ -283,9 +283,6 @@ func _ready() -> void:
 		# Apply the saved field of view, and follow live changes from the settings menu.
 		camera.fov = SettingsManager.get_fov()
 		SettingsManager.fov_changed.connect(_on_fov_changed)
-		# Debug panels: follow live the settings-menu "Show debug panels" toggle.
-		if not SettingsManager.show_debug_changed.is_connected(_on_show_debug_changed):
-			SettingsManager.show_debug_changed.connect(_on_show_debug_changed)
 		# our own name tag is never created (only remote players get one)
 		astronaut.visible = false
 		interact_label.hide()
@@ -298,9 +295,8 @@ func _ready() -> void:
 
 		active = true
 
-		# Initial visibility from the saved setting (default true — early alpha).
-		_display_debug = SettingsManager.is_show_debug()
-		display_debug.emit(_display_debug)
+		display_debug.emit(true)
+		_display_debug = true
 
 		var loading_node = get_tree().root.get_node("Loading")
 		if loading_node:
@@ -356,101 +352,6 @@ func update_last_basis() -> void:
 
 	last_basis = gravity_parent.global_transform.basis
 
-func _unhandled_input(event: InputEvent) -> void:
-	if remote_player: return
-	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
-	# (open it first by looking at its handle). A seat with no door_id leaves directly.
-	if _seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
-		if _seat_door_open(_seat_node):
-			_leave_vehicle()
-		return
-
-	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
-		# Reset the vehicle upright (server-authoritative; driver only).
-		client_send_action_to_server({"action": "reset_vehicle", "target_uuid": _seat_vehicle_uuid})
-
-	if _seat_is_driver and _seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_lights"):
-		# Toggle the vehicle head lights (server-authoritative; driver only).
-		client_send_action_to_server({"action": "vehicle_lights", "target_uuid": _seat_vehicle_uuid})
-
-	if event.is_action_pressed("toggle_flashlight"):
-		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
-		# sit before the walk guard. By default it shares the L key with vehicle_lights, so one
-		# press toggles both the torch and the head lights; rebind it to a separate key in
-		# Settings > Controls to control the torch independently.
-		client_send_action_to_server({"action": "toggle_flashlight"})
-
-	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		mouse_motion = -event.relative * 0.001
-
-	# Seated (driver/passenger): E open/closes a door by LOOKING at its handle. Must run BEFORE the
-	# walk guard — seated players have active = false, so the on-foot action block below never runs.
-	if _seat_vehicle_uuid != "" and event.is_action_pressed("action"):
-		interact_ray.force_raycast_update()
-		var seated_handle := _aimed_door_handle()
-		if seated_handle != null:
-			_toggle_door(seated_handle)
-		return  # seated: E only operates doors, never carry
-
-	if !active: return
-
-	if event.is_action_pressed(JUMP):
-		client_send_action_to_server({"action": JUMP})
-
-	if event.is_action_pressed("toggle_tool"):
-		if admin_cleanup_tool != null:
-			admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
-		mining_tool.toggle_equip()
-
-	if event.is_action_pressed("action"):
-		interact_ray.force_raycast_update()
-		# On foot, looking at a door handle from a boarding zone: open/close that door (server-auth).
-		# Priority over boarding, so aiming at the handle in the zone operates the door.
-		var handle := _aimed_door_handle()
-		if handle != null and is_instance_valid(_nearby_seat):
-			_toggle_door(handle)
-			return
-		# Standing in a seat box: E boards — but only once the seat's gating door is open (open it
-		# first by looking at the handle). A seat with no door_id boards directly.
-		if is_instance_valid(_nearby_seat):
-			if _seat_door_open(_nearby_seat):
-				_enter_seat(_nearby_seat)
-			return
-		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
-		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
-		var aim := _aimed_carriable()
-		var target_uuid := str(aim.uuid) if aim != null else ""
-		client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
-		_predict_carry_stow(aim)
-
-	if event.is_action_pressed("spawn_wheel"):
-		if _spawn_wheel:
-			_spawn_wheel.open([
-				{"text": "Rocher", "submenu": [
-					{"text": "S", "data": "rock"},
-					{"text": "M", "data": "rock_medium"},
-					{"text": "L", "data": "rock_large"},
-				]},
-				{"text": "Caisse", "submenu": [
-					{"text": "50cm", "data": "box"},
-					{"text": "Ares", "data": "palette_container"},
-					{"text": "Palet", "data": "pallet_plate"},
-					{"text": "Cube", "data": "pallet_crate"},
-					{"text": "Benne", "data": "pallet_benne"},
-					{"text": "Liquid", "data": "pallet_liquid"},
-				]},
-				{"text": "Dépôt", "data": "depot"},
-				{"text": "Camion", "data": "truck"},
-			])
-	if event.is_action_released("spawn_wheel"):
-		if _spawn_wheel:
-			_spawn_wheel.confirm()
-
-	if event.is_action_pressed("toggle_debug"):
-		_display_debug = not _display_debug
-		display_debug.emit(_display_debug)
-		SettingsManager.set_show_debug(_display_debug)  # persist + keep the settings menu in sync
 
 func server_set_input(input_dir: Vector2, newrotation: Vector3) -> void:
 	input_from_server["input_direction"] = input_dir
@@ -969,11 +870,6 @@ func _force_temp_sky_environment() -> void:
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
 	camera.fov = fov
-
-## Live update from the settings menu "Show debug panels" toggle (kept in sync with the toggle_debug key).
-func _on_show_debug_changed(on: bool) -> void:
-	_display_debug = on
-	display_debug.emit(on)
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 func _on_spawn_selected(data) -> void:
