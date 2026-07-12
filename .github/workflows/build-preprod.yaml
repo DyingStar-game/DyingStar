@@ -24,7 +24,7 @@ env:
 
 jobs:
   build:
-    name: Build Docker Image
+    name: Build Server Docker Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,18 +45,7 @@ jobs:
         id: date
         run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache planet export data
-        id: cache-planet
-        uses: actions/cache@v4
-        with:
-          path: |
-            assets/qgis/export
-            assets/qgis/checksum.txt
-            assets/qgis/creationtime.txt
-          key: planet-export-${{ steps.date.outputs.date }}
-
       - name: Download planet data
-        if: steps.cache-planet.outputs.cache-hit != 'true'
         run: bash tools/download_planet_data.sh
 
       - name: Delete blender files
