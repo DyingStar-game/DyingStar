@@ -143,6 +143,14 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_h = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
+		"vehicle_ignition":
+			var veh_i = _find_vehicle(str(data.get("target_uuid", "")))
+			if veh_i != null and veh_i._pilot == player and veh_i.has_method("toggle_engine"):
+				veh_i.toggle_engine()  # refused by the vehicle itself if it is still rolling
+		"vehicle_horn":
+			var veh_n = _find_vehicle(str(data.get("target_uuid", "")))
+			if veh_n != null and veh_n._pilot == player and veh_n.has_method("set_horn"):
+				veh_n.set_horn(bool(data.get("pressed", false)), bool(data.get("special", false)))
 		"vehicle_lights":
 			var veh_l = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_l != null and veh_l._pilot == player and veh_l.has_method("toggle_headlights"):

@@ -29,6 +29,7 @@ enum PropulsionType {ELECTRIC, THERMAL}
 ## Driving view: CHASE = 3rd-person orbit, CAB = 1st-person from the cab.
 enum ViewMode {CHASE, CAB}
 
+
 # Meta marker put on every node we generate, so a rebuild can clear the old ones.
 const GENERATED := "vehicle_generated"
 # Thickness of the generated bed floor / walls (m). Shared by the collider and the cargo-rest math.
@@ -41,9 +42,14 @@ const LIGHT_GROUP := "vehicle_light"
 ## Group put (in Godot) on the instanced real 3D model (GLB) root. Its presence (or real wheels)
 ## switches off the procedural blockout — the model provides body/wheels/steering wheel/doors.
 const MODEL_GROUP := "vehicle_model"
+## How far the horn is taken down (dB) during its fade-out, before the player is stopped.
+const HORN_FADE_DB := -30.0
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
+## Ignition: the engine must be started (key I, driver only) before the vehicle can drive, and it can
+## only be switched on/off while standing still — below this speed (km/h). A vehicle spawns engine off.
+@export_range(0.0, 20.0, 0.5) var ignition_max_kmh: float = 3.0
 ## Powertrain. ELECTRIC = single-speed, instant torque (cars/EV trucks). THERMAL = gearbox
 ## with automatic shifting. Switching it changes which settings below are editable.
 @export var propulsion_type: PropulsionType = PropulsionType.ELECTRIC:
@@ -264,6 +270,128 @@ const MODEL_GROUP := "vehicle_model"
 		debug_show_cargo_bay = v
 		_rebuild_deferred()
 
+# --- Audio SFX — all OPTIONAL: an unassigned sound simply plays nothing -------
+# Drop an audio file straight into a Sound slot; each sound then has its own volume, fade-out curve
+# and audible radius. Sounds are positional (AudioStreamPlayer3D) and fire on the CLIENTS: the door
+# state and the pilot are already replicated by the server, so everyone around hears them at the right
+# place. More sounds (engine loop, brakes…) will be added here, one subgroup each.
+#
+# The four knobs of every sound (see Sfx3D):
+#   Sound     — the audio file.
+#   Volume    — its loudness in dB, at the Falloff distance.
+#   Falloff   — reference distance (m): past it the sound starts really fading, per Attenuation.
+#   Distance  — hard cut-off (m): further away the sound is not computed at all (CPU saver).
+#   Attenuation — HOW it fades with distance (see the enum below).
+
+@export_group("Audio SFX")
+@export_subgroup("Door open")
+## Played at the door, when it opens.
+@export var sfx_door_open: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
+@export_range(-40.0, 12.0, 0.5) var sfx_door_open_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
+@export_range(0.5, 200.0, 0.5) var sfx_door_open_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
+@export_range(1.0, 500.0, 1.0) var sfx_door_open_distance: float = 40.0
+## How the sound fades with distance.
+@export var sfx_door_open_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Door close")
+## Played at the door, when it closes.
+@export var sfx_door_close: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_door_close_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_door_close_falloff: float = 5.0
+@export_range(1.0, 500.0, 1.0) var sfx_door_close_distance: float = 40.0
+@export var sfx_door_close_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Engine start")
+## Played when a driver takes the wheel (engine cranking / start-up).
+@export var sfx_engine_start: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_engine_start_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_engine_start_falloff: float = 10.0
+@export_range(1.0, 500.0, 1.0) var sfx_engine_start_distance: float = 60.0
+@export var sfx_engine_start_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+
+@export_subgroup("Engine stop")
+## Played when the driver cuts the engine (key I again).
+@export var sfx_engine_stop: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_engine_stop_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_engine_stop_falloff: float = 10.0
+@export_range(1.0, 500.0, 1.0) var sfx_engine_stop_distance: float = 60.0
+@export var sfx_engine_stop_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+
+@export_subgroup("Lights on")
+## Played when the head lights are switched on (key L).
+@export var sfx_lights_on: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_lights_on_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_lights_on_falloff: float = 4.0
+@export_range(1.0, 500.0, 1.0) var sfx_lights_on_distance: float = 25.0
+@export var sfx_lights_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Lights off")
+## Played when the head lights are switched off.
+@export var sfx_lights_off: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_lights_off_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_lights_off_falloff: float = 4.0
+@export_range(1.0, 500.0, 1.0) var sfx_lights_off_distance: float = 25.0
+@export var sfx_lights_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Handbrake on")
+## Played when the hand brake is pulled (hold Space at low speed).
+@export var sfx_handbrake_on: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_handbrake_on_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_handbrake_on_falloff: float = 5.0
+@export_range(1.0, 500.0, 1.0) var sfx_handbrake_on_distance: float = 30.0
+@export var sfx_handbrake_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Handbrake off")
+## Played when the hand brake is released — by the key, or automatically when the driver accelerates.
+@export var sfx_handbrake_off: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_handbrake_off_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_handbrake_off_falloff: float = 5.0
+@export_range(1.0, 500.0, 1.0) var sfx_handbrake_off_distance: float = 30.0
+@export var sfx_handbrake_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Engine running")
+## Engine note: ONE looped sample, played for as long as the engine runs. Record it at IDLE — the
+## revving is made from it by raising its pitch (and its volume) with the engine RPM, so a single
+## sample covers idle → full throttle. See _update_engine_sound.
+@export var sfx_engine_idle: AudioStream
+## Loudness at idle.
+@export_range(-40.0, 12.0, 0.5) var sfx_engine_idle_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_engine_idle_falloff: float = 8.0
+@export_range(1.0, 500.0, 1.0) var sfx_engine_idle_distance: float = 50.0
+@export var sfx_engine_idle_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+## Playback speed of the sample at the red line: 2 = an octave up. This IS the revving effect — the
+## higher, the more the engine "screams" at speed. 1 = no pitch change at all.
+@export_range(1.0, 3.0, 0.05) var sfx_engine_rev_pitch: float = 2.0
+## Extra loudness (dB) added on top of the idle volume at the red line — an engine under load is
+## louder, not just higher-pitched. 0 = same volume everywhere.
+@export_range(0.0, 24.0, 0.5) var sfx_engine_rev_db: float = 6.0
+## How fast the note follows the RPM (per second). Low = lazy, heavy engine; high = instant, nervous.
+@export_range(0.5, 20.0, 0.5) var sfx_engine_rev_response: float = 5.0
+
+@export_subgroup("Horn")
+## Normal horn (key H): HELD — it blows for as long as the key is down (looped automatically).
+@export var sfx_horn: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_horn_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_horn_falloff: float = 40.0
+@export_range(1.0, 500.0, 1.0) var sfx_horn_distance: float = 150.0
+@export var sfx_horn_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.FAR_REACHING
+## Shortest honk (s): a quick tap still blows for this long, instead of being cut mid-sample. Holding
+## the key simply keeps it going — one sample covers both.
+@export_range(0.0, 2.0, 0.05) var sfx_horn_min_secs: float = 0.25
+## Fade-out (s) when the horn is released: cutting a tone dead makes an audible click.
+@export_range(0.0, 1.0, 0.01) var sfx_horn_fade_secs: float = 0.06
+
+@export_subgroup("Horn (special)")
+## Special horn — air horn, siren… (key Alt+H): ONE SHOT, the sample plays once in full, no loop.
+@export var sfx_horn_special: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_horn_special_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_horn_special_falloff: float = 60.0
+@export_range(1.0, 500.0, 1.0) var sfx_horn_special_distance: float = 250.0
+@export var sfx_horn_special_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.FAR_REACHING
+
 # Networking (GenericProp contract). uuid is set by the prop spawn pipeline; an EMPTY uuid
 # means bench / standalone mode (the vehicle drives locally instead of being replicated).
 var uuid: String = ""
@@ -320,6 +448,24 @@ var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform],
 var _steering_wheel: Node3D = null          # GLB "steering_wheel" mesh that turns with the steer angle
 var _steering_wheel_rest: Basis = Basis.IDENTITY  # its closed/centered orientation
 var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door open/close clips)
+var _engine_on: bool = false                # engine running (server state; mirrored on each replica)
+var _net_last_engine: bool = false          # server: last replicated engine state, change detection
+## Client: false until _ready is done. Replicated state that lands BEFORE that is the spawn snapshot
+## (the truck's current state, which we are only now hearing about) and must be applied SILENTLY;
+## anything after it is a real change and gets its sound. Late-join guard for engine + hand brake.
+var _spawned: bool = false
+var _horn_on: bool = false                  # server: normal horn key held by the driver
+var _net_last_horn: bool = false            # server: last replicated horn state, change detection
+var _horn_special_count: int = 0            # server: number of special-horn (Alt) shots fired so far
+var _net_last_horn_special: int = 0         # server: last replicated shot count, change detection
+var _net_horn_special_count: int = -1       # client: last shot count seen (-1 = none received yet)
+var _horn_player: AudioStreamPlayer3D = null  # client: the looping horn sound while it blows
+var _idle_player: AudioStreamPlayer3D = null  # client: the looping engine-idle sound
+var _idle_sfx_on: bool = false              # client: is the engine sound currently running?
+var _rev: float = 0.0                       # client: smoothed rev ratio, 0 = idle, 1 = red line
+var _engine_sound_wait: float = 0.0         # client: seconds left of the start-up sample (loop waits)
+var _horn_held_secs: float = 0.0            # client: how long the current honk has been sounding
+var _horn_fade_left: float = 0.0            # client: seconds left of the horn's fade-out (0 = not fading)
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
 var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
@@ -350,7 +496,7 @@ func _ready() -> void:
 	# clip plays its open animation once.)
 	if _is_networked() and not GameOrchestrator.is_server():
 		for door_id in _net_doors:
-			_apply_door(str(door_id), bool(_net_doors[door_id]))
+			_apply_door(str(door_id), bool(_net_doors[door_id]), false)  # no sfx: nobody just opened it
 	if _is_networked():
 		# Replicated prop: place it where the server spawned it (client_channel_data_update
 		# also applies position/rotation, this is the initial fallback).
@@ -358,6 +504,7 @@ func _ready() -> void:
 			position = spawn_position
 		if spawn_rotation != Vector3.ZERO:
 			rotation = spawn_rotation
+	_spawned = true  # from now on, replicated engine / hand brake changes are real events → they sound
 
 ## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
 func _is_networked() -> bool:
@@ -388,6 +535,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			_apply_view()
 		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 			reset_upright()
+		# Ignition + horns, same keys as in game (in game they travel player -> server; here we are
+		# the authority ourselves). Without this the bench truck could not even be started.
+		if event.is_action_pressed("vehicle_ignition"):
+			toggle_engine()
+		if event.is_action_pressed("vehicle_horn_special", false, true):
+			set_horn(true, true)
+		elif event.is_action_pressed("vehicle_horn", false, true):
+			set_horn(true)
+		elif event.is_action_released("vehicle_horn") or event.is_action_released("vehicle_horn_special"):
+			set_horn(false)
 
 ## Show only the settings relevant to the chosen powertrain in the inspector.
 func _validate_property(property: Dictionary) -> void:
@@ -928,7 +1085,25 @@ func is_immobilized() -> bool:
 
 ## Server: the pilot toggles the hand brake (long press at low speed, relayed as an action).
 func toggle_handbrake() -> void:
-	_handbrake = not _handbrake
+	set_handbrake(not _handbrake)
+
+## Server: set the hand brake. Single write point, so its sound fires whichever way it moves — the
+## key, or the automatic release when the driver accelerates (see _apply_drive). The state is already
+## replicated, so each client plays the click on its side (see client_channel_data_update).
+func set_handbrake(on: bool) -> void:
+	if _handbrake == on:
+		return
+	_handbrake = on
+	_play_handbrake_sfx(on)  # bench: honk here (a game server is muted; its clients play it)
+
+## The hand brake click, pulled or released.
+func _play_handbrake_sfx(on: bool) -> void:
+	if on:
+		_play_sfx(sfx_handbrake_on, sfx_handbrake_on_db, sfx_handbrake_on_falloff,
+				sfx_handbrake_on_distance, sfx_handbrake_on_attenuation)
+	else:
+		_play_sfx(sfx_handbrake_off, sfx_handbrake_off_db, sfx_handbrake_off_falloff,
+				sfx_handbrake_off_distance, sfx_handbrake_off_attenuation)
 
 ## True when the hand brake is engaged — server state, or the replicated one on a client (HUD).
 func is_handbraked() -> bool:
@@ -1320,7 +1495,15 @@ func _door_handle(door_id: String) -> VehicleDoorHandle:
 ## Play a door open/close: a named Blender clip "<door_id>_open"/"_close" if the GLB has one, else a
 ## code hinge-swing fallback. Runs on the server (logical) and every client (visible swing). The
 ## per-door open angle / reverse come from the door's VehicleDoorHandle (falls back to the exports).
-func _apply_door(door_id: String, open: bool) -> void:
+## `sfx` is false for the late-join replay (the door is set to its CURRENT state — nobody just opened it).
+func _apply_door(door_id: String, open: bool, sfx: bool = true) -> void:
+	if sfx:
+		if open:
+			_play_sfx(sfx_door_open, sfx_door_open_db, sfx_door_open_falloff, sfx_door_open_distance,
+					sfx_door_open_attenuation, _door_mesh(door_id))
+		else:
+			_play_sfx(sfx_door_close, sfx_door_close_db, sfx_door_close_falloff, sfx_door_close_distance,
+					sfx_door_close_attenuation, _door_mesh(door_id))
 	var handle := _door_handle(door_id)
 	var reverse: bool = handle.reverse if handle != null else false
 	var clip := door_id + ("_open" if open else "_close")
@@ -1352,6 +1535,165 @@ func _snap_door(door_id: String, open: bool, angle_deg: float, reverse: bool) ->
 	door.transform = t
 
 # ------------------------------------------------------------------------------
+# Audio SFX
+# ------------------------------------------------------------------------------
+## Fire-and-forget positional sound with its own volume / falloff / cut-off / attenuation, played AT
+## `at` (a door mesh, the cab…) or at the vehicle's origin when null. The player node frees itself once
+## the sample is over, so nothing accumulates. No-op without a sound, in the editor, and on the
+## authority (a game server has no audio: each client fires the sound from the replicated state).
+func _play_sfx(stream: AudioStream, db: float, falloff: float, distance: float,
+		attenuation: Sfx3D.Attenuation, at: Node3D = null) -> void:
+	if _sfx_muted():
+		return
+	Sfx3D.play(at if at != null else self, stream, db, falloff, distance, attenuation)
+
+## True where SFX must not be heard: editor tooling and the game server (the clients play the sounds).
+func _sfx_muted() -> bool:
+	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
+		return true
+	return _is_networked() and GameOrchestrator.is_server()
+
+## SERVER: the driver turns the ignition key (I). Refused while the vehicle is moving — you start or
+## cut the engine standing still. The state is replicated, so every client hears the start-up + the
+## idle, and a vehicle with a dead engine does not drive (see _physics_process).
+func toggle_engine() -> void:
+	if absf(get_display_speed_kmh()) > ignition_max_kmh:
+		return
+	set_engine(not _engine_on)
+
+## Engine on/off, on the server as well as on each replica (which gets it replicated). Switching it ON
+## plays the start-up sound; the idle loop follows on its own (see _update_engine_idle).
+func set_engine(on: bool) -> void:
+	if _engine_on == on:
+		return
+	_engine_on = on
+	if on:
+		_play_sfx(sfx_engine_start, sfx_engine_start_db, sfx_engine_start_falloff,
+				sfx_engine_start_distance, sfx_engine_start_attenuation)
+		# Hold the engine loop back until the cranking sample is over, or it would start in the very
+		# same frame and drown it — you would only ever hear the idle.
+		_engine_sound_wait = sfx_engine_start.get_length() if sfx_engine_start != null else 0.0
+	else:
+		engine_force = 0.0  # cutting the engine stops powering the wheels at once
+		_engine_sound_wait = 0.0  # cut mid-cranking: forget the pending loop
+		_play_sfx(sfx_engine_stop, sfx_engine_stop_db, sfx_engine_stop_falloff,
+				sfx_engine_stop_distance, sfx_engine_stop_attenuation)
+
+## True while the engine runs (the dashboard / HUD can read it).
+func is_engine_on() -> bool:
+	return _engine_on
+
+## The engine note. ONE looped sample (recorded at idle) covers the whole rev range: its pitch and its
+## volume are pushed up with the engine RPM, which is exactly how a car engine reads to the ear. No
+## replication needed — the engine state and the speed are already known here, and get_engine_rpm()
+## works on a replica too (it is derived from the replicated speed). Called every frame.
+func _update_engine_sound(delta: float) -> void:
+	if _engine_sound_wait > 0.0:
+		_engine_sound_wait -= delta  # cranking: the loop waits its turn (see set_engine)
+	var running: bool = _engine_on and _engine_sound_wait <= 0.0
+	if running != _idle_sfx_on:
+		_idle_sfx_on = running
+		_start_or_stop_engine_sound(running)
+	if _idle_player == null or not _idle_player.playing:
+		return
+	# Chase the target rev ratio instead of jumping to it: the RPM comes from the (networked, snapped)
+	# speed, so a raw follow would step and warble. This is the engine's "inertia".
+	var target: float = _rev_ratio()
+	_rev = move_toward(_rev, target, sfx_engine_rev_response * delta)
+	_idle_player.pitch_scale = lerpf(1.0, sfx_engine_rev_pitch, _rev)
+	_idle_player.volume_db = sfx_engine_idle_db + sfx_engine_rev_db * _rev
+
+## Where the engine sits between idle (0.0) and the red line (1.0) right now. THERMAL revs between
+## idle_rpm and redline_rpm within each gear (so the note falls back on every shift, like a real
+## gearbox); ELECTRIC has no gears: the RPM just tracks the speed up to motor_max_rpm.
+func _rev_ratio() -> float:
+	var low: float = idle_rpm if propulsion_type == PropulsionType.THERMAL else 0.0
+	var high: float = redline_rpm if propulsion_type == PropulsionType.THERMAL else motor_max_rpm
+	return clampf((get_engine_rpm() - low) / maxf(high - low, 1.0), 0.0, 1.0)
+
+## Create + start (or stop) the looping engine player. The node is kept between runs, not freed.
+func _start_or_stop_engine_sound(on: bool) -> void:
+	if not on:
+		if _idle_player != null:
+			_idle_player.stop()
+		return
+	if sfx_engine_idle == null or _sfx_muted():
+		return
+	if _idle_player == null:
+		_idle_player = AudioStreamPlayer3D.new()
+		add_child(_idle_player)
+	Sfx3D.configure(_idle_player, Sfx3D.as_looping(sfx_engine_idle), sfx_engine_idle_db,
+			sfx_engine_idle_falloff, sfx_engine_idle_distance, sfx_engine_idle_attenuation)
+	_rev = 0.0  # a fresh start is always at idle: the note climbs from there
+	_idle_player.pitch_scale = 1.0
+	_idle_player.play()
+
+## SERVER: the driver presses / releases a horn key. The two horns behave differently on purpose:
+##   - normal (H): HELD — a replicated bool, so everyone around hears it for as long as it is held;
+##   - special (Alt+H): ONE SHOT — the sample is played once, in full, on the press (the release does
+##     nothing). It is replicated as a counter that ticks up on each press, because a "moment" cannot
+##     be carried by an on/off state: a quick tap could be squashed into a single delta update and
+##     never reach the clients.
+## Only the pilot can honk (checked by the caller in player_server); a driver leaving the seat
+## releases the held horn (see server_exit).
+func set_horn(on: bool, special: bool = false) -> void:
+	if special:
+		if on:
+			_horn_special_count += 1
+			_play_special_horn()  # bench (no replication loop): honk here — muted on a game server
+		return
+	if _horn_on == on:
+		return
+	_horn_on = on
+	_apply_horn(on)
+
+## Start the looping horn. STOPPING is not done here: releasing the key only asks for it, and
+## _update_horn takes care of the minimum honk + the fade-out. One player node is reused (kept).
+func _apply_horn(on: bool) -> void:
+	if not on:
+		return  # _update_horn winds it down: hold it to sfx_horn_min_secs, then fade
+	if sfx_horn == null or _sfx_muted():
+		return
+	if _horn_player == null:
+		_horn_player = AudioStreamPlayer3D.new()
+		add_child(_horn_player)
+	Sfx3D.configure(_horn_player, Sfx3D.as_looping(sfx_horn), sfx_horn_db, sfx_horn_falloff,
+			sfx_horn_distance, sfx_horn_attenuation)
+	_horn_held_secs = 0.0
+	_horn_fade_left = 0.0
+	_horn_player.play()
+
+## The tail of the held horn, every frame. A real horn is a continuous tone: a quick tap must not be
+## chopped mid-sample (hence the minimum honk), and letting go must not cut it dead (hence the fade —
+## an abrupt stop on a tone is heard as a click). Pressing again during the fade cancels it.
+func _update_horn(delta: float) -> void:
+	if _horn_player == null or not _horn_player.playing:
+		return
+	_horn_held_secs += delta
+	if _horn_on:  # still (or again) pressed: full volume, forget any fade in progress
+		if _horn_fade_left > 0.0:
+			_horn_fade_left = 0.0
+			_horn_player.volume_db = sfx_horn_db
+		return
+	if _horn_held_secs < sfx_horn_min_secs:
+		return  # released, but the honk has not reached its minimum length yet — keep blowing
+	var fade: float = maxf(sfx_horn_fade_secs, 0.001)
+	if _horn_fade_left <= 0.0:
+		_horn_fade_left = fade  # start winding down
+	_horn_fade_left -= delta
+	if _horn_fade_left <= 0.0:
+		_horn_player.stop()
+		_horn_player.volume_db = sfx_horn_db  # back to the nominal level for the next honk
+		return
+	_horn_player.volume_db = sfx_horn_db + HORN_FADE_DB * (1.0 - _horn_fade_left / fade)
+
+## One shot of the special horn (air horn / siren): plays the sample once, to its end. Not looped —
+## holding Alt+H does not extend it, and it is not cut when the key is released.
+func _play_special_horn() -> void:
+	_play_sfx(sfx_horn_special, sfx_horn_special_db, sfx_horn_special_falloff,
+			sfx_horn_special_distance, sfx_horn_special_attenuation)
+
+# ------------------------------------------------------------------------------
 # Driving (runtime only)
 # ------------------------------------------------------------------------------
 ## Client replica: physics is off (server-authoritative), so smoothly interpolate toward the
@@ -1360,6 +1702,9 @@ func _snap_door(door_id: String, open: bool, angle_deg: float, reverse: bool) ->
 func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
+	# Sound upkeep — also on the bench (no network), hence before the replica guard below.
+	_update_engine_sound(delta)
+	_update_horn(delta)
 	if not _is_networked() or GameOrchestrator.is_server():
 		return
 	# Smooth for everyone, driver included: the driver is parented to the vehicle, so the camera
@@ -1408,7 +1753,9 @@ func _physics_process(delta: float) -> void:
 			_idle_still_ticks = 0
 			if sleeping and is_instance_valid(_pilot):
 				sleeping = false  # pilot back on board: resume simulation
-		if is_instance_valid(_pilot):
+		# A driver with a DEAD ENGINE steers a lifeless truck: no drive force (it coasts / stays
+		# parked), exactly as if there were nobody at the wheel. Start it with the ignition key (I).
+		if is_instance_valid(_pilot) and _engine_on:
 			_apply_drive(delta)
 		elif _handbrake:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
@@ -1419,7 +1766,7 @@ func _physics_process(delta: float) -> void:
 	# Bench / standalone: drive locally.
 	_check_rollover_unlock()
 	_pin_locked_cargo()
-	if _pilot != null:
+	if _pilot != null and _engine_on:
 		_apply_drive(delta)
 	elif _handbrake:
 		_hold_handbrake(delta)
@@ -1471,7 +1818,8 @@ func _replicate_transform() -> void:
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
 			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering \
-			and _door_state == _net_last_doors:
+			and _horn_on == _net_last_horn and _horn_special_count == _net_last_horn_special \
+			and _engine_on == _net_last_engine and _door_state == _net_last_doors:
 		return
 	var data: Dictionary = {}
 	if my_pos != _net_last_position:
@@ -1498,6 +1846,15 @@ func _replicate_transform() -> void:
 	if my_steering != _net_last_steering:
 		data["steering"] = my_steering
 		_net_last_steering = my_steering
+	if _horn_on != _net_last_horn:
+		data["horn"] = _horn_on
+		_net_last_horn = _horn_on
+	if _horn_special_count != _net_last_horn_special:
+		data["horn_special"] = _horn_special_count
+		_net_last_horn_special = _horn_special_count
+	if _engine_on != _net_last_engine:
+		data["engine"] = _engine_on
+		_net_last_engine = _engine_on
 	if _door_state != _net_last_doors:
 		data["doors"] = _door_state.duplicate()
 		_net_last_doors = _door_state.duplicate()
@@ -1538,10 +1895,32 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("mass"):
 		mass = float(data["mass"])  # replica: show the server's real total weight on the HUD
 	if data.has("handbrake"):
-		_net_handbrake = bool(data["handbrake"])
+		var hb := bool(data["handbrake"])
+		if _spawned and hb != _net_handbrake:
+			_play_handbrake_sfx(hb)  # click only on a real change (see _spawned: not on the snapshot)
+		_net_handbrake = hb
 	if data.has("headlights"):
 		set_headlights(bool(data["headlights"]))  # mirror the head lights on this replica
+	if data.has("engine"):
+		# Mirror the ignition: start-up sound, then the engine loop. Before _ready this is the spawn
+		# snapshot (a truck already running when we arrive must not crank up in our ears) → silent.
+		if _spawned:
+			set_engine(bool(data["engine"]))
+		else:
+			_engine_on = bool(data["engine"])
+	if data.has("horn"):
+		_horn_on = bool(data["horn"])
+		_apply_horn(_horn_on)  # held horn: blow / stop it on this replica
+	if data.has("horn_special"):
+		# Shot counter (Godot sends ints as floats over the wire, hence the float→int cast). It went
+		# up = the driver just hit Alt+H → fire one shot here. The FIRST value received is only
+		# recorded: a player joining next to a truck that honked earlier must not hear a stale honk.
+		var count := int(float(data["horn_special"]))
+		if _net_horn_special_count >= 0 and count > _net_horn_special_count:
+			_play_special_horn()
+		_net_horn_special_count = count
 	if data.has("pilot_uuid"):
+		var new_pilot := str(data["pilot_uuid"])
 		pilot_uuid = str(data["pilot_uuid"])
 	if data.has("doors"):
 		var new_doors: Dictionary = data["doors"]
@@ -1609,6 +1988,7 @@ func server_exit(player: Node) -> void:
 		_net_brake = false
 		_throttle = 0.0
 		engine_force = 0.0
+		set_horn(false)  # a driver bailing out mid-honk must not leave the horn stuck on
 		_replicate_pilot()
 		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
 		# the parked truck still even with no driver. It releases on throttle when someone drives.
@@ -1700,7 +2080,7 @@ func _apply_drive(delta: float) -> void:
 		braking = Input.is_physical_key_pressed(KEY_SPACE)
 	# Hand brake holds the vehicle until the pilot presses the throttle again.
 	if _handbrake and absf(throttle_in) > 0.05:
-		_handbrake = false
+		set_handbrake(false)  # goes through the setter, so the release is heard too
 	# Ramp the applied torque toward the throttle (tempers the launch on any powertrain).
 	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
 	var forward_kmh: float = _forward_speed_kmh()
@@ -1796,10 +2176,21 @@ func _headlights() -> Array:
 	return out
 
 ## Apply the head-light state to every vehicle_light node (runs on the server AND each client replica).
+## The switch click only fires on a REAL change, once the vehicle exists here (_spawned): the _ready
+## init and the spawn snapshot of a truck whose lights are already on must stay silent.
 func set_headlights(on: bool) -> void:
+	var flipped: bool = on != _headlights_on
 	_headlights_on = on
 	for light in _headlights():
 		(light as Node3D).visible = on
+	if not flipped or not _spawned:
+		return
+	if on:
+		_play_sfx(sfx_lights_on, sfx_lights_on_db, sfx_lights_on_falloff,
+				sfx_lights_on_distance, sfx_lights_on_attenuation)
+	else:
+		_play_sfx(sfx_lights_off, sfx_lights_off_db, sfx_lights_off_falloff,
+				sfx_lights_off_distance, sfx_lights_off_attenuation)
 
 ## Server: flip the head lights; _replicate_transform then pushes the new state to clients.
 func toggle_headlights() -> void:

@@ -1,10 +1,21 @@
 [gd_scene format=3 uid="uid://p8lbfuk68g7s"]
 
 [ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/vehicles/vehicle.gd" id="1_vehicle"]
+[ext_resource type="AudioStream" uid="uid://c4882t4qc0ryu" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg" id="2_urxpd"]
 [ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/vehicles/vehicle_seat.gd" id="3_seat"]
+[ext_resource type="AudioStream" uid="uid://bkuepip360vt2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg" id="3_udf22"]
+[ext_resource type="AudioStream" uid="uid://bt0o3a85bifv0" path="res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg" id="4_5dsot"]
+[ext_resource type="AudioStream" uid="uid://chree8iuckvgt" path="res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg" id="4_grru8"]
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
+[ext_resource type="AudioStream" uid="uid://dijy5efx8pd3k" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-start.ogg" id="4_urxpd"]
+[ext_resource type="AudioStream" uid="uid://cwgcj6sbuymvd" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-stop.ogg" id="5_2twiw"]
 [ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/vehicles/trucks/truck_ui.tscn" id="5_d2vf6"]
+[ext_resource type="AudioStream" uid="uid://c64w2qwbojmk6" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-idle.ogg" id="5_udf22"]
+[ext_resource type="AudioStream" uid="uid://wqqcfpaantps" path="res://assets/_universe/audio/sfx/machine/machine-button-on.ogg" id="6_7ype0"]
 [ext_resource type="PackedScene" uid="uid://bjxceboesdb8w" path="res://scenes/vehicles/rear_camera.tscn" id="6_nd433"]
+[ext_resource type="AudioStream" uid="uid://cnr042v1yqphh" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-on.ogg" id="6_q1ni8"]
+[ext_resource type="AudioStream" uid="uid://dadhjx2xfk3iv" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-off.ogg" id="7_7ype0"]
+[ext_resource type="AudioStream" uid="uid://l2ox3cdem1rm" path="res://assets/_universe/audio/sfx/machine/machine-button-off.ogg" id="7_80saa"]
 [ext_resource type="PackedScene" uid="uid://cef7mxrwycx7k" path="res://assets/models/vehicles/mini_truck.glb" id="7_d2vf6"]
 [ext_resource type="Script" uid="uid://kbp6qag1idal" path="res://scenes/vehicles/vehicle_door_handle.gd" id="7_tuoiw"]
 
@@ -36,6 +47,28 @@ debug_color_driven_wheels = false
 cargo_bay_size = Vector3(1.6, 0.6, 1.9)
 cargo_bay_offset = Vector3(0, 0.4, 1.05)
 debug_show_cargo_bay = false
+sfx_door_open = ExtResource("2_urxpd")
+sfx_door_open_db = -30.0
+sfx_door_open_distance = 10.0
+sfx_door_close = ExtResource("3_udf22")
+sfx_door_close_db = -30.0
+sfx_door_close_distance = 10.0
+sfx_engine_start = ExtResource("4_urxpd")
+sfx_engine_stop = ExtResource("5_2twiw")
+sfx_lights_on = ExtResource("6_7ype0")
+sfx_lights_on_distance = 5.0
+sfx_lights_off = ExtResource("7_80saa")
+sfx_lights_off_distance = 5.0
+sfx_handbrake_on = ExtResource("6_q1ni8")
+sfx_handbrake_off = ExtResource("7_7ype0")
+sfx_engine_idle = ExtResource("5_udf22")
+sfx_horn = ExtResource("4_5dsot")
+sfx_horn_distance = 100.0
+sfx_horn_attenuation = 0
+sfx_horn_special = ExtResource("4_grru8")
+sfx_horn_special_db = -30.0
+sfx_horn_special_distance = 100.0
+sfx_horn_special_attenuation = 0
 
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
