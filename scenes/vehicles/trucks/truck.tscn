@@ -42,11 +42,10 @@ steering_wheel_axis = Vector3(0, -1, 0)
 bed_wall_height = 0.6
 wheel_radius = 0.05
 wheel_visual_drop = 0.02
-real_wheel_spin_axis = Vector3(0, 1, 0)
 motor_max_rpm = 3000.0
 debug_color_driven_wheels = false
-cargo_bay_size = Vector3(1.8, 0.6, 2.9)
-cargo_bay_offset = Vector3(0, 0.4, 0.75)
+cargo_bay_size = Vector3(1.6, 0.6, 1.9)
+cargo_bay_offset = Vector3(0, 0.4, 1.05)
 debug_show_cargo_bay = false
 sfx_door_open = ExtResource("2_urxpd")
 sfx_door_open_db = -30.0
@@ -74,19 +73,19 @@ sfx_horn_special_attenuation = 0
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
 
-[node name="Col_cabin" parent="Model" index="12" unique_id=335898639]
+[node name="Col_cabin" parent="Model" index="7" unique_id=353603685]
 visible = false
 
-[node name="Col_bed" parent="Model" index="13" unique_id=1639648411]
+[node name="Col_bed" parent="Model" index="8" unique_id=673651608]
 visible = false
 
-[node name="Col_bed_left" parent="Model" index="14" unique_id=1452713741]
+[node name="Col_bed_left" parent="Model" index="9" unique_id=657040893]
 visible = false
 
-[node name="Col_bed_right" parent="Model" index="15" unique_id=625416175]
+[node name="Col_bed_right" parent="Model" index="10" unique_id=210058591]
 visible = false
 
-[node name="Col_bed_rear" parent="Model" index="16" unique_id=736721459]
+[node name="Col_bed_rear" parent="Model" index="11" unique_id=1852206083]
 visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]

@@ -8,6 +8,14 @@ const RESOLUTIONS: Array[Vector2i] = [
 	Vector2i(2560, 1440), Vector2i(3840, 2160),
 ]
 
+## Seconds before a just-applied resolution auto-reverts unless the player confirms (Windows-style
+## safety: a resolution too big for the screen must not lock them out of the settings).
+const _RES_CONFIRM_SECS: int = 10
+var _res_prev_size: Vector2i = Vector2i.ZERO  # resolution to restore if the change is refused
+var _res_dialog: ConfirmationDialog = null
+var _res_timer: Timer = null
+var _res_left: int = 0
+
 @onready var _monitor: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/Monitor/OptionButton
 @onready var _display_mode: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/DisplayMode/OptionButton
 @onready var _resolution: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution/OptionButton
@@ -29,8 +37,7 @@ func _ready() -> void:
 	# DisplayMode item id 0 = Fullscreen, 1 = Windowed (as authored in the scene).
 	_display_mode.item_selected.connect(
 		func(i: int) -> void: SettingsManager.set_fullscreen(_display_mode.get_item_id(i) == 0))
-	_resolution.item_selected.connect(
-		func(i: int) -> void: SettingsManager.set_resolution(_resolution.get_item_metadata(i)))
+	_resolution.item_selected.connect(_on_resolution_selected)
 	_vsync.toggled.connect(func(on: bool) -> void:
 		_vsync.text = "On" if on else "Off"
 		SettingsManager.set_vsync(on))
@@ -40,6 +47,78 @@ func _ready() -> void:
 	_fov.value_changed.connect(func(v: float) -> void:
 		_fov_value.text = str(int(v))
 		SettingsManager.set_fov(v))
+
+## Apply the picked resolution, then ask to keep it with a visible 10 s auto-revert countdown. A too-big
+## resolution on a small screen would otherwise leave the player stuck; the timer reverts on its own.
+func _on_resolution_selected(index: int) -> void:
+	var new_size: Vector2i = _resolution.get_item_metadata(index)
+	_res_prev_size = DisplayServer.window_get_size()  # captured BEFORE applying
+	if new_size == _res_prev_size:
+		return  # re-selected the current size: nothing to confirm
+	SettingsManager.set_resolution(new_size)
+	_open_resolution_confirm()
+
+## Build the keep/revert dialog (centered → visible even if the window overflows the screen, since
+## the window is re-centered on apply) and start the 1 s countdown.
+func _open_resolution_confirm() -> void:
+	_close_resolution_confirm()
+	_res_left = _RES_CONFIRM_SECS
+	_res_dialog = ConfirmationDialog.new()
+	_res_dialog.title = "Résolution"
+	_res_dialog.exclusive = false
+	_res_dialog.get_ok_button().text = "Garder"
+	_res_dialog.get_cancel_button().text = "Revenir"
+	_res_dialog.confirmed.connect(_keep_resolution)
+	_res_dialog.canceled.connect(_revert_resolution)  # Revenir button, close (X) or Esc
+	add_child(_res_dialog)
+	_update_res_dialog_text()
+	_res_dialog.popup_centered()
+	_res_timer = Timer.new()
+	_res_timer.wait_time = 1.0
+	_res_timer.timeout.connect(_on_res_tick)
+	add_child(_res_timer)
+	_res_timer.start()
+
+func _update_res_dialog_text() -> void:
+	if _res_dialog != null:
+		_res_dialog.dialog_text = "Garder cette résolution ?\nRetour automatique dans %d s." % _res_left
+
+func _on_res_tick() -> void:
+	_res_left -= 1
+	if _res_left <= 0:
+		_revert_resolution()
+		return
+	_update_res_dialog_text()
+
+## Keep: already applied + saved by set_resolution, just tear down the confirm UI.
+func _keep_resolution() -> void:
+	_close_resolution_confirm()
+
+## Revert: re-apply (and re-save) the previous resolution and reflect it back in the dropdown.
+func _revert_resolution() -> void:
+	if _res_prev_size != Vector2i.ZERO:
+		SettingsManager.set_resolution(_res_prev_size)
+		_select_resolution(_res_prev_size)
+	_close_resolution_confirm()
+
+func _close_resolution_confirm() -> void:
+	if _res_timer != null:
+		_res_timer.stop()
+		_res_timer.queue_free()
+		_res_timer = null
+	if _res_dialog != null:
+		# Avoid re-entering _revert via the canceled signal while we free it.
+		if _res_dialog.canceled.is_connected(_revert_resolution):
+			_res_dialog.canceled.disconnect(_revert_resolution)
+		_res_dialog.queue_free()
+		_res_dialog = null
+
+## Select the dropdown entry matching a size (used to snap it back on revert).
+func _select_resolution(size: Vector2i) -> void:
+	for i in _resolution.item_count:
+		if _resolution.get_item_metadata(i) == size:
+			_resolution.select(i)
+			return
 
 ## List the real monitors and pre-select the one the window is on.
 func _init_monitor() -> void:
