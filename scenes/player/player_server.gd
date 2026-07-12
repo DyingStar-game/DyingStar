@@ -34,6 +34,10 @@ var player
 
 ## Server-only: consecutive quasi-still ticks, used to throttle move_and_slide for idle players.
 var _idle_settled_ticks: int = 0
+
+## Jumps performed by this player, replicated with the jump event so each one is a NEW value (see the
+## jump in _physics_process): an identical repeated value would be swallowed by delta compression.
+var _jump_count: int = 0
 ## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
 var _los_ray: RayCast3D = null
 var _carry_prompt_timer: float = 0.0
@@ -390,6 +394,13 @@ func _physics_process(delta: float) -> void:
 	if player.is_on_floor() and player.is_jumping:
 		player.velocity += player.up_direction * player.jump_height * player.gravity
 		player.is_jumping = false
+		# Tell the clients the jump actually HAPPENED (a request while airborne is ignored above, and
+		# would otherwise still be heard). They play the jump sound on it — ours and the other players'.
+		# The counter is what makes it an EVENT: "action" is a replicated state, delta-compressed, so
+		# sending the same "jump" twice in a row would be dropped as "unchanged" and the second jump
+		# would be silent. A value that always changes always gets through.
+		_jump_count += 1
+		player.server_send_properties_to_client({"action": "%s:%d" % [JUMP, _jump_count]})
 	# Add gravity ALWAYS (even on the floor) so the capsule stays pressed onto the terrain trimesh and
 	# is_on_floor() stays true — gating it on "not is_on_floor()" caused a ~1 cm idle "dancing".
 	else:
