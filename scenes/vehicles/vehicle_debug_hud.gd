@@ -34,16 +34,20 @@ func _process(_delta: float) -> void:
 	elif overloaded:
 		warn = "   ⚠ OVERLOADED"
 	var handbrake := "   🅿 HANDBRAKE" if _vehicle.is_handbraked() else ""
+	# The engine must be started (I) before the truck drives at all — say so loudly when it is off.
+	var ignition := "" if _vehicle.is_engine_on() else "   🔑 ENGINE OFF — press [I] to start"
 	_label.add_theme_color_override("font_color", Color(1, 0.3, 0.2) if overloaded else Color(1, 1, 1))
 	# In-game (networked replica) the bench debug keys are off, so only advertise what the
 	# player -> server control path handles. An empty uuid means the local bench.
 	var in_game: bool = _vehicle.uuid != ""
 	var trans_suffix := "" if in_game else "   (N)"
 	var keys := (
-		"[Y] exit   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip   [L] lights" if in_game
-		else "[T] rock   [N] drive mode   [Space] brake   [Hold Space <3km/h] handbrake   [R] flip")
+		"[I] engine on/off (stopped)   [Y] exit   [Space] brake   [Hold Space <3km/h] handbrake\n"
+		+ "[H] horn   [Alt+H] special horn   [L] lights   [R] flip" if in_game
+		else "[I] engine on/off (stopped)   [T] rock   [N] drive mode   [Space] brake\n"
+		+ "[Hold Space <3km/h] handbrake   [H] horn   [Alt+H] special horn   [R] flip")
 	_label.text = (
-		"Speed: %3.0f km/h%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
+		"Speed: %3.0f km/h%s%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
 		+ "Total weight: %.0f kg\nLoad: %.0f / %.0f kg%s\n%s") % [
-		speed, handbrake, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(), trans_suffix,
-		_vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn, keys]
+		speed, handbrake, ignition, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(),
+		trans_suffix, _vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn, keys]

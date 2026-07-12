@@ -278,6 +278,24 @@ func _update_handbrake_input(delta: float) -> void:
 	player._handbrake_sent = true
 	player.client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": player._seat_vehicle_uuid})
 
+## Driver: the horn is HELD, so both edges are sent and the server replicates the state (everyone
+## around hears it). Two horns share the key: "vehicle_horn" (H) and "vehicle_horn_special" (Alt+H).
+## The presses are matched exactly (exact_match), or Alt+H would fire the plain horn too. The release
+## is matched loosely on purpose: letting go while Alt changed state must never leave the horn stuck.
+func _send_horn_input(event: InputEvent) -> void:
+	var special: bool = event.is_action_pressed("vehicle_horn_special", false, true)
+	var pressed: bool = special or event.is_action_pressed("vehicle_horn", false, true)
+	var released: bool = event.is_action_released("vehicle_horn") \
+			or event.is_action_released("vehicle_horn_special")
+	if not pressed and not released:
+		return
+	player.client_send_action_to_server({
+		"action": "vehicle_horn",
+		"target_uuid": player._seat_vehicle_uuid,
+		"pressed": pressed,
+		"special": special,
+	})
+
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
 ## the transform ops (global_basis / rotate_object_local) go through player, not this role node.
@@ -328,6 +346,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
 		# Reset the vehicle upright (server-authoritative; driver only).
 		player.client_send_action_to_server({"action": "reset_vehicle", "target_uuid": player._seat_vehicle_uuid})
+
+	if player._seat_is_driver and player._seat_vehicle_uuid != "":
+		_send_horn_input(event)
+
+	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_ignition"):
+		# Start / cut the engine (server-authoritative; driver only, and only standing still).
+		player.client_send_action_to_server({"action": "vehicle_ignition", "target_uuid": player._seat_vehicle_uuid})
 
 	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_lights"):
 		# Toggle the vehicle head lights (server-authoritative; driver only).
