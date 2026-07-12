@@ -29,6 +29,13 @@ var props_list: Dictionary = {
 var props_pre_creations: Dictionary = {}
 
 var my_player_uuid: String = ""
+# UUIDs of all my player's ancestors (closest parent first, up to the universe
+# root). Rebuilt whenever my player is (re)parented.
+var my_parents_uuids: Array = []
+# A zone-exit received for one of my player's ancestors: deleting it right away
+# would tear my player out of the scene tree, so we stash the event here and
+# flush it once my player reparents away. null when nothing is pending.
+var pending_parent_delete_event = null
 
 var player_scene = preload("res://scenes/player/player.tscn")
 var props_scene: Dictionary = {
@@ -319,6 +326,20 @@ func _process(_delta: float) -> void:
 		set_process(false) # Stop processing.
 
 
+func _collect_parents_uuids(node: Node) -> Array:
+	# Walk up the scene tree from `node` and collect the uuid of every ancestor
+	# that carries one (props expose `uuid`, players expose `client_uuid`).
+	# Closest parent first, up to the universe root.
+	var uuids: Array = []
+	var current := node.get_parent()
+	while current != null:
+		if "client_uuid" in current and current.client_uuid != "":
+			uuids.append(current.client_uuid)
+		elif "uuid" in current and current.uuid != "":
+			uuids.append(current.uuid)
+		current = current.get_parent()
+	return uuids
+
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
@@ -476,6 +497,13 @@ func delete_object(event: Dictionary) -> void:
 		if props_list.has(event["object_type"]):
 			var type = event["object_type"]
 			if props_list[type].has(event["object_id"]):
+				# If this object is one of my player's ancestors, deleting it now would rip my
+				# player out of the scene tree. Defer it: keep the object and flush the delete
+				# once my player has reparented away (see player_update / _flush_pending_parent_delete).
+				if event["object_id"] in my_parents_uuids:
+					pending_parent_delete_event = event
+					return
+
 				var prop_instance = props_list[type][event["object_id"]]
 				# A carried object is parented to a player and follows it locally; its GORC zone
 				# position goes stale while carried, so ignore this despawn (otherwise it vanishes
@@ -486,6 +514,24 @@ func delete_object(event: Dictionary) -> void:
 				props_list[type].erase(event["object_id"])
 				return
 		print("unknown object type for deletion")
+
+func _flush_pending_parent_delete() -> void:
+	print("Flushing pending parent delete event: %s" % pending_parent_delete_event)
+	# Runs deferred, after my player's reparent has settled. Now that my player is no
+	# longer parented to it, actually remove the object whose zone-exit we held back.
+	if pending_parent_delete_event == null:
+		return
+	var event = pending_parent_delete_event
+	# Still one of my ancestors? Then the reparent did not move us off it — keep waiting.
+	if event["object_id"] in my_parents_uuids:
+		return
+	pending_parent_delete_event = null
+	var type = event["object_type"]
+	if props_list.has(type) and props_list[type].has(event["object_id"]):
+		var prop_instance = props_list[type][event["object_id"]]
+		if is_instance_valid(prop_instance):
+			prop_instance.queue_free()
+		props_list[type].erase(event["object_id"])
 
 ## Apply a player's gameplay state on the client — flashlight, equipped tool, head/helmet, carrying,
 ## etc. ONE shared path used both when a player is first created (late-join: the full current state
@@ -507,7 +553,6 @@ func create_player(event: Dictionary) -> void:
 	# TODO have channel 0 (position , rotation) and 6 (parent_id)
 	# we are here with position. rotation but not parent_id
 
-
 	# print("Create player: %s" % event)
 	var player_data = {}
 
@@ -518,6 +563,20 @@ func create_player(event: Dictionary) -> void:
 
 	# Special code because received 2 times the gorc_zone_enter for the same player (my player)
 	if players_list.has(event["object_id"]):
+		# special case when parent to very far away object and have a gorc_zone_enter
+		var player = players_list[event["object_id"]]
+		var current_parent = player.get_parent()
+		var new_parent = _search_parent_node(player_data["parent_id"])
+		if current_parent == null and player_data["parent_id"] != null:
+			print("case not coded")
+		elif current_parent.uuid != player_data["parent_id"]:
+			print("Reparenting player %s to new parent %s" % [event["object_id"], player_data["parent_id"]])
+			player.reparent(new_parent)
+			player.reset_physics_interpolation()
+			player.net_reset_interp()
+			player.position = Vector3(
+				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
+				)
 		return
 
 	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
@@ -558,6 +617,8 @@ func create_player(event: Dictionary) -> void:
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
 		player_entity = spawned_entity_instance
 		players_list[event["object_id"]] = spawned_entity_instance
+		# Record the uuid of each of my ancestors.
+		my_parents_uuids = _collect_parents_uuids(spawned_entity_instance)
 	else:
 		# create remote player
 		if not players_list.has(event["object_id"]):
@@ -809,6 +870,12 @@ func player_update(message: Dictionary) -> void:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
+							# We just left our previous parent. If a former ancestor had a deferred
+							# zone-exit, flush it next frame (deferred so the reparent settles first).
+							if pending_parent_delete_event != null:
+								call_deferred("_flush_pending_parent_delete")
+						# Reinit the list with the uuid of each of my new ancestors.
+						my_parents_uuids = _collect_parents_uuids(player)
 					player.net_set_local_target(ppos)
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.

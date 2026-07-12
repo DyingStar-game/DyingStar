@@ -74,15 +74,24 @@ static func generate_mesh(
 	# hp_n1/2/4/8 vs export_nside=64), it spans many export tiles, so
 	# there is no single export ipix; leave it -1 and let
 	# sample_height_for_direction resolve per-vertex via vec2pix_nest.
+	# Pyramid level this chunk samples heights from (its own nside, clamped to the
+	# baked range; == export_nside for legacy single-level exports).
+	var _sample_nside := data.sample_nside_for(hp_nside)
 	var _export_ipix: int = -1
 	if hp_mode:
 		grid_dirs = HEALPix.get_pixel_grid(hp_nside, hp_ipix, res)
 		if hp_nside >= data.export_nside:
+			# Finer than the finest tile → walk UP to the finest (nside_max) tile.
 			_export_ipix = hp_ipix
 			var _ns := hp_nside
 			while _ns > data.export_nside:
 				_export_ipix >>= 2
 				_ns /= 2
+		elif hp_nside == _sample_nside:
+			# Pyramid: this chunk's own coarse level is baked → one tile per chunk.
+			_export_ipix = hp_ipix
+		# else: coarser than the coarsest baked level (or legacy flat export) →
+		# leave -1 so each vertex resolves its tile via vec2pix at _sample_nside.
 
 	# ── Float32 precision fix ──────────────────────────────────────
 	# Vertex positions are stored as float32 in PackedVector3Array.
@@ -385,9 +394,11 @@ static func generate_mesh(
 				# sample_height_boundary picks the same canonical export tile for
 				# any given direction, so both sides of the seam are consistent.
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					height = data.sample_height_boundary(dir, _export_ipix)
+					height = data.sample_height_boundary(dir, _export_ipix,
+							-1, Vector2i(-1, -1), null, _sample_nside)
 				else:
-					height = data.sample_height_for_direction(dir, _export_ipix)
+					height = data.sample_height_for_direction(dir, _export_ipix,
+							-1, Vector2i(-1, -1), null, _sample_nside)
 			else:
 				# Snap boundary vertices to exact u_min/u_max/v_min/v_max so
 				# shared edges between adjacent chunks sample identical heights.
@@ -828,15 +839,15 @@ static func generate_mesh(
 				var h_b: float
 				var h_t: float
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					h_l = data.sample_height_boundary(dir_l, _export_ipix)
-					h_r = data.sample_height_boundary(dir_r, _export_ipix)
-					h_b = data.sample_height_boundary(dir_b, _export_ipix)
-					h_t = data.sample_height_boundary(dir_t, _export_ipix)
+					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
 				else:
-					h_l = data.sample_height_for_direction(dir_l, _export_ipix)
-					h_r = data.sample_height_for_direction(dir_r, _export_ipix)
-					h_b = data.sample_height_for_direction(dir_b, _export_ipix)
-					h_t = data.sample_height_for_direction(dir_t, _export_ipix)
+					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
 				# Carve the crack network into the gradient samples too, so the
 				# near-vertical crack walls get correct (sharp) shading normals.
 				if data.corundum_override_whole_planet:
@@ -1524,7 +1535,8 @@ static func generate_mesh(
 							cos(_lat_r) * sin(_lon_r))
 						var _h: float
 						if hp_mode:
-							_h = data.sample_height_for_direction(_dir, _export_ipix)
+							_h = data.sample_height_for_direction(_dir, _export_ipix,
+									-1, Vector2i(-1, -1), null, _sample_nside)
 						else:
 							var _fuv := PlanetData.sphere_to_cube(_dir)
 							_h = data.sample_height_for_chunk(
@@ -2175,6 +2187,11 @@ static func generate_collision_shape(
 	# keeps the server framerate up.  Cracks are carved only where the grid is
 	# fine enough to actually represent them.
 	var _col_crack_spacing := 0.0
+	# Height tile is separate from _export_ipix: _export_ipix stays at export_nside
+	# for recipe lookups (craters/zones/features), while heights read the pyramid
+	# level matching this chunk's own nside so collision matches the rendered mesh.
+	var _height_nside := data.sample_nside_for(hp_nside)
+	var _height_ipix: int = -1
 	if hp_mode:
 		grid_dirs = HEALPix.get_pixel_grid(hp_nside, hp_ipix, res)
 		if res > 0:
@@ -2186,6 +2203,12 @@ static func generate_collision_shape(
 			while _ns > data.export_nside:
 				_export_ipix >>= 2
 				_ns /= 2
+			_height_ipix = _export_ipix
+		elif hp_nside == _height_nside:
+			# Pyramid coarse chunk: one baked tile at the chunk's own level.
+			_height_ipix = hp_ipix
+		# else: coarser than coarsest baked level (or legacy flat) → leave -1
+		# so each vertex resolves via vec2pix at _height_nside (matches builder 1).
 
 	# ── Fetch recipe data for collision overlap detection ─────────
 	var _col_pz_zones: Array = []
@@ -2275,12 +2298,12 @@ static func generate_collision_shape(
 	var _hp_face: int = -1
 	var _hp_xy: Vector2i = Vector2i(-1, -1)
 	var _hp_neighbors = null
-	if hp_mode and _export_ipix >= 0:
+	if hp_mode and _height_ipix >= 0:
 		@warning_ignore("integer_division")
-		_hp_face = _export_ipix / (data.export_nside * data.export_nside)
-		var _hp_local := _export_ipix % (data.export_nside * data.export_nside)
+		_hp_face = _height_ipix / (_height_nside * _height_nside)
+		var _hp_local := _height_ipix % (_height_nside * _height_nside)
 		_hp_xy = HEALPix.nest2xy(_hp_local)
-		_hp_neighbors = HEALPix.get_neighbors_nest(data.export_nside, _export_ipix)
+		_hp_neighbors = HEALPix.get_neighbors_nest(_height_nside, _height_ipix)
 
 	for yi in res + 1:
 		for xi in res + 1:
@@ -2289,11 +2312,11 @@ static func generate_collision_shape(
 			if hp_mode:
 				dir = grid_dirs[yi][xi]
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					height = data.sample_height_boundary(dir, _export_ipix,
-							_hp_face, _hp_xy, _hp_neighbors)
+					height = data.sample_height_boundary(dir, _height_ipix,
+							_hp_face, _hp_xy, _hp_neighbors, _height_nside)
 				else:
-					height = data.sample_height_for_direction(dir, _export_ipix,
-							_hp_face, _hp_xy, _hp_neighbors)
+					height = data.sample_height_for_direction(dir, _height_ipix,
+							_hp_face, _hp_xy, _hp_neighbors, _height_nside)
 			else:
 				var u: float
 				if xi == 0:

@@ -122,18 +122,12 @@ func dispatch_horizon_message(message: Dictionary):
 		match message['event']:
 			"add_prop":
 				match message["data"]["object_type"]:
-					"planet":
-						# spawn planet
-						NetworkOrchestrator.network_agent.create_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
 			"update_prop":
 				match message["data"]["object_type"]:
-					"planet":
-						# spawn planet
-						NetworkOrchestrator.network_agent.update_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.player_action(message)
 					_:
@@ -142,9 +136,6 @@ func dispatch_horizon_message(message: Dictionary):
 				# force to pause all the objects while I load all
 				# get_tree().paused = true
 				match message["data"]["object_type"]:
-					"planet":
-						# spawn planet
-						NetworkOrchestrator.network_agent.create_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					"star":

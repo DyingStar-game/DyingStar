@@ -48,6 +48,7 @@ var props_list = {
 	"box50cm": {},
 	"box4m": {},
 	"ship": {},
+	"spawnbuilding": {},
 }
 var props_list_last_movement = {
 	# "box50cm": {},
@@ -627,6 +628,9 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
 		# Prevent write over reparent (because reparent will not sent to client)
 		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("parent_id"):
+			if reparent_uuid != null:
+				print("[server] DROP move with parent_id=", reparent_uuid,
+					" because a parent_id is already pending (", players_newposition[client_uuid]["parent_id"], ")")
 			return
 
 		var prep = {
@@ -939,11 +943,7 @@ func create_generic_object(event: Dictionary) -> void:
 
 	var spawnable_prop_instance = prop_scene.instantiate()
 	spawnable_prop_instance.set_physics_process(false)
-	spawnable_prop_instance.spawn_position = Vector3(
-		object_data["position"]["x"],
-		object_data["position"]["y"],
-		object_data["position"]["z"]
-	)
+	spawnable_prop_instance.client_channel_data_update(object_data)
 	spawnable_prop_instance.uuid = event["data"]["object_uuid"]
 	spawnable_prop_instance.tree_entered.connect(func():
 		spawnable_prop_instance.owner = get_tree().current_scene
