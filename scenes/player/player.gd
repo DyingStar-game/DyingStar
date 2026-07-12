@@ -75,6 +75,59 @@ const SPAWN_PROPS := {
 
 @export var gravity = 0.0
 
+# --- Audio SFX — all OPTIONAL: an unassigned sound simply plays nothing -------
+# Drop an audio file straight into a Sound slot; each sound then has its own volume, fade-out curve
+# and audible radius (see Sfx3D, shared with the vehicle). The sounds are POSITIONAL and played by
+# every client on every player body — your own AND the other players' — from state the server already
+# replicates (torch, jump) or from the body's own movement (footsteps). PlayerClient drives them.
+#
+# The four knobs of every sound:
+#   Sound       — the audio file.
+#   Db          — its loudness in dB, at the Falloff distance.
+#   Falloff     — reference distance (m): past it the sound starts really fading.
+#   Distance    — hard cut-off (m): further away it is not computed at all (CPU saver).
+#   Attenuation — HOW it fades with distance (see Sfx3D.Attenuation).
+@export_group("Audio SFX")
+@export_subgroup("Torch on")
+## Played when the player switches the torch on.
+@export var sfx_torch_on: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_torch_on_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_torch_on_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_torch_on_distance: float = 20.0
+@export var sfx_torch_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Torch off")
+## Played when the player switches the torch off.
+@export var sfx_torch_off: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_torch_off_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_torch_off_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_torch_off_distance: float = 20.0
+@export var sfx_torch_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Footsteps")
+## Footstep samples: one is picked at random on each step (never the same one twice in a row, so the
+## walk does not sound like a machine). Put 3+ variations here; leave empty for no footsteps.
+@export var sfx_footsteps: Array[AudioStream] = []
+@export_range(-40.0, 12.0, 0.5) var sfx_footstep_db: float = -6.0
+@export_range(0.5, 200.0, 0.5) var sfx_footstep_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_footstep_distance: float = 25.0
+@export var sfx_footstep_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+## One step every N metres WALKED — not every N seconds. The cadence then follows the speed on its own:
+## running covers the distance faster, so the steps come faster. This is the stride length.
+@export_range(0.2, 4.0, 0.05) var sfx_footstep_stride: float = 1.9
+## Random pitch spread (±) on each step: the same sample never sounds exactly twice the same.
+@export_range(0.0, 0.5, 0.01) var sfx_footstep_pitch_jitter: float = 0.08
+
+@export_subgroup("Jump")
+## Played when the player jumps (the effort, not the landing).
+@export var sfx_jump: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_jump_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_jump_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_jump_distance: float = 25.0
+@export var sfx_jump_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_group("")
+
 var client_uuid: String = ""
 
 var player_display_name: String = ""

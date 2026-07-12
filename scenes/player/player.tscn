@@ -1,19 +1,26 @@
 [gd_scene format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/player/player.gd" id="1_ll2l8"]
+[ext_resource type="AudioStream" uid="uid://wqqcfpaantps" path="res://assets/_universe/audio/sfx/machine/machine-button-on.ogg" id="2_4hvnv"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/_universe/characters/humanoids/astronaut/astronaut.res" id="2_rulc8"]
+[ext_resource type="AudioStream" uid="uid://l2ox3cdem1rm" path="res://assets/_universe/audio/sfx/machine/machine-button-off.ogg" id="3_bbmj2"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/player/player_ui.gd" id="3_kcm5r"]
+[ext_resource type="AudioStream" uid="uid://cmtla8rhdbdqf" path="res://assets/_universe/audio/sfx/characters/step_grass_1.mp3" id="4_5q8fn"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/player/debug/debug_label_settings.tres" id="4_dpwvv"]
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/player/debug/debug_server_fps.gd" id="4_sxi4m"]
 [ext_resource type="Script" uid="uid://csou6tk8ue6nt" path="res://scenes/player/debug/debug.gd" id="4_urqre"]
 [ext_resource type="Script" uid="uid://du8smr1o81j1c" path="res://scenes/player/debug/debug_server_nbplayers.gd" id="5_dpwvv"]
+[ext_resource type="AudioStream" uid="uid://oiyvcjno72op" path="res://assets/_universe/audio/sfx/characters/step_grass_2.mp3" id="5_wva7c"]
 [ext_resource type="Texture2D" uid="uid://c8j636ahpn23x" path="res://ui/ingame/debug/small_debug.png" id="5_y6iw5"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="6_5xss2"]
+[ext_resource type="AudioStream" uid="uid://4wrwtpyh4v8r" path="res://assets/_universe/audio/sfx/characters/step_grass_3.mp3" id="6_7obkq"]
 [ext_resource type="Script" uid="uid://ndt5dgkjnqij" path="res://scenes/player/debug/debug_server_nbobjects.gd" id="7_q8cfn"]
 [ext_resource type="FontFile" uid="uid://g85u4kqolh7x" path="res://ui/Poppins-Bold.ttf" id="7_ty080"]
+[ext_resource type="AudioStream" uid="uid://csvkmjyavyuiq" path="res://assets/_universe/audio/sfx/characters/step_grass_4.mp3" id="7_vo27k"]
 [ext_resource type="Script" uid="uid://boggy8s888bc5" path="res://scenes/player/debug/debug_server_nbscenes.gd" id="8_6hnll"]
 [ext_resource type="PackedScene" uid="uid://dk4le3cck03bg" path="res://ui/direct_chat/direct_chat.tscn" id="8_ikqc6"]
 [ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="8_qgvuu"]
+[ext_resource type="AudioStream" uid="uid://6edqhr5jntwe" path="res://assets/_universe/audio/sfx/characters/male-jump.wav" id="8_wva7c"]
 [ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/player/debug/debug_client_fps.gd" id="9_2g0ng"]
 [ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/player/debug/debug_client_nbplayers.gd" id="10_udrf3"]
@@ -61,6 +68,14 @@ script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
 carry_offset = Vector3(0, -1, -1.5)
+sfx_torch_on = ExtResource("2_4hvnv")
+sfx_torch_on_distance = 5.0
+sfx_torch_off = ExtResource("3_bbmj2")
+sfx_torch_off_distance = 5.0
+sfx_footsteps = Array[AudioStream]([ExtResource("4_5q8fn"), ExtResource("5_wva7c"), ExtResource("6_7obkq"), ExtResource("7_vo27k")])
+sfx_footstep_db = -20.0
+sfx_jump = ExtResource("8_wva7c")
+sfx_jump_distance = 10.0
 metadata/client_uuid = ""
 
 [node name="Placeholder_Collider" type="CollisionShape3D" parent="." unique_id=1694334487]
