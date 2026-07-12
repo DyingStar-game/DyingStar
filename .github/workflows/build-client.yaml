@@ -14,7 +14,7 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.os_name }} client
-    runs-on: ubuntu-latest
+    runs-on: dyingstar-runners
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +31,13 @@ jobs:
             artifact_name: build-windows
 
     steps:
+      - name: Install build tooling
+        run: |
+          # The self-hosted ARC runner image is minimal; these tools that
+          # GitHub-hosted runners ship by default must be installed here.
+          sudo apt-get update
+          sudo apt-get install -y wget unzip zip
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -50,6 +57,10 @@ jobs:
 
       - name: Set up .NET 9.0
         uses: actions/setup-dotnet@v4
+        env:
+          # The self-hosted ARC runner runs as an unprivileged user and cannot
+          # write to the default /usr/share/dotnet. Install into a writable dir.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '9.0.x'
 
@@ -93,18 +104,7 @@ jobs:
         id: date
         run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache planet export data
-        id: cache-planet
-        uses: actions/cache@v4
-        with:
-          path: |
-            assets/qgis/export
-            assets/qgis/checksum.txt
-            assets/qgis/creationtime.txt
-          key: planet-export-${{ steps.date.outputs.date }}
-
       - name: Download planet data
-        if: steps.cache-planet.outputs.cache-hit != 'true'
         run: bash tools/download_planet_data.sh
 
       - name: Delete blender files
