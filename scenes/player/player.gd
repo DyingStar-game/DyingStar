@@ -217,7 +217,10 @@ func _enter_tree() -> void:
 		# made non-current in _ready, so it never renders for us anyway.
 
 	elif not OS.has_feature("dedicated_server"):
-		NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
+		# _enter_tree fires again on every reparent (reparent = tree exit + re-enter), but signal
+		# connections survive a tree exit, so guard against re-connecting the same callable twice.
+		if not NetworkOrchestrator.set_player_global_position.is_connected(_set_player_global_position):
+			NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 	else:
 		# server side
 		$UserInterface.visible = false
@@ -370,6 +373,30 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if veh is Vehicle:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
+	elif area.is_in_group("teleporter"):
+		if OS.has_feature("dedicated_server"):
+			if area.name == "tarsis_4_2":
+				# Teleport onto the tarsis_4_2 planet system. Find the destination
+				# node (the system scene's root is "Tarsis4_2") and hand it to a
+				# deferred helper -- reparenting inside an Area3D signal callback is
+				# illegal ("busy adding/removing children").
+				var destination := get_tree().get_root().find_child("Tarsis4_2", true, false)
+				if destination != null:
+					# Deferred: reparenting a CharacterBody3D inside an Area3D physics
+					# callback is illegal ("Removing a CollisionObject during a physics
+					# callback is not allowed") and corrupts the body.
+					_role.call_deferred(
+						"_teleport_to_system",
+						destination,
+						Vector3(5887586.7, 2175943.7, -1037588.4)
+					)
+			elif area.name == "tarsis_4_orbital":
+				var destination := get_tree().get_root().find_child("Tarsis4", true, false)
+				_role.call_deferred(
+					"_teleport_to_system",
+					destination,
+					Vector3(4520717.7, 2714719.7, -3734460.4)
+				)
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):

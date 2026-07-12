@@ -84,6 +84,7 @@ containable=""
 player=""
 carry=""
 spawn="spawn area (apartments)"
+teleporter=""
 
 [input]
 
@@ -262,15 +263,6 @@ locale/translations=PackedStringArray("res://tools/localization/localisation.en.
 [physics]
 
 3d/run_on_separate_thread=true
-; Jolt's narrowphase runs in FLOAT32 relative to each body's origin (its
-; double-precision mode only covers body POSITIONS). It therefore REQUIRES
-; that no physics body has shapes further than ~1 km from its own origin:
-; a planet-wide body with chunk shapes offset 6,356 km produced cm-scale
-; contact noise (players/vehicles perpetually "dancing", vehicles never
-; sleeping). Planet terrain now uses one small StaticBody3D per chunk
-; (PlanetTerrain._make_chunk_collision_body) which makes Jolt stable at this
-; project's astronomic coordinates — A/B repro 2026-07-07. Keep that rule
-; for any future large object (chunk it or center its origin).
 3d/physics_engine="Jolt Physics"
 jolt_physics_3d/limits/max_body_pairs=131072
 3d/default_gravity=0.0

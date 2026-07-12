@@ -1,21 +1,37 @@
-[gd_scene format=3 uid="uid://dmyubenem1oix"]
+[gd_scene format=3 uid="uid://3cei5wwipcfv"]
 
-[ext_resource type="PackedScene" uid="uid://ceyksp23ks2h2" path="res://scenes/planet/base_planet.tscn" id="1_x3g5b"]
-[ext_resource type="Material" uid="uid://d3l2lg8y1l8yj" path="res://assets/_universe/environment/terrain/rocky_ground.tres" id="3_gm7ll"]
-[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="3_lysij"]
+[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_lysij"]
+[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_stx5i"]
+[ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_7kead"]
+[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_qyq83"]
+[ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_ixcdj"]
 
-[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_e5mub"]
-
-[sub_resource type="Resource" id="Resource_7kead"]
-script = ExtResource("3_lysij")
+[sub_resource type="Resource" id="PlanetData_tarsis4"]
+script = ExtResource("2_stx5i")
 planet_name = "tarsis_5"
-atmosphere_height = 1000.0
 surface_gravity = 11.11
 chunk_export_depth = 6
-colormap = SubResource("CompressedTexture2D_e5mub")
-terrain_material = ExtResource("3_gm7ll")
-max_quadtree_depth = 16
-metadata/_custom_type_script = "uid://8fhdm7c3vu4q"
+terrain_material = ExtResource("3_7kead")
+max_quadtree_depth = 13
+crack_spacing_m = 4000.0
+crack_width_m = 250.0
+crack_depth_m = 180.0
+debug_color_skirts = true
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 
-[node name="Tarsis5" unique_id=1455474493 instance=ExtResource("1_x3g5b")]
-planet_data = SubResource("Resource_7kead")
+[node name="Tarsis5" type="Node3D" unique_id=134586975]
+script = ExtResource("1_lysij")
+planet_data = SubResource("PlanetData_tarsis4")
+
+[node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
+script = ExtResource("4_qyq83")
+editor_preview_depth = 13
+editor_preview_rings = 3
+editor_goto_lon = -39.55558187662332
+editor_goto_lat = 24.85200755796846
+editor_goto_x = 4450891.0
+editor_goto_y = 2673782.0
+editor_goto_z = -3676289.0
+
+[node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
+script = ExtResource("5_ixcdj")

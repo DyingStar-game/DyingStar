@@ -58,8 +58,16 @@ var planet_json: String = str("assets/qgis/export/", planet_name, "/planet.json"
 		chunk_export_depth = value
 		export_nside = 1 << value
 ## HEALPix export N_side parameter. Derived from chunk_export_depth: nside = 2^depth.
-## Total export tiles = 12 × nside².
+## Total export tiles = 12 × nside². This is the FINEST pyramid level (nside_max).
 var export_nside: int = 32
+## Coarsest baked pyramid level (nside_min). When a chunk is coarser than
+## export_nside, it reads the tile at its own nside from n{nside}/ instead of
+## point-sampling many nside_max tiles. == export_nside for legacy single-level
+## (flat-layout) exports, so those behave exactly as before.
+var export_nside_min: int = 0
+## True when the chunk dir is a pyramid (n{nside}/face_{face}/f{ipix}.r32).
+## False for legacy flat layout (face_{face}/f{ipix}.r32).
+var chunk_is_pyramid: bool = false
 ## Equirectangular heightmap — kept as fallback only (editor preview, etc.).
 @export var heightmap: Texture2D
 ## Equirectangular biome map — colour encodes biome type / vegetation.
@@ -295,7 +303,12 @@ func load_from_planet_json(path: String = "") -> bool:
 
 	var fa := FileAccess.open(full_path, FileAccess.READ)
 	if fa == null:
-		push_warning("PlanetData: could not open planet JSON '%s'" % full_path)
+		# planet.json is the retired per-planet metadata file. Its terrain values
+		# (radius / height range / nside / tile_res) now live in the chunk
+		# manifest.json, applied by apply_chunk_manifest() right after this call;
+		# the rest (lod distances, has_ocean, geojson paths) come from the .tscn
+		# PlanetData resource. A missing file is therefore the normal case — return
+		# quietly. (A present-but-broken file still warns below.)
 		return false
 
 	var json_text := fa.get_as_text()
@@ -394,8 +407,20 @@ func load_from_planet_json(path: String = "") -> bool:
 ## Recipe heightmap generation is handled asynchronously by the terrain
 ## system.  This method only returns already-cached Images.
 ## Thread-safe: may be called from WorkerThreadPool mesh tasks.
-func load_chunk_heightmap(ipix: int) -> Image:
-	var key := "hp_n%d_p%d" % [export_nside, ipix]
+## Pyramid level a chunk of [param hp_nside] should sample: its own nside,
+## clamped to the baked range [nside_min, nside_max]. For non-pyramid (legacy
+## flat) exports this collapses to export_nside, preserving old behavior.
+func sample_nside_for(hp_nside: int) -> int:
+	if not chunk_is_pyramid:
+		return export_nside
+	return clampi(hp_nside, export_nside_min, export_nside)
+
+
+## Load the .r32 tile (ipix) at pyramid level [param nside]. nside <= 0 means
+## "finest" (export_nside), which is what every legacy caller gets by default.
+func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
+	var ns := nside if nside > 0 else export_nside
+	var key := "hp_n%d_p%d" % [ns, ipix]
 	# Server fast path: cache is read-only after preload, skip mutex + LRU.
 	if _server_no_evict:
 		var cached := _chunk_images.get(key) as Image
@@ -403,7 +428,7 @@ func load_chunk_heightmap(ipix: int) -> Image:
 			return cached
 		# File mode: lazily load the exported tile (thread-safe via mutex).
 		if chunk_heightmaps_dir != "":
-			return _file_load_and_cache(key, ipix)
+			return _file_load_and_cache(key, ipix, ns)
 		return null
 	_cache_mutex.lock()
 	if _chunk_images.has(key):
@@ -418,7 +443,7 @@ func load_chunk_heightmap(ipix: int) -> Image:
 	_cache_mutex.unlock()
 	# File mode: load the per-chunk elevation tile (.r32) directly from disk.
 	if chunk_heightmaps_dir != "":
-		return _file_load_and_cache(key, ipix)
+		return _file_load_and_cache(key, ipix, ns)
 	# Not cached yet — return null so callers fall back to global heightmap.
 	# The async recipe pipeline in PlanetTerrain will generate and cache it.
 	return null
@@ -427,8 +452,8 @@ func load_chunk_heightmap(ipix: int) -> Image:
 ## Load a per-chunk elevation tile (.r32) and insert it into the image cache.
 ## Thread-safe; safe to call from WorkerThreadPool mesh/collision tasks.
 ## Returns null if the tile is missing/malformed (caller falls back to global).
-func _file_load_and_cache(key: String, ipix: int) -> Image:
-	var img := _read_r32_tile(ipix)
+func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
+	var img := _read_r32_tile(ipix, nside)
 	if img == null:
 		return null
 	_cache_mutex.lock()
@@ -449,14 +474,18 @@ func _file_load_and_cache(key: String, ipix: int) -> Image:
 ## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
 ## Image. Tiles are normalized [0,1]; sample_height_for_direction() converts the
 ## sample to metres via height_offset + value*max_height.
-func _read_r32_tile(ipix: int) -> Image:
+func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
+	var ns := nside if nside > 0 else export_nside
 	@warning_ignore("integer_division")
-	var face := ipix / (export_nside * export_nside)
+	var face := ipix / (ns * ns)
 	var base := chunk_heightmaps_dir
 	if not base.begins_with("res://") and not base.begins_with("user://") \
 			and not base.begins_with("/"):
 		base = "res://" + base
-	var path := "%s/face_%d/f%d.r32" % [base, face, ipix]
+	# Pyramid layout: n{nside}/face_{face}/f{ipix}.r32. Legacy flat exports
+	# (chunk_is_pyramid == false) keep the original face_{face}/f{ipix}.r32.
+	var path := "%s/n%d/face_%d/f%d.r32" % [base, ns, face, ipix] if chunk_is_pyramid \
+			else "%s/face_%d/f%d.r32" % [base, face, ipix]
 	if not FileAccess.file_exists(path):
 		return null
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -501,16 +530,25 @@ func apply_chunk_manifest() -> bool:
 		chunk_export_depth = int(data["chunk_export_depth"])  # setter sets export_nside
 	elif data.has("nside"):
 		export_nside = int(data["nside"])
+	if data.has("nside_max"):
+		export_nside = int(data["nside_max"])
 	if data.has("tile_res"):
 		chunk_heightmap_res = int(data["tile_res"])
 	if data.has("height_offset"):
 		height_offset = float(data["height_offset"])
 	if data.has("max_height"):
 		max_height = float(data["max_height"])
+	# Pyramid descriptor. Legacy flat exports omit these → single level, so the
+	# coarsest level equals the finest (clamp is a no-op) and paths stay flat.
+	chunk_is_pyramid = bool(data.get("pyramid", false))
+	if data.has("nside_min"):
+		export_nside_min = int(data["nside_min"])
+	else:
+		export_nside_min = export_nside
 	print("[PlanetData] chunk manifest applied: radius=%.0f export_nside=%d "
 			% [radius, export_nside]
-			+ "tile_res=%d height_offset=%.1f max_height=%.1f"
-			% [chunk_heightmap_res, height_offset, max_height])
+			+ "nside_min=%d pyramid=%s tile_res=%d height_offset=%.1f max_height=%.1f"
+			% [export_nside_min, chunk_is_pyramid, chunk_heightmap_res, height_offset, max_height])
 	return true
 
 
@@ -656,6 +694,13 @@ func _load_recipe_dict(base_pixel: int, key: String) -> Dictionary:
 ## Resolve the .planetpack for this planet (lazy).
 ## Returns null if the pack is missing.
 func _get_pack():
+	# File mode (.r32 chunk tiles) has no .planetpack — the recipe/pack pipeline is
+	# retired for these planets (heightmaps come from chunk_heightmaps_dir). Short-
+	# circuit so callers (recipe loads, the safety-mesh reader) get a clean null
+	# instead of attempting to open a file that isn't produced anymore, which spams
+	# "PlanetPack: cannot open ... (err 7)" + "failed to open planet pack" every run.
+	if chunk_heightmaps_dir != "":
+		return null
 	if _pack != null:
 		return _pack
 	_pack_open_mutex.lock()
@@ -1045,13 +1090,16 @@ func _evict_lru() -> void:
 ## vec2pix_nest, avoiding mis-classification at the polar/equatorial cap boundary.
 func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
-		_cached_neighbors = null) -> float:
+		_cached_neighbors = null, nside: int = -1) -> float:
+	# nside <= 0 → finest level (export_nside). Chunk builders pass the chunk's
+	# own pyramid level so a coarse chunk reads its coarse tile, not many fine ones.
+	var ns := nside if nside > 0 else export_nside
 	var ipix: int
 	if known_export_ipix >= 0:
 		ipix = known_export_ipix
 	else:
-		ipix = HEALPix.vec2pix_nest(export_nside, dir)
-	var img := load_chunk_heightmap(ipix)
+		ipix = HEALPix.vec2pix_nest(ns, dir)
+	var img := load_chunk_heightmap(ipix, ns)
 	if img == null:
 		# DEBUG: the per-chunk tile is not available at sample time — this vertex
 		# gets its elevation from the equirect global map, which is a different
@@ -1064,10 +1112,10 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		return sample_height_at(dir)
 
 	# Get local UV within the pixel
-	var local_uv := _direction_to_pixel_uv(dir, ipix, export_nside,
+	var local_uv := _direction_to_pixel_uv(dir, ipix, ns,
 			_precomp_face, _precomp_xy)
 	var h := _sample_image_bilinear_healpix(img, local_uv.x, local_uv.y, ipix,
-			_cached_neighbors)
+			_cached_neighbors, ns)
 	return (h * max_height + height_offset) * terrain_exaggeration
 
 
@@ -1083,20 +1131,21 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 ## 0.0m fallback from a missing global heightmap.
 func sample_height_boundary(dir: Vector3, chain_ipix: int,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
-		_cached_neighbors = null) -> float:
-	var vec_ipix := HEALPix.vec2pix_nest(export_nside, dir)
+		_cached_neighbors = null, nside: int = -1) -> float:
+	var ns := nside if nside > 0 else export_nside
+	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
 		return sample_height_for_direction(dir, chain_ipix,
-				_precomp_face, _precomp_xy, _cached_neighbors)
+				_precomp_face, _precomp_xy, _cached_neighbors, ns)
 	# Prefer the canonical tile (vec_ipix) when loaded — it is symmetric:
 	# both sides of the boundary resolve to the same tile via vec2pix_nest.
-	if load_chunk_heightmap(vec_ipix) != null:
-		return sample_height_for_direction(dir, vec_ipix)
+	if load_chunk_heightmap(vec_ipix, ns) != null:
+		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns)
 	# Canonical tile not loaded — fall back to chain_ipix's tile (known-loaded).
 	# UV is clamped to [0,1] by _direction_to_pixel_uv, so the edge pixels are
 	# used rather than the catastrophic 0.0m from a missing global heightmap.
 	return sample_height_for_direction(dir, chain_ipix,
-			_precomp_face, _precomp_xy, _cached_neighbors)
+			_precomp_face, _precomp_xy, _cached_neighbors, ns)
 
 
 ## Sample height for a cube-sphere chunk vertex.
@@ -1220,7 +1269,8 @@ static func _sample_image_bilinear(img: Image, u_norm: float, v_norm: float) -> 
 ##    converge to the same height at the seam.
 func _sample_image_bilinear_healpix(
 		img: Image, u_norm: float, v_norm: float,
-		ipix: int, _cached_neighbors = null) -> float:
+		ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
+	var ns := nside if nside > 0 else export_nside
 	var w := img.get_width()
 	var h := img.get_height()
 
@@ -1255,10 +1305,10 @@ func _sample_image_bilinear_healpix(
 				+ a11 * fx * fy)
 	else:
 		# Out-of-bounds kernel pixel — fetch from neighbor tile
-		var v00 := _get_pixel_healpix(img, x0, y0, w, h, ipix, _cached_neighbors)
-		var v10 := _get_pixel_healpix(img, x1, y0, w, h, ipix, _cached_neighbors)
-		var v01 := _get_pixel_healpix(img, x0, y1, w, h, ipix, _cached_neighbors)
-		var v11 := _get_pixel_healpix(img, x1, y1, w, h, ipix, _cached_neighbors)
+		var v00 := _get_pixel_healpix(img, x0, y0, w, h, ipix, _cached_neighbors, ns)
+		var v10 := _get_pixel_healpix(img, x1, y0, w, h, ipix, _cached_neighbors, ns)
+		var v01 := _get_pixel_healpix(img, x0, y1, w, h, ipix, _cached_neighbors, ns)
+		var v11 := _get_pixel_healpix(img, x1, y1, w, h, ipix, _cached_neighbors, ns)
 		val = (v00 * (1.0 - fx) * (1.0 - fy)
 				+ v10 * fx * (1.0 - fy)
 				+ v01 * (1.0 - fx) * fy
@@ -1279,18 +1329,18 @@ func _sample_image_bilinear_healpix(
 	if _cached_neighbors != null:
 		neighbors = _cached_neighbors
 	else:
-		neighbors = HEALPix.get_neighbors_nest(export_nside, ipix)
+		neighbors = HEALPix.get_neighbors_nest(ns, ipix)
 
 	# Horizontal blend (left or right neighbour).
 	if near_left and neighbors.has("W") and neighbors["W"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["W"])
+		var nb_img := load_chunk_heightmap(neighbors["W"], ns)
 		if nb_img and nb_img.get_width() == w:
 			var nb_u := (float(w) + fpx) / float(w)
 			var nb_val := _sample_image_bilinear(nb_img, nb_u, v_norm)
 			var t := clampf(1.0 - (fpx + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_right and neighbors.has("E") and neighbors["E"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["E"])
+		var nb_img := load_chunk_heightmap(neighbors["E"], ns)
 		if nb_img and nb_img.get_width() == w:
 			var nb_u := clampf((fpx - float(w) + 0.5) / float(w), 0.0, 1.0)
 			var nb_val := _sample_image_bilinear(nb_img, nb_u, v_norm)
@@ -1299,14 +1349,14 @@ func _sample_image_bilinear_healpix(
 
 	# Vertical blend (bottom or top neighbour).
 	if near_bot and neighbors.has("S") and neighbors["S"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["S"])
+		var nb_img := load_chunk_heightmap(neighbors["S"], ns)
 		if nb_img and nb_img.get_height() == h:
 			var nb_v := (float(h) + fpy) / float(h)
 			var nb_val := _sample_image_bilinear(nb_img, u_norm, nb_v)
 			var t := clampf(1.0 - (fpy + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_top and neighbors.has("N") and neighbors["N"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["N"])
+		var nb_img := load_chunk_heightmap(neighbors["N"], ns)
 		if nb_img and nb_img.get_height() == h:
 			var nb_v := clampf((fpy - float(h) + 0.5) / float(h), 0.0, 1.0)
 			var nb_val := _sample_image_bilinear(nb_img, u_norm, nb_v)
@@ -1319,16 +1369,17 @@ func _sample_image_bilinear_healpix(
 ## Read a single heightmap pixel, fetching from the neighbour HEALPix tile
 ## when (px, py) falls outside the current tile [0, w) × [0, h).
 func _get_pixel_healpix(img: Image, px: int, py: int,
-		w: int, h: int, ipix: int, _cached_neighbors = null) -> float:
+		w: int, h: int, ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
 	if px >= 0 and px < w and py >= 0 and py < h:
 		return img.get_pixel(px, py).r
 
+	var ns := nside if nside > 0 else export_nside
 	# Out of bounds — try neighbor tile
 	var neighbors: Dictionary
 	if _cached_neighbors != null:
 		neighbors = _cached_neighbors
 	else:
-		neighbors = HEALPix.get_neighbors_nest(export_nside, ipix)
+		neighbors = HEALPix.get_neighbors_nest(ns, ipix)
 	var nb_ipix := -1
 	var nb_px := px
 	var nb_py := py
@@ -1349,7 +1400,7 @@ func _get_pixel_healpix(img: Image, px: int, py: int,
 		nb_py = py - h
 
 	if nb_ipix >= 0:
-		var nb_img := load_chunk_heightmap(nb_ipix)
+		var nb_img := load_chunk_heightmap(nb_ipix, ns)
 		if nb_img and nb_img.get_width() == w and nb_img.get_height() == h:
 			nb_px = clampi(nb_px, 0, w - 1)
 			nb_py = clampi(nb_py, 0, h - 1)
@@ -1452,8 +1503,12 @@ func sample_height_at(dir: Vector3) -> float:
 ## "ground" for server anti-tunnel clamps (player and props): the thin trimesh
 ## collision tunnels, so bodies below this are pushed back up to it. Uses the
 ## full-depth crack (vtx_spacing 0 = no LOD fade), matching the player.
-func crack_aware_surface_dist(dir: Vector3) -> float:
-	var alt := sample_height_for_direction(dir)
+## [param nside] selects the pyramid level to sample: pass the chunk's own
+## sample nside so a coarse chunk is validated against its own coarse tile
+## rather than the finest level (which legitimately differs by kilometres on
+## steep terrain and would false-trip the cache validator). nside <= 0 → finest.
+func crack_aware_surface_dist(dir: Vector3, nside: int = -1) -> float:
+	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside)
 	if corundum_override_whole_planet:
 		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
 			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0)

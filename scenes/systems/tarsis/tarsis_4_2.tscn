@@ -1,22 +1,41 @@
 [gd_scene format=3 uid="uid://28xnxvr1fmci"]
 
-[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_yf5cb"]
-[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_hyfw8"]
-[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="3_2moqb"]
+[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_lx8nc"]
+[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_y0c1k"]
+[ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_43k7b"]
+[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_lnpr0"]
+[ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_il7fp"]
+[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/props/StorageBoxes/storagewarehouse.tscn" id="6_y0c1k"]
 
-[sub_resource type="Resource" id="Resource_lx8nc"]
-script = ExtResource("2_hyfw8")
+[sub_resource type="Resource" id="PlanetData_tarsis4"]
+script = ExtResource("2_y0c1k")
 planet_name = "tarsis_4_2"
 surface_gravity = 0.49
 chunk_export_depth = 6
-max_quadtree_depth = 10
-metadata/_custom_type_script = "uid://8fhdm7c3vu4q"
+terrain_material = ExtResource("3_43k7b")
+max_quadtree_depth = 13
+crack_spacing_m = 4000.0
+crack_width_m = 250.0
+crack_depth_m = 180.0
+debug_color_skirts = true
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 
-[node name="Tarsis42" type="Node3D" unique_id=1394945843]
-script = ExtResource("1_yf5cb")
-planet_data = SubResource("Resource_lx8nc")
-metadata/_custom_type_script = "uid://b0v8ajsviht7s"
+[node name="Tarsis4_2" type="Node3D" unique_id=134586975]
+script = ExtResource("1_lx8nc")
+planet_data = SubResource("PlanetData_tarsis4")
 
-[node name="PlanetTerrain" type="Node3D" parent="." unique_id=432473518]
-script = ExtResource("3_2moqb")
-metadata/_custom_type_script = "uid://cq77afru14v7i"
+[node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
+script = ExtResource("4_lnpr0")
+editor_preview_depth = 13
+editor_preview_rings = 3
+editor_goto_lon = -10.0
+editor_goto_lat = 20.0
+editor_goto_x = 5881947.772299743
+editor_goto_y = 2173880.0309779504
+editor_goto_z = -1037146.0913744953
+
+[node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
+script = ExtResource("5_il7fp")
+
+[node name="Storagewarehouse" parent="PlanetTerrain" unique_id=695965601 instance=ExtResource("6_y0c1k")]
+transform = Transform3D(0.3467321978596412, 0.9254026984287056, 0.15299225048443726, -0.9379641693409311, 0.3420886660914647, 0.05655582697069961, 0, -0.16311097532855506, 0.9866077283943034, 5884165.154797647, 2175167.8618232184, -1037139.7436197174)

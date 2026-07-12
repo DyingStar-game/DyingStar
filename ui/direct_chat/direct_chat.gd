@@ -41,7 +41,10 @@ var forced_colors := {
 
 func _enter_tree() -> void:
 	if not OS.has_feature("dedicated_server"):
-		connect("visibility_changed", _on_visibility_changed)
+		# _enter_tree fires again on every reparent of an ancestor (reparent = tree exit + re-enter),
+		# but signal connections survive a tree exit, so guard against connecting the same callable twice.
+		if not is_connected("visibility_changed", _on_visibility_changed):
+			connect("visibility_changed", _on_visibility_changed)
 
 func _ready():
 	# Shown by default (F12 still toggles it). MOUSE_FILTER_IGNORE so the always-visible

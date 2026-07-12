@@ -1795,12 +1795,16 @@ func _try_create_or_defer(info: Dictionary) -> void:
 ## [param first_vertex] is a vertex in chunk-local space, [param origin] the
 ## chunk origin in planet-local space (mesh: info.center / collision:
 ## _chunk_collision_origin).
-func _cached_geom_valid(first_vertex: Vector3, origin: Vector3, key: String) -> bool:
+## [param sample_nside] is the pyramid level this chunk baked its heights from
+## (PlanetData.sample_nside_for(hp_nside)); the live surface is sampled at the
+## same level so a coarse chunk isn't compared against the finest tile.
+func _cached_geom_valid(first_vertex: Vector3, origin: Vector3, key: String,
+		sample_nside: int = -1) -> bool:
 	var p := origin + first_vertex
 	var r := p.length()
 	if r <= 0.0:
 		return false
-	var surf: float = planet_data.crack_aware_surface_dist(p / r)
+	var surf: float = planet_data.crack_aware_surface_dist(p / r, sample_nside)
 	if absf(r - surf) <= _CACHE_GEOM_TOLERANCE_M:
 		return true
 	print("[PlanetTerrain] cache STALE for '%s': cached radial=%.0fm vs live surface=%.0fm — discarding, will regenerate" % [
@@ -1815,7 +1819,8 @@ func _cached_mesh_valid(mesh: ArrayMesh, info: Dictionary) -> bool:
 	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	if verts.is_empty():
 		return false
-	return _cached_geom_valid(Vector3(verts[0]), info.center, info.key)
+	return _cached_geom_valid(Vector3(verts[0]), info.center, info.key,
+			planet_data.sample_nside_for(info.get("nside", 0)))
 
 
 ## Collision variant of _cached_geom_valid: pulls the first face vertex.
@@ -1823,7 +1828,8 @@ func _cached_shape_valid(shape: ConcavePolygonShape3D, nside: int, ipix: int, ke
 	var faces := shape.get_faces()
 	if faces.is_empty():
 		return false
-	return _cached_geom_valid(Vector3(faces[0]), _chunk_collision_origin(nside, ipix), key)
+	return _cached_geom_valid(Vector3(faces[0]), _chunk_collision_origin(nside, ipix), key,
+			planet_data.sample_nside_for(nside))
 
 
 ## Submit a recipe task if one isn't already in-flight or deferred.
@@ -2134,6 +2140,15 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 		if _active_chunks.has(key) or _is_chunk_in_pipeline(key):
 			continue
 		var info: Dictionary = prefetch_desired[key]
+		# File/pyramid mode has no recipe pipeline — chunks lazy-load their .r32
+		# tiles on the worker thread. Warm the exact pyramid tile the mesh will
+		# sample so that task doesn't stall on disk I/O, then skip the recipe path
+		# (submitting recipes without a pack is what spams "Invalid Task ID").
+		if planet_data.chunk_heightmaps_dir != "":
+			var _ht := _chunk_height_tile(info)
+			if _ht[0] >= 0:
+				planet_data.load_chunk_heightmap(_ht[0], _ht[1])
+			continue
 		# Only prefetch recipes (light I/O), not mesh tasks (CPU-heavy) to
 		# avoid starving the current-frame mesh pipeline.
 		var epd_nside := planet_data.export_nside
@@ -2326,7 +2341,10 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# (already guarded in _create_chunk) stay correct. Skip the write so the
 	# chunk regenerates once the tile is resident. Mirrors the server guard.
 	if _chunk_cache and mesh and not info.get("_from_disk_cache", false):
-		if planet_data.load_chunk_heightmap(_get_export_ipix(info)) != null:
+		# Gate on the SAME pyramid tile the mesh sampled (coarse chunks read a
+		# coarse tile, not the finest), so a good coarse bake isn't rejected.
+		var _ht := _chunk_height_tile(info)
+		if _ht[0] >= 0 and planet_data.load_chunk_heightmap(_ht[0], _ht[1]) != null:
 			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
@@ -2486,6 +2504,24 @@ func _get_export_ipix(info: Dictionary) -> int:
 		eipix = HEALPix.parent_pixel(eipix)
 		ns /= 2
 	return eipix
+
+
+## Pyramid tile [ipix, nside] a chunk actually samples its heights from — mirrors
+## the logic in PlanetChunk (finer→walk up to nside_max; own level if baked).
+## Returns ipix == -1 when the chunk is coarser than the coarsest baked level
+## (per-vertex resolution, no single tile to gate a cache write on).
+func _chunk_height_tile(info: Dictionary) -> Array:
+	var hp_nside: int = info.get("nside", 0)
+	var hp_ipix: int = info.get("ipix", -1)
+	var ns: int = planet_data.sample_nside_for(hp_nside)
+	if hp_nside >= planet_data.export_nside:
+		var eipix := hp_ipix
+		var cur := hp_nside
+		while cur > planet_data.export_nside:
+			eipix = HEALPix.parent_pixel(eipix)
+			cur /= 2
+		return [eipix, planet_data.export_nside]
+	return [hp_ipix, ns]
 
 
 ## Check if populate zones contain a specific biome type.

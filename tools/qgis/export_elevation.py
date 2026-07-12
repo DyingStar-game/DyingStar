@@ -12,10 +12,13 @@ Pipeline
    Contours are drawn at 50 m intervals in EPSG:4326 (lon/lat degrees).
 2. Interpolate a single global equirectangular elevation raster (reuses the fast
    rasterize→fill→upsample interpolator in export/planet/heightmap.py).
-3. For each of 12·nside² HEALPix pixels, sample a (TILE_RES × TILE_RES) grid of
-   directions covering that pixel and bilinearly read the global raster.
+3. For each pyramid level nside ∈ {NSIDE, NSIDE/2, …, NSIDE_MIN}, and each of its
+   12·nside² HEALPix pixels, sample a (TILE_RES × TILE_RES) grid of directions
+   covering that pixel and bilinearly read the global raster.
 4. Write each tile as a RAW float32 blob (.r32), values normalized to
-   [0,1] over [ELEV_MIN, ELEV_MAX].
+   [0,1] over [ELEV_MIN, ELEV_MAX], under n{nside}/face_{face}/f{ipix}.r32.
+   The pyramid lets far LODs read one coarse tile per chunk instead of
+   point-sampling many fine tiles (no aliasing, cheap whole-planet view).
 
 Why .r32 (raw float32) instead of 16-bit PNG?
     Godot's PNG loader downsamples 16-bit greyscale to 8-bit on import (256
@@ -68,7 +71,13 @@ EXPORT_DIR = os.path.expanduser(
 )
 
 # HEALPix tiling. nside=64 → 12·64² = 49152 chunks (chunk_export_depth=6).
+# This is the FINEST pyramid level (LOD0). Coarser levels down to NSIDE_MIN are
+# baked too, so far/whole-planet LODs read a single coarse tile instead of
+# point-sampling many fine ones (no aliasing, no 49k-tile fetch from orbit).
 NSIDE = 64
+# Coarsest pyramid level to bake. 1 → the 12 HEALPix base faces (whole-planet view).
+# Levels baked: NSIDE, NSIDE/2, … , NSIDE_MIN (all powers of two).
+NSIDE_MIN = 1
 # Samples per chunk edge. 25 → ~4 km spacing on a 6356 km planet (broad shape;
 # fine detail comes from the quadtree mesh interpolating between samples).
 TILE_RES = 25
@@ -195,6 +204,7 @@ def _sample_equirect_bilinear(raster, lon, lat):
 # Main export
 # ============================================================
 def run_export():
+    global ELEV_MIN, ELEV_MAX
     print("=" * 64)
     print(f"  export_elevation: planet='{PLANET_NAME}' radius={PLANET_RADIUS}m "
           f"nside={NSIDE} tile_res={TILE_RES}")
@@ -206,77 +216,115 @@ def run_export():
         return
     field = _elev_field(layer)
     if not field:
-        print(f"  ✗ No elevation field in '{layer.name()}'. "
-              f"Expected one of {_ELEV_FIELDS}.")
-        return
-    print(f"  Contour layer: '{layer.name()}'  field: '{field}'")
+        # No elevation field yet → nothing to displace. Export a FLAT planet
+        # rather than aborting, so planets still being authored can be built.
+        print(f"  ⚠ No elevation field in '{layer.name()}' "
+              f"(expected one of {_ELEV_FIELDS}) — exporting FLAT terrain.")
+    else:
+        print(f"  Contour layer: '{layer.name()}'  field: '{field}'")
 
     os.makedirs(EXPORT_DIR, exist_ok=True)
-    scan_elevation_range(layer, field)
+    if field:
+        scan_elevation_range(layer, field)
+    else:
+        if ELEV_MIN is None:
+            ELEV_MIN = 0.0
+        if ELEV_MAX is None:
+            ELEV_MAX = 1000.0
+        print(f"  Flat terrain range: [{ELEV_MIN}, {ELEV_MAX}]m")
     elev_range = ELEV_MAX - ELEV_MIN
 
     # ── Step 1: global interpolated raster (reuse shared interpolator) ──
-    print("  Building global elevation raster…")
-    raster_path = generate_heightmap_from_contours(
-        PLANET_NAME, EXPORT_DIR, HEIGHTMAP_SIZE,
-        find_layers_by_keyword, _memlog,
-    )
+    # If the contour layer has no (or too few) lines yet, the interpolator
+    # returns None; we then export a FLAT raster (elev = ELEV_MIN everywhere)
+    # so the planet still builds as a smooth sea-level sphere.
+    raster_path = None
+    if field:
+        print("  Building global elevation raster…")
+        raster_path = generate_heightmap_from_contours(
+            PLANET_NAME, EXPORT_DIR, HEIGHTMAP_SIZE,
+            find_layers_by_keyword, _memlog,
+        )
     if raster_path is None:
-        print("  ✗ Global raster interpolation failed. Aborting.")
-        return
-    raster = _read_global_raster(raster_path, HEIGHTMAP_SIZE)
-    print(f"  Global raster: {raster.shape}  range "
-          f"[{np.nanmin(raster):.1f}, {np.nanmax(raster):.1f}]m")
+        w, h = HEIGHTMAP_SIZE
+        raster = np.full((h, w), ELEV_MIN, dtype=np.float32)
+        print(f"  ⚠ No usable contour data — FLAT raster {raster.shape} "
+              f"at elev={ELEV_MIN}m (whole planet at sea level).")
+    else:
+        raster = _read_global_raster(raster_path, HEIGHTMAP_SIZE)
+        print(f"  Global raster: {raster.shape}  range "
+              f"[{np.nanmin(raster):.1f}, {np.nanmax(raster):.1f}]m")
 
-    # ── Step 2: per-chunk tiles ──
+    # ── Step 2: per-chunk tiles, one directory per pyramid level ──
+    # Layout: {planet}_chunks/n{nside}/face_{face}/f{ipix}.r32
+    # Each level independently samples the SAME smooth global raster, so all
+    # levels agree on the underlying surface (minimal LOD popping) while a coarse
+    # level's tile already represents the average shape over its larger footprint.
     chunks_dir = os.path.join(EXPORT_DIR, f"{PLANET_NAME}_chunks")
     os.makedirs(chunks_dir, exist_ok=True)
-    npix = 12 * NSIDE * NSIDE
-    npface = NSIDE * NSIDE
-    print(f"  Writing {npix} chunk tiles ({TILE_RES}×{TILE_RES} float32) → {chunks_dir}")
 
-    for face in range(12):
-        os.makedirs(os.path.join(chunks_dir, f"face_{face}"), exist_ok=True)
+    # Pyramid levels: NSIDE, NSIDE/2, … , NSIDE_MIN (all powers of two).
+    levels = []
+    ns = NSIDE
+    while ns >= max(NSIDE_MIN, 1):
+        levels.append(ns)
+        ns //= 2
+    total_tiles = sum(12 * n * n for n in levels)
+    print(f"  Writing pyramid levels {levels} "
+          f"= {total_tiles} tiles ({TILE_RES}×{TILE_RES} float32) → {chunks_dir}")
 
     written = 0
-    for ipix in range(npix):
-        lon_grid, lat_grid = hpx.get_tile_grid_lonlat(NSIDE, ipix, TILE_RES)
-        elev = _sample_equirect_bilinear(raster, lon_grid, lat_grid)
-        # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX]. Values outside the range
-        # are kept (FORMAT_RF is unclamped) so future features can exceed it.
-        norm = ((elev - ELEV_MIN) / elev_range).astype(np.float32)
-        face = ipix // npface
-        out = os.path.join(chunks_dir, f"face_{face}", f"f{ipix}.r32")
-        norm.tofile(out)  # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
-        written += 1
-        if written % 4096 == 0:
-            print(f"    {written}/{npix} tiles…")
+    for level_nside in levels:
+        npix = 12 * level_nside * level_nside
+        npface = level_nside * level_nside
+        level_dir = os.path.join(chunks_dir, f"n{level_nside}")
+        for face in range(12):
+            os.makedirs(os.path.join(level_dir, f"face_{face}"), exist_ok=True)
+        for ipix in range(npix):
+            lon_grid, lat_grid = hpx.get_tile_grid_lonlat(level_nside, ipix, TILE_RES)
+            elev = _sample_equirect_bilinear(raster, lon_grid, lat_grid)
+            # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX]. Values outside the range
+            # are kept (FORMAT_RF is unclamped) so future features can exceed it.
+            norm = ((elev - ELEV_MIN) / elev_range).astype(np.float32)
+            face = ipix // npface
+            out = os.path.join(level_dir, f"face_{face}", f"f{ipix}.r32")
+            norm.tofile(out)  # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
+            written += 1
+            if written % 8192 == 0:
+                print(f"    {written}/{total_tiles} tiles…")
+        print(f"    · level n{level_nside}: {npix} tiles")
 
     # ── Step 3: manifest ──
     depth = int(round(math.log2(NSIDE)))
     manifest = {
         "planet_name": PLANET_NAME,
         "radius": float(PLANET_RADIUS),
-        "nside": NSIDE,
-        "chunk_export_depth": depth,
+        "nside": NSIDE,                    # finest level (== nside_max)
+        "chunk_export_depth": depth,       # log2(finest nside)
         "tile_res": TILE_RES,
-        "format": "r32_f32_normalized",   # raw float32, row-major, normalized [0,1]
-        "layout": "face_{face}/f{ipix}.r32",
+        "format": "r32_f32_normalized",    # raw float32, row-major, normalized [0,1]
+        # Pyramid descriptor. Runtime reads level n{nside} for a chunk whose own
+        # nside is clamp(chunk_nside, nside_min, nside_max).
+        "pyramid": True,
+        "nside_min": int(min(levels)),
+        "nside_max": int(max(levels)),
+        "layout": "n{nside}/face_{face}/f{ipix}.r32",
         "elev_min": float(ELEV_MIN),
         "elev_max": float(ELEV_MAX),
         # Godot PlanetData round-trip: elev = pixel.r * max_height + height_offset
         "height_offset": float(ELEV_MIN),
         "max_height": float(elev_range),
-        "count": npix,
+        "count": total_tiles,
     }
     manifest_path = os.path.join(chunks_dir, "manifest.json")
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
     print("=" * 64)
-    print(f"  ✓ Done. {written} tiles + manifest.json")
+    print(f"  ✓ Done. {written} tiles ({len(levels)} levels) + manifest.json")
     print(f"    chunks_dir : {chunks_dir}")
     print(f"    radius     : {PLANET_RADIUS} m")
+    print(f"    pyramid    : n{min(levels)} … n{max(levels)}")
     print(f"    height_offset={ELEV_MIN}  max_height={elev_range}")
     print(f"    → Set PlanetData.chunk_heightmaps_dir to the chunks dir "
           f"(or load manifest.json).")

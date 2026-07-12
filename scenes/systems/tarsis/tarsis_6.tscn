@@ -1,22 +1,37 @@
 [gd_scene format=3 uid="uid://cjtlgvlsomak6"]
 
-[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_exju7"]
-[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_7raoy"]
-[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="3_cc1ch"]
+[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_ktrr0"]
+[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_67cxf"]
+[ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_28vts"]
+[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_liblk"]
+[ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_eo0be"]
 
-[sub_resource type="Resource" id="Resource_ktrr0"]
-script = ExtResource("2_7raoy")
+[sub_resource type="Resource" id="PlanetData_tarsis4"]
+script = ExtResource("2_67cxf")
 planet_name = "tarsis_6"
 surface_gravity = 21.33
 chunk_export_depth = 6
-max_quadtree_depth = 15
-metadata/_custom_type_script = "uid://8fhdm7c3vu4q"
+terrain_material = ExtResource("3_28vts")
+max_quadtree_depth = 13
+crack_spacing_m = 4000.0
+crack_width_m = 250.0
+crack_depth_m = 180.0
+debug_color_skirts = true
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 
-[node name="Tarsis6" type="Node3D" unique_id=1825889872]
-script = ExtResource("1_exju7")
-planet_data = SubResource("Resource_ktrr0")
-metadata/_custom_type_script = "uid://b0v8ajsviht7s"
+[node name="Tarsis6" type="Node3D" unique_id=134586975]
+script = ExtResource("1_ktrr0")
+planet_data = SubResource("PlanetData_tarsis4")
 
-[node name="PlanetTerrain" type="Node3D" parent="." unique_id=985679934]
-script = ExtResource("3_cc1ch")
-metadata/_custom_type_script = "uid://cq77afru14v7i"
+[node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
+script = ExtResource("4_liblk")
+editor_preview_depth = 13
+editor_preview_rings = 3
+editor_goto_lon = -39.55558187662332
+editor_goto_lat = 24.85200755796846
+editor_goto_x = 4450891.0
+editor_goto_y = 2673782.0
+editor_goto_z = -3676289.0
+
+[node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
+script = ExtResource("5_eo0be")
