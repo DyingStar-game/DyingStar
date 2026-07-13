@@ -44,8 +44,17 @@ var _gravity_area: Area3D
 
 func _ready() -> void:
 	if not Engine.is_editor_hint():
-		print("[Planet] _ready: name=%s  spawn_position=%s" % [name, spawn_position])
-		position = spawn_position
+		print("[Planet] _ready: name=%s  spawn_position=%s  position=%s"
+				% [name, spawn_position, position])
+		# Only apply spawn_position when it was actually set (server path:
+		# create_planet assigns it BEFORE add_child). On the client, planets
+		# spawn through the generic path: client_channel_data_update() applies
+		# the network "positions" BEFORE add_child, and spawn_position stays
+		# ZERO — unconditionally assigning it here wiped that position, so
+		# every network planet collapsed to (0,0,0) under its parent
+		# (tarsis_4_1/4_2 rendered as phantom surfaces INSIDE tarsis_4).
+		if spawn_position != Vector3.ZERO:
+			position = spawn_position
 
 	if planet_data:
 		# Load runtime overrides from the QGIS-exported planet JSON (if set).
@@ -282,6 +291,18 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["positions"][0]["x"],
 			data["positions"][0]["y"],
 			data["positions"][0]["z"]
+		)
+	elif data.has("position"):
+		# GORC zone events (client path) carry a SINGULAR "position" dict —
+		# _standardize_object passes zone_data through as object_data. Without
+		# this branch a network-spawned planet never applies its position and
+		# stays at (0,0,0) under its parent: tarsis_4_1/4_2 then sit CONCENTRIC
+		# inside tarsis_4, rendering a phantom uncarved surface over the real
+		# terrain (hiding the corundum cracks players then fall into).
+		position = Vector3(
+			data["position"]["x"],
+			data["position"]["y"],
+			data["position"]["z"]
 		)
 	if data.has("rotations"):
 		# NOTE: network sends rotations as quaternions {w, x, y, z}. Previously

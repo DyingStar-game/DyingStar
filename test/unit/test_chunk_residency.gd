@@ -165,3 +165,51 @@ func test_pinned_chunk_loaded_even_when_not_in_desired() -> void:
 	assert_true(s.loaded.has("a"))
 	assert_true(s.loaded.has("z"),
 		"Pinned chunk should be force-loaded even outside desired set")
+
+
+# ===================================================================
+# 3. PlanetTerrain._covered_by_active_descendants (stale-parent dedup)
+#    A no-longer-desired coarse chunk must be removed as soon as its
+#    area is fully covered by active finer chunks — pipeline churn near
+#    the player must not keep both surfaces stacked (double-surface bug).
+# ===================================================================
+
+
+func _make_terrain_with_active(active_keys: Array) -> PlanetTerrain:
+	var t := PlanetTerrain.new()
+	t.planet_data = _make_planet_data(8, 1000.0)
+	for k in active_keys:
+		t._active_chunks[k as String] = {}
+	autofree(t)
+	return t
+
+
+func test_parent_covered_when_all_four_children_active() -> void:
+	# Parent n4/p10 → children n8/p40..43 (NESTED: ipix*4 + 0..3).
+	var t := _make_terrain_with_active(
+		["hp_n8_p40", "hp_n8_p41", "hp_n8_p42", "hp_n8_p43"])
+	assert_true(t._covered_by_active_descendants(4, 10),
+		"parent fully covered by its 4 active children")
+
+
+func test_parent_not_covered_when_one_child_missing() -> void:
+	var t := _make_terrain_with_active(
+		["hp_n8_p40", "hp_n8_p41", "hp_n8_p42"])  # p43 missing
+	assert_false(t._covered_by_active_descendants(4, 10),
+		"a missing child leaves a hole — parent must stay")
+
+
+func test_parent_covered_recursively_through_grandchildren() -> void:
+	# p43 absent, but its own 4 children n16/p172..175 are active.
+	var t := _make_terrain_with_active(
+		["hp_n8_p40", "hp_n8_p41", "hp_n8_p42",
+		"hp_n16_p172", "hp_n16_p173", "hp_n16_p174", "hp_n16_p175"])
+	assert_true(t._covered_by_active_descendants(4, 10),
+		"mixed-depth coverage (children + grandchildren) counts as covered")
+
+
+func test_coverage_stops_at_max_quadtree_depth() -> void:
+	var t := _make_terrain_with_active([])
+	t.planet_data.max_quadtree_depth = 3  # finest allowed nside = 8
+	assert_false(t._covered_by_active_descendants(8, 40),
+		"no chunks can exist finer than max depth — never covered")

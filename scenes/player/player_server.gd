@@ -718,20 +718,3 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 		str(destination.uuid) if "uuid" in destination else "",
 		player.is_parented
 	)
-
-## Client-side local teleport: reparent our OWN player onto `destination` and place
-## it at `local_pos` expressed in that node's frame. Deferred because reparenting a
-## CharacterBody3D inside the Area3D physics callback is illegal. Purely local -- the
-## authoritative teleport happens on the server, but Horizon does not deliver the
-## owning client its own cross-zone reparent, so we apply it here to avoid freezing.
-func _client_teleport_to_system(destination: Node, local_pos: Vector3) -> void:
-	if destination == null or not is_instance_valid(destination):
-		return
-	if not player.is_inside_tree() or not destination.is_inside_tree():
-		return
-	if get_parent() != destination:
-		player.reparent(destination)
-	player.position = local_pos
-	player.reset_physics_interpolation()
-	player.net_reset_interp()
-	print("[client] local teleport onto ", destination.name, " at local ", player.position)

@@ -518,13 +518,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.229560
 shape = SubResource("BoxShape3D_gy7pr")
 
 [node name="tarsis_4_orbital" type="Area3D" parent="PlanetTeleporter" unique_id=1951402626 groups=["teleporter"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 94.13877190071942)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 92.53287770641573)
 collision_layer = 16
 collision_mask = 0
 monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_4_orbital" unique_id=321300656]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, -1.5290314124860345)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.048371529910724576)
 shape = SubResource("BoxShape3D_gy7pr")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="PlanetTeleporter" unique_id=1368652612]

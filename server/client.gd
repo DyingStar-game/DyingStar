@@ -870,6 +870,9 @@ func player_update(message: Dictionary) -> void:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
+							# Rare event (teleporter / cross-zone) — worth a trace.
+							print("[client] server reparent -> %s at local (%.0f, %.0f, %.0f)"
+									% [parent.name, ppos.x, ppos.y, ppos.z])
 							# We just left our previous parent. If a former ancestor had a deferred
 							# zone-exit, flush it next frame (deferred so the reparent settles first).
 							if pending_parent_delete_event != null:

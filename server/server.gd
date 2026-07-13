@@ -626,11 +626,15 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, 
 	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
 	# 	print("move uuid:", client_uuid)
 	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
-		# Prevent write over reparent (because reparent will not sent to client)
-		if players_newposition.has(client_uuid) and players_newposition[client_uuid].has("parent_id"):
-			if reparent_uuid != null:
-				print("[server] DROP move with parent_id=", reparent_uuid,
-					" because a parent_id is already pending (", players_newposition[client_uuid]["parent_id"], ")")
+		# A pending PARENTED move must not be overwritten by a plain tick move
+		# before it is flushed to Horizon — the parent change would be lost and
+		# the client would apply the position in the wrong frame.
+		# A NEWER parented move (chained teleports, or two teleporter areas
+		# firing in the same flush window) REPLACES the pending one instead:
+		# last reparent wins, so parent and position stay consistent.
+		if players_newposition.has(client_uuid) \
+				and players_newposition[client_uuid].has("parent_id") \
+				and reparent_uuid == null:
 			return
 
 		var prep = {

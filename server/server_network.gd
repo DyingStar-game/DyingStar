@@ -122,12 +122,20 @@ func dispatch_horizon_message(message: Dictionary):
 		match message['event']:
 			"add_prop":
 				match message["data"]["object_type"]:
+					"planet", "planets":
+						# spawn planet — MUST go through create_planet (not the
+						# generic path): it registers props_list["planets"], which
+						# drives active-body chunk pinning. Without it the server
+						# never builds terrain collision and players free-fall.
+						NetworkOrchestrator.network_agent.create_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
 			"update_prop":
 				match message["data"]["object_type"]:
+					"planet", "planets":
+						NetworkOrchestrator.network_agent.update_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.player_action(message)
 					_:
@@ -136,6 +144,9 @@ func dispatch_horizon_message(message: Dictionary):
 				# force to pause all the objects while I load all
 				# get_tree().paused = true
 				match message["data"]["object_type"]:
+					"planet", "planets":
+						# spawn planet (see add_prop above — required for pinning)
+						NetworkOrchestrator.network_agent.create_planet(message)
 					"player":
 						NetworkOrchestrator.network_agent.create_player(message)
 					"star":

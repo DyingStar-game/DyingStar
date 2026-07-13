@@ -1069,7 +1069,18 @@ func _update_terrain() -> void:
 	var to_remove: Array = []
 	for key in _active_chunks:
 		if not desired.has(key):
-			if not _has_pending_replacement(key) and not _has_pending_coarser(key):
+			# A stale chunk whose area is already fully covered by ACTIVE finer
+			# chunks must go NOW, regardless of pipeline state: its replacement
+			# is on screen, so no hole is possible. Without this, the constant
+			# pipeline churn near the player (per-chunk LOD re-queues) keeps
+			# _has_pending_replacement() true forever and the coarse parent
+			# lingers as a second, uncarved surface stacked over the fine one.
+			var st_nside := _parse_nside_from_key(key)
+			var st_ipix := _parse_ipix_from_key(key)
+			if st_nside > 0 and st_ipix >= 0 \
+					and _covered_by_active_descendants(st_nside, st_ipix):
+				to_remove.append(key)
+			elif not _has_pending_replacement(key) and not _has_pending_coarser(key):
 				to_remove.append(key)
 	for key in to_remove:
 		_remove_chunk(key)
@@ -1607,6 +1618,29 @@ func _is_chunk_in_pipeline(key: String) -> bool:
 		if _recipe_waiters[ek].has(key):
 			return true
 	return false
+
+
+## Returns true when the area of chunk (nside, ipix) is FULLY covered by
+## active finer chunks: every direct child is either active itself or
+## (recursively) covered by its own children. Used by the desired-set diff to
+## drop a stale coarse chunk the moment its finer replacements are all on
+## screen — pipeline churn must not keep both surfaces stacked.
+## [param max_depth] bounds the recursion (LOD split is 1 level at a time in
+## practice; 4 covers any transient mixed state).
+func _covered_by_active_descendants(nside: int, ipix: int, max_depth: int = 4) -> bool:
+	if max_depth <= 0:
+		return false
+	var child_nside := nside * 2
+	# No chunks exist finer than the quadtree's max depth — stop descending
+	# (also keeps child ipix values inside int32 for HEALPix.child_pixels).
+	if child_nside > (1 << planet_data.max_quadtree_depth):
+		return false
+	for child_ipix: int in HEALPix.child_pixels(ipix):
+		if _active_chunks.has(_chunk_key_hp(child_nside, child_ipix)):
+			continue
+		if not _covered_by_active_descendants(child_nside, child_ipix, max_depth - 1):
+			return false
+	return true
 
 
 ## Returns true if any chunk in the async pipeline is a HEALPix descendant
