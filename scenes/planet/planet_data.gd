@@ -8,6 +8,7 @@ extends Resource
 ## between sphere surface and equirectangular UV (matching QGIS EPSG:4326).
 
 const PlanetPackScript = preload("res://scenes/planet/planet_pack.gd")
+const HeightPackScript = preload("res://scenes/planet/height_pack.gd")
 
 @export_group("General")
 ## for example "tarsis_3" correspond to the QGIS file name
@@ -110,11 +111,10 @@ var chunk_is_pyramid: bool = false
 ## real terrain / crack interiors when diagnosing dark-band artifacts.
 @export var debug_color_skirts: bool = false
 
-## Directory of per-chunk elevation tiles exported by tools/qgis/export_elevation.py.
-## When non-empty, load_chunk_heightmap() reads raw float32 (.r32) tiles directly
-## from disk instead of generating heightmaps from recipes. Layout inside the dir:
-## "face_{face}/f{ipix}.r32" (face = ipix / export_nside²). Path is relative to
-## res://, e.g. "assets/qgis/.export/tarsis_5_chunks".
+## Directory of per-chunk elevation data exported by tools/qgis/export_elevation.py.
+## When non-empty, load_chunk_heightmap() reads raw float32 tiles from the dense
+## heights.pack archive inside this dir instead of generating heightmaps from
+## recipes. Path is relative to res://, e.g. "assets/qgis/export/tarsis_5_chunks".
 @export var chunk_heightmaps_dir: String = ""
 ## Samples per edge of each exported .r32 tile (matches TILE_RES in the exporter).
 @export var chunk_heightmap_res: int = 25
@@ -172,6 +172,16 @@ var _chunk_format_logged: bool = false
 var _pack = null  # PlanetPackScript instance
 var _pack_tried: bool = false
 var _pack_open_mutex: Mutex = Mutex.new()
+
+## ── Height pack (dense .r32 tile archive) ────────────────────────
+## All pyramid elevation tiles of chunk_heightmaps_dir packed into a single
+## heights.pack file (written by tools/qgis/export_elevation.py). This is the
+## ONLY source of elevation tiles: O(1) arithmetic offsets, per-thread read
+## handles (lock-free from WorkerThreadPool tasks) and coarse levels
+## preloaded in RAM.
+var _height_pack = null  # HeightPackScript instance
+var _height_pack_tried: bool = false
+var _height_pack_mutex: Mutex = Mutex.new()
 
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
@@ -471,34 +481,54 @@ func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
 	return img
 
 
-## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
-## Image. Tiles are normalized [0,1]; sample_height_for_direction() converts the
-## sample to metres via height_offset + value*max_height.
-func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
-	var ns := nside if nside > 0 else export_nside
-	@warning_ignore("integer_division")
-	var face := ipix / (ns * ns)
+## chunk_heightmaps_dir resolved to an absolute res://-style base path.
+func _chunk_base_path() -> String:
 	var base := chunk_heightmaps_dir
 	if not base.begins_with("res://") and not base.begins_with("user://") \
 			and not base.begins_with("/"):
 		base = "res://" + base
-	# Pyramid layout: n{nside}/face_{face}/f{ipix}.r32. Legacy flat exports
-	# (chunk_is_pyramid == false) keep the original face_{face}/f{ipix}.r32.
-	var path := "%s/n%d/face_%d/f%d.r32" % [base, ns, face, ipix] if chunk_is_pyramid \
-			else "%s/face_%d/f%d.r32" % [base, face, ipix]
-	if not FileAccess.file_exists(path):
-		return null
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return null
-	var bytes := f.get_buffer(f.get_length())
-	f.close()
+	return base
+
+
+## Open chunk_heightmaps_dir/heights.pack once (thread-safe, idempotent).
+## Returns the open pack or null when the planet ships loose tiles instead.
+## apply_chunk_manifest() calls this on the main thread so worker tasks
+## normally find the pack already open.
+func _ensure_height_pack():
+	if _height_pack_tried:
+		return _height_pack
+	_height_pack_mutex.lock()
+	if not _height_pack_tried:
+		var pack = HeightPackScript.new()
+		var path := _chunk_base_path() + "/heights.pack"
+		if FileAccess.file_exists(path) and pack.open(path):
+			_height_pack = pack
+			print("[PlanetData] heights.pack opened: %s" % path)
+		_height_pack_tried = true
+	_height_pack_mutex.unlock()
+	return _height_pack
+
+
+## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
+## Image. Tiles are normalized [0,1]; sample_height_for_direction() converts the
+## sample to metres via height_offset + value*max_height.
+## Tiles are read exclusively from heights.pack (O(1) offset, per-thread
+## handles) — there is no loose-file fallback; a planet without a pack has no
+## elevation tiles and callers fall back to the global heightmap.
+func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
+	var ns := nside if nside > 0 else export_nside
 	var res := chunk_heightmap_res
 	var expected := res * res * 4
+	var pack = _ensure_height_pack()
+	if pack == null:
+		return null
+	var bytes: PackedByteArray = pack.read_tile(ns, ipix)
+	if bytes.is_empty():
+		return null
 	if bytes.size() != expected:
 		if not _chunk_format_logged:
-			push_warning("[PlanetData] r32 tile %s: size %d != expected %d (res=%d)"
-					% [path, bytes.size(), expected, res])
+			push_warning("[PlanetData] r32 tile n%d/f%d: size %d != expected %d (res=%d)"
+					% [ns, ipix, bytes.size(), expected, res])
 			_chunk_format_logged = true
 		return null
 	return Image.create_from_data(res, res, false, Image.FORMAT_RF, bytes)
@@ -512,16 +542,27 @@ func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
 func apply_chunk_manifest() -> bool:
 	if chunk_heightmaps_dir == "":
 		return false
-	var base := chunk_heightmaps_dir
-	if not base.begins_with("res://") and not base.begins_with("user://") \
-			and not base.begins_with("/"):
-		base = "res://" + base
-	var path := base + "/manifest.json"
-	if not FileAccess.file_exists(path):
+	# Open heights.pack now (main thread) so WorkerThreadPool tasks never pay
+	# the open cost, and so the embedded manifest can replace a missing
+	# manifest.json (packed exports may ship the single .pack file only).
+	var pack = _ensure_height_pack()
+	if pack == null:
+		# No pack = no elevation tiles at all (there is no loose-file
+		# fallback) — every height sample will hit the global heightmap.
+		push_warning("[PlanetData] heights.pack missing in %s — planet has no "
+				% _chunk_base_path()
+				+ "elevation tiles (re-run tools/qgis/export_elevation.py)")
+	var path := _chunk_base_path() + "/manifest.json"
+	var data: Variant
+	if FileAccess.file_exists(path):
+		data = JSON.parse_string(FileAccess.get_file_as_string(path))
+	elif pack != null:
+		data = pack.get_manifest()
+		path = "heights.pack (embedded)"
+	else:
 		push_warning("[PlanetData] chunk manifest not found: %s" % path)
 		return false
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(data) != TYPE_DICTIONARY:
+	if typeof(data) != TYPE_DICTIONARY or (data as Dictionary).is_empty():
 		push_warning("[PlanetData] invalid chunk manifest: %s" % path)
 		return false
 	if data.has("radius"):

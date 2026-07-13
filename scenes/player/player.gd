@@ -46,6 +46,23 @@ const SPAWN_PROPS := {
 	"pallet_liquid": {"scene": "cargo/pallet_liquid", "type": "box", "z": 2.5, "y": 2.0},
 }
 
+# Teleporter pads (Area3D in group "teleporter"): area name -> destination
+# planet + landing offset from the planet origin (world axes — planets apply
+# no orbital rotation yet). The destination is matched by
+# PlanetData.planet_name, NEVER by node name: server-side nodes are renamed
+# to Horizon's names (e.g. tarsis_4_2 -> "P4_M2"), so scene-root names like
+# "Tarsis4_2" only exist on the client.
+const TELEPORT_TARGETS := {
+	"tarsis_4_2": {
+		"planet": "tarsis_4_2",
+		"pos": Vector3(5887586.7, 2175943.7, -1037588.4),
+	},
+	"tarsis_4_orbital": {
+		"planet": "tarsis_4",
+		"pos": Vector3(4520717.7, 2714719.7, -3734460.4),
+	},
+}
+
 @export_group("Controls map names")
 
 @export_group("Customizable player stats")
@@ -374,29 +391,43 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
 	elif area.is_in_group("teleporter"):
+		# Server-authoritative: the server reparents + repositions, then the
+		# move (with parent uuid) reaches the client through Horizon and
+		# client.gd player_update applies the reparent locally.
 		if OS.has_feature("dedicated_server"):
-			if area.name == "tarsis_4_2":
-				# Teleport onto the tarsis_4_2 planet system. Find the destination
-				# node (the system scene's root is "Tarsis4_2") and hand it to a
-				# deferred helper -- reparenting inside an Area3D signal callback is
-				# illegal ("busy adding/removing children").
-				var destination := get_tree().get_root().find_child("Tarsis4_2", true, false)
-				if destination != null:
-					# Deferred: reparenting a CharacterBody3D inside an Area3D physics
-					# callback is illegal ("Removing a CollisionObject during a physics
-					# callback is not allowed") and corrupts the body.
-					_role.call_deferred(
-						"_teleport_to_system",
-						destination,
-						Vector3(5887586.7, 2175943.7, -1037588.4)
-					)
-			elif area.name == "tarsis_4_orbital":
-				var destination := get_tree().get_root().find_child("Tarsis4", true, false)
-				_role.call_deferred(
-					"_teleport_to_system",
-					destination,
-					Vector3(4520717.7, 2714719.7, -3734460.4)
-				)
+			var target: Dictionary = TELEPORT_TARGETS.get(area.name, {})
+			if target.is_empty():
+				push_warning("[Player] teleporter '%s' has no TELEPORT_TARGETS entry"
+						% area.name)
+				return
+			var destination := _find_planet_by_data_name(target["planet"])
+			if destination == null:
+				push_warning("[Player] teleporter '%s': planet '%s' not found in registry"
+						% [area.name, target["planet"]])
+				return
+			print("[Player] teleporter '%s' -> planet '%s' (node '%s')"
+					% [area.name, target["planet"], destination.name])
+			# Deferred: reparenting a CharacterBody3D inside an Area3D physics
+			# callback is illegal ("Removing a CollisionObject during a physics
+			# callback is not allowed") and corrupts the body.
+			_role.call_deferred("_teleport_to_system", destination, target["pos"])
+
+## Server-side: resolve a planet node by its PlanetData.planet_name through
+## the authoritative registry (props_list["planets"]). Node NAMES are assigned
+## from Horizon world data (e.g. "P4_M2", "SandBox") and do not match the
+## scene-root names, so find_child() by name is never reliable here.
+func _find_planet_by_data_name(pname: String) -> Node:
+	var agent = NetworkOrchestrator.network_agent
+	if agent == null or not "props_list" in agent \
+			or not agent.props_list.has("planets"):
+		return null
+	for puuid in agent.props_list["planets"]:
+		var p = agent.props_list["planets"][puuid]
+		if is_instance_valid(p) and p.get("planet_data") != null \
+				and p.planet_data.planet_name == pname:
+			return p
+	return null
+
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
