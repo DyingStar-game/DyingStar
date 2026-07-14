@@ -31,20 +31,8 @@ const HANDBRAKE_MAX_KMH: float = 3.0
 ## (see _catch_if_below_surface).
 const _SURFACE_CATCH_MARGIN := 3.0
 
-# Dev spawn wheel: data key -> spawn params. Crates replicate as the "box" type (box_def.json) unless
-# they carry their own type (palette_container); only the scene differs — one table drives both the
-# wheel submenus and the spawn (DRY).
-const SPAWN_PROPS := {
-	"rock": {"scene": "rock/rock_mining_small", "type": "miningrock", "z": 5.5, "y": 1.2},
-	"rock_medium": {"scene": "rock/rock_mining_medium", "type": "miningrock", "z": 6.0, "y": 4.0},
-	"rock_large": {"scene": "rock/rock_mining_large", "type": "miningrock", "z": 9.0, "y": 6.0},
-	"box": {"scene": "testbox/box_50cm", "type": "box", "z": 1.5, "y": 2.0},
-	"palette_container": {"scene": "cargo/palette_container", "type": "palette_container", "z": 2.5, "y": 2.0},
-	"pallet_plate": {"scene": "cargo/pallet_plate", "type": "box", "z": 2.5, "y": 2.0},
-	"pallet_crate": {"scene": "cargo/pallet_crate", "type": "box", "z": 2.5, "y": 2.0},
-	"pallet_benne": {"scene": "cargo/pallet_benne", "type": "box", "z": 2.5, "y": 2.0},
-	"pallet_liquid": {"scene": "cargo/pallet_liquid", "type": "box", "z": 2.5, "y": 2.0},
-}
+# The dev spawn wheel's contents live in SpawnCatalog (scenes/props/spawn_catalog.gd): one table read
+# by the client (to build the wheel) AND by the server (to validate the key and place the prop).
 
 # Teleporter pads (Area3D in group "teleporter"): area name -> destination
 # planet + landing offset from the planet origin (world axes — planets apply
