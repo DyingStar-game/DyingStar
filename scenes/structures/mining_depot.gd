@@ -378,7 +378,14 @@ func _on_player_interact(body: Node3D) -> void:
 		var screen := get_node_or_null("miningdepot/Gui3D")
 		body.screen_position = screen.global_position if screen else global_position
 
+## A player walked out of the screen's zone: release the screen — but ALWAYS release the player, even
+## if it is not the one we had registered. Reading active_player.client_uuid without checking it first
+## errors out when active_player is null (it always is for a second player leaving, or after a
+## respawn), and the player it was leaving for then keeps screen_interacting set forever: its camera
+## stays locked on the screen it walked away from.
 func _on_player_leave(body: Node3D) -> void:
-	if body is Player and body.client_uuid == active_player.client_uuid:
+	if not (body is Player):
+		return
+	body.screen_interacting = null
+	if is_instance_valid(active_player) and body.client_uuid == active_player.client_uuid:
 		active_player = null
-		body.screen_interacting = null

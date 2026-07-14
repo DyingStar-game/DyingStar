@@ -153,8 +153,7 @@ func _process(_delta: float) -> void:
 		player.mouse_motion = Vector2.ZERO
 		# Turn the camera toward a 3D screen so it's centered in view.
 		if player.screen_interacting and player.screen_position != player.camera.global_position:
-			var look: Transform3D = player.camera.global_transform.looking_at(player.screen_position, player.up_direction)
-			player.camera.global_transform = player.camera.global_transform.interpolate_with(look, 0.15)
+			_face_screen(player.screen_position)
 	else:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -318,6 +317,26 @@ func _send_horn_input(event: InputEvent) -> void:
 		"pressed": pressed,
 		"special": special,
 	})
+
+## Ease the camera round to face a 3D screen (mining depot…) while we are using it.
+##
+## Everything is done in the camera's LOCAL frame, on purpose. Writing camera.global_transform — what
+## this used to do — nails the camera to a point in WORLD space: Godot turns the global transform we
+## hand it back into a local one relative to a parent that MOVES (the planet, at ~3e10). Re-writing the
+## same global origin every frame therefore keeps the camera at a fixed point of the universe while the
+## planet — and the player with it — flies away: within seconds the view is billions of metres behind,
+## staring at the sun, while the body still walks around normally for everybody else.
+## Rotating the LOCAL transform never touches the camera's position: it stays in the player's eyes.
+func _face_screen(screen_world: Vector3) -> void:
+	var pivot: Node3D = player.camera.get_parent() as Node3D
+	if pivot == null:
+		return
+	var target_local: Vector3 = pivot.to_local(screen_world)
+	var up_local: Vector3 = pivot.global_basis.inverse() * player.up_direction
+	if target_local.is_equal_approx(player.camera.position) or up_local.is_zero_approx():
+		return
+	var look: Transform3D = player.camera.transform.looking_at(target_local, up_local)
+	player.camera.transform = player.camera.transform.interpolate_with(look, 0.15)
 
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
