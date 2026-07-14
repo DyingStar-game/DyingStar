@@ -56,9 +56,11 @@ const ENTRIES := {
 		"label": "Liquid", "scene": "res://scenes/props/cargo/pallet_liquid.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
-	"depot": {
-		"label": "Dépôt", "scene": "res://scenes/structures/mining_depot.tscn",
-		"type": "mining_depot", "distance": 12.0, "origin_height": 0.0,
+	"hauling_box": {
+		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
+		# "palette_container" type: that is the def whose channels carry `content` (the ore volume).
+		"label": "Hauling", "scene": "res://scenes/props/cargo/hauling_box.tscn",
+		"type": "palette_container", "distance": 2.0, "origin_height": 0.3,
 	},
 	"truck": {
 		"label": "Camion", "scene": "res://scenes/vehicles/trucks/truck.tscn",
@@ -70,9 +72,8 @@ const ENTRIES := {
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
 	{"text": "Rocher", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "Caisse", "keys": ["box", "palette_container", "pallet_plate", "pallet_crate",
-			"pallet_benne", "pallet_liquid"]},
-	{"key": "depot"},
+	{"text": "Caisse", "keys": ["box", "hauling_box", "palette_container", "pallet_plate",
+			"pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"key": "truck"},
 ]
 
