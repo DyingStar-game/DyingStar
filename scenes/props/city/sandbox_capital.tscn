@@ -478,7 +478,12 @@ transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995
 text = "Bardock house"
 
 [node name="test_containers_6x3" parent="." unique_id=1660164005 instance=ExtResource("27_1kput")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.80019667294541, 0.01970342966785443, -59.661777808016815)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.80000000000291, 0, -58.86813561357434)
+
+[node name="6 x 3" type="Label3D" parent="test_containers_6x3" unique_id=89500634]
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -2.2301881891089224, 2.191275217228347, 0.7484304193873044)
+text = "6 X 3
+"
 
 [node name="test_containers_6x2_6" parent="." unique_id=1506572370 instance=ExtResource("28_w88le")]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -52.70100000000093, 0, -58.92596138691648)
@@ -501,7 +506,7 @@ text = "12 x 3
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.89800000000105, 0, -62)
 
 [node name="12 x 2_6" type="Label3D" parent="test_containers_12x2_6" unique_id=1769561631]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.897769999938944, 8.6148286726484e-08, -62.72873142771385)
+transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -5.18519853556618, 2.191275217228347, 0.7484304193873115)
 text = "12 x 2.6
 "
 
@@ -518,13 +523,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.229560
 shape = SubResource("BoxShape3D_gy7pr")
 
 [node name="tarsis_4_orbital" type="Area3D" parent="PlanetTeleporter" unique_id=1951402626 groups=["teleporter"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 92.53287770641573)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 92.53287770641572)
 collision_layer = 16
 collision_mask = 0
 monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_4_orbital" unique_id=321300656]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.048371529910724576)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.04837152991072457)
 shape = SubResource("BoxShape3D_gy7pr")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="PlanetTeleporter" unique_id=1368652612]
