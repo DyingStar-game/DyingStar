@@ -26,6 +26,9 @@ const _CARRY_INHAND_DIST := 0.3
 ## Keep the hold spot at least this far (m) above any solid surface below it, so looking down (e.g. to
 ## aim at an object on the ground) can't drive the carried body underground.
 const _CARRY_GROUND_CLEARANCE := 0.2
+## Dev spawn wheel: how far above / below the aimed point we look for the ground (m). Generous enough
+## for a slope or a step in front of us, short enough that a miss means "there really is nothing here".
+const GROUND_SEARCH := 30.0
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -38,6 +41,8 @@ var _idle_settled_ticks: int = 0
 ## Jumps performed by this player, replicated with the jump event so each one is a NEW value (see the
 ## jump in _physics_process): an identical repeated value would be swallowed by delta compression.
 var _jump_count: int = 0
+## Dev spawn wheel: catalogue keys asked for since the last physics tick (see _spawn_from_catalog).
+var _spawn_queue: Array[String] = []
 ## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
 var _los_ray: RayCast3D = null
 var _carry_prompt_timer: float = 0.0
@@ -108,22 +113,9 @@ func server_action_received(data: Dictionary) -> void:
 					# Not held locally (e.g. loaded from the database): tell Horizon directly.
 					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
 					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
-		"spawn_vehicle":
-			# Server-authoritative vehicle: spawn it in Horizon (all clients) AND locally on this game
-			# server (physics body that simulates + replicates). B1 networking.
-			var v_pos: Dictionary = data.get("position", {})
-			NetworkOrchestrator.spawn_prop_authoritative({
-				"type": "vehicle",
-				"uuid": UUID_UTIL.v4(),
-				"position": {
-					"x": float(v_pos.get("x", 0.0)),
-					"y": float(v_pos.get("y", 0.0)),
-					"z": float(v_pos.get("z", 0.0))
-				},
-				"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
-				"scenename": "scenes/vehicles/trucks/truck.tscn",
-				"parent_id": str(data.get("parent_id", "")),
-			})
+		"spawn_prop":
+			# Dev spawn wheel (key T): the client only NAMES what it wants; we own everything else.
+			_spawn_from_catalog(str(data.get("key", "")))
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
@@ -271,6 +263,75 @@ func _find_deletable_prop(target_uuid: String) -> Node:
 	# in the tree -> we find it and can free it (otherwise its collision lingers as a ghost).
 	return _find_node_by_uuid(get_tree().get_root(), target_uuid)
 
+# ------------------------------------------------------------------------------
+# Dev spawn wheel (key T) — SERVER-AUTHORITATIVE. The client only sends a catalogue key; the scene,
+# the object type, the celestial frame and the placement are all decided here.
+# ------------------------------------------------------------------------------
+## A wheel key arrived. Validate it against the catalogue and QUEUE it: placing a prop needs a ground
+## raycast, and the physics space can only be queried during the physics step (this runs on a network
+## message, outside it). _flush_spawn_queue does the work on the next tick.
+func _spawn_from_catalog(key: String) -> void:
+	if SpawnCatalog.entry(key).is_empty():
+		print("🌱 Spawn refused: unknown catalogue key '%s'" % key)  # a tampered / stale client
+		return
+	_spawn_queue.append(key)
+
+## Spawn everything the wheel asked for since the last tick (we are inside the physics step here).
+func _flush_spawn_queue() -> void:
+	while not _spawn_queue.is_empty():
+		_spawn_prop(_spawn_queue.pop_front())
+
+## Place ONE catalogue prop in front of the player and hand it to the network.
+##
+## The whole placement is computed in WORLD space (global_position, global_basis, up_direction — the
+## server's own vectors) and converted to the parent's frame ONCE, at the end. Mixing a LOCAL position
+## with WORLD axes — what the old client-side code did — silently skews the result as soon as the
+## parent frame is rotated, which the planet/city always is.
+func _spawn_prop(key: String) -> void:
+	var entry: Dictionary = SpawnCatalog.entry(key)
+	if entry.is_empty():
+		return
+	var forward: Vector3 = -player.global_basis.z  # where the player faces, in world space
+	var aim: Vector3 = player.global_position + forward * float(entry["distance"])
+	var spawn_world: Vector3 = aim
+	var basis: Basis = player.global_basis
+	# On a planet: drop the prop ON the ground, standing up along the local vertical. In zero g there
+	# is no ground and no vertical: leave it floating in front of the eyes, facing as we do.
+	var gravity_area: Node3D = player.get_current_gravity_parent()
+	if gravity_area != null:
+		var up: Vector3 = player.up_direction
+		var ignore: Array[RID] = [player.get_rid()]  # don't let our own body catch the ray
+		var ground: Variant = PropSpawn.ground_point(
+				player.get_world_3d().direct_space_state, aim, up, GROUND_SEARCH, ignore)
+		if ground != null:
+			spawn_world = (ground as Vector3) + up * float(entry["origin_height"])
+		else:
+			# Nothing under the crosshair (a hole, a cliff edge): keep the prop at our own height
+			# rather than dropping it into the void.
+			spawn_world = aim + up * float(entry["origin_height"])
+		basis = Globals.align_with_y(Transform3D(player.global_basis, Vector3.ZERO), up).basis
+	# Express the placement in the frame of the planet/city we stand on: a prop left in world
+	# coordinates is pinned in space while its planet moves away at ~3e10 (it drifts out of sight).
+	var net_parent: Node = PropSpawn.find_net_parent(player)
+	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, spawn_world)
+	var local_rot: Vector3 = _to_parent_rotation(net_parent, basis)
+	NetworkOrchestrator.spawn_prop_authoritative({
+		"type": str(entry["type"]),
+		"uuid": UUID_UTIL.v4(),
+		"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
+		"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
+		"scenename": str(entry["scene"]).trim_prefix("res://"),
+		"parent_id": PropSpawn.net_parent_uuid(net_parent),
+	})
+	print("🌱 Spawn '%s' (%s) for %s" % [key, entry["type"], player.client_uuid])
+
+## A WORLD orientation expressed in the parent's frame, as the euler angles the network carries.
+func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:
+	if net_parent is Node3D:
+		var parent_basis: Basis = (net_parent as Node3D).global_basis
+		return (parent_basis.inverse() * world_basis).orthonormalized().get_euler()
+	return world_basis.orthonormalized().get_euler()
+
 ## Recursive search for a node whose `uuid` matches (server-side helper).
 func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
@@ -324,6 +385,7 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
+	_flush_spawn_queue()  # the wheel's spawns wait for the physics step: they need a ground raycast
 	_server_update_carried_item(delta)
 	_server_update_carry_prompt(delta)
 	if player.piloting and is_instance_valid(player._seat_node):

@@ -388,16 +388,12 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 	network_events_sent += 1
 
 
+	# NOTE: the dev spawn wheel used to ALSO send a "props/spawn_request" straight to Horizon here,
+	# which spawned the prop from data the client had chosen itself (scene, type, position, parent) —
+	# the game server was never asked. Spawning now goes through the "spawn_prop" action above, like
+	# every other gameplay action: the server validates the key and decides the placement.
 	if datas.has("action"):
 		match datas["action"]:
-			"spawn":
-				# print("Request to spawn %s" % datas["entity"])
-				socket.send_text(JSON.stringify({
-					"namespace": "props",
-					"event": "spawn_request",
-					"data": datas,
-				}))
-				network_events_sent += 1
 			"control":
 				if datas.has("entity"):
 					match datas["entity"]:

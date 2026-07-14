@@ -434,23 +434,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed("spawn_wheel"):
 		if player._spawn_wheel:
-			player._spawn_wheel.open([
-				{"text": "Rocher", "submenu": [
-					{"text": "S", "data": "rock"},
-					{"text": "M", "data": "rock_medium"},
-					{"text": "L", "data": "rock_large"},
-				]},
-				{"text": "Caisse", "submenu": [
-					{"text": "50cm", "data": "box"},
-					{"text": "Ares", "data": "palette_container"},
-					{"text": "Palet", "data": "pallet_plate"},
-					{"text": "Cube", "data": "pallet_crate"},
-					{"text": "Benne", "data": "pallet_benne"},
-					{"text": "Liquid", "data": "pallet_liquid"},
-				]},
-				{"text": "Dépôt", "data": "depot"},
-				{"text": "Camion", "data": "truck"},
-			])
+			player._spawn_wheel.open(SpawnCatalog.build_wheel())  # labels + keys come from the catalogue
 	if event.is_action_released("spawn_wheel"):
 		if player._spawn_wheel:
 			player._spawn_wheel.confirm()
@@ -605,65 +589,13 @@ func _on_show_debug_changed(on: bool) -> void:
 	player.display_debug.emit(on)
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
-func _on_spawn_selected(data) -> void:
-	if player.SPAWN_PROPS.has(data):
-		var p: Dictionary = player.SPAWN_PROPS[data]
-		spawn_box(p["scene"], p["type"], p["z"], p["y"])
-	elif data == "depot":
-		_spawn_depot()
-	elif data == "truck":
-		_spawn_truck()
-
-# Spawn a networked truck (server-authoritative vehicle prop) in front of the player. The
-# server simulates its physics and replicates it to every client (B1 vehicle networking).
-func _spawn_truck() -> void:
-	var spawn_pos: Vector3 = player.position + (-player.global_basis.z * 8.0) + player.global_basis.y * 1.0
-	var parent = player.get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	player.client_send_action_to_server({
-		"action": "spawn_vehicle",
-		"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-		"parent_id": parentuuid,
-	})
-
-# LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
-func _spawn_depot() -> void:
-	var spawn_pos: Vector3 = player.position + (-player.global_basis.z * 10.0)
-	var parent = player.get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	player.emit_signal(
-		"client_action_requested",
-		{
-			"action": "spawn",
-			"entity": "mining_depot",
-			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-			"scenename": "scenes/structures/mining_depot.tscn",
-			"parent_id": parentuuid,
-		}
-	)
-
-func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float):
-	# LOCAL DEV (do not commit): re-enabled to spawn mining rocks for testing.
-	var item_spawn_position: Vector3 = player.position + (-player.global_basis.z * _coeffz) + player.global_basis.y * _coeffy
-	var parent = player.get_parent()
-	# Robust to the scene layout: any parent without a uuid (SystemSandbox, a grouping node) = "".
-	var parentuuid = str(parent.uuid) if "uuid" in parent else ""
-	player.emit_signal(
-		"client_action_requested",
-		{
-			"action": "spawn",
-			"entity": _type,
-			"position": {
-				"x": item_spawn_position[0],
-				"y": item_spawn_position[1],
-				"z": item_spawn_position[2]
-			},
-			"scenename": "scenes/props/" + _boxscene + ".tscn",
-			"parent_id": parentuuid,
-		}
-	)
+## A wheel entry was picked: just NAME it to the server. Everything else — which scene, which object
+## type, where it lands, which celestial frame it belongs to — is decided server-side, from the same
+## catalogue (see PlayerServer's "spawn_prop"). The client used to compute the position itself, mixing
+## its LOCAL position with WORLD axes, so the prop flew off in a skewed direction on a rotated parent;
+## and it named the scene, which let any tampered client instance anything anywhere.
+func _on_spawn_selected(key) -> void:
+	player.client_send_action_to_server({"action": "spawn_prop", "key": str(key)})
 
 ## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
 ## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
