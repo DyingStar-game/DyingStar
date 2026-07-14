@@ -3,7 +3,11 @@ extends StaticBody3D
 signal hs_server_prop_update
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
-const CRATE_SCENE = preload("res://scenes/props/cargo/palette_container.tscn")
+## The crate the depot packs its ore into. It replicates as the "palette_container" TYPE (that def is
+## the one whose channels carry `content`, the ore volume) — only the scene differs. Its physical size
+## is what crate_volume() reads to decide how much ore fills one crate.
+const CRATE_SCENE = preload("res://scenes/props/cargo/hauling_box.tscn")
+const CRATE_SCENENAME = "scenes/props/cargo/hauling_box.tscn"
 
 @export var placeholder = false
 ## Optional explicit network id for a designer-placed depot. Leave EMPTY and it is derived
@@ -339,7 +343,7 @@ func handle_extract():
 		},
 		"rotation": {"x": 0, "y": 0, "z": 0},
 		"content": {"ore_volume": cv},
-		"scenename": "scenes/props/cargo/palette_container.tscn",
+		"scenename": CRATE_SCENENAME,
 		"parent_id": uuid,
 	}
 	NetworkOrchestrator.spawn_prop_authoritative(data)

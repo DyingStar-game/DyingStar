@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://dcinktod8m0x2"]
 
+[ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/props/cargo/palette_container.gd" id="1_haul"]
 [ext_resource type="PackedScene" uid="uid://dhmj25r7k7c26" path="res://assets/models/cargo/box.glb" id="2_j2geo"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/materials/painted_metal/paint_yellow_material.tres" id="3_hqfv2"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/materials/decals/ares_misc_decal_material.tres" id="4_6ad14"]
@@ -12,6 +13,8 @@ collision_layer = 8
 collision_mask = 15
 mass = 50.0
 continuous_cd = true
+script = ExtResource("1_haul")
+type_name = "palette_container"
 
 [node name="boxmesh" parent="." unique_id=1100122273 instance=ExtResource("2_j2geo")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25432684811476347, 0)
@@ -25,6 +28,13 @@ surface_material_override/0 = ExtResource("4_6ad14")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415410391]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03649002313613891, 0)
 visible = false
+shape = SubResource("BoxShape3D_urcx6")
+
+[node name="Area3D" type="Area3D" parent="." unique_id=1415410392]
+collision_layer = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1415410393]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03649002313613891, 0)
 shape = SubResource("BoxShape3D_urcx6")
 
 [editable path="boxmesh"]

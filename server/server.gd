@@ -101,6 +101,8 @@ var props_scene: Dictionary = {
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
 	'scenes/props/cargo/palette_container.tscn':
 		preload('res://scenes/props/cargo/palette_container.tscn'),
+	'scenes/props/cargo/hauling_box.tscn':
+		preload('res://scenes/props/cargo/hauling_box.tscn'),
 	'scenes/props/cargo/pallet_crate.tscn':
 		preload('res://scenes/props/cargo/pallet_crate.tscn'),
 	'scenes/props/cargo/pallet_benne.tscn':
