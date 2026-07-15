@@ -26,6 +26,8 @@ const _CARRY_INHAND_DIST := 0.3
 ## Keep the hold spot at least this far (m) above any solid surface below it, so looking down (e.g. to
 ## aim at an object on the ground) can't drive the carried body underground.
 const _CARRY_GROUND_CLEARANCE := 0.2
+## Yaw applied to a carried object per mouse-wheel notch (radians) — see the "carry_rotate" action.
+const CARRY_ROTATE_STEP := deg_to_rad(15.0)
 ## Dev spawn wheel: how far above / below the aimed point we look for the ground (m). Generous enough
 ## for a slope or a step in front of us, short enough that a miss means "there really is nothing here".
 const GROUND_SEARCH := 30.0
@@ -139,6 +141,15 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_h = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
+		"carry_rotate":
+			# Spin the carried object around the vertical by one notch. The item holds its orientation
+			# on its own (angular axes locked, angular_velocity zeroed in _server_update_carried_item),
+			# so a one-off basis rotation here sticks. Around up_direction so it stays upright on a planet.
+			if is_instance_valid(player.hands_item):
+				var step: float = CARRY_ROTATE_STEP * signf(float(data.get("dir", 1)))
+				var t: Transform3D = player.hands_item.global_transform
+				t.basis = Basis(player.up_direction.normalized(), step) * t.basis
+				player.hands_item.global_transform = t.orthonormalized()
 		"vehicle_ignition":
 			var veh_i = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_i != null and veh_i._pilot == player and veh_i.has_method("toggle_engine"):

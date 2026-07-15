@@ -407,6 +407,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
+	# Mouse wheel spins a CARRIED object around its vertical axis, so you can orient a crate before
+	# dropping it. Server-authoritative (it owns the held body): we only send the step. Gated on
+	# actually carrying so the wheel is free for other uses otherwise.
+	if player._owner_carrying:
+		if event.is_action_pressed("carry_rotate_cw"):
+			player.client_send_action_to_server({"action": "carry_rotate", "dir": 1})
+		elif event.is_action_pressed("carry_rotate_ccw"):
+			player.client_send_action_to_server({"action": "carry_rotate", "dir": -1})
+
 	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		player.mouse_motion = -event.relative * 0.001
