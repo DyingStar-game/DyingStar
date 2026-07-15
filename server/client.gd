@@ -342,13 +342,22 @@ func _collect_parents_uuids(node: Node) -> Array:
 		current = current.get_parent()
 	return uuids
 
+## The live node a prop/player should parent to, by uuid, or null. Skips (and cleans up) a lingering
+## entry whose node was already freed — otherwise callers would reparent onto a freed instance and
+## crash. Returning null there is correct: a freed parent is treated as "not known yet", so the prop
+## stays where it is until a real parent resolves.
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
-			return props_list[proptype][parent_id]
+			var node = props_list[proptype][parent_id]
+			if is_instance_valid(node):
+				return node
+			props_list[proptype].erase(parent_id)
+			return null
 	for player_id in players_list.keys():
 		if player_id == parent_id:
-			return players_list[player_id]
+			var pnode = players_list[player_id]
+			return pnode if is_instance_valid(pnode) else null
 	return null
 
 ########################################################################
@@ -503,10 +512,16 @@ func delete_object(event: Dictionary) -> void:
 					return
 
 				var prop_instance = props_list[type][event["object_id"]]
+				# Already freed with a deleted parent (crate in a bed, carried item): nothing to free,
+				# just drop the lingering entry. Without this the is_instance_valid() below is false, the
+				# carried-object guard is skipped, and queue_free() hits a freed node → client crash.
+				if not is_instance_valid(prop_instance):
+					props_list[type].erase(event["object_id"])
+					return
 				# A carried object is parented to a player and follows it locally; its GORC zone
 				# position goes stale while carried, so ignore this despawn (otherwise it vanishes
 				# from the carrier's hands over distance). It is freed with its player anyway.
-				if is_instance_valid(prop_instance) and prop_instance.get_parent() is Player:
+				if prop_instance.get_parent() is Player:
 					return
 				prop_instance.queue_free()
 				props_list[type].erase(event["object_id"])
@@ -563,6 +578,9 @@ func create_player(event: Dictionary) -> void:
 	if players_list.has(event["object_id"]):
 		# special case when parent to very far away object and have a gorc_zone_enter
 		var player = players_list[event["object_id"]]
+		if not is_instance_valid(player):  # freed with a deleted parent — drop the stale entry
+			players_list.erase(event["object_id"])
+			return
 		var current_parent = player.get_parent()
 		var new_parent = _search_parent_node(player_data["parent_id"])
 		if current_parent == null and player_data["parent_id"] != null:
@@ -854,7 +872,8 @@ func delete_player(event: Dictionary) -> void:
 	if players_list.has(event["object_id"]):
 		var remote_player = players_list[event["object_id"]]
 		players_list.erase(event["object_id"])
-		remote_player.queue_free()
+		if is_instance_valid(remote_player):  # may already be freed with a deleted parent
+			remote_player.queue_free()
 		NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() - 1)
 		print("Player %s has been removed." % event["object_id"])
 	else:
