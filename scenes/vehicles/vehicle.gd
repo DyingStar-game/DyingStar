@@ -1553,12 +1553,13 @@ func _sfx_muted() -> bool:
 		return true
 	return _is_networked() and GameOrchestrator.is_server()
 
-## SERVER: the driver turns the ignition key (I). Refused while the vehicle is moving — you start or
-## cut the engine standing still. The state is replicated, so every client hears the start-up + the
-## idle, and a vehicle with a dead engine does not drive (see _physics_process).
+## SERVER: the driver turns the ignition key (I). STARTING needs a near-standstill (below
+## ignition_max_kmh); STOPPING is always allowed, at any speed — a kill switch (unwise while rolling
+## IRL, but the driver can always cut it). The state is replicated, so every client hears the start-up
+## + the idle, and a vehicle with a dead engine does not drive (see _physics_process).
 func toggle_engine() -> void:
-	if absf(get_display_speed_kmh()) > ignition_max_kmh:
-		return
+	if not _engine_on and absf(get_display_speed_kmh()) > ignition_max_kmh:
+		return  # can't START above walking pace; stopping (the else) is unrestricted
 	set_engine(not _engine_on)
 
 ## Engine on/off, on the server as well as on each replica (which gets it replicated). Switching it ON
@@ -1753,9 +1754,9 @@ func _physics_process(delta: float) -> void:
 			_idle_still_ticks = 0
 			if sleeping and is_instance_valid(_pilot):
 				sleeping = false  # pilot back on board: resume simulation
-		# A driver with a DEAD ENGINE steers a lifeless truck: no drive force (it coasts / stays
-		# parked), exactly as if there were nobody at the wheel. Start it with the ignition key (I).
-		if is_instance_valid(_pilot) and _engine_on:
+		# A driver is aboard: they steer and brake even with a DEAD ENGINE — only the propulsion is
+		# gated on the engine (handled inside _apply_drive). Start the engine with the ignition key (I).
+		if is_instance_valid(_pilot):
 			_apply_drive(delta)
 		elif _handbrake:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
@@ -1766,7 +1767,7 @@ func _physics_process(delta: float) -> void:
 	# Bench / standalone: drive locally.
 	_check_rollover_unlock()
 	_pin_locked_cargo()
-	if _pilot != null and _engine_on:
+	if _pilot != null:
 		_apply_drive(delta)
 	elif _handbrake:
 		_hold_handbrake(delta)
@@ -2078,6 +2079,10 @@ func _apply_drive(delta: float) -> void:
 		throttle_in = Input.get_axis("move_back", "move_forward")  # bench: local input
 		turn = Input.get_axis("move_right", "move_left")
 		braking = Input.is_physical_key_pressed(KEY_SPACE)
+	# Engine off: no propulsion (steering + braking below still work). Zero the throttle so pressing
+	# forward does nothing — not even releasing the hand brake, which stays on until the engine runs.
+	if not _engine_on:
+		throttle_in = 0.0
 	# Hand brake holds the vehicle until the pilot presses the throttle again.
 	if _handbrake and absf(throttle_in) > 0.05:
 		set_handbrake(false)  # goes through the setter, so the release is heard too
@@ -2088,9 +2093,10 @@ func _apply_drive(delta: float) -> void:
 	_sync_powertrain()  # pick up any live inspector tweak (bench tuning)
 	var force: float = _powertrain.force(_throttle, forward_kmh)
 
-	# Overloaded past the hard limit: the vehicle can't move — kill the drive and hold it.
+	# Overloaded past the hard limit, hand-braked, or engine off: no drive force. Steering + braking
+	# further down are unaffected — a dead engine still rolls, steers and brakes.
 	var immobilized: bool = is_immobilized()
-	if immobilized or _handbrake:
+	if immobilized or _handbrake or not _engine_on:
 		force = 0.0
 
 	# VehicleBody3D drives toward +Z for a positive engine_force; our cab faces -Z, so negate.
