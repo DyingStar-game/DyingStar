@@ -344,6 +344,20 @@ func _face_screen(screen_world: Vector3) -> void:
 func _handle_camera_motion() -> void:
 	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
 
+	# While carrying, holding the free-rotate button (middle mouse) makes the mouse tumble the CARRIED
+	# object on all axes instead of moving the view (this is in addition to the wheel's single-axis
+	# notch). Server-authoritative: we only stream the motion; the server owns the held body. Zero the
+	# look for this frame so the camera stays put.
+	var look: Vector2 = player.mouse_motion
+	if player._owner_carrying and Input.is_action_pressed("carry_free_rotate"):
+		if player.mouse_motion != Vector2.ZERO:
+			player.client_send_action_to_server({
+				"action": "carry_free_rotate",
+				"dx": player.mouse_motion.x,
+				"dy": player.mouse_motion.y,
+			})
+		look = Vector2.ZERO
+
 	if parent_gravity_area:
 		player._no_gravity_time = 0.0
 		if parent_gravity_area.gravity_point:
@@ -353,8 +367,8 @@ func _handle_camera_motion() -> void:
 
 		player.gravity = player._compute_gravity(parent_gravity_area)
 		player.orient_player()
-		player.global_basis = player.global_basis.rotated(player.global_basis.y, player.mouse_motion.x * player.camera_sensitivity)
-		player.camera_pivot.rotate_object_local(Vector3.RIGHT, player.mouse_motion.y * player.camera_sensitivity)
+		player.global_basis = player.global_basis.rotated(player.global_basis.y, look.x * player.camera_sensitivity)
+		player.camera_pivot.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
 		player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
 	else:
 		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
@@ -364,8 +378,8 @@ func _handle_camera_motion() -> void:
 			# 0g movement
 			player.gravity = 0.0
 			player.camera_pivot.rotation.x = 0
-			player.rotate_object_local(Vector3.UP, player.mouse_motion.x * player.camera_sensitivity)
-			player.rotate_object_local(Vector3.RIGHT, player.mouse_motion.y * player.camera_sensitivity)
+			player.rotate_object_local(Vector3.UP, look.x * player.camera_sensitivity)
+			player.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
 
 	# Replicate the camera pitch ("head") to the server so others see where we look and
 	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).

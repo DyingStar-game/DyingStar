@@ -28,6 +28,10 @@ const _CARRY_INHAND_DIST := 0.3
 const _CARRY_GROUND_CLEARANCE := 0.2
 ## Yaw applied to a carried object per mouse-wheel notch (radians) — see the "carry_rotate" action.
 const CARRY_ROTATE_STEP := deg_to_rad(15.0)
+## Free-rotate gain: radians of object rotation per unit of streamed mouse motion. The client streams
+## the same scaled motion it uses for the camera (event.relative * 0.001), so this is tuned so a
+## screen-width drag is roughly a full turn — see the "carry_free_rotate" action.
+const CARRY_FREE_ROTATE_GAIN := 6.0
 ## Dev spawn wheel: how far above / below the aimed point we look for the ground (m). Generous enough
 ## for a slope or a step in front of us, short enough that a miss means "there really is nothing here".
 const GROUND_SEARCH := 30.0
@@ -142,14 +146,21 @@ func server_action_received(data: Dictionary) -> void:
 			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
 		"carry_rotate":
-			# Spin the carried object around the vertical by one notch. The item holds its orientation
-			# on its own (angular axes locked, angular_velocity zeroed in _server_update_carried_item),
-			# so a one-off basis rotation here sticks. Around up_direction so it stays upright on a planet.
-			if is_instance_valid(player.hands_item):
-				var step: float = CARRY_ROTATE_STEP * signf(float(data.get("dir", 1)))
-				var t: Transform3D = player.hands_item.global_transform
-				t.basis = Basis(player.up_direction.normalized(), step) * t.basis
-				player.hands_item.global_transform = t.orthonormalized()
+			# Spin the carried object around the vertical by one notch, about its geometry CENTER. The item
+			# holds its orientation on its own (angular axes locked, angular_velocity zeroed in
+			# _server_update_carried_item), so a one-off rotation here sticks. Around up_direction so it
+			# stays upright on a planet.
+			var step: float = CARRY_ROTATE_STEP * signf(float(data.get("dir", 1)))
+			_rotate_held_about_center(Basis(player.up_direction.normalized(), step))
+		"carry_free_rotate":
+			# Hold the middle mouse button and move the mouse to tumble the carried object on all axes,
+			# about its geometry CENTER (so it spins in place, not orbits its off-center body origin). In
+			# addition to the wheel's single-axis notch. Yaw about the gravity up from mouse X; pitch about
+			# the camera's horizontal right axis from mouse Y, so a drag maps to what the player sees.
+			var dxr: float = float(data.get("dx", 0.0)) * CARRY_FREE_ROTATE_GAIN
+			var dyr: float = float(data.get("dy", 0.0)) * CARRY_FREE_ROTATE_GAIN
+			var pitch_axis: Vector3 = player.camera_pivot.global_basis.x.normalized()
+			_rotate_held_about_center(Basis(player.up_direction.normalized(), dxr) * Basis(pitch_axis, dyr))
 		"vehicle_ignition":
 			var veh_i = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_i != null and veh_i._pilot == player and veh_i.has_method("toggle_engine"):
@@ -666,6 +677,21 @@ func _server_drop_carried_item() -> void:
 	player.hands_item = null
 	# Stop carrying on all clients (perforator comes back) (issue #124).
 	player.server_send_properties_to_client({"carrying": false})
+
+## Rotate the held object by `rot` (world-space) about its geometry CENTER rather than its body
+## origin, so it spins in place instead of orbiting when the origin is off-center. The center is
+## pinned to the hold spot each tick by _server_update_carried_item, so we keep it fixed here too
+## (no lurch). The held body's angular axes are locked, so the new basis sticks.
+func _rotate_held_about_center(rot: Basis) -> void:
+	if not is_instance_valid(player.hands_item):
+		return
+	var item: RigidBody3D = player.hands_item
+	var center: Vector3 = item.get_center_offset() if item.has_method("get_center_offset") else Vector3.ZERO
+	var tf: Transform3D = item.global_transform
+	var center_world: Vector3 = tf * center
+	tf.basis = (rot * tf.basis).orthonormalized()
+	tf.origin = center_world - tf.basis * center
+	item.global_transform = tf
 
 ## Server: hold the carried item in front of the body (yaw only), driven toward the hold spot by
 ## velocity (physics-held carry B). The camera PITCH raises/lowers the spot vertically for stacking,
