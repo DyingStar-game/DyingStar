@@ -528,7 +528,7 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 	var c: Object = _los_ray.get_collider()
 	if c is Node3D:
 		var box_dist: float = _los_ray.global_position.distance_to(target)
-		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
 		if hit_dist > box_dist + 2.0:
 			return false
 	return true
@@ -580,7 +580,7 @@ func _first_solid_hit_is(target: Node3D) -> bool:
 		return true
 	if c is Node3D:
 		var target_dist: float = _los_ray.global_position.distance_to(target.global_position)
-		var hit_dist: float = _los_ray.global_position.distance_to((c as Node3D).global_position)
+		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
 		return hit_dist > target_dist
 	return false
 
@@ -590,6 +590,22 @@ func _is_blocked_by_geometry(prop: Node) -> bool:
 	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
 		return false
 	return not _can_see(prop)
+
+## World position of the SPECIFIC collision shape the LOS ray hit — NOT the whole CollisionObject's
+## origin. A building is a multi-cell StaticBody: get_collider() returns that body, whose origin sits at
+## one corner, far from the wall you actually hit. Comparing THAT distance to the target wrongly reads
+## the wall as "beyond" the target and lets you grab/open through it. The hit SHAPE's own transform is
+## right at the wall. Node transforms are double precision here; get_collision_point() is not (Jolt
+## float32 → km-off at astronomic coords). Falls back to the collider origin if the shape can't resolve.
+func _los_hit_world_pos(c: Object) -> Vector3:
+	if c is CollisionObject3D:
+		var obj := c as CollisionObject3D
+		var owner_id: int = obj.shape_find_owner(_los_ray.get_collider_shape())
+		if owner_id != -1:
+			return (obj.global_transform * obj.shape_owner_get_transform(owner_id)).origin
+	if c is Node3D:
+		return (c as Node3D).global_position
+	return Vector3.ZERO
 
 ## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
 ## _process / input / server alike — direct_space_state is only valid during physics).
