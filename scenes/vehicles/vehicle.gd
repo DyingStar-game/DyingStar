@@ -433,6 +433,10 @@ var _net_last_speed: float = 0.0  # server: last replicated speed (km/h), change
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
 var _net_last_cargo_mass: float = -1.0  # server: last replicated cargo load (kg), change detection
 var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), change detection
+## The real "up" for this vehicle: opposite the gravity acting on it (radial on a planet, world-up on
+## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
+## measure tilt against THIS, not world Y. Defaults to world up until the first physics step.
+var _gravity_up: Vector3 = Vector3.UP
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
@@ -780,7 +784,7 @@ func _seat_position() -> Vector3:
 ## Flip the vehicle back onto its wheels (GDD anti-rollover): keep the heading, cancel pitch
 ## and roll, lift it a touch and zero the velocities so it settles upright.
 func reset_upright() -> void:
-	var up := Vector3.UP  # bench: world up (later: gravity-up from the planet)
+	var up := _gravity_up  # the vehicle's real vertical (radial on a planet, world-up on the bench)
 	# Only flip a genuinely tipped-over vehicle (more than ~60° from upright). If it is already
 	# roughly upright, do nothing — otherwise spamming R keeps lifting it (+1 m each call) and
 	# the truck flies away.
@@ -1037,7 +1041,9 @@ func _pin_locked_cargo() -> void:
 func _check_rollover_unlock() -> void:
 	if _locked_cargo.is_empty() or cargo_unlock_tilt_deg <= 0.0:
 		return
-	if global_transform.basis.y.dot(Vector3.UP) > cos(deg_to_rad(cargo_unlock_tilt_deg)):
+	# Tilt is measured against the vehicle's OWN gravity-up, not world Y (see _gravity_up): a truck
+	# resting flat on a planet must read as fully upright (dot ~ 1), whatever its world orientation.
+	if global_transform.basis.y.dot(_gravity_up) > cos(deg_to_rad(cargo_unlock_tilt_deg)):
 		return  # still upright enough
 	for body in _locked_cargo.keys():
 		_spill_cargo(body)
@@ -2136,6 +2142,14 @@ func _apply_drive(delta: float) -> void:
 ## suspension keeps holding the truck up. Stays DYNAMIC: a collision impulse is far bigger than
 ## handbrake_hold * step, so a hit still pushes it (it then re-settles).
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	# Capture the real "up" from the gravity acting on us (radial on a planet, world-up on the bench,
+	# zero in space). This is the ONLY place the actual gravity vector is exposed. Used by the rollover
+	# check + reset_upright, which must measure tilt against the LOCAL vertical, not world Y — at
+	# astronomic planet coords world Y is ~65° off local up, so a flat truck sat right on the rollover
+	# threshold and spilled its cargo at random. Kept from the last non-zero reading in free fall / 0g.
+	var g: Vector3 = state.total_gravity
+	if g.length_squared() > 0.001:
+		_gravity_up = -g.normalized()
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y
