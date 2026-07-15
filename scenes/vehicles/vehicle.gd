@@ -44,6 +44,8 @@ const LIGHT_GROUP := "vehicle_light"
 const MODEL_GROUP := "vehicle_model"
 ## How far the horn is taken down (dB) during its fade-out, before the player is stopped.
 const HORN_FADE_DB := -30.0
+## Scan the bed for a settled fallen crate every N physics frames (see _scan_bay_for_settled_cargo).
+const BAY_SCAN_FRAMES := 6
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -415,6 +417,7 @@ var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed
 var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
+var _bay_scan_tick: int = 0  # throttles _scan_bay_for_settled_cargo (see BAY_SCAN_FRAMES)
 var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
 var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
 var _cargo_debug_markers: Dictionary = {}  # RigidBody3D cargo -> its MeshInstance3D envelope
@@ -816,6 +819,41 @@ func lock_dropped_cargo(body: Node) -> void:
 		return
 	if body is RigidBody3D and body.mass > 0.0:
 		_lock_cargo(body)
+
+## Catch a carriable that FELL, bounced or was thrown into the bed (the carry-drop path only locks an
+## item released BY HAND inside the zone). Every few frames, ask the PHYSICS ENGINE which prop bodies
+## overlap the loading zone — by collision MASK (the prop layer), so it returns exactly the crates/rocks
+## inside it, no world-wide group scan — and lock those that have come to REST. Same zone box as the
+## hand-drop (the designer Cargo_loading_zone, else the cargo bay); throttled, it only rescues free-fall.
+func _scan_bay_for_settled_cargo() -> void:
+	_bay_scan_tick += 1
+	if _bay_scan_tick < BAY_SCAN_FRAMES:
+		return
+	_bay_scan_tick = 0
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.collide_with_bodies = true
+	q.collide_with_areas = false
+	q.collision_mask = 1 << (Globals.LAYER_PROP - 1)  # props only (crates/rocks live on LAYER_PROP)
+	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
+		q.shape = cargo_loading_zone.shape
+		q.transform = cargo_loading_zone.global_transform
+	else:
+		var box := BoxShape3D.new()
+		box.size = cargo_bay_size
+		q.shape = box
+		q.transform = global_transform.translated_local(cargo_bay_offset)
+	for hit in space.intersect_shape(q, 16):
+		var body = hit.get("collider")
+		if not (body is RigidBody3D) or _locked_cargo.has(body):
+			continue
+		var rb := body as RigidBody3D
+		if rb.mass <= 0.0 or rb.get_parent() is Player:
+			continue  # carried items ride under a Player — not free cargo, don't absorb them
+		if rb.linear_velocity.length() <= cargo_settle_speed:
+			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
 ## Resolve the designer loading zone (explicit @export, else a child named "Cargo_loading_zone") and
 ## turn OFF its physics collision: a CollisionShape3D under this VehicleBody3D would otherwise be a
@@ -1735,6 +1773,7 @@ func _physics_process(delta: float) -> void:
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_check_rollover_unlock()  # spill the load if the truck is tipped over
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
+		_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
 		# Settle & sleep an idle vehicle. Wheel-suspension micro-forces on the
 		# terrain trimesh otherwise keep the body awake forever, wandering by
 		# millimetres every tick — replicated to every client as endless
@@ -1773,6 +1812,7 @@ func _physics_process(delta: float) -> void:
 	# Bench / standalone: drive locally.
 	_check_rollover_unlock()
 	_pin_locked_cargo()
+	_scan_bay_for_settled_cargo()
 	if _pilot != null:
 		_apply_drive(delta)
 	elif _handbrake:
