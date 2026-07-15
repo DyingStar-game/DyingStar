@@ -23,7 +23,7 @@
 size = Vector3(0.7717459236309878, 1.889733397892087, 1.1162902846483576)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_nd433"]
-size = Vector3(1.6587069341703682, 0.851504158613352, 1.9680689896658805)
+size = Vector3(2.185217537648896, 0.851504158613352, 2.1983872583680295)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_8eohf"]
 size = Vector3(0.03758665739610478, 0.1044873444532186, 0.14503269956207987)
@@ -187,7 +187,7 @@ screen = NodePath("../Model/ScreenR_Retro")
 resolution = Vector2i(200, 320)
 
 [node name="Cargo_loading_zone" type="CollisionShape3D" parent="." unique_id=551701719]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00417295131010436, 0.4900656582491637, 1.052520832721738)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.009171814053482052, 0.4900656582491637, 1.167679956857709)
 shape = SubResource("BoxShape3D_nd433")
 debug_color = Color(0.22392991, 0.61549836, 0.4901445, 0.41960785)
 
