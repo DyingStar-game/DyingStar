@@ -665,6 +665,13 @@ func create_generic_object(event: Dictionary) -> void:
 	if object_type == "serverinfo":
 		return
 
+	# A lingering entry may point at a FREED node: a prop parented to another object (a crate in a bed,
+	# a carried item) is freed by Godot together with that parent when the parent is deleted, but only
+	# the parent's own props_list entry is erased — the child's is not. Drop the stale entry so we fall
+	# through to the create branch and re-instantiate it fresh, instead of touching a freed instance.
+	if props_list[object_type].has(object_id) and not is_instance_valid(props_list[object_type][object_id]):
+		props_list[object_type].erase(object_id)
+
 	if props_list[object_type].has(object_id):
 		var prop_instance = props_list[object_type][object_id]
 		# manage special case for new parent (only when it actually changes — parent_id rides the
@@ -814,6 +821,14 @@ func update_generic_object(event: Dictionary) -> void:
 	if props_list.has(object_type):
 		if props_list[object_type].has(object_id):
 			var prop_instance = props_list[object_type][object_id]
+			# The node may already be FREED while its entry lingers here: a prop parented to another
+			# object (a crate in a truck bed, a carried item) is freed by Godot together with that
+			# parent when the parent is deleted, but only the PARENT's own props_list entry is erased —
+			# the child's is not. A late update for the child then lands on a freed instance. Drop the
+			# stale entry and bail (a later create re-instantiates it fresh if it comes back).
+			if not is_instance_valid(prop_instance):
+				props_list[object_type].erase(object_id)
+				return
 			# Reparent ONLY when the parent actually changes. parent_id rides zone 0 (30/s), so without
 			# this guard we'd reparent every prop every frame (spam + churn that fights the carry).
 			if object_data.has("parent_id"):
