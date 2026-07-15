@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://d37hc6ybk8fsj"]
 
-[ext_resource type="Script" uid="uid://cbg5vhdodbobh" path="res://scenes/props/testbox/box_50_cm.gd" id="1_o2evt"]
+[ext_resource type="Script" uid="uid://c7v5g1523rj0r" path="res://scenes/props/cargo/carryable_storagebox.gd" id="1_o2evt"]
 [ext_resource type="ArrayMesh" uid="uid://cqspqet04e0fj" path="res://assets/_universe/props/containers/Box50cm.mesh" id="1_xngen"]
 [ext_resource type="Material" uid="uid://cc7amvqxedibt" path="res://assets/_universe/props/containers/box_50cm.material" id="3_ovsim"]
 

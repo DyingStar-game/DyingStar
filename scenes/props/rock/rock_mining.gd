@@ -75,7 +75,7 @@ var server_parent_resend: int = 0
 
 var has_parent: bool = false
 # True while we briefly leave the tree to reparent (carry/drop): tells _exit_tree NOT
-# to emit a delete (the object still exists, it just changed parent). Mirrors Box50cm.
+# to emit a delete (the object still exists, it just changed parent). Mirrors CarriableBox.
 var server_reparenting: bool = false
 # True while carried by a player (issue #124), so nobody else can grab it meanwhile.
 var carried: bool = false
@@ -573,7 +573,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_refresh_cuts()
 
 #####################################################################
-# Carry / drop (issue #124) — carriable contract, same as Box50cm
+# Carry / drop (issue #124) — carriable contract, same as CarriableBox
 #####################################################################
 
 ## A piece is "ore" (carriable) only once it has no fault left: every fault fractured
@@ -584,7 +584,7 @@ func is_fully_fractured() -> bool:
 			return false
 	return true
 
-## Carriable contract (same shape as Box50cm.interact): the player asks the object
+## Carriable contract (same shape as CarriableBox.interact): the player asks the object
 ## whether it can be picked up — it stays generic, the rule lives here. Only a
 ## fault-less, not-already-carried piece can be carried.
 func interact(_interactor: Node = null) -> bool:
@@ -611,7 +611,7 @@ func server_parent_change(parent: Node) -> void:
 	reparent(parent)
 
 ## Tell clients to reparent this piece (into the carrier's hands, or back to the world)
-## and where it sits. Same channel/shape Box50cm uses for carrying.
+## and where it sits. Same channel/shape CarriableBox uses for carrying.
 func send_properties_to_client(parent_uuid: String) -> void:
 	var my_position = snapped(position, Vector3(0.001, 0.001, 0.001))
 	var my_rotation = snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
@@ -772,7 +772,7 @@ func _on_area_3d_body_entered(_body: Node3D) -> void:
 	pass
 
 func _enter_tree() -> void:
-	# Reparenting (carry/drop) finished re-adding us: clear the guard. Mirrors Box50cm.
+	# Reparenting (carry/drop) finished re-adding us: clear the guard. Mirrors CarriableBox.
 	if GameOrchestrator.is_server():
 		server_reparenting = false
 
