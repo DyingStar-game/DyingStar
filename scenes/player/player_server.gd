@@ -195,8 +195,12 @@ func server_action_received(data: Dictionary) -> void:
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
-				# We have something in hands: release it (drop / bed-load). Shared with the auto-drop.
-				_server_drop_carried_item()
+				# Forbid dropping while the object is still travelling to the hand with its collision
+				# suppressed (pre_carry_layer meta still set): releasing a collision-less body glitches
+				# (it falls through the floor / lands stuck). Ignore the drop until it is solid in hand.
+				if not player.hands_item.has_meta("pre_carry_layer"):
+					# In hands and solid: release it (drop / bed-load). Shared with the auto-drop.
+					_server_drop_carried_item()
 			else:
 				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its crosshair, so we
 				# grab exactly that one (our own server ray can be a hair off — pitch is throttled). (#124)
