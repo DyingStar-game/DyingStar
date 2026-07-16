@@ -14,15 +14,20 @@ const JUMP: String = "jump"
 ## Physics-held carry: cap on the follow velocity (m/s) so a fast turn can't tunnel a carried body
 ## through a thin wall (paired with continuous_cd while held).
 const _CARRY_FOLLOW_MAX_SPEED := 25.0
+## HORIZONTAL dead zone (m) around the hold spot: while the object is within it horizontally, it is NOT
+## pulled sideways — so on pickup it does NOT snap to the front, and it trails as you move. Vertical is
+## NOT dead-zoned (you always follow up/down), so looking down still takes the object to the floor to
+## place it. Bigger = looser / trails more.
+const _CARRY_DEAD_ZONE := 0.6
+## How briskly the object eases toward the hold spot once outside the dead zone (1/s). Proportional, so it
+## GLIDES in instead of the old instant snap. Higher = snappier, lower = softer.
+const _CARRY_FOLLOW_GAIN := 5.0
 ## Physics-held carry: max height (m) the camera pitch raises/lowers the hold spot, up and down.
 const _CARRY_PITCH_LIFT := 2.0
 ## How much faster than the gaze the object rises with pitch (>1 = it climbs above the crosshair on a
 ## modest up-look, so you see under it to place it on a high shelf without craning your neck). Saturates
 ## at _CARRY_PITCH_LIFT.
 const _CARRY_PITCH_GAIN := 3.0
-## Distance (m) to the hold spot under which a freshly-picked object counts as "in hand": its collision,
-## suppressed during the travel so nothing interferes, is restored at that point.
-const _CARRY_INHAND_DIST := 0.3
 ## Keep the hold spot at least this far (m) above any solid surface below it, so looking down (e.g. to
 ## aim at an object on the ground) can't drive the carried body underground.
 const _CARRY_GROUND_CLEARANCE := 0.2
@@ -195,12 +200,8 @@ func server_action_received(data: Dictionary) -> void:
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
-				# Forbid dropping while the object is still travelling to the hand with its collision
-				# suppressed (pre_carry_layer meta still set): releasing a collision-less body glitches
-				# (it falls through the floor / lands stuck). Ignore the drop until it is solid in hand.
-				if not player.hands_item.has_meta("pre_carry_layer"):
-					# In hands and solid: release it (drop / bed-load). Shared with the auto-drop.
-					_server_drop_carried_item()
+				# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
+				_server_drop_carried_item()
 			else:
 				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its crosshair, so we
 				# grab exactly that one (our own server ray can be a hair off — pitch is throttled). (#124)
@@ -224,19 +225,18 @@ func server_action_received(data: Dictionary) -> void:
 					parent_node.freeze = false
 					parent_node.gravity_scale = 0.0
 					parent_node.can_sleep = false
+					# Except the CARRIER: the held body stays solid to the world and everyone else, but must not
+					# collide with US — otherwise, steered into our capsule, the player move_and_slide depenetrates
+					# from it and we get shoved backwards. Cleared on drop (remove_collision_exception_with).
+					parent_node.add_collision_exception_with(player)
 					parent_node.continuous_cd = true  # follow speed can be high → avoid tunnelling thin walls
-					parent_node.add_collision_exception_with(player)  # solid to the world, not the carrier
 					# Keep it dynamic-rotation so it REACTS to bumps (a knock against a wall/prop nudges its
 					# orientation), but damp the spin heavily so it settles instead of tumbling. Manual
 					# orientation (wheel / middle-click) still writes the basis directly. Restored on drop.
 					parent_node.set_meta("pre_carry_angular_damp", parent_node.angular_damp)
 					parent_node.angular_damp = _CARRY_ANGULAR_DAMP
-					# Suppress collisions during the travel to the hand (restored once in hand, see
-					# _server_update_carried_item / _CARRY_INHAND_DIST).
-					parent_node.set_meta("pre_carry_layer", parent_node.collision_layer)
-					parent_node.set_meta("pre_carry_mask", parent_node.collision_mask)
-					parent_node.collision_layer = 0
-					parent_node.collision_mask = 0
+					# Collision stays ON from the moment we grab it (it eases to the hand now, it does not
+					# snap THROUGH things), so it is solid immediately — no travel-time suppression.
 					# Make sure its replication is active: a crate that sat in a bed may have had its
 					# _physics_process paused, which would stop PropNet from replicating a later drop.
 					parent_node.set_physics_process(true)
@@ -651,7 +651,7 @@ func _server_drop_carried_item() -> void:
 	# Generic: let the object know it is no longer carried (issue #124).
 	if player.hands_item.has_method("set_carried"):
 		player.hands_item.set_carried(false)
-	player.hands_item.remove_collision_exception_with(player)  # it can collide with us again
+	player.hands_item.remove_collision_exception_with(player)  # clear any stale exception (belt and braces)
 	_carry_ignore_vehicles(player.hands_item, false)  # clear any stale vehicle exceptions
 	# Restore the physics state we changed while carrying (gravity / sleep / CCD).
 	if player.hands_item.has_meta("pre_carry_gravity_scale"):
@@ -664,12 +664,6 @@ func _server_drop_carried_item() -> void:
 		player.hands_item.angular_damp = player.hands_item.get_meta("pre_carry_angular_damp")
 		player.hands_item.remove_meta("pre_carry_angular_damp")
 	# If dropped before reaching the hand, restore the collision suppressed on pickup.
-	if player.hands_item.has_meta("pre_carry_layer"):
-		player.hands_item.collision_layer = player.hands_item.get_meta("pre_carry_layer")
-		player.hands_item.remove_meta("pre_carry_layer")
-	if player.hands_item.has_meta("pre_carry_mask"):
-		player.hands_item.collision_mask = player.hands_item.get_meta("pre_carry_mask")
-		player.hands_item.remove_meta("pre_carry_mask")
 	# Drop INTO a bed -> load it onto that truck. We load it if we stand in the bed, OR if we
 	# drop it from outside but it lands inside a nearby truck's cargo bay.
 	if player.hands_item is RigidBody3D:
@@ -706,15 +700,19 @@ func _rotate_held_about_center(rot: Basis) -> void:
 ## Server: hold the carried item in front of the body (yaw only), driven toward the hold spot by
 ## velocity (physics-held carry B). The camera PITCH raises/lowers the spot vertically for stacking,
 ## and if the body is dragged out of grab reach (stuck behind a wall while we back off) it auto-drops.
-func _server_update_carried_item(delta: float) -> void:
+func _server_update_carried_item(_delta: float) -> void:
 	if player.hands_item == null:
 		return
 	var item: RigidBody3D = player.hands_item
 	# Auto-drop when the body is dragged out of reach: if it stays stuck (behind a wall) while we back
-	# away, the gap to the grab point grows; once it passes the grab reach, let it go on its own. The
+	# away, the gap to the hold spot grows; once it passes the CARRY reach, let it go on its own. This
+	# reach is derived from the hold distance (carry_offset + the max pitch lift + a margin) — NOT the
+	# interaction ray length, which is a separate, tunable grab distance: coupling them meant a short
+	# interact reach auto-dropped the object instantly (it hangs farther than the grab reach). The
 	# reparent inside the drop is illegal mid-physics-step, so defer it to the end of the frame.
 	var eye: Vector3 = player.to_global(player.camera_pivot.position)
-	if eye.distance_to(item.global_position) > player.interact_ray.target_position.length():
+	var carry_reach: float = player.carry_offset.length() + _CARRY_PITCH_LIFT + 1.0
+	if eye.distance_to(item.global_position) > carry_reach:
 		call_deferred("_server_drop_carried_item")
 		return
 	# Body-relative hold spot (head height + front) — yaw only (issue #124) — to world, offset by the
@@ -755,51 +753,31 @@ func _server_update_carried_item(delta: float) -> void:
 		var ceil_h: float = (ceil_hit.position - eye).dot(up) - _CARRY_CEILING_CLEARANCE
 		if hold_h > ceil_h:
 			hold_world += up * (ceil_h - hold_h)
-	# Restore collision once it has reached our hands AND is clear of other solids. It travelled
-	# collision-free so nothing interfered; turning it solid again while it OVERLAPS another body (picked
-	# up from inside a pile, or the hand spot is inside a prop) makes the solver eject them violently and
-	# sends the surrounding objects flying. So wait until it no longer overlaps anything before re-arming.
-	var dist: float = item.global_position.distance_to(hold_world)
-	if item.has_meta("pre_carry_layer") and dist < _CARRY_INHAND_DIST and not _carried_overlaps_solid(item):
-		item.collision_layer = item.get_meta("pre_carry_layer")
-		item.collision_mask = item.get_meta("pre_carry_mask")
-		item.remove_meta("pre_carry_layer")
-		item.remove_meta("pre_carry_mask")
-	# Physics-held carry (B): steer the DYNAMIC body toward the hold spot by velocity. With a clear path
-	# it reaches the spot in one step; the ground / a wall / a vehicle resists that velocity, so the body
-	# naturally bumps them instead of clipping through. Cap the speed so a fast turn can't tunnel a wall.
-	var vel: Vector3 = (hold_world - item.global_position) / delta
-	if vel.length() > _CARRY_FOLLOW_MAX_SPEED:
-		vel = vel.normalized() * _CARRY_FOLLOW_MAX_SPEED
+	var to_hold: Vector3 = hold_world - item.global_position
+	# Physics-held carry (B): ease the DYNAMIC body toward the hold spot (proportional velocity, so it
+	# GLIDES in — never the old instant snap). Dead zone split by axis:
+	#  - HORIZONTAL: fixed, so on pickup it doesn't snap to the front and it trails as you move.
+	#  - VERTICAL: SHRINKS as you look down (pitch_ratio -1 = straight down). At level gaze the dead zone
+	#    keeps the object from dropping on pickup; look down and it vanishes, so the object goes all the
+	#    way to the floor to place it. The ground/walls still resist the velocity.
+	var upv: Vector3 = player.up_direction
+	var vert_off: float = to_hold.dot(upv)                 # hold spot height above the object (signed)
+	var horiz_vec: Vector3 = to_hold - upv * vert_off      # horizontal offset to the hold spot
+	var horiz: float = horiz_vec.length()
+	var vert_dead: float = _CARRY_DEAD_ZONE * clampf(1.0 + pitch_ratio, 0.0, 1.0)
+	var move: Vector3 = Vector3.ZERO
+	if horiz > _CARRY_DEAD_ZONE:
+		move += horiz_vec / horiz * (horiz - _CARRY_DEAD_ZONE)
+	var av: float = absf(vert_off)
+	if av > vert_dead:
+		move += upv * signf(vert_off) * (av - vert_dead)
+	var mlen: float = move.length()
+	var vel: Vector3 = Vector3.ZERO
+	if mlen > 0.001:
+		vel = move / mlen * minf(mlen * _CARRY_FOLLOW_GAIN, _CARRY_FOLLOW_MAX_SPEED)
 	item.linear_velocity = vel
 	# NB: angular velocity is NOT zeroed here — the body keeps the spin a bump imparts (heavily damped,
 	# see _CARRY_ANGULAR_DAMP), so a carried object reacts to knocks instead of being rigidly locked.
-
-## True if the carried body currently overlaps a solid (world / vehicle / prop / another player), so we
-## can hold off re-arming its collision until it's clear — otherwise turning it solid inside a pile
-## ejects the neighbours. The carrier is excluded (we already collision-except it). Iterates the body's
-## OWN collision shapes; a query uses its own shape+mask, so the item's suppressed layer doesn't matter.
-func _carried_overlaps_solid(item: RigidBody3D) -> bool:
-	var space = item.get_world_3d().direct_space_state
-	if space == null:
-		return false
-	var mask := (1 << (Globals.LAYER_WORLD - 1)) | (1 << (Globals.LAYER_PLAYER - 1)) \
-			| (1 << (Globals.LAYER_VEHICLE - 1)) | (1 << (Globals.LAYER_PROP - 1))
-	for owner_id in item.get_shape_owners():
-		var xf: Transform3D = item.global_transform * item.shape_owner_get_transform(owner_id)
-		for i in item.shape_owner_get_shape_count(owner_id):
-			var shape: Shape3D = item.shape_owner_get_shape(owner_id, i)
-			if shape == null:
-				continue
-			var q := PhysicsShapeQueryParameters3D.new()
-			q.shape = shape
-			q.transform = xf
-			q.collision_mask = mask
-			q.exclude = [item.get_rid(), player.get_rid()]
-			q.margin = 0.0
-			if not space.intersect_shape(q, 1).is_empty():
-				return true
-	return false
 
 ## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
 ## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
