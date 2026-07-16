@@ -297,12 +297,9 @@ func _cull_settled_bodies() -> void:
 			continue
 		for body_uuid in props_list[ptype].keys():
 			var body = props_list[ptype][body_uuid]
-			if not is_instance_valid(body) or not (body is RigidBody3D) or body is Vehicle:
+			if not _is_cullable_body(body):
 				continue
 			var rb: RigidBody3D = body
-			var parent := rb.get_parent()
-			if parent is Player or parent is Vehicle:
-				continue  # carried / loaded in a bed — keep it dynamic
 			if _player_within(rb.global_position, ACTIVE_RADIUS):
 				if rb.freeze and rb.get_meta("_culled_frozen", false):
 					_unfreeze_culled_body(rb)
@@ -331,6 +328,15 @@ func _player_within(pos: Vector3, radius: float) -> bool:
 		if is_instance_valid(p) and p is Node3D and pos.distance_squared_to((p as Node3D).global_position) < r2:
 			return true
 	return false
+
+## True if [param node] is a free physics prop the settle-culler may freeze/unfreeze: a live
+## RigidBody3D that is not a Vehicle and not carried/bed-loaded (those must stay dynamic). Shared
+## by _cull_settled_bodies (runtime) and create_generic_object (reload) so both agree.
+func _is_cullable_body(node: Node) -> bool:
+	if not is_instance_valid(node) or not (node is RigidBody3D) or node is Vehicle:
+		return false
+	var parent: Node = node.get_parent()
+	return not (parent is Player or parent is Vehicle)
 
 func _freeze_culled_body(rb: RigidBody3D) -> void:
 	rb.linear_velocity = Vector3.ZERO
@@ -996,7 +1002,15 @@ func create_generic_object(event: Dictionary) -> void:
 		if is_instance_of(spawnable_prop_instance, RigidBody3D):
 			spawnable_prop_instance.freeze = true
 	else:
-		spawnable_prop_instance.set_physics_process(true)
+		# At server boot there are NO players yet, so every reloaded body would spawn awake and re-run
+		# collision for ~SETTLE_TICKS before the settle-culler freezes it — a startup CPU spike with
+		# thousands of rocks. Freeze settled free bodies up front instead; the culler unfreezes them
+		# (they carry the _culled_frozen flag) as soon as a player comes within ACTIVE_RADIUS. A body
+		# already near a player (rare at boot, possible on later GORC streaming) stays awake.
+		if _is_cullable_body(spawnable_prop_instance) and not _player_within(pos, ACTIVE_RADIUS):
+			_freeze_culled_body(spawnable_prop_instance)
+		else:
+			spawnable_prop_instance.set_physics_process(true)
 
 	for pending_message in pending_messages_player_parenting.duplicate():
 		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
