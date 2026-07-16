@@ -67,6 +67,9 @@ const TELEPORT_TARGETS := {
 ## Where a carried item floats, relative to the player body (issue #124): head height, a
 ## bit below the eye line and ahead. Body-relative (yaw only, no camera pitch).
 @export var carry_offset: Vector3 = Vector3(0.0, -0.2, -1.2)
+## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
+## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
+@export var interact_ray_length: float = 3.0
 @export var jump_height: float = 1.0
 @export var acceleration: float = 10.0
 @export var arm_length: float = 0.5
@@ -286,6 +289,10 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
+
+	# Apply the configurable interaction reach to the ray (forward = -Z). Everything that reads
+	# interact_ray (grab, line of sight, carry distance) picks this up.
+	interact_ray.target_position = Vector3(0.0, 0.0, -interact_ray_length)
 
 	# Mining tool: build its equipment mount + perforator from our camera rig, and
 	# relay its replicated-state requests to the server + its aim signal to the UI.
