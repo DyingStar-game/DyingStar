@@ -68,6 +68,7 @@ script = ExtResource("1_ll2l8")
 walk_speed = 5.0
 sprint_speed = 10.0
 carry_offset = Vector3(0, -1, -1.5)
+interact_ray_length = 10.0
 sfx_torch_on = ExtResource("2_4hvnv")
 sfx_torch_on_distance = 5.0
 sfx_torch_off = ExtResource("3_bbmj2")
