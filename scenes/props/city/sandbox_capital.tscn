@@ -26,10 +26,8 @@
 [ext_resource type="PackedScene" uid="uid://duue5eopb7mmw" path="res://assets/_universe/structures/buildings/habitat_superpose.glb" id="24_npgr1"]
 [ext_resource type="PackedScene" uid="uid://cnx8oldx8vdmb" path="res://assets/_universe/structures/buildings/habitat_test.glb" id="25_drqvg"]
 [ext_resource type="PackedScene" uid="uid://dqbngk5x7vnma" path="res://assets/_universe/structures/buildings/habitat_square_container.glb" id="26_0ulh1"]
-[ext_resource type="PackedScene" uid="uid://1duahfpbqy11" path="res://assets/_universe/props/containers/test_containers_6x3.glb" id="27_1kput"]
-[ext_resource type="PackedScene" uid="uid://dt51615ectfkm" path="res://assets/_universe/props/containers/test_containers_6x2.6.glb" id="28_w88le"]
-[ext_resource type="PackedScene" uid="uid://dpthn0id3t7fw" path="res://assets/_universe/props/containers/test_containers_12x3.glb" id="29_npgr1"]
-[ext_resource type="PackedScene" uid="uid://155jmhky57a" path="res://assets/_universe/props/containers/test_containers_12x2.6.glb" id="30_drqvg"]
+[ext_resource type="PackedScene" uid="uid://dxajkuw7y5byw" path="res://scenes/props/StorageBoxes/test_containers_6x2.6.tscn" id="27_w88le"]
+[ext_resource type="PackedScene" uid="uid://bk3qu7kpd2xa8" path="res://scenes/props/StorageBoxes/test_containers_12x2.6.tscn" id="28_npgr1"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
 rayleigh_coefficient = 2.5
@@ -422,7 +420,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247
 text = "Version A - 120%"
 
 [node name="habitat_6x2_6" parent="." unique_id=1682025266 instance=ExtResource("21_0ulh1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30.225096899470373, -4.357462e-07, -58.30769921735191)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30.005999999993943, 0, -58.30800000000454)
 
 [node name="Label3D" type="Label3D" parent="habitat_6x2_6" unique_id=903676351]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9158443301639424, 0.8170247422715334, 1.4956402663802066)
@@ -477,39 +475,6 @@ transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.3283107377782457, -0.41813909033715335, 0.5638479982708873)
 text = "Bardock house"
 
-[node name="test_containers_6x3" parent="." unique_id=1660164005 instance=ExtResource("27_1kput")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -48.80000000000291, 0, -58.86813561357434)
-
-[node name="6 x 3" type="Label3D" parent="test_containers_6x3" unique_id=89500634]
-transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -2.2301881891089224, 2.191275217228347, 0.7484304193873044)
-text = "6 X 3
-"
-
-[node name="test_containers_6x2_6" parent="." unique_id=1506572370 instance=ExtResource("28_w88le")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -52.70100000000093, 0, -58.92596138691648)
-
-[node name="6 x 2_6" type="Label3D" parent="test_containers_6x2_6" unique_id=749010631]
-transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -2.3076913668692853, 2.191275217228347, 0.7484304193873044)
-text = "6 X 2.6
-"
-
-[node name="test_containers_12x3" parent="." unique_id=1810295763 instance=ExtResource("29_npgr1")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -56.2390000000014, 0, -62)
-
-[node name="12 x 3" type="Label3D" parent="test_containers_12x3" unique_id=855453656]
-transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -5.18519853556618, 2.191275217228347, 0.7484304193873115)
-text = "12 x 3
-
-"
-
-[node name="test_containers_12x2_6" parent="." unique_id=1438531769 instance=ExtResource("30_drqvg")]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -59.89800000000105, 0, -62)
-
-[node name="12 x 2_6" type="Label3D" parent="test_containers_12x2_6" unique_id=1769561631]
-transform = Transform3D(6.122829542487007e-17, 0, -1, 0, 1, 0, 1, 0, 6.122829542487007e-17, -5.18519853556618, 2.191275217228347, 0.7484304193873115)
-text = "12 x 2.6
-"
-
 [node name="PlanetTeleporter" type="Node3D" parent="." unique_id=1976552097]
 
 [node name="tarsis_4_2" type="Area3D" parent="PlanetTeleporter" unique_id=123347451 groups=["teleporter"]]
@@ -556,3 +521,9 @@ size = Vector3(1, 1.9, 0.9)
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.9986601328201252, 3.593846440102908)
 text = "Orbital
 Sandbox"
+
+[node name="test_container_6_2_6" parent="." unique_id=869382386 instance=ExtResource("27_w88le")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -53.79194213987919, 1.414960480339289e-06, -58.168610350413765)
+
+[node name="test_container_12x2_6" parent="." unique_id=491635117 instance=ExtResource("28_npgr1")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -58.08888827826059, 9.38123322136164e-07, -61.12968649689696)
