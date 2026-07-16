@@ -26,6 +26,12 @@ const _CARRY_INHAND_DIST := 0.3
 ## Keep the hold spot at least this far (m) above any solid surface below it, so looking down (e.g. to
 ## aim at an object on the ground) can't drive the carried body underground.
 const _CARRY_GROUND_CLEARANCE := 0.2
+## Keep the hold spot at least this far (m) below a ceiling above it, so looking up inside a container /
+## building can't push the carried body up through the roof.
+const _CARRY_CEILING_CLEARANCE := 0.35
+## Rotation damping applied to a carried body: it stays dynamic-rotation (a knock nudges its
+## orientation — the object reacts to bumps) but the spin bleeds off quickly instead of tumbling.
+const _CARRY_ANGULAR_DAMP := 4.0
 ## Yaw applied to a carried object per mouse-wheel notch (radians) — see the "carry_rotate" action.
 const CARRY_ROTATE_STEP := deg_to_rad(15.0)
 ## Free-rotate gain: radians of object rotation per unit of streamed mouse motion. The client streams
@@ -216,11 +222,11 @@ func server_action_received(data: Dictionary) -> void:
 					parent_node.can_sleep = false
 					parent_node.continuous_cd = true  # follow speed can be high → avoid tunnelling thin walls
 					parent_node.add_collision_exception_with(player)  # solid to the world, not the carrier
-					# Lock the rotation while held so ground/wall contact can't tip it over (the "lie down"
-					# on pickup): it keeps its upright orientation. Restored on drop.
-					parent_node.axis_lock_angular_x = true
-					parent_node.axis_lock_angular_y = true
-					parent_node.axis_lock_angular_z = true
+					# Keep it dynamic-rotation so it REACTS to bumps (a knock against a wall/prop nudges its
+					# orientation), but damp the spin heavily so it settles instead of tumbling. Manual
+					# orientation (wheel / middle-click) still writes the basis directly. Restored on drop.
+					parent_node.set_meta("pre_carry_angular_damp", parent_node.angular_damp)
+					parent_node.angular_damp = _CARRY_ANGULAR_DAMP
 					# Suppress collisions during the travel to the hand (restored once in hand, see
 					# _server_update_carried_item / _CARRY_INHAND_DIST).
 					parent_node.set_meta("pre_carry_layer", parent_node.collision_layer)
@@ -649,10 +655,10 @@ func _server_drop_carried_item() -> void:
 		player.hands_item.remove_meta("pre_carry_gravity_scale")
 	player.hands_item.can_sleep = true
 	player.hands_item.continuous_cd = false
-	# Let it tumble freely again once dropped.
-	player.hands_item.axis_lock_angular_x = false
-	player.hands_item.axis_lock_angular_y = false
-	player.hands_item.axis_lock_angular_z = false
+	# Restore the rotation damping we raised while carried, so it tumbles freely again once dropped.
+	if player.hands_item.has_meta("pre_carry_angular_damp"):
+		player.hands_item.angular_damp = player.hands_item.get_meta("pre_carry_angular_damp")
+		player.hands_item.remove_meta("pre_carry_angular_damp")
 	# If dropped before reaching the hand, restore the collision suppressed on pickup.
 	if player.hands_item.has_meta("pre_carry_layer"):
 		player.hands_item.collision_layer = player.hands_item.get_meta("pre_carry_layer")
@@ -722,22 +728,35 @@ func _server_update_carried_item(delta: float) -> void:
 	var pitch_ratio: float = (-player.camera_pivot.global_basis.z).dot(player.up_direction)
 	var lift: float = clampf(pitch_ratio * _CARRY_PITCH_GAIN, -_CARRY_PITCH_LIFT, _CARRY_PITCH_LIFT)
 	hold_world += player.up_direction * lift
-	# Don't let the hold spot sink into the ground (looking down on pickup would otherwise drive the body
-	# underground, where it pops / gets released). Raycast vertically around the spot and, if a solid
-	# surface is below it, lift the spot to rest a small clearance above that surface (horizontal kept).
+	# Keep the hold spot inside the player's own free space: above the floor below AND below any ceiling
+	# above (e.g. inside a container / building). BOTH rays start at the EYE — always in the free space —
+	# so the downward one finds the floor and the upward one finds the ceiling. (The old guard cast DOWN
+	# from 2.5 m above the hold spot; indoors that ray hit the CEILING from above and "rested" the object
+	# on the roof, so looking up made it jump upward.)
 	var up: Vector3 = player.up_direction
 	var space = player.get_world_3d().direct_space_state
-	var ground_mask := (1 << (Globals.LAYER_WORLD - 1)) | (1 << (Globals.LAYER_VEHICLE - 1))
-	var gq := PhysicsRayQueryParameters3D.create(hold_world + up * 2.5, hold_world - up * 1.0, \
-			ground_mask, [player.get_rid(), item.get_rid()])
-	var ghit = space.intersect_ray(gq)
-	if ghit:
-		var lift_needed: float = (ghit.position + up * _CARRY_GROUND_CLEARANCE - hold_world).dot(up)
-		if lift_needed > 0.0:
-			hold_world += up * lift_needed
-	# Restore collision once it has reached our hands (it travelled collision-free so nothing interfered).
+	var solids_mask := (1 << (Globals.LAYER_WORLD - 1)) | (1 << (Globals.LAYER_VEHICLE - 1))
+	var excl: Array[RID] = [player.get_rid(), item.get_rid()]
+	var hold_h: float = (hold_world - eye).dot(up)  # hold-spot height above the eye, along up
+	var floor_hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye - up * 3.0, \
+			solids_mask, excl))
+	if floor_hit:
+		var floor_h: float = (floor_hit.position - eye).dot(up) + _CARRY_GROUND_CLEARANCE
+		if hold_h < floor_h:
+			hold_world += up * (floor_h - hold_h)
+			hold_h = floor_h
+	var ceil_hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + up * 3.0, \
+			solids_mask, excl))
+	if ceil_hit:
+		var ceil_h: float = (ceil_hit.position - eye).dot(up) - _CARRY_CEILING_CLEARANCE
+		if hold_h > ceil_h:
+			hold_world += up * (ceil_h - hold_h)
+	# Restore collision once it has reached our hands AND is clear of other solids. It travelled
+	# collision-free so nothing interfered; turning it solid again while it OVERLAPS another body (picked
+	# up from inside a pile, or the hand spot is inside a prop) makes the solver eject them violently and
+	# sends the surrounding objects flying. So wait until it no longer overlaps anything before re-arming.
 	var dist: float = item.global_position.distance_to(hold_world)
-	if item.has_meta("pre_carry_layer") and dist < _CARRY_INHAND_DIST:
+	if item.has_meta("pre_carry_layer") and dist < _CARRY_INHAND_DIST and not _carried_overlaps_solid(item):
 		item.collision_layer = item.get_meta("pre_carry_layer")
 		item.collision_mask = item.get_meta("pre_carry_mask")
 		item.remove_meta("pre_carry_layer")
@@ -749,7 +768,34 @@ func _server_update_carried_item(delta: float) -> void:
 	if vel.length() > _CARRY_FOLLOW_MAX_SPEED:
 		vel = vel.normalized() * _CARRY_FOLLOW_MAX_SPEED
 	item.linear_velocity = vel
-	item.angular_velocity = Vector3.ZERO  # bumps shouldn't set it spinning
+	# NB: angular velocity is NOT zeroed here — the body keeps the spin a bump imparts (heavily damped,
+	# see _CARRY_ANGULAR_DAMP), so a carried object reacts to knocks instead of being rigidly locked.
+
+## True if the carried body currently overlaps a solid (world / vehicle / prop / another player), so we
+## can hold off re-arming its collision until it's clear — otherwise turning it solid inside a pile
+## ejects the neighbours. The carrier is excluded (we already collision-except it). Iterates the body's
+## OWN collision shapes; a query uses its own shape+mask, so the item's suppressed layer doesn't matter.
+func _carried_overlaps_solid(item: RigidBody3D) -> bool:
+	var space = item.get_world_3d().direct_space_state
+	if space == null:
+		return false
+	var mask := (1 << (Globals.LAYER_WORLD - 1)) | (1 << (Globals.LAYER_PLAYER - 1)) \
+			| (1 << (Globals.LAYER_VEHICLE - 1)) | (1 << (Globals.LAYER_PROP - 1))
+	for owner_id in item.get_shape_owners():
+		var xf: Transform3D = item.global_transform * item.shape_owner_get_transform(owner_id)
+		for i in item.shape_owner_get_shape_count(owner_id):
+			var shape: Shape3D = item.shape_owner_get_shape(owner_id, i)
+			if shape == null:
+				continue
+			var q := PhysicsShapeQueryParameters3D.new()
+			q.shape = shape
+			q.transform = xf
+			q.collision_mask = mask
+			q.exclude = [item.get_rid(), player.get_rid()]
+			q.margin = 0.0
+			if not space.intersect_shape(q, 1).is_empty():
+				return true
+	return false
 
 ## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
 ## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
