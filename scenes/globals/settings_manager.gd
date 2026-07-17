@@ -6,6 +6,10 @@ signal cargo_debug_changed(on: bool)
 signal fov_changed(fov: float)
 ## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
 signal show_debug_changed(on: bool)
+## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
+signal shadows_changed(on: bool)
+## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
+signal shadow_distance_changed(distance: float)
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
@@ -34,6 +38,10 @@ func initialize_settings():
 	config.set_value("video", "fov", 100.0)
 	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
+	# Real-time shadows on by default; players on weak GPUs can turn them off in Graphics settings.
+	config.set_value("video", "shadows", true)
+	# Directional (sun) shadow draw distance in metres. Bigger = shadows further out but softer/costlier.
+	config.set_value("video", "shadow_distance", 300.0)
 	config.set_value("general", "cargo_debug", false)
 	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
 	config.set_value("general", "show_debug", true)
@@ -117,6 +125,25 @@ func set_max_fps(fps: int) -> void:
 	Engine.max_fps = fps
 	save_video_settings("max_fps", fps)
 	save_settings()
+
+## Real-time shadows on/off (drives the day/night sun's shadow_enabled). Persisted under [video];
+## emits so the sun toggles its shadow live without a restart. Default true.
+func set_shadows(on: bool) -> void:
+	save_video_settings("shadows", on)
+	save_settings()
+	shadows_changed.emit(on)
+
+func is_shadows() -> bool:
+	return config.get_value("video", "shadows", true)
+
+## Sun shadow draw distance (metres). Persisted under [video]; emits so the sun updates live. Default 300.
+func set_shadow_distance(distance: float) -> void:
+	save_video_settings("shadow_distance", distance)
+	save_settings()
+	shadow_distance_changed.emit(distance)
+
+func get_shadow_distance() -> float:
+	return config.get_value("video", "shadow_distance", 300.0)
 
 # ── Audio (single source of truth for the audio settings page) ──
 
