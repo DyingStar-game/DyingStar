@@ -136,6 +136,49 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 text = "On"
 
+[node name="Shadows" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1500000001]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Shadows" unique_id=1500000002]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Shadows"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/Shadows" unique_id=1500000003]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "On"
+
+[node name="ShadowDistance" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1500000004]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance" unique_id=1500000005]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Shadow Distance"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance" unique_id=1500000006]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+size_flags_vertical = 1
+min_value = 50.0
+max_value = 1000.0
+step = 10.0
+value = 300.0
+
+[node name="Value" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance" unique_id=1500000007]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+text = "300"
+label_settings = SubResource("LabelSettings_aqojs")
+horizontal_alignment = 1
+
 [node name="DevMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1344832484]
 layout_mode = 2
 

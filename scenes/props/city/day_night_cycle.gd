@@ -23,6 +23,11 @@ func _ready() -> void:
 		set_process(false)  # purely visual — no need to spin the sun on the headless server
 		return
 	_phase = start_phase
+	# Real-time sun shadows, gated by the graphics settings (default on) and reacting live to changes.
+	shadow_enabled = SettingsManager.is_shadows()
+	directional_shadow_max_distance = SettingsManager.get_shadow_distance()
+	SettingsManager.shadows_changed.connect(_on_shadows_changed)
+	SettingsManager.shadow_distance_changed.connect(_on_shadow_distance_changed)
 	if sun_tint == null:
 		sun_tint = _build_default_sun_tint()
 
@@ -50,3 +55,11 @@ func _build_default_sun_tint() -> Gradient:
 		Color(1.0, 1.0, 1.0),
 	])
 	return gradient
+
+## Live-apply the shadows on/off graphics setting (SettingsManager.shadows_changed).
+func _on_shadows_changed(on: bool) -> void:
+	shadow_enabled = on
+
+## Live-apply the shadow distance graphics setting (SettingsManager.shadow_distance_changed).
+func _on_shadow_distance_changed(distance: float) -> void:
+	directional_shadow_max_distance = distance

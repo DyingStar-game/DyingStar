@@ -24,6 +24,9 @@ var _res_left: int = 0
 @onready var _max_fps: OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/MaxFps/OptionButton
 @onready var _fov: HSlider = $ScrollContainer/MarginContainer/VBoxContainer/Fov/HSlider
 @onready var _fov_value: Label = $ScrollContainer/MarginContainer/VBoxContainer/Fov/Value
+@onready var _shadows: Button = $ScrollContainer/MarginContainer/VBoxContainer/Shadows/Button
+@onready var _shadow_dist: HSlider = $ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance/HSlider
+@onready var _shadow_dist_value: Label = $ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance/Value
 
 func _ready() -> void:
 	_init_monitor()
@@ -33,6 +36,8 @@ func _ready() -> void:
 	_init_dev_mode()
 	_init_max_fps()
 	_init_fov()
+	_init_shadows()
+	_init_shadow_distance()
 	_monitor.item_selected.connect(func(i: int) -> void: SettingsManager.set_monitor(i))
 	# DisplayMode item id 0 = Fullscreen, 1 = Windowed (as authored in the scene).
 	_display_mode.item_selected.connect(
@@ -47,6 +52,10 @@ func _ready() -> void:
 	_fov.value_changed.connect(func(v: float) -> void:
 		_fov_value.text = str(int(v))
 		SettingsManager.set_fov(v))
+	_shadows.toggled.connect(_on_shadows_toggled)
+	_shadow_dist.value_changed.connect(func(v: float) -> void:
+		_shadow_dist_value.text = str(int(v))
+		SettingsManager.set_shadow_distance(v))
 
 ## Apply the picked resolution, then ask to keep it with a visible 10 s auto-revert countdown. A too-big
 ## resolution on a small screen would otherwise leave the player stuck; the timer reverts on its own.
@@ -161,6 +170,21 @@ func _init_dev_mode() -> void:
 func _on_dev_mode_toggled(on: bool) -> void:
 	_dev_mode.text = "On" if on else "Off"
 	SettingsManager.set_dev_mode(on)
+
+## Reflect the saved shadows flag on the toggle.
+func _init_shadows() -> void:
+	_shadows.toggle_mode = true
+	_shadows.button_pressed = SettingsManager.is_shadows()
+	_shadows.text = "On" if _shadows.button_pressed else "Off"
+
+func _on_shadows_toggled(on: bool) -> void:
+	_shadows.text = "On" if on else "Off"
+	SettingsManager.set_shadows(on)
+
+## Reflect the saved sun shadow distance on the slider + its value label.
+func _init_shadow_distance() -> void:
+	_shadow_dist.value = SettingsManager.get_shadow_distance()
+	_shadow_dist_value.text = str(int(_shadow_dist.value))
 
 ## Reflect the saved field of view on the slider + its value label.
 func _init_fov() -> void:
