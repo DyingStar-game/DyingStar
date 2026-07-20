@@ -78,6 +78,12 @@ func setup() -> void:
 
 	player.camera.make_current()
 	_force_temp_sky_environment()
+	# Client-only sun: a DirectionalLight aimed from the real system star toward this player, for crisp
+	# shadows + day/night. The star's OmniLight lights the system but casts no shadows (unusable at scale).
+	var sun := PlayerSunLight.new()
+	sun.name = "PlayerSunLight"
+	sun.player = player
+	player.add_child(sun)
 	# Apply the saved field of view, and follow live changes from the settings menu.
 	player.camera.fov = SettingsManager.get_fov()
 	SettingsManager.fov_changed.connect(_on_fov_changed)

@@ -20,7 +20,6 @@
 [ext_resource type="PackedScene" uid="uid://dwem02tr2umhq" path="res://assets/_universe/structures/buildings/conteneur.glb" id="20_cnlw1"]
 [ext_resource type="Material" uid="uid://bnthx4tb3gfkk" path="res://assets/_universe/environment/terrain/biome_plateau.tres" id="20_g2xcy"]
 [ext_resource type="PackedScene" uid="uid://ddtv6gpwx74ug" path="res://assets/_universe/structures/buildings/habitat_6x2.6.glb" id="21_0ulh1"]
-[ext_resource type="Script" uid="uid://drq4elme1rpmp" path="res://scenes/props/city/day_night_cycle.gd" id="21_daync"]
 [ext_resource type="PackedScene" uid="uid://by4r4otbmsenr" path="res://assets/_universe/structures/buildings/habitat_12x2.6.glb" id="22_1kput"]
 [ext_resource type="PackedScene" uid="uid://cksw50yr7oxjk" path="res://assets/_universe/structures/buildings/habitat_lateraux.glb" id="23_w88le"]
 [ext_resource type="PackedScene" uid="uid://duue5eopb7mmw" path="res://assets/_universe/structures/buildings/habitat_superpose.glb" id="24_npgr1"]
@@ -119,10 +118,6 @@ script = ExtResource("1_hvdt3")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=745429944]
 environment = SubResource("Environment_sky")
-
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=3328540]
-transform = Transform3D(0.98947682487041, -0.08731608772312702, -0.11537553410103409, 0.12091758007516032, 0.06107901082644468, 0.9907816577153772, -0.07946415464307723, -0.9943064191994286, 0.07099431572788668, 0, 0, 0)
-script = ExtResource("21_daync")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1121.2927777104087, -24.999999999999886, 0.8867248943877541)
