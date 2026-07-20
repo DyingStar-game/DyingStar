@@ -30,8 +30,30 @@ extends Node3D
 ## Backward compatibility — old scenes export these instead of planet_data.
 @export var planet_id: String = ""
 
+@export_group("Rotation")
+## Sidereal rotation period in HOURS — 0 means the planet does not spin. Mirrors the `rotation_h`
+## column of the celestial database served by resourcesDynamic: SandBox 25 h, Gaea 24 h, Tarsis 5
+## 11.74 h. Set a very small value (e.g. 0.05 = a 3-minute day) to watch a full cycle while testing.
+##
+## These fields mirror the service contract on purpose, so feeding them from the network later is a
+## drop-in: same columns, and _apply_spin reproduces the service's own formula
+## (rotation-quaternion.ts). NOT covered yet: `tidal_locked` bodies (Tarsis 1 and 8 of the 10 moons),
+## whose rotation tracks their orbit instead of a fixed period, and `spin_longitude_rad`, which the
+## service currently hardcodes to 0 (no prime meridian, so every body shares the same phase at t=0).
+@export var rotation_period_hours: float = 0.0
+## Axial tilt in DEGREES about the local Z axis — the `tilt_rad` column, converted from radians.
+@export var axial_tilt_deg: float = 0.0
+## How many times per second the planet transform is refreshed. 2-3 Hz is plenty (ddurieux) and it
+## keeps the cost of carrying the dynamic bodies along (see _carry_dynamic_bodies) affordable.
+@export var rotation_update_hz: float = 3.0
+
 ## Set by the server before the node enters the tree.
 var spawn_position: Vector3 = Vector3.ZERO
+
+## Time since the last spin refresh, and whether a first orientation has been applied (the very first
+## one jumps from identity to the current angle — the bodies must NOT be dragged through that).
+var _spin_accum: float = 0.0
+var _spin_started: bool = false
 
 ## Runtime-created water sphere (ocean surface).
 var _water_sphere: MeshInstance3D
@@ -85,6 +107,71 @@ func _ready() -> void:
 		_setup_planet()
 	else:
 		print("[Planet] _ready: planet_data is NULL — terrain will not initialize")
+
+
+# ------------------------------------------------------------------
+# Rotation (spin on axis)
+# ------------------------------------------------------------------
+
+func _physics_process(delta: float) -> void:
+	if Engine.is_editor_hint() or rotation_period_hours <= 0.0:
+		return
+	# Refresh at a few Hz rather than every tick: the planet carries the terrain colliders and every
+	# body standing on it, and each refresh makes Jolt re-insert all of them into the broadphase.
+	_spin_accum += delta
+	if _spin_accum < 1.0 / maxf(rotation_update_hz, 0.001):
+		return
+	_spin_accum = 0.0
+	_apply_spin()
+
+## Spin the planet on its axis.
+##
+## The angle is a PURE FUNCTION OF ABSOLUTE TIME, evaluated independently by the server and by every
+## client, so the rotation never travels over the network: both sides land on the same basis as long
+## as their clocks agree. Mirrors the celestial service formula (resourcesDynamic,
+## rotation-quaternion.ts): tilt about local Z, then spin about local Y. Runs in _physics_process so
+## the transform is settled before the physics step — this node carries the terrain colliders.
+##
+## Only the basis is written; the orbital position stays whatever the network set.
+## NOTE: this is the LOCAL basis, so a moon would inherit its planet's spin — correct only for bodies
+## parented directly to the universe root. Revisit when moons start spinning.
+func _apply_spin() -> void:
+	# fmod BEFORE scaling to TAU: unix time over a ~25 h period is some 20 000 revolutions, and
+	# folding that back into a single turn first keeps the angle small and precise.
+	var turns: float = fmod(Time.get_unix_time_from_system() / (rotation_period_hours * 3600.0), 1.0)
+	var spun: Basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+	var step: Basis = spun * basis.inverse()
+	basis = spun
+	# The first application snaps from identity to wherever the planet is in its day: that is not a
+	# real step, so nothing is carried through it.
+	if not _spin_started:
+		_spin_started = true
+		return
+	_carry_dynamic_bodies(step)
+
+## Carry the dynamic bodies standing on the planet along with the spin.
+##
+## Godot has no notion of a moving reference frame: a RigidBody3D is simulated by Jolt in WORLD
+## space, so rotating this node moves the mesh through the scene graph but leaves the physics body
+## behind. The collider then drifts away from what the player sees — crates you walk through,
+## vehicles with offset collision. So we rotate each body about the planet centre ourselves and push
+## the result straight to the physics server, which is the only reliable way to teleport a body from
+## outside _integrate_forces. Networked props and vehicles are direct children of the planet, so one
+## level of children is enough — anything carried by a player or riding a truck bed is parented
+## elsewhere and correctly left alone.
+func _carry_dynamic_bodies(step: Basis) -> void:
+	if step.is_equal_approx(Basis()):
+		return
+	var centre: Vector3 = global_position
+	for child: Node in get_children():
+		if not (child is RigidBody3D):
+			continue
+		var body: RigidBody3D = child
+		var xform: Transform3D = body.global_transform
+		xform.origin = centre + step * (xform.origin - centre)
+		xform.basis = step * xform.basis
+		body.global_transform = xform
+		PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, xform)
 
 
 # ------------------------------------------------------------------

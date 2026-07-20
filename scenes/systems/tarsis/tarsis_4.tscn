@@ -27,6 +27,8 @@ roads_geojson = "assets/qgis/export/tarsis_4_roads_buffered.json"
 [node name="Tarsis4" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")
 planet_data = SubResource("PlanetData_tarsis4")
+rotation_period_hours = 25.0
+axial_tilt_deg = 15.0
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("script_terrain")
