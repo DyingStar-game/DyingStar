@@ -50,10 +50,8 @@ extends Node3D
 ## Set by the server before the node enters the tree.
 var spawn_position: Vector3 = Vector3.ZERO
 
-## Time since the last spin refresh, and whether a first orientation has been applied (the very first
-## one jumps from identity to the current angle — the bodies must NOT be dragged through that).
+## Time since the last spin refresh.
 var _spin_accum: float = 0.0
-var _spin_started: bool = false
 
 ## Runtime-created water sphere (ocean surface).
 var _water_sphere: MeshInstance3D
@@ -139,39 +137,53 @@ func _apply_spin() -> void:
 	# fmod BEFORE scaling to TAU: unix time over a ~25 h period is some 20 000 revolutions, and
 	# folding that back into a single turn first keeps the angle small and precise.
 	var turns: float = fmod(Time.get_unix_time_from_system() / (rotation_period_hours * 3600.0), 1.0)
-	var spun: Basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
-	var step: Basis = spun * basis.inverse()
-	basis = spun
-	# The first application snaps from identity to wherever the planet is in its day: that is not a
-	# real step, so nothing is carried through it.
-	if not _spin_started:
-		_spin_started = true
-		return
-	_carry_dynamic_bodies(step)
+	basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+	_carry_dynamic_bodies(self)
 
 ## Carry the dynamic bodies standing on the planet along with the spin.
 ##
 ## Godot has no notion of a moving reference frame: a RigidBody3D is simulated by Jolt in WORLD
 ## space, so rotating this node moves the mesh through the scene graph but leaves the physics body
 ## behind. The collider then drifts away from what the player sees — crates you walk through,
-## vehicles with offset collision. So we rotate each body about the planet centre ourselves and push
-## the result straight to the physics server, which is the only reliable way to teleport a body from
-## outside _integrate_forces. Networked props and vehicles are direct children of the planet, so one
-## level of children is enough — anything carried by a player or riding a truck bed is parented
-## elsewhere and correctly left alone.
-func _carry_dynamic_bodies(step: Basis) -> void:
-	if step.is_equal_approx(Basis()):
-		return
-	var centre: Vector3 = global_position
-	for child: Node in get_children():
-		if not (child is RigidBody3D):
+## vehicles with offset collision. So we recompute each body's world pose ourselves and hand it to
+## the physics server, the only reliable way to move a body from outside _integrate_forces.
+##
+## The body's LOCAL pose is the source of truth: it says where the body sits ON the planet, and the
+## spin does not change it. Deliberately NOT a delta rotation applied to the body's world pose —
+## Godot refreshes that pose from the scene graph for SLEEPING bodies but from the physics state for
+## awake ones, so a delta lands once on some bodies and twice on others (which is what made the
+## editor-placed, sleeping WindValley rigs drift off the terrain while the crates looked fine).
+## Recomputing from the local pose is idempotent, so it cannot double-apply.
+##
+## Walks the whole subtree except the terrain (whose static colliders follow the scene graph on their
+## own, and which holds far too many nodes to visit at this rate), so props carried by a player or
+## parented under a structure are carried too, not just the planet's direct children.
+func _carry_dynamic_bodies(node: Node) -> void:
+	for child: Node in node.get_children():
+		if child == planet_terrain:
 			continue
-		var body: RigidBody3D = child
-		var xform: Transform3D = body.global_transform
-		xform.origin = centre + step * (xform.origin - centre)
-		xform.basis = step * xform.basis
-		body.global_transform = xform
-		PhysicsServer3D.body_set_state(body.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, xform)
+		if child is RigidBody3D:
+			_carry_body(child)
+		_carry_dynamic_bodies(child)
+
+## Move one body's physics pose onto the spun frame, as cheaply as the body's state allows.
+##
+## Bodies the settle-culler froze are SKIPPED: their collision shapes are disabled, so they are out
+## of Jolt's broadphase entirely and their collider cannot be hit — moving it is pure cost. Their
+## mesh still follows the scene graph, and the culler pushes the physics pose back when it wakes them
+## up near a player. Teleporting them here would also WAKE them several times a second, undoing the
+## freeze that the whole server-side physics budget depends on.
+##
+## A teleport activates a body in Jolt, so one that was asleep is put straight back to sleep —
+## otherwise every resting crate on the planet wakes up on every refresh.
+func _carry_body(body: RigidBody3D) -> void:
+	if body.get_meta("_culled_frozen", false):
+		return
+	var was_asleep: bool = body.sleeping
+	var rid: RID = body.get_rid()
+	PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_TRANSFORM, body.global_transform)
+	if was_asleep:
+		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_SLEEPING, true)
 
 
 # ------------------------------------------------------------------
