@@ -309,13 +309,18 @@ func _cull_settled_bodies() -> void:
 				continue  # already frozen (by us or by design), far → leave
 			# Settle detection: drift from a reference point. Jitter oscillates within SETTLE_EPS so it
 			# still counts as still; a real move pushes past it and resets the reference.
-			var ref: Vector3 = rb.get_meta("_settle_ref", rb.global_position)
+			# Measured in the PARENT's frame (the planet), never in world space: "settled" means "no
+			# longer moving relative to the ground it rests on". A spinning planet sweeps a resting
+			# prop through tens of metres of world space between refreshes, which would reset the
+			# reference forever and stop the culler from ever freezing anything.
+			var local_pos: Vector3 = rb.position
+			var ref: Vector3 = rb.get_meta("_settle_ref", local_pos)
 			var ticks: int = rb.get_meta("_settle_ticks", 0)
-			if rb.global_position.distance_to(ref) < SETTLE_EPS:
+			if local_pos.distance_to(ref) < SETTLE_EPS:
 				ticks += 1
 			else:
 				ticks = 0
-				rb.set_meta("_settle_ref", rb.global_position)
+				rb.set_meta("_settle_ref", local_pos)
 			rb.set_meta("_settle_ticks", ticks)
 			if ticks >= SETTLE_TICKS:
 				_freeze_culled_body(rb)
@@ -350,6 +355,11 @@ func _freeze_culled_body(rb: RigidBody3D) -> void:
 	rb.remove_meta("_settle_ticks")
 
 func _unfreeze_culled_body(rb: RigidBody3D) -> void:
+	# On a spinning planet the physics pose went stale while the body was culled: Planet skips frozen
+	# bodies (their shapes are off, so carrying them would be pure cost — and would wake them). Its
+	# node transform followed the scene graph, so push that back before the shapes come back on.
+	PhysicsServer3D.body_set_state(rb.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM,
+			rb.global_transform)
 	_set_body_shapes_disabled(rb, false)
 	rb.set_physics_process(true)
 	rb.freeze = false
