@@ -22,6 +22,8 @@ chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 [node name="Tarsis8" type="Node3D" unique_id=134586975]
 script = ExtResource("1_q3h20")
 planet_data = SubResource("PlanetData_tarsis4")
+rotation_period_hours = 76.8974824125262
+axial_tilt_deg = 9.90259686733704
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("4_r06it")
