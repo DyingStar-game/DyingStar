@@ -35,8 +35,9 @@ const _SURFACE_CATCH_MARGIN := 3.0
 # by the client (to build the wheel) AND by the server (to validate the key and place the prop).
 
 # Teleporter pads (Area3D in group "teleporter"): area name -> destination
-# planet + landing offset from the planet origin (world axes — planets apply
-# no orbital rotation yet). The destination is matched by
+# planet + landing offset from the planet origin, expressed in the PLANET'S OWN
+# axes, so the spot stays put on the ground as the planet spins (see
+# PlayerServer._teleport_to_system). The destination is matched by
 # PlanetData.planet_name, NEVER by node name: server-side nodes are renamed
 # to Horizon's names (e.g. tarsis_4_2 -> "P4_M2"), so scene-root names like
 # "Tarsis4_2" only exist on the client.

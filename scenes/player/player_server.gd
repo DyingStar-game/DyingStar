@@ -858,12 +858,11 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 		return
 	if player.get_parent() != destination:
 		player.reparent(destination)
-	# Test without parent, to have the planet gorc enter on client side
-	player.global_position = Vector3(
-		local_pos.x + destination.global_position.x,
-		local_pos.y + destination.global_position.y,
-		local_pos.z + destination.global_position.z
-	)
+	# Test without parent, to have the planet gorc enter on client side.
+	# The offset goes through the destination's BASIS, so it really is expressed in that node's frame:
+	# on a spinning planet a world-axes offset would keep the landing spot fixed in space while the
+	# ground turned underneath, and the pad would drift a full circle of longitude every day.
+	player.global_position = destination.global_position + destination.global_basis * local_pos
 	emit_signal(
 		"hs_server_move",
 		player.client_uuid,
