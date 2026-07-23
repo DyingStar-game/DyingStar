@@ -185,6 +185,42 @@ func _carry_body(body: RigidBody3D) -> void:
 	if was_asleep:
 		PhysicsServer3D.body_set_state(rid, PhysicsServer3D.BODY_STATE_SLEEPING, true)
 
+## Local solar time at [param world_pos], in hours in [0, 24) — 12 h is local noon (the star is at
+## its highest), 0 h is midnight. Returns -1.0 when it is not defined: planet not spinning, no star
+## in the system, or the point sits on the spin axis (at a pole every meridian meets, so there is no
+## local time).
+##
+## Pure geometry, no clock and no network — this is a sundial: the hour is the angle, about the spin
+## axis, between the observer's meridian and the one facing the star. Both sides of a multiplayer
+## session therefore agree by construction.
+##
+## The planet's day is split into 24 hours whatever its real period, so 12:00 means "star at its
+## highest" on every planet; SandBox's 25 h day just makes each of its hours longer than an Earth one.
+func get_local_solar_time(world_pos: Vector3) -> float:
+	if rotation_period_hours <= 0.0:
+		return -1.0
+	var star: Node3D = _find_sun()
+	if star == null:
+		return -1.0
+	# Spin axis in world space: _apply_spin turns about the LOCAL Y, so the tilted local Y is the axis.
+	var axis: Vector3 = global_basis.y.normalized()
+	# Both directions are taken from the planet CENTRE: the sub-stellar point is defined by the
+	# planet->star direction, the observer's meridian by the centre->observer direction.
+	var to_star: Vector3 = star.global_position - global_position
+	var to_obs: Vector3 = world_pos - global_position
+	# Drop the along-axis part of each: what is left are the two meridians, in the equatorial plane.
+	var noon: Vector3 = to_star - axis * to_star.dot(axis)
+	var here: Vector3 = to_obs - axis * to_obs.dot(axis)
+	# Relative tests, because these vectors are astronomically long: a projection that collapsed to
+	# almost nothing means the direction was along the axis, and the angle would be meaningless.
+	if noon.length() < to_star.length() * 0.001 or here.length() < to_obs.length() * 0.001:
+		return -1.0
+	noon = noon.normalized()
+	here = here.normalized()
+	# Signed angle from the noon meridian to ours, measured about the axis: 0 = facing the star.
+	var angle: float = atan2(axis.dot(noon.cross(here)), noon.dot(here))
+	return fposmod(angle / TAU * 24.0 + 12.0, 24.0)
+
 
 # ------------------------------------------------------------------
 # Setup
