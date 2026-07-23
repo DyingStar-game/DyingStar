@@ -130,10 +130,6 @@ func _has_rocks_in_field() -> bool:
 ## Seed the RNG and fill _spawn_queue with ready-to-send rock spawn data. All ground
 ## raycasts are done here (called from _physics_process) so the physics space is available.
 func _build_spawn_queue() -> void:
-	var seed_str: String = stable_id if stable_id != "" \
-		else "%.2f,%.2f,%.2f" % [global_position.x, global_position.y, global_position.z]
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(seed_str)
 	# Parent the rocks to the same networked frame the zone lives under (the planet/city that
 	# MOVES in world space), exactly like mining_depot — otherwise root-level (parent_id="")
 	# rocks are fixed in world space and instantly drift off the rotating planet, so the client
@@ -143,6 +139,15 @@ func _build_spawn_queue() -> void:
 	var to_parent_local: Transform3D = Transform3D.IDENTITY
 	if net_parent is Node3D:
 		to_parent_local = (net_parent as Node3D).global_transform.affine_inverse()
+	# Seed from the STABLE placement in the PARENT's frame + parent uuid, NEVER from global_position:
+	# the parent is a moving world frame — and now a SPINNING one — so global_position changes on
+	# every restart and every spin step, yielding a new uuid each time. The DB upserts by uuid, so it
+	# would never dedup and rocks would pile up forever. Same reasoning and shape as mining_depot.
+	var place_pos: Vector3 = (to_parent_local * global_transform).origin
+	var seed_str: String = stable_id if stable_id != "" \
+		else "%s|%.2f,%.2f,%.2f" % [parent_uuid, place_pos.x, place_pos.y, place_pos.z]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(seed_str)
 	var half: float = field_size * 0.5
 	var placed: Array[Vector2] = []
 	var made: int = 0
