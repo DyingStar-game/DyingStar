@@ -1824,9 +1824,13 @@ func _physics_process(delta: float) -> void:
 ## Client: the replica is frozen (no physics), so roll + steer the wheels visually from
 ## the replicated speed (position delta) and steer angle.
 func _update_wheels_visual(delta: float) -> void:
-	var vel: Vector3 = global_position - _wheel_last_pos
-	_wheel_last_pos = global_position
-	var fwd_speed: float = vel.dot(-global_transform.basis.z) / maxf(delta, 0.0001)
+	# Position delta measured in the PARENT's frame, never in world space: a parked truck on a
+	# spinning planet sweeps through world space at surface speed, which would roll the wheels of a
+	# stationary vehicle (and in bursts, since the planet transform only refreshes a few times a
+	# second while this runs every frame).
+	var vel: Vector3 = position - _wheel_last_pos
+	_wheel_last_pos = position
+	var fwd_speed: float = vel.dot(-transform.basis.z) / maxf(delta, 0.0001)
 	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
 	for wheel in _wheels:
 		if wheel.use_as_steering:
