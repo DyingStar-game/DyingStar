@@ -79,3 +79,20 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "Off"
+
+[node name="CelestialGizmos" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1017380228]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos" unique_id=1600079273]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Celestial markers (star / planets / moons)"
+label_settings = SubResource("LabelSettings_gen")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos" unique_id=1547335573]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "Off"

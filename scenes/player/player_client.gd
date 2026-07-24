@@ -84,6 +84,13 @@ func setup() -> void:
 	sun.name = "PlayerSunLight"
 	sun.player = player
 	player.add_child(sun)
+	# Client-only orientation gizmos: labelled markers pointing at the star and each planet/moon,
+	# toggled from Settings > General (off by default). Parented UNDER the camera so the markers live
+	# in camera-local coordinates and don't swim at astronomic distances.
+	var gizmos := CelestialGizmos.new()
+	gizmos.name = "CelestialGizmos"
+	gizmos.player = player
+	player.camera.add_child(gizmos)
 	# Apply the saved field of view, and follow live changes from the settings menu.
 	player.camera.fov = SettingsManager.get_fov()
 	SettingsManager.fov_changed.connect(_on_fov_changed)

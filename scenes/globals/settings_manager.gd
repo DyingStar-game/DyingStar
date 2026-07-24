@@ -10,6 +10,8 @@ signal show_debug_changed(on: bool)
 signal shadows_changed(on: bool)
 ## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
 signal shadow_distance_changed(distance: float)
+## Emitted when the celestial-gizmo toggle changes, so the in-world star/planet markers show/hide live.
+signal celestial_gizmos_changed(on: bool)
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
@@ -43,6 +45,8 @@ func initialize_settings():
 	# Directional (sun) shadow draw distance in metres. Bigger = shadows further out but softer/costlier.
 	config.set_value("video", "shadow_distance", 300.0)
 	config.set_value("general", "cargo_debug", false)
+	# Off by default: labelled markers pointing at the star and every planet/moon (dev/orientation aid).
+	config.set_value("general", "celestial_gizmos", false)
 	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
 	config.set_value("general", "show_debug", true)
 	for key in AUDIO_BUSES:
@@ -204,6 +208,16 @@ func set_cargo_debug(on: bool) -> void:
 
 func is_cargo_debug() -> bool:
 	return config.get_value("general", "cargo_debug", false)
+
+## Show/hide in-world markers pointing at the star and each planet/moon (orientation aid). Lives under
+## [general]; emits so the marker layer toggles live without a restart. Default off.
+func set_celestial_gizmos(on: bool) -> void:
+	config.set_value("general", "celestial_gizmos", on)
+	save_settings()
+	celestial_gizmos_changed.emit(on)
+
+func is_celestial_gizmos() -> bool:
+	return config.get_value("general", "celestial_gizmos", false)
 
 ## Show/hide the in-game debug panels (server/client FPS, coords, counts…). Persisted under [general];
 ## emits so the HUD toggles live and the settings menu stays in sync with the toggle_debug key.
