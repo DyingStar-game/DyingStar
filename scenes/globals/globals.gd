@@ -36,6 +36,11 @@ const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body 
 ## sun and the sky with it, and each planet pushes it to its surface shaders, so all three fade in step.
 const TERMINATOR_SOFTNESS := 0.01
 
+## PLACEHOLDER atmosphere thickness (m) for bodies whose real value is not in the data yet — only
+## Tarsis4 (50 km) has one. Lets the altitude fog fade work everywhere until per-body atmosphere data
+## (derivable from the composition + pressure in tarsis.json) is wired in.
+const DEFAULT_ATMOSPHERE_HEIGHT := 50000.0
+
 var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false

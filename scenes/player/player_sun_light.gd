@@ -19,6 +19,15 @@ var player: Node3D = null
 var _star: Node3D = null
 ## Full-day sky energy, captured once from the camera's PhysicalSkyMaterial (-1 = not captured yet).
 var _sky_energy_day: float = -1.0
+## Ground-level volumetric fog density, captured once from the camera Environment (-1 = not captured).
+var _fog_density_ground: float = -1.0
+## Stabilised up-direction. The raw player.up_direction occasionally swings for a few frames on the
+## ground (the AreaDetector gravity stack briefly resolves to a wrong/overlapping area). Feeding that
+## straight into the day factor flashed the whole sky black. We follow the raw up while it moves
+## gradually (real walking / planet spin) and IGNORE a sudden large swing — unless it persists, which
+## means a genuine change of body (a teleport), and then we snap to it.
+var _up_stable: Vector3 = Vector3.ZERO
+var _up_bad_frames: int = 0
 
 func _ready() -> void:
 	if OS.has_feature("dedicated_server"):
@@ -27,6 +36,10 @@ func _ready() -> void:
 	# Re-place the sun AFTER the player role has moved the body this frame (higher priority = processed
 	# later), so it sits on the player's final position instead of lagging one frame behind.
 	process_priority = 100
+	# Do NOT light the volumetric fog with this sun. It is re-oriented every frame at ~3e10 coords, and
+	# the fog's temporal reprojection turns that per-frame change into a black FLICKER of the whole
+	# hazy view. Decoupling the fog from the moving light kills the flicker; the fog stays ambient-lit.
+	light_volumetric_fog_energy = 0.0
 	shadow_opacity = 0.69  # softened shadow look carried over from the temporary day/night sun
 	shadow_blur = 1.649
 	if sun_tint == null:
@@ -37,7 +50,7 @@ func _ready() -> void:
 	SettingsManager.shadows_changed.connect(_on_shadows_changed)
 	SettingsManager.shadow_distance_changed.connect(_on_shadow_distance_changed)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not is_instance_valid(player):
 		return
 	if not is_instance_valid(_star):
@@ -50,32 +63,46 @@ func _process(_delta: float) -> void:
 	if to_star.length_squared() < 0.0001:
 		return
 	to_star = to_star.normalized()
-	var up: Vector3 = (player as CharacterBody3D).up_direction  # centre planet -> player, kept by PlayerClient
+	# Stabilised up (centre planet -> player): reject a momentary gravity-area glitch, follow real motion.
+	var up_raw: Vector3 = (player as CharacterBody3D).up_direction
+	if _up_stable == Vector3.ZERO:
+		_up_stable = up_raw
+	elif up_raw.dot(_up_stable) > 0.9:  # within ~25deg: a real, gradual change -> follow it
+		_up_stable = _up_stable.slerp(up_raw, minf(delta * 5.0, 1.0)).normalized()
+		_up_bad_frames = 0
+	else:  # a sudden large swing: ignore it as a glitch, unless it persists (a real teleport) -> snap
+		_up_bad_frames += 1
+		if _up_bad_frames > 20:
+			_up_stable = up_raw
+			_up_bad_frames = 0
 	# Star elevation above the local horizon: > 0 = day, < 0 = night (magnitude = sine of elevation).
-	var elevation: float = up.dot(to_star)
-	# Smooth day/night factor: 1 in full day, 0 below the horizon, a soft band across the terminator.
-	# The SAME factor drives the sun energy AND the sky, so the sky-sourced ambient and reflections
-	# (which never pass through a light() function) darken in step -> a truly black night, not a snap.
+	var elevation: float = _up_stable.dot(to_star)
+	# Day/night factor: 1 in full day, 0 below the horizon, a soft band across the terminator. The SAME
+	# factor drives the sun energy AND the sky, so the sky-sourced ambient and reflections (which never
+	# pass through a light() function) darken in step -> a truly black night. Because up is stabilised,
+	# a genuine sunset (planet spin) crosses the band over minutes while glitches no longer reach it.
 	var day: float = smoothstep(-Globals.TERMINATOR_SOFTNESS, Globals.TERMINATOR_SOFTNESS, elevation)
 	_apply_night_sky(day)
 	visible = day > 0.0
-	if not visible:
-		return
-	# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
-	# world position and the resulting orientation comes out wrong at astronomic coordinates (the light
-	# then just follows its parent, so the shadows spin with the camera). A DirectionalLight shines along
-	# its -Z and we want rays FROM the star TO the player, so its +Z axis must BE to_star. Assigning
-	# global_transform locks it in world space, immune to the player body's mouse-look yaw.
-	var up_ref: Vector3 = up if absf(up.dot(to_star)) < 0.999 else player.global_transform.basis.x
-	var x_axis: Vector3 = up_ref.cross(to_star)
-	if x_axis.length_squared() < 0.000001:
-		x_axis = player.global_transform.basis.x.cross(to_star)  # degenerate: star straight overhead
-	x_axis = x_axis.normalized()
-	var y_axis: Vector3 = to_star.cross(x_axis).normalized()
-	global_transform = Transform3D(Basis(x_axis, y_axis, to_star), player.global_position)
-	# Warm the light near the horizon (sunrise/sunset), white at the zenith.
-	light_color = sun_tint.sample(clampf(elevation, 0.0, 1.0))
-	light_energy = sun_energy * day
+	if visible:
+		# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
+		# world position and the resulting orientation comes out wrong at astronomic coordinates (the
+		# light then just follows its parent, so the shadows spin with the camera). A DirectionalLight
+		# shines along its -Z and we want rays FROM the star TO the player, so its +Z axis must BE
+		# to_star. Assigning global_transform locks it in world space, immune to the body's mouse yaw.
+		var up_ref: Vector3 = _up_stable if absf(_up_stable.dot(to_star)) < 0.999 else player.global_transform.basis.x
+		var x_axis: Vector3 = up_ref.cross(to_star)
+		if x_axis.length_squared() < 0.000001:
+			x_axis = player.global_transform.basis.x.cross(to_star)  # degenerate: star straight overhead
+		x_axis = x_axis.normalized()
+		var y_axis: Vector3 = to_star.cross(x_axis).normalized()
+		global_transform = Transform3D(Basis(x_axis, y_axis, to_star), player.global_position)
+		# Warm the light near the horizon (sunrise/sunset), white at the zenith.
+		light_color = sun_tint.sample(clampf(elevation, 0.0, 1.0))
+		light_energy = sun_energy * day
+	# Fade the fog with altitude. Runs LAST, after the sun is fully set, so nothing in it can ever
+	# skip the sun above (whatever the body/state), and it still updates at night (fog is not gated on day).
+	_apply_atmosphere_fade()
 
 ## Fade the sky (and therefore its ambient light and reflections) with the day factor, so night is
 ## truly black. Ambient/reflections bypass light() entirely, so nothing else can darken them. Drives
@@ -94,6 +121,37 @@ func _apply_night_sky(day: float) -> void:
 	if _sky_energy_day < 0.0:
 		_sky_energy_day = psm.energy_multiplier
 	psm.energy_multiplier = _sky_energy_day * day
+
+## Fade the volumetric fog with altitude: full at the surface, gone at the top of the atmosphere, gone
+## in space. Fog/haze is atmospheric, so it must thin as the air thins with height — otherwise it hangs
+## in orbit. TEMPORARY, like the _force_temp_sky_environment it drives. The ground density is captured
+## once from the Environment rather than duplicated.
+func _apply_atmosphere_fade() -> void:
+	if not is_instance_valid(player) or player.camera == null:
+		return
+	var env: Environment = player.camera.environment
+	if env == null:
+		return
+	if _fog_density_ground < 0.0:
+		_fog_density_ground = env.volumetric_fog_density
+	env.volumetric_fog_density = _fog_density_ground * _atmosphere_factor()
+
+## 1 at the surface of the body the player is on, fading to 0 at the top of its atmosphere and 0 in deep
+## space (no gravity body -> no air). A plain centre-radius altitude is enough here (the fade spans tens
+## of km, so the few-km terrain height is negligible); uses atmosphere_height, or a placeholder default.
+func _atmosphere_factor() -> float:
+	var area: Node = player.get_current_gravity_parent()
+	if area == null or area.get_parent() == null:
+		return 0.0
+	var planet: Node = area.get_parent().get_parent()
+	if not (planet is Planet):
+		return 0.0
+	var data: PlanetData = (planet as Planet).planet_data
+	if data == null:
+		return 0.0
+	var height: float = data.atmosphere_height if data.atmosphere_height > 0.0 else Globals.DEFAULT_ATMOSPHERE_HEIGHT
+	var altitude: float = (player.global_position - (planet as Node3D).global_position).length() - data.radius
+	return clampf(1.0 - altitude / height, 0.0, 1.0)
 
 ## Resolve the system star (a static node under the level root). Cached by the caller.
 func _find_star() -> Node3D:

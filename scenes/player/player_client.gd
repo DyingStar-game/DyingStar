@@ -623,10 +623,13 @@ func _force_temp_sky_environment() -> void:
 	sky_material.rayleigh_coefficient = 2.5
 	sky_material.mie_coefficient = 0.02
 	sky_material.mie_eccentricity = 0.85
-	sky_material.turbidity = 12.0
+	# turbidity was 12 (very hazy) and ground_color a muddy brown; because ambient + reflections are
+	# sky-sourced, that brown tinted the whole scene ("brown veil"). Clearer air + a neutral blue-grey
+	# ground de-brown both the sky and the fill. (Still the TEMPORARY sky — the real atmosphere replaces it.)
+	sky_material.turbidity = 6.0
 	sky_material.sun_disk_scale = 3.0
-	sky_material.ground_color = Color(0.35, 0.28, 0.22)
-	sky_material.energy_multiplier = 1.2
+	sky_material.ground_color = Color(0.5, 0.55, 0.62)
+	sky_material.energy_multiplier = 1.0
 	var sky := Sky.new()
 	sky.sky_material = sky_material
 	var env := Environment.new()
