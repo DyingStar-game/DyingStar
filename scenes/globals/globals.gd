@@ -21,6 +21,16 @@ const MASK_OBSTACLE := (1 << 0) | (1 << 2) | (1 << 3)  # world | vehicle | prop 
 ## These zones are MONITORABLE-only; the player's AreaDetector is the single monitor scanning `zone`.
 const VEHICLE_ZONE_LAYER := 16
 
+## 3D RENDER layers — a SEPARATE space from the physics layers above (VisualInstance3D.layers matched
+## against Light3D.light_cull_mask, not collision). Everything renders on layer 1 by default. Layer 20
+## is reserved for CELESTIAL bodies: the far-LOD spheres of distant planets/moons, the only geometry
+## that must be lit by the system star's shadowless 1e11 OmniLight. That OmniLight is masked to this
+## layer alone, so it can never light a surface the player stands on — which is what kept night-side
+## faces lit (the star casts no shadows and the planet body cannot occlude it). Local surfaces are then
+## lit solely by the per-player day/night sun (PlayerSunLight).
+const RENDER_MASK_LOCAL := 1  # layer 1: terrain, props, players, vehicles, vegetation
+const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body far-LOD spheres
+
 var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false

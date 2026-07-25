@@ -1015,6 +1015,10 @@ func _update_terrain() -> void:
 		# sphere (at exact radius) would occlude terrain that sits below radius
 		# due to a negative height_offset.
 		planet_body.far_lod_sphere.visible = (planet_lod >= 4) and not is_server
+		# The ocean rides the OPPOSITE toggle: hidden once the far-LOD sphere shows, since it is on the
+		# local render layer (unlit by the star at distance) and would occlude the lit far sphere.
+		if not is_server:
+			planet_body.set_ocean_visible(planet_lod < 4)
 
 	# At LOD 4 there is no terrain — just the far sphere
 	if planet_lod >= 4:
