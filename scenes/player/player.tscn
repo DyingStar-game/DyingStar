@@ -22,8 +22,9 @@
 [ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="8_qgvuu"]
 [ext_resource type="AudioStream" uid="uid://6edqhr5jntwe" path="res://assets/_universe/audio/sfx/characters/male-jump.wav" id="8_wva7c"]
 [ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/player/debug/debug_client_fps.gd" id="9_2g0ng"]
-[ext_resource type="Script" path="res://scenes/player/debug/debug_planet_time.gd" id="9_ptime"]
 [ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
+[ext_resource type="Script" uid="uid://cl7pwq5jalp1i" path="res://scenes/player/debug/debug_altitude.gd" id="9_alt"]
+[ext_resource type="Script" uid="uid://dlan2ws7xee5x" path="res://scenes/player/debug/debug_planet_time.gd" id="9_ptime"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/player/debug/debug_client_nbplayers.gd" id="10_udrf3"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="Script" uid="uid://3snlx7cgv5wk" path="res://scenes/player/debug/debug_universe_servers.gd" id="11_qgvuu"]
@@ -183,6 +184,16 @@ offset_bottom = 135.0
 text = "Soon™"
 label_settings = ExtResource("4_dpwvv")
 script = ExtResource("9_ptime")
+
+[node name="altitude" type="Label" parent="UserInterface/Debug" unique_id=611203345]
+layout_mode = 0
+offset_left = 1529.0
+offset_top = 135.0
+offset_right = 1722.0
+offset_bottom = 158.0
+text = "Soon™"
+label_settings = ExtResource("4_dpwvv")
+script = ExtResource("9_alt")
 
 [node name="server_bg" type="Sprite2D" parent="UserInterface/Debug" unique_id=366153438]
 position = Vector2(1642, 271)
@@ -528,6 +539,7 @@ stow_offset = Vector3(-0.16, 0.04, 0.3)
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_players" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/planet_time" method="_on_normal_player_display_debug"]
+[connection signal="display_debug" from="." to="UserInterface/Debug/altitude" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_fps" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbplayers" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/server_nbobjects" method="_on_normal_player_display_debug"]

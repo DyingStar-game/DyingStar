@@ -65,6 +65,9 @@ func _process(delta: float) -> void:
 		var to_body: Vector3 = body.global_position - eye
 		if to_body.length_squared() < 1.0:
 			continue
+		var dist_label: Node = marker.get_node_or_null("dist")
+		if dist_label is Label3D:
+			(dist_label as Label3D).text = _dist_str(_surface_distance(body, eye, to_body.length()))
 		var dir: Vector3 = to_body.normalized()
 		# Face the marker (and its label child) at the camera HERE, in double precision, instead of
 		# leaving it to the Label3D billboard: the shader billboard subtracts two ~3e10 positions in
@@ -129,8 +132,8 @@ func _make_marker(body_name: String, color: Color) -> Node3D:
 	mat.albedo_color = color
 	mat.no_depth_test = true  # gizmo: always visible, even through terrain and buildings
 	var sphere: SphereMesh = SphereMesh.new()
-	sphere.radius = 2.0
-	sphere.height = 4.0
+	sphere.radius = 1.0
+	sphere.height = 2.0
 	var marker: MeshInstance3D = MeshInstance3D.new()
 	marker.mesh = sphere
 	marker.material_override = mat
@@ -145,9 +148,42 @@ func _make_marker(body_name: String, color: Color) -> Node3D:
 	label.no_depth_test = true
 	label.font_size = 48
 	label.pixel_size = 0.08  # world size of a font pixel -> ~3.8 m tall text at the 120 m marker
-	label.position = Vector3(0.0, 4.0, 0.0)
+	# Bottom-aligned and sitting just above the distance line, so the two never overlap whatever the
+	# name length or font size (the distance below is top-aligned just under this anchor).
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	label.position = Vector3(0.0, 3.6, 0.0)
 	marker.add_child(label)
+	# Distance readout, smaller, under the name. Updated every frame in _process (named so it is found).
+	var dist: Label3D = Label3D.new()
+	dist.name = "dist"
+	dist.modulate = color
+	dist.no_depth_test = true
+	dist.font_size = 48
+	dist.pixel_size = 0.045  # ~55% of the name size
+	# Top-aligned and pulled UP into the name's baseline so the distance tucks right under the name text
+	# (Label3D leaves descender/line space below the glyphs, so a flush anchor still looks gappy).
+	dist.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	dist.position = Vector3(0.0, 4.8, 0.0)
+	marker.add_child(dist)
 	return marker
+
+## Distance from the eye to the body's SURFACE, not its centre: so the number reads as "how far above
+## the ground" (~0 when you stand on it), not "how far to the core" (= the radius). Close in, it samples
+## the actual terrain height (accounts for relief); far away, the base radius is already accurate to
+## within the terrain height, so we skip the heightmap sample. The star keeps the centre distance.
+func _surface_distance(body: Node3D, eye: Vector3, centre_distance: float) -> float:
+	if not (body is Planet) or (body as Planet).planet_data == null:
+		return centre_distance
+	var base_altitude: float = centre_distance - (body as Planet).planet_data.radius
+	if base_altitude < 100000.0:  # within 100 km: refine with the real ground height
+		return maxf((body as Planet).surface_altitude_of(eye), 0.0)
+	return base_altitude
+
+## Distance: plain metres below 1 km, plain whole kilometres above.
+func _dist_str(metres: float) -> String:
+	if metres < 1000.0:
+		return "%.0f m" % metres
+	return "%.0f km" % (metres / 1000.0)
 
 ## The camera this node is parented under (created there by PlayerClient); its position is the eye
 ## from which body directions are measured.
