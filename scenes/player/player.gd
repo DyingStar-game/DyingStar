@@ -63,6 +63,10 @@ const TELEPORT_TARGETS := {
 @export var player_thruster_force = 10
 @export var sprint_speed: float = 5.0
 @export var crouch_speed: float = 1.5
+## EVA (dev free-flight) cruise speed in m/s. Toggled with the `toggle_eva` action ('$' by default,
+## remappable in Settings > Controls). A test aid to fly around a body and inspect its day/night faces:
+## the server detaches the player from gravity and flies it where the camera looks, ignoring collision.
+@export var eva_speed: float = 2000.0
 # Movement speed multiplier while carrying an ore (issue #124): slower with hands full.
 @export var carry_speed_factor: float = 0.5
 ## Where a carried item floats, relative to the player body (issue #124): head height, a
@@ -177,6 +181,10 @@ var active = false
 # Server-authoritative: true while seated in a vehicle. Blocks walking on the SERVER (which
 # never sets `active` true). Set by Vehicle.server_enter / server_exit.
 var piloting: bool = false
+
+# Server-authoritative: true while in EVA free-flight (dev test aid, toggled by the `toggle_eva`
+# action). The server flies the body where the camera looks, no gravity, no collision. See eva_speed.
+var eva_mode: bool = false
 
 var hands_item: Node3D = null
 

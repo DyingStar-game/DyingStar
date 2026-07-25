@@ -83,6 +83,13 @@ func server_action_received(data: Dictionary) -> void:
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
+		"toggle_eva":
+			# EVA free-flight (dev test aid): flip the authoritative state; _physics_process then flies
+			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
+			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.
+			player.eva_mode = not player.eva_mode
+			player.velocity = Vector3.ZERO
+			player.server_send_properties_to_client({"eva": player.eva_mode})
 		"screen_state":
 			# A 3D screen (mining depot) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
@@ -435,6 +442,20 @@ func _physics_process(delta: float) -> void:
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
+	if player.eva_mode:
+		# EVA free-flight (dev): fly the body where the camera looks, gravity off, collision off.
+		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
+		_server_eva_move(delta)
+		player.new_input_from_server = false
+		player.emit_signal(
+			"hs_server_move",
+			player.client_uuid,
+			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
+			snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+			null,
+			player.is_parented)
+		return
+
 	# Server-side "sleep" for settled players: once quasi-still for ~0.5 s, run the full move_and_slide
 	# only every 10th tick (6 Hz keeps the floor contact honest). Any input/velocity resets the counter.
 	if not player.new_input_from_server and player.input_direction == Vector2.ZERO \
@@ -524,6 +545,21 @@ func _physics_process(delta: float) -> void:
 		null,
 		player.is_parented
 	)
+
+## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
+## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
+## can't tunnel the thin terrain trimesh or trip the below-surface catch, and no gravity is applied
+## (this tick returns before the walk path). Same input mapping as walking, but in the CAMERA frame
+## so looking up/down climbs/dives — the server holds the replicated camera pitch on camera_pivot.
+## Stops crisply with no input, to line up a steady view of a body's day/night face.
+func _server_eva_move(delta: float) -> void:
+	var look: Basis = player.camera_pivot.global_transform.basis
+	var wish: Vector3 = look * Vector3(player.input_direction.x, 0.0, player.input_direction.y)
+	if wish.length_squared() > 0.0001:
+		player.velocity = wish.normalized() * player.eva_speed
+	else:
+		player.velocity = Vector3.ZERO
+	player.global_position += player.velocity * delta
 
 ## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
 ## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
