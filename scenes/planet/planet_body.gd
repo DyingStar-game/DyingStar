@@ -278,6 +278,19 @@ func _setup_far_lod_sphere() -> void:
 		far_lod_sphere.material_override = mat
 
 	far_lod_sphere.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# The far-LOD sphere is the ONLY surface that must stay lit by the system star's radial OmniLight
+	# (this is a DISTANT planet/moon seen in the sky). Put it on the celestial render layer, which is
+	# the only layer that OmniLight illuminates. Everything else stays on the default local layer and
+	# is lit solely by the day/night PlayerSunLight, so it goes dark at night. See Globals.RENDER_MASK_*.
+	far_lod_sphere.layers = Globals.RENDER_MASK_CELESTIAL
+
+
+## Show/hide this planet's ocean surface. The far-LOD sphere takes over at LOD >= 4; the water sphere
+## is NOT LOD-managed on its own and sits on the local render layer, so at that distance it would be
+## unlit by the star OmniLight (dark) and would occlude the lit far-LOD sphere. Hidden past LOD 4.
+func set_ocean_visible(visible_now: bool) -> void:
+	if _water_sphere:
+		_water_sphere.visible = visible_now
 
 
 func _setup_water_sphere() -> void:
