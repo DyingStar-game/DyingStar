@@ -254,13 +254,24 @@ func _setup_planet() -> void:
 
 
 func _setup_far_lod_sphere() -> void:
-	if not far_lod_sphere or not planet_data:
+	if not planet_data:
 		return
 
 	if _is_server() or Engine.is_editor_hint():
 		# Server never renders; editor shows the LOD 0 terrain preview instead.
-		far_lod_sphere.visible = false
+		if far_lod_sphere:
+			far_lod_sphere.visible = false
 		return
+
+	# Create the far-LOD sphere if the scene didn't ship one. base_planet.tscn defines a FarLODSphere
+	# node, but the actual tarsis_*.tscn planets do NOT — so without this a planet VANISHES past LOD 4,
+	# where PlanetTerrain clears the terrain chunks and nothing takes over. A plain sphere is enough:
+	# it only ever shows from thousands of km away. PlanetTerrain toggles its visibility by LOD.
+	if far_lod_sphere == null:
+		far_lod_sphere = MeshInstance3D.new()
+		far_lod_sphere.name = "FarLODSphere"
+		add_child(far_lod_sphere)
+	far_lod_sphere.visible = false  # shown by PlanetTerrain only at LOD >= 4
 
 	# Build a low-poly sphere matching the planet radius
 	var sphere := SphereMesh.new()
@@ -270,12 +281,15 @@ func _setup_far_lod_sphere() -> void:
 	sphere.rings = 32
 	far_lod_sphere.mesh = sphere
 
-	# Apply the QGIS-exported colour map as the albedo
+	# Albedo: the QGIS colour map when the planet has one, else a plain rocky placeholder colour so a
+	# planet without a baked map still reads as a lit body (and shows the star's day/night terminator).
+	var mat := StandardMaterial3D.new()
+	mat.cull_mode = BaseMaterial3D.CULL_BACK
 	if planet_data.colormap:
-		var mat := StandardMaterial3D.new()
 		mat.albedo_texture = planet_data.colormap
-		mat.cull_mode = BaseMaterial3D.CULL_BACK
-		far_lod_sphere.material_override = mat
+	else:
+		mat.albedo_color = Color(0.55, 0.45, 0.38)
+	far_lod_sphere.material_override = mat
 
 	far_lod_sphere.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# The far-LOD sphere is the ONLY surface that must stay lit by the system star's radial OmniLight
@@ -404,6 +418,23 @@ func _setup_gravity() -> void:
 # ------------------------------------------------------------------
 # Utilities
 # ------------------------------------------------------------------
+
+## Altitude of `world_pos` above this planet's terrain surface (~0 at ground level, negative below it).
+## A surface point sits at radius + terrain_height, so subtracting only the base radius reads kilometres
+## too high on a body with relief; this samples the heightmap for the real ground. Used by the altitude
+## readout and the celestial-marker distances.
+func surface_altitude_of(world_pos: Vector3) -> float:
+	if planet_data == null:
+		return 0.0
+	var to_pos: Vector3 = world_pos - global_position
+	var centre_dist: float = to_pos.length()
+	if centre_dist < 0.001:
+		return -planet_data.radius
+	# The heightmap lives in the planet's LOCAL (spinning) frame, so sample the local direction.
+	var local_dir: Vector3 = (global_basis.orthonormalized().inverse() * to_pos).normalized()
+	var terrain_height: float = planet_data.sample_height_for_direction(local_dir)
+	return centre_dist - planet_data.radius - terrain_height
+
 
 func _is_server() -> bool:
 	if Engine.is_editor_hint():
