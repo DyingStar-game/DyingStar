@@ -7,14 +7,18 @@ extends DirectionalLight3D
 ## player, so it provides crisp cast shadows and the day/night look driven by the real star direction
 ## (not a fake rotating cycle). PlayerClient creates it for the OWNER only; never networked.
 
-## Directional light energy. The star OmniLight does the base system lighting; tune this in-game.
-@export var sun_energy: float = 1.0
+## Directional light energy. This is now the SOLE light on the local surface (the star OmniLight was
+## culled off it), so it carries all of daytime — raised from 1.0 to make up for the removed OmniLight,
+## which used to roughly double the light near the player. Tune in-game (live @export).
+@export var sun_energy: float = 2.0
 ## Warm-at-horizon -> white-at-noon colour ramp, sampled by the star's real elevation above the horizon.
 @export var sun_tint: Gradient
 
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
 var player: Node3D = null
 var _star: Node3D = null
+## Full-day sky energy, captured once from the camera's PhysicalSkyMaterial (-1 = not captured yet).
+var _sky_energy_day: float = -1.0
 
 func _ready() -> void:
 	if OS.has_feature("dedicated_server"):
@@ -49,8 +53,12 @@ func _process(_delta: float) -> void:
 	var up: Vector3 = (player as CharacterBody3D).up_direction  # centre planet -> player, kept by PlayerClient
 	# Star elevation above the local horizon: > 0 = day, < 0 = night (magnitude = sine of elevation).
 	var elevation: float = up.dot(to_star)
-	# Day/night: below the horizon the star is occluded by the planet body -> no sun.
-	visible = elevation > 0.0
+	# Smooth day/night factor: 1 in full day, 0 below the horizon, a soft band across the terminator.
+	# The SAME factor drives the sun energy AND the sky, so the sky-sourced ambient and reflections
+	# (which never pass through a light() function) darken in step -> a truly black night, not a snap.
+	var day: float = smoothstep(-Globals.TERMINATOR_SOFTNESS, Globals.TERMINATOR_SOFTNESS, elevation)
+	_apply_night_sky(day)
+	visible = day > 0.0
 	if not visible:
 		return
 	# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
@@ -67,7 +75,25 @@ func _process(_delta: float) -> void:
 	global_transform = Transform3D(Basis(x_axis, y_axis, to_star), player.global_position)
 	# Warm the light near the horizon (sunrise/sunset), white at the zenith.
 	light_color = sun_tint.sample(clampf(elevation, 0.0, 1.0))
-	light_energy = sun_energy
+	light_energy = sun_energy * day
+
+## Fade the sky (and therefore its ambient light and reflections) with the day factor, so night is
+## truly black. Ambient/reflections bypass light() entirely, so nothing else can darken them. Drives
+## the PhysicalSkyMaterial energy on the player camera's Environment (built by
+## PlayerClient._force_temp_sky_environment). The full-day energy is captured once from that material,
+## so its value is not duplicated here.
+func _apply_night_sky(day: float) -> void:
+	if not is_instance_valid(player) or player.camera == null:
+		return
+	var env: Environment = player.camera.environment
+	if env == null or env.sky == null:
+		return
+	var psm := env.sky.sky_material as PhysicalSkyMaterial
+	if psm == null:
+		return
+	if _sky_energy_day < 0.0:
+		_sky_energy_day = psm.energy_multiplier
+	psm.energy_multiplier = _sky_energy_day * day
 
 ## Resolve the system star (a static node under the level root). Cached by the caller.
 func _find_star() -> Node3D:
