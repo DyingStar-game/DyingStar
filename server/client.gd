@@ -488,6 +488,13 @@ func create_object(event: Dictionary) -> void:
 			if int(event["channel"]) == 0:
 				create_player(event)
 
+		"star":
+			# The system star is a static node in the level (system_sandbox.tscn "Star"); ignore the
+			# network duplicate, otherwise the client ends up with TWO star.tscn instances — two
+			# Star_OmniLight3D lighting everything twice. All code resolves the star via the level node
+			# (universe_scene.get_node("Star") / _find_sun), never this networked copy.
+			pass
+
 		_:
 			# for all props
 			var new_event = _standardize_object(event)
