@@ -66,6 +66,24 @@ uniform float cliff_tiling_scale : hint_range(0.0001, 0.01, 0.0001) = 0.001;
 uniform vec4  cliff_tint : source_color = vec4(0.38, 0.36, 0.34, 1.0);
 uniform float cliff_tint_strength : hint_range(0.0, 1.0, 0.01) = 0.3;
 
+// Far-distance shading-normal correction.
+// Distant coarse-LOD chunks light on their GEOMETRIC vertex normals, which wander (heightmap finite
+// differences over huge quads) and warp the day/night terminator into a wavy 'yin-yang'. Past
+// radial_blend_far the shading normal is fully the smooth planet radial (planet_up) — a clean
+// great-circle terminator; below radial_blend_near it is the full detail relief (no regression up
+// close). Blended by CAMERA distance, so it only kicks in when the planet is a distant disc.
+group_uniforms lighting;
+uniform float radial_blend_near : hint_range(0.0, 10000000.0, 10000.0) = 100000.0;
+uniform float radial_blend_far : hint_range(0.0, 40000000.0, 10000.0) = 250000.0;
+// Per-fragment STAR lighting for distant chunks. On the celestial layer no Godot light reaches them
+// (the per-player sun is masked off, the star OmniLight is ineffective at astronomic range), so we
+// light them here: EMISSION = albedo * max(dot(radial, star_dir), 0) * energy, faded in with distance.
+// star_dir_world is the world-space direction from THIS planet to the star, set per-chunk (computed in
+// double precision on the CPU, so it is exact at ~3e10 where a float32 world_pos would not be).
+uniform float star_light_energy : hint_range(0.0, 8.0, 0.1) = 2.0;
+uniform vec3 star_light_color : source_color = vec3(1.0, 0.95, 0.85);
+instance uniform vec3 star_dir_world;
+
 // Chunk origin wrapped to WRAP metres, set per-chunk by planet_terrain.gd
 // (fposmod(chunk_center, 8192)).  Triplanar coordinates are built from
 // chunk-LOCAL vertex positions plus this small offset instead of the raw
@@ -74,6 +92,12 @@ uniform float cliff_tint_strength : hint_range(0.0, 1.0, 0.01) = 0.3;
 // is smaller than that (everything finer than the 1 km base octave).
 // tri_pos stays < ~8300 m → sub-millimetre precision at every octave.
 instance uniform vec3 chunk_origin_mod;
+// Full (NON-wrapped) planet-LOCAL chunk centre, set per-chunk by planet_terrain.gd (= the chunk's
+// position under the planet). chunk_center_local + VERTEX is the planet-local vertex (~4.5e6 m ->
+// float32-precise, unlike the ~3e10 world position), so normalize() of it is the TRUE radial 'up';
+// rotated to world by MODEL_MATRIX it becomes the smooth sphere normal used to de-warp the far
+// terminator (see planet_radial_world). Zero disables the correction (radial == geometric normal).
+instance uniform vec3 chunk_center_local;
 // Must match `_wrap` in planet_terrain.gd.  Tiling scales are snapped to
 // integer multiples of 1/WRAP so the pattern is seamless across the wrap
 // (UV differs by scale×WRAP×integer between chunks → integer = no seam).
@@ -84,6 +108,8 @@ varying vec3 world_normal;
 varying vec3 tri_pos;
 varying flat float detail_layer;
 varying float detail_scale;
+varying float cam_dist;  // camera -> fragment distance (m), for the far-distance radial normal blend
+varying vec3 planet_radial_world;  // true smooth sphere normal (world space): terminator + star NdotL
 
 // Snap a tiling scale to the seamless 1/WRAP grid (minimum one repeat/WRAP).
 float snap_scale(float raw) {
@@ -155,6 +181,13 @@ void vertex() {
 	// origin.  Both terms are small (≤ ~8300 m), so float32 keeps
 	// sub-millimetre precision — unlike world_pos (~4.5e6 m → 0.5 m steps).
 	tri_pos      = chunk_origin_mod + VERTEX + CUSTOM0.xyz;
+	// Camera->fragment distance for the far-distance radial normal blend (view space is camera-relative,
+	// so this stays float32-precise regardless of the astronomic world position).
+	cam_dist     = length((MODELVIEW_MATRIX * vec4(VERTEX + CUSTOM0.xyz, 1.0)).xyz);
+	// TRUE radial 'up' as a world-space direction: the planet-local vertex (chunk_center_local + VERTEX,
+	// precise) rotated by the model's linear part (the planet's world rotation; w=0 drops the ~3e10
+	// translation, so no float32 blow-up). Smooth sphere normal for the far terminator + star lighting.
+	planet_radial_world = normalize((MODEL_MATRIX * vec4(chunk_center_local + VERTEX + CUSTOM0.xyz, 0.0)).xyz);
 	detail_layer = UV2.x;    // integer layer index (0 = blank)
 	detail_scale = UV2.y;    // per-biome tiling scale (world-space)
 	// VERTEX already stores the final geometry position (dropped for
@@ -263,6 +296,17 @@ void fragment() {
 	// Increase roughness on steep cliff faces for a more matte rock look.
 	ROUGHNESS = mix(roughness, min(roughness + 0.1, 1.0), cliff_factor);
 	METALLIC  = metallic;
+
+	// Far terrain: shade on the TRUE smooth planet radial (world space) so distant coarse chunks light on
+	// a clean sphere normal (crisp great-circle terminator) instead of their wandering vertex normals (the
+	// 'yin-yang'). Near terrain (blend 0) keeps its full detail relief.
+	float radial_blend = smoothstep(radial_blend_near, radial_blend_far, cam_dist);
+	shaded_normal = normalize(mix(shaded_normal, planet_radial_world, radial_blend));
+	// Distant chunks live on the celestial layer where NO Godot light reaches them (per-player sun masked
+	// off, star OmniLight ineffective at ~3e10). Light them per-fragment from the REAL star direction and
+	// EMIT it, faded in with distance so near terrain (blend 0) still uses the Godot per-player sun.
+	EMISSION += ALBEDO * star_light_color
+			* (max(dot(planet_radial_world, star_dir_world), 0.0) * star_light_energy * radial_blend);
 
 	// Output the detail-derived surface normal (converted to view space).
 	// Replaces the old equirectangular normal_map lookup, which spanned the

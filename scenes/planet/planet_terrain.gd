@@ -189,6 +189,17 @@ var _mesh_task_backlog: Array[Dictionary] = []
 ## ── Initial-load tracking ─────────────────────────────────────────
 var _initial_ready_emitted: bool = false
 
+## True while this planet's chunks are on the CELESTIAL render layer (whole-planet LOD >= 3 = a distant
+## body) rather than the LOCAL layer (near = lit by the per-player sun). Tracked so the switch only
+## re-tags chunks on a transition.
+var _chunks_on_celestial: bool = false
+
+## World-space direction from THIS planet to the system star, computed in double precision (exact at
+## ~3e10, unlike a float32 world_pos). Fed per-chunk to the terrain shader so distant chunks — which get
+## no Godot light on the celestial layer — light themselves from the REAL star direction. Refreshed each
+## terrain update; ~static while the planet does not orbit.
+var _star_dir_world: Vector3 = Vector3.UP
+
 ## ── Look-ahead prefetch ───────────────────────────────────────────
 ## Ring-buffer of recent camera positions (planet-local) for velocity estimation.
 var _cam_history: PackedVector3Array = PackedVector3Array()
@@ -951,6 +962,22 @@ func _physics_process(delta: float) -> void:
 	_update_terrain()
 
 
+## World-space unit direction from this planet's centre to the system star, in DOUBLE precision (exact
+## at ~3e10). Fed to the terrain shader for the celestial-layer star lighting. Falls back to the last
+## value if the star node is not resolvable yet.
+func _compute_star_dir() -> Vector3:
+	var scene: Node = NetworkOrchestrator.universe_scene
+	if scene == null:
+		return _star_dir_world
+	var star: Node = scene.get_node_or_null("Star")
+	if not (star is Node3D):
+		return _star_dir_world
+	var to_star: Vector3 = (star as Node3D).global_position - global_position
+	if to_star.length_squared() < 1.0:
+		return _star_dir_world
+	return to_star.normalized()
+
+
 func _update_terrain() -> void:
 	var camera_pos := _get_reference_position()
 	if camera_pos == Vector3.INF:
@@ -996,6 +1023,23 @@ func _update_terrain() -> void:
 	# quadtree subdivision when the player spawns slightly below ground.
 	var surface_distance := _cam_alt_above_surface
 	var planet_lod := planet_data.get_lod_level(surface_distance)
+
+	# Distant bodies (whole-planet LOD >= 3) render their coarse chunks on the CELESTIAL layer, where the
+	# LOCAL per-player sun (aimed at YOU, wrong for a distant body) is masked off. They light THEMSELVES
+	# in the terrain shader from _star_dir_world (the real star direction, correct per-body day/night with
+	# a clean terminator via the radial normal). Near (you are on/at the planet, LOD < 3) stays local so
+	# the player's sun + shadows drive the surface. A per-planet switch, so your whole planet (horizon too)
+	# stays local while other planets go celestial. Re-tag existing chunks only on a transition.
+	if not is_server:
+		_star_dir_world = _compute_star_dir()
+		var want_celestial: bool = planet_lod >= 3
+		if want_celestial != _chunks_on_celestial:
+			_chunks_on_celestial = want_celestial
+			var layer: int = Globals.RENDER_MASK_CELESTIAL if want_celestial else Globals.RENDER_MASK_LOCAL
+			for ck in _active_chunks:
+				var cmi: MeshInstance3D = _active_chunks[ck].get("mesh_instance")
+				if is_instance_valid(cmi):
+					cmi.layers = layer
 
 	# Update camera history ring-buffer for look-ahead prefetch.
 	_cam_history.append(local_cam)
@@ -1203,6 +1247,9 @@ func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
 			fposmod(chunk_center.x, _wrap),
 			fposmod(chunk_center.y, _wrap),
 			fposmod(chunk_center.z, _wrap)))
+		# Full planet-local chunk centre for the terrain shader's true-radial normal (far terminator fix).
+		mi.set_instance_shader_parameter("chunk_center_local", chunk_center)
+		mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
 		_chunks_node.add_child(mi)
 		var info: Dictionary = {"key": key, "mesh_instance": mi, "veg": want_veg}
 
@@ -2230,6 +2277,12 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		fposmod(chunk_center.x, _wrap),
 		fposmod(chunk_center.y, _wrap),
 		fposmod(chunk_center.z, _wrap)))
+	# Full planet-local chunk centre for the terrain shader's true-radial normal (far terminator fix).
+	mi.set_instance_shader_parameter("chunk_center_local", chunk_center)
+	# Star direction for the shader's celestial-layer star lighting (see _star_dir_world).
+	mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
+	# Born on the celestial layer when this planet is currently a distant body (star-lit), else local.
+	mi.layers = Globals.RENDER_MASK_CELESTIAL if _chunks_on_celestial else Globals.RENDER_MASK_LOCAL
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
 

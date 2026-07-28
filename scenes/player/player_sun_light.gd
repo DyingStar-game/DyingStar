@@ -40,6 +40,10 @@ func _ready() -> void:
 	# the fog's temporal reprojection turns that per-frame change into a black FLICKER of the whole
 	# hazy view. Decoupling the fog from the moving light kills the flicker; the fog stays ambient-lit.
 	light_volumetric_fog_energy = 0.0
+	# Light ONLY the local render layer. Distant bodies rendered on the celestial layer (far-LOD spheres
+	# and, when far, terrain chunks) are lit by the system star's OmniLight from the REAL star direction;
+	# this per-player sun is aimed star->PLAYER, wrong for a distant body, so it must not touch them.
+	light_cull_mask = Globals.RENDER_MASK_LOCAL
 	shadow_opacity = 0.69  # softened shadow look carried over from the temporary day/night sun
 	shadow_blur = 1.649
 	if sun_tint == null:
