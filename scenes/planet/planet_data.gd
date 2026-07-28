@@ -81,6 +81,9 @@ var chunk_is_pyramid: bool = false
 @export var lod0_distance: float = 5000.0
 @export var lod1_distance: float = 50000.0
 @export var lod2_distance: float = 200000.0
+## NOTE: unused since get_lod_level() caps the tier at 3 (the far-LOD placeholder sphere is disabled —
+## distant bodies render their coarse LOD-3 chunks at every distance, star-lit on the celestial layer).
+## Kept for scene compatibility and in case the sphere hand-off is ever re-enabled.
 @export var lod3_distance: float = 2000000.0
 @export var lod4_distance: float = 500000000.0
 
@@ -1623,9 +1626,11 @@ func get_lod_level(surface_distance: float) -> int:
 		return 1
 	if surface_distance < lod2_distance:
 		return 2
-	if surface_distance < lod3_distance:
-		return 3
-	return 4
+	# Capped at 3: LOD 4 was the far-LOD placeholder SPHERE, now disabled by design — distant bodies
+	# render their coarse LOD-3 chunks at every distance (on the celestial layer, lit by the star), so a
+	# planet keeps its real terrain instead of popping to a smooth sphere. lod3_distance/lod4_distance
+	# are now unused. Re-enable the sphere (return 4 past lod3_distance) if the chunk cost ever bites.
+	return 3
 
 
 ## Return the per-edge vertex count for a given LOD tier.
