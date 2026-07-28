@@ -83,7 +83,14 @@ func _process(delta: float) -> void:
 	# a genuine sunset (planet spin) crosses the band over minutes while glitches no longer reach it.
 	var day: float = smoothstep(-Globals.TERMINATOR_SOFTNESS, Globals.TERMINATOR_SOFTNESS, elevation)
 	_apply_night_sky(day)
-	visible = day > 0.0
+	# Crossfade the day/night GATING by altitude. On the ground the sun is gated on your local day/night
+	# (off at your night) so shadows and total-black night work. High up and in space the gate is lifted
+	# and the sun stays on, letting its NdotL paint the true terminator across the whole visible surface
+	# — the day side lit, the night side dark — which is what the far-LOD sphere shows. This is what makes
+	# the chunk lighting match the sphere instead of going uniformly black over the night side at altitude.
+	var alt: float = _altitude_crossfade()
+	var final_energy: float = sun_energy * lerpf(day, 1.0, alt)
+	visible = final_energy > 0.001
 	if visible:
 		# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
 		# world position and the resulting orientation comes out wrong at astronomic coordinates (the
@@ -99,7 +106,7 @@ func _process(delta: float) -> void:
 		global_transform = Transform3D(Basis(x_axis, y_axis, to_star), player.global_position)
 		# Warm the light near the horizon (sunrise/sunset), white at the zenith.
 		light_color = sun_tint.sample(clampf(elevation, 0.0, 1.0))
-		light_energy = sun_energy * day
+		light_energy = final_energy
 	# Fade the fog with altitude. Runs LAST, after the sun is fully set, so nothing in it can ever
 	# skip the sun above (whatever the body/state), and it still updates at night (fog is not gated on day).
 	_apply_atmosphere_fade()
@@ -121,6 +128,24 @@ func _apply_night_sky(day: float) -> void:
 	if _sky_energy_day < 0.0:
 		_sky_energy_day = psm.energy_multiplier
 	psm.energy_multiplier = _sky_energy_day * day
+
+## 0 near the ground (sun gated on your local day/night, with shadows), rising to 1 high up and in deep
+## space (gate lifted -> the sun stays on and its NdotL draws the true day/night terminator across the
+## visible surface, matching the far-LOD sphere). Crossfades over the atmosphere so the ground keeps its
+## shadows while a view from altitude/orbit sees the whole planet's terminator, seamlessly across the LOD.
+func _altitude_crossfade() -> float:
+	var area: Node = player.get_current_gravity_parent()
+	if area == null or area.get_parent() == null:
+		return 1.0  # deep space: no ground to shadow — full terminator mode
+	var planet: Node = area.get_parent().get_parent()
+	if not (planet is Planet):
+		return 1.0
+	var data: PlanetData = (planet as Planet).planet_data
+	if data == null:
+		return 1.0
+	var top: float = (data.atmosphere_height if data.atmosphere_height > 0.0 else Globals.DEFAULT_ATMOSPHERE_HEIGHT) * 2.0
+	var altitude: float = (player.global_position - (planet as Node3D).global_position).length() - data.radius
+	return smoothstep(0.0, top, altitude)
 
 ## Fade the volumetric fog with altitude: full at the surface, gone at the top of the atmosphere, gone
 ## in space. Fog/haze is atmospheric, so it must thin as the air thins with height — otherwise it hangs
