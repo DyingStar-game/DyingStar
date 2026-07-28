@@ -17,8 +17,6 @@ extends DirectionalLight3D
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
 var player: Node3D = null
 var _star: Node3D = null
-## Full-day sky energy, captured once from the camera's PhysicalSkyMaterial (-1 = not captured yet).
-var _sky_energy_day: float = -1.0
 ## Ground-level volumetric fog density, captured once from the camera Environment (-1 = not captured).
 var _fog_density_ground: float = -1.0
 ## Stabilised up-direction. The raw player.up_direction occasionally swings for a few frames on the
@@ -86,7 +84,7 @@ func _process(delta: float) -> void:
 	# pass through a light() function) darken in step -> a truly black night. Because up is stabilised,
 	# a genuine sunset (planet spin) crosses the band over minutes while glitches no longer reach it.
 	var day: float = smoothstep(-Globals.TERMINATOR_SOFTNESS, Globals.TERMINATOR_SOFTNESS, elevation)
-	_apply_night_sky(day)
+	_apply_night_sky(day, to_star)
 	# Crossfade the day/night GATING by altitude. On the ground the sun is gated on your local day/night
 	# (off at your night) so shadows and total-black night work. High up and in space the gate is lifted
 	# and the sun stays on, letting its NdotL paint the true terminator across the whole visible surface
@@ -115,23 +113,25 @@ func _process(delta: float) -> void:
 	# skip the sun above (whatever the body/state), and it still updates at night (fog is not gated on day).
 	_apply_atmosphere_fade()
 
-## Fade the sky (and therefore its ambient light and reflections) with the day factor, so night is
-## truly black. Ambient/reflections bypass light() entirely, so nothing else can darken them. Drives
-## the PhysicalSkyMaterial energy on the player camera's Environment (built by
-## PlayerClient._force_temp_sky_environment). The full-day energy is captured once from that material,
-## so its value is not duplicated here.
-func _apply_night_sky(day: float) -> void:
+## Drive the LOCAL-frame sky shader with the current local up, star direction and day factor, so the
+## sky — and the ambient light + reflections it sources — track LOCAL day/night at astronomic
+## coordinates. Godot's world-axis PhysicalSky could not (it stayed black in local daytime); this pushes
+## the same local geometry the sun uses into local_sky.gdshader, so all three fade in step -> a truly
+## black night AND a lit daytime sky that follows the star across the sky.
+func _apply_night_sky(day: float, to_star: Vector3) -> void:
 	if not is_instance_valid(player) or player.camera == null:
 		return
 	var env: Environment = player.camera.environment
 	if env == null or env.sky == null:
 		return
-	var psm := env.sky.sky_material as PhysicalSkyMaterial
-	if psm == null:
+	var sm := env.sky.sky_material as ShaderMaterial
+	if sm == null:
 		return
-	if _sky_energy_day < 0.0:
-		_sky_energy_day = psm.energy_multiplier
-	psm.energy_multiplier = _sky_energy_day * day
+	sm.set_shader_parameter("local_up", _up_stable)
+	sm.set_shader_parameter("to_star", to_star)
+	sm.set_shader_parameter("day", day)
+	# Thin the sky toward black space as altitude rises (1 at the surface, 0 at the atmosphere top).
+	sm.set_shader_parameter("atmosphere", _atmosphere_factor())
 
 ## 0 near the ground (sun gated on your local day/night, with shadows), rising to 1 high up and in deep
 ## space (gate lifted -> the sun stays on and its NdotL draws the true day/night terminator across the

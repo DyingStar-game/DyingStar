@@ -31,10 +31,13 @@ const VEHICLE_ZONE_LAYER := 16
 const RENDER_MASK_LOCAL := 1  # layer 1: terrain, props, players, vehicles, vegetation
 const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body far-LOD spheres
 
-## Day/night terminator softness, in units of sin(star elevation) = dot(local up, dir to star).
-## ~0.01 ≈ 0.6° ≈ a ~2-minute sunrise on a 24 h day. SINGLE source of truth: PlayerSunLight fades the
-## sun and the sky with it, and each planet pushes it to its surface shaders, so all three fade in step.
-const TERMINATOR_SOFTNESS := 0.01
+## Day/night terminator half-width, in units of sin(star elevation) = dot(local up, dir to star). The
+## star is a DISC, not a point: light persists after its CENTRE crosses the horizon until its upper limb
+## sets, so the fade must span the disc's angular RADIUS (day = smoothstep(-this, +this, elevation),
+## half-lit when the centre is exactly on the horizon). ~0.05 ≈ 2.9° matches the rendered sun disc; drop
+## it for a crisper terminator, raise it for a longer twilight. SINGLE source of truth: PlayerSunLight
+## fades the sun and the sky with it, and each planet pushes it to its surface shaders — all in step.
+const TERMINATOR_SOFTNESS := 0.05
 
 ## PLACEHOLDER atmosphere thickness (m) for bodies whose real value is not in the data yet — only
 ## Tarsis4 (50 km) has one. Lets the altitude fog fade work everywhere until per-body atmosphere data
