@@ -619,17 +619,13 @@ func _seat_door_open(seat) -> bool:
 ## sun tint applies. Keep these values in sync with the WorldEnvironment in sandbox_capital.tscn.
 ## Remove this whole helper once the real sun/atmosphere system is in place.
 func _force_temp_sky_environment() -> void:
-	var sky_material := PhysicalSkyMaterial.new()
-	sky_material.rayleigh_coefficient = 2.5
-	sky_material.mie_coefficient = 0.02
-	sky_material.mie_eccentricity = 0.85
-	# turbidity was 12 (very hazy) and ground_color a muddy brown; because ambient + reflections are
-	# sky-sourced, that brown tinted the whole scene ("brown veil"). Clearer air + a neutral blue-grey
-	# ground de-brown both the sky and the fill. (Still the TEMPORARY sky — the real atmosphere replaces it.)
-	sky_material.turbidity = 6.0
-	sky_material.sun_disk_scale = 3.0
-	sky_material.ground_color = Color(0.5, 0.55, 0.62)
-	sky_material.energy_multiplier = 1.0
+	# LOCAL-frame sky shader instead of Godot's PhysicalSkyMaterial: the physical sky measures day/night
+	# and the horizon against WORLD axes, which is meaningless on a planet at ~3e10 (local up != world +Y)
+	# and left the sky black even in local daytime. local_sky.gdshader computes from local_up + to_star,
+	# both pushed each frame by PlayerSunLight._apply_night_sky. Still the TEMPORARY sky (real atmosphere
+	# replaces it), and it still feeds ambient + reflections, so night goes genuinely dark.
+	var sky_material := ShaderMaterial.new()
+	sky_material.shader = load("res://scenes/player/local_sky.gdshader")
 	var sky := Sky.new()
 	sky.sky_material = sky_material
 	var env := Environment.new()
