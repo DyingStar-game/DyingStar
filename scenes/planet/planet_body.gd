@@ -5,14 +5,13 @@ extends Node3D
 ##
 ## Responsibilities:
 ##   • Positions itself in the universe via [member spawn_position].
-##   • Orchestrates child systems (terrain, atmosphere, far-LOD sphere).
+##   • Orchestrates child systems (terrain, atmosphere).
 ##   • Applies the **client / server split**:
-##       – Client: visual terrain + atmosphere + far-LOD sphere, NO collision.
+##       – Client: visual terrain + atmosphere, NO collision.
 ##       – Server: collision shapes only (via [PlanetTerrain]), NO rendering.
 ##
 ## Expected children (set up in base_planet.tscn):
 ##   PlanetTerrain  — quadtree terrain manager
-##   FarLODSphere   — simple sphere with colormap for ultra-far LOD
 ##   Atmosphere      — (optional) instance of extremely_fast_atmosphere
 
 @export var planet_data: PlanetData:
@@ -60,7 +59,6 @@ var _water_sphere: MeshInstance3D
 var _gravity_area: Area3D
 
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain if has_node("PlanetTerrain") else null
-@onready var far_lod_sphere: MeshInstance3D = $FarLODSphere if has_node("FarLODSphere") else null
 
 func _ready() -> void:
 	if not Engine.is_editor_hint():
@@ -82,7 +80,7 @@ func _ready() -> void:
 			planet_data.load_from_planet_json()
 		# Apply the chunk manifest here too (radius / max_height / etc.) so those
 		# values are correct BEFORE _setup_planet builds things that depend on
-		# them — gravity area, far-LOD sphere, water sphere. Otherwise they use
+		# them — gravity area, water sphere. Otherwise they use
 		# the default radius (1000 m) and, e.g., the gravity sphere ends up far
 		# smaller than the planet, leaving the surface with no gravity.
 		# apply_chunk_manifest() is idempotent; PlanetTerrain.initialize() also
@@ -227,7 +225,6 @@ func get_local_solar_time(world_pos: Vector3) -> float:
 # ------------------------------------------------------------------
 
 func _setup_planet() -> void:
-	_setup_far_lod_sphere()
 	_setup_water_sphere()
 	_setup_gravity()
 
@@ -251,60 +248,6 @@ func _setup_planet() -> void:
 			var sun := _find_sun()
 			if sun:
 				atmo.sun_object = sun
-
-
-func _setup_far_lod_sphere() -> void:
-	if not planet_data:
-		return
-
-	if _is_server() or Engine.is_editor_hint():
-		# Server never renders; editor shows the LOD 0 terrain preview instead.
-		if far_lod_sphere:
-			far_lod_sphere.visible = false
-		return
-
-	# Create the far-LOD sphere if the scene didn't ship one. base_planet.tscn defines a FarLODSphere
-	# node, but the actual tarsis_*.tscn planets do NOT — so without this a planet VANISHES past LOD 4,
-	# where PlanetTerrain clears the terrain chunks and nothing takes over. A plain sphere is enough:
-	# it only ever shows from thousands of km away. PlanetTerrain toggles its visibility by LOD.
-	if far_lod_sphere == null:
-		far_lod_sphere = MeshInstance3D.new()
-		far_lod_sphere.name = "FarLODSphere"
-		add_child(far_lod_sphere)
-	far_lod_sphere.visible = false  # shown by PlanetTerrain only at LOD >= 4
-
-	# Build a low-poly sphere matching the planet radius
-	var sphere := SphereMesh.new()
-	sphere.radius = planet_data.radius
-	sphere.height = planet_data.radius * 2.0
-	sphere.radial_segments = 64
-	sphere.rings = 32
-	far_lod_sphere.mesh = sphere
-
-	# Albedo: the QGIS colour map when the planet has one, else a plain rocky placeholder colour so a
-	# planet without a baked map still reads as a lit body (and shows the star's day/night terminator).
-	var mat := StandardMaterial3D.new()
-	mat.cull_mode = BaseMaterial3D.CULL_BACK
-	if planet_data.colormap:
-		mat.albedo_texture = planet_data.colormap
-	else:
-		mat.albedo_color = Color(0.55, 0.45, 0.38)
-	far_lod_sphere.material_override = mat
-
-	far_lod_sphere.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# The far-LOD sphere is the ONLY surface that must stay lit by the system star's radial OmniLight
-	# (this is a DISTANT planet/moon seen in the sky). Put it on the celestial render layer, which is
-	# the only layer that OmniLight illuminates. Everything else stays on the default local layer and
-	# is lit solely by the day/night PlayerSunLight, so it goes dark at night. See Globals.RENDER_MASK_*.
-	far_lod_sphere.layers = Globals.RENDER_MASK_CELESTIAL
-
-
-## Show/hide this planet's ocean surface. The far-LOD sphere takes over at LOD >= 4; the water sphere
-## is NOT LOD-managed on its own and sits on the local render layer, so at that distance it would be
-## unlit by the star OmniLight (dark) and would occlude the lit far-LOD sphere. Hidden past LOD 4.
-func set_ocean_visible(visible_now: bool) -> void:
-	if _water_sphere:
-		_water_sphere.visible = visible_now
 
 
 func _setup_water_sphere() -> void:
