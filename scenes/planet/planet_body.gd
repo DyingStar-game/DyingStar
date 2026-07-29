@@ -436,6 +436,18 @@ func surface_altitude_of(world_pos: Vector3) -> float:
 	return centre_dist - planet_data.radius - terrain_height
 
 
+## Longitude/latitude (degrees, EPSG:4326) of `world_pos` on this planet. Uses the SAME body-fixed local
+## direction the heightmap is sampled with (surface_altitude_of), so it matches the terrain geography and
+## the editor_goto_* coordinates. Body-fixed means a fixed ground point keeps its lon/lat as the planet
+## spins (global_basis.inverse() undoes the spin). Returns Vector2(lon, lat).
+func lonlat_of(world_pos: Vector3) -> Vector2:
+	var to_pos: Vector3 = world_pos - global_position
+	if to_pos.length() < 0.001:
+		return Vector2.ZERO
+	var local_dir: Vector3 = (global_basis.orthonormalized().inverse() * to_pos).normalized()
+	return HEALPix.vec2lonlat(local_dir)
+
+
 func _is_server() -> bool:
 	if Engine.is_editor_hint():
 		return false

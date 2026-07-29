@@ -121,7 +121,7 @@ func _process(delta: float) -> void:
 func _apply_night_sky(day: float, to_star: Vector3) -> void:
 	if not is_instance_valid(player) or player.camera == null:
 		return
-	var env: Environment = player.camera.environment
+	var env: Environment = player.get_world_3d().environment
 	if env == null or env.sky == null:
 		return
 	var sm := env.sky.sky_material as ShaderMaterial
@@ -158,7 +158,7 @@ func _altitude_crossfade() -> float:
 func _apply_atmosphere_fade() -> void:
 	if not is_instance_valid(player) or player.camera == null:
 		return
-	var env: Environment = player.camera.environment
+	var env: Environment = player.get_world_3d().environment
 	if env == null:
 		return
 	if _fog_density_ground < 0.0:
