@@ -16,7 +16,3 @@ script = ExtResource("script_debug_export")
 [node name="Chunks" type="Node3D" parent="PlanetTerrain" unique_id=1548908213]
 
 [node name="PlayerSpawnPointsList" type="Node3D" parent="PlanetTerrain" unique_id=403365728]
-
-[node name="FarLODSphere" type="MeshInstance3D" parent="." unique_id=157104931]
-visible = false
-cast_shadow = 0

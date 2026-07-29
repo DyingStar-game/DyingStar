@@ -1009,12 +1009,6 @@ func _update_terrain() -> void:
 	# the player stands on a moon far inside that giant's radius.
 	if cam_dist < planet_data.radius * 0.9:
 		_clear_all_chunks()
-		# Hide the far-LOD sphere too — otherwise an unmaterialised white
-		# sphere of a parent body (e.g. a gas giant the player is inside)
-		# engulfs the view and looks like a giant flat surface.
-		var inside_planet_body: Planet = get_parent() as Planet
-		if inside_planet_body and inside_planet_body.far_lod_sphere:
-			inside_planet_body.far_lod_sphere.visible = false
 		return
 
 	# Altitude above the actual terrain (not sea level — high plateaus would
@@ -1050,24 +1044,6 @@ func _update_terrain() -> void:
 	# if _active_chunks.is_empty():
 	# 	print("[PlanetTerrain] first update: cam=%s  surface_dist=%.0f  lod=%d  chunk_count=%d" % [
 	# 		camera_pos, surface_distance, planet_lod, _active_chunks.size()])
-
-	# Toggle far-LOD sphere visibility
-	var planet_body: Planet = get_parent() as Planet
-	if planet_body and planet_body.far_lod_sphere:
-		# Show the simple sphere only at LOD 4+ where no terrain chunks exist.
-		# At LOD 3 the 64 coarse chunks already cover the sphere and the far
-		# sphere (at exact radius) would occlude terrain that sits below radius
-		# due to a negative height_offset.
-		planet_body.far_lod_sphere.visible = (planet_lod >= 4) and not is_server
-		# The ocean rides the OPPOSITE toggle: hidden once the far-LOD sphere shows, since it is on the
-		# local render layer (unlit by the star at distance) and would occlude the lit far sphere.
-		if not is_server:
-			planet_body.set_ocean_visible(planet_lod < 4)
-
-	# At LOD 4 there is no terrain — just the far sphere
-	if planet_lod >= 4:
-		_clear_all_chunks()
-		return
 
 	# Build the desired set of leaf chunks across all 12 HEALPix base pixels
 	# ── Horizon culling: precompute the cosine threshold ──────────

@@ -73,7 +73,8 @@ var chunk_is_pyramid: bool = false
 @export var heightmap: Texture2D
 ## Equirectangular biome map — colour encodes biome type / vegetation.
 @export var biomemap: Texture2D
-## Small equirectangular colour map used for ultra-far LOD sphere.
+## Equirectangular colour map that was the ultra-far LOD sphere's albedo. The sphere is removed, so this
+## is currently unused — kept as an @export so existing scenes don't churn (may feed a future far map).
 @export var colormap: Texture2D
 
 @export_group("LOD Distances")
@@ -81,7 +82,7 @@ var chunk_is_pyramid: bool = false
 @export var lod0_distance: float = 5000.0
 @export var lod1_distance: float = 50000.0
 @export var lod2_distance: float = 200000.0
-## NOTE: unused since get_lod_level() caps the tier at 3 (the far-LOD placeholder sphere is disabled —
+## NOTE: unused since get_lod_level() caps the tier at 3 (the far-LOD placeholder sphere is removed —
 ## distant bodies render their coarse LOD-3 chunks at every distance, star-lit on the celestial layer).
 ## Kept for scene compatibility and in case the sphere hand-off is ever re-enabled.
 @export var lod3_distance: float = 2000000.0
@@ -1626,10 +1627,10 @@ func get_lod_level(surface_distance: float) -> int:
 		return 1
 	if surface_distance < lod2_distance:
 		return 2
-	# Capped at 3: LOD 4 was the far-LOD placeholder SPHERE, now disabled by design — distant bodies
-	# render their coarse LOD-3 chunks at every distance (on the celestial layer, lit by the star), so a
-	# planet keeps its real terrain instead of popping to a smooth sphere. lod3_distance/lod4_distance
-	# are now unused. Re-enable the sphere (return 4 past lod3_distance) if the chunk cost ever bites.
+	# Capped at 3: LOD 4 was a far-LOD placeholder SPHERE, now REMOVED by design — distant bodies render
+	# their coarse LOD-3 chunks at every distance (on the celestial layer, lit by the star in the terrain
+	# shader), so a planet keeps its real terrain instead of popping to a smooth sphere. lod3_distance is
+	# now unused (kept as an @export so existing scenes don't churn).
 	return 3
 
 
