@@ -17,6 +17,22 @@ func _on_normal_player_display_debug(show: bool) -> void:
 		visible = false
 
 func _altitude_text() -> String:
+	return _altitude_only() + _frame_suffix()
+
+## The scene-graph parent the player is currently attached to — the MOVING FRAME that carries them.
+## Shows a body's name (e.g. "Tarsis4", or a structure on it) while bound to it; the universe root once
+## released to deep space by the server frame-boundary. Tells at a glance whether a body's spin/orbit
+## still carries you: "deep space · frame: Tarsis4" is bound (dragged), "· frame: <root>" is free.
+func _frame_suffix() -> String:
+	var player: Node = owner
+	if not is_instance_valid(player):
+		return ""
+	var parent_node: Node = (player as Node).get_parent()
+	if not is_instance_valid(parent_node):
+		return "\nframe: (none)"
+	return "\nframe: %s" % parent_node.name
+
+func _altitude_only() -> String:
 	var player: Node = owner
 	if not is_instance_valid(player) or not player is Node3D:
 		return "alt --"
@@ -36,4 +52,9 @@ func _altitude_text() -> String:
 	var in_air: bool = data.atmosphere_height > 0.0 and altitude <= data.atmosphere_height
 	var where: String = "atmosphere" if in_air else "space"
 	var alt_str: String = "%.2f km" % (altitude / 1000.0) if absf(altitude) >= 1000.0 else "%.0f m" % altitude
-	return "alt %s  (%s)" % [alt_str, where]
+	# Longitude/latitude on the same "where am I" readout, in compass form (N/S, E/O), matching the
+	# terrain geography. On its own line under the altitude, above the moving-frame suffix.
+	var lonlat: Vector2 = (planet as Planet).lonlat_of((player as Node3D).global_position)
+	var lat_str: String = "%.4f° %s" % [absf(lonlat.y), "N" if lonlat.y >= 0.0 else "S"]
+	var lon_str: String = "%.4f° %s" % [absf(lonlat.x), "E" if lonlat.x >= 0.0 else "O"]
+	return "alt %s  (%s)\n%s  %s" % [alt_str, where, lat_str, lon_str]

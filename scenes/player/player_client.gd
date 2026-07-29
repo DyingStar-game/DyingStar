@@ -636,7 +636,11 @@ func _force_temp_sky_environment() -> void:
 	env.glow_enabled = true
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.002
-	player.camera.environment = env
+	# Set it on the WORLD, not on player.camera, so EVERY camera in this world renders the local sky —
+	# including the vehicle mirror / reverse-cam SubViewports (RearCamera), which share get_world_3d() and
+	# have no Environment of their own. PlayerSunLight pushes the sky uniforms to this one shared material
+	# each frame, so all views (main + mirrors) stay in step. EYEDIR makes each render from its own angle.
+	player.get_world_3d().environment = env
 
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
