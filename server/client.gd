@@ -490,8 +490,8 @@ func create_object(event: Dictionary) -> void:
 
 		"star":
 			# The system star is a static node in the level (system_sandbox.tscn "Star"); ignore the
-			# network duplicate, otherwise the client ends up with TWO star.tscn instances — two
-			# Star_OmniLight3D lighting everything twice. All code resolves the star via the level node
+			# network duplicate, otherwise the client ends up with TWO star.tscn instances — two star
+			# meshes/glows at the same spot. All code resolves the star via the level node
 			# (universe_scene.get_node("Star") / _find_sun), never this networked copy.
 			pass
 

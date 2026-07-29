@@ -18,16 +18,3 @@ custom_aabb = AABB(-5000, -5000, -5000, 5000, 5000, 5000)
 mesh = SubResource("QuadMesh_7jski")
 surface_material_override/0 = SubResource("ShaderMaterial_goixn")
 script = ExtResource("2_e8616")
-
-[node name="Star_OmniLight3D" type="OmniLight3D" parent="." unique_id=223607816]
-light_color = Color(1, 0.959123, 0.80835, 1)
-light_energy = 2.0
-light_indirect_energy = 2.0
-light_volumetric_fog_energy = 0.0
-light_specular = 0.1
-light_cull_mask = 524288
-shadow_transmittance_bias = 16.0
-shadow_opacity = 0.93
-shadow_blur = 0.458
-omni_range = 100000000000.0
-omni_attenuation = 0.0
