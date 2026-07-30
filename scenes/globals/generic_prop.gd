@@ -6,7 +6,22 @@ signal hs_server_prop_delete
 
 @export var type_name = "generic_prop"
 
-var uuid: String = ""
+## Human-readable "serial" prefix shown on the crate (see serial()). The UUID below is the REAL unique
+## key (generated server-side, persisted in ScyllaDB); these two only brand it as "company-type". Defined
+## here once so every prop inherits them — set the values per scene in the Inspector.
+@export var id_company: String = "ARES"
+@export var id_type: String = "HAUL"
+## Show only the UUID's first block, uppercased (e.g. ARES-HAUL-8C44B2F9), to fit a small face. The
+## identity stays the FULL UUID; this is display-only.
+@export var id_short_display: bool = false
+
+## The unique identity of this prop (v4, server-generated, persisted in ScyllaDB, replicated to clients).
+## Assigned AFTER instancing (server spawn / client create_generic_object), so the setter refreshes the
+## on-crate id labels the moment it arrives.
+var uuid: String = "":
+	set(value):
+		uuid = value
+		_update_id_labels()
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.UP
@@ -41,6 +56,26 @@ func _ready() -> void:
 	add_to_group("carriable")
 	# Created already under a vehicle (cargo loaded before we arrived): ride it (KINEMATIC).
 	PropNet.apply_ride_freeze_mode(self)
+	# Fill the on-crate id frames now if the uuid was already assigned before we entered the tree.
+	_update_id_labels()
+
+## Human-readable "company-type-uuid" serial shown on the crate. The UUID is the real unique key; the
+## company/type prefix is cosmetic. Empty until the uuid is assigned.
+func serial() -> String:
+	if uuid == "":
+		return ""
+	var uuid_display: String = uuid.split("-")[0].to_upper() if id_short_display else uuid
+	return "%s-%s-%s" % [id_company, id_type, uuid_display]
+
+## Fill every id "frame" on this crate — the Label3D children in the group "prop_id_label" (one per
+## face) — with the current serial. Called from the uuid setter AND _ready, so it survives any order.
+func _update_id_labels() -> void:
+	if uuid == "":
+		return
+	var txt: String = serial()
+	for node in find_children("*", "Label3D", true, false):
+		if node.is_in_group("prop_id_label"):
+			(node as Label3D).text = txt
 
 func _physics_process(_delta: float) -> void:
 	PropNet.server_tick(self)
