@@ -15,14 +15,15 @@ mass = 50.0
 continuous_cd = true
 script = ExtResource("1_haul")
 type_name = "palette_container"
+id_short_display = true
 
 [node name="boxmesh" parent="." unique_id=1100122273 instance=ExtResource("2_j2geo")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25432684811476347, 0)
 
-[node name="box" parent="boxmesh" index="0" unique_id=964594845]
+[node name="box" parent="boxmesh" index="0" unique_id=1623152151]
 surface_material_override/0 = ExtResource("3_hqfv2")
 
-[node name="box_decals" parent="boxmesh" index="1" unique_id=894410932]
+[node name="box_decals" parent="boxmesh" index="1" unique_id=885319987]
 surface_material_override/0 = ExtResource("4_6ad14")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1415410391]
@@ -36,5 +37,45 @@ collision_layer = 32
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1415410393]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03649002313613891, 0)
 shape = SubResource("BoxShape3D_urcx6")
+
+[node name="IdFrameFront" type="Label3D" parent="." unique_id=771122334 groups=["prop_id_label"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06967657874970228, 0.1914409795980456)
+pixel_size = 0.0005
+modulate = Color(0.09, 0.09, 0.09, 1)
+text = "ARES-HAUL-XXXXXXXX"
+font_size = 30
+outline_size = 0
+
+[node name="IdFrameBack" type="Label3D" parent="." unique_id=771122335 groups=["prop_id_label"]]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.06967657874970228, -0.19018414121822622)
+pixel_size = 0.0005
+modulate = Color(0.09, 0.09, 0.09, 1)
+text = "ARES-HAUL-XXXXXXXX"
+font_size = 30
+outline_size = 0
+
+[node name="IdFrameRight" type="Label3D" parent="." unique_id=771122336 groups=["prop_id_label"]]
+transform = Transform3D(-1.2246064e-16, 0, 1, 0, 1, 0, -1, 0, -1.2246064e-16, 0.19140920966197805, 0.06967657874970228, 0)
+pixel_size = 0.0005
+modulate = Color(0.09, 0.09, 0.09, 1)
+text = "ARES-HAUL-XXXXXXXX"
+font_size = 30
+outline_size = 0
+
+[node name="IdFrameLeft" type="Label3D" parent="." unique_id=771122337 groups=["prop_id_label"]]
+transform = Transform3D(1.2246064e-16, 0, -1, 0, 1, 0, 1, 0, 1.2246064e-16, -0.1895871945550169, 0.06967657874970228, 0)
+pixel_size = 0.0005
+modulate = Color(0.09, 0.09, 0.09, 1)
+text = "ARES-HAUL-XXXXXXXX"
+font_size = 30
+outline_size = 0
+
+[node name="IdFrameTop" type="Label3D" parent="." unique_id=771122338 groups=["prop_id_label"]]
+transform = Transform3D(-1, 0, 1.2246064e-16, 1.2246064e-16, 0, 1, 0, 1, 0, 0, 0.14788524644088408, 0)
+pixel_size = 0.0005
+modulate = Color(0.09, 0.09, 0.09, 1)
+text = "ARES-HAUL-XXXXXXXX"
+font_size = 30
+outline_size = 0
 
 [editable path="boxmesh"]
