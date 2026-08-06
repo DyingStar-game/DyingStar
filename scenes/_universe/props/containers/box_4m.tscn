@@ -1,0 +1,50 @@
+[gd_scene format=3 uid="uid://cptjp55tlikyl"]
+
+[ext_resource type="ArrayMesh" uid="uid://jg1qr0355r1d" path="res://assets/_universe/props/containers/Box4m.mesh" id="1_82nol"]
+[ext_resource type="Script" uid="uid://d01f76c0qpc0d" path="res://scenes/_universe/props/containers/box_4m.gd" id="1_ealuu"]
+[ext_resource type="Material" uid="uid://bxvng5yhb4rki" path="res://assets/_universe/props/containers/box_4m.material" id="3_3xnib"]
+[ext_resource type="Shape3D" uid="uid://csg45728c5gy4" path="res://scenes/_universe/props/containers/Box4mInsideCollider2.shape" id="3_ealuu"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0fj0l"]
+size = Vector3(4, 4, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3xnib"]
+size = Vector3(3.8, 3.8, 3.88033)
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_l5hyn"]
+properties/0/path = NodePath(".:rotation")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:position")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+
+[node name="RigidBody3D" type="RigidBody3D" unique_id=1909729381]
+collision_layer = 8
+collision_mask = 15
+script = ExtResource("1_ealuu")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=676976134]
+mesh = ExtResource("1_82nol")
+surface_material_override/0 = ExtResource("3_3xnib")
+
+[node name="CollisionShapeOutside" type="CollisionShape3D" parent="." unique_id=487555194]
+shape = SubResource("BoxShape3D_0fj0l")
+
+[node name="Area3D" type="Area3D" parent="." unique_id=2130911442]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1573058816]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0643543)
+shape = SubResource("BoxShape3D_3xnib")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="." unique_id=1723092257]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShapeInside" type="CollisionShape3D" parent="StaticBody3D" unique_id=1922354121]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.375)
+shape = ExtResource("3_ealuu")
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="." unique_id=1232502526]
+replication_config = SubResource("SceneReplicationConfig_l5hyn")

@@ -1,0 +1,35 @@
+[gd_scene format=3 uid="uid://c04pcmnqsloek"]
+
+[ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_1deug"]
+[ext_resource type="PackedScene" uid="uid://cn8vnqwq13uir" path="res://assets/_universe/props/containers/pallet_plate_120x80x15.glb" id="2_1deug"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="3_786n3"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1deug"]
+size = Vector3(1.2, 0.15, 0.8)
+
+[node name="PalletPlate120x80x100" type="RigidBody3D" unique_id=404745465]
+collision_layer = 8
+collision_mask = 15
+mass = 80.0
+freeze = true
+script = ExtResource("1_1deug")
+
+[node name="pallet_plate_120x80x15" parent="." unique_id=813337902 instance=ExtResource("2_1deug")]
+
+[node name="pallet_plate_120x80x15_LOD0" parent="pallet_plate_120x80x15" index="0" unique_id=1121812628]
+surface_material_override/0 = ExtResource("3_786n3")
+
+[node name="pallet_plate_120x80x15_LOD1" parent="pallet_plate_120x80x15" index="1" unique_id=1135043230]
+surface_material_override/0 = ExtResource("3_786n3")
+
+[node name="pallet_plate_120x80x15_LOD2" parent="pallet_plate_120x80x15" index="2" unique_id=2067997627]
+surface_material_override/0 = ExtResource("3_786n3")
+
+[node name="pallet_plate_120x80x15_LOD3" parent="pallet_plate_120x80x15" index="3" unique_id=1287790523]
+surface_material_override/0 = ExtResource("3_786n3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1839857339]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07499999999708962, 0)
+shape = SubResource("BoxShape3D_1deug")
+
+[editable path="pallet_plate_120x80x15"]
