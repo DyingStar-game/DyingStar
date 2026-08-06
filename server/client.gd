@@ -83,7 +83,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
 	'scenes/_universe/structures/industrial/mines/mining_depot.tscn':
 		preload('res://scenes/_universe/structures/industrial/mines/mining_depot.tscn'),
-	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
+	# 'scenes/_universe/structures/urban/cities/sandbox_capital.tscn':
+	# 	preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
 }
 
 # on client, Horizon messages can arrives in not right order when have parent_id for players

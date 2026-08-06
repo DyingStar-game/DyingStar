@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://s8yuxd2tawwc"]
 
-[ext_resource type="Script" uid="uid://b6lxyooye64g2" path="res://scenes/props/city/sandbox_capital.gd" id="1_hvdt3"]
+[ext_resource type="Script" uid="uid://b6lxyooye64g2" path="res://scenes/_universe/structures/urban/cities/sandbox_capital.gd" id="1_hvdt3"]
 [ext_resource type="PackedScene" uid="uid://c0kkjodme127u" path="res://assets/_universe/environment/terrain/trees/tree_01.glb" id="3_4sslq"]
 [ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="3_16y2p"]
 [ext_resource type="PackedScene" uid="uid://b01xrsa73pp6v" path="res://assets/_universe/environment/terrain/trees/tree001.glb" id="4_khu6c"]
@@ -10,7 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/_universe/props/containers/pallet_liquid_120x80x100.tscn" id="8_k2wr2"]
 [ext_resource type="PackedScene" uid="uid://c04pcmnqsloek" path="res://scenes/_universe/props/containers/pallet_plate_120x80x100.tscn" id="9_04krg"]
 [ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="10_uow4d"]
-[ext_resource type="Script" uid="uid://5l13eh73avyv" path="res://scenes/props/city/area_3d.gd" id="11_04krg"]
+[ext_resource type="Script" uid="uid://5l13eh73avyv" path="res://scenes/common/area_3d.gd" id="11_04krg"]
 [ext_resource type="AudioStream" uid="uid://ciwe4yq6ux1pi" path="res://assets/_universe/audio/ambience/sandstorm_001.ogg" id="12_yc6ci"]
 [ext_resource type="AudioStream" uid="uid://jfgcabkqn6rm" path="res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg" id="13_yc6ci"]
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="14_4lkw2"]
