@@ -1,0 +1,236 @@
+[gd_scene format=3 uid="uid://p8lbfuk68g7s"]
+
+[ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/_universe/vehicles/vehicle.gd" id="1_vehicle"]
+[ext_resource type="AudioStream" uid="uid://c4882t4qc0ryu" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg" id="2_urxpd"]
+[ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/_universe/vehicles/vehicle_seat.gd" id="3_seat"]
+[ext_resource type="AudioStream" uid="uid://bkuepip360vt2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg" id="3_udf22"]
+[ext_resource type="AudioStream" uid="uid://bt0o3a85bifv0" path="res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg" id="4_5dsot"]
+[ext_resource type="AudioStream" uid="uid://chree8iuckvgt" path="res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg" id="4_grru8"]
+[ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
+[ext_resource type="AudioStream" uid="uid://dijy5efx8pd3k" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-start.ogg" id="4_urxpd"]
+[ext_resource type="AudioStream" uid="uid://cwgcj6sbuymvd" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-stop.ogg" id="5_2twiw"]
+[ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/ground/trucks/truck_ui.tscn" id="5_d2vf6"]
+[ext_resource type="AudioStream" uid="uid://c64w2qwbojmk6" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-idle.ogg" id="5_udf22"]
+[ext_resource type="AudioStream" uid="uid://wqqcfpaantps" path="res://assets/_universe/audio/sfx/machine/machine-button-on.ogg" id="6_7ype0"]
+[ext_resource type="PackedScene" uid="uid://bjxceboesdb8w" path="res://scenes/_universe/vehicles/rear_camera.tscn" id="6_nd433"]
+[ext_resource type="AudioStream" uid="uid://cnr042v1yqphh" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-on.ogg" id="6_q1ni8"]
+[ext_resource type="AudioStream" uid="uid://dadhjx2xfk3iv" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-off.ogg" id="7_7ype0"]
+[ext_resource type="AudioStream" uid="uid://l2ox3cdem1rm" path="res://assets/_universe/audio/sfx/machine/machine-button-off.ogg" id="7_80saa"]
+[ext_resource type="PackedScene" uid="uid://cef7mxrwycx7k" path="res://assets/models/vehicles/mini_truck.glb" id="7_d2vf6"]
+[ext_resource type="Script" uid="uid://kbp6qag1idal" path="res://scenes/_universe/vehicles/vehicle_door_handle.gd" id="7_tuoiw"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
+size = Vector3(0.7717459236309878, 1.889733397892087, 1.1162902846483576)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_nd433"]
+size = Vector3(2.185217537648896, 0.851504158613352, 2.1983872583680295)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_8eohf"]
+size = Vector3(0.03758665739610478, 0.1044873444532186, 0.14503269956207987)
+
+[node name="Truck" type="VehicleBody3D" unique_id=1579985098]
+collision_layer = 4
+collision_mask = 15
+mass = 1000.0
+script = ExtResource("1_vehicle")
+engine_power = 850.0
+max_speed_kmh = 55.0
+steer_speed = 0.8
+steer_return_speed = 1.0
+steering_wheel_ratio = 4.0
+steering_wheel_axis = Vector3(0, -1, 0)
+bed_wall_height = 0.6
+wheel_radius = 0.05
+wheel_visual_drop = 0.02
+motor_max_rpm = 3000.0
+debug_color_driven_wheels = false
+cargo_bay_size = Vector3(1.6, 0.6, 1.9)
+cargo_bay_offset = Vector3(0, 0.4, 1.05)
+sfx_door_open = ExtResource("2_urxpd")
+sfx_door_open_db = -30.0
+sfx_door_open_distance = 10.0
+sfx_door_close = ExtResource("3_udf22")
+sfx_door_close_db = -30.0
+sfx_door_close_distance = 10.0
+sfx_engine_start = ExtResource("4_urxpd")
+sfx_engine_stop = ExtResource("5_2twiw")
+sfx_lights_on = ExtResource("6_7ype0")
+sfx_lights_on_distance = 5.0
+sfx_lights_off = ExtResource("7_80saa")
+sfx_lights_off_distance = 5.0
+sfx_handbrake_on = ExtResource("6_q1ni8")
+sfx_handbrake_off = ExtResource("7_7ype0")
+sfx_engine_idle = ExtResource("5_udf22")
+sfx_horn = ExtResource("4_5dsot")
+sfx_horn_distance = 100.0
+sfx_horn_attenuation = 0
+sfx_horn_special = ExtResource("4_grru8")
+sfx_horn_special_db = -30.0
+sfx_horn_special_distance = 100.0
+sfx_horn_special_attenuation = 0
+
+[node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
+
+[node name="Col_cabin" parent="Model" index="7" unique_id=1869896668]
+visible = false
+
+[node name="Col_bed" parent="Model" index="8" unique_id=1315501032]
+visible = false
+
+[node name="Col_bed_left" parent="Model" index="9" unique_id=791713361]
+visible = false
+
+[node name="Col_bed_right" parent="Model" index="10" unique_id=1924157804]
+visible = false
+
+[node name="Col_bed_rear" parent="Model" index="11" unique_id=1735590003]
+visible = false
+
+[node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.1050032463626582)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_seat")
+role = 0
+sit_point = NodePath("SitPoint")
+door_id = "Front_l_door"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SeatDriver" unique_id=1010304140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1999999999970896, 0, 0.5)
+shape = SubResource("BoxShape3D_seat")
+
+[node name="SitPoint" type="Marker3D" parent="SeatDriver" unique_id=1846020284]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.96604443361547, 0.459316196885327, 0.4351986139646016)
+
+[node name="SeatPassenger" type="Area3D" parent="." unique_id=418211017 node_paths=PackedStringArray("sit_point")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, -1.1050032463626582)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_seat")
+sit_point = NodePath("SitPoint")
+door_id = "Front_r_door"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPassenger" unique_id=1477251655]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1999999999970896, 0, 0.5)
+shape = SubResource("BoxShape3D_seat")
+
+[node name="SitPoint" type="Marker3D" parent="SeatPassenger" unique_id=1273635299]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9872018817048636, 0.459316196885327, 0.4351986139646016)
+
+[node name="Gui3D" parent="." unique_id=438346037 node_paths=PackedStringArray("node_viewport", "node_quad") instance=ExtResource("4_nd433")]
+transform = Transform3D(-1.8369095e-16, 0, 1, 0, 1, 0, -1, 0, -1.8369095e-16, 0.8808829, 1.5104302, -2.9404380675619173)
+node_viewport = NodePath("SubViewport")
+node_quad = NodePath("../Model/ScreenFront")
+
+[node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=2131469253]
+disable_3d = true
+handle_input_locally = false
+size = Vector2i(1921, 1112)
+size_2d_override_stretch = true
+render_target_update_mode = 4
+
+[node name="VehiculeDashboard" parent="Gui3D/SubViewport" unique_id=957292936 instance=ExtResource("5_d2vf6")]
+
+[node name="Light" type="Node3D" parent="." unique_id=2071163623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0.5199967536373418)
+
+[node name="SpotLight3DL" type="SpotLight3D" parent="Light" unique_id=850312889 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.936556004583576, 0.35051797425873765, 0, -0.35051797425873765, 0.936556004583576, -0.5162292259297776, 0.08516206603119336, -1.9202990869528531)
+light_energy = 2.0
+spot_range = 150.0
+spot_angle = 37.0
+
+[node name="SpotLight3DR" type="SpotLight3D" parent="Light" unique_id=889490272 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.9612616959383188, 0.2756373558169992, 0, -0.2756373558169992, 0.9612616959383188, 0.5184703329305984, 0.07619763802790991, -1.9202990869528531)
+light_energy = 2.0
+spot_range = 150.0
+spot_angle = 37.0
+
+[node name="Cabin" type="OmniLight3D" parent="Light" unique_id=1138993396 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8559690319450313, -1.3067172254205213)
+light_energy = 0.3
+
+[node name="RearSpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=1571705372 groups=["vehicle_light"]]
+transform = Transform3D(-1, 4.292465545922857e-17, -1.1469124771714764e-16, 0, 0.9365560045835758, 0.3505179742587379, 1.2246064e-16, 0.3505179742587379, -0.9365560045835758, 0.6999999999970896, -0.28638452229786093, 1.6112571829065885)
+light_color = Color(1, 0.039215688, 0.0627451, 1)
+spot_range = 10.0
+spot_angle = 37.0
+
+[node name="RearSpotLight3DR2" type="SpotLight3D" parent="Light" unique_id=1027222496 groups=["vehicle_light"]]
+transform = Transform3D(-1, 3.3754727001257446e-17, -1.177167224920919e-16, 0, 0.9612616959383188, 0.2756373558169992, 1.2246064e-16, 0.2756373558169992, -0.9612616959383188, -0.6999999999970896, -0.28638452229786093, 1.6112571829065885)
+light_color = Color(1, 0.039215688, 0.0627451, 1)
+spot_range = 10.0
+spot_angle = 37.0
+
+[node name="SpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=331479837 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, -0.6741734925434366, 0.7385730173461422, 0, -0.7385730173461422, -0.6741734925434367, -0.01612382468180939, 0.9271067390711144, -0.3518031843022533)
+spot_range = 4.0
+spot_angle = 33.29
+
+[node name="RearCamera_Rear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.634337199246993e-17, 0.7091372917707068, 0.705070423021777, -8.684140332348007e-17, 0.705070423021777, -0.7091372917707068, -0.00059340561188747, 1.515455978092255, 0.09343121015790744)
+screen = NodePath("../Model/Screen_Rear")
+
+[node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+screen = NodePath("../Model/ScreenL_Retro")
+resolution = Vector2i(320, 320)
+mirror = true
+
+[node name="RearCamera_RetroR" parent="." unique_id=86175484 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, 9.47236311194868e-18, 1.0605402120460131e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -8.710929498070396e-17, 0.49999999999999994, -0.8660254037844387, 0.9771233102491468, 1.673670425970804, -0.777821705103517)
+screen = NodePath("../Model/ScreenR_Retro")
+resolution = Vector2i(200, 320)
+
+[node name="Cargo_loading_zone" type="CollisionShape3D" parent="." unique_id=551701719]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00917181405348205, 0.4900656582491637, 1.167679956857709)
+shape = SubResource("BoxShape3D_nd433")
+debug_color = Color(0.22392991, 0.61549836, 0.4901445, 0.41960785)
+
+[node name="Handle_FL" type="Area3D" parent="." unique_id=372280064 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+script = ExtResource("7_tuoiw")
+door_id = "Front_l_door"
+open_angle_deg = 60.0
+reverse = true
+outdoor_shape = NodePath("CollisionShape3D_out")
+indoor_shape = NodePath("CollisionShape3D_in")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
+
+[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_FL" unique_id=266252602]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8771307377480202, 0.9530118970551352, -0.5995300287153289)
+shape = SubResource("BoxShape3D_8eohf")
+debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
+
+[node name="CollisionShape3D_in" type="CollisionShape3D" parent="Handle_FL" unique_id=1932272077]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.80846598368544, 0.9530118970551352, -0.9405029228353458)
+shape = SubResource("BoxShape3D_8eohf")
+debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
+
+[node name="Handle_FR" type="Area3D" parent="." unique_id=1072075434 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+script = ExtResource("7_tuoiw")
+door_id = "Front_r_door"
+open_angle_deg = 60.0
+outdoor_shape = NodePath("CollisionShape3D_out")
+indoor_shape = NodePath("CollisionShape3D2_in")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
+
+[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_FR" unique_id=1401805639]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8736682503675075, 0.9530118970551352, -0.5995300287153289)
+shape = SubResource("BoxShape3D_8eohf")
+debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
+
+[node name="CollisionShape3D2_in" type="CollisionShape3D" parent="Handle_FR" unique_id=1969757675]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8121952957268729, 0.9530118970551352, -0.9362578415127812)
+shape = SubResource("BoxShape3D_8eohf")
+debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
+
+[editable path="Model"]

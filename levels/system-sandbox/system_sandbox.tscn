@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://drqxadtx316hs"]
 
 [ext_resource type="Script" uid="uid://de1e8utjyqtod" path="res://levels/system-sandbox/system_sandbox.gd" id="1_6wdpo"]
-[ext_resource type="PackedScene" uid="uid://vsepjo7bgp7v" path="res://scenes/star/star.tscn" id="6_0y0hx"]
+[ext_resource type="PackedScene" uid="uid://vsepjo7bgp7v" path="res://scenes/_universe/environment/space/star.tscn" id="6_0y0hx"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_swxq8"]
 sky_horizon_color = Color(0.662243, 0.671743, 0.686743, 1)

@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://c7jjgmfdmsu85"]
+
+[ext_resource type="PackedScene" uid="uid://b21mkc12tx8va" path="res://assets/_universe/props/furniture/outdoor_lamppost_2.2m_001.glb" id="1_pk050"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="2_3u0aj"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pk050"]
+size = Vector3(0.2979846285795702, 2.210542026400617, 0.25893124825574887)
+
+[node name="OutdoorLamppost2_2001" type="StaticBody3D" unique_id=1239394709]
+
+[node name="outdoor_lamppost_2_2m_001" parent="." unique_id=1650813234 instance=ExtResource("1_pk050")]
+
+[node name="outdoor_lamppost_LOD0" parent="outdoor_lamppost_2_2m_001" index="0" unique_id=1535371163]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD1" parent="outdoor_lamppost_2_2m_001" index="1" unique_id=1301414315]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD2" parent="outdoor_lamppost_2_2m_001" index="2" unique_id=579155007]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="outdoor_lamppost_LOD3" parent="outdoor_lamppost_2_2m_001" index="3" unique_id=591618302]
+surface_material_override/0 = ExtResource("2_3u0aj")
+surface_material_override/1 = ExtResource("2_3u0aj")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=210378545]
+transform = Transform3D(1, 0, 0, 0, 6.123233995736766e-17, 1, 0, -1, 6.123233995736766e-17, 0, 2.184606538898136, 0)
+light_energy = 9.969
+light_indirect_energy = 10.0
+spot_range = 60.0
+spot_angle = 80.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1071075195]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0041134804, 1.1000778526067734, 0.01858601)
+shape = SubResource("BoxShape3D_pk050")
+
+[editable path="outdoor_lamppost_2_2m_001"]

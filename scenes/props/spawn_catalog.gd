@@ -33,15 +33,15 @@ const ENTRIES := {
 		"type": "miningrock", "distance": 9.0, "origin_height": 5.0,
 	},
 	"box": {
-		"label": "50cm", "scene": "res://scenes/props/testbox/box_50cm.tscn",
+		"label": "50cm", "scene": "res://scenes/props/cargo/box_50cm.tscn",
 		"type": "box", "distance": 2.0, "origin_height": 0.3,
 	},
-	"palette_container": {
-		"label": "Ares", "scene": "res://scenes/props/cargo/palette_container.tscn",
-		"type": "palette_container", "distance": 3.0, "origin_height": 0.8,
+	"pallet_container": {
+		"label": "Ares", "scene": "res://scenes/props/cargo/pallet_container.tscn",
+		"type": "pallet_container", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_plate": {
-		"label": "Palet", "scene": "res://scenes/props/cargo/pallet_plate.tscn",
+		"label": "Pallet", "scene": "res://scenes/props/cargo/pallet_plate.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.6,
 	},
 	"pallet_crate": {
@@ -58,12 +58,12 @@ const ENTRIES := {
 	},
 	"hauling_box": {
 		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
-		# "palette_container" type: that is the def whose channels carry `content` (the ore volume).
+		# "pallet_container" type: that is the def whose channels carry `content` (the ore volume).
 		"label": "Hauling", "scene": "res://scenes/props/cargo/hauling_box.tscn",
-		"type": "palette_container", "distance": 2.0, "origin_height": 0.3,
+		"type": "pallet_container", "distance": 2.0, "origin_height": 0.3,
 	},
 	"truck": {
-		"label": "Camion", "scene": "res://scenes/vehicles/trucks/truck.tscn",
+		"label": "Camion", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
 	},
 }
@@ -72,7 +72,7 @@ const ENTRIES := {
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
 	{"text": "Rocher", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "Caisse", "keys": ["box", "hauling_box", "palette_container", "pallet_plate",
+	{"text": "Caisse", "keys": ["box", "hauling_box", "pallet_container", "pallet_plate",
 			"pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"key": "truck"},
 ]

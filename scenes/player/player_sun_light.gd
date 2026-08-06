@@ -1,7 +1,7 @@
 class_name PlayerSunLight
 extends DirectionalLight3D
 
-## Client-only "sun" for the LOCAL player. The system star (scenes/star/star.tscn) is an OmniLight that
+## Client-only "sun" for the LOCAL player. The system star (scenes/_universe/environment/space/star.tscn) is an OmniLight that
 ## lights the whole system radially but casts NO shadows (a distant point light gives unusable cubemap
 ## shadows at astronomic scale). This per-client DirectionalLight is aimed FROM the real star TOWARD the
 ## player, so it provides crisp cast shadows and the day/night look driven by the real star direction

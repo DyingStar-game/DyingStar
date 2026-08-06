@@ -10,7 +10,7 @@ extends Node3D
 ## -> server RPC removes the node -> existing delete path drops it from GORC and the DB.
 
 ## Prop type_name values this tool is allowed to delete. Everything else is ignored.
-const DELETABLE: Array[String] = ["miningrock", "box", "mining_depot", "palette_container", "vehicle"]
+const DELETABLE: Array[String] = ["miningrock", "box", "mining_depot", "pallet_container", "vehicle"]
 ## Max aim distance (meters).
 const REACH: float = 1000.0
 ## Right-hand anchor on the player body (matches the mining tool's equipment_hand_offset),

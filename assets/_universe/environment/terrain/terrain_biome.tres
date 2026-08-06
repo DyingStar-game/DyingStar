@@ -134,3 +134,7 @@ shader_parameter/cliff_detail_layer_index = 2.0
 shader_parameter/cliff_tiling_scale = 0.001
 shader_parameter/cliff_tint = Color(0.38, 0.36, 0.34, 1)
 shader_parameter/cliff_tint_strength = 0.3
+shader_parameter/radial_blend_near = 100000.0
+shader_parameter/radial_blend_far = 250000.0
+shader_parameter/star_light_energy = 2.0
+shader_parameter/star_light_color = Color(1, 0.95, 0.85, 1)

@@ -72,7 +72,7 @@ var protected_prop_uuids: Dictionary = {}
 var client_change_server = null
 
 var player_scene_path: String = "res://scenes/player/player.tscn"
-var ship_scene_path: String = "res://scenes/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
+var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
 func _enter_tree() -> void:
 	pass

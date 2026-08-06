@@ -5,7 +5,7 @@ const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
 const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
 
-var ship_scene_path: String = "res://scenes/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
+var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
 var client_peer: ENetMultiplayerPeer = null
 var peer_id: int = -1
@@ -56,8 +56,8 @@ var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn':
 		preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
-	'scenes/props/cargo/palette_container.tscn':
-		preload('res://scenes/props/cargo/palette_container.tscn'),
+	'scenes/props/cargo/pallet_container.tscn':
+		preload('res://scenes/props/cargo/pallet_container.tscn'),
 	'scenes/props/cargo/hauling_box.tscn':
 		preload('res://scenes/props/cargo/hauling_box.tscn'),
 	'scenes/props/cargo/pallet_crate.tscn':
@@ -74,12 +74,12 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/rock/rock_mining_medium.tscn'),
 	'scenes/props/rock/rock_mining_large.tscn':
 		preload('res://scenes/props/rock/rock_mining_large.tscn'),
-	'scenes/props/testbox/box_50cm.tscn':
-		preload('res://scenes/props/testbox/box_50cm.tscn'),
-	'scenes/props/testbox/box_4m.tscn':
-		preload('res://scenes/props/testbox/box_4m.tscn'),
-	'scenes/vehicles/trucks/truck.tscn':
-		preload('res://scenes/vehicles/trucks/truck.tscn'),
+	'scenes/props/cargo/box_50cm.tscn':
+		preload('res://scenes/props/cargo/box_50cm.tscn'),
+	'scenes/props/cargo/box_4m.tscn':
+		preload('res://scenes/props/cargo/box_4m.tscn'),
+	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
+		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
 	'scenes/structures/mining_depot.tscn':
 		preload('res://scenes/structures/mining_depot.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
