@@ -3,7 +3,7 @@ extends StaticBody3D
 signal hs_server_prop_update
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
-## The crate the depot packs its ore into. It replicates as the "pallet_container" TYPE (that def is
+## The crate the depot packs its ore into. It replicates as the "crate_container" TYPE (that def is
 ## the one whose channels carry `content`, the ore volume) — only the scene differs. Its physical size
 ## is what crate_volume() reads to decide how much ore fills one crate.
 const CRATE_SCENE = preload("res://scenes/_universe/props/containers/hauling_box.tscn")
@@ -38,7 +38,7 @@ var _last_sent_state := ""
 var _last_sent_ore := -1.0
 var _last_sent_extracted := -1.0
 var _last_sent_conv := -1.0
-# Cached fillable volume of one crate (pallet_container), read from its scene.
+# Cached fillable volume of one crate (crate_container), read from its scene.
 var _crate_volume := -1.0
 
 @onready var rock_depot_ui: Panel = %RockDepotUI
@@ -251,7 +251,7 @@ func filter_rocks(entities: Array):
 			filtered_rocks.push_back(entity)
 	return filtered_rocks
 
-## Fillable volume of one crate (m3), read once from the pallet_container scene.
+## Fillable volume of one crate (m3), read once from the crate_container scene.
 func crate_volume() -> float:
 	if _crate_volume < 0.0:
 		var c: Node = CRATE_SCENE.instantiate()
@@ -334,7 +334,7 @@ func handle_extract():
 	# (so it has a physics body that falls onto the belt and replicates). See
 	# NetworkOrchestrator.spawn_prop_authoritative.
 	var data := {
-		"type": "pallet_container",
+		"type": "crate_container",
 		"uuid": UUID_UTIL.new().as_string(),
 		"position": {
 			"x": box_spawn_origin.position.x,

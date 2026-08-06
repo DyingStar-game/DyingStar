@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dcinktod8m0x2"]
 
-[ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/pallet_container.gd" id="1_haul"]
+[ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/crate_container.gd" id="1_haul"]
 [ext_resource type="PackedScene" uid="uid://dhmj25r7k7c26" path="res://assets/_universe/props/containers/box.glb" id="2_j2geo"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="3_hqfv2"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="4_6ad14"]
@@ -14,7 +14,7 @@ collision_mask = 15
 mass = 50.0
 continuous_cd = true
 script = ExtResource("1_haul")
-type_name = "pallet_container"
+type_name = "crate_container"
 id_short_display = true
 
 [node name="boxmesh" parent="." unique_id=1100122273 instance=ExtResource("2_j2geo")]

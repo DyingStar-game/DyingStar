@@ -57,8 +57,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/props/containers/pallet_liquid_120x80x100.tscn'),
 	# 'scenes/_universe/props/containers/pallet_plate_120x80x100.tscn':
 	# 	preload('res://scenes/_universe/props/containers/pallet_plate_120x80x100.tscn'),
-	'scenes/_universe/props/containers/pallet_container.tscn':
-		preload('res://scenes/_universe/props/containers/pallet_container.tscn'),
+	'scenes/_universe/props/containers/crate_container.tscn':
+		preload('res://scenes/_universe/props/containers/crate_container.tscn'),
 	'scenes/_universe/props/containers/hauling_box.tscn':
 		preload('res://scenes/_universe/props/containers/hauling_box.tscn'),
 	'scenes/_universe/props/containers/pallet_crate.tscn':
