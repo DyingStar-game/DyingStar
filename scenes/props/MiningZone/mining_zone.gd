@@ -14,9 +14,9 @@ extends Node3D
 # raycast needs direct_space_state, which is only valid during the physics step (the space
 # is locked while area signals are flushed).
 
-const SCENE_SMALL := "scenes/props/rock/rock_mining_small.tscn"
-const SCENE_MEDIUM := "scenes/props/rock/rock_mining_medium.tscn"
-const SCENE_LARGE := "scenes/props/rock/rock_mining_large.tscn"
+const SCENE_SMALL := "scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn"
+const SCENE_MEDIUM := "scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn"
+const SCENE_LARGE := "scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn"
 # One rock is spawned every SPAWN_INTERVAL_FRAMES physics frames while draining the queue, to
 # spread the create_object burst so Horizon's message channel never overflows (a flood of
 # create_object messages gets dropped -> the rocks exist server-side but never reach clients).

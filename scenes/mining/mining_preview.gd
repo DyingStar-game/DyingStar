@@ -9,7 +9,7 @@ extends Node3D
 
 const PERFORATOR_SCENE := preload("res://assets/models/equipments/tools/mining/hammerdrill.glb")
 const ASTRONAUT_SCENE := preload("res://assets/_universe/characters/humanoids/astronaut/astronaut.res")
-const ROCK_SCENE := preload("res://scenes/props/rock/rock_mining_small.tscn")
+const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn")
 
 @export_group("Equipment placement")
 @export var hand_offset := Vector3(0.4, 1.0, -0.4)   # mount position = pivot
