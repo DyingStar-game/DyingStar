@@ -119,7 +119,7 @@ func server_action_received(data: Dictionary) -> void:
 			# Admin cleanup tool: permanently remove a player-spawned prop.
 			var del_type: String = str(data.get("type", ""))
 			var del_uuid: String = str(data.get("uuid", ""))
-			if del_uuid == "" or not (del_type in ["miningrock", "box", "mining_depot", "palette_container", "vehicle"]):
+			if del_uuid == "" or not (del_type in ["miningrock", "box", "mining_depot", "pallet_container", "vehicle"]):
 				print("🗑️ Admin delete refused: type=%s uuid=%s" % [del_type, del_uuid])
 			elif NetworkOrchestrator.protected_prop_uuids.has(del_uuid):
 				# World infrastructure placed by designers (e.g. a depot in the city): keep it.

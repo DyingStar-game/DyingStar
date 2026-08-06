@@ -41,7 +41,11 @@ func _ready() -> void:
 
 func start_websocket_server():
 	print("Starting server socket on port %d..." % [port])
-	var err = tcp_server.listen(port)
+	# On Windows an IPv6 ("*") socket is IPv6-only (no dual-stack), so a locally-run dev server
+	# (F5) is unreachable from Horizon, which connects over IPv4 via host.minikube.internal. Bind
+	# IPv4 explicitly on Windows; keep "*" (dual-stack on Linux) for the containerised prod server.
+	var bind_address: String = "0.0.0.0" if OS.get_name() == "Windows" else "*"
+	var err = tcp_server.listen(port, bind_address)
 	if err == OK:
 		print("Server socket started.")
 		set_process(true)
@@ -555,7 +559,7 @@ func _devmode_horizon_mapping(message: Dictionary):
 					# 	    "y": 0.0,
 					# 	    "z": 0.0
 					#     },
-					#     "scenename": "scenes/props/testbox/spawn_50cmbox.tscn",
+					#     "scenename": "scenes/props/cargo/spawn_50cmbox.tscn",
 					#     "parent_id": "9b3ec158-7789-46fb-9890-ad84c691c1a5",
 					# 	},
 					# }
@@ -576,7 +580,7 @@ func _devmode_horizon_mapping(message: Dictionary):
 					# 				"y": 0,
 					# 				"z": 0
 					# 			},
-					# 			"scenename": "scenes/props/testbox/box_50cm.tscn"
+					# 			"scenename": "scenes/props/cargo/box_50cm.tscn"
 					# 		},
 					# 		"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
 					# 		"object_type": "box50cm",

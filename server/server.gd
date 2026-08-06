@@ -80,7 +80,7 @@ var props_update: Dictionary = {}
 var player_scene_path: String = "res://scenes/player/player.tscn"
 
 var player_scene: PackedScene = preload("res://scenes/player/player.tscn")
-var box50cm_scene: PackedScene = preload("res://scenes/props/testbox/box_50cm.tscn")
+var box50cm_scene: PackedScene = preload("res://scenes/props/cargo/box_50cm.tscn")
 var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
 		preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
@@ -99,8 +99,8 @@ var props_scene: Dictionary = {
 	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn':
 		preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
 	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
-	'scenes/props/cargo/palette_container.tscn':
-		preload('res://scenes/props/cargo/palette_container.tscn'),
+	'scenes/props/cargo/pallet_container.tscn':
+		preload('res://scenes/props/cargo/pallet_container.tscn'),
 	'scenes/props/cargo/hauling_box.tscn':
 		preload('res://scenes/props/cargo/hauling_box.tscn'),
 	'scenes/props/cargo/pallet_crate.tscn':
@@ -117,14 +117,14 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/rock/rock_mining_medium.tscn'),
 	'scenes/props/rock/rock_mining_large.tscn':
 		preload('res://scenes/props/rock/rock_mining_large.tscn'),
-	'scenes/props/testbox/box_50cm.tscn':
-		preload('res://scenes/props/testbox/box_50cm.tscn'),
-	'scenes/props/testbox/box_4m.tscn':
-		preload('res://scenes/props/testbox/box_4m.tscn'),
+	'scenes/props/cargo/box_50cm.tscn':
+		preload('res://scenes/props/cargo/box_50cm.tscn'),
+	'scenes/props/cargo/box_4m.tscn':
+		preload('res://scenes/props/cargo/box_4m.tscn'),
 	'scenes/props/city/sandbox_capital.tscn':
 		preload('res://scenes/props/city/sandbox_capital.tscn'),
-	'scenes/vehicles/truck.tscn':
-		preload('res://scenes/vehicles/trucks/truck.tscn'),
+	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
+		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
 }
 
 var debug_message_number: int = 0
@@ -962,6 +962,13 @@ func create_generic_object(event: Dictionary) -> void:
 		prop_scene = props_scene[object_data["scenename"]]
 	else:
 		prop_scene = load("res://" + object_data["scenename"])
+
+	# A persisted prop can reference a scene that no longer exists at that path (e.g. moved or
+	# renamed by the asset-taxonomy migration). Skip it instead of crashing the whole loader.
+	if prop_scene == null:
+		push_warning("create_generic_object: scene not found for scenename '%s' (uuid %s), skipping" \
+			% [object_data["scenename"], event["data"]["object_uuid"]])
+		return
 
 	var spawnable_prop_instance = prop_scene.instantiate()
 	spawnable_prop_instance.set_physics_process(false)
