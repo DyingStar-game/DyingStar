@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://dumbqmrjvj582" path="res://scenes/grid/physics_grid.tscn" id="3_s7jgl"]
 [ext_resource type="Script" uid="uid://7pymoxifok1q" path="res://tools/spawn_points/player_spawn_points_list.gd" id="4_vy4lt"]
 [ext_resource type="Script" uid="uid://3b53gu5cyf58" path="res://tools/spawn_points/player_spawn_point.gd" id="5_ba5kc"]
-[ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://assets/models/spawn_kiosk/spawn_kiosk.tscn" id="6_ba5kc"]
+[ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://assets/_universe/environment/space/stations/spawn_kiosk/spawn_kiosk.tscn" id="6_ba5kc"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_bguhe"]
 size = Vector3(50, 9.512, 49.952)

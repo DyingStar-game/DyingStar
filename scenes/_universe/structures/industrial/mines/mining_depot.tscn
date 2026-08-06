@@ -2,10 +2,10 @@
 
 [ext_resource type="Script" uid="uid://qkd1o35dbvtw" path="res://scenes/_universe/structures/industrial/mines/mining_depot.gd" id="1_7mukx"]
 [ext_resource type="PackedScene" uid="uid://cqyfghsr1mby3" path="res://assets/_universe/structures/industrial/mines/miningdepot.glb" id="1_x63ok"]
-[ext_resource type="Material" uid="uid://b5h6r38he3bla" path="res://assets/materials/decals/panel_trim_material.tres" id="2_8a0gq"]
+[ext_resource type="Material" uid="uid://b5h6r38he3bla" path="res://assets/_universe/_shared/materials/decals/panel_trim_material.tres" id="2_8a0gq"]
 [ext_resource type="PackedScene" uid="uid://0nqpcxfh8upf" path="res://scenes/ui/rock_depot_ui.tscn" id="3_75ksl"]
 [ext_resource type="Texture2D" uid="uid://rc1ha8s5x4sq" path="res://assets/textures/decals/wall_panels/wall_panels_displace.exr" id="3_kxw7v"]
-[ext_resource type="Material" uid="uid://ds1x4el0ic0p4" path="res://assets/materials/decals/panel_trim_anim_material.tres" id="3_vptbq"]
+[ext_resource type="Material" uid="uid://ds1x4el0ic0p4" path="res://assets/_universe/_shared/materials/decals/panel_trim_anim_material.tres" id="3_vptbq"]
 [ext_resource type="Texture2D" uid="uid://bkd2hcfntw0yh" path="res://assets/textures/decals/wall_panels/wall_panels_normal.png" id="4_7mukx"]
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="7_l8wts"]
 [ext_resource type="PackedScene" uid="uid://cynv06ddhi8kr" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="8_cywas"]

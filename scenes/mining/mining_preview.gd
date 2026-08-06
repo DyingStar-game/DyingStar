@@ -7,7 +7,7 @@ extends Node3D
 # After changing a STRUCTURAL option (show_rock / show_astronaut / axes_length /
 # gizmo_label_size), tick "Rebuild" to rebuild the bench.
 
-const PERFORATOR_SCENE := preload("res://assets/models/equipments/tools/mining/hammerdrill.glb")
+const PERFORATOR_SCENE := preload("res://assets/_universe/props/tools/tools/mining/hammerdrill.glb")
 const ASTRONAUT_SCENE := preload("res://assets/_universe/characters/humanoids/astronaut/astronaut.res")
 const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn")
 

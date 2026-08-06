@@ -15,7 +15,7 @@ signal sync_requested(data: Dictionary)
 ## The aim crosshair should be shown/hidden (the player forwards it to the UI).
 signal aiming_changed(aiming: bool)
 
-const PERFORATOR_SCENE := preload("res://assets/models/equipments/tools/mining/hammerdrill.glb")
+const PERFORATOR_SCENE := preload("res://assets/_universe/props/tools/tools/mining/hammerdrill.glb")
 const PERFORATION_DURATION := 5.0
 ## Brief "rejected" jab when perforating off a fault: the bit lunges and snaps back.
 const REJECT_DURATION := 0.3

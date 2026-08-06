@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bq8l02o6swpho"
-path.s3tc="res://.godot/imported/Kiosk_Sign_albedo.png-0d72fea9eb4bf0bd10ac3a005eec82f5.s3tc.ctex"
+uid="uid://cp4j7s308bemp"
+path.s3tc="res://.godot/imported/PlaqueAlbedo.png-a2eac9c3b732632c1431b21fb93cc5d6.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/models/spawn_kiosk/Kiosk_Sign_albedo.png"
-dest_files=["res://.godot/imported/Kiosk_Sign_albedo.png-0d72fea9eb4bf0bd10ac3a005eec82f5.s3tc.ctex"]
+source_file="res://assets/_universe/props/furniture/CommemorativeBust/PlaqueAlbedo.png"
+dest_files=["res://.godot/imported/PlaqueAlbedo.png-a2eac9c3b732632c1431b21fb93cc5d6.s3tc.ctex"]
 
 [params]
 

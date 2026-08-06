@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bi02k4vqfw00t"]
 
-[ext_resource type="Material" uid="uid://8ukrbr5j4lhl" path="res://assets/materials/minerals/iron/iron_material.tres" id="1_qbkyy"]
+[ext_resource type="Material" uid="uid://8ukrbr5j4lhl" path="res://assets/_universe/_shared/materials/minerals/iron/iron_material.tres" id="1_qbkyy"]
 
 [node name="Goldtest" type="Node3D" unique_id=874944914]
 

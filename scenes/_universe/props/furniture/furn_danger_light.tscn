@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://d3vj7fliqdbcs" path="res://assets/_universe/props/furniture/furn_danger_light.glb" id="1_35540"]
 [ext_resource type="Script" uid="uid://b18cd3jmysyt2" path="res://scenes/_universe/props/furniture/furn_danger_light.gd" id="1_io5gy"]
-[ext_resource type="Material" uid="uid://cvigq2mjqo7w" path="res://assets/materials/painted_metal/paint_darkgrey_material.tres" id="2_mh5pe"]
+[ext_resource type="Material" uid="uid://cvigq2mjqo7w" path="res://assets/_universe/_shared/materials/painted_metal/paint_darkgrey_material.tres" id="2_mh5pe"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mh5pe"]
 metallic = 1.0

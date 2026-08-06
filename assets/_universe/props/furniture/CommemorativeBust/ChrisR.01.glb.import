@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cef7mxrwycx7k"
-path="res://.godot/imported/mini_truck.glb-0464de43323fb7eece4ef013a1f34f9e.scn"
+uid="uid://w4j6fn2tqt1q"
+path="res://.godot/imported/ChrisR.01.glb-f98d84956f2ab92af14f8b2369304b98.scn"
 
 [deps]
 
-source_file="res://assets/models/vehicles/mini_truck.glb"
-dest_files=["res://.godot/imported/mini_truck.glb-0464de43323fb7eece4ef013a1f34f9e.scn"]
+source_file="res://assets/_universe/props/furniture/CommemorativeBust/ChrisR.01.glb"
+dest_files=["res://.godot/imported/ChrisR.01.glb-f98d84956f2ab92af14f8b2369304b98.scn"]
 
 [params]
 
@@ -21,8 +21,8 @@ array_mesh/deduplicate_surfaces=true
 nodes/apply_root_scale=true
 nodes/root_scale=1.0
 nodes/import_as_skeleton_bones=false
-nodes/use_name_suffixes=false
-nodes/use_node_type_suffixes=false
+nodes/use_name_suffixes=true
+nodes/use_node_type_suffixes=true
 meshes/ensure_tangents=true
 meshes/generate_lods=true
 meshes/create_shadow_meshes=true
@@ -40,6 +40,6 @@ materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
 _subresources={}
-gltf/naming_version=2
+gltf/naming_version=1
 gltf/embedded_image_handling=1
-gltf/texture_map_mode=1
+gltf/texture_map_mode=0

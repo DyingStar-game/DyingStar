@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://dnbpt5f5pj0im"]
 
-[ext_resource type="Shader" uid="uid://bdb0hrfumlpwd" path="res://assets/materials/painted_metal/painted_metal.gdshader" id="1_tqt7k"]
+[ext_resource type="Shader" uid="uid://bdb0hrfumlpwd" path="res://assets/_universe/_shared/materials/painted_metal/painted_metal.gdshader" id="1_tqt7k"]
 [ext_resource type="Texture2D" uid="uid://qr4nm0gwackl" path="res://assets/textures/grunge/scratch_tile.png" id="2_4skrk"]
 
 [resource]

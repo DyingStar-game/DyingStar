@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://daaiiqp2jq7es"]
+
+[ext_resource type="Material" uid="uid://ciygceyikv12a" path="res://assets/_universe/_shared/materials/minerals/gold/gold_material.tres" id="1_6bm8q"]
+
+[node name="Goldtest" type="Node3D" unique_id=874944914]
+
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=230158004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.042046954840680884, -0.18389934042945416, 0.2639370162097575)
+material_override = ExtResource("1_6bm8q")
