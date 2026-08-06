@@ -39,49 +39,50 @@ var pending_parent_delete_event = null
 
 var player_scene = preload("res://scenes/player/player.tscn")
 var props_scene: Dictionary = {
-	'scenes/props/StorageBoxes/container_benne_1200x240x240.tscn':
-		preload('res://scenes/props/StorageBoxes/container_benne_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn':
-		preload('res://scenes/props/StorageBoxes/container_liquid_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_plate_1200x240x30.tscn':
-		preload('res://scenes/props/StorageBoxes/container_plate_1200x240x30.tscn'),
-	'scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn':
-		preload('res://scenes/props/StorageBoxes/container_standard_a_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn':
-		preload('res://scenes/props/StorageBoxes/container_standard_b_1200x240x240.tscn'),
-	'scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn':
-		preload('res://scenes/props/StorageBoxes/pallet_benne_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn':
-		preload('res://scenes/props/StorageBoxes/pallet_crate_120x80x100.tscn'),
-	'scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn':
-		preload('res://scenes/props/StorageBoxes/pallet_liquid_120x80x100.tscn'),
-	# 'scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn': preload('res://scenes/props/StorageBoxes/pallet_plate_120x80x100.tscn'),
-	'scenes/props/cargo/pallet_container.tscn':
-		preload('res://scenes/props/cargo/pallet_container.tscn'),
-	'scenes/props/cargo/hauling_box.tscn':
-		preload('res://scenes/props/cargo/hauling_box.tscn'),
-	'scenes/props/cargo/pallet_crate.tscn':
-		preload('res://scenes/props/cargo/pallet_crate.tscn'),
-	'scenes/props/cargo/pallet_benne.tscn':
-		preload('res://scenes/props/cargo/pallet_benne.tscn'),
-	'scenes/props/cargo/pallet_liquid.tscn':
-		preload('res://scenes/props/cargo/pallet_liquid.tscn'),
-	'scenes/props/cargo/pallet_plate.tscn':
-		preload('res://scenes/props/cargo/pallet_plate.tscn'),
+	'scenes/_universe/props/containers/container_benne_1200x240x240.tscn':
+		preload('res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn'),
+	'scenes/_universe/props/containers/container_liquid_1200x240x240.tscn':
+		preload('res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn'),
+	'scenes/_universe/props/containers/container_plate_1200x240x30.tscn':
+		preload('res://scenes/_universe/props/containers/container_plate_1200x240x30.tscn'),
+	'scenes/_universe/props/containers/container_standard_a_1200x240x240.tscn':
+		preload('res://scenes/_universe/props/containers/container_standard_a_1200x240x240.tscn'),
+	'scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn':
+		preload('res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn'),
+	'scenes/_universe/props/containers/pallet_benne_120x80x100.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_benne_120x80x100.tscn'),
+	'scenes/_universe/props/containers/pallet_crate_120x80x100.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_crate_120x80x100.tscn'),
+	'scenes/_universe/props/containers/pallet_liquid_120x80x100.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_liquid_120x80x100.tscn'),
+	# 'scenes/_universe/props/containers/pallet_plate_120x80x100.tscn':
+	# 	preload('res://scenes/_universe/props/containers/pallet_plate_120x80x100.tscn'),
+	'scenes/_universe/props/containers/pallet_container.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_container.tscn'),
+	'scenes/_universe/props/containers/hauling_box.tscn':
+		preload('res://scenes/_universe/props/containers/hauling_box.tscn'),
+	'scenes/_universe/props/containers/pallet_crate.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_crate.tscn'),
+	'scenes/_universe/props/containers/pallet_benne.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_benne.tscn'),
+	'scenes/_universe/props/containers/pallet_liquid.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_liquid.tscn'),
+	'scenes/_universe/props/containers/pallet_plate.tscn':
+		preload('res://scenes/_universe/props/containers/pallet_plate.tscn'),
 	'scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn':
 		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn'),
 	'scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn':
 		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn'),
 	'scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn':
 		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn'),
-	'scenes/props/cargo/box_50cm.tscn':
-		preload('res://scenes/props/cargo/box_50cm.tscn'),
-	'scenes/props/cargo/box_4m.tscn':
-		preload('res://scenes/props/cargo/box_4m.tscn'),
+	'scenes/_universe/props/containers/box_50cm.tscn':
+		preload('res://scenes/_universe/props/containers/box_50cm.tscn'),
+	'scenes/_universe/props/containers/box_4m.tscn':
+		preload('res://scenes/_universe/props/containers/box_4m.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
-	'scenes/structures/mining_depot.tscn':
-		preload('res://scenes/structures/mining_depot.tscn'),
+	'scenes/_universe/structures/industrial/mines/mining_depot.tscn':
+		preload('res://scenes/_universe/structures/industrial/mines/mining_depot.tscn'),
 	# 'scenes/props/city/sandbox_capital.tscn': preload('res://scenes/props/city/sandbox_capital.tscn'),
 }
 
@@ -745,6 +746,12 @@ func create_generic_object(event: Dictionary) -> void:
 				prop_scene = props_scene[object_data["scenename"]]
 			else:
 				prop_scene = load("res://" + object_data["scenename"])
+			# A persisted prop can reference a scene that no longer exists at that path (moved/renamed
+			# by the asset-taxonomy migration). Skip it instead of crashing the whole loader.
+			if prop_scene == null:
+				push_warning("create_generic_object: scene not found for scenename '%s' (uuid %s), skipping" \
+					% [object_data["scenename"], object_id])
+				return
 			var prop_instance = prop_scene.instantiate()
 			prop_instance.tree_entered.connect(func():
 				prop_instance.owner = get_tree().current_scene

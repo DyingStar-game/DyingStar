@@ -33,33 +33,33 @@ const ENTRIES := {
 		"type": "miningrock", "distance": 9.0, "origin_height": 5.0,
 	},
 	"box": {
-		"label": "50cm", "scene": "res://scenes/props/cargo/box_50cm.tscn",
+		"label": "50cm", "scene": "res://scenes/_universe/props/containers/box_50cm.tscn",
 		"type": "box", "distance": 2.0, "origin_height": 0.3,
 	},
 	"pallet_container": {
-		"label": "Ares", "scene": "res://scenes/props/cargo/pallet_container.tscn",
+		"label": "Ares", "scene": "res://scenes/_universe/props/containers/pallet_container.tscn",
 		"type": "pallet_container", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_plate": {
-		"label": "Pallet", "scene": "res://scenes/props/cargo/pallet_plate.tscn",
+		"label": "Pallet", "scene": "res://scenes/_universe/props/containers/pallet_plate.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.6,
 	},
 	"pallet_crate": {
-		"label": "Cube", "scene": "res://scenes/props/cargo/pallet_crate.tscn",
+		"label": "Cube", "scene": "res://scenes/_universe/props/containers/pallet_crate.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_benne": {
-		"label": "Benne", "scene": "res://scenes/props/cargo/pallet_benne.tscn",
+		"label": "Benne", "scene": "res://scenes/_universe/props/containers/pallet_benne.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_liquid": {
-		"label": "Liquid", "scene": "res://scenes/props/cargo/pallet_liquid.tscn",
+		"label": "Liquid", "scene": "res://scenes/_universe/props/containers/pallet_liquid.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"hauling_box": {
 		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
 		# "pallet_container" type: that is the def whose channels carry `content` (the ore volume).
-		"label": "Hauling", "scene": "res://scenes/props/cargo/hauling_box.tscn",
+		"label": "Hauling", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
 		"type": "pallet_container", "distance": 2.0, "origin_height": 0.3,
 	},
 	"truck": {

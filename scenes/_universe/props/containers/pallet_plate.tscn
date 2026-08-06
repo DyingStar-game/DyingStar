@@ -1,0 +1,29 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/containers/carryable_storagebox.gd" id="1_plate"]
+[ext_resource type="PackedScene" uid="uid://cn8vnqwq13uir" path="res://assets/_universe/props/containers/pallet_plate_120x80x15.glb" id="2_plate"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_plate"]
+size = Vector3(1.2, 0.15, 0.8)
+
+[node name="PalletPlate" type="RigidBody3D" unique_id=780003001]
+collision_layer = 8
+collision_mask = 15
+mass = 80.0
+script = ExtResource("1_plate")
+type_name = "box"
+
+[node name="pallet_plate_120x80x15" parent="." unique_id=780003002 instance=ExtResource("2_plate")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=780003003]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.075, 0)
+shape = SubResource("BoxShape3D_plate")
+
+[node name="CarryArea" type="Area3D" parent="." unique_id=780003004]
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CarryArea" unique_id=780003005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.075, 0)
+shape = SubResource("BoxShape3D_plate")

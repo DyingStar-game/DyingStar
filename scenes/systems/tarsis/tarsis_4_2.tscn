@@ -5,7 +5,7 @@
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_43k7b"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_lnpr0"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_il7fp"]
-[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/props/StorageBoxes/storagewarehouse.tscn" id="6_y0c1k"]
+[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/_universe/props/containers/storagewarehouse.tscn" id="6_y0c1k"]
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("2_y0c1k")

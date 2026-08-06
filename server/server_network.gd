@@ -559,7 +559,7 @@ func _devmode_horizon_mapping(message: Dictionary):
 					# 	    "y": 0.0,
 					# 	    "z": 0.0
 					#     },
-					#     "scenename": "scenes/props/cargo/spawn_50cmbox.tscn",
+					#     "scenename": "scenes/_universe/props/containers/spawn_50cmbox.tscn",
 					#     "parent_id": "9b3ec158-7789-46fb-9890-ad84c691c1a5",
 					# 	},
 					# }
@@ -580,7 +580,7 @@ func _devmode_horizon_mapping(message: Dictionary):
 					# 				"y": 0,
 					# 				"z": 0
 					# 			},
-					# 			"scenename": "scenes/props/cargo/box_50cm.tscn"
+					# 			"scenename": "scenes/_universe/props/containers/box_50cm.tscn"
 					# 		},
 					# 		"object_id": "4cf7f72d-ba93-4968-b7b1-9ffec31d5845",
 					# 		"object_type": "box50cm",

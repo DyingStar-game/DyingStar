@@ -268,8 +268,8 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 
 @onready var direct_chat: DirectChat = $UserInterface/DirectChat
 
-@onready var box4m: PackedScene = preload("res://scenes/props/cargo/box_4m.tscn")
-@onready var box50m: PackedScene = preload("res://scenes/props/cargo/box_50cm.tscn")
+@onready var box4m: PackedScene = preload("res://scenes/_universe/props/containers/box_4m.tscn")
+@onready var box50m: PackedScene = preload("res://scenes/_universe/props/containers/box_50cm.tscn")
 @onready var is_inside_box4m: bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch

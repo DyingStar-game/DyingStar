@@ -1,0 +1,29 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/containers/carryable_storagebox.gd" id="1_liquid"]
+[ext_resource type="PackedScene" uid="uid://dt74wufw2mdot" path="res://assets/_universe/props/containers/pallet_liquid_120x80x100.glb" id="2_liquid"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_liquid"]
+size = Vector3(1.2, 1, 0.8)
+
+[node name="PalletLiquid" type="RigidBody3D" unique_id=780002001]
+collision_layer = 8
+collision_mask = 15
+mass = 350.0
+script = ExtResource("1_liquid")
+type_name = "box"
+
+[node name="pallet_liquid_120x80x100" parent="." unique_id=780002002 instance=ExtResource("2_liquid")]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=780002003]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_liquid")
+
+[node name="CarryArea" type="Area3D" parent="." unique_id=780002004]
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CarryArea" unique_id=780002005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_liquid")
