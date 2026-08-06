@@ -15,7 +15,7 @@ class_name ForestTemperateForestSpawner
 # ── Tree mesh ────────────────────────────────────────────────────
 
 ## Path to the lowpoly tree OBJ model.
-const TREE_MESH_PATH := "res://assets/models/nature/trees/tree001.glb"
+const TREE_MESH_PATH := "res://assets/_universe/environment/terrain/trees/tree001.glb"
 
 # ── Cached statics ───────────────────────────────────────────────
 

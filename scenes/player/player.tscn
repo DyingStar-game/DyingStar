@@ -33,7 +33,7 @@
 [ext_resource type="Script" uid="uid://67v8l5556qsa" path="res://scenes/player/debug/debug_universe_players.gd" id="12_5csap"]
 [ext_resource type="Script" uid="uid://cg10agjb1pncn" path="res://scenes/player/debug/debug_client_nbscenes.gd" id="12_y6iw5"]
 [ext_resource type="Script" uid="uid://bn70g6ek7ggox" path="res://scenes/player/debug/debug_client_videomem.gd" id="13_ykmr1"]
-[ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/models/equipments/tools/mining/hammerdrill.glb" id="14_fuv0x"]
+[ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/_universe/props/tools/tools/mining/hammerdrill.glb" id="14_fuv0x"]
 [ext_resource type="Script" uid="uid://ju3yguhgtybn" path="res://scenes/player/debug/debug_client_messages_received.gd" id="14_ilbvb"]
 [ext_resource type="Script" uid="uid://bb431neb3d2jd" path="res://scenes/player/debug/debug_client_messages_sent.gd" id="15_x3gq6"]
 [ext_resource type="Script" uid="uid://dsikncjeuwf73" path="res://scenes/player/debug/debug_serverbox_coordinates.gd" id="17_5csap"]
