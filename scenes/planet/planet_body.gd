@@ -14,6 +14,13 @@ extends Node3D
 ##   PlanetTerrain  — quadtree terrain manager
 ##   Atmosphere      — (optional) instance of extremely_fast_atmosphere
 
+## Earth mass in kg — converts orbit_mass_earths to the KG the Kepler solver expects.
+const MASS_EARTH := 5.972e24
+## System scale factor — must MATCH the service's DISTANCE_FACTOR (import-system.ts). 1 = true 1:1 (real
+## distances); it used to be 3 (the system was shrunk to a third). We divide the raw AU by it so our local
+## orbit lands where the network placed the body. Flip in lockstep with the service (services PR #25).
+const DISTANCE_FACTOR := 1.0
+
 @export var planet_data: PlanetData:
 	set(value):
 		if Engine.is_editor_hint() and planet_data:
@@ -46,8 +53,34 @@ extends Node3D
 ## keeps the cost of carrying the dynamic bodies along (see _carry_dynamic_bodies) affordable.
 @export var rotation_update_hz: float = 3.0
 
+@export_group("Orbit")
+## Orbital elements, RAW as in tarsis.json / the celestial DB (resourcesDynamic) so the data is a
+## straight copy. apoapsis/periapsis = 0 means the body does NOT orbit (it keeps its network position).
+## The distances are the UNSCALED AU from tarsis.json; _build_orbit divides them by DISTANCE_FACTOR to
+## match the service's own import (which shrinks the system but keeps masses raw, so orbits run faster).
+## Like rotation_period_hours, these mirror the service contract on purpose — feeding them from the
+## network later is a drop-in. Only PLANETS are wired for now; moons keep their network offset and ride
+## their planet's orbit (they will orbit on their own once the parent-spin frame is decoupled).
+@export var orbit_periapsis_au: float = 0.0
+@export var orbit_apoapsis_au: float = 0.0
+@export var orbit_inclination_deg: float = 0.0
+@export var orbit_ascending_node_deg: float = 0.0
+@export var orbit_arg_periapsis_deg: float = 0.0
+## Mean anomaly at the elements' epoch (unix t = 0), in degrees — the M0_deg column. The phase then
+## advances with sim_time, matching the service which anchors on the same absolute time.
+@export var orbit_mean_anomaly_deg: float = 0.0
+## This body's own mass, in Earth masses (mass_Me). Negligible next to the primary but kept for fidelity.
+@export var orbit_mass_earths: float = 0.0
+## Mass of the body this one orbits, in KG: the STAR for a planet (mass_Sun × 1.98892e30), the PLANET
+## for a moon. 0 falls back to one solar mass.
+@export var orbit_primary_mass_kg: float = 0.0
+@export_group("")
+
 ## Set by the server before the node enters the tree.
 var spawn_position: Vector3 = Vector3.ZERO
+
+## Built from the orbit_* elements in _ready when the body orbits (null otherwise). Owns `position`.
+var _orbit: KeplerOrbit = null
 
 ## Time since the last spin refresh.
 var _spin_accum: float = 0.0
@@ -104,6 +137,14 @@ func _ready() -> void:
 	else:
 		print("[Planet] _ready: planet_data is NULL — terrain will not initialize")
 
+	# Celestial motion (runtime only): build the orbit and place the body at its current orbital
+	# position immediately, so an orbiting planet never pops from the network spawn position to its
+	# computed one on the first physics tick (the local orbit owns `position`, as _apply_spin owns basis).
+	if not Engine.is_editor_hint():
+		_build_orbit()
+		if _orbit != null:
+			_place_at_time(Globals.sim_time())
+
 
 # ------------------------------------------------------------------
 # Rotation (spin on axis)
@@ -120,9 +161,15 @@ func _physics_process(delta: float) -> void:
 	# itself is a pure function of absolute time, so all clients land on the SAME orientation: a space
 	# observer sees the planet turning and a surface body co-rotates with the ground. Day/night is
 	# client-side (PlayerSunLight, player world pos vs the fixed star). Orbital position is separate.
+	# ⚠️ WIP TENSION TO SETTLE: this early-return also skips the ORBIT on the server, so an orbiting
+	# planet would sit at its spawn position server-side while clients move it — positions would
+	# diverge. Keeping the guard for now because dropping it re-introduces the surface-contact bug it
+	# was written for; the orbit needs its own answer (drive `position` on the server without ever
+	# rotating the collision frame, most likely).
 	if OS.has_feature("dedicated_server"):
 		return
-	if Engine.is_editor_hint() or rotation_period_hours <= 0.0:
+	# `_orbit != null` keeps the celestial motion running for a body that does not spin on itself.
+	if Engine.is_editor_hint() or (rotation_period_hours <= 0.0 and _orbit == null):
 		return
 	# Refresh at a few Hz rather than every tick: the planet carries the terrain colliders and every
 	# body standing on it, and each refresh makes Jolt re-insert all of them into the broadphase.
@@ -130,25 +177,50 @@ func _physics_process(delta: float) -> void:
 	if _spin_accum < 1.0 / maxf(rotation_update_hz, 0.001):
 		return
 	_spin_accum = 0.0
-	_apply_spin()
-
-## Spin the planet on its axis.
-##
-## The angle is a PURE FUNCTION OF ABSOLUTE TIME, evaluated independently by the server and by every
-## client, so the rotation never travels over the network: both sides land on the same basis as long
-## as their clocks agree. Mirrors the celestial service formula (resourcesDynamic,
-## rotation-quaternion.ts): tilt about local Z, then spin about local Y. Runs in _physics_process so
-## the transform is settled before the physics step — this node carries the terrain colliders.
-##
-## Only the basis is written; the orbital position stays whatever the network set.
-## NOTE: this is the LOCAL basis, so a moon would inherit its planet's spin — correct only for bodies
-## parented directly to the universe root. Revisit when moons start spinning.
-func _apply_spin() -> void:
-	# fmod BEFORE scaling to TAU: unix time over a ~25 h period is some 20 000 revolutions, and
-	# folding that back into a single turn first keeps the angle small and precise.
-	var turns: float = fmod(Time.get_unix_time_from_system() / (rotation_period_hours * 3600.0), 1.0)
-	basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+	_place_at_time(Globals.sim_time())
 	_carry_dynamic_bodies(self)
+
+## Place this body's basis (axial spin) and position (orbit) for absolute simulation time `t`.
+##
+## Both are PURE FUNCTIONS OF TIME, evaluated independently by the server and by every client, so
+## neither the rotation nor the orbit travels over the network: all sides land on the same transform as
+## long as their clocks agree (Globals.sim_time). Mirrors the celestial service formulas
+## (resourcesDynamic: rotation-quaternion.ts and kepler-orbit.ts). Runs at a few Hz in _physics_process
+## so the transform is settled before the physics step — this node carries the terrain colliders and
+## every body on it (see _carry_dynamic_bodies, called right after).
+##
+## NOTE: the SPIN writes the LOCAL basis, so a moon parented to a planet would inherit its planet's
+## spin — correct only for bodies parented directly to the universe root. Only planets orbit for now;
+## revisit the frame when moons spin/orbit on their own.
+func _place_at_time(t: float) -> void:
+	if rotation_period_hours > 0.0:
+		# fmod BEFORE scaling to TAU: sim time over a ~25 h period is many revolutions, and folding it
+		# back into a single turn first keeps the angle small and precise.
+		var turns: float = fmod(t / (rotation_period_hours * 3600.0), 1.0)
+		basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+	if _orbit != null:
+		position = _orbit.position_at(t)
+
+
+## True when the orbit_* elements describe a real orbit (a periapsis or apoapsis was set).
+func has_orbit() -> bool:
+	return orbit_apoapsis_au > 0.0 or orbit_periapsis_au > 0.0
+
+
+## Build the Kepler solver from the raw orbit_* elements (no-op when the body does not orbit). Applies
+## the same DISTANCE_FACTOR shrink and deg->rad / Earth-mass conversions the service does at import.
+func _build_orbit() -> void:
+	if not has_orbit():
+		return
+	_orbit = KeplerOrbit.new(
+			orbit_periapsis_au / DISTANCE_FACTOR,
+			orbit_apoapsis_au / DISTANCE_FACTOR,
+			deg_to_rad(orbit_inclination_deg),
+			deg_to_rad(orbit_ascending_node_deg),
+			deg_to_rad(orbit_arg_periapsis_deg),
+			deg_to_rad(orbit_mean_anomaly_deg),
+			orbit_primary_mass_kg,
+			orbit_mass_earths * MASS_EARTH)
 
 ## Carry the dynamic bodies standing on the planet along with the spin.
 ##
@@ -432,24 +504,28 @@ func _find_sun() -> Node3D:
 
 ## Called by the network layer when synced data arrives (no-op by default).
 func client_channel_data_update(data: Dictionary) -> void:
-	if data.has("positions"):
-		position = Vector3(
-			data["positions"][0]["x"],
-			data["positions"][0]["y"],
-			data["positions"][0]["z"]
-		)
-	elif data.has("position"):
-		# GORC zone events (client path) carry a SINGULAR "position" dict —
-		# _standardize_object passes zone_data through as object_data. Without
-		# this branch a network-spawned planet never applies its position and
-		# stays at (0,0,0) under its parent: tarsis_4_1/4_2 then sit CONCENTRIC
-		# inside tarsis_4, rendering a phantom uncarved surface over the real
-		# terrain (hiding the corundum cracks players then fall into).
-		position = Vector3(
-			data["position"]["x"],
-			data["position"]["y"],
-			data["position"]["z"]
-		)
+	# When this body orbits locally, the Kepler solver OWNS `position` (server and client agree via
+	# sim_time), so the network position is ignored here — exactly as the network rotations are ignored
+	# below. Non-orbiting bodies (moons for now) still take their network position as before.
+	if not has_orbit():
+		if data.has("positions"):
+			position = Vector3(
+				data["positions"][0]["x"],
+				data["positions"][0]["y"],
+				data["positions"][0]["z"]
+			)
+		elif data.has("position"):
+			# GORC zone events (client path) carry a SINGULAR "position" dict —
+			# _standardize_object passes zone_data through as object_data. Without
+			# this branch a network-spawned planet never applies its position and
+			# stays at (0,0,0) under its parent: tarsis_4_1/4_2 then sit CONCENTRIC
+			# inside tarsis_4, rendering a phantom uncarved surface over the real
+			# terrain (hiding the corundum cracks players then fall into).
+			position = Vector3(
+				data["position"]["x"],
+				data["position"]["y"],
+				data["position"]["z"]
+			)
 	if data.has("rotations"):
 		# NOTE: network sends rotations as quaternions {w, x, y, z}. Previously
 		# parsed wrongly as Euler (x, y, z) which caused a ~10° client-only tilt

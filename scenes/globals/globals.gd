@@ -44,6 +44,15 @@ const TERMINATOR_SOFTNESS := 0.05
 ## (derivable from the composition + pressure in tarsis.json) is wired in.
 const DEFAULT_ATMOSPHERE_HEIGHT := 50000.0
 
+## Simulation-time acceleration. 1.0 = REAL time: a 25 h day and a 42-day orbit are then imperceptible,
+## but every body sits exactly where the network placed it (the celestial service anchors its ephemeris
+## on absolute unix time too, so our local orbit and the network snapshot agree at 1.0). Raise it to
+## WATCH celestial motion — e.g. 10000 makes a 42-day orbit take ~6 min and a 25 h day ~9 s — at the
+## cost of fast-forwarding AWAY from that network snapshot (intended: we are speeding up the universe).
+## Read identically by the rotation AND the orbit of every body, on server and client, so nothing about
+## time ever travels the network — both sides stay in lockstep as long as their real clocks agree.
+var time_scale: float = 1.0
+
 var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false
@@ -94,3 +103,11 @@ func log(message: String):
 	if multiplayer and GameOrchestrator.is_server():
 		header = "[color=teal][lb]server[rb][/color]: "
 	print_rich(header + message)
+
+## Accelerated simulation time in seconds — absolute unix time scaled by time_scale. The SINGLE clock
+## behind all celestial motion (Planet._place_at_time: axial spin and the Kepler orbit). Absolute (not
+## since-boot) so it matches the service's absolute-time ephemeris at time_scale 1; a pure function of
+## the real clock and time_scale, so the server and every client agree without any network sync. Stays
+## precise even at high time_scale (unix*1e4 ~ 1.7e13, well within float64's ~15-16 significant digits).
+func sim_time() -> float:
+	return Time.get_unix_time_from_system() * time_scale
