@@ -15,7 +15,7 @@ class_name MeadowSteppeMeadowSpawner
 # ── Grass stalk mesh ─────────────────────────────────────────
 
 ## Path to the grass stalk OBJ model.
-const GRASS_STALK_PATH := "res://assets/models/nature/grass-stalk.obj"
+const GRASS_STALK_PATH := "res://assets/_universe/environment/terrain/grass-stalk.obj"
 
 ## Number of individual blades merged into a single tuft mesh (LOD 0).
 ## 8 blades at random rotations + small XZ offsets give a natural clump
