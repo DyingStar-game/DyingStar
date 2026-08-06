@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://tk27ud5kcl38"
-path="res://.godot/imported/pallet_container.glb-5afd75b417bd94e64f104cf978afae94.scn"
+path="res://.godot/imported/crate_container.glb-8b125ac1d1da52590d344305ddbda3a2.scn"
 
 [deps]
 
-source_file="res://assets/_universe/props/containers/pallet_container.glb"
-dest_files=["res://.godot/imported/pallet_container.glb-5afd75b417bd94e64f104cf978afae94.scn"]
+source_file="res://assets/_universe/props/containers/crate_container.glb"
+dest_files=["res://.godot/imported/crate_container.glb-8b125ac1d1da52590d344305ddbda3a2.scn"]
 
 [params]
 
