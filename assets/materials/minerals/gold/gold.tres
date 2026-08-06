@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="MineralDef" format=3 uid="uid://druv7si0ca1ug"]
 
-[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/props/rock/mineral_def.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/_universe/environment/terrain/rocks/mineral_def.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://b7hetueajcgru" path="res://assets/textures/minerals/gold/gold_albedo.png" id="2_alb"]
 [ext_resource type="Texture2D" uid="uid://tmoad1l7oxy6" path="res://assets/textures/minerals/gold/gold_normal.png" id="3_nrm"]
 

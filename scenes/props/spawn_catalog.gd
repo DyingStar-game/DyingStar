@@ -21,15 +21,15 @@ extends RefCounted
 ##                  base). A dynamic body only needs to be about right: it settles by itself.
 const ENTRIES := {
 	"rock": {
-		"label": "S", "scene": "res://scenes/props/rock/rock_mining_small.tscn",
+		"label": "S", "scene": "res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn",
 		"type": "miningrock", "distance": 5.5, "origin_height": 0.6,
 	},
 	"rock_medium": {
-		"label": "M", "scene": "res://scenes/props/rock/rock_mining_medium.tscn",
+		"label": "M", "scene": "res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn",
 		"type": "miningrock", "distance": 6.0, "origin_height": 2.0,
 	},
 	"rock_large": {
-		"label": "L", "scene": "res://scenes/props/rock/rock_mining_large.tscn",
+		"label": "L", "scene": "res://scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn",
 		"type": "miningrock", "distance": 9.0, "origin_height": 5.0,
 	},
 	"box": {

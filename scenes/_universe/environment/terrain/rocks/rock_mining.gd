@@ -444,7 +444,7 @@ func _ore_offset() -> Vector3:
 ## adds the neutral fault grooves (only the exterior surface shows them).
 func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_grooves: bool) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://scenes/props/rock/rock_vein.gdshader")
+	mat.shader = preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
 	mat.set_shader_parameter("albedo_tex", preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg"))
 	mat.set_shader_parameter("tex_scale", 1.0)
 	# Ore LOOK (texture / colour / metalness) comes from the mineral; the ore FIELD
@@ -722,7 +722,7 @@ func _process(_delta: float) -> void:
 func _scene_name() -> String:
 	if scene_file_path != "":
 		return scene_file_path.trim_prefix("res://")
-	return "scenes/props/rock/rock_mining_small.tscn"
+	return "scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn"
 
 func _server_create_side2_rock(cut_index: int, kick: Vector3) -> void:
 	# Create the complementary half as its own networked rock. It inherits ALL our

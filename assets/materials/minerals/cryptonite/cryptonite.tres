@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="MineralDef" format=3 uid="uid://biofo54213ahf"]
 
-[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/props/rock/mineral_def.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/_universe/environment/terrain/rocks/mineral_def.gd" id="1_script"]
 
 [resource]
 script = ExtResource("1_script")

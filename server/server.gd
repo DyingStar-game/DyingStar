@@ -111,12 +111,12 @@ var props_scene: Dictionary = {
 		preload('res://scenes/props/cargo/pallet_liquid.tscn'),
 	'scenes/props/cargo/pallet_plate.tscn':
 		preload('res://scenes/props/cargo/pallet_plate.tscn'),
-	'scenes/props/rock/rock_mining_small.tscn':
-		preload('res://scenes/props/rock/rock_mining_small.tscn'),
-	'scenes/props/rock/rock_mining_medium.tscn':
-		preload('res://scenes/props/rock/rock_mining_medium.tscn'),
-	'scenes/props/rock/rock_mining_large.tscn':
-		preload('res://scenes/props/rock/rock_mining_large.tscn'),
+	'scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn':
+		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn'),
+	'scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn':
+		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn'),
+	'scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn':
+		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn'),
 	'scenes/props/cargo/box_50cm.tscn':
 		preload('res://scenes/props/cargo/box_50cm.tscn'),
 	'scenes/props/cargo/box_4m.tscn':
