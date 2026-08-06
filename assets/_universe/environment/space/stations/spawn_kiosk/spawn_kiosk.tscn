@@ -1,13 +1,13 @@
 [gd_scene format=3 uid="uid://dtcsox8hfg83s"]
 
-[ext_resource type="Script" uid="uid://s8pbsagvb7ix" path="res://assets/models/spawn_kiosk/spawn_kiosk.gd" id="1_1t3ni"]
-[ext_resource type="ArrayMesh" uid="uid://2udj7wjyt5fu" path="res://assets/models/spawn_kiosk/kiosk_body.mesh" id="1_hh7gi"]
-[ext_resource type="ArrayMesh" uid="uid://dgpdtyl722ry7" path="res://assets/models/spawn_kiosk/kisok_button.mesh" id="2_2nllh"]
-[ext_resource type="Material" uid="uid://bmpxf61hystvd" path="res://assets/models/spawn_kiosk/kiosk_body.material" id="2_8h5sf"]
-[ext_resource type="ArrayMesh" uid="uid://cy860reaga4yd" path="res://assets/models/spawn_kiosk/kiosk_sign.mesh" id="3_8h5sf"]
-[ext_resource type="Material" uid="uid://bd3mqgx6cyos" path="res://assets/models/spawn_kiosk/kiosk_button.material" id="4_fv45p"]
-[ext_resource type="Material" uid="uid://cg8puew0h0m3" path="res://assets/models/spawn_kiosk/kiosk_sign.material" id="6_fv45p"]
-[ext_resource type="Script" uid="uid://b6g3kd1dxqm12" path="res://assets/models/spawn_kiosk/kiosk_interaction_area.gd" id="8_bompr"]
+[ext_resource type="Script" uid="uid://s8pbsagvb7ix" path="res://assets/_universe/environment/space/stations/spawn_kiosk/spawn_kiosk.gd" id="1_1t3ni"]
+[ext_resource type="ArrayMesh" uid="uid://2udj7wjyt5fu" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_body.mesh" id="1_hh7gi"]
+[ext_resource type="ArrayMesh" uid="uid://dgpdtyl722ry7" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kisok_button.mesh" id="2_2nllh"]
+[ext_resource type="Material" uid="uid://bmpxf61hystvd" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_body.material" id="2_8h5sf"]
+[ext_resource type="ArrayMesh" uid="uid://cy860reaga4yd" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_sign.mesh" id="3_8h5sf"]
+[ext_resource type="Material" uid="uid://bd3mqgx6cyos" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_button.material" id="4_fv45p"]
+[ext_resource type="Material" uid="uid://cg8puew0h0m3" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_sign.material" id="6_fv45p"]
+[ext_resource type="Script" uid="uid://b6g3kd1dxqm12" path="res://assets/_universe/environment/space/stations/spawn_kiosk/kiosk_interaction_area.gd" id="8_bompr"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_fv45p"]
 size = Vector3(1.5, 1.75, 0.6)

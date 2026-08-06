@@ -16,7 +16,7 @@
 [ext_resource type="AudioStream" uid="uid://cnr042v1yqphh" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-on.ogg" id="6_q1ni8"]
 [ext_resource type="AudioStream" uid="uid://dadhjx2xfk3iv" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-off.ogg" id="7_7ype0"]
 [ext_resource type="AudioStream" uid="uid://l2ox3cdem1rm" path="res://assets/_universe/audio/sfx/machine/machine-button-off.ogg" id="7_80saa"]
-[ext_resource type="PackedScene" uid="uid://cef7mxrwycx7k" path="res://assets/models/vehicles/mini_truck.glb" id="7_d2vf6"]
+[ext_resource type="PackedScene" uid="uid://cef7mxrwycx7k" path="res://assets/_universe/vehicles/ground/mini_truck.glb" id="7_d2vf6"]
 [ext_resource type="Script" uid="uid://kbp6qag1idal" path="res://scenes/_universe/vehicles/vehicle_door_handle.gd" id="7_tuoiw"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]

@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://cvov1kmmfnwql"]
 
 [ext_resource type="PackedScene" uid="uid://62owkh6ghwx1" path="res://assets/_universe/props/food/food_biscuit.glb" id="1_qdpmo"]
-[ext_resource type="Material" uid="uid://ho5sk1nm4wo2" path="res://assets/materials/food/biscuit_material.tres" id="2_7ul2k"]
-[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/materials/decals/ares_logo_decal_material.tres" id="3_6ebdc"]
+[ext_resource type="Material" uid="uid://ho5sk1nm4wo2" path="res://assets/_universe/_shared/materials/food/biscuit_material.tres" id="2_7ul2k"]
+[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/decals/ares_logo_decal_material.tres" id="3_6ebdc"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_6ebdc"]
 size = Vector3(0.01929482309742525, 0.07858140991402252, 0.09955566330063448)

@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://3kj1xhfed62p"]
 
 [ext_resource type="PackedScene" uid="uid://cgiss4kb50rwb" path="res://assets/_universe/props/containers/pallet_canister.glb" id="1_0xiy0"]
-[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/materials/painted_metal/paint_yellow_material.tres" id="2_f3r07"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/materials/decals/ares_misc_decal_material.tres" id="3_7qd2s"]
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="2_f3r07"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="3_7qd2s"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_f3r07"]
 size = Vector3(0.6678779286044119, 0.8347990335498707, 1.0182035127832023)

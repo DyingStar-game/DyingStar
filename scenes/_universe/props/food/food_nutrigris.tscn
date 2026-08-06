@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://4oc8xbhlgsvy"]
 
 [ext_resource type="PackedScene" uid="uid://dl1t2htqdgwiv" path="res://assets/_universe/props/food/food_nutrigris.glb" id="1_lvp3x"]
-[ext_resource type="Material" uid="uid://dm3whpo6oqrbh" path="res://assets/materials/food/nutrigris_material.tres" id="2_ug831"]
-[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/materials/decals/ares_logo_decal_material.tres" id="3_we4ba"]
+[ext_resource type="Material" uid="uid://dm3whpo6oqrbh" path="res://assets/_universe/_shared/materials/food/nutrigris_material.tres" id="2_ug831"]
+[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/decals/ares_logo_decal_material.tres" id="3_we4ba"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_we4ba"]
 size = Vector3(0.07536498880108411, 0.04786435311507375, 0.07499082461072248)

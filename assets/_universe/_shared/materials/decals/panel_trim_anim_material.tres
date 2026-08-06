@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://ds1x4el0ic0p4"]
 
-[ext_resource type="Shader" uid="uid://cvndu8vv7cy1y" path="res://assets/materials/decals/animated_panel_trim.gdshader" id="1_5uba1"]
+[ext_resource type="Shader" uid="uid://cvndu8vv7cy1y" path="res://assets/_universe/_shared/materials/decals/animated_panel_trim.gdshader" id="1_5uba1"]
 [ext_resource type="Texture2D" uid="uid://rc1ha8s5x4sq" path="res://assets/textures/decals/wall_panels/wall_panels_displace.exr" id="2_5wi4i"]
 [ext_resource type="Texture2D" uid="uid://bkd2hcfntw0yh" path="res://assets/textures/decals/wall_panels/wall_panels_normal.png" id="3_q0v5b"]
 

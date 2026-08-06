@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://u7bmtowwqmhu" path="res://levels/sandbox/sandbox.gd" id="1_fd0ol"]
 [ext_resource type="PackedScene" uid="uid://nswkrnyepieq" path="res://scenes/props/testblock/basic_block.tscn" id="3_nm1m6"]
 [ext_resource type="PackedScene" uid="uid://kqmbae0l4ewu" path="res://scenes/props/testblock/basic_block_2.tscn" id="4_1esxm"]
-[ext_resource type="PackedScene" uid="uid://bmk1yx4q5cewg" path="res://assets/models/CommemorativeBust/commemorativebust.res" id="6_uk6j5"]
+[ext_resource type="PackedScene" uid="uid://bmk1yx4q5cewg" path="res://assets/_universe/props/furniture/CommemorativeBust/commemorativebust.res" id="6_uk6j5"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_r6mis"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)

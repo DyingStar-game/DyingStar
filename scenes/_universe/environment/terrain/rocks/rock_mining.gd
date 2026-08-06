@@ -39,12 +39,12 @@ const ORE_SCALE_EXTERIOR := 14.0  # high scale -> tiny spots
 # Fraction of a piece's bounding box that is actually solid (rough volume estimate).
 const VOLUME_FILL := 0.5
 # Registry id -> MineralDef, so a replicated mineral_id (string) resolves to its resource on
-# every client/server. Keep in sync with assets/materials/minerals/.
-const GOLD_MINERAL := preload("res://assets/materials/minerals/gold/gold.tres")
+# every client/server. Keep in sync with assets/_universe/_shared/materials/minerals/.
+const GOLD_MINERAL := preload("res://assets/_universe/_shared/materials/minerals/gold/gold.tres")
 const MINERALS := {
 	"gold": GOLD_MINERAL,
-	"iron": preload("res://assets/materials/minerals/iron/iron.tres"),
-	"cryptonite": preload("res://assets/materials/minerals/cryptonite/cryptonite.tres"),
+	"iron": preload("res://assets/_universe/_shared/materials/minerals/iron/iron.tres"),
+	"cryptonite": preload("res://assets/_universe/_shared/materials/minerals/cryptonite/cryptonite.tres"),
 }
 
 @export var uuid: String = ""
