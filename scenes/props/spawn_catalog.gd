@@ -36,9 +36,9 @@ const ENTRIES := {
 		"label": "50cm", "scene": "res://scenes/_universe/props/containers/box_50cm.tscn",
 		"type": "box", "distance": 2.0, "origin_height": 0.3,
 	},
-	"pallet_container": {
-		"label": "Ares", "scene": "res://scenes/_universe/props/containers/pallet_container.tscn",
-		"type": "pallet_container", "distance": 3.0, "origin_height": 0.8,
+	"crate_container": {
+		"label": "Ares", "scene": "res://scenes/_universe/props/containers/crate_container.tscn",
+		"type": "crate_container", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_plate": {
 		"label": "Pallet", "scene": "res://scenes/_universe/props/containers/pallet_plate.tscn",
@@ -58,9 +58,9 @@ const ENTRIES := {
 	},
 	"hauling_box": {
 		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
-		# "pallet_container" type: that is the def whose channels carry `content` (the ore volume).
+		# "crate_container" type: that is the def whose channels carry `content` (the ore volume).
 		"label": "Hauling", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
-		"type": "pallet_container", "distance": 2.0, "origin_height": 0.3,
+		"type": "crate_container", "distance": 2.0, "origin_height": 0.3,
 	},
 	"truck": {
 		"label": "Camion", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
@@ -72,7 +72,7 @@ const ENTRIES := {
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
 	{"text": "Rocher", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "Caisse", "keys": ["box", "hauling_box", "pallet_container", "pallet_plate",
+	{"text": "Caisse", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
 			"pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"key": "truck"},
 ]
