@@ -70,6 +70,10 @@ const TELEPORT_TARGETS := {
 @export var sprint_speed: float = 5.0
 @export var crouch_speed: float = 0.8
 @export var prone_speed: float = 0.5
+## Physics capsule height (m) per stance — the standing height is read from the scene. The collider
+## shrinks so a crouched/prone player fits under low obstacles; feet stay on the ground.
+@export var crouch_collider_height: float = 1.2
+@export var prone_collider_height: float = 0.6
 @export var jump_height: float = 0.5
 @export var regular_climb_speed: float = 6.0
 @export var fast_climb_speed: float = 8.0

@@ -67,6 +67,9 @@ var _carry_prompt_timer: float = 0.0
 ## mouse-wheel-chosen walk speed (0 until first set -> fall back to the default walk_speed).
 var _sprint_held: bool = false
 var _stance: int = 0  # 0 = standing, 1 = crouched, 2 = prone (server-authoritative, replicated as "stance")
+var _stance_request: int = 0  # last stance the owner asked for; validated + applied in the physics step
+var _collider: CollisionShape3D = null  # physics capsule (OWN copy — resized per stance, see setup)
+var _stand_collider_height: float = 1.8  # standing capsule height, captured from the scene at setup
 var _walk_speed_target: float = 0.0
 ## Landing: the server emits a "land:<n>" event (via the whitelisted `action` field, like the jump) the
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
@@ -86,6 +89,57 @@ func setup() -> void:
 	player.position = player.spawn_position
 	player.connect_area_detect()
 	player.update_last_basis()
+	# Give the physics collider its OWN capsule so shrinking it for crouch/prone doesn't also shrink the
+	# AreaDetector (gravity / seat / zone detection), which shares the scene's capsule resource.
+	_collider = player.get_node_or_null("Placeholder_Collider") as CollisionShape3D
+	if _collider != null and _collider.shape is CapsuleShape3D:
+		_collider.shape = _collider.shape.duplicate()
+		_stand_collider_height = (_collider.shape as CapsuleShape3D).height
+
+## Physics-capsule height (m) for a stance: standing (from the scene), crouched, or prone.
+func _stance_height(stance: int) -> float:
+	if stance == 1:
+		return player.crouch_collider_height
+	if stance == 2:
+		return player.prone_collider_height
+	return _stand_collider_height
+
+## Shrink/restore the physics capsule for the stance, keeping its bottom (feet) on the ground.
+func _apply_stance_collider(stance: int) -> void:
+	if _collider == null or not (_collider.shape is CapsuleShape3D):
+		return
+	var h: float = _stance_height(stance)
+	(_collider.shape as CapsuleShape3D).height = h
+	_collider.position.y = h * 0.5  # capsule is centered on its node: bottom stays at the body origin
+
+## Standing up (to a TALLER stance) needs clearance: a ray from the current head up to the taller head
+## must hit nothing solid overhead, else we stay low (can't stand under a ceiling).
+func _has_headroom(target_stance: int) -> bool:
+	if _collider == null or not (_collider.shape is CapsuleShape3D):
+		return true
+	var current_h: float = (_collider.shape as CapsuleShape3D).height
+	var target_h: float = _stance_height(target_stance)
+	if target_h <= current_h:
+		return true
+	var up: Vector3 = player.up_direction
+	var space = player.get_world_3d().direct_space_state
+	var from_pos: Vector3 = player.global_position + up * current_h
+	var to_pos: Vector3 = player.global_position + up * (target_h + 0.05)
+	var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos, Globals.MASK_OBSTACLE, [player.get_rid()])
+	return space.intersect_ray(query).is_empty()
+
+## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
+## stance needs headroom (else we drop the request and stay low). Replicates only on an actual change.
+func _process_stance_request() -> void:
+	if _stance_request == _stance:
+		return
+	if _stance_height(_stance_request) > _stance_height(_stance) and not _has_headroom(_stance_request):
+		_stance_request = _stance  # blocked overhead: drop the stand-up
+		return
+	_stance = _stance_request
+	_apply_stance_collider(_stance)
+	player.stance = _stance
+	player.server_send_properties_to_client({"stance": _stance})
 
 ## Authoritative dispatcher for a client action, called by the network layer through Player (only the
 ## dedicated server ever receives it). Every branch reads/writes the shared body via `player`.
@@ -97,11 +151,10 @@ func server_action_received(data: Dictionary) -> void:
 			_sprint_held = bool(data.get("held", false))  # Shift held: run at sprint_speed
 		"stance":
 			# Movement stance toggle (0 standing / 1 crouched / 2 prone). Server-authoritative: we set it,
-			# cap the speed from it, and replicate so remotes show the pose (collider resize: next chunk).
-			var requested: int = clampi(int(data.get("value", 0)), 0, 2)
-			_stance = requested
-			player.stance = _stance
-			player.server_send_properties_to_client({"stance": _stance})
+			# cap the speed + resize the collider from it, and replicate so remotes show the pose. We run in
+			# _process (the headroom ray needs the physics space state, null here) -> just record the
+			# request; the physics step validates + applies it (see _process_stance_request).
+			_stance_request = clampi(int(data.get("value", 0)), 0, 2)
 		"walk_speed":
 			# Mouse-wheel-chosen walk speed (owner intent), clamped to the allowed range.
 			_walk_speed_target = clampf(float(data.get("value", player.walk_speed)),
@@ -475,6 +528,7 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
 	_flush_spawn_queue()  # the wheel's spawns wait for the physics step: they need a ground raycast
+	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
 	_server_update_carry_prompt(delta)
 	if player.piloting and is_instance_valid(player._seat_node):
