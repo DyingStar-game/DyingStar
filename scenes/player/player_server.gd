@@ -174,6 +174,9 @@ func server_action_received(data: Dictionary) -> void:
 					_seat_count += 1
 					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
 					player.server_send_properties_to_client({"action": "seat:%s:%d" % [role, _seat_count]})
+				else:  # refused (seat occupied / door blocked) -> undo the client optimistic entry
+					_seat_count += 1
+					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count})
 		"exit_vehicle":
 			var veh_out = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):

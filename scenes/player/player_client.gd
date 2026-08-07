@@ -51,6 +51,8 @@ var _step_last_index: int = -1     # which footstep sample was played last (neve
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
+var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
 
@@ -583,10 +585,12 @@ func _enter_seat(seat: Node) -> void:
 	if player._seat_is_driver and veh.has_method("set_driver_hud"):
 		veh.set_driver_hud(true)
 
-## Leave the seat we occupy (driver or passenger): tell the server, walk again, un-parent back into
-## the world, and drop the driver HUD. Triggered by Y (exit) — see _unhandled_input.
-func _leave_vehicle() -> void:
-	player.client_send_action_to_server({"action": "exit_vehicle", "target_uuid": player._seat_vehicle_uuid})
+## Leave the seat we occupy (driver or passenger): walk again, un-parent back into the world, and drop
+## the driver HUD. Triggered by Y (exit) — see _unhandled_input. `notify_server` is false when the server
+## itself told us to leave (a refused seat: occupied/blocked), so we must NOT echo an exit back.
+func _leave_vehicle(notify_server: bool = true) -> void:
+	if notify_server:
+		player.client_send_action_to_server({"action": "exit_vehicle", "target_uuid": player._seat_vehicle_uuid})
 	player.active = true  # walking again
 	player.set_seated(false)
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
@@ -808,15 +812,23 @@ func client_channel_data_update(data: Dictionary) -> void:
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
-		elif player.remote_player and action.begins_with("seat:"):
-			player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
-		elif player.remote_player and action.begins_with("unseat"):
-			player.seated_role = ""  # left the seat -> normal locomotion pose
+		elif action.begins_with("seat:") and action != _last_seat_action:
+			_last_seat_action = action
+			if player.remote_player:
+				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
+		elif action.begins_with("unseat") and action != _last_seat_action:
+			_last_seat_action = action
+			if player.remote_player:
+				player.seated_role = ""  # left the seat -> normal locomotion pose
+			elif is_instance_valid(player._seat_node):
+				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	if player.remote_player:
 		player.mining_tool.apply_remote(data)
+		if data.has("carrying"):
+			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose
 	elif data.has("carrying"):
 		# Owner: reconcile the optimistic carry prediction with the server's verdict
 		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).
@@ -864,6 +876,7 @@ func _sample_locomotion(delta: float) -> void:
 		"airborne": _airborne,
 		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
 		"driver": player.seated_role == "driver",
+		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"teleport": teleport,
 	}
 
