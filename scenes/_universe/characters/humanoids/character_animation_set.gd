@@ -10,17 +10,21 @@ extends Resource
 
 @export_group("Idle")
 @export var idle: StringName = &"Idle"
+## Standing-idle variations, played occasionally for life (look around, fold arms, stretch…). Empty or
+## missing entries are skipped; the UAL2 ones (FoldArms) light up once UAL2 is merged.
+@export var idle_variations: Array[StringName] = [&"Idle_LookAround", &"Idle_Tired", &"Idle_FoldArms"]
 
-# Slow gait (~walk_speed). UAL1 only ships a forward walk; the strafe slots stay empty and fall back.
+# Slow gait (~walk_speed). Forward = UAL1 "Walk"; the directional strafes are UAL2, so they resolve once
+# UAL2 is merged (until then they fall back to the forward walk).
 @export_group("Walk")
 @export var walk_fwd: StringName = &"Walk"
-@export var walk_bwd: StringName = &""
-@export var walk_left: StringName = &""
-@export var walk_right: StringName = &""
-@export var walk_fwd_left: StringName = &""
-@export var walk_fwd_right: StringName = &""
-@export var walk_bwd_left: StringName = &""
-@export var walk_bwd_right: StringName = &""
+@export var walk_bwd: StringName = &"Walk_Bwd"
+@export var walk_left: StringName = &"Walk_L"
+@export var walk_right: StringName = &"Walk_R"
+@export var walk_fwd_left: StringName = &"Walk_Fwd_L"
+@export var walk_fwd_right: StringName = &"Walk_Fwd_R"
+@export var walk_bwd_left: StringName = &"Walk_Bwd_L"
+@export var walk_bwd_right: StringName = &"Walk_Bwd_R"
 
 # Fast gait (~sprint_speed) — fully directional in UAL1 (the "Jog" clips).
 @export_group("Run")

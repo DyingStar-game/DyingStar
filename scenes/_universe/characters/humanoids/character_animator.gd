@@ -31,6 +31,11 @@ const WARP_MAX: float = 1.8
 ## Speed margin (m/s) a tier boundary must be crossed by to switch tiers, so a speed sitting ON a
 ## boundary (e.g. wheel 2.5) does not jitter between Walk and Jog.
 const TIER_HYSTERESIS: float = 0.35
+## Standing-idle life: play a random idle variation roughly every IDLE_GAP_MIN..MAX seconds, holding it
+## IDLE_VARIATION_DURATION seconds, then back to the base idle.
+const IDLE_GAP_MIN: float = 8.0
+const IDLE_GAP_MAX: float = 18.0
+const IDLE_VARIATION_DURATION: float = 6.0
 
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
 @export var anim_set: CharacterAnimationSet
@@ -46,6 +51,10 @@ var _jump_phase: JumpPhase = JumpPhase.GROUND
 var _debug_label: Label = null  # optional on-screen movement readout (local player, Settings "Show debug")
 var _target_speed_scale: float = 1.0  # AnimationPlayer speed_scale for the current clip (walk speed-warp)
 var _current_tier: Tier = Tier.WALK  # locomotion tier, kept stable by hysteresis (see _tier_for_speed)
+var _idle_timer: float = 0.0          # seconds spent standing idle (drives the idle variations)
+var _idle_variation: StringName = &""  # variation currently playing (&"" = the base idle)
+var _idle_variation_end: float = 0.0
+var _next_idle_gap: float = 12.0
 var _walk_max: float = 2.0    # walk -> jog boundary (m/s), derived from the player's walk_speed in setup
 var _sprint_min: float = 4.0  # jog -> sprint boundary (m/s), midpoint of walk_speed and sprint_speed
 
@@ -76,8 +85,8 @@ func setup(player_body, is_local: bool) -> void:
 		_create_debug_label()  # on-screen speed / wheel / clip readout, toggled by Settings "Show debug"
 	set_process(_anim != null and anim_set != null)
 
-func _process(_delta: float) -> void:
-	_play(_select_clip())
+func _process(delta: float) -> void:
+	_play(_select_clip(delta))
 	_anim.speed_scale = _target_speed_scale  # walk speed-warp (1.0 for every other clip)
 	# First person only: shrink our own head every frame (the animation rewrote the pose just before us).
 	if _is_local and _head_bone != -1:
@@ -86,23 +95,58 @@ func _process(_delta: float) -> void:
 		_update_debug_label()
 
 ## Pick the clip for the current state, highest priority first.
-func _select_clip() -> StringName:
+func _select_clip(delta: float) -> StringName:
 	var s: Dictionary = _player.locomotion_sample
 	_target_speed_scale = 1.0  # reset each frame; only the walk tier warps it (see _locomotion_clip)
 	if s.is_empty():
 		return _idle
 	if bool(s.get("seated", false)):
+		_reset_idle()
 		return _clip_or(anim_set.sit_idle, _idle)
 	var speed: float = float(s.get("planar_speed", 0.0))
 	# Jump owns its start -> loop(fall) -> land sequence. Landing WHILE MOVING skips the land pose (no
 	# forward glide before the walk resumes); _on_anim_finished advances the one-shots.
 	var jump: StringName = _jump_clip(bool(s.get("airborne", false)), speed >= MOVE_EPSILON)
 	if jump != &"":
+		_reset_idle()
 		return jump
 	if speed < MOVE_EPSILON:
 		_current_tier = Tier.WALK  # reset so resuming from idle starts in walk, not a stale sprint tier
-		return _idle
+		return _idle_clip(delta)
+	_reset_idle()
 	return _locomotion_clip(speed, float(s.get("forward", 0.0)), float(s.get("right", 0.0)))
+
+## Standing idle: mostly the base idle, with an occasional variation (look around, fold arms…) for life.
+func _idle_clip(delta: float) -> StringName:
+	_idle_timer += delta
+	if _idle_variation != &"":
+		if _idle_timer < _idle_variation_end:
+			return _idle_variation
+		_idle_variation = &""  # variation done -> back to base idle, schedule the next one
+		_idle_timer = 0.0
+		_next_idle_gap = randf_range(IDLE_GAP_MIN, IDLE_GAP_MAX)
+	elif _idle_timer >= _next_idle_gap:
+		var variation: StringName = _pick_idle_variation()
+		if variation != &"":
+			_idle_variation = variation
+			_idle_variation_end = _idle_timer + IDLE_VARIATION_DURATION
+			return variation
+		_idle_timer = 0.0  # nothing available yet (e.g. UAL2 not merged) — retry later
+	return _idle
+
+func _reset_idle() -> void:
+	_idle_timer = 0.0
+	_idle_variation = &""
+
+## A random idle variation that actually exists on this puppet, or &"" if none are available.
+func _pick_idle_variation() -> StringName:
+	if anim_set == null:
+		return &""
+	var available: Array[StringName] = []
+	for v in anim_set.idle_variations:
+		if v != &"" and _anim.has_animation(v):
+			available.append(v)
+	return available[randi() % available.size()] if not available.is_empty() else &""
 
 ## Jump state machine. Returns the jump clip to play, or &"" when grounded (locomotion takes over).
 ## START and LAND are one-shots; _on_anim_finished advances START -> LOOP and LAND -> GROUND.
