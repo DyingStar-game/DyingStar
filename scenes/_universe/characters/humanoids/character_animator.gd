@@ -66,6 +66,9 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export_range(0.0, 1.0) var head_cam_amount: float = 1.0
 ## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
 @export var head_cam_smooth: float = 12.0
+## Turn rate (rad/s) above which a STANDING, still player plays the in-place turn clip (Turn90_L/R) instead
+## of idle. Higher = only fast pivots trigger it; 0 disables. Flip turn_left/turn_right if the sides swap.
+@export var turn_rate_threshold: float = 1.2
 
 var _player  # the Player facade this body belongs to (untyped: typing Player would cycle, see PlayerClient)
 var _is_local: bool = false
@@ -235,6 +238,10 @@ func _select_clip(delta: float) -> StringName:
 	var carrying: bool = bool(s.get("carrying", false))
 	if speed < MOVE_EPSILON:
 		_current_tier = Tier.WALK  # reset so resuming from idle starts in walk, not a stale sprint tier
+		var turn: StringName = _turn_clip(float(s.get("yaw_rate", 0.0)))
+		if turn != &"":
+			_reset_idle()
+			return turn  # standing but pivoting: play the in-place turn instead of idle
 		if carrying and _has(anim_set.carry_idle):
 			_reset_idle()
 			return anim_set.carry_idle
@@ -452,6 +459,14 @@ func _crawl_clip(speed: float, forward: float, right: float) -> StringName:
 	if fs < 0:
 		return _clip_or(anim_set.prone_bwd, _clip_or(anim_set.prone_fwd, _idle))
 	return _clip_or(anim_set.prone_left if rs < 0 else anim_set.prone_right, _clip_or(anim_set.prone_fwd, _idle))
+
+## In-place turn clip when standing still but pivoting fast enough: left/right from the yaw-rate sign, or
+## &"" (too slow / clip missing / disabled). Flip turn_left/turn_right in the set if the sides feel swapped.
+func _turn_clip(yaw_rate: float) -> StringName:
+	if turn_rate_threshold <= 0.0 or absf(yaw_rate) < turn_rate_threshold:
+		return &""
+	var clip: StringName = anim_set.turn_left if yaw_rate > 0.0 else anim_set.turn_right
+	return clip if _has(clip) else &""
 
 ## Enter/exit transition clips for a stance (crouch/prone), or &"" if none / standing.
 func _stance_enter(stance: int) -> StringName:
