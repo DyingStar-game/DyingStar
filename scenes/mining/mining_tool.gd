@@ -68,12 +68,13 @@ const REJECT_DURATION := 0.3
 @export var reach_max: float = 1.2
 
 @export_group("Stow")
-## Where the perforator slides to when stowed (player carrying an ore), relative to its
-## rest position. It stays VISIBLE there (just lowered) and lerps back on unstow.
+## Where the stowed tool sits, RELATIVE TO THE BELT BONE (player.belt_mount, a bone attachment on the
+## animated puppet's hips): this is what places it on the mesh's belt, and it follows the body (walk/
+## crouch/jump). Per-tool (each tool holsters differently). Only the stowed pose — the reach uses its own.
 @export var stow_offset: Vector3 = Vector3(0.0, -0.5, 0.3)
-## How fast the perforator stows/unstows (higher = snappier).
+## How fast the perforator eases back out of the stow when re-equipped (higher = snappier).
 @export var stow_smooth: float = 10.0
-## Fixed rotation (deg) of the perforator while stowed — no camera influence (#124).
+## Rotation (deg) of the stowed tool relative to the belt bone.
 @export var stow_rotation_deg: Vector3 = Vector3(5.0, -90.0, 95.1)
 
 ## True while aiming (read by the player to slow the mouse/movement).
@@ -90,6 +91,7 @@ var _perforation_t: float = 0.0
 var _perforator_rest_pos: Vector3 = Vector3.ZERO
 var _bit_rest: Vector3 = Vector3.ZERO
 var _rock_ray: RayCast3D = null
+var _belt: Node3D = null  # cached shared belt mount (bone attachment on the puppet) — see _belt_mount
 var _crosshair_shown: bool = false
 var _target_rock_uuid: String = ""     # rock aimed when the perforation started
 var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
@@ -122,7 +124,7 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_perforator.visible = true   # always visible: stowed pose by default / at spawn (#124)
 	_equipment_mount.hold(_perforator)
 	_perforator_rest_pos = _perforator.position
-	_perforator_base = _perforator_rest_pos + stow_offset   # start in the stowed pose
+	_perforator_base = _perforator_rest_pos   # sane init; the belt holster owns the stowed world pose
 	_bit = _perforator.get_node_or_null(bit_node_name)
 	if _bit:
 		_bit_rest = _bit.position
@@ -170,10 +172,33 @@ func _process(delta: float) -> void:
 	_update_stow_and_reach(delta)
 	if _perforator != null:
 		_perforator.position = _perforator_base   # default; the visuals jab on top of it
+		# Stowed: holster the tool on the shared belt mount (a bone attachment on the animated puppet) with
+		# THIS tool's own offset, so it follows the body (walk/crouch/jump). (The owner doesn't see his own
+		# stowed tool; this is for remotes.) Falls back to the fixed mount pose if the puppet has no belt.
+		var belt: Node3D = _belt_mount()
+		if belt != null and not _perforator_active():
+			_perforator.global_transform = belt.global_transform * _holster_transform()
 	# Perforation visual runs on EVERY instance, driven by is_perforating.
 	_update_perforation_visual(delta)
 	# Off-fault "rejected" jab (owner-local feedback): the bit lunges out then snaps back.
 	_update_reject_visual(delta)
+
+## The shared belt attachment point on the animated puppet (a BoneAttachment3D on the hip bone, created
+## once by CharacterAnimator). ANY tool holsters onto it with its OWN offset — the mount is generic, the
+## offset is per-tool. Cached; null (fall back to the fixed pose) until the puppet + mount exist.
+func _belt_mount() -> Node3D:
+	if _belt != null:
+		return _belt
+	var body: Node = get_parent()
+	if body != null and "belt_mount" in body:
+		_belt = body.belt_mount
+	return _belt
+
+## This tool's stowed pose relative to the belt mount — places it on the mesh's belt (per-tool). Keeps the
+## tool's own scale (setting global_transform would otherwise inherit the bone's).
+func _holster_transform() -> Transform3D:
+	var basis := Basis.from_euler(stow_rotation_deg * (PI / 180.0)).scaled(Vector3.ONE * equipment_item_scale)
+	return Transform3D(basis, stow_offset)
 
 ## Decide the perforator's rest target: stowed pose (carrying an ore) vs reach. The tool
 ## STAYS visible at the stow pose (just lowered), it is not hidden — for everyone (#124).
@@ -182,9 +207,9 @@ func _update_stow_and_reach(delta: float) -> void:
 	if active:
 		_update_reach(delta)
 	else:
-		# Stowed (carrying OR not equipped): lerp to a fixed lowered pose.
-		var stow_target := _perforator_rest_pos + stow_offset
-		_perforator_base = _perforator_base.lerp(stow_target, clampf(stow_smooth * delta, 0.0, 1.0))
+		# Stowed: the belt holster sets the real world pose (see _process, on the animated hips). Keep the
+		# base easing to rest so re-equipping slides out cleanly, and as the no-puppet fallback.
+		_perforator_base = _perforator_base.lerp(_perforator_rest_pos, clampf(stow_smooth * delta, 0.0, 1.0))
 	if _perforator != null:
 		# Visible to OTHER players when stowed (pose at spawn), but the local owner does
 		# NOT see his own stowed perforator (first-person clutter). Always visible when out.

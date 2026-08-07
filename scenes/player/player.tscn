@@ -68,6 +68,7 @@ events = [SubResource("InputEventKey_2sxo3")]
 collision_layer = 2
 collision_mask = 15
 script = ExtResource("1_ll2l8")
+carry_offset = Vector3(0, -1, -0.995)
 sfx_torch_on = ExtResource("2_4hvnv")
 sfx_torch_on_distance = 5.0
 sfx_torch_off = ExtResource("3_bbmj2")
@@ -520,7 +521,7 @@ mouse_filter = 1
 layout_mode = 1
 
 [node name="hammerdrill" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
-transform = Transform3D(5.406316161536077e-17, -2.8745892936326145e-17, -1, 0.4694715627858908, 0.882947592858927, 5.4415846669172385e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
+transform = Transform3D(5.4063161615360776e-17, -2.8745892936326145e-17, -1, 0.4694715627858908, 0.882947592858927, 8.354401634806166e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
@@ -534,8 +535,8 @@ perforation_hammer_amplitude = 0.01
 perforation_shake_amplitude = 0.003
 equipment_item_scale = 1.0
 bit_tip_offset = Vector3(-0.55, 0.24, 0)
-stow_offset = Vector3(-0.26, -0.06, 0.6)
-stow_rotation_deg = Vector3(15, -98, 95.1)
+stow_offset = Vector3(-0.145, 0.07, -0.1)
+stow_rotation_deg = Vector3(19.6, 83.175, 99.77)
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

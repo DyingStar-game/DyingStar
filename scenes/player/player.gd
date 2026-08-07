@@ -183,6 +183,10 @@ var seated_role: String = ""
 ## Movement stance, replicated so remotes show it: 0 = standing, 1 = crouched, 2 = prone. Server-owned —
 ## it caps the speed, resizes the collider, and drives the crouch/crawl animation.
 var stance: int = 0
+## Shared belt attachment point (a BoneAttachment3D on the puppet's hip bone, created by CharacterAnimator):
+## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
+## dedicated server (no puppet).
+var belt_mount: Node3D = null
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
