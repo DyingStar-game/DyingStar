@@ -6,6 +6,7 @@ extends Control
 @onready var _show_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/ShowDebug/Button
 @onready var _cargo_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/CargoDebug/Button
 @onready var _celestial_gizmos: Button = $ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos/Button
+@onready var _movement_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/MovementDebug/Button
 
 func _ready() -> void:
 	_show_debug.toggle_mode = true
@@ -23,6 +24,11 @@ func _ready() -> void:
 	_celestial_gizmos.text = "On" if _celestial_gizmos.button_pressed else "Off"
 	_celestial_gizmos.toggled.connect(_on_celestial_gizmos_toggled)
 
+	_movement_debug.toggle_mode = true
+	_movement_debug.button_pressed = SettingsManager.is_movement_debug()
+	_movement_debug.text = "On" if _movement_debug.button_pressed else "Off"
+	_movement_debug.toggled.connect(_on_movement_debug_toggled)
+
 ## Show/hide the in-game debug panels. Kept in sync with the toggle_debug key via SettingsManager.
 func _on_show_debug_toggled(on: bool) -> void:
 	_show_debug.text = "On" if on else "Off"
@@ -36,3 +42,8 @@ func _on_cargo_debug_toggled(on: bool) -> void:
 func _on_celestial_gizmos_toggled(on: bool) -> void:
 	_celestial_gizmos.text = "On" if on else "Off"
 	SettingsManager.set_celestial_gizmos(on)
+
+## Show/hide the movement debug readout (speed / mouse-wheel walk tier / current animation clip).
+func _on_movement_debug_toggled(on: bool) -> void:
+	_movement_debug.text = "On" if on else "Off"
+	SettingsManager.set_movement_debug(on)

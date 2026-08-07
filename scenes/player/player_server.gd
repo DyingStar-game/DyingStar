@@ -63,6 +63,14 @@ var _spawn_queue: Array[String] = []
 ## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
 var _los_ray: RayCast3D = null
 var _carry_prompt_timer: float = 0.0
+## Gait, set by the owner's replicated intent (see server_action_received): sprint held, and the
+## mouse-wheel-chosen walk speed (0 until first set -> fall back to the default walk_speed).
+var _sprint_held: bool = false
+var _walk_speed_target: float = 0.0
+## Landing: the server emits a "land:<n>" event (via the whitelisted `action` field, like the jump) the
+## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
+var _land_count: int = 0
+var _was_airborne: bool = false
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -78,6 +86,12 @@ func server_action_received(data: Dictionary) -> void:
 	match data["action"]:
 		JUMP:
 			player.is_jumping = true
+		"sprint":
+			_sprint_held = bool(data.get("held", false))  # Shift held: run at sprint_speed
+		"walk_speed":
+			# Mouse-wheel-chosen walk speed (owner intent), clamped to the allowed range.
+			_walk_speed_target = clampf(float(data.get("value", player.walk_speed)),
+				player.walk_speed_min, player.walk_speed_max)
 		"toggle_flashlight":
 			# Server-authoritative: flip the state and replicate it so the owner AND other players
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
@@ -466,7 +480,6 @@ func _physics_process(delta: float) -> void:
 	else:
 		_idle_settled_ticks = 0
 
-	var sprint = null
 	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
 
 	if parent_gravity_area:
@@ -488,7 +501,9 @@ func _physics_process(delta: float) -> void:
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
-	var speed = player.sprint_speed if sprint else player.walk_speed
+	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (default until first set).
+	var walk_target: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
+	var speed = player.sprint_speed if _sprint_held else walk_target
 	if player.mining_tool.is_aiming:
 		speed *= player.mining_tool.aim_speed_factor  # slowed down in aim mode
 	if player.mining_tool.is_perforating:
@@ -497,10 +512,14 @@ func _physics_process(delta: float) -> void:
 		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
 
 	if player.is_on_floor():
-		if player.input_direction:
-			player.velocity = move_direction * speed
-		else:
-			player.velocity = player.velocity.move_toward(Vector3.ZERO, speed)
+		# Accelerate/decelerate the HORIZONTAL velocity toward the target at `acceleration` (m/s²), so the
+		# player ramps up to speed and coasts to a stop instead of snapping. The vertical component
+		# (gravity / jump, along up_direction) is preserved untouched.
+		var up: Vector3 = player.up_direction
+		var vertical: Vector3 = up * player.velocity.dot(up)
+		var target: Vector3 = move_direction * speed if player.input_direction else Vector3.ZERO
+		var horizontal: Vector3 = (player.velocity - vertical).move_toward(target, player.acceleration * delta)
+		player.velocity = horizontal + vertical
 	else:
 		# "air" movement
 		if player.input_direction:
@@ -528,6 +547,14 @@ func _physics_process(delta: float) -> void:
 		player.velocity = player.velocity.normalized() * _terminal_velocity
 
 	player.move_and_slide()
+
+	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
+	# clients end the jump loop crisply (it can't overstay). The counter defeats delta compression.
+	var grounded_now: bool = player.is_on_floor()
+	if grounded_now and _was_airborne:
+		_land_count += 1
+		player.server_send_properties_to_client({"action": "land:%d" % _land_count})
+	_was_airborne = not grounded_now
 
 	# Safety net: catch a fast fall that tunneled clearly below the planet surface.
 	if parent_gravity_area and parent_gravity_area.gravity_point \

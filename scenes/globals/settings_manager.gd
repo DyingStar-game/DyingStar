@@ -6,6 +6,7 @@ signal cargo_debug_changed(on: bool)
 signal fov_changed(fov: float)
 ## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
 signal show_debug_changed(on: bool)
+signal movement_debug_changed(on: bool)
 ## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
 signal shadows_changed(on: bool)
 ## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
@@ -49,6 +50,7 @@ func initialize_settings():
 	config.set_value("general", "celestial_gizmos", false)
 	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
 	config.set_value("general", "show_debug", true)
+	config.set_value("general", "movement_debug", false)
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
 
@@ -229,6 +231,16 @@ func set_show_debug(on: bool) -> void:
 
 func is_show_debug() -> bool:
 	return config.get_value("general", "show_debug", true)
+
+## Movement debug: a small on-screen readout (speed / mouse-wheel walk tier / current animation clip).
+## Lives under [general]; emits so the player HUD toggles live. Default off (dev/calibration aid).
+func set_movement_debug(on: bool) -> void:
+	config.set_value("general", "movement_debug", on)
+	save_settings()
+	movement_debug_changed.emit(on)
+
+func is_movement_debug() -> bool:
+	return config.get_value("general", "movement_debug", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)
