@@ -139,6 +139,8 @@ func _process_stance_request() -> void:
 	_stance = _stance_request
 	_apply_stance_collider(_stance)
 	player.stance = _stance
+	if _stance != 0 and player.hands_item != null:  # crouch/prone can't hold a carried box -> drop it
+		_server_drop_carried_item()
 	player.server_send_properties_to_client({"stance": _stance})
 
 ## Authoritative dispatcher for a client action, called by the network layer through Player (only the
@@ -147,6 +149,8 @@ func server_action_received(data: Dictionary) -> void:
 	match data["action"]:
 		JUMP:
 			player.is_jumping = true
+			if player.hands_item != null:
+				_server_drop_carried_item()  # jumping drops what you carry
 		"sprint":
 			_sprint_held = bool(data.get("held", false))  # Shift held: run at sprint_speed
 		"stance":
@@ -319,7 +323,7 @@ func server_action_received(data: Dictionary) -> void:
 				var picked_up := false
 				# Server-authoritative: same gate as the client — grabbable (not already carried) AND a
 				# clear line of sight, so a thin wall can't be exploited to grab through it.
-				var can_grab: bool = parent_node != null and parent_node.has_method("interact") \
+				var can_grab: bool = _stance == 0 and parent_node != null and parent_node.has_method("interact") \
 						and parent_node.interact(player) and not _is_blocked_by_geometry(parent_node)
 				if can_grab:
 					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
@@ -957,6 +961,8 @@ func _compute_carry_prompt() -> String:
 		if _cargo_bed_for_drop(player.hands_item.global_position) != null:
 			return "cargo"  # dropping here loads it into the bed (sticks)
 		return "drop"
+	if _stance != 0:
+		return ""  # standing only: no "pick up" prompt while crouched or prone
 	player.interact_ray.force_raycast_update()
 	var prop = player._aimed_carriable()
 	if prop != null and prop.has_method("interact") and prop.interact(player) \
