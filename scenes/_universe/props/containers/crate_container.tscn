@@ -1,26 +1,27 @@
 [gd_scene format=3 uid="uid://d2s14o4v7mrcl"]
 
-[ext_resource type="PackedScene" uid="uid://tk27ud5kcl38" path="res://assets/_universe/props/containers/pallet_container.glb" id="1_i7idy"]
-[ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/pallet_container.gd" id="1_ync2l"]
+[ext_resource type="PackedScene" uid="uid://tk27ud5kcl38" path="res://assets/_universe/props/containers/crate_container.glb" id="1_i7idy"]
+[ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/crate_container.gd" id="1_ync2l"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="2_pe8a8"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="3_i7idy"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_t7ntl"]
 size = Vector3(0.8018728106103481, 0.9531683567988694, 1.1382587054849864)
 
-[node name="PalletContainer" type="RigidBody3D" unique_id=923994791]
+[node name="CrateContainer" type="RigidBody3D" unique_id=923994791]
 collision_layer = 8
 collision_mask = 15
 mass = 500.0
 script = ExtResource("1_ync2l")
-type_name = "pallet_container"
+type_name = "crate_container"
+carriable = false
 
-[node name="pallet_container" parent="." unique_id=1626612544 instance=ExtResource("1_i7idy")]
+[node name="crate_container" parent="." unique_id=1626612544 instance=ExtResource("1_i7idy")]
 
-[node name="box_container" parent="pallet_container" index="0" unique_id=110172060]
+[node name="box_container" parent="crate_container" index="0" unique_id=110172060]
 surface_material_override/0 = ExtResource("2_pe8a8")
 
-[node name="box_container_decals" parent="pallet_container" index="1" unique_id=1092799742]
+[node name="box_container_decals" parent="crate_container" index="1" unique_id=1092799742]
 surface_material_override/0 = ExtResource("3_i7idy")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=273505527]
@@ -35,4 +36,4 @@ collision_layer = 32
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)
 shape = SubResource("BoxShape3D_t7ntl")
 
-[editable path="pallet_container"]
+[editable path="crate_container"]
