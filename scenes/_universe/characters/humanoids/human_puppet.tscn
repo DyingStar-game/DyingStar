@@ -1,13 +1,13 @@
-[gd_scene load_steps=4 format=3 uid="uid://c21kv16wh1y4q"]
+[gd_scene format=3 uid="uid://c21kv16wh1y4q"]
 
-[ext_resource type="PackedScene" uid="uid://dcbeg7tbx16k1" path="res://assets/Universal Animation Library/Unreal-Godot/UAL1.glb" id="1_ual1"]
-[ext_resource type="Script" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="2_animator"]
-[ext_resource type="Resource" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="3_animset"]
+[ext_resource type="PackedScene" uid="uid://cdbvqsk44j6dc" path="res://assets/_universe/characters/humanoids/UALDyingStar.glb" id="1_xhonh"]
+[ext_resource type="Script" uid="uid://dtb3oqqid36t1" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="2_animator"]
+[ext_resource type="Resource" uid="uid://dti7f5itnvf0f" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="3_animset"]
 
-[node name="human_puppet" type="Node3D"]
+[node name="human_puppet" type="Node3D" unique_id=29721753]
 
-[node name="UAL1" parent="." instance=ExtResource("1_ual1")]
+[node name="UALDyingStar" parent="." unique_id=1072648671 instance=ExtResource("1_xhonh")]
 
-[node name="CharacterAnimator" type="Node" parent="."]
+[node name="CharacterAnimator" type="Node" parent="." unique_id=1539693114]
 script = ExtResource("2_animator")
 anim_set = ExtResource("3_animset")
