@@ -146,10 +146,18 @@ func _select_clip(delta: float) -> StringName:
 		if emote_clip != &"":
 			_reset_idle()
 			return emote_clip
+	# Carrying a box: the arms-full pose overrides the normal gait (still split standing vs moving). The
+	# carried speed is capped (x0.5) so it always reads as a walk. Falls back to locomotion if unavailable.
+	var carrying: bool = bool(s.get("carrying", false))
 	if speed < MOVE_EPSILON:
 		_current_tier = Tier.WALK  # reset so resuming from idle starts in walk, not a stale sprint tier
+		if carrying and _has(anim_set.carry_idle):
+			_reset_idle()
+			return anim_set.carry_idle
 		return _idle_clip(delta)
 	_reset_idle()
+	if carrying and _has(anim_set.carry_move):
+		return anim_set.carry_move
 	return _locomotion_clip(speed, float(s.get("forward", 0.0)), float(s.get("right", 0.0)))
 
 ## Standing idle: mostly the base idle, with an occasional variation (look around, fold arms…) for life.

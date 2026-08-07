@@ -66,7 +66,9 @@ extends Resource
 # Carrying a crate: these clips live in UAL2, so they resolve only once UAL2 is merged into the puppet
 # (until then has_animation() fails and the animator falls back to normal locomotion).
 @export_group("Carry")
-@export var carry_idle: StringName = &"LiftAir_Idle"
+## No good arms-full IDLE clip yet (LiftAir_Idle didn't read as carrying) -> empty = fall back to the
+## normal idle while carrying and standing still. Only the moving carry (Walk_Carry) is wired for now.
+@export var carry_idle: StringName = &""
 @export var carry_move: StringName = &"Walk_Carry"
 
 @export_group("Sit")
