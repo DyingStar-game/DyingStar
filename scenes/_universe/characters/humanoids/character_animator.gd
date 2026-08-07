@@ -43,6 +43,8 @@ const IDLE_VARIATION_DURATION: float = 6.0
 
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
 @export var anim_set: CharacterAnimationSet
+## Bone the shared belt mount follows (Unreal rig: "pelvis" = hips). Tools holster onto player.belt_mount.
+@export var belt_bone: StringName = &"pelvis"
 ## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
 ## SitPoint: the body origin rides the seat at STANDING height, so without this the seated mesh floats.
 ## Tune live in the Inspector. Applied to the puppet only — the owner's camera is a sibling, so its
@@ -125,6 +127,7 @@ func setup(player_body, is_local: bool) -> void:
 		_head_bone = _skeleton.find_bone(&"Head")  # local: hidden in first person; all: tilted to look pitch
 		if _head_bone == -1:
 			_head_bone = _skeleton.find_bone(&"head")  # some rigs (Unreal naming) use lowercase
+		_create_belt_mount()  # shared holster point any tool hangs on (follows the animated hips)
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -132,6 +135,19 @@ func setup(player_body, is_local: bool) -> void:
 	if _is_local:
 		_create_debug_label()  # on-screen speed / wheel / clip readout, toggled by Settings "Show debug"
 	set_process(_anim != null and anim_set != null)
+
+## Create the shared belt mount: a BoneAttachment3D that follows the hip bone. Any tool holsters its stowed
+## model onto player.belt_mount (with the tool's OWN offset), so it moves with the animated body (DRY).
+func _create_belt_mount() -> void:
+	if _skeleton == null or _player == null:
+		return
+	var belt := BoneAttachment3D.new()
+	belt.name = "BeltMount"
+	_skeleton.add_child(belt)
+	belt.bone_name = String(belt_bone)
+	if belt.bone_idx == -1:
+		belt.bone_name = String(belt_bone).capitalize()  # case fallback (e.g. Pelvis)
+	_player.belt_mount = belt
 
 func _process(delta: float) -> void:
 	_play(_select_clip(delta))
