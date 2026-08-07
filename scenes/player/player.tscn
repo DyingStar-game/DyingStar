@@ -24,6 +24,7 @@
 [ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/player/debug/debug_client_fps.gd" id="9_2g0ng"]
 [ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
 [ext_resource type="Script" uid="uid://cl7pwq5jalp1i" path="res://scenes/player/debug/debug_altitude.gd" id="9_alt"]
+[ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="9_genst"]
 [ext_resource type="Script" uid="uid://dlan2ws7xee5x" path="res://scenes/player/debug/debug_planet_time.gd" id="9_ptime"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/player/debug/debug_client_nbplayers.gd" id="10_udrf3"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
@@ -63,14 +64,10 @@ keycode = 77
 [sub_resource type="Shortcut" id="Shortcut_k55v7"]
 events = [SubResource("InputEventKey_2sxo3")]
 
-[node name="NormalPlayer" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
+[node name="Player" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
 collision_layer = 2
 collision_mask = 15
 script = ExtResource("1_ll2l8")
-walk_speed = 5.0
-sprint_speed = 10.0
-carry_offset = Vector3(0, -1, -1.5)
-interact_ray_length = 1.5
 sfx_torch_on = ExtResource("2_4hvnv")
 sfx_torch_on_distance = 5.0
 sfx_torch_off = ExtResource("3_bbmj2")
@@ -81,17 +78,22 @@ sfx_jump = ExtResource("8_wva7c")
 sfx_jump_distance = 10.0
 metadata/client_uuid = ""
 
+[node name="Puppet" parent="." unique_id=771997724 instance=ExtResource("9_genst")]
+transform = Transform3D(-1, 0, 1.2246064e-16, 0, 1, 0, -1.2246064e-16, 0, -1, 0, 0, 0)
+
 [node name="Placeholder_Collider" type="CollisionShape3D" parent="." unique_id=1694334487]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)
+visible = false
 shape = SubResource("CapsuleShape3D_2jk7f")
 
 [node name="Astronaut" parent="Placeholder_Collider" unique_id=1509544063 instance=ExtResource("2_rulc8")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8999999999941792, 0)
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=1090822478]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, -0.17080691769016806)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=2070954965]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06321329597513792, 0.08517313207512923)
 fov = 100.0
 far = 10000000000000.01
 
@@ -104,6 +106,7 @@ collide_with_bodies = false
 [node name="Torch" type="SpotLight3D" parent="CameraPivot/Camera3D" unique_id=1256401590]
 visible = false
 light_energy = 2.0
+shadow_enabled = true
 spot_range = 25.0
 spot_angle = 41.4246
 
@@ -516,8 +519,8 @@ mouse_filter = 1
 [node name="PauseMenu" parent="UserInterface" unique_id=1074791477 instance=ExtResource("11_edphc")]
 layout_mode = 1
 
-[node name="hammerdrill2" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
-transform = Transform3D(5.406494717047727e-17, -2.8746842332822335e-17, -1, 0.4694715627858908, 0.882947592858927, 0, 0.882947592858927, -0.4694715627858908, 6.123233995736766e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
+[node name="hammerdrill" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
+transform = Transform3D(5.406316161536077e-17, -2.8745892936326145e-17, -1, 0.4694715627858908, 0.882947592858927, 5.4415846669172385e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
@@ -529,11 +532,10 @@ perforation_hammer_freq = 4.0
 bit_axis = Vector3(1, 0, 0)
 perforation_hammer_amplitude = 0.01
 perforation_shake_amplitude = 0.003
-equipment_hand_offset = Vector3(0.4, 1, 0.1)
-equipment_item_offset = Vector3(0, -0.15, -0.2)
 equipment_item_scale = 1.0
 bit_tip_offset = Vector3(-0.55, 0.24, 0)
-stow_offset = Vector3(-0.16, 0.04, 0.3)
+stow_offset = Vector3(-0.26, -0.06, 0.6)
+stow_rotation_deg = Vector3(15, -98, 95.1)
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

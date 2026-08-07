@@ -58,35 +58,47 @@ const TELEPORT_TARGETS := {
 ## Body mass (kg) added to a vehicle's total weight when seated. Mass is gravity-independent
 ## (75 kg everywhere); only the WEIGHT changes with gravity. CharacterBody3D has no built-in mass.
 @export var mass: float = 75.0
-@export var walk_back_speed: float = 1.5
-@export var walk_speed: float = 2.5
-@export var player_thruster_force = 10
+
+@export_subgroup("Movement")
+@export var walk_speed: float = 1.5
+@export var walk_back_speed: float = 0.8
+## Walk speed is adjustable by the mouse wheel between these bounds, in walk_speed_step increments
+## (GDD: 0.5-3 m/s, 6 tiers). walk_speed above is the initial/default tier; the top tiers look like a jog.
+@export var walk_speed_min: float = 0.5
+@export var walk_speed_max: float = 3.0
+@export var walk_speed_step: float = 0.5
 @export var sprint_speed: float = 5.0
-@export var crouch_speed: float = 1.5
+@export var crouch_speed: float = 0.8
+@export var jump_height: float = 0.5
+@export var regular_climb_speed: float = 6.0
+@export var fast_climb_speed: float = 8.0
+# Speed multiplier while carrying an ore (issue #124): slower with hands full.
+@export var carry_speed_factor: float = 0.5
+## Placeholder: smooth accel/decel toward the target speed. NOT wired yet (velocity is set directly),
+## so this currently has no effect.
+@export var acceleration: float = 10.0
+
+@export_subgroup("EVA / 0g")
 ## EVA (dev free-flight) cruise speed in m/s. Toggled with the `toggle_eva` action ('$' by default,
 ## remappable in Settings > Controls). A test aid to fly around a body and inspect its day/night faces:
 ## the server detaches the player from gravity and flies it where the camera looks, ignoring collision.
 @export var eva_speed: float = 2000.0
-# Movement speed multiplier while carrying an ore (issue #124): slower with hands full.
-@export var carry_speed_factor: float = 0.5
+@export var player_thruster_force = 10
+
+@export_subgroup("Carry & interaction")
 ## Where a carried item floats, relative to the player body (issue #124): head height, a
 ## bit below the eye line and ahead. Body-relative (yaw only, no camera pitch).
-@export var carry_offset: Vector3 = Vector3(0.0, -0.2, -1.2)
+@export var carry_offset: Vector3 = Vector3(0.0, -1.0, -1.5)
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
 ## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
-@export var interact_ray_length: float = 3.0
-@export var jump_height: float = 1.0
-@export var acceleration: float = 10.0
+@export var interact_ray_length: float = 1.5
 @export var arm_length: float = 0.5
-@export var regular_climb_speed: float = 6.0
-@export var fast_climb_speed: float = 8.0
+
+@export_subgroup("Camera")
 @export_range(0.0, 1.0) var view_bobbing_amount: float = 1.0
 @export_range(1.0, 10.0) var camera_sensitivity: float = 2.0
-
 @export_range(0.0, 0.5) var camera_start_deadzone: float = .2
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
-
-@export var gravity = 0.0
 
 # --- Audio SFX — all OPTIONAL: an unassigned sound simply plays nothing -------
 # Drop an audio file straight into a Sound slot; each sound then has its own volume, fade-out curve
@@ -150,6 +162,13 @@ var movement_strength: float
 var mouse_motion: Vector2
 var is_jumping: bool = false
 
+## Per-frame derived locomotion of THIS body (planar/vertical speed, body-frame move direction, airborne,
+## seated), computed once by PlayerClient._sample_locomotion and read by the footsteps AND the puppet's
+## CharacterAnimator — so the same numbers drive both, on the owner and on every remote avatar (DRY).
+var locomotion_sample: Dictionary = {}
+## Owner's current mouse-wheel-chosen walk speed (m/s) — mirrored here by PlayerClient for the debug HUD.
+var walk_speed_target: float = 0.0
+
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
 
@@ -161,6 +180,9 @@ var hunger: int = 100
 var thirst: int = 100
 var integrity: int = 3
 
+## Current local gravity (m/s²), recomputed each physics tick by the server from the gravity area the
+## player is in (see _compute_gravity) — runtime state, not a tunable stat. 0 = zero-g fallback.
+var gravity: float = 0.0
 var gravity_parents: Array[Area3D]
 
 var last_basis: Basis
@@ -262,6 +284,7 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var labely: Label = $UserInterface/Debug/LabelYValue
 @onready var labelz: Label = $UserInterface/Debug/LabelZValue
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
+@onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 @onready var interact_label: Label = $UserInterface/HUD/InteractLabel
 @onready var camera_pivot: Node3D = $CameraPivot

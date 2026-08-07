@@ -1,0 +1,73 @@
+class_name CharacterAnimationSet
+extends Resource
+
+## Maps a character's logical states to the animation CLIP NAMES on its AnimationPlayer. Data only,
+## no logic. One set per skeleton/model: these defaults target the Quaternius UAL rig; a retargeted
+## Astronaut would get its own set, driven by the same CharacterAnimator (DRY). An empty slot means
+## "not available on this model" -> the animator falls back to a sensible clip (see CharacterAnimator).
+## NOTE: Godot's glTF importer STRIPS a trailing "_Loop" from clip names (and marks them looping), so
+## the names below are the source clip names WITHOUT "_Loop" (e.g. source "Idle_Loop" -> "Idle").
+
+@export_group("Idle")
+@export var idle: StringName = &"Idle"
+
+# Slow gait (~walk_speed). UAL1 only ships a forward walk; the strafe slots stay empty and fall back.
+@export_group("Walk")
+@export var walk_fwd: StringName = &"Walk"
+@export var walk_bwd: StringName = &""
+@export var walk_left: StringName = &""
+@export var walk_right: StringName = &""
+@export var walk_fwd_left: StringName = &""
+@export var walk_fwd_right: StringName = &""
+@export var walk_bwd_left: StringName = &""
+@export var walk_bwd_right: StringName = &""
+
+# Fast gait (~sprint_speed) — fully directional in UAL1 (the "Jog" clips).
+@export_group("Run")
+@export var run_fwd: StringName = &"Jog_Fwd"
+@export var run_bwd: StringName = &"Jog_Bwd"
+@export var run_left: StringName = &"Jog_Left"
+@export var run_right: StringName = &"Jog_Right"
+@export var run_fwd_left: StringName = &"Jog_Fwd_L"
+@export var run_fwd_right: StringName = &"Jog_Fwd_R"
+@export var run_bwd_left: StringName = &"Jog_Bwd_L"
+@export var run_bwd_right: StringName = &"Jog_Bwd_R"
+
+# Optional top gait (not triggered by the current 2-speed movement; ready for a future tier).
+@export_group("Sprint")
+@export var sprint_enter: StringName = &"Sprint_Enter"
+@export var sprint_loop: StringName = &"Sprint"
+@export var sprint_exit: StringName = &"Sprint_Exit"
+
+# Crouch MOVEMENT is deferred; the clips already exist so the slots are wired ahead of time.
+@export_group("Crouch")
+@export var crouch_idle: StringName = &"Crouch_Idle"
+@export var crouch_fwd: StringName = &"Crouch_Fwd"
+@export var crouch_bwd: StringName = &"Crouch_Bwd"
+@export var crouch_left: StringName = &"Crouch_Left"
+@export var crouch_right: StringName = &"Crouch_Right"
+@export var crouch_enter: StringName = &"Crouch_Enter"
+@export var crouch_exit: StringName = &"Crouch_Exit"
+
+# In-place turn (needs yaw-rate detection, deferred).
+@export_group("Turn")
+@export var turn_left: StringName = &"Turn90_L"
+@export var turn_right: StringName = &"Turn90_R"
+
+@export_group("Jump")
+@export var jump_start: StringName = &"Jump_Start"
+@export var jump_loop: StringName = &"Jump"
+@export var jump_land: StringName = &"Jump_Land"
+
+# Carrying a crate: these clips live in UAL2, so they resolve only once UAL2 is merged into the puppet
+# (until then has_animation() fails and the animator falls back to normal locomotion).
+@export_group("Carry")
+@export var carry_idle: StringName = &"LiftAir_Idle"
+@export var carry_move: StringName = &"Walk_Carry"
+
+@export_group("Sit")
+@export var sit_enter: StringName = &"Sitting_Enter"
+@export var sit_idle: StringName = &"Sitting_Idle"
+@export var sit_exit: StringName = &"Sitting_Exit"
+@export var sit_driving: StringName = &"Driving"
+@export var sit_passenger: StringName = &"Sitting_Nodding"

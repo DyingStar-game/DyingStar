@@ -15,6 +15,10 @@ const MAX_STEP_CLIMB_SPEED: float = 2.5
 const MIN_AIR_TIME: float = 0.2
 ## Vertical speed (m/s) under which an airborne player counts as landed.
 const MAX_LANDED_CLIMB_SPEED: float = 1.0
+## Smoothing rate (per second) for the DERIVED locomotion speed/direction. Position streams at ~30 Hz and
+## the interpolator settles between updates, so raw per-frame speed is bursty and would flicker the walk
+## animation on and off. Exponential smoothing at this rate keeps it steady (also stabilizes Jog direction).
+const LOCO_SMOOTH_RATE: float = 8.0
 
 ## Client-side logic for a player — runs on every client instance, never on the server. Covers the
 ## OWNER (local input, camera, HUD prompts, prediction) and a REMOTE avatar (interpolation, name tag).
@@ -37,9 +41,15 @@ var _name_tag: Label = null
 ## (torch already on…) is a snapshot, not something that just happened, and must stay silent.
 var _sfx_live: bool = false
 var _step_distance: float = 0.0    # metres walked since the last footstep
-var _step_last_position: Vector3 = Vector3.ZERO  # to measure that distance, frame to frame
+var _loco_last_position: Vector3 = Vector3.ZERO  # previous body position, to derive per-frame movement
+var _smooth_speed: float = 0.0    # low-passed planar speed (m/s), fed to the animator AND the footsteps
+var _smooth_forward: float = 0.0  # low-passed forward component (m/s, body frame): + = forward
+var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame): + = strafe right
+var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
+var _walk_speed_target: float = 0.0  # mouse-wheel-chosen walk speed (owner), 0 until the first change
 var _step_last_index: int = -1     # which footstep sample was played last (never twice in a row)
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
+var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
 
@@ -47,6 +57,11 @@ var _air_time: float = 0.0         # seconds spent in the air since that jump
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
 ## the camera, then go live after a short delay. (This is the former client/remote branches of _ready.)
 func setup() -> void:
+	# The animated puppet is the visible body now — for the owner (first person) and remotes alike.
+	player.astronaut.visible = false
+	var animator = player.puppet.get_node_or_null("CharacterAnimator")
+	if animator != null:
+		animator.setup(player, not player.remote_player)
 	if player.remote_player:
 		player.camera.current = false
 		_setup_name_tag(str(player.name))
@@ -123,6 +138,7 @@ func setup() -> void:
 ## HUD prompts / mouse capture / input sampling. Runs on this role's own child node, so the engine
 ## calls it only on a client (never the dedicated server). Reaches the shared body through `player`.
 func _process(_delta: float) -> void:
+	_sample_locomotion(_delta)  # one shared computation for the footsteps AND the puppet animator
 	_update_footsteps(_delta)  # own body AND remote avatars: everyone hears everyone walk
 	if player.remote_player:
 		player._interp.update(player, _delta)  # entity interpolation: glide between server updates
@@ -273,6 +289,12 @@ func _physics_process(delta: float) -> void:
 		player.client_last_global_rotation = short_rotation
 		player.emit_signal("hs_client_action_move", player.input_direction, short_rotation)
 	player.update_last_basis()
+
+	# Sprint (Shift held) is server-authoritative: send only when it changes (replicate what changes).
+	var sprint_held: bool = Input.is_action_pressed(player.SPRINT)
+	if sprint_held != _sprint_sent:
+		_sprint_sent = sprint_held
+		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
 
 	player.labelx.text = str("%0.2f" % player.global_position[0])
 	player.labely.text = str("%0.2f" % player.global_position[1])
@@ -447,6 +469,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": 1})
 		elif event.is_action_pressed("carry_rotate_ccw"):
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": -1})
+	elif event.is_action_pressed("walk_speed_up") or event.is_action_pressed("walk_speed_down"):
+		# GDD: the mouse wheel sets the walk speed (0.5-3 m/s, 0.5 steps). Server-authoritative — we send
+		# the new target; the server clamps and applies it. (Carrying uses the wheel to rotate, above.)
+		var step: float = player.walk_speed_step if event.is_action_pressed("walk_speed_up") else -player.walk_speed_step
+		var base: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
+		_walk_speed_target = clampf(base + step, player.walk_speed_min, player.walk_speed_max)
+		player.walk_speed_target = _walk_speed_target  # mirror for the debug HUD
+		player.client_send_action_to_server({"action": "walk_speed", "value": _walk_speed_target})
 
 	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -747,6 +777,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_air_time = 0.0
 			if _sfx_live:  # not the spawn snapshot: someone really jumped
 				_play_jump_sfx()
+		elif action.begins_with("land") and action != _last_land_action:
+			_last_land_action = action
+			_airborne = false  # crisp: the server just touched ground -> end the jump loop now
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
@@ -764,6 +797,43 @@ func client_channel_data_update(data: Dictionary) -> void:
 # Audio SFX (client only — the game server has no audio). Sounds are positional and played on EVERY
 # player body, ours and the remote avatars', so you hear the others walk, jump and click their torch.
 # ------------------------------------------------------------------------------
+## Derive this body's motion from its LOCAL position delta (the planet's own motion is excluded — same
+## reasoning as the footsteps below) and cache it on the facade, so the footsteps AND the puppet's
+## CharacterAnimator read one shared computation. Runs for the owner AND every remote avatar (a remote
+## has no velocity / is_on_floor to read, only its interpolated position — exactly enough here).
+func _sample_locomotion(delta: float) -> void:
+	var here: Vector3 = player.position
+	var moved: Vector3 = here - _loco_last_position
+	_loco_last_position = here
+	var dt: float = maxf(delta, 0.0001)
+	var teleport: bool = moved.length() > 5.0  # spawn offset / reparent snap: not real walking
+	var body_basis: Basis = player.transform.basis
+	var up: Vector3 = body_basis.y.normalized()  # body's own up (gravity-oriented, in the LOCAL frame)
+	var climb: float = moved.dot(up)
+	var horizontal: Vector3 = moved - up * climb
+	var local: Vector3 = body_basis.inverse() * horizontal  # body frame: -Z forward, +X right
+	# Raw per-frame motion is bursty (30 Hz position + interpolator settling => some frames move 0), which
+	# would flicker the walk animation idle<->walk. Low-pass speed/direction; the footsteps use the same
+	# smoothed speed (its integral is preserved, so the step cadence is unchanged).
+	if teleport:
+		_smooth_speed = 0.0
+		_smooth_forward = 0.0
+		_smooth_right = 0.0
+	else:
+		var k: float = clampf(delta * LOCO_SMOOTH_RATE, 0.0, 1.0)
+		_smooth_speed = lerpf(_smooth_speed, horizontal.length() / dt, k)
+		_smooth_forward = lerpf(_smooth_forward, -local.z / dt, k)
+		_smooth_right = lerpf(_smooth_right, local.x / dt, k)
+	player.locomotion_sample = {
+		"planar_speed": _smooth_speed,
+		"climb_speed": absf(climb) / dt,
+		"forward": _smooth_forward,
+		"right": _smooth_right,
+		"airborne": _airborne,
+		"seated": is_instance_valid(player._seat_node),
+		"teleport": teleport,
+	}
+
 ## Footsteps, measured in DISTANCE WALKED rather than time: one step per `sfx_footstep_stride` metres.
 ## The cadence then follows the speed for free (running covers ground faster => faster steps), it works
 ## the same on our own body and on a remote avatar (whose position is interpolated, with no velocity or
@@ -771,21 +841,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 func _update_footsteps(delta: float) -> void:
 	if player.sfx_footsteps.is_empty():
 		return
-	var here: Vector3 = player.position  # LOCAL to the planet/parent: its motion is not our walking
-	var moved: Vector3 = here - _step_last_position
-	_step_last_position = here
-	# Seated in a vehicle, or the very first frame (moved = the whole spawn offset): no steps.
-	if is_instance_valid(player._seat_node) or moved.length() > 5.0:
+	var s: Dictionary = player.locomotion_sample
+	if s.is_empty():
+		return
+	# Seated in a vehicle, or a teleport / spawn snap (the whole offset in one frame): no steps.
+	if bool(s["seated"]) or bool(s["teleport"]):
 		_step_distance = 0.0
 		return
-	# "Up" = the body's own Y axis (it is oriented by gravity — see orient_player), taken from the LOCAL
-	# transform: `moved` above is a delta of LOCAL positions, and the parent (the planet) has its own
-	# rotation, so a global axis does not live in the same frame — projecting one on the other reported
-	# a walk on flat ground as a climb, and the guard below then killed every single step.
-	var up: Vector3 = player.transform.basis.y.normalized()
-	var climb: float = moved.dot(up)  # vertical part: jumping / falling / a lift, not walking
-	var walked: float = (moved - up * climb).length()  # horizontal part only
-	var climb_speed: float = absf(climb) / maxf(delta, 0.0001)
+	var climb_speed: float = float(s["climb_speed"])  # vertical part: jumping / falling / a lift
 	# Airborne: no footsteps until we land. The vertical-speed test alone is NOT enough — at the top of
 	# a jump the vertical speed passes through zero, so a jump made while running forward would sneak a
 	# step out in mid-air. The jump event opens the window; a slow vertical speed, once we have actually
@@ -802,10 +865,11 @@ func _update_footsteps(delta: float) -> void:
 	# Standing still is NOT perfectly still: the replicated position is rounded (half a centimetre) and
 	# the body settles on the terrain, so a raw accumulator drifts and eventually fires a phantom step
 	# while we only look around. Below a real walking speed, nothing counts and the tally resets.
-	if walked / maxf(delta, 0.0001) < MIN_WALK_SPEED:
+	var planar_speed: float = float(s["planar_speed"])
+	if planar_speed < MIN_WALK_SPEED:
 		_step_distance = 0.0
 		return
-	_step_distance += walked
+	_step_distance += planar_speed * delta
 	if _step_distance < player.sfx_footstep_stride:
 		return
 	_step_distance = 0.0

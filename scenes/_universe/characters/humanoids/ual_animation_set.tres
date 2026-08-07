@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="CharacterAnimationSet" format=3 uid="uid://dti7f5itnvf0f"]
+
+[ext_resource type="Script" uid="uid://ch2cppqapipux" path="res://scenes/_universe/characters/humanoids/character_animation_set.gd" id="1_animset"]
+
+[resource]
+script = ExtResource("1_animset")

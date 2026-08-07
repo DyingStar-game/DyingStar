@@ -1,0 +1,13 @@
+[gd_scene load_steps=4 format=3 uid="uid://c21kv16wh1y4q"]
+
+[ext_resource type="PackedScene" uid="uid://dcbeg7tbx16k1" path="res://assets/Universal Animation Library/Unreal-Godot/UAL1.glb" id="1_ual1"]
+[ext_resource type="Script" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="2_animator"]
+[ext_resource type="Resource" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="3_animset"]
+
+[node name="human_puppet" type="Node3D"]
+
+[node name="UAL1" parent="." instance=ExtResource("1_ual1")]
+
+[node name="CharacterAnimator" type="Node" parent="."]
+script = ExtResource("2_animator")
+anim_set = ExtResource("3_animset")

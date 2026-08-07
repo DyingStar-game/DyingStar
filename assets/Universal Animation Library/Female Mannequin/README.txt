@@ -1,0 +1,2 @@
+The female mannequin doesn’t include the animations, as duplicating them wouldn’t make sense. 
+You can easily retarget them from the library files in Blender, or even better, directly in your engine, since both mannequins share the same rig and very similar proportions.
