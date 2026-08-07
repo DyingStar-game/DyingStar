@@ -45,6 +45,8 @@ var _loco_last_position: Vector3 = Vector3.ZERO  # previous body position, to de
 var _smooth_speed: float = 0.0    # low-passed planar speed (m/s), fed to the animator AND the footsteps
 var _smooth_forward: float = 0.0  # low-passed forward component (m/s, body frame): + = forward
 var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame): + = strafe right
+var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to derive the yaw rate (in-place turn)
+var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
 var _walk_speed_target: float = 0.0  # mouse-wheel-chosen walk speed (owner), 0 until the first change
 var _step_last_index: int = -1     # which footstep sample was played last (never twice in a row)
@@ -898,6 +900,17 @@ func _sample_locomotion(delta: float) -> void:
 		_smooth_speed = lerpf(_smooth_speed, horizontal.length() / dt, k)
 		_smooth_forward = lerpf(_smooth_forward, -local.z / dt, k)
 		_smooth_right = lerpf(_smooth_right, local.x / dt, k)
+	# Yaw rate (rad/s) around up: how fast the body pivots, for the in-place turn animation. Signed angle
+	# the flattened body-forward swept since last frame, over dt. Zeroed on a teleport/reparent snap.
+	var forward_now: Vector3 = -body_basis.z
+	var yaw_rate: float = 0.0
+	if not teleport and _loco_last_forward != Vector3.ZERO:
+		var prev_flat: Vector3 = _loco_last_forward - up * _loco_last_forward.dot(up)
+		var now_flat: Vector3 = forward_now - up * forward_now.dot(up)
+		if prev_flat.length() > 0.01 and now_flat.length() > 0.01:
+			yaw_rate = prev_flat.normalized().signed_angle_to(now_flat.normalized(), up) / dt
+	_loco_last_forward = forward_now
+	_smooth_yaw_rate = 0.0 if teleport else lerpf(_smooth_yaw_rate, yaw_rate, clampf(delta * LOCO_SMOOTH_RATE, 0.0, 1.0))
 	player.locomotion_sample = {
 		"planar_speed": _smooth_speed,
 		"climb_speed": absf(climb) / dt,
@@ -908,6 +921,7 @@ func _sample_locomotion(delta: float) -> void:
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)
+		"yaw_rate": _smooth_yaw_rate,  # turn rate (rad/s) around up, for the in-place turn animation
 		"teleport": teleport,
 	}
 
