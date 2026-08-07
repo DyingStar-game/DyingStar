@@ -66,6 +66,7 @@ var _carry_prompt_timer: float = 0.0
 ## Gait, set by the owner's replicated intent (see server_action_received): sprint held, and the
 ## mouse-wheel-chosen walk speed (0 until first set -> fall back to the default walk_speed).
 var _sprint_held: bool = false
+var _stance: int = 0  # 0 = standing, 1 = crouched, 2 = prone (server-authoritative, replicated as "stance")
 var _walk_speed_target: float = 0.0
 ## Landing: the server emits a "land:<n>" event (via the whitelisted `action` field, like the jump) the
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
@@ -94,6 +95,13 @@ func server_action_received(data: Dictionary) -> void:
 			player.is_jumping = true
 		"sprint":
 			_sprint_held = bool(data.get("held", false))  # Shift held: run at sprint_speed
+		"stance":
+			# Movement stance toggle (0 standing / 1 crouched / 2 prone). Server-authoritative: we set it,
+			# cap the speed from it, and replicate so remotes show the pose (collider resize: next chunk).
+			var requested: int = clampi(int(data.get("value", 0)), 0, 2)
+			_stance = requested
+			player.stance = _stance
+			player.server_send_properties_to_client({"stance": _stance})
 		"walk_speed":
 			# Mouse-wheel-chosen walk speed (owner intent), clamped to the allowed range.
 			_walk_speed_target = clampf(float(data.get("value", player.walk_speed)),
@@ -532,6 +540,10 @@ func _physics_process(delta: float) -> void:
 	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (default until first set).
 	var walk_target: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
 	var speed = player.sprint_speed if _sprint_held else walk_target
+	if _stance == 1:  # crouched: capped to crouch_speed (no sprint)
+		speed = minf(speed, player.crouch_speed)
+	elif _stance == 2:  # prone: even slower
+		speed = minf(speed, player.prone_speed)
 	if player.mining_tool.is_aiming:
 		speed *= player.mining_tool.aim_speed_factor  # slowed down in aim mode
 	if player.mining_tool.is_perforating:

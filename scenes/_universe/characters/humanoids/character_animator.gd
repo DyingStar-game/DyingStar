@@ -193,6 +193,11 @@ func _select_clip(delta: float) -> StringName:
 		if emote_clip != &"":
 			_reset_idle()
 			return emote_clip
+	# Crouched: its own directional gait, overriding walk/jog/sprint (the server already caps speed).
+	if int(s.get("stance", 0)) == 1:
+		_reset_idle()
+		_current_tier = Tier.WALK
+		return _crouch_clip(speed, float(s.get("forward", 0.0)), float(s.get("right", 0.0)))
 	# Carrying a box: the arms-full pose overrides the normal gait (still split standing vs moving). The
 	# carried speed is capped (x0.5) so it always reads as a walk. Falls back to locomotion if unavailable.
 	var carrying: bool = bool(s.get("carrying", false))
@@ -377,6 +382,22 @@ func _walk_dir(fs: int, rs: int) -> StringName:
 	if fs < 0:
 		return anim_set.walk_bwd_left if rs < 0 else (anim_set.walk_bwd_right if rs > 0 else anim_set.walk_bwd)
 	return anim_set.walk_left if rs < 0 else (anim_set.walk_right if rs > 0 else anim_set.walk_fwd)
+
+## Crouched directional gait: idle when still, else one of the 4 cardinal crouch clips (diagonals fall to
+## forward). A missing clip falls back to crouch_fwd / the idle, so a partial set still animates.
+func _crouch_clip(speed: float, forward: float, right: float) -> StringName:
+	if speed < MOVE_EPSILON:
+		return _clip_or(anim_set.crouch_idle, _idle)
+	var mag: float = sqrt(forward * forward + right * right)
+	var nf: float = forward / mag if mag > 0.0001 else 1.0
+	var nr: float = right / mag if mag > 0.0001 else 0.0
+	var fs: int = (1 if nf > DIR_DEADZONE else (-1 if nf < -DIR_DEADZONE else 0))
+	var rs: int = (1 if nr > DIR_DEADZONE else (-1 if nr < -DIR_DEADZONE else 0))
+	if fs > 0:
+		return _clip_or(anim_set.crouch_fwd, _idle)
+	if fs < 0:
+		return _clip_or(anim_set.crouch_bwd, _clip_or(anim_set.crouch_fwd, _idle))
+	return _clip_or(anim_set.crouch_left if rs < 0 else anim_set.crouch_right, _clip_or(anim_set.crouch_fwd, _idle))
 
 ## Return `clip` if it names a real animation on this puppet, else `fallback`.
 func _clip_or(clip: StringName, fallback: StringName) -> StringName:

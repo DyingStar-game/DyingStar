@@ -69,6 +69,7 @@ const TELEPORT_TARGETS := {
 @export var walk_speed_step: float = 0.5
 @export var sprint_speed: float = 5.0
 @export var crouch_speed: float = 0.8
+@export var prone_speed: float = 0.5
 @export var jump_height: float = 0.5
 @export var regular_climb_speed: float = 6.0
 @export var fast_climb_speed: float = 8.0
@@ -175,6 +176,9 @@ var emote_key: String = ""
 ## is NOT reparented when it sits, so this is its only seat signal): "" = on foot, "driver", "passenger".
 ## Owner sets it locally on enter/leave (immediate); remotes read the server's "seat:/unseat:" action.
 var seated_role: String = ""
+## Movement stance, replicated so remotes show it: 0 = standing, 1 = crouched, 2 = prone. Server-owned —
+## it caps the speed, resizes the collider, and drives the crouch/crawl animation.
+var stance: int = 0
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
