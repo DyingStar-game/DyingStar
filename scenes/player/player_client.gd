@@ -306,11 +306,12 @@ func _physics_process(delta: float) -> void:
 		_sprint_sent = sprint_held
 		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
 
-	# Crouch is a TOGGLE, server-authoritative: press cycles standing <-> crouched. The server owns
-	# `stance`; we only request the change (from the last echoed value) and apply the reply.
+	# Crouch / prone are TOGGLES, server-authoritative: each press cycles standing <-> that stance. The
+	# server owns `stance`; we only request the change (from the last echoed value) and apply the reply.
 	if Input.is_action_just_pressed("crouch"):
-		var stance_target: int = 0 if player.stance == 1 else 1  # STAND <-> CROUCH
-		player.client_send_action_to_server({"action": "stance", "value": stance_target})
+		player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 1 else 1})
+	elif Input.is_action_just_pressed("prone"):
+		player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 2 else 2})
 
 	player.labelx.text = str("%0.2f" % player.global_position[0])
 	player.labely.text = str("%0.2f" % player.global_position[1])
