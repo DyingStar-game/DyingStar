@@ -40,6 +40,7 @@ const IDLE_GAP_MIN: float = 8.0
 const IDLE_GAP_MAX: float = 18.0
 const IDLE_VARIATION_DURATION: float = 6.0
 
+
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
 @export var anim_set: CharacterAnimationSet
 ## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
@@ -82,6 +83,9 @@ var _jump_phase: JumpPhase = JumpPhase.GROUND
 var _debug_label: Label = null  # optional on-screen movement readout (local player, Settings "Show debug")
 var _target_speed_scale: float = 1.0  # AnimationPlayer speed_scale for the current clip (walk speed-warp)
 var _current_tier: Tier = Tier.WALK  # locomotion tier, kept stable by hysteresis (see _tier_for_speed)
+var _shown_stance: int = 0  # stance currently ANIMATED (lags the sample during a transition)
+var _stance_transition: StringName = &""  # transition one-shot playing (&"" = none); see _on_anim_finished
+var _stance_transition_target: int = 0  # stance we END in when the current transition finishes
 var _idle_timer: float = 0.0          # seconds spent standing idle (drives the idle variations)
 var _idle_variation: StringName = &""  # variation currently playing (&"" = the base idle)
 var _idle_variation_end: float = 0.0
@@ -116,6 +120,8 @@ func setup(player_body, is_local: bool) -> void:
 	_skeleton = _find_in_puppet("Skeleton3D") as Skeleton3D
 	if _skeleton != null:
 		_head_bone = _skeleton.find_bone(&"Head")  # local: hidden in first person; all: tilted to look pitch
+		if _head_bone == -1:
+			_head_bone = _skeleton.find_bone(&"head")  # some rigs (Unreal naming) use lowercase
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -193,11 +199,37 @@ func _select_clip(delta: float) -> StringName:
 		if emote_clip != &"":
 			_reset_idle()
 			return emote_clip
-	# Crouched: its own directional gait, overriding walk/jog/sprint (the server already caps speed).
-	if int(s.get("stance", 0)) == 1:
+	# Crouch / prone: enter/exit transitions + directional gait, overriding walk/jog/sprint. A one-shot
+	# transition plays out first, then the steady gait for the shown stance. _on_anim_finished commits it.
+	# Standing <-> crouch/prone uses enter/exit; crouch <-> prone goes DIRECT (no standing up between) —
+	# its dedicated clip doesn't exist in UAL yet, so it crossfades until crouch_to_prone/prone_to_crouch
+	# are exported. Whichever clip plays, we END in `target_stance` (see _stance_transition_target).
+	if _stance_transition != &"":
+		_reset_idle()
+		return _stance_transition
+	var target_stance: int = int(s.get("stance", 0))
+	if target_stance != _shown_stance:
+		_reset_idle()
+		var trans: StringName = &""
+		if _shown_stance == 0:
+			trans = _stance_enter(target_stance)                # standing -> crouch/prone
+		elif target_stance == 0:
+			trans = _stance_exit(_shown_stance)                 # crouch/prone -> standing
+		else:
+			trans = _stance_switch(_shown_stance, target_stance)  # crouch <-> prone (may be empty)
+		if _has(trans):
+			_stance_transition = trans
+			_stance_transition_target = target_stance
+			return trans
+		_shown_stance = target_stance  # no transition clip -> switch directly (crossfade)
+	if _shown_stance == 1:
 		_reset_idle()
 		_current_tier = Tier.WALK
 		return _crouch_clip(speed, float(s.get("forward", 0.0)), float(s.get("right", 0.0)))
+	if _shown_stance == 2:
+		_reset_idle()
+		_current_tier = Tier.WALK
+		return _crawl_clip(speed, float(s.get("forward", 0.0)), float(s.get("right", 0.0)))
 	# Carrying a box: the arms-full pose overrides the normal gait (still split standing vs moving). The
 	# carried speed is capped (x0.5) so it always reads as a walk. Falls back to locomotion if unavailable.
 	var carrying: bool = bool(s.get("carrying", false))
@@ -322,7 +354,13 @@ func _jump_clip(airborne: bool, moving: bool) -> StringName:
 	return &""
 
 ## A jump one-shot finished: leave the launch pose for the fall loop, or the landing pose for the ground.
-func _on_anim_finished(_finished: StringName) -> void:
+func _on_anim_finished(finished: StringName) -> void:
+	# A stance transition one-shot finished: we are now in the stance it led to (enter -> that stance,
+	# exit -> standing, crouch<->prone switch -> the other stance). See _stance_transition_target.
+	if _stance_transition != &"" and finished == _stance_transition:
+		_shown_stance = _stance_transition_target
+		_stance_transition = &""
+		return
 	if _jump_phase == JumpPhase.START:
 		_jump_phase = JumpPhase.LOOP
 	elif _jump_phase == JumpPhase.LAND:
@@ -398,6 +436,45 @@ func _crouch_clip(speed: float, forward: float, right: float) -> StringName:
 	if fs < 0:
 		return _clip_or(anim_set.crouch_bwd, _clip_or(anim_set.crouch_fwd, _idle))
 	return _clip_or(anim_set.crouch_left if rs < 0 else anim_set.crouch_right, _clip_or(anim_set.crouch_fwd, _idle))
+
+## Prone/crawling directional gait: idle when still, else one of the 4 cardinal crawl clips (diagonals fall
+## to forward). A missing clip falls back to prone_fwd / the idle.
+func _crawl_clip(speed: float, forward: float, right: float) -> StringName:
+	if speed < MOVE_EPSILON:
+		return _clip_or(anim_set.prone_idle, _idle)
+	var mag: float = sqrt(forward * forward + right * right)
+	var nf: float = forward / mag if mag > 0.0001 else 1.0
+	var nr: float = right / mag if mag > 0.0001 else 0.0
+	var fs: int = (1 if nf > DIR_DEADZONE else (-1 if nf < -DIR_DEADZONE else 0))
+	var rs: int = (1 if nr > DIR_DEADZONE else (-1 if nr < -DIR_DEADZONE else 0))
+	if fs > 0:
+		return _clip_or(anim_set.prone_fwd, _idle)
+	if fs < 0:
+		return _clip_or(anim_set.prone_bwd, _clip_or(anim_set.prone_fwd, _idle))
+	return _clip_or(anim_set.prone_left if rs < 0 else anim_set.prone_right, _clip_or(anim_set.prone_fwd, _idle))
+
+## Enter/exit transition clips for a stance (crouch/prone), or &"" if none / standing.
+func _stance_enter(stance: int) -> StringName:
+	if stance == 1:
+		return anim_set.crouch_enter
+	if stance == 2:
+		return anim_set.prone_enter
+	return &""
+
+func _stance_exit(stance: int) -> StringName:
+	if stance == 1:
+		return anim_set.crouch_exit
+	if stance == 2:
+		return anim_set.prone_exit
+	return &""
+
+## Direct crouch <-> prone transition clip (no standing up between), or &"" if not authored yet.
+func _stance_switch(from_stance: int, to_stance: int) -> StringName:
+	if from_stance == 1 and to_stance == 2:
+		return anim_set.crouch_to_prone
+	if from_stance == 2 and to_stance == 1:
+		return anim_set.prone_to_crouch
+	return &""
 
 ## Return `clip` if it names a real animation on this puppet, else `fallback`.
 func _clip_or(clip: StringName, fallback: StringName) -> StringName:

@@ -53,6 +53,20 @@ extends Resource
 @export var crouch_enter: StringName = &"Crouch_Enter"
 @export var crouch_exit: StringName = &"Crouch_Exit"
 
+# Prone / crawling (stance 2) — the UAL Crawl clips (directional + enter/exit).
+@export_group("Prone")
+@export var prone_idle: StringName = &"Crawl_Idle"
+@export var prone_fwd: StringName = &"Crawl_Fwd"
+@export var prone_bwd: StringName = &"Crawl_Bwd"
+@export var prone_left: StringName = &"Crawl_Left"
+@export var prone_right: StringName = &"Crawl_Right"
+@export var prone_enter: StringName = &"Crawl_Enter"
+@export var prone_exit: StringName = &"Crawl_Exit"
+## Direct crouch <-> prone transitions (no standing up in between). These clips do NOT exist in UAL yet —
+## export a "Crouch to Crawl" and a "Crawl to Crouch" animation to fill them. Empty = plain crossfade.
+@export var crouch_to_prone: StringName = &""
+@export var prone_to_crouch: StringName = &""
+
 # In-place turn (needs yaw-rate detection, deferred).
 @export_group("Turn")
 @export var turn_left: StringName = &"Turn90_L"
