@@ -552,11 +552,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
 ## replicated (via the vehicle's pilot_uuid); a passenger seat reads as free for now.
+## True if this seat is occupied (by someone other than us) — driver AND passenger, one system: the
+## server replicates per-seat occupancy into the vehicle's _net_seats (see Vehicle._seat_occupancy_now).
 func _seat_is_taken(seat: Node) -> bool:
-	if seat == null or not seat.is_driver_seat():
+	if seat == null:
 		return false
 	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
-	return veh != null and "pilot_uuid" in veh and str(veh.pilot_uuid) != ""
+	if veh == null or not ("_net_seats" in veh):
+		return false
+	var occupant: String = str(veh._net_seats.get(str(seat.name), ""))
+	return occupant != "" and occupant != str(player.client_uuid)
 
 ## Take the seat we are standing in: tell the server, lock walking, start riding locally.
 func _enter_seat(seat: Node) -> void:
