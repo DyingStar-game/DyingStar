@@ -476,6 +476,8 @@ var _horn_fade_left: float = 0.0            # client: seconds left of the horn's
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
 var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
+var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
+var _net_seats: Dictionary = {}             # CLIENT: seat name -> occupant uuid ("" = free), for prompts
 
 func _ready() -> void:
 	_empty_mass = mass
@@ -1865,12 +1867,14 @@ func _replicate_transform() -> void:
 	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)
 	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
 	var my_steering: float = snappedf(steering, 0.01)
+	var my_seats: Dictionary = _seat_occupancy_now()
 	if my_pos == _net_last_position and my_rot == _net_last_rotation \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
 			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering \
 			and _horn_on == _net_last_horn and _horn_special_count == _net_last_horn_special \
-			and _engine_on == _net_last_engine and _door_state == _net_last_doors:
+			and _engine_on == _net_last_engine and _door_state == _net_last_doors \
+			and my_seats == _net_last_seats:
 		return
 	var data: Dictionary = {}
 	if my_pos != _net_last_position:
@@ -1909,8 +1913,19 @@ func _replicate_transform() -> void:
 	if _door_state != _net_last_doors:
 		data["doors"] = _door_state.duplicate()
 		_net_last_doors = _door_state.duplicate()
+	if my_seats != _net_last_seats:
+		data["seats"] = my_seats.duplicate()
+		_net_last_seats = my_seats.duplicate()
 
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
+
+## SERVER: current per-seat occupancy (seat name -> occupant uuid, "" when free). Replicated so ANY
+## client can tell a seat is taken (driver AND passenger, one system — see PlayerClient._seat_is_taken).
+func _seat_occupancy_now() -> Dictionary:
+	var occ: Dictionary = {}
+	for seat in _seats():
+		occ[str(seat.name)] = seat.occupant_uuid
+	return occ
 
 ## Server: tell the clients to despawn this vehicle when it leaves the world.
 func _exit_tree() -> void:
@@ -1979,6 +1994,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if bool(new_doors[door_id]) != bool(_net_doors.get(door_id, false)):
 				_apply_door(str(door_id), bool(new_doors[door_id]))
 		_net_doors = new_doors
+	if data.has("seats"):
+		_net_seats = (data["seats"] as Dictionary).duplicate()  # for _seat_is_taken (prompt + entry gate)
 
 ## Client: reparent under the prop's parent (e.g. the planet/city) when spawned.
 func client_parent_change(parent: Node) -> void:
