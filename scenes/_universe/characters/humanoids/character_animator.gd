@@ -15,6 +15,9 @@ enum JumpPhase { GROUND, START, LOOP, LAND }
 ## Locomotion speed tier, with hysteresis on the boundaries (see _tier_for_speed).
 enum Tier { WALK, JOG, SPRINT }
 
+## Emote sequence: none -> (enter) -> hold (loop or one-shot) -> (exit) -> none. See _emote_clip.
+enum EmotePhase { NONE, ENTER, HOLD, EXIT }
+
 ## Crossfade time (s) between clips.
 const BLEND: float = 0.15
 ## Planar speed (m/s) below which the body is standing (idle).
@@ -55,6 +58,11 @@ var _idle_timer: float = 0.0          # seconds spent standing idle (drives the 
 var _idle_variation: StringName = &""  # variation currently playing (&"" = the base idle)
 var _idle_variation_end: float = 0.0
 var _next_idle_gap: float = 12.0
+var _emote_phase: EmotePhase = EmotePhase.NONE
+var _emote_enter: StringName = &""  # resolved emote clips (from the animation set) for the active emote
+var _emote_idle: StringName = &""
+var _emote_exit: StringName = &""
+var _emote_seen: String = ""  # last player.emote_key processed, to detect a fresh request
 var _walk_max: float = 2.0    # walk -> jog boundary (m/s), derived from the player's walk_speed in setup
 var _sprint_min: float = 4.0  # jog -> sprint boundary (m/s), midpoint of walk_speed and sprint_speed
 
@@ -101,6 +109,7 @@ func _select_clip(delta: float) -> StringName:
 	if s.is_empty():
 		return _idle
 	if bool(s.get("seated", false)):
+		_cancel_emote()
 		_reset_idle()
 		return _clip_or(anim_set.sit_idle, _idle)
 	var speed: float = float(s.get("planar_speed", 0.0))
@@ -108,8 +117,18 @@ func _select_clip(delta: float) -> StringName:
 	# forward glide before the walk resumes); _on_anim_finished advances the one-shots.
 	var jump: StringName = _jump_clip(bool(s.get("airborne", false)), speed >= MOVE_EPSILON)
 	if jump != &"":
+		_cancel_emote()
 		_reset_idle()
 		return jump
+	# Emote (on foot): start on a fresh request; a staged emote plays its exit when you move, else drops.
+	if _player.emote_key != _emote_seen:
+		_emote_seen = _player.emote_key
+		_start_emote(_player.emote_key)
+	if _emote_phase != EmotePhase.NONE:
+		var emote_clip: StringName = _emote_clip(speed)
+		if emote_clip != &"":
+			_reset_idle()
+			return emote_clip
 	if speed < MOVE_EPSILON:
 		_current_tier = Tier.WALK  # reset so resuming from idle starts in walk, not a stale sprint tier
 		return _idle_clip(delta)
@@ -148,6 +167,60 @@ func _pick_idle_variation() -> StringName:
 			available.append(v)
 	return available[randi() % available.size()] if not available.is_empty() else &""
 
+# --- Emotes (see EmoteCatalog) ------------------------------------------------------------------------
+## Begin the emote for `key` ("" = none). Skipped if its clips aren't on this puppet (e.g. UAL2 not merged).
+func _start_emote(key: String) -> void:
+	var def: Dictionary = EmoteCatalog.get_emote(key)
+	_emote_enter = _emote_field(def, "enter")
+	_emote_idle = _emote_field(def, "idle")
+	_emote_exit = _emote_field(def, "exit")
+	if not _has(_emote_enter) and not _has(_emote_idle):
+		_emote_phase = EmotePhase.NONE
+		return
+	_emote_phase = EmotePhase.ENTER if _has(_emote_enter) else EmotePhase.HOLD
+
+## Resolve an emote role (enter/idle/exit) to a clip via the CharacterAnimationSet field it names.
+func _emote_field(def: Dictionary, role: String) -> StringName:
+	if anim_set == null or not def.has(role) or String(def[role]) == "":
+		return &""
+	return anim_set.get(def[role])
+
+## Clip for the current emote, or &"" when it has just ended. Moving triggers the exit clip (or drops the
+## emote if it has none). _on_anim_finished advances ENTER -> HOLD and ends EXIT / one-shot emotes.
+func _emote_clip(speed: float) -> StringName:
+	if _emote_phase == EmotePhase.EXIT:
+		return _clip_or(_emote_exit, _idle)
+	if speed >= MOVE_EPSILON:  # moving cancels an ENTER/HOLD emote
+		if _has(_emote_exit):
+			_emote_phase = EmotePhase.EXIT
+			return _emote_exit
+		_end_emote()
+		return &""
+	if _emote_phase == EmotePhase.ENTER:
+		return _clip_or(_emote_enter, _emote_idle if _has(_emote_idle) else _idle)
+	return _emote_idle if _has(_emote_idle) else _clip_or(_emote_enter, _idle)  # HOLD
+
+## Clear the emote and its request (so re-selecting the SAME emote re-triggers it).
+func _end_emote() -> void:
+	_emote_phase = EmotePhase.NONE
+	_emote_enter = &""
+	_emote_idle = &""
+	_emote_exit = &""
+	_emote_seen = ""
+	if _player != null:
+		_player.emote_key = ""
+
+## Drop the emote at once, no exit clip (used when jumping / sitting takes over).
+func _cancel_emote() -> void:
+	if _emote_phase != EmotePhase.NONE:
+		_end_emote()
+
+func _has(clip: StringName) -> bool:
+	return clip != &"" and _anim.has_animation(clip)
+
+func _is_looping(clip: StringName) -> bool:
+	return _has(clip) and _anim.get_animation(clip).loop_mode != Animation.LOOP_NONE
+
 ## Jump state machine. Returns the jump clip to play, or &"" when grounded (locomotion takes over).
 ## START and LAND are one-shots; _on_anim_finished advances START -> LOOP and LAND -> GROUND.
 func _jump_clip(airborne: bool, moving: bool) -> StringName:
@@ -177,6 +250,12 @@ func _on_anim_finished(_finished: StringName) -> void:
 		_jump_phase = JumpPhase.LOOP
 	elif _jump_phase == JumpPhase.LAND:
 		_jump_phase = JumpPhase.GROUND
+	if _emote_phase == EmotePhase.ENTER:
+		_emote_phase = EmotePhase.HOLD  # the enter transition is done -> hold the pose
+	elif _emote_phase == EmotePhase.EXIT:
+		_end_emote()
+	elif _emote_phase == EmotePhase.HOLD and not _is_looping(_emote_idle):
+		_end_emote()  # a one-shot emote finished -> back to idle
 
 ## Directional locomotion clip for the current speed tier, from the body-frame move (forward = -Z,
 ## right = +X). Walk tier = slow (forward only in UAL); jog tier = default gait (fully directional);

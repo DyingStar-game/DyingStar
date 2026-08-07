@@ -71,6 +71,9 @@ var _walk_speed_target: float = 0.0
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
 var _land_count: int = 0
 var _was_airborne: bool = false
+## Emotes: replicated like the jump ("emote:<key>:<n>" on the whitelisted action field) so every client
+## plays the emote on this body. The counter defeats delta compression (same emote twice in a row).
+var _emote_count: int = 0
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -92,6 +95,12 @@ func server_action_received(data: Dictionary) -> void:
 			# Mouse-wheel-chosen walk speed (owner intent), clamped to the allowed range.
 			_walk_speed_target = clampf(float(data.get("value", player.walk_speed)),
 				player.walk_speed_min, player.walk_speed_max)
+		"emote":
+			# Play an emote on this body for everyone. Validate the key, then replicate it as an event.
+			var emote_key: String = str(data.get("key", ""))
+			if not EmoteCatalog.get_emote(emote_key).is_empty():
+				_emote_count += 1
+				player.server_send_properties_to_client({"action": "emote:%s:%d" % [emote_key, _emote_count]})
 		"toggle_flashlight":
 			# Server-authoritative: flip the state and replicate it so the owner AND other players
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).

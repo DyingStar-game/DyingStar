@@ -50,6 +50,7 @@ var _walk_speed_target: float = 0.0  # mouse-wheel-chosen walk speed (owner), 0 
 var _step_last_index: int = -1     # which footstep sample was played last (never twice in a row)
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
+var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
 
@@ -72,6 +73,12 @@ func setup() -> void:
 	player._spawn_wheel.title = "Spawn"
 	player.get_node("UserInterface").add_child(player._spawn_wheel)
 	player._spawn_wheel.option_selected.connect(_on_spawn_selected)
+
+	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
+	player._emote_wheel = RadialMenu.new()
+	player._emote_wheel.title = "Emote"
+	player.get_node("UserInterface").add_child(player._emote_wheel)
+	player._emote_wheel.option_selected.connect(_on_emote_selected)
 
 	# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
 	# targeted player-spawned prop (rock / box / depot) down to the database.
@@ -175,7 +182,7 @@ func _process(_delta: float) -> void:
 	# 3D screen, the spawn wheel, OR the pause menu is open. Otherwise capture the mouse and move the
 	# camera. (Without the pause case, this would re-capture every frame and hide the menu cursor.)
 	var ui_focus: bool = player.screen_interacting != null \
-		or (player._spawn_wheel != null and player._spawn_wheel.visible) \
+		or _any_wheel_open() \
 		or GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
 	if ui_focus:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -522,6 +529,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow(aim)
 
+	# Emote wheel (T) and spawn wheel (Alt+T) share the T key: gate the emote on Alt NOT being held.
+	if event.is_action_pressed("emote_wheel") and not (event is InputEventKey and event.alt_pressed):
+		if player._emote_wheel:
+			player._emote_wheel.open(EmoteCatalog.build_wheel())
+	if event.is_action_released("emote_wheel"):
+		if player._emote_wheel and player._emote_wheel.visible:
+			player._emote_wheel.confirm()
 	if event.is_action_pressed("spawn_wheel"):
 		if player._spawn_wheel:
 			player._spawn_wheel.open(SpawnCatalog.build_wheel())  # labels + keys come from the catalogue
@@ -690,6 +704,15 @@ func _on_show_debug_changed(on: bool) -> void:
 func _on_spawn_selected(key) -> void:
 	player.client_send_action_to_server({"action": "spawn_prop", "key": str(key)})
 
+func _on_emote_selected(key) -> void:
+	player.client_send_action_to_server({"action": "emote", "key": str(key)})
+
+## True while a radial menu (spawn OR emote) is open: the camera freezes and the cursor shows so you can
+## move the mouse to reach its items (see _process). One check for both wheels (DRY).
+func _any_wheel_open() -> bool:
+	return (player._spawn_wheel != null and player._spawn_wheel.visible) \
+		or (player._emote_wheel != null and player._emote_wheel.visible)
+
 ## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
 ## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
 ## and its layer are children of the BODY (player), so they follow it and free with it.
@@ -780,6 +803,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 		elif action.begins_with("land") and action != _last_land_action:
 			_last_land_action = action
 			_airborne = false  # crisp: the server just touched ground -> end the jump loop now
+		elif action.begins_with("emote:") and action != _last_emote_action:
+			_last_emote_action = action
+			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
