@@ -567,6 +567,7 @@ func _enter_seat(seat: Node) -> void:
 	player._seat_vehicle_node = veh
 	player._seat_vehicle_uuid = str(veh.uuid)
 	player._seat_is_driver = seat.is_driver_seat()
+	player.seated_role = "driver" if seat.is_driver_seat() else "passenger"  # drives the sit/drive pose
 	player.client_send_action_to_server({
 		"action": "enter_vehicle",
 		"target_uuid": player._seat_vehicle_uuid,
@@ -602,6 +603,7 @@ func _leave_vehicle() -> void:
 	player._seat_vehicle_node = null
 	player._seat_node = null
 	player._seat_is_driver = false
+	player.seated_role = ""  # back on foot -> normal locomotion pose
 
 ## The vehicle door handle under the crosshair (a VehicleDoorHandle Area3D on the interact layer),
 ## or null. Look-at detection; the actual open/close is server-authoritative (sent on E).
@@ -806,6 +808,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
+		elif player.remote_player and action.begins_with("seat:"):
+			player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
+		elif player.remote_player and action.begins_with("unseat"):
+			player.seated_role = ""  # left the seat -> normal locomotion pose
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
@@ -856,7 +862,8 @@ func _sample_locomotion(delta: float) -> void:
 		"forward": _smooth_forward,
 		"right": _smooth_right,
 		"airborne": _airborne,
-		"seated": is_instance_valid(player._seat_node),
+		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
+		"driver": player.seated_role == "driver",
 		"teleport": teleport,
 	}
 

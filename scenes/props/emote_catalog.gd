@@ -25,6 +25,8 @@ const EMOTES: Dictionary = {
 	"no": {"text": "No", "idle": "emote_no"},
 	"zombie": {"text": "Zombie", "idle": "emote_zombie"},
 	"tpose": {"text": "T-Pose", "idle": "emote_tpose"},
+	# Not on the wheel — triggered by gameplay (e.g. opening a vehicle door on foot).
+	"interact": {"text": "Interact", "idle": "emote_interact"},
 }
 
 ## Wheel layout: order + grouping. An entry with "key" is a single emote; one with "keys" is a submenu.
