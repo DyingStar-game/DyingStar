@@ -171,6 +171,10 @@ var walk_speed_target: float = 0.0
 ## Currently requested emote KEY (see EmoteCatalog), replicated so everyone plays it on this body. ""
 ## = none. The animator starts it while standing and clears it (back to "") on move or when it ends.
 var emote_key: String = ""
+## Replicated seat state that drives the sit/drive POSE, for the owner AND every remote avatar (a remote
+## is NOT reparented when it sits, so this is its only seat signal): "" = on foot, "driver", "passenger".
+## Owner sets it locally on enter/leave (immediate); remotes read the server's "seat:/unseat:" action.
+var seated_role: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP

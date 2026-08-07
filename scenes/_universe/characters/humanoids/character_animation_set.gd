@@ -98,3 +98,5 @@ extends Resource
 @export var emote_no: StringName = &"Idle_No"
 @export var emote_zombie: StringName = &"Zombie_Idle"
 @export var emote_tpose: StringName = &"A_TPose"
+## Not on the wheel — played as a one-shot when interacting (e.g. a vehicle door on foot).
+@export var emote_interact: StringName = &"Interact"

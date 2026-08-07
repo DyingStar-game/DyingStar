@@ -42,11 +42,18 @@ const IDLE_VARIATION_DURATION: float = 6.0
 
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
 @export var anim_set: CharacterAnimationSet
+## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
+## SitPoint: the body origin rides the seat at STANDING height, so without this the seated mesh floats.
+## Tune live in the Inspector. Applied to the puppet only — the owner's camera is a sibling, so its
+## first-person view is unaffected.
+@export var seated_puppet_offset: Vector3 = Vector3(0, 0.38, -0.34)
 
 var _player  # the Player facade this body belongs to (untyped: typing Player would cycle, see PlayerClient)
 var _is_local: bool = false
 var _anim: AnimationPlayer = null
 var _skeleton: Skeleton3D = null
+var _puppet: Node3D = null  # the puppet root (our parent); shifted down while seated (see _process)
+var _puppet_base_position: Vector3 = Vector3.ZERO
 var _head_bone: int = -1
 var _current: StringName = &""
 var _idle: StringName = &""  # resolved idle clip (the set's idle, or the first clip if names don't match)
@@ -81,6 +88,9 @@ func setup(player_body, is_local: bool) -> void:
 	var ss: float = _player.sprint_speed
 	_walk_max = wmax - wstep         # fast mouse-wheel walk (top tiers) -> Jog clip
 	_sprint_min = (wmax + ss) * 0.5  # sprint -> Sprint clip; the walk range never reaches it
+	_puppet = get_parent() as Node3D
+	if _puppet != null:
+		_puppet_base_position = _puppet.position
 	_anim = _find_in_puppet("AnimationPlayer") as AnimationPlayer
 	_skeleton = _find_in_puppet("Skeleton3D") as Skeleton3D
 	if _is_local and _skeleton != null:
@@ -99,6 +109,11 @@ func _process(delta: float) -> void:
 	# First person only: shrink our own head every frame (the animation rewrote the pose just before us).
 	if _is_local and _head_bone != -1:
 		_skeleton.set_bone_pose_scale(_head_bone, HEAD_HIDE_SCALE)
+	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
+	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
+	if _puppet != null:
+		var seated: bool = not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false))
+		_puppet.position = _puppet_base_position + (seated_puppet_offset if seated else Vector3.ZERO)
 	if _debug_label != null:
 		_update_debug_label()
 
@@ -111,7 +126,9 @@ func _select_clip(delta: float) -> StringName:
 	if bool(s.get("seated", false)):
 		_cancel_emote()
 		_reset_idle()
-		return _clip_or(anim_set.sit_idle, _idle)
+		if bool(s.get("driver", false)):
+			return _clip_or(anim_set.sit_driving, _clip_or(anim_set.sit_idle, _idle))
+		return _clip_or(anim_set.sit_passenger, _clip_or(anim_set.sit_idle, _idle))
 	var speed: float = float(s.get("planar_speed", 0.0))
 	# Jump owns its start -> loop(fall) -> land sequence. Landing WHILE MOVING skips the land pose (no
 	# forward glide before the walk resumes); _on_anim_finished advances the one-shots.

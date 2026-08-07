@@ -74,6 +74,9 @@ var _was_airborne: bool = false
 ## Emotes: replicated like the jump ("emote:<key>:<n>" on the whitelisted action field) so every client
 ## plays the emote on this body. The counter defeats delta compression (same emote twice in a row).
 var _emote_count: int = 0
+## Seat state: replicated the same way ("seat:<role>:<n>" / "unseat:<n>") so every remote avatar shows the
+## sit/drive pose (a seated remote is not reparented, so this is its only seat signal).
+var _seat_count: int = 0
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -167,10 +170,18 @@ func server_action_received(data: Dictionary) -> void:
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
 				veh.server_enter(player, str(data.get("seat", "")))
+				if is_instance_valid(player._seat_node):  # enter succeeded (seat free, door open)
+					_seat_count += 1
+					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
+					player.server_send_properties_to_client({"action": "seat:%s:%d" % [role, _seat_count]})
 		"exit_vehicle":
 			var veh_out = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):
+				var was_seated := is_instance_valid(player._seat_node)
 				veh_out.server_exit(player)
+				if was_seated:
+					_seat_count += 1
+					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count})
 		"vehicle_input":
 			var veh_in = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_in != null and veh_in._pilot == player and veh_in.has_method("set_drive_input"):
@@ -227,6 +238,9 @@ func server_action_received(data: Dictionary) -> void:
 				var side_ok: bool = claimed_side == "" or claimed_side == ("indoor" if inside_d else "outdoor")
 				if side_ok and (handle_d == null or _can_see(handle_d)):
 					veh_d.server_toggle_door(str(data.get("door_id", "")))
+					if not inside_d:  # operated ON FOOT -> play the reach-out gesture for everyone
+						_emote_count += 1
+						player.server_send_properties_to_client({"action": "emote:interact:%d" % _emote_count})
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
