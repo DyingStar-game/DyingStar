@@ -264,8 +264,8 @@ func server_set_tool(tool_id: String) -> void:
 func apply_remote(data: Dictionary) -> void:
 	if data.has("tools"):
 		_equipped = str(data["tools"]) != ""
-	if data.has("head") and _camera_pivot:
-		_camera_pivot.rotation.x = float(data["head"])
+	# NOTE: the look pitch ("head") is applied to the camera pivot by PlayerClient (a general player
+	# property); MiningTool only READS the pivot to aim the tool (see update()). Tech-debt A resolved.
 	if data.has("perforating"):
 		_apply_perforating(bool(data["perforating"]))
 	if data.has("carrying"):

@@ -232,6 +232,8 @@ var _display_debug: bool = false
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
 var _last_head_sent: float = INF
+# Last camera yaw ("head_yaw", non-zero only while seated) sent to the server, throttled.
+var _last_head_yaw_sent: float = INF
 # Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
 # gravity areas for a frame or two while the body re-enters PlanetGravity; we only switch to the 0g
 # control scheme (which zeroes the camera pitch) after the gravity has really been gone this long,
@@ -426,9 +428,12 @@ func _ride_seat(seat: Node3D) -> void:
 	else:
 		global_transform.basis = eye.basis
 		global_position = eye.origin - eye.basis * camera_pivot.position
-	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the
-	# vehicle forward, so the view is no longer locked straight ahead.
-	camera_pivot.rotation.y += mouse_motion.x * camera_sensitivity
+	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the vehicle
+	# forward, so the view is no longer locked straight ahead. BOTH are clamped: a seated body can't spin
+	# its view around forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
+	camera_pivot.rotation.y = clampf(
+		camera_pivot.rotation.y + mouse_motion.x * camera_sensitivity,
+		deg_to_rad(-120.0), deg_to_rad(120.0))
 	camera_pivot.rotation.x = clampf(
 		camera_pivot.rotation.x + mouse_motion.y * camera_sensitivity,
 		deg_to_rad(-80.0), deg_to_rad(80.0))

@@ -157,6 +157,7 @@ func _process(_delta: float) -> void:
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
 		player._ride_seat(player._seat_node)
+		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
 		# LOOKING at its handle — the handle rides the door now, so aiming works open or closed.
 		player.interact_label.hide()
@@ -425,14 +426,23 @@ func _handle_camera_motion() -> void:
 			player.rotate_object_local(Vector3.UP, look.x * player.camera_sensitivity)
 			player.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
 
-	# Replicate the camera pitch ("head") to the server so others see where we look and
-	# the server can aim our interaction ray + place a carried item (tech-debt A / #124).
+	_replicate_look()  # send pitch (+ seated yaw) so others aim the tool + tilt the head where we look
+
+	player.mouse_motion = Vector2.ZERO
+
+## Replicate the look to the server, throttled: pitch ("head") always, and yaw ("head_yaw") which is 0
+## while standing (the body carries the yaw) but non-zero while seated (the body is locked, so the camera
+## pivot turns instead). Called both on foot (_handle_camera_motion) AND seated (_ride_seat path), so a
+## seated avatar's head-look reaches remotes — the seated branch returns before the on-foot camera code.
+func _replicate_look() -> void:
 	var head_q := snappedf(player.camera_pivot.rotation.x, 0.02)
 	if head_q != player._last_head_sent:
 		player._last_head_sent = head_q
 		player.client_send_action_to_server({"action": "update_property", "head": head_q})
-
-	player.mouse_motion = Vector2.ZERO
+	var head_yaw_q := snappedf(player.camera_pivot.rotation.y, 0.02)
+	if head_yaw_q != player._last_head_yaw_sent:
+		player._last_head_yaw_sent = head_yaw_q
+		player.client_send_action_to_server({"action": "update_property", "head_yaw": head_yaw_q})
 
 func _unhandled_input(event: InputEvent) -> void:
 	if player.remote_player: return
@@ -831,6 +841,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	if player.remote_player:
+		if data.has("head"):
+			# Look pitch is a GENERAL player property: the body owns applying it to its camera pivot, and
+			# every component consumes it (the puppet's head-tilt, the mining tool's aim) — one writer, DRY.
+			player.camera_pivot.rotation.x = float(data["head"])
+		if data.has("head_yaw"):
+			player.camera_pivot.rotation.y = float(data["head_yaw"])  # seated free-look yaw (0 while standing)
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
 			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose

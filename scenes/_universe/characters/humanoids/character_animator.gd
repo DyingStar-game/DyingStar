@@ -47,6 +47,17 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## Tune live in the Inspector. Applied to the puppet only — the owner's camera is a sibling, so its
 ## first-person view is unaffected.
 @export var seated_puppet_offset: Vector3 = Vector3(0, 0.38, -0.34)
+## Head-look: how much the Head bone tilts to follow the look PITCH (up/down), added on top of the
+## animation so others see where a player aims. 1.0 = full, 0 = off, -1 = invert if it nods the wrong way.
+@export var head_look_gain: float = -1.0
+## Local axis the head pitches about — try (0,1,0) or (0,0,1) if the head turns sideways instead of nodding.
+@export var head_look_axis: Vector3 = Vector3(1, 0, 0)
+## Seated only: the body is locked, so the head also follows the look YAW (left/right). Standing, the body
+## carries the yaw and this stays 0. Same calibration idea (gain sign + local axis) as the pitch.
+@export var head_look_yaw_gain: float = 1.0
+@export var head_look_yaw_axis: Vector3 = Vector3(0, 1, 0)
+## Max head deflection (degrees) from center on each axis, so the neck never snaps to an impossible angle.
+@export var head_look_max_deg: float = 70.0
 
 var _player  # the Player facade this body belongs to (untyped: typing Player would cycle, see PlayerClient)
 var _is_local: bool = false
@@ -93,8 +104,8 @@ func setup(player_body, is_local: bool) -> void:
 		_puppet_base_position = _puppet.position
 	_anim = _find_in_puppet("AnimationPlayer") as AnimationPlayer
 	_skeleton = _find_in_puppet("Skeleton3D") as Skeleton3D
-	if _is_local and _skeleton != null:
-		_head_bone = _skeleton.find_bone(&"Head")  # hidden below so our own head never fills the camera
+	if _skeleton != null:
+		_head_bone = _skeleton.find_bone(&"Head")  # local: hidden in first person; all: tilted to look pitch
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -109,6 +120,17 @@ func _process(delta: float) -> void:
 	# First person only: shrink our own head every frame (the animation rewrote the pose just before us).
 	if _is_local and _head_bone != -1:
 		_skeleton.set_bone_pose_scale(_head_bone, HEAD_HIDE_SCALE)
+	# Head follows the look on EVERY avatar, added on top of the animation so others see where a player
+	# aims. Pitch always; yaw only matters seated (standing it is 0, the body carries the turn). Both are
+	# clamped so the neck never snaps to an impossible angle. Invisible on our own hidden head, but harmless.
+	if _head_bone != -1 and _player.camera_pivot != null:
+		var limit: float = deg_to_rad(head_look_max_deg)
+		var pitch: float = clampf(_player.camera_pivot.rotation.x * head_look_gain, -limit, limit)
+		var yaw: float = clampf(_player.camera_pivot.rotation.y * head_look_yaw_gain, -limit, limit)
+		var animated: Quaternion = _skeleton.get_bone_pose_rotation(_head_bone)
+		var look_q: Quaternion = Quaternion(head_look_yaw_axis.normalized(), yaw) \
+				* Quaternion(head_look_axis.normalized(), pitch)
+		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
 	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
 	if _puppet != null:
