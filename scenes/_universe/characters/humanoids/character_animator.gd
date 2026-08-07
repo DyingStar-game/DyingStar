@@ -58,6 +58,13 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export var head_look_yaw_axis: Vector3 = Vector3(0, 1, 0)
 ## Max head deflection (degrees) from center on each axis, so the neck never snaps to an impossible angle.
 @export var head_look_max_deg: float = 70.0
+## First-person camera follows the head bone's bob (POSITION only — orientation stays mouse-driven), so the
+## animated body never clips through a fixed camera. Owner + on foot only (the seat ride owns it seated).
+@export var head_cam_follow: bool = true
+## How much of the head's bob to apply to the camera (0 = none, 1 = full). Lower it if the view feels shaky.
+@export_range(0.0, 1.0) var head_cam_amount: float = 1.0
+## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
+@export var head_cam_smooth: float = 12.0
 
 var _player  # the Player facade this body belongs to (untyped: typing Player would cycle, see PlayerClient)
 var _is_local: bool = false
@@ -65,6 +72,9 @@ var _anim: AnimationPlayer = null
 var _skeleton: Skeleton3D = null
 var _puppet: Node3D = null  # the puppet root (our parent); shifted down while seated (see _process)
 var _puppet_base_position: Vector3 = Vector3.ZERO
+var _camera_base_pos: Vector3 = Vector3.ZERO  # first-person camera rest position (head-cam follow, local)
+var _head_rest_body: Vector3 = Vector3.ZERO   # head bone position (body frame) at rest, the follow origin
+var _head_rest_captured: bool = false         # captured lazily on the first idle frame (see _process)
 var _head_bone: int = -1
 var _current: StringName = &""
 var _idle: StringName = &""  # resolved idle clip (the set's idle, or the first clip if names don't match)
@@ -136,6 +146,21 @@ func _process(delta: float) -> void:
 	if _puppet != null:
 		var seated: bool = not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false))
 		_puppet.position = _puppet_base_position + (seated_puppet_offset if seated else Vector3.ZERO)
+	# First-person camera follows the head bone's bob (position only; the mouse still owns orientation), so
+	# the animated body never clips through a fixed camera. Owner on foot only — the seat ride owns the
+	# camera position when seated, so restore the base there. Smoothed to avoid motion sickness.
+	if _is_local and _head_bone != -1 and _player.camera_pivot != null:
+		var seated_cam: bool = not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false))
+		if head_cam_follow and not seated_cam:
+			var head_now: Vector3 = _player.to_local(_skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone).origin))
+			if not _head_rest_captured:  # first idle frame: this head position is the neutral reference
+				_head_rest_body = head_now
+				_camera_base_pos = _player.camera_pivot.position
+				_head_rest_captured = true
+			var target: Vector3 = _camera_base_pos + (head_now - _head_rest_body) * head_cam_amount
+			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
+		elif _head_rest_captured:
+			_player.camera_pivot.position = _camera_base_pos  # seated/disabled: hand the camera back to the ride
 	if _debug_label != null:
 		_update_debug_label()
 
