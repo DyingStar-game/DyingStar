@@ -5,6 +5,9 @@ signal hs_server_prop_update
 signal hs_server_prop_delete
 
 @export var type_name = "generic_prop"
+## Whether this prop can be picked up and carried BY HAND. Crates and pallets set this false (they are
+## meant to be moved with a vehicle later); boxes stay true. Gates BOTH the carry prompt and the pickup.
+@export var carriable: bool = true
 
 ## Human-readable "serial" prefix shown on the crate (see serial()). The UUID below is the REAL unique
 ## key (generated server-side, persisted in ScyllaDB); these two only brand it as "company-type". Defined
@@ -53,7 +56,8 @@ func _ready() -> void:
 	if spawn_position != Vector3.ZERO:
 		position = spawn_position
 	# So the carry pickup can resolve this prop by uuid (the client sends what it aims at).
-	add_to_group("carriable")
+	if carriable:
+		add_to_group("carriable")
 	# Created already under a vehicle (cargo loaded before we arrived): ride it (KINEMATIC).
 	PropNet.apply_ride_freeze_mode(self)
 	# Fill the on-crate id frames now if the uuid was already assigned before we entered the tree.
@@ -130,7 +134,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 
 # ── Carry contract (issue #124): any generic prop becomes pickable with E ──
 func interact(_interactor: Node = null) -> bool:
-	return not carried
+	return carriable and not carried
 
 func set_carried(value: bool) -> void:
 	carried = value

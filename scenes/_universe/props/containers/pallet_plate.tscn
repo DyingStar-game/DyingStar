@@ -12,6 +12,7 @@ collision_mask = 15
 mass = 80.0
 script = ExtResource("1_plate")
 type_name = "box"
+carriable = false
 
 [node name="pallet_plate_120x80x15" parent="." unique_id=780003002 instance=ExtResource("2_plate")]
 

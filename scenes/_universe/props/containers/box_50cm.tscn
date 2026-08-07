@@ -18,12 +18,12 @@ script = ExtResource("1_o2evt")
 mesh = ExtResource("1_xngen")
 surface_material_override/0 = ExtResource("3_ovsim")
 
-[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=2126482995 groups=["carry"]]
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="." unique_id=2126482995]
 shape = SubResource("BoxShape3D_urcx6")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1841341630]
 collision_layer = 32
 monitoring = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1862840437 groups=["carry"]]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1862840437]
 shape = SubResource("BoxShape3D_urcx6")

@@ -12,6 +12,7 @@ collision_mask = 15
 mass = 350.0
 script = ExtResource("1_liquid")
 type_name = "box"
+carriable = false
 
 [node name="pallet_liquid_120x80x100" parent="." unique_id=780002002 instance=ExtResource("2_liquid")]
 
