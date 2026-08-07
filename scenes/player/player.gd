@@ -168,6 +168,9 @@ var is_jumping: bool = false
 var locomotion_sample: Dictionary = {}
 ## Owner's current mouse-wheel-chosen walk speed (m/s) — mirrored here by PlayerClient for the debug HUD.
 var walk_speed_target: float = 0.0
+## Currently requested emote KEY (see EmoteCatalog), replicated so everyone plays it on this body. ""
+## = none. The animator starts it while standing and clears it (back to "") on move or when it ends.
+var emote_key: String = ""
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
@@ -250,6 +253,8 @@ var _role: Node = null
 
 # Dev spawn wheel (radial menu), owner only — hold the spawn key to pick what to spawn.
 var _spawn_wheel: RadialMenu = null
+# Emote wheel (radial menu), owner only — hold the emote key (T) to pick an emote.
+var _emote_wheel: RadialMenu = null
 
 # Owner: uuid of the vehicle we are seated in ("" = on foot). Set when we take a seat.
 var _seat_vehicle_uuid: String = ""

@@ -21,12 +21,12 @@ extends Control
 signal option_selected(data)
 signal cancelled
 
-@export var radius: float = 170.0
-@export var inner_radius: float = 60.0
-@export var font_size: int = 22
+@export var radius: float = 305.0
+@export var inner_radius: float = 110.0
+@export var font_size: int = 23
 @export var title: String = ""
 ## How far past `radius` the submenu arc sits, and the angular gap (rad) between its children.
-@export var submenu_radius_gap: float = 74.0
+@export var submenu_radius_gap: float = 110.0
 @export var submenu_spread: float = 0.42
 
 var _options: Array = []

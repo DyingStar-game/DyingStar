@@ -75,3 +75,26 @@ extends Resource
 @export var sit_exit: StringName = &"Sitting_Exit"
 @export var sit_driving: StringName = &"Driving"
 @export var sit_passenger: StringName = &"Sitting_Nodding"
+
+# Emote-wheel clips (T). EmoteCatalog holds the wheel layout and references these fields by name; the
+# staged ones (Sit, Lay) use enter/idle/exit. UAL2 emotes resolve once UAL2 is merged.
+@export_group("Emote")
+@export var emote_dance: StringName = &"Dance"
+@export var emote_celebration: StringName = &"Celebration"
+@export var emote_crying: StringName = &"Crying"
+@export var emote_drink: StringName = &"Drink"
+@export var emote_sit_enter: StringName = &"GroundSit_Enter"
+@export var emote_sit_idle: StringName = &"GroundSit_Idle"
+@export var emote_sit_exit: StringName = &"GroundSit_Exit"
+@export var emote_paper: StringName = &"Idle_Paper"
+@export var emote_rock: StringName = &"Idle_Rock"
+@export var emote_scissors: StringName = &"Idle_Scissors"
+@export var emote_surprise: StringName = &"Surprise"
+@export var emote_consume: StringName = &"Consume"
+@export var emote_lay_enter: StringName = &"IdleToLay"
+@export var emote_lay_exit: StringName = &"LayToIdle"
+@export var emote_rage: StringName = &"MonsterTransformation"
+@export var emote_yes: StringName = &"Yes"
+@export var emote_no: StringName = &"Idle_No"
+@export var emote_zombie: StringName = &"Zombie_Idle"
+@export var emote_tpose: StringName = &"A_TPose"
