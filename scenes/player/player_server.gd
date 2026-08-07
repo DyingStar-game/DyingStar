@@ -131,6 +131,8 @@ func server_action_received(data: Dictionary) -> void:
 				# Apply on the server too so the interaction ray + carried item follow the gaze
 				# (planet only; in 0g the body orientation is used instead).
 				player.camera_pivot.rotation.x = float(props["head"])
+			if props.has("head_yaw"):
+				player.camera_pivot.rotation.y = float(props["head_yaw"])  # seated free-look yaw
 			player.server_send_properties_to_client(props)
 		"perforate_rock":
 			# Authoritative fracture: cut the targeted rock along the aimed fault.
