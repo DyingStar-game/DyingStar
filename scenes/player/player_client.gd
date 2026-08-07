@@ -306,6 +306,12 @@ func _physics_process(delta: float) -> void:
 		_sprint_sent = sprint_held
 		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
 
+	# Crouch is a TOGGLE, server-authoritative: press cycles standing <-> crouched. The server owns
+	# `stance`; we only request the change (from the last echoed value) and apply the reply.
+	if Input.is_action_just_pressed("crouch"):
+		var stance_target: int = 0 if player.stance == 1 else 1  # STAND <-> CROUCH
+		player.client_send_action_to_server({"action": "stance", "value": stance_target})
+
 	player.labelx.text = str("%0.2f" % player.global_position[0])
 	player.labely.text = str("%0.2f" % player.global_position[1])
 	player.labelz.text = str("%0.2f" % player.global_position[2])
@@ -838,6 +844,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			elif is_instance_valid(player._seat_node):
 				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
+	if data.has("stance"):
+		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	if player.remote_player:
@@ -898,6 +906,7 @@ func _sample_locomotion(delta: float) -> void:
 		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
+		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)
 		"teleport": teleport,
 	}
 
