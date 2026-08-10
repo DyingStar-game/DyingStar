@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://ccme8rxijtf2s"]
 
 [ext_resource type="Script" uid="uid://b3ifoxj2c0cjt" path="res://scenes/player/player.gd" id="1_ll2l8"]
-[ext_resource type="AudioStream" uid="uid://wqqcfpaantps" path="res://assets/_universe/audio/sfx/machine/machine-button-on.ogg" id="2_4hvnv"]
+[ext_resource type="AudioStream" uid="uid://isxw6g4m4hxq" path="res://assets/_universe/audio/sfx/machine/tools/torch-lamp-on.ogg" id="2_genst"]
 [ext_resource type="PackedScene" uid="uid://vv063vdbl0aa" path="res://assets/_universe/characters/humanoids/astronaut/astronaut.res" id="2_rulc8"]
-[ext_resource type="AudioStream" uid="uid://l2ox3cdem1rm" path="res://assets/_universe/audio/sfx/machine/machine-button-off.ogg" id="3_bbmj2"]
 [ext_resource type="Script" uid="uid://cfwy76dpxuvoj" path="res://scenes/player/player_ui.gd" id="3_kcm5r"]
+[ext_resource type="AudioStream" uid="uid://w2uxt25371yk" path="res://assets/_universe/audio/sfx/machine/tools/torch-lamp-off.ogg" id="3_niom3"]
 [ext_resource type="AudioStream" uid="uid://cmtla8rhdbdqf" path="res://assets/_universe/audio/sfx/characters/step_grass_1.mp3" id="4_5q8fn"]
 [ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/player/debug/debug_label_settings.tres" id="4_dpwvv"]
 [ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/player/debug/debug_server_fps.gd" id="4_sxi4m"]
@@ -69,9 +69,9 @@ collision_layer = 2
 collision_mask = 15
 script = ExtResource("1_ll2l8")
 carry_offset = Vector3(0, -1, -0.995)
-sfx_torch_on = ExtResource("2_4hvnv")
+sfx_torch_on = ExtResource("2_genst")
 sfx_torch_on_distance = 5.0
-sfx_torch_off = ExtResource("3_bbmj2")
+sfx_torch_off = ExtResource("3_niom3")
 sfx_torch_off_distance = 5.0
 sfx_footsteps = Array[AudioStream]([ExtResource("4_5q8fn"), ExtResource("5_wva7c"), ExtResource("6_7obkq"), ExtResource("7_vo27k")])
 sfx_footstep_db = -20.0
@@ -524,7 +524,7 @@ mouse_filter = 1
 layout_mode = 1
 
 [node name="hammerdrill" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
-transform = Transform3D(5.4063161615360776e-17, -2.8745892936326145e-17, -1, 0.4694715627858908, 0.882947592858927, 8.354401634806166e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
+transform = Transform3D(5.406316161536077e-17, -2.874589293632614e-17, -1, 0.4694715627858908, 0.882947592858927, 8.354401634806166e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
 visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
