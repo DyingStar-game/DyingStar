@@ -4,10 +4,13 @@
 [ext_resource type="Script" uid="uid://dtb3oqqid36t1" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="2_animator"]
 [ext_resource type="Resource" uid="uid://dti7f5itnvf0f" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="3_animset"]
 
-[node name="human_puppet" type="Node3D" unique_id=29721753]
+[node name="human_puppet" type="Node3D" unique_id=1236297687]
 
-[node name="UALDyingStar" parent="." unique_id=1072648671 instance=ExtResource("1_xhonh")]
+[node name="UALDyingStar" parent="." unique_id=1485374986 instance=ExtResource("1_xhonh")]
 
-[node name="CharacterAnimator" type="Node" parent="." unique_id=1539693114]
+[node name="CharacterAnimator" type="Node" parent="." unique_id=1754996285]
 script = ExtResource("2_animator")
 anim_set = ExtResource("3_animset")
+vault_offset = Vector3(0, -0.3, 0)
+head_cam_amount = 0.439
+turn_rate_threshold = 0.1

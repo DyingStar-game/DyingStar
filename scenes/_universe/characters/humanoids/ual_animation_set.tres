@@ -4,3 +4,4 @@
 
 [resource]
 script = ExtResource("1_animset")
+idle_variations = Array[StringName]([&"Idle_LookAround", &"Idle_FoldArms"])

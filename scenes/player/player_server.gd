@@ -81,6 +81,24 @@ var _emote_count: int = 0
 ## Seat state: replicated the same way ("seat:<role>:<n>" / "unseat:<n>") so every remote avatar shows the
 ## sit/drive pose (a seated remote is not reparented, so this is its only seat signal).
 var _seat_count: int = 0
+## Auto-vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
+## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
+## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
+var _vault_count: int = 0
+var _vaulting: bool = false
+var _vault_time: float = 0.0
+var _vault_duration: float = 0.6
+var _vault_start: Vector3 = Vector3.ZERO  # parent-frame (local) start, same space as player.position
+var _vault_end: Vector3 = Vector3.ZERO    # parent-frame (local) landing on the ledge
+var _vault_arc: float = 0.0               # vault-OVER arc peak (m) above the straight path; 0 = climbs (no arc)
+var _vault_up_local: Vector3 = Vector3.ZERO  # parent-frame up direction, along which the arc is added
+var _vault_cooldown: float = 0.0          # seconds before another vault may start
+## Step-up: a short, SILENT scripted glide onto a low obstacle (no vault clip, keeps momentum) — smooth,
+## speed-independent, and no cooldown so stairs climb freely. Same parent-frame (local) convention.
+var _stepping: bool = false
+var _step_start: Vector3 = Vector3.ZERO
+var _step_end: Vector3 = Vector3.ZERO
+var _step_time: float = 0.0
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -122,11 +140,14 @@ func _has_headroom(target_stance: int) -> bool:
 	if target_h <= current_h:
 		return true
 	var up: Vector3 = player.up_direction
+	return _solid_ray(player.global_position + up * current_h, player.global_position + up * (target_h + 0.05)).is_empty()
+
+## Cast for a solid obstacle (MASK_OBSTACLE) between two world points, ignoring our own body. Returns the
+## hit dict, or {} when clear. Shared by the headroom check and the vault probes (DRY).
+func _solid_ray(from_pos: Vector3, to_pos: Vector3) -> Dictionary:
 	var space = player.get_world_3d().direct_space_state
-	var from_pos: Vector3 = player.global_position + up * current_h
-	var to_pos: Vector3 = player.global_position + up * (target_h + 0.05)
 	var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos, Globals.MASK_OBSTACLE, [player.get_rid()])
-	return space.intersect_ray(query).is_empty()
+	return space.intersect_ray(query)
 
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
 ## stance needs headroom (else we drop the request and stay low). Replicates only on an actual change.
@@ -535,6 +556,14 @@ func _physics_process(delta: float) -> void:
 	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
 	_server_update_carry_prompt(delta)
+	if _vault_cooldown > 0.0:
+		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
+	if _vaulting:
+		_server_update_vault(delta)  # a climb is in progress: it owns the body until it lands
+		return
+	if _stepping:
+		_server_update_step(delta)  # a smooth step-up glide is in progress
+		return
 	if player.piloting and is_instance_valid(player._seat_node):
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
@@ -595,6 +624,12 @@ func _physics_process(delta: float) -> void:
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
+	# Auto-vault: standing still-on-floor and walking forward into a low obstacle / ledge -> climb onto it.
+	# Server-authoritative; runs before the jump/gravity/move so the normal step never fights the slide.
+	if player.is_on_floor() and _try_start_vault():
+		_server_update_vault(delta)
+		return
+
 	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (default until first set).
 	var walk_target: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
 	var speed = player.sprint_speed if _sprint_held else walk_target
@@ -644,6 +679,13 @@ func _physics_process(delta: float) -> void:
 	if player.velocity.length() > _terminal_velocity:
 		player.velocity = player.velocity.normalized() * _terminal_velocity
 
+	# LOW obstacle right ahead (below the vault threshold): glide the body onto it (Godot's CharacterBody3D
+	# won't step up on its own). Taller obstacles are the vault's job. Started here, then driven by
+	# _server_update_step for a smooth, speed-independent climb.
+	if player.is_on_floor() and player.input_direction != Vector2.ZERO and _try_start_step_up(move_direction):
+		_server_update_step(delta)
+		return
+
 	player.move_and_slide()
 
 	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
@@ -670,6 +712,129 @@ func _physics_process(delta: float) -> void:
 		null,
 		player.is_parented
 	)
+
+## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
+## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
+## here; the geometry (trace-based mantle) is the shared VaultProbe, so the debug HUD reads the SAME probe.
+func _try_start_vault() -> bool:
+	if _vaulting or _vault_cooldown > 0.0 or _stance != 0:
+		return false  # only from a standing, settled state
+	if player.hands_item != null or player.is_jumping or not player.is_on_floor():
+		return false  # not with hands full, mid-jump, or off the ground
+	if player.mining_tool.is_perforating:
+		return false
+	if player.input_direction == Vector2.ZERO or player.input_direction.y > -0.3:
+		return false  # only while actually walking forward (get_vector: forward = y < 0)
+	var p: Dictionary = VaultProbe.probe(player, _stance_height(0))  # shared geometry (see the debug HUD)
+	if not bool(p["ok"]):
+		return false
+	var key: String = p["key"]
+	_vault_duration = player.vault_duration
+	if key == "climb_2m":
+		_vault_duration = player.climb2_duration
+	elif key == "climb_1m":
+		_vault_duration = player.climb1_duration
+	var frame: Node = player.get_parent()
+	_vault_start = player.position  # parent-frame (local); the slide stays robust to a moving planet frame
+	var landing: Vector3 = p["landing"]
+	_vault_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
+	# Vault-OVER (SafetyVault) arcs UP over the obstacle then back down to the far-side ground; the climbs
+	# go straight to the top (no arc). The arc is added along the body's up, expressed in the parent frame.
+	if key == "vault":
+		_vault_arc = float(p["height"]) + player.vault_arc_margin
+		var up_world: Vector3 = player.up_direction
+		if frame is Node3D:
+			_vault_up_local = ((frame as Node3D).global_transform.basis.inverse() * up_world).normalized()
+		else:
+			_vault_up_local = up_world.normalized()
+	else:
+		_vault_arc = 0.0
+	_vault_time = 0.0
+	_vaulting = true
+	_vault_count += 1
+	# "vault:<key>:<height>:<n>" — the height lets the animator align the pose to the obstacle (see
+	# CharacterAnimator vault_puppet_offset); the counter defeats delta compression, like the jump.
+	player.server_send_properties_to_client({"action": "vault:%s:%.2f:%d" % [key, float(p["height"]), _vault_count]})
+	return true
+
+## Advance the scripted climb: slide the body from its start to the ledge landing over _vault_duration,
+## gravity/input/collision suspended (the position is written directly, like EVA). Replicates the pose each
+## tick; on arrival, releases control and starts the cooldown. The clip plays client-side off the event.
+func _server_update_vault(delta: float) -> void:
+	_vault_time += delta
+	var s: float = clampf(_vault_time / maxf(_vault_duration, 0.01), 0.0, 1.0)
+	var pos: Vector3 = _vault_start.lerp(_vault_end, smoothstep(0.0, 1.0, s))
+	if _vault_arc > 0.0:
+		pos += _vault_up_local * (_vault_arc * sin(PI * s))  # up over the obstacle, back to ground far side
+	player.position = pos
+	player.velocity = Vector3.ZERO
+	_emit_move()
+	if s >= 1.0:
+		_vaulting = false
+		_vault_cooldown = player.vault_cooldown
+
+## Detect a LOW obstacle we walk into (below vault_min_height, so no vault fires) and, if there is a
+## walkable top within that height with clearance above, START a short glide onto it (see
+## _server_update_step). Returns true if a step-up began. Reuses the vault threshold (no gap between "walk
+## up" and "vault") and the shared _solid_ray. The short step_up_reach keeps it from firing before the step.
+func _try_start_step_up(move_dir: Vector3) -> bool:
+	var up: Vector3 = player.up_direction
+	var fwd: Vector3 = move_dir - up * move_dir.dot(up)
+	if fwd.length() < 0.01:
+		return false
+	fwd = fwd.normalized()
+	var feet: Vector3 = player.global_position
+	var reach: Vector3 = fwd * player.step_up_reach
+	var max_step: float = player.vault_min_height  # below the vault threshold = a step you walk up
+	# The face of a low obstacle right at the ankles?
+	var low: Dictionary = _solid_ray(feet + up * 0.05, feet + up * 0.05 + reach)
+	if low.is_empty():
+		return false
+	# Clear at step height (else it is tall -> the vault or a wall handles it).
+	if not _solid_ray(feet + up * max_step, feet + up * max_step + reach).is_empty():
+		return false
+	# Probe the top JUST PAST the face (from where the low ray hit), so a THIN obstacle works too — a fixed
+	# forward offset overshoots a shallow step and lands on the ground behind it, finding no top.
+	var face_dist: float = (Vector3(low["position"]) - feet).dot(fwd) + 0.05
+	var over: Vector3 = fwd * face_dist
+	var top: Dictionary = _solid_ray(feet + up * max_step + over, feet + over + up * 0.02)
+	if top.is_empty() or Vector3(top["normal"]).dot(up) < 0.6:
+		return false  # no top, or too steep to stand on
+	var h: float = (Vector3(top["position"]) - feet).dot(up)
+	if h <= 0.03 or h > max_step:
+		return false
+	# Land lifted by h and nudged forward past the face (speed-independent — a lift alone stalled at a slow
+	# walk, waiting on horizontal velocity to clear the edge). Glided, not teleported (see below).
+	var landing: Vector3 = feet + up * (h + 0.03) + fwd * face_dist
+	var frame: Node = player.get_parent()
+	_step_start = player.position
+	_step_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
+	_step_time = 0.0
+	_stepping = true
+	return true
+
+## Advance the smooth step-up glide: ease the body from its start to the step top over step_up_duration.
+## No clip and no cooldown (stairs climb freely); the velocity is left untouched, so walking resumes with
+## its momentum the instant the glide ends.
+func _server_update_step(delta: float) -> void:
+	_step_time += delta
+	var s: float = clampf(_step_time / maxf(player.step_up_duration, 0.01), 0.0, 1.0)
+	player.position = _step_start.lerp(_step_end, smoothstep(0.0, 1.0, s))
+	_emit_move()
+	if s >= 1.0:
+		_stepping = false
+
+## Replicate the body's current pose to clients (server-authoritative move). Shared by the scripted glides
+## (vault, step-up) so they emit exactly like the normal tick.
+func _emit_move() -> void:
+	player.new_input_from_server = false
+	player.emit_signal(
+		"hs_server_move",
+		player.client_uuid,
+		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
+		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
+		null,
+		player.is_parented)
 
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
 ## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
