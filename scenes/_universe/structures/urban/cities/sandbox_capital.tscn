@@ -209,7 +209,7 @@ collision_layer = 1
 collision_mask = 1
 
 [node name="PalletPlate120x80x100" parent="." unique_id=404745465 instance=ExtResource("9_04krg")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.20100000000093132, 0, 12.998999999996158)
+transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, -14.504380839696834, 0, 12.24100940661106)
 collision_layer = 1
 collision_mask = 1
 
@@ -522,3 +522,49 @@ transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -53.79
 
 [node name="test_container_12x2_6" parent="." unique_id=491635117 instance=ExtResource("28_npgr1")]
 transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -58.08888827826059, 9.38123322136164e-07, -61.12968649689696)
+
+[node name="Rampe_crouch" type="CSGBox3D" parent="." unique_id=209106272]
+transform = Transform3D(0.08965862791858242, 0, 0, 0, 1, 0, 0, 0, 0.07066914505344439, -16.57283190674337, 1.4782036133445406, 12.13809383032017)
+material_override = SubResource("ShaderMaterial_3pv0l")
+use_collision = true
+size = Vector3(4, 0.5, 37.48969738831602)
+material = ExtResource("19_vaq7g")
+
+[node name="Rampe_crouch2" type="CSGBox3D" parent="." unique_id=459908406]
+transform = Transform3D(0.08965862791858242, 0, 0, 0, 1, 0, 0, 0, 0.07066914505344439, -18.664670193580022, 0.9719325353081598, 12.13809383032017)
+material_override = SubResource("ShaderMaterial_3pv0l")
+use_collision = true
+size = Vector3(4, 0.5, 37.48969738831602)
+material = ExtResource("19_vaq7g")
+
+[node name="Rampe_crouch3" type="CSGBox3D" parent="." unique_id=1886453401]
+transform = Transform3D(0.14426475919743806, 0, 0, 0, 1, 0, 0, 0, 0.21892177845547517, -11.98171028144488, 0.4608756202091111, 12.048045239308712)
+material_override = SubResource("ShaderMaterial_3pv0l")
+use_collision = true
+size = Vector3(1.7797359698267885, 0.5, 8.751492397519542)
+material = ExtResource("19_vaq7g")
+
+[node name="PalletLiquid120x80x101" parent="." unique_id=2005981301 instance=ExtResource("8_k2wr2")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -5.7701639832050535, 0, 11.793127000212694)
+collision_layer = 1
+collision_mask = 1
+
+[node name="PalletLiquid120x80x102" parent="." unique_id=1327088651 instance=ExtResource("8_k2wr2")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -5.7701639832050535, 0.9586098820531784, 11.777828722704198)
+collision_layer = 1
+collision_mask = 1
+
+[node name="PalletLiquid120x80x103" parent="." unique_id=615943620 instance=ExtResource("8_k2wr2")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -8.857265481999466, 0, 11.793127000212694)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Sign_Ramp" type="CSGBox3D" parent="." unique_id=251164969]
+transform = Transform3D(1, 0, -2.3088811396239985e-24, 0, 1, 0, 2.3088811396239985e-24, 0, 1, -20.91584684212495, 0.7379370289984281, 13.361805461950794)
+size = Vector3(1, 0.5, 0.1)
+
+[node name="Label3D" type="Label3D" parent="Sign_Ramp" unique_id=2028217107]
+transform = Transform3D(-1, 1.2246064e-16, 1.71536e-32, 1.224606353822377e-16, 1, 0, -4.5912351213031045e-49, 0, -1, 0.00413601233744385, 0.01021945142401774, -0.0534855244709785)
+modulate = Color(0.8391672, 0.55991113, 0.23282835, 1)
+text = "<= Obstacle course"
+font_size = 25
