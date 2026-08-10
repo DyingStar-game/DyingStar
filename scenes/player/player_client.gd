@@ -186,9 +186,7 @@ func _process(_delta: float) -> void:
 	# Free the mouse + freeze the camera whenever the player isn't in direct control: focused on a
 	# 3D screen, the spawn wheel, OR the pause menu is open. Otherwise capture the mouse and move the
 	# camera. (Without the pause case, this would re-capture every frame and hide the menu cursor.)
-	var ui_focus: bool = player.screen_interacting != null \
-		or _any_wheel_open() \
-		or GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
+	var ui_focus: bool = _ui_focus()
 	if ui_focus:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO
@@ -284,10 +282,13 @@ func _physics_process(delta: float) -> void:
 		return
 	if !player.active: return
 
+	# Pause menu or a radial wheel is open: the owner is not in direct control -> don't move or act.
+	# We still fall through so input_direction becomes ZERO and a single "stop" is emitted to the server.
+	var input_locked: bool = _input_locked()
 	var dir_vect = Vector3.ZERO
 
 
-	if not player.direct_chat.can_write:
+	if not player.direct_chat.can_write and not input_locked:
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
 
 	if dir_vect:
@@ -303,17 +304,18 @@ func _physics_process(delta: float) -> void:
 	player.update_last_basis()
 
 	# Sprint (Shift held) is server-authoritative: send only when it changes (replicate what changes).
-	var sprint_held: bool = Input.is_action_pressed(player.SPRINT)
+	var sprint_held: bool = Input.is_action_pressed(player.SPRINT) and not input_locked
 	if sprint_held != _sprint_sent:
 		_sprint_sent = sprint_held
 		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
 
 	# Crouch / prone are TOGGLES, server-authoritative: each press cycles standing <-> that stance. The
 	# server owns `stance`; we only request the change (from the last echoed value) and apply the reply.
-	if Input.is_action_just_pressed("crouch"):
-		player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 1 else 1})
-	elif Input.is_action_just_pressed("prone"):
-		player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 2 else 2})
+	if not input_locked:
+		if Input.is_action_just_pressed("crouch"):
+			player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 1 else 1})
+		elif Input.is_action_just_pressed("prone"):
+			player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 2 else 2})
 
 	player.labelx.text = str("%0.2f" % player.global_position[0])
 	player.labely.text = str("%0.2f" % player.global_position[1])
@@ -455,6 +457,10 @@ func _replicate_look() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if player.remote_player: return
+	# Pause menu (Esc) is a hard modal: ignore EVERY player input — seated controls, radial wheels,
+	# jump, torch, interaction… Nothing below runs while it is up. (Movement/camera are gated the
+	# same way in _physics_process / _process via _input_locked / _ui_focus.)
+	if _menu_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
 	# (open it first by looking at its handle). A seat with no door_id leaves directly.
 	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
@@ -521,6 +527,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if !player.active: return
 
+	# On foot. Radial wheels (emote on T, spawn on Alt+T) own their open+confirm lifecycle, so we
+	# service them first, then swallow every other on-foot action while one is open.
+	_handle_radial_wheels(event)
+	if _any_wheel_open(): return
+
 	if event.is_action_pressed(JUMP):
 		player.client_send_action_to_server({"action": JUMP})
 
@@ -549,20 +560,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow(aim)
-
-	# Emote wheel (T) and spawn wheel (Alt+T) share the T key: gate the emote on Alt NOT being held.
-	if event.is_action_pressed("emote_wheel") and not (event is InputEventKey and event.alt_pressed):
-		if player._emote_wheel:
-			player._emote_wheel.open(EmoteCatalog.build_wheel())
-	if event.is_action_released("emote_wheel"):
-		if player._emote_wheel and player._emote_wheel.visible:
-			player._emote_wheel.confirm()
-	if event.is_action_pressed("spawn_wheel"):
-		if player._spawn_wheel:
-			player._spawn_wheel.open(SpawnCatalog.build_wheel())  # labels + keys come from the catalogue
-	if event.is_action_released("spawn_wheel"):
-		if player._spawn_wheel:
-			player._spawn_wheel.confirm()
 
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
@@ -742,6 +739,39 @@ func _on_emote_selected(key) -> void:
 func _any_wheel_open() -> bool:
 	return (player._spawn_wheel != null and player._spawn_wheel.visible) \
 		or (player._emote_wheel != null and player._emote_wheel.visible)
+
+## Open/confirm the radial wheels: emote on T, spawn on Alt+T (they share the T key, so the emote
+## is gated on Alt NOT being held). Called before the wheel lock in _unhandled_input so a wheel that
+## is up still confirms on release. One place for both wheels (DRY).
+func _handle_radial_wheels(event: InputEvent) -> void:
+	if event.is_action_pressed("emote_wheel") and not (event is InputEventKey and event.alt_pressed):
+		if player._emote_wheel:
+			player._emote_wheel.open(EmoteCatalog.build_wheel())
+	if event.is_action_released("emote_wheel"):
+		if player._emote_wheel and player._emote_wheel.visible:
+			player._emote_wheel.confirm()
+	if event.is_action_pressed("spawn_wheel"):
+		if player._spawn_wheel:
+			player._spawn_wheel.open(SpawnCatalog.build_wheel())  # labels + keys come from the catalogue
+	if event.is_action_released("spawn_wheel"):
+		if player._spawn_wheel:
+			player._spawn_wheel.confirm()
+
+## The pause menu (Esc) is open: a HARD modal — the game must ignore ALL player input (seated
+## controls, radial wheels, jump, interaction…). Checked once at the top of _unhandled_input.
+func _menu_open() -> bool:
+	return GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
+
+## Player input is locked: the pause menu is up OR a radial wheel is open. No movement and no
+## action fires (see _physics_process / _unhandled_input). A 3D screen does NOT lock input — you
+## leave it by walking out of its zone, so movement must stay available while facing one.
+func _input_locked() -> bool:
+	return _menu_open() or _any_wheel_open()
+
+## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
+## Frees the cursor and freezes the look (see _process). One source.
+func _ui_focus() -> bool:
+	return player.screen_interacting != null or _input_locked()
 
 ## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
 ## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
