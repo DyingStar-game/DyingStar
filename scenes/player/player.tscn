@@ -24,8 +24,10 @@
 [ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/player/debug/debug_client_fps.gd" id="9_2g0ng"]
 [ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="9_5csap"]
 [ext_resource type="Script" uid="uid://cl7pwq5jalp1i" path="res://scenes/player/debug/debug_altitude.gd" id="9_alt"]
+[ext_resource type="AudioStream" uid="uid://b0bv216274oqf" path="res://assets/_universe/audio/sfx/characters/vault.ogg" id="9_ds1xl"]
 [ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="9_genst"]
 [ext_resource type="Script" uid="uid://dlan2ws7xee5x" path="res://scenes/player/debug/debug_planet_time.gd" id="9_ptime"]
+[ext_resource type="AudioStream" uid="uid://lrx3p8pxesgu" path="res://assets/_universe/audio/sfx/characters/vault-high.ogg" id="10_1u1sw"]
 [ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/player/debug/debug_client_nbplayers.gd" id="10_udrf3"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
 [ext_resource type="Script" uid="uid://3snlx7cgv5wk" path="res://scenes/player/debug/debug_universe_servers.gd" id="11_qgvuu"]
@@ -42,6 +44,10 @@
 [ext_resource type="Texture2D" uid="uid://ndwy7fky4xxu" path="res://ui/player_interface/volume-high-solid-full.svg" id="27_akued"]
 [ext_resource type="Texture2D" uid="uid://crlbs5i36jfp" path="res://ui/player_interface/microphone-solid-full.svg" id="28_2sxo3"]
 [ext_resource type="Script" uid="uid://d2lihgny3jxwd" path="res://scenes/mining/mining_tool.gd" id="33_2sxo3"]
+[ext_resource type="AudioStream" uid="uid://dekoikplxs6gs" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-loop.ogg" id="43_niom3"]
+[ext_resource type="AudioStream" uid="uid://cr8k533bith30" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-end.ogg" id="44_iwuka"]
+[ext_resource type="AudioStream" uid="uid://cawb3sua28b7t" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-equip.ogg" id="44_ttakn"]
+[ext_resource type="AudioStream" uid="uid://cwd8j2b2kw5m5" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-fail.ogg" id="45_hyqqp"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -77,6 +83,12 @@ sfx_footsteps = Array[AudioStream]([ExtResource("4_5q8fn"), ExtResource("5_wva7c
 sfx_footstep_db = -20.0
 sfx_jump = ExtResource("8_wva7c")
 sfx_jump_distance = 10.0
+sfx_vault = ExtResource("9_ds1xl")
+sfx_vault_db = -19.0
+sfx_climb_1m = ExtResource("9_ds1xl")
+sfx_climb_1m_db = -19.0
+sfx_climb_2m = ExtResource("10_1u1sw")
+sfx_climb_2m_db = -19.0
 metadata/client_uuid = ""
 
 [node name="Puppet" parent="." unique_id=771997724 instance=ExtResource("9_genst")]
@@ -498,8 +510,6 @@ grow_vertical = 0
 
 [node name="AudioContainer" type="GridContainer" parent="UserInterface/HUD/Control" unique_id=281237977]
 layout_mode = 0
-offset_left = 0.0
-offset_top = 0.0
 offset_right = 201.0
 offset_bottom = 57.0
 scale = Vector2(0.07, 0.07)
@@ -540,6 +550,11 @@ equipment_item_scale = 1.0
 bit_tip_offset = Vector3(-0.55, 0.24, 0)
 stow_offset = Vector3(-0.145, 0.07, -0.1)
 stow_rotation_deg = Vector3(19.6, 83.175, 99.77)
+sfx_perforate = ExtResource("43_niom3")
+sfx_perforate_end = ExtResource("44_iwuka")
+sfx_perforate_fail = ExtResource("45_hyqqp")
+sfx_equip = ExtResource("44_ttakn")
+sfx_unequip = ExtResource("44_ttakn")
 
 [connection signal="display_debug" from="." to="UserInterface/Debug" method="_on_normal_player_display_debug"]
 [connection signal="display_debug" from="." to="UserInterface/Debug/universe_servers" method="_on_normal_player_display_debug"]

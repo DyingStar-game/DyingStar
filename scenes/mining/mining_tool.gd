@@ -77,6 +77,46 @@ const REJECT_DURATION := 0.3
 ## Rotation (deg) of the stowed tool relative to the belt bone.
 @export var stow_rotation_deg: Vector3 = Vector3(5.0, -90.0, 95.1)
 
+@export_group("Audio SFX")
+@export_subgroup("Perforate (loop)")
+## Held LOOP while perforating a rock (starts on the drill, stops on release / completion). Played on
+## every body (the perforating state is replicated), so nearby players hear it too.
+@export var sfx_perforate: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_perforate_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_perforate_falloff: float = 4.0
+@export_range(1.0, 500.0, 1.0) var sfx_perforate_distance: float = 30.0
+@export var sfx_perforate_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+@export_subgroup("Perforate end")
+## One-shot when a perforation COMPLETES (the drill finishes and the rock fractures). Owner-local.
+@export var sfx_perforate_end: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_perforate_end_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_perforate_end_falloff: float = 4.0
+@export_range(1.0, 500.0, 1.0) var sfx_perforate_end_distance: float = 30.0
+@export var sfx_perforate_end_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+@export_subgroup("Perforate fail")
+## One-shot when a perforation is attempted OFF a fault (the bit bounces, no cut). Owner-local feedback.
+@export var sfx_perforate_fail: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_perforate_fail_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_perforate_fail_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_perforate_fail_distance: float = 25.0
+@export var sfx_perforate_fail_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+@export_subgroup("Equip")
+## One-shot when the perforator is equipped (tool select, key 1). Played on every body (tool state replicated).
+@export var sfx_equip: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_equip_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_equip_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_equip_distance: float = 20.0
+@export var sfx_equip_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+@export_subgroup("Unequip")
+## One-shot when the perforator is put away (unequipped). Played on every body (tool state replicated).
+@export var sfx_unequip: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_unequip_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_unequip_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_unequip_distance: float = 20.0
+@export var sfx_unequip_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_group("")
+
 ## True while aiming (read by the player to slow the mouse/movement).
 var is_aiming: bool = false
 ## True during perforation (read by the player to freeze the mouse/movement).
@@ -102,6 +142,10 @@ var _perforator_base: Vector3 = Vector3.ZERO  # rest pos or reach target (the an
 var _tip_gizmo: MeshInstance3D = null  # debug sphere on the bit tip (calibration)
 var _equipped: bool = false  # logical "tool equipped" state (visibility also depends on stow)
 var _stowed: bool = false    # true while the perforator is stowed (player carrying an ore)
+var _perforate_player: AudioStreamPlayer3D = null  # held looping perforation sound (reused, not freed)
+var _perforate_sfx_on: bool = false  # last perforating state the loop was set to (edge detection)
+var _equip_prev: bool = false        # last _equipped seen, to detect the equip edge for the click
+var _sfx_ready: bool = false         # skip the spawn snapshot (a body spawning equipped must not click)
 
 ## Inject the player's camera rig and build the equipment mount + perforator.
 func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
@@ -182,6 +226,8 @@ func _process(delta: float) -> void:
 	_update_perforation_visual(delta)
 	# Off-fault "rejected" jab (owner-local feedback): the bit lunges out then snaps back.
 	_update_reject_visual(delta)
+	# Audio from the replicated state (loop + equip click), on every instance so all players hear it.
+	_update_sfx()
 
 ## The shared belt attachment point on the animated puppet (a BoneAttachment3D on the hip bone, created
 ## once by CharacterAnimator). ANY tool holsters onto it with its OWN offset — the mount is generic, the
@@ -255,15 +301,30 @@ func update_local(_delta: float) -> void:
 		elif _perforation_t >= PERFORATION_DURATION:
 			_emit_perforate()  # animation complete -> fracture the targeted rock
 			_set_perforating(false)
+			_play_sfx(sfx_perforate_end, sfx_perforate_end_db, sfx_perforate_end_falloff,
+					sfx_perforate_end_distance, sfx_perforate_end_attenuation)
 	elif looking and Input.is_action_just_pressed("perforate"):
 		_capture_target()
 		if _target_rock_uuid != "" and _target_on_fault:
 			_set_perforating(true)            # on a fault -> real perforation
 		else:
 			_reject_t = 0.0                   # off a fault -> brief rejected jab, no cut
+			_play_sfx(sfx_perforate_fail, sfx_perforate_fail_db, sfx_perforate_fail_falloff,
+					sfx_perforate_fail_distance, sfx_perforate_fail_attenuation)
 
 	# Camera pitch ("head") is now a generic player property sent by NormalPlayer
 	# (tech-debt A), not here — MiningTool only consumes it via apply_remote().
+
+## Owner: drop any in-progress aim / perforation (e.g. a menu opened). Replicates the perforation stop
+## so remotes end the loop too, hides the crosshair, and clears the off-fault jab. Idempotent.
+func cancel() -> void:
+	if is_perforating:
+		_set_perforating(false)  # replicated -> remotes stop the perforation (and its loop sound) too
+	is_aiming = false
+	_reject_t = -1.0
+	if _crosshair_shown:
+		_crosshair_shown = false
+		aiming_changed.emit(false)
 
 ## Owner only: toggle the equipped tool and replicate the state.
 func toggle_equip() -> void:
@@ -431,3 +492,52 @@ func _update_reject_visual(delta: float) -> void:
 		_bit.position = _bit_rest + bit_axis * (jab * bit_amplitude)
 	else:
 		_perforator.position = _perforator_base - Vector3(0.0, 0.0, jab * perforation_hammer_amplitude)
+
+# ── Audio ────────────────────────────────────────────────────────────────────
+
+## Drive the audio from the replicated state (runs on every instance). The FIRST frame only syncs the
+## edge-detectors so a spawn snapshot (already equipped / mid-perforation) never plays a one-shot click.
+func _update_sfx() -> void:
+	if not _sfx_ready:
+		_sfx_ready = true
+		_equip_prev = _equipped
+		_perforate_sfx_on = is_perforating
+		if is_perforating:
+			_start_or_stop_perforate_sfx(true)  # spawned mid-perforation: hold the loop, no click
+		return
+	if is_perforating != _perforate_sfx_on:
+		_perforate_sfx_on = is_perforating
+		_start_or_stop_perforate_sfx(is_perforating)
+	if _equipped != _equip_prev:
+		_equip_prev = _equipped
+		if _equipped:  # tool selected (key 1)
+			_play_sfx(sfx_equip, sfx_equip_db, sfx_equip_falloff, sfx_equip_distance, sfx_equip_attenuation)
+		else:  # tool put away
+			_play_sfx(sfx_unequip, sfx_unequip_db, sfx_unequip_falloff, sfx_unequip_distance, sfx_unequip_attenuation)
+
+## One-shot SFX positioned on the tool (on the body). Silent on the headless server / in the editor.
+func _play_sfx(stream: AudioStream, db: float, falloff: float, distance: float,
+		attenuation: Sfx3D.Attenuation) -> void:
+	if _sfx_muted():
+		return
+	Sfx3D.play(self, stream, db, falloff, distance, attenuation)
+
+## Start/stop the held perforation loop: one reused AudioStreamPlayer3D (same pattern as the vehicle
+## engine idle). Configured with a loop-enabled copy of the stream so it keeps going until stopped.
+func _start_or_stop_perforate_sfx(on: bool) -> void:
+	if not on:
+		if _perforate_player != null:
+			_perforate_player.stop()
+		return
+	if sfx_perforate == null or _sfx_muted():
+		return
+	if _perforate_player == null:
+		_perforate_player = AudioStreamPlayer3D.new()
+		add_child(_perforate_player)
+	Sfx3D.configure(_perforate_player, Sfx3D.as_looping(sfx_perforate), sfx_perforate_db,
+			sfx_perforate_falloff, sfx_perforate_distance, sfx_perforate_attenuation)
+	_perforate_player.play()
+
+## Audio is silent on the headless game server and in the editor (mirrors the vehicle).
+func _sfx_muted() -> bool:
+	return Engine.is_editor_hint() or OS.has_feature("dedicated_server")

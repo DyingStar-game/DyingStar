@@ -194,6 +194,30 @@ const TELEPORT_TARGETS := {
 @export_range(1.0, 500.0, 1.0) var sfx_jump_distance: float = 25.0
 @export var sfx_jump_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_subgroup("Vault (over a low obstacle)")
+## Played when the player auto-vaults OVER a low obstacle (SafetyVault). See Vault / climb stats.
+@export var sfx_vault: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_vault_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_vault_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_vault_distance: float = 25.0
+@export var sfx_vault_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Climb 1m")
+## Played when the player climbs ONTO a ~1 m ledge (ClimbUp_1m).
+@export var sfx_climb_1m: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_climb_1m_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_climb_1m_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_climb_1m_distance: float = 25.0
+@export var sfx_climb_1m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Climb 2m")
+## Played when the player climbs ONTO a ~2 m ledge (ClimbUp_2m).
+@export var sfx_climb_2m: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_climb_2m_db: float = 0.0
+@export_range(0.5, 200.0, 0.5) var sfx_climb_2m_falloff: float = 3.0
+@export_range(1.0, 500.0, 1.0) var sfx_climb_2m_distance: float = 25.0
+@export var sfx_climb_2m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
 @export_group("")
 
 var client_uuid: String = ""

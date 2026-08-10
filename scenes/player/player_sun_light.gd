@@ -16,7 +16,13 @@ extends DirectionalLight3D
 
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
 var player: Node3D = null
+## True once the local up-direction has been STEADY for a stretch (star found, gravity resolved, so the
+## real day/night AND the body/camera orientation have settled). The spawn loading screen waits on this,
+## so the world doesn't flash daytime + a tilted camera then snap to the correct time/orientation.
+var settled: bool = false
 var _star: Node3D = null
+var _prev_up_raw: Vector3 = Vector3.ZERO  # last frame's raw up, to detect when the orientation stops moving
+var _up_steady_frames: int = 0            # consecutive frames the raw up barely changed
 ## Ground-level volumetric fog density, captured once from the camera Environment (-1 = not captured).
 var _fog_density_ground: float = -1.0
 ## Stabilised up-direction. The raw player.up_direction occasionally swings for a few frames on the
@@ -67,6 +73,20 @@ func _process(delta: float) -> void:
 	to_star = to_star.normalized()
 	# Stabilised up (centre planet -> player): reject a momentary gravity-area glitch, follow real motion.
 	var up_raw: Vector3 = (player as CharacterBody3D).up_direction
+	# Orientation-settled detection for the spawn screen: count frames where the raw up barely moves. On
+	# the ground the gravity stack swings for a few frames after spawn (and the body/camera + light follow);
+	# once it holds steady, everything has settled. Planet spin is negligible per frame, so it stays steady.
+	if _prev_up_raw != Vector3.ZERO and up_raw.dot(_prev_up_raw) > 0.9999:
+		_up_steady_frames += 1
+	else:
+		_up_steady_frames = 0
+	_prev_up_raw = up_raw
+	# Settled = the up has held steady AND the BODY has finished aligning to it. orient_player() lerps the
+	# body toward align-with-up by 0.3/frame, so the camera keeps straightening for a stretch after the up
+	# is steady; wait until the body's own up matches the gravity up before lifting the spawn screen.
+	var body_aligned: bool = player.global_transform.basis.y.dot(up_raw) > 0.9995
+	if _up_steady_frames >= 20 and body_aligned:
+		settled = true
 	if _up_stable == Vector3.ZERO:
 		_up_stable = up_raw
 	elif up_raw.dot(_up_stable) > 0.9:  # within ~25deg: a real, gradual change -> follow it

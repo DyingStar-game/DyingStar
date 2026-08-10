@@ -128,21 +128,33 @@ func setup() -> void:
 	player.astronaut.visible = false
 	player.interact_label.hide()
 	player.connect_area_detect()
-	player.active = false
-
-	await get_tree().create_timer(5).timeout
+	# Show the "Spawning..." splash, then take control and let the world settle BEHIND it. up_direction is
+	# only refreshed by _process (which runs once active), and the gravity up steadies over a few frames
+	# after spawn — the body orientation + day/night follow it. The splash (a CanvasLayer at layer 100)
+	# covers that settle, so there's no visible day->night + camera-tilt snap once it lifts.
+	var loading := get_tree().root.get_node_or_null("Loading")
+	if loading != null:
+		var label := loading.find_child("Label", true, false) as Label
+		if label != null:
+			label.text = "Spawning..."
 
 	player.update_last_basis()
+	player.active = true  # take control now; _process starts orienting the body + updating the sun
 
-	player.active = true
+	# Hold the splash a short minimum (so the world DRAWS behind it — there is no client terrain-ready
+	# signal) AND until the sun's day/night + the body orientation have settled (gravity resolved, up
+	# steady). Capped by a timeout so a stuck spawn never hangs.
+	var waited: float = 0.0
+	while (waited < 2.5 or player.get_current_gravity_parent() == null or not sun.settled) and waited < 10.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
 
 	# Initial visibility from the saved setting (default true — early alpha).
 	player._display_debug = SettingsManager.is_show_debug()
 	player.display_debug.emit(player._display_debug)
 
-	var loading_node = get_tree().root.get_node("Loading")
-	if loading_node:
-		loading_node.queue_free()
+	if loading != null:
+		loading.queue_free()
 
 	GameOrchestrator.stop_menu_music()
 
@@ -176,18 +188,23 @@ func _process(_delta: float) -> void:
 		player.interact_label.hide()
 		return
 
-	# Mining (aim, perforation, head sync) runs in the MiningTool; here we just
-	# apply its effect on the local mouse look before moving the camera.
-	player.mining_tool.update_local(_delta)
-	if player.mining_tool.is_aiming:
-		player.mouse_motion *= player.mining_tool.aim_sensitivity_factor
-	if player.mining_tool.is_perforating:
-		player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
-
 	# Free the mouse + freeze the camera whenever the player isn't in direct control: focused on a
 	# 3D screen, the spawn wheel, OR the pause menu is open. Otherwise capture the mouse and move the
 	# camera. (Without the pause case, this would re-capture every frame and hide the menu cursor.)
 	var ui_focus: bool = _ui_focus()
+
+	# Mining (aim, perforation, head sync) runs in the MiningTool — but ONLY while in direct control, so
+	# you can't aim or drill while a menu/wheel is up (its polled input would otherwise fire while paused,
+	# and a held click would keep the tool engaged). Entering a menu cancels any in-progress action.
+	if ui_focus:
+		player.mining_tool.cancel()
+	else:
+		player.mining_tool.update_local(_delta)
+		if player.mining_tool.is_aiming:
+			player.mouse_motion *= player.mining_tool.aim_sensitivity_factor
+		if player.mining_tool.is_perforating:
+			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
+
 	if ui_focus:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO
@@ -513,8 +530,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.walk_speed_target = _walk_speed_target  # mirror for the debug HUD
 		player.client_send_action_to_server({"action": "walk_speed", "value": _walk_speed_target})
 
-	# Capture mouse look even while seated (free look in a vehicle), before the walk guard.
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	# Capture mouse look even while seated (free look in a vehicle), before the walk guard. Never while a
+	# menu/wheel/screen has focus — so a held click + Esc can't keep steering the camera behind the menu.
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _ui_focus():
 		player.mouse_motion = -event.relative * 0.001
 
 	# Seated (driver/passenger): E open/closes a door by LOOKING at its handle. Must run BEFORE the
@@ -879,7 +897,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
 		elif action.begins_with("vault:") and action != _last_vault_action:
 			_last_vault_action = action
-			player.vault_key = action  # "vault:<key>:<n>" -> the animator plays the matching climb clip
+			player.vault_key = action  # "vault:<key>:<height>:<n>" -> the animator plays the matching climb clip
+			if _sfx_live:  # not the spawn snapshot: someone really vaulted -> the per-type sound
+				_play_vault_sfx(action.split(":")[1])
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	if data.has("stance"):
 		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
@@ -1030,3 +1050,17 @@ func _play_torch_sfx(on: bool) -> void:
 func _play_jump_sfx() -> void:
 	Sfx3D.play(player, player.sfx_jump, player.sfx_jump_db, player.sfx_jump_falloff,
 			player.sfx_jump_distance, player.sfx_jump_attenuation)
+
+## The auto-vault effort, one sound per type (SafetyVault / ClimbUp_1m / ClimbUp_2m). `key` comes from
+## the replicated "vault:<key>:<height>:<n>" event, so every body plays it.
+func _play_vault_sfx(key: String) -> void:
+	match key:
+		"climb_1m":
+			Sfx3D.play(player, player.sfx_climb_1m, player.sfx_climb_1m_db, player.sfx_climb_1m_falloff,
+					player.sfx_climb_1m_distance, player.sfx_climb_1m_attenuation)
+		"climb_2m":
+			Sfx3D.play(player, player.sfx_climb_2m, player.sfx_climb_2m_db, player.sfx_climb_2m_falloff,
+					player.sfx_climb_2m_distance, player.sfx_climb_2m_attenuation)
+		_:
+			Sfx3D.play(player, player.sfx_vault, player.sfx_vault_db, player.sfx_vault_falloff,
+					player.sfx_vault_distance, player.sfx_vault_attenuation)
