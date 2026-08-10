@@ -54,6 +54,7 @@ var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast st
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
+var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
@@ -876,6 +877,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
 			elif is_instance_valid(player._seat_node):
 				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
+		elif action.begins_with("vault:") and action != _last_vault_action:
+			_last_vault_action = action
+			player.vault_key = action  # "vault:<key>:<n>" -> the animator plays the matching climb clip
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	if data.has("stance"):
 		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose

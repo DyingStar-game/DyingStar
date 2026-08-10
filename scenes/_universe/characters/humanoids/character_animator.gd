@@ -43,15 +43,35 @@ const IDLE_VARIATION_DURATION: float = 6.0
 
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
 @export var anim_set: CharacterAnimationSet
+
+@export_group("Rig")
 ## Bone the shared belt mount follows (Unreal rig: "pelvis" = hips). Tools holster onto player.belt_mount.
 @export var belt_bone: StringName = &"pelvis"
+
+@export_group("Seated pose")
 ## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
 ## SitPoint: the body origin rides the seat at STANDING height, so without this the seated mesh floats.
 ## Tune live in the Inspector. Applied to the puppet only — the owner's camera is a sibling, so its
 ## first-person view is unaffected.
 @export var seated_puppet_offset: Vector3 = Vector3(0, 0.38, -0.34)
-## Head-look: how much the Head bone tilts to follow the look PITCH (up/down), added on top of the
-## animation so others see where a player aims. 1.0 = full, 0 = off, -1 = invert if it nods the wrong way.
+
+## Body-frame shift of the puppet WHILE a climb clip plays, so each clip lines up on its obstacles — ONE
+## pair PER TYPE. Total shift for a type = its base + its per_m * (obstacle height, m), so it adjusts both
+## by type and by height. Default 0 = no shift. Tune live.
+@export_group("Vault pose offsets")
+@export_subgroup("SafetyVault")
+@export var vault_offset: Vector3 = Vector3.ZERO
+@export var vault_offset_per_m: Vector3 = Vector3.ZERO
+@export_subgroup("ClimbUp 1m")
+@export var climb1_offset: Vector3 = Vector3.ZERO
+@export var climb1_offset_per_m: Vector3 = Vector3.ZERO
+@export_subgroup("ClimbUp 2m")
+@export var climb2_offset: Vector3 = Vector3.ZERO
+@export var climb2_offset_per_m: Vector3 = Vector3.ZERO
+
+@export_group("Head look")
+## How much the Head bone tilts to follow the look PITCH (up/down), added on top of the animation so
+## others see where a player aims. 1.0 = full, 0 = off, -1 = invert if it nods the wrong way.
 @export var head_look_gain: float = -1.0
 ## Local axis the head pitches about — try (0,1,0) or (0,0,1) if the head turns sideways instead of nodding.
 @export var head_look_axis: Vector3 = Vector3(1, 0, 0)
@@ -61,13 +81,17 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export var head_look_yaw_axis: Vector3 = Vector3(0, 1, 0)
 ## Max head deflection (degrees) from center on each axis, so the neck never snaps to an impossible angle.
 @export var head_look_max_deg: float = 70.0
-## First-person camera follows the head bone's bob (POSITION only — orientation stays mouse-driven), so the
+
+@export_group("Head camera (first person)")
+## The camera follows the head bone's bob (POSITION only — orientation stays mouse-driven), so the
 ## animated body never clips through a fixed camera. Owner + on foot only (the seat ride owns it seated).
 @export var head_cam_follow: bool = true
 ## How much of the head's bob to apply to the camera (0 = none, 1 = full). Lower it if the view feels shaky.
 @export_range(0.0, 1.0) var head_cam_amount: float = 1.0
 ## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
 @export var head_cam_smooth: float = 12.0
+
+@export_group("Turn in place")
 ## Turn rate (rad/s) above which a STANDING, still player plays the in-place turn clip (Turn90_L/R) instead
 ## of idle. Higher = only fast pivots trigger it; 0 disables. Flip turn_left/turn_right if the sides swap.
 @export var turn_rate_threshold: float = 1.2
@@ -100,11 +124,17 @@ var _emote_enter: StringName = &""  # resolved emote clips (from the animation s
 var _emote_idle: StringName = &""
 var _emote_exit: StringName = &""
 var _emote_seen: String = ""  # last player.emote_key processed, to detect a fresh request
+var _vault_clip: StringName = &""  # resolved climb clip while an auto-vault plays (&"" = none)
+var _vault_seen: String = ""  # last player.vault_key processed, to detect a fresh vault (like emotes)
+var _vault_key: String = ""  # current vault TYPE (vault / climb_1m / climb_2m), selects the pose offset
+var _vault_height: float = 0.0  # obstacle height (m) of the current vault, for the height-based pose offset
+var _vault_debug: Dictionary = {}  # cached VaultProbe result for the debug HUD (sampled in _physics_process)
 var _walk_max: float = 2.0    # walk -> jog boundary (m/s), derived from the player's walk_speed in setup
 var _sprint_min: float = 4.0  # jog -> sprint boundary (m/s), midpoint of walk_speed and sprint_speed
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
+	set_physics_process(false)
 
 ## Called by PlayerClient once `player` and the puppet are in the tree.
 func setup(player_body, is_local: bool) -> void:
@@ -135,6 +165,9 @@ func setup(player_body, is_local: bool) -> void:
 	if _is_local:
 		_create_debug_label()  # on-screen speed / wheel / clip readout, toggled by Settings "Show debug"
 	set_process(_anim != null and anim_set != null)
+	# Local only: sample the vault probe in the physics frame (its space state is null in _process) so the
+	# debug HUD can show whether a ledge is climbable right now.
+	set_physics_process(_is_local and _anim != null and anim_set != null)
 
 ## Create the shared belt mount: a BoneAttachment3D that follows the hip bone. Any tool holsters its stowed
 ## model onto player.belt_mount (with the tool's OWN offset), so it moves with the animated body (DRY).
@@ -169,8 +202,14 @@ func _process(delta: float) -> void:
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
 	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
 	if _puppet != null:
-		var seated: bool = not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false))
-		_puppet.position = _puppet_base_position + (seated_puppet_offset if seated else Vector3.ZERO)
+		# Body-frame pose shift: a vault aligns its clip to the obstacle height; otherwise the sit pose sits
+		# in the seat; otherwise none. Vault wins (it overrides locomotion/seat while climbing).
+		var offset: Vector3 = Vector3.ZERO
+		if _vault_clip != &"":
+			offset = _vault_pose_offset()
+		elif not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false)):
+			offset = seated_puppet_offset
+		_puppet.position = _puppet_base_position + offset
 	# First-person camera follows the head bone's bob (position only; the mouse still owns orientation), so
 	# the animated body never clips through a fixed camera. Owner on foot only — the seat ride owns the
 	# camera position when seated, so restore the base there. Smoothed to avoid motion sickness.
@@ -189,6 +228,12 @@ func _process(delta: float) -> void:
 	if _debug_label != null:
 		_update_debug_label()
 
+## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
+## debug HUD (in _process) reads this snapshot instead. Cheap, and only while the movement debug is on.
+func _physics_process(_delta: float) -> void:
+	if _is_local and SettingsManager.is_movement_debug():
+		_vault_debug = VaultProbe.probe(_player)
+
 ## Pick the clip for the current state, highest priority first.
 func _select_clip(delta: float) -> StringName:
 	var s: Dictionary = _player.locomotion_sample
@@ -201,6 +246,16 @@ func _select_clip(delta: float) -> StringName:
 		if bool(s.get("driver", false)):
 			return _clip_or(anim_set.sit_driving, _clip_or(anim_set.sit_idle, _idle))
 		return _clip_or(anim_set.sit_passenger, _clip_or(anim_set.sit_idle, _idle))
+	# Auto-vault / climb-onto: a fresh server event ("vault:<key>:<n>") plays the matching climb clip as a
+	# one-shot, ABOVE jump and locomotion; _on_anim_finished releases it. Same one-shot idiom as the emote.
+	if _player.vault_key != _vault_seen:
+		_vault_seen = _player.vault_key
+		_start_vault(_player.vault_key)
+	if _vault_clip != &"":
+		_cancel_emote()
+		_reset_idle()
+		_jump_phase = JumpPhase.GROUND
+		return _vault_clip
 	var speed: float = float(s.get("planar_speed", 0.0))
 	# Jump owns its start -> loop(fall) -> land sequence. Landing WHILE MOVING skips the land pose (no
 	# forward glide before the walk resumes); _on_anim_finished advances the one-shots.
@@ -347,6 +402,40 @@ func _cancel_emote() -> void:
 	if _emote_phase != EmotePhase.NONE:
 		_end_emote()
 
+## Begin the climb clip for a "vault:<key>:<n>" event (key = vault / climb_1m / climb_2m), resolved via
+## the set's Climb group. Empty/missing -> the jump start, so a partial set still shows something.
+func _start_vault(vault_key: String) -> void:
+	var parts: PackedStringArray = vault_key.split(":")  # "vault:<key>:<height>:<n>"
+	if parts.size() < 2:
+		_vault_clip = &""
+		return
+	_vault_key = parts[1]  # type -> selects the per-type pose offset
+	_vault_height = float(parts[2]) if parts.size() >= 3 else 0.0  # obstacle height for the pose offset
+	# Resolve to a REAL clip or &"" (never a missing name that would never fire animation_finished and
+	# leave the vault stuck): the Climb clip, else the jump start, else nothing.
+	var clip: StringName = _clip_or(_vault_clip_for(parts[1]), anim_set.jump_start)
+	_vault_clip = clip if _has(clip) else &""
+
+## Map the server's vault key to the animation set's Climb clip (defaults to the low "Vault").
+func _vault_clip_for(key: String) -> StringName:
+	match key:
+		"climb_1m":
+			return anim_set.climb_1m
+		"climb_2m":
+			return anim_set.climb_2m
+		_:
+			return anim_set.vault
+
+## Per-type body-frame pose shift for the current vault: base + per_m * obstacle height, chosen by type.
+func _vault_pose_offset() -> Vector3:
+	match _vault_key:
+		"climb_1m":
+			return climb1_offset + climb1_offset_per_m * _vault_height
+		"climb_2m":
+			return climb2_offset + climb2_offset_per_m * _vault_height
+		_:
+			return vault_offset + vault_offset_per_m * _vault_height
+
 func _has(clip: StringName) -> bool:
 	return clip != &"" and _anim.has_animation(clip)
 
@@ -383,6 +472,10 @@ func _on_anim_finished(finished: StringName) -> void:
 	if _stance_transition != &"" and finished == _stance_transition:
 		_shown_stance = _stance_transition_target
 		_stance_transition = &""
+		return
+	# The climb one-shot finished: release it so locomotion resumes on the ledge.
+	if _vault_clip != &"" and finished == _vault_clip:
+		_vault_clip = &""
 		return
 	if _jump_phase == JumpPhase.START:
 		_jump_phase = JumpPhase.LOOP
@@ -553,4 +646,19 @@ func _update_debug_label() -> void:
 	_debug_label.visible = true
 	var s: Dictionary = _player.locomotion_sample
 	var spd: float = float(s.get("planar_speed", 0.0)) if not s.is_empty() else 0.0
-	_debug_label.text = "spd %.2f m/s   wheel %.1f   anim: %s" % [spd, _player.walk_speed_target, _current]
+	# Vault: read the SAME probe the server acts on (DRY, cached from _physics_process) + whether a climb
+	# clip plays now. The client sees prop collision but not the server-only terrain, so "can vault" is
+	# exact against crates and blank against terrain ledges (debug only).
+	var v: Dictionary = _vault_debug
+	var can_vault: String
+	if v.is_empty():
+		can_vault = "…"
+	elif bool(v["ok"]):
+		can_vault = "%.2fm -> %s" % [float(v["height"]), v["key"]]
+	elif float(v["height"]) > 0.0:
+		can_vault = "%.2fm (%s)" % [float(v["height"]), v["reason"]]  # measured but not climbable
+	else:
+		can_vault = "— (%s)" % v["reason"]  # nothing ahead
+	var mid_vault: String = ("yes (%s)" % _vault_clip) if _vault_clip != &"" else "no"
+	_debug_label.text = "spd %.2f m/s   wheel %.1f   anim: %s\ncan vault: %s   mid-vault: %s" % [
+		spd, _player.walk_speed_target, _current, can_vault, mid_vault]

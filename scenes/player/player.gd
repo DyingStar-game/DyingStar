@@ -83,6 +83,44 @@ const TELEPORT_TARGETS := {
 ## so this currently has no effect.
 @export var acceleration: float = 10.0
 
+@export_subgroup("Vault / climb")
+## Auto-vault: walking forward into a low obstacle or a ledge, the body climbs ONTO it automatically
+## (server-decided). The clip is chosen by the obstacle's height — see the animation set's Climb group.
+## A ledge lower than this (m) is just a step you walk over (no vault) — normal movement handles it.
+@export var vault_min_height: float = 0.5
+## Tallest ledge the body will climb onto (m). Higher = a wall, blocked.
+@export var vault_max_height: float = 2.3
+## Height bands (m): up to vault_low_max the short vault-over ("SafetyVault"), up to vault_climb1_max the
+## "ClimbUp_1m" clip, above that "ClimbUp_2m". Read an obstacle's exact height on the debug HUD and set
+## the thresholds just below it (e.g. a ~1 m pallet should read as a 1 m climb, so keep vault_low_max < 1).
+@export var vault_low_max: float = 0.9
+@export var vault_climb1_max: float = 1.7
+## How far below the detected ledge top (m) the face is checked. Probing near the LIP (not at a fixed
+## knee height) lets an ELEVATED ledge — a platform with a gap under it — be vaulted too, not only
+## ground obstacles, while a slope is still rejected (its face reads as walkable, not a steep wall).
+@export var vault_face_margin: float = 0.15
+## How far ahead (m) an obstacle is detected, and how far ONTO the ledge the body finishes.
+@export var vault_reach: float = 0.6
+@export var vault_land_forward: float = 0.4
+## SafetyVault (low band) is a vault-OVER: instead of ending ON TOP, the body clears the obstacle and
+## lands this far forward (m) at ~ground height — so the pose stays horizontal, no rise onto the top.
+@export var vault_over_distance: float = 1.3
+## Vault-OVER arc: the body rises this far (m) ABOVE the obstacle top at mid-vault, then drops to the
+## far-side ground — the "up and over" trajectory a root-motion clip would bake, done server-side.
+@export var vault_arc_margin: float = 0.2
+## Scripted climb durations (s) per clip — tune to match the actual clip lengths.
+@export var vault_duration: float = 0.6
+@export var climb1_duration: float = 0.9
+@export var climb2_duration: float = 1.3
+## Delay (s) after a vault before another can start, so you don't chain-climb the same ledge.
+@export var vault_cooldown: float = 0.4
+## Step-up: a LOW obstacle (below vault_min_height) is climbed by plain walking (Godot's CharacterBody3D
+## won't step up on its own). This is how far ahead (m) a step is felt — keep it short (~capsule radius)
+## so the body only lifts when it's actually against the step, not floating toward it.
+@export var step_up_reach: float = 0.4
+## How long (s) the smooth glide ONTO a step takes. Short so walking barely pauses; 0 would snap.
+@export var step_up_duration: float = 0.12
+
 @export_subgroup("EVA / 0g")
 ## EVA (dev free-flight) cruise speed in m/s. Toggled with the `toggle_eva` action ('$' by default,
 ## remappable in Settings > Controls). A test aid to fly around a body and inspect its day/night faces:
@@ -176,6 +214,10 @@ var walk_speed_target: float = 0.0
 ## Currently requested emote KEY (see EmoteCatalog), replicated so everyone plays it on this body. ""
 ## = none. The animator starts it while standing and clears it (back to "") on move or when it ends.
 var emote_key: String = ""
+## Last auto-vault event ("vault:<key>:<n>", key = vault / climb_1m / climb_2m), replicated like the
+## emote so every body plays the matching climb clip. The counter makes each vault a fresh value; the
+## animator (CharacterAnimator) plays the clip as a one-shot. "" = none yet.
+var vault_key: String = ""
 ## Replicated seat state that drives the sit/drive POSE, for the owner AND every remote avatar (a remote
 ## is NOT reparented when it sits, so this is its only seat signal): "" = on foot, "driver", "passenger".
 ## Owner sets it locally on enter/leave (immediate); remotes read the server's "seat:/unseat:" action.

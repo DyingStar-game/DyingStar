@@ -77,6 +77,13 @@ extends Resource
 @export var jump_loop: StringName = &"Jump"
 @export var jump_land: StringName = &"Jump_Land"
 
+# Auto-vault / climb-onto (server picks one by obstacle height, see Player vault_*). Played as a
+# one-shot by the CharacterAnimator; an empty/missing slot falls back to the jump start.
+@export_group("Climb")
+@export var vault: StringName = &"SafetyVault"
+@export var climb_1m: StringName = &"ClimbUp_1m"
+@export var climb_2m: StringName = &"ClimbUp_2m"
+
 # Carrying a crate: these clips live in UAL2, so they resolve only once UAL2 is merged into the puppet
 # (until then has_animation() fails and the animator falls back to normal locomotion).
 @export_group("Carry")
