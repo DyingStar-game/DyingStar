@@ -36,6 +36,14 @@ var forced_colors := {
 	str(ChannelE.DIRECT_MESSAGE): "79F25E"
 }
 
+# Panel backgrounds toggled by write mode: a semi-transparent box while typing
+# (Enter mode), an empty (fully transparent) box at rest — so the log has no
+# background once a message is sent or the input closes. Readability at rest comes
+# from the text outline. NB: removing the override would fall back to the theme's
+# default (opaque) panel, so we always re-apply the empty box instead.
+var _write_bg: StyleBoxFlat
+var _empty_bg: StyleBoxEmpty
+
 @onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
 @onready var input_bar: HBoxContainer = $MarginContainer/VBoxContainer/HBoxContainer
 
@@ -57,6 +65,22 @@ func _ready():
 	# The input bar (channel selector + text field) stays hidden until the player
 	# presses Enter to write; the message log is always visible.
 	input_bar.visible = false
+
+	# Build the write-mode backdrop once (applied to the panel only while typing).
+	_write_bg = StyleBoxFlat.new()
+	_write_bg.bg_color = Color(0, 0, 0, 0.4)
+	_write_bg.content_margin_left = 8.0
+	_write_bg.content_margin_top = 4.0
+	_write_bg.content_margin_right = 8.0
+	_write_bg.content_margin_bottom = 4.0
+	_write_bg.corner_radius_top_left = 4
+	_write_bg.corner_radius_top_right = 4
+	_write_bg.corner_radius_bottom_right = 4
+	_write_bg.corner_radius_bottom_left = 4
+	# Empty (transparent) box applied at rest — re-applied instead of removing the
+	# override, which would otherwise fall back to the theme's opaque default panel.
+	_empty_bg = StyleBoxEmpty.new()
+	add_theme_stylebox_override("panel", _empty_bg)
 
 	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
 	_refresh_channels()
@@ -184,6 +208,8 @@ func _hide_chat() -> void:
 func _start_writing() -> void:
 	can_write = true
 	input_bar.visible = true
+	# Show the backdrop only while typing, for comfort when composing a message.
+	add_theme_stylebox_override("panel", _write_bg)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	input_field.grab_focus()
 
@@ -193,6 +219,9 @@ func _stop_writing() -> void:
 		input_field.release_focus()
 	can_write = false
 	input_bar.visible = false
+	# Back to the transparent box → the log is background-free once the message is
+	# sent or the input closes (re-apply, don't remove — see _ready).
+	add_theme_stylebox_override("panel", _empty_bg)
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 # Receives a message from the server
@@ -214,13 +243,14 @@ func parse_message(message_to_parse: ChatMessage) -> void:
 	var now: Dictionary = Time.get_datetime_dict_from_system()
 	var gdh: String = "%02d:%02d:%02d" % [now.hour, now.minute, now.second]
 
+	# Order: [time] (channel) name: message — channel first, then the player name, then the text.
 	output_field.append_text(
-		"[%s] : [color=#%s]%s [/color][color=#%s]%s%s[/color]\n" % [
+		"[%s] [color=#%s]%s[/color][color=#%s]%s[/color]: %s\n" % [
 			gdh,
-			get_hexa_color_from_hash(message_to_parse.author),
-			message_to_parse.author,
 			get_hexa_color_from_hash(str(message_to_parse.channel)),
 			("" if message_to_parse.channel == ChannelE.UNSPECIFIED else "(" + ChannelE.keys()[message_to_parse.channel] + ") "),
+			get_hexa_color_from_hash(message_to_parse.author),
+			message_to_parse.author,
 			message_to_parse.content
 		]
 	)
