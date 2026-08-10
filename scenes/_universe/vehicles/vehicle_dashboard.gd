@@ -26,6 +26,12 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _vehicle == null or not is_instance_valid(_vehicle):
 		return
+	# Engine off: the screen goes dark (matches the rear-view screens). Multiplying by black keeps
+	# the panel opaque, so the cab screen reads as a powered-off display rather than a frozen dash.
+	if not _vehicle.is_engine_on():
+		modulate = Color(0, 0, 0, 1)
+		return
+	modulate = Color(1, 1, 1, 1)
 	_speed.text = "%.0f km/h" % _vehicle.get_display_speed_kmh()
 	_rpm.text = "%.0f rpm" % _vehicle.get_engine_rpm()
 	_load.text = "%.0f / %.0f kg" % [_vehicle.get_cargo_mass(), _vehicle.max_payload]
