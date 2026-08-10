@@ -487,19 +487,22 @@ label_settings = SubResource("LabelSettings_kcm5r")
 horizontal_alignment = 1
 
 [node name="Control" type="Control" parent="UserInterface/HUD" unique_id=1793293513]
-anchors_preset = 0
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 22.0
-offset_top = 980.0
+offset_top = -100.0
 offset_right = 323.0
-offset_bottom = 1068.0
+offset_bottom = -12.0
+grow_vertical = 0
 
 [node name="AudioContainer" type="GridContainer" parent="UserInterface/HUD/Control" unique_id=281237977]
 layout_mode = 0
-offset_left = 15.0
-offset_top = 14.0
-offset_right = 216.0
-offset_bottom = 71.0
-scale = Vector2(0.1, 0.1)
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 201.0
+offset_bottom = 57.0
+scale = Vector2(0.07, 0.07)
 columns = 2
 
 [node name="ButtonSpeaker" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1207755428]
