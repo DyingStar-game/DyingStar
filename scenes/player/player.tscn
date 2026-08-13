@@ -519,11 +519,13 @@ columns = 2
 
 [node name="ButtonSpeaker" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1207755428]
 layout_mode = 2
+focus_mode = 0
 shortcut = SubResource("Shortcut_2sxo3")
 icon = ExtResource("27_akued")
 
 [node name="ButtonMicrophone" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1572359195]
 layout_mode = 2
+focus_mode = 0
 shortcut = SubResource("Shortcut_k55v7")
 icon = ExtResource("28_2sxo3")
 

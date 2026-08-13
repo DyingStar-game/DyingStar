@@ -150,8 +150,13 @@ func _on_input_text_text_submitted(message: String) -> void:
 func _input(event: InputEvent) -> void:
 	if not _is_local() or not can_write:
 		return
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
-		_cycle_channel()
+	if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
+		# Swallow EVERY TAB while typing, auto-repeat echoes included: an unconsumed echo reaches
+		# Godot's GUI focus system (ui_focus_next), which then walks the focus through every
+		# focusable control on screen. Only the initial press cycles the channel, so holding TAB
+		# does not spin through the list.
+		if not event.echo:
+			_cycle_channel()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("pause"):
 		# Escape while typing closes the input (cancels writing) without pausing.
