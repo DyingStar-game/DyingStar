@@ -236,7 +236,9 @@ func _process(_delta: float) -> void:
 				player.interact_label.text = collider.label
 				player.interact_label.show()
 				player.can_interact = true
-				if Input.is_action_just_pressed("interact"):
+				# Polled, so it fires straight from the Input singleton: without this guard it
+				# triggered behind the pause menu and while typing in the chat.
+				if not ui_focus and Input.is_action_just_pressed("interact"):
 					collider.interact(player)
 					player.interact_label.hide()
 
@@ -275,7 +277,7 @@ func _process(_delta: float) -> void:
 	var dir_vect = Vector3.ZERO
 
 
-	if not player.direct_chat.can_write:
+	if not _input_locked():  # covers the pause menu, an open wheel AND the chat (see _input_locked)
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
 
 	if dir_vect:
@@ -314,7 +316,7 @@ func _physics_process(delta: float) -> void:
 	var dir_vect = Vector3.ZERO
 
 
-	if not player.direct_chat.can_write and not input_locked:
+	if not input_locked:  # covers the pause menu, an open wheel AND the chat (see _input_locked)
 		dir_vect = Input.get_vector(player.MOVE_LEFT, player.MOVE_RIGHT, player.MOVE_FORWARD, player.MOVE_BACK)
 
 	if dir_vect:
@@ -489,7 +491,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Pause menu (Esc) is a hard modal: ignore EVERY player input — seated controls, radial wheels,
 	# jump, torch, interaction… Nothing below runs while it is up. (Movement/camera are gated the
 	# same way in _physics_process / _process via _input_locked / _ui_focus.)
-	if _menu_open(): return
+	# The chat is gated the same way: the LineEdit swallows most keys, but not all of them, and
+	# nothing the player types should ever reach gameplay. (NOT _input_locked() here — that one also
+	# covers an open wheel, whose press/release lifecycle _handle_radial_wheels still needs to see.)
+	if _menu_open() or _chat_writing(): return
 	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
 	# (open it first by looking at its handle). A seat with no door_id leaves directly.
 	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
@@ -802,11 +807,20 @@ func _service_wheel(
 func _menu_open() -> bool:
 	return GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
 
-## Player input is locked: the pause menu is up OR a radial wheel is open. No movement and no
-## action fires (see _physics_process / _unhandled_input). A 3D screen does NOT lock input — you
-## leave it by walking out of its zone, so movement must stay available while facing one.
+## The local player is typing in the chat: the keyboard belongs to the text field, not to gameplay.
+## This MUST be part of the input lock, because most gameplay reads POLL the Input singleton
+## (Input.is_action_just_pressed), which the focused LineEdit cannot consume — the OS keeps feeding
+## it, so typing "crouch" used to actually crouch. Only event handlers (_unhandled_input) are
+## shielded by the GUI swallowing the key.
+func _chat_writing() -> bool:
+	return player.direct_chat != null and player.direct_chat.can_write
+
+## Player input is locked: the pause menu is up, a radial wheel is open, OR the chat has the
+## keyboard. No movement and no action fires (see _physics_process / _unhandled_input). A 3D screen
+## does NOT lock input — you leave it by walking out of its zone, so movement must stay available
+## while facing one.
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing()
 
 ## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
 ## Frees the cursor and freezes the look (see _process). One source.
