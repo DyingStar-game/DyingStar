@@ -765,22 +765,33 @@ func _any_wheel_open() -> bool:
 	return (player._spawn_wheel != null and player._spawn_wheel.visible) \
 		or (player._emote_wheel != null and player._emote_wheel.visible)
 
-## Open/confirm the radial wheels: emote on T, spawn on Alt+T (they share the T key, so the emote
-## is gated on Alt NOT being held). Called before the wheel lock in _unhandled_input so a wheel that
-## is up still confirms on release. One place for both wheels (DRY).
+## Open/confirm the radial wheels: emote on T, spawn on Alt+T. Called before the wheel lock in
+## _unhandled_input so a wheel that is up still confirms on release. One place for both wheels (DRY).
+## Both actions sit on the same T key and differ ONLY by Alt, but an action match ignores modifiers:
+## a bare T matches Alt+T too. So Alt decides which wheel may open — SYMMETRICALLY. Only the emote
+## side used to be guarded, which is why a bare T also opened the spawn wheel (hidden underneath) and
+## releasing T spawned whatever sat under the cursor.
 func _handle_radial_wheels(event: InputEvent) -> void:
-	if event.is_action_pressed("emote_wheel") and not (event is InputEventKey and event.alt_pressed):
-		if player._emote_wheel:
-			player._emote_wheel.open(EmoteCatalog.build_wheel())
-	if event.is_action_released("emote_wheel"):
-		if player._emote_wheel and player._emote_wheel.visible:
-			player._emote_wheel.confirm()
-	if event.is_action_pressed("spawn_wheel"):
-		if player._spawn_wheel:
-			player._spawn_wheel.open(SpawnCatalog.build_wheel())  # labels + keys come from the catalogue
-	if event.is_action_released("spawn_wheel"):
-		if player._spawn_wheel:
-			player._spawn_wheel.confirm()
+	var alt_held: bool = event is InputEventKey and event.alt_pressed
+	_service_wheel(event, "emote_wheel", player._emote_wheel, EmoteCatalog.build_wheel, not alt_held)
+	_service_wheel(event, "spawn_wheel", player._spawn_wheel, SpawnCatalog.build_wheel, alt_held)
+
+## Hold-to-open / release-to-confirm lifecycle of ONE wheel. `build` supplies the entries (labels +
+## keys come from the catalogue) and is only called when the wheel actually opens, so the catalogue
+## is not rebuilt on every input event. `may_open` carries the Alt discrimination above.
+## The release is matched loosely (no exact_match) on purpose: letting go of Alt before T yields a
+## release event with no Alt, which an exact match would drop and leave the spawn wheel stuck open.
+## The `visible` check is what keeps a release from confirming a wheel that never opened — its press
+## swallowed by a menu, a seat or an inactive player — and re-emitting a stale selection.
+func _service_wheel(
+	event: InputEvent, action: StringName, wheel: RadialMenu, build: Callable, may_open: bool
+) -> void:
+	if wheel == null:
+		return
+	if may_open and event.is_action_pressed(action):
+		wheel.open(build.call())
+	elif event.is_action_released(action) and wheel.visible:
+		wheel.confirm()
 
 ## The pause menu (Esc) is open: a HARD modal — the game must ignore ALL player input (seated
 ## controls, radial wheels, jump, interaction…). Checked once at the top of _unhandled_input.
