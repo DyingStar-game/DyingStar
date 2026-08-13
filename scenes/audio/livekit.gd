@@ -35,6 +35,8 @@ var _mic_pending: PackedFloat32Array = PackedFloat32Array()
 # bus does not, because a bus mute is applied after the effect chain, so AudioEffectCapture keeps
 # producing frames and _process keeps pushing them to LiveKit.
 var _mic_enabled: bool = true
+# Set by shutdown() so it stays idempotent (reachable from _exit_tree AND from the network client).
+var _shut_down: bool = false
 
 # UUIDs requested by Horizon before participant_connected fired — retried on join.
 var _pending_subscriptions: Array = []
@@ -379,6 +381,47 @@ func _process(delta: float) -> void:
 func _on_data_received(_data, _participant, _kind, _topic):
 	# print("[livekit] Data from ", _participant.get_identity(), ": ", _data.get_string_from_utf8())
 	pass
+
+# ------------------------------------------------------------------------ teardown
+
+## Leave the room and release every LiveKit handle, NOW rather than at the end of the frame.
+## Idempotent. Called by the network client when the session ends, and by _exit_tree as a safety net
+## for every other way this node can die. Whoever opens the room closes it — without this the room
+## stayed open after going back to the menu, and LiveKit refuses a second participant carrying an
+## identity that is already connected.
+func shutdown() -> void:
+	if _shut_down:
+		return
+	_shut_down = true
+	set_process(false)  # FIRST: our _process must not run again this frame
+
+	# Deliberately minimal. Leaving the room already stops publishing AND receiving, so muting or
+	# unpublishing the mic track first is pure ceremony — and a risky one: it touches the room while
+	# it may still be connecting, and unpublish_track triggers an SDP renegotiation at the worst
+	# possible moment. Only drop what WE own, then leave.
+	_mic_pending = PackedFloat32Array()
+	if _mic_capture != null:
+		_mic_capture.clear_buffer()
+	# The AudioEffectCapture stays on the bus on purpose: removing it races the audio thread, and
+	# _start_microphone_publish reuses it cleanly next session.
+	_mic_publication = null
+	_mic_track = null
+	_mic_source = null
+
+	# Stop receiving: close each reader thread and free each speaker.
+	_free_all_bridges()
+	mapping_participant_player.clear()
+	_pending_subscriptions.clear()
+
+	# Leave the room. disconnect_from_room() is ASYNCHRONOUS (the extension does it on its own
+	# thread), so we drop our reference right after and let it finish on its own.
+	if room != null:
+		if room.has_method("disconnect_from_room"):
+			room.disconnect_from_room()
+		room = null
+
+func _exit_tree() -> void:
+	shutdown()
 
 # ---------------------------------------------------------------- mic publish
 
