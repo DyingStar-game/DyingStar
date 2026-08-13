@@ -55,4 +55,9 @@ func hide_message():
 
 func _on_exit_btn_pressed() -> void:
 	exited.emit()
+	# Same as the pause menu: leaving for the menu releases the session (socket + voice room +
+	# agent). Done HERE, on the user's click, and never on the CONNEXION_ERROR transition itself --
+	# that one is raised by the client from inside its own start_client() coroutine, so freeing the
+	# agent there would destroy the object while its code is still running.
+	NetworkOrchestrator.release_network_agent()
 	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
