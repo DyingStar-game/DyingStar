@@ -34,6 +34,13 @@ const WARP_MAX: float = 1.8
 ## Speed margin (m/s) a tier boundary must be crossed by to switch tiers, so a speed sitting ON a
 ## boundary (e.g. wheel 2.5) does not jitter between Walk and Jog.
 const TIER_HYSTERESIS: float = 0.35
+## Minimum time (s) spent in a locomotion tier before it may change again. The hysteresis above
+## bounds the AMPLITUDE of the speed noise; this bounds its FREQUENCY, which is what actually stops
+## the flapping. Needed because `planar_speed` is DERIVED from the replicated position (30 Hz, some
+## frames move 0), so it stays noisy even after the low-pass — and a body held at a constant speed
+## near a boundary (an NPC, or a player parked on wheel tier 2.5) sits on it permanently instead of
+## just crossing it. The first change is still instant: only a second one within this window waits.
+const TIER_MIN_HOLD: float = 0.25
 ## Standing-idle life: play a random idle variation roughly every IDLE_GAP_MIN..MAX seconds, holding it
 ## IDLE_VARIATION_DURATION seconds, then back to the base idle.
 const IDLE_GAP_MIN: float = 8.0
@@ -112,6 +119,7 @@ var _jump_phase: JumpPhase = JumpPhase.GROUND
 var _debug_label: Label = null  # optional on-screen movement readout (local player, Settings "Show debug")
 var _target_speed_scale: float = 1.0  # AnimationPlayer speed_scale for the current clip (walk speed-warp)
 var _current_tier: Tier = Tier.WALK  # locomotion tier, kept stable by hysteresis (see _tier_for_speed)
+var _tier_held: float = 0.0  # seconds spent in _current_tier, gates changes (see TIER_MIN_HOLD)
 var _shown_stance: int = 0  # stance currently ANIMATED (lags the sample during a transition)
 var _stance_transition: StringName = &""  # transition one-shot playing (&"" = none); see _on_anim_finished
 var _stance_transition_target: int = 0  # stance we END in when the current transition finishes
@@ -238,6 +246,7 @@ func _physics_process(_delta: float) -> void:
 func _select_clip(delta: float) -> StringName:
 	var s: Dictionary = _player.locomotion_sample
 	_target_speed_scale = 1.0  # reset each frame; only the walk tier warps it (see _locomotion_clip)
+	_tier_held += delta  # ages the current locomotion tier (see TIER_MIN_HOLD in _tier_for_speed)
 	if s.is_empty():
 		return _idle
 	if bool(s.get("seated", false)):
@@ -509,6 +518,11 @@ func _locomotion_clip(speed: float, forward: float, right: float) -> StringName:
 ## Locomotion tier with hysteresis: once in a tier, the speed must cross the boundary by TIER_HYSTERESIS
 ## to switch, so a speed hovering on a boundary (e.g. wheel 2.5) does not jitter between Walk and Jog.
 func _tier_for_speed(speed: float) -> Tier:
+	# Hold the tier for a moment after each change: see TIER_MIN_HOLD. Without it, a speed parked on
+	# a boundary flaps between Walk and Jog every few frames.
+	if _tier_held < TIER_MIN_HOLD:
+		return _current_tier
+	var previous: Tier = _current_tier
 	match _current_tier:
 		Tier.WALK:
 			if speed >= _walk_max + TIER_HYSTERESIS:
@@ -521,6 +535,8 @@ func _tier_for_speed(speed: float) -> Tier:
 		Tier.SPRINT:
 			if speed < _sprint_min - TIER_HYSTERESIS:
 				_current_tier = Tier.JOG
+	if _current_tier != previous:
+		_tier_held = 0.0
 	return _current_tier
 
 func _run_dir(fs: int, rs: int) -> StringName:
