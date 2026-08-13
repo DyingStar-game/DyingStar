@@ -13,6 +13,10 @@ signal shadows_changed(on: bool)
 signal shadow_distance_changed(distance: float)
 ## Emitted when the celestial-gizmo toggle changes, so the in-world star/planet markers show/hide live.
 signal celestial_gizmos_changed(on: bool)
+## Emitted when the local microphone is muted/unmuted, so the voice client actually STOPS SENDING.
+## No audio bus is involved: a bus mute is applied after the effect chain, so AudioEffectCapture
+## would keep feeding the voice client and the others would still hear us.
+signal microphone_muted_changed(muted: bool)
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
@@ -53,6 +57,8 @@ func initialize_settings():
 	config.set_value("general", "movement_debug", false)
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
+	# HUD mic toggle, remembered between sessions like every other audio setting.
+	config.set_value("audio", "microphone_muted", false)
 
 func save_settings():
 	config.save(CONFIG_FILEPATH)
@@ -174,6 +180,20 @@ func _apply_bus_volume(key: String, value: float) -> void:
 	AudioServer.set_bus_mute(idx, value <= 0.0)
 	if value > 0.0:
 		AudioServer.set_bus_volume_db(idx, linear_to_db(value / 100.0))
+
+## HUD "mute microphone" button. Deliberately touches NO audio bus: muting the capture bus does not
+## stop AudioEffectCapture (bus mute applies after the effect chain), so the voice client kept
+## sending and the others still heard us. The voice client listens to microphone_muted_changed and
+## stops feeding frames instead.
+func set_microphone_muted(muted: bool) -> void:
+	if is_microphone_muted() == muted:
+		return
+	config.set_value("audio", "microphone_muted", muted)
+	save_settings()
+	microphone_muted_changed.emit(muted)
+
+func is_microphone_muted() -> bool:
+	return bool(config.get_value("audio", "microphone_muted", false))
 
 func set_audio_volume(key: String, value: float) -> void:
 	_apply_bus_volume(key, value)
