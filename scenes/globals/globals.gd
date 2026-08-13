@@ -56,7 +56,13 @@ func print_rich_distinguished(message: String, extras: Array) -> void:
 	if GameOrchestrator and GameOrchestrator.current_network_role != null:
 		instance_color = GameOrchestrator.distinguish_instances[GameOrchestrator.current_network_role]["instance_color"]
 		instance_name = GameOrchestrator.distinguish_instances[GameOrchestrator.current_network_role]["instance_name"]
-		peer_id = NetworkOrchestrator.network_agent.peer_id if GameOrchestrator.current_network_role == GameOrchestrator.NetworkRole.PLAYER else 1
+		# Logging must never crash: there is no network agent before connecting, nor after the
+		# session is released on the way back to the menu.
+		var agent = NetworkOrchestrator.network_agent
+		if GameOrchestrator.current_network_role == GameOrchestrator.NetworkRole.PLAYER:
+			peer_id = agent.peer_id if agent != null and "peer_id" in agent else 0
+		else:
+			peer_id = 1
 	var prefix = "[color=" + instance_color + "][" + instance_name + "(" +  str(peer_id) + ")][/color]"
 
 	var formatted_message = message
