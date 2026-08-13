@@ -74,7 +74,7 @@ var _stance: int = 0  # 0 = standing, 1 = crouched, 2 = prone (server-authoritat
 var _stance_request: int = 0  # last stance the owner asked for; validated + applied in the physics step
 var _collider: CollisionShape3D = null  # physics capsule (OWN copy — resized per stance, see setup)
 var _stand_collider_height: float = 1.8  # standing capsule height, captured from the scene at setup
-var _walk_speed_target: float = 0.0
+var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 ## Landing: the server emits a "land:<n>" event (via the whitelisted `action` field, like the jump) the
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
 var _land_count: int = 0
@@ -192,6 +192,9 @@ func setup() -> void:
 	player.position = player.spawn_position
 	player.connect_area_detect()
 	player.update_last_basis()
+	# Start at the scene's walk speed, so the wheel tier is a real speed from the very first frame
+	# (it used to start at 0 as a "never set" marker, which the HUD then displayed as 0.0 m/s).
+	_walk_speed_target = player.walk_speed
 	# Give the physics collider its OWN capsule so shrinking it for crouch/prone doesn't also shrink the
 	# AreaDetector (gravity / seat / zone detection), which shares the scene's capsule resource.
 	_collider = player.get_node_or_null("Placeholder_Collider") as CollisionShape3D
@@ -814,9 +817,8 @@ func _physics_process(delta: float) -> void:
 		_server_update_vault(delta)
 		return
 
-	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (default until first set).
-	var walk_target: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
-	var speed = player.sprint_speed if _sprint_held else walk_target
+	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed.
+	var speed = player.sprint_speed if _sprint_held else _walk_speed_target
 	if _stance == 1:  # crouched: capped to crouch_speed (no sprint)
 		speed = minf(speed, player.crouch_speed)
 	elif _stance == 2:  # prone: even slower
