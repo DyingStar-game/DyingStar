@@ -828,6 +828,11 @@ func _physics_process(delta: float) -> void:
 	if player.hands_item != null:
 		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
 
+	# GDD: no air control. Only the grounded branch below steers the horizontal velocity; once airborne
+	# we leave it alone, so a jump carries the run-up momentum and its distance follows the take-off
+	# speed. The airborne case used to ADD move_direction * speed * delta every frame with no target and
+	# no cap — unlike the grounded move_toward, which is bounded by `speed` — so every sprint-jump banked
+	# about +5 m/s for good and repeated hops climbed to the 60 m/s anti-tunnelling ceiling below.
 	if player.is_on_floor():
 		# Accelerate/decelerate the HORIZONTAL velocity toward the target at `acceleration` (m/s²), so the
 		# player ramps up to speed and coasts to a stop instead of snapping. The vertical component
@@ -837,10 +842,6 @@ func _physics_process(delta: float) -> void:
 		var target: Vector3 = move_direction * speed if player.input_direction else Vector3.ZERO
 		var horizontal: Vector3 = (player.velocity - vertical).move_toward(target, player.acceleration * delta)
 		player.velocity = horizontal + vertical
-	else:
-		# "air" movement
-		if player.input_direction:
-			player.velocity += move_direction * speed * delta
 
 	if player.is_on_floor() and player.is_jumping:
 		player.velocity += player.up_direction * player.jump_height * player.gravity
