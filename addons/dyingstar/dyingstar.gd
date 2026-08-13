@@ -45,8 +45,13 @@ func _enter_tree() -> void:
 	_http.timeout = 20.0  # never hang forever (would lock _defs_loading and the menus)
 	EditorInterface.get_base_control().add_child(_http)
 	_install_menu()
-	# Always refresh the network definitions from GitHub on startup (designers have no local Horizon).
-	_refresh_defs()
+	# Never reach for the network on our own: ask the developer first. Downloading on every editor
+	# start froze the editor for seconds, and every devmode/N-clients restart from the bottom panel
+	# re-triggered the whole thing. The cache alone decides whether Import/Export are usable — this
+	# MUST be set here, or they would stay greyed out forever now that no fetch runs at startup.
+	_defs_ready = ServerPropsIO.has_network_defs()
+	_refresh_menu_state()
+	_ask_refresh_defs.call_deferred()
 
 
 func _exit_tree() -> void:
@@ -260,6 +265,35 @@ func _report(action: String, res: Dictionary) -> void:
 # ── Network definitions (fetched from GitHub) ──────────────────────────────────
 
 func _on_update_defs() -> void:
+	_refresh_defs()
+
+
+## Startup prompt: the developer decides whether we go to GitHub at all. Deferred so it does not pop
+## while the editor is still building itself, and NOT exclusive — an exclusive dialog collides with
+## the editor's own Save-Scene modal and crashes it (same reason as _propose_cached below).
+func _ask_refresh_defs() -> void:
+	var cd := ConfirmationDialog.new()
+	cd.title = "DyingStar — Network definitions"
+	cd.exclusive = false
+	if _defs_ready:
+		cd.dialog_text = "Update the network definitions from GitHub?\nCached: %d types." % (
+			ServerPropsIO.load_network_defs().size()
+		)
+		cd.get_cancel_button().text = "Use cache"
+	else:
+		cd.dialog_text = ("Update the network definitions from GitHub?\n"
+			+ "No cache yet — Import / Export stay disabled until you do.")
+		cd.get_cancel_button().text = "Later"
+	cd.get_ok_button().text = "Update"
+	EditorInterface.get_base_control().add_child(cd)
+	cd.confirmed.connect(_on_startup_update.bind(cd))
+	# Declining reuses the existing handlers: keep the cache when there is one, else stay disabled.
+	cd.canceled.connect((_on_use_cached if _defs_ready else _on_decline_cached).bind(cd))
+	cd.popup_centered()
+
+
+func _on_startup_update(cd: ConfirmationDialog) -> void:
+	cd.queue_free()
 	_refresh_defs()
 
 
