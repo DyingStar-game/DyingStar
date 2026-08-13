@@ -79,8 +79,9 @@ const TELEPORT_TARGETS := {
 @export var fast_climb_speed: float = 8.0
 # Speed multiplier while carrying an ore (issue #124): slower with hands full.
 @export var carry_speed_factor: float = 0.5
-## Placeholder: smooth accel/decel toward the target speed. NOT wired yet (velocity is set directly),
-## so this currently has no effect.
+## How fast (m/s²) the horizontal velocity is steered toward the target speed, so the body ramps up
+## and coasts to a stop instead of snapping. Applied ON THE FLOOR only — the GDD gives the jump no air
+## control, so an airborne body keeps the velocity it took off with.
 @export var acceleration: float = 10.0
 
 @export_subgroup("Vault / climb")
