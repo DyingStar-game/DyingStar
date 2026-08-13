@@ -69,7 +69,10 @@ const TELEPORT_TARGETS := {
 @export var walk_speed_max: float = 3.0
 @export var walk_speed_step: float = 0.5
 @export var sprint_speed: float = 5.0
-@export var crouch_speed: float = 0.8
+## GDD: crouching is "limited to 2 m/s" — a CEILING, so it caps the wheel-chosen walk speed rather
+## than forcing a pace (see PlayerServer: speed = minf(speed, crouch_speed)). At 2.0 a crouched
+## player therefore moves at whatever tier they picked, up to 2 m/s.
+@export var crouch_speed: float = 2.0
 @export var prone_speed: float = 0.5
 ## Physics capsule height (m) per stance — the standing height is read from the scene. The collider
 ## shrinks so a crouched/prone player fits under low obstacles; feet stay on the ground.
