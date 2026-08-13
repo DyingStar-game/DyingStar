@@ -63,7 +63,8 @@ const TELEPORT_TARGETS := {
 @export var walk_speed: float = 1.5
 @export var walk_back_speed: float = 0.8
 ## Walk speed is adjustable by the mouse wheel between these bounds, in walk_speed_step increments
-## (GDD: 0.5-3 m/s, 6 tiers). walk_speed above is the initial/default tier; the top tiers look like a jog.
+## (GDD: 0.5-3 m/s, 6 tiers). walk_speed above is the initial/default tier and MUST sit inside these
+## bounds — outside, the first wheel notch clamps into range and speed jumps instead of stepping.
 @export var walk_speed_min: float = 0.5
 @export var walk_speed_max: float = 3.0
 @export var walk_speed_step: float = 0.5
@@ -235,7 +236,8 @@ var is_jumping: bool = false
 ## seated), computed once by PlayerClient._sample_locomotion and read by the footsteps AND the puppet's
 ## CharacterAnimator — so the same numbers drive both, on the owner and on every remote avatar (DRY).
 var locomotion_sample: Dictionary = {}
-## Owner's current mouse-wheel-chosen walk speed (m/s) — mirrored here by PlayerClient for the debug HUD.
+## Owner's current mouse-wheel-chosen walk speed (m/s) — mirrored here by PlayerClient for the debug
+## HUD, seeded from walk_speed in its setup() (so the HUD never reads 0 while the body walks).
 var walk_speed_target: float = 0.0
 ## Currently requested emote KEY (see EmoteCatalog), replicated so everyone plays it on this body. ""
 ## = none. The animator starts it while standing and clears it (back to "") on move or when it ends.

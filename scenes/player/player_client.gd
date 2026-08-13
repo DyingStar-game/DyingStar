@@ -50,7 +50,7 @@ var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame)
 var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to derive the yaw rate (in-place turn)
 var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
-var _walk_speed_target: float = 0.0  # mouse-wheel-chosen walk speed (owner), 0 until the first change
+var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 var _step_last_index: int = -1     # which footstep sample was played last (never twice in a row)
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
@@ -75,6 +75,11 @@ func setup() -> void:
 		_setup_name_tag(str(player.name))
 		_setup_conversation_text()
 		return
+
+	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
+	# set" marker, so the HUD read 0.0 m/s while the body actually walked at walk_speed.
+	_walk_speed_target = player.walk_speed
+	player.walk_speed_target = _walk_speed_target
 
 	# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
 	player._spawn_wheel = RadialMenu.new()
@@ -531,8 +536,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# GDD: the mouse wheel sets the walk speed (0.5-3 m/s, 0.5 steps). Server-authoritative — we send
 		# the new target; the server clamps and applies it. (Carrying uses the wheel to rotate, above.)
 		var step: float = player.walk_speed_step if event.is_action_pressed("walk_speed_up") else -player.walk_speed_step
-		var base: float = _walk_speed_target if _walk_speed_target > 0.0 else player.walk_speed
-		_walk_speed_target = clampf(base + step, player.walk_speed_min, player.walk_speed_max)
+		_walk_speed_target = clampf(_walk_speed_target + step, player.walk_speed_min, player.walk_speed_max)
 		player.walk_speed_target = _walk_speed_target  # mirror for the debug HUD
 		player.client_send_action_to_server({"action": "walk_speed", "value": _walk_speed_target})
 
