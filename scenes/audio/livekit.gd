@@ -68,6 +68,7 @@ func _on_connection_failed(reason: String) -> void:
 
 func _on_disconnected(reason: String) -> void:
 	push_warning("[livekit] Disconnected: " + reason)
+	_free_all_bridges()  # dropped from the room: nothing will ever arrive on these again
 
 func _on_participant_connected(participant):
 	# print("[livekit] Joined: ", participant.get_identity())
@@ -77,9 +78,17 @@ func _on_participant_connected(participant):
 		_pending_subscriptions.erase(identity)
 		_subscribe_all_audio(participant)
 
-func _on_participant_disconnected(_participant):
-	# print("[livekit] Left: ", _participant.get_identity())
-	pass
+func _on_participant_disconnected(participant):
+	# print("[livekit] Left: ", participant.get_identity())
+	if participant == null or not participant.has_method("get_identity"):
+		return
+	var identity: String = str(participant.get_identity())
+	# The SFU does not always send track_unsubscribed when someone leaves, so this is the ONLY thing
+	# that silences a departed player and frees their speaker. It used to be an empty handler, which
+	# is why a player who left was still heard.
+	_free_bridges_of(identity)
+	mapping_participant_player.erase(identity)
+	_pending_subscriptions.erase(identity)
 
 func _on_track_published(_publication, _participant):
 	# print("[livekit] Track published by ", _participant.get_identity(), ": ", _publication.get_name())
@@ -154,14 +163,54 @@ func _try_subscribe_publication(publication, _participant) -> void:
 		# 	" pub=", publication.get_name() if publication.has_method("get_name") else "?")
 		publication.set_subscribed(true)
 
-func _on_track_unsubscribed(track, _publication, _participant):
-	var key: String = track.get_name()
-	# print("[livekit] Track unsubscribed from ", _participant.get_identity(), ": ", key)
-	if _audio_bridges.has(key):
-		var bridge: Dictionary = _audio_bridges[key]
-		if is_instance_valid(bridge["player"]):
-			bridge["player"].queue_free()
-		_audio_bridges.erase(key)
+## Unique key for one subscribed audio track. The SID is unique room-wide, unlike get_name(), which
+## is "microphone" for EVERYONE — that collision made two remote voices overwrite each other in
+## _audio_bridges (one speaker left orphaned and silent), and unsubscribing A freed B's speaker.
+func _bridge_key(track, participant) -> String:
+	if track != null and track.has_method("get_sid"):
+		var sid: String = str(track.get_sid())
+		if sid != "":
+			return sid
+	# Fallback when the SID is missing: identity + track name is still unique per participant.
+	var identity: String = ""
+	if participant != null and participant.has_method("get_identity"):
+		identity = str(participant.get_identity())
+	var track_name: String = str(track.get_name()) if track != null and track.has_method("get_name") else "track"
+	return "%s_%s" % [identity, track_name]
+
+## Tear ONE bridge down: stop the LiveKit reader, free the speaker, drop the debug counter. THE
+## single teardown point — unsubscribe, participant leaving, despawned speaker and session shutdown
+## all go through it, so none of them can forget a step.
+func _free_bridge(key: String) -> void:
+	if not _audio_bridges.has(key):
+		return
+	var bridge: Dictionary = _audio_bridges[key]
+	_audio_bridges.erase(key)
+	_debug_frames_pushed.erase(key)
+	var lk_stream = bridge.get("lk_stream", null)
+	if lk_stream != null and lk_stream.has_method("close"):
+		lk_stream.close()  # stops the extension's reader thread for this track
+	var speaker = bridge.get("player", null)
+	if is_instance_valid(speaker):
+		speaker.stop()
+		speaker.queue_free()
+
+## Everything a given participant was making us hear. keys() returns a COPY, so erasing while
+## iterating is safe.
+func _free_bridges_of(participant_id: String) -> void:
+	for key in _audio_bridges.keys():
+		if str(_audio_bridges[key].get("participant_id", "")) == participant_id:
+			_free_bridge(key)
+
+func _free_all_bridges() -> void:
+	for key in _audio_bridges.keys():
+		_free_bridge(key)
+	_audio_bridges.clear()
+	_debug_frames_pushed.clear()
+
+func _on_track_unsubscribed(track, _publication, participant):
+	# print("[livekit] Track unsubscribed from ", participant.get_identity())
+	_free_bridge(_bridge_key(track, participant))
 
 func _on_track_subscribed(track, _publication, participant):
 	# print("[livekit] Track subscribed: ", track.get_name())
@@ -190,8 +239,10 @@ func _on_track_subscribed(track, _publication, participant):
 	# When debug_force_2d_audio is true, always use non-spatial to bypass
 	# 3D attenuation/listener issues during debugging.
 	var participant_id: String = participant.get_identity()
-	var track_name: String = track.get_name()
-	var speaker_name: String = "LKAudio_" + participant_id + "_" + track_name
+	var key: String = _bridge_key(track, participant)
+	# Re-subscribed with no unsubscribe in between: never leave two speakers on one track.
+	_free_bridge(key)
+	var speaker_name: String = "LKAudio_" + key
 	var player_node: Node = _find_player_node(participant_id)
 	var player: Node
 	if not debug_force_2d_audio and player_node != null and player_node is Node3D:
@@ -233,12 +284,13 @@ func _on_track_subscribed(track, _publication, participant):
 	silence.fill(Vector2.ZERO)
 	playback.push_buffer(silence)
 
-	_audio_bridges[track.get_name()] = {
+	_audio_bridges[key] = {
+		"participant_id": participant_id,  # so a leaving participant's bridges can be found
 		"lk_stream": lk_stream,
 		"playback": playback,
 		"player": player,
 	}
-	_debug_frames_pushed[track.get_name()] = 0
+	_debug_frames_pushed[key] = 0
 	# print("[livekit] Bridge created for '%s' (participant: %s) — player type: %s, bus: %s" % [
 	# 	track.get_name(), participant_id,
 	# 	"AudioStreamPlayer3D" if player is AudioStreamPlayer3D else "AudioStreamPlayer",
@@ -265,8 +317,7 @@ func _process(delta: float) -> void:
 		var bridge: Dictionary = _audio_bridges[key]
 		if not is_instance_valid(bridge["player"]):
 			# Speaker was freed (e.g. its parent player node despawned).
-			_audio_bridges.erase(key)
-			_debug_frames_pushed.erase(key)
+			_free_bridge(key)
 			continue
 		var frames_before: int = bridge["playback"].get_frames_available()
 		bridge["lk_stream"].poll(bridge["playback"])
