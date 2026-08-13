@@ -160,32 +160,12 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
 
-	_setup_microphone_to_record_bus()
-
-
-func _setup_microphone_to_record_bus() -> void:
-	# Make sure audio input is allowed (needed for AudioStreamMicrophone).
-	if not ProjectSettings.get_setting("audio/driver/enable_input", false):
-		ProjectSettings.set_setting("audio/driver/enable_input", true)
-		AudioServer.input_device = AudioServer.input_device # nudge the driver to re-init
-
-	# Ensure the "Record" bus exists.
-	var bus_idx := AudioServer.get_bus_index("Record")
-	if bus_idx < 0:
-		AudioServer.add_bus()
-		bus_idx = AudioServer.bus_count - 1
-		AudioServer.set_bus_name(bus_idx, "Record")
-
-	# Spawn an AudioStreamPlayer routed to the Record bus playing the mic.
-	if has_node("MicrophoneInput"):
-		return
-	var mic_player := AudioStreamPlayer.new()
-	mic_player.name = "MicrophoneInput"
-	mic_player.stream = AudioStreamMicrophone.new()
-	mic_player.bus = "Record"
-	mic_player.autoplay = true
-	add_child(mic_player)
-	mic_player.play()
+	# NOTE: the microphone capture is NOT set up here. It belongs to the voice client (livekit.gd),
+	# the only consumer of the Record bus, which creates its own "_MicPlayer" and configures the bus
+	# fully (silent send + mute). This node used to add a SECOND AudioStreamMicrophone on the very
+	# same bus: two unaligned copies of the same voice summed together (~+6 dB, comb filtering) and
+	# the input device stayed open even without voice chat. `audio/driver/enable_input`, which that
+	# code also forced, is already set in project.godot.
 
 
 func _load_client_ini_file() -> void:

@@ -31,12 +31,20 @@ var _mic_publication = null
 var _mic_sample_rate: int = 48000
 var _mic_chunk_samples: int = 480  # 10ms worth of samples at _mic_sample_rate
 var _mic_pending: PackedFloat32Array = PackedFloat32Array()
+# Local mic on/off. THE switch that decides whether our voice leaves the machine: muting the Record
+# bus does not, because a bus mute is applied after the effect chain, so AudioEffectCapture keeps
+# producing frames and _process keeps pushing them to LiveKit.
+var _mic_enabled: bool = true
 
 # UUIDs requested by Horizon before participant_connected fired — retried on join.
 var _pending_subscriptions: Array = []
 
 func _ready():
 	# print("[livekit] Starting connection to ", livekit_url, "...")
+	# SettingsManager owns the mute state, so it survives this node being destroyed and recreated
+	# (back to menu -> new game): a player who muted stays muted, with no restore code here.
+	_mic_enabled = not SettingsManager.is_microphone_muted()
+	SettingsManager.microphone_muted_changed.connect(_on_microphone_muted_changed)
 	room = LiveKitRoom.new()
 	room.connected.connect(_on_connected)
 	room.participant_connected.connect(_on_participant_connected)
@@ -291,18 +299,24 @@ func _process(delta: float) -> void:
 	# Pump local mic frames from the Record bus → LiveKit.
 	if _mic_capture == null or _mic_source == null:
 		return
+	# ALWAYS drain the capture ring, even while muted: the audio thread fills it no matter what, and
+	# a full buffer would replay ~100 ms of what was said during the mute as soon as we unmute.
 	var available := _mic_capture.get_frames_available()
 	if available > 0:
 		var frames: PackedVector2Array = _mic_capture.get_buffer(available)
-		# Mix down stereo to mono float32 PCM and accumulate.
-		var base := _mic_pending.size()
-		_mic_pending.resize(base + frames.size())
-		for i in frames.size():
-			var f := frames[i]
-			var mono: float = (f.x + f.y) * 0.5
-			_mic_pending[base + i] = mono
-			if absf(mono) > _debug_mic_peak:
-				_debug_mic_peak = absf(mono)
+		if _mic_enabled:
+			# Mix down stereo to mono float32 PCM and accumulate.
+			var base := _mic_pending.size()
+			_mic_pending.resize(base + frames.size())
+			for i in frames.size():
+				var f := frames[i]
+				var mono: float = (f.x + f.y) * 0.5
+				_mic_pending[base + i] = mono
+				if absf(mono) > _debug_mic_peak:
+					_debug_mic_peak = absf(mono)
+
+	if not _mic_enabled:
+		return  # nothing accumulated, and above all no capture_frame() -> we emit nothing at all
 
 	# Drain in fixed 10ms chunks (LiveKit/WebRTC requirement).
 	while _mic_pending.size() >= _mic_chunk_samples:
@@ -372,6 +386,37 @@ func _start_microphone_publish() -> void:
 
 	_mic_publication = room.get_local_participant().publish_track(_mic_track, {})
 	# print("[livekit] Microphone track published")
+	# Honour a mute chosen before the room existed (HUD button, previous session).
+	_apply_microphone_state()
+
+## Local microphone on/off. Called by the HUD button through SettingsManager, and on publish.
+func set_microphone_enabled(enabled: bool) -> void:
+	_mic_enabled = enabled
+	_apply_microphone_state()
+
+func is_microphone_enabled() -> bool:
+	return _mic_enabled
+
+func _on_microphone_muted_changed(muted: bool) -> void:
+	set_microphone_enabled(not muted)
+
+## Idempotent. Tells the SFU to stop relaying us when it can, and — the part that actually
+## guarantees silence — drops everything already captured or queued, so unmuting never replays what
+## was said during the mute (~100 ms sitting in AudioEffectCapture, ~200 ms in the LiveKit source).
+## Deliberately NOT unpublish_track(): the room uses auto_subscribe=false with subscriptions driven
+## by Horizon, so nothing guarantees we would be re-subscribed after a republish.
+func _apply_microphone_state() -> void:
+	if _mic_track != null:
+		if _mic_enabled:
+			if _mic_track.has_method("unmute"):
+				_mic_track.unmute()
+		elif _mic_track.has_method("mute"):
+			_mic_track.mute()
+	_mic_pending = PackedFloat32Array()
+	if _mic_capture != null:
+		_mic_capture.clear_buffer()
+	if _mic_source != null and _mic_source.has_method("clear_queue"):
+		_mic_source.clear_queue()
 
 func map_participant_to_player(participant_id: String, player_uuid: String) -> void:
 	mapping_participant_player[participant_id] = player_uuid
