@@ -49,9 +49,14 @@ func open(options: Array) -> void:
 	set_process(true)
 	queue_redraw()
 
+## Hide the wheel and drop what it was showing, so a closed wheel holds no selection that a stray
+## confirm() could re-emit. open() repopulates everything.
 func close() -> void:
 	visible = false
 	set_process(false)
+	_options = []
+	_selected = -1
+	_sub_selected = -1
 
 ## Emit the highlighted LEAF option (or cancelled) and close.
 func confirm() -> void:
