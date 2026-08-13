@@ -8,7 +8,13 @@ func _on_normal_player_display_debug(show: bool) -> void:
 		visible = true
 		while visible:
 			await get_tree().create_timer(1.0).timeout
-			var number_players = NetworkOrchestrator.network_agent.players_list.size()
-			text = str(int(number_players)) + " players"
+			# This polls every second for as long as the panel is up, so it also runs while there is
+			# no network agent (before connecting, and once the session is released on the way back
+			# to the menu). Without the guard it spams "Invalid access ... on a base object of Nil".
+			var agent = NetworkOrchestrator.network_agent
+			if agent == null or not "players_list" in agent:
+				text = "- players"
+				continue
+			text = str(agent.players_list.size()) + " players"
 	else:
 		visible = false

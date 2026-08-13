@@ -111,8 +111,12 @@ func _ready() -> void:
 		if arg.begins_with("--token="):
 			token = arg.substr(len("--token="))
 			break
-	Performance.add_custom_monitor("network/events_received", metric_get_network_events_received)
-	Performance.add_custom_monitor("network/events_sent", metric_get_network_events_sent)
+	# Custom monitors are GLOBAL: a second client (back to menu -> new game) would re-register the
+	# same names and leave the first one's Callable pointing at a freed node. shutdown() removes them.
+	if not Performance.has_custom_monitor("network/events_received"):
+		Performance.add_custom_monitor("network/events_received", metric_get_network_events_received)
+	if not Performance.has_custom_monitor("network/events_sent"):
+		Performance.add_custom_monitor("network/events_sent", metric_get_network_events_sent)
 
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	_load_client_ini_file()
@@ -347,9 +351,27 @@ func _search_parent_node(parent_id: String) -> Node:
 ########################################################################
 # TODO NetworkOrchestrator calls, not sure used with new system, needed to check it
 ########################################################################
-func disconnect_from_server() -> void:
+## Full stop for this network session: leave the voice room, then close the socket. Idempotent,
+## and synchronous — NetworkOrchestrator.release_network_agent() calls it right before freeing us,
+## because queue_free() alone would let this node (and its LiveKitAudio child) keep processing until
+## the end of the frame, still publishing the mic and still receiving voice.
+func shutdown() -> void:
 	set_process(false)
-	socket.close(1000, "client disconnected")
+	# set_process(false) above does NOT propagate to children, so the voice client would keep
+	# running its own _process. Stop it explicitly, and now rather than at the end of the frame.
+	var lk: Node = get_node_or_null("LiveKitAudio")
+	if lk != null and lk.has_method("shutdown"):
+		lk.shutdown()
+	if Performance.has_custom_monitor("network/events_received"):
+		Performance.remove_custom_monitor("network/events_received")
+	if Performance.has_custom_monitor("network/events_sent"):
+		Performance.remove_custom_monitor("network/events_sent")
+	if socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		socket.close(1000, "client disconnected")
+
+## Historical public name for the same shutdown.
+func disconnect_from_server() -> void:
+	shutdown()
 
 func on_connection_established() -> void:
 	request_spawn()

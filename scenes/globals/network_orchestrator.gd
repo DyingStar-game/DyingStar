@@ -81,9 +81,33 @@ func create_server() -> void:
 	network_agent = load("res://server/server.tscn").instantiate()
 	call_deferred("add_child", network_agent)
 
+## Shut the live network session down (Horizon socket + LiveKit room + voice audio) and free the
+## agent. Idempotent, and the ONLY place that frees network_agent: back-to-menu, connection error
+## and starting a new game all go through here, so the "at most one live network agent" invariant
+## cannot be broken by a caller who forgets a step.
+func release_network_agent() -> void:
+	var agent: Node = network_agent
+	network_agent = null
+	if not is_instance_valid(agent) or agent.is_queued_for_deletion():
+		return
+	# Synchronous: the voice room is left and the socket closed NOW. queue_free() alone would not
+	# do — the node (and its LiveKitAudio child) would keep processing until the end of the frame.
+	if agent.has_method("shutdown"):
+		agent.shutdown()
+	# queue_free, never free: this can be reached from inside the agent's own _process (the
+	# connection-error path) or from a LiveKit callback.
+	agent.queue_free()
+
 func create_client() -> void:
+	# The previous client lives under this AUTOLOAD, so changing scene never frees it. Without this
+	# we stack two clients, two LiveKit rooms and two microphone publications — which is why a
+	# player who went back to the menu stayed audible, and was heard twice after rejoining.
+	release_network_agent()
 	network_agent = load("res://server/client.tscn").instantiate()
-	call_deferred("add_child", network_agent)
+	# Direct add_child (not deferred): the only caller is GameOrchestrator._start_playing_deferred,
+	# after two awaits, so the tree is not locked. A deferred add_child could also land on a node
+	# already queued for deletion.
+	add_child(network_agent)
 
 func start_server(changed_scene) -> Node:
 
