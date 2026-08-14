@@ -66,21 +66,29 @@ var type_name = "miningrock"  # kept for internal blocs/side2 payloads; PropSync
 var combiner: CSGCombiner3D
 
 # uuid / carried are read by mining_tool / player / vehicle on the body; forward to the PropSync child.
+var _sync: PropSync
+
+## Cached PropSync child, resolved lazily so a facade access before _ready still works.
+func _prop_sync() -> PropSync:
+	if _sync == null:
+		_sync = PropSync.of(self)
+	return _sync
+
 var uuid: String:
 	get:
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		return s.uuid if s != null else ""
 	set(value):
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		if s != null:
 			s.uuid = value
 
 var carried: bool:
 	get:
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		return s.carried if s != null else false
 	set(value):
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		if s != null:
 			s.carried = value
 
@@ -593,14 +601,14 @@ func get_center_offset() -> Vector3:
 ## Reparent on the server (carry into hands / drop back to the world) via the PropSync component, which
 ## sets its reparent guard so the momentary tree-exit isn't seen as a despawn.
 func server_parent_change(parent: Node) -> void:
-	var s := PropSync.of(self)
+	var s := _prop_sync()
 	if s != null:
 		s.server_parent_change(parent)
 
 ## Tell clients to reparent this piece (into the carrier's hands, or back to the world)
 ## and where it sits. Same channel/shape Box50cm uses for carrying — routed through PropSync.
 func send_properties_to_client(parent_uuid: String) -> void:
-	var s := PropSync.of(self)
+	var s := _prop_sync()
 	if s == null:
 		return
 	s.server_prop_update({
@@ -616,7 +624,7 @@ func send_properties_to_client(parent_uuid: String) -> void:
 
 func _server_ready() -> void:
 	# send blocs to Horizon (through the PropSync component)
-	var s := PropSync.of(self)
+	var s := _prop_sync()
 	if s != null:
 		s.server_prop_update({"blocs": _blocs_payload()})
 	_refresh_cuts()

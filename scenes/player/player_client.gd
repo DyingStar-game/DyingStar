@@ -58,6 +58,7 @@ var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broa
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
+var _placement_marker: CarryPlacementMarker = null  # owner-only: the carry placement disc (see setup)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
 
@@ -98,6 +99,12 @@ func setup() -> void:
 	player.admin_cleanup_tool = AdminCleanupTool.new()
 	player.add_child(player.admin_cleanup_tool)
 	player.admin_cleanup_tool.setup(player.camera, player)
+
+	# Hauling: the white disc on the aim ray showing where E will put the carried crate down. Hides
+	# itself whenever we carry nothing, so it costs a flag test the rest of the time.
+	_placement_marker = CarryPlacementMarker.new()
+	player.add_child(_placement_marker)
+	_placement_marker.setup(player)
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)

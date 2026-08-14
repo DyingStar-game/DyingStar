@@ -20,12 +20,20 @@ const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
 var type_name = "mining_depot"  # kept for the placeholder self-spawn; PropSync carries the networked copy
 var state := "idle"
 
+var _sync: PropSync
+
+## Cached PropSync child, resolved lazily so a facade access before _ready still works.
+func _prop_sync() -> PropSync:
+	if _sync == null:
+		_sync = PropSync.of(self)
+	return _sync
+
 var uuid: String:
 	get:
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		return s.uuid if s != null else ""
 	set(value):
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		if s != null:
 			s.uuid = value
 var rocks_on_conveyor := 0
@@ -290,7 +298,7 @@ func _collect_rock(rock: Node) -> void:
 # Server-side state update: forward to the PropSync component, preserving the {"data": ...} envelope
 # that the client half (apply_prop_data) expects. PropSync emits it with the depot's uuid/type_name.
 func server_prop_update(data):
-	var s := PropSync.of(self)
+	var s := _prop_sync()
 	if s != null:
 		s.server_prop_update({"data": data})
 

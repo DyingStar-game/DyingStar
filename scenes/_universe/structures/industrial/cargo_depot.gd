@@ -74,6 +74,12 @@ func _ready() -> void:
 	# without knowing where depots are spawned in the tree (see server.gd::remove_player).
 	if GameOrchestrator.is_server():
 		add_to_group("cargo_depots")
+		# Seed the zone contents from what is ALREADY sitting there. `body_entered` is edge-triggered,
+		# so crates restored from persistence (or dropped while the filter below was rejecting them)
+		# would otherwise stay invisible to the magasiniers forever: the property would say the temp
+		# zone is empty while it is visibly full. Deferred by two physics frames because overlaps are
+		# only resolved once the bodies have been added to the space.
+		_seed_zone_contents.call_deferred()
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [
@@ -244,38 +250,129 @@ func _on_reception_area_body_exited(body: Node3D) -> void:
 	reception_players.erase(body.client_uuid)
 	_send_reception_players()
 
+## Rebuild `pnj_box_temp_zones` and `pnj_reception_deposited_item` from the bodies currently
+## overlapping each area, and replicate the result. Idempotent, so it is safe to call again.
+##
+## The two dictionaries are otherwise only ever maintained by `body_entered` / `body_exited`, which
+## say nothing about a world that was already populated when the depot spawned. Every crate restored
+## from persistence into the temp zone falls in that gap.
+func _seed_zone_contents() -> void:
+	if not GameOrchestrator.is_server():
+		return
+	# Two frames: one for this deferred call to land, one for the physics server to have resolved the
+	# overlaps of bodies added alongside us. get_overlapping_bodies() reads the LAST step's result.
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	if not is_inside_tree():
+		return
+
+	var zones := {}
+	var temp_root := get_node_or_null("TempZone")
+	if temp_root != null:
+		for place in temp_root.get_children():
+			# "Place5" -> zone_5, the same index the scene binds to the signals and the same key the
+			# npc service derives from its "PNJPlace5" zone name.
+			var place_name := String(place.name)
+			if not place_name.begins_with("Place"):
+				continue
+			var digits := place_name.substr(5)
+			if not digits.is_valid_int():
+				continue
+			var area := place.get_node_or_null("PNJBoxDepositTempZone") as Area3D
+			if area == null:
+				continue
+			var found: Array = []
+			for body in area.get_overlapping_bodies():
+				var id := _box_uuid(body)
+				if id != "":
+					found.append(id)
+			if not found.is_empty():
+				zones["zone_" + digits] = found
+	if zones != pnj_box_temp_zones:
+		pnj_box_temp_zones = zones
+		_send_pnj_box_temp_zones()
+
+	var counter := get_node_or_null("ReceptionDesk/PNJBoxDepositPlayer") as Area3D
+	if counter != null:
+		var on_counter: Array = []
+		for body in counter.get_overlapping_bodies():
+			var id := _box_uuid(body)
+			if id != "":
+				on_counter.append(id)
+		if on_counter != pnj_reception_deposited_item:
+			pnj_reception_deposited_item = on_counter
+			_send_reception_deposited_item()
+	print("[cargo_depot] seeded zones=%s counter=%s" % [pnj_box_temp_zones, pnj_reception_deposited_item])
+
+
+## Networked uuid of `body` if it is a prop a magasinier can pick up and shelve — what the depot flow
+## calls "a box" — or "" for anything else. The single gate for both zones.
+##
+## Deliberately NOT `type_name == "box"`, which the temp zone used to test. That key does not mean
+## "carriable container": the 19 scenes carrying it are the PALLETS and fixed containers, every one of
+## them `enable_carry = false`, while the crate the magasiniers are configured to handle
+## (hauling_box.tscn, `boxes_type_allowed` in the npc service's npcs.yaml) is
+## `type_name = "crate_container"`. The test therefore accepted only props an NPC cannot lift and
+## rejected the only one it can: the temp zone stayed empty forever and the stocker never came for it.
+## `enable_carry` is the property that states the intent; the npc service still does the fine-grained
+## `scenename` check on top.
+##
+## Returning the uuid (rather than a bool) also keeps `uuid` read off the PropSync child, which every
+## networked prop has, instead of off the body, which is a facade only some scenes define.
+func _box_uuid(body: Node) -> String:
+	var sync := PropSync.of(body)
+	if sync == null or not sync.enable_carry or sync.uuid == "":
+		return ""
+	return sync.uuid
+
+
 func _on_box_counter_body_entered(body: Node3D) -> void:
 	if not GameOrchestrator.is_server():
 		return
-	pnj_reception_deposited_item.append(body.uuid)
+	# Same gate as the temp zone: the counter used to append `body.uuid` for ANY body the area's mask
+	# let through, which listed props no magasinier could lift and read `uuid` off bodies that may not
+	# expose it at all.
+	var id := _box_uuid(body)
+	if id == "" or pnj_reception_deposited_item.has(id):
+		return
+	pnj_reception_deposited_item.append(id)
 	_send_reception_deposited_item()
 
 
 func _on_box_counter_body_exited(body: Node3D) -> void:
 	if not GameOrchestrator.is_server():
 		return
-	pnj_reception_deposited_item.erase(body.uuid)
+	var id := _box_uuid(body)
+	if id == "" or not pnj_reception_deposited_item.has(id):
+		return
+	pnj_reception_deposited_item.erase(id)
 	_send_reception_deposited_item()
 
 # when a box enter in the temporary zone, we store it in a dictionary with the zone id as key
 func _on_pnj_box_deposit_temp_zone_body_entered(body: Node3D, extra_arg_0: int) -> void:
 	if not GameOrchestrator.is_server():
 		return
-	var sync := PropSync.of(body)
-	if sync != null and sync.type_name == "box":
-		if not pnj_box_temp_zones.has("zone_" + str(extra_arg_0)):
-			pnj_box_temp_zones["zone_" + str(extra_arg_0)] = []
-		pnj_box_temp_zones["zone_" + str(extra_arg_0)].append(body.uuid)
-		_send_pnj_box_temp_zones()
+	var id := _box_uuid(body)
+	if id == "":
+		return
+	var key := "zone_" + str(extra_arg_0)
+	if not pnj_box_temp_zones.has(key):
+		pnj_box_temp_zones[key] = []
+	# The seed pass may already have listed it (both run at spawn): never double-list, or removing it
+	# once would leave a phantom the stocker keeps walking to.
+	if pnj_box_temp_zones[key].has(id):
+		return
+	pnj_box_temp_zones[key].append(id)
+	_send_pnj_box_temp_zones()
 
 # when a box exit the temporary zone, we remove it from the dictionary with the zone id as key
 func _on_pnj_box_deposit_temp_zone_body_exited(body: Node3D, extra_arg_0: int) -> void:
 	if not GameOrchestrator.is_server():
 		return
-	var sync := PropSync.of(body)
-	if sync != null and sync.type_name == "box":
+	var id := _box_uuid(body)
+	if id != "":
 		if pnj_box_temp_zones.has("zone_" + str(extra_arg_0)):
-			pnj_box_temp_zones["zone_" + str(extra_arg_0)].erase(body.uuid)
+			pnj_box_temp_zones["zone_" + str(extra_arg_0)].erase(id)
 			_send_pnj_box_temp_zones()
 
 

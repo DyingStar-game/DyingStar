@@ -134,10 +134,11 @@ const TELEPORT_TARGETS := {
 @export var player_thruster_force = 10
 
 @export_subgroup("Carry & interaction")
-## Where a carried item floats, relative to the CAMERA pivot (issue #124): -Z is the carry distance
-## along the gaze, so the item stays centered on the crosshair at any head pitch. Keep X/Y at 0 for
-## exact crosshair alignment. (The actual value is overridden per scene, e.g. player.tscn.)
-@export var carry_offset: Vector3 = Vector3(0.0, 0.0, -1.5)
+## Where a carried item is MOUNTED, in BODY-local space (the item is reparented under Player and
+## pinned here). Chest height, hugged against the torso: it follows the body's yaw and never the
+## camera pitch, so the crate rides steadily instead of floating on the gaze. Where the crate will be
+## PUT DOWN is a separate thing entirely — the placement disc on the aim ray (see CarryPlacement).
+@export var carry_mount_offset: Vector3 = Vector3(0.0, 1.271, -0.301)
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
 ## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
 @export var interact_ray_length: float = 1.5

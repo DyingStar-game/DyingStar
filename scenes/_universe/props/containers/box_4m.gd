@@ -8,11 +8,19 @@ extends RigidBody3D
 
 @export var inside_space: World3D
 
+var _sync: PropSync
+
+## Cached PropSync child, resolved lazily so a facade access before _ready still works.
+func _prop_sync() -> PropSync:
+	if _sync == null:
+		_sync = PropSync.of(self)
+	return _sync
+
 var uuid: String:
 	get:
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		return s.uuid if s != null else ""
 	set(value):
-		var s := PropSync.of(self)
+		var s := _prop_sync()
 		if s != null:
 			s.uuid = value

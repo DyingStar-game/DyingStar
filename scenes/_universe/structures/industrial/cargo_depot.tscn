@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://sn4ohukiewv6"]
 
 [ext_resource type="Material" uid="uid://cfw4xedexidi0" path="res://assets/_universe/environment/terrain/regolith_grey_simple.tres" id="2_xg6ju"]
-[ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://scenes/props/rock/rock_material.tres" id="3_yil1r"]
+[ext_resource type="Material" uid="uid://bp1l8v64nroad" path="res://assets/_universe/environment/terrain/rocks/rock_material.tres" id="3_yil1r"]
 [ext_resource type="PackedScene" uid="uid://bj6b574fct2mo" path="res://scenes/_universe/props/lighting/led_panel_1x0.3m.tscn" id="5_yil1r"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
@@ -123,6 +123,18 @@ size = Vector3(1.1460283906935729, 2.2216948406091888, 1)
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.940000000002328, 1.5, 5)
 size = Vector3(10, 3, 0.12)
 
+[node name="wall_junk_room_01" type="CSGBox3D" parent="walls" unique_id=1642500494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 94.95427644970484)
+size = Vector3(12, 3, 0.12)
+
+[node name="wall_junk_room_02" type="CSGBox3D" parent="walls" unique_id=84285821]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 5.940000000002323, 1.5, 90.0099869540893)
+size = Vector3(10, 3, 0.12)
+
+[node name="wall_junk_room_03" type="CSGBox3D" parent="walls" unique_id=367168057]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.940000000002334, 1.5, 90.0099869540893)
+size = Vector3(10, 3, 0.12)
+
 [node name="wall02" type="CSGBox3D" parent="walls" unique_id=958342489]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 10)
 size = Vector3(20, 15, 0.12)
@@ -135,6 +147,11 @@ size = Vector3(1.9, 2, 0.3)
 [node name="wall03" type="CSGBox3D" parent="walls" unique_id=1320769288]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 85)
 size = Vector3(20, 15, 0.12)
+
+[node name="CSGBox3D" type="CSGBox3D" parent="walls/wall03" unique_id=142446083]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.46688567677863135, 0)
+operation = 2
+size = Vector3(1.9, 2, 0.3)
 
 [node name="wall04" type="CSGBox3D" parent="walls" unique_id=813156635]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 9.940000000002328, 0.5, 47.473312)
@@ -153,6 +170,10 @@ size = Vector3(74.947, 0.12, 20)
 
 [node name="roof2" type="CSGBox3D" parent="roof" unique_id=560195331]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.05744648411927988, 2.94199999999546, 5)
+size = Vector3(10, 0.12, 12)
+
+[node name="roof_junk_room" type="CSGBox3D" parent="roof" unique_id=1132521495]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.05744648411928509, 2.94199999999546, 89.97990979136347)
 size = Vector3(10, 0.12, 12)
 
 [node name="ReceptionDesk" type="CSGCombiner3D" parent="." unique_id=1794383938]
@@ -558,6 +579,22 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.869851440875111, 28)
 
 [node name="LedPanel1x0_3m15" parent="Lights/Depot" unique_id=47551676 instance=ExtResource("5_yil1r")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 7.869851440875111, 28)
+
+[node name="Junk" type="Node3D" parent="Lights" unique_id=1861887610]
+
+[node name="LedPanel1x0_3m1" parent="Lights/Junk" unique_id=473935978 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 86.3095914797591)
+
+[node name="LedPanel1x0_3m2" parent="Lights/Junk" unique_id=1251524462 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 92.24254083360853)
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1281901473]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.857416347148768, 1.9449055731039908, 89.82074714987318)
+text = "Meal zone"
+
+[node name="Label3D2" type="Label3D" parent="." unique_id=1682449325]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 5.864430206046919, 1.9449055731039908, 89.82074714987318)
+text = "Mandatory activity"
 
 [connection signal="body_entered" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_entered"]
 [connection signal="body_exited" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_exited"]

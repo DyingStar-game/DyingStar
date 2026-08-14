@@ -33,6 +33,10 @@ var server_last_rotation = Vector3.ZERO
 # lost drop/settle message can't strand this prop under its old parent on clients (see PropNet).
 var server_last_parent_id: String = ""
 var server_parent_resend: int = 0
+# Cached network uuid of the current parent, keyed by its instance id (see PropNet.server_tick):
+# reading `parent.uuid` runs a scripted getter on many hosts — far too hot once per prop per tick.
+var _parent_cache_id: int = 0
+var _parent_uuid_cache: String = ""
 
 var has_parent: bool = false
 var carried: bool = false             # carried by a player (issue #124)
@@ -60,6 +64,13 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
+	# Each side only ever uses ONE of the two per-frame callbacks (server_tick is server-only, ride_pin
+	# is client-only): turn the other off entirely — with many props, even an early-return per prop per
+	# frame is measurable in the profiler.
+	if GameOrchestrator.is_server():
+		set_process(false)
+	else:
+		set_physics_process(false)
 	var body := _body()
 	if body == null:
 		return

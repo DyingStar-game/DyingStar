@@ -83,6 +83,41 @@ func make_camera_ray(camera: Node3D, length: float, mask: int, areas := false, b
 	camera.add_child(ray)
 	return ray
 
+## AABB of a body's OWN collision shapes (covers CollisionShape3D / CollisionPolygon3D alike, and
+## ignores child Area3D shapes — those belong to a separate CollisionObject3D, e.g. the rock mining
+## sphere), expressed in `frame_from_body`: pass IDENTITY for body-local, or a
+## (global⁻¹ × body.global) product for another node's local frame. Zero-size when the body has no
+## collision. Shared by the vehicle cargo fit (bay fitting, debug envelope) and the carry placement
+## (disc radius, resting a dropped crate on the aimed surface).
+func collision_aabb(body: Node3D, frame_from_body: Transform3D) -> AABB:
+	var col := body as CollisionObject3D
+	if col == null:
+		return AABB()
+	var bounds := AABB()
+	var started := false
+	for owner_id in col.get_shape_owners():
+		var owner_xform: Transform3D = col.shape_owner_get_transform(owner_id)  # relative to body
+		for i in col.shape_owner_get_shape_count(owner_id):
+			var shape: Shape3D = col.shape_owner_get_shape(owner_id, i)
+			if shape == null:
+				continue
+			var debug_mesh := shape.get_debug_mesh()
+			if debug_mesh == null:
+				continue
+			var aabb := debug_mesh.get_aabb()
+			for c in 8:
+				var corner := aabb.position + Vector3(
+					aabb.size.x if (c & 1) else 0.0,
+					aabb.size.y if (c & 2) else 0.0,
+					aabb.size.z if (c & 4) else 0.0)
+				var point: Vector3 = frame_from_body * (owner_xform * corner)
+				if not started:
+					bounds = AABB(point, Vector3.ZERO)
+					started = true
+				else:
+					bounds = bounds.expand(point)
+	return bounds
+
 func align_with_y(xform: Transform3D, new_y: Vector3) -> Transform3D:
 	xform.basis.y = new_y
 	xform.basis.x = -xform.basis.z.cross(new_y)

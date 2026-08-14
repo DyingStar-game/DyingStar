@@ -1,3 +1,4 @@
+class_name GameServer
 extends Node
 
 signal populated_universe
@@ -170,11 +171,66 @@ func _ready() -> void:
 	_send_metrics()
 
 func _physics_process(_delta: float) -> void:
+	_perf_tick(_delta)
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
 		_horizon_update_counter = 0
 		send_players_newposition_to_horizon()
 		send_props_update_to_horizon()
+
+## TEMPORARY diagnostic (TPS drops): every 2 s, print where the frame goes — engine physics vs script
+## vs render — plus the counts that discriminate between the known suspects (awake bodies = Jolt load,
+## chunk tasks/queue = terrain collision churn, nav maps = NPC bake load, update dict sizes = network
+## flush volume). Remove (or flip the const) once the drop is diagnosed.
+const _PERF_REPORT: bool = true
+var _perf_timer: float = 0.0
+
+func _perf_tick(delta: float) -> void:
+	if not _PERF_REPORT:
+		return
+	_perf_timer += delta
+	if _perf_timer < 2.0:
+		return
+	_perf_timer = 0.0
+	var total := 0
+	var unfrozen := 0
+	var awake := 0
+	for ptype in props_list.keys():
+		if ptype == "planets" or not (props_list[ptype] is Dictionary):
+			continue
+		for body_uuid in props_list[ptype].keys():
+			var b = props_list[ptype][body_uuid]
+			if b is RigidBody3D and is_instance_valid(b):
+				total += 1
+				if not (b as RigidBody3D).freeze:
+					unfrozen += 1
+					if not (b as RigidBody3D).sleeping:
+						awake += 1
+	var chunks := -1
+	var loading := -1
+	var queued := -1
+	for puuid in props_list["planets"].keys():
+		var p = props_list["planets"][puuid]
+		if p is Planet and (p as Planet).planet_terrain != null:
+			chunks = (p as Planet).planet_terrain._server_collision_chunks.size()
+			loading = (p as Planet).planet_terrain._server_chunk_tasks.size()
+			queued = (p as Planet).planet_terrain._server_chunk_queue.size()
+			break
+	var npcs := 0
+	for puuid in players_list.keys():
+		var pl = players_list[puuid]
+		if is_instance_valid(pl) and "is_npc" in pl and pl.is_npc:
+			npcs += 1
+	# print("[Perf] fps=%.0f  phys=%.1fms proc=%.1fms  active3d=%d | props awake=%d unfrozen=%d total=%d | chunks res=%d loading=%d queued=%d | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d" % [
+	# 	Engine.get_frames_per_second(),
+	# 	Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+	# 	Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+	# 	Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS),
+	# 	awake, unfrozen, total,
+	# 	chunks, loading, queued,
+	# 	players_list.size(), npcs, NavigationServer3D.get_maps().size(),
+	# 	props_update.size(), players_newposition.size(),
+	# ])
 
 func _process(_delta: float) -> void:
 	if check_pending_objects_timer == 20:
@@ -226,8 +282,9 @@ func _process(_delta: float) -> void:
 ## each awake body, and push the resulting per-planet pin set so those
 ## chunks stay resident regardless of the zone's desired residency.
 ##
-## Awake = (not sleeping) AND (not frozen).  Frozen / sleeping bodies do
-## not need collision and may be evicted with the rest of the zone churn.
+## Every UNFROZEN body pins its chunk, sleeping or not — a sleeping body still rests on its
+## contacts, and evicting the ground under it wakes it (see the loop below). Only frozen
+## bodies (collision shapes disabled by the culler) may lose their chunk with the zone churn.
 ##
 ## Players (CharacterBody3D) are ALWAYS pinned regardless of
 ## _zone_initialized: in single-server / no-mesh deployments Horizon never
@@ -267,9 +324,13 @@ func _refresh_active_body_pins() -> void:
 					continue
 				var rb: RigidBody3D = body
 				if rb.freeze:
-					continue
-				if rb.sleeping:
-					continue
+					continue  # shapes disabled by the culler: genuinely needs no ground
+				# SLEEPING bodies still pin their chunk. Unloading the ground under a sleeping body
+				# removes its contacts, which WAKES it: it falls (the reload is async), re-pins the
+				# chunk, the chunk reloads, it lands and sleeps again, the pin drops... A player
+				# walking across a chunk boundary next to a resting pile triggers that unload/wake
+				# oscillation on every crossing (measured: server TPS 60 -> 10 from walking ~5 m
+				# near the depot crates). Only FROZEN bodies can safely lose their ground.
 				_pin_node_to_planet_chunk(rb, pins_by_planet)
 
 	# Push pin set to each planet (empty array clears pins).

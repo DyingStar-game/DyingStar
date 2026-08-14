@@ -1,3 +1,4 @@
+class_name SystemSandbox
 extends Node3D
 
 @export var spawn_node: Node
