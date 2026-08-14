@@ -369,6 +369,10 @@ func _search_parent_node(parent_id: String) -> Node:
 ## the end of the frame, still publishing the mic and still receiving voice.
 func shutdown() -> void:
 	set_process(false)
+	# Drop the clock calibration with the session: the estimate only ever climbs (see
+	# Globals.sync_clock), so carrying one authority's offset into the next would be worse than
+	# starting over.
+	Globals.reset_clock()
 	# set_process(false) above does NOT propagate to children, so the voice client would keep
 	# running its own _process. Stop it explicitly, and now rather than at the end of the frame.
 	var lk: Node = get_node_or_null("LiveKitAudio")
@@ -1085,6 +1089,10 @@ func _standardize_object(event: Dictionary) -> Dictionary:
 
 	if event.has("timestamp"):
 		timestamp = event["timestamp"]
+		# The SAME clock the game server calibrates on (see ServerNetwork), so both sides derive the
+		# celestial positions from one shared instant instead of from two Windows clocks that merely
+		# happen to be close. Nothing else about time crosses the network.
+		Globals.sync_clock(float(timestamp))
 	else:
 		print("ERROR: event has no timestamp field: %s" % event)
 
