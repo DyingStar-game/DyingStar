@@ -64,6 +64,9 @@ var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broa
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
+## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
+## it is a client-side view, and no remote avatar has any use for one.
+var _star_map: StarMap = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -102,6 +105,11 @@ func setup() -> void:
 	player.admin_cleanup_tool = AdminCleanupTool.new()
 	player.add_child(player.admin_cleanup_tool)
 	player.admin_cleanup_tool.setup(player.camera, player)
+
+	# System chart (F2): every body as a plain sphere, with its orbit and current spin.
+	_star_map = StarMap.new()
+	player.get_node("UserInterface").add_child(_star_map)
+	_star_map.setup(player)  # so the chart can mark where you are
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -618,6 +626,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow(aim)
 
+	if event.is_action_pressed("star_map") and _star_map != null:
+		if _star_map.is_open():
+			_star_map.close()
+		else:
+			_star_map.open()
+
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
 		player.display_debug.emit(player._display_debug)
@@ -843,7 +857,13 @@ func _chat_writing() -> bool:
 ## does NOT lock input — you leave it by walking out of its zone, so movement must stay available
 ## while facing one.
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+
+## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
+## same way a menu freezes it.
+func _star_map_open() -> bool:
+	return _star_map != null and _star_map.is_open()
+
 
 ## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
 ## Frees the cursor and freezes the look (see _process). One source.
