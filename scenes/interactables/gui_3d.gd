@@ -54,10 +54,29 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	node_viewport.push_input(input_event)
 
 
+## Width/height (m) of the interactive surface, taken from the MESH — the surface whose 0..1 UVs the
+## interface actually occupies. PlaneMesh/QuadMesh expose it directly; any other mesh (e.g. a screen
+## from the truck's GLB) falls back to the two largest axes of its AABB, the third being its thickness.
+func _surface_size() -> Vector2:
+	var mesh: Mesh = node_quad.mesh
+	if mesh is QuadMesh or mesh is PlaneMesh:
+		return mesh.size
+	var aabb: Vector3 = mesh.get_aabb().size
+	var axes: Array = [aabb.x, aabb.y, aabb.z]
+	axes.sort()
+	return Vector2(axes[2], axes[1])  # drop the smallest axis: that one is the thickness
+
+
 func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_position: Vector3, _normal: Vector3, _shape_idx: int) -> void:
-	# Get mesh size to detect edges and make conversions. This code only supports PlaneMesh and QuadMesh.
-	var area_shape: BoxShape3D = node_area.get_child(0).shape
-	var quad_mesh_size: Vector2 = Vector2(area_shape.size.z, area_shape.size.y)
+	# Size AND position both come from the MESH, never from the collision shape. They used to be mixed:
+	# the width was read off the BoxShape's Z while the position was read off the Area's X — which is
+	# the shape's THICKNESS (0.23 m on the mining depot, whose Area is turned 90° from the mesh). A
+	# depth of impact was therefore divided by a width, pinning the horizontal coordinate to
+	# 0.5 +/- 0.077: the pointer could never leave a narrow band in the middle of the screen, and only
+	# quivered inside it with the ray's angle of incidence.
+	# A QuadMesh/PlaneMesh lies in its own local XY plane BY CONSTRUCTION, so working in the mesh's
+	# frame makes (x, -y) correct whatever the Area's orientation — no axis is assumed anywhere.
+	var quad_mesh_size: Vector2 = _surface_size()
 
 	# Event position in Area3D in world coordinate space.
 	var event_pos_3d := event_position
@@ -65,9 +84,9 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 	# Current time in seconds since engine start.
 	var now := Time.get_ticks_msec() / 1000.0
 
-	# Convert position to a coordinate space relative to the Area3D node.
-	# NOTE: `affine_inverse()` accounts for the Area3D node's scale, rotation, and position in the scene!
-	event_pos_3d = node_area.global_transform.affine_inverse() * event_pos_3d
+	# Convert position to a coordinate space relative to the SCREEN MESH.
+	# NOTE: `affine_inverse()` accounts for the node's scale, rotation, and position in the scene!
+	event_pos_3d = node_quad.global_transform.affine_inverse() * event_pos_3d
 
 	# TODO: Adapt to bilboard mode or avoid completely.
 
