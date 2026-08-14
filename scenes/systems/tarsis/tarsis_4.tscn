@@ -29,6 +29,14 @@ script = ExtResource("script_body")
 planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 25.0
 axial_tilt_deg = 15.0
+orbit_periapsis_au = 0.631
+orbit_apoapsis_au = 0.67
+orbit_inclination_deg = 1.5
+orbit_ascending_node_deg = 110.0
+orbit_arg_periapsis_deg = 45.0
+orbit_mean_anomaly_deg = 20.0
+orbit_mass_earths = 0.788
+orbit_primary_mass_kg = 1.5088184e+30
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("script_terrain")
