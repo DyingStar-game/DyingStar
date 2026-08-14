@@ -51,6 +51,9 @@ const DISTANCE_FACTOR := 1.0
 @export var axial_tilt_deg: float = 0.0
 ## How many times per second the planet transform is refreshed. 2-3 Hz is plenty (ddurieux) and it
 ## keeps the cost of carrying the dynamic bodies along (see _carry_dynamic_bodies) affordable.
+## ⚠️ A CPU budget knob, never a correctness one. Raising it does NOT reduce the one-step kinematic lag
+## described in _carry_dynamic_bodies — that lag is one physics step whatever the rate, so at 60 Hz a
+## ~150 m spike once every 20 frames simply becomes a PERMANENT ~7 m offset.
 @export var rotation_update_hz: float = 3.0
 
 @export_group("Orbit")
@@ -240,6 +243,19 @@ func _build_orbit() -> void:
 ## Walks the whole subtree except the terrain (whose static colliders follow the scene graph on their
 ## own, and which holds far too many nodes to visit at this rate), so props carried by a player or
 ## parented under a structure are carried too, not just the planet's direct children.
+##
+## ⚠️ CharacterBody3D (the player) is deliberately absent, and adding it would make things WORSE.
+## Such a body needs nothing here: the NODE owns its pose, so the scene graph already carries it —
+## unlike a RigidBody3D, whose pose the solver rewrites every step, which is the whole reason this
+## function exists. And body_set_state is precisely the call the engine already issues by itself on
+## NOTIFICATION_TRANSFORM_CHANGED; on a body whose Jolt motion type is KINEMATIC it does not teleport
+## anything, it records a target the body then SWEEPS to during the next step. We would gain nothing
+## and sweep a capsule across ~150 m of world at several km/s on every refresh.
+## What lags for such a body is its JOLT pose, by exactly one step — so never test a player's presence
+## with area-versus-body across this frame. Detection zones live on the `zone` layer and the player's
+## own AreaDetector does the looking (Player.connect_area_detect, ScreenZone).
+## NB: "kinematic" here is a Jolt MOTION TYPE, not a node class — a RigidBody3D frozen in
+## FREEZE_MODE_KINEMATIC (PropNet.apply_ride_freeze_mode, for cargo riding a truck) is kinematic too.
 func _carry_dynamic_bodies(node: Node) -> void:
 	for child: Node in node.get_children():
 		if child == planet_terrain:

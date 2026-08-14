@@ -225,7 +225,7 @@ func _process(_delta: float) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO
 		# Turn the camera toward a 3D screen so it's centered in view.
-		if player.screen_interacting is Node3D:
+		if is_instance_valid(player.screen_interacting):
 			_face_screen(player.screen_interacting)
 	else:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -848,7 +848,10 @@ func _input_locked() -> bool:
 ## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
 ## Frees the cursor and freezes the look (see _process). One source.
 func _ui_focus() -> bool:
-	return player.screen_interacting != null or _input_locked()
+	# is_instance_valid, not "!= null": a freed node (the depot deleted by the admin tool while we
+	# stand in front of it) is NOT null in GDScript, and the mouse would stay locked to a screen that
+	# no longer exists, with no way out.
+	return is_instance_valid(player.screen_interacting) or _input_locked()
 
 # LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
 func _spawn_depot() -> void:

@@ -319,12 +319,13 @@ var hands_item: Node3D = null
 # Admin cleanup tool (key 2). Built at runtime for the local player only (see _ready).
 var admin_cleanup_tool: AdminCleanupTool = null
 
-# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
-# by the screen's interaction Area; while set, the mouse is freed to click the screen.
+# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Written ONLY by
+# _set_screen, from OUR OWN AreaDetector walking into a ScreenZone; while set, the mouse is freed to
+# click the screen.
 # The NODE is the single source of truth: its global_position is always current, so the camera reads
 # where to look straight from it. A separate world position used to be snapshotted alongside, which
 # went stale the moment the planet spun on (it carries both the player and the screen).
-var screen_interacting = null
+var screen_interacting: Node3D = null
 
 var _display_debug: bool = false
 
@@ -492,6 +493,8 @@ func set_seated(seated: bool) -> void:
 			_seated_saved = true
 		collision_layer = 0
 		collision_mask = 0
+		# Taking a seat inside a screen's zone would otherwise keep the mouse freed while driving.
+		_set_screen(null)
 	else:
 		collision_layer = _saved_collision_layer
 		collision_mask = _saved_collision_mask
@@ -588,6 +591,14 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if veh is Vehicle:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
+	elif area.is_in_group("screen_area"):
+		# A 3D screen's console zone (see ScreenZone). Detected area-to-area and NEVER against our
+		# body: on a spinning planet the two are refreshed one physics step apart, which dropped and
+		# regained the overlap 3 times a second while the player stood still.
+		# A seated player is skipped: their body is taken out of collision by set_seated, so driving
+		# past a depot must not steal the mouse from the driver.
+		if not _seated_saved:
+			_set_screen(_screen_owner_of(area))
 	elif area.is_in_group("teleporter"):
 		# Server-authoritative: the server reparents + repositions, then the
 		# move (with parent uuid) reaches the client through Horizon and
@@ -640,6 +651,16 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 			if _in_vehicle_bed == veh:
 				_in_vehicle_bed = null
 			veh.remove_bed_player(self)
+	elif area.is_in_group("screen_area"):
+		# Only release OUR screen: with two consoles whose zones overlap, walking out of one must not
+		# cancel the interaction with the other.
+		# A null owner means the screen is being torn down (admin delete, despawn) and the walk up the
+		# tree found nothing live. We release in that case too: erring toward release costs a step back
+		# into the zone, while erring the other way leaves the mouse locked to a screen that no longer
+		# exists, with no way out.
+		var screen: Node3D = _screen_owner_of(area)
+		if screen == null or screen == screen_interacting:
+			_set_screen(null)
 	elif area.is_in_group("spawn"):
 		if not OS.has_feature("dedicated_server"):
 			return
@@ -654,6 +675,32 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 		call_deferred("_safe_reparent_and_sync", new_parent)
 		# if gravity_parents.has(area):
 		# 	gravity_parents.erase(area)
+
+## The node a ScreenZone belongs to: the nearest ancestor implementing the 3D-screen contract, i.e.
+## having update_screen(). The zone sits several levels below its owner (the mining depot's lives
+## under miningdepot/Gui3D) and `owner` is not dependable inside an editable instance, so we walk up
+## and test for the contract itself rather than assume a depth.
+func _screen_owner_of(area: Area3D) -> Node3D:
+	var node: Node = area.get_parent()
+	while node != null:
+		if node is Node3D and node.has_method("update_screen"):
+			return node as Node3D
+		node = node.get_parent()
+	push_warning("[Player] ScreenZone '%s' has no ancestor implementing update_screen" % area.name)
+	return null
+
+
+## Single writer for `screen_interacting`, so the camera lock, the mouse mode and the screen's own
+## bookkeeping can never disagree about which console we are using.
+func _set_screen(screen: Node3D) -> void:
+	if screen == screen_interacting:
+		return
+	if is_instance_valid(screen_interacting) and screen_interacting.has_method("screen_focus_changed"):
+		screen_interacting.screen_focus_changed(self, false)
+	screen_interacting = screen
+	if screen != null and screen.has_method("screen_focus_changed"):
+		screen.screen_focus_changed(self, true)
+
 
 ## npc_go_to_position is stored in the PARENT's frame (see PlayerServer). reparent() preserves the
 ## BODY's world position but silently changes what those stored goal coordinates mean — walking out of
