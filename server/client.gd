@@ -947,7 +947,16 @@ func player_update(message: Dictionary) -> void:
 				if uuid == my_player_uuid:
 					if message["data"].has("parent_id"):
 						var parent = _search_parent_node(message["data"]["parent_id"])
-						if parent != null and player.get_parent() != parent:
+						if parent == null:
+							# The server declared a frame we cannot resolve (its object has not entered
+							# our GORC zones yet). We keep our current parent but apply a position
+							# measured in the DECLARED one: from here on our frame silently disagrees
+							# with the server's. The server only re-declares on change, so this does not
+							# self-heal — see the known-gap note in this lot.
+							var held_by: String = player.get_parent().name if player.get_parent() != null else "<none>"
+							push_warning("[client] my player: unresolved parent_id %s, staying under '%s' — frame now diverges from the server"
+									% [message["data"]["parent_id"], held_by])
+						elif player.get_parent() != parent:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
@@ -970,7 +979,10 @@ func player_update(message: Dictionary) -> void:
 					)
 					if message["data"].has("parent_id"):
 						var parent = _search_parent_node(message["data"]["parent_id"])
-						if parent != null and player.get_parent() != parent:
+						if parent == null:
+							push_warning("[client] player %s: unresolved parent_id %s — its frame now diverges from the server"
+									% [uuid, message["data"]["parent_id"]])
+						elif player.get_parent() != parent:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()

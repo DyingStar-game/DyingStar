@@ -105,7 +105,7 @@ static func server_tick(body: Node, state = null) -> void:
 	# Detect a parent change (dropped to the world, settled into a bed) and resend the parent_id for a
 	# few frames: a single lost drop/settle message must not leave the prop stuck under its old parent on
 	# clients, and at huge planet coordinates the position throttle can suppress any other resend.
-	var parent_id: String = (str(parent.uuid) if (parent != null and "uuid" in parent) else "")
+	var parent_id: String = PropSpawn.parent_frame_uuid(body)
 	var resend_parent: bool = false
 	if tracks_parent and parent_id != state.server_last_parent_id:
 		state.server_last_parent_id = parent_id

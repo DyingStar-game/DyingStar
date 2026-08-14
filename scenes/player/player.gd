@@ -3,7 +3,10 @@ class_name Player
 extends CharacterBody3D
 
 signal hs_client_action_move
-signal hs_server_move
+## Server-authoritative move. `local_position` / `local_rotation` are expressed in the frame of
+## whatever node this body is a child of RIGHT NOW; the frame itself is NOT a parameter — the
+## receiver derives it from the tree (see Server._on_player_move). Emit it through emit_move().
+signal hs_server_move(uuid: String, local_position: Vector3, local_rotation: Vector3)
 signal hs_client_action_pressed
 signal display_debug(show: bool)
 signal hs_server_player_update
@@ -288,8 +291,6 @@ var new_input_from_server: bool = false
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
-var is_parented: bool = false
-
 # NPC (server-authoritative). Set on spawn by server.gd; PlayerServer reads these to drive movement.
 ## True when this Player is a server-controlled NPC instead of a networked client.
 var is_npc: bool = false
@@ -566,19 +567,13 @@ func orient_player():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
-		if area.name == "PlanetGravity":
-			var planet = area.get_parent().get_parent()
-			#reparent(planet)
-			# call_deferred("reparent", planet)
-			is_parented = true
-			emit_signal(
-				"hs_server_move",
-				client_uuid,
-				snapped(position, Vector3(0.001, 0.001, 0.001)),
-				snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
-				planet.uuid,
-				is_parented
-			)
+		# Entering a gravity well says NOTHING about our frame, so nothing is announced here. We are
+		# already a child of the networked node we spawned on (the apartment, then the city — see
+		# Server.create_player and _safe_reparent_and_sync) and `position` is local to THAT node. The
+		# old code announced the PLANET as our parent_id here without ever reparenting, publishing a
+		# building-local position in the planet's frame: an offset of one planet radius. It also
+		# re-fired after every reparent (a reparent drops and re-enters every area), so it kept
+		# overwriting the correct declaration. Gravity is a physics concern; the frame is the tree's.
 		gravity_parents.push_back(area)
 	elif area.is_in_group("vehicle_seat"):
 		# Our own monitor walked into a seat box: remember it so E takes that seat (client prompt).
@@ -715,27 +710,35 @@ func npc_goal_keep_world(new_parent: Node) -> void:
 		var goal_world: Vector3 = (old_parent as Node3D).global_transform * npc_go_to_position
 		npc_go_to_position = (new_parent as Node3D).global_transform.affine_inverse() * goal_world
 
-## Reparent guarded against invalid states (node/parent out of tree, already
-## parented, repeated area_exited events) to avoid a server segfault, then emit
-## the move so the server receives the position relative to the new parent.
+## The ONE way a server-authoritative move leaves this body. Position and rotation are sampled LOCAL
+## to whatever node we are a child of at this instant; the frame that goes on the wire is derived
+## from that same tree by Server._on_player_move. Sampling both from the tree in the same breath is
+## what makes "declared parent" and "real parent" one state instead of two: no caller can name a
+## frame this body is not actually in, because no caller gets to name one.
+## Typed .emit() rather than emit_signal(): the arity and the types are then checked at PARSE time,
+## so nobody can quietly re-introduce a fourth "and by the way my parent is X" argument.
+func emit_move() -> void:
+	hs_server_move.emit(
+		client_uuid,
+		snapped(position, Vector3(0.001, 0.001, 0.001)),
+		snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	)
+
+## Reparent guarded against invalid states (node/parent out of tree, already parented, repeated
+## area_exited events) to avoid a server segfault, then emit the move.
+## The ORDER is the contract: reparent FIRST, emit SECOND. emit_move() reads position AND (through
+## the receiver) the parent from the tree, so emitting before the reparent would ship the new
+## position under the old frame — and emitting a frame we have not moved into is now impossible.
 func _safe_reparent_and_sync(new_parent: Node) -> void:
-	print("YOLO REPARENT")
 	if new_parent == null or not is_instance_valid(new_parent):
 		return
 	if not is_inside_tree() or not new_parent.is_inside_tree():
 		return
-	if get_parent() != new_parent:
-		npc_goal_keep_world(new_parent)
-		reparent(new_parent)
-		emit_signal(
-			"hs_server_move",
-			client_uuid,
-			snapped(position, Vector3(0.001, 0.001, 0.001)),
-			snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
-			str(new_parent.uuid) if "uuid" in new_parent else "",
-			true
-	)
+	if get_parent() == new_parent:
+		return
+	npc_goal_keep_world(new_parent)
+	reparent(new_parent)
+	emit_move()
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

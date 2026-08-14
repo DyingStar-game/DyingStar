@@ -749,9 +749,7 @@ func _physics_process(delta: float) -> void:
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
 		player.new_input_from_server = false
-		var seat_p: Vector3 = snapped(player.position, Vector3(0.001, 0.001, 0.001))
-		var seat_r: Vector3 = snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001))
-		player.emit_signal("hs_server_move", player.client_uuid, seat_p, seat_r, null, player.is_parented)
+		player.emit_move()
 		return
 
 	# NPC: server-driven pathfinding replaces client input. Runs in its own branch because an NPC never
@@ -771,13 +769,7 @@ func _physics_process(delta: float) -> void:
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_server_eva_move(delta)
 		player.new_input_from_server = false
-		player.emit_signal(
-			"hs_server_move",
-			player.client_uuid,
-			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-			snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			null,
-			player.is_parented)
+		player.emit_move()
 		return
 
 	# Server-side "sleep" for settled players: once quasi-still for ~0.5 s, run the full move_and_slide
@@ -891,14 +883,7 @@ func _physics_process(delta: float) -> void:
 	player.update_last_basis()
 	player.new_input_from_server = false
 
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented
-	)
+	player.emit_move()
 
 ## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
 ## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
@@ -1015,13 +1000,10 @@ func _server_update_step(delta: float) -> void:
 ## (vault, step-up) so they emit exactly like the normal tick.
 func _emit_move() -> void:
 	player.new_input_from_server = false
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented)
+	# NOTE: this used to send global_rotation while every other sender sent the LOCAL rotation the
+	# client contract expects (see Player.net_set_target) — identical only while the parent's basis is
+	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
+	player.emit_move()
 
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
 ## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
@@ -1070,7 +1052,7 @@ func _npc_physics_process(delta: float) -> void:
 		player.velocity = _horiz + _vertical
 		player.move_and_slide()
 		_npc_update_face_target(delta)
-		_npc_emit_move()
+		player.emit_move()
 		return
 
 	# Make sure there is baked coverage around / ahead of us to path on.
@@ -1100,7 +1082,7 @@ func _npc_physics_process(delta: float) -> void:
 		var _idle: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
 		player.velocity = _idle + _vertical
 		player.move_and_slide()
-		_npc_emit_move()
+		player.emit_move()
 		return
 
 	# Steer toward the next path point in the ground plane; gravity owns the vertical axis.
@@ -1112,7 +1094,7 @@ func _npc_physics_process(delta: float) -> void:
 	player.move_and_slide()
 
 	_npc_update_stuck(delta)
-	_npc_emit_move()
+	player.emit_move()
 
 ## NPC pathing diagnostics — prints every 2 s while an NPC has a goal it has not reached (mesh/island
 ## reachability, bake box, reparent frames...). Costs several nav queries per report: keep off outside
@@ -1310,7 +1292,7 @@ const _NPC_FACE_TURN_SPEED: float = PI
 
 ## Pivot the standing NPC toward player.npc_face_position at constant speed, rotating around its own
 ## up axis so the body stays upright in any gravity frame (a planet included). Cleared once aligned.
-## Runs from the no-destination branch of _npc_physics_process; _npc_emit_move right after it
+## Runs from the no-destination branch of _npc_physics_process; the emit_move right after it
 ## replicates each step, so clients see the same smooth turn.
 func _npc_update_face_target(delta: float) -> void:
 	if player.npc_face_position == null:
@@ -1393,17 +1375,6 @@ func _npc_try_unstick() -> void:
 	elif _gap > _NPC_STUCK_SNAP_MAX:
 		push_warning("NPC %s wedged %.1f m off the navmesh; refusing to snap (it would tunnel through geometry)"
 				% [player.name, _gap])
-
-## Replicate the NPC's authoritative pose to clients (same signal the input path uses).
-func _npc_emit_move() -> void:
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented,
-	)
 
 ## Bake a bounded navigation region around the NPC so its agent has ground to path on, creating it on
 ## first need and re-baking ahead of the NPC once it travels past _NPC_NAV_REBAKE_DIST of the last bake
@@ -2037,11 +2008,7 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 	# on a spinning planet a world-axes offset would keep the landing spot fixed in space while the
 	# ground turned underneath, and the pad would drift a full circle of longitude every day.
 	player.global_position = destination.global_position + destination.global_basis * local_pos
-	emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		str(destination.uuid) if "uuid" in destination else "",
-		player.is_parented
-	)
+	# BUG FIXED IN PASSING: this emitted on `self` (PlayerServer, a plain Node that does NOT declare
+	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
+	# Going through the body's single emitter removes the whole class of mistake.
+	player.emit_move()

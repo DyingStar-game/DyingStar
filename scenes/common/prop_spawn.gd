@@ -22,6 +22,18 @@ static func find_net_parent(node: Node) -> Node:
 static func net_parent_uuid(net_parent: Node) -> String:
 	return str(net_parent.uuid) if net_parent != null and "uuid" in net_parent else ""
 
+## The uuid of the frame `node`'s LOCAL transform is currently expressed in — the value that MUST
+## travel as `parent_id` for it. This reads the DIRECT parent on purpose: `position` is local to the
+## direct parent and to nothing else, so declaring any other node (an ancestor, a nearby planet)
+## publishes coordinates in a frame they were never measured in. "" means "world frame".
+##
+## Derive, never declare: every sender must call this at send time instead of passing a uuid it chose
+## earlier. "The parent Horizon believes in" and "the parent in the scene tree" then stop being two
+## states that can drift apart — there is only the tree. Reparent first, send second, and the two are
+## consistent by construction. See PropNet.server_tick and Server._on_player_move.
+static func parent_frame_uuid(node: Node) -> String:
+	return net_parent_uuid(node.get_parent())
+
 ## A WORLD position expressed in the frame of `net_parent` — the form the network expects for a
 ## parented prop. Identity when there is no parent (world coordinates then).
 static func to_parent_local(net_parent: Node, world_position: Vector3) -> Vector3:
