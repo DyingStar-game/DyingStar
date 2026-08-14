@@ -864,7 +864,18 @@ func update_generic_object(event: Dictionary) -> void:
 		# (tools, head, perforating, carrying, ...); position/rotation/velocity come
 		# from the dedicated "move" path, so skip them here.
 		if players_list.has(object_id):
-			_apply_player_gameplay_props(players_list[object_id], object_data)
+			var player_instance = players_list[object_id]
+			# The node may already be FREED while its entry lingers here (freed along with a deleted
+			# parent, or a late update after delete_player). Passing a freed object to the typed
+			# _apply_player_gameplay_props is rejected outright ("previously freed ... not a subclass
+			# of the expected argument class"), once per update.
+			# Skip the update, but do NOT erase the entry: player_update() reads the same dictionary
+			# and treats a MISSING own player as fatal ("my player deleted on client side: 7001" ->
+			# CONNEXION_ERROR -> the client drops the session). Removing entries is delete_player's
+			# job; a read path must never shrink the roster.
+			if not is_instance_valid(player_instance):
+				return
+			_apply_player_gameplay_props(player_instance, object_data)
 		else:
 			print("Update player property but player not found: %s" % object_id)
 		return
