@@ -1225,6 +1225,30 @@ func _npc_debug_report() -> void:
 	var _vert: float = _off.dot(player.up_direction)
 	var _horiz: float = (_off - player.up_direction * _vert).length()
 	print("    standing on: %s" % _floor_desc)
+	# Physics-vs-bake probe: what does the PHYSICS world contain along the route where the bake found
+	# nothing? Distinguishes "terrain collider not resident" (pin/streaming problem: ray hits NOTHING or
+	# only a body far below) from "collider present but not baked" (parse/filter problem: ray hits ground
+	# near 0 m yet the navmesh coverage line shows X there).
+	var _proot := _npc_nav_world_root()
+	if _proot != null and "planet_terrain" in _proot and _proot.planet_terrain != null:
+		var _pt = _proot.planet_terrain
+		print("    terrain chunks: resident=%d loading=%d queued=%d pinned=%d" % [
+				_pt._server_collision_chunks.size(), _pt._server_chunk_tasks.size(),
+				_pt._server_chunk_queue.size(), _pt._pinned_chunks.size()])
+	var _probe_line := ""
+	for i in 9:
+		var _pp: Vector3 = player.global_position.lerp(target, float(i) / 8.0)
+		var _pq := PhysicsRayQueryParameters3D.create(
+				_pp + player.up_direction * 20.0, _pp - player.up_direction * 60.0)
+		_pq.collision_mask = _NPC_NAV_COLLISION_MASK
+		_pq.exclude = [player.get_rid()]
+		var _ph: Dictionary = _space.intersect_ray(_pq)
+		if _ph.is_empty():
+			_probe_line += "[%d/8: NOTHING] " % i
+		else:
+			var _pdy: float = (_ph.position - _pp).dot(player.up_direction)
+			_probe_line += "[%d/8: %s %+.1f m] " % [i, _ph.collider.name, _pdy]
+	print("    physics ground along route (ray 20 m up -> 60 m down): %s" % _probe_line)
 	print("    nearest navmesh is %.2f m %s the NPC and %.2f m sideways  (agent_max_climb=0.40) %s" % [
 			absf(_vert), "BELOW" if _vert < 0.0 else "ABOVE", _horiz,
 			"  <-- NPC is not on its own navmesh" if absf(_vert) > 0.4 else ""])

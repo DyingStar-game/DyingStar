@@ -713,6 +713,31 @@ func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
 func _make_chunk_collision_body(key: String, nside: int, ipix: int,
 		shape: ConcavePolygonShape3D) -> StaticBody3D:
 	shape.backface_collision = true  # solid from both sides (cached shapes too)
+	# Wind the faces in Godot's CLOCKWISE-front convention, i.e. geometric normal
+	# (e1-e0)x(e2-e0) pointing INTO the ground. backface_collision keeps physics solid either
+	# way, but the NPC navmesh bake parses these bodies through the same face pipeline as
+	# mesh/CSG sources, which expects CW-front input (it flips for Recast internally): faces
+	# whose geometric normal points OUTWARD bake ZERO navmesh while raycasts hit them fine,
+	# sealing NPCs inside any building placed on terrain. Proven empirically on the real
+	# cached chunk hp_n8192_p214960184 (scratchpad navbake_chunk_test.gd, 2026-08-14):
+	# as-cached outward winding -> 0 polygons, flipped -> polygons. Winding is uniform within
+	# a chunk (HEALPix grid orientation varies per base face), so one detection on the first
+	# non-degenerate triangle suffices. Done HERE, not in the generator, so shapes reloaded
+	# from the prebaked disk cache are corrected too.
+	var _faces := shape.get_faces()
+	var _outward := HEALPix.pix2vec_nest(nside, ipix)
+	var _probe := 0
+	while _probe + 2 < _faces.size():
+		var _n := (_faces[_probe + 1] - _faces[_probe]).cross(_faces[_probe + 2] - _faces[_probe])
+		if _n.length_squared() > 0.000001:
+			if _n.dot(_outward) > 0.0:
+				for _j in range(0, _faces.size() - 2, 3):
+					var _tmp := _faces[_j + 1]
+					_faces[_j + 1] = _faces[_j + 2]
+					_faces[_j + 2] = _tmp
+				shape.set_faces(_faces)
+			break
+		_probe += 3
 	var body := StaticBody3D.new()
 	body.name = key + "_body"
 	# Same identity as the legacy shared PlanetCollision body.
