@@ -214,7 +214,17 @@ func _place_at_time(t: float, apply_spin: bool = true) -> void:
 		var turns: float = fmod(t / (rotation_period_hours * 3600.0), 1.0)
 		basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
 	if _orbit != null:
-		position = _orbit.position_at(t)
+		# A MOON orbits its planet, and it is a CHILD of that planet, whose basis SPINS on the client.
+		# Writing the Kepler position straight into `position` would therefore let the planet's day
+		# sweep the moon around it once every rotation, on top of its real orbit. Cancelling the
+		# parent's basis makes the moon's WORLD offset the Kepler one whatever the parent is doing.
+		# Costs nothing for a planet: its parent is the universe root, whose basis is the identity —
+		# and nothing on the server either, which never spins anything.
+		var frame: Node3D = get_parent() as Node3D
+		if frame != null and frame is Planet:
+			position = frame.basis.inverse() * _orbit.position_at(t)
+		else:
+			position = _orbit.position_at(t)
 
 
 ## True when the orbit_* elements describe a real orbit (a periapsis or apoapsis was set).
