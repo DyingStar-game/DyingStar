@@ -334,6 +334,18 @@ func _collect_parents_uuids(node: Node) -> Array:
 ## entry whose node was already freed — otherwise callers would reparent onto a freed instance and
 ## crash. Returning null there is correct: a freed parent is treated as "not known yet", so the prop
 ## stays where it is until a real parent resolves.
+## The node a replicated `parent_id` designates, with the WORLD frame spelled out. An explicit ""
+## means "no networked parent" and resolves to the universe root — a legitimate destination, not a
+## failure: it is where a body that left a planet's gravity belongs. Anything else is looked up, and
+## null then means "not resolvable YET" (its object has not entered our GORC zones), which is a very
+## different situation and must not be silently turned into a move to the world frame.
+## Props already had this distinction (see the prop path's fallback to universe_scene); players did
+## not, so a player crossing into space kept its planet parent and applied world coordinates as if
+## they were local to it.
+func _frame_node(parent_id: String) -> Node:
+	return universe_scene if parent_id == "" else _search_parent_node(parent_id)
+
+
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
@@ -946,7 +958,7 @@ func player_update(message: Dictionary) -> void:
 				)
 				if uuid == my_player_uuid:
 					if message["data"].has("parent_id"):
-						var parent = _search_parent_node(message["data"]["parent_id"])
+						var parent = _frame_node(message["data"]["parent_id"])
 						if parent == null:
 							# The server declared a frame we cannot resolve (its object has not entered
 							# our GORC zones yet). We keep our current parent but apply a position
@@ -978,7 +990,7 @@ func player_update(message: Dictionary) -> void:
 						message["data"]["rotation"]["z"]
 					)
 					if message["data"].has("parent_id"):
-						var parent = _search_parent_node(message["data"]["parent_id"])
+						var parent = _frame_node(message["data"]["parent_id"])
 						if parent == null:
 							push_warning("[client] player %s: unresolved parent_id %s — its frame now diverges from the server"
 									% [uuid, message["data"]["parent_id"]])

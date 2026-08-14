@@ -733,6 +733,7 @@ func _physics_process(delta: float) -> void:
 	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
 	_server_update_carry_prompt(delta)
+	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
 	if _vault_cooldown > 0.0:
 		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
 	if _vaulting:
@@ -884,6 +885,56 @@ func _physics_process(delta: float) -> void:
 	player.new_input_from_server = false
 
 	player.emit_move()
+
+## Release the body from a planet's frame once its gravity has REALLY been gone (Player.ZERO_G_GRACE),
+## and hand it to the world frame — the planet's own parent, the universe root, where the star sits
+## too, so this is already the star's frame. The mirror of Player's gravity-ENTERED branch, which
+## adopts a body only when it arrives from the world: together they are reference-frame switching at
+## the sphere of influence, the shape space flight will need.
+##
+## Without it, a body that flies away stays a child of the planet and is dragged by its SPIN — about
+## 500 m/s of sideways pull at 1000 km up, which is not what a free body does. (The orbit drags it
+## too, but that part is roughly right: a body near a planet does share its orbital motion.)
+##
+## Checked as STATE every tick, never on the area_exited event. A reparent drops and re-enters every
+## area for a frame or two, and acting on that blip would publish a world position (~3e10) announced
+## as local to the planet: one dropped message and the body is flung across the system.
+## The parent test is the other half of the guard — a seated driver hangs from the vehicle and a
+## player indoors from the building, and neither of them is leaving anything.
+func _server_update_gravity_frame(delta: float) -> void:
+	if not player.gravity_parents.is_empty():
+		player._no_gravity_time = 0.0
+		return
+	player._no_gravity_time += delta
+	if player._no_gravity_time < player.ZERO_G_GRACE:
+		return
+	# Riding something means the ride owns our frame: it is the VEHICLE that would be leaving, not us.
+	if player.piloting or player._in_vehicle_bed != null:
+		return
+	var world: Node = _world_frame_above(player.get_parent())
+	if world != null:
+		player.call_deferred("_safe_reparent_and_sync", world)
+
+
+## What to hand a body to when it leaves the sphere of influence it is standing in: the parent of the
+## nearest celestial ancestor of [param frame]. Null when there is no such ancestor — we are already
+## in the world frame, or under something that is not a celestial body.
+##
+## Walks UP because a body is rarely a direct child of its planet: leaving the spawn building parents
+## it to the CITY, itself a prop on the planet. Testing the direct parent found nothing and the body
+## stayed glued to the planet all the way into space.
+##
+## Nesting falls out for free and is correct: from a body on a MOON the walk stops at the moon and
+## returns the moon's parent, its planet — leaving a moon's SOI puts you in the planet's, not in deep
+## space.
+static func _world_frame_above(frame: Node) -> Node:
+	var node: Node = frame
+	while node != null:
+		if node is Planet:
+			return node.get_parent()
+		node = node.get_parent()
+	return null
+
 
 ## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
 ## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
