@@ -4,6 +4,10 @@ extends Node
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
+## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
+## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
+## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
+const FACE_SCREEN_EPSILON: float = 0.9997
 ## Below this ground speed (m/s) the player is standing, not walking: no footsteps (see _update_footsteps).
 ## Well under the slowest gait (crouch/back ~1.5 m/s), well over the network + physics jitter.
 const MIN_WALK_SPEED: float = 0.6
@@ -214,11 +218,15 @@ func _process(_delta: float) -> void:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
 	if ui_focus:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		# Guarded like the CAPTURED branch below: entering CAPTURED warps the cursor to the window
+		# centre, so the transitions are what must stay rare — and the embedded game window reports a
+		# mode of its own, which makes an unguarded write per frame worth avoiding.
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO
 		# Turn the camera toward a 3D screen so it's centered in view.
-		if player.screen_interacting and player.screen_position != player.camera.global_position:
-			_face_screen(player.screen_position)
+		if player.screen_interacting is Node3D:
+			_face_screen(player.screen_interacting)
 	else:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -414,13 +422,28 @@ func _send_horn_input(event: InputEvent) -> void:
 ## planet — and the player with it — flies away: within seconds the view is billions of metres behind,
 ## staring at the sun, while the body still walks around normally for everybody else.
 ## Rotating the LOCAL transform never touches the camera's position: it stays in the player's eyes.
-func _face_screen(screen_world: Vector3) -> void:
+##
+## The target is read LIVE from the screen node, never stored: the planet spins, so a world position
+## snapshotted on approach drifts away from the screen it was meant to point at (hundreds of metres
+## per spin step), and the camera then chases a ghost that keeps receding — it never settles, which
+## also kept the physics picking re-firing and made the pointer wander across the screen's UI.
+## Stops once the camera is aimed within FACE_SCREEN_EPSILON: without that it re-aimed every frame.
+func _face_screen(screen: Node) -> void:
 	var pivot: Node3D = player.camera.get_parent() as Node3D
 	if pivot == null:
 		return
-	var target_local: Vector3 = pivot.to_local(screen_world)
+	# The screen tells us where to look (its surface sits metres away from the object's origin);
+	# anything that does not care is simply looked at directly.
+	var target: Node3D = screen.screen_look_target() if screen.has_method("screen_look_target") else screen as Node3D
+	if target == null:
+		return
+	var target_local: Vector3 = pivot.to_local(target.global_position)
 	var up_local: Vector3 = pivot.global_basis.inverse() * player.up_direction
 	if target_local.is_equal_approx(player.camera.position) or up_local.is_zero_approx():
+		return
+	# Converged? The camera looks down its own -Z; compare that to the direction of the screen.
+	var to_screen: Vector3 = (target_local - player.camera.position).normalized()
+	if -player.camera.transform.basis.z.normalized().dot(to_screen) >= FACE_SCREEN_EPSILON:
 		return
 	var look: Transform3D = player.camera.transform.looking_at(target_local, up_local)
 	player.camera.transform = player.camera.transform.interpolate_with(look, 0.15)

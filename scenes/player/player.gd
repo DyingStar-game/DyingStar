@@ -321,9 +321,10 @@ var admin_cleanup_tool: AdminCleanupTool = null
 
 # The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
 # by the screen's interaction Area; while set, the mouse is freed to click the screen.
+# The NODE is the single source of truth: its global_position is always current, so the camera reads
+# where to look straight from it. A separate world position used to be snapshotted alongside, which
+# went stale the moment the planet spun on (it carries both the player and the screen).
 var screen_interacting = null
-# World position of that screen, so the camera can turn to face it while interacting.
-var screen_position: Vector3 = Vector3.ZERO
 
 var _display_debug: bool = false
 

@@ -10,6 +10,15 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## is what crate_volume() reads to decide how much ore fills one crate.
 const CRATE_SCENE = preload("res://scenes/_universe/props/containers/hauling_box.tscn")
 const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
+## Grace period (s) before a player leaving the screen zone actually loses the screen.
+## A lone body_exited CANNOT be trusted here: the planet spins in discrete steps
+## (PlanetBody.rotation_update_hz, 3 Hz), and on the frame its basis jumps, the Area and the body are
+## refreshed one frame apart. At ~420 m/s of surface speed that is metres of mismatch — enough to
+## drop the overlap and regain it immediately. The player never moved.
+## Without this, screen_interacting flickered at exactly 3 Hz, which re-captured the mouse (warping
+## the cursor to the window centre) and made the camera alternate between facing the screen and
+## recentring. Comfortably longer than one spin step (1/3 s).
+const SCREEN_RELEASE_GRACE: float = 0.5
 
 @export var placeholder = false
 ## Optional explicit network id for a designer-placed depot. Leave EMPTY and it is derived
@@ -52,6 +61,7 @@ var _crate_volume := -1.0
 @onready var rock_depot_ui: Panel = %RockDepotUI
 @onready var danger_light_collect: Node3D = $DangerLightCollect
 @onready var rock_conveyor: MeshInstance3D = $miningdepot/conveyorbelt_001
+@onready var screen_detector: Area3D = $miningdepot/Gui3D/ScreenDetector
 @onready var rock_detector: Area3D = $RockDetector
 @onready var rock_collector: Area3D = $RockCollector
 @onready var box_spawn_origin: Marker3D = $BoxSpawnOrigin
@@ -361,22 +371,42 @@ func update_screen(data: Dictionary):
 		handle_extract()
 
 
+## Where a player's camera should look while using this screen: the screen SURFACE, not the depot's
+## origin (they are metres apart). Part of the informal "3D screen" contract — PlayerClient calls it
+## when present and falls back to the node itself, so a simpler screen needs nothing at all.
+func screen_look_target() -> Node3D:
+	return get_node_or_null("miningdepot/Gui3D") as Node3D
+
+
 func _on_player_interact(body: Node3D) -> void:
 	if body is Player:
 		active_player = body
+		# The node itself is all the player needs: its camera reads the live position of whatever
+		# screen_look_target() returns. We used to also hand over a world position, which the
+		# spinning planet made stale within a second.
 		body.screen_interacting = self
-		# Tell the player where the screen is so its camera can turn to face it.
-		var screen := get_node_or_null("miningdepot/Gui3D")
-		body.screen_position = screen.global_position if screen else global_position
 
 ## A player walked out of the screen's zone: release the screen — but ALWAYS release the player, even
 ## if it is not the one we had registered. Reading active_player.client_uuid without checking it first
 ## errors out when active_player is null (it always is for a second player leaving, or after a
 ## respawn), and the player it was leaving for then keeps screen_interacting set forever: its camera
 ## stays locked on the screen it walked away from.
+## body_exited alone is NOT trustworthy here (see SCREEN_RELEASE_GRACE): the planet's 3 Hz spin drops
+## and regains the overlap without the player ever moving. So we wait, then ask the Area itself —
+## the only reliable source — whether the body really left.
 func _on_player_leave(body: Node3D) -> void:
 	if not (body is Player):
 		return
-	body.screen_interacting = null
+	await get_tree().create_timer(SCREEN_RELEASE_GRACE).timeout
+	if not is_instance_valid(body) or not is_instance_valid(screen_detector):
+		return
+	if screen_detector.overlaps_body(body):
+		return  # false alarm: the player is still in front of the screen
+	# Only release the screen if it is OURS: with two depots whose zones overlap, walking out of one
+	# would otherwise cancel the interaction with the other, and a single dropped frame of
+	# screen_interacting re-captures the mouse — which teleports the cursor to the window centre.
+	# (Still released for ANY player, registered or not — that is the fix the comment above describes.)
+	if body.screen_interacting == self:
+		body.screen_interacting = null
 	if is_instance_valid(active_player) and body.client_uuid == active_player.client_uuid:
 		active_player = null
