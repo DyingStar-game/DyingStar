@@ -39,6 +39,15 @@ const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body 
 ## fades the sun and the sky with it, and each planet pushes it to its surface shaders — all in step.
 const TERMINATOR_SOFTNESS := 0.05
 
+## Dev/test tools that are currently switched OFF, keyed by their InputMap action. Their code and
+## their bindings are kept ON PURPOSE — we will need them again — so this is the single switch:
+## PlayerClient skips building the tool, and the controls menu hides its binding (a key that does
+## nothing must not be rebindable). Delete an entry to bring the tool back, nothing else to change.
+const DISABLED_DEV_TOOLS: Dictionary = {
+	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
+	"zapette": true,      # admin cleanup tool (key 2) — testing phase over
+}
+
 ## PLACEHOLDER atmosphere thickness (m) for bodies whose real value is not in the data yet — only
 ## Tarsis4 (50 km) has one. Lets the altitude fog fade work everywhere until per-body atmosphere data
 ## (derivable from the composition + pressure in tarsis.json) is wired in.
@@ -48,6 +57,10 @@ var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false
 var is_gut_running: bool = false
+
+## True when a dev tool is switched off (see DISABLED_DEV_TOOLS).
+static func is_dev_tool_disabled(action: StringName) -> bool:
+	return DISABLED_DEV_TOOLS.has(String(action))
 
 func print_rich_distinguished(message: String, extras: Array) -> void:
 	var peer_id: int = -1
