@@ -122,6 +122,30 @@ func log(message: String):
 ## bandwidth, no interpolation, no stale state, and a joiner is instantly in agreement with everyone
 ## whatever time it connected. The price is that the agreement is only ever as good as the shared
 ## clock — hence sync_clock() below, and hence the fact that this must NOT be the machine's own clock.
+## "1234568" -> "1 234 568". Six-figure numbers are unreadable without it, and a chart or a marker
+## showing a distance is exactly where they turn up.
+func format_thousands(value: float) -> String:
+	var digits: String = str(absi(int(round(value))))
+	var out: String = "-" if value < 0.0 else ""
+	for i: int in range(digits.length()):
+		if i > 0 and (digits.length() - i) % 3 == 0:
+			out += " "
+		out += digits[i]
+	return out
+
+
+## A distance a human can read at a glance, whatever its magnitude: metres under a kilometre, then
+## kilometres, then millions of km once the figure would run past seven digits. Shared so a body reads
+## the same on the in-game marker and in the system chart — two places, one rule.
+func format_distance(metres: float) -> String:
+	if metres < 1000.0:
+		return "%.0f m" % metres
+	var km: float = metres / 1000.0
+	if km < 1.0e6:
+		return "%s km" % format_thousands(km)
+	return "%s million km" % format_thousands(km / 1.0e6)
+
+
 func sim_time() -> float:
 	return (Time.get_unix_time_from_system() + _clock_offset) * time_scale
 

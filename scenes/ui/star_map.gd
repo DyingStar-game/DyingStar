@@ -49,10 +49,11 @@ const STAR_RADIUS_M: float = 5.7141e8
 ## Generous on purpose. A ring is a POLYLINE approximating an ellipse: between two samples the chord
 ## cuts the corner while the true curve bulges outside it, and the body — which sits on the true curve
 ## — then appears beside its own orbit. The gap is the sagitta, r·(1−cos(π/N)): at 192 segments that
-## is 13 000 km for SandBox, plainly visible once you approach. At 1024 it falls to 460 km, below a
-## pixel until you are almost touching the planet.
+## is 13 000 km for SandBox, plainly visible once you approach. Now that bodies are drawn at their
+## REAL radii, a click frames a gas giant from a few tens of thousands of km and the gap showed
+## again at 1024 — hence 4096, which puts it at 29 km, under a pixel at any zoom the chart allows.
 ## Cost is nothing: the rings are built once when the chart opens, never per frame.
-const ORBIT_SEGMENTS: int = 1024
+const ORBIT_SEGMENTS: int = 4096
 ## Points along the meridian arc that marks a body's axis and spin phase.
 const MERIDIAN_SEGMENTS: int = 24
 ## Camera distance limits, in units (1e6 km): from inside the inner system out past Tarsis 8.
@@ -68,6 +69,11 @@ const ORBIT_SENSITIVITY: float = 0.005
 const PITCH_LIMIT: float = 1.45
 ## Click tolerance, as a fraction of the distance to the body: at system scale a planet is a couple
 ## of pixels wide, and a chart you cannot click is not a chart.
+## The view the chart opens on, and the one Reset returns to. Constants rather than literals, so the
+## button and the initial state cannot drift apart.
+const DEFAULT_ZOOM: float = 1200.0
+const DEFAULT_YAW: float = 0.0
+const DEFAULT_PITCH: float = 0.55
 const PICK_TOLERANCE: float = 0.012
 ## How far a focused body is framed from, in multiples of its own radius.
 const FOCUS_ZOOM: float = 40.0
@@ -81,10 +87,26 @@ const PLANET_COLOR: Color = Color(0.45, 0.72, 1.0)
 const MOON_COLOR: Color = Color(0.45, 0.9, 0.5)
 ## An orbit is drawn in ITS BODY's colour, faded to this alpha — so a green ring is a moon's and a
 ## blue one a planet's, readable at a glance instead of nineteen identical blue curves.
-const ORBIT_ALPHA: float = 0.4
+const ORBIT_ALPHA: float = 0.65
+## Floor on a ring's brightest channel. A ring takes its body's HUE — that is what identifies it — but
+## not its luminosity: Tarsis I's ember and Tarsis II's dark ochre gave rings so dark that at 40 %
+## alpha they simply were not there. Lifting to a common floor keeps every orbit equally legible while
+## each stays recognisably its own colour.
+const ORBIT_MIN_VALUE: float = 0.85
 const AXIS_COLOR: Color = Color(1.0, 1.0, 1.0, 0.55)
 const PLAYER_COLOR: Color = Color(1.0, 0.35, 0.35)  # you, deliberately unlike any body
-const SPACE_COLOR: Color = Color(0.02, 0.02, 0.04)
+## The starry sky, generated rather than painted. The menu artwork it replaces had to be dimmed to 18%
+## before the orbit rings could be read over its nebulae, and it still sat flat behind the view — it was
+## a wallpaper. This is the SAME generator the game's own sky uses
+## (scenes/player/local_sky.gdshader), so a constellation learnt here is the one overhead, and being a
+## function of view DIRECTION the stars stay fixed in space while the chart orbits past them.
+const BACKDROP_SHADER := preload("res://assets/shaders/starfield_sky.gdshader")
+## Overall star brightness. The sky has to read as deep space without ever reaching the value of an
+## orbit ring (see ORBIT_MIN_VALUE), which is what the artwork could not do.
+const BACKDROP_BRIGHTNESS: float = 0.85
+## What a hovered body's orbit gains: alpha, and a lift toward white.
+const HOVER_ALPHA: float = 0.95
+const HOVER_LIFT: float = 0.35
 ## How much of a body's colour survives on its NIGHT side, and how hard the star lights the DAY one.
 ## These two set the whole balance, and they are the knobs to turn if it reads wrong.
 ##
@@ -106,10 +128,15 @@ var _readout: Label
 ## One entry per body: {sphere, orbit, live, radius_m, spin_hours, tilt_deg}. `orbit` places it when
 ## it has elements; `live` when it does not (a moon, positioned by the network).
 var _bodies: Array[Dictionary] = []
-var _zoom: float = 1200.0
-var _yaw: float = 0.0
-var _pitch: float = 0.55
+var _zoom: float = DEFAULT_ZOOM
+var _yaw: float = DEFAULT_YAW
+var _pitch: float = DEFAULT_PITCH
 var _dragging: bool = false
+## Body under the cursor, or -1. Drives the orbit highlight; distinct from _focus, which the camera
+## follows and the info panel describes.
+var _hover: int = -1
+var _info_panel: PanelContainer = null
+var _info_text: RichTextLabel = null
 ## Index into _bodies the camera turns around, or -1 for the star at the origin. Clicking a body
 ## focuses it; clicking empty space returns to the system view. The focus is an INDEX rather than a
 ## position because the target moves — that is the whole point of following a planet.
@@ -170,6 +197,7 @@ func _build_ui() -> void:
 	_viewport = SubViewport.new()
 	# Its OWN world: the real planets, chunks and atmospheres are not in it.
 	_viewport.own_world_3d = true
+	_viewport.transparent_bg = false  # it paints its own sky now
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	container.add_child(_viewport)
 
@@ -181,9 +209,19 @@ func _build_ui() -> void:
 	_camera.far = 100000.0
 	# Space is black. Without an Environment the viewport clears to the editor's default grey, which
 	# is what made the first version look like a diagram on cardboard.
+	# The stars come from a real Sky rather than a quad behind the viewport: the renderer already knows
+	# which way the camera points, so they sit in SPACE for free — orbiting the view sweeps past them
+	# instead of dragging them along — and it is the same generator the game's night sky uses.
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = SPACE_COLOR
+	env.background_mode = Environment.BG_SKY
+	var sky_material := ShaderMaterial.new()
+	sky_material.shader = BACKDROP_SHADER
+	sky_material.set_shader_parameter("star_brightness", BACKDROP_BRIGHTNESS)
+	env.sky = Sky.new()
+	env.sky.sky_material = sky_material
+	# The chart lights its bodies with its own OmniLight; letting the starfield contribute here would
+	# only wash the night sides back out.
+	env.ambient_light_sky_contribution = 0.0
 	# Dim, not full: the ambient is what lifts the night side off pure black, and at full strength it
 	# would drown the lighting and flatten every body again.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -208,6 +246,46 @@ func _build_ui() -> void:
 	_readout.position = Vector2(16, 16)
 	_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_readout)
+
+	# Two shortcuts, under the readout. Buttons rather than keys: rare, deliberate actions — and a
+	# Control consumes its own click, so picking a body is never triggered underneath.
+	var buttons := HBoxContainer.new()
+	buttons.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	buttons.position = Vector2(16, 62)
+	buttons.add_theme_constant_override("separation", 8)
+	# The row itself must not eat the mouse; each Button still receives its own clicks.
+	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(buttons)
+	var me_button := Button.new()
+	me_button.text = "Me"
+	me_button.tooltip_text = "Follow your own position"
+	me_button.pressed.connect(_on_me_pressed)
+	buttons.add_child(me_button)
+	var reset_button := Button.new()
+	reset_button.text = "Reset"
+	reset_button.tooltip_text = "Back to the whole system, default orientation"
+	reset_button.pressed.connect(_on_reset_pressed)
+	buttons.add_child(reset_button)
+
+	# Info panel. Hidden until you pick a body, and filled from what the scene knows about it.
+	_info_panel = PanelContainer.new()
+	_info_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_info_panel.position = Vector2(-360, 16)
+	_info_panel.custom_minimum_size = Vector2(340, 0)
+	_info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_info_panel.hide()
+	add_child(_info_panel)
+	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side: String in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 14)
+	_info_panel.add_child(margin)
+	_info_text = RichTextLabel.new()
+	_info_text.bbcode_enabled = true
+	_info_text.fit_content = true
+	_info_text.custom_minimum_size = Vector2(310, 0)
+	_info_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(_info_text)
 
 
 func _rebuild() -> void:
@@ -244,10 +322,23 @@ func _rebuild() -> void:
 		if cut > 0 and index_of.has(key.substr(0, cut)):
 			primary = index_of[key.substr(0, cut)]
 		index_of[key] = _bodies.size()
-		_add_body(key, MOON_COLOR if primary >= 0 else PLANET_COLOR,
-			_radius_of(props), _orbit_from(props), null,
-			float(props.get("rotation_period_hours", 0.0)),
-			float(props.get("axial_tilt_deg", 0.0)), primary)
+		# Name and colour come from the SCENE, which carries what the GDD says about the body — its
+		# proper name, and a colour derived from its description (Tarsis IV's corundum dust storm,
+		# Tarsis VIII's tholins) or from its physics where the GDD is silent. The by-type guess is only
+		# a fallback for a scene that has been given neither.
+		var label_text: String = str(props.get("display_name", ""))
+		if label_text == "":
+			label_text = key
+		var colour: Color = MOON_COLOR if primary >= 0 else PLANET_COLOR
+		if props.has("map_color"):
+			colour = props["map_color"]
+		_add_body(label_text, colour,
+				_radius_of(props), _orbit_from(props), null,
+				float(props.get("rotation_period_hours", 0.0)),
+				float(props.get("axial_tilt_deg", 0.0)), primary)
+		# The panel wants the semi-major axis, and the elements are right here.
+		_bodies[-1]["orbit_au"] = 0.5 * (float(props.get("orbit_periapsis_au", 0.0))
+				+ float(props.get("orbit_apoapsis_au", 0.0)))
 
 	# Bodies with no elements of their own — the moons. They keep a network offset, so they can only
 	# be drawn when they are actually loaded, and their position is read live.
@@ -257,8 +348,11 @@ func _rebuild() -> void:
 			key = body.planet_data.planet_name
 		if key != "" and known.has(key):
 			continue
-		_add_body(body.name, MOON_COLOR,
-				body.planet_data.radius if body.planet_data != null else 1.0e6,
+		var live_radius: float = body.map_radius_km * 1000.0
+		if live_radius <= 0.0 and body.planet_data != null:
+			live_radius = body.planet_data.radius  # correct once the manifest has been applied
+		_add_body(body.display_name if body.display_name != "" else body.name, body.map_color,
+				live_radius,
 				null, body, body.rotation_period_hours, body.axial_tilt_deg)
 
 	# The smallest orbit sets what "too big" means: a body wider than a good fraction of it hides
@@ -346,14 +440,16 @@ func _add_body(label_text: String, colour: Color, radius_m: float, orbit: Kepler
 	var ring: MeshInstance3D = null
 	if orbit != null:
 		ring = MeshInstance3D.new()
-		var ring_colour := Color(colour.r, colour.g, colour.b, ORBIT_ALPHA)
+		var ring_colour: Color = _ring_colour(colour)
 		ring.mesh = _orbit_mesh(orbit, ring_colour)
 		ring.material_override = _flat_material(ring_colour)
 		_world_root.add_child(ring)
 		_world_root.add_child(ring)
 
 	_bodies.append({
-		"name": label_text, "sphere": sphere, "label": label, "primary": primary, "ring": ring, "orbit": orbit, "live": live,
+		"name": label_text, "sphere": sphere, "label": label, "primary": primary,
+		"ring": ring, "ring_colour": _ring_colour(colour), "orbit_au": 0.0,
+		"orbit": orbit, "live": live,
 		"radius_m": radius_m, "spin_hours": spin_hours, "tilt_deg": tilt_deg,
 	})
 
@@ -386,11 +482,15 @@ func _root_properties(path: String) -> Dictionary:
 	return out
 
 
+## ⚠️ NOT planet_data.radius: in a SAVED scene that property still holds its 1000 m default, because the
+## real value is only applied at runtime by apply_chunk_manifest(). Reading files statically — which is
+## how this chart lists bodies it has never spawned — made every planet a kilometre wide, invisible and
+## framed absurdly close on a click.
 func _radius_of(props: Dictionary) -> float:
-	var data: Variant = props.get("planet_data")
-	if data != null and data is PlanetData:
-		return (data as PlanetData).radius
-	return 6.0e6  # a plausible terrestrial radius; only affects how big the dot reads when zoomed in
+	var km: float = float(props.get("map_radius_km", 0.0))
+	if km > 0.0:
+		return km * 1000.0
+	return 6.0e6  # plausible terrestrial radius, for a body nobody has filled in
 
 
 func _orbit_from(props: Dictionary) -> KeplerOrbit:
@@ -466,6 +566,17 @@ func _body_material(colour: Color) -> StandardMaterial3D:
 
 ## Unlit, for everything that is not a lit body: orbit lines, meridians, and the two things that emit
 ## rather than receive — the star and your own marker.
+## The colour a body's ORBIT is drawn in: its own hue, lifted to a legible brightness. One rule, used
+## both when the ring is built and when the hover highlight recomputes it.
+func _ring_colour(body_colour: Color) -> Color:
+	var peak: float = maxf(body_colour.r, maxf(body_colour.g, body_colour.b))
+	if peak <= 0.0:
+		return Color(ORBIT_MIN_VALUE, ORBIT_MIN_VALUE, ORBIT_MIN_VALUE, ORBIT_ALPHA)
+	var lift: float = maxf(1.0, ORBIT_MIN_VALUE / peak)
+	return Color(minf(body_colour.r * lift, 1.0), minf(body_colour.g * lift, 1.0),
+			minf(body_colour.b * lift, 1.0), ORBIT_ALPHA)
+
+
 func _flat_material(colour: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -528,7 +639,34 @@ func _process(delta: float) -> void:
 		else:
 			sphere.basis = scale_basis
 	_place_player_marker()
+	_refresh_rings()
+	_refresh_info()
 	_update_readout(t)
+
+
+## Which body you are standing on: simply the nearest one. Decided on your TRUE position, never on
+## the drawn one — the size boost would otherwise let a distant giant claim you. -1 when there is no
+## player, or nothing to be near.
+func _nearest_body_to_player() -> int:
+	if _player_index < 0 or _player_index >= _bodies.size():
+		return -1
+	var live: Node3D = _bodies[_player_index]["live"]
+	if not is_instance_valid(live):
+		return -1
+	var truth: Vector3 = live.global_position * UNITS_PER_METRE
+	var host: int = -1
+	var nearest: float = INF
+	for i: int in range(_bodies.size()):
+		if i == _player_index:
+			continue
+		var candidate: MeshInstance3D = _bodies[i]["sphere"]
+		if not is_instance_valid(candidate):
+			continue
+		var d: float = truth.distance_to(candidate.position)
+		if d < nearest:
+			nearest = d
+			host = i
+	return host
 
 
 ## Put the "you" marker ON the drawn surface of the body you are standing on, and draw the line from
@@ -548,18 +686,7 @@ func _place_player_marker() -> void:
 	var truth: Vector3 = live.global_position * UNITS_PER_METRE
 	# The body you stand on is simply the nearest one, decided on your TRUE position and never on the
 	# drawn one — the boost would otherwise let a distant giant claim you.
-	var host: int = -1
-	var nearest: float = INF
-	for i: int in range(_bodies.size()):
-		if i == _player_index:
-			continue
-		var candidate: MeshInstance3D = _bodies[i]["sphere"]
-		if not is_instance_valid(candidate):
-			continue
-		var d: float = truth.distance_to(candidate.position)
-		if d < nearest:
-			nearest = d
-			host = i
+	var host: int = _nearest_body_to_player()
 	if host < 0:
 		return
 	var host_sphere: MeshInstance3D = _bodies[host]["sphere"]
@@ -578,6 +705,87 @@ func _place_player_marker() -> void:
 		# two vertices, and only while the chart is open.
 		_player_ray.mesh = _line_mesh(
 				PackedVector3Array([label.position, marker.position]), PLAYER_COLOR)
+
+
+## Follow your own marker, framed on the body you are standing on rather than on yourself — you have
+## no radius, so framing on you alone drives the zoom to its floor and shows nothing around you.
+func _on_me_pressed() -> void:
+	if _player_index < 0 or _player_index >= _bodies.size():
+		return
+	_focus = _player_index
+	_focus_name = str(_bodies[_player_index]["name"])
+	var framing: float = 6.0e6  # a terrestrial radius, if we cannot tell what you are standing on
+	var host: int = _nearest_body_to_player()
+	if host >= 0:
+		framing = float(_bodies[host]["radius_m"])
+	_zoom = clampf(framing * UNITS_PER_METRE * FOCUS_ZOOM, ZOOM_MIN, ZOOM_MAX)
+
+
+## Back to the view the chart opens on: the whole system, nothing followed.
+func _on_reset_pressed() -> void:
+	_focus = -1
+	_focus_name = ""
+	_zoom = DEFAULT_ZOOM
+	_yaw = DEFAULT_YAW
+	_pitch = DEFAULT_PITCH
+
+
+## Keep the starfield between the clip planes, and light up the hovered body's orbit.
+func _refresh_rings() -> void:
+	for i: int in range(_bodies.size()):
+		var ring: MeshInstance3D = _bodies[i]["ring"]
+		if not is_instance_valid(ring):
+			continue
+		var base: Color = _bodies[i]["ring_colour"]
+		var mat: StandardMaterial3D = ring.material_override as StandardMaterial3D
+		if mat == null:
+			continue
+		# Hovered or followed: opaque and lifted toward white, so which ring belongs to what you are
+		# pointing at reads instantly among nineteen overlapping curves.
+		if i == _hover or i == _focus:
+			mat.albedo_color = base.lerp(Color.WHITE, HOVER_LIFT)
+			mat.albedo_color.a = HOVER_ALPHA
+		else:
+			mat.albedo_color = base
+
+
+## The side panel: what the scene knows about the followed body. Deliberately the same numbers the
+## chart is drawing from, so the panel can never disagree with what you see.
+func _refresh_info() -> void:
+	if _focus < 0 or _focus >= _bodies.size():
+		_info_panel.hide()
+		return
+	var e: Dictionary = _bodies[_focus]
+	var colour: Color = _bodies[_focus]["ring_colour"]
+	var rows: Array[String] = []
+	rows.append("[b][color=#%s]%s[/color][/b]" % [colour.to_html(false), str(e["name"])])
+	rows.append("")
+	var radius_m: float = float(e["radius_m"])
+	if radius_m > 0.0:
+		rows.append("Radius        %s" % Globals.format_distance(radius_m))
+	var spin: float = float(e["spin_hours"])
+	if spin > 0.0:
+		rows.append("Day           %.1f h" % spin)
+		rows.append("Axial tilt    %.1f deg" % float(e["tilt_deg"]))
+	var orbit: KeplerOrbit = e["orbit"]
+	if orbit != null:
+		var period_days: float = orbit.period_seconds() / 86400.0
+		if period_days >= 730.0:
+			rows.append("Year          %.1f years" % (period_days / 365.25))
+		else:
+			rows.append("Year          %.1f days" % period_days)
+		var au: float = float(e["orbit_au"])
+		if au > 0.0:
+			rows.append("Semi-major    %.4f AU" % au)
+		rows.append("Distance now  %s" % Globals.format_distance(
+				orbit.position_at(Globals.sim_time()).length()))
+		var primary: int = int(e["primary"])
+		var around: String = "Tarsis" if primary < 0 else str(_bodies[primary]["name"])
+		rows.append("Orbits        %s" % around)
+	else:
+		rows.append("[i]no orbit of its own[/i]")
+	_info_text.text = "\n".join(rows)
+	_info_panel.show()
 
 
 ## Turns around the FOCUSED body — which is moving, so the target is re-read every frame rather than
@@ -658,6 +866,22 @@ func _update_readout(t: float) -> void:
 	_readout.text += "\nleft-click: follow a body   middle-drag: orbit   wheel: zoom"
 
 
+## Motion during a DRAG is handled here, ahead of the GUI, and nowhere else.
+##
+## _unhandled_input only runs on what no Control wanted, so dragging the view across a panel, a
+## button row or a label simply stopped rotating halfway — the events were being consumed on the way.
+## A gesture that has begun owns the mouse until the button comes back up; that holds for every drag
+## in every tool, and it is not something the widget under the cursor gets a say in.
+func _input(event: InputEvent) -> void:
+	if not visible or not _dragging:
+		return
+	if event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		_yaw -= motion.relative.x * ORBIT_SENSITIVITY
+		_pitch = clampf(_pitch + motion.relative.y * ORBIT_SENSITIVITY, -PITCH_LIMIT, PITCH_LIMIT)
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
@@ -682,8 +906,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN and button.pressed:
 			_zoom = clampf(_zoom * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _dragging:
-		var motion := event as InputEventMouseMotion
-		_yaw -= motion.relative.x * ORBIT_SENSITIVITY
-		_pitch = clampf(_pitch + motion.relative.y * ORBIT_SENSITIVITY, -PITCH_LIMIT, PITCH_LIMIT)
-		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion:
+		# Hover only. The drag lives in _input, so it survives passing over the GUI.
+		_hover = _pick((event as InputEventMouseMotion).position)
