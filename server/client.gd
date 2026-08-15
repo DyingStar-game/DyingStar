@@ -4,6 +4,9 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
 const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
+## How long a prop may sit half-received before it counts as lost rather than merely in transit. Well
+## past any plausible gap between two channels of the same zone entry.
+const STUCK_PROP_MS: int = 8000
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -185,6 +188,7 @@ func _load_client_ini_file() -> void:
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
+	_report_stuck_pre_creations()
 	if check_pending_objects_timer == 30:
 		# every 30 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
@@ -530,6 +534,11 @@ func delete_object(event: Dictionary) -> void:
 
 	# We delete only on the channel 6
 	if int(event["channel"]) == 6:
+		# An object that leaves is gone whether or not it ever made it into the tree: drop any
+		# half-received channel data with it. Otherwise a prop that was still waiting for its
+		# other channel keeps that stale half forever, and the next zone-enter merges the old
+		# data into the new one.
+		props_pre_creations.erase(event["object_id"])
 		if props_list.has(event["object_type"]):
 			var type = event["object_type"]
 			if props_list[type].has(event["object_id"]):
@@ -847,6 +856,36 @@ func create_generic_object(event: Dictionary) -> void:
 					"channels": {}
 				}
 			props_pre_creations[object_id]["channels"][event["channel"]] = event["object_data"]
+			if not props_pre_creations[object_id].has("since"):
+				props_pre_creations[object_id]["since"] = Time.get_ticks_msec()
+
+## Names the props that are STUCK half-received, and only those.
+##
+## A prop needs both its scene (scenename) and its placement (parent_id), and they travel on separate
+## replication channels — so being half-received is the NORMAL state for a fraction of a second, and
+## logging it as it happens buries the real fault under a hundred harmless lines. What is not normal is
+## being half-received minutes later: the server only sends a property when it CHANGES, and scenename
+## changes exactly once, at creation, so a channel we never received is never resent. Those props are
+## invisible for the rest of the session. Reported once each, when the wait stops being plausible.
+func _report_stuck_pre_creations() -> void:
+	var now: int = Time.get_ticks_msec()
+	for object_id in props_pre_creations:
+		var entry: Dictionary = props_pre_creations[object_id]
+		if entry.get("reported", false) or now - int(entry.get("since", now)) < STUCK_PROP_MS:
+			continue
+		entry["reported"] = true
+		var merged: Dictionary = {}
+		for channel in entry["channels"]:
+			merged.merge(entry["channels"][channel])
+		var missing: Array[String] = []
+		if not merged.has("scenename"):
+			missing.append("scenename")
+		if not merged.has("parent_id"):
+			missing.append("parent_id")
+		print("[client][STUCK] %s %s never received %s (has channels %s) — it will stay invisible" % [
+			entry["type"], object_id, ", ".join(missing), entry["channels"].keys()
+		])
+
 
 func update_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
