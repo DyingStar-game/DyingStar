@@ -33,6 +33,29 @@ const DISTANCE_FACTOR := 1.0
 			_setup_planet()
 @export var uuid: String = ""
 
+## Colour this body reads as from space — used by the system chart (StarMap), and available to
+## anything else that needs to name it at a glance. Derived from the GDD's own description of each
+## world rather than picked by eye: Tarsis I's "océan de lave et obsidian surchauffé", Tarsis II's
+## sulfur plains and iron sand, Tarsis IV's permanent corundum dust storm, Tarsis VIII's tholins.
+## Where the GDD gives no description, physics does: methane absorbs red (the ice giant reads blue),
+## albedo sets the brightness, and equilibrium temperature separates ice from rock.
+## Default is the neutral blue a body with no data gets.
+@export var map_color: Color = Color(0.45, 0.72, 1.0)
+
+## What this body is CALLED, for markers and the system chart — never the node name, which carries
+## Horizon's code (a planet arrives as "SandBox" but a moon as "P4_M2") and differs between the
+## server's tree and the client's. Taken from the GDD: proper name when it has one, catalogue
+## designation otherwise, e.g. "Korax - Tarsis IV.M1" or plain "Tarsis VI.M1".
+## Empty falls back to the node name, so a body nobody has named still shows something.
+@export var display_name: String = ""
+
+## True radius in km, for anything that must know the body's SIZE without loading it.
+## `planet_data.radius` cannot serve: it holds its 1000 m default in the saved scene and only gets the
+## real value at runtime, from apply_chunk_manifest(). Reading a scene file statically — which is how
+## the system chart lists bodies it has never spawned — therefore sees a kilometre-wide planet.
+## Value from the celestial data (tarsis.json, radius_km). 0 = unknown, callers fall back.
+@export var map_radius_km: float = 0.0
+
 ## Backward compatibility — old scenes export these instead of planet_data.
 @export var planet_id: String = ""
 
@@ -488,6 +511,24 @@ func _setup_gravity() -> void:
 ## A surface point sits at radius + terrain_height, so subtracting only the base radius reads kilometres
 ## too high on a body with relief; this samples the heightmap for the real ground. Used by the altitude
 ## readout and the celestial-marker distances.
+## Planet-LOCAL (body-fixed) unit direction of a world point — the frame the heightmap tiles, the
+## HEALPix chunk keys and the collision bodies all live in. Vector3.ZERO at the centre, where no
+## direction exists.
+##
+## THE single conversion. It used to be written out at three call sites with TWO different formulas —
+## the altitude and lon/lat orthonormalised the basis, the server's chunk pinning did not — so a
+## scaled or skewed basis would have had them resolve to neighbouring tiles. Which matters more than
+## it sounds: whether the ground is loaded and where the ground IS must be answered about the same
+## chunk, or a body waits on terrain nobody asked for.
+##
+## Body-fixed on purpose: the planet spins, so a world-frame direction drifts off its tile.
+func local_dir_of(world_pos: Vector3) -> Vector3:
+	var to_pos: Vector3 = world_pos - global_position
+	if to_pos.length() < 0.001:
+		return Vector3.ZERO
+	return (global_basis.orthonormalized().inverse() * to_pos).normalized()
+
+
 func surface_altitude_of(world_pos: Vector3) -> float:
 	if planet_data == null:
 		return 0.0
@@ -496,8 +537,7 @@ func surface_altitude_of(world_pos: Vector3) -> float:
 	if centre_dist < 0.001:
 		return -planet_data.radius
 	# The heightmap lives in the planet's LOCAL (spinning) frame, so sample the local direction.
-	var local_dir: Vector3 = (global_basis.orthonormalized().inverse() * to_pos).normalized()
-	var terrain_height: float = planet_data.sample_height_for_direction(local_dir)
+	var terrain_height: float = planet_data.sample_height_for_direction(local_dir_of(world_pos))
 	return centre_dist - planet_data.radius - terrain_height
 
 
@@ -506,10 +546,9 @@ func surface_altitude_of(world_pos: Vector3) -> float:
 ## the editor_goto_* coordinates. Body-fixed means a fixed ground point keeps its lon/lat as the planet
 ## spins (global_basis.inverse() undoes the spin). Returns Vector2(lon, lat).
 func lonlat_of(world_pos: Vector3) -> Vector2:
-	var to_pos: Vector3 = world_pos - global_position
-	if to_pos.length() < 0.001:
+	var local_dir: Vector3 = local_dir_of(world_pos)
+	if local_dir.is_zero_approx():
 		return Vector2.ZERO
-	var local_dir: Vector3 = (global_basis.orthonormalized().inverse() * to_pos).normalized()
 	return HEALPix.vec2lonlat(local_dir)
 
 
