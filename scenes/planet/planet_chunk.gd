@@ -117,6 +117,7 @@ static func generate_mesh(
 	var _lf_arr: Array = _rbd[1]     # linear_features
 	var _rf_arr: Array = _rbd[2]     # radial_features
 	var _cr_arr: Array = _rbd[3]     # sub-pixel craters
+	var _road_arr: Array = _rbd[4]   # road pieces, already clipped to this chunk
 
 	# Quick check: does this chunk potentially overlap any liquid/shallow zone?
 	# Derived from recipe data — no GeoJSON needed.
@@ -136,9 +137,14 @@ static func generate_mesh(
 	var has_dry_river_bed_overlap := false
 	var _dry_river_bed_zones: Array[Dictionary] = []  # linear features matching dry riverbed
 
-	# Road overlay: uses a separate BiomeQuery loaded from roads_geojson.
-	var rq = data.get_road_query()  # may be null
-	var has_road_overlap := false
+	# Road overlay. Normally the tile from terrainmodifier.pack already holds
+	# this chunk's own disjoint stretch, so the test is just "is it empty".
+	# The BiomeQuery/roads_geojson path below is the transition fallback for
+	# planets that have not been re-exported yet (and for use_modifier_pack=off).
+	var has_road_overlap := not _road_arr.is_empty()
+	var rq = null
+	if not has_road_overlap and data.get_modifier_pack() == null:
+		rq = data.get_road_query()  # may be null
 
 	# HEALPix lon/lat bounding box (reused for road overlay).
 	var _cbb: Array[Vector2] = []
@@ -305,14 +311,6 @@ static func generate_mesh(
 		river_original_height.resize(vert_count)
 		river_cross_t.resize(vert_count)
 		river_along_t.resize(vert_count)
-
-	# Per-vertex: road overlay flag.
-	# Roads don't depress terrain — they're flat overlays above the surface.
-	# The overlay mesh is built as an independent strip from centerline data,
-	# but we still flag grid vertices for grass suppression (meadow_spawner).
-	var is_road_vertex: PackedByteArray = PackedByteArray()
-	if has_road_overlap:
-		is_road_vertex.resize(vert_count)
 
 	# How far the terrain is pushed below the water surface (metres).
 	const LIQUID_DEPTH := 10.0
@@ -549,21 +547,12 @@ static func generate_mesh(
 						_drb_best_zone, _drb_lonlat, _drb_m_per_deg)
 					dry_river_bed_flow_uv[idx] = _drb_flow
 
-			# Road overlay — query the separate road BiomeQuery.
-			# Roads don't depress terrain; they are flat texture overlays.
-			# The detection polygon is wider than the visual road, so
-			# cross-section t < 1.0 determines which vertices get the overlay.
-			if has_road_overlap and rq:
-				var _rd_zones: Array[Dictionary] = rq.query_at_direction(dir)
-				for _rd_z in _rd_zones:
-					if not RoadTerrain.is_road_zone(_rd_z):
-						continue
-					RoadTerrain.prepare_zone(_rd_z, data.radius)
-					var _rd_lonlat := BiomeQuery._dir_to_lonlat(dir)
-					var _rd_cs := BiomeQuery.get_cross_section_t(_rd_z, _rd_lonlat)
-					if _rd_cs.t < 1.0:
-						is_road_vertex[idx] = 1
-						break
+			# No per-vertex road pass here: roads don't depress the terrain, and
+			# the overlay is an independent strip extruded from the centerline
+			# further down. The vegetation spawners run their own road query to
+			# suppress grass and trees, so flagging grid vertices was a
+			# query_at_direction() + get_cross_section_t() per vertex whose
+			# result nothing ever read.
 
 			# Lava river — iterate recipe linear features for lava_river type.
 			# The cross-section test (t < 1.0) determines which vertices
@@ -706,7 +695,7 @@ static func generate_mesh(
 			# Vertices inside the cliff polygon are pushed down to form
 			# a steep drop at the polygon boundary.
 			if has_cliff_overlap and bd and RockyLandformCliffTerrain.matches_zone(bd):
-				var _cl_poly: PackedVector2Array = first_zone.get("polygon", PackedVector2Array())
+				var _cl_poly := _zone_outline(first_zone)
 				if _cl_poly.size() >= 3:
 					var _cl_lonlat := BiomeQuery._dir_to_lonlat(dir)
 					var _cl_m_per_deg := data.radius * PI / 180.0
@@ -1420,7 +1409,7 @@ static func generate_mesh(
 	#
 	# Material selection: highways/roads → fixed asphalt; paths/trails →
 	# biome-adaptive (e.g. path_grass in meadow, path_dirt in forest).
-	if has_road_overlap and rq:
+	if has_road_overlap:
 		var _rd_m_per_deg := data.radius * PI / 180.0
 		var _rd_cbb: Array[Vector2]
 		if hp_mode:
@@ -1430,39 +1419,43 @@ static func generate_mesh(
 				face, u_min, u_max, v_min, v_max)
 		var _rd_cbb_min: Vector2 = _rd_cbb[0]
 		var _rd_cbb_max: Vector2 = _rd_cbb[1]
-		if hp_mode:
-			print("[ROAD DBG] chunk hp_n%d_p%d cbb_ll=(%.8f,%.8f)→(%.8f,%.8f)" % [
-				hp_nside, hp_ipix,
-				_rd_cbb_min.x, _rd_cbb_min.y, _rd_cbb_max.x, _rd_cbb_max.y])
-		else:
-			print("[ROAD DBG] chunk face=%d u=[%.8f,%.8f] v=[%.8f,%.8f] cbb_ll=(%.8f,%.8f)→(%.8f,%.8f)" % [
-				face, u_min, u_max, v_min, v_max,
-				_rd_cbb_min.x, _rd_cbb_min.y, _rd_cbb_max.x, _rd_cbb_max.y])
-
 		# Group strip geometry by material path.
 		var road_groups: Dictionary = {}
 
-		for _rd_zone in rq.get_zones_for_region(_rd_cbb_min, _rd_cbb_max):
-			if not RoadTerrain.is_road_zone(_rd_zone):
-				print("[ROAD DBG]   zone skipped: not a road zone")
-				continue
-			if not BiomeQuery._aabb_overlap(
-					_rd_cbb_min, _rd_cbb_max,
-					_rd_zone.bbox_min, _rd_zone.bbox_max):
-				print("[ROAD DBG]   zone skipped: AABB no overlap. zone_bb=(%.8f,%.8f)→(%.8f,%.8f)" % [
-					_rd_zone.bbox_min.x, _rd_zone.bbox_min.y, _rd_zone.bbox_max.x, _rd_zone.bbox_max.y])
-				continue
-			print("[ROAD DBG]   zone PASSED AABB: rt=%s" % RoadTerrain.get_road_type(_rd_zone))
+		# Pack path: _road_arr holds this chunk's own pieces, already clipped.
+		# Legacy path: whole global centerlines from BiomeQuery, which is why the
+		# ribbon used to be built N times over and float above the terrain.
+		var _rd_sources: Array = _road_arr
+		if _rd_sources.is_empty() and rq:
+			_rd_sources = []
+			for _z in rq.get_zones_for_region(_rd_cbb_min, _rd_cbb_max):
+				if RoadTerrain.is_road_zone(_z) and BiomeQuery._aabb_overlap(
+						_rd_cbb_min, _rd_cbb_max, _z.bbox_min, _z.bbox_max):
+					RoadTerrain.prepare_zone(_z, data.radius)
+					_rd_sources.append(_z)
 
-			RoadTerrain.prepare_zone(_rd_zone, data.radius)
+		for _rd_zone in _rd_sources:
 			var _rd_rt := RoadTerrain.get_road_type(_rd_zone)
-			var _rd_hw_m: float = RoadTerrain.HALF_WIDTH_M.get(_rd_rt, 0.5)
-			var _rd_hw_deg: float = _rd_hw_m / _rd_m_per_deg
+			# Half-width in metres, then degrees. The pack pre-computes both
+			# (width_m is the total width, halved once by the decoder); the
+			# legacy path gets them from RoadTerrain.prepare_zone(). This is
+			# where `half_width_deg` used to be ambiguous: BiomeQuery filled it
+			# with width/2 in METRES and prepare_zone() overwrote it in degrees.
+			var _rd_hw_m: float = float(_rd_zone.get(
+				"half_width_m", RoadTerrain.get_half_width_m(_rd_zone)))
+			var _rd_hw_deg: float = float(_rd_zone.get(
+				"half_width_deg", _rd_hw_m / _rd_m_per_deg))
 			var _rd_tile_m: float = RoadTerrain.get_tile_size(_rd_rt)
 			var _rd_cl: PackedVector2Array = _rd_zone.get(
 				"centerline", PackedVector2Array())
 			if _rd_cl.size() < 2:
 				continue
+			# Distance from the road's TRUE start for each stored point. The
+			# pack carries it so the asphalt UVs stay continuous where one
+			# chunk's piece meets the next; without it every chunk would restart
+			# at 0 and the texture would jump at every boundary.
+			var _rd_cum: PackedFloat64Array = _rd_zone.get(
+				"_cum_lengths", PackedFloat64Array())
 
 			var _rd_mid_ll := (_rd_cl[0] + _rd_cl[_rd_cl.size() - 1]) * 0.5
 			var _rd_biome_type := ""
@@ -1498,6 +1491,9 @@ static func generate_mesh(
 			var grp_indices: PackedInt32Array = grp["indices"]
 			var _strip_base: int = grp_verts.size()
 
+			# Fallback when no per-point distances are stored (legacy zones):
+			# accumulate from this piece's start, as before.
+			var _rd_have_cum := _rd_cum.size() == _rd_cl.size()
 			var along_m := 0.0
 			# Use chunk degree span (not cube-face UV span) so subdivision
 			# matches the centerline's coordinate system (degrees).
@@ -1516,13 +1512,19 @@ static func generate_mesh(
 
 				var perp := Vector2(-seg_dir.y, seg_dir.x).normalized()
 				var n_sub := maxi(1, ceili(seg_len_deg / _max_seg_deg))
+				# Along-road distance at this segment's two ends. From the pack
+				# these are absolute (measured from the road's start), so the
+				# texture runs continuously across chunk boundaries.
+				var _seg_a0: float = _rd_cum[_seg_i] if _rd_have_cum else along_m
+				var _seg_a1: float = _rd_cum[_seg_i + 1] if _rd_have_cum \
+					else along_m + seg_len_deg * _rd_m_per_deg
 
 				for _sub_j in n_sub + 1:
 					if _sub_j == n_sub and _seg_i < _rd_cl.size() - 2:
 						continue
 					var frac := float(_sub_j) / float(n_sub)
 					var pt := p0 + seg_dir * frac
-					var along_here := along_m + seg_len_deg * frac * _rd_m_per_deg
+					var along_here := _seg_a0 + (_seg_a1 - _seg_a0) * frac
 					var pt_l := pt + perp * _rd_hw_deg
 					var pt_r := pt - perp * _rd_hw_deg
 
@@ -1554,8 +1556,6 @@ static func generate_mesh(
 
 			# Build quad-strip indices: pairs [L0,R0, L1,R1, ...].
 			var _pair_count: int = (grp_verts.size() - _strip_base) / 2
-			print("[ROAD DBG]   strip: %d verts, %d pairs, base=%d, mat=%s, biome=%s" % [
-				grp_verts.size() - _strip_base, _pair_count, _strip_base, _mat_path, _rd_biome_type])
 			for _pi in _pair_count - 1:
 				var _li := _strip_base + _pi * 2      # left  current
 				var _ri := _li + 1                     # right current
@@ -1601,22 +1601,18 @@ static func generate_mesh(
 			var ru: PackedVector2Array = grp["uvs"]
 			var ri: PackedInt32Array = grp["indices"]
 			if rv.size() == 0:
-				print("[ROAD DBG] emit: %s — 0 verts, skipping" % mat_path)
 				continue
-			print("[ROAD DBG] emit: %s — %d verts, %d idx, v[0]=%s v[1]=%s" % [
-				mat_path, rv.size(), ri.size(),
-				rv[0], rv[mini(1, rv.size() - 1)]])
-			# Load the road material.
-			var rd_mat: Material = null
-			if data._road_material_cache.has(mat_path):
-				rd_mat = data._road_material_cache[mat_path]
-			elif ResourceLoader.exists(mat_path):
-				var loaded = ResourceLoader.load(mat_path)
-				if loaded is Material:
-					data._road_material_cache[mat_path] = loaded
-					rd_mat = loaded
+			# Load the road material. This runs on a WorkerThreadPool task, so
+			# the cache lookup + ResourceLoader.load + insert must be
+			# serialised — an unsynchronised Dictionary write from several mesh
+			# tasks at once is a live heap-corruption risk.
+			var rd_mat: Material = data.get_road_material_cached(mat_path)
 			if rd_mat == null:
-				print("[ROAD DBG]   mat NULL, skipping surface")
+				# Loud on purpose: a missing .tres silently dropped every road
+				# surface for a long time (the old res://assets/materials/planet/
+				# paths in RoadTerrain no longer existed).
+				push_warning("[PlanetChunk] Road material not found: '%s' — "
+					% mat_path + "road surface skipped.")
 				continue
 			rd_mat = rd_mat.duplicate() as Material
 			if rd_mat is BaseMaterial3D:
@@ -2504,11 +2500,8 @@ static func generate_collision_shape(
 				for _clz in _cl_zones:
 					var _clbd := data.get_biome_by_type(_clz.get("biome_type", ""))
 					if _clbd and RockyLandformCliffTerrain.matches_zone(_clbd):
-						var _cl_verts: Array = _clz.get("vertices", [])
-						if _cl_verts.size() >= 3:
-							var _cl_poly := PackedVector2Array()
-							for _cv in _cl_verts:
-								_cl_poly.append(Vector2(_cv[0], _cv[1]))
+						var _cl_poly := _zone_outline(_clz)
+						if _cl_poly.size() >= 3:
 							var _cl_ll := BiomeQuery._dir_to_lonlat(dir)
 							var _cl_mpd := data.radius * PI / 180.0
 							var _cl_dist := BiomeQuery._dist_to_polygon_edge(_cl_ll, _cl_poly) * _cl_mpd
@@ -2636,18 +2629,25 @@ static func _resolve_export_ipix(hp_nside: int, hp_ipix: int,
 	return ipix
 
 
-## Get recipe data for this chunk: [populate_zones, linear_features,
-## radial_features, craters].  Falls back to empty arrays gracefully.
+## Get per-chunk modifier data: [populate_zones, linear_features,
+## radial_features, craters, roads].  Falls back to empty arrays gracefully.
+##
+## The first four are read at export_nside via the ancestor ipix, exactly as
+## before. Roads are read at THIS chunk's own level, so the record it gets is
+## already clipped to this chunk — which is what stops a neighbouring chunk at a
+## coarser LOD from extruding the same stretch of road at a different altitude.
 static func _get_recipe_biome_data(data: PlanetData,
 		hp_nside: int, hp_ipix: int) -> Array:
 	if hp_nside <= 0:
-		return [[], [], [], []]
+		return [[], [], [], [], []]
 	var eip := _resolve_export_ipix(hp_nside, hp_ipix, data.export_nside)
+	var roads: Array = data.get_roads_for_chunk(hp_nside, hp_ipix)
 	return [
 		data.get_chunk_populate_zones(eip),
 		data.get_chunk_linear_features(eip),
 		data.get_chunk_radial_features(eip),
 		data.get_chunk_craters(eip),
+		roads,
 	]
 
 
@@ -2686,6 +2686,30 @@ static func _dir_in_populate_zone(dir: Vector3, zone: Dictionary) -> bool:
 		return false
 	var lonlat := BiomeQuery._dir_to_lonlat(dir)
 	return _point_in_polygon_lonlat(lonlat.x, lonlat.y, vertices)
+
+
+## Outline of a populate zone as a PackedVector2Array of lon/lat points.
+##
+## Producers disagree on the key: recipe exports write `vertices` (an Array of
+## [lon, lat] pairs, see tools/qgis/export/planet/recipe.py), while
+## PlanetData.inject_biome_feature() writes `polygon` (a PackedVector2Array).
+## Reading only one of them silently yields an empty outline for zones from the
+## other producer — that is how the client mesh lost its cliff drop while the
+## server collision kept it, diverging by up to DROP_M (50 m).
+## Returns an empty array when the zone has no usable outline (< 3 points).
+static func _zone_outline(zone: Dictionary) -> PackedVector2Array:
+	var verts: Array = zone.get("vertices", [])
+	if verts.size() >= 3:
+		var poly := PackedVector2Array()
+		poly.resize(verts.size())
+		for i in verts.size():
+			var v = verts[i]
+			poly[i] = Vector2(float(v[0]), float(v[1]))
+		return poly
+	var packed: PackedVector2Array = zone.get("polygon", PackedVector2Array())
+	if packed.size() >= 3:
+		return packed
+	return PackedVector2Array()
 
 
 ## Find all populate zones containing the given direction.

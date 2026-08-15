@@ -112,6 +112,21 @@ const _CACHE_GEOM_TOLERANCE_M := 1500.0
 ## Read by the "Planet Tools" editor plugin's "Snap to surface" action.
 @export var editor_snap_height_offset: float = 0.0
 
+## ── POI import (QGIS) ─────────────────────────────────────────────
+## JSON produced by tools/qgis/export_poi.py. Empty → derived from the planet
+## name: res://assets/qgis/export/<planet_name>_poi.json
+@export_file("*.json") var poi_json_path: String = ""
+## Collision layer/mask applied to the generated POI Area3Ds. 0/0 by default:
+## the POIs are inert zone markers until gameplay code wires them up, so they
+## can't perturb the player controller or the interaction rays.
+@export_flags_3d_physics var poi_collision_layer: int = 0
+@export_flags_3d_physics var poi_collision_mask: int = 0
+# Resolved through a getter, not an initializer, so the editor can never read
+# the button callback back as Nil ("value is Nil, but Callable was expected").
+@export_tool_button("Import POI from JSON")
+var _import_poi_action: Callable:
+	get: return import_poi_from_json
+
 var planet_data: PlanetData
 var is_server: bool = false
 
@@ -264,9 +279,17 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			int(data.corundum_override_whole_planet), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
 			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_v25%s" % [
+		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
+		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
+		# The vNN literal is the manual bump for pipeline changes no other field
+		# captures — v26 marks the QGIS exporter moving to spherical-TIN sampling
+		# with level-preserving thinning, which changed the elevations while
+		# radius / max_height / height_offset all stayed identical (so the old key
+		# kept reporting "Cache valid" and served pre-change terrain).
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v26%s" % [
 			data.planet_name, data.export_nside, data.radius,
-			data.max_height, data.height_offset, data.terrain_exaggeration, _cor]
+			data.max_height, data.height_offset, data.terrain_exaggeration,
+			data.chunk_heightmap_res, _cor]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -1435,7 +1458,7 @@ func _goto_lonlat() -> void:
 		return
 	var dir := HEALPix.lonlat2vec(editor_goto_lon, editor_goto_lat)
 	# Sync x/y/z to the surface point in that direction.
-	var surface: Vector3 = dir * planet_data.radius
+	var surface: Vector3 = surface_point_for_direction(dir)
 	editor_goto_x = surface.x
 	editor_goto_y = surface.y
 	editor_goto_z = surface.z
@@ -1471,8 +1494,9 @@ func _goto_coordinates() -> void:
 ## a focus marker the user can frame with F. Shared by the biome dropdown and
 ## the "Go to lon/lat" button.
 func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
-	var surface_local: Vector3 = dir * planet_data.radius
-	var world_pos: Vector3 = dir * (planet_data.radius + 200.0)
+	var surface_local: Vector3 = surface_point_for_direction(dir)
+	# 200 m above the GROUND, not above sea level.
+	var world_pos: Vector3 = surface_local + dir * 200.0
 
 	# Create or move the focus marker so the user can press F to frame it.
 	if not _editor_biome_focus or not is_instance_valid(_editor_biome_focus):
@@ -1526,6 +1550,24 @@ func _auto_tune_editor_camera() -> void:
 		r, z_far, fly_speed])
 
 
+## Planet-local position of the terrain surface along unit [param dir]: sea
+## level plus the elevation sampled from the heightmap pyramid.
+##
+## Sea level alone ([code]dir * radius[/code]) is NOT the surface — tarsis_4
+## spans −1700 m to +9000 m, so a point built that way sits kilometres below
+## the ground on any highland. Every lon/lat → position conversion in the
+## editor goes through here for that reason.
+##
+## Samples at the finest pyramid level, which is the surface the runtime
+## collision mesh is built from; a coarse editor preview may render a slightly
+## smoother shape, but the finest level is the authoritative ground.
+func surface_point_for_direction(dir: Vector3) -> Vector3:
+	if planet_data == null:
+		return dir
+	return dir * (planet_data.radius
+		+ planet_data.sample_height_for_direction(dir))
+
+
 ## Compute the global transform that places [param n3] on the planet surface
 ## directly below it (radially, toward the planet centre). Samples the terrain
 ## heightmap along the object's own direction from the centre — no physics
@@ -1570,6 +1612,175 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 	z_axis = x_axis.cross(y_axis).normalized()
 	var basis := Basis(x_axis, y_axis, z_axis).scaled(gscale)
 	return Transform3D(basis, surface_pos)
+
+
+# ------------------------------------------------------------------
+# POI import (QGIS)
+# ------------------------------------------------------------------
+
+## Inspector button: rebuild the "POIs" child from the JSON exported by
+## tools/qgis/export_poi.py. Each POI becomes an Area3D named after it, holding
+## a SphereShape3D of its influence radius, sitting on the terrain surface at
+## its longitude/latitude. The nodes are owned by the edited scene, so they are
+## saved into the planet's .tscn and can be tweaked by hand afterwards; the
+## QGIS attributes ride along as node metadata.
+##
+## Re-running replaces the whole "POIs" subtree — it never appends.
+func import_poi_from_json() -> void:
+	if not Engine.is_editor_hint():
+		return
+
+	var data := _resolve_planet_data()
+	if data == null:
+		push_warning("[PlanetTerrain] Import POI: no PlanetData on this node or "
+			+ "its parent Planet.")
+		return
+	if data.radius <= 0.0:
+		push_warning("[PlanetTerrain] Import POI: PlanetData.radius is not set "
+			+ "yet (it comes from the chunk manifest) — reopen the scene first.")
+		return
+	# compute_surface_transform() reads the *member*, and silently returns the
+	# node untouched when it is null — which would drop every POI to sea level.
+	# Adopt the resolved resource, exactly as initialize() would have.
+	if planet_data == null:
+		planet_data = data
+
+	var path := poi_json_path
+	if path.is_empty():
+		path = "res://assets/qgis/export/%s_poi.json" % data.planet_name
+	if not FileAccess.file_exists(path):
+		push_warning("[PlanetTerrain] Import POI: '%s' not found — run "
+			% path + "tools/qgis/export_poi.py from the QGIS Python console first.")
+		return
+
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(parsed) != TYPE_DICTIONARY or typeof(parsed.get("pois")) != TYPE_ARRAY:
+		push_warning("[PlanetTerrain] Import POI: '%s' is not a POI export " % path
+			+ "(expected an object with a \"pois\" array).")
+		return
+
+	# Resolved through Engine.get_singleton (as elsewhere in this file) rather
+	# than the EditorInterface global: this script also ships in the exported
+	# game, where that global does not exist.
+	var ei = Engine.get_singleton("EditorInterface")
+	if ei == null:
+		return
+	var scene_root: Node = ei.get_edited_scene_root()
+	if scene_root == null:
+		push_warning("[PlanetTerrain] Import POI: no scene is open in the editor.")
+		return
+
+	var imported := build_poi_nodes(parsed["pois"], data, scene_root)
+	ei.mark_scene_as_unsaved()
+	print("[PlanetTerrain] Imported %d POI from %s" % [imported, path])
+
+
+## (Re)build the "POIs" child from [param pois] (the parsed JSON array) and
+## return how many were placed. Split out of [method import_poi_from_json] so
+## it carries no editor dependency and can be driven from a test harness;
+## [param owner_node] is what the created nodes are owned by (the edited scene
+## root in the editor) — pass null to leave them unowned.
+func build_poi_nodes(pois: Array, data: PlanetData, owner_node: Node) -> int:
+	# Replace, never append: drop any previous import before rebuilding.
+	var previous := get_node_or_null("POIs")
+	if previous:
+		remove_child(previous)
+		previous.queue_free()
+
+	var container := Node3D.new()
+	container.name = "POIs"
+	add_child(container)
+	if owner_node != null:
+		container.owner = owner_node
+
+	var imported := 0
+	for entry in pois:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if _add_poi_node(container, owner_node, data, entry):
+			imported += 1
+	return imported
+
+
+## Build one Area3D for [param entry] under [param container]. Returns false
+## when the entry carries no usable position.
+func _add_poi_node(container: Node3D, owner_node: Node, data: PlanetData,
+		entry: Dictionary) -> bool:
+	if not (entry.has("lon") and entry.has("lat")):
+		push_warning("[PlanetTerrain] Import POI: entry without lon/lat skipped.")
+		return false
+
+	var dir := HEALPix.lonlat2vec(float(entry["lon"]), float(entry["lat"]))
+
+	var area := Area3D.new()
+	# Fall back to the id when the POI has no name — a node name can't be empty.
+	var poi_name := _poi_str(entry, "name").validate_node_name()
+	area.name = poi_name if not poi_name.is_empty() \
+		else "POI_%d" % _poi_int(entry, "id")
+	# force_readable_name so two POIs sharing a name become "Foo"/"Foo2", not
+	# "@Area3D@42" — the whole point is to recognise them in the Scene dock.
+	container.add_child(area, true)
+	if owner_node != null:
+		area.owner = owner_node
+
+	area.monitoring = false
+	area.monitorable = true
+	area.collision_layer = poi_collision_layer
+	area.collision_mask = poi_collision_mask
+
+	var sphere := SphereShape3D.new()
+	var radius = entry.get("radius")
+	sphere.radius = maxf(0.1 if radius == null else float(radius), 0.1)
+	var shape := CollisionShape3D.new()
+	shape.shape = sphere
+	shape.name = "Zone"
+	area.add_child(shape)
+	# A child without an owner is not serialised into the .tscn.
+	if owner_node != null:
+		shape.owner = owner_node
+
+	# QGIS may carry an explicit ground elevation; otherwise sample the terrain
+	# heightmap through compute_surface_transform(), which also stands the node
+	# up along the surface normal.
+	var elevation = entry.get("elevation")
+	if elevation != null:
+		area.position = dir * (data.radius + float(elevation))
+	else:
+		area.position = dir * data.radius
+		area.global_transform = compute_surface_transform(area)
+
+	# Metadata is serialised with the node, so the QGIS attributes survive the
+	# save without needing a dedicated POI class or resource.
+	area.set_meta("poi_id", _poi_int(entry, "id"))
+	area.set_meta("poi_type", _poi_str(entry, "poi_type"))
+	area.set_meta("population", _poi_int(entry, "population"))
+	area.set_meta("description", _poi_str(entry, "description"))
+	area.set_meta("lon", float(entry["lon"]))
+	area.set_meta("lat", float(entry["lat"]))
+	return true
+
+
+## JSON field readers that tolerate a missing key *and* an explicit null — a
+## hand-edited export shouldn't abort the import on a cast error.
+func _poi_str(entry: Dictionary, key: String) -> String:
+	var value = entry.get(key)
+	return "" if value == null else str(value)
+
+
+func _poi_int(entry: Dictionary, key: String) -> int:
+	var value = entry.get(key)
+	return 0 if value == null else int(value)
+
+
+## The terrain's own PlanetData, or the parent Planet's when initialize() has
+## not run yet (the button can be clicked on a freshly opened scene).
+func _resolve_planet_data() -> PlanetData:
+	if planet_data != null:
+		return planet_data
+	var parent := get_parent()
+	if parent != null and parent.get("planet_data") != null:
+		return parent.planet_data
+	return null
 
 
 # ------------------------------------------------------------------

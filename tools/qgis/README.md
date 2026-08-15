@@ -12,8 +12,14 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 |---|---|---|
 | `setup_planet_project.py` | QGIS Python Console | Creates a new QGIS project with all the standard layers (contours, biomes, roads, POI, water) pre-configured |
 | `export_elevation.py` | QGIS Python Console | **Elevation-only**: one raw float32 (`.r32`) heightmap tile per HEALPix chunk, for the standard mesh terrain (no recipes/voxels). See below. |
-| `export_planet.py` | QGIS Python Console | Full pipeline: exports all layers to GeoJSON + heightmap, biome raster, far-LOD color map, recipes |
-| `qgis_planet_importer.gd` | Godot Editor | Reads the exported files and generates terrain textures, biome maps, and POI markers for your Planet node |
+| `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
+| `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
+| `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
+| `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
+| `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
+| `export/planet/dsmp_strings.py` | library | The append-only `parts/strings.json` intern table. |
+| `export/planet/roads.py` | library | Road widths (the single Python mirror of `RoadTerrain.HALF_WIDTH_M`) and the ROAD part builder. |
+| `export_planet_old.py` | QGIS Python Console | **Retired** full pipeline (biome GeoJSON, spatial tiles, `.planetpack` recipes). Kept for reference; its outputs are no longer read at runtime. |
 
 ---
 
@@ -46,6 +52,198 @@ is avoided because Godot downsamples it to 8-bit on import → terracing.) Decod
 
 > When `chunk_heightmaps_dir` is empty, the terrain falls back to the recipe
 > pipeline (`export_planet.py`) as before — the two are mutually exclusive per planet.
+
+---
+
+## POI pipeline (`export_poi.py` → inspector button)
+
+Turns the `poi` point layer into `Area3D` zones inside the planet scene, so the
+lon/lat → X/Y/Z conversion described in §4.3 no longer has to be done by hand.
+
+1. **Draw the POIs** in QGIS on the `poi` layer (see "Place Points of Interest"
+   below), filling in `name`, `poi_type`, `population`, `radius` (metres) and
+   `description`. Leave `elevation` empty unless you want to *override* the
+   terrain height at that spot.
+2. **Export** from the QGIS Python Console:
+   ```python
+   exec(open('…/tools/qgis/export_poi.py').read())
+   ```
+   Output: `<EXPORT_DIR>/<planet>_poi.json` — a flat list of
+   `{id, name, poi_type, population, radius, description, lon, lat, elevation}`.
+   `planet_name` / `planet_radius_m` are read from the QGIS project variables,
+   like `export_elevation.py`.
+3. **Import in Godot**: open the planet scene, select the **`PlanetTerrain`**
+   node, and click **"Import POI from JSON"** in the inspector. Leave
+   `poi_json_path` empty to use `assets/qgis/export/<planet_name>_poi.json`.
+
+The button (re)builds a `POIs` child holding one `Area3D` per POI:
+
+- named after the POI, positioned at its lon/lat **on the terrain surface**
+  (height sampled from the heightmap, +Y along the surface normal — the same
+  `compute_surface_transform()` the "Snap to planet surface" tool uses);
+- with a `SphereShape3D` of the POI's `radius`;
+- carrying the QGIS attributes as node metadata (`poi_id`, `poi_type`,
+  `population`, `description`, `lon`, `lat`).
+
+The nodes are owned by the edited scene, so **save the scene** to keep them.
+Re-running the button replaces the whole `POIs` subtree rather than appending,
+so a re-export from QGIS is always safe to re-import.
+
+> The generated areas use `collision_layer`/`collision_mask` = 0 by default —
+> they are inert markers. Set `poi_collision_layer` / `poi_collision_mask` on
+> `PlanetTerrain` **before** importing if gameplay code needs to detect them.
+
+---
+
+## Roads pipeline (`export_roads.py`)
+
+Unlike the POI pipeline, **the Godot side needs no button**: roads are generated
+inside `PlanetChunk.generate_mesh()`, so they appear as soon as the data file
+exists — in the running game *and* in the editor preview, which calls the same
+mesh generator.
+
+1. **Draw the roads** in QGIS on the `roads` layer (see "Draw Roads" below).
+   `road_type` drives everything; `width` (total, metres) is optional.
+2. **Export** from the QGIS Python Console:
+   ```python
+   exec(open('…/tools/qgis/export_roads.py').read())
+   ```
+   Two outputs, in this order:
+   - `<planet>_chunks/parts/roads.dsmpart` — **what the game reads**, then merged
+     into `<planet>_chunks/terrainmodifier.pack` by the automatic relink;
+   - `<EXPORT_DIR>/<planet>_roads_buffered.json` — the legacy GeoJSON, still read
+     by `BiomeQuery` during the transition.
+3. **Nothing to wire in Godot**: chunks read `terrainmodifier.pack` from
+   `chunk_heightmaps_dir` directly. Reopen the scene to regenerate the preview.
+
+---
+
+## Terrain-modifier pack (`terrainmodifier.pack`)
+
+The per-chunk, per-LOD archive of everything that modifies terrain — roads,
+craters, linear features (rivers, lava, dry beds, canyons), radial features
+(caves, fumaroles, volcanoes) and biome populate zones. POIs are **not** in it:
+they are an editor-only import baked into the `.tscn`.
+
+```
+assets/qgis/export/<planet>_chunks/
+    heights.pack            DSHP — elevation tiles (unchanged)
+    manifest.json
+    terrainmodifier.pack    DSMP — DERIVED, written by link_modifiers.py
+    parts/
+        strings.json        global, APPEND-ONLY string table
+        roads.dsmpart       written by export_roads.py
+        …                   one part per feature family
+```
+
+**Each exporter owns one part.** Re-running `export_roads.py` rewrites
+`roads.dsmpart` and relinks the pack from every part present, so it replaces the
+roads and leaves the other families untouched. Because the string table only ever
+grows, ids stay valid forever and the linker copies record blocks byte for byte —
+two links over unchanged parts produce a byte-identical pack.
+
+```python
+# chain several exporters, link once
+NO_LINK = True   # set at the top of each exporter
+exec(open('…/tools/qgis/export_roads.py').read())
+import link_modifiers; link_modifiers.link('tarsis_4')
+
+# a checkout that has the pack but no parts/
+link_modifiers.explode('tarsis_4')
+```
+
+### Why roads are stored per chunk
+
+A road used to be stored **once, globally**. `PlanetChunk.generate_mesh()` then
+walked its entire centerline in *every* chunk whose bounding box touched it — a
+13 km road with 1177 points, rebuilt in dozens of chunks. Worse, neighbouring
+chunks at different LODs sample terrain height at different pyramid levels
+(`PlanetData.sample_nside_for()`), so the duplicate ribbons landed at **different
+altitudes**: in game you saw two roads, the upper one floating about 2 m up.
+
+In the pack a road is **partitioned**: at every level, each point belongs to
+exactly one HEALPix tile, pieces are split on the tile boundary, and the two
+pieces meeting there share a bit-identical vertex. A chunk draws its own stretch
+and nothing else, so the duplication is impossible by construction rather than
+avoided by a runtime test. On tarsis_4 the longest road goes from 1177 points
+rebuilt per chunk to ~7 points per chunk at n8192.
+
+Roads must be baked down to `PlanetData.max_quadtree_depth` (13 on tarsis_4,
+n8192). A shallower bake would make deeper chunks share an ancestor tile — the
+duplication again — so `link_modifiers.link()` refuses to build such a pack and
+`PlanetData` warns at load time.
+
+Craters, radial features and biome zones stop at `export_nside` instead: they are
+point and polygon *queries*, never emitted geometry, so a shared ancestor tile is
+harmless — and baking a biome polygon covering a quarter of a planet down to
+n8192 would need hundreds of millions of tiles.
+
+### Format
+
+`DSMP v1`, spec'd in
+[`export/planet/dsmp.py`](export/planet/dsmp.py) and mirrored by the reader
+[`scenes/planet/modifier_pack.gd`](../../scenes/planet/modifier_pack.gd).
+Coordinates are `i32` in units of 1e-7° (~1.1 cm) — `float32` loses 0.85 m at
+100° of longitude, a quarter of a road's width. Unlike `heights.pack`, tiles are
+sparse and variable-size, so each level carries a sorted index that the reader
+binary-searches **in place** on the raw bytes (a level can hold millions of
+entries; materialising them as a `Dictionary` would cost ~100 bytes of Variant
+each and stall the main thread at `open()`).
+
+Every polyline point stores its distance from the start of the **unclipped**
+feature. Recomputing it from a clipped piece would restart at 0 in every tile, so
+a river would snap back to its start width at each chunk seam and a road's
+asphalt texture would jump at every chunk boundary.
+
+Tests: [`test/unit/test_modifier_pack.gd`](../../test/unit/test_modifier_pack.gd),
+[`test/unit/test_modifier_pack_py.py`](../../test/unit/test_modifier_pack_py.py)
+(`python3` alone, no QGIS) and
+[`test/unit/test_road_no_double_render.gd`](../../test/unit/test_road_no_double_render.gd).
+The two encoders are pinned to each other by a shared SHA-256 of one canonical
+tile, so neither can drift silently.
+
+### Why buffered polygons (legacy GeoJSON)
+
+Godot loads that file through `BiomeQuery`, whose parser **only accepts `Polygon`
+geometry** — a raw LineString export is silently ignored. So each road is
+buffered into a polygon and the original line is kept in `properties.centerline`:
+
+- the **polygon** is only a coarse detection volume (deliberately
+  `DETECTION_MULTIPLIER` = 3× wider than the road) so a chunk crossed by a narrow
+  trail is never missed by the bounding-box test;
+- the **visible ribbon** is extruded from the centerline at the real half-width,
+  with flow-aligned UVs, and sits `SURFACE_OFFSET` = 5 cm above the ground.
+
+The pack needs neither: its tiles are partitioned, not bbox-tested. This file
+disappears once `PlanetData.roads_geojson` is retired.
+
+Roads do **not** displace the terrain, and have no collision of their own — they
+ride on the terrain collision.
+
+### Width
+
+`RoadTerrain.get_half_width_m()` and the exporter apply the same rule: the
+per-feature `width` from QGIS wins when it is set, otherwise the `road_type`
+default applies.
+
+| road_type | default total width | material |
+|---|---|---|
+| `highway` | 12 m | asphalt (fixed) |
+| `road` | 6 m | asphalt (fixed) |
+| `path` | 2 m | biome-adaptive (grass / dirt / sand / snow) |
+| `trail` | 1 m | biome-adaptive |
+
+`HALF_WIDTH_M` in [`scenes/planet/road/road_terrain.gd`](../../scenes/planet/road/road_terrain.gd)
+and `HALF_WIDTH_M` in [`export/planet/roads.py`](export/planet/roads.py) **must
+stay in sync**. The Python side now lives in that one module (imported by
+`export_roads.py`) rather than being duplicated, so there are exactly two copies
+to keep aligned instead of three.
+
+> **Known limitation:** widths are computed in degree space with no `cos(lat)`
+> correction, so a road narrows in longitude away from the equator — about 9 % at
+> 25° of latitude, 50 % at 60°. Fixing it means touching the export buffer, the
+> ribbon builder and `BiomeQuery.get_cross_section_t()` together, otherwise the
+> rendering and the vegetation suppression desynchronise.
 
 ---
 
@@ -119,8 +317,9 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 #### Place Points of Interest
 1. Select the `<planet>_poi` layer → Toggle Editing
 2. Click **Add Point Feature** and click where you want to place a city, station, or spawn point
-3. Fill in: `name`, `poi_type` (city/station/landmark/spawn_point), `population`, `radius`
-4. Save edits
+3. Fill in: `name`, `poi_type` (city/station/landmark/spawn_point), `population`,
+   `radius` (influence radius in metres) and `description`
+4. Save edits, then see the POI pipeline section above to get them into Godot
 
 #### Draw Water Bodies
 1. Select the `<planet>_water` layer → Toggle Editing

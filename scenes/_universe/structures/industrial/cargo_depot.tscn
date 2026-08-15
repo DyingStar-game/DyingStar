@@ -126,7 +126,7 @@ size = Vector3(11.916180997226547, 1, 10.025707958775229)
 
 [node name="floor2" type="CSGBox3D" parent="floor" unique_id=638508050]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00031864643, -0.5, 4.959085191192628)
-size = Vector3(11.963961978560292, 1, 10.030576222690797)
+size = Vector3(11.963961978560292, 1, 10.030576222690796)
 
 [node name="walls" type="CSGCombiner3D" parent="." unique_id=272998775]
 material_override = ExtResource("2_xg6ju")
@@ -134,7 +134,7 @@ use_collision = true
 
 [node name="wall01" type="CSGBox3D" parent="walls" unique_id=135442379]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1362741, 0)
-size = Vector3(12, 3.7274518990780052, 0.12)
+size = Vector3(12, 3.727451899078005, 0.12)
 
 [node name="CSGBox3D" type="CSGBox3D" parent="walls/wall01" unique_id=280226474]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14454257, 0)
@@ -156,7 +156,7 @@ size = Vector3(10, 3.716309947456466, 0.12)
 
 [node name="wall_junk_room_01" type="CSGBox3D" parent="walls" unique_id=1642500494]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1452028, 94.95427644970484)
-size = Vector3(12, 3.7095944720267653, 0.12)
+size = Vector3(12, 3.7095944720267657, 0.12)
 
 [node name="wall_junk_room_02" type="CSGBox3D" parent="walls" unique_id=84285821]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 5.940000000002323, 1.0649918, 90.0099869540893)
@@ -248,14 +248,14 @@ shape = SubResource("BoxShape3D_nr3d1")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
 [node name="fence" type="CSGBox3D" parent="ReceptionDesk" unique_id=257375520]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.061374758372261695, 1.9845640979774473, 3.148337700533633)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06137475837226169, 1.9845640979774473, 3.148337700533633)
 size = Vector3(11.829775515364418, 1.984039205639192, 0.1)
 material = ExtResource("5_8j60v")
 
 [node name="CSGBox3D" type="CSGBox3D" parent="ReceptionDesk/fence" unique_id=2089876031]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7234246668953249, -0.6351050650008254, 0)
 operation = 2
-size = Vector3(0.9631633646024511, 0.9897648373769243, 1)
+size = Vector3(0.9631633646024512, 0.9897648373769244, 1)
 
 [node name="reception_area" type="Area3D" parent="." unique_id=119297318]
 collision_mask = 2
@@ -632,7 +632,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 7.869851440875111, 28)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 86.3095914797591)
 
 [node name="LedPanel1x0_3m2" parent="Lights/Junk" unique_id=1251524462 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 92.24254083360853)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 92.24254083360852)
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1281901473]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.857416347148768, 1.9449055731039908, 89.82074714987318)

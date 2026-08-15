@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://dvwggfmy7o52p"]
 
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="6_0lykg"]
-[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/_universe/props/containers/storagewarehouse.tscn" id="6_7jf1i"]
 [ext_resource type="PackedScene" uid="uid://bn1lq4a5rqcgr" path="res://scenes/_universe/structures/industrial/wind_valley.tscn" id="7_5a8bp"]
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
@@ -22,36 +21,36 @@ crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
+chunk_heightmap_res = 50
 roads_geojson = "assets/qgis/export/tarsis_4_roads_buffered.json"
 
 [node name="Tarsis4" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")
 planet_data = SubResource("PlanetData_tarsis4")
+uuid = "_planet_SandBox"
 rotation_period_hours = 25.0
 axial_tilt_deg = 15.0
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("script_terrain")
 editor_preview_depth = 13
-editor_preview_rings = 3
+editor_preview_rings = 4
 editor_goto_lon = -39.55558187662332
 editor_goto_lat = 24.85200755796846
-editor_goto_x = 4450891.0
-editor_goto_y = 2673782.0
-editor_goto_z = -3676289.0
+editor_goto_x = 4450657.649318684
+editor_goto_y = 2673641.8193369843
+editor_goto_z = -3676096.260042345
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("script_debug_export")
 
-[node name="Storagewarehouse" parent="." unique_id=695965601 instance=ExtResource("6_7jf1i")]
-transform = Transform3D(0.5914825805936532, 0.6996656768921495, 0.4007696313760846, -0.7942655445330378, 0.41995916646175446, 0.4390632565728839, 0.13889061027265323, -0.5780157775388131, 0.8041188713705775, 4451007.479484161, 2671620.8222507075, -3677116.9918082017)
-
 [node name="WindValley4" parent="." unique_id=444361552 instance=ExtResource("7_5a8bp")]
-transform = Transform3D(0.6990712111585502, 0.6995541930773201, -0.14806543376918735, -0.2350103114853264, 0.4203445568959582, 0.8764020806590493, 0.6753292494960423, -0.5778705602778881, 0.45825322730912865, 4450085.604323657, 2674131.94718859, -3676175.892575689)
+transform = Transform3D(0.6647458045902908, 0.6995541930773201, -0.2621773182934532, -0.08610343465919526, 0.4203445568959582, 0.9032699773754416, 0.7420911088400781, -0.5778705602778881, 0.339656299433152, 4450097.938574121, 2674139.3585301233, -3676186.0813506218)
 sleeping = true
 
 [node name="WindValley" parent="." unique_id=1403391396 instance=ExtResource("7_5a8bp")]
-transform = Transform3D(0.05262110342297449, 0.6995808728867154, 0.7126132343463809, -0.8373151201295885, 0.41977773208605906, -0.35027138799373503, -0.5441823307283337, -0.5782501689889472, 0.6078588100762649, 4450163.818482326, 2670354.5352879465, -3678834.6321479618)
+transform = Transform3D(0.5481707307819497, 0.6995808728867154, 0.5494653697086881, -1.0620227598267726, 0.41977773208605906, 0.20131588248438426, -0.10777990315410725, -0.5782501689889473, 0.8109005629239805, 4451357.094564657, 2669904.6803798126, -3677747.3090314586)
+visible = false
 sleeping = true
 
 [node name="WindValley2" parent="." unique_id=1516298421 instance=ExtResource("7_5a8bp")]
@@ -59,5 +58,10 @@ transform = Transform3D(0.6862502678023343, 0.6994801027330471, 0.19946968647338
 sleeping = true
 
 [node name="WindValley3" parent="." unique_id=695734040 instance=ExtResource("7_5a8bp")]
-transform = Transform3D(0.6850253901750898, 0.699503453169801, 0.20355621783426353, -0.6246669374921787, 0.4202022600633441, 0.6581954708457058, 0.37487522193339035, -0.5780354484295767, 0.72480589700913, 4450038.761774321, 2673564.083962796, -3676648.259097345)
+transform = Transform3D(0.6850253901750898, 0.699503453169801, 0.20355621783426353, -0.6246669374921787, 0.4202022600633441, 0.6581954708457058, 0.37487522193339035, -0.5780354484295767, 0.72480589700913, 4450050.327987319, 2673571.031961151, -3676657.8168501863)
+sleeping = true
+
+[node name="WindValley5" parent="." unique_id=548013462 instance=ExtResource("7_5a8bp")]
+transform = Transform3D(-0.03635293559403746, 0.7000613105638153, 0.713156802901977, -0.7866785599129458, 0.4200472320861748, -0.45243470931178237, -0.6162915766477662, -0.577472496547166, 0.5354532736706293, 4450568.811892972, 2673609.5888976147, -3676001.51933552)
+visible = false
 sleeping = true
