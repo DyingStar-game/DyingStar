@@ -418,16 +418,13 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 			# print("[Pin] no planet near body at ", body_pos,
 			# 	" (closest planets: ", _debug_closest_planets(body_pos, 3), ")")
 		return
-	var local := body_pos - best_planet.global_position
-	if local.length_squared() < 1.0e-6:
+	# Planet-LOCAL (body-frame) direction, through the planet's own conversion — the SAME one
+	# PlanetTerrain.collision_chunk_key uses to answer "is the ground here loaded?". They must agree on
+	# the tile: vec2pix_nest expects the body frame, and the planet spins, so a world-frame direction
+	# resolves to the wrong tile and the one actually under the player is never pinned.
+	var dir: Vector3 = best_planet.local_dir_of(body_pos)
+	if dir.is_zero_approx():
 		return
-	# Convert from world-frame to planet-LOCAL (body-frame) direction.
-	# vec2pix_nest expects the direction in the planet's own coordinate
-	# system; the planet rotates in orbit, so a world-frame direction would
-	# resolve to the WRONG tile and the actual tile under the player would
-	# never be pinned (player falls through to safety net).
-	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
-	var dir := local_body.normalized()
 	var pd = best_planet.planet_data
 	# Collision detail nside: the client's FINEST LOD nside on crack planets, so
 	# the pinned collision is built on the SAME grid the visual renders (see
@@ -975,6 +972,11 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
+	# Ask for the collision under this player NOW rather than up to PIN_TICK_INTERVAL render frames from
+	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
+	# frame of pinning latency is a frame of frozen player. Idempotent — the sweep pushes the whole set,
+	# so calling it early cannot drop another player's pins.
+	_refresh_active_body_pins()
 	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
 
 	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position

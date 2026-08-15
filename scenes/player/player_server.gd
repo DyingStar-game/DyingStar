@@ -8,6 +8,9 @@ extends Node
 ## they migrate too. (Filled in incrementally.)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+## How long a body waits for the ground under it before being released anyway. Generous: a cold start
+## regenerates every chunk on worker threads, and being released early is exactly the bug.
+const SPAWN_GROUND_TIMEOUT: float = 20.0
 ## Kept in sync with Player.JUMP — a `match` pattern needs a compile-time constant, so we can't read
 ## `player.JUMP` here.
 const JUMP: String = "jump"
@@ -89,6 +92,12 @@ var _seat_count: int = 0
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
 var _vault_count: int = 0
+## True once this body has actually been inside a gravity well. Gates the release to the world
+## frame: before it, an empty gravity stack only means the AreaDetector has not reported yet.
+var _had_gravity: bool = false
+## True once the terrain under this body has been seen at least once. See _hold_until_ground.
+var _ground_seen: bool = false
+var _ground_wait: float = 0.0
 var _vaulting: bool = false
 var _vault_time: float = 0.0
 var _vault_duration: float = 0.6
@@ -734,6 +743,8 @@ func _physics_process(delta: float) -> void:
 	_server_update_carried_item(delta)
 	_server_update_carry_prompt(delta)
 	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
+	if _hold_until_ground(delta):
+		return  # nothing under us yet: hold still rather than fall through
 	if _vault_cooldown > 0.0:
 		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
 	if _vaulting:
@@ -901,9 +912,62 @@ func _physics_process(delta: float) -> void:
 ## as local to the planet: one dropped message and the body is flung across the system.
 ## The parent test is the other half of the guard — a seated driver hangs from the vehicle and a
 ## player indoors from the building, and neither of them is leaving anything.
+## Hold a freshly created body still until the terrain under it actually exists. Returns true while
+## it is being held, and the caller must then do nothing else this tick.
+##
+## The server builds terrain collision chunk by chunk, on worker threads, and only around bodies that
+## already exist — so there is unavoidably a window after creation where there is nothing underneath.
+## Released into it, a body meets only the planet-wide fallback shells 100-200 m BELOW the playable
+## surface: it falls, _catch_if_below_surface teleports it back to the theoretical surface without any
+## real contact (so is_on_floor() stays false), gravity resumes next frame, and it falls again —
+## forever. That loop is what "spawned in the air, bouncing in the void" actually was.
+##
+## Only the FIRST moments are gated. Once the ground has been seen, it is never checked again: a body
+## walking off the edge of loaded terrain is a different problem, and the fallback shells plus
+## _catch_if_below_surface are what handle that.
+##
+## It cannot deadlock: pinning walks players_list and asks for the chunk under each of them whether
+## they move or not, so being held does not stop the ground being built. And SPAWN_GROUND_TIMEOUT
+## releases the body regardless — a player frozen forever would be worse than the bug being fixed.
+func _hold_until_ground(delta: float) -> bool:
+	if _ground_seen:
+		return false
+	var terrain: PlanetTerrain = null
+	var walk: Node = player.get_parent()
+	while walk != null:
+		if walk is Planet:
+			terrain = (walk as Planet).planet_terrain
+			break
+		walk = walk.get_parent()
+	if terrain == null:
+		# Not on a celestial body at all (EVA, a body in transit): nothing to wait for.
+		_ground_seen = true
+		return false
+	if terrain.has_collision_under(player.global_position):
+		_ground_seen = true
+		return false
+	_ground_wait += delta
+	if _ground_wait >= SPAWN_GROUND_TIMEOUT:
+		push_warning("[Spawn] %s: no terrain collision after %.0f s, releasing anyway"
+				% [player.client_uuid, _ground_wait])
+		_ground_seen = true
+		return false
+	# Held: no gravity, no move_and_slide, no velocity to carry over when we are let go.
+	player.velocity = Vector3.ZERO
+	return true
+
+
 func _server_update_gravity_frame(delta: float) -> void:
 	if not player.gravity_parents.is_empty():
 		player._no_gravity_time = 0.0
+		_had_gravity = true
+		return
+	# ⚠️ You cannot LEAVE a gravity well you were never in. At spawn the AreaDetector needs a few
+	# physics frames to report its overlaps, so gravity_parents is empty to begin with — and without
+	# this guard a body was released into the world frame seconds after spawning, INDOORS, having gone
+	# nowhere. It then sat outside the planet's subtree while the planet carried on at 33 km/s, which
+	# reads in game as being flung into the air and left bobbing in the void.
+	if not _had_gravity:
 		return
 	player._no_gravity_time += delta
 	if player._no_gravity_time < player.ZERO_G_GRACE:
@@ -913,6 +977,8 @@ func _server_update_gravity_frame(delta: float) -> void:
 		return
 	var world: Node = _world_frame_above(player.get_parent())
 	if world != null:
+		print("[Frame] %s released to the world: %.2f s without gravity, was under '%s'" % [
+				player.client_uuid, player._no_gravity_time, player.get_parent().name])
 		player.call_deferred("_safe_reparent_and_sync", world)
 
 
