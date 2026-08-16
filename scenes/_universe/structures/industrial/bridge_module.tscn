@@ -1,0 +1,64 @@
+[gd_scene load_steps=6 format=3]
+
+; Placeholder modular bridge — ONE BAY, repeatable along +X.
+;
+; Built from primitives so BridgeSpawner can be validated before the real asset
+; exists. Replace the meshes with the finished module and keep the metadata
+; block below; that contract is what the spawner reads.
+;
+;   deck_height  the driving surface is AT the origin here (0.0), which is the
+;                convention a purpose-built module should follow. wind_valley
+;                does not: its origin sits at the base of its piers, ~97 m under
+;                the deck, which is exactly why the spawner reads a declared
+;                value instead of assuming a pivot.
+;   span_length  length of one bay along +X
+;   repeatable   the spawner tiles this bay to cover any measured gap rather
+;                than stretching it, which would visibly distort a 189 m module
+;                asked to cover 732 m.
+
+[ext_resource type="Material" uid="uid://cmreo7rjq0ava" path="res://assets/_universe/environment/terrain/regolith_grey.tres" id="1_deckmat"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_deck"]
+size = Vector3(50, 1, 12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
+size = Vector3(50, 1, 12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rail"]
+size = Vector3(50, 1.2, 0.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail"]
+size = Vector3(50, 1.2, 0.4)
+
+[node name="BridgeModule" type="StaticBody3D"]
+metadata/deck_height = 0.0
+metadata/span_length = 50.0
+metadata/road_width = 12.0
+metadata/repeatable = true
+
+[node name="Deck" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+mesh = SubResource("BoxMesh_deck")
+surface_material_override/0 = ExtResource("1_deckmat")
+
+[node name="DeckCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_deck")
+
+[node name="RailLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 5.8)
+mesh = SubResource("BoxMesh_rail")
+surface_material_override/0 = ExtResource("1_deckmat")
+
+[node name="RailLeftCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 5.8)
+shape = SubResource("BoxShape3D_rail")
+
+[node name="RailRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -5.8)
+mesh = SubResource("BoxMesh_rail")
+surface_material_override/0 = ExtResource("1_deckmat")
+
+[node name="RailRightCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -5.8)
+shape = SubResource("BoxShape3D_rail")

@@ -230,6 +230,13 @@ var _mod_overlay_add: Array[Dictionary] = []
 var _mod_overlay_remove: Array[Dictionary] = []
 var _mod_overlay_mutex: Mutex = Mutex.new()
 
+## Where the roads fly over a procedural chasm (see RoadBridge). Computed once
+## per planet by walking the roads against the crack field — deterministic, so
+## the client and the server agree without replicating anything.
+var _bridge_spans: Array = []
+var _bridge_spans_built: bool = false
+var _bridge_spans_mutex: Mutex = Mutex.new()
+
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
 ## in PlanetTerrain — this is the always-resident backstop mesh used when a
@@ -1421,6 +1428,91 @@ func get_chunk_radial_features(ipix: int) -> Array:
 ## export_nside). Each record is already clipped to this tile.
 func get_chunk_roads(nside: int, ipix: int) -> Array:
 	return get_chunk_modifiers(nside, ipix).get("roads", [])
+
+
+## Every road on the planet, stitched back into WHOLE features.
+##
+## Read from the pack's COARSEST level, where one record normally covers an
+## entire road: bridge detection must see a whole road, because a chasm span can
+## be longer than a fine tile and a clipped record would report a truncated gap.
+## Roads survive decimation almost intact at every level (the tolerance is
+## clamped to half the road's own width, ~1.5 m), so the coarse copy is faithful.
+##
+## Pieces sharing a feature_id are concatenated in along-road order, which the
+## absolute `_cum_lengths` make unambiguous.
+func get_whole_roads() -> Array:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return []
+	var levels: PackedInt64Array = pack.get_levels()
+	if levels.is_empty():
+		return []
+	var nside := int(levels[0])
+	var by_feature: Dictionary = {}
+	for ipix in pack.get_tile_ipix(nside):
+		for r in get_chunk_roads(nside, int(ipix)):
+			var fid: int = int(r.get("feature_id", -1))
+			if not by_feature.has(fid):
+				by_feature[fid] = []
+			by_feature[fid].append(r)
+
+	var out: Array = []
+	for fid in by_feature:
+		var pieces: Array = by_feature[fid]
+		if pieces.size() == 1:
+			out.append(pieces[0])
+			continue
+		pieces.sort_custom(func(a, b):
+			return float((a["_cum_lengths"] as PackedFloat64Array)[0]) \
+					< float((b["_cum_lengths"] as PackedFloat64Array)[0]))
+		var cl := PackedVector2Array()
+		var cum := PackedFloat64Array()
+		for p in pieces:
+			var pcl: PackedVector2Array = p["centerline"]
+			var pcum: PackedFloat64Array = p["_cum_lengths"]
+			for i in pcl.size():
+				# Skip a duplicated joint vertex where two pieces meet.
+				if cum.size() > 0 and absf(pcum[i] - cum[cum.size() - 1]) < 1e-6:
+					continue
+				cl.append(pcl[i])
+				cum.append(pcum[i])
+		var merged: Dictionary = (pieces[0] as Dictionary).duplicate()
+		merged["centerline"] = cl
+		merged["_cum_lengths"] = cum
+		out.append(merged)
+	return out
+
+
+## Every chasm span the roads fly over, computed once and memoised.
+##
+## Deterministic: a pure walk of the roads against the procedural crack field,
+## so the client and the server produce identical spans with no replication.
+## See RoadBridge for why this cannot be baked at export time.
+func get_bridge_spans() -> Array:
+	if _bridge_spans_built:
+		return _bridge_spans
+	_bridge_spans_mutex.lock()
+	if not _bridge_spans_built:
+		var spans := RoadBridge.find_all_spans(self, get_whole_roads())
+		_bridge_spans = spans
+		_bridge_spans_built = true
+		if not spans.is_empty():
+			var truncated := 0
+			for s in spans:
+				if s.get("truncated", false):
+					truncated += 1
+			print("[PlanetData] %d road/chasm crossing(s) found on '%s'"
+					% [spans.size(), planet_name]
+					+ (" — %d too oblique for a bridge" % truncated if truncated else ""))
+	_bridge_spans_mutex.unlock()
+	return _bridge_spans
+
+
+func clear_bridge_spans() -> void:
+	_bridge_spans_mutex.lock()
+	_bridge_spans.clear()
+	_bridge_spans_built = false
+	_bridge_spans_mutex.unlock()
 
 
 ## Road records for the HEALPix chunk (hp_nside, hp_ipix), resolving the pyramid

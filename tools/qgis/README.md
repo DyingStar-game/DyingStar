@@ -202,6 +202,50 @@ Tests: [`test/unit/test_modifier_pack.gd`](../../test/unit/test_modifier_pack.gd
 The two encoders are pinned to each other by a shared SHA-256 of one canonical
 tile, so neither can drift silently.
 
+### Bridges over the procedural chasms
+
+On a corundum planet the "canyons" are **not** data: they are the crack network
+generated at runtime by `ArideDesertCorundumPlateauTerrain.crack_offset()` — on
+tarsis_4, gorges 250 m wide and 180 m deep every 4 km. Nothing to intersect at
+QGIS time, so bridge sites cannot be baked into the pack.
+
+The road ribbon samples the RAW heightmap and never applies the crack offset, so
+it already flies over every gorge at rim altitude. The server collision *does*
+carve them. That mismatch is the bug: you drive along a ribbon suspended over
+nothing and fall through it. Measured on tarsis_4, **8 to 14 % of every road is
+over a 180 m void — 35 crossings across the 5 roads**, spans from 188 m to 731 m
+(the widest ones are oblique crossings of the same 250 m gorge).
+
+Because `crack_offset()` is a pure function of a direction plus the `PlanetData`
+parameters, the crossings are found by walking the roads and evaluating the
+field ([`RoadBridge`](../../scenes/planet/road/road_bridge.gd)) — and the client
+and the server, walking the same roads, find bit-identical spans with nothing
+replicated between them. A coarse walk at a quarter of the gorge width cannot
+miss one, and each rim is then bisected to 1 m; a naive fixed 5 m walk cost 1.8 s
+of frozen main thread, this costs ~190 ms and is done once at planet init.
+
+A span can be longer than a chunk, so each is assigned to the single chunk
+containing its **midpoint**, which builds the whole structure — the same
+ownership trick that stops the road ribbon being drawn twice.
+
+Bridge scenes declare their own geometry, rather than relying on a pivot
+convention:
+
+| metadata | meaning |
+|---|---|
+| `deck_height` | height of the driving surface above the scene origin, in metres |
+| `span_length` | length of one bay along +X |
+| `road_width` | usable deck width (optional) |
+| `repeatable` | true when the bay may be tiled to cover any span |
+
+Declared values are checked at load time; a mis-authored pivot is only visible
+in game. `wind_valley.tscn` is the reason: its origin sits at the base of its
+piers, about 97 m below the deck. It stays a hand-placed landmark — a repeated
+landmark is no longer a landmark — while
+[`bridge_module.tscn`](../../scenes/_universe/structures/industrial/bridge_module.tscn)
+is the placeholder module the spawner tiles. Replace its primitives with the
+finished art and keep the metadata block.
+
 ### Why buffered polygons (legacy GeoJSON)
 
 Godot loads that file through `BiomeQuery`, whose parser **only accepts `Polygon`

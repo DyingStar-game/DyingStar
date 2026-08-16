@@ -27,6 +27,11 @@ var props_list: Dictionary = {
 }
 # We need it when a channel arrives before another in the case of this channel not have the scenename property
 var props_pre_creations: Dictionary = {}
+# DIAGNOSTIC (temporary): object_id -> true, so "update for an object we never built" is reported ONCE
+# per object instead of tens of thousands of times. An object can go missing through two paths that
+# used to be completely silent — a node freed with its parent, and a create still waiting on the
+# channel that carries scenename/parent_id — which is why the log gave no clue which one it was.
+var _missing_object_reported: Dictionary = {}
 
 var my_player_uuid: String = ""
 # UUIDs of all my player's ancestors (closest parent first, up to the universe
@@ -687,6 +692,14 @@ func create_player(event: Dictionary) -> void:
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
+## Is this object already waiting on a missing parent? Guards the queue against duplicates now that
+## repeated updates for an unbuilt object also reach the create path.
+func _is_pending_generic_object(object_id: String) -> bool:
+	for m in pending_messages_generic_objects_parenting:
+		if str(m.get("object_id", "")) == object_id:
+			return true
+	return false
+
 func create_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
 	var object_id = event["object_id"]
@@ -750,9 +763,12 @@ func create_generic_object(event: Dictionary) -> void:
 			if object_data["parent_id"] != "":
 				parent = _search_parent_node(object_data["parent_id"])
 				if parent == null:
-					# parent object not created yet -> wait for it
-					pending_messages_generic_objects_parenting.append(event)
-					print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
+					# parent object not created yet -> wait for it. Queued ONCE: this path is now also
+					# reached from update_generic_object, which fires many times a second, and stacking
+					# a duplicate per update would grow the queue without bound.
+					if not _is_pending_generic_object(object_id):
+						pending_messages_generic_objects_parenting.append(event)
+						print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
 					return
 
 			var prop_scene: PackedScene
@@ -826,6 +842,10 @@ func create_generic_object(event: Dictionary) -> void:
 			# Missing scenename or parent_id: buffer THIS channel's data and wait for the
 			# other channel (the merge above will then have everything to instantiate).
 			if not props_pre_creations.has(object_id):
+				# DIAGNOSTIC: silent until now — an object stuck here never appears in the world and
+				# never logs anything of its own.
+				print("[diag] buffering %s (%s): missing %s" % [object_id, object_type,
+						"scenename" if not merged.has("scenename") else "parent_id"])
 				props_pre_creations[object_id] = {
 					"type": object_type,
 					"channels": {}
@@ -878,6 +898,10 @@ func update_generic_object(event: Dictionary) -> void:
 			# the child's is not. A late update for the child then lands on a freed instance. Drop the
 			# stale entry and bail (a later create re-instantiates it fresh if it comes back).
 			if not is_instance_valid(prop_instance):
+				# DIAGNOSTIC: this erase was silent, and it is the point of no return — nothing ever
+				# re-creates the object afterwards, so every later update just prints "not found".
+				print("[diag] prop %s (%s) was FREED (parent deleted?) — dropping its entry" \
+						% [object_id, object_type])
 				props_list[object_type].erase(object_id)
 				return
 			# Address networking via the PropSync component when present; fall back to the root
@@ -900,7 +924,27 @@ func update_generic_object(event: Dictionary) -> void:
 			#print("client_channel_data_update (5) for existing object %s" % object_id)
 			net.client_channel_data_update(object_data)
 		else:
-			print("Update generic object but not found: %s" % object_id)
+			# DIAGNOSTIC: once per object (this used to fire tens of thousands of times), and now says
+			# WHY — still buffered waiting for a channel, still queued on a missing parent, or neither
+			# (i.e. it was created and then lost).
+			if not _missing_object_reported.has(object_id):
+				_missing_object_reported[object_id] = true
+				var state := "unknown (created then lost?)"
+				if props_pre_creations.has(object_id):
+					state = "buffered in props_pre_creations, channels=%s" \
+							% str(props_pre_creations[object_id]["channels"].keys())
+				else:
+					for m in pending_messages_generic_objects_parenting:
+						if m.get("object_id", "") == object_id:
+							state = "queued on missing parent %s" % m["object_data"].get("parent_id", "?")
+							break
+				print("[diag] Update for unbuilt object %s (%s) — %s" % [object_id, object_type, state])
+			# An update carries genuine replicated data — for a vehicle that includes `scenename`
+			# (see addons/dyingstar/network_defs.json). Dropping it is a POINT OF NO RETURN: a client
+			# rebuild wipes props_pre_creations while Horizon, which already sent the gorc_zone_enter,
+			# never replays it, so the object can only ever be described by updates from then on. Feed
+			# it back through the create path, which either completes the object or re-buffers it.
+			create_generic_object(event)
 	else:
 		print("Update generic object but type not found: %s" % object_type)
 

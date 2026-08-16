@@ -26,12 +26,13 @@ static func apply_ride_freeze_mode(body: Node3D) -> void:
 	if GameOrchestrator.is_server():
 		return  # the server sets KINEMATIC itself on lock; this is the client replica's parenting
 	body.freeze_mode = (
-		RigidBody3D.FREEZE_MODE_KINEMATIC if _rides_parent(body)
+		RigidBody3D.FREEZE_MODE_KINEMATIC if rides_parent(body)
 		else RigidBody3D.FREEZE_MODE_STATIC)
 
 ## Is this prop carried by / loaded onto a parent that moves under it? Both cases pin a CONSTANT local
-## pose, so they share the freeze mode and the render-rate pinning below.
-static func _rides_parent(body: Node3D) -> bool:
+## pose, so they share the freeze mode, the render-rate pinning below, and the exemption from the
+## server-side "settled props stop ticking" gate (PropSync).
+static func rides_parent(body: Node3D) -> bool:
 	var parent: Node = body.get_parent()
 	return parent is Vehicle or parent is Player
 
@@ -57,7 +58,7 @@ static func ride_pin(body: Node3D, state = null) -> void:
 		return
 	if state == null:
 		state = body
-	if _rides_parent(body):
+	if rides_parent(body):
 		body.position = state._ride_local_pos
 		body.rotation = state._ride_local_rot
 
@@ -70,9 +71,19 @@ static func server_tick(body: Node, state = null) -> void:
 		return
 	if state == null:
 		state = body
+	var parent: Node = body.get_parent()
+	# Resting in the world: a FROZEN (culled) or SLEEPING body cannot move, so the change-throttle at
+	# the bottom would suppress its update anyway — bail out BEFORE reading the pose. `body.rotation`
+	# decomposes the basis into Euler angles and the physics server re-dirties that cache every frame,
+	# so with ~1000 rocks settled on a planet this read alone dominated the server tick (4 TPS).
+	# Anything that changes a resting body's parent (carry, drop, bed-settle) moves or wakes it first,
+	# so no update can be missed. Carried / bed-loaded props are exempt: they deliberately re-send
+	# every frame — even perfectly still — to keep their Horizon GORC entry fresh (see below).
+	var rides: bool = parent is Player or parent is Vehicle  # same test as rides_parent, on the Node we hold
+	if body is RigidBody3D and (body.freeze or body.sleeping) and not rides:
+		return
 	var pos: Vector3 = snapped(body.position, Vector3(0.005, 0.005, 0.005))  # 5 mm precision is enough
 	var rot: Vector3 = snapped(body.rotation, Vector3(0.01, 0.01, 0.01)) # precision at 0.57 degrees
-	var parent: Node = body.get_parent()
 	# verify the state object tracks the parent_id (component PropSync always does; a legacy root may not)
 	var tracks_parent: bool = "server_last_parent_id" in state
 	if parent is Player:
@@ -103,13 +114,6 @@ static func server_tick(body: Node, state = null) -> void:
 				state.type_name,
 				true)
 			state.server_last_parent_id = str(parent.uuid)
-		return
-	# Resting in the world. A culled/settled body is frozen and hasn't moved — the throttle below would
-	# suppress it anyway, so skip the per-frame work entirely (the PropSync component keeps ticking even
-	# when the root's own _physics_process was disabled by culling — see server.gd _freeze_culled_body).
-	# A SLEEPING body gets the same skip: it cannot move while asleep, and anything that changes its
-	# parent (carry, drop, bed-settle) moves or wakes it first, so no update can be missed.
-	if body is RigidBody3D and (body.freeze or body.sleeping):
 		return
 	# Detect a parent change (dropped to the world, settled into a bed) and resend the parent_id for a
 	# few frames: a single lost drop/settle message must not leave the prop stuck under its old parent on

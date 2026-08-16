@@ -414,6 +414,7 @@ func _freeze_culled_body(rb: RigidBody3D) -> void:
 	# OCS: drop the body out of Jolt's broadphase entirely. freeze=true alone keeps it registered
 	# (residual per-step cost), so we also disable its own collision shapes and stop its script tick.
 	rb.set_physics_process(false)
+	_set_prop_sync_ticking(rb, false)
 	_set_body_shapes_disabled(rb, true)
 	rb.set_meta("_culled_frozen", true)
 	rb.remove_meta("_settle_ticks")
@@ -426,13 +427,28 @@ func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 			rb.global_transform)
 	_set_body_shapes_disabled(rb, false)
 	rb.set_physics_process(true)
+	_set_prop_sync_ticking(rb, true)
 	rb.freeze = false
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
 	rb.remove_meta("_culled_frozen")
 	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
-	if "server_last_position" in rb:
-		rb.server_last_position = Vector3.INF
+	# The replication state lives on the PropSync component when the prop has one, on the root for a
+	# not-yet-migrated legacy prop — reading it off the root only would silently skip every PropSync
+	# prop (i.e. all the rocks).
+	var state: Object = PropSync.of(rb)
+	if state == null:
+		state = rb
+	if "server_last_position" in state:
+		state.server_last_position = Vector3.INF
+
+## The PropSync component is a CHILD node, so it keeps ticking when we disable the host body's own
+## _physics_process — and PropNet.server_tick then runs per frame for a body that cannot move. Every
+## place that stops a body's script tick must silence its component too.
+func _set_prop_sync_ticking(node: Node, on: bool) -> void:
+	var sync := PropSync.of(node)
+	if sync != null:
+		sync.set_physics_process(on)
 
 ## Enable/disable the body's OWN collision shapes (direct CollisionShape3D/Polygon children) so it
 ## leaves/re-enters Jolt's broadphase. Child Area3D shapes (interaction zones) are left untouched.
@@ -1103,6 +1119,7 @@ func create_generic_object(event: Dictionary) -> void:
 			or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
 		#  we are out of zone, keep it frozen
 		spawnable_prop_instance.set_physics_process(false)
+		_set_prop_sync_ticking(spawnable_prop_instance, false)
 		if is_instance_of(spawnable_prop_instance, RigidBody3D):
 			spawnable_prop_instance.freeze = true
 	else:
@@ -1234,6 +1251,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 		if props_list[proptype].has(object["object_uuid"]):
 			var prop = props_list[proptype][object["object_uuid"]]
 			prop.set_physics_process(false)
+			_set_prop_sync_ticking(prop, false)
 			if is_instance_of(prop, RigidBody3D):
 				prop.freeze = true
 			found = true

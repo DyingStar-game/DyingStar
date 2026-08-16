@@ -379,6 +379,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# generation tasks see them as purely read-only (no lazy-init side-effects).
 	planet_data.ensure_queries_loaded()
 
+	# Find the road/chasm crossings now rather than on the first chunk that
+	# needs a bridge: the walk costs ~200 ms on tarsis_4 and would otherwise
+	# land as a visible stall in the middle of flight. Memoised afterwards.
+	planet_data.get_bridge_spans()
+
 	_initialized = true
 
 	# Server: zone-driven collision residency.  No chunks are loaded at boot;
@@ -2635,6 +2640,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 						_chunks_node.add_child(volc_node)
 						info["volcanic"] = volc_node
 
+	_spawn_bridges(info)
+
 	# Save terrain mesh to disk cache for future restarts — but ONLY if the
 	# chunk's export elevation tile is actually available. If the .r32 tile was
 	# missing/unreadable when the mesh was built, generate_mesh sampled the flat
@@ -2739,16 +2746,55 @@ func _create_chunk(info: Dictionary) -> void:
 						_chunks_node.add_child(volc_node)
 						info["volcanic"] = volc_node
 
+	# The server needs bridges too: the deck carries the ONLY collision over a
+	# chasm. Without it a vehicle drives along the road ribbon — which flies over
+	# the gorge at rim altitude — and falls straight through.
+	_spawn_bridges(info)
+
 	_active_chunks[key] = info
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 	print("[PlanetTerrain] _create_chunk (server) '%s' lod=%d res=%d took %.1f ms (total_active=%d)" % [
 		key, lod, res, _elapsed_ms, _active_chunks.size()])
 
 
+## Spawn a bridge for every road/chasm crossing this chunk owns.
+##
+## Ownership is by span MIDPOINT: a deck can be several hundred metres long and
+## straddle several chunks, so exactly one chunk builds the whole structure.
+## Quadtree leaves are disjoint and cover the sphere, so every span has one
+## owner and no bridge is ever built twice — the same reasoning that keeps the
+## road ribbon itself from being drawn by two chunks.
+func _spawn_bridges(info: Dictionary) -> void:
+	if planet_data == null or int(info.get("lod", 99)) > BridgeSpawner.MAX_LOD:
+		return
+	var nside: int = int(info.get("nside", 0))
+	var ipix: int = int(info.get("ipix", -1))
+	if nside <= 0 or ipix < 0:
+		return
+	var spans := planet_data.get_bridge_spans()
+	if spans.is_empty():
+		return
+	var mine := RoadBridge.spans_owned_by(spans, nside, ipix)
+	if mine.is_empty():
+		return
+	var nodes: Array[Node3D] = []
+	for s in mine:
+		var b := BridgeSpawner.spawn(planet_data, s)
+		if b:
+			_chunks_node.add_child(b)
+			nodes.append(b)
+	if not nodes.is_empty():
+		info["bridges"] = nodes
+
+
 func _remove_chunk(key: String) -> void:
 	if not _active_chunks.has(key):
 		return
 	var info: Dictionary = _active_chunks[key]
+	if info.has("bridges"):
+		for b in info["bridges"]:
+			if b:
+				(b as Node3D).queue_free()
 	if info.has("mesh_instance") and info.mesh_instance:
 		info.mesh_instance.queue_free()
 	if info.has("vegetation") and info.vegetation:

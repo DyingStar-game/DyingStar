@@ -5,9 +5,9 @@ func _ready() -> void:
 
 func _set_gameserver_server_fps(fps):
 	if fps >= 30:
-		text = "[color=green]" + str(int(fps)) + "[/color] FPS"
+		text = "[color=green]" + str(int(fps)) + "[/color] TPS"
 	else:
-		text = "[color=red]" + str(int(fps)) + "[/color] FPS"
+		text = "[color=red]" + str(int(fps)) + "[/color] TPS"
 
 func _disconnect():
 	pass

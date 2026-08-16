@@ -46,6 +46,11 @@ var server_reparenting: bool = false  # briefly leaving the tree to reparent (ca
 var _ride_local_pos: Vector3 = Vector3.ZERO
 var _ride_local_rot: Vector3 = Vector3.ZERO
 
+# The host body, resolved once. get_parent() runs per prop per physics frame, which with ~1000 props
+# resting on a planet is measurable on its own. Cleared on _enter_tree (the body may have been
+# reparented), never held across frees.
+var _body_cache: Node3D = null
+
 ## Resolve the PropSync child of a prop root, or null when the prop hasn't been migrated yet — callers
 ## fall back to addressing the root directly, so the migration can proceed one prop at a time.
 static func of(root: Node) -> PropSync:
@@ -53,13 +58,19 @@ static func of(root: Node) -> PropSync:
 
 ## The host body this component drives (its parent in the scene tree).
 func _body() -> Node3D:
-	return get_parent() as Node3D
+	if _body_cache == null:
+		_body_cache = get_parent() as Node3D
+	return _body_cache
 
 func _enter_tree() -> void:
 	if Engine.is_editor_hint():
 		return
+	_body_cache = null  # a reparent (carry / drop / bed-settle) took us out and back in
 	if GameOrchestrator.is_server():
 		server_reparenting = false
+		# Re-arm the tick: the body just changed parent, so it may now be carried or bed-loaded and
+		# must replicate every frame again even if the sleep gate below had silenced it.
+		set_physics_process(true)
 
 func _ready() -> void:
 	if Engine.is_editor_hint():
@@ -82,8 +93,25 @@ func _ready() -> void:
 	if enable_carry:
 		# So the carry pickup can resolve this prop by uuid (the client sends what it aims at).
 		body.add_to_group("carriable")
+	# Server: stop ticking while the host sleeps (see _on_host_sleeping_state_changed).
+	if GameOrchestrator.is_server() and body is RigidBody3D:
+		body.sleeping_state_changed.connect(_on_host_sleeping_state_changed)
 	# Created already under a vehicle (cargo loaded before we arrived): ride it (KINEMATIC).
 	PropNet.apply_ride_freeze_mode(body)
+
+## Server: a settled prop is dead weight — Jolt will not move it, so PropNet.server_tick can only
+## recompute a pose and throw it away. Early-returning inside the callback is not enough at this
+## scale: with ~1000 rocks resting on a planet, the per-prop GDScript call overhead alone sank the
+## server to a few TPS. Stop the callback entirely instead, and re-arm it the moment the body wakes.
+##
+## Carried (Player) / bed-loaded (Vehicle) props are NEVER gated: they re-send their pose every frame
+## precisely because their LOCAL pose is constant, to keep Horizon's GORC entry from going stale.
+func _on_host_sleeping_state_changed() -> void:
+	var body := _body()
+	if not (body is RigidBody3D):
+		return  # only ever connected on a RigidBody3D host, but the cache may have gone stale
+	var rb: RigidBody3D = body
+	set_physics_process(not rb.sleeping or PropNet.rides_parent(rb))
 
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():
