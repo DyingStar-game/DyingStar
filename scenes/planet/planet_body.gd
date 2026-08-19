@@ -48,6 +48,13 @@ extends Node3D
 
 ## Set by the server before the node enters the tree.
 var spawn_position: Vector3 = Vector3.ZERO
+## SERVER REBASE: the planet's TRUE universe position, kept as DATA only. On the server each planet
+## sits at the ORIGIN of its own physics world (SubViewport.own_world_3d, see server.gd
+## create_planet) so Jolt's float32 broadphase keeps metre-scale AABBs — at 3.3e10 m they quantise
+## to ±2 km and every query near a dense surface costs ~30x (measured, CoordProbe/SpaceProbe).
+## Conversions between frames go through server.gd _true_position/_owning_planet. Stays ZERO on
+## clients: their scene keeps the astronomic layout, replication is parent-local on both sides.
+var orbital_position: Vector3 = Vector3.ZERO
 
 ## Time since the last spin refresh.
 var _spin_accum: float = 0.0

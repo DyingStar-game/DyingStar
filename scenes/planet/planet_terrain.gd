@@ -534,6 +534,8 @@ func _load_chunk(key: String) -> void:
 func _unload_chunk(key: String) -> void:
 	if _server_collision_chunks.has(key):
 		var body: Node = _server_collision_chunks[key]
+		if PropNet.PROF:
+			PropNet.prof_chunk_unloads += 1  # TEMPORARY (étape 0d): measure the churn under the player
 		body.queue_free()
 		_server_collision_chunks.erase(key)
 	if _server_feature_nodes.has(key):
@@ -790,6 +792,8 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 	var body := _make_chunk_collision_body(key, nside, ipix, shape)
 	add_child(body)
 	_server_collision_chunks[key] = body
+	if PropNet.PROF:
+		PropNet.prof_chunk_loads += 1  # TEMPORARY (étape 0d): measure the churn under the player
 	var faces: PackedVector3Array = shape.get_faces()
 	if faces.size() > 0:
 		var col_origin := _chunk_collision_origin(nside, ipix)
@@ -965,6 +969,11 @@ func _physics_process(delta: float) -> void:
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
+		if PropNet.PROF:
+			var _t0: int = Time.get_ticks_usec()
+			_server_poll_chunk_tasks()
+			PropNet.prof_terrain_usec += Time.get_ticks_usec() - _t0
+			return
 		_server_poll_chunk_tasks()
 		return
 

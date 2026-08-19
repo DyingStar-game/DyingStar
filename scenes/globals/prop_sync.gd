@@ -118,6 +118,14 @@ func _physics_process(_delta: float) -> void:
 		return
 	if uuid == "":
 		return  # not networked yet (e.g. an in-scene placeholder before/without dispatch) — don't replicate
+	if PropNet.PROF:
+		# Measured HERE, not inside server_tick: this is the inclusive per-call cost (body + emit +
+		# server.gd's handler), which is exactly what the engine profiler claimed was 5.9 ms.
+		var _t0: int = Time.get_ticks_usec()
+		PropNet.server_tick(_body(), self)
+		PropNet.prof_tick_usec += Time.get_ticks_usec() - _t0
+		PropNet.prof_calls += 1
+		return
 	PropNet.server_tick(_body(), self)
 
 func _process(_delta: float) -> void:

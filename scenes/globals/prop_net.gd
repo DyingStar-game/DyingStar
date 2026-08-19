@@ -15,6 +15,71 @@ extends RefCounted
 ## `has_parent`, `server_last_position`, `server_last_rotation`, and the `hs_server_prop_update` signal;
 ## and for the client ride helpers also `_ride_local_pos` / `_ride_local_rot`.
 
+# ── TEMPORARY profiling (TPS drops, étape 0) ──────────────────────────────────────────────────────
+# The engine profiler cannot be trusted on this path: it reported 5.9 ms for a SINGLE server_tick call,
+# which this code cannot cost. That number is inclusive time (the emit reaches server.gd _on_prop_update)
+# plus the profiler's own per-call instrumentation, which dwarfs a function this small called ~170x per
+# frame. These counters measure the three layers separately, with two Time calls per tick instead of a
+# full instrumentation frame. Server-side only; server.gd _perf_tick prints and resets them.
+# Remove (or flip PROF) once the drop is diagnosed.
+const PROF: bool = true
+static var prof_calls: int = 0        # server_tick invocations
+static var prof_tick_usec: int = 0    # INCLUSIVE: body + emit dispatch + _on_prop_update
+static var prof_emits: int = 0        # invocations that actually replicated
+static var prof_handler_usec: int = 0 # time inside _on_prop_update only (the dictionary building)
+static var prof_flush_usec: int = 0   # time inside send_props_update_to_horizon (JSON + websocket)
+static var prof_flushes: int = 0
+static var prof_flush_entries: int = 0
+# Physics-tick breakdown (étape 0b): TIME_PHYSICS_PROCESS measured 24 ms with active3d=0, so the cost
+# is either in our _physics_process callbacks or in Jolt. These buckets cover every server-side
+# callback that runs in the physics tick; whatever TIME_PHYSICS_PROCESS has left over is Jolt.
+static var prof_player_usec: int = 0  # player_server _physics_process (move_and_slide, raycasts)
+static var prof_player_calls: int = 0
+static var prof_terrain_usec: int = 0 # planet_terrain _physics_process (x18 planets)
+static var prof_srv_usec: int = 0     # server.gd _physics_process (the network flushes)
+# Breakdown of the player tick (étape 0c): walking took it from 0.25 ms to 4.7 ms for ONE player.
+# The paths that only run while moving forward are the prime suspects (vault / step-up probes).
+static var prof_p_pre_usec: int = 0   # spawn queue, stance, carried item, carry prompt, dialog
+static var prof_p_vault_usec: int = 0 # _try_start_vault -> VaultProbe.probe (up to 3 raycasts)
+static var prof_p_step_usec: int = 0  # _try_start_step_up
+static var prof_p_move_usec: int = 0  # move_and_slide
+static var prof_p_emit_usec: int = 0  # the hs_server_move replication at the end
+# Wall-clock span from the FIRST to the LAST _physics_process callback in the tick, measured by two
+# PerfBracket nodes at extreme process_physics_priority. TIME_PHYSICS_PROCESS minus this span is the
+# engine's own work (Jolt step + sync), with no script callback left hiding inside it.
+static var prof_span_t0: int = 0
+static var prof_span_usec: int = 0
+# Étape 0d: 97% of the walking cost is collision queries (engine + move_and_slide). These counters
+# discriminate between the two candidate causes — a move_and_slide that keeps re-iterating against an
+# unstable contact, versus terrain collision chunks being built/freed under the walking player.
+static var prof_slide_count: int = 0  # summed get_slide_collision_count() over the window
+static var prof_slide_ticks: int = 0  # move_and_slide calls, to average the above
+static var prof_chunk_loads: int = 0
+static var prof_chunk_unloads: int = 0
+
+static func prof_reset() -> void:
+	prof_calls = 0
+	prof_tick_usec = 0
+	prof_emits = 0
+	prof_handler_usec = 0
+	prof_flush_usec = 0
+	prof_flushes = 0
+	prof_flush_entries = 0
+	prof_player_usec = 0
+	prof_player_calls = 0
+	prof_terrain_usec = 0
+	prof_srv_usec = 0
+	prof_p_pre_usec = 0
+	prof_p_vault_usec = 0
+	prof_p_step_usec = 0
+	prof_p_move_usec = 0
+	prof_p_emit_usec = 0
+	prof_span_usec = 0
+	prof_slide_count = 0
+	prof_slide_ticks = 0
+	prof_chunk_loads = 0
+	prof_chunk_unloads = 0
+
 ## Client: match the freeze mode to the prop's parent. A prop RIDING a moving parent — a crate in a
 ## truck bed, a crate mounted on a hauling player — must be KINEMATIC so the frozen body follows that
 ## parent through the scene tree (a STATIC frozen body instead gets its world transform rewritten

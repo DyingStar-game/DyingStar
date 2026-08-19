@@ -744,6 +744,16 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
+	if not PropNet.PROF:
+		_physics_process_impl(delta)
+		return
+	var _t0: int = Time.get_ticks_usec()
+	_physics_process_impl(delta)
+	PropNet.prof_player_usec += Time.get_ticks_usec() - _t0
+	PropNet.prof_player_calls += 1
+
+func _physics_process_impl(delta: float) -> void:
+	var _tp: int = Time.get_ticks_usec() if PropNet.PROF else 0
 	_flush_spawn_queue()  # the wheel's spawns wait for the physics step: they need a ground raycast
 	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
@@ -751,6 +761,8 @@ func _physics_process(delta: float) -> void:
 		# The E-prompt only exists for a human owner's HUD; for an NPC it would still cost a forced
 		# raycast every 0.1 s per NPC (measured hot with many NPCs), replicated to nobody.
 		_server_update_carry_prompt(delta)
+	if PropNet.PROF:
+		PropNet.prof_p_pre_usec += Time.get_ticks_usec() - _tp
 	if _vault_cooldown > 0.0:
 		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
 	if _vaulting:
@@ -794,7 +806,7 @@ func _physics_process(delta: float) -> void:
 			player.client_uuid,
 			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
 			snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			null,
+			_net_parent_uuid(),
 			player.is_parented)
 		return
 
@@ -831,7 +843,11 @@ func _physics_process(delta: float) -> void:
 
 	# Auto-vault: standing still-on-floor and walking forward into a low obstacle / ledge -> climb onto it.
 	# Server-authoritative; runs before the jump/gravity/move so the normal step never fights the slide.
-	if player.is_on_floor() and _try_start_vault():
+	var _tv: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _vault_started: bool = player.is_on_floor() and _try_start_vault()
+	if PropNet.PROF:
+		PropNet.prof_p_vault_usec += Time.get_ticks_usec() - _tv
+	if _vault_started:
 		_server_update_vault(delta)
 		return
 
@@ -887,11 +903,23 @@ func _physics_process(delta: float) -> void:
 	# LOW obstacle right ahead (below the vault threshold): glide the body onto it (Godot's CharacterBody3D
 	# won't step up on its own). Taller obstacles are the vault's job. Started here, then driven by
 	# _server_update_step for a smooth, speed-independent climb.
-	if player.is_on_floor() and player.input_direction != Vector2.ZERO and _try_start_step_up(move_direction):
+	var _ts: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _step_started: bool = player.is_on_floor() and player.input_direction != Vector2.ZERO \
+			and _try_start_step_up(move_direction)
+	if PropNet.PROF:
+		PropNet.prof_p_step_usec += Time.get_ticks_usec() - _ts
+	if _step_started:
 		_server_update_step(delta)
 		return
 
+	var _tm: int = Time.get_ticks_usec() if PropNet.PROF else 0
 	player.move_and_slide()
+	if PropNet.PROF:
+		PropNet.prof_p_move_usec += Time.get_ticks_usec() - _tm
+		# A settled contact resolves in one iteration; an unstable one makes move_and_slide re-cast up
+		# to max_slides times, which is the shape this cost has (0.18 ms -> 3.30 ms when walking).
+		PropNet.prof_slide_count += player.get_slide_collision_count()
+		PropNet.prof_slide_ticks += 1
 
 	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
 	# clients end the jump loop crisply (it can't overstay). The counter defeats delta compression.
@@ -909,14 +937,17 @@ func _physics_process(delta: float) -> void:
 	player.update_last_basis()
 	player.new_input_from_server = false
 
+	var _te: int = Time.get_ticks_usec() if PropNet.PROF else 0
 	player.emit_signal(
 		"hs_server_move",
 		player.client_uuid,
 		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
 		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
+		_net_parent_uuid(),
 		player.is_parented
 	)
+	if PropNet.PROF:
+		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
 
 ## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
 ## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
@@ -1029,6 +1060,25 @@ func _server_update_step(delta: float) -> void:
 	if s >= 1.0:
 		_stepping = false
 
+## Network parent to attach to every replicated move while the origin rebase has this player
+## parented DIRECTLY to a Planet (server.gd create_player routes unparented spawns there; every
+## Horizon-driven parent — apartment, vehicle seat, teleport target — is a non-Planet node).
+##
+## Sent on EVERY move, exactly like PropNet re-sends position+parent_id for carried props: the
+## client's player_update applies parent_id + the parent-LOCAL position ATOMICALLY (reparent +
+## net_set_local_target in the same payload), and repeating it makes Horizon's record converge
+## even if one message is lost mid-registration. The two broken alternatives are documented
+## history: sending the parent_id ONCE at spawn lost the race with Horizon's registration (GORC
+## then read planet-local coords as universe → empty world), and sending ABSOLUTE positions with
+## parent "" collided with the GORC zone-enter that reparents the client under the planet (the
+## absolute vector was applied planet-LOCAL → player 3.3e10 m into deep space; measured both,
+## 2026-08-19).
+func _net_parent_uuid():
+	var parent: Node = player.get_parent()
+	if parent is Planet:
+		return str((parent as Planet).uuid)
+	return null
+
 ## Replicate the body's current pose to clients (server-authoritative move). Shared by the scripted glides
 ## (vault, step-up) so they emit exactly like the normal tick.
 func _emit_move() -> void:
@@ -1038,7 +1088,7 @@ func _emit_move() -> void:
 		player.client_uuid,
 		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
 		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
+		_net_parent_uuid(),
 		player.is_parented)
 
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
@@ -1582,7 +1632,7 @@ func _npc_emit_move() -> void:
 		player.client_uuid,
 		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
 		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
+		_net_parent_uuid(),
 		player.is_parented,
 	)
 
