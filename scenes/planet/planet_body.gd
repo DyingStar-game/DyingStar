@@ -187,23 +187,26 @@ func _physics_process(delta: float) -> void:
 	# itself is a pure function of absolute time, so all clients land on the SAME orientation: a space
 	# observer sees the planet turning and a surface body co-rotates with the ground. Day/night is
 	# client-side (PlayerSunLight, player world pos vs the fixed star). Orbital position is separate.
-	# ⚠️ EXPERIMENT (2026-08-14) — the server now follows the ORBIT, and still never the SPIN.
-	# The guard was written for the spin: turning a planet-sized collision frame is what broke ground
-	# contact for every simulated body. A TRANSLATION is a different motion, and whether it does the
-	# same damage is an open question, so the two are separated here to make the answer measurable.
-	# What is expected to hurt, in order: (1) `Server._check_out_of_zone` compares a WORLD position to
-	# Horizon's zone bounds, and every player's world position now travels at orbital speed — players
-	# may be declared out of zone and freed; (2) the terrain teleports while a player's KINEMATIC body
-	# only records its target and sweeps to it next step, which is ~10 km of mismatch for one step out
-	# of twenty at 3 Hz. Restore the plain `if OS.has_feature("dedicated_server"): return` to undo.
-	if Engine.is_editor_hint():
+	# The server moves NOTHING celestial — neither the spin nor the orbit — and the two are forbidden
+	# for DIFFERENT reasons, which is why they were separated and measured rather than assumed.
+	#
+	# The SPIN: turning a planet-sized collision frame teleports it in Jolt every refresh and breaks
+	# CharacterBody contact for every body on the surface (the "everyone bobs" dance).
+	#
+	# The ORBIT was tried, and it cost nothing: a player is a CHILD of the planet, so the scene graph
+	# moves them together, in the same frame, by the same vector — their relative geometry never
+	# changes, and ground contact depends on nothing else. Measured with SandBox at 94.61 million km
+	# travelling 33.1 km/s: no effect in game. **Moving a frame is safe; turning one is not.**
+	#
+	# It stays off anyway, because the server's planets are about to stop living in a shared world at
+	# all. Each one is being moved to the ORIGIN of its own physics world so Jolt's float32 broadphase
+	# keeps metre-scale AABBs — at 3.3e10 m they quantise to ±2 km, which multiplies every query near a
+	# dense surface and collapses the tick rate. Placing a planet anywhere but its own origin hands
+	# that straight back, and this file merges CLEANLY into a server that does exactly that, with no
+	# conflict for anyone to notice. So the guard lives here rather than in a merge note.
+	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
 		return
-	var on_server: bool = OS.has_feature("dedicated_server")
-	# `_orbit != null` keeps the celestial motion running for a body that does not spin on itself.
-	if on_server:
-		if _orbit == null:
-			return  # the server has nothing to do for a body that only spins
-	elif rotation_period_hours <= 0.0 and _orbit == null:
+	if rotation_period_hours <= 0.0 and _orbit == null:
 		return
 	# Refresh at a few Hz rather than every tick: the planet carries the terrain colliders and every
 	# body standing on it, and each refresh makes Jolt re-insert all of them into the broadphase.
@@ -211,7 +214,7 @@ func _physics_process(delta: float) -> void:
 	if _spin_accum < 1.0 / maxf(rotation_update_hz, 0.001):
 		return
 	_spin_accum = 0.0
-	_place_at_time(Globals.sim_time(), not on_server)
+	_place_at_time(Globals.sim_time())
 	_carry_dynamic_bodies(self)
 
 ## Place this body's basis (axial spin) and position (orbit) for absolute simulation time `t`.
@@ -226,10 +229,9 @@ func _physics_process(delta: float) -> void:
 ## NOTE: the SPIN writes the LOCAL basis, so a moon parented to a planet would inherit its planet's
 ## spin — correct only for bodies parented directly to the universe root. Only planets orbit for now;
 ## revisit the frame when moons spin/orbit on their own.
-## [param apply_spin] false drives the ORBIT ALONE, leaving the basis untouched — what the dedicated
-## server does, so its collision frame never turns while it still travels to the right place. Harmless
-## for replication: rotations are exchanged in the planet-LOCAL frame, a frame-invariant quantity, so
-## a server whose basis is frozen and a client whose basis turns still agree on where a body faces.
+## [param apply_spin] false drives the ORBIT ALONE, leaving the basis untouched. No caller needs it
+## now that the server places nothing, but it stays: it is the knob that made the spin and the orbit
+## separable, and that distinction is the part worth keeping.
 func _place_at_time(t: float, apply_spin: bool = true) -> void:
 	if apply_spin and rotation_period_hours > 0.0:
 		# fmod BEFORE scaling to TAU: sim time over a ~25 h period is many revolutions, and folding it

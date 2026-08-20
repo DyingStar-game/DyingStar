@@ -997,7 +997,15 @@ static func _world_frame_above(frame: Node) -> Node:
 	var node: Node = frame
 	while node != null:
 		if node is Planet:
-			return node.get_parent()
+			# Step past any SubViewport above the planet. Inert today — a planet is a direct child of
+			# the universe root — but the server is moving each planet into its OWN physics world, held
+			# by a SubViewport, and then the planet's parent IS that viewport. Stepping a single level
+			# would reparent a body that has just LEFT a planet back INTO the world it was leaving,
+			# which is the one place it must not be.
+			var above: Node = node.get_parent()
+			while above is SubViewport:
+				above = above.get_parent()
+			return above
 		node = node.get_parent()
 	return null
 
