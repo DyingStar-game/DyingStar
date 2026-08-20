@@ -177,6 +177,10 @@ func change_game_state(new_state) -> int:
 			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.UNIVERSE_MENU])
 		GameStates.CONNEXION_ERROR:
 			current_state = new_state
+			# The loading splash is a CanvasLayer at layer 100 living on the root, and it is normally
+			# removed by the player once it spawns. On this path no player will ever spawn, so it would
+			# stay on top of the error dialog and the user would only ever see an eternal "loading".
+			_remove_loading_splash()
 			get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.CONNEXION_ERROR])
 		GameStates.PLAYING:
 			match current_state:
@@ -186,11 +190,15 @@ func change_game_state(new_state) -> int:
 				_:
 					if GameOrchestrator.GAME_STATES_SCENES_PATHS[GameOrchestrator.GameStates.PLAYING]:
 						current_state = new_state
+						# The splash is created once at startup, but a failed session frees it (see
+						# _remove_loading_splash). Rebuild it here so a second attempt is covered too.
 						var loading_node: Node = get_tree().root.get_node_or_null("Loading")
-						if loading_node:
-							var loading_screen: Node = loading_node.get_node_or_null("LoadingScreen")
-							if loading_screen:
-								loading_screen.visible = true
+						if loading_node == null:
+							loading_node = LOADING_SCENE.instantiate()
+							get_tree().root.add_child.call_deferred(loading_node)
+						var loading_screen: Node = loading_node.get_node_or_null("LoadingScreen")
+						if loading_screen:
+							loading_screen.visible = true
 						# create_client() blocks the main thread for a few seconds, so run it (and the
 						# scene change) only after the splash has actually painted one frame.
 						_start_playing_deferred()
@@ -207,6 +215,13 @@ func change_game_state(new_state) -> int:
 		_:
 			return_state = ChangeStateReturns.ERROR
 	return return_state
+
+## Drop the loading splash if it is still up. Safe to call when there is none.
+func _remove_loading_splash() -> void:
+	var loading_node: Node = get_tree().root.get_node_or_null("Loading")
+	if loading_node != null:
+		loading_node.queue_free()
+
 
 ## Wait for the loading splash to paint one frame, then run the blocking client creation and swap
 ## to the PLAYING scene. Kept separate so change_game_state() stays synchronous (returns its int).
