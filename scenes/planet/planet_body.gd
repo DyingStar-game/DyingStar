@@ -180,7 +180,16 @@ func _ready() -> void:
 	# Celestial motion (runtime only): build the orbit and place the body at its current orbital
 	# position immediately, so an orbiting planet never pops from the network spawn position to its
 	# computed one on the first physics tick (the local orbit owns `position`, as _apply_spin owns basis).
-	if not Engine.is_editor_hint():
+	#
+	# CLIENTS ONLY, and for the SAME reason _physics_process is clients only (see the note there): on
+	# the server each planet sits at the ORIGIN of its own physics world so Jolt's float32 broadphase
+	# keeps metre-scale AABBs. Placing it on its orbit here put it back out at astronomic range —
+	# 7.8e9 m for the innermost body, 9.5e10 m for SandBox, where the f32 ULP is 512 m and 4096 m
+	# respectively — so every AABB near the city is inflated by hundreds of metres and every query is
+	# handed hundreds of extra candidates. That is the whole 60 -> 6 TPS collapse, AT REST, out of one
+	# assignment at boot. The `_physics_process` guard cannot catch it: placing the planet ONCE is
+	# enough, and this ran before the first physics frame.
+	if not Engine.is_editor_hint() and not OS.has_feature("dedicated_server"):
 		_build_orbit()
 		if _orbit != null:
 			_place_at_time(Globals.sim_time())
