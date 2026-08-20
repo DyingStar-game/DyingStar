@@ -122,7 +122,11 @@ jobs:
         run: rm -fr assets_blender
 
       - name: Create build output directory
-        run: mkdir -p ${{ matrix.build_dir }}
+        run: |
+          # Self-hosted runners reuse the workspace: wipe stale exports so a
+          # previous embedded-PCK binary can never ship next to a fresh .pck.
+          rm -rf "${{ matrix.build_dir }}"
+          mkdir -p "${{ matrix.build_dir }}"
 
       - name: Export ${{ matrix.os_name }} client
         env:
