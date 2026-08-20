@@ -331,9 +331,14 @@ func server_action_received(data: Dictionary) -> void:
 			# EVA free-flight (dev test aid): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
 			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.
-			player.eva_mode = not player.eva_mode
-			player.velocity = Vector3.ZERO
-			player.server_send_properties_to_client({"eva": player.eva_mode})
+			#
+			# Checked HERE as well as on the client, and this is the check that counts: movement is
+			# server-authoritative, so a client that asked anyway — an old build, a modified one —
+			# would still fly. Switching a tool off has to happen where the tool actually runs.
+			if not Globals.is_dev_tool_disabled("toggle_eva"):
+				player.eva_mode = not player.eva_mode
+				player.velocity = Vector3.ZERO
+				player.server_send_properties_to_client({"eva": player.eva_mode})
 		"screen_state":
 			# A 3D screen (mining depot) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):

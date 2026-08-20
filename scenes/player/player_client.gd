@@ -89,11 +89,14 @@ func setup() -> void:
 	_walk_speed_target = player.walk_speed
 	player.walk_speed_target = _walk_speed_target
 
-	# Dev spawn wheel: hold the spawn key (T) to pick what to spawn.
-	player._spawn_wheel = RadialMenu.new()
-	player._spawn_wheel.title = "Spawn"
-	player.get_node("UserInterface").add_child(player._spawn_wheel)
-	player._spawn_wheel.option_selected.connect(_on_spawn_selected)
+	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Currently switched off (see
+	# Globals.DISABLED_DEV_TOOLS) — the wheel is simply never built, and everything downstream
+	# already handles a null wheel (_service_wheel, _any_wheel_open), so nothing else changes.
+	if not Globals.is_dev_tool_disabled(&"spawn_wheel"):
+		player._spawn_wheel = RadialMenu.new()
+		player._spawn_wheel.title = "Spawn"
+		player.get_node("UserInterface").add_child(player._spawn_wheel)
+		player._spawn_wheel.option_selected.connect(_on_spawn_selected)
 
 	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
 	player._emote_wheel = RadialMenu.new()
@@ -101,11 +104,13 @@ func setup() -> void:
 	player.get_node("UserInterface").add_child(player._emote_wheel)
 	player._emote_wheel.option_selected.connect(_on_emote_selected)
 
-	# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the
-	# targeted player-spawned prop (rock / box / depot) down to the database.
-	player.admin_cleanup_tool = AdminCleanupTool.new()
-	player.add_child(player.admin_cleanup_tool)
-	player.admin_cleanup_tool.setup(player.camera, player)
+	# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the targeted
+	# player-spawned prop (rock / box / depot) down to the database. Currently switched off (see
+	# Globals.DISABLED_DEV_TOOLS) — never built, and its only other caller already null-checks it.
+	if not Globals.is_dev_tool_disabled(&"zapette"):
+		player.admin_cleanup_tool = AdminCleanupTool.new()
+		player.add_child(player.admin_cleanup_tool)
+		player.admin_cleanup_tool.setup(player.camera, player)
 
 	# Hauling: the white disc on the aim ray showing where E will put the carried crate down. Hides
 	# itself whenever we carry nothing, so it costs a flag test the rest of the time.
@@ -561,7 +566,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
-	if event.is_action_pressed("toggle_eva"):
+	if event.is_action_pressed("toggle_eva") and not Globals.is_dev_tool_disabled("toggle_eva"):
 		# EVA (dev free-flight): just request the toggle; the server owns the state and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
 		player.client_send_action_to_server({"action": "toggle_eva"})
