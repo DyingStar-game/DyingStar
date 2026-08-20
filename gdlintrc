@@ -3,3 +3,4 @@ max-file-lines: 3000
 max-line-length: 140
 max-public-methods: 40
 max-returns: 20
+disable: [class-definitions-order]

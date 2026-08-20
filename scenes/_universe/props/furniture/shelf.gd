@@ -1,4 +1,5 @@
 @tool
+class_name Shelf
 extends StaticBody3D
 
 ## A shelf with a grid of discrete storage SLOTS. A carried crate dropped near a free slot snaps onto

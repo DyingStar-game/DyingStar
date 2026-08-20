@@ -1,0 +1,21 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://c0at27ib77dy6"]
+
+[ext_resource type="Texture2D" uid="uid://cafs8ny53vs1f" path="res://assets/_universe/_shared/materials/urban_wire_fence_albedo.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://biqvnkv0741u8" path="res://assets/_universe/_shared/materials/urban_wire_fence_orm.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://danjruw88tstg" path="res://assets/_universe/_shared/materials/urban_wire_fence_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://cwvt1f2vco38o" path="res://assets/_universe/_shared/materials/urban_wire_fence_heightmap.png" id="4"]
+
+[resource]
+transparency = 1
+albedo_texture = ExtResource("1")
+orm_texture = ExtResource("2")
+normal_enabled = true
+normal_texture = ExtResource("3")
+heightmap_enabled = true
+heightmap_scale = 9.75
+heightmap_deep_parallax = true
+heightmap_min_layers = 8
+heightmap_max_layers = 32
+heightmap_texture = ExtResource("4")
+uv1_offset = Vector3(-0.3, 0.035, 0)
+uv1_triplanar = true

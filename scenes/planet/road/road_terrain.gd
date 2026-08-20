@@ -54,29 +54,35 @@ const ADAPTIVE_MATERIAL_TYPES: PackedStringArray = ["path", "trail"]
 
 # ── Material paths ───────────────────────────────────────────────────
 
+## Materials live under assets/_universe/environment/terrain/ — they were moved
+## there by the "new tree architecture" commit, and the old
+## res://assets/materials/planet/ paths silently dropped every road surface
+## (planet_chunk.gd skips a road group whose material fails to load).
+const MATERIAL_DIR := "res://assets/_universe/environment/terrain/"
+
 ## Fixed materials for highway/road.
-const ASPHALT_MATERIAL_PATH := "res://assets/materials/planet/path_asphalt.tres"
+const ASPHALT_MATERIAL_PATH := MATERIAL_DIR + "path_asphalt.tres"
 
 ## Biome-adaptive material mapping:  biome_type → .tres path.
 ## For path/trail road types, the material is selected based on the
 ## biome the road segment crosses.
 const ADAPTIVE_MATERIAL_MAP := {
-	"meadow_steppe-meadow": "res://assets/materials/planet/path_grass.tres",
-	"meadow_steppe-savanna": "res://assets/materials/planet/path_grass.tres",
-	"meadow_steppe-steppe": "res://assets/materials/planet/path_grass.tres",
-	"meadow_steppe-terraformed_grass": "res://assets/materials/planet/path_grass.tres",
-	"forest-temperate_forest": "res://assets/materials/planet/path_dirt.tres",
-	"forest-boreal_forest": "res://assets/materials/planet/path_dirt.tres",
-	"forest-tropical_forest": "res://assets/materials/planet/path_dirt.tres",
-	"forest-dead_forest": "res://assets/materials/planet/path_dirt.tres",
-	"aride_desert-sandy_desert": "res://assets/materials/planet/path_sand.tres",
-	"aride_desert-rocky_desert": "res://assets/materials/planet/path_dirt.tres",
-	"icy-snow":          "res://assets/materials/planet/path_snow.tres",
-	"icy-tundra":        "res://assets/materials/planet/path_dirt.tres",
+	"meadow_steppe-meadow": MATERIAL_DIR + "path_grass.tres",
+	"meadow_steppe-savanna": MATERIAL_DIR + "path_grass.tres",
+	"meadow_steppe-steppe": MATERIAL_DIR + "path_grass.tres",
+	"meadow_steppe-terraformed_grass": MATERIAL_DIR + "path_grass.tres",
+	"forest-temperate_forest": MATERIAL_DIR + "path_dirt.tres",
+	"forest-boreal_forest": MATERIAL_DIR + "path_dirt.tres",
+	"forest-tropical_forest": MATERIAL_DIR + "path_dirt.tres",
+	"forest-dead_forest": MATERIAL_DIR + "path_dirt.tres",
+	"aride_desert-sandy_desert": MATERIAL_DIR + "path_sand.tres",
+	"aride_desert-rocky_desert": MATERIAL_DIR + "path_dirt.tres",
+	"icy-snow":          MATERIAL_DIR + "path_snow.tres",
+	"icy-tundra":        MATERIAL_DIR + "path_dirt.tres",
 }
 
 ## Fallback material when no biome match is found for adaptive types.
-const FALLBACK_MATERIAL_PATH := "res://assets/materials/planet/path_dirt.tres"
+const FALLBACK_MATERIAL_PATH := MATERIAL_DIR + "path_dirt.tres"
 
 
 # ── Detection helpers ──────────────────────────────────────────────
@@ -97,14 +103,27 @@ static func is_road_zone(zone: Dictionary) -> bool:
 	return cl.size() >= 2
 
 
+## Half-width in metres for [param zone]: the per-feature `width` exported from
+## QGIS when the designer filled it in, otherwise the [constant HALF_WIDTH_M]
+## default for the road type.
+##
+## `width` is the TOTAL width in metres, as written by
+## tools/qgis/export_roads.py — hence the halving. Note that BiomeQuery stores a
+## `half_width_deg` of its own (width / 2, mislabelled: that value is in metres),
+## which [method prepare_zone] overwrites with the correct degree value.
+static func get_half_width_m(zone: Dictionary) -> float:
+	var width_m: float = float(zone.get("width", 0.0))
+	if width_m > 0.0:
+		return width_m * 0.5
+	return HALF_WIDTH_M.get(get_road_type(zone), 0.5)
+
+
 ## Convert the road half-width from metres to degrees and cache it
 ## in the zone dictionary so BiomeQuery.get_cross_section_t() can use it.
 static func prepare_zone(zone: Dictionary, planet_radius: float) -> void:
 	if not zone.get("_road_hw_converted", false):
 		var m_per_deg := planet_radius * PI / 180.0
-		var rt := get_road_type(zone)
-		var hw_m: float = HALF_WIDTH_M.get(rt, 0.5)
-		zone["half_width_deg"] = hw_m / m_per_deg
+		zone["half_width_deg"] = get_half_width_m(zone) / m_per_deg
 		zone["_road_hw_converted"] = true
 
 
@@ -116,6 +135,53 @@ static func get_half_width(road_type: String) -> float:
 ## Get the tile size in metres for a road type.
 static func get_tile_size(road_type: String) -> float:
 	return TILE_M.get(road_type, 2.0)
+
+
+## Squared distance in degrees from [param p] to segment [param a]-[param b],
+## with longitude scaled by cos(lat) so the comparison is metric-ish.
+static func _dist_sq_to_segment(p: Vector2, a: Vector2, b: Vector2,
+		lat_scale: float) -> float:
+	var ax := a.x * lat_scale
+	var bx := b.x * lat_scale
+	var px := p.x * lat_scale
+	var dx := bx - ax
+	var dy := b.y - a.y
+	var seg_sq := dx * dx + dy * dy
+	var t := 0.0
+	if seg_sq > 1e-24:
+		t = clampf(((px - ax) * dx + (p.y - a.y) * dy) / seg_sq, 0.0, 1.0)
+	var cx := px - (ax + t * dx)
+	var cy := p.y - (a.y + t * dy)
+	return cx * cx + cy * cy
+
+
+## Is (lon, lat) on the surface of any road in [param roads]?
+##
+## [param roads] are the records of THIS chunk's modifier tile, so the test is a
+## point-to-polyline distance over a handful of local points. The three prop
+## spawners used to each run their own copy of a BiomeQuery lookup plus
+## get_cross_section_t() over every road on the planet, per candidate instance.
+##
+## [param m_per_deg] = planet_radius * PI / 180.
+static func point_on_any_road(lon: float, lat: float, roads: Array,
+		m_per_deg: float) -> bool:
+	if roads.is_empty():
+		return false
+	var p := Vector2(lon, lat)
+	var lat_scale := cos(deg_to_rad(clampf(lat, -89.5, 89.5)))
+	if lat_scale < 1e-6:
+		lat_scale = 1e-6
+	for r in roads:
+		var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
+		if cl.size() < 2:
+			continue
+		var hw_m: float = float(r.get("half_width_m", get_half_width_m(r)))
+		var hw_deg := hw_m / m_per_deg
+		var hw_sq := hw_deg * hw_deg
+		for i in cl.size() - 1:
+			if _dist_sq_to_segment(p, cl[i], cl[i + 1], lat_scale) <= hw_sq:
+				return true
+	return false
 
 
 ## Returns [code]true[/code] if this road type uses a fixed material

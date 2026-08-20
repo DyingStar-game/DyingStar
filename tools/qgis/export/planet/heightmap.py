@@ -8,23 +8,42 @@ import numpy as np
 from qgis.core import QgsVectorLayer
 
 
-def generate_heightmap_from_contours(planet_name, export_dir, heightmap_size,
-                                      find_layers_func, memlog_func):
-    """
-    Generate a heightmap GeoTIFF from contour lines.
+def _thin_by_cell_and_level(pts, bin_w, bin_h):
+    """Keep one real vertex per (equirectangular grid cell, contour elevation).
 
-    Instead of using QGIS's built-in TIN interpolation (which freezes the GUI
-    on large rasters), this extracts vertices directly from contour features
-    and interpolates with scipy (fast Delaunay) or a numpy IDW fallback.
+    Returns a SUBSET of [param pts] — actual input rows, never a synthesised
+    position and never an averaged elevation. Grouping by elevation as well as by
+    cell is the whole point: vertices sharing a cell AND a contour level lie on the
+    same line and are genuinely redundant, whereas vertices sharing only a cell
+    belong to different lines, and averaging those invents a height nobody drew.
+    """
+    col = np.clip(((pts[:, 0] + 180.0) * (bin_w / 360.0)).astype(np.int64), 0, bin_w - 1)
+    row = np.clip(((90.0 - pts[:, 1]) * (bin_h / 180.0)).astype(np.int64), 0, bin_h - 1)
+    levels, level_idx = np.unique(pts[:, 2], return_inverse=True)
+    # Composite (cell, level) key: cells top out at 16384*8192 and contour levels
+    # number in the hundreds, so the product stays far inside int64.
+    key = (row * bin_w + col) * len(levels) + level_idx
+    _, first = np.unique(key, return_index=True)
+    return pts[first]
+
+
+def extract_contour_points(heightmap_size, find_layers_func, memlog_func):
+    """
+    Read every contour vertex out of the QGIS project and decimate it.
+
+    Returns an (N, 3) float64 array of (lon, lat, elevation), or None when the
+    project holds no usable contour data.
+
+    Split out of generate_heightmap_from_contours so that a caller which
+    interpolates the points itself — export_elevation's spherical TIN — works
+    from exactly the same source samples as the equirectangular raster, without
+    a second pass over the layer.
 
     Parameters
     ----------
-    planet_name : str
-        Name of the planet (used for the output file name).
-    export_dir : str
-        Directory where the heightmap GeoTIFF will be saved.
     heightmap_size : tuple[int, int]
-        (width, height) of the output raster in pixels.
+        (width, height) of the target raster. Only used to size the decimation
+        bins, which are expressed relative to the output resolution.
     find_layers_func : callable
         Function(keyword) → list of QGIS layers whose name contains *keyword*.
     memlog_func : callable
@@ -88,84 +107,85 @@ def generate_heightmap_from_contours(planet_name, export_dir, heightmap_size,
     print(f"  {len(pts)} vertices, elevation range "
           f"[{pts[:, 2].min():.1f}, {pts[:, 2].max():.1f}]m")
 
-    output_path = os.path.join(export_dir, f"{planet_name}_heightmap.tif")
     w, h = heightmap_size
 
-    # ── Decimate redundant contour vertices ──
-    # Contour lines from QGIS are densely sampled along curves (often
-    # millions of vertices). Feeding them all to scipy.griddata triggers
-    # a Delaunay triangulation that stalls for hours past ~500K points.
-    # We adaptively bin source points to coarser grids until the count
-    # drops below the safe Delaunay budget, preserving mean elevation
-    # per bin so quality loss is negligible at the output resolution.
-    DECIMATION_THRESHOLD = 500_000
+    # ── Thin redundant contour vertices ──
+    # QGIS contour lines are densely sampled along their curves (often millions of
+    # vertices), far more than any interpolator needs. Keep one representative
+    # vertex per (grid cell, contour level) and halve the grid until the count fits
+    # the budget.
+    #
+    # This deliberately never AVERAGES elevations. The previous version took the
+    # mean elevation per cell, mixing vertices from DIFFERENT contour lines. On
+    # tarsis_4 it bottomed out at a 1024×512 grid — 39 km cells — so a summit whose
+    # 50 m contours are packed into a few kilometres collapsed to the local mean and
+    # reached the tiles as ~6200 m instead of the 9000 m that was drawn. Grouping by
+    # level as well makes the thinning lossless in elevation: it only ever drops
+    # vertices lying on the same line inside the same cell.
+    #
+    # The budget is far above the old 500k because the consumer changed. That limit
+    # existed for scipy.griddata, whose Delaunay stalls past ~500k; the spherical TIN
+    # triangulates 438k points in ~7 s and scales near-linearly. Memory is the real
+    # constraint now — the TIN keeps ~144 bytes per point of precomputed triangle
+    # inverses, so 1.2M points is roughly 350 MB resident and ~1 GB peak while
+    # building. This pass is also much lighter than the one it replaces, which
+    # allocated bincount arrays over the whole bin grid (~2 GB at 16384×8192).
+    DECIMATION_THRESHOLD = 1_200_000
     if len(pts) > DECIMATION_THRESHOLD:
-        # Start at 4× the output resolution and halve until under budget
-        oversample = 4
-        decimated = pts
-        while len(decimated) > DECIMATION_THRESHOLD and oversample >= 1:
-            bin_w = max(w * oversample, 1)
-            bin_h = max(h * oversample, 1)
-            src = decimated if decimated is not pts else pts
-            col_idx = np.clip(
-                ((src[:, 0] + 180.0) * (bin_w / 360.0)).astype(np.int64),
-                0, bin_w - 1,
-            )
-            row_idx = np.clip(
-                ((90.0 - src[:, 1]) * (bin_h / 180.0)).astype(np.int64),
-                0, bin_h - 1,
-            )
-            flat_bin = row_idx * bin_w + col_idx
-            sums = np.bincount(flat_bin, weights=src[:, 2])
-            counts = np.bincount(flat_bin)
-            occupied = np.nonzero(counts)[0]
-            mean_elev = sums[occupied] / counts[occupied]
-            bin_row = occupied // bin_w
-            bin_col = occupied % bin_w
-            bin_lon = -180.0 + (bin_col + 0.5) * (360.0 / bin_w)
-            bin_lat = 90.0 - (bin_row + 0.5) * (180.0 / bin_h)
-            decimated = np.column_stack([bin_lon, bin_lat, mean_elev])
-            print(f"  Decimation pass (oversample={oversample}): "
-                  f"{len(src)} → {len(decimated)} vertices "
-                  f"(bin grid {bin_w}×{bin_h})")
-            del sums, counts, occupied, bin_row, bin_col, bin_lon, bin_lat
-            del mean_elev, flat_bin, col_idx, row_idx
-            oversample //= 2
-        # If still above budget at oversample=1 (output resolution), halve
-        # the bin grid further until we fit.
-        coarsen = 2
-        while len(decimated) > DECIMATION_THRESHOLD:
-            bin_w = max(w // coarsen, 64)
-            bin_h = max(h // coarsen, 32)
-            col_idx = np.clip(
-                ((decimated[:, 0] + 180.0) * (bin_w / 360.0)).astype(np.int64),
-                0, bin_w - 1,
-            )
-            row_idx = np.clip(
-                ((90.0 - decimated[:, 1]) * (bin_h / 180.0)).astype(np.int64),
-                0, bin_h - 1,
-            )
-            flat_bin = row_idx * bin_w + col_idx
-            sums = np.bincount(flat_bin, weights=decimated[:, 2])
-            counts = np.bincount(flat_bin)
-            occupied = np.nonzero(counts)[0]
-            mean_elev = sums[occupied] / counts[occupied]
-            bin_row = occupied // bin_w
-            bin_col = occupied % bin_w
-            bin_lon = -180.0 + (bin_col + 0.5) * (360.0 / bin_w)
-            bin_lat = 90.0 - (bin_row + 0.5) * (180.0 / bin_h)
-            decimated = np.column_stack([bin_lon, bin_lat, mean_elev])
-            print(f"  Decimation pass (coarsen=1/{coarsen}): "
-                  f"→ {len(decimated)} vertices (bin grid {bin_w}×{bin_h})")
-            del sums, counts, occupied, bin_row, bin_col, bin_lon, bin_lat
-            del mean_elev, flat_bin, col_idx, row_idx
-            coarsen *= 2
-            if bin_w <= 64:
-                break  # safety: stop shrinking
-        print(f"  ✓ Final: {len(pts)} → {len(decimated)} vertices")
-        del pts
-        pts = decimated
+        bin_w, bin_h = w * 4, h * 4
+        while True:
+            pts = _thin_by_cell_and_level(pts, bin_w, bin_h)
+            print(f"  Thinning pass (bin grid {bin_w}×{bin_h}): → {len(pts)} vertices, "
+                  f"range [{pts[:, 2].min():.1f}, {pts[:, 2].max():.1f}]m")
+            if len(pts) <= DECIMATION_THRESHOLD or bin_w <= 64:
+                break
+            bin_w = max(bin_w // 2, 64)
+            bin_h = max(bin_h // 2, 32)
+        print(f"  ✓ Thinned to {len(pts)} vertices "
+              f"(elevations preserved exactly — no cross-level averaging)")
         memlog_func("heightmap: decimation done", f"count={len(pts)}")
+
+    return pts
+
+
+def generate_heightmap_from_contours(planet_name, export_dir, heightmap_size,
+                                      find_layers_func, memlog_func, points=None):
+    """
+    Generate a heightmap GeoTIFF from contour lines.
+
+    Instead of using QGIS's built-in TIN interpolation (which freezes the GUI
+    on large rasters), this extracts vertices directly from contour features
+    and interpolates with scipy (fast Delaunay) or a numpy IDW fallback.
+
+    NOTE on fidelity: methods 1 and 3-4 average source vertices (per coarse cell
+    or per neighbourhood), so isolated peaks are pulled toward the local mean and
+    the result never reaches the input extremes. Callers that need the contour
+    values preserved exactly should interpolate the points themselves with
+    export.planet.spherical_tin instead — see export_elevation.
+
+    Parameters
+    ----------
+    planet_name : str
+        Name of the planet (used for the output file name).
+    export_dir : str
+        Directory where the heightmap GeoTIFF will be saved.
+    heightmap_size : tuple[int, int]
+        (width, height) of the output raster in pixels.
+    find_layers_func : callable
+        Function(keyword) → list of QGIS layers whose name contains *keyword*.
+    memlog_func : callable
+        Function(label, *extra) for memory/progress logging.
+    points : np.ndarray, optional
+        Pre-extracted (N, 3) contour points from extract_contour_points(). Pass
+        this to avoid walking the QGIS layer a second time.
+    """
+    pts = extract_contour_points(heightmap_size, find_layers_func, memlog_func) \
+        if points is None else np.asarray(points, dtype=np.float64)
+    if pts is None or len(pts) == 0:
+        return None
+
+    output_path = os.path.join(export_dir, f"{planet_name}_heightmap.tif")
+    w, h = heightmap_size
 
     # Build output grid (pixel centres)
     lon_vals = np.linspace(-180.0, 180.0, w, endpoint=False) + (360.0 / w / 2.0)
@@ -321,7 +341,17 @@ def generate_heightmap_from_contours(planet_name, export_dir, heightmap_size,
                 print(f"    row {row}/{h}...")
         print(f"  ✓ numpy IDW interpolation complete ({_time.time() - _t0:.1f}s)")
 
-    # ── Save as GeoTIFF ──
+    return save_heightmap_geotiff(output_path, grid_data)
+
+
+def save_heightmap_geotiff(output_path, grid_data):
+    """Write an equirectangular elevation grid as a WGS84 GeoTIFF.
+
+    Returns the path actually written — the .tif, or a .npy sidecar when GDAL is
+    not importable. Shared with export_elevation so a TIN-sampled raster lands on
+    disk in exactly the same format as an interpolated one.
+    """
+    h, w = grid_data.shape
     try:
         from osgeo import gdal, osr
         driver = gdal.GetDriverByName('GTiff')

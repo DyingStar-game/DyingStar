@@ -1,0 +1,19 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://5haip4wcx6f0"]
+
+[ext_resource type="Texture2D" uid="uid://b681paw7yh4w8" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001_albedo.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://bu6s3btjfj8q2" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001_orm.png" id="2"]
+[ext_resource type="Texture2D" uid="uid://bi7oqfgldpu7p" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://b5kus08l4dkg7" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001_heightmap.png" id="4"]
+
+[resource]
+albedo_texture = ExtResource("1")
+orm_texture = ExtResource("2")
+normal_enabled = true
+normal_texture = ExtResource("3")
+heightmap_enabled = true
+heightmap_scale = 12.5
+heightmap_deep_parallax = true
+heightmap_min_layers = 8
+heightmap_max_layers = 32
+heightmap_texture = ExtResource("4")
+uv1_triplanar = true

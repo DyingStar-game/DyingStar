@@ -10,11 +10,22 @@ Pipeline
 --------
 1. Read the contour / elevation line layer (field: elev/elevation/height/z/alt).
    Contours are drawn at 50 m intervals in EPSG:4326 (lon/lat degrees).
-2. Interpolate a single global equirectangular elevation raster (reuses the fast
-   rasterize→fill→upsample interpolator in export/planet/heightmap.py).
+2. Triangulate those vertices ON THE SPHERE (export/planet/spherical_tin.py) and
+   interpolate every tile barycentrically from that TIN.
+   This is deliberately NOT the equirectangular raster path: that interpolator
+   averages source vertices into coarse cells (measured on tarsis_4: a 936×468
+   working grid, i.e. 42.7 km per cell), which pulls isolated peaks toward the
+   local mean — a 9000 m summit came out at 6196 m, and every pyramid level
+   inherited it because all levels resampled that one raster. A TIN is exact at
+   each contour vertex and bounded by the input range everywhere else, so tiles
+   now carry the elevations that were actually drawn.
+   The equirectangular {planet}_heightmap.tif is still written, sampled from the
+   same TIN, for the runtime's whole-planet fallback.
 3. For each pyramid level nside ∈ {NSIDE_MIN, …, NSIDE/2, NSIDE}, and each of
    its 12·nside² HEALPix pixels, sample a (TILE_RES × TILE_RES) grid of
-   directions covering that pixel and bilinearly read the global raster.
+   directions covering that pixel against the TIN (tiles are sampled in groups
+   of TILE_BATCH so the per-call overhead is amortised — 8× faster than one
+   call per tile, measured).
 4. Stream every tile (raw float32, normalized to [0,1] over
    [ELEV_MIN, ELEV_MAX]) into a single dense archive
    {planet}_chunks/heights.pack (DSHP v1, spec below), read at runtime by
@@ -71,8 +82,29 @@ _tools_dir = os.path.dirname(os.path.abspath(__file__))
 if _tools_dir not in sys.path:
     sys.path.insert(0, _tools_dir)
 
+# The documented entry point is exec()-ing this file from the QGIS Python console,
+# which reuses ONE long-lived interpreter: any helper imported by an earlier run
+# stays in sys.modules and is never re-read from disk, so edits under
+# export/planet/ silently do nothing — and a newly ADDED function surfaces as an
+# ImportError from the import block right below. Drop the previously loaded
+# modules so every exec() picks up the current source. Matching on the file's
+# location (rather than on its name) keeps this from touching anything QGIS or
+# another plugin has loaded; namespace packages carry no __file__, hence the
+# second clause.
+for _name, _mod in list(sys.modules.items()):
+    _mod_file = getattr(_mod, "__file__", None)
+    if _mod_file and os.path.abspath(_mod_file).startswith(_tools_dir + os.sep):
+        del sys.modules[_name]
+    elif _mod_file is None and (_name == "export" or _name.startswith("export.")):
+        del sys.modules[_name]
+
 import healpix_utils as hpx
-from export.planet.heightmap import generate_heightmap_from_contours
+from export.planet.heightmap import (
+    extract_contour_points,
+    generate_heightmap_from_contours,
+    save_heightmap_geotiff,
+)
+from export.planet.spherical_tin import SphericalTIN
 
 from qgis.core import (
     QgsProject,
@@ -103,9 +135,20 @@ NSIDE = 64
 # Coarsest pyramid level to bake. 1 → the 12 HEALPix base faces (whole-planet view).
 # Levels baked: NSIDE, NSIDE/2, … , NSIDE_MIN (all powers of two).
 NSIDE_MIN = 1
-# Samples per chunk edge. 25 → ~4 km spacing on a 6356 km planet (broad shape;
+# Samples per chunk edge. 50 → ~2.03 km spacing on a 6356 km planet (broad shape;
 # fine detail comes from the quadtree mesh interpolating between samples).
-TILE_RES = 25
+# The pack is dense, so its size scales with TILE_RES²:
+#   25 → 4.07 km, 164 MB   |   50 → 2.03 km, 655 MB   |   100 → 1.02 km, 2.6 GB
+# Raised from 25 because a summit narrower than the sample spacing is only caught
+# when a sample happens to land on it: tarsis_4's 9000 m peak read 8207 m at
+# 4.07 km, and jittering its position gave anywhere from 6200 m to 9000 m for the
+# same terrain — that spread is grid alignment, not missing data.
+TILE_RES = 50
+
+# Tiles per TIN call, sized to hold the measured sweet spot of ~160k directions per
+# call whatever TILE_RES is. One call per tile wastes ~85% of the time in per-call
+# overhead (measured: 6.06 ms/tile alone vs 0.73 ms/tile grouped).
+TILE_BATCH = max(1, 160_000 // (TILE_RES * TILE_RES))
 
 # Also write the legacy loose-tile tree (n{nside}/face_{face}/f{ipix}.r32) next
 # to heights.pack. Off by default: the pack alone is what the runtime reads,
@@ -283,22 +326,50 @@ def run_export():
     # If the contour layer has no (or too few) lines yet, the interpolator
     # returns None; we then export a FLAT raster (elev = ELEV_MIN everywhere)
     # so the planet still builds as a smooth sea-level sphere.
-    raster_path = None
+    pts = None
+    tin = None
+    raster = None
     if field:
-        print("  Building global elevation raster…")
-        raster_path = generate_heightmap_from_contours(
-            PLANET_NAME, EXPORT_DIR, HEIGHTMAP_SIZE,
-            find_layers_by_keyword, _memlog,
-        )
-    if raster_path is None:
+        print("  Reading contour vertices…")
+        pts = extract_contour_points(HEIGHTMAP_SIZE, find_layers_by_keyword, _memlog)
+    if pts is not None and len(pts) >= 4:
+        try:
+            tin = SphericalTIN(pts[:, 0], pts[:, 1], pts[:, 2])
+        except ImportError:
+            print("  ⚠ scipy unavailable — falling back to the equirect raster path "
+                  "(peaks will be averaged down; see the module docstring).")
+    if tin is not None:
+        # The .tif is no longer what the tiles are built from, but the runtime still
+        # uses it as a whole-planet fallback, so sample it from the SAME TIN — a
+        # fallback that disagreed with the tiles would move the ground under the
+        # player exactly when a chunk failed to load.
         w, h = HEIGHTMAP_SIZE
-        raster = np.full((h, w), ELEV_MIN, dtype=np.float32)
-        print(f"  ⚠ No usable contour data — FLAT raster {raster.shape} "
-              f"at elev={ELEV_MIN}m (whole planet at sea level).")
-    else:
-        raster = _read_global_raster(raster_path, HEIGHTMAP_SIZE)
-        print(f"  Global raster: {raster.shape}  range "
+        lon_vals = np.linspace(-180.0, 180.0, w, endpoint=False) + (360.0 / w / 2.0)
+        lat_vals = np.linspace(90.0, -90.0, h, endpoint=False) - (180.0 / h / 2.0)
+        grid_lon, grid_lat = np.meshgrid(lon_vals, lat_vals)
+        print(f"  Sampling the {w}×{h} fallback raster from the TIN…")
+        raster = tin.sample_lonlat(grid_lon, grid_lat).astype(np.float32)
+        save_heightmap_geotiff(
+            os.path.join(EXPORT_DIR, f"{PLANET_NAME}_heightmap.tif"), raster)
+        print(f"  Global raster (TIN-sampled): {raster.shape}  range "
               f"[{np.nanmin(raster):.1f}, {np.nanmax(raster):.1f}]m")
+    else:
+        raster_path = None
+        if pts is not None:
+            print("  Building global elevation raster…")
+            raster_path = generate_heightmap_from_contours(
+                PLANET_NAME, EXPORT_DIR, HEIGHTMAP_SIZE,
+                find_layers_by_keyword, _memlog, points=pts,
+            )
+        if raster_path is None:
+            w, h = HEIGHTMAP_SIZE
+            raster = np.full((h, w), ELEV_MIN, dtype=np.float32)
+            print(f"  ⚠ No usable contour data — FLAT raster {raster.shape} "
+                  f"at elev={ELEV_MIN}m (whole planet at sea level).")
+        else:
+            raster = _read_global_raster(raster_path, HEIGHTMAP_SIZE)
+            print(f"  Global raster: {raster.shape}  range "
+                  f"[{np.nanmin(raster):.1f}, {np.nanmax(raster):.1f}]m")
 
     # ── Step 2: manifest (written first — it is embedded in heights.pack) ──
     chunks_dir = os.path.join(EXPORT_DIR, f"{PLANET_NAME}_chunks")
@@ -364,23 +435,39 @@ def run_export():
                 for face in range(12):
                     os.makedirs(os.path.join(level_dir, f"face_{face}"),
                                 exist_ok=True)
-            for ipix in range(npix):
-                lon_grid, lat_grid = hpx.get_tile_grid_lonlat(
-                    level_nside, ipix, TILE_RES)
-                elev = _sample_equirect_bilinear(raster, lon_grid, lat_grid)
-                # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX]. Values outside the
-                # range are kept (FORMAT_RF is unclamped) so future features can
-                # exceed it.
-                norm = ((elev - ELEV_MIN) / elev_range).astype(np.float32)
-                # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
-                out.write(norm.tobytes())
-                if WRITE_LOOSE_TILES:
-                    face = ipix // npface
-                    norm.tofile(os.path.join(
-                        level_dir, f"face_{face}", f"f{ipix}.r32"))
-                written += 1
-                if written % 8192 == 0:
-                    print(f"    {written}/{total_tiles} tiles…")
+            for base in range(0, npix, TILE_BATCH):
+                group = range(base, min(base + TILE_BATCH, npix))
+                if tin is not None:
+                    # Sample the whole group in one TIN call — the KD-tree query and
+                    # the barycentric solve both amortise, and tiles stay in ipix
+                    # order so the dense blob layout is unaffected.
+                    grids = [hpx.get_tile_grid_vec(level_nside, ip, TILE_RES)
+                             for ip in group]
+                    flat = tin.sample_vec(
+                        np.concatenate([g[0].ravel() for g in grids]),
+                        np.concatenate([g[1].ravel() for g in grids]),
+                        np.concatenate([g[2].ravel() for g in grids]))
+                    elevs = flat.reshape(len(grids), TILE_RES, TILE_RES)
+                else:
+                    elevs = np.stack([
+                        _sample_equirect_bilinear(
+                            raster,
+                            *hpx.get_tile_grid_lonlat(level_nside, ip, TILE_RES))
+                        for ip in group])
+                for offset, ipix in enumerate(group):
+                    # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX]. Values outside the
+                    # range are kept (FORMAT_RF is unclamped) so future features can
+                    # exceed it.
+                    norm = ((elevs[offset] - ELEV_MIN) / elev_range).astype(np.float32)
+                    # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
+                    out.write(norm.tobytes())
+                    if WRITE_LOOSE_TILES:
+                        face = ipix // npface
+                        norm.tofile(os.path.join(
+                            level_dir, f"face_{face}", f"f{ipix}.r32"))
+                    written += 1
+                    if written % 8192 == 0:
+                        print(f"    {written}/{total_tiles} tiles…")
             print(f"    · level n{level_nside}: {npix} tiles")
     os.replace(tmp_path, pack_path)
     pack_mb = os.path.getsize(pack_path) / (1 << 20)

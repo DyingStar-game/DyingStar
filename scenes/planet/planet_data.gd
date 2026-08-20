@@ -9,6 +9,7 @@ extends Resource
 
 const PlanetPackScript = preload("res://scenes/planet/planet_pack.gd")
 const HeightPackScript = preload("res://scenes/planet/height_pack.gd")
+const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
 
 @export_group("General")
 ## for example "tarsis_3" correspond to the QGIS file name
@@ -69,6 +70,15 @@ var export_nside_min: int = 0
 ## True when the chunk dir is a pyramid (n{nside}/face_{face}/f{ipix}.r32).
 ## False for legacy flat layout (face_{face}/f{ipix}.r32).
 var chunk_is_pyramid: bool = false
+## Fingerprint of the exported elevation data, from manifest["data_version"]
+## (tools/qgis/export_elevation.py compute_data_version). PlanetTerrain folds it
+## into its chunk disk-cache key so a re-export automatically invalidates cached
+## meshes and collision shapes: radius / max_height / height_offset / tile_res can
+## all stay identical while every elevation changes, which used to leave the cache
+## reporting "valid" and serving pre-export terrain. Empty for manifests written
+## before the field existed — those keep exactly the key they had, so caches for
+## planets that have not been re-exported stay valid.
+var chunk_data_version: String = ""
 ## Equirectangular heightmap — kept as fallback only (editor preview, etc.).
 @export var heightmap: Texture2D
 ## Equirectangular biome map — colour encodes biome type / vegetation.
@@ -122,6 +132,10 @@ var chunk_is_pyramid: bool = false
 @export var chunk_heightmaps_dir: String = ""
 ## Samples per edge of each exported .r32 tile (matches TILE_RES in the exporter).
 @export var chunk_heightmap_res: int = 25
+## Read roads, craters, rivers, caves and biome zones from
+## <chunk_heightmaps_dir>/terrainmodifier.pack. Turn off to fall back to the
+## legacy roads_geojson/BiomeQuery path — an A/B switch for comparing the two.
+@export var use_modifier_pack: bool = true
 
 @export_group("Roads")
 ## Path to a GeoJSON file with road polygons (buffered from LineStrings).
@@ -162,6 +176,9 @@ var _road_query_tried: bool = false
 
 ## Cache of loaded road materials: path → Material.
 var _road_material_cache: Dictionary = {}
+## Serialises get_road_material_cached(): mesh generation runs on
+## WorkerThreadPool tasks and several can want the same material at once.
+var _road_material_mutex: Mutex = Mutex.new()
 
 ## Cache of loaded chunk heightmap images.  Key = "hp_nN_pP" → Image.
 var _chunk_images: Dictionary = {}
@@ -186,6 +203,48 @@ var _pack_open_mutex: Mutex = Mutex.new()
 var _height_pack = null  # HeightPackScript instance
 var _height_pack_tried: bool = false
 var _height_pack_mutex: Mutex = Mutex.new()
+
+## ── Modifier pack (sparse per-chunk vector archive) ──────────────
+## terrainmodifier.pack: roads, craters, linear features, radial features and
+## biome populate zones, already clipped to their HEALPix tile and decimated
+## per LOD level (written by tools/qgis/link_modifiers.py from the per-kind
+## parts each exporter produces).
+##
+## Roads in particular are PARTITIONED across tiles, so a chunk draws only its
+## own stretch. Before this, every chunk whose bbox touched a road re-extruded
+## the whole centerline, and neighbouring chunks at different LODs sampled
+## height at different pyramid levels — which is how one road ended up rendered
+## twice, ~2 m apart.
+var _modifier_pack = null  # ModifierPackScript instance
+var _modifier_pack_tried: bool = false
+var _modifier_pack_mutex: Mutex = Mutex.new()
+
+## Decoded modifier tiles, keyed "mp_nN_pP". Kept separate from _chunk_images so
+## road/feature reads never contend with heightmap reads on the same mutex.
+var _modifier_tiles: Dictionary = {}
+var _modifier_order: Array[String] = []
+var _modifier_bytes: int = 0
+var _modifier_mutex: Mutex = Mutex.new()
+const MAX_MODIFIER_CACHE_BYTES: int = 64 * 1024 * 1024
+## Rough Variant overhead of a decoded tile over its packed payload. Estimating
+## from the payload size is far cheaper and more stable than trying to measure
+## Dictionary/Array memory.
+const MODIFIER_DECODE_BLOAT: int = 6
+
+## Runtime feature injections (Horizon biome updates). The pack is immutable and
+## decoded tiles are LRU-evicted, so an injection cannot be written into them —
+## it would vanish on the next eviction. It lives here instead and is applied on
+## every read. Entries: {kind_key, biome_type, bbox_min, bbox_max, record}.
+var _mod_overlay_add: Array[Dictionary] = []
+var _mod_overlay_remove: Array[Dictionary] = []
+var _mod_overlay_mutex: Mutex = Mutex.new()
+
+## Where the roads fly over a procedural chasm (see RoadBridge). Computed once
+## per planet by walking the roads against the crack field — deterministic, so
+## the client and the server agree without replicating anything.
+var _bridge_spans: Array = []
+var _bridge_spans_built: bool = false
+var _bridge_spans_mutex: Mutex = Mutex.new()
 
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
@@ -485,6 +544,41 @@ func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
 	return img
 
 
+## The chunk manifest, as applied by apply_chunk_manifest(). Kept so the pack
+## openers can honour the file-name fields it carries.
+var _chunk_manifest: Dictionary = {}
+var _loose_manifest_tried: bool = false
+var _loose_manifest_cache: Dictionary = {}
+
+
+## The LOOSE manifest.json, read at most once.
+##
+## Separate from _chunk_manifest because of an ordering knot: heights.pack
+## embeds a copy of the manifest and is opened BEFORE apply_chunk_manifest()
+## parses it (that copy is the fallback when the loose file is missing). So the
+## name of the pack cannot come from the embedded manifest — that would require
+## opening the pack to learn what to open. Only the loose file can break the
+## cycle; without it the default name is the only way to bootstrap.
+func _loose_manifest() -> Dictionary:
+	if _loose_manifest_tried:
+		return _loose_manifest_cache
+	_loose_manifest_tried = true
+	var path := _chunk_base_path() + "/manifest.json"
+	if FileAccess.file_exists(path):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if typeof(parsed) == TYPE_DICTIONARY:
+			_loose_manifest_cache = parsed
+	return _loose_manifest_cache
+
+
+## Name of a pack file declared by the manifest, or [param fallback].
+func _manifest_file(key: String, fallback: String) -> String:
+	var name: String = _chunk_manifest.get(key, "")
+	if name == "":
+		name = _loose_manifest().get(key, "")
+	return name if name != "" else fallback
+
+
 ## chunk_heightmaps_dir resolved to an absolute res://-style base path.
 func _chunk_base_path() -> String:
 	var base := chunk_heightmaps_dir
@@ -504,13 +598,138 @@ func _ensure_height_pack():
 	_height_pack_mutex.lock()
 	if not _height_pack_tried:
 		var pack = HeightPackScript.new()
-		var path := _chunk_base_path() + "/heights.pack"
+		# Honour manifest["pack_file"] instead of hardcoding the name, so a
+		# planet can ship a differently-named archive. The field was written by
+		# the exporter and silently ignored here for a long time.
+		var path := _chunk_base_path() + "/" + _manifest_file(
+				"pack_file", "heights.pack")
 		if FileAccess.file_exists(path) and pack.open(path):
 			_height_pack = pack
 			print("[PlanetData] heights.pack opened: %s" % path)
 		_height_pack_tried = true
 	_height_pack_mutex.unlock()
 	return _height_pack
+
+
+## Open chunk_heightmaps_dir/terrainmodifier.pack once (thread-safe, idempotent).
+## Returns the open pack, or null when the planet has no modifier data — in
+## which case every accessor below degrades to the pre-pack behaviour.
+func _ensure_modifier_pack():
+	if _modifier_pack_tried:
+		return _modifier_pack
+	_modifier_pack_mutex.lock()
+	if not _modifier_pack_tried:
+		_modifier_pack_tried = true
+		if use_modifier_pack and chunk_heightmaps_dir != "":
+			var pack = ModifierPackScript.new()
+			var path := _chunk_base_path() + "/" + _manifest_file(
+					"modifiers_file", "terrainmodifier.pack")
+			if not FileAccess.file_exists(path):
+				push_warning("[PlanetData] no terrainmodifier.pack at %s — " % path
+						+ "roads, craters, rivers and biome overlays will be "
+						+ "absent. Produce it with tools/qgis/export_roads.py "
+						+ "(and the other export_*.py), which relink it.")
+			elif pack.open(path):
+				_modifier_pack = pack
+				var caps: Dictionary = pack.get_manifest().get("kind_max_nside", {})
+				var road_cap := int(caps.get("road", 0))
+				var quadtree_nside := 1 << max_quadtree_depth
+				# The invariant the partitioning rests on: chunks finer than the
+				# deepest baked road level would share an ancestor tile, and a
+				# shared tile means two chunks extruding the same road.
+				if road_cap > 0 and road_cap < quadtree_nside:
+					push_warning("[PlanetData] %s bakes roads only to n%d but "
+							% [path, road_cap]
+							+ "max_quadtree_depth=%d needs n%d — deep chunks will "
+							% [max_quadtree_depth, quadtree_nside]
+							+ "clip at runtime. Re-export roads.")
+				print("[PlanetData] terrainmodifier.pack opened: %s (levels %s)"
+						% [path, str(pack.get_levels())])
+	_modifier_pack_mutex.unlock()
+	return _modifier_pack
+
+
+## The open modifier pack, or null when this planet has none.
+func get_modifier_pack():
+	return _ensure_modifier_pack()
+
+
+## Deepest baked nside for [param kind] (a ModifierPack.KIND_* constant).
+## Falls back to export_nside so callers behave sanely without a pack.
+func modifier_max_nside_for(kind: int) -> int:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return export_nside
+	var cap: int = pack.max_nside_for_kind(kind)
+	return cap if cap > 0 else export_nside
+
+
+## Decoded modifier tile for [param ipix] at pyramid level [param nside].
+## Returns {} when the pack is absent or the tile holds nothing.
+##
+## Follows _file_load_and_cache()'s pattern: check the cache under the lock,
+## DECODE OUTSIDE IT (decoding is the expensive part and decode_tile() is pure),
+## then re-check and insert — another worker thread may have decoded the same
+## tile meanwhile.
+func get_chunk_modifiers(nside: int, ipix: int) -> Dictionary:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return {}
+	var key := "mp_n%d_p%d" % [nside, ipix]
+	_modifier_mutex.lock()
+	var hit: Variant = _modifier_tiles.get(key)
+	if hit != null:
+		if not _server_no_evict:
+			var idx := _modifier_order.find(key)
+			if idx >= 0:
+				_modifier_order.remove_at(idx)
+			_modifier_order.append(key)
+		_modifier_mutex.unlock()
+		return hit
+	_modifier_mutex.unlock()
+
+	var raw: PackedByteArray = pack.read_tile(nside, ipix)
+	if raw.is_empty():
+		return {}
+	var decoded: Dictionary = pack.decode_tile(raw, radius * PI / 180.0)
+
+	_modifier_mutex.lock()
+	var again: Variant = _modifier_tiles.get(key)
+	if again != null:
+		_modifier_mutex.unlock()
+		return again
+	_modifier_tiles[key] = decoded
+	_modifier_order.append(key)
+	_modifier_bytes += int(decoded.get("_raw_bytes", 0)) * MODIFIER_DECODE_BLOAT
+	_modifier_mutex.unlock()
+	if not _server_no_evict:
+		_evict_modifier_lru()
+	return decoded
+
+
+func _evict_modifier_lru() -> void:
+	if _server_no_evict:
+		return
+	_modifier_mutex.lock()
+	while _modifier_bytes > MAX_MODIFIER_CACHE_BYTES and not _modifier_order.is_empty():
+		var oldest: String = _modifier_order[0]
+		_modifier_order.remove_at(0)
+		var gone: Variant = _modifier_tiles.get(oldest)
+		if gone != null:
+			_modifier_bytes -= int((gone as Dictionary).get("_raw_bytes", 0)) \
+					* MODIFIER_DECODE_BLOAT
+			_modifier_tiles.erase(oldest)
+	if _modifier_bytes < 0:
+		_modifier_bytes = 0
+	_modifier_mutex.unlock()
+
+
+func clear_modifier_cache() -> void:
+	_modifier_mutex.lock()
+	_modifier_tiles.clear()
+	_modifier_order.clear()
+	_modifier_bytes = 0
+	_modifier_mutex.unlock()
 
 
 ## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
@@ -569,6 +788,7 @@ func apply_chunk_manifest() -> bool:
 	if typeof(data) != TYPE_DICTIONARY or (data as Dictionary).is_empty():
 		push_warning("[PlanetData] invalid chunk manifest: %s" % path)
 		return false
+	_chunk_manifest = data
 	if data.has("radius"):
 		radius = float(data["radius"])
 	if data.has("chunk_export_depth"):
@@ -586,6 +806,7 @@ func apply_chunk_manifest() -> bool:
 	# Pyramid descriptor. Legacy flat exports omit these → single level, so the
 	# coarsest level equals the finest (clamp is a no-op) and paths stay flat.
 	chunk_is_pyramid = bool(data.get("pyramid", false))
+	chunk_data_version = str(data.get("data_version", ""))
 	if data.has("nside_min"):
 		export_nside_min = int(data["nside_min"])
 	else:
@@ -593,7 +814,8 @@ func apply_chunk_manifest() -> bool:
 	print("[PlanetData] chunk manifest applied: radius=%.0f export_nside=%d "
 			% [radius, export_nside]
 			+ "nside_min=%d pyramid=%s tile_res=%d height_offset=%.1f max_height=%.1f"
-			% [export_nside_min, chunk_is_pyramid, chunk_heightmap_res, height_offset, max_height])
+			% [export_nside_min, chunk_is_pyramid, chunk_heightmap_res, height_offset, max_height]
+			+ " data_version=%s" % ("(none)" if chunk_data_version == "" else chunk_data_version))
 	return true
 
 
@@ -682,24 +904,42 @@ func inject_biome_feature(nside: int, ipix: int, biome_update: Dictionary) -> vo
 			if not _chunk_linear_features.has(key):
 				_chunk_linear_features[key] = []
 			_chunk_linear_features[key].append(feature)
+			_overlay_add(ipix, "linear_features", feature)
 		elif geom_type == "polygon" or geom_type == "point":
 			# Add as a populate zone.
 			var verts: Array = geometry.get("vertices", [])
+			# "partial", not "polygon": PlanetChunk._dir_in_populate_zone() only
+			# special-cases "full" and "point", and every recipe/pack producer
+			# writes "partial" for an outlined zone.
 			var zone := {
 				"biome_type": biome_type,
-				"coverage": "point" if geom_type == "point" else "polygon",
+				"coverage": "point" if geom_type == "point" else "partial",
 			}
 			if geom_type == "point" and verts.size() >= 1:
 				zone["lon"] = verts[0][0] if verts[0] is Array else verts[0].x
 				zone["lat"] = verts[0][1] if verts[0] is Array else verts[0].y
 			elif verts.size() >= 3:
+				# Write BOTH outline keys. Consumers are split: the per-vertex
+				# containment test and the recipe/pack exports use `vertices`
+				# (Array of [lon, lat]), older cliff code read `polygon`
+				# (PackedVector2Array). Writing only `polygon` made injected
+				# zones invisible to _dir_in_populate_zone() entirely.
 				var packed := PackedVector2Array()
-				for v in verts:
-					packed.append(Vector2(v[0], v[1]) if v is Array else v)
+				packed.resize(verts.size())
+				var norm: Array = []
+				norm.resize(verts.size())
+				for i in verts.size():
+					var v = verts[i]
+					var lon_v: float = float(v[0]) if v is Array else float(v.x)
+					var lat_v: float = float(v[1]) if v is Array else float(v.y)
+					packed[i] = Vector2(lon_v, lat_v)
+					norm[i] = [lon_v, lat_v]
+				zone["vertices"] = norm
 				zone["polygon"] = packed
 			if not _chunk_populate_zones.has(key):
 				_chunk_populate_zones[key] = []
 			_chunk_populate_zones[key].append(zone)
+			_overlay_add(ipix, "populate_zones", zone)
 
 	elif action == "remove":
 		# Remove matching biome_type entries.
@@ -715,6 +955,43 @@ func inject_biome_feature(nside: int, ipix: int, biome_update: Dictionary) -> vo
 				if lf.get("type", "") != biome_type:
 					filtered.append(lf)
 			_chunk_linear_features[key] = filtered
+		_overlay_remove(ipix, "populate_zones", "biome_type", biome_type)
+		_overlay_remove(ipix, "linear_features", "type", biome_type)
+
+
+## Record a runtime injection so it survives modifier-tile LRU eviction.
+##
+## The pack is immutable and get_chunk_modifiers() hands out cached decoded
+## tiles that are evicted under memory pressure, so writing an injection into
+## one would make it disappear at an arbitrary later moment. The overlay is
+## consulted on every read instead, and holds only Horizon-driven updates.
+func _overlay_add(ipix: int, list_key: String, record: Dictionary) -> void:
+	_mod_overlay_mutex.lock()
+	_mod_overlay_add.append({
+		"ipix": ipix, "list_key": list_key, "record": record,
+	})
+	_mod_overlay_mutex.unlock()
+
+
+func _overlay_remove(ipix: int, list_key: String, type_key: String,
+		biome_type: String) -> void:
+	if biome_type == "":
+		return
+	_mod_overlay_mutex.lock()
+	# Drop any pending add of the same type first, so add-then-remove nets out
+	# instead of leaving a record the remove filter has to chase forever.
+	var kept: Array[Dictionary] = []
+	for a in _mod_overlay_add:
+		if int(a["ipix"]) == ipix and a["list_key"] == list_key \
+				and (a["record"] as Dictionary).get(type_key, "") == biome_type:
+			continue
+		kept.append(a)
+	_mod_overlay_add = kept
+	_mod_overlay_remove.append({
+		"ipix": ipix, "list_key": list_key,
+		"type_key": type_key, "biome_type": biome_type,
+	})
+	_mod_overlay_mutex.unlock()
 
 
 ## Load a recipe Dictionary from the planet pack.
@@ -1049,10 +1326,62 @@ func _load_neighbor_recipe_craters(ipix: int) -> Array:
 	return data.get("craters", [])
 
 
-## Return the cached recipe crater list for an export-level chunk,
-## including sub-pixel craters from cached neighbor chunks.
-## Ensures cross-boundary craters are applied to per-vertex displacement.
+## Modifier records of one kind for an export-level chunk: the pack's tile,
+## plus runtime injections, minus runtime removals.
+##
+## Falls back to the legacy recipe caches when there is no pack, so every
+## existing caller keeps working on a planet that has not been re-exported.
+func _modifiers_of(ipix: int, list_key: String, legacy: Dictionary) -> Array:
+	if _ensure_modifier_pack() == null:
+		# No pack: the legacy caches ARE mutable, so inject_biome_feature() has
+		# already written into them. Applying the overlay too would return every
+		# injected feature twice.
+		return legacy.get("hp_n%d_p%d" % [export_nside, ipix], [])
+	return _apply_overlay(
+		get_chunk_modifiers(export_nside, ipix).get(list_key, []), list_key, ipix)
+
+
+## Apply the runtime injection overlay to [param base].
+## Cheap by construction: the overlay only holds Horizon-driven injections, so
+## it is empty in the overwhelmingly common case and this is one is_empty().
+func _apply_overlay(base: Array, list_key: String, ipix: int) -> Array:
+	_mod_overlay_mutex.lock()
+	var has_add := not _mod_overlay_add.is_empty()
+	var has_remove := not _mod_overlay_remove.is_empty()
+	if not has_add and not has_remove:
+		_mod_overlay_mutex.unlock()
+		return base
+	var adds := _mod_overlay_add.duplicate()
+	var removes := _mod_overlay_remove.duplicate()
+	_mod_overlay_mutex.unlock()
+
+	var out: Array = []
+	for rec in base:
+		var drop := false
+		for r in removes:
+			if r["list_key"] == list_key and int(r["ipix"]) == ipix \
+					and (rec as Dictionary).get(r["type_key"], "") == r["biome_type"]:
+				drop = true
+				break
+		if not drop:
+			out.append(rec)
+	for a in adds:
+		if a["list_key"] == list_key and int(a["ipix"]) == ipix:
+			out.append(a["record"])
+	return out
+
+
+## Return the crater list for an export-level chunk.
+##
+## The 8-neighbour merge below only exists for RECIPE-sourced craters, whose
+## export assigned each crater to a single chunk by an equirectangular AABB test
+## that misses HEALPix face boundaries and high latitudes. The modifier pack has
+## no such gap: tools/qgis/export/planet/modifier_geom.py writes a crater into
+## every tile its influence radius reaches, so a pack-sourced list is already
+## complete and the merge is skipped.
 func get_chunk_craters(ipix: int) -> Array:
+	if _ensure_modifier_pack() != null:
+		return _modifiers_of(ipix, "craters", _chunk_craters)
 	var key := "hp_n%d_p%d" % [export_nside, ipix]
 	var own: Array = _chunk_craters.get(key, [])
 	# Merge sub-pixel craters from cached neighbor export tiles.
@@ -1082,8 +1411,7 @@ func get_chunk_craters(ipix: int) -> Array:
 ## Return populate zones for an export-level chunk (from v7+ recipes).
 ## Each zone is a Dictionary with: biome_type, coverage, vertices (or lon/lat).
 func get_chunk_populate_zones(ipix: int) -> Array:
-	var key := "hp_n%d_p%d" % [export_nside, ipix]
-	return _chunk_populate_zones.get(key, [])
+	return _modifiers_of(ipix, "populate_zones", _chunk_populate_zones)
 
 
 ## Return all populate zones across every loaded export chunk, flattened.
@@ -1097,15 +1425,126 @@ func get_all_populate_zones() -> Array:
 ## Return cached linear features for an export-level chunk.
 ## Each entry has: type, centerline, width_start_m, width_end_m, profile, etc.
 func get_chunk_linear_features(ipix: int) -> Array:
-	var key := "hp_n%d_p%d" % [export_nside, ipix]
-	return _chunk_linear_features.get(key, [])
+	return _modifiers_of(ipix, "linear_features", _chunk_linear_features)
 
 
 ## Return cached radial features for an export-level chunk.
 ## Each entry has: type, lon, lat, radius_m, depth_m, profile.
 func get_chunk_radial_features(ipix: int) -> Array:
-	var key := "hp_n%d_p%d" % [export_nside, ipix]
-	return _chunk_radial_features.get(key, [])
+	return _modifiers_of(ipix, "radial_features", _chunk_radial_features)
+
+
+## Road records for a chunk, at the level [param nside] (roads are baked all the
+## way down to the quadtree depth, unlike the other kinds which stop at
+## export_nside). Each record is already clipped to this tile.
+func get_chunk_roads(nside: int, ipix: int) -> Array:
+	return get_chunk_modifiers(nside, ipix).get("roads", [])
+
+
+## Every road on the planet, stitched back into WHOLE features.
+##
+## Read from the pack's COARSEST level, where one record normally covers an
+## entire road: bridge detection must see a whole road, because a chasm span can
+## be longer than a fine tile and a clipped record would report a truncated gap.
+## Roads survive decimation almost intact at every level (the tolerance is
+## clamped to half the road's own width, ~1.5 m), so the coarse copy is faithful.
+##
+## Pieces sharing a feature_id are concatenated in along-road order, which the
+## absolute `_cum_lengths` make unambiguous.
+func get_whole_roads() -> Array:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return []
+	var levels: PackedInt64Array = pack.get_levels()
+	if levels.is_empty():
+		return []
+	var nside := int(levels[0])
+	var by_feature: Dictionary = {}
+	for ipix in pack.get_tile_ipix(nside):
+		for r in get_chunk_roads(nside, int(ipix)):
+			var fid: int = int(r.get("feature_id", -1))
+			if not by_feature.has(fid):
+				by_feature[fid] = []
+			by_feature[fid].append(r)
+
+	var out: Array = []
+	for fid in by_feature:
+		var pieces: Array = by_feature[fid]
+		if pieces.size() == 1:
+			out.append(pieces[0])
+			continue
+		pieces.sort_custom(func(a, b):
+			return float((a["_cum_lengths"] as PackedFloat64Array)[0]) \
+					< float((b["_cum_lengths"] as PackedFloat64Array)[0]))
+		var cl := PackedVector2Array()
+		var cum := PackedFloat64Array()
+		for p in pieces:
+			var pcl: PackedVector2Array = p["centerline"]
+			var pcum: PackedFloat64Array = p["_cum_lengths"]
+			for i in pcl.size():
+				# Skip a duplicated joint vertex where two pieces meet.
+				if cum.size() > 0 and absf(pcum[i] - cum[cum.size() - 1]) < 1e-6:
+					continue
+				cl.append(pcl[i])
+				cum.append(pcum[i])
+		var merged: Dictionary = (pieces[0] as Dictionary).duplicate()
+		merged["centerline"] = cl
+		merged["_cum_lengths"] = cum
+		out.append(merged)
+	return out
+
+
+## Every chasm span the roads fly over, computed once and memoised.
+##
+## Deterministic: a pure walk of the roads against the procedural crack field,
+## so the client and the server produce identical spans with no replication.
+## See RoadBridge for why this cannot be baked at export time.
+func get_bridge_spans() -> Array:
+	if _bridge_spans_built:
+		return _bridge_spans
+	_bridge_spans_mutex.lock()
+	if not _bridge_spans_built:
+		var spans := RoadBridge.find_all_spans(self, get_whole_roads())
+		_bridge_spans = spans
+		_bridge_spans_built = true
+		if not spans.is_empty():
+			var truncated := 0
+			for s in spans:
+				if s.get("truncated", false):
+					truncated += 1
+			print("[PlanetData] %d road/chasm crossing(s) found on '%s'"
+					% [spans.size(), planet_name]
+					+ (" — %d too oblique for a bridge" % truncated if truncated else ""))
+	_bridge_spans_mutex.unlock()
+	return _bridge_spans
+
+
+func clear_bridge_spans() -> void:
+	_bridge_spans_mutex.lock()
+	_bridge_spans.clear()
+	_bridge_spans_built = false
+	_bridge_spans_mutex.unlock()
+
+
+## Road records for the HEALPix chunk (hp_nside, hp_ipix), resolving the pyramid
+## level for you. Empty when the planet has no pack.
+##
+## Roads are baked down to the quadtree depth so a chunk normally gets its own
+## tile and the records are exactly its stretch. A chunk finer than the deepest
+## baked level falls back to the ancestor tile, whose pieces reach beyond this
+## chunk — callers that emit geometry must clip; callers that test a point
+## (prop spawners) do not care.
+func get_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
+	if hp_nside <= 0 or _ensure_modifier_pack() == null:
+		return []
+	var cap := modifier_max_nside_for(ModifierPackScript.KIND_ROAD)
+	var nside: int = clampi(hp_nside, 1, cap)
+	var ipix := hp_ipix
+	var cur := hp_nside
+	while cur > nside:
+		ipix = HEALPix.parent_pixel(ipix)
+		cur /= 2
+	return get_chunk_roads(nside, ipix)
 
 
 const BASE_PIXEL_COUNT := 12
@@ -1833,6 +2272,29 @@ func get_river_material() -> Material:
 	if bd and bd.terrain_material_override:
 		return bd.terrain_material_override
 	return null
+
+
+## Load (and memoise) a road material by resource path — thread-safe.
+##
+## PlanetChunk.generate_mesh() runs on WorkerThreadPool tasks and used to do the
+## has/load/store dance on _road_material_cache inline, unsynchronised: several
+## mesh tasks could call ResourceLoader.load() for the same path and write the
+## Dictionary concurrently. Negative results are cached too, so a missing .tres
+## is not re-probed once per chunk.
+func get_road_material_cached(mat_path: String) -> Material:
+	_road_material_mutex.lock()
+	if _road_material_cache.has(mat_path):
+		var hit = _road_material_cache[mat_path]
+		_road_material_mutex.unlock()
+		return hit as Material
+	var loaded: Material = null
+	if ResourceLoader.exists(mat_path):
+		var res = ResourceLoader.load(mat_path)
+		if res is Material:
+			loaded = res
+	_road_material_cache[mat_path] = loaded
+	_road_material_mutex.unlock()
+	return loaded
 
 
 ## Return the terrain_material_override from the volcanic_geothermal-active_volcano

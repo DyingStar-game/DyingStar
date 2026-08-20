@@ -87,15 +87,24 @@ static func scatter_grass(
 			return null
 
 	# Road query — suppress grass tufts on road surfaces.
-	var road_query = planet_data.get_road_query()  # may be null
-	var has_road_overlap := false
-	if road_query and road_query.is_loaded():
-		if hp_mode:
-			has_road_overlap = road_query.chunk_overlaps_any_zone_hp(
-				hp_nside, hp_ipix)
-		else:
-			has_road_overlap = road_query.chunk_overlaps_any_zone(
-				face, u_min, u_max, v_min, v_max)
+	# The chunk's modifier tile already holds only THIS chunk's road pieces, so
+	# the suppression test below is a point-to-polyline distance over a handful
+	# of local points instead of a planet-wide zone scan per candidate.
+	# BiomeQuery stays as the fallback for planets without a pack.
+	var chunk_roads: Array = planet_data.get_roads_for_chunk(hp_nside, hp_ipix) \
+		if hp_mode else []
+	var road_m_per_deg: float = planet_data.radius * PI / 180.0
+	var road_query = null
+	var has_road_overlap := not chunk_roads.is_empty()
+	if not has_road_overlap and planet_data.get_modifier_pack() == null:
+		road_query = planet_data.get_road_query()  # may be null
+		if road_query and road_query.is_loaded():
+			if hp_mode:
+				has_road_overlap = road_query.chunk_overlaps_any_zone_hp(
+					hp_nside, hp_ipix)
+			else:
+				has_road_overlap = road_query.chunk_overlaps_any_zone(
+					face, u_min, u_max, v_min, v_max)
 
 	# Clamp LOD to valid range for grass tiers.
 	var lod_tier := clampi(chunk_lod, 0, MeadowSteppeMeadowTerrain.GRASS_LOD_BUDGET.size() - 1)
@@ -172,16 +181,18 @@ static func scatter_grass(
 
 			# Skip grass on roads — no tufts where a trail/path/road crosses.
 			if has_road_overlap:
-				var rd_zones: Array[Dictionary] = road_query.query_at_direction(dir)
+				var rd_lonlat := BiomeQuery._dir_to_lonlat(dir)
 				var on_road := false
-				for rd_z in rd_zones:
-					if RoadTerrain.is_road_zone(rd_z):
-						RoadTerrain.prepare_zone(rd_z, planet_data.radius)
-						var rd_lonlat := BiomeQuery._dir_to_lonlat(dir)
-						var _rd_cs := BiomeQuery.get_cross_section_t(rd_z, rd_lonlat)
-						if _rd_cs.t < 1.0:
-							on_road = true
-							break
+				if not chunk_roads.is_empty():
+					on_road = RoadTerrain.point_on_any_road(
+						rd_lonlat.x, rd_lonlat.y, chunk_roads, road_m_per_deg)
+				elif road_query:
+					for rd_z in road_query.query_at_direction(dir):
+						if RoadTerrain.is_road_zone(rd_z):
+							RoadTerrain.prepare_zone(rd_z, planet_data.radius)
+							if BiomeQuery.get_cross_section_t(rd_z, rd_lonlat).t < 1.0:
+								on_road = true
+								break
 				if on_road:
 					continue
 

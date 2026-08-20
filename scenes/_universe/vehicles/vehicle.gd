@@ -423,6 +423,9 @@ var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off 
 var _cargo_debug_markers: Dictionary = {}  # RigidBody3D cargo -> its MeshInstance3D envelope
 var _net_last_position: Vector3 = Vector3.ZERO
 var _net_last_rotation: Vector3 = Vector3.ZERO
+## SERVER: last replicated parent uuid, change detection. Replicated positions are PARENT-LOCAL, so
+## the receiver must know which frame they are in — see _replicate_transform.
+var _net_last_parent_id: String = ""
 ## Consecutive server ticks the pilotless vehicle has been quasi-still — after
 ## 30 (0.5 s) the body is put to sleep to stop suspension micro-jitter.
 var _idle_still_ticks: int = 0
@@ -971,38 +974,11 @@ static func _fit_shift(item_min: float, item_max: float, bay_min: float, bay_max
 func _bed_floor_local_y() -> float:
 	return body_height * 0.5 + BED_WALL_THICKNESS
 
-## AABB of a body's OWN collision shapes (covers CollisionShape3D / CollisionPolygon3D alike, and
-## ignores child Area3D shapes — those belong to a separate CollisionObject3D, e.g. the rock mining
-## sphere), expressed in `frame_from_body`: pass IDENTITY for body-local, or this vehicle's
-## (global⁻¹ × body.global) for vehicle-local. Zero-size when the body has no collision.
+## AABB of a body's OWN collision shapes, expressed in `frame_from_body`: pass IDENTITY for
+## body-local, or this vehicle's (global⁻¹ × body.global) for vehicle-local. The maths lives in
+## Globals (the carry placement needs the same footprint); this stays as the vehicle-side name.
 func _collision_aabb(body: Node3D, frame_from_body: Transform3D) -> AABB:
-	var col := body as CollisionObject3D
-	if col == null:
-		return AABB()
-	var bounds := AABB()
-	var started := false
-	for owner_id in col.get_shape_owners():
-		var owner_xform: Transform3D = col.shape_owner_get_transform(owner_id)  # relative to body
-		for i in col.shape_owner_get_shape_count(owner_id):
-			var shape: Shape3D = col.shape_owner_get_shape(owner_id, i)
-			if shape == null:
-				continue
-			var debug_mesh := shape.get_debug_mesh()
-			if debug_mesh == null:
-				continue
-			var aabb := debug_mesh.get_aabb()
-			for c in 8:
-				var corner := aabb.position + Vector3(
-					aabb.size.x if (c & 1) else 0.0,
-					aabb.size.y if (c & 2) else 0.0,
-					aabb.size.z if (c & 4) else 0.0)
-				var point: Vector3 = frame_from_body * (owner_xform * corner)
-				if not started:
-					bounds = AABB(point, Vector3.ZERO)
-					started = true
-				else:
-					bounds = bounds.expand(point)
-	return bounds
+	return Globals.collision_aabb(body, frame_from_body)
 
 # ------------------------------------------------------------------------------
 # Cargo debug envelope (Settings > General > Cargo debug). Dev aid only, off by default.
@@ -1860,15 +1836,34 @@ func set_driver_hud(show: bool) -> void:
 		_hud.queue_free()
 		_hud = null
 
+## SERVER: uuid of the node this vehicle's replicated (PARENT-LOCAL) position is expressed in.
+##
+## Unlike every other prop, a Vehicle replicates its transform here instead of through PropNet, and
+## this payload never carried a parent_id — which is safe only as long as the receiver's idea of the
+## parent matches ours. The origin rebase can break that tie: server.gd create_generic_object routes
+## a spawn that arrives WITHOUT a parent into the owning planet's physics world, so `position`
+## becomes planet-local while Horizon still has parent "" and would read those metres as universe
+## coordinates (that exact mismatch teleported the player 3.3e10 m into deep space; see
+## player_server._net_parent_uuid). Sending the parent alongside the position — on change, exactly
+## like PropNet.server_tick does for every other prop — makes the frame explicit and self-heals a
+## stale record, whichever parent the spawn actually arrived with.
+func _net_parent_id() -> String:
+	var parent: Node = get_parent()
+	if parent != null and "uuid" in parent:
+		return str(parent.uuid)
+	return ""
+
 func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.01, 0.01, 0.01))
+	var my_parent_id: String = _net_parent_id()
 	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
 	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)
 	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
 	var my_steering: float = snappedf(steering, 0.01)
 	var my_seats: Dictionary = _seat_occupancy_now()
 	if my_pos == _net_last_position and my_rot == _net_last_rotation \
+			and my_parent_id == _net_last_parent_id \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
 			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering \
@@ -1877,6 +1872,13 @@ func _replicate_transform() -> void:
 			and my_seats == _net_last_seats:
 		return
 	var data: Dictionary = {}
+	# The parent goes out WITH the position it qualifies, in the same payload — never in a message of
+	# its own, so the receiver can never apply a local position in the previous frame.
+	if my_parent_id != _net_last_parent_id:
+		data["parent_id"] = my_parent_id
+		data["position"] = my_pos
+		_net_last_parent_id = my_parent_id
+		_net_last_position = my_pos
 	if my_pos != _net_last_position:
 		data["position"] = my_pos
 		_net_last_position = my_pos

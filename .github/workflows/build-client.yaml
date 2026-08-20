@@ -12,9 +12,34 @@ env:
   GODOT_VERSION: 4.7
 
 jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_date: ${{ steps.version.outputs.release_date }}
+    steps:
+      - name: Compute version info
+        id: version
+        run: |
+          # Computed once here so every platform build shares the exact same
+          # version string (a per-matrix timestamp gave linux and windows
+          # two different versions).
+          DATE=$(date +%Y-%m-%d)
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            VERSION="PullRequest"
+          else
+            VERSION="$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.os_name }} client
     runs-on: dyingstar-runners
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -40,20 +65,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Compute version info
-        id: version
-        run: |
-          DATE=$(date +%Y-%m-%d)
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            VERSION="PullRequest"
-          else
-            VERSION="$(date +%Y%m%d%H%M%S)"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
 
       - name: Set up .NET 9.0
         uses: actions/setup-dotnet@v4
@@ -111,7 +122,11 @@ jobs:
         run: rm -fr assets_blender
 
       - name: Create build output directory
-        run: mkdir -p ${{ matrix.build_dir }}
+        run: |
+          # Self-hosted runners reuse the workspace: wipe stale exports so a
+          # previous embedded-PCK binary can never ship next to a fresh .pck.
+          rm -rf "${{ matrix.build_dir }}"
+          mkdir -p "${{ matrix.build_dir }}"
 
       - name: Export ${{ matrix.os_name }} client
         env:
@@ -148,7 +163,7 @@ jobs:
 
       - name: Write version.json
         run: |
-          echo '{"version":"${{ steps.version.outputs.version }}","releaseDate":"${{ steps.version.outputs.release_date }}"}' \
+          echo '{"version":"${{ needs.version.outputs.version }}","releaseDate":"${{ needs.version.outputs.release_date }}"}' \
             > "${{ matrix.build_dir }}/version.json"
 
       - name: Create build zip

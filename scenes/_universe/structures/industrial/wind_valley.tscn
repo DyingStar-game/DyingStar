@@ -2,6 +2,10 @@
 
 [ext_resource type="PackedScene" uid="uid://bdxjibeoa055g" path="res://assets/_universe/structures/industrial/wind_valley_bridge.glb" id="1_p27tt"]
 [ext_resource type="PackedScene" uid="uid://btgke3btm5ma7" path="res://assets/_universe/structures/industrial/wind_valley_fan.glb" id="2_svp04"]
+[ext_resource type="Material" uid="uid://cmreo7rjq0ava" path="res://assets/_universe/environment/terrain/regolith_grey.tres" id="2_urp1l"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_yy05e"]
+friction = 0.5
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_p27tt"]
 size = Vector3(299.36741340111166, 65.56090138369495, 10)
@@ -13,6 +17,10 @@ size = Vector3(49.65505270586982, 37.93089269361008, 10)
 freeze = true
 
 [node name="wind_valley_bridge" parent="." unique_id=164632456 instance=ExtResource("1_p27tt")]
+physics_material_override = SubResource("PhysicsMaterial_yy05e")
+
+[node name="PONT_EXPORT" parent="wind_valley_bridge" index="0" unique_id=2034089896]
+surface_material_override/0 = ExtResource("2_urp1l")
 
 [node name="wind_valley_fan" parent="." unique_id=418803296 instance=ExtResource("2_svp04")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 92, 0)
@@ -53,6 +61,7 @@ shape = SubResource("BoxShape3D_dagjk")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -124.76487067397392, 19.57107295879385, 0)
 shape = SubResource("BoxShape3D_dagjk")
 
+[editable path="wind_valley_bridge"]
 [editable path="wind_valley_fan"]
 [editable path="wind_valley_fan_little1"]
 [editable path="wind_valley_fan_little2"]

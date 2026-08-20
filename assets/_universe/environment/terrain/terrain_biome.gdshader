@@ -243,6 +243,10 @@ void fragment() {
 				detail_bump_strength, detail_lods(tri_pos, s));
 		detail = base_o.w;
 		vec3 bn = base_o.xyz;
+		// Count the base terms accumulated in bn: every octave carries one
+		// sgn*n (the triplanar reconstruction of world_normal).  They are
+		// subtracted below so only the gradient perturbation survives.
+		float oct = 1.0;
 
 		if (detail_fine_strength > 0.0) {
 			vec4 fine_o = detail_octave_sample(tri_pos, sf, layer, n, sgn,
@@ -250,11 +254,13 @@ void fragment() {
 			// Add the fine grain to the albedo modifier around neutral 0.5.
 			detail = clamp(detail + (fine_o.w - 0.5) * detail_fine_strength, 0.0, 1.0);
 			bn += fine_o.xyz;
+			oct += 1.0;
 		}
 
 		if (detail_macro_strength > 0.0) {
 			bn += detail_octave_sample(tri_pos, sm, layer, n, sgn,
 					detail_bump_strength * detail_macro_strength, detail_lods(tri_pos, sm)).xyz;
+			oct += 1.0;
 		}
 
 		// ── Cliff detail swap ────────────────────────────────────────
@@ -270,18 +276,31 @@ void fragment() {
 					detail_bump_strength, detail_lods(tri_pos, cs));
 			float cliff_detail = cbase.w;
 			vec3 cbn = cbase.xyz;
+			float coct = 1.0;  // the cliff path has no macro octave
 			if (detail_fine_strength > 0.0) {
 				vec4 cfine = detail_octave_sample(tri_pos, csf, cl, n, sgn,
 						detail_bump_strength * detail_fine_strength, detail_lods(tri_pos, csf));
 				cliff_detail = clamp(cliff_detail + (cfine.w - 0.5) * detail_fine_strength, 0.0, 1.0);
 				cbn += cfine.xyz;
+				coct += 1.0;
 			}
 			detail = mix(detail, cliff_detail, cliff_factor);
 			bn = mix(bn, cbn, cliff_factor);
+			oct = mix(oct, coct, cliff_factor);  // bn's base count follows the same blend
 		}
 
 		if (detail_bump_strength > 0.0) {
-			shaded_normal = normalize(bn);
+			// Perturb the TRUE geometric normal — never replace it with bn.
+			// Each octave's base term in bn is sgn*n, the triplanar reconstruction
+			// of world_normal, which sharpness-warps it toward the dominant
+			// coordinate axis (~23 deg of tilt on ground whose radial has no
+			// dominant axis).  A fixed world-space tilt is invisible under the
+			// high sun but flips N.L sign under a grazing local light (the torch
+			// lighting the ground from one azimuth and not from the opposite one).
+			// Subtracting one base per contributing octave (oct, counted above
+			// and cliff-blended with bn) leaves the pure gradient perturbation,
+			// which then rides on world_normal.
+			shaded_normal = normalize(world_normal + (bn - sgn * n * oct));
 		}
 	}
 

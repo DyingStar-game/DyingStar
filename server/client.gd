@@ -4,6 +4,9 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
 const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
+## How long a prop may sit half-received before it counts as lost rather than merely in transit. Well
+## past any plausible gap between two channels of the same zone entry.
+const STUCK_PROP_MS: int = 8000
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -27,6 +30,11 @@ var props_list: Dictionary = {
 }
 # We need it when a channel arrives before another in the case of this channel not have the scenename property
 var props_pre_creations: Dictionary = {}
+# DIAGNOSTIC (temporary): object_id -> true, so "update for an object we never built" is reported ONCE
+# per object instead of tens of thousands of times. An object can go missing through two paths that
+# used to be completely silent — a node freed with its parent, and a create still waiting on the
+# channel that carries scenename/parent_id — which is why the log gave no clue which one it was.
+var _missing_object_reported: Dictionary = {}
 
 var my_player_uuid: String = ""
 # UUIDs of all my player's ancestors (closest parent first, up to the universe
@@ -185,6 +193,7 @@ func _load_client_ini_file() -> void:
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
+	_report_stuck_pre_creations()
 	if check_pending_objects_timer == 30:
 		# every 30 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
@@ -334,6 +343,18 @@ func _collect_parents_uuids(node: Node) -> Array:
 ## entry whose node was already freed — otherwise callers would reparent onto a freed instance and
 ## crash. Returning null there is correct: a freed parent is treated as "not known yet", so the prop
 ## stays where it is until a real parent resolves.
+## The node a replicated `parent_id` designates, with the WORLD frame spelled out. An explicit ""
+## means "no networked parent" and resolves to the universe root — a legitimate destination, not a
+## failure: it is where a body that left a planet's gravity belongs. Anything else is looked up, and
+## null then means "not resolvable YET" (its object has not entered our GORC zones), which is a very
+## different situation and must not be silently turned into a move to the world frame.
+## Props already had this distinction (see the prop path's fallback to universe_scene); players did
+## not, so a player crossing into space kept its planet parent and applied world coordinates as if
+## they were local to it.
+func _frame_node(parent_id: String) -> Node:
+	return universe_scene if parent_id == "" else _search_parent_node(parent_id)
+
+
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
@@ -357,6 +378,10 @@ func _search_parent_node(parent_id: String) -> Node:
 ## the end of the frame, still publishing the mic and still receiving voice.
 func shutdown() -> void:
 	set_process(false)
+	# Drop the clock calibration with the session: the estimate only ever climbs (see
+	# Globals.sync_clock), so carrying one authority's offset into the next would be worse than
+	# starting over.
+	Globals.reset_clock()
 	# set_process(false) above does NOT propagate to children, so the voice client would keep
 	# running its own _process. Stop it explicitly, and now rather than at the end of the frame.
 	var lk: Node = get_node_or_null("LiveKitAudio")
@@ -514,6 +539,11 @@ func delete_object(event: Dictionary) -> void:
 
 	# We delete only on the channel 6
 	if int(event["channel"]) == 6:
+		# An object that leaves is gone whether or not it ever made it into the tree: drop any
+		# half-received channel data with it. Otherwise a prop that was still waiting for its
+		# other channel keeps that stale half forever, and the next zone-enter merges the old
+		# data into the new one.
+		props_pre_creations.erase(event["object_id"])
 		if props_list.has(event["object_type"]):
 			var type = event["object_type"]
 			if props_list[type].has(event["object_id"]):
@@ -687,6 +717,14 @@ func create_player(event: Dictionary) -> void:
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
+## Is this object already waiting on a missing parent? Guards the queue against duplicates now that
+## repeated updates for an unbuilt object also reach the create path.
+func _is_pending_generic_object(object_id: String) -> bool:
+	for m in pending_messages_generic_objects_parenting:
+		if str(m.get("object_id", "")) == object_id:
+			return true
+	return false
+
 func create_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
 	var object_id = event["object_id"]
@@ -750,9 +788,12 @@ func create_generic_object(event: Dictionary) -> void:
 			if object_data["parent_id"] != "":
 				parent = _search_parent_node(object_data["parent_id"])
 				if parent == null:
-					# parent object not created yet -> wait for it
-					pending_messages_generic_objects_parenting.append(event)
-					print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
+					# parent object not created yet -> wait for it. Queued ONCE: this path is now also
+					# reached from update_generic_object, which fires many times a second, and stacking
+					# a duplicate per update would grow the queue without bound.
+					if not _is_pending_generic_object(object_id):
+						pending_messages_generic_objects_parenting.append(event)
+						print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
 					return
 
 			var prop_scene: PackedScene
@@ -826,11 +867,45 @@ func create_generic_object(event: Dictionary) -> void:
 			# Missing scenename or parent_id: buffer THIS channel's data and wait for the
 			# other channel (the merge above will then have everything to instantiate).
 			if not props_pre_creations.has(object_id):
+				# Nothing is logged here on purpose: waiting for the other channel is the NORMAL path,
+				# and announcing it printed several hundred lines per connection — noise that buried
+				# the one line that matters. Only a prop still half-received after STUCK_PROP_MS says
+				# anything, and by then it never will complete (see _report_stuck_pre_creations).
 				props_pre_creations[object_id] = {
 					"type": object_type,
 					"channels": {}
 				}
 			props_pre_creations[object_id]["channels"][event["channel"]] = event["object_data"]
+			if not props_pre_creations[object_id].has("since"):
+				props_pre_creations[object_id]["since"] = Time.get_ticks_msec()
+
+## Names the props that are STUCK half-received, and only those.
+##
+## A prop needs both its scene (scenename) and its placement (parent_id), and they travel on separate
+## replication channels — so being half-received is the NORMAL state for a fraction of a second, and
+## logging it as it happens buries the real fault under a hundred harmless lines. What is not normal is
+## being half-received minutes later: the server only sends a property when it CHANGES, and scenename
+## changes exactly once, at creation, so a channel we never received is never resent. Those props are
+## invisible for the rest of the session. Reported once each, when the wait stops being plausible.
+func _report_stuck_pre_creations() -> void:
+	var now: int = Time.get_ticks_msec()
+	for object_id in props_pre_creations:
+		var entry: Dictionary = props_pre_creations[object_id]
+		if entry.get("reported", false) or now - int(entry.get("since", now)) < STUCK_PROP_MS:
+			continue
+		entry["reported"] = true
+		var merged: Dictionary = {}
+		for channel in entry["channels"]:
+			merged.merge(entry["channels"][channel])
+		var missing: Array[String] = []
+		if not merged.has("scenename"):
+			missing.append("scenename")
+		if not merged.has("parent_id"):
+			missing.append("parent_id")
+		print("[client][STUCK] %s %s never received %s (has channels %s) — it will stay invisible" % [
+			entry["type"], object_id, ", ".join(missing), entry["channels"].keys()
+		])
+
 
 func update_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
@@ -864,7 +939,18 @@ func update_generic_object(event: Dictionary) -> void:
 		# (tools, head, perforating, carrying, ...); position/rotation/velocity come
 		# from the dedicated "move" path, so skip them here.
 		if players_list.has(object_id):
-			_apply_player_gameplay_props(players_list[object_id], object_data)
+			var player_instance = players_list[object_id]
+			# The node may already be FREED while its entry lingers here (freed along with a deleted
+			# parent, or a late update after delete_player). Passing a freed object to the typed
+			# _apply_player_gameplay_props is rejected outright ("previously freed ... not a subclass
+			# of the expected argument class"), once per update.
+			# Skip the update, but do NOT erase the entry: player_update() reads the same dictionary
+			# and treats a MISSING own player as fatal ("my player deleted on client side: 7001" ->
+			# CONNEXION_ERROR -> the client drops the session). Removing entries is delete_player's
+			# job; a read path must never shrink the roster.
+			if not is_instance_valid(player_instance):
+				return
+			_apply_player_gameplay_props(player_instance, object_data)
 		else:
 			print("Update player property but player not found: %s" % object_id)
 		return
@@ -878,6 +964,10 @@ func update_generic_object(event: Dictionary) -> void:
 			# the child's is not. A late update for the child then lands on a freed instance. Drop the
 			# stale entry and bail (a later create re-instantiates it fresh if it comes back).
 			if not is_instance_valid(prop_instance):
+				# DIAGNOSTIC: this erase was silent, and it is the point of no return — nothing ever
+				# re-creates the object afterwards, so every later update just prints "not found".
+				print("[diag] prop %s (%s) was FREED (parent deleted?) — dropping its entry" \
+						% [object_id, object_type])
 				props_list[object_type].erase(object_id)
 				return
 			# Address networking via the PropSync component when present; fall back to the root
@@ -900,7 +990,27 @@ func update_generic_object(event: Dictionary) -> void:
 			#print("client_channel_data_update (5) for existing object %s" % object_id)
 			net.client_channel_data_update(object_data)
 		else:
-			print("Update generic object but not found: %s" % object_id)
+			# DIAGNOSTIC: once per object (this used to fire tens of thousands of times), and now says
+			# WHY — still buffered waiting for a channel, still queued on a missing parent, or neither
+			# (i.e. it was created and then lost).
+			if not _missing_object_reported.has(object_id):
+				_missing_object_reported[object_id] = true
+				var state := "unknown (created then lost?)"
+				if props_pre_creations.has(object_id):
+					state = "buffered in props_pre_creations, channels=%s" \
+							% str(props_pre_creations[object_id]["channels"].keys())
+				else:
+					for m in pending_messages_generic_objects_parenting:
+						if m.get("object_id", "") == object_id:
+							state = "queued on missing parent %s" % m["object_data"].get("parent_id", "?")
+							break
+				print("[diag] Update for unbuilt object %s (%s) — %s" % [object_id, object_type, state])
+			# An update carries genuine replicated data — for a vehicle that includes `scenename`
+			# (see addons/dyingstar/network_defs.json). Dropping it is a POINT OF NO RETURN: a client
+			# rebuild wipes props_pre_creations while Horizon, which already sent the gorc_zone_enter,
+			# never replays it, so the object can only ever be described by updates from then on. Feed
+			# it back through the create path, which either completes the object or re-buffers it.
+			create_generic_object(event)
 	else:
 		print("Update generic object but type not found: %s" % object_type)
 
@@ -935,8 +1045,17 @@ func player_update(message: Dictionary) -> void:
 				)
 				if uuid == my_player_uuid:
 					if message["data"].has("parent_id"):
-						var parent = _search_parent_node(message["data"]["parent_id"])
-						if parent != null and player.get_parent() != parent:
+						var parent = _frame_node(message["data"]["parent_id"])
+						if parent == null:
+							# The server declared a frame we cannot resolve (its object has not entered
+							# our GORC zones yet). We keep our current parent but apply a position
+							# measured in the DECLARED one: from here on our frame silently disagrees
+							# with the server's. The server only re-declares on change, so this does not
+							# self-heal — see the known-gap note in this lot.
+							var held_by: String = player.get_parent().name if player.get_parent() != null else "<none>"
+							push_warning("[client] my player: unresolved parent_id %s, staying under '%s' — frame now diverges from the server"
+									% [message["data"]["parent_id"], held_by])
+						elif player.get_parent() != parent:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
@@ -958,8 +1077,11 @@ func player_update(message: Dictionary) -> void:
 						message["data"]["rotation"]["z"]
 					)
 					if message["data"].has("parent_id"):
-						var parent = _search_parent_node(message["data"]["parent_id"])
-						if parent != null and player.get_parent() != parent:
+						var parent = _frame_node(message["data"]["parent_id"])
+						if parent == null:
+							push_warning("[client] player %s: unresolved parent_id %s — its frame now diverges from the server"
+									% [uuid, message["data"]["parent_id"]])
+						elif player.get_parent() != parent:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
@@ -1050,6 +1172,10 @@ func _standardize_object(event: Dictionary) -> Dictionary:
 
 	if event.has("timestamp"):
 		timestamp = event["timestamp"]
+		# The SAME clock the game server calibrates on (see ServerNetwork), so both sides derive the
+		# celestial positions from one shared instant instead of from two Windows clocks that merely
+		# happen to be close. Nothing else about time crosses the network.
+		Globals.sync_clock(float(timestamp))
 	else:
 		print("ERROR: event has no timestamp field: %s" % event)
 

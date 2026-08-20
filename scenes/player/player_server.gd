@@ -8,35 +8,12 @@ extends Node
 ## they migrate too. (Filled in incrementally.)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+## How long a body waits for the ground under it before being released anyway. Generous: a cold start
+## regenerates every chunk on worker threads, and being released early is exactly the bug.
+const SPAWN_GROUND_TIMEOUT: float = 20.0
 ## Kept in sync with Player.JUMP — a `match` pattern needs a compile-time constant, so we can't read
 ## `player.JUMP` here.
 const JUMP: String = "jump"
-## Physics-held carry: cap on the follow velocity (m/s) so a fast turn can't tunnel a carried body
-## through a thin wall (paired with continuous_cd while held).
-const _CARRY_FOLLOW_MAX_SPEED := 25.0
-## HORIZONTAL dead zone (m) around the hold spot: while the object is within it horizontally, it is NOT
-## pulled sideways — so on pickup it does NOT snap to the front, and it trails as you move. Vertical is
-## NOT dead-zoned (you always follow up/down), so looking down still takes the object to the floor to
-## place it. Bigger = looser / trails more.
-const _CARRY_DEAD_ZONE := 0.6
-## How briskly the object eases toward the hold spot once outside the dead zone (1/s). Proportional, so it
-## GLIDES in instead of the old instant snap. Higher = snappier, lower = softer.
-const _CARRY_FOLLOW_GAIN := 5.0
-## Physics-held carry: max height (m) the camera pitch raises/lowers the hold spot, up and down.
-const _CARRY_PITCH_LIFT := 2.0
-## How much faster than the gaze the object rises with pitch (>1 = it climbs above the crosshair on a
-## modest up-look, so you see under it to place it on a high shelf without craning your neck). Saturates
-## at _CARRY_PITCH_LIFT.
-const _CARRY_PITCH_GAIN := 3.0
-## Keep the hold spot at least this far (m) above any solid surface below it, so looking down (e.g. to
-## aim at an object on the ground) can't drive the carried body underground.
-const _CARRY_GROUND_CLEARANCE := 0.2
-## Keep the hold spot at least this far (m) below a ceiling above it, so looking up inside a container /
-## building can't push the carried body up through the roof.
-const _CARRY_CEILING_CLEARANCE := 0.35
-## Rotation damping applied to a carried body: it stays dynamic-rotation (a knock nudges its
-## orientation — the object reacts to bumps) but the spin bleeds off quickly instead of tumbling.
-const _CARRY_ANGULAR_DAMP := 4.0
 ## Yaw applied to a carried object per mouse-wheel notch (radians) — see the "carry_rotate" action.
 const CARRY_ROTATE_STEP := deg_to_rad(15.0)
 ## Free-rotate gain: radians of object rotation per unit of streamed mouse motion. The client streams
@@ -67,6 +44,13 @@ var _spawn_queue: Array[String] = []
 ## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
 var _los_ray: RayCast3D = null
 var _carry_prompt_timer: float = 0.0
+## Orientation of the carried crate ON ITS MOUNT, in BODY-local space: the wheel notch and the
+## middle-mouse free rotate accumulate into it, _server_update_carried_item re-applies it every tick,
+## and it survives the drop as the crate's spin about the placement surface normal. Reset per pickup.
+var _carry_basis: Basis = Basis.IDENTITY
+## Last resolved placement under the crosshair (see CarryPlacement.resolve). Refreshed every tick
+## while carrying; feeds the E prompt. The drop re-resolves rather than trusting this.
+var _place: Dictionary = {}
 ## Gait, set by the owner's replicated intent (see server_action_received): sprint held, and the
 ## mouse-wheel-chosen walk speed (0 until first set -> fall back to the default walk_speed).
 var _sprint_held: bool = false
@@ -89,6 +73,12 @@ var _seat_count: int = 0
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
 var _vault_count: int = 0
+## True once this body has actually been inside a gravity well. Gates the release to the world
+## frame: before it, an empty gravity stack only means the AreaDetector has not reported yet.
+var _had_gravity: bool = false
+## True once the terrain under this body has been seen at least once. See _hold_until_ground.
+var _ground_seen: bool = false
+var _ground_wait: float = 0.0
 var _vaulting: bool = false
 var _vault_time: float = 0.0
 var _vault_duration: float = 0.6
@@ -119,10 +109,29 @@ var _dialog_active: bool = false
 # NPC — the `is_npc` flag and `npc_go_to_position` target live on the Player facade (set by server.gd
 # / external AI); everything below is server-only working state owned by this role.
 var _npc_path_retry_timer: float = 0.0
+## Server-only: consecutive idle ticks (no goal, no facing turn, settled on the floor), used to
+## throttle move_and_slide for idle NPCs — the same sleep real players get (see _physics_process).
+var _npc_idle_ticks: int = 0
 ## Throttle for the temporary _NPC_DEBUG report.
 var _npc_debug_timer: float = 0.0
-var _npc_prev_pos: Vector3 = Vector3.ZERO
-var _npc_stuck_timer: float = 0.0
+## Progress watchdog (see _npc_update_stuck): where the NPC stood when the current window opened, and
+## how long that window has been running.
+var _npc_progress_ref: Vector3 = Vector3.ZERO
+var _npc_progress_timer: float = 0.0
+## How many rungs of the recovery ladder we have climbed without regaining headway. Reset by real
+## progress and by a new goal; drives _npc_try_unstick's escalation.
+var _npc_recover_step: int = 0
+## Intermediate world point the ROUTE is aimed at instead of the goal while working around a blockage
+## (null = none), and how long it stays valid. A detour is never a destination: arrival is always judged
+## against the real goal.
+var _npc_detour = null
+var _npc_detour_timer: float = 0.0
+## Detours taken since this goal was handed to us. Unlike _npc_recover_step it is NOT cleared by
+## headway — walking to a detour IS headway, so the step counter resets every cycle and can never
+## measure a goal we keep failing to reach. This one only clears on a new goal.
+var _npc_detour_count: int = 0
+## Last goal we saw, so a NEW one can reset the watchdog and drop a stale detour.
+var _npc_goal_seen = null
 ## Runtime-baked navigation coverage for this NPC, driven straight through the NavigationServer rather
 ## than a NavigationRegion3D node — a node would inherit its parent's transform and drag the mesh out to
 ## the planet's coordinates, which is exactly what must not happen (see _npc_to_nav). RID() until the
@@ -161,8 +170,23 @@ const _NPC_NAV_GOAL_MARGIN: float = 4.0
 ## box only voxelizes empty sky (and the box is per-NPC, per-rebake — it has to stay cheap).
 const _NPC_NAV_VERTICAL: float = 8.0
 ## How close (m, measured in the ground plane) the NPC must get to a path waypoint before we move on to
-## the next one. Roughly the body radius — tighter makes it wobble around corners.
-const _NPC_WAYPOINT_REACHED: float = 0.5
+## the next one. Must stay WELL under the clearance the mesh guarantees around geometry: the funnelled
+## path hugs an obstacle corner at exactly agent_radius (0.30 m) and the capsule eats 0.265 m of that,
+## so a waypoint dropped from 0.5 m away — the old value — aims the NPC at the point PAST the corner
+## while it is still short of the corner, and that shortcut chord goes through the wall. This is only
+## the fallback anyway: _npc_next_path_point normally advances on the passed-the-waypoint test.
+const _NPC_WAYPOINT_REACHED: float = 0.15
+## Beyond this ground-plane distance (m) a waypoint is never considered "passed". The passed test uses a
+## plane, which extends sideways forever: a body shoved off-route (a player walking into it) must not
+## silently skip the corner it still has to walk around.
+const _NPC_PASSED_MAX_DIST: float = 1.5
+## How far (m) an interior path corner is pushed off the geometry it hugs, see _npc_widen_path_corners.
+## Enough to cover the turn overshoot at _NPC_WALK_SPEED / _NPC_TURN_SHARPNESS; it is only ever applied
+## where the mesh has the room, so it cannot close a doorway.
+const _NPC_CORNER_CLEARANCE: float = 0.35
+## How far off the mesh (m) a pushed corner may land before the push is shrunk. One cell plus a little,
+## for the closest-point query's own quantisation.
+const _NPC_CORNER_ON_MESH_EPS: float = 0.12
 ## Ground-plane distance to the GOAL under which the NPC counts as arrived (and we notify the brain).
 ## Deliberately looser than _NPC_WAYPOINT_REACHED: the goal can sit slightly off the navmesh, so the last
 ## reachable waypoint may stop us a bit short — this must forgive that gap, or arrival never fires.
@@ -173,6 +197,21 @@ const _NPC_WALK_SPEED: float = 2.0
 ## How sharply the body turns toward the walk direction (exponential smoothing rate, 1/s). ~8 settles a
 ## 90° turn in about half a second; higher snaps, lower feels like a boat.
 const _NPC_TURN_SHARPNESS: float = 8.0
+## How long (s) an NPC may make no headway before the recovery ladder escalates one rung. At
+## _NPC_WALK_SPEED it covers 5 m in this window, so falling under _NPC_PROGRESS_MIN means it is scraping
+## geometry, orbiting a waypoint, or parked against a wall — never just walking slowly.
+const _NPC_PROGRESS_WINDOW: float = 2.5
+## Ground distance (m) that counts as headway over _NPC_PROGRESS_WINDOW. 1 m in 2.5 s is 20% of walking
+## pace: generous enough that squeezing through a doorway is not mistaken for a wedge.
+const _NPC_PROGRESS_MIN: float = 1.0
+## Radius (m) of the ring the detour rung samples for an intermediate point to route through. Far enough
+## to leave the dead end that trapped us, near enough to still be inside the baked coverage.
+const _NPC_DETOUR_RADIUS: float = 6.0
+## How many directions around the NPC the detour rung samples.
+const _NPC_DETOUR_SAMPLES: int = 12
+## How long (s) a chosen detour stays the routing target before the NPC goes back to aiming at the real
+## goal. A cap, not a schedule: reaching the detour retires it early.
+const _NPC_DETOUR_TIMEOUT: float = 10.0
 ## Furthest the stuck recovery may teleport an NPC onto the navmesh. Kept ~a body width: the snap skips
 ## collision, so anything beyond "the mesh I'm already standing on" tunnels it through walls.
 const _NPC_STUCK_SNAP_MAX: float = 1.5
@@ -184,6 +223,11 @@ const _NPC_NAV_SOURCE_GROUP: StringName = &"npc_nav_source"
 ## which must stay out or the NPC (and every other player standing nearby) would bake its own capsule in
 ## as an obstacle. Same set the line-of-sight rays treat as solid.
 const _NPC_NAV_COLLISION_MASK: int = Globals.MASK_OBSTACLE
+## Physics frame of the last synchronous world-geometry parse ANY NPC ran (class-wide, see
+## _ensure_npc_nav_region): parse_source_geometry_data walks every collider under the planet ON THE MAIN
+## THREAD, so several NPCs re-baking in the same frame stack those parses into one giant spike. The
+## guard lets one NPC parse per physics frame; the others simply retry next tick.
+static var _npc_nav_parse_frame: int = -1
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -287,9 +331,14 @@ func server_action_received(data: Dictionary) -> void:
 			# EVA free-flight (dev test aid): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
 			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.
-			player.eva_mode = not player.eva_mode
-			player.velocity = Vector3.ZERO
-			player.server_send_properties_to_client({"eva": player.eva_mode})
+			#
+			# Checked HERE as well as on the client, and this is the check that counts: movement is
+			# server-authoritative, so a client that asked anyway — an old build, a modified one —
+			# would still fly. Switching a tool off has to happen where the tool actually runs.
+			if not Globals.is_dev_tool_disabled("toggle_eva"):
+				player.eva_mode = not player.eva_mode
+				player.velocity = Vector3.ZERO
+				player.server_send_properties_to_client({"eva": player.eva_mode})
 		"screen_state":
 			# A 3D screen (mining depot) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
@@ -377,21 +426,20 @@ func server_action_received(data: Dictionary) -> void:
 			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
 		"carry_rotate":
-			# Spin the carried object around the vertical by one notch, about its geometry CENTER. The item
-			# holds its orientation on its own (angular axes locked, angular_velocity zeroed in
-			# _server_update_carried_item), so a one-off rotation here sticks. Around up_direction so it
-			# stays upright on a planet.
+			# Spin the carried object around the vertical by one notch. The crate is pinned to its mount
+			# each tick, so the rotation goes into _carry_basis (body-local) rather than the body's own
+			# transform. Vector3.UP in that frame IS the player's up_direction (the body is aligned to
+			# gravity), so the crate stays upright on a planet.
 			var step: float = CARRY_ROTATE_STEP * signf(float(data.get("dir", 1)))
-			_rotate_held_about_center(Basis(player.up_direction.normalized(), step))
+			_rotate_held(Basis(Vector3.UP, step))
 		"carry_free_rotate":
-			# Hold the middle mouse button and move the mouse to tumble the carried object on all axes,
-			# about its geometry CENTER (so it spins in place, not orbits its off-center body origin). In
-			# addition to the wheel's single-axis notch. Yaw about the gravity up from mouse X; pitch about
-			# the camera's horizontal right axis from mouse Y, so a drag maps to what the player sees.
+			# Hold the middle mouse button and move the mouse to tumble the carried object on all axes, in
+			# addition to the wheel's single-axis notch. Yaw about the body's up from mouse X; pitch about
+			# its right axis from mouse Y (the camera pivot only pitches, so its right IS the body's), so
+			# a drag maps to what the player sees.
 			var dxr: float = float(data.get("dx", 0.0)) * CARRY_FREE_ROTATE_GAIN
 			var dyr: float = float(data.get("dy", 0.0)) * CARRY_FREE_ROTATE_GAIN
-			var pitch_axis: Vector3 = player.camera_pivot.global_basis.x.normalized()
-			_rotate_held_about_center(Basis(player.up_direction.normalized(), dxr) * Basis(pitch_axis, dyr))
+			_rotate_held(Basis(Vector3.UP, dxr) * Basis(Vector3.RIGHT, dyr))
 		"vehicle_ignition":
 			var veh_i = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_i != null and veh_i._pilot == player and veh_i.has_method("toggle_engine"):
@@ -524,34 +572,29 @@ func server_action_received(data: Dictionary) -> void:
 						var stored_shelf = parent_node.get_meta("shelf_ref")
 						if is_instance_valid(stored_shelf) and stored_shelf.has_method("release_slot"):
 							stored_shelf.release_slot(parent_node)
-					# Carry it as a real DYNAMIC body so the physics engine owns its position: it then collides
-					# NATURALLY with the ground, walls and vehicles (blocked by them) and pushes lighter props —
-					# no manual clamping. Gravity is off + no sleeping while held; the carrier is excepted so it
-					# never blocks us. We steer it toward the hold point by velocity each tick (see
-					# _server_update_carried_item). Save the gravity scale to restore it on drop.
-					parent_node.set_meta("pre_carry_gravity_scale", parent_node.gravity_scale)
-					parent_node.freeze = false
-					parent_node.gravity_scale = 0.0
-					parent_node.can_sleep = false
-					# Except the CARRIER: the held body stays solid to the world and everyone else, but must not
-					# collide with US — otherwise, steered into our capsule, the player move_and_slide depenetrates
-					# from it and we get shoved backwards. Cleared on drop (remove_collision_exception_with).
-					parent_node.add_collision_exception_with(player)
-					parent_node.continuous_cd = true  # follow speed can be high → avoid tunnelling thin walls
-					# Keep it dynamic-rotation so it REACTS to bumps (a knock against a wall/prop nudges its
-					# orientation), but damp the spin heavily so it settles instead of tumbling. Manual
-					# orientation (wheel / middle-click) still writes the basis directly. Restored on drop.
-					parent_node.set_meta("pre_carry_angular_damp", parent_node.angular_damp)
-					parent_node.angular_damp = _CARRY_ANGULAR_DAMP
-					# Collision stays ON from the moment we grab it (it eases to the hand now, it does not
-					# snap THROUGH things), so it is solid immediately — no travel-time suppression.
+					# Mount it RIGIDLY on the body: reparented under the player and pinned at
+					# carry_mount_offset, it rides the player through the scene tree instead of being
+					# steered there by velocity — no bobbing, no fighting the geometry, and a constant local
+					# pose on the wire. Frozen KINEMATIC so it follows a moving parent (a STATIC frozen body
+					# gets its world transform rewritten every physics frame instead), and made PHANTOM
+					# (layer/mask 0) so a crate held against a wall can't shove its carrier or plough through
+					# props. Both restored on drop.
+					parent_node.set_meta("pre_carry_layer", parent_node.collision_layer)
+					parent_node.set_meta("pre_carry_mask", parent_node.collision_mask)
+					parent_node.collision_layer = 0
+					parent_node.collision_mask = 0
+					parent_node.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+					parent_node.freeze = true
+					parent_node.linear_velocity = Vector3.ZERO
+					parent_node.angular_velocity = Vector3.ZERO
 					# Make sure its replication is active: a crate that sat in a bed may have had its
 					# _physics_process paused, which would stop PropNet from replicating a later drop.
 					parent_node.set_physics_process(true)
 					parent_node.server_parent_change(player)
-					# NOTE: no snap to a fixed spot in front — with the physics velocity-follow that snap made
-					# the crate "teleport" up 1 m on E before easing back down. Left where it was grabbed, it
-					# now rises smoothly from there into the hand.
+					# Each pickup starts unrotated; the wheel / middle-mouse then accumulate into it.
+					_carry_basis = Basis.IDENTITY
+					_place = {}  # the first physics tick fills it; nothing stale from the last carry
+					parent_node.transform = Transform3D(_carry_basis, player.carry_mount_offset)
 					#  send reparent to client
 					parent_node.send_properties_to_client(player.client_uuid)
 					player.hands_item = parent_node
@@ -696,20 +739,6 @@ func _find_carriable(target_uuid: String) -> Node:
 			return n
 	return null
 
-## Make a carried prop pass through (or collide again with) every vehicle. A carried prop is
-## frozen, which the physics solver treats as immovable / infinite mass — letting it touch a
-## vehicle would shove or flip the (much heavier) truck, bypassing its real mass. So while it is
-## held it ignores vehicles; cargo is loaded by DROPPING it into the bed, not by ramming.
-func _carry_ignore_vehicles(prop: Node, ignore: bool) -> void:
-	if prop == null:
-		return
-	for v in get_tree().get_nodes_in_group("vehicle"):
-		if v is CollisionObject3D and v != prop:
-			if ignore:
-				prop.add_collision_exception_with(v)
-			else:
-				prop.remove_collision_exception_with(v)
-
 func _reparent_children_of_prop(prop: Node) -> void:
 	if prop == null or not is_instance_valid(prop):
 		return
@@ -729,10 +758,28 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
+	if not PropNet.PROF:
+		_physics_process_impl(delta)
+		return
+	var _t0: int = Time.get_ticks_usec()
+	_physics_process_impl(delta)
+	PropNet.prof_player_usec += Time.get_ticks_usec() - _t0
+	PropNet.prof_player_calls += 1
+
+func _physics_process_impl(delta: float) -> void:
+	var _tp: int = Time.get_ticks_usec() if PropNet.PROF else 0
 	_flush_spawn_queue()  # the wheel's spawns wait for the physics step: they need a ground raycast
 	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
-	_server_update_carry_prompt(delta)
+	if not player.is_npc:
+		# The E-prompt only exists for a human owner's HUD; for an NPC it would still cost a forced
+		# raycast every 0.1 s per NPC (measured hot with many NPCs), replicated to nobody.
+		_server_update_carry_prompt(delta)
+	if PropNet.PROF:
+		PropNet.prof_p_pre_usec += Time.get_ticks_usec() - _tp
+	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
+	if _hold_until_ground(delta):
+		return  # nothing under us yet: hold still rather than fall through
 	if _vault_cooldown > 0.0:
 		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
 	if _vaulting:
@@ -749,9 +796,7 @@ func _physics_process(delta: float) -> void:
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
 		player.new_input_from_server = false
-		var seat_p: Vector3 = snapped(player.position, Vector3(0.001, 0.001, 0.001))
-		var seat_r: Vector3 = snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001))
-		player.emit_signal("hs_server_move", player.client_uuid, seat_p, seat_r, null, player.is_parented)
+		player.emit_move()
 		return
 
 	# NPC: server-driven pathfinding replaces client input. Runs in its own branch because an NPC never
@@ -771,13 +816,7 @@ func _physics_process(delta: float) -> void:
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_server_eva_move(delta)
 		player.new_input_from_server = false
-		player.emit_signal(
-			"hs_server_move",
-			player.client_uuid,
-			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-			snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			null,
-			player.is_parented)
+		player.emit_move()
 		return
 
 	# Server-side "sleep" for settled players: once quasi-still for ~0.5 s, run the full move_and_slide
@@ -813,7 +852,11 @@ func _physics_process(delta: float) -> void:
 
 	# Auto-vault: standing still-on-floor and walking forward into a low obstacle / ledge -> climb onto it.
 	# Server-authoritative; runs before the jump/gravity/move so the normal step never fights the slide.
-	if player.is_on_floor() and _try_start_vault():
+	var _tv: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _vault_started: bool = player.is_on_floor() and _try_start_vault()
+	if PropNet.PROF:
+		PropNet.prof_p_vault_usec += Time.get_ticks_usec() - _tv
+	if _vault_started:
 		_server_update_vault(delta)
 		return
 
@@ -869,11 +912,23 @@ func _physics_process(delta: float) -> void:
 	# LOW obstacle right ahead (below the vault threshold): glide the body onto it (Godot's CharacterBody3D
 	# won't step up on its own). Taller obstacles are the vault's job. Started here, then driven by
 	# _server_update_step for a smooth, speed-independent climb.
-	if player.is_on_floor() and player.input_direction != Vector2.ZERO and _try_start_step_up(move_direction):
+	var _ts: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _step_started: bool = player.is_on_floor() and player.input_direction != Vector2.ZERO \
+			and _try_start_step_up(move_direction)
+	if PropNet.PROF:
+		PropNet.prof_p_step_usec += Time.get_ticks_usec() - _ts
+	if _step_started:
 		_server_update_step(delta)
 		return
 
+	var _tm: int = Time.get_ticks_usec() if PropNet.PROF else 0
 	player.move_and_slide()
+	if PropNet.PROF:
+		PropNet.prof_p_move_usec += Time.get_ticks_usec() - _tm
+		# A settled contact resolves in one iteration; an unstable one makes move_and_slide re-cast up
+		# to max_slides times, which is the shape this cost has (0.18 ms -> 3.30 ms when walking).
+		PropNet.prof_slide_count += player.get_slide_collision_count()
+		PropNet.prof_slide_ticks += 1
 
 	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
 	# clients end the jump loop crisply (it can't overstay). The counter defeats delta compression.
@@ -891,14 +946,122 @@ func _physics_process(delta: float) -> void:
 	player.update_last_basis()
 	player.new_input_from_server = false
 
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented
-	)
+	var _te: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	player.emit_move()
+	if PropNet.PROF:
+		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
+
+## Release the body from a planet's frame once its gravity has REALLY been gone (Player.ZERO_G_GRACE),
+## and hand it to the world frame — the planet's own parent, the universe root, where the star sits
+## too, so this is already the star's frame. The mirror of Player's gravity-ENTERED branch, which
+## adopts a body only when it arrives from the world: together they are reference-frame switching at
+## the sphere of influence, the shape space flight will need.
+##
+## Without it, a body that flies away stays a child of the planet and is dragged by its SPIN — about
+## 500 m/s of sideways pull at 1000 km up, which is not what a free body does. (The orbit drags it
+## too, but that part is roughly right: a body near a planet does share its orbital motion.)
+##
+## Checked as STATE every tick, never on the area_exited event. A reparent drops and re-enters every
+## area for a frame or two, and acting on that blip would publish a world position (~3e10) announced
+## as local to the planet: one dropped message and the body is flung across the system.
+## The parent test is the other half of the guard — a seated driver hangs from the vehicle and a
+## player indoors from the building, and neither of them is leaving anything.
+## Hold a freshly created body still until the terrain under it actually exists. Returns true while
+## it is being held, and the caller must then do nothing else this tick.
+##
+## The server builds terrain collision chunk by chunk, on worker threads, and only around bodies that
+## already exist — so there is unavoidably a window after creation where there is nothing underneath.
+## Released into it, a body meets only the planet-wide fallback shells 100-200 m BELOW the playable
+## surface: it falls, _catch_if_below_surface teleports it back to the theoretical surface without any
+## real contact (so is_on_floor() stays false), gravity resumes next frame, and it falls again —
+## forever. That loop is what "spawned in the air, bouncing in the void" actually was.
+##
+## Only the FIRST moments are gated. Once the ground has been seen, it is never checked again: a body
+## walking off the edge of loaded terrain is a different problem, and the fallback shells plus
+## _catch_if_below_surface are what handle that.
+##
+## It cannot deadlock: pinning walks players_list and asks for the chunk under each of them whether
+## they move or not, so being held does not stop the ground being built. And SPAWN_GROUND_TIMEOUT
+## releases the body regardless — a player frozen forever would be worse than the bug being fixed.
+func _hold_until_ground(delta: float) -> bool:
+	if _ground_seen:
+		return false
+	var terrain: PlanetTerrain = null
+	var walk: Node = player.get_parent()
+	while walk != null:
+		if walk is Planet:
+			terrain = (walk as Planet).planet_terrain
+			break
+		walk = walk.get_parent()
+	if terrain == null:
+		# Not on a celestial body at all (EVA, a body in transit): nothing to wait for.
+		_ground_seen = true
+		return false
+	if terrain.has_collision_under(player.global_position):
+		_ground_seen = true
+		return false
+	_ground_wait += delta
+	if _ground_wait >= SPAWN_GROUND_TIMEOUT:
+		push_warning("[Spawn] %s: no terrain collision after %.0f s, releasing anyway"
+				% [player.client_uuid, _ground_wait])
+		_ground_seen = true
+		return false
+	# Held: no gravity, no move_and_slide, no velocity to carry over when we are let go.
+	player.velocity = Vector3.ZERO
+	return true
+
+
+func _server_update_gravity_frame(delta: float) -> void:
+	if not player.gravity_parents.is_empty():
+		player._no_gravity_time = 0.0
+		_had_gravity = true
+		return
+	# ⚠️ You cannot LEAVE a gravity well you were never in. At spawn the AreaDetector needs a few
+	# physics frames to report its overlaps, so gravity_parents is empty to begin with — and without
+	# this guard a body was released into the world frame seconds after spawning, INDOORS, having gone
+	# nowhere. It then sat outside the planet's subtree while the planet carried on at 33 km/s, which
+	# reads in game as being flung into the air and left bobbing in the void.
+	if not _had_gravity:
+		return
+	player._no_gravity_time += delta
+	if player._no_gravity_time < player.ZERO_G_GRACE:
+		return
+	# Riding something means the ride owns our frame: it is the VEHICLE that would be leaving, not us.
+	if player.piloting or player._in_vehicle_bed != null:
+		return
+	var world: Node = _world_frame_above(player.get_parent())
+	if world != null:
+		print("[Frame] %s released to the world: %.2f s without gravity, was under '%s'" % [
+				player.client_uuid, player._no_gravity_time, player.get_parent().name])
+		player.call_deferred("_safe_reparent_and_sync", world)
+
+
+## What to hand a body to when it leaves the sphere of influence it is standing in: the parent of the
+## nearest celestial ancestor of [param frame]. Null when there is no such ancestor — we are already
+## in the world frame, or under something that is not a celestial body.
+##
+## Walks UP because a body is rarely a direct child of its planet: leaving the spawn building parents
+## it to the CITY, itself a prop on the planet. Testing the direct parent found nothing and the body
+## stayed glued to the planet all the way into space.
+##
+## Nesting falls out for free and is correct: from a body on a MOON the walk stops at the moon and
+## returns the moon's parent, its planet — leaving a moon's SOI puts you in the planet's, not in deep
+## space.
+static func _world_frame_above(frame: Node) -> Node:
+	var node: Node = frame
+	while node != null:
+		if node is Planet:
+			# Since the ORIGIN REBASE a planet sits at the origin of its OWN physics world, held by a
+			# SubViewport (Server.create_planet). Its parent is therefore that viewport, not the universe
+			# root — and stepping a single level would leave a body that has just LEFT the planet inside
+			# the planet's world, which is the one place it must not be.
+			var above: Node = node.get_parent()
+			while above is SubViewport:
+				above = above.get_parent()
+			return above
+		node = node.get_parent()
+	return null
+
 
 ## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
 ## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
@@ -1011,17 +1174,33 @@ func _server_update_step(delta: float) -> void:
 	if s >= 1.0:
 		_stepping = false
 
+## Network parent to attach to every replicated move while the origin rebase has this player
+## parented DIRECTLY to a Planet (server.gd create_player routes unparented spawns there; every
+## Horizon-driven parent — apartment, vehicle seat, teleport target — is a non-Planet node).
+##
+## Sent on EVERY move, exactly like PropNet re-sends position+parent_id for carried props: the
+## client's player_update applies parent_id + the parent-LOCAL position ATOMICALLY (reparent +
+## net_set_local_target in the same payload), and repeating it makes Horizon's record converge
+## even if one message is lost mid-registration. The two broken alternatives are documented
+## history: sending the parent_id ONCE at spawn lost the race with Horizon's registration (GORC
+## then read planet-local coords as universe → empty world), and sending ABSOLUTE positions with
+## parent "" collided with the GORC zone-enter that reparents the client under the planet (the
+## absolute vector was applied planet-LOCAL → player 3.3e10 m into deep space; measured both,
+## 2026-08-19).
+func _net_parent_uuid():
+	var parent: Node = player.get_parent()
+	if parent is Planet:
+		return str((parent as Planet).uuid)
+	return null
+
 ## Replicate the body's current pose to clients (server-authoritative move). Shared by the scripted glides
 ## (vault, step-up) so they emit exactly like the normal tick.
 func _emit_move() -> void:
 	player.new_input_from_server = false
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented)
+	# NOTE: this used to send global_rotation while every other sender sent the LOCAL rotation the
+	# client contract expects (see Player.net_set_target) — identical only while the parent's basis is
+	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
+	player.emit_move()
 
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
 ## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
@@ -1043,6 +1222,18 @@ func _server_eva_move(delta: float) -> void:
 ## the body from the NavigationAgent3D instead of replicated client input. Gravity-frame aware: "down"
 ## is player.up_direction (radial on a planet), so steering happens in the ground plane, not world XZ.
 func _npc_physics_process(delta: float) -> void:
+	# Server-side "sleep" for settled idle NPCs — the same throttle real players get (see the
+	# idle-settled block in _physics_process): once an NPC has nothing to do (no goal, no pending
+	# facing turn, resting on the floor, no residual velocity), run the full gravity + move_and_slide
+	# only every 10th tick (6 Hz keeps the floor contact honest). Like the player path, the check runs
+	# BEFORE this tick's gravity is applied, so on skipped ticks the velocity stays at its settled ~0.
+	if player.npc_go_to_position == null and player.npc_face_position == null \
+			and player.is_on_floor() and player.velocity.length_squared() < 0.0001:
+		_npc_idle_ticks += 1
+		if _npc_idle_ticks > 30 and (_npc_idle_ticks % 10) != 0:
+			return
+	else:
+		_npc_idle_ticks = 0
 	# Gravity, mirroring the non-NPC setup so the NPC settles onto whatever body it stands on.
 	var grav_area: Node3D = player.get_current_gravity_parent()
 	if grav_area:
@@ -1054,6 +1245,18 @@ func _npc_physics_process(delta: float) -> void:
 	else:
 		player.up_direction = Vector3.UP
 		player.gravity = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
+	# Stand the NPC up along its local up. Nothing else does it: orient_player() is called by the
+	# OWNING CLIENT for its own body (player_client.gd), and the resulting rotation is what every
+	# other machine replicates — but an NPC has no owning client, so nobody was ever righting it.
+	#
+	# The NPC service sends a plain heading, which is correct in the planet's own frame and completely
+	# wrong on the ground: the city sits on the flank of the sphere, 5640 m up and far from the
+	# planet's Y axis, so a heading-only rotation leaves the body LYING FLAT on the floor. That is the
+	# whole of the "the magasiniers are lying down" bug — a perfectly oriented body, in the wrong frame.
+	#
+	# align_with_y keeps basis.z, so the heading the service asked for survives: only the vertical is
+	# rebuilt. Same lerp as the on-foot path, so an NPC rights itself exactly as a player does.
+	player.orient_player()
 	# Apply gravity ALWAYS (even on the floor) so the capsule stays pressed onto the terrain trimesh and
 	# is_on_floor() stays true — this is the SAME fix the on-foot path uses (see the "Add gravity ALWAYS"
 	# block above). Gating gravity on "not is_on_floor()" and zeroing the downward velocity on the floor
@@ -1070,11 +1273,19 @@ func _npc_physics_process(delta: float) -> void:
 		player.velocity = _horiz + _vertical
 		player.move_and_slide()
 		_npc_update_face_target(delta)
-		_npc_emit_move()
+		player.emit_move()
 		return
+
+	# A NEW goal invalidates everything the watchdog has learned about the last one (and any detour it
+	# picked for it), so notice the change before anything else reads that state.
+	if _npc_goal_seen == null or _npc_goal_seen != player.npc_go_to_position:
+		_npc_goal_seen = player.npc_go_to_position
+		_npc_reset_recovery()
 
 	# Make sure there is baked coverage around / ahead of us to path on.
 	_ensure_npc_nav_region()
+	# Drop the detour once it has served its purpose, so we aim at the real goal again.
+	_npc_update_detour(delta)
 
 	if _NPC_DEBUG:
 		_npc_debug_timer -= delta
@@ -1094,12 +1305,18 @@ func _npc_physics_process(delta: float) -> void:
 		# No more waypoints. This fires BOTH on real arrival AND when there is simply no route yet (mesh
 		# still baking / goal genuinely unreachable), so we can't treat it as "arrived" on its own — gate
 		# on the actual ground-plane distance to the goal before notifying.
-		if _npc_ground_dist_to_goal() <= _NPC_ARRIVED_DIST:
+		var _arrived: bool = _npc_ground_dist_to_goal() <= _NPC_ARRIVED_DIST
+		if _arrived:
 			_npc_notify_arrived()
 		# Either way, bleed off horizontal speed and hold (gravity still owns the vertical axis).
 		var _idle: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
 		player.velocity = _idle + _vertical
 		player.move_and_slide()
+		# NOT arrived and no route: the NPC is parked short of a goal it cannot path to — the exact case
+		# the watchdog exists for, and the one it used to miss entirely because this branch returned
+		# before ever reaching the _npc_update_stuck call at the end of the walking path.
+		if not _arrived:
+			_npc_update_stuck(delta)
 		_npc_emit_move()
 		return
 
@@ -1112,7 +1329,7 @@ func _npc_physics_process(delta: float) -> void:
 	player.move_and_slide()
 
 	_npc_update_stuck(delta)
-	_npc_emit_move()
+	player.emit_move()
 
 ## NPC pathing diagnostics — prints every 2 s while an NPC has a goal it has not reached (mesh/island
 ## reachability, bake box, reparent frames...). Costs several nav queries per report: keep off outside
@@ -1181,6 +1398,30 @@ func _npc_debug_report() -> void:
 	var _vert: float = _off.dot(player.up_direction)
 	var _horiz: float = (_off - player.up_direction * _vert).length()
 	print("    standing on: %s" % _floor_desc)
+	# Physics-vs-bake probe: what does the PHYSICS world contain along the route where the bake found
+	# nothing? Distinguishes "terrain collider not resident" (pin/streaming problem: ray hits NOTHING or
+	# only a body far below) from "collider present but not baked" (parse/filter problem: ray hits ground
+	# near 0 m yet the navmesh coverage line shows X there).
+	var _proot := _npc_nav_world_root()
+	if _proot != null and "planet_terrain" in _proot and _proot.planet_terrain != null:
+		var _pt = _proot.planet_terrain
+		print("    terrain chunks: resident=%d loading=%d queued=%d pinned=%d" % [
+				_pt._server_collision_chunks.size(), _pt._server_chunk_tasks.size(),
+				_pt._server_chunk_queue.size(), _pt._pinned_chunks.size()])
+	var _probe_line := ""
+	for i in 9:
+		var _pp: Vector3 = player.global_position.lerp(target, float(i) / 8.0)
+		var _pq := PhysicsRayQueryParameters3D.create(
+				_pp + player.up_direction * 20.0, _pp - player.up_direction * 60.0)
+		_pq.collision_mask = _NPC_NAV_COLLISION_MASK
+		_pq.exclude = [player.get_rid()]
+		var _ph: Dictionary = _space.intersect_ray(_pq)
+		if _ph.is_empty():
+			_probe_line += "[%d/8: NOTHING] " % i
+		else:
+			var _pdy: float = (_ph.position - _pp).dot(player.up_direction)
+			_probe_line += "[%d/8: %s %+.1f m] " % [i, _ph.collider.name, _pdy]
+	print("    physics ground along route (ray 20 m up -> 60 m down): %s" % _probe_line)
 	print("    nearest navmesh is %.2f m %s the NPC and %.2f m sideways  (agent_max_climb=0.40) %s" % [
 			absf(_vert), "BELOW" if _vert < 0.0 else "ABOVE", _horiz,
 			"  <-- NPC is not on its own navmesh" if absf(_vert) > 0.4 else ""])
@@ -1302,6 +1543,10 @@ func _npc_ground_dist_to_goal() -> float:
 ## (see server_action_received). Without that ack the next journey would begin with a stale true.
 func _npc_notify_arrived() -> void:
 	player.npc_go_to_position = null
+	# Forget the goal we were tracking rather than comparing against it: the brain may well send the very
+	# same position again (re-dispatched to the same workplace), and an unchanged value would not look
+	# like a new goal — the next journey would then inherit this one's detour count and watchdog state.
+	_npc_goal_seen = null
 	player.server_send_properties_to_client({"npc_arrived": true})
 
 # Constant angular speed of the stand-and-face turn (rad/s): half a turn per second, a calm human
@@ -1310,7 +1555,7 @@ const _NPC_FACE_TURN_SPEED: float = PI
 
 ## Pivot the standing NPC toward player.npc_face_position at constant speed, rotating around its own
 ## up axis so the body stays upright in any gravity frame (a planet included). Cleared once aligned.
-## Runs from the no-destination branch of _npc_physics_process; _npc_emit_move right after it
+## Runs from the no-destination branch of _npc_physics_process; the emit_move right after it
 ## replicates each step, so clients see the same smooth turn.
 func _npc_update_face_target(delta: float) -> void:
 	if player.npc_face_position == null:
@@ -1352,18 +1597,128 @@ func _npc_face(direction: Vector3, delta: float) -> void:
 	var _t: float = 1.0 - exp(-_NPC_TURN_SHARPNESS * delta)
 	player.global_basis = player.global_basis.orthonormalized().slerp(_target, _t)
 
-## If the NPC barely moves for 3 s it is wedged (e.g. off the baked mesh or inside geometry): try to get
-## it going again.
+## Forget everything the watchdog has learned. Called when the NPC is handed a NEW goal: the old
+## recovery state describes a journey that is over, and a detour picked for it would drag the NPC the
+## wrong way.
+func _npc_reset_recovery() -> void:
+	_npc_progress_ref = player.global_position
+	_npc_progress_timer = 0.0
+	_npc_recover_step = 0
+	_npc_detour = null
+	_npc_detour_timer = 0.0
+	_npc_detour_count = 0
+
+## Progress watchdog. An NPC that covers less than _NPC_PROGRESS_MIN of ground in _NPC_PROGRESS_WINDOW
+## is not getting anywhere — wedged on geometry, orbiting a waypoint, or parked at the closest reachable
+## point to a goal it cannot actually reach — so climb one rung of the recovery ladder.
+##
+## Measured over a WINDOW, not per frame. The previous test (moved less than 5 cm since the last frame
+## that moved 5 cm) only ever caught a body at a dead stop: an NPC scraping along a wall at 0.3 m/s
+## reset the timer every single frame and stayed stuck forever.
 func _npc_update_stuck(delta: float) -> void:
-	if player.global_position.distance_to(_npc_prev_pos) < 0.05:
-		_npc_stuck_timer += delta
-		if _npc_stuck_timer >= 3.0:
-			_npc_try_unstick()
-			_npc_stuck_timer = 0.0
-			_npc_prev_pos = player.global_position
-	else:
-		_npc_stuck_timer = 0.0
-		_npc_prev_pos = player.global_position
+	_npc_progress_timer += delta
+	if _npc_progress_timer < _NPC_PROGRESS_WINDOW:
+		return
+	var _moved: float = player.global_position.distance_to(_npc_progress_ref)
+	_npc_progress_timer = 0.0
+	_npc_progress_ref = player.global_position
+	if _moved >= _NPC_PROGRESS_MIN:
+		_npc_recover_step = 0  # walking normally again: the ladder starts from the bottom next time
+		return
+	_npc_recover_step += 1
+	_npc_try_unstick()
+
+## One rung of recovery for an NPC that has stopped making headway, escalating with _npc_recover_step so
+## the cheap and safe fixes are tried before the disruptive ones:
+##   1. re-bake and re-path — a stale mesh, a goal that moved, or a bake that was still running;
+##   2. snap back onto the navmesh — a body wedged just off its own mesh (tightly gated, see below);
+##   3+ detour — abandon the direct route and walk to a reachable intermediate point first. This is the
+##      rung that gets an NPC out of a dead end, or around an obstacle its direct route keeps hugging,
+##      at the cost of a longer walk.
+## Rungs 3+ repeat with a rotating sample phase, so successive attempts explore different sides instead
+## of re-picking the direction that just failed.
+func _npc_try_unstick() -> void:
+	if _npc_recover_step == 1:
+		_npc_nav_bake_center = null  # make _ensure_npc_nav_region bake fresh coverage next tick
+		_npc_repath()
+		return
+	if _npc_recover_step == 2:
+		_npc_snap_onto_mesh()
+		_npc_repath()
+		return
+	if not _npc_pick_detour():
+		# Nothing reachable to detour through — the NPC is walled in, or the mesh around it is stale.
+		# Fall back to the cheap rungs rather than standing still.
+		_npc_nav_bake_center = null
+		_npc_snap_onto_mesh()
+	_npc_repath()
+
+## Pick a reachable intermediate point to route through, so a blocked NPC takes a different way round
+## even if it is longer. Stores it in _npc_detour and returns true on success.
+##
+## Candidates sit on a ring of _NPC_DETOUR_RADIUS around the NPC. Being ON the mesh is not enough — the
+## point must be on OUR side of the walls, so each one is probed with a real path query and kept only if
+## the route actually ENDS there (an unreachable target yields a stub that stops against the geometry in
+## between). Among the survivors we take the one closest to the real goal, which keeps the detour
+## purposeful instead of sending the NPC wandering.
+func _npc_pick_detour() -> bool:
+	var _map: RID = _npc_map()
+	if _map == RID() or NavigationServer3D.map_get_iteration_id(_map) == 0:
+		return false
+	var _here_nav: Vector3 = _npc_to_nav(player.global_position)
+	var _goal: Vector3 = _npc_target_global()
+	# Rotate the ring between attempts so a repeat does not re-pick the direction that just failed.
+	var _phase: float = float(_npc_recover_step) * 0.7
+	var _best = null
+	var _best_score: float = INF
+	for i in range(_NPC_DETOUR_SAMPLES):
+		var _ang: float = TAU * float(i) / float(_NPC_DETOUR_SAMPLES) + _phase
+		# Nav space has +Y up by construction (see _npc_surface_frame), so the ring lies in XZ.
+		var _cand: Vector3 = _here_nav + Vector3(cos(_ang), 0.0, sin(_ang)) * _NPC_DETOUR_RADIUS
+		var _on_mesh: Vector3 = NavigationServer3D.map_get_closest_point(_map, _cand)
+		var _probe := NavigationServer3D.map_get_path(_map, _here_nav, _on_mesh, true)
+		if _probe.size() < 2 or _probe[_probe.size() - 1].distance_to(_on_mesh) > 1.0:
+			continue  # cannot actually get there from here
+		var _world: Vector3 = _npc_from_nav(_on_mesh)
+		if player.global_position.distance_to(_world) < _NPC_DETOUR_RADIUS * 0.5:
+			continue  # snapped back to roughly where we already stand: not a different route
+		var _score: float = _world.distance_to(_goal)
+		if _score < _best_score:
+			_best_score = _score
+			_best = _world
+	if _best == null:
+		return false
+	_npc_detour = _best
+	_npc_detour_timer = _NPC_DETOUR_TIMEOUT
+	_npc_detour_count += 1
+	if _npc_detour_count == 6:
+		# Loud once per goal, not per detour. Six different ways round and still no arrival: the goal is
+		# very likely unreachable (sealed room, wrong side of a wall) rather than merely awkward. The NPC
+		# keeps trying regardless — it just does so on the record, so the schedule stalling upstream has
+		# a visible cause.
+		push_warning("NPC %s has taken %d detours without reaching goal %s; it may be unreachable"
+				% [player.name, _npc_detour_count, player.npc_go_to_position])
+	return true
+
+## Retire the active detour once it has been reached or has run out of time, so the NPC goes back to
+## aiming at its real goal.
+func _npc_update_detour(delta: float) -> void:
+	if _npc_detour == null:
+		return
+	_npc_detour_timer -= delta
+	var _d: Vector3 = (_npc_detour as Vector3) - player.global_position
+	_d -= player.up_direction * _d.dot(player.up_direction)
+	if _npc_detour_timer <= 0.0 or _d.length() <= _NPC_ARRIVED_DIST:
+		_npc_detour = null
+		_npc_repath()
+
+## Where the ROUTE currently aims: the active detour if there is one, else the real goal. Arrival keeps
+## being judged against the real goal (_npc_ground_dist_to_goal), so a detour can never be mistaken for
+## the destination and acked to the brain.
+func _npc_route_target_global() -> Vector3:
+	if _npc_detour != null:
+		return _npc_detour
+	return _npc_target_global()
 
 ## Nudge a wedged NPC back onto the navmesh. This ASSIGNS global_position, i.e. it moves the body with no
 ## collision test whatsoever — the one and only way an NPC can end up on the far side of a solid wall. So
@@ -1371,8 +1726,7 @@ func _npc_update_stuck(delta: float) -> void:
 ## looks like "the NPC walked through the wall" and hides the pathing bug that wedged it in the first
 ## place. When in doubt, leave it stuck — a visibly stuck NPC is a bug report; a tunnelling one is a
 ## mystery.
-func _npc_try_unstick() -> void:
-	_npc_repath()
+func _npc_snap_onto_mesh() -> void:
 	var _nav_map: RID = _npc_map()
 	# A query against a map that has not synced yet (or holds no region) does NOT fail loudly — it
 	# quietly returns Vector3.ZERO. Snapping to that teleports the NPC to the world origin.
@@ -1394,17 +1748,10 @@ func _npc_try_unstick() -> void:
 		push_warning("NPC %s wedged %.1f m off the navmesh; refusing to snap (it would tunnel through geometry)"
 				% [player.name, _gap])
 
-## Replicate the NPC's authoritative pose to clients (same signal the input path uses).
+## Replicate the NPC's authoritative pose to clients (same emitter the input path uses, so the
+## frame it declares is derived from the tree in one place — see Player.emit_move).
 func _npc_emit_move() -> void:
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		null,
-		player.is_parented,
-	)
-
+	player.emit_move()
 ## Bake a bounded navigation region around the NPC so its agent has ground to path on, creating it on
 ## first need and re-baking ahead of the NPC once it travels past _NPC_NAV_REBAKE_DIST of the last bake
 ## center. Baking is async on a worker thread; until it finishes the agent simply has no path.
@@ -1439,6 +1786,11 @@ func _ensure_npc_nav_region() -> void:
 			and _pos.distance_to(_npc_nav_bake_center) < _NPC_NAV_REBAKE_DIST \
 			and _goal.distance_to(_npc_nav_bake_goal) < _NPC_NAV_REBAKE_DIST:
 		return  # still well inside the current baked area
+	# A (re)bake is due — but only one NPC may run the synchronous world parse per physics frame.
+	# Waiting a tick is harmless here: the NPC keeps walking its current path meanwhile.
+	if Engine.get_physics_frames() == _npc_nav_parse_frame:
+		return
+	_npc_nav_parse_frame = Engine.get_physics_frames()
 	if _npc_nav_frame == null:
 		_npc_nav_frame = Node3D.new()
 		_npc_nav_frame.name = "NpcNavFrame"
@@ -1563,19 +1915,78 @@ func _npc_repath() -> void:
 	if NavigationServer3D.map_get_iteration_id(_npc_nav_map) == 0:
 		return  # map not synced yet; queries would silently return nothing
 	_npc_path = NavigationServer3D.map_get_path(_npc_nav_map,
-			_npc_to_nav(player.global_position), _npc_to_nav(_npc_target_global()), true)
+			_npc_to_nav(player.global_position), _npc_to_nav(_npc_route_target_global()), true)
+	_npc_widen_path_corners()
+
+## Push the path's interior corners off the geometry they hug.
+##
+## map_get_path funnels the corridor, so every interior corner sits exactly ON a navmesh vertex — and
+## the mesh boundary is agent_radius (0.30 m) from the wall, of which the capsule (0.265 m) eats all but
+## ~3 cm. Walking that line, the slightest turn overshoot scrapes the wall, which is the "NPC wedged on
+## the corner of a wall" bug. Each corner is therefore nudged along the OUTWARD bisector of its two legs
+## (`in - out` points away from the vertex the path wraps around) by _NPC_CORNER_CLEARANCE.
+##
+## The nudge is validated, never blind: a candidate that leaves the mesh is halved, then quartered, then
+## dropped. That is what keeps narrow openings working — inside a 0.9 m door the corridor is only 0.3 m
+## wide once eroded, so there is nowhere to push and the corner simply stays where the funnel put it.
+## Do NOT "fix" corner scraping by raising agent_radius instead: 0.3 is already the widest radius a
+## 0.9 m door can pass (0.9 - 2*0.3 = 0.3 m of corridor left, i.e. 3 cells at cell_size 0.1).
+func _npc_widen_path_corners() -> void:
+	if _npc_path.size() < 3:
+		return
+	# Every bisector is measured on the ORIGINAL path, never on the partly-widened one. Recast chamfers a
+	# convex corner into two vertices ~0.2 m apart, so with in-place reads the second corner takes its
+	# incoming leg from the already-moved first one — the bisector then points along the wall instead of
+	# away from it, and the push lands INSIDE the geometry (measured: straight into the wall it was
+	# supposed to clear).
+	var _src := PackedVector3Array(_npc_path)
+	for i in range(1, _src.size() - 1):
+		var _cur: Vector3 = _src[i]
+		# Nav space has +Y up by construction (see _npc_surface_frame), so the ground plane is XZ and no
+		# projection along up_direction is needed here.
+		var _in: Vector3 = _cur - _src[i - 1]
+		var _out: Vector3 = _src[i + 1] - _cur
+		_in.y = 0.0
+		_out.y = 0.0
+		if _in.length_squared() < 0.0001 or _out.length_squared() < 0.0001:
+			continue
+		var _push: Vector3 = _in.normalized() - _out.normalized()
+		if _push.length_squared() < 0.0001:
+			continue  # straight through: not a corner, nothing to widen
+		_push = _push.normalized()
+		for _f in [1.0, 0.5, 0.25]:
+			var _cand: Vector3 = _cur + _push * (_NPC_CORNER_CLEARANCE * _f)
+			var _snap: Vector3 = NavigationServer3D.map_get_closest_point(_npc_nav_map, _cand)
+			if _snap.distance_to(_cand) <= _NPC_CORNER_ON_MESH_EPS:
+				_npc_path[i] = _snap  # the snapped point, so the waypoint is guaranteed ON the mesh
+				break
 
 ## Next point to steer at, in WORLD space, or null when there is no usable path left. Consumes waypoints
 ## we have already reached.
+##
+## A waypoint is only dropped once we are standing on it (_NPC_WAYPOINT_REACHED) or have walked PAST it
+## — past the plane through it, perpendicular to the leg that led there. Dropping it any earlier means
+## steering at the waypoint that follows the corner from before the corner: a shortcut straight into the
+## wall, with only ~3 cm of clearance to absorb it. See _NPC_WAYPOINT_REACHED.
 func _npc_next_path_point():
 	while _npc_path_idx < _npc_path.size():
 		var _p: Vector3 = _npc_from_nav(_npc_path[_npc_path_idx])
 		# Compare in the ground plane: gravity owns the vertical axis, so height must not gate arrival.
 		var _d: Vector3 = _p - player.global_position
 		_d -= player.up_direction * _d.dot(player.up_direction)
-		if _d.length() > _NPC_WAYPOINT_REACHED:
-			return _p
-		_npc_path_idx += 1
+		var _dist: float = _d.length()
+		if _dist <= _NPC_WAYPOINT_REACHED:
+			_npc_path_idx += 1
+			continue
+		# Passed it? Needs a leg to measure along (path[0] is our own position, so it has none) and only
+		# counts from nearby — see _NPC_PASSED_MAX_DIST.
+		if _npc_path_idx > 0 and _dist < _NPC_PASSED_MAX_DIST:
+			var _leg: Vector3 = _p - _npc_from_nav(_npc_path[_npc_path_idx - 1])
+			_leg -= player.up_direction * _leg.dot(player.up_direction)
+			if _leg.length_squared() > 0.0001 and _d.dot(_leg.normalized()) < 0.0:
+				_npc_path_idx += 1
+				continue
+		return _p
 	return null
 
 ## Release the private navigation map with the NPC (it is a raw server RID: nothing else frees it).
@@ -1749,159 +2160,92 @@ func _ensure_los_ray() -> void:
 	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
 	add_child(_los_ray)
 
-## Release the carried prop: restore its physics, load it onto a truck bed if it was dropped into one,
-## else drop it back into the world. Shared by the E-drop (server_action_received) and the out-of-reach
-## auto-drop (_server_update_carried_item). Guarded so a deferred call after a drop is a no-op.
+## Put the carried prop DOWN on the placement disc the player is aiming at (see CarryPlacement): into
+## a truck bed / a shelf slot when the disc landed on one, else resting on the aimed surface — or, if
+## the aim ray hit nothing, in mid-air at the end of the ray, from where it just falls. Placement
+## always resolves, so E always releases. Guarded so a repeated/deferred call is a no-op.
 func _server_drop_carried_item() -> void:
 	if player.hands_item == null:
 		return
-	print("player has an item in hands, dropping it")
+	var item: RigidBody3D = player.hands_item as RigidBody3D
+	# Use the placement the PHYSICS TICK resolved (at most one frame old), never a fresh query: E
+	# arrives on the network dispatch, OUTSIDE the physics step, where the space state gives nothing —
+	# the ray would silently miss and drop the crate at the end of the ray instead of on its disc.
+	# (Same reason the spawn wheel and the stance check queue their raycasts for the step.)
+	var place: Dictionary = _place if _place.has("position") else _resolve_placement()
+	_place = {}  # consumed: never let it leak into the next pickup
 	# Generic: let the object know it is no longer carried (issue #124).
 	if player.hands_item.has_method("set_carried"):
 		player.hands_item.set_carried(false)
 	player.hands_item.remove_collision_exception_with(player)  # clear any stale exception (belt and braces)
-	_carry_ignore_vehicles(player.hands_item, false)  # clear any stale vehicle exceptions
-	# Restore the physics state we changed while carrying (gravity / sleep / CCD).
-	if player.hands_item.has_meta("pre_carry_gravity_scale"):
-		player.hands_item.gravity_scale = player.hands_item.get_meta("pre_carry_gravity_scale")
-		player.hands_item.remove_meta("pre_carry_gravity_scale")
-	player.hands_item.can_sleep = true
-	player.hands_item.continuous_cd = false
-	# Restore the rotation damping we raised while carried, so it tumbles freely again once dropped.
-	if player.hands_item.has_meta("pre_carry_angular_damp"):
-		player.hands_item.angular_damp = player.hands_item.get_meta("pre_carry_angular_damp")
-		player.hands_item.remove_meta("pre_carry_angular_damp")
-	# If dropped before reaching the hand, restore the collision suppressed on pickup.
+	# Restore what the pickup suppressed: the crate is solid again and owns its own physics.
+	if player.hands_item.has_meta("pre_carry_layer"):
+		player.hands_item.collision_layer = player.hands_item.get_meta("pre_carry_layer")
+		player.hands_item.remove_meta("pre_carry_layer")
+	if player.hands_item.has_meta("pre_carry_mask"):
+		player.hands_item.collision_mask = player.hands_item.get_meta("pre_carry_mask")
+		player.hands_item.remove_meta("pre_carry_mask")
+	# Seat it on the disc BEFORE handing it to a bed / shelf: both of them read the body's world
+	# position to pick their slot, and the mount (on the chest) is not where the player is aiming.
+	player.hands_item.global_transform = CarryPlacement.seat(player.hands_item, place, _carry_basis)
 	# Drop INTO a bed -> load it onto that truck. We load it if we stand in the bed, OR if we
 	# drop it from outside but it lands inside a nearby truck's cargo bay.
-	if player.hands_item is RigidBody3D:
-		var bed = _cargo_bed_for_drop(player.hands_item.global_position)
+	if item != null:
+		var bed = _cargo_bed_for_drop(place["position"])
 		if bed != null:
-			bed.lock_dropped_cargo(player.hands_item)
+			bed.lock_dropped_cargo(item)
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
 		# Drop ONTO a shelf slot -> snap the crate into the nearest free slot and freeze it there. The
 		# crate stays a normal resting world prop (parented to the world node, not the shelf, which never
 		# moves), so its replication rides the ordinary settled-prop path; the shelf only tracks the slot.
-		print(player.hands_item)
-		var shelf = _shelf_for_drop(player.hands_item.global_position)
+		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
 		if shelf != null:
 			var shelf_parent = player.get_parent()
-			player.hands_item.server_parent_change(shelf_parent)  # out of the player, into the world
-			shelf.store_at_nearest_slot(player.hands_item, str(shelf_parent.uuid) if "uuid" in shelf_parent else "")
+			item.server_parent_change(shelf_parent)  # out of the player, into the world
+			shelf.store_at_nearest_slot(item, str(shelf_parent.uuid) if "uuid" in shelf_parent else "")
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
 	var drop_parent = player.get_parent()
-	player.hands_item.server_parent_change(drop_parent)
+	player.hands_item.server_parent_change(drop_parent)  # reparent() keeps the world pose we just seated
+	player.hands_item.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	player.hands_item.freeze = false
+	player.hands_item.can_sleep = true
 	# Robust to the scene layout: a parent without a uuid (grouping/test-zone node) = "".
 	player.hands_item.send_properties_to_client(str(drop_parent.uuid) if "uuid" in drop_parent else "")
 	player.hands_item = null
 	# Stop carrying on all clients (perforator comes back) (issue #124).
 	player.server_send_properties_to_client({"carrying": false})
 
-## Rotate the held object by `rot` (world-space) about its geometry CENTER rather than its body
-## origin, so it spins in place instead of orbiting when the origin is off-center. The center is
-## pinned to the hold spot each tick by _server_update_carried_item, so we keep it fixed here too
-## (no lurch). The held body's angular axes are locked, so the new basis sticks.
-func _rotate_held_about_center(rot: Basis) -> void:
+## Spin the mounted crate by `rot` (BODY-local). The crate is pinned to its mount every tick, so the
+## rotation accumulates in _carry_basis instead of the body's transform — and carries over to the
+## placed crate's spin about the surface normal when it is put down.
+func _rotate_held(rot: Basis) -> void:
 	if not is_instance_valid(player.hands_item):
 		return
-	var item: RigidBody3D = player.hands_item
-	var center: Vector3 = item.get_center_offset() if item.has_method("get_center_offset") else Vector3.ZERO
-	var tf: Transform3D = item.global_transform
-	var center_world: Vector3 = tf * center
-	tf.basis = (rot * tf.basis).orthonormalized()
-	tf.origin = center_world - tf.basis * center
-	item.global_transform = tf
+	_carry_basis = (rot * _carry_basis).orthonormalized()
 
-## Server: hold the carried item in front of the body (yaw only), driven toward the hold spot by
-## velocity (physics-held carry B). The camera PITCH raises/lowers the spot vertically for stacking,
-## and if the body is dragged out of grab reach (stuck behind a wall while we back off) it auto-drops.
+## Where the crate would be put down right now, from the player's replicated aim. Shared by the tick
+## (for the E prompt) and the drop itself; the owner's client runs the very same resolution to draw
+## the placement disc, so what it shows is what lands here.
+func _resolve_placement() -> Dictionary:
+	var excl: Array[RID] = [player.get_rid()]
+	if player.hands_item is CollisionObject3D:
+		excl.append(player.hands_item.get_rid())
+	return CarryPlacement.resolve(player.get_world_3d().direct_space_state,
+			player.camera_pivot.global_transform, player.up_direction, excl, get_tree(),
+			player.hands_item)
+
+## Server: hold the carried crate RIGIDLY on its body mount and keep the placement disc up to date.
+## Re-asserting the local pose every tick costs nothing and makes the hold immune to anything that
+## nudges the body (a physics wake-up, a replicated pose landing late).
 func _server_update_carried_item(_delta: float) -> void:
 	if player.hands_item == null:
 		return
-	var item: RigidBody3D = player.hands_item
-	# Auto-drop when the body is dragged out of reach: if it stays stuck (behind a wall) while we back
-	# away, the gap to the hold spot grows; once it passes the CARRY reach, let it go on its own. This
-	# reach is derived from the hold distance (carry_offset + the max pitch lift + a margin) — NOT the
-	# interaction ray length, which is a separate, tunable grab distance: coupling them meant a short
-	# interact reach auto-dropped the object instantly (it hangs farther than the grab reach). The
-	# reparent inside the drop is illegal mid-physics-step, so defer it to the end of the frame.
-	var eye: Vector3 = player.to_global(player.camera_pivot.position)
-	var carry_reach: float = player.carry_offset.length() + _CARRY_PITCH_LIFT + 1.0
-	if eye.distance_to(item.global_position) > carry_reach:
-		call_deferred("_server_drop_carried_item")
-		return
-	# Hold spot ON the camera ray (crosshair-aligned): carry_offset is CAMERA-space (-Z = carry distance
-	# along the gaze), so the box stays centered on the crosshair dot at ANY head pitch — the same ray
-	# the InteractRay shoots. (It used to be body-relative, yaw only, plus an artificial vertical pitch
-	# "lift", which made the box slide off the crosshair as the head pitched.) The server has the
-	# replicated "head" pitch on camera_pivot. Offset by the geometry center so the object sits centered
-	# on that spot.
-	var center: Vector3 = Vector3.ZERO
-	if item.has_method("get_center_offset"):
-		center = item.get_center_offset()
-	var hold_world: Vector3 = player.camera_pivot.global_transform * player.carry_offset \
-			- item.global_basis * center
-	# Camera pitch raises/lowers the hold spot along the VERTICAL (up_direction) only — look up/down to
-	# place the object higher/lower (e.g. stacking). The server has the replicated "head" pitch, so the
-	# camera forward's vertical component gives the pitch ratio (+1 up, -1 down, 0 level). We amplify it
-	# (gain) so the object climbs FASTER than the gaze — it sits above the crosshair, leaving the target
-	# shelf visible under it — then saturate at the max lift.
-	var pitch_ratio: float = (-player.camera_pivot.global_basis.z).dot(player.up_direction)
-	var lift: float = clampf(pitch_ratio * _CARRY_PITCH_GAIN, -_CARRY_PITCH_LIFT, _CARRY_PITCH_LIFT)
-	hold_world += player.up_direction * lift
-	# Keep the hold spot inside the player's own free space: above the floor below AND below any ceiling
-	# above (e.g. inside a container / building). BOTH rays start at the EYE — always in the free space —
-	# so the downward one finds the floor and the upward one finds the ceiling. (The old guard cast DOWN
-	# from 2.5 m above the hold spot; indoors that ray hit the CEILING from above and "rested" the object
-	# on the roof, so looking up made it jump upward.)
-	var up: Vector3 = player.up_direction
-	var space = player.get_world_3d().direct_space_state
-	var solids_mask := (1 << (Globals.LAYER_WORLD - 1)) | (1 << (Globals.LAYER_VEHICLE - 1))
-	var excl: Array[RID] = [player.get_rid(), item.get_rid()]
-	var hold_h: float = (hold_world - eye).dot(up)  # hold-spot height above the eye, along up
-	var floor_hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye - up * 3.0, \
-			solids_mask, excl))
-	if floor_hit:
-		var floor_h: float = (floor_hit.position - eye).dot(up) + _CARRY_GROUND_CLEARANCE
-		if hold_h < floor_h:
-			hold_world += up * (floor_h - hold_h)
-			hold_h = floor_h
-	var ceil_hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + up * 3.0, \
-			solids_mask, excl))
-	if ceil_hit:
-		var ceil_h: float = (ceil_hit.position - eye).dot(up) - _CARRY_CEILING_CLEARANCE
-		if hold_h > ceil_h:
-			hold_world += up * (ceil_h - hold_h)
-	var to_hold: Vector3 = hold_world - item.global_position
-	# Physics-held carry (B): ease the DYNAMIC body toward the hold spot (proportional velocity, so it
-	# GLIDES in — never the old instant snap). Dead zone split by axis:
-	#  - HORIZONTAL: fixed, so on pickup it doesn't snap to the front and it trails as you move.
-	#  - VERTICAL: SHRINKS as you look down (pitch_ratio -1 = straight down). At level gaze the dead zone
-	#    keeps the object from dropping on pickup; look down and it vanishes, so the object goes all the
-	#    way to the floor to place it. The ground/walls still resist the velocity.
-	var upv: Vector3 = player.up_direction
-	var vert_off: float = to_hold.dot(upv)                 # hold spot height above the object (signed)
-	var horiz_vec: Vector3 = to_hold - upv * vert_off      # horizontal offset to the hold spot
-	var horiz: float = horiz_vec.length()
-	var vert_dead: float = _CARRY_DEAD_ZONE * clampf(1.0 + pitch_ratio, 0.0, 1.0)
-	var move: Vector3 = Vector3.ZERO
-	if horiz > _CARRY_DEAD_ZONE:
-		move += horiz_vec / horiz * (horiz - _CARRY_DEAD_ZONE)
-	var av: float = absf(vert_off)
-	if av > vert_dead:
-		move += upv * signf(vert_off) * (av - vert_dead)
-	var mlen: float = move.length()
-	var vel: Vector3 = Vector3.ZERO
-	if mlen > 0.001:
-		vel = move / mlen * minf(mlen * _CARRY_FOLLOW_GAIN, _CARRY_FOLLOW_MAX_SPEED)
-	item.linear_velocity = vel
-	# NB: angular velocity is NOT zeroed here — the body keeps the spin a bump imparts (heavily damped,
-	# see _CARRY_ANGULAR_DAMP), so a carried object reacts to knocks instead of being rigidly locked.
+	player.hands_item.transform = Transform3D(_carry_basis, player.carry_mount_offset)
+	_place = _resolve_placement()
 
 ## Drain the dialog queue: release the OLDEST pending line every _DIALOG_LINE_INTERVAL seconds, then
 ## clear the bubble with a single null once nothing is left to say.
@@ -1947,10 +2291,13 @@ func _server_update_carry_prompt(delta: float) -> void:
 ## grabbable prop that is reachable (not carried by another, clear line of sight).
 func _compute_carry_prompt() -> String:
 	if player.hands_item != null:
-		if _cargo_bed_for_drop(player.hands_item.global_position) != null:
+		# The PLACEMENT point decides, not where the crate rides: it sits on our chest now, while E
+		# puts it down on the disc under the crosshair (which may be metres away, in a bed or a slot).
+		var point: Vector3 = _place["position"] if _place.has("position") else player.global_position
+		if _cargo_bed_for_drop(point) != null:
 			return "cargo"  # dropping here loads it into the bed (sticks)
-		#if _shelf_for_drop(player.hands_item.global_position) != null:
-			#return "cargo"  # dropping here snaps it into a shelf slot (sticks)
+		if _place.get("shelf") != null:
+			return "cargo"  # dropping here snaps it into a shelf slot (sticks)
 		return "drop"
 	if _stance != 0:
 		return ""  # standing only: no "pick up" prompt while crouched or prone
@@ -2037,11 +2384,7 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 	# on a spinning planet a world-axes offset would keep the landing spot fixed in space while the
 	# ground turned underneath, and the pad would drift a full circle of longitude every day.
 	player.global_position = destination.global_position + destination.global_basis * local_pos
-	emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		str(destination.uuid) if "uuid" in destination else "",
-		player.is_parented
-	)
+	# BUG FIXED IN PASSING: this emitted on `self` (PlayerServer, a plain Node that does NOT declare
+	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
+	# Going through the body's single emitter removes the whole class of mistake.
+	player.emit_move()

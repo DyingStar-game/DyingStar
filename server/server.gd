@@ -1,3 +1,4 @@
+class_name GameServer
 extends Node
 
 signal populated_universe
@@ -18,6 +19,9 @@ const PIN_DEBUG_MAX: int = 200
 const SETTLE_EPS: float = 0.05       # m of net drift below which a body counts as "not moving"
 const SETTLE_TICKS: int = 15         # consecutive still ticks (~1.5 s at the pin cadence) before freezing
 const ACTIVE_RADIUS: float = 60.0    # m: keep bodies dynamic within this of any player
+## Edge (m) of a frozen-body index cell. Must stay > ACTIVE_RADIUS so a player's sphere never spans
+## more than the 3x3x3 block the wake pass walks.
+const CULL_CELL_SIZE: float = 64.0
 
 var universe_scene: Node = null
 var entities_spawn_node: Node = null
@@ -38,6 +42,10 @@ var max_players_allowed = 40
 var players_list = {}
 var players_list_last_movement = {}
 var players_list_last_rotation = {}
+## Last frame uuid DECLARED to Horizon per player. Never assigned by a caller: it is a memo of what
+## PropSpawn.parent_frame_uuid() returned last time, so a change of scene parent can be detected and
+## re-announced. Same role as PropSync.server_last_parent_id for props.
+var players_list_last_parent: Dictionary = {}
 var players_list_creationdate = {}
 var players_list_temp_by_id = {}
 var players_list_currently_in_transfert = {}
@@ -144,6 +152,30 @@ var pending_freeze_objects: Array[Dictionary] = []
 var check_pending_objects_timer: int = 0
 var check_out_of_zone_after_split: int = 0
 
+# ── Settle-culler index ───────────────────────────────────────────────────────
+# Scanning props_list every tick is O(all props). That was fine at a dozen networked objects; with
+# the ~2100 rocks a planet now carries it dominated the server, and at 50k it is hopeless no matter
+# how cheap each step is (staggering an O(N) sweep is still O(N) amortised). These structures make
+# the per-tick cost depend on what is NEAR A PLAYER instead of on how many props exist:
+#
+#   _cull_active — cullable bodies that are NOT culled-frozen. Only a body that can still move needs
+#                  the settle test, so this is the only set the freeze direction ever walks. Bodies
+#                  far from every player are frozen and cost exactly nothing per tick.
+#   _cull_frozen — culled-frozen bodies bucketed by coarse PLANET-LOCAL cell. A frozen body cannot
+#                  move relative to its planet, so its bucket stays valid for as long as it is
+#                  frozen, and waking bodies costs a lookup of the cells a player overlaps.
+#
+# Planet-local, never world: a planet orbits, so a world-space bucket would go stale every frame.
+var _cull_active: Dictionary = {}       # instance_id -> RigidBody3D
+var _cull_frozen: Dictionary = {}       # planet_id -> { Vector3i cell -> { instance_id -> body } }
+var _cull_frozen_at: Dictionary = {}    # instance_id -> {planet, cell, local} (to unbucket + test)
+var _cull_settle: Dictionary = {}       # instance_id -> {"ref": Vector3, "ticks": int}
+## props_list population at the last adopt pass. Bodies are indexed when they freeze/unfreeze, but a
+## newly spawned one has no such hook — rather than hook every creation site (and silently never cull
+## whatever a future site forgets), notice that the population changed and adopt the newcomers. It
+## runs while the world streams in, then never again.
+var _cull_indexed_total: int = -1
+
 ## True once manage_zone() has received an authoritative zone assignment
 ## from Horizon.  Until then, planets keep zero resident chunks (only their
 ## safety-net coarse mesh) so a 17-planet boot doesn't load 836k shapes.
@@ -170,11 +202,157 @@ func _ready() -> void:
 	_send_metrics()
 
 func _physics_process(_delta: float) -> void:
+	var _t0: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	_perf_tick(_delta)
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
 		_horizon_update_counter = 0
 		send_players_newposition_to_horizon()
 		send_props_update_to_horizon()
+	if PropNet.PROF:
+		# _perf_tick prints and resets INSIDE this window, so its own report frame lands in the next
+		# window's bucket. Over a 2 s window that is noise; it keeps the accounting simple.
+		PropNet.prof_srv_usec += Time.get_ticks_usec() - _t0
+
+## Dormant perf rig (flip _PERF_REPORT AND PropNet.PROF to re-arm): every 2 s, print where the
+## frame goes — engine physics vs script — plus the counts that discriminate between the known
+## suspects (awake bodies = Jolt load, chunk tasks/queue = terrain collision churn, nav maps = NPC
+## bake load, update dict sizes = network flush volume). Built during the 2026-08 TPS investigation.
+const _PERF_REPORT: bool = false
+var _perf_timer: float = 0.0
+var _perf_frames: int = 0
+
+func _perf_tick(delta: float) -> void:
+	if not _PERF_REPORT:
+		return
+	_perf_timer += delta
+	_perf_frames += 1
+	if _perf_timer < 2.0:
+		return
+	var _window_frames: int = maxi(_perf_frames, 1)
+	_perf_timer = 0.0
+	_perf_frames = 0
+	var total := 0
+	var unfrozen := 0
+	var awake := 0
+	for ptype in props_list.keys():
+		if ptype == "planets" or not (props_list[ptype] is Dictionary):
+			continue
+		for body_uuid in props_list[ptype].keys():
+			var b = props_list[ptype][body_uuid]
+			if b is RigidBody3D and is_instance_valid(b):
+				total += 1
+				if not (b as RigidBody3D).freeze:
+					unfrozen += 1
+					if not (b as RigidBody3D).sleeping:
+						awake += 1
+	# SUM over every planet, never just the first: this universe holds 18 of them, and reading only
+	# props_list["planets"].keys()[0] reported "chunks res=0" while the planet the player actually
+	# stands on may have been fine — a measurement artefact that inverted the diagnosis.
+	var chunks := 0
+	var loading := 0
+	var queued := 0
+	var planets_with_chunks := 0
+	for puuid in props_list["planets"].keys():
+		var p = props_list["planets"][puuid]
+		if p is Planet and (p as Planet).planet_terrain != null:
+			var pt = (p as Planet).planet_terrain
+			var c: int = pt._server_collision_chunks.size()
+			chunks += c
+			loading += pt._server_chunk_tasks.size()
+			queued += pt._server_chunk_queue.size()
+			if c > 0:
+				planets_with_chunks += 1
+	var npcs := 0
+	for puuid in players_list.keys():
+		var pl = players_list[puuid]
+		if is_instance_valid(pl) and "is_npc" in pl and pl.is_npc:
+			npcs += 1
+	print(("[Perf] fps=%.0f  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
+			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d"
+			+ " | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d") % [
+		Engine.get_frames_per_second(),
+		Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS),
+		Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS),
+		Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT),
+		awake, unfrozen, total,
+		chunks, planets_with_chunks, props_list["planets"].size(), loading, queued,
+		players_list.size(), npcs, NavigationServer3D.get_maps().size(),
+		props_update.size(), players_newposition.size(),
+	])
+	# Replication cost, split into the three layers the engine profiler conflates into one
+	# "PropNet.server_tick" row. `tick` is INCLUSIVE (it contains `handler`), so the cost of the
+	# function's own body + the signal dispatch is tick-handler. `flush` is the JSON + websocket
+	# send, which happens every 2nd frame and is NOT part of tick.
+	if PropNet.PROF:
+		var _fr: float = float(_window_frames)
+		var _tick_ms: float = PropNet.prof_tick_usec / 1000.0 / _fr
+		var _hand_ms: float = PropNet.prof_handler_usec / 1000.0 / _fr
+		var _flush_ms: float = PropNet.prof_flush_usec / 1000.0 / _fr
+		var _per_call_us: float = (
+			float(PropNet.prof_tick_usec) / float(PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0)
+		print(("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%)"
+				+ " | per frame: tick=%.2fms (body+dispatch=%.2f handler=%.2f) flush=%.2fms"
+				+ " | per call: %.1fus | flush avg entries=%.0f") % [
+			PropNet.prof_calls / _fr,
+			PropNet.prof_emits / _fr,
+			(100.0 * PropNet.prof_emits / PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0,
+			_tick_ms, _tick_ms - _hand_ms, _hand_ms, _flush_ms,
+			_per_call_us,
+			(float(PropNet.prof_flush_entries) / float(PropNet.prof_flushes)) if PropNet.prof_flushes > 0 else 0.0,
+		])
+		# Physics-tick accounting: every server-side _physics_process we know of, versus the engine's
+		# own TIME_PHYSICS_PROCESS. The leftover is Jolt (the step is waited on from the main thread,
+		# 3d/run_on_separate_thread=true) — if it dominates, no GDScript optimisation can help.
+		var _player_ms: float = PropNet.prof_player_usec / 1000.0 / _fr
+		var _terrain_ms: float = PropNet.prof_terrain_usec / 1000.0 / _fr
+		var _srv_ms: float = PropNet.prof_srv_usec / 1000.0 / _fr
+		var _scripts_ms: float = _tick_ms + _player_ms + _terrain_ms + _srv_ms
+		var _phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+		# `known` = the callbacks we instrumented; the rest is the engine + any uninstrumented
+		# _physics_process (during the 2026-08 investigation a PerfBracket pair measured that
+		# uninstrumented remainder precisely; re-create it from git history if ever needed again).
+		print("[Perf/phys] tick=%.1fms | known=%.2fms (props=%.2f player=%.2f[%.0f/f] terrain=%.2f server=%.2f) | engine+rest=%.2fms (%.0f%%)" % [
+			_phys_ms, _scripts_ms,
+			_tick_ms, _player_ms, PropNet.prof_player_calls / _fr, _terrain_ms, _srv_ms,
+			_phys_ms - _scripts_ms,
+			(100.0 * (_phys_ms - _scripts_ms) / _phys_ms) if _phys_ms > 0.0 else 0.0,
+		])
+		var _p_pre: float = PropNet.prof_p_pre_usec / 1000.0 / _fr
+		var _p_vault: float = PropNet.prof_p_vault_usec / 1000.0 / _fr
+		var _p_step: float = PropNet.prof_p_step_usec / 1000.0 / _fr
+		var _p_move: float = PropNet.prof_p_move_usec / 1000.0 / _fr
+		var _p_emit: float = PropNet.prof_p_emit_usec / 1000.0 / _fr
+		print("[Perf/player] total=%.2fms | pre=%.2f vault_probe=%.2f step_probe=%.2f move_and_slide=%.2f emit=%.2f | rest=%.2f" % [
+			_player_ms, _p_pre, _p_vault, _p_step, _p_move, _p_emit,
+			_player_ms - (_p_pre + _p_vault + _p_step + _p_move + _p_emit),
+		])
+		# The two candidate causes of the collision-query cost, side by side. `slides` above ~1 means
+		# move_and_slide keeps re-casting against an unstable contact; chunk load/unload counts show
+		# whether terrain colliders are being rebuilt under the walking player. Plus the gravity Area3D
+		# the player stands in: with 2179 bodies inside it, its monitoring runs in flush_queries, which
+		# lands in `engine` — that would explain the 3.7 ms already present at rest.
+		var _grav_bodies := -1
+		var _grav_name := ""
+		for puuid in players_list.keys():
+			var pl = players_list[puuid]
+			if is_instance_valid(pl) and "gravity_parents" in pl and not pl.gravity_parents.is_empty():
+				var a = pl.gravity_parents.back()
+				if a is Area3D:
+					_grav_name = (a as Area3D).name
+					_grav_bodies = (a as Area3D).get_overlapping_bodies().size()
+				break
+		print(("[Perf/coll] slides=%.2f/tick (over %.0f moves/f)"
+				+ " | chunks loaded=%d unloaded=%d per window"
+				+ " | gravity area '%s' monitoring %d bodies") % [
+			(float(PropNet.prof_slide_count) / float(PropNet.prof_slide_ticks)) if PropNet.prof_slide_ticks > 0 else 0.0,
+			PropNet.prof_slide_ticks / _fr,
+			PropNet.prof_chunk_loads, PropNet.prof_chunk_unloads,
+			_grav_name, _grav_bodies,
+		])
+		PropNet.prof_reset()
 
 func _process(_delta: float) -> void:
 	if check_pending_objects_timer == 20:
@@ -226,8 +404,9 @@ func _process(_delta: float) -> void:
 ## each awake body, and push the resulting per-planet pin set so those
 ## chunks stay resident regardless of the zone's desired residency.
 ##
-## Awake = (not sleeping) AND (not frozen).  Frozen / sleeping bodies do
-## not need collision and may be evicted with the rest of the zone churn.
+## Every UNFROZEN body pins its chunk, sleeping or not — a sleeping body still rests on its
+## contacts, and evicting the ground under it wakes it (see the loop below). Only frozen
+## bodies (collision shapes disabled by the culler) may lose their chunk with the zone churn.
 ##
 ## Players (CharacterBody3D) are ALWAYS pinned regardless of
 ## _zone_initialized: in single-server / no-mesh deployments Horizon never
@@ -267,9 +446,13 @@ func _refresh_active_body_pins() -> void:
 					continue
 				var rb: RigidBody3D = body
 				if rb.freeze:
-					continue
-				if rb.sleeping:
-					continue
+					continue  # shapes disabled by the culler: genuinely needs no ground
+				# SLEEPING bodies still pin their chunk. Unloading the ground under a sleeping body
+				# removes its contacts, which WAKES it: it falls (the reload is async), re-pins the
+				# chunk, the chunk reloads, it lands and sleeps again, the pin drops... A player
+				# walking across a chunk boundary next to a resting pile triggers that unload/wake
+				# oscillation on every crossing (measured: server TPS 60 -> 10 from walking ~5 m
+				# near the depot crates). Only FROZEN bodies can safely lose their ground.
 				_pin_node_to_planet_chunk(rb, pins_by_planet)
 
 	# Push pin set to each planet (empty array clears pins).
@@ -295,45 +478,199 @@ func _refresh_active_body_pins() -> void:
 func _cull_settled_bodies() -> void:
 	if not GameOrchestrator.is_server():
 		return  # server-only: it owns the authoritative bodies
+	_cull_adopt_new_bodies()
+	# 1) WAKE: only the cells a player overlaps are visited, so this is independent of how many
+	#    frozen bodies the planet holds — the 50k case costs the same as the 100 case.
+	_cull_wake_near_players()
+	# 2) SETTLE: only bodies that can still move. Their positions are read in world space here, which
+	#    is fine precisely because the set is small (what is near a player, or still coming to rest).
+	var player_positions: PackedVector3Array = _live_player_positions()
+	for id in _cull_active.keys():
+		var rb = _cull_active[id]
+		if not _is_cullable_body(rb):
+			_cull_forget(id)  # freed, carried or loaded into a bed — no longer ours to cull
+			continue
+		if _any_within(player_positions, _true_position(rb), ACTIVE_RADIUS):  # true coords, see _live_player_positions
+			_cull_settle.erase(id)  # a player is here: it must stay dynamic, restart the settle count
+			continue
+		if rb.freeze:
+			continue  # design-frozen (storage box, out-of-zone spawn), far → leave
+		# Settle detection: drift from a reference point. Jitter oscillates within SETTLE_EPS so it
+		# still counts as still; a real move pushes past it and resets the reference.
+		# Measured in the PARENT's frame (the planet), never in world space: "settled" means "no
+		# longer moving relative to the ground it rests on". A spinning planet sweeps a resting
+		# prop through tens of metres of world space between refreshes, which would reset the
+		# reference forever and stop the culler from ever freezing anything.
+		var local_pos: Vector3 = (rb as RigidBody3D).position
+		var st: Dictionary = _cull_settle.get(id, {"ref": local_pos, "ticks": 0})
+		if local_pos.distance_to(st["ref"]) < SETTLE_EPS:
+			st["ticks"] = int(st["ticks"]) + 1
+		else:
+			st["ticks"] = 0
+			st["ref"] = local_pos
+		_cull_settle[id] = st
+		if int(st["ticks"]) >= SETTLE_TICKS:
+			_freeze_culled_body(rb)
+
+## Wake every culled-frozen body a player has come within ACTIVE_RADIUS of. Walks the 3x3x3 cells
+## around each player (CULL_CELL_SIZE > ACTIVE_RADIUS guarantees the sphere fits) and tests the
+## planet-local position recorded when the body froze — no transform work per candidate.
+func _cull_wake_near_players() -> void:
+	if _cull_frozen.is_empty():
+		return
+	var r2: float = ACTIVE_RADIUS * ACTIVE_RADIUS
+	for puuid in players_list.keys():
+		var p = players_list[puuid]
+		if not (is_instance_valid(p) and p is Node3D):
+			continue
+		var frame := _cull_frame_of(p as Node3D)
+		var planet_id: int = frame[0]
+		if not _cull_frozen.has(planet_id):
+			continue
+		var cells: Dictionary = _cull_frozen[planet_id]
+		var here: Vector3 = frame[1]
+		var base: Vector3i = _cull_cell(here)
+		var waking: Array = []
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for dz in range(-1, 2):
+					var bucket = cells.get(Vector3i(base.x + dx, base.y + dy, base.z + dz))
+					if bucket == null:
+						continue
+					for id in (bucket as Dictionary).keys():
+						var at = _cull_frozen_at.get(id)
+						if at != null and (at["local"] as Vector3).distance_squared_to(here) >= r2:
+							continue  # inside the 3x3x3 cell block, outside the actual radius
+						waking.append(id)
+		# Unfreeze AFTER the walk: _unfreeze_culled_body re-buckets, and mutating the cells we are
+		# iterating would skip bodies.
+		for id in waking:
+			var at = _cull_frozen_at.get(id)
+			if at == null:
+				continue  # already woken by another player in this same pass
+			var rb = at.get("body")
+			if rb is RigidBody3D and is_instance_valid(rb):
+				_unfreeze_culled_body(rb)
+			else:
+				_cull_forget(id)
+
+## The frame a node's cull position is expressed in: [planet instance_id, position in that planet's
+## local space]. Planet-local so a planet's orbital motion never invalidates a recorded position.
+## A node with no Planet ancestor falls back to planet_id 0 / world space (the universe root is
+## fixed, so that is stable too).
+func _cull_frame_of(node: Node3D) -> Array:
+	var n: Node = node
+	while n != null:
+		if n is Planet:
+			return [n.get_instance_id(), (n as Node3D).to_local(node.global_position)]
+		n = n.get_parent()
+	return [0, node.global_position]
+
+func _cull_cell(local: Vector3) -> Vector3i:
+	return Vector3i(
+		int(floor(local.x / CULL_CELL_SIZE)),
+		int(floor(local.y / CULL_CELL_SIZE)),
+		int(floor(local.z / CULL_CELL_SIZE)))
+
+## Put a just-frozen body in its cell bucket and out of the active set.
+func _cull_index_frozen(rb: RigidBody3D) -> void:
+	var id: int = rb.get_instance_id()
+	_cull_active.erase(id)
+	_cull_settle.erase(id)
+	var frame := _cull_frame_of(rb)
+	var planet_id: int = frame[0]
+	var local: Vector3 = frame[1]
+	var cell: Vector3i = _cull_cell(local)
+	if not _cull_frozen.has(planet_id):
+		_cull_frozen[planet_id] = {}
+	var cells: Dictionary = _cull_frozen[planet_id]
+	if not cells.has(cell):
+		cells[cell] = {}
+	(cells[cell] as Dictionary)[id] = rb
+	_cull_frozen_at[id] = {"planet": planet_id, "cell": cell, "local": local, "body": rb}
+
+## Take a body out of its cell bucket and back into the active set (or out of the index entirely).
+func _cull_index_active(rb: RigidBody3D) -> void:
+	var id: int = rb.get_instance_id()
+	_cull_unbucket(id)
+	_cull_active[id] = rb
+
+func _cull_unbucket(id: int) -> void:
+	var at = _cull_frozen_at.get(id)
+	if at == null:
+		return
+	_cull_frozen_at.erase(id)
+	var cells = _cull_frozen.get(at["planet"])
+	if cells == null:
+		return
+	var bucket = (cells as Dictionary).get(at["cell"])
+	if bucket == null:
+		return
+	(bucket as Dictionary).erase(id)
+	if (bucket as Dictionary).is_empty():
+		(cells as Dictionary).erase(at["cell"])
+
+## Drop a body from every cull structure (freed, or now carried / bed-loaded).
+func _cull_forget(id: int) -> void:
+	_cull_active.erase(id)
+	_cull_settle.erase(id)
+	_cull_unbucket(id)
+
+## Adopt bodies that entered props_list without going through freeze/unfreeze. Only runs when the
+## prop population actually changed, i.e. while the world streams in — see _cull_indexed_total.
+func _cull_adopt_new_bodies() -> void:
+	var total: int = 0
 	for ptype in props_list.keys():
 		if ptype == "planets" or not (props_list[ptype] is Dictionary):
 			continue
-		for body_uuid in props_list[ptype].keys():
+		total += (props_list[ptype] as Dictionary).size()
+	if total == _cull_indexed_total:
+		return
+	_cull_indexed_total = total
+	for ptype in props_list.keys():
+		if ptype == "planets" or not (props_list[ptype] is Dictionary):
+			continue
+		for body_uuid in (props_list[ptype] as Dictionary).keys():
 			var body = props_list[ptype][body_uuid]
 			if not _is_cullable_body(body):
 				continue
-			var rb: RigidBody3D = body
-			if _player_within(rb.global_position, ACTIVE_RADIUS):
-				if rb.freeze and rb.get_meta("_culled_frozen", false):
-					_unfreeze_culled_body(rb)
-				rb.set_meta("_settle_ticks", 0)
+			var id: int = body.get_instance_id()
+			if _cull_active.has(id) or _cull_frozen_at.has(id):
 				continue
-			if rb.freeze:
-				continue  # already frozen (by us or by design), far → leave
-			# Settle detection: drift from a reference point. Jitter oscillates within SETTLE_EPS so it
-			# still counts as still; a real move pushes past it and resets the reference.
-			# Measured in the PARENT's frame (the planet), never in world space: "settled" means "no
-			# longer moving relative to the ground it rests on". A spinning planet sweeps a resting
-			# prop through tens of metres of world space between refreshes, which would reset the
-			# reference forever and stop the culler from ever freezing anything.
-			var local_pos: Vector3 = rb.position
-			var ref: Vector3 = rb.get_meta("_settle_ref", local_pos)
-			var ticks: int = rb.get_meta("_settle_ticks", 0)
-			if local_pos.distance_to(ref) < SETTLE_EPS:
-				ticks += 1
+			if (body as RigidBody3D).get_meta("_culled_frozen", false):
+				_cull_index_frozen(body)
 			else:
-				ticks = 0
-				rb.set_meta("_settle_ref", local_pos)
-			rb.set_meta("_settle_ticks", ticks)
-			if ticks >= SETTLE_TICKS:
-				_freeze_culled_body(rb)
+				_cull_active[id] = body
 
-## True if any connected player is within [param radius] of [param pos].
+## World positions of every connected, live player. Snapshotted once per culler sweep so the
+## per-body proximity test costs a distance compare instead of a transform-chain walk per player.
+func _live_player_positions() -> PackedVector3Array:
+	# TRUE universe coordinates: with every planet at the origin of its own world, raw
+	# global_position collides across worlds (a rock on planet A and a player on planet B would
+	# both read near-origin and falsely count as "close").
+	var out := PackedVector3Array()
+	for puuid in players_list.keys():
+		var p = players_list[puuid]
+		if is_instance_valid(p) and p is Node3D:
+			out.append(_true_position(p as Node3D))
+	return out
+
+## True if any of [param positions] is within [param radius] of [param pos].
+func _any_within(positions: PackedVector3Array, pos: Vector3, radius: float) -> bool:
+	var r2 := radius * radius
+	for p in positions:
+		if pos.distance_squared_to(p) < r2:
+			return true
+	return false
+
+## True if any connected player is within [param radius] of [param pos]. One-shot form (spawn-time
+## checks); the culler uses the snapshot pair above instead. [param pos] must be in TRUE universe
+## coordinates (players are converted the same way, so the test is world-safe).
 func _player_within(pos: Vector3, radius: float) -> bool:
 	var r2 := radius * radius
 	for puuid in players_list.keys():
 		var p = players_list[puuid]
-		if is_instance_valid(p) and p is Node3D and pos.distance_squared_to((p as Node3D).global_position) < r2:
+		if is_instance_valid(p) and p is Node3D and pos.distance_squared_to(_true_position(p as Node3D)) < r2:
 			return true
 	return false
 
@@ -346,6 +683,26 @@ func _is_cullable_body(node: Node) -> bool:
 	var parent: Node = node.get_parent()
 	return not (parent is Player or parent is Vehicle)
 
+## True when [param body] sits over a planet whose terrain collision has NOT been built under it yet.
+## False in open space — there is nothing to wait for — and false once the chunk is resident.
+##
+## The same question PlayerServer._hold_until_ground asks, through the same PlanetTerrain accessor, so
+## a body and a player can never disagree about whether the ground beneath them exists.
+func _ground_missing_under(body: Node3D) -> bool:
+	if not is_instance_valid(body) or not body.is_inside_tree():
+		return false
+	var planet: Planet = null
+	var node: Node = body
+	while node != null:
+		if node is Planet:
+			planet = node as Planet
+			break
+		node = node.get_parent()
+	if planet == null or planet.planet_terrain == null:
+		return false
+	return not planet.planet_terrain.has_collision_under(body.global_position)
+
+
 func _freeze_culled_body(rb: RigidBody3D) -> void:
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
@@ -353,9 +710,10 @@ func _freeze_culled_body(rb: RigidBody3D) -> void:
 	# OCS: drop the body out of Jolt's broadphase entirely. freeze=true alone keeps it registered
 	# (residual per-step cost), so we also disable its own collision shapes and stop its script tick.
 	rb.set_physics_process(false)
+	_set_prop_sync_ticking(rb, false)
 	_set_body_shapes_disabled(rb, true)
 	rb.set_meta("_culled_frozen", true)
-	rb.remove_meta("_settle_ticks")
+	_cull_index_frozen(rb)  # out of the per-tick active set, into its planet-local cell bucket
 
 func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 	# On a spinning planet the physics pose went stale while the body was culled: Planet skips frozen
@@ -365,13 +723,29 @@ func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 			rb.global_transform)
 	_set_body_shapes_disabled(rb, false)
 	rb.set_physics_process(true)
+	_set_prop_sync_ticking(rb, true)
 	rb.freeze = false
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
 	rb.remove_meta("_culled_frozen")
+	_cull_index_active(rb)  # back into the per-tick active set, out of its cell bucket
 	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
-	if "server_last_position" in rb:
-		rb.server_last_position = Vector3.INF
+	# The replication state lives on the PropSync component when the prop has one, on the root for a
+	# not-yet-migrated legacy prop — reading it off the root only would silently skip every PropSync
+	# prop (i.e. all the rocks).
+	var state: Object = PropSync.of(rb)
+	if state == null:
+		state = rb
+	if "server_last_position" in state:
+		state.server_last_position = Vector3.INF
+
+## The PropSync component is a CHILD node, so it keeps ticking when we disable the host body's own
+## _physics_process — and PropNet.server_tick then runs per frame for a body that cannot move. Every
+## place that stops a body's script tick must silence its component too.
+func _set_prop_sync_ticking(node: Node, on: bool) -> void:
+	var sync := PropSync.of(node)
+	if sync != null:
+		sync.set_physics_process(on)
 
 ## Enable/disable the body's OWN collision shapes (direct CollisionShape3D/Polygon children) so it
 ## leaves/re-enters Jolt's broadphase. Child Area3D shapes (interaction zones) are left untouched.
@@ -387,43 +761,28 @@ func _set_body_shapes_disabled(rb: RigidBody3D, disabled: bool) -> void:
 ## the body's position to [param pins_by_planet][planet_uuid].  Skips when
 ## the body is far above any planet (>radius * 1.5 from any centre).
 func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void:
-	var best_uuid := ""
-	var best_planet: Planet = null
-	var best_dist_sq := INF
-	var body_pos := body.global_position
-	for puuid in props_list["planets"].keys():
-		var pn = props_list["planets"][puuid]
-		if pn == null or not is_instance_valid(pn) or not (pn is Planet):
-			continue
-		var p: Planet = pn as Planet
-		if p.planet_data == null:
-			continue
-		var d_sq: float = body_pos.distance_squared_to(p.global_position)
-		# Skip planets clearly out of reach (1.5× radius gives margin for
-		# atmosphere / above-surface bodies that should still pin).
-		var max_r: float = p.planet_data.radius * 1.5
-		if d_sq > max_r * max_r:
-			continue
-		if d_sq < best_dist_sq:
-			best_dist_sq = d_sq
-			best_uuid = puuid
-			best_planet = p
+	# ORIGIN REBASE: the owning planet is the body's ANCESTOR — each planet lives at the origin of
+	# its own physics world (see create_planet), so a distance scan against planet positions is
+	# meaningless across worlds (every planet reads as "at the origin"). A root-world body (ship or
+	# player in open space) has no planet ancestor and cannot touch terrain anyway (worlds are
+	# isolated), so it pins nothing.
+	var best_planet: Planet = _planet_ancestor_of(body)
 	if best_planet == null:
-		if _pin_debug_logged < PIN_DEBUG_MAX:
-			_pin_debug_logged += 1
-			# print("[Pin] no planet near body at ", body_pos,
-			# 	" (closest planets: ", _debug_closest_planets(body_pos, 3), ")")
 		return
-	var local := body_pos - best_planet.global_position
-	if local.length_squared() < 1.0e-6:
+	var best_uuid: String = best_planet.uuid
+	if not pins_by_planet.has(best_uuid):
+		return  # planet not (yet) registered in props_list["planets"]
+	if best_planet.planet_data == null:
 		return
-	# Convert from world-frame to planet-LOCAL (body-frame) direction.
-	# vec2pix_nest expects the direction in the planet's own coordinate
-	# system; the planet rotates in orbit, so a world-frame direction would
-	# resolve to the WRONG tile and the actual tile under the player would
-	# never be pinned (player falls through to safety net).
-	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
-	var dir := local_body.normalized()
+	var body_pos := body.global_position
+	# Planet-LOCAL (body-frame) direction, through the planet's own conversion — the SAME one
+	# PlanetTerrain.collision_chunk_key uses to answer "is the ground here loaded?". They must agree on
+	# the tile, or a body waits on terrain nobody asked for. Since the origin rebase the planet sits at
+	# its world's origin with identity basis, so this reduces to a plain subtraction — but it stays the
+	# shared conversion, because the check on the other side does exactly the same thing.
+	var dir: Vector3 = best_planet.local_dir_of(body_pos)
+	if dir.is_zero_approx():
+		return
 	var pd = best_planet.planet_data
 	# Collision detail nside: the client's FINEST LOD nside on crack planets, so
 	# the pinned collision is built on the SAME grid the visual renders (see
@@ -450,14 +809,11 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 			frontier = next_frontier
 	for pi in pin_ipix:
 		pins_by_planet[best_uuid]["hp_n%d_p%d" % [nside, pi]] = true
-	if _pin_debug_logged < PIN_DEBUG_MAX:
-		_pin_debug_logged += 1
-		var alt: float = sqrt(best_dist_sq) - best_planet.planet_data.radius
-		# print("[Pin] body at ", body_pos, " → planet '", best_planet.name,
-		# 	"' alt=", alt, " m  key=", key)
 
 
 ## Helper for debug log: list the N closest planets and their distances.
+## [param pos] must be in TRUE universe coordinates (rebase: planet nodes all sit at their own
+## world's origin, only orbital_position is comparable).
 func _debug_closest_planets(pos: Vector3, n: int) -> String:
 	var items: Array = []
 	for puuid in props_list["planets"].keys():
@@ -465,7 +821,7 @@ func _debug_closest_planets(pos: Vector3, n: int) -> String:
 		if not is_instance_valid(pn) or not (pn is Planet):
 			continue
 		var p: Planet = pn as Planet
-		var d := pos.distance_to(p.global_position)
+		var d := pos.distance_to(_planet_orbital_abs(p))
 		var r: float = p.planet_data.radius if p.planet_data else 0.0
 		items.append([d, p.name, r])
 	items.sort_custom(func(a, b): return a[0] < b[0])
@@ -610,6 +966,11 @@ func _spawn_prop_remote_update(prop):
 	if not NetworkOrchestrator.props_list[prop.type].has(prop.uuid):
 		return
 	# update the position
+	# NOT REBASED (dead path): server-to-server SDO replication. It writes a TRUE-universe position
+	# straight into global_position, which since the origin rebase is a per-planet-world frame — so
+	# this needs _owning_planet routing like create_generic_object before it can be revived. Nothing
+	# runs it today: NetworkOrchestrator.small_props_spawner_node is never assigned (its every
+	# initialisation is commented out), so _spawn_prop_remote_add null-crashes first.
 	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
 	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_rotation = Vector3(float(prop.xr), float(prop.yr), float(prop.zr))
 
@@ -630,6 +991,7 @@ func set_server_inactive(_newserver_id: int):
 		for uuid in props_list[proptype].keys():
 			props_list[proptype][uuid].queue_free()
 			props_list[proptype].erase(uuid)
+	_orbital_abs_cache.clear()  # planets are gone: their resolved centres must not outlive them
 
 
 
@@ -643,46 +1005,70 @@ func set_server_inactive(_newserver_id: int):
 # Horizon server part                              #
 #####################################################
 
-func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, _is_parented = false):
-	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
-	# 	print("move uuid:", client_uuid)
-	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
-		# A pending PARENTED move must not be overwritten by a plain tick move
-		# before it is flushed to Horizon — the parent change would be lost and
-		# the client would apply the position in the wrong frame.
-		# A NEWER parented move (chained teleports, or two teleporter areas
-		# firing in the same flush window) REPLACES the pending one instead:
-		# last reparent wins, so parent and position stay consistent.
-		if players_newposition.has(client_uuid) \
-				and players_newposition[client_uuid].has("parent_id") \
-				and reparent_uuid == null:
-			return
+## A server-authoritative move from a Player (see Player.emit_move). The FRAME is deliberately NOT a
+## parameter: it is read from the scene tree HERE, from the very node whose position we just received.
+## "The parent Horizon believes in" is therefore a pure function of "the parent in the tree", and the
+## two can no longer be separate states that drift apart unnoticed. A caller cannot announce a frame
+## it has not actually moved into, because a caller no longer gets to announce anything.
+##
+## A frame change is a first-class reason to send, exactly like a position change — the same rule
+## PropNet.server_tick already applies to props. It used to ride along as an extra field on a
+## position packet, so a reparent that happened not to move the body was silently swallowed.
+func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) -> void:
+	var player = players_list.get(client_uuid)
+	if not is_instance_valid(player):
+		return
 
-		var prep = {
-			"player_id": client_uuid,
-			"pos": {
-				"x": position[0],
-				"y": position[1],
-				"z": position[2],
-			},
-			"rot": {
-				"x": rotation[0],
-				"y": rotation[1],
-				"z": rotation[2]
-			}
+	var frame_uuid: String = PropSpawn.parent_frame_uuid(player)
+	var last_frame: String = players_list_last_parent.get(client_uuid, "")
+	var frame_changed: bool = last_frame != frame_uuid
+	var moved: bool = players_list_last_movement.get(client_uuid) != position \
+			or players_list_last_rotation.get(client_uuid) != rotation
+	if not moved and not frame_changed:
+		return
+
+	if frame_changed:
+		var parent_name: String = player.get_parent().name if player.get_parent() != null else "<none>"
+		print("[Server] player %s frame '%s' -> '%s' (%s)" % [client_uuid, last_frame, frame_uuid, parent_name])
+		if frame_uuid == "":
+			# The body sits under a node Horizon knows nothing about, so its LOCAL position is about to
+			# be published as WORLD coordinates. Harmless while every frame is motionless; a runaway the
+			# day frames orbit. Loud on purpose — this is the one divergence deriving cannot prevent.
+			push_warning("[Server] player %s is under '%s', which carries no uuid: its position will be sent as world coordinates"
+					% [client_uuid, parent_name])
+		players_list_last_parent[client_uuid] = frame_uuid
+
+	var prep = {
+		"player_id": client_uuid,
+		"pos": {
+			"x": position[0],
+			"y": position[1],
+			"z": position[2],
+		},
+		"rot": {
+			"x": rotation[0],
+			"y": rotation[1],
+			"z": rotation[2]
 		}
+	}
 
-		if reparent_uuid != null:
-			prep["parent_id"] = reparent_uuid
-		players_list_last_movement[client_uuid] = position
-		players_list_last_rotation[client_uuid] = rotation
-		if _check_out_of_zone(client_uuid):
-			prep["out_of_zone"] = serverinfo_uuid
-			var player = players_list[client_uuid]
-			print("erase player (2): %s" % client_uuid)
-			players_list.erase(client_uuid)
-			player.queue_free()
-		players_newposition[client_uuid] = prep
+	# players_newposition is one entry per player per flush, so a later move in the same window
+	# overwrites this one. Carry a frame change already queued onto the newer pose instead of losing
+	# it — both poses are expressed in the SAME (new) frame, so this is always safe. The old code
+	# returned early here instead, which threw the fresher position away to save the parent.
+	if frame_changed:
+		prep["parent_id"] = frame_uuid
+	elif players_newposition.has(client_uuid) and players_newposition[client_uuid].has("parent_id"):
+		prep["parent_id"] = players_newposition[client_uuid]["parent_id"]
+
+	players_list_last_movement[client_uuid] = position
+	players_list_last_rotation[client_uuid] = rotation
+	if _check_out_of_zone(client_uuid):
+		prep["out_of_zone"] = serverinfo_uuid
+		print("erase player (2): %s" % client_uuid)
+		players_list.erase(client_uuid)
+		player.queue_free()
+	players_newposition[client_uuid] = prep
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -705,6 +1091,15 @@ func _on_prop_update(
 	type: String,
 	_is_parented = false
 ):
+	if PropNet.PROF:
+		PropNet.prof_emits += 1
+		var _t0: int = Time.get_ticks_usec()
+		_on_prop_update_impl(uuid, properties, type)
+		PropNet.prof_handler_usec += Time.get_ticks_usec() - _t0
+		return
+	_on_prop_update_impl(uuid, properties, type)
+
+func _on_prop_update_impl(uuid: String, properties: Dictionary, type: String) -> void:
 	if not props_update.has(uuid):
 		props_update[uuid] = {
 			"uuid": uuid,
@@ -730,6 +1125,16 @@ func _on_prop_update(
 func send_props_update_to_horizon():
 	if props_update.values().size() == 0:
 		return
+	if PropNet.PROF:
+		PropNet.prof_flushes += 1
+		PropNet.prof_flush_entries += props_update.size()
+		var _t0: int = Time.get_ticks_usec()
+		_send_props_update_impl()
+		PropNet.prof_flush_usec += Time.get_ticks_usec() - _t0
+		return
+	_send_props_update_impl()
+
+func _send_props_update_impl() -> void:
 	debug_message_number = debug_message_number + 1
 	var message = {
 		"namespace": "props",
@@ -780,17 +1185,38 @@ func create_planet(event: Dictionary) -> void:
 		return
 
 	var spawnable_planet_instance = load("res://" + planet_data["scenename"]).instantiate()
-	spawnable_planet_instance.spawn_position = Vector3(
+	# ORIGIN REBASE: the planet's true universe position becomes DATA (orbital_position); the node
+	# itself sits at the ORIGIN of its own physics world so Jolt's float32 broadphase keeps
+	# metre-scale AABBs (at astronomic coords they quantise to ±2 km and every query near a dense
+	# surface — the city — costs ~30x, collapsing the tick to 6 TPS while walking; measured, see
+	# 2026-08 investigation). spawn_position deliberately stays ZERO so planet_body._ready leaves the node at
+	# the origin. SubViewport.own_world_3d gives the planet a full private World3D (physics space,
+	# gravity areas, get_world_3d() for every probe under it) — validated on this build: physics
+	# steps and collides in a camera-less SubViewport world, isolated from the root world. The
+	# client scene is untouched: it keeps astronomic planet positions, and replication
+	# is parent-local on both sides, so poses agree as long as the parent CHAIN agrees.
+	spawnable_planet_instance.orbital_position = Vector3(
 		planet_data["positions"][0]["x"],
 		planet_data["positions"][0]["y"],
 		planet_data["positions"][0]["z"]
 	)
+	# A MOON's position is measured from the planet it orbits, not from the universe origin, and the
+	# tie is parent_id (the client resolves it by parenting the moon under its planet). Remember it
+	# so _planet_orbital_abs can sum the chain; resolution is lazy because a moon can arrive BEFORE
+	# the planet it orbits.
+	spawnable_planet_instance.orbital_parent_uuid = str(planet_data.get("parent_id", ""))
 	spawnable_planet_instance.name = planet_data["name"]
 	spawnable_planet_instance.uuid = planet_uuid
 	spawnable_planet_instance.tree_entered.connect(func():
 		spawnable_planet_instance.owner = get_tree().current_scene
 	)
-	universe_scene.add_child(spawnable_planet_instance)
+	var planet_world := SubViewport.new()
+	planet_world.name = "PlanetWorld_" + str(planet_data["name"])
+	planet_world.own_world_3d = true
+	planet_world.size = Vector2i(2, 2)  # physics only — never rendered, no camera
+	planet_world.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	universe_scene.add_child(planet_world)
+	planet_world.add_child(spawnable_planet_instance)
 	props_list_last_movement[planet_uuid] = Vector3.ZERO
 	props_list_last_rotation[planet_uuid] = Vector3.ZERO
 	props_list["planets"][planet_uuid] = spawnable_planet_instance
@@ -811,10 +1237,36 @@ func create_planet(event: Dictionary) -> void:
 				spawnable_planet_instance.planet_terrain.initial_chunks_ready.connect(
 					on_ready, CONNECT_ONE_SHOT))
 
+## Apply a planet update from Horizon — today only its ORBITAL POSITION.
+##
+## Orbital motion is nearly free under the origin rebase: the planet ORBITS BY CHANGING THIS DATA
+## ONLY, its node never moves, because it sits at the origin of its own physics world. Nothing on the
+## surface is disturbed — no collider is teleported, no contact broken, no sleeping body woken. That
+## is not a detail: moving a planet-sized collider in Jolt every refresh is precisely what caused the
+## "everyone bobs" dance (see the spin note in planet_body._physics_process), which is why the server
+## never spun its planets. Orbit costs a Vector3 assignment here.
+##
+## Only comparisons that CROSS worlds see the change — Horizon's zone bounds, the cull radius, spawn
+## ownership — so the resolved-centre cache is dropped (a moon's centre depends on its planet's) and
+## the zone's chunk residency is recomputed, since a fixed universe-space zone now maps onto a
+## different patch of the planet.
 func update_planet(event: Dictionary) -> void:
-	if props_list["planets"].has(event["object_uuid"]):
-		var planet = props_list["planets"][event["object_uuid"]]
-		# TODO update on server the data
+	# Horizon addresses planets with the nested shape everywhere else (see create_planet); accept the
+	# flat one too rather than silently doing nothing if a caller uses it.
+	var data: Dictionary = event.get("data", {})
+	var planet_uuid: String = str(data.get("object_uuid", event.get("object_uuid", "")))
+	if not props_list["planets"].has(planet_uuid):
+		return
+	var planet := props_list["planets"][planet_uuid] as Planet
+	if planet == null or not is_instance_valid(planet):
+		return
+	var object_data: Dictionary = data.get("object_data", {})
+	var positions = object_data.get("positions", [])
+	if positions is Array and positions.size() > 0:
+		planet.orbital_position = Vector3(
+			positions[0]["x"], positions[0]["y"], positions[0]["z"])
+		_orbital_abs_cache.clear()
+		_push_zone_residency_to_planet(planet)
 
 
 ## Handle a biome update from Horizon.  Rebuilds collision shapes on the
@@ -891,6 +1343,7 @@ func create_player(event: Dictionary) -> void:
 		players_list.erase(player_uuid)
 		players_list_last_movement.erase(player_uuid)
 		players_list_last_rotation.erase(player_uuid)
+		players_list_last_parent.erase(player_uuid)
 		players_list_creationdate.erase(player_uuid)
 		if is_instance_valid(old_player):
 			old_player.queue_free()
@@ -926,7 +1379,25 @@ func create_player(event: Dictionary) -> void:
 			parent.add_child(spawned_entity_instance)
 
 	if not parented:
-		universe_scene.add_child(spawned_entity_instance)
+		# ORIGIN REBASE: an unparented player arrives in TRUE universe coordinates. Inside a
+		# planet's region they must live in that planet's physics world (terrain collision is
+		# unreachable from the root world): parent to the planet and convert to planet-local.
+		# Open space stays under universe_scene at true coords (empty space costs nothing).
+		var abs_pos := Vector3(
+			player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
+		var owner_planet := _owning_planet(abs_pos)
+		if owner_planet != null:
+			# The physics parent becomes the planet, but the NETWORK contract stays exactly what
+			# Horizon believes: parent "" and UNIVERSE-absolute positions. player_server's
+			# _net_position() adds the orbital offset back at every emit. Replicating the reparent
+			# instead was tried and is UNSAFE: the players-position channel and the parenting
+			# events are not atomic across Horizon, so the client applied planet-local positions
+			# in its old frame and teleported thousands of km onto empty terrain (measured).
+			owner_planet.add_child(spawned_entity_instance)
+			var local_pos: Vector3 = abs_pos - _planet_orbital_abs(owner_planet)
+			player_data["position"] = {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z}
+		else:
+			universe_scene.add_child(spawned_entity_instance)
 
 	spawned_entity_instance.position = Vector3(
 		player_data["position"]["x"],
@@ -935,15 +1406,31 @@ func create_player(event: Dictionary) -> void:
 	)
 	# Derive the surface-normal "up" from the spawn position so the player is
 	# oriented correctly on the planet surface, not stuck with global Vector3.UP.
+	# (In a planet world, global_position IS planet-centric — the planet sits at the origin — so
+	# this normalized() finally points along the real surface normal instead of the universe axis.)
 	if not spawned_entity_instance.position.is_zero_approx():
 		spawned_entity_instance.spawn_up = spawned_entity_instance.global_position.normalized()
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
-	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
+	# Ask for the collision under this player NOW rather than up to PIN_TICK_INTERVAL render frames from
+	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
+	# frame of pinning latency is a frame of frozen player. Idempotent — the sweep pushes the whole set,
+	# so calling it early cannot drop another player's pins.
+	_refresh_active_body_pins()
+	prints("spawning player", player_uuid, "in world of",
+		_planet_ancestor_of(spawned_entity_instance).name if _planet_ancestor_of(spawned_entity_instance) != null else "ROOT",
+		"at local", spawned_entity_instance.position, "true", _true_position(spawned_entity_instance))
 
-	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
-	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
+	# Seed the change-detection in the SAME frame _on_player_move compares against (the emitted,
+	# parent-LOCAL pose). Seeding it from global_position instead only ever forced a redundant first
+	# update, but since the rebase those two frames differ by a whole planet radius, which made the
+	# mismatch look like a real move.
+	players_list_last_movement[player_uuid] = spawned_entity_instance.position
+	players_list_last_rotation[player_uuid] = spawned_entity_instance.rotation
+	# Seed the frame memo with the parent we just attached to: Horizon asked for it, so it already
+	# knows. Without this the very first tick would re-announce a frame nobody changed.
+	players_list_last_parent[player_uuid] = PropSpawn.parent_frame_uuid(spawned_entity_instance)
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
@@ -996,6 +1483,20 @@ func create_generic_object(event: Dictionary) -> void:
 	if net == null:
 		net = spawnable_prop_instance
 	spawnable_prop_instance.set_physics_process(false)
+	# ORIGIN REBASE: an unparented ("" parent) spawn arrives in TRUE universe coordinates from
+	# Horizon. If a planet owns that region, the prop must live INSIDE that planet's physics world
+	# (it cannot touch terrain from the root world): parent it to the planet below, and convert the
+	# payload position to planet-local BEFORE client_channel_data_update applies it. On the first
+	# server_tick the parent-change detection replicates parent_id + the local pose to
+	# Horizon/clients, so their astro-layout scenes converge to the same world pose.
+	var owner_planet: Planet = null
+	if str(object_data.get("parent_id", "")) == "" and object_data.has("position"):
+		var abs_pos := Vector3(
+			object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"])
+		owner_planet = _owning_planet(abs_pos)
+		if owner_planet != null:
+			var local_pos: Vector3 = abs_pos - _planet_orbital_abs(owner_planet)
+			object_data["position"] = {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z}
 	net.client_channel_data_update(object_data)
 	net.uuid = event["data"]["object_uuid"]
 	spawnable_prop_instance.tree_entered.connect(func():
@@ -1011,8 +1512,12 @@ func create_generic_object(event: Dictionary) -> void:
 					parent.request_nav_rebake()
 			else:
 				universe_scene.add_child(spawnable_prop_instance)
+		elif owner_planet != null:
+			owner_planet.add_child(spawnable_prop_instance)  # rebase: into the owning planet's world
 		else:
 			universe_scene.add_child(spawnable_prop_instance)
+	elif owner_planet != null:
+		owner_planet.add_child(spawnable_prop_instance)  # rebase: into the owning planet's world
 	else:
 		universe_scene.add_child(spawnable_prop_instance)
 
@@ -1035,13 +1540,15 @@ func create_generic_object(event: Dictionary) -> void:
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
 
-	# check if position in zone, if not, freeze it
-	var pos = spawnable_prop_instance.global_position
+	# check if position in zone, if not, freeze it (TRUE universe coords: the zone comes from
+	# Horizon in absolute coordinates, the prop may live in a planet world near its origin)
+	var pos = _true_position(spawnable_prop_instance)
 	if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] \
 			or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] \
 			or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
 		#  we are out of zone, keep it frozen
 		spawnable_prop_instance.set_physics_process(false)
+		_set_prop_sync_ticking(spawnable_prop_instance, false)
 		if is_instance_of(spawnable_prop_instance, RigidBody3D):
 			spawnable_prop_instance.freeze = true
 	else:
@@ -1051,6 +1558,22 @@ func create_generic_object(event: Dictionary) -> void:
 		# (they carry the _culled_frozen flag) as soon as a player comes within ACTIVE_RADIUS. A body
 		# already near a player (rare at boot, possible on later GORC streaming) stays awake.
 		if _is_cullable_body(spawnable_prop_instance) and not _player_within(pos, ACTIVE_RADIUS):
+			_freeze_culled_body(spawnable_prop_instance)
+		elif spawnable_prop_instance is RigidBody3D and _ground_missing_under(spawnable_prop_instance):
+			# Nothing under it YET. Terrain collision is built chunk by chunk on worker threads, and at
+			# a cold start `user://prebaked_collision/` is empty, so a body created now would meet only
+			# the safety shells 100-200 m below the playable surface and sink through them.
+			#
+			# This branch exists because the one above deliberately skips VEHICLES: a truck being
+			# driven must never be frozen. But a truck being CREATED is driven by nobody, and sixteen
+			# trucks seeded into the world fell 7.4 km — measured, ending 1.8 km under the reference
+			# radius, far outside every player's replication range, which is why none of them ever
+			# appeared. Rocks were spared only because the branch above already froze them.
+			#
+			# ⚠️ Freezing a VehicleBody3D stops its suspension and lets the wheels sink into the body
+			# (see the parking work). Harmless here and only here, because the hold is transient: the
+			# culler unfreezes on approach, by which time the player is standing on loaded terrain, and
+			# the suspension pushes the vehicle back up on the first step.
 			_freeze_culled_body(spawnable_prop_instance)
 		else:
 			spawnable_prop_instance.set_physics_process(true)
@@ -1086,6 +1609,90 @@ func update_generic_object(event: Dictionary) -> void:
 		if net == null:
 			net = object
 		net.client_channel_data_update(event["data"]["object_data"])
+
+
+# ── Origin-rebase frame helpers ──────────────────────────────────────────────────────────────────
+# Server-side, every planet lives at the ORIGIN of its own physics world (see create_planet); its
+# true universe position is planet.orbital_position (data). Any comparison that crosses worlds — or
+# faces Horizon, which always speaks TRUE universe coordinates — must go through these.
+
+## Resolved universe-absolute centre per planet uuid, see _planet_orbital_abs. Only filled once the
+## whole orbital chain is spawned, so a moon that arrives before its planet resolves on a later call.
+var _orbital_abs_cache: Dictionary = {}
+
+## TRUE universe position of [param p]'s centre. NOT the same as p.orbital_position for a moon:
+## Horizon sends a moon's position RELATIVE to the planet it orbits (P4_M1 arrives at ~3e7 m while
+## Tarsis 4 sits at ~3.3e10 m), so the chain has to be summed. Everything that compares positions
+## ACROSS worlds — the settle-culler radius, the Horizon zone bounds, spawn ownership — must go
+## through this, or a body on a moon reads as ~3.3e10 m away from where it really is.
+##
+## Lazy + cached: message order is not guaranteed, so an unresolved parent returns the best-effort
+## sum WITHOUT caching it, and the next call retries once the parent has spawned.
+func _planet_orbital_abs(p: Planet) -> Vector3:
+	if _orbital_abs_cache.has(p.uuid):
+		return _orbital_abs_cache[p.uuid]
+	var acc: Vector3 = p.orbital_position
+	var cur: Planet = p
+	var guard: int = 0
+	while cur.orbital_parent_uuid != "" and guard < 8:  # guard: never loop on a cyclic record
+		guard += 1
+		var pn = props_list["planets"].get(cur.orbital_parent_uuid)
+		if not (pn is Planet) or not is_instance_valid(pn):
+			return acc  # parent not spawned yet — retry on the next call, don't cache
+		cur = pn as Planet
+		acc += cur.orbital_position
+	_orbital_abs_cache[p.uuid] = acc
+	return acc
+
+
+## The Planet whose world [param node] lives in (nearest Planet ancestor), or null for a root-world
+## node (ship or player in open space).
+func _planet_ancestor_of(node: Node) -> Planet:
+	var n: Node = node
+	while n != null:
+		if n is Planet:
+			return n as Planet
+		n = n.get_parent()
+	return null
+
+## Radius out to which a planet OWNS space: the reference sphere, the tallest terrain rising above
+## it, and the atmosphere shell on top. This is the planet/space FRONTIER — inside it a body belongs
+## in the planet's physics world, outside it in the root world (open space). Terrain height matters:
+## with atmosphere_height 0 (a bare moon) the bare radius would leave anyone standing on a mountain
+## outside their own planet.
+func _planet_domain_radius(p: Planet) -> float:
+	if p.planet_data == null:
+		return 0.0
+	return p.planet_data.radius + p.planet_data.max_height + p.planet_data.atmosphere_height
+
+
+## The planet owning TRUE-universe position [param abs_pos], or null for open space. Ties break on
+## the closest centre, so a moon sitting inside its planet's domain still wins at its own surface.
+func _owning_planet(abs_pos: Vector3) -> Planet:
+	var best: Planet = null
+	var best_d := INF
+	for puuid in props_list["planets"].keys():
+		var pn = props_list["planets"][puuid]
+		if pn == null or not is_instance_valid(pn) or not (pn is Planet):
+			continue
+		var p: Planet = pn as Planet
+		if p.planet_data == null:
+			continue
+		var d: float = abs_pos.distance_squared_to(_planet_orbital_abs(p))
+		var max_r: float = _planet_domain_radius(p)
+		if d <= max_r * max_r and d < best_d:
+			best_d = d
+			best = p
+	return best
+
+## [param node]'s position in TRUE universe coordinates: orbital + world-local for planet-world
+## residents (the planet sits at its world's origin with identity basis — the server never spins),
+## plain global for root-world nodes. Comparable across worlds and against Horizon data.
+func _true_position(node: Node3D) -> Vector3:
+	var planet := _planet_ancestor_of(node)
+	if planet == null:
+		return node.global_position
+	return _planet_orbital_abs(planet) + node.global_position
 
 
 func _search_parent_node(parent_id: String) -> Node:
@@ -1173,6 +1780,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 		if props_list[proptype].has(object["object_uuid"]):
 			var prop = props_list[proptype][object["object_uuid"]]
 			prop.set_physics_process(false)
+			_set_prop_sync_ticking(prop, false)
 			if is_instance_of(prop, RigidBody3D):
 				prop.freeze = true
 			found = true
@@ -1203,7 +1811,9 @@ func manage_zone(event: Dictionary) -> void:
 	_push_zone_residency_to_all()
 
 
-## Compute the authoritative zone AABB in world space.
+## The authoritative zone AABB, in TRUE UNIVERSE coordinates — Horizon speaks that frame and only
+## that one. Server-side scene positions are per-planet-world since the origin rebase, so every
+## comparison against this box goes through _true_position / _planet_orbital_abs.
 func _server_zone_aabb_world() -> AABB:
 	var pmin := Vector3(
 		server_zone["x_start"], server_zone["y_start"], server_zone["z_start"])
@@ -1237,10 +1847,11 @@ func _push_zone_residency_to_planet(planet_node: Node) -> void:
 	if planet.planet_data.collision_detail_nside() > planet.planet_data.export_nside:
 		planet.planet_terrain.set_resident_chunks(PackedStringArray())
 		return
-	# Convert zone AABB from world → planet-local by subtracting planet origin.
+	# Convert zone AABB from TRUE universe coords → planet-local by subtracting the ORBITAL
+	# position (the node itself sits at the origin of its own world — rebase, see create_planet).
 	var aabb_world := _server_zone_aabb_world()
 	var aabb_local := AABB(
-		aabb_world.position - planet.global_position, aabb_world.size)
+		aabb_world.position - _planet_orbital_abs(planet), aabb_world.size)
 	var keys := planet.planet_data.chunks_in_aabb_world(aabb_local, 1)
 	planet.planet_terrain.set_resident_chunks(keys)
 
@@ -1262,7 +1873,7 @@ func _check_out_of_zone(player_uuid: String = "") -> bool:
 		if Time.get_ticks_msec() < players_list_creationdate[player_uuid]:
 			return false
 		#print("go...")
-		var pos = players_list[player_uuid].global_position
+		var pos = _true_position(players_list[player_uuid])  # zone bounds are TRUE universe coords
 		var magicnumber = 0.400
 		if pos[0] < (server_zone["x_start"] - magicnumber) or pos[0] > (server_zone["x_end"] + magicnumber) \
 				or pos[1] < (server_zone["y_start"] - magicnumber) or pos[1] > (server_zone["y_end"] + magicnumber) \

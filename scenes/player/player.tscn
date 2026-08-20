@@ -76,7 +76,6 @@ collision_mask = 15
 script = ExtResource("1_ll2l8")
 walk_speed = 1.5
 sprint_speed = 5.0
-carry_offset = Vector3(0, -1, -0.995)
 sfx_torch_on = ExtResource("2_genst")
 sfx_torch_on_distance = 5.0
 sfx_torch_off = ExtResource("3_niom3")
@@ -501,7 +500,7 @@ label_settings = SubResource("LabelSettings_kcm5r")
 horizontal_alignment = 1
 
 [node name="Control" type="Control" parent="UserInterface/HUD" unique_id=1793293513]
-anchors_preset = 2
+anchors_preset = 0
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 22.0

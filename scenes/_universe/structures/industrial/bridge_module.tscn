@@ -1,0 +1,83 @@
+[gd_scene load_steps=6 format=3]
+
+; Placeholder modular bridge — ONE BAY, repeatable along +X.
+;
+; Built from primitives so BridgeSpawner can be validated before the real asset
+; exists. Replace the meshes with the finished module and keep the metadata
+; block below; that contract is what the spawner reads.
+;
+;   deck_height  the driving surface is AT the origin here (0.0), which is the
+;                convention a purpose-built module should follow. wind_valley
+;                does not: its origin sits at the base of its piers, ~97 m under
+;                the deck, which is exactly why the spawner reads a declared
+;                value instead of assuming a pivot.
+;   road_width   CLEAR width between the parapets, i.e. the drivable surface:
+;                12 m of slab minus the two 0.8 m barriers standing on it. Used
+;                only when a span states no road width of its own; normally the
+;                spawner rebuilds this cross-section to match the road, driven by
+;                the metadata/deck_role on each child.
+;   span_length  length of one bay along +X
+;   repeatable   the spawner tiles this bay to cover any measured gap rather
+;                than stretching it, which would visibly distort a 189 m module
+;                asked to cover 732 m. Note that only the MESHES are tiled: the
+;                spawner stretches box COLLISION shapes to the full deck length
+;                instead, so a vehicle never crosses a shape seam.
+;
+; The parapets are 0.8 m thick, not the width the eye would pick. Thickness here
+; is a physics budget, not styling: a shape thinner than the distance a vehicle
+; travels in one physics step can be crossed outright, and this project has seen
+; the server tick fall to 10 Hz, where 45 km/h covers 1.25 m per step. Their
+; outer faces stay flush with the deck edge at z = ±6.
+
+[ext_resource type="Material" uid="uid://cmreo7rjq0ava" path="res://assets/_universe/environment/terrain/regolith_grey.tres" id="1_deckmat"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_deck"]
+size = Vector3(50, 1, 12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
+size = Vector3(50, 1, 12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rail"]
+size = Vector3(50, 1.2, 0.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail"]
+size = Vector3(50, 1.2, 0.8)
+
+[node name="BridgeModule" type="StaticBody3D"]
+metadata/deck_height = 0.0
+metadata/span_length = 50.0
+metadata/road_width = 10.4
+metadata/repeatable = true
+
+[node name="Deck" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+mesh = SubResource("BoxMesh_deck")
+surface_material_override/0 = ExtResource("1_deckmat")
+metadata/deck_role = "surface"
+
+[node name="DeckCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_deck")
+metadata/deck_role = "surface"
+
+[node name="RailLeft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 5.6)
+mesh = SubResource("BoxMesh_rail")
+surface_material_override/0 = ExtResource("1_deckmat")
+metadata/deck_role = "edge"
+
+[node name="RailLeftCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 5.6)
+shape = SubResource("BoxShape3D_rail")
+metadata/deck_role = "edge"
+
+[node name="RailRight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -5.6)
+mesh = SubResource("BoxMesh_rail")
+surface_material_override/0 = ExtResource("1_deckmat")
+metadata/deck_role = "edge"
+
+[node name="RailRightCollision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -5.6)
+shape = SubResource("BoxShape3D_rail")
+metadata/deck_role = "edge"

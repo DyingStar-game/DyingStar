@@ -17,6 +17,9 @@ extends RefCounted
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## Marker node grouping every imported/networked prop. Created on import; NOT written to the JSON.
 const NETWORK_NODE_NAME := "dyingstarNetwork"
+## The PropSync component every prop carries as a child (see scenes/globals/prop_sync.gd). It holds
+## the networked `type_name` / `uuid`; the prop itself is its PARENT (the body), never this node.
+const PROP_SYNC_NODE_NAME := "PropSync"
 ## Cache of the per-type network property allowlists, fetched from horizonserver's <type>_def.json
 ## files by the editor plugin. {type: [property names]}. Empty until "Update network definitions".
 const DEFS_CACHE := "res://addons/dyingstar/network_defs.json"
@@ -53,6 +56,8 @@ static func export_to_json(scene_root: Node, path: String) -> Dictionary:
 
 static func _collect(node: Node, parent_id: String, objects: Array) -> void:
 	for child in node.get_children():
+		if _is_prop_sync(child):
+			continue  # a prop's own networking component, not a prop of its own
 		if _is_prop(child):
 			var cid := _prop_uuid(child)
 			# A prop that has prop children must own a uuid so they can reference it as parent.
@@ -84,14 +89,18 @@ static func _build_object(node: Node, parent_id: String, is_anchor := false) -> 
 		data["scenename"] = scenename
 	# The anchor (scene root) is edited at 0,0,0; its real server position lives in the recorded data
 	# (replayed above), so keep it. Children use their live transform. Fall back to the transform.
-	if not is_anchor or not data.has("position"):
-		data["position"] = _v3(node.position)
-	if not is_anchor or not data.has("rotation"):
-		data["rotation"] = _v3(node.rotation)
+	# Only a Node3D has a transform — a spatial-less prop keeps whatever the recorded data holds
+	# (reading `position` off a plain Node aborts this function and silently emits {}).
+	if node is Node3D:
+		if not is_anchor or not data.has("position"):
+			data["position"] = _v3(node.position)
+		if not is_anchor or not data.has("rotation"):
+			data["rotation"] = _v3(node.rotation)
 	# 3) Type-specific fields (opt-in), override the stale recorded values with current ones.
 	if node.has_method("server_export_data"):
-		for k in (node.server_export_data() as Dictionary):
-			data[k] = node.server_export_data()[k]
+		var extra: Dictionary = node.server_export_data()
+		for k in extra:
+			data[k] = extra[k]
 	var uuid_val := _prop_uuid(node)
 	return {
 		"object_type": _prop_type(node),
@@ -167,8 +176,7 @@ static func import_from_json(scene_root: Node, path: String) -> Dictionary:
 ## Record an EXISTING node's identity (the scene root) without recreating it.
 static func _apply_identity(node: Node, entry: Dictionary) -> void:
 	var od: Dictionary = entry.get("object_data", {})
-	if node.get("uuid") != null and entry.get("object_uuid") != null:
-		node.uuid = str(entry["object_uuid"])
+	_assign_uuid(node, entry)
 	# Not applying position/rotation to the scene root: a Godot scene is edited at the origin; the
 	# JSON position is only the SERVER spawn distance, kept in the session table and re-emitted.
 	if node.has_method("server_import_data"):
@@ -187,8 +195,7 @@ static func _instantiate(entry: Dictionary) -> Node:
 	var node := packed.instantiate()
 	if od.has("name"):
 		node.name = str(od["name"])
-	if node.get("uuid") != null and entry.get("object_uuid") != null:
-		node.uuid = str(entry["object_uuid"])
+	_assign_uuid(node, entry)
 	if node is Node3D:
 		if od.has("position"):
 			node.position = _to_v3(od["position"])
@@ -198,6 +205,20 @@ static func _instantiate(entry: Dictionary) -> Node:
 		node.server_import_data(od)
 	_record(node, entry)
 	return node
+
+## Write an imported uuid onto whichever node actually holds it: the body, else its PropSync. Both
+## are silently skipped when the editor only gave the script a placeholder instance (no readable
+## `uuid`) — the session table carries the identity in that case, which is the normal editor path.
+static func _assign_uuid(node: Node, entry: Dictionary) -> void:
+	if entry.get("object_uuid") == null:
+		return
+	var u := str(entry["object_uuid"])
+	if node.get("uuid") != null:
+		node.set("uuid", u)
+		return
+	var sync := _prop_sync(node)
+	if sync != null and sync.get("uuid") != null:
+		sync.set("uuid", u)
 
 ## Store a node's identity (type, uuid, original object_data) in the session table — see _identity.
 static func _record(node: Node, entry: Dictionary) -> void:
@@ -254,9 +275,24 @@ static func _get_or_create_marker(scene_root: Node) -> Node:
 	marker.owner = scene_root
 	return marker
 
-## A prop is a node we recorded on import, or one whose `type_name` is readable (e.g. @export/@tool).
+## The PropSync component a prop carries as a child, or null. Reached by NAME (PropSync.of does the
+## same) so it also resolves on nodes the editor gave a placeholder script instance.
+static func _prop_sync(node: Node) -> Node:
+	return node.get_node_or_null(NodePath(PROP_SYNC_NODE_NAME))
+
+## Is this node a prop's networking component rather than a prop? It carries an @export `type_name`,
+## so without this check the exporter would mistake it for the prop and drop the real body.
+static func _is_prop_sync(node: Node) -> bool:
+	return node.name == PROP_SYNC_NODE_NAME or node is PropSync
+
+## A prop is a node we recorded on import, one carrying a PropSync component, or a legacy prop whose
+## own `type_name` is readable (only @export/@tool vars are, outside of a running game).
 static func _is_prop(node: Node) -> bool:
-	return _identity.has(node.get_instance_id()) or node.get("type_name") != null
+	if _identity.has(node.get_instance_id()):
+		return true
+	if _is_prop_sync(node):
+		return false
+	return _prop_sync(node) != null or node.get("type_name") != null
 
 static func _has_prop_descendant(node: Node) -> bool:
 	for c in node.get_children():
@@ -264,19 +300,27 @@ static func _has_prop_descendant(node: Node) -> bool:
 			return true
 	return false
 
-## object_type, from the recorded identity (preferred) or a readable `type_name`.
+## object_type, from the recorded identity (preferred), the PropSync component, or a legacy
+## `type_name` on the body itself.
 static func _prop_type(node: Node) -> String:
 	var e: Dictionary = _identity.get(node.get_instance_id(), {})
-	if e.has("type"):
+	if e.has("type") and str(e["type"]) != "":
 		return str(e["type"])
+	var sync := _prop_sync(node)
+	if sync != null and sync.get("type_name") != null:
+		return str(sync.get("type_name"))
 	return str(node.get("type_name")) if node.get("type_name") != null else ""
 
-## object_uuid, from the recorded identity (preferred) or a readable `uuid`.
+## object_uuid, from the recorded identity (preferred), the body's own `uuid`, or its PropSync's.
 static func _prop_uuid(node: Node) -> String:
 	var e: Dictionary = _identity.get(node.get_instance_id(), {})
 	if e.has("uuid") and str(e["uuid"]) != "":
 		return str(e["uuid"])
-	return _node_uuid(node)
+	var own := _node_uuid(node)
+	if own != "":
+		return own
+	var sync := _prop_sync(node)
+	return _node_uuid(sync) if sync != null else ""
 
 ## The original object_data recorded for a node (for fidelity), or {} if none.
 static func _stored_data(node: Node) -> Dictionary:

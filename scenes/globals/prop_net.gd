@@ -15,18 +15,85 @@ extends RefCounted
 ## `has_parent`, `server_last_position`, `server_last_rotation`, and the `hs_server_prop_update` signal;
 ## and for the client ride helpers also `_ride_local_pos` / `_ride_local_rot`.
 
-## Client: match the freeze mode to the prop's parent. A bed-riding crate must be KINEMATIC so the
-## frozen body follows the moving truck through the scene tree (a STATIC frozen body instead gets its
-## world transform rewritten every physics frame, so it stays put while the truck drives off — the
-## "cargo left behind at speed" bug). Resting in the world stays STATIC. No-op on non-RigidBody hosts.
+# ── Manual perf counters (dormant — flip PROF to re-arm) ──────────────────────────────────────────
+# The engine profiler cannot be trusted on this path: it once reported 5.9 ms for a SINGLE
+# server_tick call — inclusive time plus per-call instrumentation overhead on a tiny function called
+# ~200x per frame (that misread cost a whole investigation; see the jolt-broadphase memory). These
+# counters measure the real layers with two Time calls per tick. Server-side; server.gd _perf_tick
+# (gated by its own _PERF_REPORT const) prints and resets them every 2 s. Both flags off in normal
+# operation — flip PROF here AND _PERF_REPORT in server.gd to re-arm the whole rig.
+const PROF: bool = false
+static var prof_calls: int = 0        # server_tick invocations
+static var prof_tick_usec: int = 0    # INCLUSIVE: body + emit dispatch + _on_prop_update
+static var prof_emits: int = 0        # invocations that actually replicated
+static var prof_handler_usec: int = 0 # time inside _on_prop_update only (the dictionary building)
+static var prof_flush_usec: int = 0   # time inside send_props_update_to_horizon (JSON + websocket)
+static var prof_flushes: int = 0
+static var prof_flush_entries: int = 0
+# Physics-tick breakdown (étape 0b): TIME_PHYSICS_PROCESS measured 24 ms with active3d=0, so the cost
+# is either in our _physics_process callbacks or in Jolt. These buckets cover every server-side
+# callback that runs in the physics tick; whatever TIME_PHYSICS_PROCESS has left over is Jolt.
+static var prof_player_usec: int = 0  # player_server _physics_process (move_and_slide, raycasts)
+static var prof_player_calls: int = 0
+static var prof_terrain_usec: int = 0 # planet_terrain _physics_process (x18 planets)
+static var prof_srv_usec: int = 0     # server.gd _physics_process (the network flushes)
+# Breakdown of the player tick (étape 0c): walking took it from 0.25 ms to 4.7 ms for ONE player.
+# The paths that only run while moving forward are the prime suspects (vault / step-up probes).
+static var prof_p_pre_usec: int = 0   # spawn queue, stance, carried item, carry prompt, dialog
+static var prof_p_vault_usec: int = 0 # _try_start_vault -> VaultProbe.probe (up to 3 raycasts)
+static var prof_p_step_usec: int = 0  # _try_start_step_up
+static var prof_p_move_usec: int = 0  # move_and_slide
+static var prof_p_emit_usec: int = 0  # the hs_server_move replication at the end
+# Étape 0d: 97% of the walking cost is collision queries (engine + move_and_slide). These counters
+# discriminate between the two candidate causes — a move_and_slide that keeps re-iterating against an
+# unstable contact, versus terrain collision chunks being built/freed under the walking player.
+static var prof_slide_count: int = 0  # summed get_slide_collision_count() over the window
+static var prof_slide_ticks: int = 0  # move_and_slide calls, to average the above
+static var prof_chunk_loads: int = 0
+static var prof_chunk_unloads: int = 0
+
+static func prof_reset() -> void:
+	prof_calls = 0
+	prof_tick_usec = 0
+	prof_emits = 0
+	prof_handler_usec = 0
+	prof_flush_usec = 0
+	prof_flushes = 0
+	prof_flush_entries = 0
+	prof_player_usec = 0
+	prof_player_calls = 0
+	prof_terrain_usec = 0
+	prof_srv_usec = 0
+	prof_p_pre_usec = 0
+	prof_p_vault_usec = 0
+	prof_p_step_usec = 0
+	prof_p_move_usec = 0
+	prof_p_emit_usec = 0
+	prof_slide_count = 0
+	prof_slide_ticks = 0
+	prof_chunk_loads = 0
+	prof_chunk_unloads = 0
+
+## Client: match the freeze mode to the prop's parent. A prop RIDING a moving parent — a crate in a
+## truck bed, a crate mounted on a hauling player — must be KINEMATIC so the frozen body follows that
+## parent through the scene tree (a STATIC frozen body instead gets its world transform rewritten
+## every physics frame, so it stays put while the truck drives off — the "cargo left behind at speed"
+## bug). Resting in the world stays STATIC. No-op on non-RigidBody hosts.
 static func apply_ride_freeze_mode(body: Node3D) -> void:
 	if not (body is RigidBody3D):
 		return  # StaticBody3D / Node3D / MeshInstance3D roots have no freeze_mode
 	if GameOrchestrator.is_server():
 		return  # the server sets KINEMATIC itself on lock; this is the client replica's parenting
 	body.freeze_mode = (
-		RigidBody3D.FREEZE_MODE_KINEMATIC if body.get_parent() is Vehicle
+		RigidBody3D.FREEZE_MODE_KINEMATIC if rides_parent(body)
 		else RigidBody3D.FREEZE_MODE_STATIC)
+
+## Is this prop carried by / loaded onto a parent that moves under it? Both cases pin a CONSTANT local
+## pose, so they share the freeze mode, the render-rate pinning below, and the exemption from the
+## server-side "settled props stop ticking" gate (PropSync).
+static func rides_parent(body: Node3D) -> bool:
+	var parent: Node = body.get_parent()
+	return parent is Vehicle or parent is Player
 
 ## Client: apply a replicated LOCAL pose (position/rotation) and remember it so ride_pin can hold it.
 ## Call from a prop's client_channel_data_update (shared by every networked prop).
@@ -41,16 +108,16 @@ static func apply_client_transform(body: Node3D, state = null, data = null) -> v
 		body.rotation = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
 		state._ride_local_rot = body.rotation
 
-## Client: while riding a bed, re-assert the constant LOCAL pose every render frame. The crate is a
-## physics body, so it otherwise refreshes only at the (slower) physics tick and lags the truck, which
-## is interpolated at render rate -> visible jitter. Call from a prop's _process; the parent (truck)
-## runs first, so a direct set (no lerp) tracks it exactly.
+## Client: while riding a bed (or mounted on a hauling player), re-assert the constant LOCAL pose
+## every render frame. The crate is a physics body, so it otherwise refreshes only at the (slower)
+## physics tick and lags the parent, which is interpolated at render rate -> visible jitter. Call from
+## a prop's _process; the parent runs first, so a direct set (no lerp) tracks it exactly.
 static func ride_pin(body: Node3D, state = null) -> void:
 	if GameOrchestrator.is_server():
 		return
 	if state == null:
 		state = body
-	if body.get_parent() is Vehicle:
+	if rides_parent(body):
 		body.position = state._ride_local_pos
 		body.rotation = state._ride_local_rot
 
@@ -63,9 +130,19 @@ static func server_tick(body: Node, state = null) -> void:
 		return
 	if state == null:
 		state = body
+	var parent: Node = body.get_parent()
+	# Resting in the world: a FROZEN (culled) or SLEEPING body cannot move, so the change-throttle at
+	# the bottom would suppress its update anyway — bail out BEFORE reading the pose. `body.rotation`
+	# decomposes the basis into Euler angles and the physics server re-dirties that cache every frame,
+	# so with ~1000 rocks settled on a planet this read alone dominated the server tick (4 TPS).
+	# Anything that changes a resting body's parent (carry, drop, bed-settle) moves or wakes it first,
+	# so no update can be missed. Carried / bed-loaded props are exempt: they deliberately re-send
+	# every frame — even perfectly still — to keep their Horizon GORC entry fresh (see below).
+	var rides: bool = parent is Player or parent is Vehicle  # same test as rides_parent, on the Node we hold
+	if body is RigidBody3D and (body.freeze or body.sleeping) and not rides:
+		return
 	var pos: Vector3 = snapped(body.position, Vector3(0.005, 0.005, 0.005))  # 5 mm precision is enough
 	var rot: Vector3 = snapped(body.rotation, Vector3(0.01, 0.01, 0.01)) # precision at 0.57 degrees
-	var parent: Node = body.get_parent()
 	# verify the state object tracks the parent_id (component PropSync always does; a legacy root may not)
 	var tracks_parent: bool = "server_last_parent_id" in state
 	if parent is Player:
@@ -97,15 +174,28 @@ static func server_tick(body: Node, state = null) -> void:
 				true)
 			state.server_last_parent_id = str(parent.uuid)
 		return
-	# Resting in the world. A culled/settled body is frozen and hasn't moved — the throttle below would
-	# suppress it anyway, so skip the per-frame work entirely (the PropSync component keeps ticking even
-	# when the root's own _physics_process was disabled by culling — see server.gd _freeze_culled_body).
-	if body is RigidBody3D and body.freeze:
-		return
 	# Detect a parent change (dropped to the world, settled into a bed) and resend the parent_id for a
 	# few frames: a single lost drop/settle message must not leave the prop stuck under its old parent on
 	# clients, and at huge planet coordinates the position throttle can suppress any other resend.
-	var parent_id: String = (str(parent.uuid) if (parent != null and "uuid" in parent) else "")
+	#
+	# The frame is DERIVED from the tree — PropSpawn.parent_frame_uuid walks up to the nearest node
+	# carrying a network uuid — so no caller ever gets to name a frame the body is not actually in.
+	#
+	# Its result is CACHED per parent instance: resolving it walks the ancestors and reads scripted
+	# uuid getters (a get_node_or_null on several hosts), which is the profiler's @uuid_getter hot
+	# spot, once per prop per tick. Re-resolve only when the immediate parent node actually changes;
+	# an EMPTY cached uuid is retried, because an ancestor can receive its network uuid after we
+	# first saw it.
+	var parent_id: String = ""
+	if parent != null:
+		var pid: int = parent.get_instance_id()
+		if "_parent_cache_id" in state and state._parent_cache_id == pid and state._parent_uuid_cache != "":
+			parent_id = state._parent_uuid_cache
+		else:
+			parent_id = PropSpawn.parent_frame_uuid(body)
+			if "_parent_cache_id" in state:
+				state._parent_cache_id = pid
+				state._parent_uuid_cache = parent_id
 	var resend_parent: bool = false
 	if tracks_parent and parent_id != state.server_last_parent_id:
 		state.server_last_parent_id = parent_id

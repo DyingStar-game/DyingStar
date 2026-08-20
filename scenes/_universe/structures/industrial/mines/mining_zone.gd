@@ -1,4 +1,5 @@
 @tool
+class_name MiningZone
 extends Node3D
 
 # Mining Zone — a designer-placed trigger. When a player enters its detection Area3D AND
