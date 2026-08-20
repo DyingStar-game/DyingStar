@@ -3,7 +3,10 @@ class_name Player
 extends CharacterBody3D
 
 signal hs_client_action_move
-signal hs_server_move
+## Server-authoritative move. `local_position` / `local_rotation` are expressed in the frame of
+## whatever node this body is a child of RIGHT NOW; the frame itself is NOT a parameter — the
+## receiver derives it from the tree (see Server._on_player_move). Emit it through emit_move().
+signal hs_server_move(uuid: String, local_position: Vector3, local_rotation: Vector3)
 signal hs_client_action_pressed
 signal display_debug(show: bool)
 signal hs_server_player_update
@@ -289,8 +292,6 @@ var new_input_from_server: bool = false
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
 
-var is_parented: bool = false
-
 # NPC (server-authoritative). Set on spawn by server.gd; PlayerServer reads these to drive movement.
 ## True when this Player is a server-controlled NPC instead of a networked client.
 var is_npc: bool = false
@@ -320,11 +321,13 @@ var hands_item: Node3D = null
 # Admin cleanup tool (key 2). Built at runtime for the local player only (see _ready).
 var admin_cleanup_tool: AdminCleanupTool = null
 
-# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Set
-# by the screen's interaction Area; while set, the mouse is freed to click the screen.
-var screen_interacting = null
-# World position of that screen, so the camera can turn to face it while interacting.
-var screen_position: Vector3 = Vector3.ZERO
+# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Written ONLY by
+# _set_screen, from OUR OWN AreaDetector walking into a ScreenZone; while set, the mouse is freed to
+# click the screen.
+# The NODE is the single source of truth: its global_position is always current, so the camera reads
+# where to look straight from it. A separate world position used to be snapshotted alongside, which
+# went stale the moment the planet spun on (it carries both the player and the screen).
+var screen_interacting: Node3D = null
 
 var _display_debug: bool = false
 
@@ -335,9 +338,13 @@ var _last_head_sent: float = INF
 # Last camera yaw ("head_yaw", non-zero only while seated) sent to the server, throttled.
 var _last_head_yaw_sent: float = INF
 # Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
-# gravity areas for a frame or two while the body re-enters PlanetGravity; we only switch to the 0g
-# control scheme (which zeroes the camera pitch) after the gravity has really been gone this long,
-# so that blip doesn't snap the look back to the horizon.
+# gravity areas for a frame or two while the body re-enters PlanetGravity; we only act on a real loss
+# of gravity after it has been gone this long, so that blip changes nothing.
+# Two readers, each in its own role, so they never run on the same instance: the owner client switches
+# to the 0g control scheme (which zeroes the camera pitch, and the blip would snap the look back to
+# the horizon), and the SERVER releases the body from the planet's frame
+# (PlayerServer._server_update_gravity_frame) — where acting on the blip would be far worse than a
+# camera jolt: it would publish a world position as if it were local to the planet.
 var _no_gravity_time: float = 0.0
 var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
@@ -492,6 +499,8 @@ func set_seated(seated: bool) -> void:
 			_seated_saved = true
 		collision_layer = 0
 		collision_mask = 0
+		# Taking a seat inside a screen's zone would otherwise keep the mouse freed while driving.
+		_set_screen(null)
 	else:
 		collision_layer = _saved_collision_layer
 		collision_mask = _saved_collision_mask
@@ -563,20 +572,31 @@ func orient_player():
 
 func _on_area_detector_area_entered(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
-		if area.name == "PlanetGravity":
-			var planet = area.get_parent().get_parent()
-			#reparent(planet)
-			# call_deferred("reparent", planet)
-			is_parented = true
-			emit_signal(
-				"hs_server_move",
-				client_uuid,
-				snapped(position, Vector3(0.001, 0.001, 0.001)),
-				snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
-				planet.uuid,
-				is_parented
-			)
+		# Entering a gravity well says NOTHING about our frame, so nothing is announced here. We are
+		# already a child of the networked node we spawned on (the apartment, then the city — see
+		# Server.create_player and _safe_reparent_and_sync) and `position` is local to THAT node. The
+		# old code announced the PLANET as our parent_id here without ever reparenting, publishing a
+		# building-local position in the planet's frame: an offset of one planet radius. It also
+		# re-fired after every reparent (a reparent drops and re-enters every area), so it kept
+		# overwriting the correct declaration. Gravity is a physics concern; the frame is the tree's.
 		gravity_parents.push_back(area)
+		# ...with ONE exception: arriving from SPACE. A body in the world frame that enters a planet's
+		# gravity well has just crossed into its sphere of influence, and from now on it belongs to
+		# that planet's frame — so it is carried when the frame moves, and its position is published
+		# where it is actually measured. This is one half of frame switching at the SOI boundary; the
+		# exited branch below is the other.
+		# "Already in its SUBTREE", not "is its direct child", is what makes the test right. A body on
+		# the ground is rarely a direct child of the planet: leaving the spawn building parents it to
+		# the CITY, itself a prop on the planet. Adopting it here would republish a city-local position
+		# in the planet's frame — the planet-radius offset described above. Only a body arriving from
+		# OUTSIDE the subtree, i.e. from space, is adopted.
+		# It also ends the loop a reparent starts by dropping and re-entering every area: once adopted,
+		# the planet is our ancestor and the test is false.
+		# Deferred because reparenting inside an Area3D callback is illegal.
+		if OS.has_feature("dedicated_server") and area.name == "PlanetGravity":
+			var planet: Node = area.get_parent().get_parent()
+			if not planet.is_ancestor_of(self):
+				call_deferred("_safe_reparent_and_sync", planet)
 	elif area.is_in_group("vehicle_seat"):
 		# Our own monitor walked into a seat box: remember it so E takes that seat (client prompt).
 		_nearby_seat = area
@@ -588,6 +608,14 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if veh is Vehicle:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
+	elif area.is_in_group("screen_area"):
+		# A 3D screen's console zone (see ScreenZone). Detected area-to-area and NEVER against our
+		# body: on a spinning planet the two are refreshed one physics step apart, which dropped and
+		# regained the overlap 3 times a second while the player stood still.
+		# A seated player is skipped: their body is taken out of collision by set_seated, so driving
+		# past a depot must not steal the mouse from the driver.
+		if not _seated_saved:
+			_set_screen(_screen_owner_of(area))
 	elif area.is_in_group("teleporter"):
 		# Server-authoritative: the server reparents + repositions, then the
 		# move (with parent uuid) reaches the client through Horizon and
@@ -631,6 +659,9 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
+		# NOTE: leaving a planet's frame is NOT decided here. Losing the last gravity area is a state,
+		# not an event — a reparent drops and re-enters every area for a frame or two — so the release
+		# is checked every tick, under Player.ZERO_G_GRACE, by PlayerServer._server_update_gravity_frame.
 	elif area.is_in_group("vehicle_seat"):
 		if _nearby_seat == area:
 			_nearby_seat = null
@@ -640,6 +671,16 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 			if _in_vehicle_bed == veh:
 				_in_vehicle_bed = null
 			veh.remove_bed_player(self)
+	elif area.is_in_group("screen_area"):
+		# Only release OUR screen: with two consoles whose zones overlap, walking out of one must not
+		# cancel the interaction with the other.
+		# A null owner means the screen is being torn down (admin delete, despawn) and the walk up the
+		# tree found nothing live. We release in that case too: erring toward release costs a step back
+		# into the zone, while erring the other way leaves the mouse locked to a screen that no longer
+		# exists, with no way out.
+		var screen: Node3D = _screen_owner_of(area)
+		if screen == null or screen == screen_interacting:
+			_set_screen(null)
 	elif area.is_in_group("spawn"):
 		if not OS.has_feature("dedicated_server"):
 			return
@@ -655,6 +696,32 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 		# if gravity_parents.has(area):
 		# 	gravity_parents.erase(area)
 
+## The node a ScreenZone belongs to: the nearest ancestor implementing the 3D-screen contract, i.e.
+## having update_screen(). The zone sits several levels below its owner (the mining depot's lives
+## under miningdepot/Gui3D) and `owner` is not dependable inside an editable instance, so we walk up
+## and test for the contract itself rather than assume a depth.
+func _screen_owner_of(area: Area3D) -> Node3D:
+	var node: Node = area.get_parent()
+	while node != null:
+		if node is Node3D and node.has_method("update_screen"):
+			return node as Node3D
+		node = node.get_parent()
+	push_warning("[Player] ScreenZone '%s' has no ancestor implementing update_screen" % area.name)
+	return null
+
+
+## Single writer for `screen_interacting`, so the camera lock, the mouse mode and the screen's own
+## bookkeeping can never disagree about which console we are using.
+func _set_screen(screen: Node3D) -> void:
+	if screen == screen_interacting:
+		return
+	if is_instance_valid(screen_interacting) and screen_interacting.has_method("screen_focus_changed"):
+		screen_interacting.screen_focus_changed(self, false)
+	screen_interacting = screen
+	if screen != null and screen.has_method("screen_focus_changed"):
+		screen.screen_focus_changed(self, true)
+
+
 ## npc_go_to_position is stored in the PARENT's frame (see PlayerServer). reparent() preserves the
 ## BODY's world position but silently changes what those stored goal coordinates mean — walking out of
 ## the spawn building reparents building→planet, and the unconverted goal sent the NPC to a wrong world
@@ -668,27 +735,35 @@ func npc_goal_keep_world(new_parent: Node) -> void:
 		var goal_world: Vector3 = (old_parent as Node3D).global_transform * npc_go_to_position
 		npc_go_to_position = (new_parent as Node3D).global_transform.affine_inverse() * goal_world
 
-## Reparent guarded against invalid states (node/parent out of tree, already
-## parented, repeated area_exited events) to avoid a server segfault, then emit
-## the move so the server receives the position relative to the new parent.
+## The ONE way a server-authoritative move leaves this body. Position and rotation are sampled LOCAL
+## to whatever node we are a child of at this instant; the frame that goes on the wire is derived
+## from that same tree by Server._on_player_move. Sampling both from the tree in the same breath is
+## what makes "declared parent" and "real parent" one state instead of two: no caller can name a
+## frame this body is not actually in, because no caller gets to name one.
+## Typed .emit() rather than emit_signal(): the arity and the types are then checked at PARSE time,
+## so nobody can quietly re-introduce a fourth "and by the way my parent is X" argument.
+func emit_move() -> void:
+	hs_server_move.emit(
+		client_uuid,
+		snapped(position, Vector3(0.001, 0.001, 0.001)),
+		snapped(rotation, Vector3(0.0001, 0.0001, 0.0001))
+	)
+
+## Reparent guarded against invalid states (node/parent out of tree, already parented, repeated
+## area_exited events) to avoid a server segfault, then emit the move.
+## The ORDER is the contract: reparent FIRST, emit SECOND. emit_move() reads position AND (through
+## the receiver) the parent from the tree, so emitting before the reparent would ship the new
+## position under the old frame — and emitting a frame we have not moved into is now impossible.
 func _safe_reparent_and_sync(new_parent: Node) -> void:
-	print("YOLO REPARENT")
 	if new_parent == null or not is_instance_valid(new_parent):
 		return
 	if not is_inside_tree() or not new_parent.is_inside_tree():
 		return
-	if get_parent() != new_parent:
-		npc_goal_keep_world(new_parent)
-		reparent(new_parent)
-		emit_signal(
-			"hs_server_move",
-			client_uuid,
-			snapped(position, Vector3(0.001, 0.001, 0.001)),
-			snapped(rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			# Robust to the scene layout: a parent without a uuid (e.g. a grouping/test-zone node) = "".
-			str(new_parent.uuid) if "uuid" in new_parent else "",
-			true
-	)
+	if get_parent() == new_parent:
+		return
+	npc_goal_keep_world(new_parent)
+	reparent(new_parent)
+	emit_move()
 
 func _set_player_global_position(pos, rot):
 	global_position = pos

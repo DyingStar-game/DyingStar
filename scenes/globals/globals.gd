@@ -44,10 +44,27 @@ const TERMINATOR_SOFTNESS := 0.05
 ## (derivable from the composition + pressure in tarsis.json) is wired in.
 const DEFAULT_ATMOSPHERE_HEIGHT := 50000.0
 
+## Simulation-time acceleration. 1.0 = REAL time: a 25 h day and a 42-day orbit are then imperceptible,
+## but every body sits exactly where the network placed it (the celestial service anchors its ephemeris
+## on absolute unix time too, so our local orbit and the network snapshot agree at 1.0). Raise it to
+## WATCH celestial motion — e.g. 10000 makes a 42-day orbit take ~6 min and a 25 h day ~9 s — at the
+## cost of fast-forwarding AWAY from that network snapshot (intended: we are speeding up the universe).
+## Read identically by the rotation AND the orbit of every body, on server and client. Only the
+## reference TIME crosses the network (see sync_clock), never a position: from one shared instant both
+## sides derive the same universe.
+var time_scale: float = 1.0
+## True once a reference timestamp has been seen. While false, sim_time() runs on THIS machine's
+## clock — the historical behaviour, kept as the fallback so a missing authority degrades the accuracy
+## of celestial motion instead of stopping it.
+var clock_synced: bool = false
+
 var player_name: String = "I am an idiot !"
 var player_uuid: String = ""
 var online_mode: bool = false
 var is_gut_running: bool = false
+
+## Seconds to add to the local clock to land on the reference one. See sync_clock().
+var _clock_offset: float = 0.0
 
 func print_rich_distinguished(message: String, extras: Array) -> void:
 	var peer_id: int = -1
@@ -129,3 +146,76 @@ func log(message: String):
 	if multiplayer and GameOrchestrator.is_server():
 		header = "[color=teal][lb]server[rb][/color]: "
 	print_rich(header + message)
+
+## Accelerated simulation time in seconds — the REFERENCE clock, scaled by time_scale. The single clock
+## behind all celestial motion (Planet._place_at_time: axial spin and Kepler orbit), on the server and
+## on every client alike. Absolute (not since-boot) so it matches the service's absolute-time
+## ephemeris at time_scale 1. Stays precise even at high time_scale (unix*1e4 ~ 1.7e13, well within
+## float64's ~15-16 significant digits).
+##
+## Celestial positions are DERIVED from it rather than replicated, which is what keeps them free: no
+## bandwidth, no interpolation, no stale state, and a joiner is instantly in agreement with everyone
+## whatever time it connected. The price is that the agreement is only ever as good as the shared
+## clock — hence sync_clock() below, and hence the fact that this must NOT be the machine's own clock.
+## "1234568" -> "1 234 568". Six-figure numbers are unreadable without it, and a chart or a marker
+## showing a distance is exactly where they turn up.
+func format_thousands(value: float) -> String:
+	var digits: String = str(absi(int(round(value))))
+	var out: String = "-" if value < 0.0 else ""
+	for i: int in range(digits.length()):
+		if i > 0 and (digits.length() - i) % 3 == 0:
+			out += " "
+		out += digits[i]
+	return out
+
+
+## A distance a human can read at a glance, whatever its magnitude: metres under a kilometre, then
+## kilometres, then millions of km once the figure would run past seven digits. Shared so a body reads
+## the same on the in-game marker and in the system chart — two places, one rule.
+func format_distance(metres: float) -> String:
+	if metres < 1000.0:
+		return "%.0f m" % metres
+	var km: float = metres / 1000.0
+	if km < 1.0e6:
+		return "%s km" % format_thousands(km)
+	return "%s million km" % format_thousands(km / 1.0e6)
+
+
+func sim_time() -> float:
+	return (Time.get_unix_time_from_system() + _clock_offset) * time_scale
+
+
+## Feed a reference timestamp coming off the network (seconds since the unix epoch, as sent by the
+## authority). Cheap enough to call on every message that carries one.
+##
+## The estimate converges from BELOW, by keeping the largest offset ever observed. That is deliberate,
+## and it is what buys sub-second accuracy out of a timestamp that is only sent as whole seconds:
+## an observation is `floor(T_ref) - T_local`, i.e. the true offset minus the transmission delay minus
+## the truncated fraction — both of which only ever make it SMALLER. The maximum over many samples
+## therefore climbs toward the true offset, reached by whichever sample had the least latency and the
+## smallest fraction lost. Without this, calibrating on a whole-second timestamp would leave up to a
+## second of error, which at orbital speed is 32 km.
+##
+## ⚠️ It never regresses, so a reference clock that steps BACKWARD is not followed. That is the right
+## trade while the only timestamps available are whole seconds; revisit it the day the authority sends
+## a proper sub-second time, which is the change that would make all of this exact.
+func sync_clock(reference_unix_seconds: float) -> void:
+	if reference_unix_seconds <= 0.0:
+		return
+	var observed: float = reference_unix_seconds - Time.get_unix_time_from_system()
+	if clock_synced and observed <= _clock_offset:
+		return
+	var previous: float = _clock_offset
+	_clock_offset = observed
+	if not clock_synced:
+		clock_synced = true
+		print("[Globals] reference clock acquired: %+.3f s from this machine's own" % _clock_offset)
+	elif absf(_clock_offset - previous) > 0.05:
+		print("[Globals] reference clock refined: %+.3f s (was %+.3f)" % [_clock_offset, previous])
+
+
+## Drop the calibration, so the next reference timestamp starts a fresh estimate. Call on disconnect:
+## a new session may face a different authority, and the estimate only ever climbs.
+func reset_clock() -> void:
+	_clock_offset = 0.0
+	clock_synced = false

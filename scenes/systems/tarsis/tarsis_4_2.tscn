@@ -24,6 +24,17 @@ chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 script = ExtResource("1_lx8nc")
 planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 563.75
+display_name = "Xarok - Tarsis IV.M2"
+map_radius_km = 700.0
+map_color = Color(0.497, 0.465, 0.417, 1)
+orbit_periapsis_au = 0.0020962865215433846
+orbit_apoapsis_au = 0.0021818492367084207
+orbit_inclination_deg = 0.5
+orbit_ascending_node_deg = 107.8
+orbit_arg_periapsis_deg = 120.0
+orbit_mean_anomaly_deg = 210.5
+orbit_mass_earths = 0.000601
+orbit_primary_mass_kg = 4.7059360000000005e+24
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("4_lnpr0")

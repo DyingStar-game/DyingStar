@@ -437,6 +437,47 @@ func set_resident_chunks(desired_keys: PackedStringArray) -> void:
 	_apply_residency()
 
 
+## The collision chunk covering [param world_pos], as the key used throughout the residency system,
+## or "" when this terrain cannot answer (no data, or the point sits on the centre).
+##
+## THE single definition of "which chunk covers this point". The pin sweep and anyone asking whether
+## the ground exists must agree, or a body would wait on a chunk nobody ever requested.
+##
+## The direction is taken in the planet's OWN frame: vec2pix_nest expects it there, and the planet
+## turns, so a world-frame direction resolves to the wrong tile.
+func collision_chunk_key(world_pos: Vector3) -> String:
+	if planet_data == null:
+		return ""
+	# Through the planet's own conversion, which the chunk pinning also uses — the two MUST agree on
+	# which tile covers a point, or a body waits on a chunk nobody requested.
+	var planet: Planet = get_parent() as Planet
+	if planet == null:
+		return ""
+	var dir: Vector3 = planet.local_dir_of(world_pos)
+	if dir.is_zero_approx():
+		return ""
+	# The client's FINEST LOD nside on crack planets, so collision is built on the same grid the
+	# visual renders; the export nside otherwise (see PlanetData.collision_detail_nside).
+	var nside: int = planet_data.collision_detail_nside()
+	return "hp_n%d_p%d" % [nside, HEALPix.vec2pix_nest(nside, dir)]
+
+
+## True when the chunk covering [param world_pos] already carries its collision body.
+##
+## The server builds terrain collision chunk by chunk, around the bodies that need it, and the
+## generation runs on worker threads — so there is a window after a body is created where there is
+## simply NOTHING under it. During that window the only shapes in reach are the planet-wide fallbacks,
+## which sit 100-200 m below the playable surface: a body released into it falls straight through.
+## Anything that would let a body fall must ask this first.
+##
+## NB: `initial_chunks_ready` cannot serve here — server-side it is emitted BEFORE any chunk loads.
+func has_collision_under(world_pos: Vector3) -> bool:
+	if not _server_collision_loaded:
+		return false
+	var key: String = collision_chunk_key(world_pos)
+	return key != "" and _server_collision_chunks.has(key)
+
+
 ## Replace the pinned-chunk set and re-apply residency.  Pinned chunks
 ## are forcibly resident regardless of the zone's desired set, and are
 ## NEVER evicted by set_resident_chunks().  Use this for active-body

@@ -8,6 +8,9 @@ extends Node
 ## they migrate too. (Filled in incrementally.)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+## How long a body waits for the ground under it before being released anyway. Generous: a cold start
+## regenerates every chunk on worker threads, and being released early is exactly the bug.
+const SPAWN_GROUND_TIMEOUT: float = 20.0
 ## Kept in sync with Player.JUMP — a `match` pattern needs a compile-time constant, so we can't read
 ## `player.JUMP` here.
 const JUMP: String = "jump"
@@ -70,6 +73,12 @@ var _seat_count: int = 0
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
 var _vault_count: int = 0
+## True once this body has actually been inside a gravity well. Gates the release to the world
+## frame: before it, an empty gravity stack only means the AreaDetector has not reported yet.
+var _had_gravity: bool = false
+## True once the terrain under this body has been seen at least once. See _hold_until_ground.
+var _ground_seen: bool = false
+var _ground_wait: float = 0.0
 var _vaulting: bool = false
 var _vault_time: float = 0.0
 var _vault_duration: float = 0.6
@@ -763,6 +772,9 @@ func _physics_process_impl(delta: float) -> void:
 		_server_update_carry_prompt(delta)
 	if PropNet.PROF:
 		PropNet.prof_p_pre_usec += Time.get_ticks_usec() - _tp
+	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
+	if _hold_until_ground(delta):
+		return  # nothing under us yet: hold still rather than fall through
 	if _vault_cooldown > 0.0:
 		_vault_cooldown = maxf(0.0, _vault_cooldown - delta)
 	if _vaulting:
@@ -779,9 +791,7 @@ func _physics_process_impl(delta: float) -> void:
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
 		player.new_input_from_server = false
-		var seat_p: Vector3 = snapped(player.position, Vector3(0.001, 0.001, 0.001))
-		var seat_r: Vector3 = snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001))
-		player.emit_signal("hs_server_move", player.client_uuid, seat_p, seat_r, null, player.is_parented)
+		player.emit_move()
 		return
 
 	# NPC: server-driven pathfinding replaces client input. Runs in its own branch because an NPC never
@@ -801,13 +811,7 @@ func _physics_process_impl(delta: float) -> void:
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_server_eva_move(delta)
 		player.new_input_from_server = false
-		player.emit_signal(
-			"hs_server_move",
-			player.client_uuid,
-			snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-			snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-			_net_parent_uuid(),
-			player.is_parented)
+		player.emit_move()
 		return
 
 	# Server-side "sleep" for settled players: once quasi-still for ~0.5 s, run the full move_and_slide
@@ -938,16 +942,121 @@ func _physics_process_impl(delta: float) -> void:
 	player.new_input_from_server = false
 
 	var _te: int = Time.get_ticks_usec() if PropNet.PROF else 0
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		_net_parent_uuid(),
-		player.is_parented
-	)
+	player.emit_move()
 	if PropNet.PROF:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
+
+## Release the body from a planet's frame once its gravity has REALLY been gone (Player.ZERO_G_GRACE),
+## and hand it to the world frame — the planet's own parent, the universe root, where the star sits
+## too, so this is already the star's frame. The mirror of Player's gravity-ENTERED branch, which
+## adopts a body only when it arrives from the world: together they are reference-frame switching at
+## the sphere of influence, the shape space flight will need.
+##
+## Without it, a body that flies away stays a child of the planet and is dragged by its SPIN — about
+## 500 m/s of sideways pull at 1000 km up, which is not what a free body does. (The orbit drags it
+## too, but that part is roughly right: a body near a planet does share its orbital motion.)
+##
+## Checked as STATE every tick, never on the area_exited event. A reparent drops and re-enters every
+## area for a frame or two, and acting on that blip would publish a world position (~3e10) announced
+## as local to the planet: one dropped message and the body is flung across the system.
+## The parent test is the other half of the guard — a seated driver hangs from the vehicle and a
+## player indoors from the building, and neither of them is leaving anything.
+## Hold a freshly created body still until the terrain under it actually exists. Returns true while
+## it is being held, and the caller must then do nothing else this tick.
+##
+## The server builds terrain collision chunk by chunk, on worker threads, and only around bodies that
+## already exist — so there is unavoidably a window after creation where there is nothing underneath.
+## Released into it, a body meets only the planet-wide fallback shells 100-200 m BELOW the playable
+## surface: it falls, _catch_if_below_surface teleports it back to the theoretical surface without any
+## real contact (so is_on_floor() stays false), gravity resumes next frame, and it falls again —
+## forever. That loop is what "spawned in the air, bouncing in the void" actually was.
+##
+## Only the FIRST moments are gated. Once the ground has been seen, it is never checked again: a body
+## walking off the edge of loaded terrain is a different problem, and the fallback shells plus
+## _catch_if_below_surface are what handle that.
+##
+## It cannot deadlock: pinning walks players_list and asks for the chunk under each of them whether
+## they move or not, so being held does not stop the ground being built. And SPAWN_GROUND_TIMEOUT
+## releases the body regardless — a player frozen forever would be worse than the bug being fixed.
+func _hold_until_ground(delta: float) -> bool:
+	if _ground_seen:
+		return false
+	var terrain: PlanetTerrain = null
+	var walk: Node = player.get_parent()
+	while walk != null:
+		if walk is Planet:
+			terrain = (walk as Planet).planet_terrain
+			break
+		walk = walk.get_parent()
+	if terrain == null:
+		# Not on a celestial body at all (EVA, a body in transit): nothing to wait for.
+		_ground_seen = true
+		return false
+	if terrain.has_collision_under(player.global_position):
+		_ground_seen = true
+		return false
+	_ground_wait += delta
+	if _ground_wait >= SPAWN_GROUND_TIMEOUT:
+		push_warning("[Spawn] %s: no terrain collision after %.0f s, releasing anyway"
+				% [player.client_uuid, _ground_wait])
+		_ground_seen = true
+		return false
+	# Held: no gravity, no move_and_slide, no velocity to carry over when we are let go.
+	player.velocity = Vector3.ZERO
+	return true
+
+
+func _server_update_gravity_frame(delta: float) -> void:
+	if not player.gravity_parents.is_empty():
+		player._no_gravity_time = 0.0
+		_had_gravity = true
+		return
+	# ⚠️ You cannot LEAVE a gravity well you were never in. At spawn the AreaDetector needs a few
+	# physics frames to report its overlaps, so gravity_parents is empty to begin with — and without
+	# this guard a body was released into the world frame seconds after spawning, INDOORS, having gone
+	# nowhere. It then sat outside the planet's subtree while the planet carried on at 33 km/s, which
+	# reads in game as being flung into the air and left bobbing in the void.
+	if not _had_gravity:
+		return
+	player._no_gravity_time += delta
+	if player._no_gravity_time < player.ZERO_G_GRACE:
+		return
+	# Riding something means the ride owns our frame: it is the VEHICLE that would be leaving, not us.
+	if player.piloting or player._in_vehicle_bed != null:
+		return
+	var world: Node = _world_frame_above(player.get_parent())
+	if world != null:
+		print("[Frame] %s released to the world: %.2f s without gravity, was under '%s'" % [
+				player.client_uuid, player._no_gravity_time, player.get_parent().name])
+		player.call_deferred("_safe_reparent_and_sync", world)
+
+
+## What to hand a body to when it leaves the sphere of influence it is standing in: the parent of the
+## nearest celestial ancestor of [param frame]. Null when there is no such ancestor — we are already
+## in the world frame, or under something that is not a celestial body.
+##
+## Walks UP because a body is rarely a direct child of its planet: leaving the spawn building parents
+## it to the CITY, itself a prop on the planet. Testing the direct parent found nothing and the body
+## stayed glued to the planet all the way into space.
+##
+## Nesting falls out for free and is correct: from a body on a MOON the walk stops at the moon and
+## returns the moon's parent, its planet — leaving a moon's SOI puts you in the planet's, not in deep
+## space.
+static func _world_frame_above(frame: Node) -> Node:
+	var node: Node = frame
+	while node != null:
+		if node is Planet:
+			# Since the ORIGIN REBASE a planet sits at the origin of its OWN physics world, held by a
+			# SubViewport (Server.create_planet). Its parent is therefore that viewport, not the universe
+			# root — and stepping a single level would leave a body that has just LEFT the planet inside
+			# the planet's world, which is the one place it must not be.
+			var above: Node = node.get_parent()
+			while above is SubViewport:
+				above = above.get_parent()
+			return above
+		node = node.get_parent()
+	return null
+
 
 ## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
 ## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
@@ -1083,13 +1192,10 @@ func _net_parent_uuid():
 ## (vault, step-up) so they emit exactly like the normal tick.
 func _emit_move() -> void:
 	player.new_input_from_server = false
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.global_rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		_net_parent_uuid(),
-		player.is_parented)
+	# NOTE: this used to send global_rotation while every other sender sent the LOCAL rotation the
+	# client contract expects (see Player.net_set_target) — identical only while the parent's basis is
+	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
+	player.emit_move()
 
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
 ## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
@@ -1150,7 +1256,7 @@ func _npc_physics_process(delta: float) -> void:
 		player.velocity = _horiz + _vertical
 		player.move_and_slide()
 		_npc_update_face_target(delta)
-		_npc_emit_move()
+		player.emit_move()
 		return
 
 	# A NEW goal invalidates everything the watchdog has learned about the last one (and any detour it
@@ -1206,7 +1312,7 @@ func _npc_physics_process(delta: float) -> void:
 	player.move_and_slide()
 
 	_npc_update_stuck(delta)
-	_npc_emit_move()
+	player.emit_move()
 
 ## NPC pathing diagnostics — prints every 2 s while an NPC has a goal it has not reached (mesh/island
 ## reachability, bake box, reparent frames...). Costs several nav queries per report: keep off outside
@@ -1432,7 +1538,7 @@ const _NPC_FACE_TURN_SPEED: float = PI
 
 ## Pivot the standing NPC toward player.npc_face_position at constant speed, rotating around its own
 ## up axis so the body stays upright in any gravity frame (a planet included). Cleared once aligned.
-## Runs from the no-destination branch of _npc_physics_process; _npc_emit_move right after it
+## Runs from the no-destination branch of _npc_physics_process; the emit_move right after it
 ## replicates each step, so clients see the same smooth turn.
 func _npc_update_face_target(delta: float) -> void:
 	if player.npc_face_position == null:
@@ -1625,17 +1731,10 @@ func _npc_snap_onto_mesh() -> void:
 		push_warning("NPC %s wedged %.1f m off the navmesh; refusing to snap (it would tunnel through geometry)"
 				% [player.name, _gap])
 
-## Replicate the NPC's authoritative pose to clients (same signal the input path uses).
+## Replicate the NPC's authoritative pose to clients (same emitter the input path uses, so the
+## frame it declares is derived from the tree in one place — see Player.emit_move).
 func _npc_emit_move() -> void:
-	player.emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		_net_parent_uuid(),
-		player.is_parented,
-	)
-
+	player.emit_move()
 ## Bake a bounded navigation region around the NPC so its agent has ground to path on, creating it on
 ## first need and re-baking ahead of the NPC once it travels past _NPC_NAV_REBAKE_DIST of the last bake
 ## center. Baking is async on a worker thread; until it finishes the agent simply has no path.
@@ -2268,11 +2367,7 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 	# on a spinning planet a world-axes offset would keep the landing spot fixed in space while the
 	# ground turned underneath, and the pad would drift a full circle of longitude every day.
 	player.global_position = destination.global_position + destination.global_basis * local_pos
-	emit_signal(
-		"hs_server_move",
-		player.client_uuid,
-		snapped(player.position, Vector3(0.001, 0.001, 0.001)),
-		snapped(player.rotation, Vector3(0.0001, 0.0001, 0.0001)),
-		str(destination.uuid) if "uuid" in destination else "",
-		player.is_parented
-	)
+	# BUG FIXED IN PASSING: this emitted on `self` (PlayerServer, a plain Node that does NOT declare
+	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
+	# Going through the body's single emitter removes the whole class of mistake.
+	player.emit_move()

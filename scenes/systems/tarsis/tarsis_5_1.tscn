@@ -23,6 +23,17 @@ chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 script = ExtResource("1_udv0s")
 planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 98.4
+display_name = "Tarsis V.M1"
+map_radius_km = 2552.0
+map_color = Color(0.710, 0.710, 0.728, 1)
+orbit_periapsis_au = 0.0037054471257257004
+orbit_apoapsis_au = 0.0037054471257257004
+orbit_inclination_deg = -0.67
+orbit_ascending_node_deg = 275.09
+orbit_arg_periapsis_deg = 0.0
+orbit_mean_anomaly_deg = 140.0
+orbit_mass_earths = 0.038
+orbit_primary_mass_kg = 7.98946076351981e+26
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("3_q1lx8")

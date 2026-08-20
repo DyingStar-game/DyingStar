@@ -89,6 +89,12 @@ func _process(_delta: float) -> void:
 				# print("SERVER - Received packet: %s" % [packet_text])
 				var message = JSON.parse_string(packet_text)
 				if message != null:
+					# Horizon's own clock, on the packet it just sent. Feeding it here rather than in
+					# one handler catches EVERY message, which is what lets the estimator converge:
+					# the timestamp is whole seconds, so accuracy comes from seeing many samples
+					# (see Globals.sync_clock).
+					if message is Dictionary and message.has("timestamp"):
+						Globals.sync_clock(float(message["timestamp"]))
 					dispatch_horizon_message(message)
 					if devmode:
 						_devmode_horizon_mapping(message)

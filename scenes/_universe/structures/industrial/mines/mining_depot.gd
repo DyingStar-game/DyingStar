@@ -10,7 +10,6 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## is what crate_volume() reads to decide how much ore fills one crate.
 const CRATE_SCENE = preload("res://scenes/_universe/props/containers/hauling_box.tscn")
 const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
-
 @export var placeholder = false
 ## Optional explicit network id for a designer-placed depot. Leave EMPTY and it is derived
 ## automatically from the depot's fixed position (stable across restarts, no setup needed).
@@ -369,22 +368,22 @@ func update_screen(data: Dictionary):
 		handle_extract()
 
 
-func _on_player_interact(body: Node3D) -> void:
-	if body is Player:
-		active_player = body
-		body.screen_interacting = self
-		# Tell the player where the screen is so its camera can turn to face it.
-		var screen := get_node_or_null("miningdepot/Gui3D")
-		body.screen_position = screen.global_position if screen else global_position
+## Where a player's camera should look while using this screen: the screen SURFACE, not the depot's
+## origin (they are metres apart). Part of the informal "3D screen" contract — PlayerClient calls it
+## when present and falls back to the node itself, so a simpler screen needs nothing at all.
+func screen_look_target() -> Node3D:
+	return get_node_or_null("miningdepot/Gui3D") as Node3D
 
-## A player walked out of the screen's zone: release the screen — but ALWAYS release the player, even
-## if it is not the one we had registered. Reading active_player.client_uuid without checking it first
-## errors out when active_player is null (it always is for a second player leaving, or after a
-## respawn), and the player it was leaving for then keeps screen_interacting set forever: its camera
-## stays locked on the screen it walked away from.
-func _on_player_leave(body: Node3D) -> void:
-	if not (body is Player):
+
+## 3D-screen contract: a player's proximity monitor gained (or lost) this console. The PLAYER owns
+## `screen_interacting` and is the single active monitor of the game (Player.connect_area_detect), so
+## all we do here is note who is using the machine.
+## This used to be a pair of body_entered / body_exited handlers on our own Area3D, with a half-second
+## grace period bolted on to survive the planet's spin. Both are gone: an area-to-area overlap cannot
+## desynchronise across a moving frame, so there is no false exit left to absorb (see ScreenZone).
+func screen_focus_changed(player: Player, focused: bool) -> void:
+	if focused:
+		active_player = player
 		return
-	body.screen_interacting = null
-	if is_instance_valid(active_player) and body.client_uuid == active_player.client_uuid:
+	if is_instance_valid(active_player) and active_player.client_uuid == player.client_uuid:
 		active_player = null

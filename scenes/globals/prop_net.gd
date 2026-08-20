@@ -178,17 +178,21 @@ static func server_tick(body: Node, state = null) -> void:
 	# few frames: a single lost drop/settle message must not leave the prop stuck under its old parent on
 	# clients, and at huge planet coordinates the position throttle can suppress any other resend.
 	#
-	# The parent's uuid is CACHED per parent instance: both `"uuid" in parent` and `parent.uuid` invoke
-	# the host's scripted uuid getter (a get_node_or_null on several hosts) — the profiler's @uuid_getter
-	# hot spot, once per prop per tick. Re-resolve only when the parent node actually changes; an EMPTY
-	# cached uuid is retried, because a parent can receive its network uuid after we first saw it.
+	# The frame is DERIVED from the tree — PropSpawn.parent_frame_uuid walks up to the nearest node
+	# carrying a network uuid — so no caller ever gets to name a frame the body is not actually in.
+	#
+	# Its result is CACHED per parent instance: resolving it walks the ancestors and reads scripted
+	# uuid getters (a get_node_or_null on several hosts), which is the profiler's @uuid_getter hot
+	# spot, once per prop per tick. Re-resolve only when the immediate parent node actually changes;
+	# an EMPTY cached uuid is retried, because an ancestor can receive its network uuid after we
+	# first saw it.
 	var parent_id: String = ""
 	if parent != null:
 		var pid: int = parent.get_instance_id()
 		if "_parent_cache_id" in state and state._parent_cache_id == pid and state._parent_uuid_cache != "":
 			parent_id = state._parent_uuid_cache
 		else:
-			parent_id = str(parent.uuid) if "uuid" in parent else ""
+			parent_id = PropSpawn.parent_frame_uuid(body)
 			if "_parent_cache_id" in state:
 				state._parent_cache_id = pid
 				state._parent_uuid_cache = parent_id

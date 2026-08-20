@@ -4,6 +4,10 @@ extends Node
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
+## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
+## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
+## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
+const FACE_SCREEN_EPSILON: float = 0.9997
 ## Below this ground speed (m/s) the player is standing, not walking: no footsteps (see _update_footsteps).
 ## Well under the slowest gait (crouch/back ~1.5 m/s), well over the network + physics jitter.
 const MIN_WALK_SPEED: float = 0.6
@@ -61,6 +65,9 @@ var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar 
 var _placement_marker: CarryPlacementMarker = null  # owner-only: the carry placement disc (see setup)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
+## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
+## it is a client-side view, and no remote avatar has any use for one.
+var _star_map: StarMap = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -105,6 +112,10 @@ func setup() -> void:
 	_placement_marker = CarryPlacementMarker.new()
 	player.add_child(_placement_marker)
 	_placement_marker.setup(player)
+	# System chart (F2): every body as a plain sphere, with its orbit and current spin.
+	_star_map = StarMap.new()
+	player.get_node("UserInterface").add_child(_star_map)
+	_star_map.setup(player)  # so the chart can mark where you are
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -221,11 +232,15 @@ func _process(_delta: float) -> void:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
 	if ui_focus:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		# Guarded like the CAPTURED branch below: entering CAPTURED warps the cursor to the window
+		# centre, so the transitions are what must stay rare — and the embedded game window reports a
+		# mode of its own, which makes an unguarded write per frame worth avoiding.
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO
 		# Turn the camera toward a 3D screen so it's centered in view.
-		if player.screen_interacting and player.screen_position != player.camera.global_position:
-			_face_screen(player.screen_position)
+		if is_instance_valid(player.screen_interacting):
+			_face_screen(player.screen_interacting)
 	else:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -421,13 +436,28 @@ func _send_horn_input(event: InputEvent) -> void:
 ## planet — and the player with it — flies away: within seconds the view is billions of metres behind,
 ## staring at the sun, while the body still walks around normally for everybody else.
 ## Rotating the LOCAL transform never touches the camera's position: it stays in the player's eyes.
-func _face_screen(screen_world: Vector3) -> void:
+##
+## The target is read LIVE from the screen node, never stored: the planet spins, so a world position
+## snapshotted on approach drifts away from the screen it was meant to point at (hundreds of metres
+## per spin step), and the camera then chases a ghost that keeps receding — it never settles, which
+## also kept the physics picking re-firing and made the pointer wander across the screen's UI.
+## Stops once the camera is aimed within FACE_SCREEN_EPSILON: without that it re-aimed every frame.
+func _face_screen(screen: Node) -> void:
 	var pivot: Node3D = player.camera.get_parent() as Node3D
 	if pivot == null:
 		return
-	var target_local: Vector3 = pivot.to_local(screen_world)
+	# The screen tells us where to look (its surface sits metres away from the object's origin);
+	# anything that does not care is simply looked at directly.
+	var target: Node3D = screen.screen_look_target() if screen.has_method("screen_look_target") else screen as Node3D
+	if target == null:
+		return
+	var target_local: Vector3 = pivot.to_local(target.global_position)
 	var up_local: Vector3 = pivot.global_basis.inverse() * player.up_direction
 	if target_local.is_equal_approx(player.camera.position) or up_local.is_zero_approx():
+		return
+	# Converged? The camera looks down its own -Z; compare that to the direction of the screen.
+	var to_screen: Vector3 = (target_local - player.camera.position).normalized()
+	if -player.camera.transform.basis.z.normalized().dot(to_screen) >= FACE_SCREEN_EPSILON:
 		return
 	var look: Transform3D = player.camera.transform.looking_at(target_local, up_local)
 	player.camera.transform = player.camera.transform.interpolate_with(look, 0.15)
@@ -601,6 +631,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow(aim)
+
+	if event.is_action_pressed("star_map") and _star_map != null:
+		if _star_map.is_open():
+			_star_map.close()
+		else:
+			_star_map.open()
 
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
@@ -827,12 +863,21 @@ func _chat_writing() -> bool:
 ## does NOT lock input — you leave it by walking out of its zone, so movement must stay available
 ## while facing one.
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+
+## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
+## same way a menu freezes it.
+func _star_map_open() -> bool:
+	return _star_map != null and _star_map.is_open()
+
 
 ## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
 ## Frees the cursor and freezes the look (see _process). One source.
 func _ui_focus() -> bool:
-	return player.screen_interacting != null or _input_locked()
+	# is_instance_valid, not "!= null": a freed node (the depot deleted by the admin tool while we
+	# stand in front of it) is NOT null in GDScript, and the mouse would stay locked to a screen that
+	# no longer exists, with no way out.
+	return is_instance_valid(player.screen_interacting) or _input_locked()
 
 # LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
 func _spawn_depot() -> void:

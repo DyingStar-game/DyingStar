@@ -67,7 +67,8 @@ func _process(delta: float) -> void:
 			continue
 		var dist_label: Node = marker.get_node_or_null("dist")
 		if dist_label is Label3D:
-			(dist_label as Label3D).text = _dist_str(_surface_distance(body, eye, to_body.length()))
+			(dist_label as Label3D).text = Globals.format_distance(
+					_surface_distance(body, eye, to_body.length()))
 		var dir: Vector3 = to_body.normalized()
 		# Face the marker (and its label child) at the camera HERE, in double precision, instead of
 		# leaving it to the Label3D billboard: the shader billboard subtracts two ~3e10 positions in
@@ -93,7 +94,16 @@ func _sync_markers() -> void:
 	for id: int in bodies:
 		if not _markers.has(id):
 			var body: Node3D = bodies[id]
-			var marker: Node3D = _make_marker(body.name, _body_color(body))
+			# The same two properties the system chart reads, so a body is named and coloured identically
+			# wherever it shows up. body.name is Horizon's code ("P4_M2"), never what to show a player.
+			var label_text: String = body.name
+			var colour: Color = _body_color(body)
+			if body is Planet:
+				var planet: Planet = body as Planet
+				if planet.display_name != "":
+					label_text = planet.display_name
+				colour = planet.map_color
+			var marker: Node3D = _make_marker(label_text, colour)
 			add_child(marker)
 			_markers[id] = marker
 
@@ -179,11 +189,9 @@ func _surface_distance(body: Node3D, eye: Vector3, centre_distance: float) -> fl
 		return maxf((body as Planet).surface_altitude_of(eye), 0.0)
 	return base_altitude
 
-## Distance: plain metres below 1 km, plain whole kilometres above.
-func _dist_str(metres: float) -> String:
-	if metres < 1000.0:
-		return "%.0f m" % metres
-	return "%.0f km" % (metres / 1000.0)
+## Distance, formatted by the SHARED rule (Globals.format_distance) so a body reads identically here
+## and in the system chart. Kept as a one-line seam rather than calling Globals inline: the call site
+## in _process is a hot loop and this keeps the intent named.
 
 ## The camera this node is parented under (created there by PlayerClient); its position is the eye
 ## from which body directions are measured.

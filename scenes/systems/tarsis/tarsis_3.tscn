@@ -23,7 +23,18 @@ chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
 script = ExtResource("1_dgd5j")
 planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 24.0
+display_name = "Gaea - Tarsis III"
+map_radius_km = 5875.0
+map_color = Color(0.280, 0.520, 0.700, 1)
 axial_tilt_deg = 23.5
+orbit_periapsis_au = 0.539
+orbit_apoapsis_au = 0.561
+orbit_inclination_deg = 1.0
+orbit_ascending_node_deg = 75.0
+orbit_arg_periapsis_deg = 102.0
+orbit_mean_anomaly_deg = 140.0
+orbit_mass_earths = 0.783
+orbit_primary_mass_kg = 1.5088184368786238e+30
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("3_phf8n")

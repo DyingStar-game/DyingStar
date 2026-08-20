@@ -42,6 +42,10 @@ var max_players_allowed = 40
 var players_list = {}
 var players_list_last_movement = {}
 var players_list_last_rotation = {}
+## Last frame uuid DECLARED to Horizon per player. Never assigned by a caller: it is a memo of what
+## PropSpawn.parent_frame_uuid() returned last time, so a change of scene parent can be detected and
+## re-announced. Same role as PropSync.server_last_parent_id for props.
+var players_list_last_parent: Dictionary = {}
 var players_list_creationdate = {}
 var players_list_temp_by_id = {}
 var players_list_currently_in_transfert = {}
@@ -745,16 +749,14 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	if best_planet.planet_data == null:
 		return
 	var body_pos := body.global_position
-	var local := body_pos - best_planet.global_position
-	if local.length_squared() < 1.0e-6:
+	# Planet-LOCAL (body-frame) direction, through the planet's own conversion — the SAME one
+	# PlanetTerrain.collision_chunk_key uses to answer "is the ground here loaded?". They must agree on
+	# the tile, or a body waits on terrain nobody asked for. Since the origin rebase the planet sits at
+	# its world's origin with identity basis, so this reduces to a plain subtraction — but it stays the
+	# shared conversion, because the check on the other side does exactly the same thing.
+	var dir: Vector3 = best_planet.local_dir_of(body_pos)
+	if dir.is_zero_approx():
 		return
-	# Convert from world-frame to planet-LOCAL (body-frame) direction.
-	# vec2pix_nest expects the direction in the planet's own coordinate
-	# system; the planet rotates in orbit, so a world-frame direction would
-	# resolve to the WRONG tile and the actual tile under the player would
-	# never be pinned (player falls through to safety net).
-	var local_body: Vector3 = best_planet.global_transform.basis.inverse() * local
-	var dir := local_body.normalized()
 	var pd = best_planet.planet_data
 	# Collision detail nside: the client's FINEST LOD nside on crack planets, so
 	# the pinned collision is built on the SAME grid the visual renders (see
@@ -977,46 +979,70 @@ func set_server_inactive(_newserver_id: int):
 # Horizon server part                              #
 #####################################################
 
-func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3, reparent_uuid = null, _is_parented = false):
-	# if client_uuid == "024255cb-a567-4fc0-8126-fe6f8c32054c":
-	# 	print("move uuid:", client_uuid)
-	if players_list_last_movement[client_uuid] != position or players_list_last_rotation[client_uuid] != rotation:
-		# A pending PARENTED move must not be overwritten by a plain tick move
-		# before it is flushed to Horizon — the parent change would be lost and
-		# the client would apply the position in the wrong frame.
-		# A NEWER parented move (chained teleports, or two teleporter areas
-		# firing in the same flush window) REPLACES the pending one instead:
-		# last reparent wins, so parent and position stay consistent.
-		if players_newposition.has(client_uuid) \
-				and players_newposition[client_uuid].has("parent_id") \
-				and reparent_uuid == null:
-			return
+## A server-authoritative move from a Player (see Player.emit_move). The FRAME is deliberately NOT a
+## parameter: it is read from the scene tree HERE, from the very node whose position we just received.
+## "The parent Horizon believes in" is therefore a pure function of "the parent in the tree", and the
+## two can no longer be separate states that drift apart unnoticed. A caller cannot announce a frame
+## it has not actually moved into, because a caller no longer gets to announce anything.
+##
+## A frame change is a first-class reason to send, exactly like a position change — the same rule
+## PropNet.server_tick already applies to props. It used to ride along as an extra field on a
+## position packet, so a reparent that happened not to move the body was silently swallowed.
+func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) -> void:
+	var player = players_list.get(client_uuid)
+	if not is_instance_valid(player):
+		return
 
-		var prep = {
-			"player_id": client_uuid,
-			"pos": {
-				"x": position[0],
-				"y": position[1],
-				"z": position[2],
-			},
-			"rot": {
-				"x": rotation[0],
-				"y": rotation[1],
-				"z": rotation[2]
-			}
+	var frame_uuid: String = PropSpawn.parent_frame_uuid(player)
+	var last_frame: String = players_list_last_parent.get(client_uuid, "")
+	var frame_changed: bool = last_frame != frame_uuid
+	var moved: bool = players_list_last_movement.get(client_uuid) != position \
+			or players_list_last_rotation.get(client_uuid) != rotation
+	if not moved and not frame_changed:
+		return
+
+	if frame_changed:
+		var parent_name: String = player.get_parent().name if player.get_parent() != null else "<none>"
+		print("[Server] player %s frame '%s' -> '%s' (%s)" % [client_uuid, last_frame, frame_uuid, parent_name])
+		if frame_uuid == "":
+			# The body sits under a node Horizon knows nothing about, so its LOCAL position is about to
+			# be published as WORLD coordinates. Harmless while every frame is motionless; a runaway the
+			# day frames orbit. Loud on purpose — this is the one divergence deriving cannot prevent.
+			push_warning("[Server] player %s is under '%s', which carries no uuid: its position will be sent as world coordinates"
+					% [client_uuid, parent_name])
+		players_list_last_parent[client_uuid] = frame_uuid
+
+	var prep = {
+		"player_id": client_uuid,
+		"pos": {
+			"x": position[0],
+			"y": position[1],
+			"z": position[2],
+		},
+		"rot": {
+			"x": rotation[0],
+			"y": rotation[1],
+			"z": rotation[2]
 		}
+	}
 
-		if reparent_uuid != null:
-			prep["parent_id"] = reparent_uuid
-		players_list_last_movement[client_uuid] = position
-		players_list_last_rotation[client_uuid] = rotation
-		if _check_out_of_zone(client_uuid):
-			prep["out_of_zone"] = serverinfo_uuid
-			var player = players_list[client_uuid]
-			print("erase player (2): %s" % client_uuid)
-			players_list.erase(client_uuid)
-			player.queue_free()
-		players_newposition[client_uuid] = prep
+	# players_newposition is one entry per player per flush, so a later move in the same window
+	# overwrites this one. Carry a frame change already queued onto the newer pose instead of losing
+	# it — both poses are expressed in the SAME (new) frame, so this is always safe. The old code
+	# returned early here instead, which threw the fresher position away to save the parent.
+	if frame_changed:
+		prep["parent_id"] = frame_uuid
+	elif players_newposition.has(client_uuid) and players_newposition[client_uuid].has("parent_id"):
+		prep["parent_id"] = players_newposition[client_uuid]["parent_id"]
+
+	players_list_last_movement[client_uuid] = position
+	players_list_last_rotation[client_uuid] = rotation
+	if _check_out_of_zone(client_uuid):
+		prep["out_of_zone"] = serverinfo_uuid
+		print("erase player (2): %s" % client_uuid)
+		players_list.erase(client_uuid)
+		player.queue_free()
+	players_newposition[client_uuid] = prep
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -1291,6 +1317,7 @@ func create_player(event: Dictionary) -> void:
 		players_list.erase(player_uuid)
 		players_list_last_movement.erase(player_uuid)
 		players_list_last_rotation.erase(player_uuid)
+		players_list_last_parent.erase(player_uuid)
 		players_list_creationdate.erase(player_uuid)
 		if is_instance_valid(old_player):
 			old_player.queue_free()
@@ -1360,6 +1387,11 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
+	# Ask for the collision under this player NOW rather than up to PIN_TICK_INTERVAL render frames from
+	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
+	# frame of pinning latency is a frame of frozen player. Idempotent — the sweep pushes the whole set,
+	# so calling it early cannot drop another player's pins.
+	_refresh_active_body_pins()
 	prints("spawning player", player_uuid, "in world of",
 		_planet_ancestor_of(spawned_entity_instance).name if _planet_ancestor_of(spawned_entity_instance) != null else "ROOT",
 		"at local", spawned_entity_instance.position, "true", _true_position(spawned_entity_instance))
@@ -1370,6 +1402,9 @@ func create_player(event: Dictionary) -> void:
 	# mismatch look like a real move.
 	players_list_last_movement[player_uuid] = spawned_entity_instance.position
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.rotation
+	# Seed the frame memo with the parent we just attached to: Horizon asked for it, so it already
+	# knows. Without this the very first tick would re-announce a frame nobody changed.
+	players_list_last_parent[player_uuid] = PropSpawn.parent_frame_uuid(spawned_entity_instance)
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
