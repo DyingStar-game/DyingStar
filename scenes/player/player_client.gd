@@ -303,35 +303,11 @@ func _process(_delta: float) -> void:
 	player.labely.text = str("%0.2f" % player.global_position[1])
 	player.labelz.text = str("%0.2f" % player.global_position[2])
 
-var _cdiag_t: float = 0.0  # TEMPORARY diag throttle (rebase debug), see _physics_process
-
 ## Fixed-step OWNER input sampling: relay drive input while seated, else sample walking input and
 ## emit the move only on change. Runs on this role's own child node → only on a client (never the
 ## server); the remote guard keeps a replicated avatar from sampling local input.
 func _physics_process(delta: float) -> void:
 	if player.remote_player: return
-	if PropNet.PROF:
-		# TEMPORARY diag (rebase debug): where IS this client's own player, really? Prints every 2 s:
-		# world position, physics parent, and distance to the planet the camera should orbit —
-		# replaces guessing the client's frame state from server logs. Remove with the PROF block.
-		_cdiag_t += delta
-		if _cdiag_t > 2.0:
-			_cdiag_t = 0.0
-			var planet: Node3D = null
-			var n: Node = player.get_parent()
-			while n != null and planet == null:
-				if n is Planet:
-					planet = n
-				n = n.get_parent()
-			var pdist: String = "no-planet-ancestor"
-			if planet != null:
-				pdist = "%.0f m from '%s' center (r=%.0f)" % [
-					player.global_position.distance_to(planet.global_position), planet.name,
-					planet.planet_data.radius if planet.planet_data != null else 0.0]
-			# NOTE: %e is NOT a valid GDScript format (it errors and prints the raw string) — km via %.0f.
-			print("[CDiag] pos=%v (%.0f km from origin) parent=%s | %s" % [
-				player.global_position, player.global_position.length() / 1000.0,
-				player.get_parent().name, pdist])
 	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
 	if is_instance_valid(player._seat_node):
 		# Seated: relay drive input (driver only) and skip walking.

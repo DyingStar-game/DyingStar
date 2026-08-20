@@ -51,10 +51,17 @@ var spawn_position: Vector3 = Vector3.ZERO
 ## SERVER REBASE: the planet's TRUE universe position, kept as DATA only. On the server each planet
 ## sits at the ORIGIN of its own physics world (SubViewport.own_world_3d, see server.gd
 ## create_planet) so Jolt's float32 broadphase keeps metre-scale AABBs — at 3.3e10 m they quantise
-## to ±2 km and every query near a dense surface costs ~30x (measured, CoordProbe/SpaceProbe).
+## to ±2 km and every query near a dense surface costs ~30x (measured 2026-08; see the
+## origin-rebase notes in the commit history).
 ## Conversions between frames go through server.gd _true_position/_owning_planet. Stays ZERO on
 ## clients: their scene keeps the astronomic layout, replication is parent-local on both sides.
 var orbital_position: Vector3 = Vector3.ZERO
+## SERVER REBASE: uuid of the body [member orbital_position] is measured FROM, "" when it is already
+## a universe-absolute position. Horizon sends a moon's position RELATIVE to the planet it orbits
+## (P4_M1 arrives at ~3e7 m while Tarsis 4 sits at ~3.3e10 m) and carries the tie in parent_id — the
+## client resolves it by parenting the moon under its planet, but the server keeps every body at the
+## origin of its own physics world, so it must sum the chain instead: server.gd _planet_orbital_abs.
+var orbital_parent_uuid: String = ""
 
 ## Time since the last spin refresh.
 var _spin_accum: float = 0.0

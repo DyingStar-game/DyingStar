@@ -196,9 +196,6 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	set_process(false)
 	_send_metrics()
-	if PropNet.PROF:
-		PerfBracket.attach_to(self)  # TEMPORARY: brackets the physics tick, see perf_bracket.gd
-		SpaceProbe.run(self)  # TEMPORARY: validates SubViewport own_world_3d physics, see space_probe.gd
 
 func _physics_process(_delta: float) -> void:
 	var _t0: int = Time.get_ticks_usec() if PropNet.PROF else 0
@@ -213,15 +210,13 @@ func _physics_process(_delta: float) -> void:
 		# window's bucket. Over a 2 s window that is noise; it keeps the accounting simple.
 		PropNet.prof_srv_usec += Time.get_ticks_usec() - _t0
 
-## TEMPORARY diagnostic (TPS drops): every 2 s, print where the frame goes — engine physics vs script
-## vs render — plus the counts that discriminate between the known suspects (awake bodies = Jolt load,
-## chunk tasks/queue = terrain collision churn, nav maps = NPC bake load, update dict sizes = network
-## flush volume). Remove (or flip the const) once the drop is diagnosed.
-const _PERF_REPORT: bool = true
+## Dormant perf rig (flip _PERF_REPORT AND PropNet.PROF to re-arm): every 2 s, print where the
+## frame goes — engine physics vs script — plus the counts that discriminate between the known
+## suspects (awake bodies = Jolt load, chunk tasks/queue = terrain collision churn, nav maps = NPC
+## bake load, update dict sizes = network flush volume). Built during the 2026-08 TPS investigation.
+const _PERF_REPORT: bool = false
 var _perf_timer: float = 0.0
 var _perf_frames: int = 0
-var _coord_probe_done: bool = false
-var _scene_dump_done: bool = false
 
 func _perf_tick(delta: float) -> void:
 	if not _PERF_REPORT:
@@ -308,15 +303,14 @@ func _perf_tick(delta: float) -> void:
 		var _srv_ms: float = PropNet.prof_srv_usec / 1000.0 / _fr
 		var _scripts_ms: float = _tick_ms + _player_ms + _terrain_ms + _srv_ms
 		var _phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-		# `span` is every script callback in the tick (PerfBracket); `known` is the subset we
-		# instrumented. span-known = callbacks we never measured; phys-span = the engine itself.
-		var _span_ms: float = PropNet.prof_span_usec / 1000.0 / _fr
-		print("[Perf/phys] tick=%.1fms | span=%.2fms (known=%.2f: props=%.2f player=%.2f[%.0f/f] terrain=%.2f server=%.2f | unmeasured=%.2f) | engine=%.2fms (%.0f%%)" % [
-			_phys_ms, _span_ms, _scripts_ms,
+		# `known` = the callbacks we instrumented; the rest is the engine + any uninstrumented
+		# _physics_process (during the 2026-08 investigation a PerfBracket pair measured that
+		# uninstrumented remainder precisely; re-create it from git history if ever needed again).
+		print("[Perf/phys] tick=%.1fms | known=%.2fms (props=%.2f player=%.2f[%.0f/f] terrain=%.2f server=%.2f) | engine+rest=%.2fms (%.0f%%)" % [
+			_phys_ms, _scripts_ms,
 			_tick_ms, _player_ms, PropNet.prof_player_calls / _fr, _terrain_ms, _srv_ms,
-			_span_ms - _scripts_ms,
-			_phys_ms - _span_ms,
-			(100.0 * (_phys_ms - _span_ms) / _phys_ms) if _phys_ms > 0.0 else 0.0,
+			_phys_ms - _scripts_ms,
+			(100.0 * (_phys_ms - _scripts_ms) / _phys_ms) if _phys_ms > 0.0 else 0.0,
 		])
 		var _p_pre: float = PropNet.prof_p_pre_usec / 1000.0 / _fr
 		var _p_vault: float = PropNet.prof_p_vault_usec / 1000.0 / _fr
@@ -342,45 +336,6 @@ func _perf_tick(delta: float) -> void:
 					_grav_name = (a as Area3D).name
 					_grav_bodies = (a as Area3D).get_overlapping_bodies().size()
 				break
-		# One-shot TEMPORARY dump (rebase debug): who lives in which world, where — planets with
-		# uuid + orbital, the player's world/local/true position, and a sample of every prop type.
-		# Decides between "player routed into the wrong planet world" and "props at wrong local
-		# coordinates" without any speculation.
-		if not _scene_dump_done and players_list.size() > 0:
-			_scene_dump_done = true
-			for puuid in props_list["planets"].keys():
-				var pl = props_list["planets"][puuid]
-				if pl is Planet and is_instance_valid(pl):
-					print("[Dump] planet name=%s uuid=%s orbital=%v" % [pl.name, puuid, (pl as Planet).orbital_position])
-			for puuid in players_list.keys():
-				var p = players_list[puuid]
-				if is_instance_valid(p) and p is Node3D:
-					var pw := _planet_ancestor_of(p)
-					print("[Dump] player %s world=%s local=%v true=%v" % [
-						puuid, pw.name if pw != null else "ROOT", (p as Node3D).position, _true_position(p)])
-			for ptype in props_list.keys():
-				if ptype == "planets" or not (props_list[ptype] is Dictionary):
-					continue
-				var shown := 0
-				for ouuid in props_list[ptype].keys():
-					if shown >= 3:
-						break
-					var o = props_list[ptype][ouuid]
-					if is_instance_valid(o) and o is Node3D:
-						shown += 1
-						var ow := _planet_ancestor_of(o)
-						print("[Dump] prop type=%s %s world=%s parent=%s local=%v true=%v" % [
-							ptype, ouuid, ow.name if ow != null else "ROOT",
-							(o as Node3D).get_parent().name, (o as Node3D).position, _true_position(o)])
-		# One-shot: does query cost depend on distance from the world origin? See coord_probe.gd.
-		# Deferred until a player exists so it measures the space with the terrain actually resident.
-		if not _coord_probe_done and _grav_bodies >= 0:
-			_coord_probe_done = true
-			for puuid in players_list.keys():
-				var pl = players_list[puuid]
-				if is_instance_valid(pl) and pl is Node3D:
-					CoordProbe.run(pl as Node3D)  # coroutine: resumes on its own, not awaited here
-					break
 		print("[Perf/coll] slides=%.2f/tick (over %.0f moves/f) | chunks loaded=%d unloaded=%d per window | gravity area '%s' monitoring %d bodies" % [
 			(float(PropNet.prof_slide_count) / float(PropNet.prof_slide_ticks)) if PropNet.prof_slide_ticks > 0 else 0.0,
 			PropNet.prof_slide_ticks / _fr,
@@ -838,7 +793,7 @@ func _debug_closest_planets(pos: Vector3, n: int) -> String:
 		if not is_instance_valid(pn) or not (pn is Planet):
 			continue
 		var p: Planet = pn as Planet
-		var d := pos.distance_to(p.orbital_position)
+		var d := pos.distance_to(_planet_orbital_abs(p))
 		var r: float = p.planet_data.radius if p.planet_data else 0.0
 		items.append([d, p.name, r])
 	items.sort_custom(func(a, b): return a[0] < b[0])
@@ -983,6 +938,11 @@ func _spawn_prop_remote_update(prop):
 	if not NetworkOrchestrator.props_list[prop.type].has(prop.uuid):
 		return
 	# update the position
+	# NOT REBASED (dead path): server-to-server SDO replication. It writes a TRUE-universe position
+	# straight into global_position, which since the origin rebase is a per-planet-world frame — so
+	# this needs _owning_planet routing like create_generic_object before it can be revived. Nothing
+	# runs it today: NetworkOrchestrator.small_props_spawner_node is never assigned (its every
+	# initialisation is commented out), so _spawn_prop_remote_add null-crashes first.
 	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_position = Vector3(float(prop.x), float(prop.y), float(prop.z))
 	NetworkOrchestrator.props_list[prop.type][prop.uuid].global_rotation = Vector3(float(prop.xr), float(prop.yr), float(prop.zr))
 
@@ -1003,6 +963,7 @@ func set_server_inactive(_newserver_id: int):
 		for uuid in props_list[proptype].keys():
 			props_list[proptype][uuid].queue_free()
 			props_list[proptype].erase(uuid)
+	_orbital_abs_cache.clear()  # planets are gone: their resolved centres must not outlive them
 
 
 
@@ -1176,16 +1137,22 @@ func create_planet(event: Dictionary) -> void:
 	# itself sits at the ORIGIN of its own physics world so Jolt's float32 broadphase keeps
 	# metre-scale AABBs (at astronomic coords they quantise to ±2 km and every query near a dense
 	# surface — the city — costs ~30x, collapsing the tick to 6 TPS while walking; measured, see
-	# CoordProbe). spawn_position deliberately stays ZERO so planet_body._ready leaves the node at
+	# 2026-08 investigation). spawn_position deliberately stays ZERO so planet_body._ready leaves the node at
 	# the origin. SubViewport.own_world_3d gives the planet a full private World3D (physics space,
-	# gravity areas, get_world_3d() for every probe under it) — validated 4/4 by SpaceProbe on this
-	# build. The client scene is untouched: it keeps astronomic planet positions, and replication
+	# gravity areas, get_world_3d() for every probe under it) — validated on this build: physics
+	# steps and collides in a camera-less SubViewport world, isolated from the root world. The
+	# client scene is untouched: it keeps astronomic planet positions, and replication
 	# is parent-local on both sides, so poses agree as long as the parent CHAIN agrees.
 	spawnable_planet_instance.orbital_position = Vector3(
 		planet_data["positions"][0]["x"],
 		planet_data["positions"][0]["y"],
 		planet_data["positions"][0]["z"]
 	)
+	# A MOON's position is measured from the planet it orbits, not from the universe origin, and the
+	# tie is parent_id (the client resolves it by parenting the moon under its planet). Remember it
+	# so _planet_orbital_abs can sum the chain; resolution is lazy because a moon can arrive BEFORE
+	# the planet it orbits.
+	spawnable_planet_instance.orbital_parent_uuid = str(planet_data.get("parent_id", ""))
 	spawnable_planet_instance.name = planet_data["name"]
 	spawnable_planet_instance.uuid = planet_uuid
 	spawnable_planet_instance.tree_entered.connect(func():
@@ -1218,10 +1185,36 @@ func create_planet(event: Dictionary) -> void:
 				spawnable_planet_instance.planet_terrain.initial_chunks_ready.connect(
 					on_ready, CONNECT_ONE_SHOT))
 
+## Apply a planet update from Horizon — today only its ORBITAL POSITION.
+##
+## Orbital motion is nearly free under the origin rebase: the planet ORBITS BY CHANGING THIS DATA
+## ONLY, its node never moves, because it sits at the origin of its own physics world. Nothing on the
+## surface is disturbed — no collider is teleported, no contact broken, no sleeping body woken. That
+## is not a detail: moving a planet-sized collider in Jolt every refresh is precisely what caused the
+## "everyone bobs" dance (see the spin note in planet_body._physics_process), which is why the server
+## never spun its planets. Orbit costs a Vector3 assignment here.
+##
+## Only comparisons that CROSS worlds see the change — Horizon's zone bounds, the cull radius, spawn
+## ownership — so the resolved-centre cache is dropped (a moon's centre depends on its planet's) and
+## the zone's chunk residency is recomputed, since a fixed universe-space zone now maps onto a
+## different patch of the planet.
 func update_planet(event: Dictionary) -> void:
-	if props_list["planets"].has(event["object_uuid"]):
-		var planet = props_list["planets"][event["object_uuid"]]
-		# TODO update on server the data
+	# Horizon addresses planets with the nested shape everywhere else (see create_planet); accept the
+	# flat one too rather than silently doing nothing if a caller uses it.
+	var data: Dictionary = event.get("data", {})
+	var planet_uuid: String = str(data.get("object_uuid", event.get("object_uuid", "")))
+	if not props_list["planets"].has(planet_uuid):
+		return
+	var planet := props_list["planets"][planet_uuid] as Planet
+	if planet == null or not is_instance_valid(planet):
+		return
+	var object_data: Dictionary = data.get("object_data", {})
+	var positions = object_data.get("positions", [])
+	if positions is Array and positions.size() > 0:
+		planet.orbital_position = Vector3(
+			positions[0]["x"], positions[0]["y"], positions[0]["z"])
+		_orbital_abs_cache.clear()
+		_push_zone_residency_to_planet(planet)
 
 
 ## Handle a biome update from Horizon.  Rebuilds collision shapes on the
@@ -1348,7 +1341,7 @@ func create_player(event: Dictionary) -> void:
 			# events are not atomic across Horizon, so the client applied planet-local positions
 			# in its old frame and teleported thousands of km onto empty terrain (measured).
 			owner_planet.add_child(spawned_entity_instance)
-			var local_pos: Vector3 = abs_pos - owner_planet.orbital_position
+			var local_pos: Vector3 = abs_pos - _planet_orbital_abs(owner_planet)
 			player_data["position"] = {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z}
 		else:
 			universe_scene.add_child(spawned_entity_instance)
@@ -1367,10 +1360,16 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
-	prints("spawning player", player_uuid, "at", spawned_entity_instance.global_position)
+	prints("spawning player", player_uuid, "in world of",
+		_planet_ancestor_of(spawned_entity_instance).name if _planet_ancestor_of(spawned_entity_instance) != null else "ROOT",
+		"at local", spawned_entity_instance.position, "true", _true_position(spawned_entity_instance))
 
-	players_list_last_movement[player_uuid] = spawned_entity_instance.global_position
-	players_list_last_rotation[player_uuid] = spawned_entity_instance.global_rotation
+	# Seed the change-detection in the SAME frame _on_player_move compares against (the emitted,
+	# parent-LOCAL pose). Seeding it from global_position instead only ever forced a redundant first
+	# update, but since the rebase those two frames differ by a whole planet radius, which made the
+	# mismatch look like a real move.
+	players_list_last_movement[player_uuid] = spawned_entity_instance.position
+	players_list_last_rotation[player_uuid] = spawned_entity_instance.rotation
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
@@ -1435,7 +1434,7 @@ func create_generic_object(event: Dictionary) -> void:
 			object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"])
 		owner_planet = _owning_planet(abs_pos)
 		if owner_planet != null:
-			var local_pos: Vector3 = abs_pos - owner_planet.orbital_position
+			var local_pos: Vector3 = abs_pos - _planet_orbital_abs(owner_planet)
 			object_data["position"] = {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z}
 	net.client_channel_data_update(object_data)
 	net.uuid = event["data"]["object_uuid"]
@@ -1540,6 +1539,35 @@ func update_generic_object(event: Dictionary) -> void:
 # true universe position is planet.orbital_position (data). Any comparison that crosses worlds — or
 # faces Horizon, which always speaks TRUE universe coordinates — must go through these.
 
+## Resolved universe-absolute centre per planet uuid, see _planet_orbital_abs. Only filled once the
+## whole orbital chain is spawned, so a moon that arrives before its planet resolves on a later call.
+var _orbital_abs_cache: Dictionary = {}
+
+## TRUE universe position of [param p]'s centre. NOT the same as p.orbital_position for a moon:
+## Horizon sends a moon's position RELATIVE to the planet it orbits (P4_M1 arrives at ~3e7 m while
+## Tarsis 4 sits at ~3.3e10 m), so the chain has to be summed. Everything that compares positions
+## ACROSS worlds — the settle-culler radius, the Horizon zone bounds, spawn ownership — must go
+## through this, or a body on a moon reads as ~3.3e10 m away from where it really is.
+##
+## Lazy + cached: message order is not guaranteed, so an unresolved parent returns the best-effort
+## sum WITHOUT caching it, and the next call retries once the parent has spawned.
+func _planet_orbital_abs(p: Planet) -> Vector3:
+	if _orbital_abs_cache.has(p.uuid):
+		return _orbital_abs_cache[p.uuid]
+	var acc: Vector3 = p.orbital_position
+	var cur: Planet = p
+	var guard: int = 0
+	while cur.orbital_parent_uuid != "" and guard < 8:  # guard: never loop on a cyclic record
+		guard += 1
+		var pn = props_list["planets"].get(cur.orbital_parent_uuid)
+		if not (pn is Planet) or not is_instance_valid(pn):
+			return acc  # parent not spawned yet — retry on the next call, don't cache
+		cur = pn as Planet
+		acc += cur.orbital_position
+	_orbital_abs_cache[p.uuid] = acc
+	return acc
+
+
 ## The Planet whose world [param node] lives in (nearest Planet ancestor), or null for a root-world
 ## node (ship or player in open space).
 func _planet_ancestor_of(node: Node) -> Planet:
@@ -1550,8 +1578,19 @@ func _planet_ancestor_of(node: Node) -> Planet:
 		n = n.get_parent()
 	return null
 
-## The planet owning TRUE-universe position [param abs_pos]: within 1.5 R of its orbital center
-## (same margin _pin_node_to_planet_chunk always used). null = open space.
+## Radius out to which a planet OWNS space: the reference sphere, the tallest terrain rising above
+## it, and the atmosphere shell on top. This is the planet/space FRONTIER — inside it a body belongs
+## in the planet's physics world, outside it in the root world (open space). Terrain height matters:
+## with atmosphere_height 0 (a bare moon) the bare radius would leave anyone standing on a mountain
+## outside their own planet.
+func _planet_domain_radius(p: Planet) -> float:
+	if p.planet_data == null:
+		return 0.0
+	return p.planet_data.radius + p.planet_data.max_height + p.planet_data.atmosphere_height
+
+
+## The planet owning TRUE-universe position [param abs_pos], or null for open space. Ties break on
+## the closest centre, so a moon sitting inside its planet's domain still wins at its own surface.
 func _owning_planet(abs_pos: Vector3) -> Planet:
 	var best: Planet = null
 	var best_d := INF
@@ -1562,8 +1601,8 @@ func _owning_planet(abs_pos: Vector3) -> Planet:
 		var p: Planet = pn as Planet
 		if p.planet_data == null:
 			continue
-		var d: float = abs_pos.distance_squared_to(p.orbital_position)
-		var max_r: float = p.planet_data.radius * 1.5
+		var d: float = abs_pos.distance_squared_to(_planet_orbital_abs(p))
+		var max_r: float = _planet_domain_radius(p)
 		if d <= max_r * max_r and d < best_d:
 			best_d = d
 			best = p
@@ -1576,7 +1615,7 @@ func _true_position(node: Node3D) -> Vector3:
 	var planet := _planet_ancestor_of(node)
 	if planet == null:
 		return node.global_position
-	return planet.orbital_position + node.global_position
+	return _planet_orbital_abs(planet) + node.global_position
 
 
 func _search_parent_node(parent_id: String) -> Node:
@@ -1695,7 +1734,9 @@ func manage_zone(event: Dictionary) -> void:
 	_push_zone_residency_to_all()
 
 
-## Compute the authoritative zone AABB in world space.
+## The authoritative zone AABB, in TRUE UNIVERSE coordinates — Horizon speaks that frame and only
+## that one. Server-side scene positions are per-planet-world since the origin rebase, so every
+## comparison against this box goes through _true_position / _planet_orbital_abs.
 func _server_zone_aabb_world() -> AABB:
 	var pmin := Vector3(
 		server_zone["x_start"], server_zone["y_start"], server_zone["z_start"])
@@ -1733,7 +1774,7 @@ func _push_zone_residency_to_planet(planet_node: Node) -> void:
 	# position (the node itself sits at the origin of its own world — rebase, see create_planet).
 	var aabb_world := _server_zone_aabb_world()
 	var aabb_local := AABB(
-		aabb_world.position - planet.orbital_position, aabb_world.size)
+		aabb_world.position - _planet_orbital_abs(planet), aabb_world.size)
 	var keys := planet.planet_data.chunks_in_aabb_world(aabb_local, 1)
 	planet.planet_terrain.set_resident_chunks(keys)
 

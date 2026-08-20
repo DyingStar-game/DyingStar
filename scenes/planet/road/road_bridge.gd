@@ -93,8 +93,12 @@ static func chasm_depth_at(planet_data: PlanetData, lon: float, lat: float) -> f
 ##
 ## Each span is
 ##     {feature_id, along_start, along_end, span_m, deck_span_m,
-##      mid_lon, mid_lat, mid_dir, bearing, max_depth_m, truncated}
-## where `bearing` is the unit lon/lat direction of the road at the midpoint.
+##      mid_lon, mid_lat, mid_dir, bearing, forward_dir, max_depth_m,
+##      road_width_m, truncated}
+## where `bearing` is the unit east/north direction of the crossing (longitude
+## already scaled by cos(lat), so it is a real bearing and not a raw lon/lat
+## delta) and `forward_dir` is that same direction as a world-space unit vector
+## on the tangent plane — what the spawner actually orients the deck with.
 static func find_spans_in_road(planet_data: PlanetData, road: Dictionary) -> Array:
 	if not planet_data.corundum_override_whole_planet:
 		return []
@@ -103,6 +107,13 @@ static func find_spans_in_road(planet_data: PlanetData, road: Dictionary) -> Arr
 	if cl.size() < 2 or cum.size() != cl.size():
 		return []
 	var fid: int = int(road.get("feature_id", -1))
+	# Carried into every span so the deck can be built to the width of the road
+	# it continues. Read the same way the ribbon reads it, so a bridge is never
+	# wider or narrower than the tarmac running onto it.
+	var hw: float = float(road.get("half_width_m", 0.0))
+	if hw <= 0.0:
+		hw = RoadTerrain.get_half_width_m(road)
+	var road_w := 2.0 * hw
 
 	var step := COARSE_STEP_FALLBACK_M
 	if planet_data.crack_width_m > 0.0:
@@ -142,7 +153,7 @@ static func find_spans_in_road(planet_data: PlanetData, road: Dictionary) -> Arr
 				in_chasm = false
 				var s := _make_span(fid, entry_along, edge,
 						lonlat_at(cl, cum, entry_along), lonlat_at(cl, cum, edge),
-						max_depth)
+						max_depth, road_w)
 				if not s.is_empty():
 					spans.append(s)
 				max_depth = 0.0
@@ -153,7 +164,7 @@ static func find_spans_in_road(planet_data: PlanetData, road: Dictionary) -> Arr
 	if in_chasm:
 		# The road ends inside a chasm — describe what we have rather than drop it.
 		var s := _make_span(fid, entry_along, last,
-				lonlat_at(cl, cum, entry_along), cl[cl.size() - 1], max_depth)
+				lonlat_at(cl, cum, entry_along), cl[cl.size() - 1], max_depth, road_w)
 		if not s.is_empty():
 			spans.append(s)
 	return spans
@@ -205,13 +216,31 @@ static func _refine_edge(planet_data: PlanetData, cl: PackedVector2Array,
 
 
 static func _make_span(fid: int, a_along: float, b_along: float,
-		a_lonlat: Vector2, b_lonlat: Vector2, max_depth: float) -> Dictionary:
+		a_lonlat: Vector2, b_lonlat: Vector2, max_depth: float,
+		road_width_m: float) -> Dictionary:
 	var gap := b_along - a_along
 	if gap < MIN_SPAN_M:
 		return {}
-	var mid := a_lonlat.lerp(b_lonlat, 0.5)
-	var dir_ll := b_lonlat - a_lonlat
+	# Interpolate on the SHORT way round, so a span straddling the ±180° seam
+	# does not put its midpoint on the far side of the planet.
+	var dlon := wrapf(b_lonlat.x - a_lonlat.x, -180.0, 180.0)
+	var mid := Vector2(a_lonlat.x + 0.5 * dlon, 0.5 * (a_lonlat.y + b_lonlat.y))
+	var mid_dir := lonlat_to_dir(mid.x, mid.y)
+	# A degree of longitude is only cos(lat) as long as a degree of latitude, so
+	# the raw lon/lat delta is NOT a direction. Taking it for one skews the deck
+	# by ~10° against a road running NE at 45° of latitude, and worse further
+	# from the equator — scale it before normalising. RoadTerrain does the same
+	# thing for its own distance tests.
+	var lat_scale := cos(deg_to_rad(clampf(mid.y, -89.5, 89.5)))
+	var dir_ll := Vector2(dlon * lat_scale, b_lonlat.y - a_lonlat.y)
 	var bearing := dir_ll.normalized() if dir_ll.length_squared() > 1e-20 else Vector2.RIGHT
+	# The deck is straight and must land on both rims, so its direction is the
+	# rim-to-rim chord, flattened onto the tangent plane at the midpoint. Giving
+	# the spawner a ready-made world vector spares it rebuilding an east/north
+	# frame from angles, which is where the orientation used to go wrong.
+	var chord := lonlat_to_dir(b_lonlat.x, b_lonlat.y) - lonlat_to_dir(a_lonlat.x, a_lonlat.y)
+	var forward := chord - mid_dir * chord.dot(mid_dir)
+	forward = forward.normalized() if forward.length_squared() > 1e-20 else Vector3.ZERO
 	var truncated := gap > MAX_SPAN_M
 	return {
 		"feature_id": fid,
@@ -221,9 +250,11 @@ static func _make_span(fid: int, a_along: float, b_along: float,
 		"deck_span_m": gap + ABUTMENT_MARGIN_M,
 		"mid_lon": mid.x,
 		"mid_lat": mid.y,
-		"mid_dir": lonlat_to_dir(mid.x, mid.y),
+		"mid_dir": mid_dir,
 		"bearing": bearing,
+		"forward_dir": forward,
 		"max_depth_m": max_depth,
+		"road_width_m": road_width_m,
 		"truncated": truncated,
 	}
 

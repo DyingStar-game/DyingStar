@@ -70,6 +70,15 @@ var export_nside_min: int = 0
 ## True when the chunk dir is a pyramid (n{nside}/face_{face}/f{ipix}.r32).
 ## False for legacy flat layout (face_{face}/f{ipix}.r32).
 var chunk_is_pyramid: bool = false
+## Fingerprint of the exported elevation data, from manifest["data_version"]
+## (tools/qgis/export_elevation.py compute_data_version). PlanetTerrain folds it
+## into its chunk disk-cache key so a re-export automatically invalidates cached
+## meshes and collision shapes: radius / max_height / height_offset / tile_res can
+## all stay identical while every elevation changes, which used to leave the cache
+## reporting "valid" and serving pre-export terrain. Empty for manifests written
+## before the field existed — those keep exactly the key they had, so caches for
+## planets that have not been re-exported stay valid.
+var chunk_data_version: String = ""
 ## Equirectangular heightmap — kept as fallback only (editor preview, etc.).
 @export var heightmap: Texture2D
 ## Equirectangular biome map — colour encodes biome type / vegetation.
@@ -797,6 +806,7 @@ func apply_chunk_manifest() -> bool:
 	# Pyramid descriptor. Legacy flat exports omit these → single level, so the
 	# coarsest level equals the finest (clamp is a no-op) and paths stay flat.
 	chunk_is_pyramid = bool(data.get("pyramid", false))
+	chunk_data_version = str(data.get("data_version", ""))
 	if data.has("nside_min"):
 		export_nside_min = int(data["nside_min"])
 	else:
@@ -804,7 +814,8 @@ func apply_chunk_manifest() -> bool:
 	print("[PlanetData] chunk manifest applied: radius=%.0f export_nside=%d "
 			% [radius, export_nside]
 			+ "nside_min=%d pyramid=%s tile_res=%d height_offset=%.1f max_height=%.1f"
-			% [export_nside_min, chunk_is_pyramid, chunk_heightmap_res, height_offset, max_height])
+			% [export_nside_min, chunk_is_pyramid, chunk_heightmap_res, height_offset, max_height]
+			+ " data_version=%s" % ("(none)" if chunk_data_version == "" else chunk_data_version))
 	return true
 
 

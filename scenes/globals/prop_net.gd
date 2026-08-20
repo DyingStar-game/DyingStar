@@ -15,14 +15,14 @@ extends RefCounted
 ## `has_parent`, `server_last_position`, `server_last_rotation`, and the `hs_server_prop_update` signal;
 ## and for the client ride helpers also `_ride_local_pos` / `_ride_local_rot`.
 
-# ── TEMPORARY profiling (TPS drops, étape 0) ──────────────────────────────────────────────────────
-# The engine profiler cannot be trusted on this path: it reported 5.9 ms for a SINGLE server_tick call,
-# which this code cannot cost. That number is inclusive time (the emit reaches server.gd _on_prop_update)
-# plus the profiler's own per-call instrumentation, which dwarfs a function this small called ~170x per
-# frame. These counters measure the three layers separately, with two Time calls per tick instead of a
-# full instrumentation frame. Server-side only; server.gd _perf_tick prints and resets them.
-# Remove (or flip PROF) once the drop is diagnosed.
-const PROF: bool = true
+# ── Manual perf counters (dormant — flip PROF to re-arm) ──────────────────────────────────────────
+# The engine profiler cannot be trusted on this path: it once reported 5.9 ms for a SINGLE
+# server_tick call — inclusive time plus per-call instrumentation overhead on a tiny function called
+# ~200x per frame (that misread cost a whole investigation; see the jolt-broadphase memory). These
+# counters measure the real layers with two Time calls per tick. Server-side; server.gd _perf_tick
+# (gated by its own _PERF_REPORT const) prints and resets them every 2 s. Both flags off in normal
+# operation — flip PROF here AND _PERF_REPORT in server.gd to re-arm the whole rig.
+const PROF: bool = false
 static var prof_calls: int = 0        # server_tick invocations
 static var prof_tick_usec: int = 0    # INCLUSIVE: body + emit dispatch + _on_prop_update
 static var prof_emits: int = 0        # invocations that actually replicated
@@ -44,11 +44,6 @@ static var prof_p_vault_usec: int = 0 # _try_start_vault -> VaultProbe.probe (up
 static var prof_p_step_usec: int = 0  # _try_start_step_up
 static var prof_p_move_usec: int = 0  # move_and_slide
 static var prof_p_emit_usec: int = 0  # the hs_server_move replication at the end
-# Wall-clock span from the FIRST to the LAST _physics_process callback in the tick, measured by two
-# PerfBracket nodes at extreme process_physics_priority. TIME_PHYSICS_PROCESS minus this span is the
-# engine's own work (Jolt step + sync), with no script callback left hiding inside it.
-static var prof_span_t0: int = 0
-static var prof_span_usec: int = 0
 # Étape 0d: 97% of the walking cost is collision queries (engine + move_and_slide). These counters
 # discriminate between the two candidate causes — a move_and_slide that keeps re-iterating against an
 # unstable contact, versus terrain collision chunks being built/freed under the walking player.
@@ -74,7 +69,6 @@ static func prof_reset() -> void:
 	prof_p_step_usec = 0
 	prof_p_move_usec = 0
 	prof_p_emit_usec = 0
-	prof_span_usec = 0
 	prof_slide_count = 0
 	prof_slide_ticks = 0
 	prof_chunk_loads = 0

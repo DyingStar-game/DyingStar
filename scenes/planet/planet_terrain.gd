@@ -281,15 +281,22 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
 		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
 		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
-		# The vNN literal is the manual bump for pipeline changes no other field
-		# captures — v26 marks the QGIS exporter moving to spherical-TIN sampling
-		# with level-preserving thinning, which changed the elevations while
-		# radius / max_height / height_offset all stayed identical (so the old key
-		# kept reporting "Cache valid" and served pre-change terrain).
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v26%s" % [
+		# data.chunk_data_version is the exporter's own fingerprint of the baked
+		# elevations (manifest "data_version"). It closes the hole that forced the
+		# v26 bump below: moving the QGIS exporter to spherical-TIN sampling changed
+		# every elevation while radius / max_height / height_offset / tile_res all
+		# stayed identical, so the old key kept reporting "Cache valid" and served
+		# pre-change terrain. Any re-export now changes this suffix by itself.
+		# Empty for manifests baked before the field existed → the key is byte-for-
+		# byte the one those planets already cached under, so they are not re-baked.
+		var _dv := "_dv%s" % data.chunk_data_version if data.chunk_data_version != "" else ""
+		# The vNN literal now only covers RUNTIME-side changes that no field
+		# captures (mesh/skirt/crack logic below) — exporter changes no longer need
+		# a manual bump, _dv handles them.
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v26%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor]
+			data.chunk_heightmap_res, _cor, _dv]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -2786,9 +2793,12 @@ func _spawn_bridges(info: Dictionary) -> void:
 	var mine := RoadBridge.spans_owned_by(spans, nside, ipix)
 	if mine.is_empty():
 		return
+	# Same pyramid tile the chunk drew its road ribbon from, so the deck lands ON
+	# the road instead of a decimetre over it.
+	var tile: Array = _chunk_height_tile(info)
 	var nodes: Array[Node3D] = []
 	for s in mine:
-		var b := BridgeSpawner.spawn(planet_data, s)
+		var b := BridgeSpawner.spawn(planet_data, s, int(tile[0]), int(tile[1]))
 		if b:
 			_chunks_node.add_child(b)
 			nodes.append(b)
