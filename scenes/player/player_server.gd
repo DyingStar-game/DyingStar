@@ -1245,6 +1245,18 @@ func _npc_physics_process(delta: float) -> void:
 	else:
 		player.up_direction = Vector3.UP
 		player.gravity = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
+	# Stand the NPC up along its local up. Nothing else does it: orient_player() is called by the
+	# OWNING CLIENT for its own body (player_client.gd), and the resulting rotation is what every
+	# other machine replicates — but an NPC has no owning client, so nobody was ever righting it.
+	#
+	# The NPC service sends a plain heading, which is correct in the planet's own frame and completely
+	# wrong on the ground: the city sits on the flank of the sphere, 5640 m up and far from the
+	# planet's Y axis, so a heading-only rotation leaves the body LYING FLAT on the floor. That is the
+	# whole of the "the magasiniers are lying down" bug — a perfectly oriented body, in the wrong frame.
+	#
+	# align_with_y keeps basis.z, so the heading the service asked for survives: only the vertical is
+	# rebuilt. Same lerp as the on-foot path, so an NPC rights itself exactly as a player does.
+	player.orient_player()
 	# Apply gravity ALWAYS (even on the floor) so the capsule stays pressed onto the terrain trimesh and
 	# is_on_floor() stays true — this is the SAME fix the on-foot path uses (see the "Add gravity ALWAYS"
 	# block above). Gating gravity on "not is_on_floor()" and zeroing the downward velocity on the floor

@@ -867,10 +867,10 @@ func create_generic_object(event: Dictionary) -> void:
 			# Missing scenename or parent_id: buffer THIS channel's data and wait for the
 			# other channel (the merge above will then have everything to instantiate).
 			if not props_pre_creations.has(object_id):
-				# DIAGNOSTIC: silent until now — an object stuck here never appears in the world and
-				# never logs anything of its own.
-				print("[diag] buffering %s (%s): missing %s" % [object_id, object_type,
-						"scenename" if not merged.has("scenename") else "parent_id"])
+				# Nothing is logged here on purpose: waiting for the other channel is the NORMAL path,
+				# and announcing it printed several hundred lines per connection — noise that buried
+				# the one line that matters. Only a prop still half-received after STUCK_PROP_MS says
+				# anything, and by then it never will complete (see _report_stuck_pre_creations).
 				props_pre_creations[object_id] = {
 					"type": object_type,
 					"channels": {}

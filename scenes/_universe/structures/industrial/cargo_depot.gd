@@ -197,6 +197,15 @@ func apply_prop_data(data: Dictionary) -> void:
 		storage_shelves = data["storage_shelves"]
 
 
+## Is [param uuid] still a connected player on this server? The single source of truth for liveness
+## is the server's own player registry — an event can be missed, a registry cannot be wrong.
+func _server_player_exists(uuid: String) -> bool:
+	var agent = NetworkOrchestrator.network_agent
+	if agent == null or not ("players_list" in agent):
+		return true  # cannot tell: leave the claim alone rather than steal it on a guess
+	return agent.players_list.has(uuid)
+
+
 ## Server-authoritative: a PNJ asks to take the reception role. Granted only when nobody owns it
 ## (single-threaded server, so this read-check-set is atomic). Returns true when this PNJ is the
 ## owner afterwards (freshly granted or it already held it), false when someone else owns it.
@@ -205,6 +214,16 @@ func try_claim_reception(player_uuid: String) -> bool:
 		return false
 	if reception_owner == player_uuid:
 		return true
+	# A claim held by someone who is no longer connected is not a claim. Releasing it relied on the
+	# owner disconnecting cleanly, and a missed disconnect — a horizon restart, a service restart —
+	# left the role held by a uuid that no longer exists anywhere. Nothing could take it back, so the
+	# depot silently stopped receiving: measured with three magasiniers standing idle for half an
+	# hour, greeting each other, while the role belonged to a PNJ that had been gone for twenty
+	# minutes. Deriving liveness from who is actually here, rather than trusting an event that may
+	# never arrive, makes it self-healing.
+	if reception_owner != "" and not _server_player_exists(reception_owner):
+		print("[cargo_depot] reception owner %s no longer connected; claim released" % reception_owner)
+		reception_owner = ""
 	if reception_owner != "":
 		return false
 	reception_owner = player_uuid
