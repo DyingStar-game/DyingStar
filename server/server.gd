@@ -677,6 +677,26 @@ func _is_cullable_body(node: Node) -> bool:
 	var parent: Node = node.get_parent()
 	return not (parent is Player or parent is Vehicle)
 
+## True when [param body] sits over a planet whose terrain collision has NOT been built under it yet.
+## False in open space — there is nothing to wait for — and false once the chunk is resident.
+##
+## The same question PlayerServer._hold_until_ground asks, through the same PlanetTerrain accessor, so
+## a body and a player can never disagree about whether the ground beneath them exists.
+func _ground_missing_under(body: Node3D) -> bool:
+	if not is_instance_valid(body) or not body.is_inside_tree():
+		return false
+	var planet: Planet = null
+	var node: Node = body
+	while node != null:
+		if node is Planet:
+			planet = node as Planet
+			break
+		node = node.get_parent()
+	if planet == null or planet.planet_terrain == null:
+		return false
+	return not planet.planet_terrain.has_collision_under(body.global_position)
+
+
 func _freeze_culled_body(rb: RigidBody3D) -> void:
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
@@ -1532,6 +1552,22 @@ func create_generic_object(event: Dictionary) -> void:
 		# (they carry the _culled_frozen flag) as soon as a player comes within ACTIVE_RADIUS. A body
 		# already near a player (rare at boot, possible on later GORC streaming) stays awake.
 		if _is_cullable_body(spawnable_prop_instance) and not _player_within(pos, ACTIVE_RADIUS):
+			_freeze_culled_body(spawnable_prop_instance)
+		elif spawnable_prop_instance is RigidBody3D and _ground_missing_under(spawnable_prop_instance):
+			# Nothing under it YET. Terrain collision is built chunk by chunk on worker threads, and at
+			# a cold start `user://prebaked_collision/` is empty, so a body created now would meet only
+			# the safety shells 100-200 m below the playable surface and sink through them.
+			#
+			# This branch exists because the one above deliberately skips VEHICLES: a truck being
+			# driven must never be frozen. But a truck being CREATED is driven by nobody, and sixteen
+			# trucks seeded into the world fell 7.4 km — measured, ending 1.8 km under the reference
+			# radius, far outside every player's replication range, which is why none of them ever
+			# appeared. Rocks were spared only because the branch above already froze them.
+			#
+			# ⚠️ Freezing a VehicleBody3D stops its suspension and lets the wheels sink into the body
+			# (see the parking work). Harmless here and only here, because the hold is transient: the
+			# culler unfreezes on approach, by which time the player is standing on loaded terrain, and
+			# the suspension pushes the vehicle back up on the first step.
 			_freeze_culled_body(spawnable_prop_instance)
 		else:
 			spawnable_prop_instance.set_physics_process(true)
