@@ -131,7 +131,10 @@ func scan_pnj_zones() -> void:
 	pnj_zones = zones
 	notify_property_list_changed()
 	if Engine.is_editor_hint():
-		EditorInterface.mark_scene_as_unsaved()
+		# Through Engine, not the EditorInterface global: this script also parses in the exported
+		# game, where that global does not exist — and a parse error there takes the WHOLE scene
+		# down (the depot never spawns). Same resolution as SceneScatter._editor().
+		Engine.get_singleton("EditorInterface").call("mark_scene_as_unsaved")
 	print("[cargo_depot] scanned %d PNJ zone(s) in %d categorie(s): %s"
 		% [found, zones.size(), ", ".join(PackedStringArray(zones.keys()))])
 

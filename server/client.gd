@@ -7,6 +7,12 @@ const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
 ## How long a prop may sit half-received before it counts as lost rather than merely in transit. Well
 ## past any plausible gap between two channels of the same zone entry.
 const STUCK_PROP_MS: int = 8000
+## How long we wait, after the server acknowledged our session (init_ack), for the zone entry that
+## CREATES our own player. The server streams our movement from the first tick, but the creation
+## itself only reaches us once its parent object enters our GORC zones, so a few seconds of "moves
+## for a player that does not exist yet" is normal. Minutes of it is not: the loading splash is
+## lifted by the player itself, so without this watchdog the client sits on it forever.
+const SPAWN_TIMEOUT_MS: int = 45000
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -37,6 +43,14 @@ var props_pre_creations: Dictionary = {}
 var _missing_object_reported: Dictionary = {}
 
 var my_player_uuid: String = ""
+## True once create_player() actually built our own body. Distinguishes "not spawned YET" (the server
+## is still streaming the world to us) from "was there and is gone" — only the second one is fatal.
+var my_player_created: bool = false
+## Ticks (ms) at which the server acknowledged the session, i.e. when our spawn became due. -1 until
+## init_ack, and reset to -1 once the body exists so the watchdog stops looking.
+var my_player_spawn_due_since: int = -1
+## The "moves for a player we never built" warning is worth exactly one line, not one per frame.
+var _own_player_missing_reported: bool = false
 # UUIDs of all my player's ancestors (closest parent first, up to the universe
 # root). Rebuilt whenever my player is (re)parented.
 var my_parents_uuids: Array = []
@@ -194,6 +208,7 @@ func _load_client_ini_file() -> void:
 
 func _process(_delta: float) -> void:
 	_report_stuck_pre_creations()
+	_watch_own_player_spawn()
 	if check_pending_objects_timer == 30:
 		# every 30 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
@@ -254,6 +269,7 @@ func _process(_delta: float) -> void:
 							# returned by Horizon server when connection established and player authenticated
 							# store my player uuid
 							my_player_uuid = event["player_id"]
+							my_player_spawn_due_since = Time.get_ticks_msec()
 						"gorc_zone_enter":
 							# When an object enter in my zone (GorcPlayer, planet, miningrock...)
 							create_object(event)
@@ -518,6 +534,13 @@ func create_object(event: Dictionary) -> void:
 		"player":
 			if int(event["channel"]) == 0:
 				create_player(event)
+			elif event["object_id"] == my_player_uuid:
+				# Players are built from channel 0 alone (props merge their channels, players do not).
+				# A zone entry for OUR body on any other channel is therefore dropped here, silently,
+				# and we would never spawn — worth a line, because the symptom (an eternal loading
+				# splash) looks nothing like the cause.
+				push_warning("[client] my player: zone entry ignored, it arrived on channel %s, not 0"
+						% event["channel"])
 
 		"star":
 			# The system star is a static node in the level (system_sandbox.tscn "Star"); ignore the
@@ -680,6 +703,8 @@ func create_player(event: Dictionary) -> void:
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
 		player_entity = spawned_entity_instance
 		players_list[event["object_id"]] = spawned_entity_instance
+		my_player_created = true
+		my_player_spawn_due_since = -1  # spawned: the watchdog has nothing left to watch
 		# Record the uuid of each of my ancestors.
 		my_parents_uuids = _collect_parents_uuids(spawned_entity_instance)
 	else:
@@ -907,6 +932,37 @@ func _report_stuck_pre_creations() -> void:
 		])
 
 
+## Fails the connection when our own body never arrives, instead of leaving the client on the loading
+## splash forever. The splash is removed by the player itself (see PlayerClient.setup), so "no player"
+## and "still loading" look identical on screen — this turns it into the error dialog it really is,
+## with what we were waiting on.
+func _watch_own_player_spawn() -> void:
+	if my_player_created or my_player_spawn_due_since < 0:
+		return
+	if Time.get_ticks_msec() - my_player_spawn_due_since < SPAWN_TIMEOUT_MS:
+		return
+	my_player_spawn_due_since = -1  # report once, then stop
+	var waiting_on: String = ""
+	for pending_message in pending_messages_player_parenting:
+		if str(pending_message.get("object_id", "")) != my_player_uuid:
+			continue
+		var pending_player_data: Dictionary = pending_message.get("zone_data", pending_message.get("data", {}))
+		waiting_on = str(pending_player_data.get("parent_id", ""))
+		break
+	if waiting_on != "":
+		GameOrchestrator.connexion_error_message = (
+			"Spawn impossible : l'objet parent %s n'est jamais arrivé du serveur." % waiting_on
+		)
+	else:
+		GameOrchestrator.connexion_error_message = (
+			"Spawn impossible : le serveur n'a jamais envoyé la création de votre joueur (%s)."
+			% my_player_uuid
+		)
+	push_error("Fatal error, my player never spawned on client side: 7002 (%s)"
+			% GameOrchestrator.connexion_error_message)
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+
+
 func update_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
 	var object_id = event["object_id"]
@@ -1089,6 +1145,15 @@ func player_update(message: Dictionary) -> void:
 		else:
 			print("Update Player but not found...")
 			if uuid == my_player_uuid:
+				if not my_player_created:
+					# We have never been spawned: the server streams our movement from its first tick,
+					# while the zone entry that CREATES us waits on its parent object. This is a race at
+					# join time, not a deletion — killing the session here dropped players who were about
+					# to spawn normally. _watch_own_player_spawn() reports it if it really never comes.
+					if not _own_player_missing_reported:
+						_own_player_missing_reported = true
+						push_warning("[client] my player: move received before its zone entry — still waiting to spawn")
+					return
 				print("My player seems deleted...")
 				# Disconnect from server with error
 				push_error("Fatal error, my player deleted on client side: 7001")
@@ -1202,6 +1267,8 @@ func _standardize_object(event: Dictionary) -> Dictionary:
 	return new_event
 
 func remove_loading_node():
-	var loading_node = get_tree().root.get_node("Loading")
-	if loading_node:
+	# get_node_or_null, not get_node: the splash may already be gone (a previous error path freed it),
+	# and get_node would log a spurious "Node not found" on the way out.
+	var loading_node = get_tree().root.get_node_or_null("Loading")
+	if loading_node != null:
 		loading_node.queue_free()
