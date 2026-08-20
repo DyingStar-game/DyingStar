@@ -268,7 +268,9 @@ func _perf_tick(delta: float) -> void:
 		var pl = players_list[puuid]
 		if is_instance_valid(pl) and "is_npc" in pl and pl.is_npc:
 			npcs += 1
-	print("[Perf] fps=%.0f  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d | chunks res=%d (on %d/%d planets) loading=%d queued=%d | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d" % [
+	print(("[Perf] fps=%.0f  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
+			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d"
+			+ " | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d") % [
 		Engine.get_frames_per_second(),
 		Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
@@ -291,7 +293,9 @@ func _perf_tick(delta: float) -> void:
 		var _flush_ms: float = PropNet.prof_flush_usec / 1000.0 / _fr
 		var _per_call_us: float = (
 			float(PropNet.prof_tick_usec) / float(PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0)
-		print("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%) | per frame: tick=%.2fms (body+dispatch=%.2f handler=%.2f) flush=%.2fms | per call: %.1fus | flush avg entries=%.0f" % [
+		print(("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%)"
+				+ " | per frame: tick=%.2fms (body+dispatch=%.2f handler=%.2f) flush=%.2fms"
+				+ " | per call: %.1fus | flush avg entries=%.0f") % [
 			PropNet.prof_calls / _fr,
 			PropNet.prof_emits / _fr,
 			(100.0 * PropNet.prof_emits / PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0,
@@ -340,7 +344,9 @@ func _perf_tick(delta: float) -> void:
 					_grav_name = (a as Area3D).name
 					_grav_bodies = (a as Area3D).get_overlapping_bodies().size()
 				break
-		print("[Perf/coll] slides=%.2f/tick (over %.0f moves/f) | chunks loaded=%d unloaded=%d per window | gravity area '%s' monitoring %d bodies" % [
+		print(("[Perf/coll] slides=%.2f/tick (over %.0f moves/f)"
+				+ " | chunks loaded=%d unloaded=%d per window"
+				+ " | gravity area '%s' monitoring %d bodies") % [
 			(float(PropNet.prof_slide_count) / float(PropNet.prof_slide_ticks)) if PropNet.prof_slide_ticks > 0 else 0.0,
 			PropNet.prof_slide_ticks / _fr,
 			PropNet.prof_chunk_loads, PropNet.prof_chunk_unloads,
