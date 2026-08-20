@@ -529,7 +529,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
-	if event.is_action_pressed("toggle_eva"):
+	if event.is_action_pressed("toggle_eva") and not Globals.is_dev_tool_disabled("toggle_eva"):
 		# EVA (dev free-flight): just request the toggle; the server owns the state and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
 		player.client_send_action_to_server({"action": "toggle_eva"})

@@ -46,6 +46,7 @@ const TERMINATOR_SOFTNESS := 0.05
 const DISABLED_DEV_TOOLS: Dictionary = {
 	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
 	"zapette": true,      # admin cleanup tool (key 2) — testing phase over
+	"toggle_eva": true,   # EVA free-flight ($) — testing phase over, normal play only
 }
 
 ## PLACEHOLDER atmosphere thickness (m) for bodies whose real value is not in the data yet — only
