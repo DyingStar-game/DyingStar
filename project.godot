@@ -334,3 +334,11 @@ textures/default_filters/anisotropic_filtering_level=4
 viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
+
+[threading]
+
+; Kubernetes containers see every core of the NODE (80 on preprod), not the pod's CPU limit, and the
+; default (-1) sizes the WorkerThreadPool to that. Jolt's per-step job fan-out then wakes ~80 threads
+; in waves across NUMA sockets: measured 204k futex wakeups/s, system time 2x user, tick at 5 TPS.
+; Cap the pool on the dedicated server only; clients keep the core-count default.
+worker_pool/max_threads.dedicated_server=8
