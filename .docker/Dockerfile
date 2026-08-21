@@ -3,7 +3,7 @@
 ############################################
 FROM debian:trixie-slim AS builder
 
-ENV GODOT_VERSION=4.6.1
+ENV GODOT_VERSION=4.7
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
