@@ -81,6 +81,8 @@ var props_scene: Dictionary = {
 	# 	preload('res://scenes/_universe/props/containers/pallet_plate_120x80x100.tscn'),
 	'scenes/_universe/props/containers/crate_container.tscn':
 		preload('res://scenes/_universe/props/containers/crate_container.tscn'),
+	'scenes/_universe/structures/industrial/mines/Mining_Zone.tscn':
+		preload('res://scenes/_universe/structures/industrial/mines/Mining_Zone.tscn'),
 	'scenes/_universe/props/containers/hauling_box.tscn':
 		preload('res://scenes/_universe/props/containers/hauling_box.tscn'),
 	'scenes/_universe/props/containers/pallet_crate.tscn':
@@ -117,6 +119,7 @@ var pending_messages_player_parenting: Array[Dictionary] = []
 # same for generic objects
 var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 
+
 var network_events_received: int = 0
 var network_events_sent: int = 0
 
@@ -124,15 +127,48 @@ var token: String = ""
 
 var check_pending_objects_timer: int = 0
 
+## --net-verbose: break `net:poll` down into net:parse / net:route / net:create / net:pending on the
+## [CPerf+] line. Cheap (a get_ticks_usec per packet) but off by default, because the top-level
+## net:poll is enough for a health check and these only earn their place when something is actually
+## being hunted inside the drain.
+var _net_verbose: bool = false
+
+## --net-echo: dump every inbound packet's full payload. This is NOT the same switch as the scopes
+## above, on purpose. Every print() in this project is routed through CustomLogger -> Obs.logs_info
+## -> the C# OpenTelemetry bridge (tools/observability/obs.gd), so a print costs milliseconds, not
+## microseconds. At 3 Hz replication over a populated zone this echo ran ~134 times a second — 8217
+## lines and 3.8 MB in a six-minute session, ~12 prints PER FRAME — and it is what put `proc` at
+## 125 ms and the client at 8.5 fps whenever a rock field streamed in.
+##
+## Sharing one flag with the scopes would mean every attempt to MEASURE the drain also loaded it
+## with the heaviest thing that was ever in it, and the measurement would describe the instrument.
+var _net_echo: bool = false
+
+
+## Open a sub-scope of the inbound drain, or nothing when --net-verbose is off.
+func _net_t() -> int:
+	return ClientPerf.scope_begin() if _net_verbose else 0
+
+
+## Close one. The sub-scopes NEST inside net:poll (and net:create contains prop:spawn), so the
+## breakdown does not sum to net:poll — each name accounts for itself, independently.
+func _net_t_end(scope_name: String, token: int) -> void:
+	if token != 0:
+		ClientPerf.scope_end(scope_name, token)
+
+
 func _enter_tree() -> void:
 	set_process(false)
 
 func _ready() -> void:
 	set_process(false)
-	for arg in OS.get_cmdline_args():
+	var args: PackedStringArray = OS.get_cmdline_args()
+	for arg in args:
 		if arg.begins_with("--token="):
 			token = arg.substr(len("--token="))
 			break
+	_net_verbose = "--net-verbose" in args
+	_net_echo = "--net-echo" in args
 	# Custom monitors are GLOBAL: a second client (back to menu -> new game) would re-register the
 	# same names and leave the first one's Callable pointing at a freed node. shutdown() removes them.
 	if not Performance.has_custom_monitor("network/events_received"):
@@ -207,8 +243,16 @@ func _load_client_ini_file() -> void:
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
+	# `net:watch` — the two per-frame housekeeping walks, so the accounting of _process is complete
+	# and neither can hide inside "everything else".
+	var _watch_tok: int = _net_t()
 	_report_stuck_pre_creations()
 	_watch_own_player_spawn()
+	_net_t_end("net:watch", _watch_tok)
+	# `net:pending` — the every-30-frames rescan of the two parenting queues. It walks BOTH queues in
+	# full and calls _search_parent_node per entry, so it is a candidate for the ~650 ms of net:poll
+	# that prop:spawn did not account for during a zone entry.
+	var _pending_tok: int = _net_t()
 	if check_pending_objects_timer == 30:
 		# every 30 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
@@ -244,9 +288,15 @@ func _process(_delta: float) -> void:
 		check_pending_objects_timer = 0
 	else:
 		check_pending_objects_timer += 1
+	_net_t_end("net:pending", _pending_tok)
 
 
 
+	# `net:poll` on the [CPerf+] line — the whole inbound drain, which is where every prop spawn,
+	# every replicated update and (until it was gated) the per-packet echo were paid for. The x<n>
+	# count is the number of frames that drained anything, not the number of packets; that one is
+	# the `network/events_received` custom monitor.
+	var _net_tok: int = ClientPerf.scope_begin()
 	socket.poll()
 
 	# get_ready_state() tells you what state the socket is in.
@@ -258,10 +308,20 @@ func _process(_delta: float) -> void:
 		while socket.get_available_packet_count():
 			var packet = socket.get_packet()
 			if socket.was_string_packet():
+				# `net:parse` — UTF-8 decode plus JSON parse, per packet. Its x<n> count IS the packet
+				# count, which is the number the drain was missing: a 1036 ms frame says nothing
+				# until you know whether it carried 50 packets or 5000.
+				var _parse_tok: int = _net_t()
 				var packet_text = packet.get_string_from_utf8()
-				# print("< Client - Got text data from server: %s" % packet_text)
+				if _net_echo:
+					print("< Client - Got text data from server: %s" % packet_text)
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
+				_net_t_end("net:parse", _parse_tok)
+
+				# `net:route` — everything the packet then triggers: creation, deletion, movement,
+				# property updates. prop:spawn nests inside it.
+				var _route_tok: int = _net_t()
 
 				if event.has("type"):
 					match event["type"]:
@@ -283,6 +343,8 @@ func _process(_delta: float) -> void:
 							socket.close(1000, event["message"])
 							GameOrchestrator.connexion_error_message = event["message"]
 							GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+							_net_t_end("net:route", _route_tok)
+							ClientPerf.scope_end("net:poll", _net_tok)
 							return
 						_:
 							print("< Client - ERROR - Unknown event type: %s" % event["type"])
@@ -323,6 +385,7 @@ func _process(_delta: float) -> void:
 						print("< Client - ERROR - Unknown event_type: %s" % event["event_type"])
 				else:
 					print("< Client - ERROR - Unknown event format: %s" % packet_text)
+				_net_t_end("net:route", _route_tok)
 
 			else:
 				print("< Client - Got binary data from server: %d bytes" % packet.size())
@@ -339,6 +402,7 @@ func _process(_delta: float) -> void:
 		var code = socket.get_close_code()
 		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
+	ClientPerf.scope_end("net:poll", _net_tok)
 
 
 func _collect_parents_uuids(node: Node) -> Array:
@@ -507,7 +571,18 @@ func _on_client_action_pressed(action: String) -> void:
 # Horizon server messages handling
 #########################################################################
 
+## `net:create` — the whole creation path, against `prop:spawn` which times only instantiate +
+## add_child. The GAP between them is the point: the channel merge, _search_parent_node, and above
+## all the two pending-queue rescans create_generic_object runs after EVERY successful creation.
+## Those are O(queue) per object, so a zone entry that creates thousands of them is O(n²) — the
+## shape that would explain the 650 ms of a 1036 ms drain that prop:spawn did not account for.
 func create_object(event: Dictionary) -> void:
+	var _create_tok: int = _net_t()
+	_create_object(event)
+	_net_t_end("net:create", _create_tok)
+
+
+func _create_object(event: Dictionary) -> void:
 	# message type:
 	#{
 	#     "channel": 0,
@@ -854,6 +929,14 @@ func create_generic_object(event: Dictionary) -> void:
 				push_warning("create_generic_object: scene not found for scenename '%s' (uuid %s), skipping" \
 					% [object_data["scenename"], object_id])
 				return
+			# `prop:spawn` on the [CPerf+] heartbeat, with a separate scope for the rocks: walking into
+			# a mining field lands hundreds of props in a handful of frames, and this is the one place
+			# that measures what ONE of them costs the main thread end to end (instantiate + the
+			# first channel apply + entering the tree, which is where _ready runs).
+			var _spawn_tok: int = ClientPerf.scope_begin()
+			var _spawn_scope: String = "prop:spawn:rock" \
+					if str(object_data["scenename"]).contains("rock_mining") else "prop:spawn"
+
 			var prop_instance = prop_scene.instantiate()
 			# Address networking via the PropSync component when present; fall back to the root
 			# (incremental migration). Physics/freeze stay on the root body.
@@ -877,6 +960,7 @@ func create_generic_object(event: Dictionary) -> void:
 			else:
 				# parent_id == "" -> root-level object, attach to the universe.
 				universe_scene.add_child(prop_instance)
+			ClientPerf.scope_end(_spawn_scope, _spawn_tok)
 
 			props_list[object_type][object_id] = prop_instance
 
@@ -985,11 +1069,31 @@ func _watch_own_player_spawn() -> void:
 	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 
 
+## `net:update` — the steady-state counterpart of net:create: every replicated property change for
+## every prop, several times a second each. Separated so a zone's ARRIVAL cost and its ONGOING cost
+## can never be mistaken for one another.
 func update_generic_object(event: Dictionary) -> void:
+	var _update_tok: int = _net_t()
+	_update_generic_object(event)
+	_net_t_end("net:update", _update_tok)
+
+
+func _update_generic_object(event: Dictionary) -> void:
 	# for better readability, we store in variable couple key/values
 	var object_id = event["object_id"]
 	var object_type = event["object_type"]
 	var object_data = event["object_data"]
+
+	# TEMPORARY (cut diagnosis): the LAST unknown. The server proves it queues and flushes a rock's
+	# fracture list, yet the piece stays whole here. This says whether the update reaches the client
+	# process at all — logged before any routing, so a lookup or channel filter further down cannot
+	# hide it.
+	if _net_echo and object_type == "miningrock" and (object_data as Dictionary).has("fractures"):
+		print("[cut] RECV %s ch=%s known=%s fractures=%s" % [
+			str(object_id).substr(0, 8), event.get("channel", "?"),
+			props_list.get(object_type, {}).has(object_id),
+			(object_data["fractures"] as Array).map(
+				func(f): return (f as Dictionary).get("fractured", "<absent>"))])
 
 	if object_type == "serverinfo":
 		if object_data.has("godotserver"):

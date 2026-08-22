@@ -130,6 +130,9 @@ var _orbit: KeplerOrbit = null
 
 ## Time since the last spin refresh.
 var _spin_accum: float = 0.0
+## Nodes visited by the last _carry_dynamic_bodies walk. Diagnostic only (ClientPerf reads it): the
+## cost of the 3 Hz refresh is proportional to it, and a duplicated zone doubles it silently.
+var _carry_visits: int = 0
 
 ## Runtime-created water sphere (ocean surface).
 var _water_sphere: MeshInstance3D
@@ -243,8 +246,16 @@ func _physics_process(delta: float) -> void:
 	if _spin_accum < 1.0 / maxf(rotation_update_hz, 0.001):
 		return
 	_spin_accum = 0.0
+	# Timed, because this refresh is the prime suspect in the client FPS collapse and no player log
+	# could ever say how much it actually cost. ClientPerf reports it as ms-per-second of wall clock
+	# alongside the node count the walk visited: "planet_spin=180.0ms/s x3, carry_visits=9412" reads
+	# as "60% of the main thread, on 9412 nodes" without anyone having to attach a profiler.
+	var _perf_token: int = ClientPerf.scope_begin()
 	_place_at_time(Globals.sim_time())
+	_carry_visits = 0
 	_carry_dynamic_bodies(self)
+	ClientPerf.scope_end("planet_spin", _perf_token)
+	ClientPerf.gauge("carry_visits:" + name, _carry_visits)
 
 ## Place this body's basis (axial spin) and position (orbit) for absolute simulation time `t`.
 ##
@@ -334,6 +345,7 @@ func _build_orbit() -> void:
 ## FREEZE_MODE_KINEMATIC (PropNet.apply_ride_freeze_mode, for cargo riding a truck) is kinematic too.
 func _carry_dynamic_bodies(node: Node) -> void:
 	for child: Node in node.get_children():
+		_carry_visits += 1
 		if child == planet_terrain:
 			continue
 		if child is RigidBody3D:

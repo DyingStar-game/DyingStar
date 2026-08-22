@@ -163,8 +163,13 @@ static func _dist_sq_to_segment(p: Vector2, a: Vector2, b: Vector2,
 ## get_cross_section_t() over every road on the planet, per candidate instance.
 ##
 ## [param m_per_deg] = planet_radius * PI / 180.
+##
+## [param extra_margin_m] widens every road by that many metres for the test only. A caller placing
+## something with a FOOTPRINT (a mining zone, a building) must pass its own half-extent here:
+## without it the test only rejects a candidate whose exact centre lands on the tarmac, and a 500 m
+## field centred just off the verge still swallows the road whole.
 static func point_on_any_road(lon: float, lat: float, roads: Array,
-		m_per_deg: float) -> bool:
+		m_per_deg: float, extra_margin_m: float = 0.0) -> bool:
 	if roads.is_empty():
 		return false
 	var p := Vector2(lon, lat)
@@ -175,7 +180,7 @@ static func point_on_any_road(lon: float, lat: float, roads: Array,
 		var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
 		if cl.size() < 2:
 			continue
-		var hw_m: float = float(r.get("half_width_m", get_half_width_m(r)))
+		var hw_m: float = float(r.get("half_width_m", get_half_width_m(r))) + extra_margin_m
 		var hw_deg := hw_m / m_per_deg
 		var hw_sq := hw_deg * hw_deg
 		for i in cl.size() - 1:

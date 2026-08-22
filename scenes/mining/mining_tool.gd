@@ -399,7 +399,9 @@ func _is_looking_at_rock() -> bool:
 		return false
 	if _rock_ray == null:
 		return false
-	_rock_ray.force_raycast_update()
+	# The RayCast3D is enabled, so it auto-updates every physics frame. Do NOT call
+	# force_raycast_update() here: this runs in _process (idle frame) where the Jolt
+	# physics space is inaccessible, which throws "Space state is inaccessible" every frame.
 	var c = _rock_ray.get_collider()
 	return c != null and c.is_in_group("miningrock")
 
@@ -409,10 +411,9 @@ func _aim_point() -> Vector3:
 		return global_position
 	var origin: Vector3 = _camera.global_position
 	var fwd: Vector3 = -_camera.global_transform.basis.z
-	if _rock_ray != null:
-		_rock_ray.force_raycast_update()
-		if _rock_ray.is_colliding():
-			return _rock_ray.get_collision_point()
+	# Read the auto-updated ray (see _is_looking_at_rock): no force_raycast_update() in _process.
+	if _rock_ray != null and _rock_ray.is_colliding():
+		return _rock_ray.get_collision_point()
 	return origin + fwd * (aim_rock_distance + 2.0)
 
 ## Capture the rock under the crosshair + the aim point (in the rock's local space)
@@ -420,8 +421,7 @@ func _aim_point() -> Vector3:
 func _capture_target() -> void:
 	_target_rock_uuid = ""
 	_target_on_fault = false
-	if _rock_ray != null:
-		_rock_ray.force_raycast_update()   # fresh hit before capturing the target
+	# Uses the auto-updated ray (no force_raycast_update() in _process — see _is_looking_at_rock).
 	if _rock_ray == null or not _rock_ray.is_colliding():
 		return
 	var rock = _rock_ray.get_collider()

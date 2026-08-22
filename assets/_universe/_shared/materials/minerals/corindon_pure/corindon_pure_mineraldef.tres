@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MineralDef" format=3 uid="uid://c7wh51ey8wvdf"]
+
+[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/_universe/environment/terrain/rocks/mineral_def.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://bgbdtwexmiqhd" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_diffuse.png" id="2_rock_alb"]
+[ext_resource type="Texture2D" uid="uid://dd458m0u33t6d" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_normal.png" id="3_rock_nrm"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"corundum_pure"
+display_name = "Pure Corundum"
+is_inert = true
+color = Color(0.84, 0.83, 0.8, 1)
+metallic = 0.0
+roughness = 0.35
+rock_albedo_tex = ExtResource("2_rock_alb")
+rock_normal_tex = ExtResource("3_rock_nrm")
+rock_roughness = 0.3
+density_kg_m3 = 4020.0
+hardness = 0.9
+base_value = 0.0

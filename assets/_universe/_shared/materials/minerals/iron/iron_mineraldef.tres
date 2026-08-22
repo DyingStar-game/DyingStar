@@ -7,9 +7,13 @@
 [resource]
 script = ExtResource("3_fa1if")
 id = &"iron"
+display_name = "Iron"
 use_texture = true
 albedo_tex = ExtResource("1_qu6xp")
 color = Color(1, 1, 1, 1)
 normal_tex = ExtResource("2_jddbm")
 metallic = 0.638
 emission = 0.01
+density_kg_m3 = 7874.0
+hardness = 0.6
+base_value = 10.0

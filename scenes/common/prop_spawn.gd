@@ -1,9 +1,9 @@
 class_name PropSpawn
 extends RefCounted
 
-## Placing a networked prop in a world whose frames MOVE. Three primitives, shared by everything that
-## spawns a prop server-side (the dev spawn wheel today; mining_zone / mining_depot / rock each still
-## carry their own copy of this and should migrate here).
+## Placing a networked prop in a world whose frames MOVE. The primitives shared by everything that
+## spawns a prop server-side (the dev spawn wheel, MiningZonePlanner, MiningZone; mining_depot and
+## rock still carry their own copies of stable_uuid / the net-parent walk and should migrate here).
 ##
 ## The rule they exist to enforce: a prop must be parented to the networked frame it sits on (the
 ## planet, the city) and its position expressed LOCALLY to that frame. A prop left at the root
@@ -40,6 +40,29 @@ static func to_parent_local(net_parent: Node, world_position: Vector3) -> Vector
 	if net_parent is Node3D:
 		return (net_parent as Node3D).global_transform.affine_inverse() * world_position
 	return world_position
+
+## A valid-format uuid derived from `seed_str` — same seed, same uuid, across restarts and across
+## servers. This is what lets a server RE-spawn world infrastructure it already spawned (a depot, a
+## mining zone, the rocks in a field) and have the database upsert it instead of piling a duplicate
+## on every boot. Never use it for something that must be unique per instance; use uuid.v4() there.
+static func stable_uuid(seed_str: String) -> String:
+	var h: String = seed_str.sha256_text()
+	return "%s-%s-%s-%s-%s" % [
+		h.substr(0, 8), h.substr(8, 4), h.substr(12, 4), h.substr(16, 4), h.substr(20, 12)]
+
+## Orientation of a prop resting on a surface: its local +Y along `normal_world`, plus `yaw` around
+## that normal. Returned as EULER ANGLES IN THE PARENT FRAME, because `rotation` travels
+## parent-local — and on a planet the parent's +Y is the POLE, not the local up, so a plain
+## (0, yaw, 0) lays a prop on its side everywhere except at the pole. Physics used to hide that by
+## letting a dropped prop topple as it fell; placing one directly does not.
+static func surface_euler(normal_world: Vector3, yaw: float,
+		to_parent_local: Transform3D) -> Vector3:
+	var up_w: Vector3 = normal_world.normalized()
+	# Any reference direction not parallel to the normal yields a tangent to build the basis on.
+	var ref: Vector3 = Vector3.FORWARD if absf(up_w.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
+	var x_w: Vector3 = ref.cross(up_w).normalized()
+	var basis_w := Basis(x_w, up_w, x_w.cross(up_w)).rotated(up_w, yaw)
+	return (to_parent_local.basis * basis_w).orthonormalized().get_euler()
 
 ## Where the ground is under `world_position`, along `up`. Casts down from `search` metres above to
 ## `search` metres below and returns the WORLD hit position, or null when there is nothing there

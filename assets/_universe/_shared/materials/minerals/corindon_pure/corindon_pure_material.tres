@@ -1,0 +1,19 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://wt2ttfasaksj"]
+
+[ext_resource type="Texture2D" uid="uid://bgbdtwexmiqhd" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_diffuse.png" id="1_x12y5"]
+[ext_resource type="Texture2D" uid="uid://bng3d6nbalohx" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_ao.png" id="2_degf1"]
+[ext_resource type="Texture2D" uid="uid://bppcq1ysm7yba" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_height.png" id="3_tr06t"]
+[ext_resource type="Texture2D" uid="uid://dcrbernqdnrhv" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_metallic.png" id="4_0qj31"]
+[ext_resource type="Texture2D" uid="uid://dd458m0u33t6d" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_normal.png" id="5_sspqs"]
+[ext_resource type="Texture2D" uid="uid://i2qowkog7trv" path="res://assets/_universe/_shared/materials/minerals/corindon_pure/corindon_pure_roughness.png" id="6_28f4k"]
+
+[resource]
+albedo_texture = ExtResource("1_x12y5")
+metallic_texture = ExtResource("4_0qj31")
+roughness_texture = ExtResource("6_28f4k")
+normal_enabled = true
+normal_texture = ExtResource("5_sspqs")
+ao_enabled = true
+ao_texture = ExtResource("2_degf1")
+heightmap_enabled = true
+heightmap_texture = ExtResource("3_tr06t")

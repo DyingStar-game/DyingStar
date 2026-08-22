@@ -179,11 +179,14 @@ func server_prop_update(data: Dictionary) -> void:
 
 func send_properties_to_client(parent_uuid: String) -> void:
 	var body := _body()
+	# Send the body's REAL mass, not a constant: a mining rock derives its own from the mineral
+	# density and the volume left after each cut (RockMining._refresh_mass), and a flat 200 here
+	# would overwrite that on every carry / drop. Non-rigid hosts have no mass, hence the fallback.
 	server_prop_update({
 		"position": body.position,
 		"rotation": body.rotation,
 		"parent_id": parent_uuid,
-		"weight": 200,
+		"weight": (body as RigidBody3D).mass if body is RigidBody3D else 200,
 	})
 
 ## Server: reparent the host, setting server_reparenting FIRST so the resulting _exit_tree isn't seen

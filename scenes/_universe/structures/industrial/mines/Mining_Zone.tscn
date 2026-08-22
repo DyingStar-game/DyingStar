@@ -1,17 +1,36 @@
 [gd_scene format=3 uid="uid://y76cnowlemud"]
 
-[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/mines/mining_zone.gd" id="1_zone"]
+[ext_resource type="Script" uid="uid://c18w1cdmeckpe" path="res://scenes/_universe/structures/industrial/mines/mining_zone.gd" id="1_zone"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_trigger"]
-radius = 1000.0
+radius = 10.0
 
-[node name="MiningZone" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(10, 20, 10)
+
+[node name="MiningZone" type="Node3D" unique_id=977843027]
 script = ExtResource("1_zone")
-trigger_area = NodePath("TriggerArea")
+zone_size = 10.0
+rock_count = 300
 
-[node name="TriggerArea" type="Area3D" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=654269104]
+script = ExtResource("propsync_ds")
+type_name = "miningzone"
+
+[node name="TriggerArea" type="Area3D" parent="." unique_id=1888853494]
 collision_layer = 0
-collision_mask = 2
+collision_mask = 4294967295
+monitoring = false
+monitorable = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TriggerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TriggerArea" unique_id=1536685750]
 shape = SubResource("SphereShape3D_trigger")
+
+[node name="EditorZone" type="Area3D" parent="." unique_id=2039674592]
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EditorZone" unique_id=1666332612]
+shape = SubResource("BoxShape3D_gy7pr")
+debug_color = Color(0.939616, 0.044796623, 0.6008697, 0.41960785)

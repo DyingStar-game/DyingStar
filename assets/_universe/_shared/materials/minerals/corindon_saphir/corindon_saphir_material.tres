@@ -1,0 +1,19 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://wd1b58kwsu3l"]
+
+[ext_resource type="Texture2D" uid="uid://vxpey5oemahf" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_diffuse.png" id="1_72fgq"]
+[ext_resource type="Texture2D" uid="uid://duq44gorkw3xg" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_ao.png" id="2_lr68q"]
+[ext_resource type="Texture2D" uid="uid://b7fondx12b320" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_height.png" id="3_fc5fr"]
+[ext_resource type="Texture2D" uid="uid://co8mbb5qjv7e0" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_metallic.png" id="4_m6mjr"]
+[ext_resource type="Texture2D" uid="uid://dgbp1fqsyv1nj" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_normal.png" id="5_3xiue"]
+[ext_resource type="Texture2D" uid="uid://bfswxow6cy342" path="res://assets/_universe/_shared/materials/minerals/corindon_saphir/corindon_saphir_roughness.png" id="6_62rgg"]
+
+[resource]
+albedo_texture = ExtResource("1_72fgq")
+metallic_texture = ExtResource("4_m6mjr")
+roughness_texture = ExtResource("6_62rgg")
+normal_enabled = true
+normal_texture = ExtResource("5_3xiue")
+ao_enabled = true
+ao_texture = ExtResource("2_lr68q")
+heightmap_enabled = true
+heightmap_texture = ExtResource("3_fc5fr")
