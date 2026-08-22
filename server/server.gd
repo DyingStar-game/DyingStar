@@ -9,6 +9,9 @@ const PIN_TICK_INTERVAL: int = 6
 ## Prop type names in props_list that may contain RigidBody3D instances
 ## we want to pin chunks for.  "planets" intentionally excluded.
 const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
+## Seeds mining zones under players as they walk the planet. Server-owned: it publishes zones
+## through NetworkOrchestrator.spawn_prop_authoritative and arms/disarms their detection.
+var _mining_planner := MiningZonePlanner.new()
 ## Max number of [Pin] log entries before suppressing further output.
 const PIN_DEBUG_MAX: int = 200
 
@@ -110,6 +113,8 @@ var props_scene: Dictionary = {
 	# 	preload('res://scenes/_universe/props/containers/pallet_plate_120x80x100.tscn'),
 	'scenes/_universe/props/containers/crate_container.tscn':
 		preload('res://scenes/_universe/props/containers/crate_container.tscn'),
+	'scenes/_universe/structures/industrial/mines/Mining_Zone.tscn':
+		preload('res://scenes/_universe/structures/industrial/mines/Mining_Zone.tscn'),
 	'scenes/_universe/props/containers/hauling_box.tscn':
 		preload('res://scenes/_universe/props/containers/hauling_box.tscn'),
 	'scenes/_universe/props/containers/pallet_crate.tscn':
@@ -199,6 +204,9 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	set_process(false)
+	# props_list itself lives for the server's lifetime; only its per-type sub-dictionaries are
+	# created lazily, which is why the planner re-reads it through .get() instead of caching one.
+	_mining_planner.bind_props_list(props_list)
 	_send_metrics()
 
 func _physics_process(_delta: float) -> void:
@@ -426,6 +434,9 @@ func _refresh_active_body_pins() -> void:
 
 	# Pin chunks under each connected player so their surroundings have
 	# real collision even before (or without) a Horizon zone assignment.
+	# The same walk feeds MiningZonePlanner: it needs exactly the chunk under each player, which
+	# _pin_node_to_planet_chunk is already computing here, so seeding costs no extra sweep.
+	_mining_planner.begin_sweep()
 	for player_uuid in players_list.keys():
 		var player_node = players_list[player_uuid]
 		if not is_instance_valid(player_node):
@@ -433,6 +444,11 @@ func _refresh_active_body_pins() -> void:
 		if not (player_node is Node3D):
 			continue
 		_pin_node_to_planet_chunk(player_node as Node3D, pins_by_planet)
+		var player_planet: Planet = _planet_ancestor_of(player_node as Node3D)
+		if player_planet != null:
+			_mining_planner.plan_for_player(
+				player_planet, player_node as Node3D, player_uuid as String)
+	_mining_planner.end_sweep()
 
 	if _zone_initialized:
 		for ptype in PIN_PROP_TYPES:
@@ -1120,6 +1136,14 @@ func _on_prop_update_impl(uuid: String, properties: Dictionary, type: String) ->
 				"z": properties["rotation"][2]
 			}
 		else:
+			# TEMPORARY (cut diagnosis): prove whether a rock's fracture update ever leaves the
+			# server. A piece the server cut but the client shows whole is either a message we
+			# never sent or one Horizon never delivered — and only this line tells the two apart.
+			if key == "fractures":
+				print("[cut] QUEUE %s fractures=%s" % [
+					uuid.substr(0, 8),
+					(properties[key] as Array).map(
+						func(f): return (f as Dictionary).get("fractured", "<absent>"))])
 			prop_entry[key] = properties[key]
 
 func send_props_update_to_horizon():
@@ -1143,6 +1167,10 @@ func _send_props_update_impl() -> void:
 		"data": props_update.values()
 	}
 	# print("Send props update to horizon: ", message)
+	# TEMPORARY (cut diagnosis): which uuids actually go out carrying a fracture list.
+	for _e in props_update.values():
+		if (_e as Dictionary).has("fractures"):
+			print("[cut] FLUSH %s -> horizon" % str((_e as Dictionary)["uuid"]).substr(0, 8))
 	ServerNetwork.send_message(message, "prop_update")
 	props_update.clear()
 
@@ -1503,6 +1531,21 @@ func create_generic_object(event: Dictionary) -> void:
 		spawnable_prop_instance.owner = get_tree().current_scene
 	)
 
+	# Connect BEFORE add_child: add_child runs the prop's _ready(), and a prop that publishes state
+	# from there (RockMining generates its first crack plane in _server_ready) would emit into a
+	# signal nobody listens to yet — the crack existed on the server and never reached any client.
+	# uuid is already assigned above, so _on_prop_update can key the update correctly.
+	if net.has_signal("hs_server_prop_update"):
+		net.connect("hs_server_prop_update", _on_prop_update)
+	else:
+		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_update (type=%s)" \
+			% [object_data["scenename"], spawnable_prop_instance.get_class()])
+	if net.has_signal("hs_server_prop_delete"):
+		net.connect("hs_server_prop_delete", _on_prop_delete)
+	else:
+		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_delete (type=%s)" \
+			% [object_data["scenename"], spawnable_prop_instance.get_class()])
+
 	if object_data.has("parent_id"):
 		if object_data["parent_id"] != "":
 			var parent = _search_parent_node(object_data["parent_id"])
@@ -1521,16 +1564,6 @@ func create_generic_object(event: Dictionary) -> void:
 	else:
 		universe_scene.add_child(spawnable_prop_instance)
 
-	if net.has_signal("hs_server_prop_update"):
-		net.connect("hs_server_prop_update", _on_prop_update)
-	else:
-		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_update (type=%s)" \
-			% [object_data["scenename"], spawnable_prop_instance.get_class()])
-	if net.has_signal("hs_server_prop_delete"):
-		net.connect("hs_server_prop_delete", _on_prop_delete)
-	else:
-		push_warning("[Server] create_generic_object: scene '%s' root has no signal hs_server_prop_delete (type=%s)" \
-			% [object_data["scenename"], spawnable_prop_instance.get_class()])
 	# Must be after signals in case call signals if modifications done in client_channel_data_update
 	net.client_channel_data_update(object_data)
 

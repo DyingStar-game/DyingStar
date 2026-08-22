@@ -12,10 +12,10 @@
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("script_data")
 planet_name = "tarsis_3"
-surface_family = "mineral"
 atmosphere_profile = ExtResource("atmosphere_tarsis4")
 surface_gravity = 7.77
 chunk_export_depth = 6
+surface_family = "mineral"
 terrain_material = ExtResource("6_0lykg")
 max_quadtree_depth = 13
 corundum_override_whole_planet = true
@@ -25,7 +25,98 @@ crack_depth_m = 180.0
 debug_color_skirts = true
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
 chunk_heightmap_res = 50
+mining_zones_enabled = true
+mining_zone_deposit_rate = 0.7
+mining_zone_rock_density = 500.0
+mining_zone_weight_small = 1.0
+mining_zone_weight_medium = 0.0
+mining_zone_weight_large = 0.0
+mining_zone_minerals = PackedStringArray("iron", "gold", "cryptonite")
+mining_zone_mineral_weights = PackedFloat32Array(0, 1, 0)
+mining_zone_host_rock = "corundum_sapphire"
+mining_zone_poi_margin = 10.0
 roads_geojson = "assets/qgis/export/tarsis_3_roads_buffered.json"
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_awcws"]
+radius = 1000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_gvfsn"]
+radius = 2500.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_hvh21"]
+radius = 1000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_lnjns"]
+radius = 1000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_p7cvs"]
+radius = 1000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_mqiao"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_2ikvx"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_yvydb"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_y065j"]
+radius = 40000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_yblbl"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_d65rm"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_v552l"]
+radius = 30000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_spyjl"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_bqt3j"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_sjsh1"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_4asfn"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_v57nn"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_nme7l"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_xn0ah"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_aiyeq"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_v23gf"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_4kg1i"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_psh8k"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_ieq7g"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_jpgtr"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_5lqg1"]
+radius = 25000.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_ulc4r"]
+radius = 25000.0
 
 [node name="Tarsis3" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")
@@ -49,16 +140,453 @@ orbit_primary_mass_kg = 1.5088183999999998e+30
 script = ExtResource("script_terrain")
 editor_preview_depth = 13
 editor_preview_rings = 4
-editor_goto_lon = -39.556
-editor_goto_lat = 24.852
-editor_goto_x = 4450631.091767376
-editor_goto_y = 2673641.056334676
-editor_goto_z = -3676128.961678017
+editor_goto_lon = -39.56129209405187
+editor_goto_lat = 24.80613308821457
+editor_goto_x = 4451949.088
+editor_goto_y = 2669024.473
+editor_goto_z = -3677909.393
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("script_debug_export")
 
-[node name="WindValley4" parent="." unique_id=444361552 instance=ExtResource("7_5a8bp")]
+[node name="POIs" type="Node3D" parent="PlanetTerrain" unique_id=87127302]
+
+[node name="mining_village_02" type="Area3D" parent="PlanetTerrain/POIs" unique_id=621769788]
+transform = Transform3D(0.512871144178001, 0.7015020552821014, 0.4948313408673057, -0.8584656017975025, 0.41909677100913906, 0.2956259580283253, 0, -0.5764137081686215, 0.8171580245186969, 4464613.941803907, 2667284.1123180417, -3668506.2550552688)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 2
+metadata/poi_type = "mining village"
+metadata/population = 250
+metadata/description = ""
+metadata/lon = -39.409432007469725
+metadata/lat = 24.777575996133013
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/mining_village_02" unique_id=1213800772]
+shape = SubResource("SphereShape3D_awcws")
+
+[node name="factory_village_01" type="Area3D" parent="PlanetTerrain/POIs" unique_id=604588214]
+transform = Transform3D(0.5121983823773464, 0.7006555673628857, 0.49672385991959606, -0.8588671708070055, 0.41784650805752355, 0.2962287606126457, 2.7755576e-17, -0.5783477082409221, 0.8157903703602252, 4457353.834319159, 2658210.1414780417, -3679269.094513907)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 5
+metadata/poi_type = "factory village"
+metadata/population = 1000
+metadata/description = ""
+metadata/lon = -39.53755926538008
+metadata/lat = 24.698703012033132
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/factory_village_01" unique_id=774753162]
+shape = SubResource("SphereShape3D_gvfsn")
+
+[node name="mining_village_04" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1350781265]
+transform = Transform3D(0.5104595114703608, 0.700678232550414, 0.4984787874919741, -0.8599017892465632, 0.4159403698868739, 0.2959096509898417, 0, -0.5796926971494454, 0.8148351838694751, 4457467.48940373, 2646065.7548226374, -3687800.2360412967)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 4
+metadata/poi_type = "mining village"
+metadata/population = 250
+metadata/description = ""
+metadata/lon = -39.60200262139025
+metadata/lat = 24.57855002227761
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/mining_village_04" unique_id=2118559682]
+shape = SubResource("SphereShape3D_hvh21")
+
+[node name="mining_village_03" type="Area3D" parent="PlanetTerrain/POIs" unique_id=505472406]
+transform = Transform3D(0.5141808526082249, 0.6986628411679789, 0.4974819445790636, -0.8576817887836252, 0.4188488785181197, 0.29824078552913336, -2.7755576e-17, -0.580030905500044, 0.8145944688400476, 4444641.706911318, 2664565.9174352395, -3689948.0006311075)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 3
+metadata/poi_type = "mining village"
+metadata/population = 250
+metadata/description = ""
+metadata/lon = -39.69950672970444
+metadata/lat = 24.761933691319296
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/mining_village_03" unique_id=1655344192]
+shape = SubResource("SphereShape3D_lnjns")
+
+[node name="mining_village_01" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1929957687]
+transform = Transform3D(0.515030964517436, 0.6995889250036444, 0.49529631696640436, -0.8571715730168843, 0.4203475361906874, 0.2975984597241376, -2.7755576e-17, -0.577826344874188, 0.8161597363073824, 4450528.614860147, 2674097.1321020694, -3675919.65848977)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 1
+metadata/poi_type = "mining village"
+metadata/population = 250
+metadata/description = ""
+metadata/lon = -39.555045988527674
+metadata/lat = 24.856530843244073
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/mining_village_01" unique_id=1329507299]
+shape = SubResource("SphereShape3D_p7cvs")
+
+[node name="major_airport_city_01" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1379758144]
+transform = Transform3D(0.05665807373658994, -0.9963215724957304, -0.06428986592064449, 0.9983936411458455, 0.05654048542920573, 0.0036484006044618365, -4.3368087e-19, -0.06439330467575868, 0.9979245975087171, -6337099.03297079, 359625.51191137044, -409573.3346095871)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 6
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -176.3020571374896
+metadata/lat = 3.2412597109974777
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_01" unique_id=699425556]
+shape = SubResource("SphereShape3D_mqiao")
+
+[node name="major_airport_city_02" type="Area3D" parent="PlanetTerrain/POIs" unique_id=135205541]
+transform = Transform3D(0.8760081947541163, -0.42308034759146046, -0.23154408263983647, 0.48229621885687063, 0.768452741362933, 0.42056003325109115, 2.7755576e-17, -0.4800868710698953, 0.8772209506312066, -2691272.2374315825, 4888233.500756434, -3053898.568017258)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 7
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -131.38836975133887
+metadata/lat = 50.21514897018403
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_02" unique_id=1490740504]
+shape = SubResource("SphereShape3D_2ikvx")
+
+[node name="major_airport_city_03" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1373261834]
+transform = Transform3D(0.9877318410404022, 0.1055956704796843, 0.11504505452597112, -0.1561595664534765, 0.667907886641499, 0.7276766072694303, 0, -0.7367147408176603, 0.6762036606392837, 671678.3486352966, 4248462.690770674, -4686132.852604868)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 8
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -81.84316970911642
+metadata/lat = 41.9057991229002
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_03" unique_id=768377105]
+shape = SubResource("SphereShape3D_yvydb")
+
+[node name="Palaka-Pital" type="Area3D" parent="PlanetTerrain/POIs" unique_id=356337425]
+transform = Transform3D(0.0006841329878164731, 0.9491643613410042, 0.31478015681135046, -0.9999997659810002, 0.0006493548024144971, 0.00021535153958103902, -2.7105054312137617e-20, -0.3147802304759052, 0.9491645834635508, 6036876.124214605, 4130.027066441671, -2002065.5379959529)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 9
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -18.347551028375612
+metadata/lat = 0.03720529219957669
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/Palaka-Pital" unique_id=2010792788]
+shape = SubResource("SphereShape3D_y065j")
+
+[node name="major_airport_city_04" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1765122149]
+transform = Transform3D(-0.3522902405122748, 0.8705695800245112, -0.34351156134219063, -0.935890798351925, -0.3277018721303622, 0.12930543902888292, 0, 0.36704235360268944, 0.930204230619168, 5537386.898706285, -2084396.3481530093, 2334627.31382439)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 10
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 22.860859160045003
+metadata/lat = -19.12934770254795
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_04" unique_id=2059562510]
+shape = SubResource("SphereShape3D_yblbl")
+
+[node name="major_airport_city_05" type="Area3D" parent="PlanetTerrain/POIs" unique_id=24021508]
+transform = Transform3D(-0.9243352866661199, 0.3218674207962198, -0.20495277810718088, -0.3815812859979668, -0.7796855495469547, 0.4964737314338002, 0, 0.5371143335060539, 0.8435094502981859, 2047192.1982654708, -4959079.642743383, 3416239.737498358)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 11
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 59.06772084927198
+metadata/lat = -51.23179362596411
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_05" unique_id=1786852285]
+shape = SubResource("SphereShape3D_d65rm")
+
+[node name="major_airport_city_6" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1898653144]
+transform = Transform3D(-0.9063147425727867, -0.3213480936342635, 0.2744612725191813, 0.4226033452248381, -0.6891628238376655, 0.5886093907209358, -2.7755576e-17, 0.6494536203284416, 0.7604012066286325, -2043978.9156429672, -4383515.28847832, 4130939.4172108043)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 12
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 116.32609492018813
+metadata/lat = -43.56387560426659
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_airport_city_6" unique_id=118125632]
+shape = SubResource("SphereShape3D_v552l")
+
+[node name="major_railway_city_01" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1149467863]
+transform = Transform3D(0.34799362838415593, -0.8881611626394313, -0.30011695017609996, 0.9374968984503522, 0.32968047797030026, 0.11140174074602424, 0, -0.32012580593299267, 0.9473750410348332, -5644400.241256697, 2095169.9394996385, -2034448.5350731744)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 13
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -160.17898049579225
+metadata/lat = 19.249382958767036
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_01" unique_id=2096336542]
+shape = SubResource("SphereShape3D_spyjl")
+
+[node name="major_railway_city_02" type="Area3D" parent="PlanetTerrain/POIs" unique_id=168142267]
+transform = Transform3D(0.7529531773193494, -0.6130258076301597, -0.23929244021507834, 0.6580740936738784, 0.7014099689853982, 0.2737928827475367, 2.7755576e-17, -0.3636253767097302, 0.9315452675059366, -3896160.5100845527, 4457896.859359059, -2311065.5629294408)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 14
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -149.3250706628834
+metadata/lat = 44.54023575435125
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_02" unique_id=155525494]
+shape = SubResource("SphereShape3D_bqt3j")
+
+[node name="major_railway_city_03" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1373760546]
+transform = Transform3D(0.912024171123283, -0.31830202620526776, -0.25864209131637816, 0.4101364544720314, 0.707811116157482, 0.575144775301846, 0, -0.6306244872802838, 0.7760881110044653, -2023030.2990484328, 4498630.9105882095, -4008056.3114831457)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 15
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -116.78194965552773
+metadata/lat = 45.05709964551417
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_03" unique_id=208056657]
+shape = SubResource("SphereShape3D_sjsh1")
+
+[node name="major_railway_city_04" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1210756262]
+transform = Transform3D(0.9975992937419875, -0.05172857610804343, -0.04604132425682566, 0.06925062545196112, 0.7451830312703897, 0.663254552024474, 6.93889390390723e-18, -0.6648506631721952, 0.7469763019530755, -328749.2043972101, 4735841.329727797, -4225307.22872209)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 16
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -94.44892407315328
+metadata/lat = 48.17482233661698
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_04" unique_id=1370552125]
+shape = SubResource("SphereShape3D_4asfn")
+
+[node name="major_railway_city_05" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1232699783]
+transform = Transform3D(0.8925592329078109, 0.2610373877689388, 0.3676921238451931, -0.45093016726652935, 0.5166904933410446, 0.7278000538197067, 0, -0.8154081286556792, 0.5788865033167065, 1659049.2321006015, 3283878.120056571, -5182407.934959288)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 17
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -72.24852211337031
+metadata/lat = 31.1105169985614
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_05" unique_id=1450660972]
+shape = SubResource("SphereShape3D_v57nn")
+
+[node name="major_railway_city_06" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1271049893]
+transform = Transform3D(0.2577892917604329, 0.6123921733676733, 0.7473422957732768, -0.9662011597248549, 0.16339055595528457, 0.19939620149583748, 0, -0.7734851984509079, 0.6338143638143267, 3891880.8393857684, 1038381.2885165259, -4915660.836821686)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 18
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -51.630250433956725
+metadata/lat = 9.403751339618156
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_06" unique_id=770420929]
+shape = SubResource("SphereShape3D_nme7l")
+
+[node name="major_railway_city_07" type="Area3D" parent="PlanetTerrain/POIs" unique_id=850433494]
+transform = Transform3D(-0.061440216217086785, 0.8632368924761227, 0.5010460730305794, -0.9981107653117453, -0.05313785119203037, -0.030842648062318012, 0, -0.5019944583746523, 0.8648708364612253, 5486488.996278309, -337729.1197723143, -3190534.4825625615)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 19
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -30.179102522239766
+metadata/lat = -3.0460092219745505
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_07" unique_id=1046356085]
+shape = SubResource("SphereShape3D_xn0ah")
+
+[node name="major_railway_city_08" type="Area3D" parent="PlanetTerrain/POIs" unique_id=398614222]
+transform = Transform3D(0.002242476020276879, 0.9895464264740338, 0.1441972300488748, -0.9999974856474882, 0.0022190397117667713, 0.00032335964361508257, 5.421010862427523e-20, -0.144197592612454, 0.9895489145488326, 6289415.744823947, 14103.899451494557, -916499.3021843582)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 20
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = -8.2908368794916
+metadata/lat = 0.1271417144001834
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_08" unique_id=1019508227]
+shape = SubResource("SphereShape3D_aiyeq")
+
+[node name="major_railway_city_09" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1677113623]
+transform = Transform3D(-0.14040660618825493, 0.9613883922082443, -0.2366819474863757, -0.9900939273314914, -0.13633583405824526, 0.03356419838080933, 6.938894e-18, 0.23904999409933028, 0.9710072606943319, 6110200.065536625, -866496.026943123, 1519306.142502156)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 21
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 13.963464270665227
+metadata/lat = -7.835871791095007
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_09" unique_id=1429995343]
+shape = SubResource("SphereShape3D_v23gf")
+
+[node name="major_railway_city_10" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1574161721]
+transform = Transform3D(-0.5090428533462588, 0.7376452244960128, -0.4435706214745588, -0.8607411768104855, -0.4362438325840271, 0.26232793422603695, 0, 0.5153356588774216, 0.8569884238946135, 4688288.63560812, -2772656.7389563313, 3275344.613922459)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 22
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 34.93902179508581
+metadata/lat = -25.86446731753354
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_10" unique_id=329959922]
+shape = SubResource("SphereShape3D_4kg1i")
+
+[node name="major_railway_city_11" type="Area3D" parent="PlanetTerrain/POIs" unique_id=136360232]
+transform = Transform3D(-0.6967231312277402, 0.5317496935678351, -0.4814760033508697, -0.7173401413640625, -0.5164667222267536, 0.4676379437344026, 0, 0.6711962367466514, 0.741279712238999, 3379716.5748444656, -3282580.4369601905, 4266016.649836587)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 23
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 51.61226444493239
+metadata/lat = -31.095543224898165
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_11" unique_id=1660602135]
+shape = SubResource("SphereShape3D_psh8k")
+
+[node name="major_railway_city_12" type="Area3D" parent="PlanetTerrain/POIs" unique_id=2095281019]
+transform = Transform3D(-0.9723530481036957, 0.2036395628213662, -0.11428244964724503, -0.2335156308332533, -0.8479498734937032, 0.4758691650008022, -1.3877788e-17, 0.4893995714096364, 0.8720596651055845, 1294241.4234873615, -5389187.818474692, 3110403.4460677747)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 24
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 67.4077652907519
+metadata/lat = -57.98938157185139
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_12" unique_id=1699384844]
+shape = SubResource("SphereShape3D_ieq7g")
+
+[node name="major_railway_city_13" type="Area3D" parent="PlanetTerrain/POIs" unique_id=1604288641]
+transform = Transform3D(-0.9920068717219243, -0.08998855394017914, 0.08845578904875182, 0.12618385973048143, -0.7074539015976268, 0.695403919069927, 0, 0.7010071592174012, 0.7131542348790683, -571934.2865094533, -4496317.861908764, 4455344.7287479)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 25
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 97.31507434266024
+metadata/lat = -45.02813354351727
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_13" unique_id=1323722757]
+shape = SubResource("SphereShape3D_jpgtr")
+
+[node name="major_railway_city_14" type="Area3D" parent="PlanetTerrain/POIs" unique_id=51378029]
+transform = Transform3D(-0.6891446768244616, -0.6225058234784578, 0.37089906192913913, 0.7246237743853761, -0.5920266346578001, 0.3527390670896141, 0, 0.5118505285639223, 0.85907452319856, -3955934.5958818146, -3762243.7532222094, 3252736.1793210343)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 26
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 140.57151647595757
+metadata/lat = -36.3009566218871
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_14" unique_id=939402204]
+shape = SubResource("SphereShape3D_5lqg1")
+
+[node name="major_railway_city_15" type="Area3D" parent="PlanetTerrain/POIs" unique_id=809101615]
+transform = Transform3D(-0.22836896063078438, -0.9726733306968623, 0.0418832851085893, 0.9735746596026498, -0.22815753817502205, 0.009824456906011808, 0, 0.0430201060550234, 0.9990742066908816, -6181380.585878868, -1449950.9059085455, 273394.6125370304)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+metadata/poi_id = 27
+metadata/poi_type = ""
+metadata/population = 0
+metadata/description = ""
+metadata/lon = 177.4675309034345
+metadata/lat = -13.188622549190033
+
+[node name="Zone" type="CollisionShape3D" parent="PlanetTerrain/POIs/major_railway_city_15" unique_id=1887401361]
+shape = SubResource("SphereShape3D_ulc4r")
+
+[node name="WindValley" parent="PlanetTerrain" unique_id=444361552 instance=ExtResource("7_5a8bp")]
+transform = Transform3D(0.6792100022626536, 0.6917323263820941, -0.2453164516790156, -0.10253869695301351, 0.4204003345494096, 0.9015261362478197, 0.7267458898772972, -0.5871711397444197, 0.3564694435680212, 4453505.094331626, 2666242.868314171, -3677930.768669051)
+
+[node name="WindValley4" parent="." unique_id=1638090279 instance=ExtResource("7_5a8bp")]
 transform = Transform3D(0.6647458045902908, 0.6995541930773201, -0.2621773182934532, -0.08610343465919526, 0.4203445568959582, 0.9032699773754416, 0.7420911088400781, -0.5778705602778881, 0.339656299433152, 4450097.938574121, 2674139.3585301233, -3676186.0813506218)
 sleeping = true
 
@@ -76,8 +604,7 @@ transform = Transform3D(0.6850253901750898, 0.699503453169801, 0.203556217834263
 sleeping = true
 
 [node name="WindValley5" parent="." unique_id=548013462 instance=ExtResource("7_5a8bp")]
-transform = Transform3D(-0.03998822915344133, 0.7000613105638153, 0.7131568029019769, -0.8653464159042403, 0.4200472320861747, -0.4524347093117825, -0.6779207343125431, -0.577472496547166, 0.5354532736706292, 4450568.811892972, 2673609.5888976147, -3676001.51933552)
-visible = false
+transform = Transform3D(-0.03998822915344133, 0.7000613105638153, 0.7131568029019769, -0.8653464159042403, 0.4200472320861747, -0.4524347093117825, -0.6779207343125431, -0.577472496547166, 0.5354532736706292, 4450541.129353888, 2673638.1300750966, -3676012.982564431)
 sleeping = true
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1326848139]
@@ -86,7 +613,7 @@ text = "01 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D" unique_id=293746107]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D2" type="Label3D" parent="." unique_id=1375571459]
@@ -95,61 +622,61 @@ text = "02 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D2" unique_id=313848114]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D3" type="Label3D" parent="." unique_id=1406201698]
-transform = Transform3D(0.6887162651141816, 0.6996096292237506, -0.19030573523826894, -0.18126693764347812, 0.4202942622627377, 0.8890978744921036, 0.7020058429133813, -0.5778400295985275, 0.4162795895897915, 4450796.74378568, 2671686.8975579664, -3677357.635560241)
+transform = Transform3D(0.6887162651141816, 0.6996096292237506, -0.19030573523826896, -0.18126693764347812, 0.4202942622627377, 0.8890978744921036, 0.7020058429133813, -0.5778400295985275, 0.4162795895897915, 4450796.74378568, 2671686.8975579664, -3677357.635560241)
 text = "03 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D3" unique_id=1019566710]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D4" type="Label3D" parent="." unique_id=938957245]
-transform = Transform3D(0.6416044831478772, 0.6996096292237507, -0.3144678900968289, -0.013605962430240245, 0.42029426226273775, 0.9072858485038595, 0.7669149659453072, -0.5778400295985275, 0.2791815452401548, 4451077.966301539, 2670790.5427855556, -3677671.8900930197)
+transform = Transform3D(0.6416044831478772, 0.6996096292237507, -0.3144678900968289, -0.01360596243024024, 0.42029426226273775, 0.9072858485038596, 0.7669149659453072, -0.5778400295985275, 0.2791815452401548, 4451077.966301539, 2670790.5427855556, -3677671.89009302)
 text = "04 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D4" unique_id=1928789893]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D5" type="Label3D" parent="." unique_id=1573524187]
-transform = Transform3D(0.5668540572566745, 0.6996096292237506, -0.43499752237116573, 0.16586178131107093, 0.4202942622627378, 0.8921001079527678, 0.8069487885064113, -0.5778400295985275, 0.12220700847990437, 4451503.218926309, 2669874.1325631877, -3677831.2184576797)
+transform = Transform3D(0.5668540572566745, 0.6996096292237506, -0.43499752237116573, 0.16586178131107093, 0.4202942622627378, 0.8921001079527678, 0.8069487885064113, -0.5778400295985275, 0.12220700847990436, 4451503.218926309, 2669874.1325631877, -3677831.21845768)
 text = "05 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D5" unique_id=249443005]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D6" type="Label3D" parent="." unique_id=974557257]
-transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.47934172011108445, 0.23734278944514786, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.056660232558023466, 4451949.088033385, 2669024.4731602855, -3677909.393469655)
+transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.4793417201110845, 0.23734278944514783, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.05666023255802346, 4451949.088033385, 2669024.4731602855, -3677909.393469655)
 text = "06 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D6" unique_id=1843098846]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D7" type="Label3D" parent="." unique_id=1259323423]
-transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.47934172011108445, 0.23734278944514786, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.056660232558023466, 4452415.288424255, 2668136.731148643, -3677990.954678921)
+transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.4793417201110845, 0.23734278944514783, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.05666023255802346, 4452415.288424255, 2668136.731148643, -3677990.954678921)
 text = "07 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D7" unique_id=1554672484]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D8" type="Label3D" parent="." unique_id=304510695]
-transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.47934172011108445, 0.23734278944514786, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.056660232558023466, 4452869.799023018, 2667273.0451858635, -3678072.608721963)
+transform = Transform3D(0.5298847818708826, 0.6996096292237506, -0.4793417201110845, 0.23734278944514783, 0.4202942622627378, 0.8757974271527736, 0.8141808879113063, -0.5778400295985276, 0.05666023255802346, 4452869.799023018, 2667273.0451858635, -3678072.608721963)
 text = "08 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D8" unique_id=1366170740]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D9" type="Label3D" parent="." unique_id=201067484]
@@ -158,16 +685,16 @@ text = "09 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D9" unique_id=1807050483]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D10" type="Label3D" parent="." unique_id=1447983462]
-transform = Transform3D(0.49917556947454966, 0.7001049773102898, -0.510565149207344, 0.29178270833659203, 0.41900287881575415, 0.8598252372778283, 0.8158961955760811, -0.5781778344847449, 0.004877474244805142, 4453907.8470668495, 2665600.576934404, -3678240.654207633)
+transform = Transform3D(0.49917556947454966, 0.7001049773102898, -0.510565149207344, 0.29178270833659203, 0.41900287881575415, 0.8598252372778283, 0.8158961955760811, -0.5781778344847449, 0.00487747424480514, 4453907.8470668495, 2665600.576934404, -3678240.654207633)
 text = "10 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D10" unique_id=1031653900]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D11" type="Label3D" parent="." unique_id=1378951731]
@@ -176,25 +703,25 @@ text = "11 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D11" unique_id=605010873]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D12" type="Label3D" parent="." unique_id=444106164]
-transform = Transform3D(0.2029811408184683, 0.7002993183237208, -0.6843825839597066, 0.6595895694696872, 0.41878234924470864, 0.6241497767426303, 0.7236990094775766, -0.5781022476313465, -0.3769052068687293, 4455265.329694594, 2664247.7941938215, -3677797.9940990843)
+transform = Transform3D(0.2029811408184683, 0.7002993183237208, -0.6843825839597066, 0.6595895694696872, 0.41878234924470864, 0.6241497767426303, 0.7236990094775766, -0.5781022476313465, -0.3769052068687293, 4455265.329694594, 2664247.7941938215, -3677797.994099084)
 text = "12 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D12" unique_id=1884957397]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D13" type="Label3D" parent="." unique_id=648915653]
-transform = Transform3D(-0.038770418342892354, 0.7004222375116153, -0.7126749215881946, 0.8309717076126132, 0.41870249323424946, 0.36629802525648536, 0.5549620489807341, -0.5780111688874581, -0.5982643335787781, 4456013.7836816665, 2663809.6189476023, -3677308.9256713935)
+transform = Transform3D(-0.03877041834289235, 0.7004222375116153, -0.7126749215881946, 0.8309717076126132, 0.41870249323424946, 0.36629802525648536, 0.5549620489807341, -0.5780111688874581, -0.5982643335787781, 4456013.7836816665, 2663809.6189476023, -3677308.9256713935)
 text = "13 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D13" unique_id=1184995501]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D14" type="Label3D" parent="." unique_id=1951519688]
@@ -203,16 +730,16 @@ text = "14 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D14" unique_id=74426343]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D15" type="Label3D" parent="." unique_id=546804862]
-transform = Transform3D(0.2814293807948615, 0.7005331364056964, 0.6557826075941777, -0.9063646095705208, 0.418485751415166, -0.058076418455003505, -0.3151201328755397, -0.5780337366106599, 0.7527126285618039, 4456729.881760107, 2662496.0442869617, -3677249.230013665)
+transform = Transform3D(0.2814293807948615, 0.7005331364056964, 0.6557826075941777, -0.9063646095705208, 0.418485751415166, -0.0580764184550035, -0.3151201328755397, -0.5780337366106599, 0.7527126285618039, 4456729.881760107, 2662496.0442869617, -3677249.230013665)
 text = "15 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D15" unique_id=1193249162]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D16" type="Label3D" parent="." unique_id=1397399077]
@@ -221,16 +748,16 @@ text = "16 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D16" unique_id=1024203680]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D17" type="Label3D" parent="." unique_id=1519534865]
-transform = Transform3D(0.7132219545055065, 0.7005331364056965, 0.023827891407830773, -0.43762838470851273, 0.418485751415166, 0.795833571018402, 0.5475361545220215, -0.57803373661066, 0.6050464104770432, 4455874.196525413, 2661846.4963131635, -3678685.0221281354)
+transform = Transform3D(0.7132219545055065, 0.7005331364056965, 0.02382789140783077, -0.43762838470851273, 0.418485751415166, 0.795833571018402, 0.5475361545220215, -0.57803373661066, 0.6050464104770432, 4455874.196525413, 2661846.4963131635, -3678685.0221281354)
 text = "17 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D17" unique_id=1738592637]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D18" type="Label3D" parent="." unique_id=1854385497]
@@ -239,18 +766,21 @@ text = "18 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D18" unique_id=514190606]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="Label3D19" type="Label3D" parent="." unique_id=1095401359]
-transform = Transform3D(0.48964187737980824, 0.7005187270721835, -0.5191573412147267, 0.3079251705760927, 0.418123096415503, 0.8546081941858481, 0.8157407193720692, -0.5783135734747018, -0.010976770620704011, 4456524.243713208, 2659994.0819972125, -3679091.042338788)
+transform = Transform3D(0.48964187737980824, 0.7005187270721835, -0.5191573412147267, 0.3079251705760927, 0.418123096415503, 0.8546081941858481, 0.8157407193720692, -0.5783135734747018, -0.01097677062070401, 4456524.243713208, 2659994.0819972125, -3679091.042338788)
 text = "19 km"
 font_size = 96
 
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D19" unique_id=800817383]
-transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.3266727e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
+transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.326672700000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
 
 [node name="PlanetTeleporter" parent="." unique_id=1302203990 instance=ExtResource("15_gthms")]
 transform = Transform3D(0.5150267552610541, 0.6996066488300183, 0.49527565887907465, -0.8571741021316909, 0.4203535097594764, 0.2975827371801319, 0, -0.5778005397589387, 0.8161780052502512, 4450641.321533869, 2674135.106228629, -3675755.4579509394)
 visible = false
+
+[node name="WindValley6" parent="." unique_id=2063163450 instance=ExtResource("7_5a8bp")]
+transform = Transform3D(0.1741305724523261, 0.6997507048129777, 0.6928401654430597, -0.8849927470833038, 0.41974231705222165, -0.2015049004009077, -0.43181753246871857, -0.5780703576463451, 0.6923642684766842, 4451423.186935106, 2669883.38803467, -3677686.9643839966)

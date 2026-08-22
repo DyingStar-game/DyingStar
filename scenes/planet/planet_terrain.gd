@@ -225,6 +225,10 @@ var _last_local_cam: Vector3 = Vector3.ZERO
 ## so we can free them when the chunk is unloaded.  key → Array[Node3D].
 var _server_feature_nodes: Dictionary = {}
 
+## POIs resolved from the "POIs" child, built on first use (see poi_spheres). Only a re-import
+## changes them, and that needs an editor restart, so it is never invalidated at runtime.
+var _poi_cache: Array = []
+
 ## Buffered desired set when set_resident_chunks() is called before
 ## the planet finishes initializing (rare race during Horizon boot).
 var _pending_desired_keys: PackedStringArray = PackedStringArray()
@@ -1786,7 +1790,7 @@ func _add_poi_node(container: Node3D, owner_node: Node, data: PlanetData,
 		area.owner = owner_node
 
 	area.monitoring = false
-	area.monitorable = true
+	area.monitorable = false
 	area.collision_layer = poi_collision_layer
 	area.collision_mask = poi_collision_mask
 
@@ -1820,6 +1824,49 @@ func _add_poi_node(container: Node3D, owner_node: Node, data: PlanetData,
 	area.set_meta("lon", float(entry["lon"]))
 	area.set_meta("lat", float(entry["lat"]))
 	return true
+
+
+## The POIs of this planet as [code]{name, position (world), radius}[/code], read once and cached.
+##
+## The radius is NOT in the node metadata — it exists only as the child "Zone" CollisionShape3D's
+## SphereShape3D radius, which is why this accessor exists rather than every caller walking the
+## tree. The POI Area3Ds are inert markers (collision_layer 0, monitoring off), so consumers do a
+## distance test against this list instead of a physics query.
+func poi_spheres() -> Array:
+	if not _poi_cache.is_empty():
+		return _poi_cache
+	var container: Node = get_node_or_null("POIs")
+	if container == null:
+		return _poi_cache
+	for child in container.get_children():
+		if not (child is Node3D):
+			continue
+		var shape_node := child.get_node_or_null("Zone") as CollisionShape3D
+		if shape_node == null or not (shape_node.shape is SphereShape3D):
+			continue
+		_poi_cache.append({
+			"name": String(child.name),
+			"position": (child as Node3D).global_position,
+			"radius": (shape_node.shape as SphereShape3D).radius,
+		})
+	return _poi_cache
+
+
+## The first POI in [param spheres] whose influence sphere, grown by [param margin], contains
+## [param world_pos] — as {name, position, radius, distance}. Empty when the point is clear.
+##
+## Static and taking the list explicitly so the geometry can be exercised without a scene tree, and
+## so every consumer (MiningZonePlanner picking a site, MiningZone placing a rock) shares ONE
+## definition of "inside a POI". Two definitions would let a zone be sited legally while its rocks
+## are culled by a different rule, or worse, the reverse.
+static func first_blocking_poi(world_pos: Vector3, spheres: Array, margin: float) -> Dictionary:
+	for poi in spheres:
+		var d: float = world_pos.distance_to(poi["position"] as Vector3)
+		if d < float(poi["radius"]) + margin:
+			var hit: Dictionary = (poi as Dictionary).duplicate()
+			hit["distance"] = d
+			return hit
+	return {}
 
 
 ## JSON field readers that tolerate a missing key *and* an explicit null — a

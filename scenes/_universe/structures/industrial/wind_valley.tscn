@@ -6,6 +6,7 @@
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_yy05e"]
 friction = 0.5
+rough = true
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_p27tt"]
 size = Vector3(299.36741340111166, 65.56090138369495, 10)
@@ -19,34 +20,34 @@ freeze = true
 [node name="wind_valley_bridge" parent="." unique_id=164632456 instance=ExtResource("1_p27tt")]
 physics_material_override = SubResource("PhysicsMaterial_yy05e")
 
-[node name="PONT_EXPORT" parent="wind_valley_bridge" index="0" unique_id=2034089896]
+[node name="PONT_EXPORT" parent="wind_valley_bridge" index="0" unique_id=328580297]
 surface_material_override/0 = ExtResource("2_urp1l")
 
 [node name="wind_valley_fan" parent="." unique_id=418803296 instance=ExtResource("2_svp04")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 92, 0)
 
-[node name="FAN_EXPORT" parent="wind_valley_fan" index="0" unique_id=1369926639]
+[node name="FAN_EXPORT" parent="wind_valley_fan" index="0" unique_id=1554293]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
-[node name="AnimationPlayer" parent="wind_valley_fan" index="1" unique_id=109183559]
+[node name="AnimationPlayer" parent="wind_valley_fan" index="1" unique_id=360349945]
 autoplay = &"FANEAction_003"
 
 [node name="wind_valley_fan_little1" parent="." unique_id=407842810 instance=ExtResource("2_svp04")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 72, 74, 0)
 
-[node name="FAN_EXPORT" parent="wind_valley_fan_little1" index="0" unique_id=1369926639]
+[node name="FAN_EXPORT" parent="wind_valley_fan_little1" index="0" unique_id=1554293]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
-[node name="AnimationPlayer" parent="wind_valley_fan_little1" index="1" unique_id=109183559]
+[node name="AnimationPlayer" parent="wind_valley_fan_little1" index="1" unique_id=360349945]
 autoplay = &"FANEAction_003"
 
 [node name="wind_valley_fan_little2" parent="." unique_id=2032810050 instance=ExtResource("2_svp04")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -72, 74, 0)
 
-[node name="FAN_EXPORT" parent="wind_valley_fan_little2" index="0" unique_id=1369926639]
+[node name="FAN_EXPORT" parent="wind_valley_fan_little2" index="0" unique_id=1554293]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
-[node name="AnimationPlayer" parent="wind_valley_fan_little2" index="1" unique_id=109183559]
+[node name="AnimationPlayer" parent="wind_valley_fan_little2" index="1" unique_id=360349945]
 autoplay = &"FANEAction_003"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=676848505]

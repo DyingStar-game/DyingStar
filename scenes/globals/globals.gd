@@ -36,7 +36,7 @@ const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body 
 ## PlayerClient skips building the tool, and the controls menu hides its binding (a key that does
 ## nothing must not be rebindable). Delete an entry to bring the tool back, nothing else to change.
 const DISABLED_DEV_TOOLS: Dictionary = {
-	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
+	#"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
 	"zapette": true,      # admin cleanup tool (key 2) — testing phase over
 	"toggle_eva": true,   # EVA free-flight ($) — testing phase over, normal play only
 }

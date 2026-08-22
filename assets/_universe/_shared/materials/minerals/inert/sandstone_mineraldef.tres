@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MineralDef" format=3]
+
+[ext_resource type="Script" uid="uid://dfol8sjf0bo8c" path="res://scenes/_universe/environment/terrain/rocks/mineral_def.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = &"sandstone"
+display_name = "Sandstone"
+is_inert = true
+use_texture = false
+color = Color(0.72, 0.59, 0.38, 1)
+metallic = 0.0
+roughness = 0.85
+emission = 0.0
+density_kg_m3 = 2200.0
+hardness = 0.2
+base_value = 0.0

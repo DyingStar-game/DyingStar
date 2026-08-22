@@ -149,6 +149,58 @@ var chunk_data_version: String = ""
 ## legacy roads_geojson/BiomeQuery path — an A/B switch for comparing the two.
 @export var use_modifier_pack: bool = true
 
+@export_group("Mining zones")
+## Let the server seed mining zones across this planet on its own (MiningZonePlanner). OFF by
+## default: a planet only grows deposits once a designer opts it in, so enabling the feature never
+## silently populates every world in the universe.
+@export var mining_zones_enabled: bool = false
+## Share of candidate cells that actually carry a deposit, 0..1. The verdict is a hash of
+## (planet uuid, chunk key), so it is stable across restarts and identical on every server — a
+## barren cell costs nothing because it is never written to the database.
+@export_range(0.0, 1.0) var mining_zone_deposit_rate: float = 0.15
+## How much of its collision chunk a generated zone's square rock field spans, 0..1. The size in
+## metres is derived from the chunk itself (HEALPix.pixel_side_length — ~794 m on tarsis_4), so it
+## follows max_quadtree_depth automatically instead of having to be re-tuned by hand whenever the
+## terrain LOD changes.
+##
+## 1.0 does NOT pave the chunk exactly: a HEALPix pixel is a curvilinear quad and the field is a
+## square in the tangent plane with an arbitrary yaw, so at full fill it spills into the neighbouring
+## chunks at the corners while still leaving gaps along the edges. Overlapping fields also confuse
+## MiningZone._has_rocks_in_field, which would then see a neighbour's rocks as its own and skip
+## generating. Stay a little under: 0.88 leaves a ~95 m breathing space between deposits.
+@export_range(0.0, 1.0) var mining_zone_chunk_fill: float = 0.88
+## Rocks per square kilometre inside a zone's field. A DENSITY rather than a count, so changing
+## mining_zone_chunk_fill re-sizes the field without silently making every deposit look poorer.
+## 120/km² is one rock per ~91 m, the historical 30-rocks-in-a-500 m-field look.
+@export var mining_zone_rock_density: float = 120.0
+## Minimum spacing (m) between two rocks of the same field.
+@export var mining_zone_min_spacing: float = 8.0
+## Relative share of each rock size in the mix (small, medium, large). Mirrors MiningZone's own
+## weight_small/medium/large; any positive ratio works.
+@export_range(0.0, 1.0) var mining_zone_weight_small: float = 0.6
+@export_range(0.0, 1.0) var mining_zone_weight_medium: float = 0.3
+@export_range(0.0, 1.0) var mining_zone_weight_large: float = 0.1
+## Which minerals this planet yields, and their relative frequency. Ids must exist in
+## MineralRegistry.ALL; unknown ones are dropped with a warning at planning time. The two arrays are
+## read in parallel — a missing weight counts as 1.0.
+@export var mining_zone_minerals: PackedStringArray = PackedStringArray(
+	["iron", "gold", "cryptonite"])
+@export var mining_zone_mineral_weights: PackedFloat32Array = PackedFloat32Array([0.6, 0.3, 0.1])
+## The BARREN rock the ore sits in on THIS planet — the local geology. Every zone the planner
+## seeds here weighs its rocks' gangue with this mineral's density (MiningZone._host_rock_density),
+## so a vein in corundum weighs more than the same vein in sandstone. A hand-placed MiningZone can
+## still override it per zone; leave that field empty and it inherits this one.
+## Dropdown fed by MineralRegistry, restricted to the inert minerals (see _validate_property).
+@export var mining_zone_host_rock: String = "granite"
+## Range the per-zone ore richness is drawn from (0 = poor, 1 = rich).
+@export_range(0.0, 1.0) var mining_zone_richness_min: float = 0.25
+@export_range(0.0, 1.0) var mining_zone_richness_max: float = 0.75
+## Clearance (m) kept OUTSIDE a POI's own influence sphere. tarsis_4's POIs range from 1 km
+## (mining villages) to 40 km (major cities), and a deposit must not creep into any of them.
+@export var mining_zone_poi_margin: float = 200.0
+## Clearance (m) kept outside a road's own half-width, so a field never swallows the carriageway.
+@export var mining_zone_road_margin: float = 50.0
+
 @export_group("Roads")
 ## Path to a GeoJSON file with road polygons (buffered from LineStrings).
 ## Exported by the QGIS pipeline as {planet}_roads_buffered.json.
@@ -308,6 +360,14 @@ func get_atmosphere_top() -> float:
 	if atmosphere_profile == null:
 		return 0.0
 	return atmosphere_profile.atmosphere_top
+
+## Inspector: `mining_zone_host_rock` is a plain String (that id is what MiningZone looks up in
+## MineralRegistry), but a designer should pick it from the registered inert minerals rather than
+## type an id whose only symptom is a silent fall back to granite's density.
+func _validate_property(property: Dictionary) -> void:
+	if property["name"] == "mining_zone_host_rock":
+		property["hint"] = PROPERTY_HINT_ENUM
+		property["hint_string"] = MineralRegistry.enum_hint(MineralRegistry.Kind.INERT)
 
 
 func _get_heightmap_image() -> Image:
