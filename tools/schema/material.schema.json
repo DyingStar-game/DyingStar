@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dyingstar-game.com/schema/material.schema.json",
+  "title": "Dying Star PBR material",
+  "description": "Structural contract for a material.json entry. Tag vocabulary and pixel-level rules are enforced separately (see tags.json and image_rules.py).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "tags",
+    "physical_size_m",
+    "license",
+    "author",
+    "ai_generated",
+    "delivery",
+    "maps"
+  ],
+  "properties": {
+    "id": {
+      "description": "Stable identifier. Must match the folder name.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "tags": {
+      "description": "Searchable keywords. Values are checked against tags.json.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 12,
+      "uniqueItems": true
+    },
+    "physical_size_m": {
+      "description": "Real-world size covered by one UV tile, in meters [width, height]. Drives consistent tiling across the whole game world.",
+      "type": "array",
+      "items": { "type": "number", "exclusiveMinimum": 0 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "license": {
+      "type": "string",
+      "enum": ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "AGPL-3.0"]
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ai_generated": {
+      "description": "Project policy forbids AI-generated art, so only false is accepted.",
+      "const": false
+    },
+    "notes": {
+      "description": "Free-form rationale for deliberate deviations (art direction choices, known limitations).",
+      "type": "string"
+    },
+    "delivery": {
+      "description": "Where the binary maps come from.",
+      "oneOf": [
+        { "$ref": "#/$defs/externalDelivery" },
+        { "$ref": "#/$defs/hostedDelivery" }
+      ]
+    },
+    "maps": {
+      "description": "Map name to file name, relative to the material folder (hosted) or to the extracted archive (external).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["albedo", "normal"],
+      "properties": {
+        "albedo": { "$ref": "#/$defs/fileName" },
+        "normal": { "$ref": "#/$defs/fileName" },
+        "orm": { "$ref": "#/$defs/fileName" },
+        "ao": { "$ref": "#/$defs/fileName" },
+        "roughness": { "$ref": "#/$defs/fileName" },
+        "metallic": { "$ref": "#/$defs/fileName" },
+        "height": { "$ref": "#/$defs/fileName" },
+        "emissive": { "$ref": "#/$defs/fileName" },
+        "opacity": { "$ref": "#/$defs/fileName" }
+      },
+      "$comment": "orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
+    }
+  },
+  "$defs": {
+    "fileName": {
+      "$comment": "Follows the project naming convention: tex_[descriptor]_[map].png",
+      "type": "string",
+      "pattern": "^tex_[a-z0-9_]+\\.png$"
+    },
+    "externalDelivery": {
+      "description": "Maps fetched from a third-party library. Nothing is hosted by the project.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "provider", "urls"],
+      "properties": {
+        "type": { "const": "external" },
+        "provider": { "type": "string", "minLength": 1 },
+        "urls": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "1k": { "$ref": "#/$defs/httpsUrl" },
+            "2k": { "$ref": "#/$defs/httpsUrl" },
+            "4k": { "$ref": "#/$defs/httpsUrl" }
+          }
+        }
+      }
+    },
+    "hostedDelivery": {
+      "description": "Maps stored in this repository. Download URLs are derived from id, version and resolution, never written by hand.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "version"],
+      "properties": {
+        "type": { "const": "hosted" },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    }
+  }
+}
