@@ -1,0 +1,28 @@
+{
+  "id": "mat_mineral_corundum_pure",
+  "display_name": "Pure Corundum",
+  "tags": [
+    "mineral",
+    "crystal",
+    "ore",
+    "raw"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "AGPL-3.0",
+  "author": "KiFouine",
+  "ai_generated": false,
+  "notes": "High metallic value is a deliberate art-direction choice, not a physical one.",
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_mineral_corundum_pure_albedo.png",
+    "normal": "tex_mineral_corundum_pure_normal.png",
+    "orm": "tex_mineral_corundum_pure_orm.png",
+    "height": "tex_mineral_corundum_pure_height.png"
+  }
+}

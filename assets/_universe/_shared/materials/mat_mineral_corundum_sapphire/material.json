@@ -1,0 +1,28 @@
+{
+  "id": "mat_mineral_corundum_sapphire",
+  "display_name": "Sapphire Corundum",
+  "tags": [
+    "mineral",
+    "crystal",
+    "ore",
+    "raw"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "AGPL-3.0",
+  "author": "KiFouine",
+  "ai_generated": false,
+  "notes": "TODO confirm physical_size_m and tags.",
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_mineral_corundum_sapphire_albedo.png",
+    "normal": "tex_mineral_corundum_sapphire_normal.png",
+    "orm": "tex_mineral_corundum_sapphire_orm.png",
+    "height": "tex_mineral_corundum_sapphire_height.png"
+  }
+}

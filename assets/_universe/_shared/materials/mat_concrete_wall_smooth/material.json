@@ -1,0 +1,28 @@
+{
+  "id": "mat_concrete_wall_smooth",
+  "display_name": "Concrete Wall Smooth",
+  "tags": [
+    "concrete",
+    "scratched",
+    "exterior",
+    "wall",
+    "roof",
+    "ceiling"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "DDurieux",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_concrete_wall_smooth_albedo.png",
+    "normal": "tex_concrete_wall_smooth_normal.png",
+    "roughness": "tex_concrete_wall_smooth_roughness.png"
+  }
+}

@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://dkxs53ephoysf"]
+
+[ext_resource type="Texture2D" uid="uid://coxmvw2a3yoqr" path="res://assets/_universe/_shared/materials/mat_concrete_wall_smooth/tex_concrete_wall_smooth_albedo.png" id="1_kcy7w"]
+[ext_resource type="Texture2D" uid="uid://daqfykahw84fo" path="res://assets/_universe/_shared/materials/mat_concrete_wall_smooth/tex_concrete_wall_smooth_normal.png" id="2_dyaeo"]
+[ext_resource type="Texture2D" uid="uid://bf8xs80tqajmn" path="res://assets/_universe/_shared/materials/mat_concrete_wall_smooth/tex_concrete_wall_smooth_roughness.png" id="3_v068w"]
+
+[resource]
+resource_name = "mat_concrete_wall_smooth"
+albedo_texture = ExtResource("1_kcy7w")
+roughness_texture = ExtResource("3_v068w")
+normal_enabled = true
+normal_texture = ExtResource("2_dyaeo")

@@ -1,0 +1,24 @@
+{
+  "id": "mat_vegetation_bark_pine",
+  "display_name": "Pine Bark",
+  "tags": [
+    "wood",
+    "vegetation"
+  ],
+  "physical_size_m": [
+    1.0,
+    2.0
+  ],
+  "license": "CC0-1.0",
+  "author": "AmbientCG",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_vegetation_bark_pine_albedo.png",
+    "normal": "tex_vegetation_bark_pine_normal.png",
+    "roughness": "tex_vegetation_bark_pine_roughness.png"
+  }
+}
