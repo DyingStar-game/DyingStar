@@ -1,0 +1,26 @@
+{
+  "id": "mat_concrete_wall_rough",
+  "display_name": "Rough Concrete Wall",
+  "tags": [
+    "concrete",
+    "wall",
+    "worn"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "KiFouine",
+  "ai_generated": false,
+  "notes": "Source: AmbientCG Concrete032 (CC0). Re-encoded from JPEG on export.",
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_concrete_wall_rough_albedo.png",
+    "normal": "tex_concrete_wall_rough_normal.png",
+    "roughness": "tex_concrete_wall_rough_roughness.png"
+  }
+}

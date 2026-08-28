@@ -1,0 +1,13 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://bguii8sbnenan"]
+
+[ext_resource type="Texture2D" uid="uid://u6aiik4jcd1e" path="res://assets/_universe/_shared/materials/mat_vegetation_bark_pine/tex_vegetation_bark_pine_albedo.png" id="1_lchfu"]
+[ext_resource type="Texture2D" uid="uid://dr18oyqsoblcd" path="res://assets/_universe/_shared/materials/mat_vegetation_bark_pine/tex_vegetation_bark_pine_normal.png" id="2_vtwn4"]
+[ext_resource type="Texture2D" uid="uid://cpp27o7elldpu" path="res://assets/_universe/_shared/materials/mat_vegetation_bark_pine/tex_vegetation_bark_pine_roughness.png" id="3_1u4p7"]
+
+[resource]
+resource_name = "mat_vegetation_bark_pine"
+albedo_texture = ExtResource("1_lchfu")
+roughness_texture = ExtResource("3_1u4p7")
+normal_enabled = true
+normal_texture = ExtResource("2_vtwn4")
+uv1_scale = Vector3(1, 0.5, 1)
