@@ -1,0 +1,24 @@
+{
+  "id": "mat_metal_diamondplate2k",
+  "display_name": "diamond metal plate floor",
+  "tags": [
+    "metal"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "AGPL-3.0",
+  "author": "https://ambientcg.com/",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_metal_diamondplate2k_albedo.png",
+    "normal": "tex_metal_diamondplate2k_normal.png",
+    "roughness": "tex_metal_diamondplate2k_roughness.png",
+    "metallic": "tex_metal_diamondplate2k_metallic.png"
+  }
+}
