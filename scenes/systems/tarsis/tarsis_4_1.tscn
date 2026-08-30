@@ -25,6 +25,7 @@ planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 113.62
 display_name = "Korax - Tarsis IV.M1"
 map_radius_km = 1500.0
+surface_albedo = 0.18
 map_color = Color(0.441, 0.413, 0.370, 1)
 orbit_periapsis_au = 0.0007279515376150337
 orbit_apoapsis_au = 0.0007426576292840243

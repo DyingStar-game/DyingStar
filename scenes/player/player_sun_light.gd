@@ -14,11 +14,17 @@ extends DirectionalLight3D
 ## culled off it), so it carries all of daytime — raised from 1.0 to make up for the removed OmniLight,
 ## which used to roughly double the light near the player. Tune in-game (live @export).
 @export var sun_energy: float = 2.0
-## Warm-at-horizon -> white-at-noon colour ramp, sampled by the star's real elevation above the horizon.
-@export var sun_tint: Gradient
+
+## Shortest cascade we will ever ask for, in metres: the shortest distance the graphics menu itself
+## offers. Under a thick haze the derived distance would collapse further, and a floor the settings
+## already consider acceptable is a better bound than a number picked here.
+const MIN_SHADOW_DISTANCE := 50.0
 
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
 var player: Node3D = null
+## The atmosphere, for the air this light has to cross (set by PlayerClient). Null = airless: the
+## star then arrives undimmed, which is exactly right on a bare moon or in open space.
+var atmosphere: AtmosphereRenderer = null
 ## True once the local up-direction has been STEADY for a stretch (star found, gravity resolved, so the
 ## real day/night AND the body/camera orientation have settled). The spawn loading screen waits on this,
 ## so the world doesn't flash daytime + a tilted camera then snap to the correct time/orientation.
@@ -57,8 +63,6 @@ func _ready() -> void:
 	light_cull_mask = Globals.RENDER_MASK_LOCAL
 	shadow_opacity = 0.69  # softened shadow look carried over from the temporary day/night sun
 	shadow_blur = 1.649
-	if sun_tint == null:
-		sun_tint = _build_default_sun_tint()
 	# Real-time shadows gated by the graphics settings (default on), reacting live to menu changes.
 	shadow_enabled = SettingsManager.is_shadows()
 	directional_shadow_max_distance = SettingsManager.get_shadow_distance()
@@ -107,60 +111,116 @@ func _process(delta: float) -> void:
 			_up_bad_frames = 0
 	# Star elevation above the local horizon: > 0 = day, < 0 = night (magnitude = sine of elevation).
 	var elevation: float = _up_stable.dot(to_star)
-	# Day/night factor: 1 in full day, 0 below the horizon, a soft band across the terminator. The SAME
-	# factor drives the sun energy AND the sky, so the sky-sourced ambient and reflections (which never
-	# pass through a light() function) darken in step -> a truly black night. Because up is stabilised,
-	# a genuine sunset (planet spin) crosses the band over minutes while glitches no longer reach it.
-	var day: float = smoothstep(-Globals.TERMINATOR_SOFTNESS, Globals.TERMINATOR_SOFTNESS, elevation)
+	# What actually reaches the ground, after the air the light crossed. This REPLACES the old
+	# smoothstep terminator: the planet's own bulk blocking the ray is the terminator, and the last
+	# degrees before it are dim because the light crosses tens of air masses — not because a constant
+	# said so. The star used to keep its full glare down to ~3 degrees and then switch off; it now
+	# loses most of it over the last ten, which is what a sunset looks like.
+	var extinction: Color = _atmospheric_extinction(elevation)
+	# Split into a HUE and a BRIGHTNESS, exactly: the colour is the transmittance divided by its
+	# strongest channel, the energy is that channel. Multiply them back and you get the transmittance
+	# per channel, unchanged — no approximation, and nowhere for the two to drift apart.
+	var brightest: float = maxf(extinction.r, maxf(extinction.g, extinction.b))
 	# Crossfade the day/night GATING by altitude. On the ground the sun is gated on your local day/night
 	# (off at your night) so shadows and total-black night work. High up and in space the gate is lifted
 	# and the sun stays on, letting its NdotL paint the true terminator across the whole visible surface
 	# — the day side lit, the night side dark — which is what the far-LOD sphere shows. This is what makes
 	# the chunk lighting match the sphere instead of going uniformly black over the night side at altitude.
 	var alt: float = _altitude_crossfade()
-	var final_energy: float = sun_energy * lerpf(day, 1.0, alt)
-	visible = final_energy > 0.001
+	var final_energy: float = sun_energy * lerpf(brightest, 1.0, alt)
+	visible = final_energy > 0.0001
 	if visible:
 		# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
 		# world position and the resulting orientation comes out wrong at astronomic coordinates (the
 		# light then just follows its parent, so the shadows spin with the camera). A DirectionalLight
 		# shines along its -Z and we want rays FROM the star TO the player, so its +Z axis must BE
 		# to_star. Assigning global_transform locks it in world space, immune to the body's mouse yaw.
-		var up_ref: Vector3 = _up_stable if absf(_up_stable.dot(to_star)) < 0.999 else player.global_transform.basis.x
-		var x_axis: Vector3 = up_ref.cross(to_star)
-		if x_axis.length_squared() < 0.000001:
-			x_axis = player.global_transform.basis.x.cross(to_star)  # degenerate: star straight overhead
-		x_axis = x_axis.normalized()
-		var y_axis: Vector3 = to_star.cross(x_axis).normalized()
-		global_transform = Transform3D(Basis(x_axis, y_axis, to_star), player.global_position)
+		global_transform = Transform3D(
+			aim_basis(to_star, _up_stable, player.global_transform.basis.x), player.global_position
+		)
 		# Warm the light near the horizon (sunrise/sunset), white at the zenith.
-		light_color = sun_tint.sample(clampf(elevation, 0.0, 1.0))
+		light_color = star_tint(extinction)
 		light_energy = final_energy
+	_apply_shadow_distance()
+
+## Orientation for a light shining FROM a celestial body TOWARD the player, given the unit vector
+## [param to_source] pointing at that body. Shared with the moon lights, which need it built exactly
+## the same way — hence a function rather than a second copy of the reasoning below.
+##
+## Do NOT use look_at() here: its target is derived from a ~3e10 world position and the resulting
+## orientation comes out wrong at astronomic coordinates (the light then just follows its parent, so
+## the shadows spin with the camera). A DirectionalLight shines along its -Z and we want rays FROM the
+## body TO the player, so its +Z axis must BE to_source.
+static func aim_basis(to_source: Vector3, up_reference: Vector3, fallback_axis: Vector3) -> Basis:
+	var up_ref: Vector3 = up_reference
+	if absf(up_reference.dot(to_source)) >= 0.999:
+		up_ref = fallback_axis
+	var x_axis: Vector3 = up_ref.cross(to_source)
+	if x_axis.length_squared() < 0.000001:
+		x_axis = fallback_axis.cross(to_source)  # degenerate: source straight overhead
+	x_axis = x_axis.normalized()
+	var y_axis: Vector3 = to_source.cross(x_axis).normalized()
+	return Basis(x_axis, y_axis, to_source)
+
 
 ## 0 near the ground (sun gated on your local day/night, with shadows), rising to 1 high up and in deep
 ## space (gate lifted -> the sun stays on and its NdotL draws the true day/night terminator across the
 ## visible surface, matching the far-LOD sphere). Crossfades over the atmosphere so the ground keeps its
 ## shadows while a view from altitude/orbit sees the whole planet's terminator, seamlessly across the LOD.
 func _altitude_crossfade() -> float:
-	var area: Node = player.get_current_gravity_parent()
-	if area == null or area.get_parent() == null:
-		return 1.0  # deep space: no ground to shadow — full terminator mode
-	var planet: Node = area.get_parent().get_parent()
-	if not (planet is Planet):
+	if not is_instance_valid(atmosphere):
 		return 1.0
-	var data: PlanetData = (planet as Planet).planet_data
-	if data == null:
-		return 1.0
-	var top: float = data.get_atmosphere_top() * 2.0
-	if top <= 0.0:
-		return 1.0  # airless body: no air to hide the terminator, full terminator mode
-	var altitude: float = (player.global_position - (planet as Node3D).global_position).length() - data.radius
-	return smoothstep(0.0, top, altitude)
+	var profile := atmosphere.current_profile()
+	if profile == null:
+		return 1.0  # deep space or an airless body: no air to hide the terminator, full terminator mode
+	# Starts lifting only ONCE OUT of the air, not from the ground up. Written from 0 it reached
+	# 0.0019 at the 5634 m of Sandbox's plateau, which left the sun 0.0039 of energy in the middle of
+	# the night — a fifth of a full moon, arriving from a star below the horizon, and enough to light
+	# the side of a building while the ground stayed black.
+	return smoothstep(
+		profile.atmosphere_top, profile.atmosphere_top * 2.0, atmosphere.altitude_above_sphere()
+	)
 
-## The stabilised local up, for AtmosphereRenderer. A read-only view: the stabilisation itself stays
-## in _process, untouched, because it carries fixes for glitches that took a while to pin down.
+
+## Fraction of the star's light, per channel, that survives the air between it and the player. White
+## when there is no air. A thin wrapper on purpose: the integral belongs with the coefficients, on
+## AtmosphereProfile, where the sky shader's twin of it also lives.
+func _atmospheric_extinction(elevation: float) -> Color:
+	if not is_instance_valid(atmosphere):
+		return Color.WHITE
+	return atmosphere.transmittance_at(elevation)
+
+
+## Shorten the shadow cascade under a haze. Below the veil only 13.6 % of the starlight arrives
+## directly on Sandbox — the rest is diffuse, and diffuse light casts no shadow — so a long cascade
+## spends its resolution drawing shadows whose contrast has already gone. Scaled by the VERTICAL
+## transmittance, which depends on altitude alone: making it follow the star's elevation instead would
+## change the cascade distance through the day and set the shadows swimming.
+func _apply_shadow_distance() -> void:
+	var setting: float = SettingsManager.get_shadow_distance()
+	if not is_instance_valid(atmosphere):
+		directional_shadow_max_distance = setting
+		return
+	var profile := atmosphere.current_profile()
+	if profile == null:
+		directional_shadow_max_distance = setting
+		return
+	var overhead: Color = atmosphere.transmittance_at(1.0)
+	directional_shadow_max_distance = maxf(setting * overhead.get_luminance(), MIN_SHADOW_DISTANCE)
+
+
+## The stabilised local up, for AtmosphereRenderer and MoonLights. A read-only view: the
+## stabilisation itself stays in _process, untouched, because it carries fixes for glitches that took
+## a while to pin down.
 func stable_up() -> Vector3:
 	return _up_stable
+
+
+## The system star node, once resolved. MoonLights needs it to work out each moon's phase, and
+## resolving it a second time would risk two answers.
+func get_star() -> Node3D:
+	return _star
+
 
 ## Resolve the system star (a static node under the level root). Cached by the caller.
 func _find_star() -> Node3D:
@@ -176,17 +236,20 @@ func _on_shadows_changed(on: bool) -> void:
 	shadow_enabled = on
 
 ## Live-apply the shadow distance graphics setting (SettingsManager.shadow_distance_changed).
-func _on_shadow_distance_changed(distance: float) -> void:
-	directional_shadow_max_distance = distance
+func _on_shadow_distance_changed(_distance: float) -> void:
+	_apply_shadow_distance()
 
-## Default sun colour ramp (elevation 0 -> 1): deep orange at dawn/dusk fading to white at noon.
-func _build_default_sun_tint() -> Gradient:
-	var gradient := Gradient.new()
-	gradient.offsets = PackedFloat32Array([0.0, 0.12, 0.35, 1.0])
-	gradient.colors = PackedColorArray([
-		Color(1.0, 0.32, 0.12),
-		Color(1.0, 0.55, 0.28),
-		Color(1.0, 0.93, 0.84),
-		Color(1.0, 1.0, 1.0),
-	])
-	return gradient
+## Hue of light that has crossed [param extinction] worth of air: the transmittance normalised to its
+## strongest channel, so it carries only the colour and the magnitude stays with the energy.
+##
+## This REPLACES the hand-written ramp the spec prescribed. That ramp was a table of seven colours
+## computed at SEA LEVEL, and on Sandbox's 5634 m plateau it applied the ground's reddening to air the
+## player is above: green cut to 0.114 at sunrise where the real figure is 0.268, blue to zero where
+## it is 0.009. It also forced pure white at the zenith, erasing the warmth a K star keeps through
+## any amount of air (0.959, 0.860). The integral we already run every frame knows all of this, and
+## knows it at the altitude the player is actually at.
+static func star_tint(extinction: Color) -> Color:
+	var brightest := maxf(extinction.r, maxf(extinction.g, extinction.b))
+	if brightest <= 0.0:
+		return Color.WHITE
+	return Color(extinction.r / brightest, extinction.g / brightest, extinction.b / brightest)

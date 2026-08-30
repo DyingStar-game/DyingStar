@@ -56,6 +56,12 @@ const DISTANCE_FACTOR := 1.0
 ## Value from the celestial data (tarsis.json, radius_km). 0 = unknown, callers fall back.
 @export var map_radius_km: float = 0.0
 
+## Fraction of the starlight this body reflects, from the celestial data (tarsis.json, albedo). It is
+## what turns a moon into a light source: the reflected illumination it sends to a nearby planet is
+## (2/3) * albedo * (radius / distance)^2 of the starlight the moon itself receives. 0 = unknown, and
+## the body then lights nothing.
+@export var surface_albedo: float = 0.0
+
 ## Backward compatibility — old scenes export these instead of planet_data.
 @export var planet_id: String = ""
 

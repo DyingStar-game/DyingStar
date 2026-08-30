@@ -125,11 +125,15 @@ float mie_phase(float cos_theta, float g) {
 
 // Optical depth accumulated from [param origin] along [param dir] over [param max_distance].
 vec3 optical_depth(vec3 origin, vec3 dir, float max_distance, int steps) {
-	float ds = max_distance / float(steps);
 	vec3 depth = vec3(0.0);
+	float near = 0.0;
 	for (int i = 0; i < steps; i++) {
-		vec3 p = origin + dir * (ds * (float(i) + 0.5));
-		depth += atmo_extinction(atmo_altitude(p)) * ds;
+		// Quadratic spacing, for the reason spelled out in scatter(): these rays always start inside
+		// the air and climb out of it, so the extinction is concentrated at the near end.
+		float far = max_distance * pow(float(i + 1) / float(steps), 2.0);
+		vec3 p = origin + dir * ((near + far) * 0.5);
+		depth += atmo_extinction(atmo_altitude(p)) * (far - near);
+		near = far;
 	}
 	return depth;
 }
@@ -168,7 +172,17 @@ vec3 scatter(
 		return vec3(0.0);
 	}
 
-	float ds = (t_exit - t_enter) / float(steps_view);
+	// Uniform steps fail badly here, and silently. Under Sandbox's veil the air is a 3.5 km slab at
+	// the bottom of a 110 km column, and even steps either straddle it or miss it. Measured over the
+	// whole hemisphere from the lowlands, a uniform march came out 25 times too bright AND the wrong
+	// colour — a green-cyan ambient under an orange sky, because the light and the dome were being
+	// integrated differently. Spacing the samples by i^2 puts them where the extinction is.
+	//
+	// Only when the camera is INSIDE the shell: from orbit the density peaks at the ray's closest
+	// approach, not at its start, and quadratic spacing would then sample the wrong end.
+	bool inside = shell.x <= 0.0;
+	float span = t_exit - t_enter;
+	float near = 0.0;
 	float cos_theta = dot(dir, to_star);
 	float phase_r = rayleigh_phase(cos_theta);
 	float phase_m = mie_phase(cos_theta, mie_g);
@@ -178,11 +192,19 @@ vec3 scatter(
 	vec3 sum_mie = vec3(0.0);
 
 	for (int i = 0; i < steps_view; i++) {
-		vec3 p = origin + dir * (t_enter + ds * (float(i) + 0.5));
+		float step_width = span / float(steps_view);
+		float t = t_enter + step_width * (float(i) + 0.5);
+		if (inside) {
+			float far = span * pow(float(i + 1) / float(steps_view), 2.0);
+			t = t_enter + (near + far) * 0.5;
+			step_width = far - near;
+			near = far;
+		}
+		vec3 p = origin + dir * t;
 		float h = atmo_altitude(p);
 		float density_r = rayleigh_density(h);
 		float density_m = mie_density(h);
-		depth_view += atmo_extinction(h) * ds;
+		depth_view += atmo_extinction(h) * step_width;
 
 		// Is this sample in the planet's own shadow? A star ray that enters the ground never gets
 		// here, and testing it is what draws the terminator and the shadow of the planet climbing
@@ -194,8 +216,8 @@ vec3 scatter(
 		vec3 depth_light = optical_depth(p, to_star, to_top, steps_light);
 
 		vec3 transmittance = exp(-(depth_view + depth_light));
-		sum_rayleigh += density_r * transmittance * ds;
-		sum_mie += density_m * transmittance * ds;
+		sum_rayleigh += density_r * transmittance * step_width;
+		sum_mie += density_m * transmittance * step_width;
 	}
 
 	view_transmittance = exp(-depth_view);
