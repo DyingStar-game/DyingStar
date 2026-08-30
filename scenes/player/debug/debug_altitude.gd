@@ -47,9 +47,10 @@ func _altitude_only() -> String:
 	# Altitude above the real terrain surface (samples the heightmap), ~0 when standing on the ground —
 	# not distance to the core, which would read the planet radius.
 	var altitude: float = (planet as Planet).surface_altitude_of((player as Node3D).global_position)
-	# In the air while below the atmosphere top (Tarsis4 = 50 km; other bodies have no value yet), in
-	# space above it. Airless bodies (height 0) read as space above the ground.
-	var in_air: bool = data.atmosphere_height > 0.0 and altitude <= data.atmosphere_height
+	# In the air while below the atmosphere top, in space above it. Airless bodies (no profile, or a
+	# zero shell) read as space above the ground.
+	var atmosphere_top: float = data.get_atmosphere_top()
+	var in_air: bool = atmosphere_top > 0.0 and altitude <= atmosphere_top
 	var where: String = "atmosphere" if in_air else "space"
 	var alt_str: String = "%.2f km" % (altitude / 1000.0) if absf(altitude) >= 1000.0 else "%.0f m" % altitude
 	# Longitude/latitude on the same "where am I" readout, in compass form (N/S, E/O), matching the

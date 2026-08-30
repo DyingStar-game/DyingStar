@@ -1658,12 +1658,12 @@ func _planet_ancestor_of(node: Node) -> Planet:
 ## Radius out to which a planet OWNS space: the reference sphere, the tallest terrain rising above
 ## it, and the atmosphere shell on top. This is the planet/space FRONTIER — inside it a body belongs
 ## in the planet's physics world, outside it in the root world (open space). Terrain height matters:
-## with atmosphere_height 0 (a bare moon) the bare radius would leave anyone standing on a mountain
+## with no atmosphere at all (a bare moon) the bare radius would leave anyone standing on a mountain
 ## outside their own planet.
 func _planet_domain_radius(p: Planet) -> float:
 	if p.planet_data == null:
 		return 0.0
-	return p.planet_data.radius + p.planet_data.max_height + p.planet_data.atmosphere_height
+	return p.planet_data.radius + p.planet_data.max_height + p.planet_data.get_atmosphere_top()
 
 
 ## The planet owning TRUE-universe position [param abs_pos], or null for open space. Ties break on

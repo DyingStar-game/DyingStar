@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="AtmosphereProfile" format=3 uid="uid://dv2jf80uor3c"]
+
+[ext_resource type="Script" uid="uid://bn505iggrkh12" path="res://scenes/planet/atmosphere_profile.gd" id="1_yfeoh"]
+
+[resource]
+script = ExtResource("1_yfeoh")
+planet_radius = 6356000.0
+atmosphere_top = 110000.0
+gravity = 7.774705784062155
+rayleigh_beta = Vector3(5.154740312339872e-06, 1.219751878571826e-05, 3.0415852828067998e-05)
+rayleigh_scale_height = 10371.042640756335
+mie_beta = Vector3(0.0005544043, 0.0005439069, 0.0005322673)
+mie_g = 0.691
+haze_top = 3500.0
+haze_falloff = 500.0
+ground_albedo = 0.15
+star_irradiance = 1066.825343425514
+star_angular_diameter = 0.6733701862512145
+star_temperature = 4831.333436607605
