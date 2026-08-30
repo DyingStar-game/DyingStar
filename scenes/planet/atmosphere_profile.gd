@@ -47,9 +47,12 @@ extends Resource
 @export var ground_albedo: float = 0.0
 @export var star_irradiance: float = 0.0        # W/m2 at this body
 @export var star_angular_diameter: float = 0.0  # degrees
-## Effective temperature of the star, K. Drives its disc colour and the colour
-## of the light that gets scattered.
+## Effective temperature of the star, K. Drives the colour below.
 @export var star_temperature: float = 0.0
+## Linear colour of the star, normalised so its brightest channel is 1. Derived
+## from star_temperature by a Planck spectrum through the CIE observer, so the
+## magnitude stays with star_irradiance and only the hue lives here.
+@export var star_color: Color = Color.WHITE
 
 
 ## True when this body has air to scatter light. Airless bodies keep a profile

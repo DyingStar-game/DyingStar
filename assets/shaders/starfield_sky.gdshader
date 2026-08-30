@@ -3,7 +3,7 @@ shader_type sky;
 // Bare starfield, no atmosphere: the sky of somewhere with no air. Used as the system chart's
 // background, where a Sky beats a full-screen quad — the renderer already knows which way the camera
 // is looking, so the stars sit in space for free instead of having the basis copied over by hand each
-// frame. The in-game sky (scenes/player/local_sky.gdshader) draws the same stars behind its air.
+// frame. The in-game sky (scenes/_universe/environment/sky.gdshader) draws the same stars behind its air.
 
 #include "res://assets/shaders/starfield.gdshaderinc"
 
