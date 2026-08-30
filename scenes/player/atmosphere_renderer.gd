@@ -51,6 +51,10 @@ var sun: PlayerSunLight = null
 ## frame, and at night the stars ARE the frame. 0.05 restores the look the night had before adaptation
 ## was switched on, whose eye opened about twenty times less far.
 @export var star_brightness: float = 1.0
+## Softness of the star's limb, as a fraction of its radius. Pushed from here so it can be tuned live:
+## the right value depends on the field of view and the screen, because it exists to keep a disc near
+## the resolution limit from aliasing into a polygon.
+@export var star_limb_softness: float = 0.5
 
 @export_group("Debug")
 ## Look at the lowlands without going there. OFF in play; a development tool, kept because it is the
@@ -280,6 +284,7 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 	}
 	_apply(values)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
+	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
 
 
