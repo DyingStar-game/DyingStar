@@ -149,6 +149,17 @@ func setup() -> void:
 	atmosphere.player = player
 	atmosphere.sun = sun
 	player.add_child(atmosphere)
+	# ... and the sun asks it back how much of the star survives the air. The two point at each other
+	# on purpose: one owns the geometry, the other owns the air, and neither duplicates the other.
+	sun.atmosphere = atmosphere
+	# Client-only moonlight: one directional light per moon of the body you are on, each one's
+	# brightness derived from that moon's own size, distance, albedo and phase. Sandbox has two.
+	var moons := MoonLights.new()
+	moons.name = "MoonLights"
+	moons.player = player
+	moons.sun = sun
+	moons.atmosphere = atmosphere
+	player.add_child(moons)
 	# Client-only orientation gizmos: labelled markers pointing at the star and each planet/moon,
 	# toggled from Settings > General (off by default). Parented UNDER the camera so the markers live
 	# in camera-local coordinates and don't swim at astronomic distances.

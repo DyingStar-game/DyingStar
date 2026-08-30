@@ -24,6 +24,52 @@ var sun: PlayerSunLight = null
 ## ONE knob that is allowed to be turned by eye, and it may only scale, never tint.
 @export var exposure_scale: float = 1.0
 
+@export_group("Dark adaptation")
+## Adapt the exposure to the scene. OFF by default, after measurement: this project runs with
+## `use_physical_light_units` disabled, which leaves CameraAttributes' ISO sensitivities without the
+## meaning that would turn a wide min/max range into a wide gain. The measured gain is a few, against
+## the 1e5 a moonlit night needs — so it cannot do the job it was switched on for, and MoonLights'
+## explicit gain does it instead.
+##
+## Worse, the two together fight: a fixed gain is what MAKES the night darker than the day, and an
+## auto-exposure's whole purpose is to bring them back to the same brightness. Kept as a switch
+## because a mild adaptation is pleasant on its own, but it is no longer load-bearing.
+@export var dark_adaptation: bool = false
+## Sensitivity bounds, ISO-like. The ceiling is DERIVED, not picked: a ground lit by Korax at 10
+## degrees of elevation returns 7.9e-7 in engine units, and bringing that to a dim but readable 0.15
+## needs a sensitivity of 1.9e7. An earlier cap of 1e6 was below what Korax needs even at the ZENITH
+## (2.4e6), which is why a rising moon seemed to light nothing until it was high: the eye was already
+## against the stop and could not open further as the moon sank. Godot's own defaults (0 to 800) span
+## a factor of eight, which is a camera's range, not an eye's.
+@export var adaptation_min_sensitivity: float = 20.0
+@export var adaptation_max_sensitivity: float = 2.0e7
+## How fast it opens and closes. Real dark adaptation takes minutes; this is deliberately quicker,
+## because a player who turns around should not wait for the world to appear.
+@export var adaptation_speed: float = 0.5
+## Brightness of the starfield. Pushed from here so it can be tuned live in the remote inspector,
+## because it is the only number in this lot with no physical anchor: dark adaptation normalises the
+## frame, and at night the stars ARE the frame. 0.05 restores the look the night had before adaptation
+## was switched on, whose eye opened about twenty times less far.
+@export var star_brightness: float = 1.0
+
+@export_group("Debug")
+## Look at the lowlands without going there. OFF in play; a development tool, kept because it is the
+## only way to inspect them at all.
+##
+## Sandbox's one city stands 5634 m up, above the corundum veil, so the permanent storm the lore
+## describes cannot be seen from the single place anyone plays — and the acceptance figures written
+## for it (a milky dome, 7 km of visibility, a star swallowed near the horizon) were unverifiable
+## until this existed.
+##
+## It raises the haze CEILING by the player's own altitude, every frame, leaving its thickness and its
+## coefficients alone, and lowers the observer by the same amount for the light. What ends up overhead
+## is then exactly what a lowlander has: 3500 m of veil, an optical depth of 1.904 — the figure that
+## pins the planet's published 0.32 albedo.
+##
+## It fakes the OBSERVER, never the planet: measured from the ground the column is no longer the
+## calibrated one. A way to look, and nothing more.
+@export var debug_pretend_lowlands: bool = false
+
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
@@ -60,6 +106,18 @@ func _build_environment() -> void:
 	# what the "visibility at ground level" figure of the model would be measured against.
 	env.volumetric_fog_enabled = false
 	player.get_world_3d().environment = env
+	player.get_world_3d().camera_attributes = _build_camera_attributes()
+
+
+## The eye. Set on the WORLD alongside the Environment, so every camera in it adapts together —
+## a mirror that kept a fixed exposure while the main view adapted would read as a lit screen at night.
+func _build_camera_attributes() -> CameraAttributesPractical:
+	var attributes := CameraAttributesPractical.new()
+	attributes.auto_exposure_enabled = dark_adaptation
+	attributes.auto_exposure_min_sensitivity = adaptation_min_sensitivity
+	attributes.auto_exposure_max_sensitivity = adaptation_max_sensitivity
+	attributes.auto_exposure_speed = adaptation_speed
+	return attributes
 
 
 ## Full-screen pass for the air in front of geometry. A shader_type sky cannot draw it: it only
@@ -95,29 +153,93 @@ func _process(_delta: float) -> void:
 	var star_direction: Vector3 = sun.star_direction
 	if star_direction == Vector3.ZERO:
 		return  # the sun has not found the star yet; leave last frame's sky rather than flash black
-	var profile: AtmosphereProfile = _current_profile()
+	var profile: AtmosphereProfile = current_profile()
+	_show_star_mesh(profile == null)
 	if profile == null:
 		_push_airless(star_direction)
 		return
 	_push_profile(profile, star_direction)
 
 
-## The atmosphere of the body the player is currently in, or null in open space or on a body that
-## carries none. Resolved through the gravity area the player is standing in, the same chain the sun
-## uses, so light and sky can never end up describing two different planets.
-func _current_profile() -> AtmosphereProfile:
+## Hand the star's disc to whichever of the two things that draw it is right here.
+##
+## scenes/_universe/environment/space/star.tscn is an additive quad with `fog_disabled` that writes no
+## depth, so the aerial perspective pass skips its pixels as empty sky and it shone through Sandbox's
+## dust storm at full strength — where the real transmittance is 6e-12. Inside an atmosphere the sky
+## shader already draws that disc, at the body's real angular diameter and dimmed by the transmittance
+## it has just integrated, so the mesh is redundant AND the wrong one of the two. In space the sky
+## draws none (there is no irradiance to spread), and the mesh comes back.
+##
+## Only visibility is touched. Everything else reads the node's POSITION — PlayerSunLight for the star
+## direction, PlanetBody and PlanetTerrain for their own lighting — and that is untouched.
+func _show_star_mesh(shown: bool) -> void:
+	if not is_instance_valid(sun):
+		return
+	var star := sun.get_star()
+	if star == null or star.visible == shown:
+		return
+	star.visible = shown
+
+
+## Leave the star as we found it. Without this, quitting to the menu from a planet would leave the
+## mesh hidden for whatever comes next.
+func _exit_tree() -> void:
+	_show_star_mesh(true)
+
+
+## The body the player is currently standing on, or null in open space. Resolved through the gravity
+## area, and resolved HERE ONLY: PlayerSunLight used to walk the same chain for its own purposes, and
+## two resolvers can disagree about which planet you are on. Everything atmospheric asks this node.
+func current_body() -> Planet:
 	var area: Node = player.get_current_gravity_parent()
 	if area == null or area.get_parent() == null:
 		return null
 	var body: Node = area.get_parent().get_parent()
 	if not (body is Planet):
 		return null
-	var data: PlanetData = (body as Planet).planet_data
-	if data == null or data.atmosphere_profile == null:
+	return body as Planet
+
+
+## The atmosphere of that body, or null when it is open space or an airless body.
+func current_profile() -> AtmosphereProfile:
+	var body := current_body()
+	if body == null or body.planet_data == null:
 		return null
-	if not data.atmosphere_profile.has_atmosphere():
+	var profile: AtmosphereProfile = body.planet_data.atmosphere_profile
+	if profile == null or not profile.has_atmosphere():
 		return null
-	return data.atmosphere_profile
+	return profile
+
+
+## Height of the player above the body's REFERENCE SPHERE, which is the altitude the density profiles
+## are written against — not the height above the terrain, which on a plateau differs by kilometres.
+func altitude_above_sphere() -> float:
+	var body := current_body()
+	if body == null or body.planet_data == null:
+		return 0.0
+	return (player.global_position - body.global_position).length() - body.planet_data.radius
+
+
+## How far to raise the haze ceiling, in metres. See debug_pretend_lowlands.
+func _haze_lift() -> float:
+	if not debug_pretend_lowlands:
+		return 0.0
+	return maxf(0.0, altitude_above_sphere())
+
+
+## Fraction of the light arriving from [param sin_elevation] above the local horizon, per channel,
+## that survives the air. White in open space, black when the body itself is in the way.
+##
+## Serves the star and the moons alike — it is the same air — and it is what makes a source lose most
+## of its glare near the horizon instead of switching off across an arbitrary softness band.
+func transmittance_at(sin_elevation: float) -> Color:
+	var profile := current_profile()
+	if profile == null:
+		return Color.WHITE
+	# The debug lift has to reach the LIGHT too, or the veil rises over your head while the star keeps
+	# shining at full plateau strength. Raising the ceiling for the shader and lowering the observer
+	# for the integral both mean the same thing: 3500 m of corundum overhead.
+	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation)
 
 
 ## Vector from the camera to the centre of the body the profile describes, or ZERO when it cannot be
@@ -125,13 +247,10 @@ func _current_profile() -> AtmosphereProfile:
 ## floats, where that magnitude quantises to hundreds of metres. The shader therefore never sees an
 ## absolute position, only this small offset.
 func _planet_center_relative() -> Vector3:
-	var area: Node = player.get_current_gravity_parent()
-	if area == null or area.get_parent() == null:
+	var body := current_body()
+	if body == null:
 		return Vector3.ZERO
-	var body: Node = area.get_parent().get_parent()
-	if not (body is Node3D):
-		return Vector3.ZERO
-	return (body as Node3D).global_position - player.camera.global_position
+	return body.global_position - player.camera.global_position
 
 
 ## Push one body's constants into both shaders. Every value comes from the profile; nothing is
@@ -146,7 +265,7 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"mie_beta": profile.mie_beta,
 		"mie_g": profile.mie_g,
 		"mie_albedo": profile.mie_albedo,
-		"haze_top": profile.haze_top,
+		"haze_top": profile.haze_top + _haze_lift(),
 		"haze_falloff": maxf(profile.haze_falloff, 1.0),
 		"mie_scale_height": maxf(profile.mie_scale_height, 1.0),
 		"absorption_beta": profile.absorption_beta,
@@ -161,6 +280,7 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 	}
 	_apply(values)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
+	_sky_material.set_shader_parameter("star_brightness", star_brightness)
 
 
 ## Open space, or an airless body: zero the coefficients so scatter() returns nothing and its
@@ -177,6 +297,7 @@ func _push_airless(star_direction: Vector3) -> void:
 		"to_star": star_direction,
 		"star_irradiance": 0.0,
 	})
+	_sky_material.set_shader_parameter("star_brightness", star_brightness)
 
 
 func _apply(values: Dictionary) -> void:

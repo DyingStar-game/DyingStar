@@ -19,7 +19,15 @@ uniform float star_angular_diameter = 0.5;
 // scale, and a hard edge aliases badly against a 32-step sky.
 uniform float star_limb_softness : hint_range(0.0, 1.0) = 0.15;
 
-uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
+// Brightness of the starfield, driven by AtmosphereRenderer.
+//
+// This is the one value in the whole model that CANNOT be derived, and the reason is worth
+// stating: a star is a point source far below one pixel, so what a shader draws for it has no
+// physical radiance to match. Worse, dark adaptation NORMALISES the frame — at night the stars are
+// most of what is in it, so scaling them physically does not dim them, it just moves the exposure
+// until they come back. Setting this from the physics was tried and put the sky below the point
+// where the eye stops opening, which erased the stars entirely. It is calibrated by eye instead.
+uniform float star_brightness : hint_range(0.0, 4.0) = 0.05;
 // How strongly a lit sky drowns the stars. This is eye adaptation, not radiometry: the stars really
 // are still there at noon, which is why they are attenuated by the physical transmittance FIRST and
 // only then washed out by the sky's own brightness.
