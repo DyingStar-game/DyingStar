@@ -135,13 +135,20 @@ func setup() -> void:
 	player.camera.current = true
 
 	player.camera.make_current()
-	_force_temp_sky_environment()
 	# Client-only sun: a DirectionalLight aimed from the real system star toward this player, for crisp
 	# shadows + day/night. The star's OmniLight lights the system but casts no shadows (unusable at scale).
 	var sun := PlayerSunLight.new()
 	sun.name = "PlayerSunLight"
 	sun.player = player
 	player.add_child(sun)
+	# Client-only atmosphere: owns the Environment, the sky dome and the aerial perspective pass, all
+	# driven by the current body's AtmosphereProfile. Created AFTER the sun, whose star direction it
+	# reads rather than recomputing (that geometry is delicate at astronomic coordinates).
+	var atmosphere := AtmosphereRenderer.new()
+	atmosphere.name = "AtmosphereRenderer"
+	atmosphere.player = player
+	atmosphere.sun = sun
+	player.add_child(atmosphere)
 	# Client-only orientation gizmos: labelled markers pointing at the star and each planet/moon,
 	# toggled from Settings > General (off by default). Parented UNDER the camera so the markers live
 	# in camera-local coordinates and don't swim at astronomic distances.
@@ -771,30 +778,6 @@ func _seat_door_open(seat) -> bool:
 ## shows the sky to every player. The PhysicalSky reacts to the DirectionalLight, so the day/night
 ## sun tint applies. Keep these values in sync with the WorldEnvironment in sandbox_capital.tscn.
 ## Remove this whole helper once the real sun/atmosphere system is in place.
-func _force_temp_sky_environment() -> void:
-	# LOCAL-frame sky shader instead of Godot's PhysicalSkyMaterial: the physical sky measures day/night
-	# and the horizon against WORLD axes, which is meaningless on a planet at ~3e10 (local up != world +Y)
-	# and left the sky black even in local daytime. local_sky.gdshader computes from local_up + to_star,
-	# both pushed each frame by PlayerSunLight._apply_night_sky. Still the TEMPORARY sky (real atmosphere
-	# replaces it), and it still feeds ambient + reflections, so night goes genuinely dark.
-	var sky_material := ShaderMaterial.new()
-	sky_material.shader = load("res://scenes/player/local_sky.gdshader")
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.glow_enabled = true
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.002
-	# Set it on the WORLD, not on player.camera, so EVERY camera in this world renders the local sky —
-	# including the vehicle mirror / reverse-cam SubViewports (RearCamera), which share get_world_3d() and
-	# have no Environment of their own. PlayerSunLight pushes the sky uniforms to this one shared material
-	# each frame, so all views (main + mirrors) stay in step. EYEDIR makes each render from its own angle.
-	player.get_world_3d().environment = env
-
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
 	player.camera.fov = fov

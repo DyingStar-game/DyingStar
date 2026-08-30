@@ -1,0 +1,59 @@
+shader_type sky;
+
+// Physical sky dome. Replaces local_sky.gdshader, whose gradient was marked TEMPORARY in its own
+// comments, and the extremely_fast_atmosphere addon that drew the halo from hand-painted gradient
+// LUTs. Both are gone: ground and orbit are now one model with one set of constants.
+//
+// Nothing here decides what the sky looks like — atmosphere_common.gdshaderinc integrates it from
+// the body's AtmosphereProfile. This file only says where the ray starts, adds the star's own disc,
+// and lets the stars through.
+#include "res://scenes/_universe/environment/atmosphere_common.gdshaderinc"
+
+// The same starfield the system chart (F2) draws, so a constellation learnt on the chart is the one
+// overhead. It is a pure function of a direction, which is why one file serves a quad and a dome.
+#include "res://assets/shaders/starfield.gdshaderinc"
+
+// Angular DIAMETER of the star's disc, degrees, as seen from this body.
+uniform float star_angular_diameter = 0.5;
+// Softness of the disc edge as a fraction of its radius: a star is not a hard-edged shape at this
+// scale, and a hard edge aliases badly against a 32-step sky.
+uniform float star_limb_softness : hint_range(0.0, 1.0) = 0.15;
+
+uniform float star_brightness : hint_range(0.0, 4.0) = 1.0;
+// How strongly a lit sky drowns the stars. This is eye adaptation, not radiometry: the stars really
+// are still there at noon, which is why they are attenuated by the physical transmittance FIRST and
+// only then washed out by the sky's own brightness.
+uniform float star_wash : hint_range(0.0, 2000.0) = 200.0;
+
+// The radiance cubemap that feeds ambient light and reflections is rendered over six faces every
+// time the sky changes, so it gets a cheaper integration. Its job is an average, not a horizon.
+uniform int cubemap_view_steps = 12;
+uniform int cubemap_light_steps = 4;
+
+
+void sky() {
+	vec3 transmittance;
+	int steps_v = AT_CUBEMAP_PASS ? cubemap_view_steps : view_steps;
+	int steps_l = AT_CUBEMAP_PASS ? cubemap_light_steps : light_steps;
+	// The camera is the origin of the frame: AtmosphereRenderer already subtracted its world position
+	// in double precision, so planet_center carries the offset and no ~3e10 coordinate reaches here.
+	vec3 air = scatter(vec3(0.0), EYEDIR, 1.0e30, steps_v, steps_l, transmittance);
+
+	// The star's disc, seen through whatever air lies in front of it. Its radiance is its irradiance
+	// spread over its solid angle, so a distant dim star and a close bright one both come out right.
+	float radius = radians(star_angular_diameter) * 0.5;
+	float angle = acos(clamp(dot(EYEDIR, to_star), -1.0, 1.0));
+	float disc = 1.0 - smoothstep(radius * (1.0 - star_limb_softness), radius, angle);
+	if (disc > 0.0) {
+		float solid_angle = max(2.0 * PI_F * (1.0 - cos(radius)), 1.0e-12);
+		air += star_irradiance / solid_angle * star_color * disc * transmittance * sky_exposure;
+	}
+
+	// Stars sit outside the atmosphere, so the same transmittance dims them — that is why they fade
+	// out through dusk instead of snapping on at sunset, and why they burn at full strength in space
+	// where the integral returns nothing and the transmittance is 1.
+	float sky_luminance = dot(air, vec3(0.2126, 0.7152, 0.0722));
+	vec3 stars = sf_starfield(EYEDIR) * star_brightness * transmittance;
+
+	COLOR = air + stars / (1.0 + sky_luminance * star_wash);
+}

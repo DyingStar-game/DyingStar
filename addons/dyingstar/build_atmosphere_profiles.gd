@@ -22,6 +22,8 @@ extends EditorScript
 ## index measured there with a density taken at another temperature is a silent
 ## 5 % error, so the two must be quoted together.
 const K_BOLTZMANN := 1.380649e-23
+const H_PLANCK := 6.62607015e-34
+const C_LIGHT := 2.99792458e8
 const R_GAS := 8.314462618
 const N_REF := 2.6867811e25
 const G_CONST := 6.67430e-11
@@ -160,6 +162,7 @@ func _read_star(structured: Dictionary, report: Report) -> Dictionary:
 		"luminosity_w": luminosity_w,
 		"radius_m": radius_sun * R_SUN,
 		"temperature": derived_temp,
+		"color": _blackbody_color(derived_temp),
 	}
 
 
@@ -195,6 +198,7 @@ func _build_planet(planet: Dictionary, index: int, flat: Dictionary, star: Dicti
 	profile.rayleigh_scale_height = _scale_height(mix, temperature, gravity)
 	profile.rayleigh_beta = _rayleigh_beta(mix, float(atmosphere.get("pressure_bar", 0.0)), temperature)
 	profile.star_temperature = star["temperature"]
+	profile.star_color = star["color"]
 	profile.star_irradiance = star["luminosity_w"] / (4.0 * PI * distance * distance)
 	profile.star_angular_diameter = rad_to_deg(2.0 * atan(star["radius_m"] / distance))
 	_apply_haze(profile, planet_name, display_name, report)
@@ -335,6 +339,7 @@ func _build_earth_reference(report: Report) -> void:
 	profile.absorption_beta = Vector3(0.650e-06, 1.881e-06, 0.085e-06)
 	profile.ground_albedo = 0.15
 	profile.star_temperature = T_SUN
+	profile.star_color = _blackbody_color(T_SUN)
 	profile.star_irradiance = 1361.0
 	profile.star_angular_diameter = 0.5334
 	var optical_depth: float = profile.rayleigh_beta.y * profile.rayleigh_scale_height
@@ -343,6 +348,64 @@ func _build_earth_reference(report: Report) -> void:
 		% optical_depth
 	)
 	_write_profile(profile, "earth_reference", report)
+
+
+## Linear colour of a black body at [param temperature], normalised so its
+## brightest channel is 1. The magnitude of the light belongs to star_irradiance,
+## so only the hue is kept here: a cooler star does not become a dimmer one.
+##
+## Planck spectrum through the CIE 1931 observer, then XYZ to linear sRGB. The
+## observer uses Wyman's multi-lobe Gaussian fit rather than a sampled table:
+## a handful of coefficients reproduce it to well under a perceptible step.
+func _blackbody_color(temperature: float) -> Color:
+	var x := 0.0
+	var y := 0.0
+	var z := 0.0
+	for nanometres in range(380, 781):
+		var radiance := _planck(float(nanometres), temperature)
+		x += radiance * _cie_x(float(nanometres))
+		y += radiance * _cie_y(float(nanometres))
+		z += radiance * _cie_z(float(nanometres))
+	var red := maxf(0.0, 3.2406 * x - 1.5372 * y - 0.4986 * z)
+	var green := maxf(0.0, -0.9689 * x + 1.8758 * y + 0.0415 * z)
+	var blue := maxf(0.0, 0.0557 * x - 0.2040 * y + 1.0570 * z)
+	var brightest := maxf(red, maxf(green, blue))
+	if brightest <= 0.0:
+		return Color.WHITE
+	return Color(red / brightest, green / brightest, blue / brightest)
+
+
+## Spectral radiance of a black body, W/m3/sr, at [param nanometres] and [param temperature].
+func _planck(nanometres: float, temperature: float) -> float:
+	var wavelength := nanometres * 1e-9
+	var exponent := H_PLANCK * C_LIGHT / (wavelength * K_BOLTZMANN * temperature)
+	return 2.0 * H_PLANCK * C_LIGHT * C_LIGHT / pow(wavelength, 5.0) / (exp(exponent) - 1.0)
+
+
+## One asymmetric Gaussian lobe of the colour-matching fit.
+func _cie_lobe(nanometres: float, centre: float, width_low: float, width_high: float) -> float:
+	var width := width_low if nanometres < centre else width_high
+	var t := (nanometres - centre) / width
+	return exp(-0.5 * t * t)
+
+
+func _cie_x(nanometres: float) -> float:
+	var orange := 1.056 * _cie_lobe(nanometres, 599.8, 37.9, 31.0)
+	var violet := 0.362 * _cie_lobe(nanometres, 442.0, 16.0, 26.7)
+	var dip := 0.065 * _cie_lobe(nanometres, 501.1, 20.4, 26.2)
+	return orange + violet - dip
+
+
+func _cie_y(nanometres: float) -> float:
+	var yellow := 0.821 * _cie_lobe(nanometres, 568.8, 46.9, 40.5)
+	var green := 0.286 * _cie_lobe(nanometres, 530.9, 16.3, 31.1)
+	return yellow + green
+
+
+func _cie_z(nanometres: float) -> float:
+	var blue := 1.217 * _cie_lobe(nanometres, 437.0, 11.8, 36.0)
+	var indigo := 0.681 * _cie_lobe(nanometres, 459.0, 26.0, 13.8)
+	return blue + indigo
 
 
 func _write_profile(profile: AtmosphereProfile, body_name: String, report: Report) -> void:

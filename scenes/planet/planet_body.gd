@@ -12,7 +12,7 @@ extends Node3D
 ##
 ## Expected children (set up in base_planet.tscn):
 ##   PlanetTerrain  — quadtree terrain manager
-##   Atmosphere      — (optional) instance of extremely_fast_atmosphere
+##   (the atmosphere is drawn client-side by AtmosphereRenderer, not by a node here)
 
 ## Earth mass in kg — converts orbit_mass_earths to the KG the Kepler solver expects.
 const MASS_EARTH := 5.972e24
@@ -404,20 +404,11 @@ func _setup_planet() -> void:
 	else:
 		print("[Planet] _setup_planet: planet_terrain is NULL (no $PlanetTerrain child)")
 
-	# Atmosphere — client only, runtime only
+	# The atmosphere is no longer a node on the planet: AtmosphereRenderer draws it from the player's
+	# side, out of this body's AtmosphereProfile, so one model serves the ground and the orbit alike.
+	# A leftover "Atmosphere" child from the old addon would just render a second, contradictory halo.
 	if not Engine.is_editor_hint() and has_node("Atmosphere"):
-		if _is_server():
-			# Server has no use for the atmosphere — remove it to avoid
-			# PlaceholderMaterial errors from the headless renderer.
-			$Atmosphere.queue_free()
-		else:
-			var atmo: Node = $Atmosphere
-			atmo.planet_radius = planet_data.radius
-			atmo.atmosphere_height = planet_data.get_atmosphere_top()
-			# Try to find the sun (star) in the parent scene
-			var sun := _find_sun()
-			if sun:
-				atmo.sun_object = sun
+		$Atmosphere.queue_free()
 
 
 func _setup_water_sphere() -> void:

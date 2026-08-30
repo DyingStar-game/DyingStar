@@ -17,3 +17,4 @@ ground_albedo = 0.15
 star_irradiance = 1066.825343425514
 star_angular_diameter = 0.6733701862512145
 star_temperature = 4831.333436607605
+star_color = Color(1, 0.77474326, 0.58699775, 1)

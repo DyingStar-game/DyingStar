@@ -98,7 +98,7 @@ const PLAYER_COLOR: Color = Color(1.0, 0.35, 0.35)  # you, deliberately unlike a
 ## The starry sky, generated rather than painted. The menu artwork it replaces had to be dimmed to 18%
 ## before the orbit rings could be read over its nebulae, and it still sat flat behind the view — it was
 ## a wallpaper. This is the SAME generator the game's own sky uses
-## (scenes/player/local_sky.gdshader), so a constellation learnt here is the one overhead, and being a
+## (scenes/_universe/environment/sky.gdshader), so a constellation learnt here is the one overhead, and being a
 ## function of view DIRECTION the stars stay fixed in space while the chart orbits past them.
 const BACKDROP_SHADER := preload("res://assets/shaders/starfield_sky.gdshader")
 ## Overall star brightness. The sky has to read as deep space without ever reaching the value of an
