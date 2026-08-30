@@ -15,9 +15,14 @@ shader_type sky;
 
 // Angular DIAMETER of the star's disc, degrees, as seen from this body.
 uniform float star_angular_diameter = 0.5;
-// Softness of the disc edge as a fraction of its radius: a star is not a hard-edged shape at this
-// scale, and a hard edge aliases badly against a 32-step sky.
-uniform float star_limb_softness : hint_range(0.0, 1.0) = 0.15;
+// Softness of the disc edge, as a fraction of its radius.
+//
+// The star's limb really is sharp, but 0.6734 degrees lands on about ten pixels at a 75 degree field
+// of view — near the resolution limit, where a hard edge is the WRONG answer: it aliases into a
+// visible polygon, and reads as a second, separate disc sitting inside the glow. Same trap the
+// starfield include documents for stars, from the other side. At 0.5 the fade spans half the radius,
+// roughly two pixels, and the core merges into its halo instead of fighting it.
+uniform float star_limb_softness : hint_range(0.0, 1.0) = 0.5;
 
 // Brightness of the starfield, driven by AtmosphereRenderer.
 //
