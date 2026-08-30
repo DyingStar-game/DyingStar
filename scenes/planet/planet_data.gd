@@ -31,8 +31,10 @@ var _height_fallback_hits: int = 0
 ## this (e.g. 3–8) to make terrain visually dramatic. Applies to both the visual
 ## mesh and collision, so they stay consistent. 1.0 = true scale.
 @export var terrain_exaggeration: float = 1.0
-## Atmosphere shell thickness in meters (0 = no atmosphere).
-@export var atmosphere_height: float = 0.0
+## Physical atmosphere of this body (null = airless). Owns the shell thickness,
+## the scattering coefficients and the star constants seen from here. Generated
+## by addons/dyingstar/build_atmosphere_profiles.gd from the system JSON.
+@export var atmosphere_profile: AtmosphereProfile = null
 ## Surface gravity in m/s² (Earth = 9.8).
 @export var surface_gravity: float = 9.8
 ## Radius of the gravity influence zone above the surface, in meters.
@@ -287,6 +289,15 @@ var skip_neighbor_crater_merge: bool = false
 ## mesh generation (WorkerThreadPool tasks) can safely read the image cache
 ## at the same time the main thread stores new recipe results.
 var _cache_mutex: Mutex = Mutex.new()
+
+
+## Altitude of the top of the atmosphere above the surface, in meters, or 0 for an
+## airless body. Single reader of the profile's shell thickness, so nothing else
+## has to know whether this body carries a profile at all.
+func get_atmosphere_top() -> float:
+	if atmosphere_profile == null:
+		return 0.0
+	return atmosphere_profile.atmosphere_top
 
 
 func _get_heightmap_image() -> Image:

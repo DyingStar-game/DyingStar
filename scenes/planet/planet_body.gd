@@ -413,7 +413,7 @@ func _setup_planet() -> void:
 		else:
 			var atmo: Node = $Atmosphere
 			atmo.planet_radius = planet_data.radius
-			atmo.atmosphere_height = planet_data.atmosphere_height
+			atmo.atmosphere_height = planet_data.get_atmosphere_top()
 			# Try to find the sun (star) in the parent scene
 			var sun := _find_sun()
 			if sun:

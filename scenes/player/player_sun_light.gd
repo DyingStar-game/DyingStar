@@ -167,7 +167,9 @@ func _altitude_crossfade() -> float:
 	var data: PlanetData = (planet as Planet).planet_data
 	if data == null:
 		return 1.0
-	var top: float = (data.atmosphere_height if data.atmosphere_height > 0.0 else Globals.DEFAULT_ATMOSPHERE_HEIGHT) * 2.0
+	var top: float = data.get_atmosphere_top() * 2.0
+	if top <= 0.0:
+		return 1.0  # airless body: no air to hide the terminator, full terminator mode
 	var altitude: float = (player.global_position - (planet as Node3D).global_position).length() - data.radius
 	return smoothstep(0.0, top, altitude)
 
@@ -187,7 +189,7 @@ func _apply_atmosphere_fade() -> void:
 
 ## 1 at the surface of the body the player is on, fading to 0 at the top of its atmosphere and 0 in deep
 ## space (no gravity body -> no air). A plain centre-radius altitude is enough here (the fade spans tens
-## of km, so the few-km terrain height is negligible); uses atmosphere_height, or a placeholder default.
+## of km, so the few-km terrain height is negligible); the shell height comes from the body's profile.
 func _atmosphere_factor() -> float:
 	var area: Node = player.get_current_gravity_parent()
 	if area == null or area.get_parent() == null:
@@ -198,7 +200,9 @@ func _atmosphere_factor() -> float:
 	var data: PlanetData = (planet as Planet).planet_data
 	if data == null:
 		return 0.0
-	var height: float = data.atmosphere_height if data.atmosphere_height > 0.0 else Globals.DEFAULT_ATMOSPHERE_HEIGHT
+	var height: float = data.get_atmosphere_top()
+	if height <= 0.0:
+		return 0.0  # airless body: no air, so no haze to fade
 	var altitude: float = (player.global_position - (planet as Node3D).global_position).length() - data.radius
 	return clampf(1.0 - altitude / height, 0.0, 1.0)
 

@@ -49,11 +49,6 @@ const DISABLED_DEV_TOOLS: Dictionary = {
 	"toggle_eva": true,   # EVA free-flight ($) — testing phase over, normal play only
 }
 
-## PLACEHOLDER atmosphere thickness (m) for bodies whose real value is not in the data yet — only
-## Tarsis4 (50 km) has one. Lets the altitude fog fade work everywhere until per-body atmosphere data
-## (derivable from the composition + pressure in tarsis.json) is wired in.
-const DEFAULT_ATMOSPHERE_HEIGHT := 50000.0
-
 ## Simulation-time acceleration. 1.0 = REAL time: a 25 h day and a 42-day orbit are then imperceptible,
 ## but every body sits exactly where the network placed it (the celestial service anchors its ephemeris
 ## on absolute unix time too, so our local orbit and the network snapshot agree at 1.0). Raise it to
