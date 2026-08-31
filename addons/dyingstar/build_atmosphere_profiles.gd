@@ -62,7 +62,8 @@ const HAZE := {
 		"mie_beta": Vector3(5.544043e-04, 5.439069e-04, 5.322673e-04),
 		"mie_g": 0.691,
 		"mie_albedo": 1.0,
-		"haze_top": 3500.0,
+		"haze_top": 4000.0,
+		"haze_bottom": 500.0,
 		"haze_falloff": 500.0,
 		"ground_albedo": 0.15,
 	},
@@ -317,6 +318,7 @@ func _apply_haze(profile: AtmosphereProfile, planet_name: String, display_name: 
 	profile.mie_g = haze["mie_g"]
 	profile.mie_albedo = haze["mie_albedo"]
 	profile.haze_top = haze["haze_top"]
+	profile.haze_bottom = haze["haze_bottom"]
 	profile.haze_falloff = haze["haze_falloff"]
 	profile.ground_albedo = haze["ground_albedo"]
 

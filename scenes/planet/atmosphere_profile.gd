@@ -35,8 +35,12 @@ const EXTINCTION_STEPS := 64
 ## 1.0 = non-absorbing (corundum). Below 1.0 the layer also darkens.
 @export var mie_albedo: float = 1.0
 ## 0 = exponential profile with `mie_scale_height`.
-## > 0 = capped, well-mixed layer topped at this altitude.
+## > 0 = a well-mixed SLAB between haze_bottom and haze_top, clear air on both sides.
 @export var haze_top: float = 0.0               # m
+## Floor of that slab. The dust is lifted and held by wind, so it does not reach the ground: on
+## Sandbox it runs from 500 m to 4 km, which leaves the valleys UNDER the veil rather than in it —
+## a permanent ceiling overhead and clear air to see across.
+@export var haze_bottom: float = 0.0            # m
 @export var haze_falloff: float = 0.0           # m, soft upper edge
 @export var mie_scale_height: float = 1200.0    # m, only when haze_top == 0
 
@@ -140,7 +144,9 @@ func rayleigh_density(altitude: float) -> float:
 
 func mie_density(altitude: float) -> float:
 	if haze_top > 0.0:
-		return 1.0 - smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude)
+		var below := smoothstep(haze_bottom - haze_falloff, haze_bottom + haze_falloff, altitude)
+		var above := smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude)
+		return below * (1.0 - above)
 	return exp(-altitude / mie_scale_height)
 
 
