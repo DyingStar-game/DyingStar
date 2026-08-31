@@ -27,8 +27,9 @@ uniform float mie_g = 0.0;
 // 1.0 = the haze only redistributes light, it cannot darken. Corundum (Al2O3) has k ~ 0 in the
 // visible, so Sandbox's veil sits exactly at 1.0; a value below it means a genuinely absorbing dust.
 uniform float mie_albedo = 1.0;
-// haze_top > 0 selects a capped, well-mixed layer; 0 selects a plain exponential.
+// haze_top > 0 selects a well-mixed SLAB between haze_bottom and haze_top; 0 a plain exponential.
 uniform float haze_top = 0.0;
+uniform float haze_bottom = 0.0;
 uniform float haze_falloff = 1.0;
 uniform float mie_scale_height = 1200.0;
 
@@ -71,9 +72,16 @@ vec2 ray_sphere(vec3 origin, vec3 dir, float radius) {
 }
 
 
-// Height of [param p] above the reference surface, in metres.
+// Height of [param p] above the reference surface, in metres, never below zero.
+//
+// The floor is not cosmetic. Half of Sandbox's surface lies BELOW the reference sphere — its valleys
+// reach -1700 m — and from there every ray/ground intersection returns a negative entry distance, so
+// the view march is never clipped by the planet and a downward ray travels through its interior. The
+// density there is exp(+depth / scale_height), which passes the float32 ceiling at -920 km and turns
+// the whole integral into inf, then NaN, then black. Clamping keeps a ray that dips underground
+// merely opaque, which is what it should be: you cannot see through a planet.
 float atmo_altitude(vec3 p) {
-	return length(p - planet_center) - planet_radius;
+	return max(0.0, length(p - planet_center) - planet_radius);
 }
 
 
@@ -84,12 +92,19 @@ float rayleigh_density(float altitude) {
 }
 
 
-// Two regimes. A capped, well-mixed layer (haze_top > 0) is what a suspended dust storm looks like:
-// uniform up to a ceiling, then a soft edge — which is why Sandbox's 4000 m plateaus stand clear of
-// it. Otherwise a plain exponential, like terrestrial aerosol.
+// Two regimes. A SLAB between haze_bottom and haze_top is what a wind-held dust storm looks like: it
+// hangs, so it reaches neither the ground nor the plateaus. On Sandbox it runs 500 m to 4 km, which
+// puts the plateaus above it and the valleys BELOW it — under a permanent ceiling, in air clear
+// enough to see across. Otherwise a plain exponential, like terrestrial aerosol.
+//
+// Its integral is exactly haze_top - haze_bottom whatever the falloff, because each soft edge
+// contributes half of its own width: the optical depth that pins the planet's albedo depends on the
+// slab's THICKNESS alone, and moving it up or down leaves the calibration untouched.
 float mie_density(float altitude) {
 	if (haze_top > 0.0) {
-		return 1.0 - smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude);
+		float below = smoothstep(haze_bottom - haze_falloff, haze_bottom + haze_falloff, altitude);
+		float above = smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude);
+		return below * (1.0 - above);
 	}
 	return exp(-altitude / mie_scale_height);
 }
