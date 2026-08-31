@@ -1,0 +1,161 @@
+[gd_scene format=3 uid="uid://cnwg7illbpt26"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(0.44462238568098655, 1.6645963120454326, 0.6993179991577563)
+
+[node name="PlanetTeleporter" type="Node3D" unique_id=1302203990]
+
+[node name="tarsis_4_2" type="Area3D" parent="." unique_id=1346999361 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, 5.288)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="tarsis_4_2" unique_id=1727317951]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.150341)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="tarsis_4_orbital" type="Area3D" parent="." unique_id=694240898 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, 3.587)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="tarsis_4_orbital" unique_id=1174924754]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.04837152991072457)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="sandbox_valley" type="Area3D" parent="." unique_id=1497501017 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, 1.887)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="sandbox_valley" unique_id=1447038626]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.05)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="sandbox_deepest" type="Area3D" parent="." unique_id=571759655 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, 0.186)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="sandbox_deepest" unique_id=617102159]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.05)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="sandbox_in_dust" type="Area3D" parent="." unique_id=180935160 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, -1.514)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="sandbox_in_dust" unique_id=1888778139]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.05)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="sandbox_above_veil" type="Area3D" parent="." unique_id=808943738 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, -3.215)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="sandbox_above_veil" unique_id=956984012]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.05)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="sandbox_polar" type="Area3D" parent="." unique_id=753537438 groups=["teleporter"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, -4.915)
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="sandbox_polar" unique_id=307474075]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.05)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=887078363]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(2, 2.5, 12)
+
+[node name="CSGBox3D" type="CSGBox3D" parent="CSGBox3D" unique_id=836816460]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 5.287659798198121)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D" type="Label3D" parent="CSGBox3D" unique_id=1083933730]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.8498875009151492, 5.320268427470822)
+text = "Tarsis_4_2"
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="CSGBox3D" unique_id=656102238]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 3.587156230187972)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D2" type="Label3D" parent="CSGBox3D" unique_id=111182650]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.9986601328201252, 3.593846440102908)
+text = "Orbital
+Sandbox"
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="CSGBox3D" unique_id=201649439]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 1.8867)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D3" type="Label3D" parent="CSGBox3D" unique_id=1597683031]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.95, 1.8867)
+text = "Vallee
+equateur
+-145 m"
+font_size = 48
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="CSGBox3D" unique_id=1571664034]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 0.1862)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D4" type="Label3D" parent="CSGBox3D" unique_id=2006104869]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.95, 0.1862)
+text = "Point le
+plus bas
+-1700 m"
+font_size = 48
+
+[node name="CSGBox3D5" type="CSGBox3D" parent="CSGBox3D" unique_id=1657323246]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, -1.5143)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D5" type="Label3D" parent="CSGBox3D" unique_id=1619638212]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.95, -1.5143)
+text = "DANS la
+poussiere
+2733 m"
+font_size = 48
+
+[node name="CSGBox3D6" type="CSGBox3D" parent="CSGBox3D" unique_id=137378278]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, -3.2148)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D6" type="Label3D" parent="CSGBox3D" unique_id=68815721]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.95, -3.2148)
+text = "Au-dessus
+du voile
+4202 m"
+font_size = 48
+
+[node name="CSGBox3D7" type="CSGBox3D" parent="CSGBox3D" unique_id=1824487828]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, -4.9153)
+operation = 2
+size = Vector3(1, 1.9, 0.9)
+
+[node name="Label3D7" type="Label3D" parent="CSGBox3D" unique_id=792254939]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.95, -4.9153)
+text = "Vallee
+polaire
+-1420 m"
+font_size = 48
