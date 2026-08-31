@@ -57,22 +57,26 @@ var sun: PlayerSunLight = null
 @export var star_limb_softness: float = 0.5
 
 @export_group("Debug")
-## Look at the lowlands without going there. OFF in play; a development tool, kept because it is the
-## only way to inspect them at all.
+## Look at another altitude without going there. OFF in play; a development tool, kept because it is
+## the only way to inspect most of the planet at all.
 ##
-## Sandbox's one city stands 5634 m up, above the corundum veil, so the permanent storm the lore
-## describes cannot be seen from the single place anyone plays — and the acceptance figures written
-## for it (a milky dome, 7 km of visibility, a star swallowed near the horizon) were unverifiable
-## until this existed.
+## Sandbox's one city stands 5634 m up, above the corundum veil, so neither the storm nor the valleys
+## beneath it can be seen from the single place anyone plays — and the acceptance figures written for
+## them stayed unverifiable until this existed.
 ##
-## It raises the haze CEILING by the player's own altitude, every frame, leaving its thickness and its
-## coefficients alone, and lowers the observer by the same amount for the light. What ends up overhead
-## is then exactly what a lowlander has: 3500 m of veil, an optical depth of 1.904 — the figure that
-## pins the planet's published 0.32 albedo.
+## It shifts the haze SLAB by the difference between where you are and `debug_pretend_altitude`,
+## leaving its thickness and its coefficients alone, and shifts the observer by the same amount for
+## the light. What ends up overhead is then exactly what someone standing at that altitude has.
+##
+## Since the veil is a slab from 500 m to 4 km, the target altitude decides which world you get:
+##   380  — a valley floor, UNDER the veil: a ceiling overhead and 320 km of clear air around you
+##   2000 — INSIDE the dust: the milky dome, 7 km of visibility, the star swallowed near the horizon
+##   4050 — the altitude Bitogno wants for the capital, just clear of the storms
 ##
 ## It fakes the OBSERVER, never the planet: measured from the ground the column is no longer the
 ## calibrated one. A way to look, and nothing more.
 @export var debug_pretend_lowlands: bool = false
+@export var debug_pretend_altitude: float = 380.0
 
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
@@ -134,8 +138,21 @@ func _build_aerial_quad() -> void:
 		return
 	_aerial_material = ShaderMaterial.new()
 	_aerial_material.shader = load("res://scenes/_universe/environment/aerial_perspective.gdshader")
-	# Composite last, so the screen texture it reads already holds everything else.
-	_aerial_material.render_priority = 100
+	# Composite BEFORE the other transparent objects, not after.
+	#
+	# This pass rewrites each pixel from a copy of the screen, and that copy is taken when the pass
+	# itself draws. Drawn last, it read a screen that did not yet contain the Label3Ds, particles or
+	# any other transparent thing, and overwrote them with the opaque surface behind — but only where
+	# there WAS an opaque surface, since the `depth <= 0` branch leaves sky pixels alone. Text over a
+	# wall vanished while the same text against the sky survived, cut exactly along the wall's
+	# silhouette. Drawing first makes the copy hold the opaque frame, which is the only thing this
+	# pass is entitled to fog anyway.
+	#
+	# The trade: transparent objects no longer receive aerial perspective. For labels that is right —
+	# they are signage, not scenery. For a future transparent effect at kilometres it would not be,
+	# and the fix then is two passes, blend_mul for the transmittance and blend_add for the
+	# in-scattering, which composites without reading the screen at all.
+	_aerial_material.render_priority = -100
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	_aerial_quad = MeshInstance3D.new()
@@ -228,7 +245,7 @@ func altitude_above_sphere() -> float:
 func _haze_lift() -> float:
 	if not debug_pretend_lowlands:
 		return 0.0
-	return maxf(0.0, altitude_above_sphere())
+	return altitude_above_sphere() - debug_pretend_altitude
 
 
 ## Fraction of the light arriving from [param sin_elevation] above the local horizon, per channel,
@@ -270,6 +287,7 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"mie_g": profile.mie_g,
 		"mie_albedo": profile.mie_albedo,
 		"haze_top": profile.haze_top + _haze_lift(),
+		"haze_bottom": profile.haze_bottom + _haze_lift(),
 		"haze_falloff": maxf(profile.haze_falloff, 1.0),
 		"mie_scale_height": maxf(profile.mie_scale_height, 1.0),
 		"absorption_beta": profile.absorption_beta,
