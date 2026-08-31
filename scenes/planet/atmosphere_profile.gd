@@ -120,7 +120,9 @@ func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) 
 	for i in steps:
 		var far: float = distance * pow(float(i + 1) / float(steps), 2.0)
 		var point: Vector3 = origin + dir * ((near + far) * 0.5)
-		var altitude: float = point.length() - planet_radius
+		# Never below the reference sphere: see atmo_altitude() in the shader. Sandbox's valleys go to
+		# -1700 m, and an unclamped depth makes exp(+depth / scale_height) overflow.
+		var altitude: float = maxf(0.0, point.length() - planet_radius)
 		depth += (
 			rayleigh_beta * rayleigh_density(altitude)
 			+ mie_beta * mie_density(altitude)
