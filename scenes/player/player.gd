@@ -53,6 +53,47 @@ const TELEPORT_TARGETS := {
 		"planet": "tarsis_4",
 		"pos": Vector3(4520717.7, 2714719.7, -3734460.4),
 	},
+	# Atmosphere test sites, from the terrain data (assets/qgis/export/tarsis_4_heightmap.tif) and the
+	# POI list. Sandbox's corundum veil is a slab from 500 m to 4 km, so what the sky looks like is
+	# decided by which side of it you stand on — and the one city sits 5637 m up, above all of it.
+	# Each landing is 100 m over the sampled terrain; the heightmap is ~10 km per pixel, so the local
+	# relief decides the last few metres of the drop.
+	## major_railway_city_08, lon -8.291 lat +0.127, terrain -145 m. UNDER the veil and on the
+	## equator: a ceiling overhead, clear air around, and the star climbing to the zenith.
+	"sandbox_valley": {
+		"planet": "tarsis_4",
+		"pos": Vector3(6289510.3, 14088.4, -916531.4),
+	},
+	## The lowest point on the planet, lon -53.438 lat +2.812, terrain -1700 m. 2.2 km of clear air
+	## below the veil's floor.
+	"sandbox_deepest": {
+		"planet": "tarsis_4",
+		"pos": Vector3(3780709.2, 311740.2, -5097789.3),
+	},
+	## lon -5.846 lat +18.862, terrain +1750 m: INSIDE the dust. The milky dome, 7 km of visibility,
+	## and the star's disc extinguished below about 8 degrees of elevation. On a plateau at least
+	## 29 km across, because the veil needs an OPEN horizon to be judged: every equatorial site at
+	## this altitude sits on the slope climbing from the -145 m valley to Palaka-Pital at +4202 m,
+	## and lands you in a ravine whose walls hide the sky. Longitude is what sets local time, and
+	## this one is within 3 degrees of sandbox_valley, so the three veil sites still share an hour
+	## of the day; only the star's elevation differs, by the 19 degrees of latitude.
+	"sandbox_in_dust": {
+		"planet": "tarsis_4",
+		"pos": Vector3(5985143.4, 2055428.6, -612803.9),
+	},
+	## Palaka-Pital, lon -18.348 lat +0.037, terrain +4202 m: just clear of the veil, on the equator.
+	## The altitude Bitogno wants for the capital, and a blue sky with the star overhead.
+	"sandbox_above_veil": {
+		"planet": "tarsis_4",
+		"pos": Vector3(6036956.1, 4107.3, -2002144.6),
+	},
+	## lon +9.844 lat +78.047, terrain -1420 m: under the veil AND at high latitude, where the axial
+	## tilt of 15 degrees keeps the star between -3 and +27 degrees over the year. Grazing light and
+	## maximum extinction at once — the hardest case in the model.
+	"sandbox_polar": {
+		"planet": "tarsis_4",
+		"pos": Vector3(1296735.8, 6216897.1, 225010.8),
+	},
 }
 
 @export_group("Controls map names")
