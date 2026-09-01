@@ -68,5 +68,18 @@ void sky() {
 	float sky_luminance = dot(air, vec3(0.2126, 0.7152, 0.0722));
 	vec3 stars = sf_starfield(EYEDIR) * star_brightness * transmittance;
 
+	// The stars are drawn for the EYE, never for the light. This same function also renders the
+	// radiance cubemap that feeds ambient light and reflections, and star_brightness is explicitly
+	// NOT radiometric -- it is calibrated against eye adaptation, as the uniform above says. Letting
+	// it through made the whole night sky an ambient source: at night `air` is nearly zero, so the
+	// wash-out term vanishes and the starfield arrives at full strength, lighting the terrain and
+	// the buildings from every direction at once. That is what read as everything being backlit.
+	//
+	// Real starlight is around 1e-4 lux against 0.25 for a full moon: it lights nothing. The moons
+	// do the lighting, through MoonLights, where it can be reasoned about.
+	if (AT_CUBEMAP_PASS) {
+		stars = vec3(0.0);
+	}
+
 	COLOR = air + stars / (1.0 + sky_luminance * star_wash);
 }
