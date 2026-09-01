@@ -679,7 +679,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var moons = player.get_node_or_null("MoonLights")
 		if moons != null:
 			moons.moon_lights_enabled = not moons.moon_lights_enabled
-			print("[MoonLights] %s" % ("allumees" if moons.moon_lights_enabled else "ETEINTES"))
+			moons.report_now()
 
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
