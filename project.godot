@@ -298,6 +298,11 @@ debug_toggle_moon_lights={
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":true,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":76,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
+debug_isolate_light={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":true,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":73,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
 star_map={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194333,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
@@ -364,4 +369,8 @@ occlusion_culling/use_occlusion_culling=true
 
 [threading]
 
+; Kubernetes containers see every core of the NODE (80 on preprod), not the pod's CPU limit, and the
+; default (-1) sizes the WorkerThreadPool to that. Jolt's per-step job fan-out then wakes ~80 threads
+; in waves across NUMA sockets: measured 204k futex wakeups/s, system time 2x user, tick at 5 TPS.
+; Cap the pool on the dedicated server only; clients keep the core-count default.
 worker_pool/max_threads.dedicated_server=8

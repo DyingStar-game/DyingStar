@@ -681,6 +681,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			moons.moon_lights_enabled = not moons.moon_lights_enabled
 			moons.report_now()
 
+	# Removes one light contributor at a time, to attribute what is lighting a surface.
+	if event.is_action_pressed("debug_isolate_light") and not _input_locked():
+		var renderer = player.get_node_or_null("AtmosphereRenderer")
+		if renderer != null:
+			var labels := [
+				"tout allume",
+				"SANS PERSPECTIVE AERIENNE : plus d'air entre l'oeil et la surface",
+				"SANS REFLET DU CIEL : plus de speculaire",
+				"SANS AMBIANTE DU CIEL : plus de diffus, le ciel n'eclaire plus rien",
+			]
+			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
+
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
 		player.display_debug.emit(player._display_debug)
