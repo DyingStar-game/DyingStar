@@ -81,6 +81,8 @@ var sun: PlayerSunLight = null
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
+## Which contributor the development switches currently remove. See cycle_light_isolation().
+var _isolation: int = 0
 
 
 func _ready() -> void:
@@ -340,3 +342,47 @@ func _sky_exposure(profile: AtmosphereProfile) -> float:
 	if profile.star_irradiance <= 0.0:
 		return 0.0
 	return PI * sun.sun_energy / profile.star_irradiance * exposure_scale
+
+
+## Development switches that remove ONE contributor at a time, so whatever stays lit names its own
+## source. Attributing light by eye is guesswork: a slope lit by the sky's diffuse ambient, by the
+## air in front of it, or by a reflection of the horizon all look alike, and the three need opposite
+## repairs.
+##
+## They earned their place at once. A slope that looked lit FROM BEHIND -- blamed on terrain having
+## no shadows past 300 m -- turned out to receive no direct light at all: switching the ambient off
+## took it from luminance 78 to 2, while switching the aerial pass off barely moved it. Two hours of
+## shadow work could never have changed it.
+
+
+## Hides the aerial-perspective pass: the air between the eye and the surface.
+func set_aerial_enabled(on: bool) -> void:
+	if is_instance_valid(_aerial_quad):
+		_aerial_quad.visible = on
+
+
+## Switches the sky's SPECULAR reflection off. Separate from the ambient on purpose: they are two
+## lights of two colours. The ambient is the whole dome averaged, so it carries the sky's MEAN
+## colour; the reflection is directional and returns a narrow band of it.
+func set_sky_reflection_enabled(on: bool) -> void:
+	var env := player.get_world_3d().environment
+	if env != null:
+		env.reflected_light_source = (Environment.REFLECTION_SOURCE_SKY if on
+				else Environment.REFLECTION_SOURCE_DISABLED)
+
+
+## Switches the sky's diffuse ambient off, leaving the reflection and the direct lights.
+func set_sky_ambient_enabled(on: bool) -> void:
+	var env := player.get_world_3d().environment
+	if env != null:
+		env.ambient_light_source = (Environment.AMBIENT_SOURCE_SKY if on
+				else Environment.AMBIENT_SOURCE_DISABLED)
+
+
+## Cycles which single contributor is removed: 0 none, 1 aerial, 2 reflection, 3 ambient.
+func cycle_light_isolation() -> int:
+	_isolation = (_isolation + 1) % 4
+	set_aerial_enabled(_isolation != 1)
+	set_sky_reflection_enabled(_isolation != 2)
+	set_sky_ambient_enabled(_isolation != 3)
+	return _isolation
