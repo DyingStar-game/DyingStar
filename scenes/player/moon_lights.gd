@@ -38,6 +38,13 @@ const SHADOW_WORTH_FRACTION := 5.0e-06
 ## all the moons together and changes none of their relationships.
 @export var moon_light_gain: float = 500.0
 
+## Development switch, toggled by the `debug_toggle_moon_lights` action. OFF means the moons light
+## NOTHING, which is the only way to tell their contribution apart from the city's own lamps and
+## from a wall simply catching a grazing light face-on. Judging moonlight by eye without it is
+## guesswork: a directional light at the horizon hits vertical walls at full cosine and the ground
+## at almost none, so a moon setting LOOKS like it is brightening the buildings.
+@export var moon_lights_enabled: bool = true
+
 ## The owned player body (set by PlayerClient).
 var player: Node3D = null
 ## The star's light, for the shared aiming, the reddening ramp and the reference energy.
@@ -62,6 +69,9 @@ func _process(_delta: float) -> void:
 	if not is_instance_valid(player) or not is_instance_valid(sun) or not is_instance_valid(atmosphere):
 		return
 	var moons := _moons_of_current_body()
+	if not moons_lights_enabled_now():
+		_drop_lights_not_in([])
+		return
 	var brightest: Node3D = null
 	var brightest_fraction := 0.0
 	var contributions := {}
@@ -74,6 +84,12 @@ func _process(_delta: float) -> void:
 	for moon in moons:
 		_apply_moon(moon, contributions[moon], moon == brightest)
 	_drop_lights_not_in(moons)
+
+
+## True while the moons are allowed to light the world. Kept as a function so the switch has one
+## reader, and so turning it off DROPS the lights rather than leaving them at their last energy.
+func moons_lights_enabled_now() -> bool:
+	return moon_lights_enabled
 
 
 ## The moons of the body the player is on. On the client a moon is parented UNDER its planet (the

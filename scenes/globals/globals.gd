@@ -182,8 +182,23 @@ func format_distance(metres: float) -> String:
 	return "%s million km" % format_thousands(km / 1.0e6)
 
 
+## Development offset in SIMULATION seconds, added after `time_scale` so one hour is one hour of the
+## planet's own day whatever the scale. Nudged by the `debug_time_forward` / `debug_time_back`
+## actions.
+##
+## It is safe to move because the sky is a PURE FUNCTION OF TIME and everything standing on a planet
+## is a CHILD of it: shifting the clock turns the star, the moons and the planets together, and turns
+## the ground under nobody. The authority keeps its own time and never learns about this, which is
+## why the offset lives here and not in `_clock_offset` -- sync_clock() would erase it on the next
+## packet, by design.
+var debug_time_offset: float = 0.0
+
+## Seconds of simulation time one press of `debug_time_forward` is worth.
+const DEBUG_TIME_STEP: float = 3600.0
+
+
 func sim_time() -> float:
-	return (Time.get_unix_time_from_system() + _clock_offset) * time_scale
+	return (Time.get_unix_time_from_system() + _clock_offset) * time_scale + debug_time_offset
 
 
 ## Feed a reference timestamp coming off the network (seconds since the unix epoch, as sent by the

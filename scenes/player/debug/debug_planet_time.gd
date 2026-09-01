@@ -33,4 +33,9 @@ func _planet_time_text() -> String:
 		return "-- : --"  # not spinning, no star, or standing on a pole
 	var whole: int = int(hours)
 	var minutes: int = int((hours - float(whole)) * 60.0)
-	return "%02d:%02d %s" % [whole, minutes, (planet as Planet).name]
+	var label: String = "%02d:%02d %s" % [whole, minutes, (planet as Planet).name]
+	# A clock that has been nudged must SAY so: an hour that does not match the authority's is the
+	# kind of thing one forgets having set, and then debugs for twenty minutes.
+	if not is_zero_approx(Globals.debug_time_offset):
+		label += "  (%+.1f h dev)" % (Globals.debug_time_offset / 3600.0)
+	return label
