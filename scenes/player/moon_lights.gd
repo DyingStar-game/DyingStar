@@ -86,6 +86,36 @@ func _process(_delta: float) -> void:
 	_drop_lights_not_in(moons)
 
 
+## One line per moon: what each factor of the energy chain is actually worth right now. Printed on
+## demand rather than shown in the HUD, because the interesting moment is a specific one -- a given
+## phase at a given elevation -- and because it is the only way to tell WHICH factor is eating the
+## light. Measured from a screenshot, the ground was rendering 200 times below what the gain says it
+## should, and no amount of looking could say whether the phase, the extinction or the gain was
+## responsible.
+func report_now() -> void:
+	if not is_instance_valid(player) or not is_instance_valid(sun):
+		return
+	print("[MoonLights] gain=%.0f  interrupteur=%s  sun_energy=%.2f"
+		% [moon_light_gain, "on" if moon_lights_enabled else "OFF", sun.sun_energy])
+	for moon in _moons_of_current_body():
+		var to_moon: Vector3 = moon.global_position - player.global_position
+		if to_moon.length_squared() < 0.0001:
+			continue
+		to_moon = to_moon.normalized()
+		var fraction := _reflected_fraction(moon)
+		var phase := _phase(moon, to_moon)
+		var elevation: float = sun.stable_up().dot(to_moon)
+		var extinction: Color = atmosphere.transmittance_at(elevation)
+		var brightest: float = maxf(extinction.r, maxf(extinction.g, extinction.b))
+		# Parts per million rather than scientific notation: Godot's String % has NO %e, and using
+		# one fails at RUNTIME with "unsupported format character", printing the format string
+		# itself and aborting the rest of the function.
+		print("   %-10s fraction=%.2f ppm  phase=%.3f  elevation=%+.1f deg  extinction=%.3f  -> energie=%.5f"
+			% [moon.name, fraction * 1.0e6, phase,
+			rad_to_deg(asin(clampf(elevation, -1.0, 1.0))),
+			brightest, sun.sun_energy * fraction * phase * brightest * moon_light_gain])
+
+
 ## True while the moons are allowed to light the world. Kept as a function so the switch has one
 ## reader, and so turning it off DROPS the lights rather than leaving them at their last energy.
 func moons_lights_enabled_now() -> bool:
