@@ -661,6 +661,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_star_map.open()
 
+	# Development clock. Echo is allowed on purpose: holding the key sweeps the sky, which is the
+	# only practical way to judge a sunset. Locked out with the rest of the input so it cannot fire
+	# under the star map, whose zoom shares these two keys.
+	if not _input_locked() and not Globals.is_dev_tool_disabled("debug_time"):
+		var step: float = 0.0
+		if event.is_action_pressed("debug_time_forward", true):
+			step = Globals.DEBUG_TIME_STEP
+		elif event.is_action_pressed("debug_time_back", true):
+			step = -Globals.DEBUG_TIME_STEP
+		if step != 0.0:
+			Globals.debug_time_offset += step
+
+	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
+	if event.is_action_pressed("debug_toggle_moon_lights") and not _input_locked():
+		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
+		var moons = player.get_node_or_null("MoonLights")
+		if moons != null:
+			moons.moon_lights_enabled = not moons.moon_lights_enabled
+			print("[MoonLights] %s" % ("allumees" if moons.moon_lights_enabled else "ETEINTES"))
+
 	if event.is_action_pressed("toggle_debug"):
 		player._display_debug = not player._display_debug
 		player.display_debug.emit(player._display_debug)
