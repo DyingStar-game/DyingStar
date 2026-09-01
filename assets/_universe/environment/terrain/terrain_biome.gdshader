@@ -207,7 +207,20 @@ void fragment() {
 	// path per-fragment.  Computed here (before any texturing) so its VALUE —
 	// not a per-fragment branch — blends the cliff result, keeping the
 	// derivative-based LOD (dFdx in detail_lods) in uniform control flow.
-	vec3 planet_up = normalize(world_pos);
+	// The radial computed in vertex(), NOT normalize(world_pos). The comment on planet_radial_world
+	// above already spells out why: w = 0 drops the model matrix's translation. world_pos keeps it,
+	// and on the CLIENT that translation is the planet's Kepler position -- tarsis_4 orbits at
+	// 0.63-0.67 AU, i.e. ~1e11 m from the universe root, against a 6.36e6 m radius. normalize() of
+	// that returns the star-to-planet direction, which varies by 0.004 degrees across the whole
+	// globe: `slope` was therefore not the local slope at all, but the dot of the surface normal
+	// with a planet-wide constant. Every face on the star-facing hemisphere fell under
+	// cliff_slope_threshold and rendered as cliff -- albedo pulled 30 % toward cliff_tint and
+	// ROUGHNESS forced up -- while genuinely vertical faces elsewhere were missed.
+	//
+	// It only shows on the client: planet_body.gd returns early from _place_at_time() under
+	// Engine.is_editor_hint() or dedicated_server, so in the editor and on the server the planet
+	// sits at the origin and normalize(world_pos) happens to be right. That is why it survived.
+	vec3 planet_up = planet_radial_world;
 	float slope = dot(world_normal, planet_up);  // 1.0 = flat, 0.0 = vertical
 	float cliff_lo = cliff_slope_threshold - cliff_blend_range;
 	float cliff_hi = cliff_slope_threshold + cliff_blend_range;
