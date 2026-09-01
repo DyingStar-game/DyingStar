@@ -57,7 +57,17 @@ void sky() {
 	float radius = radians(star_angular_diameter) * 0.5;
 	float angle = acos(clamp(dot(EYEDIR, to_star), -1.0, 1.0));
 	float disc = 1.0 - smoothstep(radius * (1.0 - star_limb_softness), radius, angle);
-	if (disc > 0.0) {
+	// Never in the ambient cubemap, for two independent reasons.
+	//
+	// DOUBLE COUNTING: the disc's radiance is star_irradiance / solid_angle, so integrating it over
+	// the sky gives back the star's FULL irradiance -- which PlayerSunLight's DirectionalLight
+	// already delivers. Letting both through lights everything twice.
+	//
+	// AND THE CUBEMAP HAS NO TERRAIN: it is rendered over six faces including the one pointing
+	// down, and nothing there knows the planet is in the way. At night the star sits in that face,
+	// attenuated only by the short path to the ground, so the world ends up lit from below by a
+	// star that has set. That is the light that survived turning the moons off.
+	if (disc > 0.0 && !AT_CUBEMAP_PASS) {
 		float solid_angle = max(2.0 * PI_F * (1.0 - cos(radius)), 1.0e-12);
 		air += star_irradiance / solid_angle * star_color * disc * transmittance * sky_exposure;
 	}
