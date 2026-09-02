@@ -17,6 +17,25 @@ uniform float metallic  : hint_range(0.0, 1.0, 0.01) = 0.0;
 // How much vertex color influences the final albedo (1.0 = full, 0.0 = flat).
 group_uniforms blending;
 uniform float vertex_color_strength : hint_range(0.0, 1.0, 0.01) = 1.0;
+// Scales the final albedo. A knob on the BIOME PALETTE, not a lighting correction.
+//
+// iron_tint() produces vertex colours around 0.82-0.90, which is the reflectance of fresh snow.
+// Light sand sits near 0.35 and powdered corundum near 0.25, so the ground was returning about 2.4x
+// the light it should. Until the cliff bug above was fixed this went unnoticed, because cliff_tint
+// was darkening the entire day side by 30 % and hiding it.
+//
+// Measured at noon on Sandbox, ground against the sky directly above it:
+//   before  ratio 7.78, 64 % of the ground's pixels clipped to white
+//   at 0.40 ratio 3.53, no clipping at all   (light sand is physically 3.2)
+//
+// Lowering EXPOSURE instead would look similar and be wrong: it would darken the sky too, and the
+// sky is correct. That is precisely what the cliff bug was doing by accident.
+//
+// This is a STOPGAP. The real fix belongs in iron_tint(), and the value needs a decision: the
+// atmosphere profile of Sandbox declares ground_albedo = 0.15, which is what pins the planet's
+// published 0.32 albedo and the calibration of mie_beta. 0.15, 0.40 and the 0.64 of KiFouine's
+// corundum material cannot all be right.
+uniform float albedo_multiplier : hint_range(0.05, 1.5, 0.01) = 1.0;
 // A fallback base color used when vertex_color_strength < 1.0.
 uniform vec4 base_color : source_color = vec4(0.45, 0.35, 0.25, 1.0);
 
@@ -323,7 +342,7 @@ void fragment() {
 	// Blend: detail 0.5 = no change, <0.5 darkens, >0.5 brightens.
 	// Using overlay-style blending for natural look.
 	float mod = mix(1.0, detail * 2.0, detail_strength);
-	ALBEDO = clamp(biome_color * mod, vec3(0.0), vec3(1.0));
+	ALBEDO = clamp(biome_color * mod * albedo_multiplier, vec3(0.0), vec3(1.0));
 
 	// Increase roughness on steep cliff faces for a more matte rock look.
 	ROUGHNESS = mix(roughness, min(roughness + 0.1, 1.0), cliff_factor);

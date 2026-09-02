@@ -118,6 +118,7 @@ render_priority = 0
 shader = ExtResource("shader")
 shader_parameter/roughness = 0.85
 shader_parameter/metallic = 0.0
+shader_parameter/albedo_multiplier = 0.4
 shader_parameter/vertex_color_strength = 1.0
 shader_parameter/base_color = Color(0.45, 0.35, 0.25, 1)
 shader_parameter/detail_textures = SubResource("Texture2DArray_6er27")
