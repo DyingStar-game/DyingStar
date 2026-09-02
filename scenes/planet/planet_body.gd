@@ -513,7 +513,7 @@ func _setup_gravity() -> void:
 	_gravity_area.collision_mask = Globals.MASK_SOLID
 
 	# The gravity sphere covers the terrain plus the configurable gravity_reach.
-	# gravity_reach is independent of atmosphere_height — even airless bodies
+	# gravity_reach is independent of the atmosphere shell — even airless bodies
 	# (moons, asteroids) have gravitational pull above their surface.
 	var gravity_reach: float = planet_data.gravity_reach + planet_data.max_height
 	var shape := SphereShape3D.new()
