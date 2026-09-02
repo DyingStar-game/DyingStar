@@ -674,7 +674,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			Globals.debug_time_offset += step
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
-	if event.is_action_pressed("debug_toggle_moon_lights") and not _input_locked():
+	if (event.is_action_pressed("debug_toggle_moon_lights") and not _input_locked()
+			and not Globals.is_dev_tool_disabled("debug_toggle_moon_lights")):
 		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
 		var moons = player.get_node_or_null("MoonLights")
 		if moons != null:
@@ -682,14 +683,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			moons.report_now()
 
 	# Removes one light contributor at a time, to attribute what is lighting a surface.
-	if event.is_action_pressed("debug_isolate_light") and not _input_locked():
+	if (event.is_action_pressed("debug_isolate_light") and not _input_locked()
+			and not Globals.is_dev_tool_disabled("debug_isolate_light")):
 		var renderer = player.get_node_or_null("AtmosphereRenderer")
 		if renderer != null:
 			var labels := [
-				"tout allume",
-				"SANS PERSPECTIVE AERIENNE : plus d'air entre l'oeil et la surface",
-				"SANS REFLET DU CIEL : plus de speculaire",
-				"SANS AMBIANTE DU CIEL : plus de diffus, le ciel n'eclaire plus rien",
+				"everything on",
+				"NO AERIAL PERSPECTIVE: no air between the eye and the surface",
+				"NO SKY REFLECTION: no specular",
+				"NO SKY AMBIENT: no diffuse, the sky lights nothing",
 			]
 			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
 
@@ -815,12 +817,6 @@ func _seat_door_open(seat) -> bool:
 		return true
 	return veh.is_door_open(str(seat.door_id))
 
-## TEMPORARY (until the planet sun/atmosphere system is fixed): build a physical-sky environment
-## directly on the player camera. A Camera3D's own environment overrides any rival WorldEnvironment
-## (the scene's WorldEnvironment doesn't apply in-game here -> black sky), so this is what reliably
-## shows the sky to every player. The PhysicalSky reacts to the DirectionalLight, so the day/night
-## sun tint applies. Keep these values in sync with the WorldEnvironment in sandbox_capital.tscn.
-## Remove this whole helper once the real sun/atmosphere system is in place.
 ## Live camera FOV update from the settings menu (local player only).
 func _on_fov_changed(fov: float) -> void:
 	player.camera.fov = fov

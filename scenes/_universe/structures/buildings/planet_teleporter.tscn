@@ -1,9 +1,12 @@
-[gd_scene format=3 uid="uid://cnwg7illbpt26"]
+[gd_scene load_steps=3 format=3 uid="uid://cnwg7illbpt26"]
+
+[ext_resource type="Script" uid="uid://enijs3uxypvy" path="res://scenes/_universe/structures/buildings/planet_teleporter.gd" id="1_tpscript"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
 size = Vector3(0.44462238568098655, 1.6645963120454326, 0.6993179991577563)
 
 [node name="PlanetTeleporter" type="Node3D" unique_id=1302203990]
+script = ExtResource("1_tpscript")
 
 [node name="tarsis_4_2" type="Area3D" parent="." unique_id=1346999361 groups=["teleporter"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.25, 5.288)
