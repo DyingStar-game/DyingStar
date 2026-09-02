@@ -36,16 +36,16 @@ const DISTANCE_FACTOR := 1.0
 ## Colour this body reads as from space — used by the system chart (StarMap), and available to
 ## anything else that needs to name it at a glance. Derived from the GDD's own description of each
 ## world rather than picked by eye: Tarsis I's "océan de lave et obsidian surchauffé", Tarsis II's
-## sulfur plains and iron sand, Tarsis IV's permanent corundum dust storm, Tarsis VIII's tholins.
+## sulfur plains and iron sand, Tarsis III's permanent corundum dust storm, Tarsis VIII's tholins.
 ## Where the GDD gives no description, physics does: methane absorbs red (the ice giant reads blue),
 ## albedo sets the brightness, and equilibrium temperature separates ice from rock.
 ## Default is the neutral blue a body with no data gets.
 @export var map_color: Color = Color(0.45, 0.72, 1.0)
 
 ## What this body is CALLED, for markers and the system chart — never the node name, which carries
-## Horizon's code (a planet arrives as "SandBox" but a moon as "P4_M2") and differs between the
+## Horizon's code (a planet arrives as "SandBox" but a moon as "P3_M2") and differs between the
 ## server's tree and the client's. Taken from the GDD: proper name when it has one, catalogue
-## designation otherwise, e.g. "Korax - Tarsis IV.M1" or plain "Tarsis VI.M1".
+## designation otherwise, e.g. "Korax - Tarsis III.M1" or plain "Tarsis VI.M1".
 ## Empty falls back to the node name, so a body nobody has named still shows something.
 @export var display_name: String = ""
 
@@ -120,7 +120,7 @@ var spawn_position: Vector3 = Vector3.ZERO
 var orbital_position: Vector3 = Vector3.ZERO
 ## SERVER REBASE: uuid of the body [member orbital_position] is measured FROM, "" when it is already
 ## a universe-absolute position. Horizon sends a moon's position RELATIVE to the planet it orbits
-## (P4_M1 arrives at ~3e7 m while Tarsis 4 sits at ~3.3e10 m) and carries the tie in parent_id — the
+## (P3_M1 arrives at ~3e7 m while Tarsis 3 sits at ~3.3e10 m) and carries the tie in parent_id — the
 ## client resolves it by parenting the moon under its planet, but the server keeps every body at the
 ## origin of its own physics world, so it must sum the chain instead: server.gd _planet_orbital_abs.
 var orbital_parent_uuid: String = ""
@@ -149,7 +149,7 @@ func _ready() -> void:
 		# the network "positions" BEFORE add_child, and spawn_position stays
 		# ZERO — unconditionally assigning it here wiped that position, so
 		# every network planet collapsed to (0,0,0) under its parent
-		# (tarsis_4_1/4_2 rendered as phantom surfaces INSIDE tarsis_4).
+		# (tarsis_3_1/4_2 rendered as phantom surfaces INSIDE tarsis_3).
 		if spawn_position != Vector3.ZERO:
 			position = spawn_position
 
@@ -617,8 +617,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			# GORC zone events (client path) carry a SINGULAR "position" dict —
 			# _standardize_object passes zone_data through as object_data. Without
 			# this branch a network-spawned planet never applies its position and
-			# stays at (0,0,0) under its parent: tarsis_4_1/4_2 then sit CONCENTRIC
-			# inside tarsis_4, rendering a phantom uncarved surface over the real
+			# stays at (0,0,0) under its parent: tarsis_3_1/4_2 then sit CONCENTRIC
+			# inside tarsis_3, rendering a phantom uncarved surface over the real
 			# terrain (hiding the corundum cracks players then fall into).
 			position = Vector3(
 				data["position"]["x"],

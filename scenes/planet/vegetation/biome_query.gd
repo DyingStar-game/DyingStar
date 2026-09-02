@@ -21,7 +21,7 @@ extends RefCounted
 ##
 ## Usage:
 ##   var bq := BiomeQuery.new()
-##   bq.load_geojson("res://assets/qgis/.export/tarsis_4_biomes.json")
+##   bq.load_geojson("res://assets/qgis/.export/tarsis_3_biomes.json")
 ##   var zone := bq.query_biome_type(dir, "forest")
 ##   if not zone.is_empty():
 ##       print("Inside forest zone with density ", zone.density)

@@ -525,7 +525,7 @@ func _project_by_raycast(points: Array[Vector3], up: Vector3) -> Array[Dictionar
 
 ## The planet supplying ground heights, or null when the scene has none. Explicit assignment
 ## wins; otherwise the ancestors are walked first (cheapest, and right when the scatter node
-## sits under the planet) and then the whole edited scene is scanned — in tarsis_4.tscn the
+## sits under the planet) and then the whole edited scene is scanned — in tarsis_3.tscn the
 ## PlanetTerrain is a SIBLING branch, so an ancestor walk alone would never find it.
 func _resolve_planet() -> Node3D:
 	if planet != null:

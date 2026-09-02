@@ -95,7 +95,7 @@ func _sync_markers() -> void:
 		if not _markers.has(id):
 			var body: Node3D = bodies[id]
 			# The same two properties the system chart reads, so a body is named and coloured identically
-			# wherever it shows up. body.name is Horizon's code ("P4_M2"), never what to show a player.
+			# wherever it shows up. body.name is Horizon's code ("P3_M2"), never what to show a player.
 			var label_text: String = body.name
 			var colour: Color = _body_color(body)
 			if body is Planet:

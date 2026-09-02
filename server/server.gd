@@ -1621,8 +1621,8 @@ func update_generic_object(event: Dictionary) -> void:
 var _orbital_abs_cache: Dictionary = {}
 
 ## TRUE universe position of [param p]'s centre. NOT the same as p.orbital_position for a moon:
-## Horizon sends a moon's position RELATIVE to the planet it orbits (P4_M1 arrives at ~3e7 m while
-## Tarsis 4 sits at ~3.3e10 m), so the chain has to be summed. Everything that compares positions
+## Horizon sends a moon's position RELATIVE to the planet it orbits (P3_M1 arrives at ~3e7 m while
+## Tarsis 3 sits at ~3.3e10 m), so the chain has to be summed. Everything that compares positions
 ## ACROSS worlds — the settle-culler radius, the Horizon zone bounds, spawn ownership — must go
 ## through this, or a body on a moon reads as ~3.3e10 m away from where it really is.
 ##
@@ -1834,7 +1834,7 @@ func _push_zone_residency_to_planet(planet_node: Node) -> void:
 	var planet: Planet = planet_node as Planet
 	if planet.planet_terrain == null or planet.planet_data == null:
 		return
-	# Fine-collision planets (file-mode crack planets like tarsis_4) get ALL
+	# Fine-collision planets (file-mode crack planets like tarsis_3) get ALL
 	# their collision from the per-body pin system at collision_detail_nside
 	# (n8192). Do NOT also blanket the zone with coarse export-nside (n64)
 	# chunks: both attach shapes to the SAME PlanetCollision body, and where a

@@ -20,9 +20,9 @@ func _altitude_text() -> String:
 	return _altitude_only() + _frame_suffix()
 
 ## The scene-graph parent the player is currently attached to — the MOVING FRAME that carries them.
-## Shows a body's name (e.g. "Tarsis4", or a structure on it) while bound to it; the universe root once
+## Shows a body's name (e.g. "Tarsis3", or a structure on it) while bound to it; the universe root once
 ## released to deep space by the server frame-boundary. Tells at a glance whether a body's spin/orbit
-## still carries you: "deep space · frame: Tarsis4" is bound (dragged), "· frame: <root>" is free.
+## still carries you: "deep space · frame: Tarsis3" is bound (dragged), "· frame: <root>" is free.
 func _frame_suffix() -> String:
 	var player: Node = owner
 	if not is_instance_valid(player):
