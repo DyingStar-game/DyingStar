@@ -147,7 +147,7 @@ var _editor_biome_focus: Node3D = null
 
 ## Camera altitude above the ACTUAL (crack-aware) terrain surface, sampled
 ## once per LOD update in _update_terrain and reused by every _traverse call.
-## Metrics measured against sea level are wrong on high terrain: tarsis_4's
+## Metrics measured against sea level are wrong on high terrain: tarsis_3's
 ## plateau sits ~5.6 km above the sea-level radius, which inflated every
 ## distance by that much and stopped the quadtree from ever reaching its
 ## finest depth (so the render could never match the always-finest collision).
@@ -387,7 +387,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	planet_data.ensure_queries_loaded()
 
 	# Find the road/chasm crossings now rather than on the first chunk that
-	# needs a bridge: the walk costs ~200 ms on tarsis_4 and would otherwise
+	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
 	# land as a visible stall in the middle of flight. Memoised afterwards.
 	planet_data.get_bridge_spans()
 
@@ -1615,7 +1615,7 @@ func _auto_tune_editor_camera() -> void:
 ## Planet-local position of the terrain surface along unit [param dir]: sea
 ## level plus the elevation sampled from the heightmap pyramid.
 ##
-## Sea level alone ([code]dir * radius[/code]) is NOT the surface — tarsis_4
+## Sea level alone ([code]dir * radius[/code]) is NOT the surface — tarsis_3
 ## spans −1700 m to +9000 m, so a point built that way sits kilometres below
 ## the ground on any highland. Every lon/lat → position conversion in the
 ## editor goes through here for that reason.
@@ -1864,7 +1864,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 	# LOD distance = max(surface distance to the chunk, camera altitude above
 	# the ACTUAL terrain surface).  Straight-line distance to the sea-level
 	# chunk centre is wrong twice over: cracks/valleys put the camera below
-	# the centres, and high terrain (tarsis_4's plateau is ~5.6 km above the
+	# the centres, and high terrain (tarsis_3's plateau is ~5.6 km above the
 	# sea-level radius) inflates EVERY distance by its elevation — so the
 	# quadtree never reached its finest depth and the render sat coarser than
 	# the always-finest collision (player under the displayed floor).  The
@@ -2146,7 +2146,7 @@ func _try_create_or_defer(info: Dictionary) -> void:
 ## Sanity-check cached chunk geometry against the live analytic surface.
 ## A chunk baked while the per-chunk .r32 elevation tiles were unreadable was
 ## built from the flat equirect fallback — its surface sits kilometres away
-## from the real one (the tarsis_4 "3-6 km" bug). The cache version hash can't
+## from the real one (the tarsis_3 "3-6 km" bug). The cache version hash can't
 ## capture that failure, so validate at LOAD time: reconstruct one vertex's
 ## planet-local radial distance and compare it to the crack-aware surface in
 ## that direction. Tolerance is generous (cracks are ~200 m deep; the failure
@@ -2702,7 +2702,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# Save terrain mesh to disk cache for future restarts — but ONLY if the
 	# chunk's export elevation tile is actually available. If the .r32 tile was
 	# missing/unreadable when the mesh was built, generate_mesh sampled the flat
-	# equirect fallback, collapsing high plateaus toward sea level (the tarsis_4
+	# equirect fallback, collapsing high plateaus toward sea level (the tarsis_3
 	# "terrain 3-6 km below the props" bug). Persisting such a mesh makes the bad
 	# bake "valid" forever, while the editor (fresh regen) and server collision
 	# (already guarded in _create_chunk) stay correct. Skip the write so the

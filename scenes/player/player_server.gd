@@ -2001,7 +2001,7 @@ func _exit_tree() -> void:
 ## The node the bake TRAVERSES for source geometry: the whole world the NPC can walk around in.
 ##
 ## Emphatically NOT player.get_parent(). A player is parented to the APARTMENT it spawned in (the spawn
-## event sends parent_id == spawn_appartment_id, e.g. "tarsis_4-1002"), so grouping the parent parses
+## event sends parent_id == spawn_appartment_id, e.g. "tarsis_3-1002"), so grouping the parent parses
 ## that one apartment's collider and nothing else — measured: 38 polys of apartment floor, identical
 ## under every bake setting, leaving the NPC able to walk only as far as its own wall. The planet is the
 ## node that actually holds the terrain chunks AND the city (the city spawns with the planet as parent).

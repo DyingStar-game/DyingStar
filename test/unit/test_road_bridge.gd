@@ -19,7 +19,7 @@ extends GutTest
 const PlanetDataScript := preload("res://scenes/planet/planet_data.gd")
 
 const RADIUS := 6356000.0
-## tarsis_4's settings: gorges 250 m wide and 180 m deep, every 4 km.
+## tarsis_3's settings: gorges 250 m wide and 180 m deep, every 4 km.
 const SPACING := 4000.0
 const WIDTH := 250.0
 const DEPTH := 180.0

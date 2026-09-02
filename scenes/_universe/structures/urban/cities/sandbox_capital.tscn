@@ -477,23 +477,23 @@ text = "Bardock house"
 
 [node name="PlanetTeleporter" type="Node3D" parent="." unique_id=1976552097]
 
-[node name="tarsis_4_2" type="Area3D" parent="PlanetTeleporter" unique_id=123347451 groups=["teleporter"]]
+[node name="tarsis_3_2" type="Area3D" parent="PlanetTeleporter" unique_id=123347451 groups=["teleporter"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 94.13877190071942)
 collision_layer = 16
 collision_mask = 0
 monitoring = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_4_2" unique_id=648478695]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_3_2" unique_id=648478695]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.150341)
 shape = SubResource("BoxShape3D_gy7pr")
 
-[node name="tarsis_4_orbital" type="Area3D" parent="PlanetTeleporter" unique_id=1951402626 groups=["teleporter"]]
+[node name="tarsis_3_orbital" type="Area3D" parent="PlanetTeleporter" unique_id=1951402626 groups=["teleporter"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 92.53287770641572)
 collision_layer = 16
 collision_mask = 0
 monitoring = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_4_orbital" unique_id=321300656]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_3_orbital" unique_id=321300656]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.04837152991072457)
 shape = SubResource("BoxShape3D_gy7pr")
 

@@ -23,7 +23,7 @@ extends GutTest
 ##       -gtest=res://test/unit/test_road_no_double_render.gd
 
 const ModifierPackScript := preload("res://scenes/planet/modifier_pack.gd")
-const PACK_PATH := "res://assets/qgis/export/tarsis_4_chunks/terrainmodifier.pack"
+const PACK_PATH := "res://assets/qgis/export/tarsis_3_chunks/terrainmodifier.pack"
 
 ## Along-road distances are float32 in the pack; 1 mm is far below anything
 ## visible and well above the representation error at 40 km.
@@ -187,7 +187,7 @@ func test_roads_are_baked_to_the_quadtree_depth() -> void:
 	if _skip_without_pack():
 		return
 	var cap: int = _pack.max_nside_for_kind(ModifierPackScript.KIND_ROAD)
-	var quadtree_nside := 1 << 13    # tarsis_4.tscn: max_quadtree_depth = 13
+	var quadtree_nside := 1 << 13    # tarsis_3.tscn: max_quadtree_depth = 13
 	assert_true(cap >= quadtree_nside,
 			"roads baked to n%d but the quadtree reaches n%d" % [cap, quadtree_nside])
 

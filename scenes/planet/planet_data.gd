@@ -24,7 +24,7 @@ var height_offset: float = 0.0
 ## because the per-chunk .r32 tile was missing/unreadable AT SAMPLE TIME. A
 ## non-zero count at runtime means chunks are being built from the fallback map
 ## instead of the real elevation tiles → high plateaus collapse toward sea level
-## (the tarsis_4 "terrain 3-6 km below the props" symptom).
+## (the tarsis_3 "terrain 3-6 km below the props" symptom).
 var _height_fallback_hits: int = 0
 ## Vertical exaggeration applied to sampled elevation. Real planetary relief is
 ## ~0.1% of the radius (Earth-like) and reads as flat at true 1:1 scale; raise
@@ -43,7 +43,7 @@ var _height_fallback_hits: int = 0
 @export var gravity_reach: float = 100000.0
 
 ## Optional path to the planet JSON file exported from QGIS
-## (e.g. "assets/qgis/export/tarsis_4/planet.json").
+## (e.g. "assets/qgis/export/tarsis_3/planet.json").
 ## When set, load_from_planet_json() is called automatically on _ready
 ## and overwrites radius, max_height, chunk_export_depth, etc.
 var planet_json: String = str("assets/qgis/export/", planet_name, "/planet.json")
@@ -143,7 +143,7 @@ var chunk_data_version: String = ""
 ## Path to a GeoJSON file with road polygons (buffered from LineStrings).
 ## Exported by the QGIS pipeline as {planet}_roads_buffered.json.
 ## When provided, road overlays are rendered on terrain chunks.
-## Path is relative to res://, e.g. "assets/qgis/.export/tarsis_4_roads_buffered.json".
+## Path is relative to res://, e.g. "assets/qgis/.export/tarsis_3_roads_buffered.json".
 @export var roads_geojson: String = ""
 
 ## When true, crater profiles are already baked into chunk heightmaps
@@ -161,7 +161,7 @@ var vegetation_rules: Array[VegetationRule] = []
 ## Path to a GeoJSON file with biome polygons (exported from QGIS).
 ## When provided, vegetation rules can match by biome_type against polygon
 ## zones instead of — or in addition to — sampling the biomemap colour.
-## Path is relative to res://, e.g. "assets/qgis/export/tarsis_4/biomes.geojson".
+## Path is relative to res://, e.g. "assets/qgis/export/tarsis_3/biomes.geojson".
 var biomes_geojson: String = str("assets/qgis/export/", planet_name, "/biomes.json")
 
 # ---------------------------------------------------------------------------

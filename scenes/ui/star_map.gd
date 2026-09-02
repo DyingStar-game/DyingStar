@@ -302,7 +302,7 @@ func _rebuild() -> void:
 	_add_star()
 	# Bodies the chart can place on its own, read straight from the scene FILES.
 	# SORTED, because a moon's position is relative to its planet and _process resolves primaries in
-	# index order: "tarsis_4" must be built before "tarsis_4_1".
+	# index order: "tarsis_3" must be built before "tarsis_3_1".
 	var files: PackedStringArray = _system_scene_files()
 	files.sort()
 	var known: Dictionary = {}
@@ -315,15 +315,15 @@ func _rebuild() -> void:
 			continue  # no elements: it can only be placed from a live node (see below)
 		known[key] = true
 		# A moon's elements are measured from its PLANET, not the star, so its drawn position is its
-		# planet's plus its own. The primary comes from the naming convention — "tarsis_4_1" under
-		# "tarsis_4" — which is how the scenes are laid out and what the network parenting mirrors.
+		# planet's plus its own. The primary comes from the naming convention — "tarsis_3_1" under
+		# "tarsis_3" — which is how the scenes are laid out and what the network parenting mirrors.
 		var primary: int = -1
 		var cut: int = key.rfind("_")
 		if cut > 0 and index_of.has(key.substr(0, cut)):
 			primary = index_of[key.substr(0, cut)]
 		index_of[key] = _bodies.size()
 		# Name and colour come from the SCENE, which carries what the GDD says about the body — its
-		# proper name, and a colour derived from its description (Tarsis IV's corundum dust storm,
+		# proper name, and a colour derived from its description (Tarsis III's corundum dust storm,
 		# Tarsis VIII's tholins) or from its physics where the GDD is silent. The by-type guess is only
 		# a fallback for a scene that has been given neither.
 		var label_text: String = str(props.get("display_name", ""))

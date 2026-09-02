@@ -9,7 +9,7 @@
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("2_y0c1k")
-planet_name = "tarsis_4_2"
+planet_name = "tarsis_3_2"
 surface_gravity = 0.49
 chunk_export_depth = 6
 terrain_material = ExtResource("3_43k7b")
@@ -18,13 +18,13 @@ crack_spacing_m = 4000.0
 crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
-chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_chunks"
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
 
-[node name="Tarsis4_2" type="Node3D" unique_id=134586975]
+[node name="Tarsis3_2" type="Node3D" unique_id=134586975]
 script = ExtResource("1_lx8nc")
 planet_data = SubResource("PlanetData_tarsis4")
 rotation_period_hours = 563.75
-display_name = "Xarok - Tarsis IV.M2"
+display_name = "Xarok - Tarsis III.M2"
 map_radius_km = 700.0
 surface_albedo = 0.28
 map_color = Color(0.497, 0.465, 0.417, 1)

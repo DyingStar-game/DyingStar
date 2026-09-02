@@ -99,7 +99,7 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 	var ipix: int = height_ipix if height_ipix >= 0 else HEALPix.vec2pix_nest(ns, mid_dir)
 	# A missing tile makes sample_height_for_direction fall back to the global
 	# equirect map — a different, flatter surface, which is what put the props
-	# kilometres above the terrain on tarsis_4. The chunk mesh cache already
+	# kilometres above the terrain on tarsis_3. The chunk mesh cache already
 	# refuses to persist a mesh built that way; a bridge built that way lands
 	# nowhere near its road, and worse, the client and the server stop agreeing
 	# as soon as only ONE of them has the tile cached — a deck you can see but

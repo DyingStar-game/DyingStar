@@ -41,16 +41,33 @@ const LAMBDA_B := 0.440
 ## Molar masses, kg/mol. A gas absent from this table cannot be handled: its
 ## refractivity is not sourced, and silently dropping it would renormalise the
 ## mix and produce a wrong beta. Bodies using one are skipped and reported.
+## kg/mol. Sets the scale height, so a missing entry does not merely lose a gas --
+## it makes the whole atmosphere the wrong height. _unknown_gases() reports any gas
+## absent from here, and _refractivity() must learn the same gas at the same time.
 const MOLAR_MASS := {
 	"N2": 0.0280134,
 	"O2": 0.0319988,
 	"Ar": 0.0399480,
 	"CO2": 0.0440095,
 	"CH4": 0.0160425,
+	"H2": 0.00201588,
+	"He": 0.00400260,
+	"Ne": 0.0201797,
+	"H2O": 0.0180153,
+	"NH3": 0.0170305,
+	"SO2": 0.0640638,
+	"C2H6": 0.0300690,
+	"HCN": 0.0270253,
+	"NO2": 0.0460055,
+	"O3": 0.0479982,
 }
 
 ## Haze, ground albedo and star colour cannot be derived from the JSON. Keyed by
-## the Godot planet name. See the atmosphere study for the derivation.
+## the Godot planet name, which is the body's SLOT in the system ("tarsis_3" is the
+## third planet), not its identity. Sandbox and Gaea swapped slots when Sandbox moved
+## in to 0.55 AU, so this key moved from tarsis_4 to tarsis_3 with it -- get that
+## wrong and the corundum veil ends up on the wrong world, silently.
+## See the atmosphere study for the derivation.
 ##
 ## Sandbox: mie_beta is calibrated so the vertical optical depth is 1.9037 with
 ## the capped density profile below, whose integral is haze_top = 3500 m. That
@@ -58,7 +75,7 @@ const MOLAR_MASS := {
 ## means recomputing beta. mie_albedo is exactly 1.0 because corundum (Al2O3) has
 ## k close to 0 in the visible: the veil redistributes light, it never darkens.
 const HAZE := {
-	"tarsis_4": {
+	"tarsis_3": {
 		"mie_beta": Vector3(5.544043e-04, 5.439069e-04, 5.322673e-04),
 		"mie_g": 0.691,
 		"mie_albedo": 1.0,
@@ -274,8 +291,15 @@ func _cross_section(gas: String, lambda_um: float) -> float:
 
 
 ## n - 1 at 273.15 K / 101325 Pa. N2 and O2 carry their dispersion formula (they
-## are most of the air and the wavelength dependence matters); the trace gases are
-## flat, they are too light in the mix for the difference to show.
+## are most of Earth-like air and the wavelength dependence matters); the others are
+## flat values at ~550 nm, where their dispersion across the visible is well under
+## the uncertainty on the value itself.
+##
+## An unknown gas returns 0, which does not mean "a bit less blue" -- it means that
+## fraction of the air scatters NOTHING. The mix is renormalised to 1 before this is
+## called, so an unlisted gas silently dilutes every other one. That was the state of
+## Tarsis 5 and 6: 86-87 % H2 and 12 % He, neither listed, so the two gas giants had
+## essentially no sky at all. Add the gas here before adding it to a planet.
 func _refractivity(gas: String, lambda_um: float) -> float:
 	var inverse_um := 1.0 / lambda_um
 	match gas:
@@ -290,6 +314,31 @@ func _refractivity(gas: String, lambda_um: float) -> float:
 			return 4.49e-4
 		"CH4":
 			return 4.41e-4
+		# --- well measured, and each is the bulk of some body's air -------------------
+		"H2":
+			return 1.36e-4   # the giants are 86-87 % this
+		"He":
+			return 3.50e-5   # barely refracts: a helium sky is nearly colourless
+		"Ne":
+			return 6.71e-5   # 22 % of Gaea's new moon
+		"H2O":
+			return 2.56e-4   # vapour, at the same reference density as the rest
+		"NH3":
+			return 3.76e-4
+		"SO2":
+			return 6.86e-4
+		"C2H6":
+			return 7.50e-4
+		# --- rougher, and deliberately so ---------------------------------------------
+		# These three never exceed 0.2 % of any atmosphere here, so a 10 % error on the
+		# value moves no sky by anything anyone could see. Replace them with measured
+		# figures before promoting any of them to a major constituent.
+		"HCN":
+			return 4.6e-4
+		"NO2":
+			return 5.0e-4
+		"O3":
+			return 5.4e-4
 	return 0.0
 
 
@@ -304,6 +353,18 @@ func _king_factor(gas: String, lambda_um: float) -> float:
 			return 1.096 + 1.385e-3 / l2 + 1.448e-4 / (l2 * l2)
 		"CO2":
 			return 1.15
+		# F_king = (6 + 3d) / (6 - 7d) from the depolarisation d. Monatomic gases are
+		# perfectly isotropic, so He, Ne and Ar are exactly 1 and fall through below.
+		"H2":
+			return 1.036
+		"H2O":
+			return 1.003
+		"NH3":
+			return 1.009
+		"SO2":
+			return 1.13
+		"C2H6":
+			return 1.05
 	return 1.0
 
 

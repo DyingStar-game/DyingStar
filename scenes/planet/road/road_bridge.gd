@@ -3,7 +3,7 @@ class_name RoadBridge
 ## Finds where a road spans a chasm, so a bridge can be placed there.
 ##
 ## On corundum planets the "canyons" are the procedural crack network: a
-## Voronoi field of gorges (250 m wide, 180 m deep, every 4 km on tarsis_4)
+## Voronoi field of gorges (250 m wide, 180 m deep, every 4 km on tarsis_3)
 ## carved by ArideDesertCorundumPlateauTerrain.crack_offset(). There is no
 ## polyline to intersect — the cracks do not exist as data at QGIS export time,
 ## they are generated at runtime — so a crossing cannot be baked into the pack
@@ -30,7 +30,7 @@ class_name RoadBridge
 ## where a span begins and ends.
 
 ## Coarse walk step, as a fraction of the narrowest feature. A gorge is
-## crack_width_m wide (250 m on tarsis_4), so stepping a quarter of that puts at
+## crack_width_m wide (250 m on tarsis_3), so stepping a quarter of that puts at
 ## least four samples inside every crack and cannot miss one.
 ##
 ## A fixed fine step is the obvious implementation and the wrong one: at 5 m,
