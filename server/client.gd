@@ -557,7 +557,12 @@ func create_object(event: Dictionary) -> void:
 func delete_object(event: Dictionary) -> void:
 	if int(event["channel"]) == 0:
 		match event["object_type"]:
-			"GorcPlayer":
+			# "player" is what the server actually sends (the object definition name in
+			# player_def.json). "GorcPlayer" is the legacy name and was the only case matched
+			# here, so every remote-player zone exit was silently dropped: the server sent the
+			# gorc_zone_exit, the client ignored it, and the other player stayed on screen
+			# frozen at their last known position — and the next zone enter created a duplicate.
+			"player", "GorcPlayer":
 				delete_player(event)
 
 	# We delete only on the channel 6
@@ -732,6 +737,23 @@ func create_player(event: Dictionary) -> void:
 				universe_scene.add_child(remote_player_instance)
 
 			remote_player_instance.client_uuid = event["object_id"]
+
+			# Apply the orientation carried by the zone-enter snapshot. Without this the body keeps
+			# player.tscn's default basis: on a curved planet surface that is not the local "up", so
+			# the character appears lying flat on the ground. It used to be corrected by the first
+			# "move" that arrived — but a player standing still sends no move, so it stayed down
+			# forever. Same frame convention as net_set_target(): rotation is replicated in the
+			# parent-local frame and applied directly as the local basis.
+			if player_data.has("rotation"):
+				remote_player_instance.net_set_target(
+					remote_player_instance.position,
+					Vector3(
+						player_data["rotation"]["x"],
+						player_data["rotation"]["y"],
+						player_data["rotation"]["z"]
+					)
+				)
+				remote_player_instance.net_reset_interp()
 
 			players_list[event["object_id"]] = remote_player_instance
 
