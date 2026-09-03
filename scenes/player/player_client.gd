@@ -293,6 +293,10 @@ func _process(_delta: float) -> void:
 	if not player.interact_label.visible and is_instance_valid(player._nearby_seat) and player._seat_vehicle_uuid == "":
 		if _seat_is_taken(player._nearby_seat):
 			player.interact_label.text = "Driver seat taken"
+		elif player._owner_carrying:
+			# Before the door check on purpose: telling someone to open a door and then refusing
+			# them the seat for a reason we already knew would be a wasted trip.
+			player.interact_label.text = "Hands full — [E] drops it, then board"
 		elif not _seat_door_open(player._nearby_seat):
 			player.interact_label.text = "Open the door first (aim at the handle)"
 		else:
@@ -659,7 +663,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		# Standing in a seat box: E boards — but only once the seat's gating door is open (open it
 		# first by looking at the handle). A seat with no door_id boards directly.
-		if is_instance_valid(player._nearby_seat):
+		# Carrying: fall through to the carry/drop handling below instead of boarding. Not merely
+		# refused here -- this branch ends in a `return`, which would swallow E and leave you unable to
+		# put the crate down while standing in the seat box.
+		if is_instance_valid(player._nearby_seat) and not player._owner_carrying:
 			if _seat_door_open(player._nearby_seat):
 				_enter_seat(player._nearby_seat)
 			return

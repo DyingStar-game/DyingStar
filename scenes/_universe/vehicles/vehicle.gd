@@ -2023,6 +2023,11 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 	var seat: Node = _find_seat(seat_name)
 	if seat == null or not seat.is_free() or _seat_door_blocked(seat):
 		return
+	# Both hands are on what you carry: put it down before you climb in. Refused here rather than
+	# silently dropping the load, because dropping someone's crate for them -- possibly into the
+	# scenery, or under the truck -- is not a decision the game should take on their behalf.
+	if "hands_item" in player and player.hands_item != null:
+		return
 	seat.occupant_uuid = str(player.client_uuid) if "client_uuid" in player else ""
 	seat.occupant = player  # kept so we can free the seat if the player disconnects (node freed)
 	seat.occupant_mass = _player_mass(player)
