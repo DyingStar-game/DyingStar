@@ -1996,6 +1996,15 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if bool(new_doors[door_id]) != bool(_net_doors.get(door_id, false)):
 				_apply_door(str(door_id), bool(new_doors[door_id]))
 		_net_doors = new_doors
+		# The SERVER runs this too, when it rebuilds a prop from persistence -- and its own truth
+		# (_door_state) is written ONLY by server_toggle_door. Without this, a truck left with a door
+		# open came back with the server believing every door shut: the client showed the open door
+		# and happily let you press E, the server refused the seat, and you were ejected on the spot.
+		# It never healed either, since _door_state and _net_last_doors were both empty, so the
+		# server saw nothing to replicate and never corrected the client.
+		if GameOrchestrator.is_server():
+			_door_state = new_doors.duplicate()
+			_net_last_doors = _door_state.duplicate()
 	if data.has("seats"):
 		_net_seats = (data["seats"] as Dictionary).duplicate()  # for _seat_is_taken (prompt + entry gate)
 
