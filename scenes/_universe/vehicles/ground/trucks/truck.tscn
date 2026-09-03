@@ -47,10 +47,10 @@ debug_color_driven_wheels = false
 cargo_bay_size = Vector3(1.6, 0.6, 1.9)
 cargo_bay_offset = Vector3(0, 0.4, 1.05)
 sfx_door_open = ExtResource("2_urxpd")
-sfx_door_open_db = -30.0
+sfx_door_open_db = -10.0
 sfx_door_open_distance = 10.0
 sfx_door_close = ExtResource("3_udf22")
-sfx_door_close_db = -30.0
+sfx_door_close_db = -10.0
 sfx_door_close_distance = 10.0
 sfx_engine_start = ExtResource("4_urxpd")
 sfx_engine_stop = ExtResource("5_2twiw")
@@ -61,30 +61,32 @@ sfx_lights_off_distance = 5.0
 sfx_handbrake_on = ExtResource("6_q1ni8")
 sfx_handbrake_off = ExtResource("7_7ype0")
 sfx_engine_idle = ExtResource("10_4yw1w")
+sfx_engine_idle_db = -10.0
+sfx_engine_idle_falloff = 5.5
 sfx_horn = ExtResource("4_5dsot")
 sfx_horn_distance = 100.0
 sfx_horn_attenuation = 0
 sfx_horn_special = ExtResource("4_grru8")
-sfx_horn_special_db = -30.0
+sfx_horn_special_db = -5.5
 sfx_horn_special_distance = 100.0
 sfx_horn_special_attenuation = 0
 
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
 
-[node name="Col_cabin" parent="Model" index="7" unique_id=548278815]
+[node name="Col_cabin" parent="Model" index="7" unique_id=1940863112]
 visible = false
 
-[node name="Col_bed" parent="Model" index="8" unique_id=787870056]
+[node name="Col_bed" parent="Model" index="8" unique_id=1608889693]
 visible = false
 
-[node name="Col_bed_left" parent="Model" index="9" unique_id=353588014]
+[node name="Col_bed_left" parent="Model" index="9" unique_id=625372678]
 visible = false
 
-[node name="Col_bed_right" parent="Model" index="10" unique_id=1632626069]
+[node name="Col_bed_right" parent="Model" index="10" unique_id=891277005]
 visible = false
 
-[node name="Col_bed_rear" parent="Model" index="11" unique_id=1723029501]
+[node name="Col_bed_rear" parent="Model" index="11" unique_id=271351169]
 visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]

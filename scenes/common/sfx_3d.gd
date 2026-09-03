@@ -14,12 +14,21 @@ extends RefCounted
 ## FLAT: no fading at all — full volume up to the hard cut-off.
 enum Attenuation {REALISTIC, VERY_SHORT, FAR_REACHING, FLAT}
 
+## The mixer bus these sounds belong to (see SettingsManager.AUDIO_BUSES and default_bus_layout.tres).
+const SFX_BUS: StringName = &"SFX"
+
 ## Looping copies of streams, so a held sound (a horn, an engine) loops whatever its import settings
 ## say, and the copy is built once. Keyed by the original stream.
 static var _looping: Dictionary = {}
 
 ## Fire-and-forget: play `stream` at `host` (the node the sound comes from). The player node frees
 ## itself once the sample is over, so nothing accumulates. No-op without a stream.
+## True where SFX must not be heard: editor tooling and the game server (each CLIENT plays its own
+## sounds from the replicated state). Was copied into every class that emits a sound; it is one rule.
+static func muted() -> bool:
+	return Engine.is_editor_hint() or OS.has_feature("dedicated_server")
+
+
 static func play(host: Node3D, stream: AudioStream, db: float, falloff: float, distance: float,
 		attenuation: Attenuation) -> void:
 	if stream == null or host == null or not host.is_inside_tree():
@@ -48,7 +57,17 @@ static func play_pitched(host: Node3D, stream: AudioStream, db: float, falloff: 
 static func configure(player: AudioStreamPlayer3D, stream: AudioStream, db: float, falloff: float,
 		distance: float, attenuation: Attenuation) -> void:
 	player.stream = stream
+	# On the SFX bus, not Master. Every positional sound in the game goes through here — footsteps,
+	# crates, the truck, the torch — and none of them named a bus, so they all landed on Master and the
+	# "SFX volume" slider in the settings moved nothing at all.
+	player.bus = SFX_BUS
 	player.volume_db = db
+	# max_db caps volume_db PLUS the distance gain, and it defaults to 3 dB. Closer than unit_size the
+	# gain grows without bound, so on top of the listener — a crate in your own hands, your own
+	# footsteps — the total saturated at that 3 dB and volume_db stopped mattering: turning a sound
+	# down quietened it for everyone ELSE and not for you. Capping at the nominal level makes the knob
+	# mean what its label says: the loudness at the falloff distance, and never more.
+	player.max_db = db
 	player.unit_size = falloff
 	player.max_distance = distance
 	player.attenuation_model = model(attenuation)
