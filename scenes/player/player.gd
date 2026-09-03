@@ -133,7 +133,7 @@ const TELEPORT_TARGETS := {
 @export var acceleration: float = 10.0
 
 @export_subgroup("Vault / climb")
-## Auto-vault: walking forward into a low obstacle or a ledge, the body climbs ONTO it automatically
+## Vault / climb: pressing JUMP while walking forward into a low obstacle or a ledge climbs ONTO it
 ## (server-decided). The clip is chosen by the obstacle's height — see the animation set's Climb group.
 ## A ledge lower than this (m) is just a step you walk over (no vault) — normal movement handles it.
 @export var vault_min_height: float = 0.5
@@ -246,7 +246,7 @@ const TELEPORT_TARGETS := {
 @export var sfx_jump_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Vault (over a low obstacle)")
-## Played when the player auto-vaults OVER a low obstacle (SafetyVault). See Vault / climb stats.
+## Played when the player vaults OVER a low obstacle (SafetyVault). See Vault / climb stats.
 @export var sfx_vault: AudioStream
 @export_range(-40.0, 12.0, 0.5) var sfx_vault_db: float = 0.0
 @export_range(0.5, 200.0, 0.5) var sfx_vault_falloff: float = 3.0
@@ -290,7 +290,7 @@ var walk_speed_target: float = 0.0
 ## Currently requested emote KEY (see EmoteCatalog), replicated so everyone plays it on this body. ""
 ## = none. The animator starts it while standing and clears it (back to "") on move or when it ends.
 var emote_key: String = ""
-## Last auto-vault event ("vault:<key>:<n>", key = vault / climb_1m / climb_2m), replicated like the
+## Last vault event ("vault:<key>:<n>", key = vault / climb_1m / climb_2m), replicated like the
 ## emote so every body plays the matching climb clip. The counter makes each vault a fresh value; the
 ## animator (CharacterAnimator) plays the clip as a one-shot. "" = none yet.
 var vault_key: String = ""

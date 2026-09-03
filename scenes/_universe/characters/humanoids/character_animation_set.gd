@@ -77,7 +77,7 @@ extends Resource
 @export var jump_loop: StringName = &"Jump"
 @export var jump_land: StringName = &"Jump_Land"
 
-# Auto-vault / climb-onto (server picks one by obstacle height, see Player vault_*). Played as a
+# Vault / climb-onto (server picks one by obstacle height, see Player vault_*). Played as a
 # one-shot by the CharacterAnimator; an empty/missing slot falls back to the jump start.
 @export_group("Climb")
 @export var vault: StringName = &"SafetyVault"
