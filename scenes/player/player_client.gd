@@ -577,15 +577,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if player._seat_is_driver and player._seat_vehicle_uuid != "":
 		_send_horn_input(event)
 
-	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_ignition"):
+	if (player._seat_is_driver and player._seat_vehicle_uuid != ""
+			and event.is_action_pressed("vehicle_ignition") and not _alt_held(event)):
 		# Start / cut the engine (server-authoritative; driver only, and only standing still).
 		player.client_send_action_to_server({"action": "vehicle_ignition", "target_uuid": player._seat_vehicle_uuid})
 
-	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_lights"):
+	if (player._seat_is_driver and player._seat_vehicle_uuid != ""
+			and event.is_action_pressed("vehicle_lights") and not _alt_held(event)):
 		# Toggle the vehicle head lights (server-authoritative; driver only).
 		player.client_send_action_to_server({"action": "vehicle_lights", "target_uuid": player._seat_vehicle_uuid})
 
-	if event.is_action_pressed("toggle_flashlight"):
+	if event.is_action_pressed("toggle_flashlight") and not _alt_held(event):
 		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
 		# sit before the walk guard. By default it shares the L key with vehicle_lights, so one
 		# press toggles both the torch and the head lights; rebind it to a separate key in
@@ -806,6 +808,18 @@ func _on_spawn_selected(key) -> void:
 func _on_emote_selected(key) -> void:
 	player.client_send_action_to_server({"action": "emote", "key": str(key)})
 
+## Is Alt held on THIS event?
+##
+## Godot matches an action by key alone: the modifiers recorded in the InputMap are not compared,
+## so a bare L fires debug_toggle_moon_lights (bound to Alt+L) and Alt+L fires vehicle_lights
+## (bound to plain L). Three actions sit on L -- torch, head lights, moon debug -- and two on I
+## -- ignition and light isolation. Whoever shares a key must therefore test the modifier itself,
+## and SYMMETRICALLY: the plain binding requires Alt to be up, the Alt binding requires it down.
+## Same trap, same remedy as the emote/spawn wheels that share T.
+func _alt_held(event: InputEvent) -> bool:
+	return event is InputEventKey and event.alt_pressed
+
+
 ## True while a radial menu (spawn OR emote) is open: the camera freezes and the cursor shows so you can
 ## move the mouse to reach its items (see _process). One check for both wheels (DRY).
 func _any_wheel_open() -> bool:
@@ -848,7 +862,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			Globals.debug_time_offset += step
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
-	if (event.is_action_pressed("debug_toggle_moon_lights")
+	if (event.is_action_pressed("debug_toggle_moon_lights") and _alt_held(event)
 			and not Globals.is_dev_tool_disabled("debug_toggle_moon_lights")):
 		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
 		var moons = player.get_node_or_null("MoonLights")
@@ -857,7 +871,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			moons.report_now()
 
 	# Removes one light contributor at a time, to attribute what is lighting a surface.
-	if (event.is_action_pressed("debug_isolate_light")
+	if (event.is_action_pressed("debug_isolate_light") and _alt_held(event)
 			and not Globals.is_dev_tool_disabled("debug_isolate_light")):
 		var renderer = player.get_node_or_null("AtmosphereRenderer")
 		if renderer != null:
@@ -870,7 +884,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
 
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key.
-	if event.is_action_pressed("toggle_debug"):
+	if event.is_action_pressed("toggle_debug") and _alt_held(event):
 		player._display_debug = not player._display_debug
 		player.display_debug.emit(player._display_debug)
 		SettingsManager.set_show_debug(player._display_debug)
@@ -883,7 +897,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 ## side used to be guarded, which is why a bare T also opened the spawn wheel (hidden underneath) and
 ## releasing T spawned whatever sat under the cursor.
 func _handle_radial_wheels(event: InputEvent) -> void:
-	var alt_held: bool = event is InputEventKey and event.alt_pressed
+	var alt_held: bool = _alt_held(event)
 	_service_wheel(event, "emote_wheel", player._emote_wheel, EmoteCatalog.build_wheel, not alt_held)
 	_service_wheel(event, "spawn_wheel", player._spawn_wheel, SpawnCatalog.build_wheel, alt_held)
 
