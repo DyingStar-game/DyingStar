@@ -220,6 +220,7 @@ func _process(_delta: float) -> void:
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
+		_apply_cursor_mode(_ui_focus())  # a panel opened at the wheel needs the pointer, same as on foot
 		player._ride_seat(player._seat_node)
 		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
@@ -254,19 +255,12 @@ func _process(_delta: float) -> void:
 		if player.mining_tool.is_perforating:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
+	_apply_cursor_mode(ui_focus)
 	if ui_focus:
-		# Guarded like the CAPTURED branch below: entering CAPTURED warps the cursor to the window
-		# centre, so the transitions are what must stay rare — and the embedded game window reports a
-		# mode of its own, which makes an unguarded write per frame worth avoiding.
-		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		player.mouse_motion = Vector2.ZERO
 		# Turn the camera toward a 3D screen so it's centered in view.
 		if is_instance_valid(player.screen_interacting):
 			_face_screen(player.screen_interacting)
 	else:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		# Return the camera to the pivot's control after a screen interaction.
 		player.camera.rotation = player.camera.rotation.lerp(Vector3.ZERO, 0.2)
 		_handle_camera_motion()
@@ -348,10 +342,13 @@ func _physics_process(delta: float) -> void:
 	if player.remote_player: return
 	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
 	if is_instance_valid(player._seat_node):
-		# Seated: relay drive input (driver only) and skip walking.
+		# Seated: relay drive input (driver only) and skip walking. When input is locked (pause menu,
+		# chat, the system chart) the truck must receive NEUTRAL, not the last throttle we sent -- else
+		# the keys pressed under an open panel would keep driving it.
 		if player._seat_is_driver:
-			_send_drive_input()
-			_update_handbrake_input(delta)
+			var locked: bool = _input_locked()
+			_send_drive_input(locked)
+			_update_handbrake_input(delta, locked)
 		return
 	if !player.active: return
 
@@ -398,10 +395,11 @@ func _physics_process(delta: float) -> void:
 	player.labelz.text = str("%0.2f" % player.global_position[2])
 
 ## Owner: send our driving input to the server (only when it changes; the server holds it).
-func _send_drive_input() -> void:
-	var throttle: float = Input.get_axis("move_back", "move_forward")
-	var steer: float = Input.get_axis("move_right", "move_left")
-	var braking: bool = Input.is_action_pressed("brake")
+## `locked` means a panel owns the keyboard: we then send neutral, so nothing typed under it drives.
+func _send_drive_input(locked: bool) -> void:
+	var throttle: float = 0.0 if locked else Input.get_axis("move_back", "move_forward")
+	var steer: float = 0.0 if locked else Input.get_axis("move_right", "move_left")
+	var braking: bool = false if locked else Input.is_action_pressed("brake")
 	if throttle == player._last_throttle and steer == player._last_steer and braking == player._last_brake:
 		return
 	player._last_throttle = throttle
@@ -416,8 +414,8 @@ func _send_drive_input() -> void:
 	})
 
 ## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
-func _update_handbrake_input(delta: float) -> void:
-	if not Input.is_action_pressed("brake"):
+func _update_handbrake_input(delta: float, locked: bool) -> void:
+	if locked or not Input.is_action_pressed("brake"):
 		player._space_held_time = 0.0
 		player._handbrake_sent = false
 		return
@@ -555,6 +553,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	# nothing the player types should ever reach gameplay. (NOT _input_locked() here — that one also
 	# covers an open wheel, whose press/release lifecycle _handle_radial_wheels still needs to see.)
 	if _menu_open() or _chat_writing(): return
+	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
+	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
+	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
+	if event.is_action_pressed("star_map") and _star_map != null:
+		if _star_map.is_open():
+			_star_map.close()
+		else:
+			_star_map.open()
+		return
+	if _star_map_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
 	# (open it first by looking at its handle). A seat with no door_id leaves directly.
 	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
@@ -619,6 +627,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_toggle_door(seated_handle)
 		return  # seated: E only operates doors, never carry
 
+	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk
+	# guard. A seated player has player.active = false, which used to swallow every one of them at the
+	# wheel of a truck. One guard for the whole family, inside the helper.
+	_handle_dev_toggles(event)
+
 	if !player.active: return
 
 	# On foot. Radial wheels (emote on T, spawn on Alt+T) own their open+confirm lifecycle, so we
@@ -654,51 +667,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		_predict_carry_stow(aim)
-
-	if event.is_action_pressed("star_map") and _star_map != null:
-		if _star_map.is_open():
-			_star_map.close()
-		else:
-			_star_map.open()
-
-	# Development clock. Echo is allowed on purpose: holding the key sweeps the sky, which is the
-	# only practical way to judge a sunset. Locked out with the rest of the input so it cannot fire
-	# under the star map, whose zoom shares these two keys.
-	if not _input_locked() and not Globals.is_dev_tool_disabled("debug_time"):
-		var step: float = 0.0
-		if event.is_action_pressed("debug_time_forward", true):
-			step = Globals.DEBUG_TIME_STEP
-		elif event.is_action_pressed("debug_time_back", true):
-			step = -Globals.DEBUG_TIME_STEP
-		if step != 0.0:
-			Globals.debug_time_offset += step
-
-	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
-	if (event.is_action_pressed("debug_toggle_moon_lights") and not _input_locked()
-			and not Globals.is_dev_tool_disabled("debug_toggle_moon_lights")):
-		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
-		var moons = player.get_node_or_null("MoonLights")
-		if moons != null:
-			moons.moon_lights_enabled = not moons.moon_lights_enabled
-			moons.report_now()
-
-	# Removes one light contributor at a time, to attribute what is lighting a surface.
-	if (event.is_action_pressed("debug_isolate_light") and not _input_locked()
-			and not Globals.is_dev_tool_disabled("debug_isolate_light")):
-		var renderer = player.get_node_or_null("AtmosphereRenderer")
-		if renderer != null:
-			var labels := [
-				"everything on",
-				"NO AERIAL PERSPECTIVE: no air between the eye and the surface",
-				"NO SKY REFLECTION: no specular",
-				"NO SKY AMBIENT: no diffuse, the sky lights nothing",
-			]
-			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
-
-	if event.is_action_pressed("toggle_debug"):
-		player._display_debug = not player._display_debug
-		player.display_debug.emit(player._display_debug)
-		SettingsManager.set_show_debug(player._display_debug)  # persist + keep the settings menu in sync
 
 ## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
 ## replicated (via the vehicle's pilot_uuid); a passenger seat reads as free for now.
@@ -843,6 +811,70 @@ func _on_emote_selected(key) -> void:
 func _any_wheel_open() -> bool:
 	return (player._spawn_wheel != null and player._spawn_wheel.visible) \
 		or (player._emote_wheel != null and player._emote_wheel.visible)
+
+
+## Who owns the cursor: the game (captured, drives the camera) or a panel on top of it (visible, drives
+## the panel). ONE decision, shared by the on-foot and the seated paths -- the seated path returns early
+## and used to skip it entirely, so the chart opened at the wheel had no pointer to click it with.
+## Both writes are guarded: entering CAPTURED warps the cursor to the window centre, so it is the
+## transitions that must stay rare, and the embedded game window reports a mode of its own.
+func _apply_cursor_mode(ui_focus: bool) -> void:
+	if ui_focus:
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		player.mouse_motion = Vector2.ZERO  # freeze the look while the panel has the pointer
+	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Development instruments, in one place: the sky clock, the moon lights, the light isolation and the
+## debug panels. They read the world and change nothing in it, so they work in any state — on foot,
+## seated, driving. Two rules hold for the whole family instead of being repeated on each key: a panel
+## that owns the keyboard silences them (the chart's zoom shares the clock's two keys), and each one
+## can be switched off for a build through Globals.
+func _handle_dev_toggles(event: InputEvent) -> void:
+	if _input_locked():
+		return
+
+	# Sky clock. Echo is allowed on purpose: holding the key sweeps the sky, which is the only
+	# practical way to judge a sunset.
+	if not Globals.is_dev_tool_disabled("debug_time"):
+		var step: float = 0.0
+		if event.is_action_pressed("debug_time_forward", true):
+			step = Globals.DEBUG_TIME_STEP
+		elif event.is_action_pressed("debug_time_back", true):
+			step = -Globals.DEBUG_TIME_STEP
+		if step != 0.0:
+			Globals.debug_time_offset += step
+
+	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
+	if (event.is_action_pressed("debug_toggle_moon_lights")
+			and not Globals.is_dev_tool_disabled("debug_toggle_moon_lights")):
+		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
+		var moons = player.get_node_or_null("MoonLights")
+		if moons != null:
+			moons.moon_lights_enabled = not moons.moon_lights_enabled
+			moons.report_now()
+
+	# Removes one light contributor at a time, to attribute what is lighting a surface.
+	if (event.is_action_pressed("debug_isolate_light")
+			and not Globals.is_dev_tool_disabled("debug_isolate_light")):
+		var renderer = player.get_node_or_null("AtmosphereRenderer")
+		if renderer != null:
+			var labels := [
+				"everything on",
+				"NO AERIAL PERSPECTIVE: no air between the eye and the surface",
+				"NO SKY REFLECTION: no specular",
+				"NO SKY AMBIENT: no diffuse, the sky lights nothing",
+			]
+			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
+
+	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key.
+	if event.is_action_pressed("toggle_debug"):
+		player._display_debug = not player._display_debug
+		player.display_debug.emit(player._display_debug)
+		SettingsManager.set_show_debug(player._display_debug)
+
 
 ## Open/confirm the radial wheels: emote on T, spawn on Alt+T. Called before the wheel lock in
 ## _unhandled_input so a wheel that is up still confirms on release. One place for both wheels (DRY).
