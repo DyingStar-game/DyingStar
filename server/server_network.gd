@@ -2,6 +2,10 @@ extends Node
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
+# How long a new connection has to complete its WebSocket handshake before we drop it. A port probe
+# opens a TCP connection and never upgrades, so it expires here instead of stealing the link.
+const CANDIDATE_TIMEOUT_S: float = 5.0
+
 # Websocket port we will listen to (Horizon server or godot client in devmode).
 var port = 8980
 
@@ -18,6 +22,10 @@ var sceneuuid: String = UUID_UTIL.v4()
 
 # Track whether we have sent the check_server_started handshake to Horizon.
 var _peer_handshake_sent: bool = false
+
+# A connection that arrived while the current peer still looked alive, waiting to prove itself.
+var _candidate: WebSocketPeer = null
+var _candidate_age: float = 0.0
 
 func _enter_tree() -> void:
 	var server_ini = "server.ini"
@@ -53,25 +61,12 @@ func start_websocket_server():
 		push_error("Unable to start server socket.")
 	return true
 
-func _process(_delta: float) -> void:
-	var peer_state = peer.get_ready_state()
-	if peer_state == WebSocketPeer.STATE_CLOSED:
-		_peer_handshake_sent = false
-		if ServerNetwork.tcp_server.is_connection_available():
-			print("Peer connected (Horizon server).")
-			peer = WebSocketPeer.new()
-			peer.outbound_buffer_size = 1000000000  # 1 GB — must be set before accept_stream
-			peer.max_queued_packets = 1000000
-			peer.accept_stream(ServerNetwork.tcp_server.take_connection())
-			peer.set_no_delay(true)
-		# Drain any additional pending connections to avoid backlog
-		while ServerNetwork.tcp_server.is_connection_available():
-			var extra = ServerNetwork.tcp_server.take_connection()
-			extra.disconnect_from_host()
+func _process(delta: float) -> void:
+	_accept_incoming(delta)
 
 	peer.poll()
 
-	peer_state = peer.get_ready_state()
+	var peer_state := peer.get_ready_state()
 	if peer_state == WebSocketPeer.STATE_OPEN:
 		if not _peer_handshake_sent:
 			_peer_handshake_sent = true
@@ -101,6 +96,73 @@ func _process(_delta: float) -> void:
 			else:
 				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
 				peer.send_text(packet)
+
+
+## Take whoever is knocking on the port, and hand the link to the NEWEST Horizon that proves itself.
+##
+## Horizon is our only client, and it reconnects by opening a fresh socket -- it never reuses the old
+## one. But a Kubernetes rolling restart keeps the OUTGOING pod alive for its grace period (30 s by
+## default) with its WebSocket still open, while the incoming pod is already up and, four seconds
+## after booting, emits the one and only `init_server` that ships the whole world to us. While we
+## only looked at new connections once the current peer read as CLOSED, that new pod sat unanswered
+## in the accept queue for the whole grace period: its world dump fell on nobody, Horizon logged
+## `No handlers for event: plugin:gameserverplugin:init_server` a couple of thousand times, and we
+## ended up running with no props at all -- so a player spawned parented to an apartment we had
+## never been told about, and could not move.
+##
+## A newcomer must nevertheless EARN the link: it is accepted as a candidate and only promoted once
+## its WebSocket handshake completes. A port probe (the dev panel's, or anything else that just
+## opens a TCP connection to see if we are alive) never upgrades, so it expires instead of cutting
+## a healthy link.
+func _accept_incoming(delta: float) -> void:
+	if peer.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+		_peer_handshake_sent = false
+		if _candidate == null and ServerNetwork.tcp_server.is_connection_available():
+			# Nobody to protect: take it straight away, no probation.
+			peer = _accept_stream()
+			print("Peer connected (Horizon server).")
+			_drain_extra()
+			return
+
+	if _candidate == null:
+		if ServerNetwork.tcp_server.is_connection_available():
+			_candidate = _accept_stream()
+			_candidate_age = 0.0
+	else:
+		_candidate_age += delta
+		_candidate.poll()
+		var state := _candidate.get_ready_state()
+		if state == WebSocketPeer.STATE_OPEN:
+			# It spoke WebSocket, so it is a real Horizon: retire the previous one and take over.
+			print("Peer connected (Horizon server), replacing the previous link.")
+			peer.close()
+			peer = _candidate
+			_candidate = null
+			_peer_handshake_sent = false
+		elif state == WebSocketPeer.STATE_CLOSED or _candidate_age > CANDIDATE_TIMEOUT_S:
+			_candidate.close()
+			_candidate = null
+
+	_drain_extra()
+
+
+## Anything still queued beyond the one connection we are considering is backlog: refuse it now
+## rather than let it pile up.
+func _drain_extra() -> void:
+	while ServerNetwork.tcp_server.is_connection_available():
+		var extra = ServerNetwork.tcp_server.take_connection()
+		extra.disconnect_from_host()
+
+
+## One place to build a peer, so both paths get the same buffer sizes (they must be set BEFORE
+## accept_stream) and the same no-delay setting.
+func _accept_stream() -> WebSocketPeer:
+	var fresh := WebSocketPeer.new()
+	fresh.outbound_buffer_size = 1000000000  # 1 GB — must be set before accept_stream
+	fresh.max_queued_packets = 1000000
+	fresh.accept_stream(ServerNetwork.tcp_server.take_connection())
+	fresh.set_no_delay(true)
+	return fresh
 
 
 func dispatch_horizon_message(message: Dictionary):
