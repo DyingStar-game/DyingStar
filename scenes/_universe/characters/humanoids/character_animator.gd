@@ -132,7 +132,7 @@ var _emote_enter: StringName = &""  # resolved emote clips (from the animation s
 var _emote_idle: StringName = &""
 var _emote_exit: StringName = &""
 var _emote_seen: String = ""  # last player.emote_key processed, to detect a fresh request
-var _vault_clip: StringName = &""  # resolved climb clip while an auto-vault plays (&"" = none)
+var _vault_clip: StringName = &""  # resolved climb clip while a vault plays (&"" = none)
 var _vault_seen: String = ""  # last player.vault_key processed, to detect a fresh vault (like emotes)
 var _vault_key: String = ""  # current vault TYPE (vault / climb_1m / climb_2m), selects the pose offset
 var _vault_height: float = 0.0  # obstacle height (m) of the current vault, for the height-based pose offset
@@ -255,7 +255,7 @@ func _select_clip(delta: float) -> StringName:
 		if bool(s.get("driver", false)):
 			return _clip_or(anim_set.sit_driving, _clip_or(anim_set.sit_idle, _idle))
 		return _clip_or(anim_set.sit_passenger, _clip_or(anim_set.sit_idle, _idle))
-	# Auto-vault / climb-onto: a fresh server event ("vault:<key>:<n>") plays the matching climb clip as a
+	# Vault / climb-onto: a fresh server event ("vault:<key>:<n>") plays the matching climb clip as a
 	# one-shot, ABOVE jump and locomotion; _on_anim_finished releases it. Same one-shot idiom as the emote.
 	if _player.vault_key != _vault_seen:
 		_vault_seen = _player.vault_key

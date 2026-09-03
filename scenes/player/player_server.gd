@@ -69,7 +69,7 @@ var _emote_count: int = 0
 ## Seat state: replicated the same way ("seat:<role>:<n>" / "unseat:<n>") so every remote avatar shows the
 ## sit/drive pose (a seated remote is not reparented, so this is its only seat signal).
 var _seat_count: int = 0
-## Auto-vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
+## Vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
 var _vault_count: int = 0
@@ -850,10 +850,13 @@ func _physics_process_impl(delta: float) -> void:
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
-	# Auto-vault: standing still-on-floor and walking forward into a low obstacle / ledge -> climb onto it.
+	# Vault / climb: the PLAYER asks for it, by pressing jump while walking into a low obstacle or a
+	# ledge. It used to fire on its own, which took the choice away -- you could not walk up to a crate
+	# without being hoisted onto it. Space against nothing still jumps: the request is only spent on a
+	# climb when the probe finds something to climb.
 	# Server-authoritative; runs before the jump/gravity/move so the normal step never fights the slide.
 	var _tv: int = Time.get_ticks_usec() if PropNet.PROF else 0
-	var _vault_started: bool = player.is_on_floor() and _try_start_vault()
+	var _vault_started: bool = player.is_on_floor() and player.is_jumping and _try_start_vault()
 	if PropNet.PROF:
 		PropNet.prof_p_vault_usec += Time.get_ticks_usec() - _tv
 	if _vault_started:
@@ -1063,14 +1066,18 @@ static func _world_frame_above(frame: Node) -> Node:
 	return null
 
 
-## Auto-vault: standing and walking forward into a low obstacle or a climbable ledge, start a scripted
-## climb-onto and tell clients which clip to play. Returns true when a vault begins. Gameplay guards live
-## here; the geometry (trace-based mantle) is the shared VaultProbe, so the debug HUD reads the SAME probe.
+## Vault / climb, on the player's own jump request: standing and walking forward into a low obstacle or
+## a climbable ledge, start a scripted climb-onto and tell clients which clip to play. Returns true when
+## a vault begins, and then the jump request is SPENT -- the body climbs instead of hopping. Gameplay
+## guards live here; the geometry (trace-based mantle) is the shared VaultProbe, so the debug HUD reads
+## the SAME probe.
 func _try_start_vault() -> bool:
 	if _vaulting or _vault_cooldown > 0.0 or _stance != 0:
 		return false  # only from a standing, settled state
-	if player.hands_item != null or player.is_jumping or not player.is_on_floor():
-		return false  # not with hands full, mid-jump, or off the ground
+	# `is_jumping` is the pending jump REQUEST, and it is what brought us here -- so it is not a guard
+	# any more. Hands full still forbids a climb (the jump handler already dropped what was carried).
+	if player.hands_item != null or not player.is_on_floor():
+		return false  # not with hands full, or off the ground
 	if player.mining_tool.is_perforating:
 		return false
 	if player.input_direction == Vector2.ZERO or player.input_direction.y > -0.3:
@@ -1101,6 +1108,9 @@ func _try_start_vault() -> bool:
 		_vault_arc = 0.0
 	_vault_time = 0.0
 	_vaulting = true
+	# The jump request is SPENT on the climb. Left standing, it would fire the moment we land on the
+	# ledge and send the body hopping off it.
+	player.is_jumping = false
 	_vault_count += 1
 	# "vault:<key>:<height>:<n>" — the height lets the animator align the pose to the obstacle (see
 	# CharacterAnimator vault_puppet_offset); the counter defeats delta compression, like the jump.

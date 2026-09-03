@@ -1291,7 +1291,7 @@ func _play_jump_sfx() -> void:
 	Sfx3D.play(player, player.sfx_jump, player.sfx_jump_db, player.sfx_jump_falloff,
 			player.sfx_jump_distance, player.sfx_jump_attenuation)
 
-## The auto-vault effort, one sound per type (SafetyVault / ClimbUp_1m / ClimbUp_2m). `key` comes from
+## The vault effort, one sound per type (SafetyVault / ClimbUp_1m / ClimbUp_2m). `key` comes from
 ## the replicated "vault:<key>:<height>:<n>" event, so every body plays it.
 func _play_vault_sfx(key: String) -> void:
 	match key:
