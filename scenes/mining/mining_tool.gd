@@ -346,6 +346,13 @@ func is_equipped() -> bool:
 func server_set_tool(tool_id: String) -> void:
 	_equipped = tool_id != ""  # visibility is derived in _process (server doesn't render)
 
+
+## Adopt a state the SERVER decided, without echoing it back. set_equipped() would emit
+## sync_requested and bounce the decision straight back at its author; the owner obeys here, silently,
+## exactly as it does for any other server-authoritative state.
+func apply_authoritative_tool(tool_id: String) -> void:
+	_equipped = tool_id != ""
+
 ## Apply replicated state on remote players (tool visibility, camera aim, perforation).
 func apply_remote(data: Dictionary) -> void:
 	if data.has("tools"):
@@ -538,6 +545,7 @@ func _start_or_stop_perforate_sfx(on: bool) -> void:
 			sfx_perforate_falloff, sfx_perforate_distance, sfx_perforate_attenuation)
 	_perforate_player.play()
 
-## Audio is silent on the headless game server and in the editor (mirrors the vehicle).
+## Audio is silent on the headless game server and in the editor. The rule itself lives in Sfx3D, with
+## the sounds it governs; this stays only because callers read better with a local name.
 func _sfx_muted() -> bool:
-	return Engine.is_editor_hint() or OS.has_feature("dedicated_server")
+	return Sfx3D.muted()

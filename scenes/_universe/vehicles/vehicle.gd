@@ -1571,8 +1571,10 @@ func _play_sfx(stream: AudioStream, db: float, falloff: float, distance: float,
 
 ## True where SFX must not be heard: editor tooling and the game server (the clients play the sounds).
 func _sfx_muted() -> bool:
-	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
+	if Sfx3D.muted():
 		return true
+	# On top of the shared rule: a networked vehicle is silent on the authority even when that
+	# authority is not a headless build (an editor instance running as the server).
 	return _is_networked() and GameOrchestrator.is_server()
 
 ## SERVER: the driver turns the ignition key (I). STARTING needs a near-standstill (below
@@ -2034,6 +2036,8 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 	if "piloting" in player:
 		player.piloting = true  # server-side walk lock
 		player._seat_node = seat  # the player rides this seat each frame (server)
+	if player.has_method("server_stow_tools"):
+		player.server_stow_tools()  # no driving with a perforator out
 	if player.has_method("set_seated"):
 		player.set_seated(true)  # drop the player's collision so it can't shove the truck
 	_occupant_mass += _player_mass(player)  # the seated player adds their weight to the truck
