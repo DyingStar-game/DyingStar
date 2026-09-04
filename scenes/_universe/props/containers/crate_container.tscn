@@ -6,6 +6,8 @@
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="3_i7idy"]
 
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+[ext_resource type="Resource" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_t7ntl"]
 size = Vector3(0.8018728106103481, 0.9531683567988694, 1.1382587054849864)
@@ -15,6 +17,8 @@ collision_layer = 8
 collision_mask = 15
 mass = 500.0
 script = ExtResource("1_ync2l")
+sfx_pick_up = ExtResource("sfx_pick")
+sfx_landing = ExtResource("sfx_landing")
 type_name = "crate_container"
 carriable = false
 
