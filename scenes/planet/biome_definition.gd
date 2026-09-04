@@ -37,6 +37,12 @@ extends Resource
 ## Should match the color_hex from QGIS export.
 @export var color: Color = Color.BLACK
 
+## Taxonomy family for FOOTSTEPS and impacts on this biome — one of the "family" values in
+## tools/schema/tags.json ("sand", "snow", "rock"…). Leave EMPTY and SurfaceProbe derives it from
+## biome_type, which is right for almost every biome; set it only where the derived answer is wrong
+## (an ice cave whose type says "rocky_landform", say).
+@export var surface_family: String = ""
+
 ## Optional override material for terrain chunks inside this biome.
 ## If null, the planet-wide [member PlanetData.terrain_material] is used.
 @export var terrain_material_override: Material

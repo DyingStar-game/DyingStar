@@ -85,6 +85,16 @@ var chunk_data_version: String = ""
 @export var heightmap: Texture2D
 ## Equirectangular biome map — colour encodes biome type / vegetation.
 @export var biomemap: Texture2D
+
+## Taxonomy family for footsteps and impacts on this body's bare ground — one of the "family" values
+## in tools/schema/tags.json ("sand", "rock", "ice"…).
+##
+## Needed because a biome cannot answer for most of a planet: populate zones are SPARSE by design,
+## they say where things are placed rather than covering the surface, and no planet ships a biomemap.
+## Outside a zone, sample_biome_at() itself falls through to a hardcoded colour. So the honest answer
+## for open ground is a per-body default, stated once here, rather than a guess made per step.
+## A biome that does cover the ground still wins (see BiomeDefinition.surface_family).
+@export var surface_family: String = ""
 ## Equirectangular colour map that was the ultra-far LOD sphere's albedo. The sphere is removed, so this
 ## is currently unused — kept as an @export so existing scenes don't churn (may feed a future far map).
 @export var colormap: Texture2D
@@ -2050,19 +2060,31 @@ func sample_biome_at(dir: Vector3) -> Color:
 		return img.get_pixel(px, py)
 
 	# ── Path 2: populate zones → BiomeDefinition.color ──
-	if export_nside > 0:
-		var eipix := HEALPix.vec2pix_nest(export_nside, dir)
-		var pz := get_chunk_populate_zones(eipix)
-		if not pz.is_empty():
-			var matched := PlanetChunk._query_zones_at_direction(dir, pz)
-			if not matched.is_empty():
-				var bt: String = matched[0].get("biome_type", "")
-				var bd := get_biome_by_type(bt)
-				if bd:
-					return bd.color
+	var bd := biome_at(dir)
+	if bd != null:
+		return bd.color
 
 	# ── Path 3: fallback ──
 	return Color(0.45, 0.35, 0.25, 1.0)
+
+
+## The BiomeDefinition covering a body-fixed direction, or null when we cannot tell.
+##
+## Deliberately the EXACT path only — the populate zones, which name their biome_type. The biome map
+## raster is not usable here: it stores a COLOUR, and there is no reverse lookup, so answering from it
+## would mean matching the nearest of 126 biome colours. A footstep built on that guess would sound
+## confident and be wrong; null lets the caller fall back honestly.
+func biome_at(dir: Vector3) -> BiomeDefinition:
+	if export_nside <= 0:
+		return null
+	var eipix := HEALPix.vec2pix_nest(export_nside, dir)
+	var pz := get_chunk_populate_zones(eipix)
+	if pz.is_empty():
+		return null
+	var matched := PlanetChunk._query_zones_at_direction(dir, pz)
+	if matched.is_empty():
+		return null
+	return get_biome_by_type(String(matched[0].get("biome_type", "")))
 
 
 # ---------------------------------------------------------------------------
