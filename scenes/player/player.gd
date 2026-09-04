@@ -826,6 +826,9 @@ func stow_mining_tool() -> void:
 		mining_tool.set_equipped(false)
 
 
+## Stows performed, so each one is a NEW value on the `action` field (see server_stow_tools).
+var _stow_count: int = 0
+
 ## SERVER: put every tool away and tell everyone. Called when the player boards a vehicle — you do not
 ## drive with a perforator in your hands, and unlike a carried crate a tool has somewhere to go, so it
 ## is stowed rather than refused (see Vehicle.server_enter, which refuses a boarding with FULL hands).
@@ -841,7 +844,20 @@ func server_stow_tools() -> void:
 	# the perforator staying visible to everyone. Stating the state costs one property on a rare event,
 	# and delta compression drops it when it truly changes nothing.
 	mining_tool.server_set_tool("")
-	server_send_properties_to_client({"tools": ""})
+	# The counter is what makes it an EVENT. `tools` is a replicated STATE and delta compression drops
+	# it when the value has not changed — and the server's idea of the current tool is second-hand, so
+	# "" often looked unchanged and the stow vanished on the way out. A value that always changes always
+	# gets through; the same trick the jump, the vault and the emotes already use on this very field.
+	_stow_count += 1
+	# ONE FRAME LATER, and that is the whole reason the first boarding used to keep the tool out.
+	# Horizon MERGES the properties it receives before broadcasting, so two writes to `action` inside one
+	# of its ticks leave only the last — and boarding also emits "seat:<role>:<n>" right after this. The
+	# two were racing on the same field. A frame apart, both arrive; the tool state below is set at once
+	# either way, so the server's own truth is never delayed.
+	await get_tree().physics_frame
+	if not is_inside_tree():
+		return  # left the game during that frame — nothing left to tell anyone about
+	server_send_properties_to_client({"tools": "", "action": "stow:%d" % _stow_count})
 
 # Send action of the client to the server part (Horizon / godot server)
 # data example:

@@ -59,6 +59,7 @@ var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + =
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
+var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
 var _surface_age: float = 0.0              # seconds since that sample
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
@@ -1138,6 +1139,11 @@ func client_channel_data_update(data: Dictionary) -> void:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
 			elif is_instance_valid(player._seat_node):
 				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
+		elif action.begins_with("stow:") and action != _last_stow_action:
+			# Boarding put our tools away. An EVENT rather than the `tools` state, because the state is
+			# delta-compressed and a stow that changes nothing on the wire never arrives.
+			_last_stow_action = action
+			player.mining_tool.apply_authoritative_tool("")
 		elif action.begins_with("vault:") and action != _last_vault_action:
 			_last_vault_action = action
 			player.vault_key = action  # "vault:<key>:<height>:<n>" -> the animator plays the matching climb clip
