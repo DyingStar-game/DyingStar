@@ -128,10 +128,41 @@ func _physics_process(_delta: float) -> void:
 		return
 	PropNet.server_tick(_body(), self)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 	PropNet.ride_pin(_body(), self)  # hold the constant local bed pose at render rate (no jitter)
+	if _landing_watch:
+		_watch_landing(delta)
+
+
+## CLIENT: a prop we saw released is falling. Fire its landing sound the moment the replicated pose
+## stops changing. Hooked onto the callback that already runs every frame for every prop, so the cost
+## of not watching is one boolean test.
+func _watch_landing(delta: float) -> void:
+	var body := _body()
+	if body == null:
+		_landing_watch = false
+		return
+	_landing_age += delta
+	if _landing_age > LANDING_TIMEOUT_S:
+		_landing_watch = false  # never settled: stay silent rather than fire late on a stray bump
+		return
+	var pos: Vector3 = body.position  # LOCAL: the parent frame is what the wire carries
+	if _landing_last_pos == Vector3.INF:
+		_landing_last_pos = pos
+		return  # the release itself reparents the prop, so the first delta is a frame change, not motion
+	var moved: float = pos.distance_to(_landing_last_pos)
+	_landing_last_pos = pos
+	if moved > LANDING_STILL_M:
+		_landing_quiet = 0.0
+		return
+	_landing_quiet += delta
+	if _landing_quiet < LANDING_QUIET_S:
+		return
+	_landing_watch = false
+	if body.has_method("on_prop_landed"):
+		body.on_prop_landed()
 
 func _exit_tree() -> void:
 	if Engine.is_editor_hint():
@@ -167,7 +198,50 @@ func client_parent_change(parent: Node) -> void:
 	body.reparent(parent)
 	has_parent = true
 	PropNet.apply_ride_freeze_mode(body)  # KINEMATIC under a vehicle so it rides the moving truck
+	var was_carried := _carried_locally
+	_carried_locally = _is_carrier(parent)
 	_apply_carry_collision_exception(parent)
+	# Tell a host that cares (a carriable crate wanting its pick-up sound). Optional method, like
+	# apply_prop_data below: a prop that does not implement it costs nothing.
+	if was_carried != _carried_locally and body != null and body.has_method("on_carry_changed"):
+		body.on_carry_changed(_carried_locally)
+	# Just released: the DROP is voiced on impact, not here. Watch it fall (see _watch_landing).
+	if was_carried and not _carried_locally:
+		_landing_watch = true
+		_landing_age = 0.0
+		_landing_quiet = 0.0
+		_landing_last_pos = Vector3.INF  # unset: the first frame only records, never compares
+
+## Landing watch (CLIENT). A dropped prop should be heard when it HITS something, not when the hand
+## opens -- release a crate at waist height and the two are half a second apart.
+##
+## We cannot ask the physics engine: on a client the prop is FROZEN and its pose comes from the wire
+## (see PropNet.apply_client_transform), so it never reports a contact. What we do get is the motion
+## itself -- the server streams the fall and then goes quiet, because a settled body stops replicating
+## (see PropNet.server_tick). "Stopped moving" IS the landing, and it costs nothing to observe.
+var _landing_watch: bool = false
+var _landing_age: float = 0.0
+var _landing_quiet: float = 0.0
+var _landing_last_pos: Vector3 = Vector3.INF
+## Movement under this (m, per frame) counts as still. The wire snaps positions to 5 mm, so anything
+## finer than that is not motion, it is quantisation.
+const LANDING_STILL_M: float = 0.006
+## How long it must stay still before we call it landed. Long enough to ride out a dropped packet
+## mid-fall, short enough that the sound still reads as the impact.
+const LANDING_QUIET_S: float = 0.12
+## Give up after this long. A prop dropped down a hole may never settle, and a stale armed watch must
+## not fire on some unrelated nudge minutes later.
+const LANDING_TIMEOUT_S: float = 10.0
+
+
+## True while this prop hangs from a player -- ANY player, not just ours: a crate someone else picks
+## up in front of us must sound the same. Derived from the replicated parent, so it costs no bytes.
+var _carried_locally: bool = false
+
+## Is this parent a player, i.e. does hanging from it mean "being carried"?
+func _is_carrier(parent: Node) -> bool:
+	return parent != null and parent is Player
+
 
 ## Client: if WE (the local player) are the new parent, we're carrying this prop — ignore collisions
 ## between us and it so our own move_and_slide isn't blocked. Otherwise clear any stale exception so it

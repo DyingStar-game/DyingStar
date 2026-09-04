@@ -4,6 +4,8 @@
 [ext_resource type="PackedScene" uid="uid://bqppe3gbg5ga4" path="res://assets/_universe/props/containers/pallet_crate_120x80x100.glb" id="2_crate"]
 
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+[ext_resource type="Resource" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_crate"]
 size = Vector3(1.2, 1, 0.8)
@@ -13,6 +15,8 @@ collision_layer = 8
 collision_mask = 15
 mass = 200.0
 script = ExtResource("1_crate")
+sfx_pick_up = ExtResource("sfx_pick")
+sfx_landing = ExtResource("sfx_landing")
 type_name = "box"
 carriable = false
 

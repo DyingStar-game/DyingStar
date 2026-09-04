@@ -4,6 +4,8 @@
 [ext_resource type="ArrayMesh" uid="uid://cqspqet04e0fj" path="res://assets/_universe/props/containers/Box50cm.mesh" id="1_xngen"]
 [ext_resource type="Material" uid="uid://cc7amvqxedibt" path="res://assets/_universe/props/containers/box_50cm.material" id="3_ovsim"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+[ext_resource type="Resource" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_urcx6"]
 size = Vector3(0.5, 0.5, 0.5)
@@ -14,6 +16,8 @@ collision_mask = 15
 mass = 15.0
 continuous_cd = true
 script = ExtResource("1_o2evt")
+sfx_pick_up = ExtResource("sfx_pick")
+sfx_landing = ExtResource("sfx_landing")
 
 [node name="PropSync" type="Node" parent="."]
 script = ExtResource("propsync_1")

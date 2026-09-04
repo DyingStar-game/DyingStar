@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="SurfaceSounds" format=3 uid="uid://bbd8gcogr6hfd"]
+
+[ext_resource type="Script" uid="uid://bui2t3eqpyye8" path="res://scenes/common/surface_sounds.gd" id="1"]
+[ext_resource type="AudioStream" uid="uid://brukmwlf81rt6" path="res://assets/_universe/audio/sfx/props/crate-put-down-ground.mp3" id="gnd"]
+[ext_resource type="AudioStream" uid="uid://h0etgypdhefu" path="res://assets/_universe/audio/sfx/props/crate-put-down-metal.mp3" id="met"]
+[ext_resource type="AudioStream" uid="uid://dnqohk4goy70l" path="res://assets/_universe/audio/sfx/ui/missing-sound.wav" id="miss"]
+
+[resource]
+script = ExtResource("1")
+by_family = {
+&"brick": [ExtResource("gnd")],
+&"concrete": [ExtResource("gnd")],
+&"dirt": [ExtResource("gnd")],
+&"grate": [ExtResource("met")],
+&"gravel": [ExtResource("gnd")],
+&"ground": [ExtResource("gnd")],
+&"ice": [ExtResource("gnd")],
+&"metal": [ExtResource("met")],
+&"mineral": [ExtResource("gnd")],
+&"mud": [ExtResource("gnd")],
+&"organic": [ExtResource("gnd")],
+&"rock": [ExtResource("gnd")],
+&"sand": [ExtResource("gnd")],
+&"snow": [ExtResource("gnd")],
+&"stone": [ExtResource("gnd")],
+&"vegetation": [ExtResource("gnd")]
+}
+default_samples = Array[AudioStream]([ExtResource("gnd")])
+missing = ExtResource("miss")
+pitch_jitter = 0.06
