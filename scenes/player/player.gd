@@ -826,6 +826,23 @@ func stow_mining_tool() -> void:
 		mining_tool.set_equipped(false)
 
 
+## SERVER: put every tool away and tell everyone. Called when the player boards a vehicle — you do not
+## drive with a perforator in your hands, and unlike a carried crate a tool has somewhere to go, so it
+## is stowed rather than refused (see Vehicle.server_enter, which refuses a boarding with FULL hands).
+##
+## The state travels as the replicated `tools` property, so remote avatars drop the visible tool the
+## usual way; the owner obeys the same echo (see PlayerClient.client_channel_data_update).
+func server_stow_tools() -> void:
+	if mining_tool == null:
+		return
+	# ASSERTED, not conditional. Skipping the send when the server believes nothing is equipped looks
+	# like a sane optimisation and is a trap: that belief is second-hand (it is set from a client
+	# update_property), so any drift in it silently cancels the stow — which is exactly what happened,
+	# the perforator staying visible to everyone. Stating the state costs one property on a rare event,
+	# and delta compression drops it when it truly changes nothing.
+	mining_tool.server_set_tool("")
+	server_send_properties_to_client({"tools": ""})
+
 # Send action of the client to the server part (Horizon / godot server)
 # data example:
 # {

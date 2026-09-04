@@ -1148,6 +1148,11 @@ func client_channel_data_update(data: Dictionary) -> void:
 		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
+	# The OWNER obeys the authoritative tool state as well. It used to be applied on remote avatars
+	# only, so anything the server decided about our own hands — stowing on boarding, say — showed on
+	# everyone else's screen and not on ours.
+	if not player.remote_player and data.has("tools"):
+		player.mining_tool.apply_authoritative_tool(str(data["tools"]))
 	if player.remote_player:
 		if data.has("head"):
 			# Look pitch is a GENERAL player property: the body owns applying it to its camera pivot, and
