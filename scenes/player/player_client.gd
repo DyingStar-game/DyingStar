@@ -8,6 +8,9 @@ const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
 const FACE_SCREEN_EPSILON: float = 0.9997
+## How often the ground is re-probed (s). A step comes every metre or so; sampling at 60 Hz would cast
+## sixty rays to answer a question that changes when you walk into another room.
+const SURFACE_SAMPLE_S: float = 0.2
 ## Below this ground speed (m/s) the player is standing, not walking: no footsteps (see _update_footsteps).
 ## Well under the slowest gait (crouch/back ~1.5 m/s), well over the network + physics jitter.
 const MIN_WALK_SPEED: float = 0.6
@@ -55,7 +58,9 @@ var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to deri
 var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
-var _step_last_index: int = -1     # which footstep sample was played last (never twice in a row)
+var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
+var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
+var _surface_age: float = 0.0              # seconds since that sample
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
@@ -121,6 +126,8 @@ func setup() -> void:
 	_star_map = StarMap.new()
 	player.get_node("UserInterface").add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
+	# Surface readout (Settings > General): what the ground under our feet is, and how we decided.
+	SurfaceDebugHud.attach(player, player.get_node("UserInterface"))
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -343,6 +350,10 @@ func _process(_delta: float) -> void:
 ## emit the move only on change. Runs on this role's own child node → only on a client (never the
 ## server); the remote guard keeps a replicated avatar from sampling local input.
 func _physics_process(delta: float) -> void:
+	# BEFORE the remote guard, and here rather than with the footsteps: a ray needs
+	# direct_space_state, which only exists during a physics frame — _process gets null and every
+	# probe silently answered "unknown". And remote avatars need it too: everyone hears everyone walk.
+	_sample_surface(delta)
 	if player.remote_player: return
 	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
 	if is_instance_valid(player._seat_node):
@@ -1231,7 +1242,7 @@ func _sample_locomotion(delta: float) -> void:
 ## the same on our own body and on a remote avatar (whose position is interpolated, with no velocity or
 ## is_on_floor to read), and a player pushed around without walking makes no sound.
 func _update_footsteps(delta: float) -> void:
-	if player.sfx_footsteps.is_empty():
+	if player.sfx_footsteps == null:
 		return
 	var s: Dictionary = player.locomotion_sample
 	if s.is_empty():
@@ -1267,22 +1278,25 @@ func _update_footsteps(delta: float) -> void:
 	_step_distance = 0.0
 	_play_footstep()
 
-## One footstep: a random sample, never the same one twice in a row, with a touch of random pitch.
-## Both tricks fight the "machine gun" effect a single repeated sample gives.
+## One footstep, on the surface actually under the foot. The no-repeat draw and the pitch spread live
+## in SurfaceSounds, shared with every other consumer instead of copied per caller.
 func _play_footstep() -> void:
-	var count: int = player.sfx_footsteps.size()
-	var index: int = randi() % count
-	if count > 1 and index == _step_last_index:
-		# Draw again, UNIFORMLY among the other samples: replacing the repeat with "the next one" would
-		# make that neighbour come up more often than the rest.
-		index = randi() % (count - 1)
-		if index >= _step_last_index:
-			index += 1
-	_step_last_index = index
-	var jitter: float = player.sfx_footstep_pitch_jitter
-	Sfx3D.play_pitched(player, player.sfx_footsteps[index], player.sfx_footstep_db,
-			player.sfx_footstep_falloff, player.sfx_footstep_distance, player.sfx_footstep_attenuation,
-			randf_range(1.0 - jitter, 1.0 + jitter))
+	var sample: AudioStream = player.sfx_footsteps.pick(_surface_family, _step_last_sample)
+	_step_last_sample = sample
+	Sfx3D.play_pitched(player, sample, player.sfx_footstep_db, player.sfx_footstep_falloff,
+			player.sfx_footstep_distance, player.sfx_footstep_attenuation,
+			player.sfx_footsteps.random_pitch())
+
+## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,
+## since direct_space_state is null everywhere else — and throttled, because a step happens every metre
+## or two while physics runs at 60 Hz.
+func _sample_surface(delta: float) -> void:
+	_surface_age += delta
+	if _surface_age < SURFACE_SAMPLE_S:
+		return
+	_surface_age = 0.0
+	_surface_family = SurfaceProbe.family_under(
+		player, SurfaceProbe.down_of(player), SurfaceProbe.FOOT_REACH_M, Globals.MASK_OBSTACLE)
 
 ## The torch was just flipped (replicated state): click it. Silent on the spawn snapshot (see _sfx_live).
 func _play_torch_sfx(on: bool) -> void:

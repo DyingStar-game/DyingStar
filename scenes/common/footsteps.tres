@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="SurfaceSounds" format=3 uid="uid://6f0gseklfmuj"]
+
+[ext_resource type="Script" uid="uid://bui2t3eqpyye8" path="res://scenes/common/surface_sounds.gd" id="1"]
+[ext_resource type="AudioStream" uid="uid://cmtla8rhdbdqf" path="res://assets/_universe/audio/sfx/characters/step_grass_1.mp3" id="g1"]
+[ext_resource type="AudioStream" uid="uid://oiyvcjno72op" path="res://assets/_universe/audio/sfx/characters/step_grass_2.mp3" id="g2"]
+[ext_resource type="AudioStream" uid="uid://4wrwtpyh4v8r" path="res://assets/_universe/audio/sfx/characters/step_grass_3.mp3" id="g3"]
+[ext_resource type="AudioStream" uid="uid://csvkmjyavyuiq" path="res://assets/_universe/audio/sfx/characters/step_grass_4.mp3" id="g4"]
+[ext_resource type="AudioStream" uid="uid://ceq46jbf8bw3u" path="res://assets/_universe/audio/sfx/characters/step_metal_1.mp3" id="m1"]
+[ext_resource type="AudioStream" uid="uid://b64bc6qax1ho7" path="res://assets/_universe/audio/sfx/characters/step_metal_2.mp3" id="m2"]
+[ext_resource type="AudioStream" uid="uid://dnqohk4goy70l" path="res://assets/_universe/audio/sfx/ui/missing-sound.wav" id="miss"]
+[ext_resource type="AudioStream" uid="uid://c1tttf5kvfq30" path="res://assets/_universe/audio/sfx/characters/step_sand_1.mp3" id="s1"]
+[ext_resource type="AudioStream" uid="uid://bisrs6xcxhoic" path="res://assets/_universe/audio/sfx/characters/step_sand_2.mp3" id="s2"]
+[ext_resource type="AudioStream" uid="uid://b6wbq1r07dnl2" path="res://assets/_universe/audio/sfx/characters/step_sand_3.mp3" id="s3"]
+[ext_resource type="AudioStream" uid="uid://tvl1x0upmmqw" path="res://assets/_universe/audio/sfx/characters/step_stone_1.mp3" id="t1"]
+[ext_resource type="AudioStream" uid="uid://bkdes1xx6o1c7" path="res://assets/_universe/audio/sfx/characters/step_stone_2.mp3" id="t2"]
+
+[resource]
+script = ExtResource("1")
+by_family = {
+&"brick": [ExtResource("t1"), ExtResource("t2")],
+&"concrete": [ExtResource("t1"), ExtResource("t2")],
+&"dirt": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
+&"grate": [ExtResource("m1"), ExtResource("m2")],
+&"gravel": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
+&"metal": [ExtResource("m1"), ExtResource("m2")],
+&"mineral": [ExtResource("t1"), ExtResource("t2")],
+&"organic": [ExtResource("g1"), ExtResource("g2"), ExtResource("g3"), ExtResource("g4")],
+&"rock": [ExtResource("t1"), ExtResource("t2")],
+&"sand": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
+&"stone": [ExtResource("t1"), ExtResource("t2")],
+&"vegetation": [ExtResource("g1"), ExtResource("g2"), ExtResource("g3"), ExtResource("g4")]
+}
+missing = ExtResource("miss")

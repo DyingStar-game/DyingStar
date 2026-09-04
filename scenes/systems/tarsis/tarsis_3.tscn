@@ -12,6 +12,7 @@
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("script_data")
 planet_name = "tarsis_3"
+surface_family = "mineral"
 atmosphere_profile = ExtResource("atmosphere_tarsis4")
 surface_gravity = 7.77
 chunk_export_depth = 6

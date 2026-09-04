@@ -7,6 +7,7 @@ extends Control
 @onready var _cargo_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/CargoDebug/Button
 @onready var _celestial_gizmos: Button = $ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos/Button
 @onready var _movement_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/MovementDebug/Button
+@onready var _surface_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug/Button
 
 func _ready() -> void:
 	_show_debug.toggle_mode = true
@@ -29,6 +30,11 @@ func _ready() -> void:
 	_movement_debug.text = "On" if _movement_debug.button_pressed else "Off"
 	_movement_debug.toggled.connect(_on_movement_debug_toggled)
 
+	_surface_debug.toggle_mode = true
+	_surface_debug.button_pressed = SettingsManager.is_surface_debug()
+	_surface_debug.text = "On" if _surface_debug.button_pressed else "Off"
+	_surface_debug.toggled.connect(_on_surface_debug_toggled)
+
 ## Show/hide the in-game debug panels. Kept in sync with the toggle_debug key via SettingsManager.
 func _on_show_debug_toggled(on: bool) -> void:
 	_show_debug.text = "On" if on else "Off"
@@ -47,3 +53,8 @@ func _on_celestial_gizmos_toggled(on: bool) -> void:
 func _on_movement_debug_toggled(on: bool) -> void:
 	_movement_debug.text = "On" if on else "Off"
 	SettingsManager.set_movement_debug(on)
+
+## Show/hide the surface readout (which taxonomy family is under your feet, and how it was decided).
+func _on_surface_debug_toggled(on: bool) -> void:
+	_surface_debug.text = "On" if on else "Off"
+	SettingsManager.set_surface_debug(on)

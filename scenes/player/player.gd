@@ -224,9 +224,11 @@ const TELEPORT_TARGETS := {
 @export var sfx_torch_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Footsteps")
-## Footstep samples: one is picked at random on each step (never the same one twice in a row, so the
-## walk does not sound like a machine). Put 3+ variations here; leave empty for no footsteps.
-@export var sfx_footsteps: Array[AudioStream] = []
+## Footstep samples PER SURFACE (see SurfaceSounds): the ground under the foot picks the family, the
+## library picks a sample from it — never the same one twice in a row, so the walk does not sound like
+## a machine. A family with no samples plays the library's "missing" marker, so a hole is audible
+## rather than silent. Leave null for no footsteps at all.
+@export var sfx_footsteps: SurfaceSounds
 @export_range(-40.0, 12.0, 0.5) var sfx_footstep_db: float = -6.0
 @export_range(0.5, 200.0, 0.5) var sfx_footstep_falloff: float = 3.0
 @export_range(1.0, 500.0, 1.0) var sfx_footstep_distance: float = 25.0
@@ -234,8 +236,6 @@ const TELEPORT_TARGETS := {
 ## One step every N metres WALKED — not every N seconds. The cadence then follows the speed on its own:
 ## running covers the distance faster, so the steps come faster. This is the stride length.
 @export_range(0.2, 4.0, 0.05) var sfx_footstep_stride: float = 1.9
-## Random pitch spread (±) on each step: the same sample never sounds exactly twice the same.
-@export_range(0.0, 0.5, 0.01) var sfx_footstep_pitch_jitter: float = 0.08
 
 @export_subgroup("Jump")
 ## Played when the player jumps (the effort, not the landing).
@@ -824,6 +824,7 @@ func server_send_properties_to_client(data: Dictionary):
 func stow_mining_tool() -> void:
 	if mining_tool != null:
 		mining_tool.set_equipped(false)
+
 
 # Send action of the client to the server part (Horizon / godot server)
 # data example:

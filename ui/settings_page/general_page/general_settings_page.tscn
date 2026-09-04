@@ -97,6 +97,23 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "Off"
 
+[node name="SurfaceDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Surface debug (ground family / how it was found)"
+label_settings = SubResource("LabelSettings_gen")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "Off"
+
 [node name="MovementDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1017380229]
 layout_mode = 2
 

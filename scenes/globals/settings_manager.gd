@@ -7,6 +7,7 @@ signal fov_changed(fov: float)
 ## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
 signal show_debug_changed(on: bool)
 signal movement_debug_changed(on: bool)
+signal surface_debug_changed(on: bool)
 ## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
 signal shadows_changed(on: bool)
 ## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
@@ -55,6 +56,7 @@ func initialize_settings():
 	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
 	config.set_value("general", "show_debug", true)
 	config.set_value("general", "movement_debug", false)
+	config.set_value("general", "surface_debug", false)
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
 	# HUD mic toggle, remembered between sessions like every other audio setting.
@@ -261,6 +263,18 @@ func set_movement_debug(on: bool) -> void:
 
 func is_movement_debug() -> bool:
 	return config.get_value("general", "movement_debug", false)
+
+## Surface debug: an on-screen readout of the ground under your feet — the taxonomy family, how it was
+## worked out, and whether a footstep sample exists for it. Its own toggle rather than a line added to
+## the movement readout: someone chasing a wrong footstep sound has no use for animation clips, and
+## someone tuning a walk cycle has none for material ids.
+func set_surface_debug(on: bool) -> void:
+	config.set_value("general", "surface_debug", on)
+	save_settings()
+	surface_debug_changed.emit(on)
+
+func is_surface_debug() -> bool:
+	return config.get_value("general", "surface_debug", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)
