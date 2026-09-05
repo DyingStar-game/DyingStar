@@ -30,6 +30,12 @@ extends RefCounted
 ##   --rocks-verbose     restore the per-rock `[cut]` prints. They are off by default because EVERY
 ##                       print() here is routed through CustomLogger -> Obs -> the C# OpenTelemetry
 ##                       bridge, so four lines per rock on a field spawn are a cost of their own.
+##
+## Each also has a client.ini key (`debug_rocks_no_csg`, `debug_rocks_scene_hull`,
+## `debug_rocks_shared_mat`, `debug_rocks_hidden`, `debug_rocks_verbose`), because the players who
+## report a rock-field framerate run a packaged build and cannot pass a command line — see
+## client_config.gd. Four of the five CHANGE WHAT IS RENDERED and exist to bisect a report, not to
+## be left on: ask for one, get the log, ask for it back off.
 
 static var no_csg: bool = false
 static var scene_hull: bool = false
@@ -40,11 +46,11 @@ static var verbose_cuts: bool = false
 
 static func _static_init() -> void:
 	var args: PackedStringArray = OS.get_cmdline_args()
-	no_csg = "--rocks-no-csg" in args
-	scene_hull = "--rocks-scene-hull" in args
-	shared_material = "--rocks-shared-mat" in args
-	hidden = "--rocks-hidden" in args
-	verbose_cuts = "--rocks-verbose" in args
+	no_csg = "--rocks-no-csg" in args or ClientConfig.get_bool("debug_rocks_no_csg", false)
+	scene_hull = "--rocks-scene-hull" in args or ClientConfig.get_bool("debug_rocks_scene_hull", false)
+	shared_material = "--rocks-shared-mat" in args or ClientConfig.get_bool("debug_rocks_shared_mat", false)
+	hidden = "--rocks-hidden" in args or ClientConfig.get_bool("debug_rocks_hidden", false)
+	verbose_cuts = "--rocks-verbose" in args or ClientConfig.get_bool("debug_rocks_verbose", false)
 	if no_csg or scene_hull or shared_material or hidden or verbose_cuts:
 		print("[RockDebug] no_csg=%s scene_hull=%s shared_mat=%s hidden=%s verbose=%s" % [
 			no_csg, scene_hull, shared_material, hidden, verbose_cuts])
