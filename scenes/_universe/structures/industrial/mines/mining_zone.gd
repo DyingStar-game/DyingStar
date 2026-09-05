@@ -669,7 +669,7 @@ func apply_prop_data(data: Dictionary) -> void:
 		generated = data["generated"]
 	if "last_generation_datetime" in data:
 		last_generation_datetime = data["last_generation_datetime"]
-	
+
 	# Deliberately NOT arming detection here. Horizon replays every stored zone at boot, and on a
 	# planet seeded by MiningZonePlanner that is hundreds of them — each would then run its own
 	# _physics_process forever. MiningZonePlanner arms only the zone under a player and disarms it

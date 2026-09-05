@@ -245,7 +245,14 @@ func _report() -> void:
 		pipe_delta.append(str(v - _pipe_prev[i]))
 	_pipe_prev = pipe_now
 
-	print("[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d | mem=%s vram=%s | pipe+=%s" % [
+	var fmt: String = (
+		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
+		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
+		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
+		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
+		+ " | mem=%s vram=%s | pipe+=%s"
+	)
+	print(fmt % [
 		_clock(), _uptime(),
 		fps, _worst_ms, _worst_at, _hitches,
 		window, _proc_max,

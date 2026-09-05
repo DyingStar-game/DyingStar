@@ -69,13 +69,13 @@ func _run(mesh: Mesh, fracs: Array, per_frame: bool) -> Dictionary:
 
 
 ## Verbatim copy of RockMining._make_cut_box, so the check exercises the real box placement.
-func _make_cut_box(frac: Dictionary, aabbBox: AABB) -> CSGBox3D:
+func _make_cut_box(frac: Dictionary, aabb_box: AABB) -> CSGBox3D:
 	var box := CSGBox3D.new()
-	box.size = Vector3(2.0 * aabbBox.size.x, 2.0 * aabbBox.size.y, 2.0 * aabbBox.size.z)
+	box.size = Vector3(2.0 * aabb_box.size.x, 2.0 * aabb_box.size.y, 2.0 * aabb_box.size.z)
 	box.rotation = Vector3(
 		deg_to_rad(frac["rotation_x"]), deg_to_rad(frac["rotation_y"]), deg_to_rad(frac["rotation_z"]))
 	var offset: float = frac["plane_offset"]
-	var box_x: float = (offset - aabbBox.size.x) if int(frac["keep_side"]) == 1 else (offset + aabbBox.size.x)
+	var box_x: float = (offset - aabb_box.size.x) if int(frac["keep_side"]) == 1 else (offset + aabb_box.size.x)
 	box.translate_object_local(Vector3(box_x, 0.0, 0.0))
 	box.operation = CSGShape3D.OPERATION_SUBTRACTION
 	return box

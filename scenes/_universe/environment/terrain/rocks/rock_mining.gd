@@ -3,6 +3,8 @@ class_name RockMining
 extends GenericProp
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+const ROCK_VEIN_SHADER = preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
+const FALLBACK_ROCK_TEX = preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg")
 
 # Max distance (rock-local) from the aim point to the active crack plane for the hit
 # to count as "on the crack". Aiming farther than this = not on a crack -> no cut.
@@ -565,9 +567,9 @@ func _rebuild_fracture(fracture: Dictionary) -> void:
 ## plane_offset = dot(normal, point_on_plane) in rock-local space — already bakes in
 ## the mesh-centre correction, so no extra shift is needed here.
 func _make_cut_box(frac: Dictionary) -> CSGBox3D:
-	var aabbBox: AABB = _source_mesh().get_aabb()
+	var aabb_box: AABB = _source_mesh().get_aabb()
 	var box := CSGBox3D.new()
-	box.size = Vector3(2.0 * aabbBox.size.x, 2.0 * aabbBox.size.y, 2.0 * aabbBox.size.z)
+	box.size = Vector3(2.0 * aabb_box.size.x, 2.0 * aabb_box.size.y, 2.0 * aabb_box.size.z)
 	var rx: float = frac.get("rotation_x", 0.0)
 	var ry: float = frac.get("rotation_y", 0.0)
 	var rz: float = frac.get("rotation_z", 0.0)
@@ -579,9 +581,9 @@ func _make_cut_box(frac: Dictionary) -> CSGBox3D:
 	# keep_side 2 = keep -normal half -> remove +normal half (box centre above the plane).
 	var box_x: float
 	if int(frac.get("keep_side", 1)) == 1:
-		box_x = offset - aabbBox.size.x
+		box_x = offset - aabb_box.size.x
 	else:
-		box_x = offset + aabbBox.size.x
+		box_x = offset + aabb_box.size.x
 	box.translate_object_local(Vector3(box_x, 0.0, 0.0))
 	box.operation = CSGShape3D.OPERATION_SUBTRACTION
 	# In Godot's CSG the faces a brush carves inherit THAT brush's material, which is how the cut
@@ -798,14 +800,13 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 		return _shared_debug_material()
 	var _mat_tok := RockDebug.t()
 	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
-	var _fallback_rock_tex := preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg")
+	mat.shader = ROCK_VEIN_SHADER
 	# The exterior belongs to the HOST ROCK when one was replicated; otherwise it keeps coming from
 	# the ore mineral's own rock_* fields (pre-host_rock_id behaviour). Relief and finish are read
 	# ONLY from a real host rock: taking them from the ore mineral would repaint every existing rock
 	# with gold's polish the day gold gets a normal map.
 	var exterior: MineralDef = host_rock if host_rock != null else mineral
-	var rock_tex: Texture2D = exterior.rock_albedo_tex if exterior != null and exterior.rock_albedo_tex != null else _fallback_rock_tex
+	var rock_tex: Texture2D = exterior.rock_albedo_tex if exterior != null and exterior.rock_albedo_tex != null else FALLBACK_ROCK_TEX
 	mat.set_shader_parameter("albedo_tex", rock_tex)
 	mat.set_shader_parameter("tex_scale", exterior.rock_tex_scale if exterior != null else 1.0)
 	mat.set_shader_parameter("rock_use_normal", host_rock != null and host_rock.rock_normal_tex != null)
@@ -854,9 +855,8 @@ static var _debug_shared_material: ShaderMaterial = null
 func _shared_debug_material() -> ShaderMaterial:
 	if _debug_shared_material == null:
 		_debug_shared_material = ShaderMaterial.new()
-		_debug_shared_material.shader = preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
-		_debug_shared_material.set_shader_parameter("albedo_tex",
-			preload("res://assets/textures/grounds/rock/Rock029_2K_Color.jpg"))
+		_debug_shared_material.shader = ROCK_VEIN_SHADER
+		_debug_shared_material.set_shader_parameter("albedo_tex", FALLBACK_ROCK_TEX)
 		_debug_shared_material.set_shader_parameter("ore_threshold", 1.0)
 		_debug_shared_material.set_shader_parameter("ore_emission", 0.0)
 		_debug_shared_material.set_shader_parameter("plane_count", 0)
@@ -1044,14 +1044,14 @@ func check_rock() -> void:
 	if fractures.size() > 0:
 		if not _is_breakable_piece():
 			_can_be_breakable = false
-			
+
 	can_be_breakable = _can_be_breakable
 	server_prop_update({"can_be_breakable": can_be_breakable})
 	_refresh_mass()
 	if not _can_be_breakable:
 		# no breakable, don't need to generate fracture plane
 		return
-		
+
 	# Now, if the rock is breakable, create fracture plan if not exists
 	var has_active_plane := false
 	for frac in fractures:
@@ -1299,4 +1299,5 @@ func _server_create_side2_rock(cut_index: int) -> void:
 		"host_rock_id": str(host_rock.id) if host_rock != null else "",
 		"inert_density": inert_density,
 	})
-	# print("[mining] perforate %s CUT along plane %d (keep_side %d) -> %d fracture(s), breakable=%s" % [uuid, cut_i, keep_side, fractures.size(), can_be_breakable])
+	# print("[mining] perforate %s CUT along plane %d (keep_side %d) -> %d fracture(s), breakable=%s"
+	# 	% [uuid, cut_i, keep_side, fractures.size(), can_be_breakable])
