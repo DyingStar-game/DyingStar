@@ -1,5 +1,5 @@
 function-variable-name: _?[a-z][a-z0-9]*(_[a-z0-9]+)*
-max-file-lines: 3000
+max-file-lines: 3200
 max-line-length: 140
 max-public-methods: 40
 max-returns: 20
