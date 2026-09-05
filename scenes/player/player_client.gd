@@ -78,12 +78,25 @@ var _star_map: StarMap = null
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
 ## the camera, then go live after a short delay. (This is the former client/remote branches of _ready.)
+## Move the torch from the camera onto the head. Parented to the camera it stayed rigid while the body
+## animated, so the beam came off nothing -- most visibly on other players, whose camera is not even
+## driven. The mount already faces the way the body faces, so the light only needs its offset.
+func _mount_torch() -> void:
+	if player.head_mount == null or player.flashlight == null:
+		return
+	player.flashlight.reparent(player.head_mount, false)
+	# The mount cancels the head bone rest AND the first-person hide scale, so this offset is plain
+	# metres in body axes on every avatar: forward is -Z, exactly as it reads in the Inspector.
+	player.flashlight.transform = Transform3D(Basis(), player.torch_head_offset)
+
+
 func setup() -> void:
 	# The animated puppet is the visible body now — for the owner (first person) and remotes alike.
 	player.astronaut.visible = false
 	var animator = player.puppet.get_node_or_null("CharacterAnimator")
 	if animator != null:
 		animator.setup(player, not player.remote_player)
+	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
 	if player.remote_player:
 		player.camera.current = false
 		_setup_name_tag(str(player.name))

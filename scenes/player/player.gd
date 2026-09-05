@@ -305,6 +305,10 @@ var stance: int = 0
 ## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
 ## dedicated server (no puppet).
 var belt_mount: Node3D = null
+## Shared head attachment point (a BoneAttachment3D on the puppet's head bone, created by
+## CharacterAnimator, with the bone's rest rotation cancelled so a child faces the way the body faces).
+## The torch rides it, so the beam follows the animated head. Null on the dedicated server (no puppet).
+var head_mount: Node3D = null
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
@@ -455,6 +459,10 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var is_inside_box4m: bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
+## Where the torch sits relative to the HEAD BONE, which PlayerClient mounts it on. The bone sits at the
+## base of the skull, so the lamp has to come forward (-Z) and up to clear the face instead of shining
+## from inside it. Tune live in the Inspector.
+@export var torch_head_offset: Vector3 = Vector3(0, 0.08, -0.2)
 
 # Mining gameplay (perforator equip, aim, perforation) is encapsulated in the
 # MiningTool component (scene child). Networking stays here (see _ready wiring).
@@ -467,9 +475,10 @@ func _enter_tree() -> void:
 	if remote_player:
 		position = spawn_position
 		$UserInterface.visible = false
-		# Don't hide CameraPivot: its Torch (SpotLight3D) lives under it, and a hidden ancestor would
-		# keep a remote player's flashlight dark even when its replicated state is ON. The camera is
-		# made non-current in _ready, so it never renders for us anyway.
+		# Don't hide CameraPivot: it still drives where a remote player is looking (its pitch is
+		# replicated), and the camera is made non-current in _ready, so it never renders for us anyway.
+		# The Torch used to live under it and had to stay lit; it now rides the head bone instead
+		# (PlayerClient._mount_torch), so it no longer depends on this node's visibility.
 
 	elif not OS.has_feature("dedicated_server"):
 		# _enter_tree fires again on every reparent (reparent = tree exit + re-enter), but signal
