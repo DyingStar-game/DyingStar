@@ -52,8 +52,9 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export var anim_set: CharacterAnimationSet
 
 @export_group("Rig")
-## Bone the shared belt mount follows (Unreal rig: "pelvis" = hips). Tools holster onto player.belt_mount.
-@export var belt_bone: StringName = &"pelvis"
+## Bone the shared belt mount follows. Retargeted rigs expose the humanoid profile name ("Hips"); a raw
+## Unreal-named rig calls it "pelvis". Tools holster onto player.belt_mount.
+@export var belt_bone: StringName = &"Hips"
 
 @export_group("Seated pose")
 ## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
@@ -160,11 +161,10 @@ func setup(player_body, is_local: bool) -> void:
 	if _puppet != null:
 		_puppet_base_position = _puppet.position
 	_anim = _find_in_puppet("AnimationPlayer") as AnimationPlayer
-	_skeleton = _find_in_puppet("Skeleton3D") as Skeleton3D
+	_skeleton = _find_posed_skeleton()
 	if _skeleton != null:
-		_head_bone = _skeleton.find_bone(&"Head")  # local: hidden in first person; all: tilted to look pitch
-		if _head_bone == -1:
-			_head_bone = _skeleton.find_bone(&"head")  # some rigs (Unreal naming) use lowercase
+		# Local: hidden in first person; every avatar: tilted to the look pitch.
+		_head_bone = _resolve_bone([&"Head", &"head"])
 		_create_belt_mount()  # shared holster point any tool hangs on (follows the animated hips)
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
@@ -177,6 +177,18 @@ func setup(player_body, is_local: bool) -> void:
 	# debug HUD can show whether a ledge is climbable right now.
 	set_physics_process(_is_local and _anim != null and anim_set != null)
 
+## The skeleton the animations actually pose. The clips live in a library built for this character
+## (addons/dyingstar/build_retargeted_animations.gd) and the AnimationPlayer names the rig they address
+## through its root_node -- ask it, rather than assuming the puppet holds exactly one skeleton.
+func _find_posed_skeleton() -> Skeleton3D:
+	if _anim != null:
+		var posed: Node = _anim.get_node_or_null(_anim.root_node)
+		if posed != null:
+			var found: Array[Node] = posed.find_children("*", "Skeleton3D", true, false)
+			if not found.is_empty():
+				return found[0] as Skeleton3D
+	return _find_in_puppet("Skeleton3D") as Skeleton3D
+
 ## Create the shared belt mount: a BoneAttachment3D that follows the hip bone. Any tool holsters its stowed
 ## model onto player.belt_mount (with the tool's OWN offset), so it moves with the animated body (DRY).
 func _create_belt_mount() -> void:
@@ -185,10 +197,24 @@ func _create_belt_mount() -> void:
 	var belt := BoneAttachment3D.new()
 	belt.name = "BeltMount"
 	_skeleton.add_child(belt)
-	belt.bone_name = String(belt_bone)
-	if belt.bone_idx == -1:
-		belt.bone_name = String(belt_bone).capitalize()  # case fallback (e.g. Pelvis)
+	var hip: int = _resolve_bone([belt_bone, &"Hips", &"pelvis"])
+	if hip == -1:
+		push_warning("[DyingStar] CharacterAnimator: no hip bone on this rig, belt mount not placed.")
+		belt.queue_free()
+		return
+	belt.bone_name = _skeleton.get_bone_name(hip)
 	_player.belt_mount = belt
+
+
+## First of `candidates` that this rig actually carries, or -1. Rigs reach us under two naming schemes:
+## the humanoid profile names Godot writes when a glTF is imported with retargeting ("Hips", "Head"), and
+## the raw Unreal names of a rig imported without it ("pelvis", "head"). One lookup, used by every caller.
+func _resolve_bone(candidates: Array[StringName]) -> int:
+	for candidate in candidates:
+		var idx: int = _skeleton.find_bone(candidate)
+		if idx != -1:
+			return idx
+	return -1
 
 func _process(delta: float) -> void:
 	_play(_select_clip(delta))
