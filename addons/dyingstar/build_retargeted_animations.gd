@@ -51,11 +51,22 @@ const ROOT_MOTION_BONES: Array[StringName] = [&"Hips", &"Root"]
 ## simply make the clench permanent.
 const FROZEN_GROUPS: Array[String] = ["Thumb", "Index", "Middle", "Ring", "Little"]
 
+## Clips that keep their finger animation anyway, because the hand GRIPS something. The reason fingers
+## are frozen is that an imported curl closes past the anatomical stop and the fingertips sink into the
+## palm -- plainly wrong on an open hand. Closed around a steering wheel the same excess is hidden by
+## the rim, and a flat hand laid on the wheel is the worse of the two. Add a clip here if its hands
+## should hold rather than rest.
+const GRIPPING_CLIPS: Array[String] = ["Driving"]
+
+## How much of the imported curl a gripping clip keeps, from 0 (the character's own relaxed hand) to 1
+## (the library's curl, verbatim). Neither end is right: at 0 a flat hand rests on the wheel, at 1 the
+## fingers close past their stop and cross into the palm, because the two hands are not built the same.
+## This is a dial, not a derivation -- set it by eye on the driving pose.
+const FINGER_STRENGTH: float = 0.55
+
 
 ## Both skeletons, paired by bone name, with the rest poses the conversion needs precomputed once.
-class Rig:
-	extends RefCounted
-
+class Rig extends RefCounted:
 	## Bones to leave at the character's own rest direction. Aligning a bone only makes sense where the two
 	## rigs rest in a different POSE, as the arms do (a T-posed library on an A-posed character). These
 	## already rest the same way and differ only in BUILD, so aligning them would import the library's
@@ -161,9 +172,7 @@ class Rig:
 
 
 ## What one converted clip produced, so the run reports without parsing logs.
-class ClipResult:
-	extends RefCounted
-
+class ClipResult extends RefCounted:
 	var clip: Animation
 	var skipped_tracks: int = 0
 
@@ -195,7 +204,7 @@ func _run() -> void:
 	var converted: int = 0
 
 	for clip_name in player.get_animation_list():
-		var result: ClipResult = _convert_clip(player.get_animation(clip_name), rig, dst_prefix)
+		var result: ClipResult = _convert_clip(player.get_animation(clip_name), rig, dst_prefix, clip_name)
 		library.add_animation(clip_name, result.clip)
 		skipped_tracks += result.skipped_tracks
 		converted += 1
@@ -213,7 +222,7 @@ func _run() -> void:
 	_free_all([source, target])
 
 
-func _convert_clip(source_clip: Animation, rig: Rig, dst_prefix: String) -> ClipResult:
+func _convert_clip(source_clip: Animation, rig: Rig, dst_prefix: String, clip_name: String) -> ClipResult:
 	var result: ClipResult = ClipResult.new()
 	var out: Animation = Animation.new()
 	out.length = source_clip.length
@@ -232,7 +241,7 @@ func _convert_clip(source_clip: Animation, rig: Rig, dst_prefix: String) -> Clip
 		if idx == -1 or not rig.source_of.has(idx):
 			result.skipped_tracks += 1
 			continue
-		if _is_frozen(bone):
+		if _is_frozen(bone) and not GRIPPING_CLIPS.has(clip_name):
 			continue
 		var kind: int = source_clip.track_get_type(track)
 		if kind == Animation.TYPE_ROTATION_3D:
@@ -291,6 +300,11 @@ func _convert_pose(
 		dst_global[idx] = becomes
 		if out_rotation.has(idx):
 			var local_dst: Quaternion = (dst_parent.inverse() * becomes).normalized()
+			if _is_frozen(rig.dst.get_bone_name(idx)):
+				# A gripping clip got here with its finger tracks kept; ease them back toward the hand
+				# this character actually has, rather than closing them the whole way.
+				var relaxed: Quaternion = rig.dst.get_bone_rest(idx).basis.get_rotation_quaternion()
+				local_dst = relaxed.slerp(local_dst, FINGER_STRENGTH).normalized()
 			out.rotation_track_insert_key(out_rotation[idx], time, local_dst)
 
 
