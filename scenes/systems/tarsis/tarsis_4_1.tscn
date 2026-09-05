@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://cwnjnbbnl0eap"]
+
+[ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="1_mv1ur"]
+[ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="2_xddol"]
+[ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_pwivt"]
+[ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_wbxss"]
+[ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_k4d84"]
+[ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/_universe/props/containers/storagewarehouse.tscn" id="6_cmfuk"]
+
+[sub_resource type="Resource" id="PlanetData_tarsis4"]
+script = ExtResource("2_xddol")
+planet_name = "tarsis_4_1"
+surface_gravity = 1.76
+gravity_reach = 302000.0
+chunk_export_depth = 6
+terrain_material = ExtResource("3_pwivt")
+max_quadtree_depth = 13
+crack_spacing_m = 4000.0
+crack_width_m = 250.0
+crack_depth_m = 180.0
+debug_color_skirts = true
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
+chunk_heightmap_res = 50
+
+[node name="Tarsis3_2" type="Node3D" unique_id=134586975]
+script = ExtResource("1_mv1ur")
+planet_data = SubResource("PlanetData_tarsis4")
+map_color = Color(0.497, 0.465, 0.417, 1)
+display_name = "Tarsis IV.M1"
+map_radius_km = 1146.0
+surface_albedo = 0.28
+rotation_period_hours = 563.75
+orbit_periapsis_au = 0.00209628652154338
+orbit_apoapsis_au = 0.00218184923670842
+orbit_inclination_deg = 0.5
+orbit_ascending_node_deg = 107.8
+orbit_arg_periapsis_deg = 120.0
+orbit_mean_anomaly_deg = 210.5
+orbit_mass_earths = 0.000601
+orbit_primary_mass_kg = 4.7059360000000005e+24
+
+[node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
+script = ExtResource("4_wbxss")
+editor_preview_depth = 13
+editor_preview_rings = 3
+editor_goto_lon = -10.0
+editor_goto_lat = 20.0
+editor_goto_x = 5881947.772299743
+editor_goto_y = 2173880.0309779504
+editor_goto_z = -1037146.0913744952
+
+[node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
+script = ExtResource("5_k4d84")
+
+[node name="Storagewarehouse" parent="PlanetTerrain" unique_id=695965601 instance=ExtResource("6_cmfuk")]
+transform = Transform3D(0.3467321978596412, 0.9254026984287056, 0.15299225048443726, -0.9379641693409312, 0.3420886660914647, 0.05655582697069961, 0, -0.16311097532855506, 0.9866077283943034, 5884165.154797647, 2175167.8618232184, -1037139.7436197174)
