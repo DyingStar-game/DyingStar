@@ -165,7 +165,7 @@ func setup(player_body, is_local: bool) -> void:
 	if _skeleton != null:
 		# Local: hidden in first person; every avatar: tilted to the look pitch.
 		_head_bone = _resolve_bone([&"Head", &"head"])
-		_create_belt_mount()  # shared holster point any tool hangs on (follows the animated hips)
+		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -189,21 +189,55 @@ func _find_posed_skeleton() -> Skeleton3D:
 				return found[0] as Skeleton3D
 	return _find_in_puppet("Skeleton3D") as Skeleton3D
 
-## Create the shared belt mount: a BoneAttachment3D that follows the hip bone. Any tool holsters its stowed
-## model onto player.belt_mount (with the tool's OWN offset), so it moves with the animated body (DRY).
-func _create_belt_mount() -> void:
+## Create the shared attachment points on the animated body: the belt any tool holsters onto (with the
+## tool's OWN offset) and the head a lamp rides on. Both move with the animation, so nothing has to be
+## repositioned per frame.
+func _create_mounts() -> void:
 	if _skeleton == null or _player == null:
 		return
-	var belt := BoneAttachment3D.new()
-	belt.name = "BeltMount"
-	_skeleton.add_child(belt)
 	var hip: int = _resolve_bone([belt_bone, &"Hips", &"pelvis"])
-	if hip == -1:
-		push_warning("[DyingStar] CharacterAnimator: no hip bone on this rig, belt mount not placed.")
-		belt.queue_free()
-		return
-	belt.bone_name = _skeleton.get_bone_name(hip)
-	_player.belt_mount = belt
+	_player.belt_mount = _create_bone_mount("BeltMount", hip, false)
+	_player.head_mount = _create_bone_mount("HeadMount", _head_bone, true)
+
+## A point on the animated body that a prop can hang from. `body_aligned` adds a child that cancels the
+## bone's rest rotation, so whatever mounts there starts out facing the way the BODY faces instead of
+## wherever the artist happened to point that bone -- what a headlamp needs. A holster does not: a tool
+## carries its own offset, calibrated against the bone.
+func _create_bone_mount(mount_name: String, bone: int, body_aligned: bool) -> Node3D:
+	if bone == -1:
+		push_warning("[DyingStar] CharacterAnimator: this rig has no bone for %s." % mount_name)
+		return null
+	var attachment := BoneAttachment3D.new()
+	attachment.name = mount_name
+	_skeleton.add_child(attachment)
+	attachment.bone_name = _skeleton.get_bone_name(bone)
+	if not body_aligned:
+		return attachment
+	var aligned := Node3D.new()
+	aligned.name = "BodyAligned"
+	attachment.add_child(aligned)
+	aligned.transform = Transform3D(_body_aligned_basis(bone), Vector3.ZERO)
+	return aligned
+
+## The local basis that leaves a mount facing the way the BODY faces at rest. Two corrections, and both
+## are needed:
+##
+## The bone attachment lives under the skeleton, so cancelling the bone rest alone aligns the mount with
+## the SKELETON. That is not the body: the puppet is instanced rotated (player.tscn), so a lamp aligned
+## that way shines backwards. Going through the player transform takes that out, whatever the puppet is
+## rotated by.
+##
+## And first person hides our own head by shrinking its bone (see _process), a scale a bone attachment
+## inherits, which would leave the owner's own torch a thousand times too small. The factor is exact and
+## constant, so it is folded in here rather than fought every frame -- but it has to be built INTO the
+## basis: assigning `scale` afterwards makes Godot recompose the basis from a rotation/scale
+## decomposition, which does not survive an inverted basis and comes out as a roll.
+func _body_aligned_basis(bone: int) -> Basis:
+	var to_bone: Basis = _skeleton.global_transform.basis * _skeleton.get_bone_global_rest(bone).basis
+	var aligned: Basis = to_bone.inverse() * (_player as Node3D).global_transform.basis
+	if _is_local:
+		aligned = aligned.scaled(Vector3.ONE / HEAD_HIDE_SCALE)
+	return aligned
 
 
 ## First of `candidates` that this rig actually carries, or -1. Rigs reach us under two naming schemes:
