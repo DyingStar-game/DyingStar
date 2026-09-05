@@ -1,16 +1,23 @@
 [gd_scene format=3 uid="uid://c21kv16wh1y4q"]
 
-[ext_resource type="PackedScene" uid="uid://cdbvqsk44j6dc" path="res://assets/_universe/characters/humanoids/UALDyingStar.glb" id="1_xhonh"]
-[ext_resource type="Script" uid="uid://dtb3oqqid36t1" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="2_animator"]
-[ext_resource type="Resource" uid="uid://dti7f5itnvf0f" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="3_animset"]
+[ext_resource type="PackedScene" uid="uid://b34dxsc5gixdo" path="res://assets/_universe/characters/humanoids/man_ddurieux.glb" id="1_body"]
+[ext_resource type="AnimationLibrary" uid="uid://do3hc8x4nonh0" path="res://assets/_universe/characters/humanoids/man_ddurieux_animations.res" id="2_anims"]
+[ext_resource type="Script" uid="uid://dtb3oqqid36t1" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="3_animator"]
+[ext_resource type="Resource" uid="uid://dti7f5itnvf0f" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="4_animset"]
 
-[node name="human_puppet" type="Node3D" unique_id=1236297687]
+[node name="human_puppet" type="Node3D" unique_id=1701771454]
 
-[node name="UALDyingStar" parent="." unique_id=1485374986 instance=ExtResource("1_xhonh")]
+[node name="Body" parent="." unique_id=462503427 instance=ExtResource("1_body")]
 
-[node name="CharacterAnimator" type="Node" parent="." unique_id=1754996285]
-script = ExtResource("2_animator")
-anim_set = ExtResource("3_animset")
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=542844815]
+root_node = NodePath("../Body")
+libraries/ = ExtResource("2_anims")
+
+[node name="CharacterAnimator" type="Node" parent="." unique_id=477994025]
+script = ExtResource("3_animator")
+anim_set = ExtResource("4_animset")
+seated_puppet_offset = Vector3(0, 0.43, -0.29)
 vault_offset = Vector3(0, -0.3, 0)
+head_look_max_deg = 50.0
 head_cam_amount = 0.439
 turn_rate_threshold = 0.1
