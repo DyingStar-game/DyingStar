@@ -127,21 +127,28 @@ var token: String = ""
 
 var check_pending_objects_timer: int = 0
 
-## --net-verbose: break `net:poll` down into net:parse / net:route / net:create / net:pending on the
-## [CPerf+] line. Cheap (a get_ticks_usec per packet) but off by default, because the top-level
-## net:poll is enough for a health check and these only earn their place when something is actually
-## being hunted inside the drain.
+## --net-verbose, or `debug_perf=true` in client.ini: break `net:poll` down into net:parse /
+## net:route / net:create / net:pending on the [CPerf+] line. Cheap (a get_ticks_usec per packet) but
+## off by default, because the top-level net:poll is enough for a health check and these only earn
+## their place when something is actually being hunted inside the drain.
+##
+## Included in `debug_perf` on purpose: it adds no print at all, only detail to lines that are being
+## printed anyway, and "where inside the packet drain" is one of the few questions a player's log has
+## never been able to answer.
 var _net_verbose: bool = false
 
-## --net-echo: dump every inbound packet's full payload. This is NOT the same switch as the scopes
-## above, on purpose. Every print() in this project is routed through CustomLogger -> Obs.logs_info
-## -> the C# OpenTelemetry bridge (tools/observability/obs.gd), so a print costs milliseconds, not
-## microseconds. At 3 Hz replication over a populated zone this echo ran ~134 times a second — 8217
-## lines and 3.8 MB in a six-minute session, ~12 prints PER FRAME — and it is what put `proc` at
-## 125 ms and the client at 8.5 fps whenever a rock field streamed in.
+## --net-echo, or `debug_net_echo=true` in client.ini: dump every inbound packet's full payload.
+## This is NOT the same switch as the scopes above, nor part of `debug_perf`, on purpose. Every
+## print() in this project is routed through CustomLogger -> Obs.logs_info -> the C# OpenTelemetry
+## bridge (tools/observability/obs.gd), so a print costs milliseconds, not microseconds. At 3 Hz
+## replication over a populated zone this echo ran ~134 times a second — 8217 lines and 3.8 MB in a
+## six-minute session, ~12 prints PER FRAME — and it is what put `proc` at 125 ms and the client at
+## 8.5 fps whenever a rock field streamed in.
 ##
 ## Sharing one flag with the scopes would mean every attempt to MEASURE the drain also loaded it
 ## with the heaviest thing that was ever in it, and the measurement would describe the instrument.
+## For the same reason it is a SEPARATE ini key: only ask a player for this one when the payloads
+## themselves are the question, and expect their framerate to drop while it is on.
 var _net_echo: bool = false
 
 
@@ -167,8 +174,12 @@ func _ready() -> void:
 		if arg.begins_with("--token="):
 			token = arg.substr(len("--token="))
 			break
-	_net_verbose = "--net-verbose" in args
-	_net_echo = "--net-echo" in args
+	# The ini half of each flag exists because a packaged build cannot be given a command line —
+	# see client_config.gd.
+	_net_verbose = "--net-verbose" in args or ClientConfig.get_bool("debug_perf", false)
+	_net_echo = "--net-echo" in args or ClientConfig.get_bool("debug_net_echo", false)
+	if _net_verbose or _net_echo:
+		print("[Net] diagnostics: net_verbose=%s net_echo=%s" % [_net_verbose, _net_echo])
 	# Custom monitors are GLOBAL: a second client (back to menu -> new game) would re-register the
 	# same names and leave the first one's Callable pointing at a freed node. shutdown() removes them.
 	if not Performance.has_custom_monitor("network/events_received"):
