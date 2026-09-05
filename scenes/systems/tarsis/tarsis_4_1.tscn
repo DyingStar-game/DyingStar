@@ -7,7 +7,7 @@
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_k4d84"]
 [ext_resource type="PackedScene" uid="uid://bqki5tqoj5qm2" path="res://scenes/_universe/props/containers/storagewarehouse.tscn" id="6_cmfuk"]
 
-[sub_resource type="Resource" id="PlanetData_tarsis4"]
+[sub_resource type="Resource" id="PlanetData_tarsis4_1"]
 script = ExtResource("2_xddol")
 planet_name = "tarsis_4_1"
 surface_gravity = 1.76
@@ -19,12 +19,12 @@ crack_spacing_m = 4000.0
 crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
-chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
+chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_1_chunks"
 chunk_heightmap_res = 50
 
-[node name="Tarsis3_2" type="Node3D" unique_id=134586975]
+[node name="Tarsis4_1" type="Node3D" unique_id=134586975]
 script = ExtResource("1_mv1ur")
-planet_data = SubResource("PlanetData_tarsis4")
+planet_data = SubResource("PlanetData_tarsis4_1")
 map_color = Color(0.497, 0.465, 0.417, 1)
 display_name = "Tarsis IV.M1"
 map_radius_km = 1146.0
