@@ -122,6 +122,27 @@ var _phys_max: float = 0.0
 ## "window" across 23.0 s of real time, so every ms/s on the [CPerf+] line was overstated ~6x in
 ## exactly the windows that mattered most.
 var _last_frame_usec: int = 0
+## The frame's `proc=` figure, SPLIT. TIME_PROCESS covers everything the idle step does — every
+## _process callback, the message queue flush, and RenderingServer sync+draw — so a log reading
+## `proc=161` next to 2 ms of instrumented scopes says only "it is not the network", and the last
+## 5-6 fps report died exactly there: 155 ms of frame in no scope at all, unchanged while draw calls
+## went 433 -> 3298 -> 566 and the node count moved by a thousand.
+##
+## Measured, not guessed, with two probes:
+##   - this autoload is the FIRST node processed (autoloads head the tree), and `_tail` is a bare
+##     node with a huge process_priority, so it is the LAST. The span between them is every
+##     _process callback in the game -> `scripts=`.
+##   - the viewport's own timers (viewport_set_measure_render_time) give what the RENDER THREAD and
+##     the GPU spent on the same frame -> `rcpu=` / `rgpu=`.
+## `proc` minus `scripts` minus `rcpu` is then the engine's own idle work. Three numbers, and the
+## next log says which third of the frame to open rather than which to suspect.
+var _scripts_usec: int = 0
+var _frame_start_usec: int = 0
+var _tail: Node = null
+var _viewport_rid: RID = RID()
+var _scripts_max: float = 0.0
+var _rcpu_max: float = 0.0
+var _rgpu_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -164,6 +185,11 @@ var _phys_procs: int = 0
 ## four hundred GDScript callbacks; the script names can.
 var _phys_by_class: Dictionary = {}
 var _phys_by_script: Dictionary = {}
+## Same, for the IDLE callbacks. `nodes with _process=311` was in every log of the 6 fps bug and
+## named nobody: the physics side has had a by-script breakdown since the 53 ms tick, and the idle
+## side — which is where that bug's whole frame lives — had none.
+var _proc_by_class: Dictionary = {}
+var _proc_by_script: Dictionary = {}
 ## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
 ## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
 ## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
@@ -287,6 +313,21 @@ func _ready() -> void:
 		print(("[CPerf] !! debug_physics_hz=%d — physics tick forced from %d Hz to %d Hz."
 				+ " THIS IS A MEASUREMENT MODE, not a fix: the simulation is degraded.")
 				% [_phz, _was, Engine.physics_ticks_per_second])
+	# The two probes that split `proc=` (see _scripts_usec). Neither exists unless the heartbeat is
+	# on, so a normal player pays nothing for either.
+	_tail = _TailProbe.new()
+	_tail.name = "CPerfTail"
+	_tail.tick = _tail_tick
+	# process_priority orders the WHOLE tree, not just siblings: the highest value is called last, so
+	# this lands after every game node's _process. Left on PROCESS_MODE_INHERIT deliberately — it
+	# must go quiet in exactly the frames this autoload does, or a paused tree would report the pause
+	# as script time.
+	_tail.process_priority = 1_000_000
+	add_child(_tail)
+	# The renderer's own timers. The GPU figure arrives a frame or two late (it is a timestamp query
+	# read back, not a wall clock), which is fine for a cost that has been steady for five minutes.
+	_viewport_rid = get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(_viewport_rid, true)
 	# Seed the node census so the first hitch line reports a real delta and not the whole tree.
 	_prev_nodes = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	print("[CPerf] performance logging ON — every %.1fs, hitch>%.0fms, census every %d reports. Source: %s" % [
@@ -477,6 +518,8 @@ func _process(_delta: float) -> void:
 	var now: int = Time.get_ticks_usec()
 	var prev: int = _last_frame_usec
 	_last_frame_usec = now
+	# Start of THIS frame's callbacks, for the tail probe at the other end of them.
+	_frame_start_usec = now
 	if prev == 0:
 		return
 	var ms: float = float(now - prev) / 1000.0
@@ -484,8 +527,16 @@ func _process(_delta: float) -> void:
 	_frames += 1
 	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	# Everything below reads the frame that just ENDED, like _frame_usec and `ms` itself: the tail
+	# probe ran at the end of it, and the viewport timers hold the frame the renderer last finished.
+	var scripts_ms: float = float(_scripts_usec) / 1000.0
+	var rcpu_ms: float = RenderingServer.viewport_get_measured_render_time_cpu(_viewport_rid)
+	var rgpu_ms: float = RenderingServer.viewport_get_measured_render_time_gpu(_viewport_rid)
 	_proc_max = maxf(_proc_max, proc_ms)
 	_phys_max = maxf(_phys_max, phys_ms)
+	_scripts_max = maxf(_scripts_max, scripts_ms)
+	_rcpu_max = maxf(_rcpu_max, rcpu_ms)
+	_rgpu_max = maxf(_rgpu_max, rgpu_ms)
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -510,10 +561,12 @@ func _process(_delta: float) -> void:
 			_hitch_lines += 1
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
+				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
+				scripts_ms, rcpu_ms, rgpu_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -538,6 +591,9 @@ func _process(_delta: float) -> void:
 	_hitches = 0
 	_proc_max = 0.0
 	_phys_max = 0.0
+	_scripts_max = 0.0
+	_rcpu_max = 0.0
+	_rgpu_max = 0.0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -565,6 +621,7 @@ func _report() -> void:
 	print((
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
+		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -574,6 +631,7 @@ func _report() -> void:
 		window, _proc_max,
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
+		_scripts_max, _rcpu_max, _rgpu_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -753,6 +811,9 @@ func _print_classes() -> void:
 	# Second line: who those _physics_process nodes are. Ranked, because the tail is never the story.
 	print("[CPerf*] %s _physics_process by script: %s | by class: %s" % [
 		_clock(), _top_pairs(_phys_by_script, 8), _top_pairs(_phys_by_class, 8)])
+	# And the idle half, which `scripts=` on the heartbeat gives a millisecond figure to.
+	print("[CPerf*] %s _process by script: %s | by class: %s" % [
+		_clock(), _top_pairs(_proc_by_script, 8), _top_pairs(_proc_by_class, 8)])
 	# Third line: the monitoring areas, which measured out as this client's single biggest cost.
 	print("[CPerf*] %s monitoring Area3D by script: %s | by collision_mask: %s" % [
 		_clock(), _top_pairs(_areas_by_script, 8), _top_pairs(_areas_by_mask, 8)])
@@ -854,6 +915,8 @@ func _world_context() -> PackedStringArray:
 		_phys_procs = 0
 		_phys_by_class.clear()
 		_phys_by_script.clear()
+		_proc_by_class.clear()
+		_proc_by_script.clear()
 		_areas_monitoring = 0
 		_areas_undeclared = 0
 		_areas_by_script.clear()
@@ -880,6 +943,10 @@ func _walk(node: Node, planet: String) -> void:
 	_classes[cls] = int(_classes.get(cls, 0)) + 1
 	if node.is_processing():
 		_procs += 1
+		_proc_by_class[cls] = int(_proc_by_class.get(cls, 0)) + 1
+		var pscr: Script = node.get_script()
+		var pname: String = pscr.resource_path.get_file() if pscr != null else "<no script>"
+		_proc_by_script[pname] = int(_proc_by_script.get(pname, 0)) + 1
 	if node.is_physics_processing():
 		_phys_procs += 1
 		_phys_by_class[cls] = int(_phys_by_class.get(cls, 0)) + 1
@@ -939,3 +1006,29 @@ func _uptime() -> float:
 
 func _clock() -> String:
 	return Time.get_time_string_from_system()
+
+
+## The other end of a frame's script callbacks.
+##
+## Nothing in the engine reports "time spent in _process": TIME_PROCESS is the whole idle step,
+## renderer included, and every attempt to read a 6 fps log stopped at that ambiguity. A node with
+## the highest possible process_priority runs after every other node's _process, so the gap between
+## this autoload (first, being an autoload) and this probe (last) IS the game's script time — no
+## engine patch, no profiler, and it costs one subtraction a frame.
+##
+## It reports into the parent rather than keeping its own state so the number is read where every
+## other one is, on the frame after, next to `proc=` and the renderer's own figures.
+class _TailProbe extends Node:
+	## A Callable, not the parent node: a statically typed `Node` cannot be asked for a method the
+	## class does not declare, and dropping the type to get one back would give up the only checking
+	## GDScript does here.
+	var tick: Callable = Callable()
+
+	func _process(_delta: float) -> void:
+		if not tick.is_null():
+			tick.call()
+
+
+## Called by _TailProbe once every frame, after every other _process in the game.
+func _tail_tick() -> void:
+	_scripts_usec = Time.get_ticks_usec() - _frame_start_usec
