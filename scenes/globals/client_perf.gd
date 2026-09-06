@@ -158,6 +158,30 @@ var _classes: Dictionary = {}
 ## the `proc=` and `phys=` figures are divided among.
 var _procs: int = 0
 var _phys_procs: int = 0
+## Which CLASSES those _physics_process nodes are, and which SCRIPTS drive them. One physics tick was
+## measured at 53 ms on this client (fps 2.2 at 60 Hz vs 14-18 at 10 Hz), and the tick contains exactly
+## two things: Jolt's step, and these callbacks. A bare count cannot tell a broadphase problem from
+## four hundred GDScript callbacks; the script names can.
+var _phys_by_class: Dictionary = {}
+var _phys_by_script: Dictionary = {}
+## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
+## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
+## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
+var _areas_ablate: bool = false
+var _areas_silenced: int = 0
+var _areas_monitoring: int = 0
+## Monitoring areas NOT carrying the marker group — the runtime half of the CI check. A non-zero
+## count in a shipped build means an area got past review, or was created in code without saying so.
+var _areas_undeclared: int = 0
+## The one group that declares "this area really must detect". Mirrored by
+## tools/check_area_monitoring.py, which enforces it on every .tscn.
+const _MONITOR_GROUP: StringName = &"active_monitor"
+## WHICH areas monitor, and what they ask for. Silencing 150 of them took this client from 2.6 to
+## 30 fps, so each monitoring Area3D costs ~0.1 ms per physics step here — the mark of a broadphase
+## query whose candidate set is huge. The fix is not "no areas", it is a narrower `collision_mask`
+## on the ones that ask for everything, and only their scripts and masks can say which those are.
+var _areas_by_script: Dictionary = {}
+var _areas_by_mask: Dictionary = {}
 ## Previous value of each custom monitor (network/events_received, ...), for a per-second rate.
 var _custom_prev: Dictionary = {}
 ## Available system RAM at boot, so the heartbeat can report the TREND. A client that is swapping
@@ -243,6 +267,26 @@ func _ready() -> void:
 	_interval = maxf(0.5, ClientConfig.get_float("debug_perf_interval", REPORT_INTERVAL))
 	_hitch_ms = maxf(8.0, ClientConfig.get_float("debug_perf_hitch_ms", HITCH_MS))
 	_deep_every = maxi(1, ClientConfig.get_int("debug_perf_deep_every", DEEP_EVERY))
+	# Bisection switch, in the same family as the debug_rocks_* ones: run the simulation at a lower
+	# tick rate for one measurement. Nothing else in the client separates "the frame is long because of
+	# physics" from "the frame is long because of _process" — 95% of the frame currently sits in no
+	# scope at all, rendering and networking have both been exonerated by a 5x drop that moved the
+	# framerate not at all, and this is the one-line experiment that halves what is left. It CHANGES
+	# THE SIMULATION (movement gets coarse, contacts get sloppy): measure, read, put it back to 0.
+	_areas_ablate = ClientConfig.get_bool("debug_no_area_monitoring", false)
+	if _areas_ablate:
+		print("[CPerf] !! debug_no_area_monitoring=true — every Area3D that is NOT in the"
+				+ " `active_monitor` group will be silenced as the census walks the tree."
+				+ " INTERACTIONS MAY BREAK: this is a measurement mode, not a fix.")
+	var _phz: int = ClientConfig.get_int("debug_physics_hz", 0)
+	if _phz > 0:
+		var _was: int = Engine.physics_ticks_per_second
+		Engine.physics_ticks_per_second = clampi(_phz, 1, 240)
+		# Parenthesised: `%` binds tighter than `+`, so without them the arguments would be applied to
+		# the second literal (which has no placeholders) instead of the whole message.
+		print(("[CPerf] !! debug_physics_hz=%d — physics tick forced from %d Hz to %d Hz."
+				+ " THIS IS A MEASUREMENT MODE, not a fix: the simulation is degraded.")
+				% [_phz, _was, Engine.physics_ticks_per_second])
 	# Seed the node census so the first hitch line reports a real delta and not the whole tree.
 	_prev_nodes = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	print("[CPerf] performance logging ON — every %.1fs, hitch>%.0fms, census every %d reports. Source: %s" % [
@@ -706,6 +750,22 @@ func _print_classes() -> void:
 		parts.append("%s=%d" % [str(keys[i]), int(counts[keys[i]])])
 	print("[CPerf*] %s classes (top %d of %d distinct) %s | nodes with _process=%d _physics_process=%d" % [
 		_clock(), mini(TOP_CLASSES, keys.size()), keys.size(), " ".join(parts), _procs, _phys_procs])
+	# Second line: who those _physics_process nodes are. Ranked, because the tail is never the story.
+	print("[CPerf*] %s _physics_process by script: %s | by class: %s" % [
+		_clock(), _top_pairs(_phys_by_script, 8), _top_pairs(_phys_by_class, 8)])
+	# Third line: the monitoring areas, which measured out as this client's single biggest cost.
+	print("[CPerf*] %s monitoring Area3D by script: %s | by collision_mask: %s" % [
+		_clock(), _top_pairs(_areas_by_script, 8), _top_pairs(_areas_by_mask, 8)])
+
+
+## "name=count name=count" for the busiest entries of a census dictionary.
+func _top_pairs(counts: Dictionary, top: int) -> String:
+	var keys: Array = counts.keys()
+	keys.sort_custom(func(a: Variant, b: Variant) -> bool: return int(counts[a]) > int(counts[b]))
+	var parts: PackedStringArray = []
+	for i: int in mini(top, keys.size()):
+		parts.append("%s=%d" % [str(keys[i]), int(counts[keys[i]])])
+	return " ".join(parts) if not parts.is_empty() else "none"
 
 
 # ------------------------------------------------------------------
@@ -792,7 +852,18 @@ func _world_context() -> PackedStringArray:
 		_classes.clear()
 		_procs = 0
 		_phys_procs = 0
+		_phys_by_class.clear()
+		_phys_by_script.clear()
+		_areas_monitoring = 0
+		_areas_undeclared = 0
+		_areas_by_script.clear()
+		_areas_by_mask.clear()
 		_walk(tree.root, "")
+		out.append("areas_monitoring=%d" % _areas_monitoring)
+		if _areas_undeclared > 0:
+			out.append("areas_UNDECLARED=%d" % _areas_undeclared)
+		if _areas_ablate:
+			out.append("areas_silenced=%d" % _areas_silenced)
 		for k: String in _deep.keys():
 			out.append("%s=%d" % [k, _deep[k]])
 	return out
@@ -811,6 +882,35 @@ func _walk(node: Node, planet: String) -> void:
 		_procs += 1
 	if node.is_physics_processing():
 		_phys_procs += 1
+		_phys_by_class[cls] = int(_phys_by_class.get(cls, 0)) + 1
+		# The script is what actually costs: two nodes of the same class can run very different
+		# callbacks, and a node with no script at all is pure engine work.
+		var scr: Script = node.get_script()
+		var sname: String = scr.resource_path.get_file() if scr != null else "<no script>"
+		_phys_by_script[sname] = int(_phys_by_script.get(sname, 0)) + 1
+	# Area census + optional ablation, on the same walk. PlanetGravity is spared: without it the player
+	# loses gravity and starts falling, which would make the very thing being measured move.
+	if node is Area3D:
+		var area := node as Area3D
+		if area.monitoring:
+			# Census BEFORE any ablation, or the switch would hide the very list it exists to produce.
+			var ascr: Script = area.get_script()
+			var an: String = ascr.resource_path.get_file() if ascr != null else area.name
+			_areas_by_script[an] = int(_areas_by_script.get(an, 0)) + 1
+			var mk: String = "mask=%d" % area.collision_mask
+			_areas_by_mask[mk] = int(_areas_by_mask.get(mk, 0)) + 1
+			# An area monitoring WITHOUT the marker is the bug tools/check_area_monitoring.py
+			# catches in scenes — counted here too, because a live tree also holds areas created
+			# in code, which no static check of .tscn files can ever see.
+			if not area.is_in_group(_MONITOR_GROUP):
+				_areas_undeclared += 1
+			# The ablation spares declared monitors, so the switch answers "what do the areas we
+			# did NOT intend cost?" rather than breaking gravity along with everything else.
+			if _areas_ablate and not area.is_in_group(_MONITOR_GROUP):
+				area.monitoring = false
+				_areas_silenced += 1
+			else:
+				_areas_monitoring += 1
 	if node is Planet:
 		planet = node.name
 	elif planet != "":

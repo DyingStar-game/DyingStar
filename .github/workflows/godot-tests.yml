@@ -25,6 +25,28 @@ jobs:
       #  with:
       #    godot_version: 4.4.1
 
+  scene-lint:
+    name: Check Area3D monitoring
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No pip step on purpose: the checker is Python 3 stdlib only, so it runs on
+      # the ubuntu-latest image as-is. Neither the self-hosted runner nor the custom
+      # Godot 4.7 build is needed — it reads .tscn files as text.
+      #
+      # What it guards: an Area3D left with `monitoring` on (the engine default) also
+      # keeps `collision_mask = 1`, the `world` layer, and queries the planet terrain
+      # on EVERY physics step. Measured 2026-09-06: 150 such areas cost ~930 ms per
+      # wall second — 2.2 FPS with physics starved to 17/60 Hz. The bug is silent
+      # until the framerate collapses, which is why it needs a machine to catch it.
+      - name: Check Area3D monitoring
+        run: python3 tools/check_area_monitoring.py
+
+      - name: Parser unit tests
+        run: python3 test/unit/test_area_monitoring_py.py
+
   linter:
     name: Run GDScript linter
     runs-on: ubuntu-latest

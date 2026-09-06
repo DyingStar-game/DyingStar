@@ -224,7 +224,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7588284743281892, 0.5021373
 operation = 2
 size = Vector3(0.7522567086889467, 0.35813434590272664, 0.6185318751522573)
 
-[node name="PNJBoxDepositPlayer" type="Area3D" parent="ReceptionDesk" unique_id=1529539961]
+[node name="PNJBoxDepositPlayer" type="Area3D" parent="ReceptionDesk" unique_id=1529539961 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6445629073999144, 1.085475980516691, 3.4498896940085153)
 collision_mask = 8
 monitorable = false
@@ -257,7 +257,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7234246668953249, -0.635105
 operation = 2
 size = Vector3(0.9631633646024512, 0.9897648373769244, 1)
 
-[node name="reception_area" type="Area3D" parent="." unique_id=119297318]
+[node name="reception_area" type="Area3D" parent="." unique_id=119297318 groups=["active_monitor"]]
 collision_mask = 2
 monitorable = false
 
@@ -380,7 +380,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place0" unique_id=652161405]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place0" unique_id=652161405 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -406,7 +406,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place1" unique_id=903149590]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place1" unique_id=903149590 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -432,7 +432,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place2" unique_id=1294280280]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place2" unique_id=1294280280 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -458,7 +458,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place3" unique_id=951652539]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place3" unique_id=951652539 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -484,7 +484,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place4" unique_id=455984241]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place4" unique_id=455984241 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -510,7 +510,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place5" unique_id=530702943]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place5" unique_id=530702943 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -536,7 +536,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place6" unique_id=1037634350]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place6" unique_id=1037634350 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false
@@ -562,7 +562,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.2510000000038417, 0.15
 shape = SubResource("BoxShape3D_3av62")
 debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
 
-[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place7" unique_id=1733592326]
+[node name="PNJBoxDepositTempZone" type="Area3D" parent="TempZone/Place7" unique_id=1733592326 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27087010037674375, 0.590750316788201, 0.6092817518543221)
 collision_mask = 8
 monitorable = false

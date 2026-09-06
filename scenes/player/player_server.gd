@@ -758,7 +758,7 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
 func _physics_process(delta: float) -> void:
-	if not PropNet.PROF:
+	if not PropNet.prof_on:
 		_physics_process_impl(delta)
 		return
 	var _t0: int = Time.get_ticks_usec()
@@ -767,7 +767,7 @@ func _physics_process(delta: float) -> void:
 	PropNet.prof_player_calls += 1
 
 func _physics_process_impl(delta: float) -> void:
-	var _tp: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _tp: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	_flush_spawn_queue()  # the wheel's spawns wait for the physics step: they need a ground raycast
 	_process_stance_request()  # apply a queued crouch/stand here: the headroom ray needs the space state
 	_server_update_carried_item(delta)
@@ -775,7 +775,7 @@ func _physics_process_impl(delta: float) -> void:
 		# The E-prompt only exists for a human owner's HUD; for an NPC it would still cost a forced
 		# raycast every 0.1 s per NPC (measured hot with many NPCs), replicated to nobody.
 		_server_update_carry_prompt(delta)
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_p_pre_usec += Time.get_ticks_usec() - _tp
 	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
 	if _hold_until_ground(delta):
@@ -855,9 +855,9 @@ func _physics_process_impl(delta: float) -> void:
 	# without being hoisted onto it. Space against nothing still jumps: the request is only spent on a
 	# climb when the probe finds something to climb.
 	# Server-authoritative; runs before the jump/gravity/move so the normal step never fights the slide.
-	var _tv: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _tv: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	var _vault_started: bool = player.is_on_floor() and player.is_jumping and _try_start_vault()
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_p_vault_usec += Time.get_ticks_usec() - _tv
 	if _vault_started:
 		_server_update_vault(delta)
@@ -915,18 +915,18 @@ func _physics_process_impl(delta: float) -> void:
 	# LOW obstacle right ahead (below the vault threshold): glide the body onto it (Godot's CharacterBody3D
 	# won't step up on its own). Taller obstacles are the vault's job. Started here, then driven by
 	# _server_update_step for a smooth, speed-independent climb.
-	var _ts: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _ts: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	var _step_started: bool = player.is_on_floor() and player.input_direction != Vector2.ZERO \
 			and _try_start_step_up(move_direction)
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_p_step_usec += Time.get_ticks_usec() - _ts
 	if _step_started:
 		_server_update_step(delta)
 		return
 
-	var _tm: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _tm: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	player.move_and_slide()
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_p_move_usec += Time.get_ticks_usec() - _tm
 		# A settled contact resolves in one iteration; an unstable one makes move_and_slide re-cast up
 		# to max_slides times, which is the shape this cost has (0.18 ms -> 3.30 ms when walking).
@@ -949,9 +949,9 @@ func _physics_process_impl(delta: float) -> void:
 	player.update_last_basis()
 	player.new_input_from_server = false
 
-	var _te: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _te: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	player.emit_move()
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
 
 ## Release the body from a planet's frame once its gravity has REALLY been gone (Player.ZERO_G_GRACE),

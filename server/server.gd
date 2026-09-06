@@ -208,36 +208,80 @@ func _ready() -> void:
 	# created lazily, which is why the planner re-reads it through .get() instead of caching one.
 	_mining_planner.bind_props_list(props_list)
 	_send_metrics()
+	# Say it out loud at boot, both ways. A rig that is silently off looks exactly like a server with
+	# nothing to report, and that ambiguity is what a low-TPS log must never contain.
+	if _perf_report:
+		print("[Perf] rig ARMED by %s — report every 2 s" % PropNet.prof_source)
+		# A server started from the editor keeps a WINDOW and renders the whole system; preprod runs
+		# headless and does not. That difference lands entirely in `fps` and not at all in `tps`, so
+		# the log has to say which of the two it is or the numbers below cannot be compared.
+		print("[Perf] display=%s | physics %d Hz max_steps/frame=%d separate_thread=%s | workers=%s" % [
+			DisplayServer.get_name(),
+			Engine.physics_ticks_per_second,
+			int(ProjectSettings.get_setting("physics/common/max_physics_steps_per_frame", 8)),
+			str(ProjectSettings.get_setting("physics/3d/run_on_separate_thread", false)),
+			str(ProjectSettings.get_setting("threading/worker_pool/max_threads.dedicated_server",
+					ProjectSettings.get_setting("threading/worker_pool/max_threads", -1))),
+		])
+	else:
+		print("[Perf] rig off — arm it with --perf, or DS_PERF=1, or [debug] perf=true in server.ini")
 
 func _physics_process(_delta: float) -> void:
-	var _t0: int = Time.get_ticks_usec() if PropNet.PROF else 0
+	var _t0: int = Time.get_ticks_usec() if PropNet.prof_on else 0
+	if PropNet.prof_on and _perf_prev_exit_usec > 0:
+		# Wall time since our previous callback returned: Jolt's step, every other node's
+		# _physics_process, and (once per rendered frame) the whole main loop. Summed over a window it
+		# turns the accounting into a closed budget — our instrumented scripts plus this gap IS the
+		# wall clock — with no assumption about how many substeps a frame ran.
+		_perf_gap_usec += _t0 - _perf_prev_exit_usec
 	_perf_tick(_delta)
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
 		_horizon_update_counter = 0
 		send_players_newposition_to_horizon()
 		send_props_update_to_horizon()
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		# _perf_tick prints and resets INSIDE this window, so its own report frame lands in the next
 		# window's bucket. Over a 2 s window that is noise; it keeps the accounting simple.
-		PropNet.prof_srv_usec += Time.get_ticks_usec() - _t0
+		_perf_prev_exit_usec = Time.get_ticks_usec()
+		PropNet.prof_srv_usec += _perf_prev_exit_usec - _t0
 
-## Dormant perf rig (flip _PERF_REPORT AND PropNet.PROF to re-arm): every 2 s, print where the
-## frame goes — engine physics vs script — plus the counts that discriminate between the known
-## suspects (awake bodies = Jolt load, chunk tasks/queue = terrain collision churn, nav maps = NPC
-## bake load, update dict sizes = network flush volume). Built during the 2026-08 TPS investigation.
-const _PERF_REPORT: bool = false
+## Perf rig: every 2 s, print where the frame goes — engine physics vs script — plus the counts that
+## discriminate between the known suspects (awake bodies = Jolt load, chunk tasks/queue = terrain
+## collision churn, nav maps = NPC bake load, update dict sizes = network flush volume). Built during
+## the 2026-08 TPS investigation. One switch for the whole rig, resolved by PropNet (`--perf`, or
+## `DS_PERF=1`, or `[debug] perf=true` in server.ini) — see the comment on PropNet.prof_on.
+var _perf_report: bool = PropNet.prof_on
 var _perf_timer: float = 0.0
 var _perf_frames: int = 0
+## Real time at the last report. `_perf_timer` accumulates the FIXED physics delta (1/60), so it
+## measures game time, not wall time: when the tick falls behind, a "2 s" window takes longer than 2 s
+## in the real world and every per-second figure derived from it is wrong by that ratio. The client
+## rig learned this the hard way; the server rig never had the check at all.
+var _perf_wall_usec: int = 0
+## Wall clock at the end of our last _physics_process, and the summed gaps between callbacks.
+var _perf_prev_exit_usec: int = 0
+var _perf_gap_usec: int = 0
 
 func _perf_tick(delta: float) -> void:
-	if not _PERF_REPORT:
+	if not _perf_report:
 		return
 	_perf_timer += delta
 	_perf_frames += 1
 	if _perf_timer < 2.0:
 		return
+	if _perf_wall_usec == 0:
+		_perf_wall_usec = Time.get_ticks_usec()
 	var _window_frames: int = maxi(_perf_frames, 1)
+	var _now_usec: int = Time.get_ticks_usec()
+	var _wall_s: float = float(_now_usec - _perf_wall_usec) / 1_000_000.0
+	_perf_wall_usec = _now_usec
+	# The two rates that "6 TPS" conflates, and which no server log has ever separated. `tps` is the
+	# achieved PHYSICS rate — the one that decides whether the simulation keeps up. `fps` is the main
+	# loop, which on a windowed run also carries rendering; Godot runs up to
+	# physics/common/max_physics_steps_per_frame ticks per frame, so a low fps next to a healthy tps
+	# means the frame is long for a reason the simulation has nothing to do with.
+	var _tps: float = float(_window_frames) / _wall_s if _wall_s > 0.0 else 0.0
 	_perf_timer = 0.0
 	_perf_frames = 0
 	var total := 0
@@ -276,9 +320,14 @@ func _perf_tick(delta: float) -> void:
 		var pl = players_list[puuid]
 		if is_instance_valid(pl) and "is_npc" in pl and pl.is_npc:
 			npcs += 1
-	print(("[Perf] fps=%.0f  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
+	print(("[Perf] %s up=%.0fs win=%.1fs tps=%.0f/%d fps=%.0f"
+			+ "  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
 			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d"
 			+ " | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d") % [
+		Time.get_time_string_from_system(),
+		float(Time.get_ticks_msec()) / 1000.0,
+		_wall_s,
+		_tps, Engine.physics_ticks_per_second,
 		Engine.get_frames_per_second(),
 		Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
@@ -294,39 +343,69 @@ func _perf_tick(delta: float) -> void:
 	# "PropNet.server_tick" row. `tick` is INCLUSIVE (it contains `handler`), so the cost of the
 	# function's own body + the signal dispatch is tick-handler. `flush` is the JSON + websocket
 	# send, which happens every 2nd frame and is NOT part of tick.
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		var _fr: float = float(_window_frames)
 		var _tick_ms: float = PropNet.prof_tick_usec / 1000.0 / _fr
 		var _hand_ms: float = PropNet.prof_handler_usec / 1000.0 / _fr
 		var _flush_ms: float = PropNet.prof_flush_usec / 1000.0 / _fr
 		var _per_call_us: float = (
 			float(PropNet.prof_tick_usec) / float(PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0)
+		# Who the emitters ARE, busiest type first. A type sitting at exactly N emits per tick in a
+		# world at rest is a prop re-sending itself unconditionally, not a prop that moved.
+		var _types: Array = PropNet.prof_emit_types.keys()
+		_types.sort_custom(func(a, b): return PropNet.prof_emit_types[a] > PropNet.prof_emit_types[b])
+		var _type_parts: PackedStringArray = []
+		for _t: String in _types.slice(0, 6):
+			_type_parts.append("%s=%.1f/f" % [_t, float(PropNet.prof_emit_types[_t]) / float(_window_frames)])
 		print(("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%)"
 				+ " | per frame: tick=%.2fms (body+dispatch=%.2f handler=%.2f) flush=%.2fms"
-				+ " | per call: %.1fus | flush avg entries=%.0f") % [
+				+ " | per call: %.1fus | flush avg entries=%.0f (%.1f KB/s of JSON)"
+				+ " | emitters: %s | branches: carried=%.1f/f riding=%.1f/f world=%.1f/f (world mean move %.1f mm over %d)") % [
 			PropNet.prof_calls / _fr,
 			PropNet.prof_emits / _fr,
 			(100.0 * PropNet.prof_emits / PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0,
 			_tick_ms, _tick_ms - _hand_ms, _hand_ms, _flush_ms,
 			_per_call_us,
 			(float(PropNet.prof_flush_entries) / float(PropNet.prof_flushes)) if PropNet.prof_flushes > 0 else 0.0,
+			(float(PropNet.prof_flush_bytes) / 1024.0) / _wall_s if _wall_s > 0.0 else 0.0,
+			" ".join(_type_parts) if not _type_parts.is_empty() else "none",
+			PropNet.prof_emit_carried / _fr, PropNet.prof_emit_riding / _fr, PropNet.prof_emit_world / _fr,
+			(PropNet.prof_emit_dpos_mm / float(PropNet.prof_emit_dpos_n)) if PropNet.prof_emit_dpos_n > 0 else 0.0,
+			PropNet.prof_emit_dpos_n,
 		])
-		# Physics-tick accounting: every server-side _physics_process we know of, versus the engine's
-		# own TIME_PHYSICS_PROCESS. The leftover is Jolt (the step is waited on from the main thread,
-		# 3d/run_on_separate_thread=true) — if it dominates, no GDScript optimisation can help.
+		# Physics accounting, in MILLISECONDS PER SECOND OF WALL CLOCK — the only unit in which these
+		# figures can be added up. The previous version compared our per-TICK counters against
+		# Performance.TIME_PHYSICS_PROCESS, which is per FRAME; with the tick starved to 8 substeps per
+		# frame the two differ by ~8x, and the resulting "engine+rest=81%" was arithmetic, not a
+		# measurement (our scripts alone already exceeded the supposed total). The engine's TIME_*
+		# monitors are printed on their own, flagged, and never mixed into a subtraction again.
 		var _player_ms: float = PropNet.prof_player_usec / 1000.0 / _fr
 		var _terrain_ms: float = PropNet.prof_terrain_usec / 1000.0 / _fr
 		var _srv_ms: float = PropNet.prof_srv_usec / 1000.0 / _fr
-		var _scripts_ms: float = _tick_ms + _player_ms + _terrain_ms + _srv_ms
-		var _phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-		# `known` = the callbacks we instrumented; the rest is the engine + any uninstrumented
-		# _physics_process (during the 2026-08 investigation a PerfBracket pair measured that
-		# uninstrumented remainder precisely; re-create it from git history if ever needed again).
-		print("[Perf/phys] tick=%.1fms | known=%.2fms (props=%.2f player=%.2f[%.0f/f] terrain=%.2f server=%.2f) | engine+rest=%.2fms (%.0f%%)" % [
-			_phys_ms, _scripts_ms,
-			_tick_ms, _player_ms, PropNet.prof_player_calls / _fr, _terrain_ms, _srv_ms,
-			_phys_ms - _scripts_ms,
-			(100.0 * (_phys_ms - _scripts_ms) / _phys_ms) if _phys_ms > 0.0 else 0.0,
+		var _vehicle_ms: float = PropNet.prof_vehicle_usec / 1000.0 / _fr
+		var _scripts_ms: float = _tick_ms + _player_ms + _terrain_ms + _srv_ms + _vehicle_ms
+		# The budget is NESTED, not flat, and getting that wrong printed 1245 ms inside one second on
+		# the first run. `_perf_gap_usec` is the wall time between the END of our own _physics_process
+		# and its next START — so props / player / terrain, which run in OTHER nodes' callbacks, are
+		# INSIDE that gap and must not be added alongside it. Only server.gd's own body is outside.
+		# Subtract what we know runs in there, and the remainder is the honest unknown.
+		var _gap_ms_s: float = (float(_perf_gap_usec) / 1000.0) / _wall_s if _wall_s > 0.0 else 0.0
+		_perf_gap_usec = 0
+		var _in_gap_ms_s: float = (_tick_ms + _player_ms + _terrain_ms + _vehicle_ms) * _tps
+		var _srv_ms_s: float = _srv_ms * _tps
+		var _unknown_ms_s: float = _gap_ms_s - _in_gap_ms_s
+		print(("[Perf/phys] per wall second (adds up to 1000): server.gd=%.0fms"
+				+ " | instrumented in other callbacks=%.0fms (props=%.0f player=%.0f terrain=%.0f vehicles=%.0f[%.0f/tick])"
+				+ " | UNATTRIBUTED=%.0fms (%.0f%%) = Jolt step + uninstrumented _physics_process + main loop"
+				+ " | per tick: ours=%.2fms over %.0f ticks/s"
+				+ " | engine monitors (per FRAME, never mix with the above): TIME_PHYSICS=%.1f TIME_PROCESS=%.1f") % [
+			_srv_ms_s,
+			_in_gap_ms_s, _tick_ms * _tps, _player_ms * _tps, _terrain_ms * _tps,
+			_vehicle_ms * _tps, PropNet.prof_vehicle_calls / _fr,
+			_unknown_ms_s, 100.0 * _unknown_ms_s / 1000.0,
+			_scripts_ms, _tps,
+			Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 		])
 		var _p_pre: float = PropNet.prof_p_pre_usec / 1000.0 / _fr
 		var _p_vault: float = PropNet.prof_p_vault_usec / 1000.0 / _fr
@@ -1107,8 +1186,9 @@ func _on_prop_update(
 	type: String,
 	_is_parented = false
 ):
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_emits += 1
+		PropNet.prof_emit_types[type] = int(PropNet.prof_emit_types.get(type, 0)) + 1
 		var _t0: int = Time.get_ticks_usec()
 		_on_prop_update_impl(uuid, properties, type)
 		PropNet.prof_handler_usec += Time.get_ticks_usec() - _t0
@@ -1149,9 +1229,10 @@ func _on_prop_update_impl(uuid: String, properties: Dictionary, type: String) ->
 func send_props_update_to_horizon():
 	if props_update.values().size() == 0:
 		return
-	if PropNet.PROF:
+	if PropNet.prof_on:
 		PropNet.prof_flushes += 1
 		PropNet.prof_flush_entries += props_update.size()
+		PropNet.prof_flush_bytes += JSON.stringify(props_update.values()).length()
 		var _t0: int = Time.get_ticks_usec()
 		_send_props_update_impl()
 		PropNet.prof_flush_usec += Time.get_ticks_usec() - _t0

@@ -513,6 +513,13 @@ func _setup_gravity() -> void:
 	_gravity_area = Area3D.new()
 	_gravity_area.name = "PlanetGravity"
 	_gravity_area.add_to_group("gravity")
+	# THE one area in the game that must monitor, said out loud rather than inherited from the engine
+	# default: a gravity_space_override area only applies its pull to the bodies it DETECTS, so
+	# monitoring off would leave every prop, vehicle and player weightless. `active_monitor` is the
+	# project-wide marker for a deliberate monitor — tools/check_area_monitoring.py enforces it on
+	# scenes, and client_perf.gd's area census spares group members when it silences the rest.
+	_gravity_area.add_to_group("active_monitor")
+	_gravity_area.monitoring = true
 	# Sit on the `zone` layer so the player's AreaDetector (which scans `zone`) detects it and
 	# applies gravity to the player; routed by the "gravity" group.
 	_gravity_area.collision_layer = 1 << (Globals.LAYER_ZONE - 1)

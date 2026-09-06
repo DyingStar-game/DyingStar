@@ -31,7 +31,7 @@ uv1_scale = Vector3(2, 2, 2)
 transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 20, 0)
 shadow_enabled = true
 
-[node name="GravityField" type="Area3D" parent="." unique_id=991758188]
+[node name="GravityField" type="Area3D" parent="." unique_id=991758188 groups=["active_monitor"]]
 gravity_space_override = 1
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GravityField" unique_id=1743099905]
