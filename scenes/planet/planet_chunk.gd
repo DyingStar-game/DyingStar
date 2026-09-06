@@ -1446,18 +1446,19 @@ static func generate_mesh(
 			var _rd_hw_deg: float = float(_rd_zone.get(
 				"half_width_deg", _rd_hw_m / _rd_m_per_deg))
 			var _rd_tile_m: float = RoadTerrain.get_tile_size(_rd_rt)
-			var _rd_cl: PackedVector2Array = _rd_zone.get(
+			var _rd_cl_full: PackedVector2Array = _rd_zone.get(
 				"centerline", PackedVector2Array())
-			if _rd_cl.size() < 2:
+			if _rd_cl_full.size() < 2:
 				continue
 			# Distance from the road's TRUE start for each stored point. The
 			# pack carries it so the asphalt UVs stay continuous where one
 			# chunk's piece meets the next; without it every chunk would restart
 			# at 0 and the texture would jump at every boundary.
-			var _rd_cum: PackedFloat64Array = _rd_zone.get(
+			var _rd_cum_full: PackedFloat64Array = _rd_zone.get(
 				"_cum_lengths", PackedFloat64Array())
 
-			var _rd_mid_ll := (_rd_cl[0] + _rd_cl[_rd_cl.size() - 1]) * 0.5
+			var _rd_mid_ll := (_rd_cl_full[0]
+				+ _rd_cl_full[_rd_cl_full.size() - 1]) * 0.5
 			var _rd_biome_type := ""
 			if not _pz_zones.is_empty():
 				var _rd_mid_lon := deg_to_rad(_rd_mid_ll.x)
@@ -1489,84 +1490,112 @@ static func generate_mesh(
 			var grp_norms: PackedVector3Array = grp["norms"]
 			var grp_uvs: PackedVector2Array = grp["uvs"]
 			var grp_indices: PackedInt32Array = grp["indices"]
-			var _strip_base: int = grp_verts.size()
 
-			# Fallback when no per-point distances are stored (legacy zones):
-			# accumulate from this piece's start, as before.
-			var _rd_have_cum := _rd_cum.size() == _rd_cl.size()
-			var along_m := 0.0
 			# Use chunk degree span (not cube-face UV span) so subdivision
 			# matches the centerline's coordinate system (degrees).
 			var _max_seg_deg := maxf(
 				_rd_cbb_max.x - _rd_cbb_min.x,
 				_rd_cbb_max.y - _rd_cbb_min.y) / float(res) * 0.5
 
-			for _seg_i in _rd_cl.size() - 1:
-				var p0 := _rd_cl[_seg_i]
-				var p1 := _rd_cl[_seg_i + 1]
-				var seg_dir := p1 - p0
-				var seg_len_deg := seg_dir.length()
-				if seg_len_deg < 1e-12:
-					along_m += seg_len_deg * _rd_m_per_deg
+			# Take the ribbon out from under the bridges. Only the pack path can
+			# be cut: the exclusion intervals are stated in absolute along-road
+			# distances, which the legacy BiomeQuery path does not carry — and
+			# which has no bridges either, since detection needs whole roads
+			# from the pack.
+			#
+			# The result is a LIST of pieces, each of which gets its own strip
+			# base and its own index run below. Dropping the vertices instead
+			# would not open a hole: the strip builder joins consecutive pairs,
+			# so it would stretch one quad straight over the gorge.
+			var _rd_pieces: Array = [[_rd_cl_full, _rd_cum_full]]
+			if _rd_cum_full.size() == _rd_cl_full.size() \
+					and data.corundum_override_whole_planet:
+				var _rd_excl: Array = data.get_bridge_exclusions_for_feature(
+					int(_rd_zone.get("feature_id", -1)))
+				if not _rd_excl.is_empty():
+					_rd_pieces = RoadCut.split(
+						_rd_cl_full, _rd_cum_full, _rd_excl)
+
+			for _rd_piece in _rd_pieces:
+				var _rd_cl: PackedVector2Array = _rd_piece[0]
+				var _rd_cum: PackedFloat64Array = _rd_piece[1]
+				if _rd_cl.size() < 2:
 					continue
+				var _strip_base: int = grp_verts.size()
+				# Fallback when no per-point distances are stored (legacy zones):
+				# accumulate from this piece's start, as before.
+				var _rd_have_cum := _rd_cum.size() == _rd_cl.size()
+				var along_m := 0.0
 
-				var perp := Vector2(-seg_dir.y, seg_dir.x).normalized()
-				var n_sub := maxi(1, ceili(seg_len_deg / _max_seg_deg))
-				# Along-road distance at this segment's two ends. From the pack
-				# these are absolute (measured from the road's start), so the
-				# texture runs continuously across chunk boundaries.
-				var _seg_a0: float = _rd_cum[_seg_i] if _rd_have_cum else along_m
-				var _seg_a1: float = _rd_cum[_seg_i + 1] if _rd_have_cum \
-					else along_m + seg_len_deg * _rd_m_per_deg
-
-				for _sub_j in n_sub + 1:
-					if _sub_j == n_sub and _seg_i < _rd_cl.size() - 2:
+				for _seg_i in _rd_cl.size() - 1:
+					var p0 := _rd_cl[_seg_i]
+					var p1 := _rd_cl[_seg_i + 1]
+					var seg_dir := p1 - p0
+					var seg_len_deg := seg_dir.length()
+					if seg_len_deg < 1e-12:
+						along_m += seg_len_deg * _rd_m_per_deg
 						continue
-					var frac := float(_sub_j) / float(n_sub)
-					var pt := p0 + seg_dir * frac
-					var along_here := _seg_a0 + (_seg_a1 - _seg_a0) * frac
-					var pt_l := pt + perp * _rd_hw_deg
-					var pt_r := pt - perp * _rd_hw_deg
 
-					for _side_ll in [pt_l, pt_r]:
-						var _lon_r := deg_to_rad(_side_ll.x)
-						var _lat_r := deg_to_rad(_side_ll.y)
-						var _dir := Vector3(
-							cos(_lat_r) * cos(_lon_r),
-							sin(_lat_r),
-							cos(_lat_r) * sin(_lon_r))
-						var _h: float
-						if hp_mode:
-							_h = data.sample_height_for_direction(_dir, _export_ipix,
-									-1, Vector2i(-1, -1), null, _sample_nside)
-						else:
-							var _fuv := PlanetData.sphere_to_cube(_dir)
-							_h = data.sample_height_for_chunk(
-								_fuv["face"], _fuv["u"], _fuv["v"],
-								u_min, u_max, v_min, v_max)
-						var _pos := _dir * (data.radius + _h + RoadTerrain.SURFACE_OFFSET)
-						grp_verts.append(_world_to_local(_pos, cc_f32, _wp_f32))
-						grp_norms.append(_dir)
+					# Metric perpendicular: rotating the raw lon/lat delta is
+					# NOT a rotation, and extruded every road that is not
+					# east-west too narrow and sheared. See RoadTerrain.perp_deg.
+					var perp := RoadTerrain.perp_deg(p0, p1)
+					var n_sub := maxi(1, ceili(seg_len_deg / _max_seg_deg))
+					# Along-road distance at this segment's two ends. From the pack
+					# these are absolute (measured from the road's start), so the
+					# texture runs continuously across chunk boundaries.
+					var _seg_a0: float = _rd_cum[_seg_i] if _rd_have_cum else along_m
+					var _seg_a1: float = _rd_cum[_seg_i + 1] if _rd_have_cum \
+						else along_m + seg_len_deg * _rd_m_per_deg
 
-					var _u_along := along_here / _rd_tile_m
-					grp_uvs.append(Vector2(_u_along, _rd_hw_m / _rd_tile_m))
-					grp_uvs.append(Vector2(_u_along, -_rd_hw_m / _rd_tile_m))
+					for _sub_j in n_sub + 1:
+						if _sub_j == n_sub and _seg_i < _rd_cl.size() - 2:
+							continue
+						var frac := float(_sub_j) / float(n_sub)
+						var pt := p0 + seg_dir * frac
+						var along_here := _seg_a0 + (_seg_a1 - _seg_a0) * frac
+						var pt_l := pt + perp * _rd_hw_deg
+						var pt_r := pt - perp * _rd_hw_deg
 
-				along_m += seg_len_deg * _rd_m_per_deg
+						for _side_ll in [pt_l, pt_r]:
+							var _lon_r := deg_to_rad(_side_ll.x)
+							var _lat_r := deg_to_rad(_side_ll.y)
+							var _dir := Vector3(
+								cos(_lat_r) * cos(_lon_r),
+								sin(_lat_r),
+								cos(_lat_r) * sin(_lon_r))
+							var _h: float
+							if hp_mode:
+								_h = data.sample_height_for_direction(_dir, _export_ipix,
+										-1, Vector2i(-1, -1), null, _sample_nside)
+							else:
+								var _fuv := PlanetData.sphere_to_cube(_dir)
+								_h = data.sample_height_for_chunk(
+									_fuv["face"], _fuv["u"], _fuv["v"],
+									u_min, u_max, v_min, v_max)
+							var _pos := _dir * (data.radius + _h + RoadTerrain.SURFACE_OFFSET)
+							grp_verts.append(_world_to_local(_pos, cc_f32, _wp_f32))
+							grp_norms.append(_dir)
 
-			# Build quad-strip indices: pairs [L0,R0, L1,R1, ...].
-			var _pair_count: int = (grp_verts.size() - _strip_base) / 2
-			for _pi in _pair_count - 1:
-				var _li := _strip_base + _pi * 2      # left  current
-				var _ri := _li + 1                     # right current
-				var _ln := _li + 2                     # left  next
-				var _rn := _li + 3                     # right next
-				grp_indices.append(_li)
-				grp_indices.append(_ln)
-				grp_indices.append(_ri)
-				grp_indices.append(_ri)
-				grp_indices.append(_ln)
-				grp_indices.append(_rn)
+						var _u_along := along_here / _rd_tile_m
+						grp_uvs.append(Vector2(_u_along, _rd_hw_m / _rd_tile_m))
+						grp_uvs.append(Vector2(_u_along, -_rd_hw_m / _rd_tile_m))
+
+					along_m += seg_len_deg * _rd_m_per_deg
+
+				# Build quad-strip indices: pairs [L0,R0, L1,R1, ...].
+				var _pair_count: int = (grp_verts.size() - _strip_base) / 2
+				for _pi in _pair_count - 1:
+					var _li := _strip_base + _pi * 2      # left  current
+					var _ri := _li + 1                     # right current
+					var _ln := _li + 2                     # left  next
+					var _rn := _li + 3                     # right next
+					grp_indices.append(_li)
+					grp_indices.append(_ln)
+					grp_indices.append(_ri)
+					grp_indices.append(_ri)
+					grp_indices.append(_ln)
+					grp_indices.append(_rn)
 
 			# Write modified packed arrays back to the dictionary.
 			# PackedArray types use copy-on-write so the dictionary must

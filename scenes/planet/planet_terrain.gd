@@ -160,6 +160,26 @@ var _chunk_cache: ChunkDiskCache
 # chunk_key → { key, nside, ipix, depth, center, lod,
 #               mesh_instance?, collision_shape? }
 var _active_chunks: Dictionary = {}
+
+## Bridges, keyed by SPAN — not by chunk. A deck must outlive the chunk that
+## happened to trigger it: ownership used to be the quadtree LEAF, which is
+## distance-driven, so the same span was owned by a coarse parent and its finer
+## child at the same time (two exactly coincident StaticBody3Ds under the
+## wheels) and was freed then rebuilt at every LOD flip (a hole in the deck a
+## vehicle drives into). Keyed at export_nside instead, a bridge is built once
+## and freed only when the LAST chunk that references it goes away.
+var _bridge_nodes: Dictionary = {}        # span_key → Node3D
+var _bridge_owners: Dictionary = {}       # span_key → { chunk_key: true }
+var _bridge_orphan_since: Dictionary = {} # span_key → msec it lost its last owner
+
+## Grace period before an unreferenced bridge is actually freed.
+##
+## A chunk whose LOD merely changed is REMOVED and re-queued under the SAME key
+## (_update_terrain step 3), and the rebuild is asynchronous. Freeing on the
+## last release would therefore still take the deck's collision away for as long
+## as the rebuild takes — on the server, a hole in the bridge. Waiting a few
+## seconds costs one idle mesh and makes that impossible.
+const BRIDGE_GRACE_MS := 5000
 var _update_timer: float = 0.0
 var _initialized: bool = false
 
@@ -297,10 +317,20 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# The vNN literal now only covers RUNTIME-side changes that no field
 		# captures (mesh/skirt/crack logic below) — exporter changes no longer need
 		# a manual bump, _dv handles them.
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v26%s%s" % [
+		# Bridges change the ribbon itself: it is CUT where a deck and its ramps
+		# stand, so a ramp slope is baked geometry and a designer tweaking one
+		# must invalidate the meshes. Materials are deliberately NOT in that
+		# signature — they change how a bridge looks, not where the road stops.
+		var _brg := ""
+		if data.corundum_override_whole_planet:
+			_brg = "_brg%s" % data.get_bridge_profile().signature()
+		# v26 → v27: the road ribbon's perpendicular is now taken in metric
+		# space. That widens every road that is not east-west, on EVERY planet
+		# with roads, so it is a runtime change no data field captures.
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v27%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _dv]
+			data.chunk_heightmap_res, _cor, _brg, _dv]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -394,6 +424,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
 	# land as a visible stall in the middle of flight. Memoised afterwards.
 	planet_data.get_bridge_spans()
+	# Plan the decks and ramps in the same breath, on THIS thread. The mesh
+	# workers cut the road ribbon out from under those ramps, so they must read
+	# a table that is already complete; building it lazily would let a worker
+	# and the main thread disagree about where a bridge starts, and the ribbon
+	# would be cut open where nothing spans it.
+	planet_data.warm_bridge_plans()
 
 	_initialized = true
 
@@ -551,6 +587,10 @@ func _apply_residency() -> void:
 		if not _server_collision_chunks.has(key) and not _server_chunk_tasks.has(key):
 			_load_chunk(key)
 
+	# Bridges outlive the chunks that reference them; collect the ones nothing
+	# has claimed back, after the load pass has had its chance to.
+	_sweep_orphan_bridges()
+
 
 ## Enqueue a HEALPix chunk for async collision loading.  Returns immediately;
 ## the heavy work (heightmap + shape generation) runs in WorkerThreadPool tasks
@@ -590,6 +630,7 @@ func _unload_chunk(key: String) -> void:
 			PropNet.prof_chunk_unloads += 1  # TEMPORARY (étape 0d): measure the churn under the player
 		body.queue_free()
 		_server_collision_chunks.erase(key)
+	_release_bridges(key)
 	if _server_feature_nodes.has(key):
 		for n in _server_feature_nodes[key]:
 			if is_instance_valid(n):
@@ -867,6 +908,13 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 	# sub-chunks pinned under bodies don't duplicate them.
 	if nside == planet_data.export_nside:
 		_spawn_chunk_features(key, nside, ipix)
+	# Bridges. This path — not _create_chunk — is the live server residency, and
+	# it did not build them: the deck existed on the client and nowhere else, so
+	# a vehicle drove along the visible ribbon and fell through the gorge. The
+	# deck carries the ONLY collision over a chasm, so the server needs it as
+	# much as the terrain it replaces. Deduplicated by span, so a fine
+	# sub-chunk pinned under a body cannot build a second one.
+	_spawn_bridges({"key": key, "nside": nside, "ipix": ipix, "lod": 0})
 
 
 ## Parse the trailing ipix from a chunk key "hp_nN_pP".  Returns -1 on error.
@@ -1229,6 +1277,11 @@ func _update_terrain() -> void:
 			if not _is_chunk_in_pipeline(key):
 				_remove_chunk(key)
 				_try_create_or_defer(desired[key])
+
+	# Bridges outlive the chunks that ask for them, so they are collected here
+	# rather than in _remove_chunk — after steps 1-3 have had their chance to
+	# claim them back.
+	_sweep_orphan_bridges()
 
 	# Look-ahead: prefetch chunks along the predicted camera trajectory so
 	# they're ready before the player reaches them.
@@ -2863,45 +2916,95 @@ func _create_chunk(info: Dictionary) -> void:
 
 ## Spawn a bridge for every road/chasm crossing this chunk owns.
 ##
-## Ownership is by span MIDPOINT: a deck can be several hundred metres long and
-## straddle several chunks, so exactly one chunk builds the whole structure.
-## Quadtree leaves are disjoint and cover the sphere, so every span has one
-## owner and no bridge is ever built twice — the same reasoning that keeps the
-## road ribbon itself from being drawn by two chunks.
+## Ownership is by span MIDPOINT, resolved at EXPORT_NSIDE — deliberately not at
+## the chunk's own leaf nside.
+##
+## The leaf nside is distance-driven, and that made a bridge a function of where
+## the camera stood, with two failures a driver actually feels:
+##   · _update_terrain keeps a stale coarse parent alive while its finer
+##     children are still in the pipeline, so the same span was owned by BOTH
+##     for a while — two exactly coincident deck colliders under the wheels,
+##     which is contact chatter and lost grip, not a cosmetic double;
+##   · a chunk whose LOD merely changed is removed and re-queued, which freed
+##     the deck's collision for as long as the rebuild took. On the server that
+##     is a hole in the bridge.
+## export_nside is fixed, so a span has ONE owning pixel forever, the client and
+## the server agree on it without replicating anything, and the deck is built
+## once. The chunk only REFERENCES it: the node is freed when the last chunk
+## resolving to that pixel goes away.
 func _spawn_bridges(info: Dictionary) -> void:
 	if planet_data == null or int(info.get("lod", 99)) > BridgeSpawner.MAX_LOD:
-		return
-	var nside: int = int(info.get("nside", 0))
-	var ipix: int = int(info.get("ipix", -1))
-	if nside <= 0 or ipix < 0:
 		return
 	var spans := planet_data.get_bridge_spans()
 	if spans.is_empty():
 		return
-	var mine := RoadBridge.spans_owned_by(spans, nside, ipix)
+	var eipix := _get_export_ipix(info)
+	if eipix < 0:
+		return
+	var mine := RoadBridge.spans_owned_by(spans, planet_data.export_nside, eipix)
 	if mine.is_empty():
 		return
-	# Same pyramid tile the chunk drew its road ribbon from, so the deck lands ON
-	# the road instead of a decimetre over it.
-	var tile: Array = _chunk_height_tile(info)
-	var nodes: Array[Node3D] = []
+	var chunk_key: String = info.get("key", "")
 	for s in mine:
-		var b := BridgeSpawner.spawn(planet_data, s, int(tile[0]), int(tile[1]))
+		var sk: String = _bridge_span_key(s)
+		if not _bridge_owners.has(sk):
+			_bridge_owners[sk] = {}
+		(_bridge_owners[sk] as Dictionary)[chunk_key] = true
+		_bridge_orphan_since.erase(sk)
+		if _bridge_nodes.has(sk):
+			continue
+		# No height tile is passed: the deck resolves its own at export_nside
+		# from the span midpoint, so its altitude cannot depend on which chunk
+		# happened to ask for it (see BridgeSpawner.spawn).
+		var b := BridgeSpawner.spawn(planet_data, s)
 		if b:
 			_chunks_node.add_child(b)
-			nodes.append(b)
-	if not nodes.is_empty():
-		info["bridges"] = nodes
+			_bridge_nodes[sk] = b
+
+
+## Stable identity of a span, independent of the chunk that reported it.
+static func _bridge_span_key(span: Dictionary) -> String:
+	return "f%d_%d" % [int(span.get("feature_id", -1)),
+			int(span.get("along_start", 0.0))]
+
+
+## Drop [param chunk_key]'s claim on every bridge. Nothing is freed here — a
+## bridge that loses its last owner is only MARKED, and _sweep_orphan_bridges
+## frees it once the grace period has passed without anyone claiming it back.
+func _release_bridges(chunk_key: String) -> void:
+	if _bridge_owners.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for sk in _bridge_owners:
+		var owners: Dictionary = _bridge_owners[sk]
+		if not owners.has(chunk_key):
+			continue
+		owners.erase(chunk_key)
+		if owners.is_empty() and not _bridge_orphan_since.has(sk):
+			_bridge_orphan_since[sk] = now
+
+
+## Free the bridges nothing has referenced for BRIDGE_GRACE_MS.
+func _sweep_orphan_bridges() -> void:
+	if _bridge_orphan_since.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for sk in _bridge_orphan_since.keys():
+		if now - int(_bridge_orphan_since[sk]) < BRIDGE_GRACE_MS:
+			continue
+		_bridge_orphan_since.erase(sk)
+		_bridge_owners.erase(sk)
+		var node: Node3D = _bridge_nodes.get(sk, null)
+		if node:
+			node.queue_free()
+		_bridge_nodes.erase(sk)
 
 
 func _remove_chunk(key: String) -> void:
 	if not _active_chunks.has(key):
 		return
 	var info: Dictionary = _active_chunks[key]
-	if info.has("bridges"):
-		for b in info["bridges"]:
-			if b:
-				(b as Node3D).queue_free()
+	_release_bridges(key)
 	if info.has("mesh_instance") and info.mesh_instance:
 		info.mesh_instance.queue_free()
 	if info.has("vegetation") and info.vegetation:
@@ -2951,14 +3054,24 @@ func _get_chunk_populate_zones(info: Dictionary) -> Array:
 	return planet_data.get_chunk_populate_zones(export_ipix)
 
 
-## Map a chunk's runtime ipix to the export-level ipix by walking up the
-## HEALPix quadtree until nside matches planet_data.export_nside.
+## Map a chunk's runtime ipix to the export-level ipix by walking the HEALPix
+## quadtree until nside matches planet_data.export_nside.
+##
+## Walks DOWN as well as up: a chunk coarser than export_nside covers four (or
+## more) export pixels, and taking its FIRST child is what _try_create_or_defer
+## already does to pick a recipe. Callers that only need "one export pixel this
+## chunk belongs to" — bridge ownership does — get a stable answer either way.
 func _get_export_ipix(info: Dictionary) -> int:
 	var eipix: int = info.get("ipix", -1)
 	var ns: int = info.get("nside", 0)
+	if eipix < 0 or ns <= 0:
+		return -1
 	while ns > planet_data.export_nside:
 		eipix = HEALPix.parent_pixel(eipix)
 		ns /= 2
+	while ns < planet_data.export_nside:
+		eipix *= 4
+		ns *= 2
 	return eipix
 
 
