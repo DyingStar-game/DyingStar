@@ -264,7 +264,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95.7138843536377, 66.76164340
 size = Vector3(756.9077583118269, 135.5232830842242, 306.89811270363225)
 material = SubResource("ShaderMaterial_3b5ap")
 
-[node name="Area3D" type="Area3D" parent="." unique_id=1228311395 groups=["player"]]
+[node name="Area3D" type="Area3D" parent="." unique_id=1228311395 groups=["active_monitor", "player"]]
 script = ExtResource("11_04krg")
 target_volume_db = -30.0
 

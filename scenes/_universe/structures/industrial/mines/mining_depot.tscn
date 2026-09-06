@@ -336,6 +336,7 @@ transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995
 mesh = SubResource("QuadMesh_l8wts")
 
 [node name="TouchScreen" type="Area3D" parent="miningdepot/Gui3D/ScreenMesh" unique_id=859681979]
+monitoring = false
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.00330258909847297, 0, -0.1049409435543579)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="miningdepot/Gui3D/ScreenMesh/TouchScreen" unique_id=475393211]
@@ -355,7 +356,7 @@ shape = SubResource("BoxShape3D_ke7ee")
 [node name="BoxSpawnOrigin" type="Marker3D" parent="." unique_id=1419126176]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 4.040174807122646, 0.914861297012593, -2.6002636587563273)
 
-[node name="RockDetector" type="Area3D" parent="." unique_id=1984882986]
+[node name="RockDetector" type="Area3D" parent="." unique_id=1984882986 groups=["active_monitor"]]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -0.2741005707315467, 1.0766338231052774, 2.630822158377826)
 collision_mask = 8
 
@@ -364,7 +365,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04836291934604331, -0.43973
 shape = SubResource("BoxShape3D_cywas")
 debug_color = Color(0.70196074, 0.32014543, 0.27115196, 0.41960785)
 
-[node name="BoxDetector" type="Area3D" parent="." unique_id=824689863]
+[node name="BoxDetector" type="Area3D" parent="." unique_id=824689863 groups=["active_monitor"]]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -0.27410057073154703, 1.0766338231052774, -2.601417988734338)
 collision_mask = 8
 
@@ -373,7 +374,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04836291934604331, -0.43973
 shape = SubResource("BoxShape3D_n332y")
 debug_color = Color(0.70196074, 0.32014543, 0.27115196, 0.41960785)
 
-[node name="RockCollector" type="Area3D" parent="." unique_id=1806926985]
+[node name="RockCollector" type="Area3D" parent="." unique_id=1806926985 groups=["active_monitor"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.354821632366431, -0.0510717205387774, 2.630822158377826)
 collision_mask = 8
 

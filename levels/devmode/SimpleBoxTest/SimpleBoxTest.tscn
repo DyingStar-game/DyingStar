@@ -58,7 +58,7 @@ environment = SubResource("Environment_le64j")
 [node name="DataPlanet" type="Node" parent="." unique_id=400465058]
 metadata/_custom_type_script = "uid://cj5kd1hkfvjrg"
 
-[node name="Area3D" type="Area3D" parent="." unique_id=708588488 groups=["gravity"]]
+[node name="Area3D" type="Area3D" parent="." unique_id=708588488 groups=["active_monitor", "gravity"]]
 gravity_space_override = 3
 script = ExtResource("4_jq82d")
 

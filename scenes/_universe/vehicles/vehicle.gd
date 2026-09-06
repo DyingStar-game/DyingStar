@@ -1745,6 +1745,17 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
+	# Perf bucket (dormant unless the server rig is armed): the body has many early returns, so it is
+	# wrapped rather than bracketed in place.
+	if not PropNet.prof_on:
+		_physics_process_impl(delta)
+		return
+	var _tv: int = Time.get_ticks_usec()
+	_physics_process_impl(delta)
+	PropNet.prof_vehicle_usec += Time.get_ticks_usec() - _tv
+	PropNet.prof_vehicle_calls += 1
+
+func _physics_process_impl(delta: float) -> void:
 	if _is_networked():
 		# Server-authoritative: only the game server simulates + replicates. The client replica
 		# has physics off; its smoothing + wheels are done in _process.

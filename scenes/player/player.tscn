@@ -119,9 +119,10 @@ shadow_enabled = true
 spot_range = 25.0
 spot_angle = 41.4246
 
-[node name="AreaDetector" type="Area3D" parent="." unique_id=972717439]
+[node name="AreaDetector" type="Area3D" parent="." unique_id=972717439 groups=["active_monitor"]]
 collision_layer = 0
 monitorable = false
+metadata/monitor_reason = "The single active monitor of the game: every zone (seat, cargo bay, gravity, spawn, screen) is passive and this is what reports the overlap. Its mask is set in player.gd connect_area_detect() to Globals.MASK_PROBE, the `zone` layer only, which no static check of this file can see."
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="AreaDetector" unique_id=1523390027]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.08165e-12, 0.9, 2.08165e-12)

@@ -31,6 +31,7 @@ spot_range = 4.011
 spot_angle = 70.03
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1669198076 groups=["spawn"]]
+monitoring = false
 collision_layer = 16
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1057822611]

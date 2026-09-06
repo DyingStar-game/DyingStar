@@ -12,6 +12,7 @@ script = ExtResource("2_cont12")
 [node name="test_containers_12x2_6" parent="." unique_id=302789445 instance=ExtResource("1_nbpa7")]
 
 [node name="Area3D" type="Area3D" parent="test_containers_12x2_6" unique_id=985169000]
+monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="test_containers_12x2_6/Area3D" unique_id=301337383]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6728704, 1.3010025173425674, 0.007235199)
