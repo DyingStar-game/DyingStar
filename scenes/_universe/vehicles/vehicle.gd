@@ -32,6 +32,9 @@ enum ViewMode {CHASE, CAB}
 
 # Meta marker put on every node we generate, so a rebuild can clear the old ones.
 const GENERATED := "vehicle_generated"
+## Metadata a static body may carry to state its own grip (see
+## [member wheel_friction_slip_default]). BridgeSpawner sets it on every deck.
+const GRIP_META := "grip_slip"
 # Thickness of the generated bed floor / walls (m). Shared by the collider and the cargo-rest math.
 const BED_WALL_THICKNESS := 0.08
 # Bench: the real mining rock scene, reused to test loading the bed.
@@ -196,6 +199,16 @@ const BAY_SCAN_FRAMES := 6
 ## Max force EACH suspension can push (N). Must exceed the LOADED static load per wheel
 ## (~5600 N at 2.3 t) with margin for bumps/landings, or the bed bottoms out when full.
 @export var suspension_max_force: float = 15000.0
+## Grip on ordinary ground, as VehicleWheel3D's friction slip.
+##
+## Godot's VehicleBody3D is the Bullet raycast-vehicle port: the friction budget
+## for a wheel is suspension_force x step x wheel_friction_slip, and NOTHING in
+## that path reads the contacted body's PhysicsMaterial. A slippery-feeling
+## surface therefore cannot be fixed by putting a PhysicsMaterial on it; the
+## value has to be chosen here, from the body the wheel is standing on. A body
+## that wants its own grip declares it as the [constant GRIP_META] metadata —
+## the bridge decks do, so a deck can be tuned without touching this.
+@export var wheel_friction_slip_default: float = 3.0
 
 # --- Real 3D model (Blender GLB) — all OPTIONAL drop-ins -----------------------
 # When a real model is present (a child in group "vehicle_model", or wheel meshes named below),
@@ -406,6 +419,8 @@ var pilot_uuid: String = ""
 
 var _steer_target: float = 0.0
 var _wheels: Array[VehicleWheel3D] = []
+## Tick counter for the grip diagnostic (see _log_wheel_contacts).
+var _grip_log_ticks: int = 0
 var _throttle: float = 0.0
 var _pilot: Node3D = null
 var _chase_cam: Node3D = null
@@ -1248,7 +1263,7 @@ func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire
 	wheel.suspension_max_force = suspension_max_force
 	wheel.damping_compression = 0.5
 	wheel.damping_relaxation = 0.7
-	wheel.wheel_friction_slip = 3.0
+	wheel.wheel_friction_slip = wheel_friction_slip_default
 	add_child(wheel)
 	_wheels.append(wheel)
 	if with_csg_tire:
@@ -1762,6 +1777,7 @@ func _physics_process_impl(delta: float) -> void:
 		if not GameOrchestrator.is_server():
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
+		_apply_surface_grip()  # grip follows the surface under each wheel (bridge deck vs terrain)
 		_check_rollover_unlock()  # spill the load if the truck is tipped over
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
 		_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
@@ -1801,6 +1817,7 @@ func _physics_process_impl(delta: float) -> void:
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
+	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
 	_scan_bay_for_settled_cargo()
@@ -1810,6 +1827,50 @@ func _physics_process_impl(delta: float) -> void:
 		_hold_handbrake(delta)
 	else:
 		_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
+
+## Give each wheel the grip of whatever it is standing on.
+##
+## Needed because Godot's raycast vehicle ignores the ground body's
+## PhysicsMaterial entirely (see [member wheel_friction_slip_default]), so a
+## bridge deck and the terrain are indistinguishable to it however they are
+## authored. A body states its grip through [constant GRIP_META]; anything that
+## does not simply gets the default, which is the value every wheel used to be
+## given unconditionally — so this changes nothing until a surface asks it to.
+func _apply_surface_grip() -> void:
+	for wheel in _wheels:
+		var slip := wheel_friction_slip_default
+		if wheel.is_in_contact():
+			var ground := wheel.get_contact_body()
+			if ground != null and ground.has_meta(GRIP_META):
+				slip = float(ground.get_meta(GRIP_META))
+		wheel.wheel_friction_slip = slip
+	if PropNet.prof_on:
+		_log_wheel_contacts()
+
+
+## Diagnostic for "the bridge feels slippery", dormant unless the server perf
+## rig is armed. It distinguishes the three causes that look identical from the
+## driver's seat:
+##   · the contact body ALTERNATING between two colliders — overlapping bodies,
+##     which is what LOD-owned bridges used to produce;
+##   · is_in_contact() FLICKERING — the suspension unloading over a step or a
+##     seam, which costs grip because the friction budget is proportional to
+##     suspension force;
+##   · a low skid factor with a stable contact — a genuine grip shortfall, the
+##     only one wheel_friction_slip can fix.
+func _log_wheel_contacts() -> void:
+	_grip_log_ticks += 1
+	if _grip_log_ticks < 30:
+		return
+	_grip_log_ticks = 0
+	var parts: PackedStringArray = []
+	for wheel in _wheels:
+		var ground := wheel.get_contact_body()
+		parts.append("%s:%s skid=%.2f on=%s" % [wheel.name,
+				"air" if ground == null else ground.name,
+				wheel.get_skidinfo(), wheel.is_in_contact()])
+	print("[Vehicle grip] " + " | ".join(parts))
+
 
 ## Server: replicate position/rotation to clients when they change (same shape as a rock).
 ## Client: the replica is frozen (no physics), so roll + steer the wheels visually from

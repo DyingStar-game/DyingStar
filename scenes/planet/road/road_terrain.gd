@@ -137,6 +137,27 @@ static func get_tile_size(road_type: String) -> float:
 	return TILE_M.get(road_type, 2.0)
 
 
+## Unit perpendicular to the segment [param p0]-[param p1], in DEGREES, such
+## that offsetting a point by `perp * (half_width_m / metres_per_degree)` moves
+## it exactly half_width_m metres sideways at any latitude.
+##
+## The obvious version — rotating the raw lon/lat delta by 90° — is wrong, and
+## was wrong in the road ribbon for a long time: a degree of longitude is only
+## cos(lat) as long as a degree of latitude, so rotating in degree space is not
+## a rotation. It extruded a north-south road cos(lat) too narrow (-9 % at 25°,
+## -50 % at 60°) and left a diagonal road's edges non-perpendicular to it — a
+## sheared ribbon. Rotate in METRIC space and convert back.
+##
+## Returns Vector2.ZERO for a degenerate segment, which the caller must skip.
+static func perp_deg(p0: Vector2, p1: Vector2) -> Vector2:
+	var d := p1 - p0
+	if d.length_squared() < 1e-24:
+		return Vector2.ZERO
+	var ls := maxf(cos(deg_to_rad(clampf(0.5 * (p0.y + p1.y), -89.5, 89.5))), 1e-6)
+	var metric := Vector2(d.x * ls, d.y).normalized()
+	return Vector2(-metric.y / ls, metric.x)
+
+
 ## Squared distance in degrees from [param p] to segment [param a]-[param b],
 ## with longitude scaled by cos(lat) so the comparison is metric-ish.
 static func _dist_sq_to_segment(p: Vector2, a: Vector2, b: Vector2,

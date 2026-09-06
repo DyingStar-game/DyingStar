@@ -93,8 +93,8 @@ static func chasm_depth_at(planet_data: PlanetData, lon: float, lat: float) -> f
 ##
 ## Each span is
 ##     {feature_id, along_start, along_end, span_m, deck_span_m,
-##      mid_lon, mid_lat, mid_dir, bearing, forward_dir, max_depth_m,
-##      road_width_m, truncated}
+##      mid_lon, mid_lat, mid_dir, start_lonlat, end_lonlat, start_dir,
+##      end_dir, bearing, forward_dir, max_depth_m, road_width_m, truncated}
 ## where `bearing` is the unit east/north direction of the crossing (longitude
 ## already scaled by cos(lat), so it is a real bearing and not a raw lon/lat
 ## delta) and `forward_dir` is that same direction as a world-space unit vector
@@ -234,11 +234,14 @@ static func _make_span(fid: int, a_along: float, b_along: float,
 	var lat_scale := cos(deg_to_rad(clampf(mid.y, -89.5, 89.5)))
 	var dir_ll := Vector2(dlon * lat_scale, b_lonlat.y - a_lonlat.y)
 	var bearing := dir_ll.normalized() if dir_ll.length_squared() > 1e-20 else Vector2.RIGHT
-	# The deck is straight and must land on both rims, so its direction is the
-	# rim-to-rim chord, flattened onto the tangent plane at the midpoint. Giving
-	# the spawner a ready-made world vector spares it rebuilding an east/north
-	# frame from angles, which is where the orientation used to go wrong.
-	var chord := lonlat_to_dir(b_lonlat.x, b_lonlat.y) - lonlat_to_dir(a_lonlat.x, a_lonlat.y)
+	var dir_a := lonlat_to_dir(a_lonlat.x, a_lonlat.y)
+	var dir_b := lonlat_to_dir(b_lonlat.x, b_lonlat.y)
+	# DEPRECATED, kept for callers that have not moved on: the rim-to-rim chord,
+	# flattened onto the tangent plane at the midpoint. It describes a STRAIGHT
+	# deck, which is precisely why a bridge over a curved road used to cut the
+	# corner. BridgePlan/BridgeDeck follow the centerline instead and ignore
+	# this; so should anything new.
+	var chord := dir_b - dir_a
 	var forward := chord - mid_dir * chord.dot(mid_dir)
 	forward = forward.normalized() if forward.length_squared() > 1e-20 else Vector3.ZERO
 	var truncated := gap > MAX_SPAN_M
@@ -251,6 +254,13 @@ static func _make_span(fid: int, a_along: float, b_along: float,
 		"mid_lon": mid.x,
 		"mid_lat": mid.y,
 		"mid_dir": mid_dir,
+		# The two rims themselves. Carried because a deck has to be planned
+		# against BOTH altitudes — a single sample at the midpoint is what left
+		# the old deck buried on the high rim and floating on the low one.
+		"start_lonlat": a_lonlat,
+		"end_lonlat": b_lonlat,
+		"start_dir": dir_a,
+		"end_dir": dir_b,
 		"bearing": bearing,
 		"forward_dir": forward,
 		"max_depth_m": max_depth,

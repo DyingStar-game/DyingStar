@@ -201,6 +201,15 @@ var chunk_data_version: String = ""
 ## Clearance (m) kept outside a road's own half-width, so a field never swallows the carriageway.
 @export var mining_zone_road_margin: float = 50.0
 
+@export_group("Bridges")
+## Deck, ramp and abutment settings for the bridges carrying roads over the
+## procedural chasms. Leave null to use the defaults; a profile is only worth
+## authoring when a planet's terrain needs different ramps.
+##
+## Its signature() feeds the chunk disk-cache key: the ribbon is CUT to make
+## room for the ramps, so changing a ramp changes baked chunk meshes.
+@export var bridge_profile: BridgeProfile = null
+
 @export_group("Roads")
 ## Path to a GeoJSON file with road polygons (buffered from LineStrings).
 ## Exported by the QGIS pipeline as {planet}_roads_buffered.json.
@@ -309,6 +318,20 @@ var _mod_overlay_mutex: Mutex = Mutex.new()
 var _bridge_spans: Array = []
 var _bridge_spans_built: bool = false
 var _bridge_spans_mutex: Mutex = Mutex.new()
+
+## Deck/ramp plans, and the stretches of ribbon they displace.
+##
+## Built ONCE, on the main thread, for every span at the same time. That is not
+## an optimisation: the ribbon cutter runs on a mesh worker thread while the
+## deck builder runs on the main one, and the two must use the same numbers or
+## the road is cut open where nothing spans it. One shared table, filled before
+## either of them runs, is what makes that impossible.
+var _bridge_plans: Dictionary = {}            # span key → plan
+var _bridge_excl: Dictionary = {}             # feature_id → Array[Vector2] merged
+var _bridge_plans_built: bool = false
+var _bridge_plans_mutex: Mutex = Mutex.new()
+var _whole_roads_by_fid: Dictionary = {}
+var _bridge_profile_cache: BridgeProfile = null
 
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
@@ -1605,6 +1628,164 @@ func clear_bridge_spans() -> void:
 	_bridge_spans.clear()
 	_bridge_spans_built = false
 	_bridge_spans_mutex.unlock()
+	clear_bridge_plans()
+
+
+## The bridge settings for this planet, defaulting to a stock profile.
+func get_bridge_profile() -> BridgeProfile:
+	if bridge_profile != null:
+		return bridge_profile
+	if _bridge_profile_cache == null:
+		_bridge_profile_cache = BridgeProfile.new()
+	return _bridge_profile_cache
+
+
+## Stable identity of a span. Mirrors PlanetTerrain's bridge-node key.
+static func bridge_span_key(span: Dictionary) -> String:
+	return "f%d_%d" % [int(span.get("feature_id", -1)),
+			int(span.get("along_start", 0.0))]
+
+
+## One whole road by feature id, from the same stitched set bridge detection
+## walked — so a plan and its span describe the same polyline.
+func get_whole_road(fid: int) -> Dictionary:
+	_ensure_bridge_plans()
+	return _whole_roads_by_fid.get(fid, {})
+
+
+## The deck/ramp plan for [param span], or an empty dictionary when it has none.
+func get_bridge_plan(span: Dictionary) -> Dictionary:
+	_ensure_bridge_plans()
+	return _bridge_plans.get(bridge_span_key(span), {})
+
+
+## Stretches of road [param fid] that a bridge occupies, as merged, sorted,
+## non-overlapping [lo, hi] along-road intervals. The ribbon must not be drawn
+## there: it would lie across the ramps and hang over the gorge.
+func get_bridge_exclusions_for_feature(fid: int) -> Array:
+	if not corundum_override_whole_planet:
+		return []
+	_ensure_bridge_plans()
+	return _bridge_excl.get(fid, [])
+
+
+## Build every deck/ramp plan now, on the calling thread.
+##
+## Call this on the MAIN thread at load time. The mesh workers cut the road
+## ribbon out from under the ramps, and PlanetData's lazy caches are not
+## thread-safe to populate — a worker filling this table while another reads it
+## is the same race that once left patches of terrain untextured.
+func warm_bridge_plans() -> void:
+	_ensure_bridge_plans()
+
+
+func clear_bridge_plans() -> void:
+	_bridge_plans_mutex.lock()
+	_bridge_plans.clear()
+	_bridge_excl.clear()
+	_whole_roads_by_fid.clear()
+	_bridge_plans_built = false
+	_bridge_plans_mutex.unlock()
+
+
+## Plan every span in one pass. Call it from the main thread at load time
+## (PlanetTerrain does); a worker thread reaching it first still works, but pays
+## the tile reads inside the mutex.
+func _ensure_bridge_plans() -> void:
+	if _bridge_plans_built:
+		return
+	_bridge_plans_mutex.lock()
+	if not _bridge_plans_built:
+		_build_bridge_plans()
+		_bridge_plans_built = true
+	_bridge_plans_mutex.unlock()
+
+
+func _build_bridge_plans() -> void:
+	var spans := get_bridge_spans()
+	for r in get_whole_roads():
+		_whole_roads_by_fid[int(r.get("feature_id", -1))] = r
+	if spans.is_empty():
+		return
+	var profile := get_bridge_profile()
+	var by_feature: Dictionary = {}
+	var skipped := 0
+	for s in spans:
+		if s.get("truncated", false):
+			continue
+		var fid: int = int(s.get("feature_id", -1))
+		var road: Dictionary = _whole_roads_by_fid.get(fid, {})
+		if road.is_empty():
+			continue
+		# The tile is pinned to the span's own midpoint at export_nside, so the
+		# plan cannot depend on which chunk asked for it — that dependency is
+		# what let the client and the server disagree about a deck's altitude.
+		var ipix: int = HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
+		if load_chunk_heightmap(ipix, export_nside) == null:
+			# No tile means sample_height_for_direction would silently fall back
+			# to the global equirect map — a flatter, different surface, the one
+			# that once put props kilometres above the terrain. Refusing here
+			# keeps deck and ribbon consistent: no plan, no deck, and no cut.
+			skipped += 1
+			continue
+		var plan := BridgePlan.compute(profile, s, road, radius,
+				bridge_height_sampler(ipix), terrain_vertex_spacing_m())
+		if not bool(plan.get("ok", false)):
+			skipped += 1
+			continue
+		_bridge_plans[bridge_span_key(s)] = plan
+		if not by_feature.has(fid):
+			by_feature[fid] = []
+		by_feature[fid].append(Vector2(float(plan["excl_lo_along"]),
+				float(plan["excl_hi_along"])))
+	for fid in by_feature:
+		# Merged before anyone sees them: two gorges close enough for their
+		# ramps to overlap would otherwise leave a sliver of ribbon between two
+		# decks, which is a hole you drive into.
+		_bridge_excl[fid] = RoadCut.merge_intervals(by_feature[fid])
+	var stranded: PackedStringArray = []
+	var steepened := 0
+	for k in _bridge_plans:
+		var pl: Dictionary = _bridge_plans[k]
+		if bool(pl.get("clamped", false)):
+			stranded.append("%s (rims differ by %.0f m)"
+					% [k, absf(float(pl["start_alt_m"]) - float(pl["end_alt_m"]))])
+		if bool(pl.get("steepened", false)):
+			steepened += 1
+	print("[PlanetData] %d bridge plan(s) on '%s'" % [_bridge_plans.size(), planet_name]
+			+ (" — %d skipped" % skipped if skipped else "")
+			+ (" — %d ramp(s) steepened to reach falling ground" % steepened if steepened else "")
+			+ (" — %d abutment(s) left on a step" % stranded.size() if stranded.size() else ""))
+	if stranded.size() > 0:
+		# Named, not counted: these crossings need re-routing in QGIS, and a
+		# bare number gives nobody anything to act on.
+		push_warning("[PlanetData] '%s': no ramp can reach the ground at %s. "
+				% [planet_name, ", ".join(stranded)]
+				+ "Even sloping the deck to its cap leaves more height than a "
+				+ "ramp can make up — the road crosses a cliff rather than a "
+				+ "gorge, or ends at one. Re-route it or move the crossing.")
+
+
+## Vertex spacing, in metres, of the FINEST terrain mesh this planet builds.
+##
+## Mirrors PlanetChunk's own `_crack_vtx_spacing` (HEALPix pixel side over the
+## chunk resolution), because that grid is what decides where the rendered and
+## collided chasm rim actually is: the mesh samples crack_offset at its
+## vertices, so the last solid vertex can be a whole spacing outside the
+## analytic rim. Bridge abutments are sized on this.
+func terrain_vertex_spacing_m() -> float:
+	var finest_nside: int = 1 << maxi(max_quadtree_depth, 0)
+	var res: int = maxi(chunk_resolution, 1)
+	return HEALPix.pixel_side_length(finest_nside, radius) / float(res)
+
+
+## Terrain sampler for the bridge builders: altitude for a direction, read from
+## ONE pinned export tile so every sample of one bridge comes off the same
+## bilinear surface with no seam inside the deck.
+func bridge_height_sampler(ipix: int) -> Callable:
+	var ns := export_nside
+	return func(dir: Vector3) -> float:
+		return sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null, ns)
 
 
 ## Road records for the HEALPix chunk (hp_nside, hp_ipix), resolving the pyramid

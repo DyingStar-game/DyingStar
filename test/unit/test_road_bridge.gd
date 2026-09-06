@@ -211,6 +211,28 @@ func test_short_or_malformed_roads_are_ignored() -> void:
 			"centerline and distances out of step")
 
 
+func test_span_carries_both_rims() -> void:
+	# A deck has to be planned against BOTH rim altitudes: referencing it to one
+	# sample at the midpoint is what left the old deck buried in the high rim
+	# (which reads as "the bridge stops before the edge") and floating over the
+	# low one. The rims are the only place those altitudes can be read.
+	var spans := RoadBridge.find_spans_in_road(_pd, _road(20000.0))
+	assert_gt(spans.size(), 0, "there is a crossing to inspect")
+	for s in spans:
+		var a: Vector2 = s["start_lonlat"]
+		var b: Vector2 = s["end_lonlat"]
+		assert_eq(RoadBridge.chasm_depth_at(_pd, a.x, a.y), 0.0,
+				"the start rim is solid ground")
+		assert_eq(RoadBridge.chasm_depth_at(_pd, b.x, b.y), 0.0,
+				"and so is the end rim")
+		var da: Vector3 = s["start_dir"]
+		var db: Vector3 = s["end_dir"]
+		assert_almost_eq(da.length(), 1.0, 1e-9, "rim directions are unit")
+		assert_almost_eq(db.length(), 1.0, 1e-9)
+		assert_almost_eq(da.distance_to(RoadBridge.lonlat_to_dir(a.x, a.y)),
+				0.0, 1e-12, "and match their lon/lat")
+
+
 func test_find_all_spans_concatenates_roads() -> void:
 	var a := _road(20000.0, 24.8, -39.6, 1)
 	var b := _road(20000.0, 25.4, -39.6, 2)
