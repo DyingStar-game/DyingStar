@@ -92,8 +92,11 @@ def parse_header(head):
 class HeaderLayout(unittest.TestCase):
 
     def _header(self, u16):
+        # build_header rend (en-tête, bourrage) : les cartes de présence s'écrivent entre
+        # les deux, donc il ne peut plus rendre un bloc unique.
         EXP["SAMPLE_U16"] = u16
-        return EXP["build_header"](b'{"planet_name":"t"}', 32, 1, 1024)
+        EXP["SPARSE_EPSILON_M"] = 0.0
+        return EXP["build_header"](b'{"planet_name":"t"}', 32, 1, 1024)[0]
 
     def test_v2_header_fields(self):
         h = self._header(True)
@@ -114,13 +117,59 @@ class HeaderLayout(unittest.TestCase):
     def test_blob_start_is_aligned_and_past_the_manifest(self):
         manifest = b'{"planet_name":"tarsis_3"}'
         EXP["SAMPLE_U16"] = True
-        h = EXP["build_header"](manifest, 32, 1, 64)
+        h, pad = EXP["build_header"](manifest, 32, 1, 64)
         f = parse_header(h)
         self.assertEqual(f["json_len"], len(manifest))
         self.assertGreaterEqual(f["blob_start"], 32 + len(manifest))
         self.assertEqual(f["blob_start"] % 16, 0, "blob aligné sur 16 octets")
-        self.assertEqual(len(h), f["blob_start"], "l'en-tête va jusqu'au blob")
+        self.assertEqual(len(h) + pad, f["blob_start"], "en-tête + bourrage = début du blob")
         self.assertEqual(h[32:32 + len(manifest)], manifest, "manifeste verbatim")
+
+
+class SparseLayout(unittest.TestCase):
+    """Les cartes de présence vivent ENTRE le manifeste et le blob : si blob_start ne les
+    comptait pas, le lecteur prendrait des bits de présence pour des échantillons."""
+
+    def _levels(self, ns_min, ns_max):
+        out, n = [], ns_min
+        while n <= ns_max:
+            out.append(n)
+            n *= 2
+        return out
+
+    def test_sparse_header_reserves_room_for_the_bitmaps(self):
+        EXP["SAMPLE_U16"] = True
+        manifest = b'{"planet_name":"t"}'
+        levels = self._levels(1, 32)
+        bitmap_bytes = sum((12 * n * n + 7) // 8 for n in levels)
+        head, pad = EXP["build_header"](manifest, 16, 1, 32, bitmap_bytes)
+        f = parse_header(head)
+        self.assertEqual(f["version"], 2)
+        self.assertEqual(f["flags"], 3, "bit0 u16 + bit1 sparse")
+        self.assertEqual(len(head), 32 + len(manifest),
+                         "l'en-tête s'arrête au manifeste ; l'appelant écrit les cartes")
+        self.assertEqual(f["blob_start"], 32 + len(manifest) + bitmap_bytes + pad)
+        self.assertEqual(f["blob_start"] % 16, 0)
+
+    def test_dense_header_reserves_nothing(self):
+        EXP["SAMPLE_U16"] = True
+        head, pad = EXP["build_header"](b"{}", 16, 1, 32, 0)
+        f = parse_header(head)
+        self.assertEqual(f["flags"] & 2, 0, "pas de bit sparse sans cartes")
+        self.assertEqual(f["blob_start"], 32 + 2 + pad)
+
+    def test_presence_bits_are_lsb_first_within_each_byte(self):
+        # Convention partagée avec HeightPack.slot_of() : bit i -> octet i>>3, bit i&7.
+        # L'inverser décalerait toutes les tuiles d'un niveau sans lever d'erreur.
+        npix = 12
+        bits = bytearray((npix + 7) // 8)
+        present = {0, 1, 7, 8, 11}
+        for i in present:
+            bits[i >> 3] |= 1 << (i & 7)
+        self.assertEqual(bits[0], 0b10000011, "bits 0,1,7 dans le premier octet")
+        self.assertEqual(bits[1], 0b00001001, "bits 8 et 11 dans le second")
+        for i in range(npix):
+            self.assertEqual(bool(bits[i >> 3] >> (i & 7) & 1), i in present)
 
 
 class SampleEncoding(unittest.TestCase):
@@ -171,11 +220,25 @@ class DataVersion(unittest.TestCase):
         EXP["PLANET_NAME"], EXP["PLANET_RADIUS"] = "tarsis_3", 6356000.0
         EXP["ELEV_MIN"], EXP["ELEV_MAX"] = -1700.0, 9000.0
         pts = np.zeros((16, 3))
+        EXP["SPARSE_EPSILON_M"] = 1.0
         EXP["SAMPLE_U16"] = True
         a = EXP["compute_data_version"](pts)
         EXP["SAMPLE_U16"] = False
         b = EXP["compute_data_version"](pts)
         self.assertNotEqual(a, b, "l'encodage doit entrer dans data_version")
+
+    def test_epsilon_change_invalidates_the_cache(self):
+        # Changer epsilon change quelles tuiles existent, donc le terrain reconstruit.
+        EXP["PLANET_NAME"], EXP["PLANET_RADIUS"] = "tarsis_3", 6356000.0
+        EXP["ELEV_MIN"], EXP["ELEV_MAX"] = -1700.0, 9000.0
+        EXP["SAMPLE_U16"] = True
+        pts = np.zeros((16, 3))
+        EXP["SPARSE_EPSILON_M"] = 1.0
+        a = EXP["compute_data_version"](pts)
+        EXP["SPARSE_EPSILON_M"] = 10.0
+        b = EXP["compute_data_version"](pts)
+        EXP["SPARSE_EPSILON_M"] = 1.0
+        self.assertNotEqual(a, b, "epsilon doit entrer dans data_version")
 
 
 if __name__ == "__main__":

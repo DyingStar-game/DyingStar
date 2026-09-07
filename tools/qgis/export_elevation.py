@@ -112,6 +112,11 @@ for _name, _mod in list(sys.modules.items()):
         del sys.modules[_name]
 
 import healpix_utils as hpx
+# Le mapping de quadrant NESTED et l'upsample bilinéaire décalé d'une demi-cellule ne
+# doivent exister qu'à un seul endroit : tools/analyze_pack_sparsity.py les porte, et
+# test/unit/test_pack_sparsity_py.py les couvre.
+sys.path.insert(0, os.path.dirname(os.path.dirname(_tools_dir)))  # racine du dépôt
+from tools.analyze_pack_sparsity import _upsampler
 from export.planet.heightmap import (
     extract_contour_points,
     generate_heightmap_from_contours,
@@ -175,6 +180,21 @@ WRITE_LOOSE_TILES = False
 # Mettre à False pour réémettre un pack v1 dense float32.
 SAMPLE_U16 = True
 
+# Élagage du pack : une tuile n'est PAS stockée quand la reconstruction que le client en
+# ferait depuis son parent s'en écarte de moins de SPARSE_EPSILON_M mètres. 0 désactive.
+#
+# La pyramide est massivement sur-échantillonnée — les contours de tarsis_3 portent ~438 000
+# valeurs indépendantes pour 1,29e10 échantillons à 198 m — donc l'essentiel des niveaux fins
+# n'est pas de la donnée mais de l'interpolation. Sondé sur le vrai TIN : 75 % des tuiles
+# élaguables à 1 m, SANS perte de relief (1 m représente 0,009 % de l'amplitude et se situe
+# bien sous les 50 m d'équidistance des contours).
+#
+# La comparaison se fait contre la RECONSTRUCTION, pas contre le parent réel : à 75 %
+# d'élagage la plupart des parents sont eux-mêmes absents, et prédire depuis le grand-parent
+# cumulerait l'erreur. Comparer à ce que le client verra vraiment la borne à epsilon quelle
+# que soit la profondeur.
+SPARSE_EPSILON_M = 1.0
+
 # Bump manuel pour toute évolution de l'ALGORITHME d'échantillonnage qui change les
 # élévations produites sans toucher à une seule constante ci-dessus (nouvel
 # interpolateur, changement de convention de grille, agrégation différente). Les valeurs
@@ -200,21 +220,23 @@ _DSHP_VERSION = 1
 _DSHP_ALIGN = 16
 
 
-def build_header(manifest_bytes, tile_res, nside_min, nside_max):
+def build_header(manifest_bytes, tile_res, nside_min, nside_max, extra_bytes=0):
     """DSHP fixed header + embedded manifest, padded to _DSHP_ALIGN.
 
     Emits v1 (dense float32) or v2 (u16) depending on SAMPLE_U16. The version is not
     bumped gratuitously: a v1 reader would misread u16 samples as float32, so the
     encoding change has to be visible in the header.
     """
-    version = 2 if SAMPLE_U16 else _DSHP_VERSION
-    flags = 1 if SAMPLE_U16 else 0          # bit0 = u16 samples
-    raw_len = 32 + len(manifest_bytes)
+    version = 2 if (SAMPLE_U16 or extra_bytes) else _DSHP_VERSION
+    flags = (1 if SAMPLE_U16 else 0) | (2 if extra_bytes else 0)
+    raw_len = 32 + len(manifest_bytes) + extra_bytes
     blob_start = (raw_len + _DSHP_ALIGN - 1) // _DSHP_ALIGN * _DSHP_ALIGN
     head = struct.pack("<4s6I", _DSHP_MAGIC, version, tile_res,
                        nside_min, nside_max, flags, blob_start)
     head += struct.pack("<I", len(manifest_bytes)) + manifest_bytes
-    return head + b"\x00" * (blob_start - raw_len)
+    # extra_bytes réserve la place des cartes de présence, écrites par l'appelant juste
+    # après le manifeste ; le bourrage d'alignement vient après elles.
+    return head, blob_start - raw_len
 
 
 def _memlog(label, *extra):
@@ -347,7 +369,8 @@ def compute_data_version(pts):
     """
     h = hashlib.blake2b(digest_size=8)
     for value in (PLANET_NAME, PLANET_RADIUS, NSIDE, NSIDE_MIN, TILE_RES,
-                  ELEV_MIN, ELEV_MAX, HEIGHTMAP_SIZE, ALGO_VERSION, SAMPLE_U16):
+                  ELEV_MIN, ELEV_MAX, HEIGHTMAP_SIZE, ALGO_VERSION, SAMPLE_U16,
+                  SPARSE_EPSILON_M):
         h.update(repr(value).encode("utf-8"))
     if pts is None:
         h.update(b"flat")           # planète sans contours : pas de sommets à hacher
@@ -494,24 +517,48 @@ def run_export():
     print(f"  Writing pyramid levels {levels} = {total_tiles} tiles "
           f"({TILE_RES}×{TILE_RES} float32) → {pack_path}")
 
+    sparse = SPARSE_EPSILON_M > 0.0
+    up = _upsampler(TILE_RES)
+    half = TILE_RES // 2
+    bitmap_bytes = sum((12 * n * n + 7) // 8 for n in levels) if sparse else 0
+    head, pad = build_header(manifest_bytes, TILE_RES, int(min(levels)),
+                             int(max(levels)), bitmap_bytes)
+
+    # PASSE 1 — échantillonner, décider, écrire les tuiles gardées par niveau.
+    #
+    # Les cartes de présence précèdent le blob dans le fichier mais ne sont connues qu'après
+    # avoir tout calculé, d'où les fichiers temporaires par niveau, concaténés en passe 2.
+    #
+    # La reconstruction du niveau parent passe par un memmap plutôt que par la RAM : à
+    # n1024 un niveau pèse ~13 Go, ce qui exclut de le garder en mémoire. Les accès sont
+    # séquentiels (l'ipix parent croît avec l'ipix enfant), donc le cache disque suffit.
     written = 0
-    with open(tmp_path, "wb") as out:
-        out.write(build_header(manifest_bytes, TILE_RES,
-                               int(min(levels)), int(max(levels))))
-        for level_nside in levels:
-            npix = 12 * level_nside * level_nside
-            npface = level_nside * level_nside
-            if WRITE_LOOSE_TILES:
-                level_dir = os.path.join(chunks_dir, f"n{level_nside}")
-                for face in range(12):
-                    os.makedirs(os.path.join(level_dir, f"face_{face}"),
-                                exist_ok=True)
+    kept_total = 0
+    tmp_files = []
+    bitmaps = {}
+    recon_prev = None
+    recon_prev_path = None
+    for level_nside in levels:
+        npix = 12 * level_nside * level_nside
+        npface = level_nside * level_nside
+        if WRITE_LOOSE_TILES:
+            level_dir = os.path.join(chunks_dir, f"n{level_nside}")
+            for face in range(12):
+                os.makedirs(os.path.join(level_dir, f"face_{face}"), exist_ok=True)
+        bits = bytearray((npix + 7) // 8)
+        recon_path = os.path.join(chunks_dir, f".recon_n{level_nside}.tmp")
+        recon = np.memmap(recon_path, dtype=np.float32, mode="w+",
+                          shape=(npix, TILE_RES, TILE_RES))
+        blob_path = os.path.join(chunks_dir, f".blob_n{level_nside}.tmp")
+        tmp_files.append((blob_path, recon_path))
+        kept_here = 0
+        with open(blob_path, "wb") as lvl:
             for base in range(0, npix, TILE_BATCH):
                 group = range(base, min(base + TILE_BATCH, npix))
                 if tin is not None:
                     # Sample the whole group in one TIN call — the KD-tree query and
                     # the barycentric solve both amortise, and tiles stay in ipix
-                    # order so the dense blob layout is unaffected.
+                    # order so the blob layout is unaffected.
                     grids = [hpx.get_tile_grid_vec(level_nside, ip, TILE_RES)
                              for ip in group]
                     flat = tin.sample_vec(
@@ -526,19 +573,38 @@ def run_export():
                             *hpx.get_tile_grid_lonlat(level_nside, ip, TILE_RES))
                         for ip in group])
                 for offset, ipix in enumerate(group):
-                    # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX]. Values outside the
-                    # range are kept (FORMAT_RF is unclamped) so future features can
-                    # exceed it.
+                    # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX].
                     norm = ((elevs[offset] - ELEV_MIN) / elev_range).astype(np.float32)
-                    # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
-                    if SAMPLE_U16:
-                        # Borné avant quantification : FORMAT_RF n'était pas clampé et
-                        # laissait passer les valeurs hors [ELEV_MIN, ELEV_MAX], mais un
-                        # u16 les replierait au lieu de les saturer.
-                        out.write(np.rint(np.clip(norm, 0.0, 1.0) * 65535.0)
-                                  .astype("<u2").tobytes())
+
+                    keep = True
+                    pred = None
+                    if sparse and recon_prev is not None:
+                        k = ipix & 3
+                        dx, dy = k & 1, (k >> 1) & 1
+                        quad = recon_prev[ipix >> 2][dy * half:(dy + 1) * half,
+                                                     dx * half:(dx + 1) * half]
+                        pred = up(quad)
+                        err_m = float(np.abs(pred - norm).max()) * elev_range
+                        keep = err_m > SPARSE_EPSILON_M
+
+                    if keep:
+                        if SAMPLE_U16:
+                            # Borné avant quantification : FORMAT_RF n'était pas clampé et
+                            # laissait passer les valeurs hors [ELEV_MIN, ELEV_MAX], mais un
+                            # u16 les replierait au lieu de les saturer.
+                            q = np.rint(np.clip(norm, 0.0, 1.0) * 65535.0).astype("<u2")
+                            lvl.write(q.tobytes())
+                            # La reconstruction est ce que le CLIENT verra, donc la valeur
+                            # déquantifiée — sinon epsilon ignorerait l'erreur de quantification.
+                            recon[ipix] = q.astype(np.float32) / 65535.0
+                        else:
+                            lvl.write(norm.tobytes())
+                            recon[ipix] = norm
+                        bits[ipix >> 3] |= 1 << (ipix & 7)
+                        kept_here += 1
                     else:
-                        out.write(norm.tobytes())
+                        recon[ipix] = pred
+
                     if WRITE_LOOSE_TILES:
                         face = ipix // npface
                         norm.tofile(os.path.join(
@@ -546,7 +612,44 @@ def run_export():
                     written += 1
                     if written % 8192 == 0:
                         print(f"    {written}/{total_tiles} tiles…")
-            print(f"    · level n{level_nside}: {npix} tiles")
+        recon.flush()
+        bitmaps[level_nside] = bytes(bits)
+        kept_total += kept_here
+        pct = 100.0 * (npix - kept_here) / npix if npix else 0.0
+        print(f"    · level n{level_nside}: {npix} tiles, {kept_here} kept "
+              f"({pct:.1f}% pruned)" if sparse
+              else f"    · level n{level_nside}: {npix} tiles")
+        del recon_prev
+        if recon_prev_path:
+            os.remove(recon_prev_path)
+        recon_prev = np.memmap(recon_path, dtype=np.float32, mode="r",
+                               shape=(npix, TILE_RES, TILE_RES))
+        recon_prev_path = recon_path
+
+    del recon_prev
+    if recon_prev_path and os.path.exists(recon_prev_path):
+        os.remove(recon_prev_path)
+
+    # PASSE 2 — en-tête, cartes de présence, puis les blobs de niveau dans l'ordre.
+    with open(tmp_path, "wb") as out:
+        out.write(head)
+        if sparse:
+            for level_nside in levels:
+                out.write(bitmaps[level_nside])
+        out.write(b"\x00" * pad)
+        for blob_path, _r in tmp_files:
+            with open(blob_path, "rb") as lvl:
+                while True:
+                    chunk = lvl.read(1 << 22)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+    for blob_path, _r in tmp_files:
+        os.remove(blob_path)
+    if sparse:
+        print(f"  Sparse pack: {kept_total}/{total_tiles} tiles kept "
+              f"({100.0 * (total_tiles - kept_total) / total_tiles:.1f}% pruned "
+              f"at epsilon={SPARSE_EPSILON_M} m)")
     os.replace(tmp_path, pack_path)
     pack_mb = os.path.getsize(pack_path) / (1 << 20)
 
