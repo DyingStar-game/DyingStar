@@ -74,6 +74,7 @@ import os
 import sys
 import json
 import math
+import hashlib
 import struct
 import numpy as np
 
@@ -154,6 +155,12 @@ TILE_BATCH = max(1, 160_000 // (TILE_RES * TILE_RES))
 # to heights.pack. Off by default: the pack alone is what the runtime reads,
 # and ~65k tiny files per planet are exactly what this format eliminates.
 WRITE_LOOSE_TILES = False
+
+# Bump manuel pour toute évolution de l'ALGORITHME d'échantillonnage qui change les
+# élévations produites sans toucher à une seule constante ci-dessus (nouvel
+# interpolateur, changement de convention de grille, agrégation différente). Les valeurs
+# des constantes, elles, entrent déjà dans data_version toutes seules.
+ALGO_VERSION = 1
 
 # Global interpolation raster (equirectangular, width = 2 × height).
 HEIGHTMAP_SIZE = (4096, 2048)
@@ -291,6 +298,40 @@ def _sample_equirect_bilinear(raster, lon, lat):
 # ============================================================
 # Main export
 # ============================================================
+def compute_data_version(pts):
+    """Empreinte des ENTRÉES de l'export, écrite dans le manifeste sous `data_version`.
+
+    Elle ferme un piège silencieux. `PlanetTerrain` construit sa clé de cache à partir de
+    planet_name / radius / max_height / height_offset / tile_res : cinq champs qu'un
+    ré-export laisse le plus souvent identiques, alors que TOUTES les élévations ont
+    changé (contours redessinés, interpolateur modifié, NSIDE relevé). L'ancienne clé
+    rapportait alors « Cache valid » et servait le terrain d'avant, indéfiniment — un
+    ré-export sans effet visible, à ne pas confondre avec un export raté.
+
+    Le côté runtime est déjà branché : PlanetData lit `data_version` (planet_data.gd) et
+    planet_terrain.gd en fait le suffixe `_dv` de la clé. Seul ce champ manquait, donc
+    aucun planet n'a jamais bénéficié de l'invalidation automatique.
+
+    On hache les ENTRÉES, pas le blob produit : le manifeste est écrit dans l'EN-TÊTE du
+    pack, donc avant les tuiles — hacher la sortie demanderait de revenir écrire dedans.
+
+    Un manifeste sans le champ donne un suffixe vide côté Godot, donc une clé identique
+    à celle sous laquelle les planètes non ré-exportées ont déjà bâti leur cache : elles
+    ne sont pas invalidées pour rien.
+    """
+    h = hashlib.blake2b(digest_size=8)
+    for value in (PLANET_NAME, PLANET_RADIUS, NSIDE, NSIDE_MIN, TILE_RES,
+                  ELEV_MIN, ELEV_MAX, HEIGHTMAP_SIZE, ALGO_VERSION):
+        h.update(repr(value).encode("utf-8"))
+    if pts is None:
+        h.update(b"flat")           # planète sans contours : pas de sommets à hacher
+    else:
+        arr = np.ascontiguousarray(pts, dtype=np.float64)
+        h.update(str(arr.shape).encode("utf-8"))
+        h.update(arr.tobytes())
+    return h.hexdigest()
+
+
 def run_export():
     global ELEV_MIN, ELEV_MAX
     print("=" * 64)
@@ -404,6 +445,9 @@ def run_export():
         "height_offset": float(ELEV_MIN),
         "max_height": float(elev_range),
         "count": total_tiles,
+        # Empreinte des entrées : c'est elle qui invalide les caches de meshes et de
+        # collision au prochain lancement. Voir compute_data_version().
+        "data_version": compute_data_version(pts),
     }
     manifest["packed"] = True
     manifest["pack_file"] = "heights.pack"
