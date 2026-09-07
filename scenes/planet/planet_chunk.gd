@@ -39,7 +39,21 @@ static func generate_mesh(
 		resolution: int,
 		chunk_center: Vector3 = Vector3.ZERO,
 		hp_nside: int = 0,
-		hp_ipix: int = -1) -> ArrayMesh:
+		hp_ipix: int = -1,
+		prof: Dictionary = {}) -> ArrayMesh:
+
+	# Découpage du coût de génération, phase 0 de docs/PLANET_CHUNK_STREAMING.md.
+	# Cette fonction tourne sur WorkerThreadPool : on n'écrit QUE dans `prof`, qui
+	# appartient à l'appelant et n'est vu que par ce thread. Le reversement dans les
+	# compteurs partagés (PropNet.prof_chunk_*) se fait sur le thread principal, dans
+	# PlanetTerrain._poll_mesh_tasks. Rig éteint => un test booléen par section.
+	var _pf: bool = PropNet.prof_on
+	var _t_phase: int = Time.get_ticks_usec() if _pf else 0
+	var _t_start: int = _t_phase
+	# Coût de lecture de tuile propre À CE MESH : le compteur global compte aussi les
+	# lectures faites hors génération (chunks servis par le cache disque, requêtes de
+	# gameplay, spawners), ce qui donnait une part de 144 % du temps mesh.
+	var _t_tile0: int = PlanetData.prof_thread_tile_usec() if _pf else 0
 
 	var res := resolution
 	var vert_count := (res + 1) * (res + 1)
@@ -378,7 +392,17 @@ static func generate_mesh(
 	# covers it cheaply.
 	var _chunk_heights := PackedFloat32Array()
 	_chunk_heights.resize((res + 1) * (res + 1))
+	# Distance au bord de crack la plus proche, par sommet — INF quand aucune crack n'est
+	# dessinée ici. Le Voronoï 3D qui la produit est la partie chère de crack_offset ; en la
+	# gardant, le calcul des normales sait sans rien réévaluer que ses quatre points de
+	# gradient sont hors crack, donc que leurs offsets sont nuls.
+	var _crack_edge := PackedFloat32Array()
+	_crack_edge.resize((res + 1) * (res + 1))
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["prepare"] = _now - _t_phase
+		_t_phase = _now
 	# --- vertices -----------------------------------------------------------
 	for yi in res + 1:
 		for xi in res + 1:
@@ -714,11 +738,15 @@ static func generate_mesh(
 			# only needed below for the crack COLOUR staining.
 			# Offset (≤ 0) is reused below to stain the crack interiors.
 			var _crack_off := 0.0
+			var _crack_d := INF
 			if data.corundum_override_whole_planet:
-				_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset(
+				_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 					dir, data.radius, data.crack_spacing_m,
-					data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+					data.crack_width_m, _crack_vtx_spacing)
+				_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
+					_crack_d, data.crack_width_m, data.crack_depth_m)
 				height += _crack_off
+			_crack_edge[idx] = _crack_d
 
 			_chunk_heights[idx] = height
 			vertices[idx] = _world_to_local(dir * (data.radius + height), cc_f32, _wp_f32)
@@ -752,6 +780,10 @@ static func generate_mesh(
 			var detail_scale := data.get_detail_scale_for_layer(detail_layer)
 			uv2s[idx] = Vector2(float(detail_layer), detail_scale)
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["verts"] = _now - _t_phase
+		_t_phase = _now
 	# --- indices (two triangles per quad) -----------------------------------
 	indices.resize(res * res * 6)
 	var ii := 0
@@ -796,6 +828,10 @@ static func generate_mesh(
 				jj += 3
 			indices = swapped
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["index"] = _now - _t_phase
+		_t_phase = _now
 	# --- smooth normals from analytical heightmap gradient -------------------
 	# Previously we used _recalculate_normals (face-accumulated) for interior
 	# vertices and analytical gradient only for boundary vertices.  The two
@@ -806,6 +842,26 @@ static func generate_mesh(
 	# vertex uses the same method — no transition artifact.
 	if hp_mode:
 		var _eps_frac := 0.25 / float(res)
+		# Invariants de boucle : pixel_side_length ne dépend que de hp_nside, et l'était
+		# recalculé à chaque sommet.
+		var _eps_rad := HEALPix.pixel_side_length(hp_nside, 1.0) * _eps_frac
+		# Un sommet dont le bord de crack le plus proche est au-delà de cette distance a
+		# ses quatre points de gradient hors crack : la distance à un bord est
+		# 1-lipschitzienne et ils ne sont qu'à _eps_rad de lui. Leurs offsets valent donc
+		# zéro, et les quatre Voronoï sont inutiles. Marge de 2× sur le décalage plutôt
+		# que 1× : elle ne coûte presque rien en taux de saut et clôt toute discussion sur
+		# la lipschitziennité de l'approximation de Voronoï employée.
+		var _crack_skip_m: float = data.crack_width_m * 0.5 + 2.0 * _eps_rad * data.radius
+		# Sous-découpage de la phase "normals", qui pèse 74 % de la génération d'un chunk
+		# (mesuré à froid : 623 ms/chunk). Trois postes candidats, et le correctif n'est pas
+		# le même selon lequel domine :
+		#   _t_sm : les 4 échantillons de hauteur par sommet
+		#   _t_ck : les 4 crack_offset par sommet — chacun évalue un Voronoï 3D
+		#           (deux passes 3×3×3, ~160 sin()), et seule tarsis_3 les active
+		#   le reste : repère tangent, normalisations, produit vectoriel
+		var _t_sm := 0
+		var _t_ck := 0
+		var _t_sub := 0
 		for yi in res + 1:
 			for xi in res + 1:
 				var idx := yi * (res + 1) + xi
@@ -815,11 +871,10 @@ static func generate_mesh(
 				var arbitrary := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
 				var tan_u := up.cross(arbitrary).normalized()
 				var tan_v := up.cross(tan_u).normalized()
-				var eps_rad := HEALPix.pixel_side_length(hp_nside, 1.0) * _eps_frac
-				var dir_l := (dir_c - tan_u * eps_rad).normalized()
-				var dir_r := (dir_c + tan_u * eps_rad).normalized()
-				var dir_b := (dir_c - tan_v * eps_rad).normalized()
-				var dir_t := (dir_c + tan_v * eps_rad).normalized()
+				var dir_l := (dir_c - tan_u * _eps_rad).normalized()
+				var dir_r := (dir_c + tan_u * _eps_rad).normalized()
+				var dir_b := (dir_c - tan_v * _eps_rad).normalized()
+				var dir_t := (dir_c + tan_v * _eps_rad).normalized()
 				# Edge vertices: use sample_height_boundary so both sides of
 				# a chunk seam resolve to the same canonical export tile →
 				# identical normals.  Interior vertices can use the fast path.
@@ -827,6 +882,8 @@ static func generate_mesh(
 				var h_r: float
 				var h_b: float
 				var h_t: float
+				if _pf:
+					_t_sub = Time.get_ticks_usec()
 				if xi == 0 or xi == res or yi == 0 or yi == res:
 					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
 					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
@@ -837,9 +894,18 @@ static func generate_mesh(
 					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
 					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
 					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+				if _pf:
+					var _now := Time.get_ticks_usec()
+					_t_sm += _now - _t_sub
+					_t_sub = _now
 				# Carve the crack network into the gradient samples too, so the
 				# near-vertical crack walls get correct (sharp) shading normals.
-				if data.corundum_override_whole_planet:
+				# Sauté quand le sommet est assez loin d'un bord pour que les quatre
+				# offsets soient nuls par construction : le résultat est identique, sans
+				# les quatre Voronoï. Mesuré à 39 % du temps des normales, soit 29 % de la
+				# génération d'un chunk sur tarsis_3.
+				if data.corundum_override_whole_planet \
+						and _crack_edge[idx] < _crack_skip_m:
 					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
 						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
 					h_r += ArideDesertCorundumPlateauTerrain.crack_offset(
@@ -848,6 +914,8 @@ static func generate_mesh(
 						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
 					h_t += ArideDesertCorundumPlateauTerrain.crack_offset(
 						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+				if _pf:
+					_t_ck += Time.get_ticks_usec() - _t_sub
 				var world_l := dir_l * (data.radius + h_l)
 				var world_r := dir_r * (data.radius + h_r)
 				var world_b := dir_b * (data.radius + h_b)
@@ -863,6 +931,9 @@ static func generate_mesh(
 					normals[idx] = n.normalized()
 				else:
 					normals[idx] = dir_c
+		if _pf:
+			prof["normals_sample"] = _t_sm
+			prof["normals_crack"] = _t_ck
 	else:
 		# Cube-sphere path: analytical normals for all vertices too.
 		var _eps_u := u_step * 0.25
@@ -908,6 +979,10 @@ static func generate_mesh(
 				else:
 					normals[idx] = _outward
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["normals"] = _now - _t_phase
+		_t_phase = _now
 	# --- skirt geometry to hide chunk boundary seams -------------------------
 	# Duplicate every edge vertex, nudge outward from the chunk interior
 	# (so the skirt overlaps slightly with the neighbour's terrain), then
@@ -1032,6 +1107,10 @@ static func generate_mesh(
 		indices.append(a);  indices.append(sa); indices.append(b)
 		indices.append(b);  indices.append(sa); indices.append(sb)
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["skirt"] = _now - _t_phase
+		_t_phase = _now
 	# --- collect volcanic_active quad indices for lava surface ---------------
 	# Volcanic quads are excluded from the base terrain surface and drawn on a
 	# separate surface with their own ORMMaterial3D.  No z-fighting because
@@ -1190,6 +1269,10 @@ static func generate_mesh(
 	# against the vertex normal and pack as Vector4(t.xyz, sign).
 	var tangents := _compute_tangents(vertices, normals, uvs, base_indices)
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["overlay"] = _now - _t_phase
+		_t_phase = _now
 	# --- build mesh ---------------------------------------------------------
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -2184,6 +2267,12 @@ static func generate_mesh(
 				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, rw_arrays)
 				mesh.surface_set_material(rw_surface_idx, rw_mat)
 
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["surface"] = _now - _t_phase
+		prof["total"] = _now - _t_start
+		prof["tile"] = PlanetData.prof_thread_tile_usec() - _t_tile0
+
 	return mesh
 
 
@@ -2597,9 +2686,10 @@ static func generate_mesh_healpix(
 		nside: int,
 		ipix: int,
 		resolution: int,
-		chunk_center: Vector3 = Vector3.ZERO) -> ArrayMesh:
+		chunk_center: Vector3 = Vector3.ZERO,
+		prof: Dictionary = {}) -> ArrayMesh:
 	return generate_mesh(data, 0, 0.0, 0.0, 0.0, 0.0, resolution,
-			chunk_center, nside, ipix)
+			chunk_center, nside, ipix, prof)
 
 
 ## Generate a [ConcavePolygonShape3D] for one HEALPix terrain chunk.
