@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://iu6yviv6ftqn"]
+
+[ext_resource type="Texture2D" uid="uid://dkhub4ckg4q06" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/tex_metal_yellow_hauling_albedo.png" id="1_c5o64"]
+[ext_resource type="Texture2D" uid="uid://cb3ivjws7l76e" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/tex_metal_yellow_hauling_normal.png" id="2_75t3l"]
+[ext_resource type="Texture2D" uid="uid://5pvi2sv68oyh" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/tex_metal_yellow_hauling_roughness.png" id="3_13o2y"]
+
+[resource]
+resource_name = "mat_metal_yellow_hauling"
+albedo_texture = ExtResource("1_c5o64")
+roughness_texture = ExtResource("3_13o2y")
+normal_enabled = true
+normal_texture = ExtResource("2_75t3l")

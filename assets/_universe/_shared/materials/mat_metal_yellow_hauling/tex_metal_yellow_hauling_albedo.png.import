@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://r7c1u37bhpcc"
-path.s3tc="res://.godot/imported/tex_metal_diamondplate2k_roughness.png-5e3562bec8387b627dfd6ee2884fe616.s3tc.ctex"
+uid="uid://dkhub4ckg4q06"
+path.s3tc="res://.godot/imported/tex_metal_yellow_hauling_albedo.png-447de48b4a8830df426b81ac0af83520.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/_universe/_shared/materials/mat_metal_diamondplate2k/tex_metal_diamondplate2k_roughness.png"
-dest_files=["res://.godot/imported/tex_metal_diamondplate2k_roughness.png-5e3562bec8387b627dfd6ee2884fe616.s3tc.ctex"]
+source_file="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/tex_metal_yellow_hauling_albedo.png"
+dest_files=["res://.godot/imported/tex_metal_yellow_hauling_albedo.png-447de48b4a8830df426b81ac0af83520.s3tc.ctex"]
 
 [params]
 
@@ -26,7 +26,7 @@ compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
-roughness/mode=0
+roughness/mode=1
 roughness/src_normal=""
 process/channel_remap/red=0
 process/channel_remap/green=1

@@ -1,0 +1,25 @@
+{
+  "id": "mat_metal_yellow_hauling",
+  "display_name": "Yellow Hauling Metal",
+  "tags": [
+    "metal",
+    "painted"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "AmbiantCG",
+  "ai_generated": false,
+  "notes": "https://ambientcg.com/a/PaintedPlaster004",
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_metal_yellow_hauling_albedo.png",
+    "normal": "tex_metal_yellow_hauling_normal.png",
+    "roughness": "tex_metal_yellow_hauling_roughness.png"
+  }
+}
