@@ -60,12 +60,41 @@ static func crack_offset(dir: Vector3, radius: float,
 	# full-depth PHYSICS floor (which always samples at full depth), so the
 	# player ends up standing below the rendered surface.  Wherever the crack
 	# IS drawn, it is drawn at full depth — so visual and physics agree.
+	return crack_offset_from_edge(
+		crack_edge_distance_m(dir, radius, spacing_m, width_m, vtx_spacing_m),
+		width_m, depth_m)
+
+
+## Distance en mètres au bord de crack le plus proche, ou INF quand aucune crack n'est
+## dessinée ici (paramètres nuls, ou LOD trop grossier).
+##
+## Scindé de [method crack_offset] pour que l'appelant garde la distance : le Voronoï 3D
+## est la partie chère (deux passes 3×3×3, ~160 sin() par appel), et le calcul des
+## normales l'évaluait CINQ fois par sommet — une au centre dans la boucle des sommets,
+## quatre de plus pour le gradient. Or l'offset est nul dès que la distance dépasse la
+## demi-largeur, et la distance à un bord est 1-lipschitzienne : un sommet assez loin
+## d'une crack garantit que ses quatre points de gradient le sont aussi, donc que les
+## quatre offsets valent zéro. Conserver la distance du centre permet de le savoir sans
+## réévaluer quoi que ce soit.
+##
+## Le découpage est arithmétiquement neutre : mêmes opérations, même ordre, même
+## float64. crack_offset() ci-dessus produit exactement ce qu'il produisait avant.
+static func crack_edge_distance_m(dir: Vector3, radius: float,
+		spacing_m: float, width_m: float, vtx_spacing_m: float = 0.0) -> float:
+	if spacing_m <= 0.0 or width_m <= 0.0:
+		return INF
+	# LOD: skip the crack entirely once the mesh is too coarse to represent it.
 	if vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5:
-		return 0.0
+		return INF
 	# Surface point expressed in Voronoi-cell units (1 cell ≈ spacing_m).
 	var p := dir * (radius / spacing_m)
-	var edge_cells := _voronoi_edge_distance(p)
-	var d_m := edge_cells * spacing_m          # metres to nearest cell edge
+	return _voronoi_edge_distance(p) * spacing_m
+
+
+## Profondeur de carve pour une distance au bord déjà connue. Pure, sans Voronoï.
+static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -> float:
+	if depth_m <= 0.0 or width_m <= 0.0:
+		return 0.0
 	var half := width_m * 0.5
 	if d_m >= half:
 		return 0.0
