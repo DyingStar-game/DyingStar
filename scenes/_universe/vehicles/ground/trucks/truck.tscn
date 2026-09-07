@@ -18,6 +18,9 @@
 [ext_resource type="AudioStream" uid="uid://b3vyn0m2d2pk2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-off.ogg" id="7_lnse2"]
 [ext_resource type="Script" uid="uid://kbp6qag1idal" path="res://scenes/_universe/vehicles/vehicle_door_handle.gd" id="7_tuoiw"]
 [ext_resource type="AudioStream" uid="uid://b3a1inhihbo80" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-idle.ogg" id="10_4yw1w"]
+[ext_resource type="PackedScene" uid="uid://cjkq1jpjbgd6a" path="res://assets/_universe/vehicles/ground/flatbed_small_mini_truck.glb" id="19_lnse2"]
+[ext_resource type="Resource" path="res://scenes/common/wheel_scrub.tres" id="90_scrub"]
+[ext_resource type="AudioStream" uid="uid://dxl4bmbemj1bx" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_struck_constant.mp3" id="91_scrubfast"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
 size = Vector3(0.7717459236309878, 1.889733397892087, 1.1162902846483576)
@@ -40,12 +43,17 @@ steer_return_speed = 1.0
 steering_wheel_ratio = 4.0
 steering_wheel_axis = Vector3(0, -1, 0)
 bed_wall_height = 0.6
-wheel_radius = 0.05
-wheel_visual_drop = 0.02
+wheel_radius = 0.34
+wheelbase = 2.0
+suspension_stiffness = 40.0
+suspension_damping_compression = 0.38
+suspension_damping_relaxation = 0.8
+wheel_roll_influence = 0.05
 motor_max_rpm = 3000.0
 debug_color_driven_wheels = false
 cargo_bay_size = Vector3(1.6, 0.6, 1.9)
 cargo_bay_offset = Vector3(0, 0.4, 1.05)
+debug_show_cargo_bay = false
 sfx_door_open = ExtResource("2_urxpd")
 sfx_door_open_db = -10.0
 sfx_door_open_distance = 10.0
@@ -70,23 +78,28 @@ sfx_horn_special = ExtResource("4_grru8")
 sfx_horn_special_db = -5.5
 sfx_horn_special_distance = 100.0
 sfx_horn_special_attenuation = 0
+sfx_wheel_scrub = ExtResource("90_scrub")
+sfx_wheel_scrub_db = -15.0
+sfx_wheel_roll = ExtResource("91_scrubfast")
+sfx_wheel_roll_db = -15.0
+sfx_wheel_roll_kmh = 5.0
 
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07848798309627769, 1.0561842884377195)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10000000000582077, 0.4349999999976717, -0.5050000000046566)
 
-[node name="Col_cabin" parent="Model" index="7" unique_id=1940863112]
+[node name="Col_bed" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 448732805) index="2" unique_id=1670749356]
 visible = false
 
-[node name="Col_bed" parent="Model" index="8" unique_id=1608889693]
+[node name="Col_bed_left" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 448732805) index="3" unique_id=119503829]
 visible = false
 
-[node name="Col_bed_left" parent="Model" index="9" unique_id=625372678]
+[node name="Col_bed_rear" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 448732805) index="4" unique_id=1848565973]
 visible = false
 
-[node name="Col_bed_right" parent="Model" index="10" unique_id=891277005]
+[node name="Col_bed_right" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 448732805) index="5" unique_id=683497722]
 visible = false
 
-[node name="Col_bed_rear" parent="Model" index="11" unique_id=271351169]
+[node name="Col_cabin" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 448732805) index="6" unique_id=1369308503]
 visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
@@ -125,7 +138,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9869999999937136, 0.429000
 [node name="Gui3D" parent="." unique_id=438346037 node_paths=PackedStringArray("node_viewport", "node_quad") instance=ExtResource("4_nd433")]
 transform = Transform3D(-1.8369095e-16, 0, 1, 0, 1, 0, -1, 0, -1.8369095e-16, 0.8808829, 1.5104302, -2.9404380675619173)
 node_viewport = NodePath("SubViewport")
-node_quad = NodePath("../Model/ScreenFront")
+node_quad = NodePath("../Model/Carrosserie/ScreenFront")
 
 [node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=2131469253]
 disable_3d = true
@@ -152,8 +165,8 @@ spot_range = 150.0
 spot_angle = 37.0
 
 [node name="Cabin" type="OmniLight3D" parent="Light" unique_id=1138993396 groups=["vehicle_light"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8559690319450313, -1.3067172254205213)
-light_energy = 0.3
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6733140348399729, -1.3067172254205213)
+light_energy = 0.066
 
 [node name="RearSpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=1571705372 groups=["vehicle_light"]]
 transform = Transform3D(-1, 4.292465545922857e-17, -1.1469124771714764e-16, 0, 0.9365560045835758, 0.3505179742587379, 1.2246064e-16, 0.3505179742587379, -0.9365560045835758, 0.6999999999970896, -0.28638452229786093, 1.6112571829065885)
@@ -174,18 +187,19 @@ spot_angle = 33.29
 
 [node name="RearCamera_Rear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.634337199246993e-17, 0.7091372917707068, 0.705070423021777, -8.684140332348007e-17, 0.705070423021777, -0.7091372917707068, -0.00059340561188747, 1.515455978092255, 0.09343121015790744)
-screen = NodePath("../Model/Screen_Rear")
+screen = NodePath("../Model/Carrosserie/Screen_Rear")
 
 [node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
-screen = NodePath("../Model/ScreenL_Retro")
+screen = NodePath("../Model/Carrosserie/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true
 
 [node name="RearCamera_RetroR" parent="." unique_id=86175484 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, 9.47236311194868e-18, 1.0605402120460131e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -8.710929498070396e-17, 0.49999999999999994, -0.8660254037844387, 0.9771233102491468, 1.673670425970804, -0.777821705103517)
-screen = NodePath("../Model/ScreenR_Retro")
+screen = NodePath("../Model/Carrosserie/ScreenR_Retro")
 resolution = Vector2i(200, 320)
+mirror = true
 
 [node name="Cargo_loading_zone" type="CollisionShape3D" parent="." unique_id=551701719]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00917181405348205, 0.4900656582491637, 1.167679956857709)
@@ -234,5 +248,8 @@ debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8121952957268729, 0.9530118970551352, -0.9362578415127812)
 shape = SubResource("BoxShape3D_8eohf")
 debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
+
+[node name="flatbed_small_mini_truck" parent="." unique_id=115087127 instance=ExtResource("19_lnse2")]
+transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, -0.00206990235642834, 0.4319164637378363, 1.061855327619314)
 
 [editable path="Model"]

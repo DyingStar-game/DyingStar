@@ -1,0 +1,26 @@
+{
+  "id": "mat_metal_yellow_rusty",
+  "display_name": "Rusty Yellow Painted Metal",
+  "tags": [
+    "metal",
+    "rusted",
+    "cracked"
+  ],
+  "physical_size_m": [
+    2.0,
+    2.0
+  ],
+  "license": "CC0-1.0",
+  "author": "KiFouine",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_metal_yellow_rusty_albedo.png",
+    "normal": "tex_metal_yellow_rusty_normal.png",
+    "roughness": "tex_metal_yellow_rusty_roughness.png",
+    "metallic": "tex_metal_yellow_rusty_metallic.png"
+  }
+}
