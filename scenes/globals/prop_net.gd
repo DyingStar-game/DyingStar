@@ -121,6 +121,58 @@ static var prof_slide_ticks: int = 0  # move_and_slide calls, to average the abo
 static var prof_chunk_loads: int = 0
 static var prof_chunk_unloads: int = 0
 
+# ── Terrain chunk generation breakdown (phase 0 de l'étude PLANET_CHUNK_STREAMING) ───────────────
+# Le doc répond "streamer les tuiles plutôt que les meshes" sur des chiffres de VOLUME, mais le
+# deuxième problème posé — le coût CPU de génération d'un chunk — n'a jamais été mesuré : le seul
+# chrono existant (planet_terrain _assemble_visual_chunk) était commenté, et le print serveur de
+# _create_chunk sortait une ligne PAR CHUNK, ce qui coûte des millisecondes via le pont OTel et
+# fausse la mesure qu'il prétend faire. Ces compteurs découpent la génération pour savoir si le
+# streaming touche seulement à ce coût, et si oui par où.
+#
+# Les phases suivent les sections `# --- ... ---` de PlanetChunk.generate_mesh :
+#   prepare  : zones/rivières/routes, grille de directions HEALPix  (avant `# --- vertices`)
+#   verts    : la double boucle sommets = échantillonnage hauteur + zone modifiers + couleurs
+#   index    : indices + correction de winding
+#   normals  : normales analytiques
+#   skirt    : jupes anti-fissures
+#   overlay  : collecte des quads d'overlay (lave, prairie, falaise…) + tangentes
+#   surface  : add_surface_from_arrays + toutes les surfaces d'overlay (route, eau, lave…)
+# `tile` est IMBRIQUÉ dans verts : c'est le temps passé dans PlanetData.load_chunk_heightmap, donc
+# la part du coût qu'un passage en streaming déplacerait sur le réseau. C'est LE ratio que la
+# phase 0 doit produire.
+#
+# Écriture : generate_mesh tourne sur WorkerThreadPool et n'écrit RIEN ici — il remplit un
+# Dictionary local à l'appel, que le thread principal reverse dans ces compteurs
+# (planet_terrain _poll_mesh_tasks). Les statics ne sont donc touchés que depuis le main thread.
+static var prof_chunk_calls: int = 0
+static var prof_chunk_total_usec: int = 0
+static var prof_chunk_prepare_usec: int = 0
+static var prof_chunk_verts_usec: int = 0
+static var prof_chunk_index_usec: int = 0
+static var prof_chunk_normals_usec: int = 0
+static var prof_chunk_skirt_usec: int = 0
+static var prof_chunk_overlay_usec: int = 0
+static var prof_chunk_surface_usec: int = 0
+## Lecture de tuiles IMBRIQUÉE dans la génération de mesh, mesurée par thread (voir
+## PlanetData._prof_tile_usec_by_thread). C'est la seule part comparable au temps mesh : le
+## compteur global PlanetData.prof_tile_usec compte aussi tout ce qui se passe hors génération.
+static var prof_chunk_tile_usec: int = 0
+## Sous-postes de la phase "normals", qui pèse 74 % de la génération. `crack` n'est non nul
+## que sur une planète à corundum (tarsis_3), où chaque sommet évalue quatre fois un Voronoï 3D.
+static var prof_norm_sample_usec: int = 0
+static var prof_norm_crack_usec: int = 0
+## Assemblage main-thread (MeshInstance3D, MultiMesh végétation, biomes ponctuels).
+static var prof_asm_calls: int = 0
+static var prof_asm_usec: int = 0
+## Collision serveur : generate_collision_shape_healpix.
+static var prof_col_calls: int = 0
+static var prof_col_usec: int = 0
+## ResourceSaver / ResourceLoader du cache disque de chunks (ChunkDiskCache).
+static var prof_cache_save_calls: int = 0
+static var prof_cache_save_usec: int = 0
+static var prof_cache_load_calls: int = 0
+static var prof_cache_load_usec: int = 0
+
 static func prof_reset() -> void:
 	prof_calls = 0
 	prof_tick_usec = 0
@@ -151,6 +203,26 @@ static func prof_reset() -> void:
 	prof_slide_ticks = 0
 	prof_chunk_loads = 0
 	prof_chunk_unloads = 0
+	prof_chunk_calls = 0
+	prof_chunk_total_usec = 0
+	prof_chunk_prepare_usec = 0
+	prof_chunk_verts_usec = 0
+	prof_chunk_index_usec = 0
+	prof_chunk_normals_usec = 0
+	prof_chunk_skirt_usec = 0
+	prof_chunk_overlay_usec = 0
+	prof_chunk_surface_usec = 0
+	prof_chunk_tile_usec = 0
+	prof_norm_sample_usec = 0
+	prof_norm_crack_usec = 0
+	prof_asm_calls = 0
+	prof_asm_usec = 0
+	prof_col_calls = 0
+	prof_col_usec = 0
+	prof_cache_save_calls = 0
+	prof_cache_save_usec = 0
+	prof_cache_load_calls = 0
+	prof_cache_load_usec = 0
 
 ## Client: match the freeze mode to the prop's parent. A prop RIDING a moving parent — a crate in a
 ## truck bed, a crate mounted on a hauling player — must be KINEMATIC so the frozen body follows that

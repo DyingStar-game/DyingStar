@@ -737,7 +737,9 @@ func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
 	var nside := _parse_nside_from_key(key)
 	if nside <= 0:
 		nside = planet_data.export_nside
-	var result_ref: Array = [null]
+	# result_ref[1] porte la durée de génération : écrit par le worker sur un index qui
+	# existe déjà, lu par le thread principal seulement après is_task_completed().
+	var result_ref: Array = [null, 0]
 	var task_entry := {
 		"phase": 1, "task_id": -1, "result_ref": result_ref,
 		"ipix": ipix, "col_res": col_res,
@@ -745,7 +747,10 @@ func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
 	}
 	_server_chunk_tasks[key] = task_entry
 	var task_id := WorkerThreadPool.add_task(func():
+		var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 		result_ref[0] = PlanetChunk.generate_collision_shape_healpix(pd, nside, ipix, col_res)
+		if _t0 != 0:
+			result_ref[1] = Time.get_ticks_usec() - _t0
 	)
 	task_entry["task_id"] = task_id
 
@@ -802,6 +807,10 @@ func _server_poll_chunk_tasks() -> void:
 		elif phase == 1:
 			var shape: ConcavePolygonShape3D = \
 					entry["result_ref"][0] as ConcavePolygonShape3D
+			var _cu: int = entry["result_ref"][1] if entry["result_ref"].size() > 1 else 0
+			if _cu > 0:
+				PropNet.prof_col_calls += 1
+				PropNet.prof_col_usec += _cu
 			if shape:
 				if _chunk_cache:
 					_chunk_cache.save_collision(key, 0, shape)
@@ -1066,6 +1075,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 func _physics_process(delta: float) -> void:
 	if not _initialized:
 		return
+	TerrainProfiler.maybe_report()
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
@@ -2501,17 +2511,22 @@ func _queue_mesh_task(info: Dictionary) -> void:
 
 	# result_ref[0] will be set to the ArrayMesh (or null on failure).
 	var result_ref: Array = [null]
+	# Découpage par phase du coût de génération (phase 0 de PLANET_CHUNK_STREAMING).
+	# Un Dictionary PAR TÂCHE : seul le thread de cette tâche y écrit, et le thread
+	# principal ne le lit qu'après is_task_completed(). Aucun verrou nécessaire.
+	var prof: Dictionary = {}
 	var task_entry := {
 		"task_id": -1,
 		"result_ref": result_ref,
 		"info": info,
+		"prof": prof,
 	}
 	_mesh_tasks[key] = task_entry
 
 	var task_id := WorkerThreadPool.add_task(
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
-				pd, nside, ipix, res, chunk_center)
+				pd, nside, ipix, res, chunk_center, prof)
 			result_ref[0] = mesh
 	)
 	task_entry["task_id"] = task_id
@@ -2536,6 +2551,8 @@ func _poll_mesh_tasks() -> void:
 			continue
 		WorkerThreadPool.wait_for_task_completion(task_id)
 		completed_keys.append(key)
+		if PropNet.prof_on:
+			TerrainProfiler.commit_mesh(entry.get("prof", {}))
 		var mesh: ArrayMesh = entry.result_ref[0] as ArrayMesh
 		if mesh != null:
 			_assemble_queue.append({"info": entry.info, "mesh": mesh})
@@ -2816,6 +2833,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 
 	_active_chunks[key] = info
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
+	if PropNet.prof_on:
+		PropNet.prof_asm_calls += 1
+		PropNet.prof_asm_usec += int(_elapsed_ms * 1000.0)
 	var _cache_tag := " [from cache]" if info.get("_from_disk_cache", false) else ""
 	# print("[PlanetTerrain] _assemble_visual_chunk '%s' lod=%d res=%d took %.1f ms (active=%d)%s" % [
 	# 	key, lod, res, _elapsed_ms, _active_chunks.size(), _cache_tag])
@@ -2909,9 +2929,14 @@ func _create_chunk(info: Dictionary) -> void:
 	_spawn_bridges(info)
 
 	_active_chunks[key] = info
-	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
-	print("[PlanetTerrain] _create_chunk (server) '%s' lod=%d res=%d took %.1f ms (total_active=%d)" % [
-		key, lod, res, _elapsed_ms, _active_chunks.size()])
+	# Ce print sortait une ligne PAR CHUNK, inconditionnellement. Chaque print traverse
+	# CustomLogger -> Obs -> le pont OpenTelemetry C# et coûte des millisecondes : sur le
+	# chemin de création de chunk il mesurait surtout son propre coût, et il polluait les
+	# logs serveur en continu. Remplacé par une accumulation + le récapitulatif agrégé.
+	if PropNet.prof_on:
+		var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
+		PropNet.prof_col_calls += 1
+		PropNet.prof_col_usec += int(_elapsed_ms * 1000.0)
 
 
 ## Spawn a bridge for every road/chasm crossing this chunk owns.
