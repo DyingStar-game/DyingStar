@@ -233,6 +233,12 @@ func read_tile(nside: int, ipix: int) -> PackedByteArray:
 	return raw if _sample_bytes == 4 else _widen_u16(raw)
 
 
+## Le pack omet-il des tuiles ? Permet aux appelants de ne payer la remontée de niveau
+## que là où elle a un sens : sur un pack dense, une tuile absente reste une anomalie.
+func is_sparse() -> bool:
+	return _sparse
+
+
 ## La tuile est-elle stockée ? Toujours vrai sur un pack dense.
 ## Un « non » sur un pack creux n'est pas une erreur : il signifie que le parent la
 ## reproduit à epsilon près et que l'appelant doit remonter d'un niveau.

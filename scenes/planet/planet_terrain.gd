@@ -2828,7 +2828,10 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		# Gate on the SAME pyramid tile the mesh sampled (coarse chunks read a
 		# coarse tile, not the finest), so a good coarse bake isn't rejected.
 		var _ht := _chunk_height_tile(info)
-		if _ht[0] >= 0 and planet_data.load_chunk_heightmap(_ht[0], _ht[1]) != null:
+		# has_usable_tile, pas load_chunk_heightmap : sur un pack creux une tuile absente
+		# est normale (le parent la reproduit), et refuser d'y mettre le mesh en cache
+		# empêcherait tout simplement le cache de se remplir.
+		if _ht[0] >= 0 and planet_data.has_usable_tile(_ht[0], _ht[1]):
 			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
