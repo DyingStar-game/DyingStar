@@ -20,7 +20,10 @@ extends GutTest
 
 const HeightPackScript := preload("res://scenes/planet/height_pack.gd")
 
-const TILE_RES := 2
+## 16 et non 2 : le sampler de PlanetData mélange avec les tuiles voisines dans une marge
+## de BLEND_PIXELS (4) autour de chaque bord. À tile_res 2 la tuile entière est dans cette
+## marge et aucun échantillon ne rend sa propre valeur. À 16, le centre en est hors.
+const TILE_RES := 16
 const NSIDE_MIN := 1
 ## n32 porte 12 288 tuiles, donc plus d'un bloc de rang (4096) : c'est ce qui exerce
 ## l'index. n1 en porte 12, non multiple de 8 : c'est ce qui exerce la queue de bits.
@@ -28,6 +31,12 @@ const NSIDE_MAX := 32
 const DIR := "user://test_dshp_v2/"
 
 var _levels: Array[int] = []
+## Construits une fois dans before_all : ouvrir un pack imprime une ligne
+## ("[PlanetData] heights.pack opened"), et tout print traverse le pont OpenTelemetry dont
+## l'erreur est comptée par GUT comme un échec du test en cours. Hors d'un corps de test,
+## la ligne ne fait échouer personne.
+var _pd_sparse: PlanetData = null
+var _pd_dense: PlanetData = null
 
 
 func before_all() -> void:
@@ -36,6 +45,11 @@ func before_all() -> void:
 		_levels.append(ns)
 		ns *= 2
 	DirAccess.make_dir_recursive_absolute(DIR)
+	_pd_sparse = _planet_data_on("sp", true)
+	_pd_dense = _planet_data_on("dn", false)
+	# Force l'ouverture du pack ici, pas dans un test.
+	_pd_sparse.load_chunk_floats(0, NSIDE_MIN)
+	_pd_dense.load_chunk_floats(0, NSIDE_MIN)
 
 
 func after_all() -> void:
@@ -55,15 +69,33 @@ func _tile_value(nside: int, ipix: int) -> float:
 	return float((nside * 7 + ipix * 13) % 65536 % 65535) / 65535.0
 
 
+## Valeur ne dépendant QUE du niveau. Les packs servant aux tests PlanetData l'utilisent :
+## toutes les tuiles d'un niveau étant égales, le mélange de bord devient neutre et ce qui
+## est mesuré est bien le NIVEAU dont la hauteur provient — c'est-à-dire la remontée.
+func _level_value(nside: int) -> float:
+	return float(nside * 971 % 65535) / 65535.0
+
+
 func _present(nside: int, ipix: int) -> bool:
 	# Motif volontairement non aligné sur les octets ni sur les blocs de rang.
 	return (ipix + nside) % 3 != 0
 
 
-func _write(path: String, u16: bool, sparse: bool) -> void:
+## height_offset 0 / max_height 1 : la hauteur rendue par PlanetData est alors exactement
+## la valeur normalisée de la tuile, donc les assertions portent sur des nombres connus.
+func _manifest_json() -> String:
+	return JSON.stringify({
+		"planet_name": "v2test", "tile_res": TILE_RES, "nside": NSIDE_MAX,
+		"nside_min": NSIDE_MIN, "nside_max": NSIDE_MAX, "pyramid": true,
+		"radius": 1000000.0, "height_offset": 0.0, "max_height": 1.0,
+		"packed": true, "pack_file": "heights.pack",
+	})
+
+
+func _write(path: String, u16: bool, sparse: bool, level_only: bool = false) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	assert_not_null(f, "impossible d'écrire %s" % path)
-	var manifest := JSON.stringify({"planet_name": "v2test", "tile_res": TILE_RES}).to_utf8_buffer()
+	var manifest := _manifest_json().to_utf8_buffer()
 	var bitmap_bytes := 0
 	if sparse:
 		for nside in _levels:
@@ -95,7 +127,7 @@ func _write(path: String, u16: bool, sparse: bool) -> void:
 		for ipix in 12 * nside * nside:
 			if sparse and not _present(nside, ipix):
 				continue
-			var v := _tile_value(nside, ipix)
+			var v := _level_value(nside) if level_only else _tile_value(nside, ipix)
 			for _px in TILE_RES * TILE_RES:
 				if u16:
 					f.store_16(int(round(v * 65535.0)))
@@ -139,7 +171,7 @@ func test_u16_halves_the_stored_size() -> void:
 	var u16 := FileAccess.open(DIR + "a_u16.pack", FileAccess.READ).get_length()
 	assert_lt(u16, f32, "uint16 doit être plus petit")
 	# En-tête et manifeste mis à part, le blob doit exactement doubler de u16 à f32.
-	var header := 32 + JSON.stringify({"planet_name": "v2test", "tile_res": TILE_RES}).length()
+	var header := 32 + _manifest_json().length()
 	assert_eq(f32 - header, 2 * (u16 - header), "le blob f32 doit peser exactement le double")
 
 
@@ -236,3 +268,96 @@ func test_unsupported_version_is_refused() -> void:
 	f.close()
 	var pack = HeightPackScript.new()
 	assert_false(pack.open(path), "une version inconnue doit être refusée, pas lue de travers")
+
+
+# ===================================================================
+# Remontée de niveau (PlanetData sur pack creux)
+# ===================================================================
+
+func _planet_data_on(name: String, sparse: bool) -> PlanetData:
+	var dir := DIR + name + "/"
+	DirAccess.make_dir_recursive_absolute(dir)
+	_write(dir + "heights.pack", true, sparse, true)
+	var mf := FileAccess.open(dir + "manifest.json", FileAccess.WRITE)
+	mf.store_string(_manifest_json())
+	mf.close()
+	# Champs posés à la main plutôt que par apply_chunk_manifest() : celui-ci imprime un
+	# récapitulatif, et tout print traverse le pont OpenTelemetry dont l'erreur est comptée
+	# par GUT comme un échec de test. Le parsing du manifeste est déjà couvert ailleurs.
+	var pd := PlanetData.new()
+	pd.chunk_heightmaps_dir = dir
+	pd.export_nside = NSIDE_MAX
+	pd.export_nside_min = NSIDE_MIN
+	pd.chunk_heightmap_res = TILE_RES
+	pd.chunk_is_pyramid = true
+	pd.radius = 1000000.0
+	pd.height_offset = 0.0
+	pd.max_height = 1.0
+	pd.terrain_exaggeration = 1.0
+	return pd
+
+
+func test_pack_is_sparse_only_reports_sparse_packs() -> void:
+	assert_true(_pd_sparse.pack_is_sparse(), "pack creux")
+	assert_false(_pd_dense.pack_is_sparse(),
+			"un pack dense ne doit faire payer la remontée à personne")
+
+
+func test_has_usable_tile_accepts_an_absent_tile_with_a_present_ancestor() -> void:
+	var pd := _pd_sparse
+	var absent := -1
+	var present := -1
+	for ipix in 12 * NSIDE_MAX * NSIDE_MAX:
+		if _present(NSIDE_MAX, ipix):
+			if present < 0:
+				present = ipix
+		elif absent < 0:
+			absent = ipix
+		if absent >= 0 and present >= 0:
+			break
+	assert_gt(present, -1, "l'échantillon doit contenir une tuile présente")
+	assert_gt(absent, -1, "et une absente")
+	assert_true(pd.has_usable_tile(present, NSIDE_MAX), "tuile présente")
+	assert_true(pd.has_usable_tile(absent, NSIDE_MAX),
+			"tuile absente mais reproductible depuis un ancêtre : utilisable")
+
+
+func test_sampling_an_absent_tile_falls_back_to_its_ancestor_not_the_global_map() -> void:
+	# C'est LA propriété du pack creux : une tuile omise doit rendre la hauteur de son
+	# ancêtre, pas celle de la carte équirectangulaire globale — laquelle est une surface
+	# différente, bien plus plate, et la cause connue du terrain « des kilomètres sous
+	# les props ».
+	var pd := _pd_sparse
+	var absent := -1
+	for ipix in 12 * NSIDE_MAX * NSIDE_MAX:
+		if not _present(NSIDE_MAX, ipix):
+			absent = ipix
+			break
+	assert_gt(absent, -1)
+
+	# Ancêtre attendu : en NESTED, on remonte par >> 2 jusqu'à trouver une tuile stockée.
+	var anc_ip := absent
+	var anc_ns := NSIDE_MAX
+	while anc_ns > NSIDE_MIN:
+		anc_ns >>= 1
+		anc_ip >>= 2
+		if _present(anc_ns, anc_ip):
+			break
+	assert_true(_present(anc_ns, anc_ip), "un ancêtre doit exister dans ce motif")
+
+	var dir := HEALPix.pix2vec_nest(NSIDE_MAX, absent)
+	var h := pd.sample_height_for_direction(dir, absent, -1, Vector2i(-1, -1), null, NSIDE_MAX)
+	assert_almost_eq(h, _level_value(anc_ns), 1.0 / 65535.0,
+			"la hauteur doit venir de l'ancêtre n%d ipix %d" % [anc_ns, anc_ip])
+	assert_ne(_level_value(anc_ns), _level_value(NSIDE_MAX),
+			"les deux niveaux doivent différer, sinon le test ne prouve rien")
+
+
+func test_dense_pack_sampling_is_unchanged() -> void:
+	# Le garde de non-régression : sur un pack dense, la remontée ne doit jamais s'armer.
+	var pd := _pd_dense
+	for ipix in [0, 5, 12 * NSIDE_MAX * NSIDE_MAX - 1]:
+		var dir := HEALPix.pix2vec_nest(NSIDE_MAX, ipix)
+		assert_almost_eq(
+				pd.sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null, NSIDE_MAX),
+				_level_value(NSIDE_MAX), 1.0 / 65535.0, "ipix %d" % ipix)

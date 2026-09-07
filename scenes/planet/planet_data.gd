@@ -690,6 +690,40 @@ func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
 	return img
 
 
+## Le pack d'élévation omet-il des tuiles ? Faux pour tout pack dense (v1, ou v2 non
+## creux), auquel cas aucun appelant ne paie la remontée de niveau.
+func pack_is_sparse() -> bool:
+	# Pas d'inférence ici : _ensure_height_pack() ne déclare pas de type de retour.
+	var pack = _ensure_height_pack()
+	return pack != null and pack.is_sparse()
+
+
+## Plus fin ancêtre de (ipix, nside) dont la tuile est réellement stockée, en
+## Vector2i(ipix, nside) ; (-1, -1) si aucun. En NESTED, le parent d'une tuile est
+## simplement ipix >> 2 au niveau nside >> 1.
+func _finest_present_ancestor(ipix: int, nside: int) -> Vector2i:
+	var cur_ip := ipix
+	var cur_ns := nside
+	while cur_ns > export_nside_min:
+		cur_ns >>= 1
+		cur_ip >>= 2
+		if not load_chunk_floats(cur_ip, cur_ns).is_empty():
+			return Vector2i(cur_ip, cur_ns)
+	return Vector2i(-1, -1)
+
+
+## Une hauteur est-elle disponible pour cette tuile, directement ou via un ancêtre ?
+##
+## Sur un pack creux, une tuile absente est normale et non une anomalie : le garde qui
+## refuse de mettre un mesh en cache quand sa tuile manquait doit donc accepter ce cas,
+## sinon plus aucun chunk ne serait jamais mis en cache.
+func has_usable_tile(ipix: int, nside: int = -1) -> bool:
+	var ns := nside if nside > 0 else export_nside
+	if not load_chunk_floats(ipix, ns).is_empty():
+		return true
+	return pack_is_sparse() and _finest_present_ancestor(ipix, ns).y > 0
+
+
 ## Tuile décodée en float32, pour le chemin d'échantillonnage chaud.
 ##
 ## Miroir exact de load_chunk_heightmap (même clé, même verrou, même « touch » LRU, même
@@ -2047,6 +2081,16 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 	else:
 		ipix = HEALPix.vec2pix_nest(ns, dir)
 	var floats := load_chunk_floats(ipix, ns)
+	if floats.is_empty() and pack_is_sparse():
+		# Pack creux : cette tuile n'a pas été stockée parce que l'upsample de son parent
+		# la reproduit à epsilon près. On remonte donc au plus fin ancêtre présent — et
+		# l'UV doit être recalculé pour LUI, ce qui est la raison pour laquelle la
+		# remontée vit ici et non dans le chargement de tuile.
+		var up := _finest_present_ancestor(ipix, ns)
+		if up.y > 0:
+			ipix = up.x
+			ns = up.y
+			floats = load_chunk_floats(ipix, ns)
 	if floats.is_empty():
 		# DEBUG: the per-chunk tile is not available at sample time — this vertex
 		# gets its elevation from the equirect global map, which is a different
