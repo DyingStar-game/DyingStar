@@ -255,6 +255,17 @@ var _road_material_mutex: Mutex = Mutex.new()
 
 ## Cache of loaded chunk heightmap images.  Key = "hp_nN_pP" → Image.
 var _chunk_images: Dictionary = {}
+## Mêmes tuiles que _chunk_images, décodées en PackedFloat32Array.
+##
+## Les tuiles sont créées en FORMAT_RF depuis les octets bruts du pack : la donnée SOUS-JACENTE
+## est déjà du float32, et `img.get_pixel(x, y).r` ne fait que la relire en construisant une
+## Color (quatre floats) à chaque texel. Le noyau bilinéaire en demande quatre, le calcul des
+## normales quatre échantillons par sommet, et la bande de mélange en ajoute encore : mesuré à
+## ~17 400 get_pixel par chunk, pour 45 % du temps de génération passé dans l'échantillonnage.
+## Indexer un PackedFloat32Array rend exactement la même valeur, sans l'allocation.
+##
+## Peuplé et purgé aux mêmes endroits que _chunk_images, sous le même _cache_mutex.
+var _chunk_floats: Dictionary = {}
 var _empty_chunk_logged: bool = false
 var _chunk_format_logged: bool = false
 
@@ -593,9 +604,185 @@ func sample_nside_for(hp_nside: int) -> int:
 	return clampi(hp_nside, export_nside_min, export_nside)
 
 
+# ── Recensement des tuiles d'élévation (phase 0 de docs/PLANET_CHUNK_STREAMING.md) ──────────────
+# Combien de tuiles DISTINCTES une vraie session touche-t-elle, et à quels niveaux ? La section 3 du
+# doc répond 273 tuiles / 1,07 MiB, mais par SIMULATION de _traverse et par reconstitution depuis le
+# cache de meshes — jamais par mesure directe. Ce compteur est la mesure directe : c'est lui qui
+# dimensionne le bundle, le budget de cache et l'egress si on passe au streaming.
+#
+# Écrit depuis les tâches WorkerThreadPool (load_chunk_heightmap est appelé dans generate_mesh), donc
+# protégé par son propre mutex — surtout pas _cache_mutex, dont le chemin serveur (_server_no_evict)
+# se passe délibérément.
+static var prof_tile_requests: int = 0
+## Lectures disque réelles (cache d'Images manqué) — à comparer à prof_tile_requests.
+static var prof_tile_disk_reads: int = 0
+## Temps total passé dans load_chunk_heightmap, imbriqué dans la phase "verts" du chunk.
+static var prof_tile_usec: int = 0
+## "hp_n<nside>_p<ipix>" -> nombre de demandes. Sa TAILLE est le chiffre recherché.
+static var prof_tiles_seen: Dictionary = {}
+## Temps de lecture de tuile CUMULÉ PAR THREAD, pour que generate_mesh puisse mesurer sa PROPRE
+## part plutôt que le total global.
+##
+## Sans ça, la ligne clé de la phase 0 est fausse : le premier relevé client affichait
+## [code]tuiles=144.4% du temps mesh[/code]. Le total global comptait aussi les lectures faites hors
+## génération — 488 chunks assemblés depuis le cache disque, les requêtes de gameplay, les
+## spawners — pendant que le dénominateur ne couvrait que les 3 meshes réellement générés.
+## Une part relative n'a de sens que si numérateur et dénominateur parlent du même travail.
+##
+## generate_mesh lit ce compteur au début et à la fin de son propre thread et prend la différence :
+## chaque tâche worker a son entrée, personne ne partage rien. Même modèle que les FileAccess
+## par thread de [HeightPack].
+static var _prof_tile_usec_by_thread: Dictionary = {}
+## Nom du point d'entrée public -> nombre d'appels. Attribue les demandes de tuiles à ce qui les
+## provoque : le premier run serveur a montré ~80 demandes/s ALORS QU'AUCUN chunk n'était construit,
+## et sans cette ventilation on ne peut pas dire d'où elles viennent.
+static var prof_sampler_calls: Dictionary = {}
+static var prof_tile_mutex: Mutex = Mutex.new()
+
+
+static func prof_tiles_reset() -> void:
+	prof_tile_mutex.lock()
+	prof_tile_requests = 0
+	prof_tile_disk_reads = 0
+	prof_tile_usec = 0
+	prof_tiles_seen.clear()
+	prof_sampler_calls.clear()
+	_prof_tile_usec_by_thread.clear()
+	prof_tile_mutex.unlock()
+
+
+## Temps de lecture de tuile cumulé par le thread appelant. Deux relevés encadrant un travail en
+## donnent le coût de tuile propre, sans compter celui des autres threads.
+static func prof_thread_tile_usec() -> int:
+	prof_tile_mutex.lock()
+	var v: int = int(_prof_tile_usec_by_thread.get(OS.get_thread_caller_id(), 0))
+	prof_tile_mutex.unlock()
+	return v
+
+
+## Compte un appel à un point d'entrée d'échantillonnage. Appelé depuis des tâches worker,
+## donc sous le même mutex que le recensement de tuiles.
+static func _prof_count_sampler(entry: String) -> void:
+	prof_tile_mutex.lock()
+	prof_sampler_calls[entry] = int(prof_sampler_calls.get(entry, 0)) + 1
+	prof_tile_mutex.unlock()
+
+
 ## Load the .r32 tile (ipix) at pyramid level [param nside]. nside <= 0 means
 ## "finest" (export_nside), which is what every legacy caller gets by default.
+##
+## Enveloppe de mesure : quand le rig est éteint (le cas normal) c'est un test booléen puis
+## l'appel direct, donc le chemin chaud est inchangé.
 func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
+	if not PropNet.prof_on:
+		return _load_chunk_heightmap_impl(ipix, nside)
+	var _t0 := Time.get_ticks_usec()
+	var img := _load_chunk_heightmap_impl(ipix, nside)
+	var _spent := Time.get_ticks_usec() - _t0
+	var _key := "hp_n%d_p%d" % [nside if nside > 0 else export_nside, ipix]
+	prof_tile_mutex.lock()
+	prof_tile_requests += 1
+	prof_tile_usec += _spent
+	prof_tiles_seen[_key] = int(prof_tiles_seen.get(_key, 0)) + 1
+	var _tid := OS.get_thread_caller_id()
+	_prof_tile_usec_by_thread[_tid] = int(_prof_tile_usec_by_thread.get(_tid, 0)) + _spent
+	prof_tile_mutex.unlock()
+	return img
+
+
+## Tuile décodée en float32, pour le chemin d'échantillonnage chaud.
+##
+## Miroir exact de load_chunk_heightmap (même clé, même verrou, même « touch » LRU, même
+## chargement paresseux) mais rendant les floats plutôt que l'Image : le noyau bilinéaire les
+## indexe directement au lieu d'appeler get_pixel(), qui construit une Color par texel.
+## Une seule prise de verrou sur le chemin chaud, comme avant.
+## Décode une tuile en float32, quel que soit son format d'Image.
+##
+## Les tuiles du pack sont en FORMAT_RF et leurs octets SONT déjà les float32 : la
+## conversion est alors une simple réinterprétation. Mais le chemin recipe
+## (store_chunk_image) et les tuiles synthétiques des tests peuvent arriver dans un autre
+## format, où get_data() n'est pas un multiple de 4 octets — `to_float32_array()` échoue
+## alors en silence sur « size % sizeof(float) » et rend un tableau vide, c'est-à-dire un
+## terrain plat. Ces formats-là sont décodés texel par texel, UNE fois à l'insertion,
+## plutôt qu'à chaque échantillon comme avant.
+## Côté d'une tuile carrée à partir du nombre de texels, ou -1 si elle ne l'est pas.
+## Les tuiles HEALPix sont carrées par construction (_read_r32_tile en produit res × res) ;
+## le contrôle est là pour que le cas contraire retombe sur la carte globale plutôt que de
+## lire hors des bornes.
+static func _tile_side(floats: PackedFloat32Array) -> int:
+	var n := floats.size()
+	if n <= 0:
+		return -1
+	var side := int(round(sqrt(float(n))))
+	return side if side * side == n else -1
+
+
+static func _decode_tile_floats(img: Image) -> PackedFloat32Array:
+	if img.get_format() == Image.FORMAT_RF:
+		return img.get_data().to_float32_array()
+	var w := img.get_width()
+	var h := img.get_height()
+	var out := PackedFloat32Array()
+	out.resize(w * h)
+	for y in h:
+		for x in w:
+			out[y * w + x] = img.get_pixel(x, y).r
+	return out
+
+
+func load_chunk_floats(ipix: int, nside: int = -1) -> PackedFloat32Array:
+	if not PropNet.prof_on:
+		return _load_chunk_floats_impl(ipix, nside)
+	# Même enveloppe de mesure que load_chunk_heightmap. La première version ne recopiait
+	# que les COMPTEURS et pas le chronomètre : déplacer le chemin chaud ici faisait
+	# tomber la ligne "tuiles=" à 0,2 % du temps mesh, ce qui ressemblait à un gain alors
+	# que le temps était seulement devenu invisible (fondu dans "échantillons").
+	var t0 := Time.get_ticks_usec()
+	var out := _load_chunk_floats_impl(ipix, nside)
+	var spent := Time.get_ticks_usec() - t0
+	var key := "hp_n%d_p%d" % [nside if nside > 0 else export_nside, ipix]
+	prof_tile_mutex.lock()
+	prof_tile_requests += 1
+	prof_tile_usec += spent
+	prof_tiles_seen[key] = int(prof_tiles_seen.get(key, 0)) + 1
+	var tid := OS.get_thread_caller_id()
+	_prof_tile_usec_by_thread[tid] = int(_prof_tile_usec_by_thread.get(tid, 0)) + spent
+	prof_tile_mutex.unlock()
+	return out
+
+
+func _load_chunk_floats_impl(ipix: int, nside: int = -1) -> PackedFloat32Array:
+	var ns := nside if nside > 0 else export_nside
+	var key := "hp_n%d_p%d" % [ns, ipix]
+
+	if _server_no_evict:
+		var hit: Variant = _chunk_floats.get(key)
+		if hit != null:
+			return hit
+		if chunk_heightmaps_dir != "" and _file_load_and_cache(key, ipix, ns) != null:
+			return _chunk_floats.get(key, PackedFloat32Array())
+		return PackedFloat32Array()
+
+	_cache_mutex.lock()
+	if _chunk_floats.has(key):
+		var idx := _cache_order.find(key)
+		if idx >= 0:
+			_cache_order.remove_at(idx)
+			_cache_order.append(key)
+		var cached: PackedFloat32Array = _chunk_floats[key]
+		_cache_mutex.unlock()
+		return cached
+	_cache_mutex.unlock()
+
+	if chunk_heightmaps_dir != "" and _file_load_and_cache(key, ipix, ns) != null:
+		_cache_mutex.lock()
+		var loaded: PackedFloat32Array = _chunk_floats.get(key, PackedFloat32Array())
+		_cache_mutex.unlock()
+		return loaded
+	return PackedFloat32Array()
+
+
+func _load_chunk_heightmap_impl(ipix: int, nside: int = -1) -> Image:
 	var ns := nside if nside > 0 else export_nside
 	var key := "hp_n%d_p%d" % [ns, ipix]
 	# Server fast path: cache is read-only after preload, skip mutex + LRU.
@@ -630,6 +817,10 @@ func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
 ## Thread-safe; safe to call from WorkerThreadPool mesh/collision tasks.
 ## Returns null if the tile is missing/malformed (caller falls back to global).
 func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
+	if PropNet.prof_on:
+		prof_tile_mutex.lock()
+		prof_tile_disk_reads += 1
+		prof_tile_mutex.unlock()
 	var img := _read_r32_tile(ipix, nside)
 	if img == null:
 		return null
@@ -640,6 +831,7 @@ func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
 		_cache_mutex.unlock()
 		return existing
 	_chunk_images[key] = img
+	_chunk_floats[key] = _decode_tile_floats(img)
 	_cache_order.append(key)
 	_cache_bytes += img.get_width() * img.get_height() * 4
 	_cache_mutex.unlock()
@@ -939,6 +1131,7 @@ func store_chunk_image(key: String, img: Image, craters: Array,
 		radial_features: Array = []) -> void:
 	_cache_mutex.lock()
 	_chunk_images[key] = img
+	_chunk_floats[key] = _decode_tile_floats(img)
 	_cache_order.append(key)
 	_cache_bytes += img.get_width() * img.get_height() * 4
 	_cache_mutex.unlock()
@@ -970,6 +1163,7 @@ func invalidate_chunk_cache(export_key: String) -> void:
 		if old_img:
 			_cache_bytes -= old_img.get_width() * old_img.get_height() * 4
 		_chunk_images.erase(export_key)
+		_chunk_floats.erase(export_key)
 		_cache_order.erase(export_key)
 	_cache_mutex.unlock()
 	_chunk_craters.erase(export_key)
@@ -1825,6 +2019,7 @@ func _evict_lru() -> void:
 		if old_img != null:
 			_cache_bytes -= old_img.get_width() * old_img.get_height() * 4
 		_chunk_images.erase(oldest_key)
+		_chunk_floats.erase(oldest_key)
 	_cache_mutex.unlock()
 
 
@@ -1837,6 +2032,12 @@ func _evict_lru() -> void:
 func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1) -> float:
+	if PropNet.prof_on:
+		# Les constructeurs de chunks passent TOUJOURS known_export_ipix (ils savent dans
+		# quelle tuile ils travaillent) ; une requête de gameplay ne le connaît pas et le
+		# fait déduire de la direction. Ce seul bit sépare "génération de terrain" de
+		# "quelqu'un demande l'altitude du sol", et ne coûte rien.
+		_prof_count_sampler("dir_chunk" if known_export_ipix >= 0 else "dir_query")
 	# nside <= 0 → finest level (export_nside). Chunk builders pass the chunk's
 	# own pyramid level so a coarse chunk reads its coarse tile, not many fine ones.
 	var ns := nside if nside > 0 else export_nside
@@ -1845,8 +2046,8 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		ipix = known_export_ipix
 	else:
 		ipix = HEALPix.vec2pix_nest(ns, dir)
-	var img := load_chunk_heightmap(ipix, ns)
-	if img == null:
+	var floats := load_chunk_floats(ipix, ns)
+	if floats.is_empty():
 		# DEBUG: the per-chunk tile is not available at sample time — this vertex
 		# gets its elevation from the equirect global map, which is a different
 		# (usually flatter) surface. If this fires while building the plateau
@@ -1860,8 +2061,14 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 	# Get local UV within the pixel
 	var local_uv := _direction_to_pixel_uv(dir, ipix, ns,
 			_precomp_face, _precomp_xy)
-	var h := _sample_image_bilinear_healpix(img, local_uv.x, local_uv.y, ipix,
-			_cached_neighbors, ns)
+	# Côté de la tuile déduit du tableau, PAS de chunk_heightmap_res : les deux coïncident
+	# pour les tuiles du pack, mais le chemin recipe et les tuiles synthétiques des tests
+	# stockent d'autres tailles — les supposer égales lisait hors des bornes.
+	var res := _tile_side(floats)
+	if res <= 0:
+		return sample_height_at(dir)
+	var h := _sample_image_bilinear_healpix(floats, res,
+			local_uv.x, local_uv.y, ipix, _cached_neighbors, ns)
 	return (h * max_height + height_offset) * terrain_exaggeration
 
 
@@ -1878,6 +2085,8 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 func sample_height_boundary(dir: Vector3, chain_ipix: int,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1) -> float:
+	if PropNet.prof_on:
+		_prof_count_sampler("boundary")
 	var ns := nside if nside > 0 else export_nside
 	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
@@ -1974,6 +2183,29 @@ static func _format_name(fmt: int) -> String:
 ## [0, 1] (normalised texture coordinates).  Returns the interpolated red
 ## channel value — used for heightmaps stored as 16-bit greyscale PNGs
 ## where the height lives in the R channel.
+## Jumeau de [method _sample_image_bilinear] lisant un PackedFloat32Array. Mêmes bornes,
+## mêmes poids, mêmes opérations dans le même ordre : la tuile étant en FORMAT_RF, indexer
+## les floats rend exactement ce que get_pixel().r rendait, sans construire de Color.
+static func _sample_floats_bilinear(floats: PackedFloat32Array, w: int, h: int,
+		u_norm: float, v_norm: float) -> float:
+	var fpx := u_norm * w - 0.5
+	var fpy := v_norm * h - 0.5
+	var x0 := clampi(int(floorf(fpx)), 0, w - 1)
+	var y0 := clampi(int(floorf(fpy)), 0, h - 1)
+	var x1 := mini(x0 + 1, w - 1)
+	var y1 := mini(y0 + 1, h - 1)
+	var fx := clampf(fpx - floorf(fpx), 0.0, 1.0)
+	var fy := clampf(fpy - floorf(fpy), 0.0, 1.0)
+	var v00 := floats[y0 * w + x0]
+	var v10 := floats[y0 * w + x1]
+	var v01 := floats[y1 * w + x0]
+	var v11 := floats[y1 * w + x1]
+	return (v00 * (1.0 - fx) * (1.0 - fy)
+			+ v10 * fx * (1.0 - fy)
+			+ v01 * (1.0 - fx) * fy
+			+ v11 * fx * fy)
+
+
 static func _sample_image_bilinear(img: Image, u_norm: float, v_norm: float) -> float:
 	var w := img.get_width()
 	var h := img.get_height()
@@ -2014,11 +2246,12 @@ static func _sample_image_bilinear(img: Image, u_norm: float, v_norm: float) -> 
 ##    the current tile's sample and the neighbour's sample so both tiles
 ##    converge to the same height at the seam.
 func _sample_image_bilinear_healpix(
-		img: Image, u_norm: float, v_norm: float,
+		floats: PackedFloat32Array, res: int, u_norm: float, v_norm: float,
 		ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
 	var ns := nside if nside > 0 else export_nside
-	var w := img.get_width()
-	var h := img.get_height()
+	# Les tuiles sont carrées (tile_res × tile_res) et déjà validées à la lecture du pack.
+	var w := res
+	var h := res
 
 	# How many pixels from each tile edge to blend.  Higher = smoother
 	# transition but slightly blurs the terrain at tile boundaries.
@@ -2041,20 +2274,20 @@ func _sample_image_bilinear_healpix(
 	# ── Sample current tile (always needed) ────────────────────────
 	var val: float
 	if x0 >= 0 and x1 < w and y0 >= 0 and y1 < h:
-		var a00 := img.get_pixel(x0, y0).r
-		var a10 := img.get_pixel(x1, y0).r
-		var a01 := img.get_pixel(x0, y1).r
-		var a11 := img.get_pixel(x1, y1).r
+		var a00 := floats[y0 * w + x0]
+		var a10 := floats[y0 * w + x1]
+		var a01 := floats[y1 * w + x0]
+		var a11 := floats[y1 * w + x1]
 		val = (a00 * (1.0 - fx) * (1.0 - fy)
 				+ a10 * fx * (1.0 - fy)
 				+ a01 * (1.0 - fx) * fy
 				+ a11 * fx * fy)
 	else:
 		# Out-of-bounds kernel pixel — fetch from neighbor tile
-		var v00 := _get_pixel_healpix(img, x0, y0, w, h, ipix, _cached_neighbors, ns)
-		var v10 := _get_pixel_healpix(img, x1, y0, w, h, ipix, _cached_neighbors, ns)
-		var v01 := _get_pixel_healpix(img, x0, y1, w, h, ipix, _cached_neighbors, ns)
-		var v11 := _get_pixel_healpix(img, x1, y1, w, h, ipix, _cached_neighbors, ns)
+		var v00 := _get_pixel_healpix(floats, x0, y0, w, h, ipix, _cached_neighbors, ns)
+		var v10 := _get_pixel_healpix(floats, x1, y0, w, h, ipix, _cached_neighbors, ns)
+		var v01 := _get_pixel_healpix(floats, x0, y1, w, h, ipix, _cached_neighbors, ns)
+		var v11 := _get_pixel_healpix(floats, x1, y1, w, h, ipix, _cached_neighbors, ns)
 		val = (v00 * (1.0 - fx) * (1.0 - fy)
 				+ v10 * fx * (1.0 - fy)
 				+ v01 * (1.0 - fx) * fy
@@ -2079,33 +2312,33 @@ func _sample_image_bilinear_healpix(
 
 	# Horizontal blend (left or right neighbour).
 	if near_left and neighbors.has("W") and neighbors["W"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["W"], ns)
-		if nb_img and nb_img.get_width() == w:
+		var nb := load_chunk_floats(neighbors["W"], ns)
+		if nb.size() == w * h:
 			var nb_u := (float(w) + fpx) / float(w)
-			var nb_val := _sample_image_bilinear(nb_img, nb_u, v_norm)
+			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
 			var t := clampf(1.0 - (fpx + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_right and neighbors.has("E") and neighbors["E"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["E"], ns)
-		if nb_img and nb_img.get_width() == w:
+		var nb := load_chunk_floats(neighbors["E"], ns)
+		if nb.size() == w * h:
 			var nb_u := clampf((fpx - float(w) + 0.5) / float(w), 0.0, 1.0)
-			var nb_val := _sample_image_bilinear(nb_img, nb_u, v_norm)
+			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
 			var t := clampf(1.0 - (float(w) - 0.5 - fpx) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 
 	# Vertical blend (bottom or top neighbour).
 	if near_bot and neighbors.has("S") and neighbors["S"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["S"], ns)
-		if nb_img and nb_img.get_height() == h:
+		var nb := load_chunk_floats(neighbors["S"], ns)
+		if nb.size() == w * h:
 			var nb_v := (float(h) + fpy) / float(h)
-			var nb_val := _sample_image_bilinear(nb_img, u_norm, nb_v)
+			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
 			var t := clampf(1.0 - (fpy + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_top and neighbors.has("N") and neighbors["N"] >= 0:
-		var nb_img := load_chunk_heightmap(neighbors["N"], ns)
-		if nb_img and nb_img.get_height() == h:
+		var nb := load_chunk_floats(neighbors["N"], ns)
+		if nb.size() == w * h:
 			var nb_v := clampf((fpy - float(h) + 0.5) / float(h), 0.0, 1.0)
-			var nb_val := _sample_image_bilinear(nb_img, u_norm, nb_v)
+			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
 			var t := clampf(1.0 - (float(h) - 0.5 - fpy) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 
@@ -2114,10 +2347,10 @@ func _sample_image_bilinear_healpix(
 
 ## Read a single heightmap pixel, fetching from the neighbour HEALPix tile
 ## when (px, py) falls outside the current tile [0, w) × [0, h).
-func _get_pixel_healpix(img: Image, px: int, py: int,
+func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
 		w: int, h: int, ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
 	if px >= 0 and px < w and py >= 0 and py < h:
-		return img.get_pixel(px, py).r
+		return floats[py * w + px]
 
 	var ns := nside if nside > 0 else export_nside
 	# Out of bounds — try neighbor tile
@@ -2146,13 +2379,13 @@ func _get_pixel_healpix(img: Image, px: int, py: int,
 		nb_py = py - h
 
 	if nb_ipix >= 0:
-		var nb_img := load_chunk_heightmap(nb_ipix, ns)
-		if nb_img and nb_img.get_width() == w and nb_img.get_height() == h:
+		var nb := load_chunk_floats(nb_ipix, ns)
+		if nb.size() == w * h:
 			nb_px = clampi(nb_px, 0, w - 1)
 			nb_py = clampi(nb_py, 0, h - 1)
-			return nb_img.get_pixel(nb_px, nb_py).r
+			return nb[nb_py * w + nb_px]
 
-	return img.get_pixel(clampi(px, 0, w - 1), clampi(py, 0, h - 1)).r
+	return floats[clampi(py, 0, h - 1) * w + clampi(px, 0, w - 1)]
 
 
 # ---------------------------------------------------------------------------
