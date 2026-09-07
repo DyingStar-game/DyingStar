@@ -37,23 +37,35 @@ Pipeline
    The pyramid lets far LODs read one coarse tile per chunk instead of
    point-sampling many fine tiles (no aliasing, cheap whole-planet view).
 
-DSHP v1 on-disk format (little-endian) — authoritative spec
------------------------------------------------------------
+DSHP on-disk format (little-endian) — authoritative spec
+--------------------------------------------------------
     0   magic       "DSHP" (4 B)
-    4   version     u32 = 1
-    8   tile_res    u32     samples per tile edge (tile = tile_res² float32)
+    4   version     u32 = 1 or 2
+    8   tile_res    u32     samples per tile edge (tile = tile_res² samples)
     12  nside_min   u32     coarsest pyramid level
     16  nside_max   u32     finest pyramid level (levels = all powers of two between)
-    20  flags       u32     reserved, 0
+    20  flags       u32     v1: reserved, 0
+                            v2: bit0 = samples are u16, bit1 = sparse
     24  blob_start  u32     absolute offset of the tile blob
     28  json_len    u32
     32  manifest    json_len B  (verbatim manifest.json, UTF-8)
+    …   [v2, sparse only] one presence bitmap per level, ascending:
+              ceil(12·nside²/8) B, bit i (LSB-first) set when tile i is stored
     …   padding to blob_start (16-byte aligned)
     blob: for nside = nside_min, 2·nside_min, …, nside_max (ascending):
-              tiles f0 … f(12·nside²−1), each tile_res²·4 B raw float32 LE
+              the STORED tiles in ipix order, each tile_res²·sample_size B LE
 
-Every tile is fixed-size and every ipix exists at every level, so the reader
-needs no index:  offset(nside, ipix) = blob_start + level_base[nside] + ipix·tile_size
+v1 is dense float32: every ipix exists at every level, so the reader needs no
+index — offset(nside, ipix) = blob_start + level_base[nside] + ipix·tile_size.
+
+v2 samples are u16 by default: a planet's elevation span fits in 10 700 m, where
+float32 offers 0.163 m steps — far below the 50 m vertical resolution of the
+source contours. Halves the archive. The runtime reader widens back to float32
+on read, so nothing downstream of HeightPack.read_tile() changes.
+
+A sparse v2 pack omits tiles the bilinear upsample of their parent already
+reproduces, so offsets stop being arithmetic: the per-level presence bitmap plus
+a rank index give the tile's slot within its level. See scenes/planet/height_pack.gd.
 
 Why .r32 (raw float32) instead of 16-bit PNG?
     Godot's PNG loader downsamples 16-bit greyscale to 8-bit on import (256
@@ -156,6 +168,13 @@ TILE_BATCH = max(1, 160_000 // (TILE_RES * TILE_RES))
 # and ~65k tiny files per planet are exactly what this format eliminates.
 WRITE_LOOSE_TILES = False
 
+# Échantillons stockés en uint16 normalisé plutôt qu'en float32 (DSHP v2). L'amplitude
+# d'une planète tient dans [ELEV_MIN, ELEV_MAX] ; sur 10 700 m, 65 535 pas donnent 0,16 m,
+# soit bien en dessous des 50 m d'équidistance des contours. Le float32 y offrait des pas
+# de 0,163 m — de la précision dépensée pour rien, sur la moitié de l'archive.
+# Mettre à False pour réémettre un pack v1 dense float32.
+SAMPLE_U16 = True
+
 # Bump manuel pour toute évolution de l'ALGORITHME d'échantillonnage qui change les
 # élévations produites sans toucher à une seule constante ci-dessus (nouvel
 # interpolateur, changement de convention de grille, agrégation différente). Les valeurs
@@ -182,11 +201,18 @@ _DSHP_ALIGN = 16
 
 
 def build_header(manifest_bytes, tile_res, nside_min, nside_max):
-    """DSHP v1 fixed header + embedded manifest, padded to _DSHP_ALIGN."""
+    """DSHP fixed header + embedded manifest, padded to _DSHP_ALIGN.
+
+    Emits v1 (dense float32) or v2 (u16) depending on SAMPLE_U16. The version is not
+    bumped gratuitously: a v1 reader would misread u16 samples as float32, so the
+    encoding change has to be visible in the header.
+    """
+    version = 2 if SAMPLE_U16 else _DSHP_VERSION
+    flags = 1 if SAMPLE_U16 else 0          # bit0 = u16 samples
     raw_len = 32 + len(manifest_bytes)
     blob_start = (raw_len + _DSHP_ALIGN - 1) // _DSHP_ALIGN * _DSHP_ALIGN
-    head = struct.pack("<4s6I", _DSHP_MAGIC, _DSHP_VERSION, tile_res,
-                       nside_min, nside_max, 0, blob_start)
+    head = struct.pack("<4s6I", _DSHP_MAGIC, version, tile_res,
+                       nside_min, nside_max, flags, blob_start)
     head += struct.pack("<I", len(manifest_bytes)) + manifest_bytes
     return head + b"\x00" * (blob_start - raw_len)
 
@@ -321,7 +347,7 @@ def compute_data_version(pts):
     """
     h = hashlib.blake2b(digest_size=8)
     for value in (PLANET_NAME, PLANET_RADIUS, NSIDE, NSIDE_MIN, TILE_RES,
-                  ELEV_MIN, ELEV_MAX, HEIGHTMAP_SIZE, ALGO_VERSION):
+                  ELEV_MIN, ELEV_MAX, HEIGHTMAP_SIZE, ALGO_VERSION, SAMPLE_U16):
         h.update(repr(value).encode("utf-8"))
     if pts is None:
         h.update(b"flat")           # planète sans contours : pas de sommets à hacher
@@ -432,7 +458,8 @@ def run_export():
         "nside": NSIDE,                    # finest level (== nside_max)
         "chunk_export_depth": depth,       # log2(finest nside)
         "tile_res": TILE_RES,
-        "format": "r32_f32_normalized",    # raw float32, row-major, normalized [0,1]
+        # Encodage des échantillons, row-major, normalisé [0,1] sur [elev_min, elev_max].
+        "format": "u16_normalized" if SAMPLE_U16 else "r32_f32_normalized",
         # Pyramid descriptor. Runtime reads level n{nside} for a chunk whose own
         # nside is clamp(chunk_nside, nside_min, nside_max).
         "pyramid": True,
@@ -504,7 +531,14 @@ def run_export():
                     # exceed it.
                     norm = ((elevs[offset] - ELEV_MIN) / elev_range).astype(np.float32)
                     # C-order (row=fy, col=fx) — matches Godot FORMAT_RF
-                    out.write(norm.tobytes())
+                    if SAMPLE_U16:
+                        # Borné avant quantification : FORMAT_RF n'était pas clampé et
+                        # laissait passer les valeurs hors [ELEV_MIN, ELEV_MAX], mais un
+                        # u16 les replierait au lieu de les saturer.
+                        out.write(np.rint(np.clip(norm, 0.0, 1.0) * 65535.0)
+                                  .astype("<u2").tobytes())
+                    else:
+                        out.write(norm.tobytes())
                     if WRITE_LOOSE_TILES:
                         face = ipix // npface
                         norm.tofile(os.path.join(
