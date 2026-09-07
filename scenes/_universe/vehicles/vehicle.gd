@@ -47,8 +47,13 @@ const LIGHT_GROUP := "vehicle_light"
 const MODEL_GROUP := "vehicle_model"
 ## How far the horn is taken down (dB) during its fade-out, before the player is stopped.
 const HORN_FADE_DB := -30.0
+## Below this envelope level a scrub loop is inaudible and is stopped outright, rather than left
+## running at -60 dB for the rest of the session.
+const TYRE_SILENT := 0.001
 ## Scan the bed for a settled fallen crate every N physics frames (see _scan_bay_for_settled_cargo).
 const BAY_SCAN_FRAMES := 6
+## How long (s) a sampled surface family is reused before probing again. See _scrub_surface_family.
+const SCRUB_SAMPLE_S: float = 0.5
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -124,81 +129,130 @@ const BAY_SCAN_FRAMES := 6
 
 # --- Dimensions (meters) — changing one rebuilds the blockout -----------------
 @export_group("Body")
+## Blockout body length (m), front to rear. NOT inert on a vehicle with a real 3D model: it also places
+## the cameras and the drop-off point used when a player exits, and builds the fallback collision box
+## when the model carries no col_* meshes.
 @export var body_length: float = 4.6:
 	set(v):
 		body_length = v
 		_rebuild_deferred()
+## Blockout body width (m). Same reach as body_length — cameras, exit drop-off, fallback collision.
 @export var body_width: float = 2.0:
 	set(v):
 		body_width = v
 		_rebuild_deferred()
+## Blockout body height (m): the flat deck the bed sits on. Half of it is the deck height above the
+## vehicle origin, which is what the camera and exit offsets are measured from.
 @export var body_height: float = 0.5:
 	set(v):
 		body_height = v
 		_rebuild_deferred()
 
 @export_group("Cab")
+## Blockout cab length (m), taken out of body_length so the rest is bed. Also shifts the cameras and
+## the exit drop-off toward the front.
 @export var cab_length: float = 1.5:
 	set(v):
 		cab_length = v
 		_rebuild_deferred()
+## Blockout cab height (m) above the deck. Sets how high the chase camera rides.
 @export var cab_height: float = 1.9:
 	set(v):
 		cab_height = v
 		_rebuild_deferred()
 
-## Cabin cutout (windshield / door opening) carved from the body. It is a CSG subtraction
-## added INSIDE the generated body combiner (a sibling CSGBox under the vehicle root would
-## not cut — CSG only combines within one CSGCombiner). Tunable live.
-@export var cab_cutout_size: Vector3 = Vector3(2.255, 0.969, 0.744):
-	set(v):
-		cab_cutout_size = v
-		_rebuild_deferred()
-@export var cab_cutout_offset: Vector3 = Vector3(-0.017, 1.454, -2.062):
-	set(v):
-		cab_cutout_offset = v
-		_rebuild_deferred()
-
 @export_group("Bed")
+## Blockout bed side and rear wall height (m). Only the FALLBACK collision uses it: a real 3D model
+## brings its own col_* walls and this value then does nothing.
 @export var bed_wall_height: float = 0.7:
 	set(v):
 		bed_wall_height = v
 		_rebuild_deferred()
 
-@export_group("Wheels")
-@export var wheel_radius: float = 0.55:
-	set(v):
-		wheel_radius = v
-		_rebuild_deferred()
+# --- Blockout only: the CSG stand-in drawn when NO 3D model is plugged in ----
+# A vehicle with a GLB model ignores every setting below. They are kept so a new vehicle can be
+# prototyped and driven before its model exists — see also the Body / Cab / Bed dimensions, which are
+# NOT purely blockout (they also place the cameras, the exit drop-off and the fallback collision).
+@export_group("Blockout (no 3D model)")
+## Width (m) of the blockout tyre.
 @export var wheel_width: float = 0.35:
 	set(v):
 		wheel_width = v
 		_rebuild_deferred()
-## CLIENT-replica visual only: how far to drop the wheel meshes below their hub. On a replica the
-## physics is off, so VehicleWheel3D never lowers the wheels to the suspension contact — they'd
-## float at the hub. This drops the visual to ~ground level. Tune so the replica's wheels touch.
-@export_range(0.0, 1.5, 0.01) var wheel_visual_drop: float = 0.5
-## Distance between the front and rear axles.
-@export var wheelbase: float = 3.0:
-	set(v):
-		wheelbase = v
-		_rebuild_deferred()
-## Distance between the left and right wheels.
+## Distance (m) between the left and right blockout wheels.
 @export var track_width: float = 1.55:
 	set(v):
 		track_width = v
 		_rebuild_deferred()
-## Suspension rest length (how far the wheel hangs below its mount). Drives ride height.
+## Cabin cutout (windshield / door opening) carved from the blockout body. A CSG subtraction added
+## INSIDE the generated body combiner — a sibling CSGBox under the vehicle root would not cut, CSG only
+## combines within one CSGCombiner. Tunable live.
+@export var cab_cutout_size: Vector3 = Vector3(2.255, 0.969, 0.744):
+	set(v):
+		cab_cutout_size = v
+		_rebuild_deferred()
+## Where that cutout sits, relative to the body centre. Pairs with cab_cutout_size — move it here,
+## resize it there.
+@export var cab_cutout_offset: Vector3 = Vector3(-0.017, 1.454, -2.062):
+	set(v):
+		cab_cutout_offset = v
+		_rebuild_deferred()
+
+@export_group("Wheels")
+## Radius (m) of the PHYSICS wheel. Match the tyre of the 3D model: it is what decides whether a wheel
+## climbs an obstacle or the chassis grounds on it first. It also sets the visual spin rate
+## (turns = speed / radius) and the blockout tyre. Ride height follows too — the contact sits
+## suspension_rest + wheel_radius below the wheel mount.
+@export var wheel_radius: float = 0.55:
+	set(v):
+		wheel_radius = v
+		_rebuild_deferred()
+## Distance (m) between the front and rear axles. NOT cosmetic: it is the reference the centre of mass
+## is pinned to, which is what keeps the truck from nose-diving whatever shape the collision takes. It
+## also lays out the blockout wheels.
+@export var wheelbase: float = 3.0:
+	set(v):
+		wheelbase = v
+		_rebuild_deferred()
+## Suspension rest length (m): how far the wheel hangs below its mount, unloaded. With wheel_radius it
+## sets ride height — the contact point sits suspension_rest + wheel_radius below the mount — so raising
+## the radius to match a model means lowering this by as much to keep the same stance.
 @export var suspension_rest: float = 0.4:
 	set(v):
 		suspension_rest = v
 		_rebuild_deferred()
 ## Suspension spring stiffness (small 1 t truck ~20-25). Too high + any ground penetration
 ## launches the body.
-@export var suspension_stiffness: float = 22.0
+@export var suspension_stiffness: float = 22.0:
+	set(v):
+		suspension_stiffness = v
+		_apply_wheel_tuning()
 ## Max force EACH suspension can push (N). Must exceed the LOADED static load per wheel
 ## (~5600 N at 2.3 t) with margin for bumps/landings, or the bed bottoms out when full.
-@export var suspension_max_force: float = 15000.0
+@export var suspension_max_force: float = 15000.0:
+	set(v):
+		suspension_max_force = v
+		_apply_wheel_tuning()
+## Damping while the spring COMPRESSES (0 = none, 1 = fully damped). At 0 the body stores the bump
+## and gives it straight back, so it keeps bouncing; ~0.3 reads as a normal car. Raise it together
+## with the stiffness -- a stiff spring with weak damping rolls MORE, not less.
+@export_range(0.0, 1.0, 0.01) var suspension_damping_compression: float = 0.5:
+	set(v):
+		suspension_damping_compression = v
+		_apply_wheel_tuning()
+## Damping while the spring EXTENDS back. Keep it slightly above the compression value, or the
+## outside wheels rebound faster than the inside ones load up and the body pitches into the turn.
+@export_range(0.0, 1.0, 0.01) var suspension_damping_relaxation: float = 0.7:
+	set(v):
+		suspension_damping_relaxation = v
+		_apply_wheel_tuning()
+## How much of the cornering force is allowed to ROLL the body (0 = none, 1 = full). This is the
+## direct anti-rollover dial: lower it and a hard turn slides the vehicle instead of tipping it.
+## Godot's own default is 0.1. Reach for the centre of mass first -- this one hides the symptom.
+@export_range(0.0, 1.0, 0.01) var wheel_roll_influence: float = 0.1:
+	set(v):
+		wheel_roll_influence = v
+		_apply_wheel_tuning()
 ## Grip on ordinary ground, as VehicleWheel3D's friction slip.
 ##
 ## Godot's VehicleBody3D is the Bullet raycast-vehicle port: the friction budget
@@ -236,13 +290,16 @@ const BAY_SCAN_FRAMES := 6
 ## THERMAL only. Per-gear torque multiplier, 1st to last (1st = strongest/slowest). Shifts
 ## automatically on engine RPM.
 @export var gear_ratios: Array[float] = [2.5, 1.7, 1.25, 1.0, 0.8]
-## THERMAL only. Engine RPM at which the gearbox shifts up / down.
+## THERMAL only. Engine RPM the gearbox shifts UP at.
 @export var shift_up_rpm: float = 3400.0
+## THERMAL only. Engine RPM the gearbox shifts DOWN at. Keep a wide gap with shift_up_rpm, or the box
+## hunts between two gears.
 @export var shift_down_rpm: float = 1400.0
 ## THERMAL only. Reverse gear torque multiplier.
 @export var reverse_ratio: float = 2.5
-## THERMAL only. Idle / redline engine RPM (the needle sweeps between them within each gear).
+## THERMAL only. Idle engine RPM — the bottom of the needle's sweep within each gear.
 @export var idle_rpm: float = 800.0
+## THERMAL only. Redline engine RPM — the top of that sweep, and the pitch ceiling of the engine sound.
 @export var redline_rpm: float = 4000.0
 
 @export_group("Debug")
@@ -250,6 +307,13 @@ const BAY_SCAN_FRAMES := 6
 @export var debug_color_driven_wheels: bool = true:
 	set(v):
 		debug_color_driven_wheels = v
+		_rebuild_deferred()
+## Draw the SIMULATED wheel (the VehicleWheel3D the physics actually uses) as a translucent magenta
+## cylinder, on top of the model's own wheel mesh. The two should overlap: if the model's wheel sits
+## off the simulated one, the visual is lying about where the vehicle really rolls. Off in play.
+@export var debug_show_physics_wheels: bool = false:
+	set(v):
+		debug_show_physics_wheels = v
 		_rebuild_deferred()
 
 @export_group("Cargo")
@@ -407,6 +471,40 @@ const BAY_SCAN_FRAMES := 6
 @export_range(1.0, 500.0, 1.0) var sfx_horn_special_distance: float = 250.0
 @export var sfx_horn_special_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.FAR_REACHING
 
+@export_subgroup("Tyre scrub (steering)")
+## Tyres dragging sideways as the wheel is turned. A SurfaceSounds set, not a single stream: the
+## noise depends on what the tyre is standing on, and one repeated sample is instantly heard as one
+## repeated sample. Same resource type the footsteps use -- drop the files in, fill a family slot.
+@export var sfx_wheel_scrub: SurfaceSounds
+@export_range(-40.0, 12.0, 0.5) var sfx_wheel_scrub_db: float = -6.0
+@export_range(0.5, 200.0, 0.5) var sfx_wheel_scrub_falloff: float = 4.0
+@export_range(1.0, 500.0, 1.0) var sfx_wheel_scrub_distance: float = 30.0
+@export var sfx_wheel_scrub_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+## How fast the steering must turn (rad/s) before a tyre is heard scrubbing. Below it the driver is
+## trimming their line, which makes no noise; above it they are hauling the wheel round.
+@export_range(0.05, 5.0, 0.05) var sfx_wheel_scrub_min_rate: float = 0.35
+## How long (s) the scrub takes to die once the wheel stops turning. Keep it SHORT: the sound belongs
+## to the movement, and anything that outlives it is heard as a sound that forgot to stop. It exists
+## at all only because cutting a loop dead makes an audible click.
+@export_range(0.01, 1.0, 0.01) var sfx_wheel_scrub_fade_secs: float = 0.08
+@export_subgroup("Tyre roll (driving)")
+## Rolling noise: the tyres on the ground while the vehicle MOVES, turning or not. One looped sample,
+## held for as long as it drives. Nothing to do with steering -- it is the sound of the wheels going
+## round, so it is gated on speed alone.
+##
+## It must LOOP cleanly: unlike the manoeuvre scuffs it runs for as long as the drive lasts, so a seam
+## comes back every few seconds and is unmistakable.
+@export var sfx_wheel_roll: AudioStream
+@export_range(-40.0, 12.0, 0.5) var sfx_wheel_roll_db: float = -6.0
+## Speed (km/h) at which the rolling noise reaches FULL volume. It is a ramp, not a switch: the sound
+## rises with the speed from standstill to here, then holds. Tyres do not start making noise at some
+## particular speed, they get louder as they turn faster, and a loop appearing at full level would be
+## heard as a sound effect being triggered rather than as a vehicle picking up.
+@export_range(1.0, 120.0, 1.0) var sfx_wheel_roll_kmh: float = 20.0
+## Longest the level may take (s) to cross its whole range. A speed limiter on the ramp, not a fade:
+## it only bites when the speed jumps rather than climbs -- a vehicle spawning mid-drive, or landing.
+@export_range(0.0, 2.0, 0.01) var sfx_wheel_roll_attack_secs: float = 0.25
+
 # Networking (GenericProp contract). uuid is set by the prop spawn pipeline; an EMPTY uuid
 # means bench / standalone mode (the vehicle drives locally instead of being replicated).
 var uuid: String = ""
@@ -418,6 +516,18 @@ var has_parent: bool = false
 var pilot_uuid: String = ""
 
 var _steer_target: float = 0.0
+## Tyre scrub bookkeeping: last steering angle (rad) to measure the turn RATE, the single held player
+## (one, so two scrubs can never overlap), how much of its fade-out is left, the cached surface family
+## (probing is a raycast -- far too costly every tick), its age, and the last sample played so a new
+## turn never draws the same one twice.
+var _scrub_last_steer: float = 0.0
+var _scrub_slow_player: AudioStreamPlayer3D = null   # manoeuvre scuff (sample set), below the crossover
+var _scrub_slow_level: float = 0.0                   # its envelope, 0 = silent, 1 = full
+var _roll_player: AudioStreamPlayer3D = null         # rolling noise (constant loop) while driving
+var _roll_level: float = 0.0
+var _scrub_family: StringName = &""
+var _scrub_family_age: float = 999.0
+var _scrub_last_sample: AudioStream = null
 var _wheels: Array[VehicleWheel3D] = []
 ## Tick counter for the grip diagnostic (see _log_wheel_contacts).
 var _grip_log_ticks: int = 0
@@ -495,6 +605,10 @@ var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (
 var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
+## SERVER: last replicated wheel heights (cm, vehicle frame), change detection. CLIENT: the heights
+## received, applied instead of the flat rest pose so a replica shows the real suspension.
+var _net_last_suspension: Array = []
+var _net_suspension: Array = []
 var _net_seats: Dictionary = {}             # CLIENT: seat name -> occupant uuid ("" = free), for prompts
 
 func _ready() -> void:
@@ -643,6 +757,17 @@ func _collision_base_offset() -> Vector3:
 		return (mr as Node3D).position
 	return Vector3.ZERO
 
+## Push the suspension settings onto the wheels that already exist, so they can be tuned from the
+## inspector (or the bench) WITHOUT rebuilding the vehicle. Rebuilding drops the real model's wheel
+## meshes and re-attaches them, which is both slow and visible; these values need none of that.
+func _apply_wheel_tuning() -> void:
+	for wheel in _wheels:
+		wheel.suspension_stiffness = suspension_stiffness
+		wheel.suspension_max_force = suspension_max_force
+		wheel.damping_compression = suspension_damping_compression
+		wheel.damping_relaxation = suspension_damping_relaxation
+		wheel.wheel_roll_influence = wheel_roll_influence
+
 ## Pin the center of mass instead of letting the RigidBody auto-derive it from the collision shapes.
 ## Auto-COM follows the col_ volumes (a big cab box pulls it forward → the truck nose-dives); we want
 ## it balanced on the wheels regardless of how the collision was modeled. Default = the wheelbase
@@ -656,7 +781,12 @@ func _apply_center_of_mass() -> void:
 		var sum := Vector3.ZERO
 		for w in _wheels:
 			sum += (w as Node3D).position
-		com = sum / float(_wheels.size()) + center_of_mass_offset
+		# Reference the RESTING HUB, not the mount. A VehicleWheel3D node is the TOP of the suspension
+		# and the wheel hangs suspension_rest below it, so averaging the mounts puts the centre of mass
+		# a whole rest length too high -- and centre-of-mass HEIGHT is what decides whether a vehicle
+		# slides or tips in a hard turn. Subtracting it keeps the mass where the axles are, so raising
+		# the mounts to fix ride height cannot silently make the vehicle roll over.
+		com = sum / float(_wheels.size()) - Vector3.UP * suspension_rest + center_of_mass_offset
 	center_of_mass = com
 
 ## Build collision from "col_*" meshes authored in the GLB (the artist shapes the volumes in Blender).
@@ -1235,10 +1365,17 @@ func _build_wheels() -> void:
 		for wheel_name in layout:
 			_make_wheel(wheel_name, layout[wheel_name][0], bool(layout[wheel_name][1]), true)
 		return
-	# Real model: one physics wheel per GLB wheel mesh, placed at the mesh's local position, with NO
-	# CSG tire (the GLB mesh is reparented under it at runtime by _attach_real_wheel_meshes).
+	# Real model: one physics wheel per GLB wheel mesh, with NO CSG tire (the GLB mesh is reparented
+	# under it at runtime by _attach_real_wheel_meshes).
+	#
+	# The mount goes suspension_rest ABOVE the mesh, not on it. VehicleWheel3D treats its node as the
+	# TOP of the suspension and hangs the wheel that far below, so mounting straight on the modelled
+	# hub parks the wheel a whole rest length too low — the body then floats by exactly that, and the
+	# reparented visual goes with it. Lifting the mount lands the resting wheel where the artist put
+	# it, with the full travel still available above it.
 	for w in real:
-		_make_wheel(str(w["name"]), w["pos"], bool(w["is_front"]), false)
+		var mount: Vector3 = (w["pos"] as Vector3) + Vector3.UP * suspension_rest
+		_make_wheel(str(w["name"]), mount, bool(w["is_front"]), debug_show_physics_wheels)
 
 ## Create one VehicleWheel3D (the shared per-wheel setup, DRY for both blockout and real wheels).
 ## with_csg_tire adds the procedural cylinder visual (blockout only). Returns the wheel.
@@ -1261,8 +1398,9 @@ func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire
 	wheel.wheel_rest_length = suspension_rest
 	wheel.suspension_stiffness = suspension_stiffness
 	wheel.suspension_max_force = suspension_max_force
-	wheel.damping_compression = 0.5
-	wheel.damping_relaxation = 0.7
+	wheel.damping_compression = suspension_damping_compression
+	wheel.damping_relaxation = suspension_damping_relaxation
+	wheel.wheel_roll_influence = wheel_roll_influence
 	wheel.wheel_friction_slip = wheel_friction_slip_default
 	add_child(wheel)
 	_wheels.append(wheel)
@@ -1276,7 +1414,13 @@ func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire
 		var tire_color := Color(0.12, 0.12, 0.13)
 		if debug_color_driven_wheels and traction:
 			tire_color = Color(0.1, 0.8, 0.2)  # green = powered wheel
-		tire.material = _solid_material(tire_color)
+		var mat: StandardMaterial3D = _solid_material(tire_color)
+		if _has_real_model():
+			# Overlaid on the model's own wheel: it must read as a MARKER, not as a second tyre, or
+			# you cannot tell which of the two you are looking at.
+			mat.albedo_color = Color(1.0, 0.0, 1.0, 0.35)
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		tire.material = mat
 		wheel.add_child(tire)
 	return wheel
 
@@ -1419,11 +1563,63 @@ func _detach_real_wheel_meshes() -> void:
 ## Spin a wheel's visual child about its axle. The blockout CSG tire spins about local UP (it was
 ## rotated 90° about Z); a real GLB wheel spins about real_wheel_spin_axis. One helper for both.
 func _spin_wheel_visual(wheel: VehicleWheel3D, angle: float) -> void:
-	if wheel.get_child_count() == 0:
+	var visual: Node3D = _wheel_visual(wheel)
+	if visual == null:
 		return
-	var visual: Node3D = wheel.get_child(0)
 	var axis: Vector3 = Vector3.UP if visual is CSGCylinder3D else real_wheel_spin_axis.normalized()
 	visual.rotate_object_local(axis, angle)
+
+
+## The mesh that stands for this wheel on screen: the model's own wheel when one was reparented under
+## it, else the blockout's CSG tyre.
+##
+## NEVER get_child(0). With the physics-wheel debug overlay on, the marker is added first and would be
+## taken for the visual — the marker would then be spun and dropped while the real wheel sat still,
+## which is exactly the confusion the overlay exists to remove.
+func _wheel_visual(wheel: VehicleWheel3D) -> Node3D:
+	var marker: Node3D = null
+	for c in wheel.get_children():
+		if c is CSGCylinder3D:
+			marker = c as Node3D
+		elif c is Node3D:
+			return c as Node3D
+	return marker
+
+
+## SERVER: each wheel mesh's height in the VEHICLE's own frame, in centimetres.
+##
+## Measured where the mesh ENDS UP rather than read off the wheel node, because how the engine places a
+## simulated wheel — moving the node or moving its child — is an implementation detail we should not
+## depend on. This works either way.
+##
+## The centimetre rounding is the throttle, not a precision choice: on smooth ground the array stops
+## changing, the change test above stops sending it, and a yard full of parked trucks costs nothing.
+func _sample_suspension() -> Array:
+	var heights: Array = []
+	for wheel in _wheels:
+		var visual: Node3D = _wheel_visual(wheel)
+		if visual == null:
+			heights.append(0)
+			continue
+		heights.append(roundi(to_local(visual.global_position).y * 100.0))
+	return heights
+
+
+## CLIENT: where to place wheel [param index]'s mesh, as a local height under its wheel node.
+##
+## A replica has no physics, so without this the wheel would sit at one fixed height and the vehicle
+## would be drawn permanently unloaded -- springs never moving over a bump.
+##
+## Until a packet arrives -- a vehicle too far away to be worth replicating its suspension, or one that
+## has only just come into view -- it falls back to the REST POSE, which is not a number to be tuned by
+## eye: the wheel node is the top of the suspension and the wheel belongs suspension_rest below it,
+## which is exactly where the model was authored. So the far pose is the editor pose, by construction.
+## It used to be a hand-set wheel_visual_drop, which drifted to nearly double this and drew distant
+## vehicles slumped on their axles until you got close enough for the real heights to snap them up.
+func _replica_wheel_height(index: int, wheel: VehicleWheel3D) -> float:
+	if index >= _net_suspension.size():
+		return -suspension_rest
+	return float(_net_suspension[index]) * 0.01 - wheel.position.y
 
 ## Find the steering-wheel mesh in the model (name "steering_wheel") and capture its rest basis.
 func _discover_steering_wheel() -> void:
@@ -1771,6 +1967,8 @@ func _physics_process(delta: float) -> void:
 	PropNet.prof_vehicle_calls += 1
 
 func _physics_process_impl(delta: float) -> void:
+	# Before the replica guard below: a client has physics off but still hears its own tyres.
+	_update_tyre_audio(delta)
 	if _is_networked():
 		# Server-authoritative: only the game server simulates + replicates. The client replica
 		# has physics off; its smoothing + wheels are done in _process.
@@ -1884,13 +2082,163 @@ func _update_wheels_visual(delta: float) -> void:
 	_wheel_last_pos = position
 	var fwd_speed: float = vel.dot(-transform.basis.z) / maxf(delta, 0.0001)
 	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
+	var index: int = 0
 	for wheel in _wheels:
 		if wheel.use_as_steering:
 			wheel.rotation.y = _net_steering
-		if wheel.get_child_count() > 0:
-			wheel.get_child(0).position.y = -wheel_visual_drop  # replica has no suspension → drop to ~ground
+		var visual: Node3D = _wheel_visual(wheel)
+		if visual != null:
+			visual.position.y = _replica_wheel_height(index, wheel)
 			_spin_wheel_visual(wheel, -spin)
+		index += 1
 	_update_steering_wheel(_net_steering)  # turn the volant on the replica too (no-op if absent)
+
+## The steer angle (rad) this vehicle is actually showing, whichever side we are on. The server and
+## the bench have the real physics value; a replica has physics off and only knows what was sent.
+func _current_steer_angle() -> float:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _net_steering
+	return steering
+
+
+## Surface family under a steered wheel, cached. The probe is a raycast plus a biome lookup: it costs
+## far too much to run every physics tick, and the ground under a vehicle does not change that fast.
+##
+## Sampled HERE, from a physics frame, on purpose. direct_space_state is unusable outside one, so a
+## probe called from _process silently reports nothing at all -- which reads as an unknown surface
+## rather than as a bug.
+func _scrub_surface_family() -> StringName:
+	if _scrub_family_age < SCRUB_SAMPLE_S:
+		return _scrub_family
+	_scrub_family_age = 0.0
+	# Probed from the VEHICLE, never from a wheel. SurfaceProbe excludes the node it starts from, and it
+	# can only exclude a CollisionObject3D -- a VehicleWheel3D is not one, so a ray fired from a wheel
+	# would not exclude the truck and MASK_OBSTACLE contains the vehicle layer: the first thing hit
+	# would be the truck's own chassis, and it would confidently report the truck's material as the
+	# ground. The body centre is a couple of metres from the tyres; the surface does not change over it.
+	_scrub_family = SurfaceProbe.family_under(self, SurfaceProbe.down_of(self),
+			SurfaceProbe.FOOT_REACH_M, Globals.MASK_OBSTACLE)
+	return _scrub_family
+
+
+## The two tyre sounds. They are NOT two versions of one event -- they answer different questions and
+## simply happen to share a threshold:
+##
+##   SCUFF -- the tyre shoved sideways across the ground. Driven by the steering RATE, so holding full
+##     lock is silent and only TURNING makes noise. A manoeuvre sound: it belongs to parking pace, and
+##     stands down once the vehicle is rolling fast enough for the roll to cover it.
+##   ROLL -- the tyres simply going round. Driven by SPEED alone, turning or not, held for the whole
+##     drive.
+##
+## Each is a single HELD loop -- never a stream of one-shots, which pile up on the tail of the one
+## before until a single turn sounds like a crowd. Runs on every client and on the bench, silent on the
+## game server (Sfx3D.muted): each client plays them from the replicated state rather than being told.
+func _update_tyre_audio(delta: float) -> void:
+	if Sfx3D.muted():
+		return
+	_scrub_family_age += delta
+	var angle: float = _current_steer_angle()
+	var rate: float = absf(angle - _scrub_last_steer) / maxf(delta, 0.0001)
+	_scrub_last_steer = angle
+	# Two sounds, two unrelated questions. The scuff is about the STEERING: the tyre is being shoved
+	# sideways across the ground, which only happens while the wheel is actually being turned. The roll
+	# is about the SPEED and nothing else: the tyres are going round, turning or not.
+	var speed_kmh: float = absf(get_display_speed_kmh())
+	# The roll is a RAMP, not a gate: its level is the speed as a fraction of sfx_wheel_roll_kmh. At a
+	# standstill it is zero and the loop is stopped outright; it grows with the speed and holds at full
+	# from that speed up.
+	var roll_target: float = 0.0
+	if sfx_wheel_roll != null:
+		roll_target = clampf(speed_kmh / maxf(sfx_wheel_roll_kmh, 0.1), 0.0, 1.0)
+	# The scuff still stands down once the roll is at full level: past that speed a manoeuvre scuff is
+	# not what the tyres are doing any more.
+	var turning: bool = rate >= sfx_wheel_scrub_min_rate
+	var want_slow: bool = turning and roll_target < 1.0 and sfx_wheel_scrub != null
+	# Started only from silence: a turn held for seconds keeps the sound it began with. That IS the
+	# no-overlap rule -- and it is also when a fresh sample is drawn, the only moment variation is heard
+	# as variation rather than as a stutter.
+	if want_slow and _scrub_slow_level <= 0.0:
+		_start_slow_scrub()
+	if roll_target > 0.0 and _roll_level <= 0.0:
+		_start_wheel_roll()
+	# Both envelopes are driven every tick, including one that is winding down: pulling away then hands
+	# over from scuff to roll as a crossfade instead of a cut.
+	_scrub_slow_level = _drive_tyre_loop(_scrub_slow_player, _scrub_slow_level, 1.0 if want_slow else 0.0,
+			0.0, sfx_wheel_scrub_fade_secs, sfx_wheel_scrub_db, delta)
+	_roll_level = _drive_tyre_loop(_roll_player, _roll_level, roll_target,
+			sfx_wheel_roll_attack_secs, sfx_wheel_scrub_fade_secs, sfx_wheel_roll_db, delta)
+
+
+## Move one held loop toward `target` (0 = silent, 1 = full), no faster than `attack` going up or
+## `release` coming down, and stop it once it truly reaches silence. Returns the new level for the
+## caller to store -- GDScript has no by-reference, and sharing this is what keeps the two sounds from
+## drifting apart as one of them gets tuned.
+##
+## A LEVEL rather than an on/off flag, because the roll is a ramp: it is as loud as the vehicle is
+## fast. The scuff simply passes 1 or 0 and gets the fade it always had.
+func _drive_tyre_loop(player: AudioStreamPlayer3D, level: float, target: float,
+		attack: float, release: float, db: float, delta: float) -> float:
+	var ramp: float = maxf(attack if target > level else release, 0.001)
+	var next_level: float = move_toward(level, clampf(target, 0.0, 1.0), delta / ramp)
+	if player == null or not is_instance_valid(player):
+		# No player, so no sound, so no level -- returning the ramped value would strand it above zero
+		# and the caller only ever (re)starts a loop FROM zero: the sound would go missing for good.
+		return 0.0
+	if next_level <= TYRE_SILENT:
+		if player.playing:
+			player.stop()
+		return 0.0
+	player.volume_db = db + linear_to_db(next_level)
+	return next_level
+
+
+## The node a scrub sound comes from: a steered wheel, so the noise sits where the rubber is. ONE of
+## them, not both -- two players running the same loop is the overlap we are avoiding, and 1.5 m apart
+## nobody could tell them apart anyway.
+func _scrub_host() -> Node3D:
+	for wheel in _wheels:
+		if wheel.use_as_steering:
+			return wheel
+	return self
+
+
+## Get a player parented to the current host, reusing the one we have. The parent check matters: the
+## wheels are rebuilt whenever a dimension changes, which frees whatever hung under them.
+func _tyre_player_on(existing: AudioStreamPlayer3D, host: Node3D) -> AudioStreamPlayer3D:
+	if existing != null and is_instance_valid(existing) and existing.get_parent() == host:
+		return existing
+	if is_instance_valid(existing):
+		existing.queue_free()
+	var player := AudioStreamPlayer3D.new()
+	host.add_child(player)
+	return player
+
+
+## Begin the manoeuvre scuff: a sample drawn from the set, never the same one twice running.
+func _start_slow_scrub() -> void:
+	var sample: AudioStream = sfx_wheel_scrub.pick(_scrub_surface_family(), _scrub_last_sample)
+	if sample == null:
+		return
+	_scrub_last_sample = sample
+	_scrub_slow_player = _tyre_player_on(_scrub_slow_player, _scrub_host())
+	Sfx3D.configure(_scrub_slow_player, Sfx3D.as_looping(sample), sfx_wheel_scrub_db,
+			sfx_wheel_scrub_falloff, sfx_wheel_scrub_distance, sfx_wheel_scrub_attenuation)
+	_scrub_slow_player.pitch_scale = sfx_wheel_scrub.random_pitch()
+	_scrub_slow_player.volume_db = sfx_wheel_scrub_db + linear_to_db(TYRE_SILENT)
+	_scrub_slow_player.play()
+
+
+## Begin the rolling noise: always the same loop, so no pick and no pitch jitter -- a constant noise
+## whose pitch changed every time you pulled away would be heard as a different vehicle each time.
+##
+## Hosted on the VEHICLE, not on a steered wheel like the scuff: every wheel rolls, so the noise
+## belongs to the whole machine rather than to one corner of it.
+func _start_wheel_roll() -> void:
+	_roll_player = _tyre_player_on(_roll_player, self)
+	Sfx3D.configure(_roll_player, Sfx3D.as_looping(sfx_wheel_roll), sfx_wheel_roll_db,
+			sfx_wheel_scrub_falloff, sfx_wheel_scrub_distance, sfx_wheel_scrub_attenuation)
+	_roll_player.volume_db = sfx_wheel_roll_db + linear_to_db(TYRE_SILENT)
+	_roll_player.play()
 
 ## Speed shown on the HUD: real physics speed on the server/bench; on a client replica (frozen,
 ## linear_velocity is 0) use the speed replicated by the server — deriving it from the
@@ -1992,6 +2340,10 @@ func _replicate_transform() -> void:
 	if my_seats != _net_last_seats:
 		data["seats"] = my_seats.duplicate()
 		_net_last_seats = my_seats.duplicate()
+	var suspension: Array = _sample_suspension()
+	if suspension != _net_last_suspension:
+		data["suspension"] = suspension
+		_net_last_suspension = suspension.duplicate()
 
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
 
@@ -2028,6 +2380,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 		if data.has("rotation"):
 			rot = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
 		_interp.set_target(self, pos, Basis.from_euler(rot))
+	if data.has("suspension"):
+		_net_suspension = (data["suspension"] as Array).duplicate()
 	if data.has("steering"):
 		_net_steering = float(data["steering"])
 	if data.has("speed"):
