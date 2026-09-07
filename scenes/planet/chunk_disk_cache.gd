@@ -119,7 +119,11 @@ func load_mesh(chunk_key: String, lod: int) -> ArrayMesh:
 	var path := _res_path(chunk_key, lod, "mesh")
 	if not FileAccess.file_exists(path):
 		return null
+	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var res := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if _t0 != 0:
+		PropNet.prof_cache_load_calls += 1
+		PropNet.prof_cache_load_usec += Time.get_ticks_usec() - _t0
 	if res is ArrayMesh:
 		cache_hits += 1
 		return res as ArrayMesh
@@ -131,7 +135,11 @@ func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh) -> void:
 	if not _enabled:
 		return
 	var path := _res_path(chunk_key, lod, "mesh")
+	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var err := ResourceSaver.save(mesh, path, ResourceSaver.FLAG_COMPRESS)
+	if _t0 != 0:
+		PropNet.prof_cache_save_calls += 1
+		PropNet.prof_cache_save_usec += Time.get_ticks_usec() - _t0
 	if err == OK:
 		cache_saves += 1
 	else:
@@ -152,7 +160,11 @@ func load_collision(chunk_key: String, lod: int) -> ConcavePolygonShape3D:
 	var path := _res_path(chunk_key, lod, "col")
 	if not FileAccess.file_exists(path):
 		return null
+	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var res := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if _t0 != 0:
+		PropNet.prof_cache_load_calls += 1
+		PropNet.prof_cache_load_usec += Time.get_ticks_usec() - _t0
 	if res is ConcavePolygonShape3D:
 		cache_hits += 1
 		return res as ConcavePolygonShape3D
@@ -164,7 +176,11 @@ func save_collision(chunk_key: String, lod: int, shape: ConcavePolygonShape3D) -
 	if not _enabled:
 		return
 	var path := _res_path(chunk_key, lod, "col")
+	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var err := ResourceSaver.save(shape, path, ResourceSaver.FLAG_COMPRESS)
+	if _t0 != 0:
+		PropNet.prof_cache_save_calls += 1
+		PropNet.prof_cache_save_usec += Time.get_ticks_usec() - _t0
 	if err == OK:
 		cache_saves += 1
 	else:
