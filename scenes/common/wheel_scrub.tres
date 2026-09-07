@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SurfaceSounds" format=3]
+
+[ext_resource type="Script" uid="uid://bui2t3eqpyye8" path="res://scenes/common/surface_sounds.gd" id="1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_1.mp3" id="w1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_2.mp3" id="w2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_3.mp3" id="w3"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_4.mp3" id="w4"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_5.mp3" id="w5"]
+[ext_resource type="AudioStream" uid="uid://dnqohk4goy70l" path="res://assets/_universe/audio/sfx/ui/missing-sound.wav" id="miss"]
+
+[resource]
+script = ExtResource("1")
+by_family = {
+&"gravel": [ExtResource("w1"), ExtResource("w2"), ExtResource("w3"), ExtResource("w4"), ExtResource("w5")]
+}
+default_samples = Array[AudioStream]([ExtResource("w1"), ExtResource("w2"), ExtResource("w3"), ExtResource("w4"), ExtResource("w5")])
+missing = ExtResource("miss")
