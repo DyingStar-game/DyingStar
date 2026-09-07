@@ -381,6 +381,146 @@ def compute_data_version(pts):
     return h.hexdigest()
 
 
+def write_pack(tmp_path, chunks_dir, manifest_bytes, levels, total_tiles,
+               elev_range, sample_norm, loose_dir_fn=None):
+    """Écrit le pack DSHP (deux passes) et rend (tuiles gardées, total).
+
+    Extrait de run_export pour être testable sans QGIS : c'est le code le plus risqué de
+    l'exporteur — deux passes, fichiers temporaires, cartes de présence, décision
+    d'élagage en cascade — et un export réel de tarsis_3 dure ~35 h. Le découvrir cassé
+    après coup coûterait la journée.
+
+    [param sample_norm] : callable(nside, group) -> ndarray (n, TILE_RES, TILE_RES) de
+    valeurs NORMALISÉES [0,1]. C'est le seul lien avec le TIN, donc le seul point à
+    remplacer dans un test.
+    """
+    sparse = SPARSE_EPSILON_M > 0.0
+    up = _upsampler(TILE_RES)
+    half = TILE_RES // 2
+    bitmap_bytes = sum((12 * n * n + 7) // 8 for n in levels) if sparse else 0
+    head, pad = build_header(manifest_bytes, TILE_RES, int(min(levels)),
+                             int(max(levels)), bitmap_bytes)
+
+    # PASSE 1 — échantillonner, décider, écrire les tuiles gardées par niveau.
+    #
+    # Les cartes de présence précèdent le blob dans le fichier mais ne sont connues qu'après
+    # avoir tout calculé, d'où les fichiers temporaires par niveau, concaténés en passe 2.
+    #
+    # La reconstruction du niveau parent passe par un memmap plutôt que par la RAM : à
+    # n1024 un niveau pèse ~13 Go, ce qui exclut de le garder en mémoire. Les accès sont
+    # séquentiels (l'ipix parent croît avec l'ipix enfant), donc le cache disque suffit.
+    written = 0
+    kept_total = 0
+    tmp_files = []
+    bitmaps = {}
+    recon_prev = None
+    recon_prev_path = None
+    for level_nside in levels:
+        npix = 12 * level_nside * level_nside
+        npface = level_nside * level_nside
+        level_dir = loose_dir_fn(level_nside) if loose_dir_fn else None
+        bits = bytearray((npix + 7) // 8)
+        # La reconstruction ne sert qu'aux ENFANTS : inutile de l'écrire pour le niveau le
+        # plus fin, qui n'en a pas. À n1024 ce fichier pèserait 51 Go pour rien.
+        needs_recon = sparse and level_nside < max(levels)
+        recon_path = os.path.join(chunks_dir, f".recon_n{level_nside}.tmp")
+        recon = (np.memmap(recon_path, dtype=np.float32, mode="w+",
+                           shape=(npix, TILE_RES, TILE_RES)) if needs_recon else None)
+        blob_path = os.path.join(chunks_dir, f".blob_n{level_nside}.tmp")
+        tmp_files.append(blob_path)
+        kept_here = 0
+        with open(blob_path, "wb") as lvl:
+            for base in range(0, npix, TILE_BATCH):
+                group = range(base, min(base + TILE_BATCH, npix))
+                # Un seul appel par groupe : le lot amortit la requête KD-tree et la
+                # résolution barycentrique du TIN (8x plus rapide qu'un appel par tuile),
+                # et les tuiles restent en ordre d'ipix, donc la disposition du blob est
+                # inchangée.
+                norms = sample_norm(level_nside, group)
+                for offset, ipix in enumerate(group):
+                    norm = norms[offset]
+
+                    keep = True
+                    pred = None
+                    if sparse and recon_prev is not None:
+                        k = ipix & 3
+                        dx, dy = k & 1, (k >> 1) & 1
+                        quad = recon_prev[ipix >> 2][dy * half:(dy + 1) * half,
+                                                     dx * half:(dx + 1) * half]
+                        pred = up(quad)
+                        err_m = float(np.abs(pred - norm).max()) * elev_range
+                        keep = err_m > SPARSE_EPSILON_M
+
+                    if keep:
+                        if SAMPLE_U16:
+                            # Borné avant quantification : FORMAT_RF n'était pas clampé et
+                            # laissait passer les valeurs hors [ELEV_MIN, ELEV_MAX], mais un
+                            # u16 les replierait au lieu de les saturer.
+                            q = np.rint(np.clip(norm, 0.0, 1.0) * 65535.0).astype("<u2")
+                            lvl.write(q.tobytes())
+                            # La reconstruction est ce que le CLIENT verra, donc la valeur
+                            # déquantifiée — sinon epsilon ignorerait l'erreur de quantification.
+                            if needs_recon:
+                                recon[ipix] = q.astype(np.float32) / 65535.0
+                        else:
+                            lvl.write(norm.tobytes())
+                            if needs_recon:
+                                recon[ipix] = norm
+                        bits[ipix >> 3] |= 1 << (ipix & 7)
+                        kept_here += 1
+                    elif needs_recon:
+                        recon[ipix] = pred
+
+                    if level_dir is not None:
+                        face = ipix // npface
+                        norm.tofile(os.path.join(
+                            level_dir, f"face_{face}", f"f{ipix}.r32"))
+                    written += 1
+                    if written % 8192 == 0:
+                        print(f"    {written}/{total_tiles} tiles…")
+        if needs_recon:
+            recon.flush()
+        bitmaps[level_nside] = bytes(bits)
+        kept_total += kept_here
+        pct = 100.0 * (npix - kept_here) / npix if npix else 0.0
+        print(f"    · level n{level_nside}: {npix} tiles, {kept_here} kept "
+              f"({pct:.1f}% pruned)" if sparse
+              else f"    · level n{level_nside}: {npix} tiles")
+        del recon_prev
+        if recon_prev_path and os.path.exists(recon_prev_path):
+            os.remove(recon_prev_path)
+        recon_prev = (np.memmap(recon_path, dtype=np.float32, mode="r",
+                                shape=(npix, TILE_RES, TILE_RES))
+                      if needs_recon else None)
+        recon_prev_path = recon_path if needs_recon else None
+
+    del recon_prev
+    if recon_prev_path and os.path.exists(recon_prev_path):
+        os.remove(recon_prev_path)
+
+    # PASSE 2 — en-tête, cartes de présence, puis les blobs de niveau dans l'ordre.
+    with open(tmp_path, "wb") as out:
+        out.write(head)
+        if sparse:
+            for level_nside in levels:
+                out.write(bitmaps[level_nside])
+        out.write(b"\x00" * pad)
+        for blob_path in tmp_files:
+            with open(blob_path, "rb") as lvl:
+                while True:
+                    chunk = lvl.read(1 << 22)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+    for blob_path in tmp_files:
+        os.remove(blob_path)
+    if sparse:
+        print(f"  Sparse pack: {kept_total}/{total_tiles} tiles kept "
+              f"({100.0 * (total_tiles - kept_total) / total_tiles:.1f}% pruned "
+              f"at epsilon={SPARSE_EPSILON_M} m)")
+    return kept_total, total_tiles
+
+
 def run_export():
     global ELEV_MIN, ELEV_MAX
     print("=" * 64)
@@ -517,139 +657,33 @@ def run_export():
     print(f"  Writing pyramid levels {levels} = {total_tiles} tiles "
           f"({TILE_RES}×{TILE_RES} float32) → {pack_path}")
 
-    sparse = SPARSE_EPSILON_M > 0.0
-    up = _upsampler(TILE_RES)
-    half = TILE_RES // 2
-    bitmap_bytes = sum((12 * n * n + 7) // 8 for n in levels) if sparse else 0
-    head, pad = build_header(manifest_bytes, TILE_RES, int(min(levels)),
-                             int(max(levels)), bitmap_bytes)
+    def _sample_norm(level_nside, group):
+        """Tuiles du groupe, en valeurs normalisées [0,1] sur [ELEV_MIN, ELEV_MAX]."""
+        if tin is not None:
+            # Sample the whole group in one TIN call — the KD-tree query and the
+            # barycentric solve both amortise (8x faster than one call per tile).
+            grids = [hpx.get_tile_grid_vec(level_nside, ip, TILE_RES) for ip in group]
+            flat = tin.sample_vec(
+                np.concatenate([g[0].ravel() for g in grids]),
+                np.concatenate([g[1].ravel() for g in grids]),
+                np.concatenate([g[2].ravel() for g in grids]))
+            elevs = flat.reshape(len(grids), TILE_RES, TILE_RES)
+        else:
+            elevs = np.stack([
+                _sample_equirect_bilinear(
+                    raster, *hpx.get_tile_grid_lonlat(level_nside, ip, TILE_RES))
+                for ip in group])
+        return ((elevs - ELEV_MIN) / elev_range).astype(np.float32)
 
-    # PASSE 1 — échantillonner, décider, écrire les tuiles gardées par niveau.
-    #
-    # Les cartes de présence précèdent le blob dans le fichier mais ne sont connues qu'après
-    # avoir tout calculé, d'où les fichiers temporaires par niveau, concaténés en passe 2.
-    #
-    # La reconstruction du niveau parent passe par un memmap plutôt que par la RAM : à
-    # n1024 un niveau pèse ~13 Go, ce qui exclut de le garder en mémoire. Les accès sont
-    # séquentiels (l'ipix parent croît avec l'ipix enfant), donc le cache disque suffit.
-    written = 0
-    kept_total = 0
-    tmp_files = []
-    bitmaps = {}
-    recon_prev = None
-    recon_prev_path = None
-    for level_nside in levels:
-        npix = 12 * level_nside * level_nside
-        npface = level_nside * level_nside
-        if WRITE_LOOSE_TILES:
-            level_dir = os.path.join(chunks_dir, f"n{level_nside}")
-            for face in range(12):
-                os.makedirs(os.path.join(level_dir, f"face_{face}"), exist_ok=True)
-        bits = bytearray((npix + 7) // 8)
-        recon_path = os.path.join(chunks_dir, f".recon_n{level_nside}.tmp")
-        recon = np.memmap(recon_path, dtype=np.float32, mode="w+",
-                          shape=(npix, TILE_RES, TILE_RES))
-        blob_path = os.path.join(chunks_dir, f".blob_n{level_nside}.tmp")
-        tmp_files.append((blob_path, recon_path))
-        kept_here = 0
-        with open(blob_path, "wb") as lvl:
-            for base in range(0, npix, TILE_BATCH):
-                group = range(base, min(base + TILE_BATCH, npix))
-                if tin is not None:
-                    # Sample the whole group in one TIN call — the KD-tree query and
-                    # the barycentric solve both amortise, and tiles stay in ipix
-                    # order so the blob layout is unaffected.
-                    grids = [hpx.get_tile_grid_vec(level_nside, ip, TILE_RES)
-                             for ip in group]
-                    flat = tin.sample_vec(
-                        np.concatenate([g[0].ravel() for g in grids]),
-                        np.concatenate([g[1].ravel() for g in grids]),
-                        np.concatenate([g[2].ravel() for g in grids]))
-                    elevs = flat.reshape(len(grids), TILE_RES, TILE_RES)
-                else:
-                    elevs = np.stack([
-                        _sample_equirect_bilinear(
-                            raster,
-                            *hpx.get_tile_grid_lonlat(level_nside, ip, TILE_RES))
-                        for ip in group])
-                for offset, ipix in enumerate(group):
-                    # Normalize to [0,1] over [ELEV_MIN, ELEV_MAX].
-                    norm = ((elevs[offset] - ELEV_MIN) / elev_range).astype(np.float32)
+    def _loose_dir(level_nside):
+        d = os.path.join(chunks_dir, f"n{level_nside}")
+        for face in range(12):
+            os.makedirs(os.path.join(d, f"face_{face}"), exist_ok=True)
+        return d
 
-                    keep = True
-                    pred = None
-                    if sparse and recon_prev is not None:
-                        k = ipix & 3
-                        dx, dy = k & 1, (k >> 1) & 1
-                        quad = recon_prev[ipix >> 2][dy * half:(dy + 1) * half,
-                                                     dx * half:(dx + 1) * half]
-                        pred = up(quad)
-                        err_m = float(np.abs(pred - norm).max()) * elev_range
-                        keep = err_m > SPARSE_EPSILON_M
-
-                    if keep:
-                        if SAMPLE_U16:
-                            # Borné avant quantification : FORMAT_RF n'était pas clampé et
-                            # laissait passer les valeurs hors [ELEV_MIN, ELEV_MAX], mais un
-                            # u16 les replierait au lieu de les saturer.
-                            q = np.rint(np.clip(norm, 0.0, 1.0) * 65535.0).astype("<u2")
-                            lvl.write(q.tobytes())
-                            # La reconstruction est ce que le CLIENT verra, donc la valeur
-                            # déquantifiée — sinon epsilon ignorerait l'erreur de quantification.
-                            recon[ipix] = q.astype(np.float32) / 65535.0
-                        else:
-                            lvl.write(norm.tobytes())
-                            recon[ipix] = norm
-                        bits[ipix >> 3] |= 1 << (ipix & 7)
-                        kept_here += 1
-                    else:
-                        recon[ipix] = pred
-
-                    if WRITE_LOOSE_TILES:
-                        face = ipix // npface
-                        norm.tofile(os.path.join(
-                            level_dir, f"face_{face}", f"f{ipix}.r32"))
-                    written += 1
-                    if written % 8192 == 0:
-                        print(f"    {written}/{total_tiles} tiles…")
-        recon.flush()
-        bitmaps[level_nside] = bytes(bits)
-        kept_total += kept_here
-        pct = 100.0 * (npix - kept_here) / npix if npix else 0.0
-        print(f"    · level n{level_nside}: {npix} tiles, {kept_here} kept "
-              f"({pct:.1f}% pruned)" if sparse
-              else f"    · level n{level_nside}: {npix} tiles")
-        del recon_prev
-        if recon_prev_path:
-            os.remove(recon_prev_path)
-        recon_prev = np.memmap(recon_path, dtype=np.float32, mode="r",
-                               shape=(npix, TILE_RES, TILE_RES))
-        recon_prev_path = recon_path
-
-    del recon_prev
-    if recon_prev_path and os.path.exists(recon_prev_path):
-        os.remove(recon_prev_path)
-
-    # PASSE 2 — en-tête, cartes de présence, puis les blobs de niveau dans l'ordre.
-    with open(tmp_path, "wb") as out:
-        out.write(head)
-        if sparse:
-            for level_nside in levels:
-                out.write(bitmaps[level_nside])
-        out.write(b"\x00" * pad)
-        for blob_path, _r in tmp_files:
-            with open(blob_path, "rb") as lvl:
-                while True:
-                    chunk = lvl.read(1 << 22)
-                    if not chunk:
-                        break
-                    out.write(chunk)
-    for blob_path, _r in tmp_files:
-        os.remove(blob_path)
-    if sparse:
-        print(f"  Sparse pack: {kept_total}/{total_tiles} tiles kept "
-              f"({100.0 * (total_tiles - kept_total) / total_tiles:.1f}% pruned "
-              f"at epsilon={SPARSE_EPSILON_M} m)")
+    written, _tt = write_pack(
+        tmp_path, chunks_dir, manifest_bytes, levels, total_tiles, elev_range,
+        _sample_norm, _loose_dir if WRITE_LOOSE_TILES else None)
     os.replace(tmp_path, pack_path)
     pack_mb = os.path.getsize(pack_path) / (1 << 20)
 

@@ -241,5 +241,138 @@ class DataVersion(unittest.TestCase):
         self.assertNotEqual(a, b, "epsilon doit entrer dans data_version")
 
 
+class PackWriter(unittest.TestCase):
+    """write_pack() de bout en bout : deux passes, cartes de présence, élagage en cascade.
+
+    C'est le code le plus risqué de l'exporteur, et un export réel de tarsis_3 dure ~35 h :
+    le découvrir cassé après coup coûterait la journée. Ces tests le font tourner sur une
+    pyramide synthétique et RELISENT le pack produit pour vérifier la seule propriété qui
+    compte — que le terrain reconstruit par le client reste à moins d'epsilon du vrai.
+    """
+
+    TR = 8
+    LEVELS = [1, 2, 4, 8]
+    EPS = 0.01          # elev_range = 1, donc 1 unité normalisée = 1 « mètre »
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        EXP["TILE_RES"] = self.TR
+        EXP["TILE_BATCH"] = 16
+        EXP["SAMPLE_U16"] = True
+        EXP["SPARSE_EPSILON_M"] = self.EPS
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    # -- terrain synthétique, fonction continue de la position ------------------
+    def _field(self, lon, lat):
+        smooth = 0.5 + 0.2 * np.sin(np.radians(lon))
+        bump = 0.25 * np.exp(-(((lon - 30.0) ** 2 + (lat - 10.0) ** 2) / 50.0))
+        return (smooth + bump).astype(np.float32)
+
+    def _sampler(self):
+        hpx = EXP["hpx"]
+
+        def sample(nside, group):
+            out = []
+            for ip in group:
+                lon, lat = hpx.get_tile_grid_lonlat(nside, ip, self.TR)
+                out.append(self._field(lon, lat))
+            return np.stack(out)
+        return sample
+
+    def _write(self, sparse_eps):
+        EXP["SPARSE_EPSILON_M"] = sparse_eps
+        manifest = b'{"planet_name":"wp"}'
+        total = sum(12 * n * n for n in self.LEVELS)
+        path = os.path.join(self.dir, "heights.pack")
+        kept, tot = EXP["write_pack"](path, self.dir, manifest, self.LEVELS, total,
+                                      1.0, self._sampler())
+        return path, kept, tot
+
+    # -- relecture indépendante, comme le ferait le client ----------------------
+    def _read(self, path):
+        with open(path, "rb") as fh:
+            blob = fh.read()
+        h = parse_header(blob)
+        off = 32 + h["json_len"]
+        present, slots = {}, {}
+        for n in self.LEVELS:
+            npix = 12 * n * n
+            nb = (npix + 7) // 8
+            bits = blob[off:off + nb]
+            off += nb
+            present[n] = [bool(bits[i >> 3] >> (i & 7) & 1) for i in range(npix)]
+            slots[n] = np.cumsum([0] + present[n][:-1]).tolist()
+        base, tiles = h["blob_start"], {}
+        for n in self.LEVELS:
+            npix = 12 * n * n
+            for ip in range(npix):
+                if not present[n][ip]:
+                    continue
+                o = base + slots[n][ip] * self.TR * self.TR * 2
+                raw = np.frombuffer(blob, dtype="<u2", count=self.TR * self.TR,
+                                    offset=o).astype(np.float64) / 65535.0
+                tiles[(n, ip)] = raw.reshape(self.TR, self.TR)
+            base += sum(present[n]) * self.TR * self.TR * 2
+        return h, present, tiles
+
+    def _reconstruct(self, present, tiles, nside, ipix):
+        """Ce que le client obtiendrait : la tuile, ou l'upsample de sa reconstruction."""
+        if present[nside][ipix]:
+            return tiles[(nside, ipix)]
+        parent = self._reconstruct(present, tiles, nside // 2, ipix >> 2)
+        up = EXP["_upsampler"](self.TR)
+        k, half = ipix & 3, self.TR // 2
+        dx, dy = k & 1, (k >> 1) & 1
+        return up(parent[dy * half:(dy + 1) * half, dx * half:(dx + 1) * half])
+
+    # -- les tests --------------------------------------------------------------
+    def test_smooth_terrain_prunes_heavily(self):
+        _p, kept, tot = self._write(self.EPS)
+        self.assertLess(kept, tot * 0.6,
+                        "un relief lisse doit s'élaguer largement (%d/%d gardées)" % (kept, tot))
+        self.assertGreaterEqual(kept, 12, "le niveau le plus grossier est toujours gardé")
+
+    def test_epsilon_zero_keeps_everything(self):
+        _p, kept, tot = self._write(0.0)
+        self.assertEqual(kept, tot, "epsilon nul = pack dense")
+
+    def test_reconstruction_never_exceeds_epsilon(self):
+        # LA propriété. On relit le pack et on reconstruit chaque tuile du niveau le plus
+        # fin exactement comme le client, puis on compare au terrain vrai.
+        path, _k, _t = self._write(self.EPS)
+        h, present, tiles = self._read(path)
+        self.assertEqual(h["flags"], 3, "u16 + sparse")
+        hpx = EXP["hpx"]
+        fine = max(self.LEVELS)
+        worst = 0.0
+        for ip in range(12 * fine * fine):
+            lon, lat = hpx.get_tile_grid_lonlat(fine, ip, self.TR)
+            truth = self._field(lon, lat)
+            got = self._reconstruct(present, tiles, fine, ip)
+            worst = max(worst, float(np.abs(got - truth).max()))
+        # epsilon + un pas de quantification : une tuile GARDÉE porte aussi l'arrondi u16.
+        self.assertLessEqual(worst, self.EPS + 1.0 / 65535.0,
+                             "erreur reconstruite %.6f > epsilon %.6f" % (worst, self.EPS))
+
+    def test_blob_size_matches_the_presence_maps(self):
+        # Un décalage d'un octet entre cartes et blob ne lèverait aucune erreur : il
+        # décalerait toutes les tuiles.
+        path, kept, _t = self._write(self.EPS)
+        h, present, _tiles = self._read(path)
+        expected = h["blob_start"] + kept * self.TR * self.TR * 2
+        self.assertEqual(os.path.getsize(path), expected,
+                         "taille du fichier = en-tête + cartes + tuiles gardées")
+        self.assertEqual(sum(sum(v) for v in present.values()), kept)
+
+    def test_no_temp_files_are_left_behind(self):
+        self._write(self.EPS)
+        leftovers = [f for f in os.listdir(self.dir) if f.startswith(".")]
+        self.assertEqual(leftovers, [], "les temporaires doivent être nettoyés")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
