@@ -1157,9 +1157,31 @@ les mesures qui justifient ces chiffres sont en §8.
   un PVC.
 - Handshake : le serveur annonce `planet → data_version`, le client obéit.
 
-### Phase 5 — éditeur
+### Phase 5 — éditeur — ✅ FAITE
 
-- Même fetcher, mode synchrone toléré, plus un bouton « prefetch région ».
+L'éditeur n'a plus d'aperçu à lui. Il fait tourner le **même quadtree, les mêmes LOD, le
+même pipeline asynchrone et le même streaming** que le client, simplement autour de la
+caméra d'édition au lieu du joueur. `editor_preview_depth`, `editor_preview_rings` et
+`editor_preview_vegetation` ont disparu, avec leur générateur : une profondeur et un
+nombre d'anneaux fixés à la main ne montraient pas ce que le joueur verrait, et les
+construire sur le fil de l'éditeur est ce qui le gelait dès que les tuiles devaient être
+téléchargées. Les 38 valeurs stockées dans 19 scènes ont été retirées.
+
+Aucun bouton « prefetch région » n'a été nécessaire : le prefetch en anneau s'en charge,
+puisque c'est le même code.
+
+Trois bugs découverts par cette bascule, tous réels au-delà de l'éditeur :
+
+- `_crc32` lisait une table statique dont l'initialiseur n'avait pas tourné dans ce
+  contexte. Chaque index sortait des bornes, le CRC était faux, la tuile était rejetée —
+  et l'absence de terrain ne désignait rien. Table construite à la demande.
+- Les boucles d'attente de `HTTPClient` n'avaient **aucune échéance**. Un service qui
+  accepte la connexion puis se tait les faisait tourner indéfiniment, et `open_planet`
+  part du thread principal : un serveur de tuiles en panne gelait l'éditeur à l'ouverture
+  d'une scène. Vérifié contre un écouteur muet — 2001 ms pour une échéance de 2000.
+- Les autoloads ne sont pas `@tool` : leurs membres, constantes comprises, ne sont pas
+  atteignables depuis le nœud dans l'éditeur. Quatre sites tombaient dessus une fois le
+  pipeline actif. Les constantes se lisent désormais sur le **script**.
 
 ### Phase 6 (optionnelle, plus tard) — CDN de meshes borné
 
@@ -1174,8 +1196,12 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
 - **Streamer les tuiles, pas les meshes** (§2) — inventaire 73,8 Go contre ~14,5 To.
 - **Résolution par corps** : tarsis_3 à 198 m (`n1024 × tr32`), les 19 autres planètes
   et lunes à 4 065 m (`n64 × tr25`). tarsis_5 baisse donc de 2 033 m à 4 065 m.
-- **Un fichier par tuile, pas de bundles** (§4) — `nside` et `tile_res` sont déjà le
-  même bouton que la granularité de bundle.
+- **Un fichier par tuile pour les niveaux fins** (§4) — `nside` et `tile_res` sont déjà
+  le même bouton que la granularité de bundle. **Révisé pour les niveaux grossiers** : le
+  plancher n1…n8 est servi en un `floor.bin` unique, parce que ces 1 020 tuiles ne pèsent
+  que 1,88 Mio mais coûtent 1 020 allers-retours — des secondes de bande passante contre
+  des minutes de latence. Le critère n'est donc pas la taille mais le rapport
+  volume/allers-retours, et il ne bascule qu'aux niveaux grossiers.
 - **Adressage par chemin, pas par contenu** (§7) — dédup mesurée à 1 %, working set de
   580 Ko, manifeste de 537 Mo : les trois arguments du contenu-adressage tombent.
 - **Le streaming n'apporte rien au CPU** (phase 0) — lecture de tuiles à 9,4 % de la
@@ -1197,5 +1223,5 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
 ---
 
 *Décisions actées : streaming des tuiles et non des meshes (§2) ; tarsis_3 à 198 m et
-les 19 autres corps à 4 065 m (§4) ; un fichier par tuile, pas de bundles (§4) ;
-adressage par chemin (§7).*
+les 19 autres corps à 4 065 m (§4) ; un fichier par tuile aux niveaux fins, un objet
+unique pour le plancher (§4) ; adressage par chemin (§7).*
