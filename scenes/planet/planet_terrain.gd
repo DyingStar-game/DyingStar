@@ -43,6 +43,14 @@ const CAM_HISTORY_SIZE := 10
 ## is 3000-6000 m off.
 const _CACHE_GEOM_TOLERANCE_M := 1500.0
 
+## Couches et masques, lus sur le SCRIPT et non sur le nœud autoload.
+##
+## L'autoload Globals n'est pas @tool : dans l'éditeur ses membres — constantes comprises —
+## ne sont pas accessibles depuis le nœud, et chaque chunk assemblé y lèverait. Passer par
+## le script résout les constantes à la compilation, dans l'éditeur comme en jeu, sans
+## dupliquer les valeurs.
+const GlobalsDefs := preload("res://scenes/globals/globals.gd")
+
 ## ── Editor ────────────────────────────────────────────────────────
 ## L'éditeur affiche EXACTEMENT les mêmes chunks que le jeu : même quadtree, mêmes LOD,
 ## même pipeline asynchrone, même streaming de tuiles — simplement autour de la caméra
@@ -350,10 +358,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_collision_body = StaticBody3D.new()
 		_collision_body.name = "PlanetCollision"
 		# Terrain IS the `world` layer (layer 1) and scans world | player |
-		# vehicle | prop (masks 1–4 = Globals.MASK_SOLID).
-		_collision_body.collision_layer = Globals.LAYER_WORLD
-		_collision_body.set_collision_layer_value(Globals.LAYER_WORLD, true)
-		_collision_body.collision_mask = Globals.MASK_SOLID
+		# vehicle | prop (masks 1–4 = GlobalsDefs.MASK_SOLID).
+		_collision_body.collision_layer = GlobalsDefs.LAYER_WORLD
+		_collision_body.set_collision_layer_value(GlobalsDefs.LAYER_WORLD, true)
+		_collision_body.collision_mask = GlobalsDefs.MASK_SOLID
 		add_child(_collision_body)
 
 		var base_sphere := SphereShape3D.new()
@@ -849,9 +857,9 @@ func _make_chunk_collision_body(key: String, nside: int, ipix: int,
 	var body := StaticBody3D.new()
 	body.name = key + "_body"
 	# Same identity as the legacy shared PlanetCollision body.
-	body.collision_layer = Globals.LAYER_WORLD
-	body.set_collision_layer_value(Globals.LAYER_WORLD, true)
-	body.collision_mask = Globals.MASK_SOLID
+	body.collision_layer = GlobalsDefs.LAYER_WORLD
+	body.set_collision_layer_value(GlobalsDefs.LAYER_WORLD, true)
+	body.collision_mask = GlobalsDefs.MASK_SOLID
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.name = key + "_col"
@@ -1099,6 +1107,12 @@ func _physics_process(delta: float) -> void:
 ## at ~3e10). Fed to the terrain shader for the celestial-layer star lighting. Falls back to the last
 ## value if the star node is not resolvable yet.
 func _compute_star_dir() -> Vector3:
+	# Les autoloads ne sont pas @tool : dans l'éditeur leur script est bien nommé mais ses
+	# membres n'existent pas, et lire universe_scene y lève à chaque frame. Il n'y a de
+	# toute façon pas de scène d'univers dans l'éditeur — le terrain garde la direction
+	# par défaut, comme le faisait l'ancien aperçu.
+	if Engine.is_editor_hint():
+		return _star_dir_world
 	var scene: Node = NetworkOrchestrator.universe_scene
 	if scene == null:
 		return _star_dir_world
@@ -1162,7 +1176,7 @@ func _update_terrain() -> void:
 		var want_celestial: bool = planet_lod >= 3
 		if want_celestial != _chunks_on_celestial:
 			_chunks_on_celestial = want_celestial
-			var layer: int = Globals.RENDER_MASK_CELESTIAL if want_celestial else Globals.RENDER_MASK_LOCAL
+			var layer: int = GlobalsDefs.RENDER_MASK_CELESTIAL if want_celestial else GlobalsDefs.RENDER_MASK_LOCAL
 			for ck in _active_chunks:
 				var cmi: MeshInstance3D = _active_chunks[ck].get("mesh_instance")
 				if is_instance_valid(cmi):
@@ -2506,7 +2520,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# Star direction for the shader's celestial-layer star lighting (see _star_dir_world).
 	mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
 	# Born on the celestial layer when this planet is currently a distant body (star-lit), else local.
-	mi.layers = Globals.RENDER_MASK_CELESTIAL if _chunks_on_celestial else Globals.RENDER_MASK_LOCAL
+	mi.layers = GlobalsDefs.RENDER_MASK_CELESTIAL if _chunks_on_celestial else GlobalsDefs.RENDER_MASK_LOCAL
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
 
