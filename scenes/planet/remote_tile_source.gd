@@ -57,11 +57,14 @@ var floor_nside_max: int = 0
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
 
-## Connexion HTTP conservée entre deux tuiles. Propriété du fil de téléchargement seul :
-## _http_get n'est atteint que depuis lui, il n'y a donc pas d'accès concurrent.
+## Connexion HTTP conservée entre deux tuiles. Propriété du SEUL fil de téléchargement,
+## et le code le vérifie au lieu de le supposer — voir [method _reuses_connection].
 var _conn: HTTPClient = null
 var _conn_host: String = ""
 var _conn_port: int = 0
+## Identifiant du fil de téléchargement, seul autorisé à réutiliser _conn. 0 tant qu'il
+## n'a pas démarré.
+var _worker_tid: int = 0
 
 ## Borne le cache disque. Null = pas d'éviction (le comportement des tests unitaires,
 ## qui n'écrivent qu'une poignée de tuiles).
@@ -508,7 +511,20 @@ func _forget(kind: int, nside: int, ipix: int) -> void:
 	_mutex.unlock()
 
 
+## Cet appel a-t-il le droit de réutiliser la connexion conservée ?
+##
+## Un HTTPClient partagé entre deux fils se corrompt : deux requêtes entrelacées sur le
+## même flux ont donné un signal 11 dans les entrailles de HTTPClient, découvert en
+## sondant le plancher pendant que le fil téléchargeait des tuiles. Tout appelant qui
+## n'est pas le fil de téléchargement reçoit donc une connexion jetable — c'est
+## exactement le comportement d'avant, et cela ne concerne que open_planet, une requête
+## par planète.
+func _reuses_connection() -> bool:
+	return _worker_tid != 0 and OS.get_thread_caller_id() == _worker_tid
+
+
 func _worker() -> void:
+	_worker_tid = OS.get_thread_caller_id()
 	while true:
 		_sem.wait()
 		_mutex.lock()
@@ -566,6 +582,8 @@ func _http_get(url: String) -> Array:
 		var hp := host.split(":")
 		host = hp[0]
 		port = int(hp[1])
+	if not _reuses_connection():
+		return _http_fresh(host, port, path)
 	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
 	# ne doit pas se traduire par une tuile manquante.
 	var res := _http_once(host, port, path)
@@ -573,6 +591,28 @@ func _http_get(url: String) -> Array:
 		_conn = null
 		res = _http_once(host, port, path)
 	return res
+
+
+## Requête sur une connexion jetable, sans toucher à celle du fil de téléchargement.
+func _http_fresh(host: String, port: int, path: String) -> Array:
+	var http := HTTPClient.new()
+	if http.connect_to_host(host, port) != OK:
+		return [0, PackedByteArray()]
+	while http.get_status() == HTTPClient.STATUS_CONNECTING \
+			or http.get_status() == HTTPClient.STATUS_RESOLVING:
+		http.poll()
+	if http.get_status() != HTTPClient.STATUS_CONNECTED:
+		return [0, PackedByteArray()]
+	if http.request(HTTPClient.METHOD_GET, path, []) != OK:
+		return [0, PackedByteArray()]
+	while http.get_status() == HTTPClient.STATUS_REQUESTING:
+		http.poll()
+	var body := PackedByteArray()
+	while http.get_status() == HTTPClient.STATUS_BODY:
+		http.poll()
+		body.append_array(http.read_response_body_chunk())
+	net_requests += 1
+	return [http.get_response_code(), body]
 
 
 ## Une requête sur la connexion courante, qu'elle rouvre si besoin. [0, vide] signale une
