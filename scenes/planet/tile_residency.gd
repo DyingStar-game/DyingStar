@@ -64,10 +64,19 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -
 		ready = false
 		# Demander la plus fine tuile réellement publiée : sur un pack creux la tuile
 		# exacte peut ne pas exister, et c'est son ancêtre qu'il faut rapatrier.
+		#
+		# presence_of() et NON has_tile() : ce code tourne sur le thread principal, et
+		# has_tile va chercher la carte du shard en HTTP synchrone quand elle manque.
+		# Appelé pour chaque chunk en attente à chaque frame, cela a fait tomber le jeu
+		# à 0,2 FPS. Ici, une carte inconnue met le chunk en attente d'une frame de plus
+		# — le fil de téléchargement la rapatrie pendant ce temps.
 		var ns := t.y
 		var ip := t.x
 		while ns >= data.export_nside_min:
-			if data.remote_source.has_tile(ns, ip):
+			var state: int = data.remote_source.presence_of(ns, ip)
+			if state == RemoteTileSource.PRESENCE_UNKNOWN:
+				break
+			if state == RemoteTileSource.PRESENCE_YES:
 				data.remote_source.queue(ns, ip)
 				break
 			ns >>= 1

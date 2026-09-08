@@ -2553,7 +2553,10 @@ func _queue_mesh_task(info: Dictionary) -> void:
 ## Vide le backlog, en BORNANT les tentatives à son contenu initial : sinon un chunk remis
 ## en attente d'un téléchargement relancerait la boucle sans fin (phase 3 du doc).
 func _drain_backlog() -> void:
-	var tries := _mesh_task_backlog.size()
+	# Plafonné : évaluer la résidence d'un chunk coûte une passe sur sa tuile et ses huit
+	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
+	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
+	var tries := mini(_mesh_task_backlog.size(), max_mesh_tasks * 2)
 	while tries > 0 and _mesh_tasks.size() < max_mesh_tasks:
 		var info: Dictionary = _mesh_task_backlog[0]
 		_mesh_task_backlog.remove_at(0)

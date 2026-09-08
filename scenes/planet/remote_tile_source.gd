@@ -26,6 +26,13 @@ const TILE_MAGIC := 0x4C545344   # "DSTL" en little-endian
 const TILE_HEADER := 12
 const FLAG_DEFLATE := 1
 
+## Réponse de [method presence_of]. UNKNOWN n'est pas une erreur : la carte du shard n'est
+## pas encore arrivée, et l'appelant doit différer plutôt que d'attendre.
+enum { PRESENCE_UNKNOWN, PRESENCE_YES, PRESENCE_NO }
+## Genres de travaux de la file du fil de téléchargement.
+const JOB_TILE := 0
+const JOB_PRESENCE := 1
+
 ## Base servie, sans slash final. Ex. "http://127.0.0.1/dist".
 var base_url: String = ""
 var planet: String = ""
@@ -46,7 +53,7 @@ var fetcher: Callable = Callable()
 ## attendre une socket gèlerait la génération de terrain. Les demandes sont donc mises en
 ## file et servies ici, pendant que l'appelant diffère le chunk concerné.
 var _thread: Thread = null
-var _queue: Array[Vector2i] = []      # (ipix, nside)
+var _queue: Array[Vector3i] = []      # (ipix, nside, genre)
 var _queued: Dictionary = {}          # "n/p" -> true, pour ne pas redemander
 var _mutex: Mutex = Mutex.new()
 var _sem: Semaphore = Semaphore.new()
@@ -169,21 +176,50 @@ static func decode_envelope(blob: PackedByteArray) -> PackedByteArray:
 	return payload
 
 
-## La tuile est-elle publiée ? Répond depuis la carte de présence du shard, qui couvre
-## 4096 tuiles voisines pour 512 octets.
+## Présence SANS BLOQUER, pour le thread principal.
 ##
-## Sans elle, une tuile absente ne se découvrirait que par un 404 : deux allers-retours sur
-## la majorité des requêtes, puisque 35 à 65 % des tuiles d'un pack creux n'existent pas.
+## [method has_tile] va chercher la carte du shard en HTTP synchrone si elle manque. Appelé
+## depuis le thread principal pour chaque chunk en attente à chaque frame, cela a fait
+## tomber le jeu à 0,2 FPS : des dizaines d'allers-retours réseau par image. Cette
+## variante ne consulte que ce qui est déjà là, met la carte en file si elle manque, et
+## rend UNKNOWN — à charge pour l'appelant de différer le chunk.
+func presence_of(nside: int, ipix: int) -> int:
+	@warning_ignore("integer_division")
+	var shard := ipix / shard_tiles
+	var key := "n%d/f%d" % [nside, shard]
+	_mutex.lock()
+	var bits: Variant = _present.get(key)
+	_mutex.unlock()
+	if bits == null:
+		_enqueue(nside, shard * shard_tiles, JOB_PRESENCE)
+		return PRESENCE_UNKNOWN
+	var packed: PackedByteArray = bits
+	var i := ipix - shard * shard_tiles
+	var byte := i >> 3
+	if byte >= packed.size():
+		return PRESENCE_NO
+	return PRESENCE_YES if ((packed[byte] >> (i & 7)) & 1) == 1 else PRESENCE_NO
+
+
+## La tuile est-elle publiée ? Va chercher la carte du shard si elle manque, donc
+## BLOQUANT : réservé au fil de téléchargement. Le thread principal utilise presence_of().
 func has_tile(nside: int, ipix: int) -> bool:
 	@warning_ignore("integer_division")
 	var shard := ipix / shard_tiles
 	var key := "n%d/f%d" % [nside, shard]
-	if not _present.has(key):
+	_mutex.lock()
+	var known: bool = _present.has(key)
+	_mutex.unlock()
+	if not known:
 		var res: Array = _request("%s/present.bin" % shard_url(nside, ipix))
 		if res[0] != 200:
 			return false
+		_mutex.lock()
 		_present[key] = res[1]
+		_mutex.unlock()
+	_mutex.lock()
 	var bits: PackedByteArray = _present[key]
+	_mutex.unlock()
 	var i := ipix - shard * shard_tiles
 	var byte := i >> 3
 	if byte >= bits.size():
@@ -275,13 +311,18 @@ func stop() -> void:
 ## Met une tuile en file. Ne bloque pas et ne redemande jamais deux fois la même.
 ## Sans effet si la tuile est déjà en cache ou si la carte de présence la nie.
 func queue(nside: int, ipix: int) -> void:
-	var key := "%d/%d" % [nside, ipix]
+	_enqueue(nside, ipix, JOB_TILE)
+
+
+func _enqueue(nside: int, ipix: int, kind: int) -> void:
+	var key := "%d/%d/%d" % [kind, nside, ipix]
 	_mutex.lock()
 	var known: bool = _queued.has(key)
 	if not known:
 		_queued[key] = true
-		_queue.append(Vector2i(ipix, nside))
-		stat_requested += 1
+		_queue.append(Vector3i(ipix, nside, kind))
+		if kind == JOB_TILE:
+			stat_requested += 1
 	_mutex.unlock()
 	if not known:
 		_sem.post()
@@ -294,9 +335,14 @@ func _worker() -> void:
 		if _quit:
 			_mutex.unlock()
 			return
-		var item: Vector2i = _queue.pop_front() if not _queue.is_empty() else Vector2i(-1, -1)
+		var item: Vector3i = _queue.pop_front() if not _queue.is_empty() else Vector3i(-1, -1, 0)
 		_mutex.unlock()
 		if item.x < 0:
+			continue
+		if item.z == JOB_PRESENCE:
+			# Rapatrie la carte du shard. C'est ce qui débloque presence_of() côté
+			# thread principal, sans que celui-ci n'ait jamais touché au réseau.
+			has_tile(item.y, item.x)
 			continue
 		var ok := fetch_now(item.y, item.x)
 		_mutex.lock()
