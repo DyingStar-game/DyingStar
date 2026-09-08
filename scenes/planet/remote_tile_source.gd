@@ -66,6 +66,14 @@ var _conn_port: int = 0
 ## n'a pas démarré.
 var _worker_tid: int = 0
 
+## Délai maximal d'une requête, en millisecondes.
+##
+## Les boucles d'attente de HTTPClient sont des boucles serrées sur poll() : sans borne,
+## un service injoignable les fait tourner indéfiniment. open_planet est appelé depuis le
+## thread principal — dans l'éditeur, cela gèle l'éditeur, et un service en panne ne doit
+## jamais empêcher d'ouvrir une scène.
+var request_timeout_ms: int = 10000
+
 ## Borne le cache disque. Null = pas d'éviction (le comportement des tests unitaires,
 ## qui n'écrivent qu'une poignée de tuiles).
 var lru: TileCacheLru = null
@@ -595,29 +603,50 @@ func _http_get(url: String) -> Array:
 
 ## Requête sur une connexion jetable, sans toucher à celle du fil de téléchargement.
 func _http_fresh(host: String, port: int, path: String) -> Array:
+	var deadline := Time.get_ticks_msec() + request_timeout_ms
 	var http := HTTPClient.new()
 	if http.connect_to_host(host, port) != OK:
 		return [0, PackedByteArray()]
-	while http.get_status() == HTTPClient.STATUS_CONNECTING \
-			or http.get_status() == HTTPClient.STATUS_RESOLVING:
-		http.poll()
-	if http.get_status() != HTTPClient.STATUS_CONNECTED:
+	if not _await(http, deadline, true):
 		return [0, PackedByteArray()]
 	if http.request(HTTPClient.METHOD_GET, path, []) != OK:
 		return [0, PackedByteArray()]
-	while http.get_status() == HTTPClient.STATUS_REQUESTING:
+	return _drain(http, deadline)
+
+
+## Attend que la connexion s'établisse, ou que l'échéance tombe. Rend false sur échéance.
+func _await(http: HTTPClient, deadline: int, connecting: bool) -> bool:
+	while http.get_status() == HTTPClient.STATUS_CONNECTING \
+			or http.get_status() == HTTPClient.STATUS_RESOLVING:
+		if Time.get_ticks_msec() > deadline:
+			return false
 		http.poll()
+	return http.get_status() == HTTPClient.STATUS_CONNECTED or not connecting
+
+
+## Envoie la requête au bout et rend [code, corps]. [0, vide] sur échéance ou rupture.
+func _drain(http: HTTPClient, deadline: int) -> Array:
+	while http.get_status() == HTTPClient.STATUS_REQUESTING:
+		if Time.get_ticks_msec() > deadline:
+			return [0, PackedByteArray()]
+		http.poll()
+	var code := http.get_response_code()
+	if code == 0:
+		return [0, PackedByteArray()]
 	var body := PackedByteArray()
 	while http.get_status() == HTTPClient.STATUS_BODY:
+		if Time.get_ticks_msec() > deadline:
+			return [0, PackedByteArray()]
 		http.poll()
 		body.append_array(http.read_response_body_chunk())
 	net_requests += 1
-	return [http.get_response_code(), body]
+	return [code, body]
 
 
 ## Une requête sur la connexion courante, qu'elle rouvre si besoin. [0, vide] signale une
 ## connexion inutilisable — à l'appelant de réessayer une fois.
 func _http_once(host: String, port: int, path: String) -> Array:
+	var deadline := Time.get_ticks_msec() + request_timeout_ms
 	if _conn == null or _conn_host != host or _conn_port != port \
 			or _conn.get_status() != HTTPClient.STATUS_CONNECTED:
 		_conn = HTTPClient.new()
@@ -626,25 +655,15 @@ func _http_once(host: String, port: int, path: String) -> Array:
 		if _conn.connect_to_host(host, port) != OK:
 			_conn = null
 			return [0, PackedByteArray()]
-		while _conn.get_status() == HTTPClient.STATUS_CONNECTING \
-				or _conn.get_status() == HTTPClient.STATUS_RESOLVING:
-			_conn.poll()
-		if _conn.get_status() != HTTPClient.STATUS_CONNECTED:
+		if not _await(_conn, deadline, true):
 			_conn = null
 			return [0, PackedByteArray()]
 	if _conn.request(HTTPClient.METHOD_GET, path, []) != OK:
 		return [0, PackedByteArray()]
-	while _conn.get_status() == HTTPClient.STATUS_REQUESTING:
-		_conn.poll()
-	var code := _conn.get_response_code()
-	if code == 0:
-		return [0, PackedByteArray()]
-	var body := PackedByteArray()
-	while _conn.get_status() == HTTPClient.STATUS_BODY:
-		_conn.poll()
-		body.append_array(_conn.read_response_body_chunk())
-	net_requests += 1
-	return [code, body]
+	var res := _drain(_conn, deadline)
+	if res[0] == 0:
+		_conn = null
+	return res
 
 
 static func _remove_tree(path: String) -> void:
@@ -681,6 +700,14 @@ static func _build_crc_table() -> PackedInt64Array:
 
 
 static func _crc32(data: PackedByteArray) -> int:
+	# L'initialiseur de variable statique n'a pas toujours tourné quand on arrive ici :
+	# depuis l'éditeur, la table était vide et chaque octet indexait hors bornes. Le CRC
+	# rendu était alors faux, decode_envelope rejetait la tuile, et l'absence de terrain
+	# ne se lisait nulle part comme un problème de CRC. On la construit donc à la demande.
+	# Deux fils peuvent la bâtir en même temps sans dommage : ils écrivent la même table,
+	# et l'affectation d'un PackedArray est une copie de valeur.
+	if _crc_table.size() != 256:
+		_crc_table = _build_crc_table()
 	var c := 0xFFFFFFFF
 	for i in data.size():
 		c = _crc_table[(c ^ data[i]) & 0xFF] ^ (c >> 8)

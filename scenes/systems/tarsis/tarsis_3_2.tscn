@@ -39,8 +39,6 @@ orbit_primary_mass_kg = 4.7059360000000005e+24
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("4_lnpr0")
-editor_preview_depth = 13
-editor_preview_rings = 3
 editor_goto_lon = -10.0
 editor_goto_lat = 20.0
 editor_goto_x = 5881947.772299743

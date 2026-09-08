@@ -415,3 +415,47 @@ func test_the_worker_claims_the_connection_when_it_starts() -> void:
 	assert_ne(rts._worker_tid, OS.get_thread_caller_id(),
 			"et ce n'est pas le thread principal")
 	rts.stop()
+
+
+func test_crc_survives_an_uninitialised_table() -> void:
+	# LA régression : l'initialiseur de variable statique n'avait pas tourné quand
+	# l'éditeur a commencé à lire des tuiles. La table était vide, chaque octet indexait
+	# hors bornes, le CRC était faux — et l'éditeur n'affichait aucun terrain sans que
+	# rien ne désigne le CRC. La table doit se reconstruire à la demande.
+	var payload := PackedByteArray([0x78, 0x9C, 0x01, 0x02, 0x03])
+	var want := RemoteTileSource._crc32(payload)
+	RemoteTileSource._crc_table = PackedInt64Array()
+	assert_eq(RemoteTileSource._crc32(payload), want, "même CRC après table vidée")
+	assert_eq(RemoteTileSource._crc_table.size(), 256, "et la table est reconstruite")
+
+
+func test_an_envelope_decodes_after_the_table_was_emptied() -> void:
+	# La conséquence réelle : une enveloppe valide doit se décoder, pas être rejetée.
+	var payload := PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8])
+	var blob := PackedByteArray()
+	blob.resize(RemoteTileSource.TILE_HEADER)
+	blob.encode_u32(0, RemoteTileSource.TILE_MAGIC)
+	blob.encode_u32(4, RemoteTileSource._crc32(payload))
+	blob.encode_u32(8, 0)
+	blob.append_array(payload)
+	RemoteTileSource._crc_table = PackedInt64Array()
+	assert_eq(RemoteTileSource.decode_envelope(blob), payload)
+
+
+func test_an_unreachable_service_returns_instead_of_spinning() -> void:
+	# Les boucles d'attente de HTTPClient sont des boucles serrées sur poll(). Sans
+	# échéance, un service injoignable les fait tourner indéfiniment — et comme
+	# open_planet part du thread principal, cela gèle l'éditeur à l'ouverture d'une scène.
+	# Le cas « accepte puis se tait » a été vérifié par sonde : rendu en 2001 ms pour une
+	# échéance de 2000. Ici on couvre le cas testable partout, un port fermé.
+	var rts := RemoteTileSource.new()
+	rts.request_timeout_ms = 1000
+	var t0 := Time.get_ticks_msec()
+	var res: Array = rts._http_get("http://127.0.0.1:9/nothing")
+	assert_eq(res[0], 0, "un service injoignable rend un code nul, pas une exception")
+	assert_true((res[1] as PackedByteArray).is_empty())
+	assert_lt(Time.get_ticks_msec() - t0, 5000, "et rend la main")
+
+
+func test_the_timeout_has_a_sane_default() -> void:
+	assert_between(RemoteTileSource.new().request_timeout_ms, 1000, 60000)
