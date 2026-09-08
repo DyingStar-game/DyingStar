@@ -17,14 +17,23 @@ extends RefCounted
 ## marge de BLEND_PIXELS autour de chaque bord, et le noyau bilinéaire déborde d'un texel
 ## aux extrémités. Précharger la seule tuile centrale laisserait donc des bords se
 ## rabattre sur la carte globale.
-static func chunk_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Array[Vector2i]:
+## La tuile qu'un chunk échantillonne : la sienne quand il est plus grossier que
+## nside_max, sinon celle de son ancêtre au niveau d'échantillonnage.
+static func chunk_tile(data: PlanetData, hp_nside: int, hp_ipix: int) -> Vector2i:
 	var ns := data.sample_nside_for(hp_nside)
 	var ip := hp_ipix
 	var k := hp_nside
 	while k > ns:
 		k >>= 1
-		ip >>= 2
-	var out: Array[Vector2i] = [Vector2i(ip, ns)]
+		ip >>= 2      # parent NESTED
+	return Vector2i(ip, ns)
+
+
+static func chunk_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Array[Vector2i]:
+	var primary := chunk_tile(data, hp_nside, hp_ipix)
+	var ns := primary.y
+	var ip := primary.x
+	var out: Array[Vector2i] = [primary]
 	for key: String in HEALPix.get_neighbors_nest(ns, ip):
 		var nb: int = HEALPix.get_neighbors_nest(ns, ip)[key]
 		if nb >= 0:

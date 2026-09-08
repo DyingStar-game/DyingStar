@@ -60,6 +60,56 @@ var _present: Dictionary = {}     # "n<nside>/f<shard>" -> PackedByteArray
 var _misses: Dictionary = {}      # URL -> true, pour ne pas redemander un 404
 
 
+## URL de base du service de tuiles, ou "" quand le streaming est éteint.
+##
+## Même idiome que PropNet.prof_on : ligne de commande, puis variable d'environnement,
+## puis ini. C'est un réglage de DÉPLOIEMENT — il ne peut pas vivre dans une ressource de
+## planète versionnée, puisqu'il diffère entre poste de dev, préprod et production.
+##
+## Éteint par défaut : sans lui, rien ne change pour les planètes qui lisent leur pack
+## local, ce qui est le cas de toutes aujourd'hui.
+static func configured_base_url() -> String:
+	var args: PackedStringArray = OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	for a: String in args:
+		if a.begins_with("--tile-stream="):
+			return a.split("=", true, 1)[1]
+	var env := OS.get_environment("DS_TILE_STREAM")
+	if env != "":
+		return env
+	var ini: String = "server.ini" if OS.has_feature("dedicated_server") else "client.ini"
+	for a: String in args:
+		if a.contains("srvini="):
+			ini = a.split("=")[1]
+	var cfg := ConfigFile.new()
+	if cfg.load(ini) != OK:
+		return ""
+	return str(cfg.get_value("stream", "tiles_url", ""))
+
+
+## Construit une source prête à l'emploi pour cette planète, ou null.
+##
+## Null couvre les deux cas normaux : aucun service configuré, et service injoignable. Un
+## service en panne ne doit pas empêcher de jouer — la planète retombe simplement sur son
+## pack local, qui est le comportement d'aujourd'hui.
+static func for_planet(planet_name: String) -> RemoteTileSource:
+	var url := configured_base_url()
+	if url == "" or planet_name == "":
+		return null
+	var src := RemoteTileSource.new()
+	if not src.open_planet(url, planet_name):
+		print("[RemoteTileSource] indisponible pour '%s' (%s) — pack local"
+				% [planet_name, url])
+		return null
+	# Les objets d'une version sont immuables, donc jamais périmés : le changement de
+	# version est le seul moment où l'on jette.
+	var dropped := src.purge_other_versions()
+	src.start()
+	print("[RemoteTileSource] '%s' version=%s tile_res=%d n%d..n%d%s"
+			% [planet_name, src.version, src.tile_res, src.nside_min, src.nside_max,
+			" (%d ancienne(s) version(s) purgée(s))" % dropped if dropped else ""])
+	return src
+
+
 ## Lit le pointeur de version et s'auto-configure. Rend false si le service est injoignable
 ## ou répond autre chose que le pointeur attendu.
 func open_planet(p_base_url: String, p_planet: String) -> bool:
