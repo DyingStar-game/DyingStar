@@ -460,10 +460,10 @@ sur les tuiles :
 
 ---
 
-## 8. Cache client — ✅ FAIT (`TileCacheLru`, budget 128 Mo)
+## 8. Cache client — ✅ FAIT (`TileCacheLru`, budget 128 Mio)
 
-Le budget de 400 Mo initialement retenu ici supposait deux tiers, tuiles **et** meshes, et
-disait explicitement que « en pratique les 400 Mo serviront aux meshes générés ». Le
+Le budget de 400 Mio initialement retenu ici supposait deux tiers, tuiles **et** meshes, et
+disait explicitement que « en pratique les 400 Mio serviront aux meshes générés ». Le
 streaming de meshes ayant été écarté (§3, 14,5 To d'inventaire), ce tier n'existe pas et
 personne ne consomme ce budget. Les chiffres ci-dessous sont mesurés sur l'export
 tarsis_3 n256 publié et sur une session de jeu réelle.
@@ -473,8 +473,8 @@ tarsis_3 n256 publié et sur une session de jeu réelle.
 | | |
 |---|---|
 | tuiles publiées (tarsis_3, n1…n256) | 674 884 |
-| données | 849 Mo |
-| **sur disque** | **2,6 Go** |
+| données | 849 Mio |
+| **sur disque** | **2,6 Gio** |
 | taille d'une tuile | médiane 1383 o, max **2060 o** |
 
 Aucune tuile n'atteint 4 Kio, donc chacune occupe exactement un bloc de système de
@@ -482,9 +482,9 @@ fichiers : l'écart données/disque est de ×3,1, uniforme. Un budget exprimé e
 données consommerait trois fois ce qu'il annonce. `TileCacheLru` convertit une fois
 (`BLOCK_BYTES = 4096`) et raisonne ensuite en **nombre de fichiers**.
 
-### Pourquoi 128 Mo
+### Pourquoi 128 Mio
 
-| niveau | cumul tuiles | Mo disque | côté d'une tuile | par échantillon |
+| niveau | cumul tuiles | Mio disque | côté d'une tuile | par échantillon |
 |---|---|---|---|---|
 | n8 | 1 024 | 4 | 813 km | 25,3 km |
 | **n16** | **4 095** | **16** | **407 km** | **12,7 km** |
@@ -499,34 +499,35 @@ consomme.
 **C'est un plafond, pas une cible.** Occupation réelle mesurée après une session de jeu,
 par niveau :
 
-    n4:20  n8:75  n16:91  n32:94  n64:91  n128:86  n256:78   = 535 tuiles, 2,2 Mo
+    n4:20  n8:75  n16:91  n32:94  n64:91  n128:86  n256:78   = 535 tuiles, 2,2 Mio
 
 La répartition est plate — c'est la signature de la pyramide de LOD : le joueur voit un
 nombre à peu près constant de chunks, réparti sur les niveaux. Le cache ne croît donc pas
 avec le niveau le plus fin, mais avec la surface distincte visitée.
 
-- La même session à la résolution visée n1024 demanderait **2 095 tuiles, 8,2 Mo** (les
+- La même session à la résolution visée n1024 demanderait **2 095 tuiles, 8,2 Mio** (les
   niveaux n512 et n1024 s'ajoutent, ×4 et ×16 sur la surface déjà couverte en n256).
-- 128 Mo vaut donc **seize fois** la session la plus lourde qu'on ait mesurée. Le budget
+- 128 Mio vaut donc **seize fois** la session la plus lourde qu'on ait mesurée. Le budget
   n'est jamais réservé : il ne coûte rien tant qu'il n'est pas atteint, et n'existe que
   pour le cas pathologique du joueur qui survole la planète des heures durant.
 - Il reste sous un vingtième de la planète complète en n1024 : le cache ne peut pas
-  dégénérer en « télécharger la planète », ce qu'un budget de 400 Mo autorisait déjà à
+  dégénérer en « télécharger la planète », ce qu'un budget de 400 Mio autorisait déjà à
   n256 (la moitié des données de la planète).
 
-Réglable par `--tile-cache-mb=`, `DS_TILE_CACHE_MB`, ou `[stream] tile_cache_mb` du
+Le budget s'exprime en **mébioctets** — les chiffres ci-dessus viennent de `du` et de
+divisions par 1048576, tout est binaire. Réglable par `--tile-cache-mb=`, `DS_TILE_CACHE_MB`, ou `[stream] tile_cache_mb` du
 `.ini` — la cascade habituelle. `0` désactive l'éviction.
 
 ### Niveaux épinglés plutôt que LRU
 
-**n1…n16 n'est jamais évincé** : 4 095 tuiles, 16 Mo, la planète entière à 12,7 km par
+**n1…n16 n'est jamais évincé** : 4 095 tuiles, 16 Mio, la planète entière à 12,7 km par
 échantillon. Une
 tuile n16 sert des milliers de chunks ; la laisser évincer par un déplacement au sol
 rendrait la vue orbitale à nouveau payante. Ces tuiles ne sont même pas suivies par
-l'index, donc ne consomment pas le budget — plafond réel ~144 Mo.
+l'index, donc ne consomment pas le budget — plafond réel ~144 Mio.
 
-C'est aussi moins cher que prévu : ce plancher était estimé à 26 Mo pour n1…n8 seulement,
-alors qu'il coûte 4 Mo mesurés et peut donc descendre deux niveaux plus bas.
+C'est aussi moins cher que prévu : ce plancher était estimé à 26 Mio pour n1…n8 seulement,
+alors qu'il coûte 4 Mio mesurés et peut donc descendre deux niveaux plus bas.
 
 ### Index d'usage
 
