@@ -28,7 +28,6 @@ const BACKFACE_DOT := -0.3
 ## ~0.02 rad ≈ 1.1° — covers ≈40 km at the planet surface.
 const HORIZON_MARGIN_RAD := 0.02
 ## Seconds between editor camera tracking updates.
-const EDITOR_TRACK_INTERVAL := 0.5
 ## Maximum concurrent recipe worker tasks (avoid flooding the thread pool).
 const MAX_CONCURRENT_RECIPES := 8
 ## Maximum chunks assembled (MeshInstance3D + vegetation) per physics frame.
@@ -44,36 +43,13 @@ const CAM_HISTORY_SIZE := 10
 ## is 3000-6000 m off.
 const _CACHE_GEOM_TOLERANCE_M := 1500.0
 
-## ── Editor preview settings ───────────────────────────────────────
-## Quadtree depth for editor preview chunks. Higher = smaller chunks,
-## more detail. Depth 6 → ~52 km, depth 12 → ~800 m, depth 14 → ~200 m.
-## The game's quadtree goes up to max_quadtree_depth (14) near the surface.
-@export_range(0, 14) var editor_preview_depth: int = 3:
-	set(value):
-		editor_preview_depth = value
-		if Engine.is_editor_hint() and _initialized:
-			_editor_goto_cooldown = 0.0
-			_generate_editor_preview()
-
-## Number of chunk rings displayed around the centre chunk in the editor
-## preview. 0 = only the centre chunk, 1 = 3×3, 2 = 5×5, N = (2N+1)×(2N+1).
-## Higher values give a larger contiguous surface for placing items, at the
-## cost of more mesh generation. Rings are grown by HEALPix neighbour walk.
-@export_range(0, 8) var editor_preview_rings: int = 1:
-	set(value):
-		editor_preview_rings = value
-		if Engine.is_editor_hint() and _initialized:
-			_editor_goto_cooldown = 0.0
-			_generate_editor_preview()
-
-## When enabled, the editor preview also scatters vegetation (trees,
-## grass) on the visible chunks — gives a near-runtime WYSIWYG view.
-@export var editor_preview_vegetation: bool = false:
-	set(value):
-		editor_preview_vegetation = value
-		if Engine.is_editor_hint() and _initialized:
-			_editor_goto_cooldown = 0.0
-			_generate_editor_preview()
+## ── Editor ────────────────────────────────────────────────────────
+## L'éditeur affiche EXACTEMENT les mêmes chunks que le jeu : même quadtree, mêmes LOD,
+## même pipeline asynchrone, même streaming de tuiles — simplement autour de la caméra
+## d'édition au lieu du joueur. Il n'y a donc plus de réglages de chunks propres à
+## l'éditeur : une profondeur et un nombre d'anneaux fixés à la main ne montraient pas ce
+## que le joueur verrait, et leur génération synchrone sur le fil de l'éditeur gelait
+## celui-ci dès que les tuiles devaient être téléchargées.
 
 ## Maximum concurrent mesh-generation worker tasks.
 ## Set to 4 so all 4 HEALPix children of a split pixel compute in parallel.
@@ -131,12 +107,9 @@ var _import_poi_action: Callable:
 var planet_data: PlanetData
 var is_server: bool = false
 
-var _editor_track_timer: float = 0.0
 ## Cached editor camera position (planet-local) to detect movement.
-var _editor_last_cam_local: Vector3 = Vector3.INF
 ## Grace period (seconds) after a "Go to biome" to prevent camera tracking
 ## from immediately overwriting the biome-centred preview.
-var _editor_goto_cooldown: float = 0.0
 
 ## ── Editor biome navigator ────────────────────────────────────────
 ## Populated from BiomeQuery on initialize; drives the dynamic dropdown.
@@ -357,15 +330,14 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_chunks_node.name = "Chunks"
 		add_child(_chunks_node)
 
-	# Editor: generate a static 6-face preview at full chunk resolution
+	# Éditeur : seuls ces trois points lui sont propres. Tout le reste — préchauffage des
+	# requêtes, quadtree, tâches de mesh, streaming — est le chemin commun, et c'est
+	# précisément ce qu'on veut voir dans l'éditeur.
 	if Engine.is_editor_hint():
-		_initialized = true
 		_populate_biome_entries()
 		_print_biome_locations()
 		if editor_auto_tune_camera:
 			_auto_tune_editor_camera()
-		_generate_editor_preview()
-		return
 
 	# Server FALLBACK collision body (BaseSphere + SafetyNet only).
 	# Terrain chunks each get their OWN small StaticBody3D at the chunk origin
@@ -1098,28 +1070,6 @@ func _physics_process(delta: float) -> void:
 		_server_poll_chunk_tasks()
 		return
 
-	# ── Editor: track camera and regenerate nearby chunks ────────
-	if Engine.is_editor_hint():
-		# Grace period after "Go to biome" — don't override the preview.
-		if _editor_goto_cooldown > 0.0:
-			_editor_goto_cooldown -= delta
-			return
-		_editor_track_timer += delta
-		if _editor_track_timer < EDITOR_TRACK_INTERVAL:
-			return
-		_editor_track_timer = 0.0
-		var cam_local := _get_editor_camera_local()
-		if cam_local == Vector3.INF:
-			return
-		# Only regenerate when camera moved significantly (>5% of planet radius).
-		if _editor_last_cam_local != Vector3.INF:
-			var move_dist := cam_local.distance_to(_editor_last_cam_local)
-			if move_dist < planet_data.radius * 0.05:
-				return
-		_editor_last_cam_local = cam_local
-		_generate_editor_preview()
-		return
-
 	# ── Poll completed async work EVERY frame (not rate-limited) ───────
 	# This minimises the latency between a task finishing and its result
 	# appearing on screen.  The actual heavy work runs on worker threads;
@@ -1311,7 +1261,7 @@ func _update_terrain() -> void:
 
 
 # ------------------------------------------------------------------
-# Editor preview
+# Editor camera
 # ------------------------------------------------------------------
 
 ## Get the editor 3D viewport camera position in planet-local space.
@@ -1328,147 +1278,6 @@ func _get_editor_camera_local() -> Vector3:
 	if cam == null:
 		return Vector3.INF
 	return cam.global_position - global_position
-
-
-## Generate an editor preview centred on the editor camera.
-## Spawns the centre HEALPix pixel plus [member editor_preview_rings] rings of
-## neighbours at the configured [member editor_preview_depth].
-## When [member editor_preview_vegetation] is enabled, tree and grass
-## MultiMeshes are also generated on those chunks.
-## Called only in the Godot editor (@tool mode).
-## [param center_local]: if not [constant Vector3.INF], use this planet-local
-## position as the preview centre instead of the editor camera.
-func _generate_editor_preview(center_local: Vector3 = Vector3.INF) -> void:
-	var depth := editor_preview_depth
-	var nside := HEALPix.depth_to_nside(depth)
-	var res := planet_data.chunk_resolution
-
-	# ── Determine reference pixel ─────────────────────────────────
-	var ref_local := center_local
-	if ref_local == Vector3.INF:
-		ref_local = _get_editor_camera_local()
-	if ref_local == Vector3.INF:
-		return
-
-	var cam_dir := ref_local.normalized()
-	var center_ipix := HEALPix.vec2pix_nest(nside, cam_dir)
-
-	# ── Build pixel set: centre + N rings of neighbours ───────────
-	# BFS outward: each ring adds the 8-neighbourhood of the previous
-	# frontier, producing a roughly (2N+1)×(2N+1) patch of chunks.
-	var pixel_set := {center_ipix: true}
-	var frontier := [center_ipix]
-	for _ring in editor_preview_rings:
-		var next_frontier: Array = []
-		for p in frontier:
-			var nbrs := HEALPix.get_neighbors_nest(nside, p)
-			for dir_name in nbrs:
-				var nb: int = nbrs[dir_name]
-				if nb >= 0 and not pixel_set.has(nb):
-					pixel_set[nb] = true
-					next_frontier.append(nb)
-		frontier = next_frontier
-	var pixels := pixel_set.keys()
-
-	# ── Reuse: keep chunks already built, free the rest ───────────
-	# Chunk keys are deterministic per (nside, ipix), so a chunk that
-	# stays in the patch — or a preview that just re-centres a chunk or
-	# two away — is reused as-is instead of being recomputed. Changing the
-	# depth changes nside → new keys → full rebuild, which is correct.
-	var want_veg := editor_preview_vegetation
-	var desired := {}
-	for ipix in pixels:
-		desired["editor_hp_n%d_p%d" % [nside, ipix]] = ipix
-
-	for old_key in _active_chunks.keys():
-		var old: Dictionary = _active_chunks[old_key]
-		# Drop chunks no longer in the patch, or whose vegetation state
-		# no longer matches the current toggle.
-		if not desired.has(old_key) or old.get("veg", false) != want_veg:
-			_free_editor_chunk(old)
-			_active_chunks.erase(old_key)
-
-	var reused := _active_chunks.size()
-	var built := 0
-
-	for key in desired:
-		if _active_chunks.has(key):
-			continue  # already built and still valid — skip recompute
-		var ipix: int = desired[key]
-		built += 1
-		var chunk_center := PlanetChunk.snap_to_f32(
-			HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
-
-		# ── Terrain mesh ──────────────────────────────────────
-		var mesh := PlanetChunk.generate_mesh_healpix(
-			planet_data, nside, ipix, res, chunk_center)
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.name = key
-		mi.position = chunk_center
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var _wrap := 8192.0
-		mi.set_instance_shader_parameter("chunk_origin_mod", Vector3(
-			fposmod(chunk_center.x, _wrap),
-			fposmod(chunk_center.y, _wrap),
-			fposmod(chunk_center.z, _wrap)))
-		# Full planet-local chunk centre for the terrain shader's true-radial normal (far terminator fix).
-		mi.set_instance_shader_parameter("chunk_center_local", chunk_center)
-		mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
-		_chunks_node.add_child(mi)
-		var info: Dictionary = {"key": key, "mesh_instance": mi, "veg": want_veg}
-
-		# ── Vegetation (trees + grass) ────────────────────────
-		if want_veg:
-			var _ed_info := {"nside": nside, "ipix": ipix}
-			var _ed_pz := _get_chunk_populate_zones(_ed_info)
-			var _ed_has_forest := _zones_have_biome(_ed_pz, ForestTemperateForestTerrain.BIOME_TYPE)
-			var _ed_has_meadow := _zones_have_biome(_ed_pz, MeadowSteppeMeadowTerrain.BIOME_TYPE)
-			# Forest temperate trees
-			if _ed_has_forest:
-				var _ed_lf := planet_data.get_chunk_linear_features(
-					_get_export_ipix(_ed_info))
-				var tree_mm := ForestTemperateForestSpawner.scatter_trees_hp(
-					planet_data, null, nside, ipix,
-					chunk_center, 0, _ed_pz, _ed_lf)
-				if tree_mm:
-					var tree_mmi := MultiMeshInstance3D.new()
-					tree_mmi.multimesh = tree_mm
-					tree_mmi.name = key + "_forest_trees"
-					tree_mmi.position = chunk_center
-					tree_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-					_chunks_node.add_child(tree_mmi)
-					info["forest"] = tree_mmi
-
-			# Meadow grass
-			if _ed_has_meadow:
-				var grass_mm := MeadowSteppeMeadowSpawner.scatter_grass_hp(
-					planet_data, null, nside, ipix,
-					chunk_center, 0, _ed_pz)
-				if grass_mm:
-					var grass_mmi := MultiMeshInstance3D.new()
-					grass_mmi.multimesh = grass_mm
-					grass_mmi.name = key + "_grass"
-					grass_mmi.position = chunk_center
-					grass_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-					_chunks_node.add_child(grass_mmi)
-					info["meadow"] = grass_mmi
-
-		_active_chunks[key] = info
-
-	print("[PlanetTerrain] Editor preview: HEALPix nside=%d center_ipix=%d chunks=%d (built=%d reused=%d) veg=%s" % [
-		nside, center_ipix, _active_chunks.size(), built, reused, editor_preview_vegetation])
-
-
-## Remove and free the nodes of a single editor-preview chunk (terrain mesh
-## plus any vegetation MultiMeshInstances). Used by the reuse diff in
-## [method _generate_editor_preview].
-func _free_editor_chunk(info: Dictionary) -> void:
-	for node_key in ["mesh_instance", "forest", "meadow"]:
-		var n = info.get(node_key)
-		if n and is_instance_valid(n):
-			_chunks_node.remove_child(n)
-			n.free()
 
 
 ## Print the 3D world positions of all biome zone centroids so you know
@@ -1648,14 +1457,8 @@ func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
 		_editor_biome_focus.owner = null
 	_editor_biome_focus.position = world_pos
 
-	# Generate preview centred on this point (not on the camera).
-	_generate_editor_preview(surface_local)
-
-	# Prevent camera tracking from overwriting the preview for 3 seconds,
-	# giving the user time to press F to fly to it.
-	_editor_goto_cooldown = 3.0
-	_editor_last_cam_local = surface_local
-
+	# Le repère suffit : le terrain se construit autour de la caméra, donc il apparaît
+	# quand on l'y amène — exactement comme en jeu. Rien à recentrer à la main.
 	# Select the marker so the user can press F to frame it.
 	var ei = Engine.get_singleton("EditorInterface")
 	if ei:
@@ -3176,6 +2979,12 @@ static func _zone_centroid_dir(zone: Dictionary) -> Vector3:
 ##   Client → active camera.
 ##   Server → closest connected player.
 func _get_reference_position() -> Vector3:
+	# Dans l'éditeur, get_viewport().get_camera_3d() ne rend pas la caméra de la vue 3D :
+	# c'est EditorInterface qui la porte. Sans cela le quadtree n'aurait aucune référence
+	# et l'éditeur n'afficherait rien.
+	if Engine.is_editor_hint():
+		var ed_local := _get_editor_camera_local()
+		return Vector3.INF if ed_local == Vector3.INF else global_position + ed_local
 	if is_server:
 		var closest_dist := INF
 		var closest_pos := Vector3.INF
