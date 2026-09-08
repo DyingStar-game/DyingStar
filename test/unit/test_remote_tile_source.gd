@@ -379,3 +379,39 @@ func test_floor_does_not_overwrite_a_fresher_tile() -> void:
 
 	assert_eq(rts.fetch_floor(), 2, "seules les deux tuiles absentes sont écrites")
 	assert_eq(FileAccess.get_file_as_bytes(path), PackedByteArray([99]))
+
+
+# ===================================================================
+# La connexion conservée n'appartient qu'au fil de téléchargement
+# ===================================================================
+
+func test_only_the_download_thread_reuses_the_connection() -> void:
+	# LA régression : un HTTPClient partagé entre deux fils se corrompt. Deux requêtes
+	# entrelacées sur le même flux ont donné un signal 11 dans les entrailles de
+	# HTTPClient — le plancher sondé depuis le thread principal pendant que le fil
+	# téléchargeait des tuiles. Tout appelant qui n'est pas le fil reçoit donc une
+	# connexion jetable, ce qui est le comportement d'origine.
+	var rts := RemoteTileSource.new()
+	assert_false(rts._reuses_connection(), "fil non démarré : personne ne réutilise")
+
+	rts._worker_tid = OS.get_thread_caller_id() + 1
+	assert_false(rts._reuses_connection(),
+			"un autre fil que celui de téléchargement ne touche jamais à _conn")
+
+	rts._worker_tid = OS.get_thread_caller_id()
+	assert_true(rts._reuses_connection(), "le fil de téléchargement, lui, la conserve")
+
+
+func test_the_worker_claims_the_connection_when_it_starts() -> void:
+	var rts := RemoteTileSource.new()
+	rts.cache_root = FLOOR_DIR
+	assert_eq(rts._worker_tid, 0)
+	rts.start()
+	# start() lance le fil ; il s'inscrit dès sa première instruction.
+	var t0 := Time.get_ticks_msec()
+	while rts._worker_tid == 0 and Time.get_ticks_msec() - t0 < 2000:
+		OS.delay_msec(5)
+	assert_ne(rts._worker_tid, 0, "le fil doit s'être inscrit")
+	assert_ne(rts._worker_tid, OS.get_thread_caller_id(),
+			"et ce n'est pas le thread principal")
+	rts.stop()

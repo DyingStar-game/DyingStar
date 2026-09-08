@@ -440,8 +440,17 @@ moment où `for_planet()` construit la source, donc sur le fil de téléchargeme
 requête, au moment où cela devient utile. Précharger les 19 corps au menu coûterait 36 Mio
 et ne se justifierait que pour jouer réseau coupé.
 
-Vérifié bout en bout sur le pack tarsis_3 et nginx : **1 020 tuiles écrites en une requête,
-277 ms, aucune illisible**. Le témoin `floor.done` n'est posé qu'une fois tout écrit, si
+Vérifié bout en bout depuis un cache vide, contre l'arbre publié : **plancher complet en
+624 ms, 1,88 Mio, 2 requêtes** (le pointeur de version puis l'objet), aucune tuile
+illisible.
+
+Cette vérification a coûté un plantage, qui vaut d'être noté : sonder le plancher depuis le
+thread principal pendant que le fil téléchargeait des tuiles a donné un **signal 11** dans
+les entrailles de `HTTPClient`. La connexion conservée était partagée, et un commentaire
+affirmait qu'elle n'appartenait qu'au fil sans que rien ne le garantisse. `_reuses_connection()`
+le vérifie désormais : tout appelant qui n'est pas le fil de téléchargement reçoit une
+connexion jetable, c'est-à-dire le comportement d'origine. En pratique cela ne concerne que
+`open_planet`, une requête par planète. Le témoin `floor.done` n'est posé qu'une fois tout écrit, si
 bien qu'un arrêt en cours se retraduit par un nouveau téléchargement et non par un
 plancher à trous.
 
