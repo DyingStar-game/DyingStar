@@ -8,9 +8,9 @@ extends GutTest
 ##      tarsis_3 n256 : 849 Mo de données mais 2,6 Go sur disque, parce qu'aucune tuile
 ##      n'atteint 4 Kio et occupe donc un bloc entier. Compter les octets de données ferait
 ##      consommer trois fois le budget annoncé.
-##   2. Les niveaux grossiers sont épinglés. Une tuile n16 couvre 12,7 km et sert des
-##      milliers de chunks ; la laisser évincer par un déplacement au sol rendrait la vue
-##      orbitale à nouveau payante.
+##   2. Les niveaux grossiers sont épinglés. Une tuile n16 couvre 407 km de côté et sert
+##      des milliers de chunks ; la laisser évincer par un déplacement au sol rendrait la
+##      vue orbitale à nouveau payante.
 ##   3. C'est bien le moins récemment utilisé qui part.
 ##
 ## Run:

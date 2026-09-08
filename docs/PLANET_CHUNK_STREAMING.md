@@ -484,19 +484,33 @@ données consommerait trois fois ce qu'il annonce. `TileCacheLru` convertit une 
 
 ### Pourquoi 128 Mo
 
-| niveau | cumul tuiles | Mo disque | résolution sol |
-|---|---|---|---|
-| n8 | 1 024 | 4 | 25,3 km |
-| **n16** | **4 095** | **16** | **12,7 km** |
-| n32 | 16 304 | 64 | 6,3 km |
-| n64 | 62 345 | 244 | 3,2 km |
-| n256 | 674 884 | 2 636 | 0,79 km |
+| niveau | cumul tuiles | Mo disque | côté d'une tuile | par échantillon |
+|---|---|---|---|---|
+| n8 | 1 024 | 4 | 813 km | 25,3 km |
+| **n16** | **4 095** | **16** | **407 km** | **12,7 km** |
+| n32 | 16 304 | 64 | 203 km | 6,3 km |
+| n64 | 62 345 | 244 | 102 km | 3,2 km |
+| n256 | 674 884 | 2 636 | 25 km | 0,79 km |
 
-- Une session de jeu réelle sur l'export n256 tient dans **2,2 Mo (535 tuiles)**.
-- Mais la résolution visée est n1024, où la même surface au sol demande **seize fois**
-  plus de tuiles fines : ~35 Mo par session équivalente. 128 Mo, c'est donc trois à
-  quatre longues sessions à la résolution cible.
-- Et cela reste sous un vingtième de la planète complète en n1024 : le cache ne peut pas
+Une tuile couvre `tile_res` = 32 échantillons de côté : les deux colonnes de droite
+diffèrent d'un facteur 32, et c'est la première qui dit combien de tuiles une traversée
+consomme.
+
+**C'est un plafond, pas une cible.** Occupation réelle mesurée après une session de jeu,
+par niveau :
+
+    n4:20  n8:75  n16:91  n32:94  n64:91  n128:86  n256:78   = 535 tuiles, 2,2 Mo
+
+La répartition est plate — c'est la signature de la pyramide de LOD : le joueur voit un
+nombre à peu près constant de chunks, réparti sur les niveaux. Le cache ne croît donc pas
+avec le niveau le plus fin, mais avec la surface distincte visitée.
+
+- La même session à la résolution visée n1024 demanderait **2 095 tuiles, 8,2 Mo** (les
+  niveaux n512 et n1024 s'ajoutent, ×4 et ×16 sur la surface déjà couverte en n256).
+- 128 Mo vaut donc **seize fois** la session la plus lourde qu'on ait mesurée. Le budget
+  n'est jamais réservé : il ne coûte rien tant qu'il n'est pas atteint, et n'existe que
+  pour le cas pathologique du joueur qui survole la planète des heures durant.
+- Il reste sous un vingtième de la planète complète en n1024 : le cache ne peut pas
   dégénérer en « télécharger la planète », ce qu'un budget de 400 Mo autorisait déjà à
   n256 (la moitié des données de la planète).
 
@@ -505,7 +519,8 @@ Réglable par `--tile-cache-mb=`, `DS_TILE_CACHE_MB`, ou `[stream] tile_cache_mb
 
 ### Niveaux épinglés plutôt que LRU
 
-**n1…n16 n'est jamais évincé** : 4 095 tuiles, 16 Mo, la planète entière à 12,7 km. Une
+**n1…n16 n'est jamais évincé** : 4 095 tuiles, 16 Mo, la planète entière à 12,7 km par
+échantillon. Une
 tuile n16 sert des milliers de chunks ; la laisser évincer par un déplacement au sol
 rendrait la vue orbitale à nouveau payante. Ces tuiles ne sont même pas suivies par
 l'index, donc ne consomment pas le budget — plafond réel ~144 Mo.
@@ -519,7 +534,8 @@ Godot n'expose pas d'atime (`FileAccess.get_modified_time` rend le mtime, et lir
 met pas à jour). `index.bin` est maintenu dans le répertoire de version et écrit à
 l'arrêt de la source. Quand il manque — premier lancement, ou arrêt brutal — on parcourt
 le répertoire : l'ordre est alors inconnu et la première éviction arbitraire, mais **le
-budget reste tenu**, ce qui est la propriété qui compte. L'éviction purge jusqu'à 90 % du
+budget reste tenu**, ce qui est la propriété qui compte. Ce parcours porte sur l'occupation
+réelle — quelques centaines à quelques milliers de fichiers — et non sur le plafond. L'éviction purge jusqu'à 90 % du
 budget pour ne pas se relancer à chaque tuile écrite ensuite.
 
 ### Obsolescence
