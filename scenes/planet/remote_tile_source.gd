@@ -46,6 +46,10 @@ var shard_tiles: int = 4096
 ## Racine du cache disque. Chaque version a son sous-répertoire, donc changer de version
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
+
+## Borne le cache disque. Null = pas d'éviction (le comportement des tests unitaires,
+## qui n'écrivent qu'une poignée de tuiles).
+var lru: TileCacheLru = null
 ## Callable(url) -> [code:int, body:PackedByteArray].
 var fetcher: Callable = Callable()
 
@@ -140,10 +144,16 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 	# Les objets d'une version sont immuables, donc jamais périmés : le changement de
 	# version est le seul moment où l'on jette.
 	var dropped := src.purge_other_versions()
+	var budget := TileCacheLru.configured_budget_mb()
+	if budget > 0:
+		src.lru = TileCacheLru.new()
+		src.lru.set_budget_mb(budget)
+		src.lru.open("%s%s/%s/" % [src.cache_root, src.planet, src.version])
 	src.start()
-	print("[RemoteTileSource] '%s' version=%s tile_res=%d n%d..n%d%s"
+	print("[RemoteTileSource] '%s' version=%s tile_res=%d n%d..n%d%s%s"
 			% [planet_name, src.version, src.tile_res, src.nside_min, src.nside_max,
-			" (%d ancienne(s) version(s) purgée(s))" % dropped if dropped else ""])
+			" (%d ancienne(s) version(s) purgée(s))" % dropped if dropped else "",
+			"  %s" % src.lru.stat_line() if src.lru != null else "  cache non borné"])
 	return src
 
 
@@ -269,6 +279,8 @@ func take(nside: int, ipix: int) -> PackedByteArray:
 		return PackedByteArray()
 	var raw := f.get_buffer(f.get_length())
 	f.close()
+	if lru != null:
+		lru.touch(nside, path)
 	return decode_envelope(raw)
 
 
@@ -278,6 +290,8 @@ func fetch_now(nside: int, ipix: int) -> bool:
 	# Déjà en cache : le prefetch redemande volontiers ce qu'il a déjà, et sans ce test
 	# chaque redemande re-téléchargerait la tuile.
 	if FileAccess.file_exists(tile_cache_path(nside, ipix)):
+		if lru != null:
+			lru.touch(nside, tile_cache_path(nside, ipix))
 		return true
 	if not has_tile(nside, ipix):
 		return false
@@ -304,6 +318,8 @@ func fetch_now(nside: int, ipix: int) -> bool:
 		return false
 	f.store_buffer(res[1])
 	f.close()
+	if lru != null:
+		lru.admit(nside, path)
 	return true
 
 
@@ -346,6 +362,8 @@ func stop() -> void:
 	_sem.post()
 	_thread.wait_to_finish()
 	_thread = null
+	if lru != null:
+		lru.save()
 
 
 ## Met une tuile en file. Ne bloque pas et ne redemande jamais deux fois la même.

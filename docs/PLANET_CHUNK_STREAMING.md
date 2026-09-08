@@ -460,28 +460,73 @@ sur les tuiles :
 
 ---
 
-## 8. Cache client (budget 400 Mo)
+## 8. Cache client — ✅ FAIT (`TileCacheLru`, budget 128 Mo)
 
-Deux tiers, car leurs durées de vie diffèrent :
+Le budget de 400 Mo initialement retenu ici supposait deux tiers, tuiles **et** meshes, et
+disait explicitement que « en pratique les 400 Mo serviront aux meshes générés ». Le
+streaming de meshes ayant été écarté (§3, 14,5 To d'inventaire), ce tier n'existe pas et
+personne ne consomme ce budget. Les chiffres ci-dessous sont mesurés sur l'export
+tarsis_3 n256 publié et sur une session de jeu réelle.
 
-| tier | taille unitaire | réutilisation | invalidé par |
+### Le budget se compte en fichiers, pas en octets
+
+| | |
+|---|---|
+| tuiles publiées (tarsis_3, n1…n256) | 674 884 |
+| données | 849 Mo |
+| **sur disque** | **2,6 Go** |
+| taille d'une tuile | médiane 1383 o, max **2060 o** |
+
+Aucune tuile n'atteint 4 Kio, donc chacune occupe exactement un bloc de système de
+fichiers : l'écart données/disque est de ×3,1, uniforme. Un budget exprimé en octets de
+données consommerait trois fois ce qu'il annonce. `TileCacheLru` convertit une fois
+(`BLOCK_BYTES = 4096`) et raisonne ensuite en **nombre de fichiers**.
+
+### Pourquoi 128 Mo
+
+| niveau | cumul tuiles | Mo disque | résolution sol |
 |---|---|---|---|
-| tuiles | ~1-4 Ko | très forte (une tuile ↔ des centaines de chunks) | ré-export (`data_version`) uniquement |
-| meshes | ~18 Ko | faible (1 chunk × 1 lod) | ré-export **+ tout patch de code** |
+| n8 | 1 024 | 4 | 25,3 km |
+| **n16** | **4 095** | **16** | **12,7 km** |
+| n32 | 16 304 | 64 | 6,3 km |
+| n64 | 62 345 | 244 | 3,2 km |
+| n256 | 674 884 | 2 636 | 0,79 km |
 
-- **Budget 400 Mo, éviction des meshes d'abord, des tuiles en dernier.**
-  L'empreinte instantanée en tuiles est de 0,5 à 1 MiB : il faudrait ~400
-  positions totalement disjointes sur la planète pour saturer le tier tuiles. En
-  pratique les 400 Mo serviront aux meshes générés.
-- **Plancher jamais évincé** : n1…n8, embarqués dans le `.pck`.
-- **LRU** : Godot n'expose pas d'atime (`FileAccess.get_modified_time` renvoie le
-  mtime, et lire ne le met pas à jour). Maintenir un `index.bin` (clé → dernier
-  usage, taille), flushé périodiquement et à la fermeture. Éviction déclenchée à
-  l'écriture : purger jusqu'à 90 % du budget.
-- **Obsolescence** : version dans le *chemin*
-  (`user://tile_cache/<planet>/<data_version>/`). Au chargement de planète,
-  supprimer tout répertoire dont la version diffère de celle annoncée par le
-  serveur. O(1), et c'est déjà le pattern de `chunk_disk_cache.gd:51`.
+- Une session de jeu réelle sur l'export n256 tient dans **2,2 Mo (535 tuiles)**.
+- Mais la résolution visée est n1024, où la même surface au sol demande **seize fois**
+  plus de tuiles fines : ~35 Mo par session équivalente. 128 Mo, c'est donc trois à
+  quatre longues sessions à la résolution cible.
+- Et cela reste sous un vingtième de la planète complète en n1024 : le cache ne peut pas
+  dégénérer en « télécharger la planète », ce qu'un budget de 400 Mo autorisait déjà à
+  n256 (la moitié des données de la planète).
+
+Réglable par `--tile-cache-mb=`, `DS_TILE_CACHE_MB`, ou `[stream] tile_cache_mb` du
+`.ini` — la cascade habituelle. `0` désactive l'éviction.
+
+### Niveaux épinglés plutôt que LRU
+
+**n1…n16 n'est jamais évincé** : 4 095 tuiles, 16 Mo, la planète entière à 12,7 km. Une
+tuile n16 sert des milliers de chunks ; la laisser évincer par un déplacement au sol
+rendrait la vue orbitale à nouveau payante. Ces tuiles ne sont même pas suivies par
+l'index, donc ne consomment pas le budget — plafond réel ~144 Mo.
+
+C'est aussi moins cher que prévu : ce plancher était estimé à 26 Mo pour n1…n8 seulement,
+alors qu'il coûte 4 Mo mesurés et peut donc descendre deux niveaux plus bas.
+
+### Index d'usage
+
+Godot n'expose pas d'atime (`FileAccess.get_modified_time` rend le mtime, et lire ne le
+met pas à jour). `index.bin` est maintenu dans le répertoire de version et écrit à
+l'arrêt de la source. Quand il manque — premier lancement, ou arrêt brutal — on parcourt
+le répertoire : l'ordre est alors inconnu et la première éviction arbitraire, mais **le
+budget reste tenu**, ce qui est la propriété qui compte. L'éviction purge jusqu'à 90 % du
+budget pour ne pas se relancer à chaque tuile écrite ensuite.
+
+### Obsolescence
+
+Version dans le *chemin* (`user://tile_cache/<planet>/<data_version>/`). Au chargement de
+planète, `purge_other_versions()` supprime tout répertoire dont la version diffère de
+celle annoncée par le serveur. O(1), et c'est déjà le pattern de `chunk_disk_cache.gd:51`.
 
 ---
 
@@ -1034,10 +1079,15 @@ a déjà :
   mettre deux fois la même chose en attente ; le garder indéfiniment en ferait un index de
   toutes les tuiles jamais demandées, plus d'un million sur tarsis_3.
 
+#### Cache LRU — ✅ FAIT (`TileCacheLru`)
+
+Le cache de tuiles grossissait sans limite, et le prefetch en anneau le remplit bien plus
+vite que les demandes à la carte qu'il a remplacées. Budget ramené de 400 à **128 Mo**,
+compté en fichiers et non en octets, niveaux n1…n16 épinglés hors budget. Le détail et
+les mesures qui justifient ces chiffres sont en §8.
+
 #### Ce qui reste — du confort, pas de la correction
 
-- **Cache LRU** avec le budget de 400 Mo (§8) et son index de derniers usages : le cache
-  de tuiles grossit aujourd'hui sans limite.
 - **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans
   réseau et qu'une vue orbitale n'émette aucune requête.
 

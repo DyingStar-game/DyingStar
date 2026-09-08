@@ -103,6 +103,9 @@ static func report_now() -> void:
 	var net := RemoteTileSource.net_line()
 	if net != "":
 		print("[TerrainProf] %s" % net)
+	var cache := TileCacheLru.live_line()
+	if cache != "":
+		print("[TerrainProf] %s" % cache)
 	print("[TerrainProf] %s" % tile_census_line())
 
 
