@@ -1008,11 +1008,34 @@ raisonnement :
 - `_read_r32_tile` sortait avant le repli distant quand le pack local manquait, si bien
   qu'une planète entièrement streamée ne pouvait lire aucune tuile.
 
+#### Prefetch en anneau — ✅ FAIT (`TileResidency.prefetch`)
+
+C'était le manque le plus visible : une tuile n'était demandée qu'au moment où un chunk en
+avait besoin, donc chaque zone nouvelle coûtait au moins un aller-retour avant d'apparaître.
+
+`prefetch()` demande maintenant, à chaque mise à jour du terrain, la tuile sous le joueur
+et ses huit voisines HEALPix **à tous les niveaux de la pyramide**. Quand l'historique
+caméra montre un déplacement, l'anneau est répété autour d'un point situé en avant du
+joueur (`PREFETCH_LEAD = 8` fois la course récente) — c'est ce qui fait arriver le terrain
+avant lui.
+
+Le travail se fait sur les **tuiles** et non sur les chunks : évaluer la résidence de
+chaque chunk désiré coûterait neuf tuiles et une marche d'ancêtres par chunk, pour les
+centaines de chunks visibles, alors qu'une direction donne directement son ipix à chaque
+niveau. Comme le garde, le prefetch tourne sur le thread principal et ne consulte donc que
+`presence_of()`, jamais `has_tile()` ; un test verrouille qu'aucune requête n'en part.
+
+Deux corrections que le prefetch rend nécessaires, puisqu'il redemande volontiers ce qu'il
+a déjà :
+
+- `fetch_now()` sort immédiatement quand la tuile est déjà en cache disque — sans quoi
+  chaque redemande la re-téléchargerait.
+- le mémo des travaux en file est vidé une fois le travail traité. Il ne sert qu'à ne pas
+  mettre deux fois la même chose en attente ; le garder indéfiniment en ferait un index de
+  toutes les tuiles jamais demandées, plus d'un million sur tarsis_3.
+
 #### Ce qui reste — du confort, pas de la correction
 
-- **Prefetch en anneau** autour du joueur, biaisé par la vélocité. C'est le manque le plus
-  visible : une tuile n'est demandée qu'au moment où un chunk en a besoin, donc chaque
-  zone nouvelle coûte au moins un aller-retour avant d'apparaître.
 - **Cache LRU** avec le budget de 400 Mo (§8) et son index de derniers usages : le cache
   de tuiles grossit aujourd'hui sans limite.
 - **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans
