@@ -47,6 +47,12 @@ var shard_tiles: int = 4096
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
 
+## Connexion HTTP conservée entre deux tuiles. Propriété du fil de téléchargement seul :
+## _http_get n'est atteint que depuis lui, il n'y a donc pas d'accès concurrent.
+var _conn: HTTPClient = null
+var _conn_host: String = ""
+var _conn_port: int = 0
+
 ## Borne le cache disque. Null = pas d'éviction (le comportement des tests unitaires,
 ## qui n'écrivent qu'une poignée de tuiles).
 var lru: TileCacheLru = null
@@ -77,15 +83,19 @@ static var net_maps: int = 0
 static var net_map_bytes: int = 0
 static var net_failed: int = 0
 
+## Allers-retours HTTP réellement émis. Distinct du nombre de tuiles : c'est le coût qui
+## domine sur un vrai réseau, et c'est lui que la connexion conservée fait chuter.
+static var net_requests: int = 0
+
 
 ## Une ligne lisible du volume téléchargé depuis le démarrage, ou "" si rien.
 static func net_line() -> String:
 	if net_tiles + net_maps + net_failed == 0:
 		return ""
 	var total := net_tile_bytes + net_map_bytes
-	return "réseau: %d tuiles (%s) + %d cartes (%s) = %s téléchargés, %d échecs" % [
+	return "réseau: %d tuiles (%s) + %d cartes (%s) = %s en %d requêtes, %d échecs" % [
 		net_tiles, human_bytes(net_tile_bytes), net_maps, human_bytes(net_map_bytes),
-		human_bytes(total), net_failed]
+		human_bytes(total), net_requests, net_failed]
 
 
 ## Octets en unité lisible. Une tuile pèse ~1,4 Kio : afficher « 0.00 Mio » n'apprendrait
@@ -431,10 +441,17 @@ func _request(url: String) -> Array:
 	return _http_get(url)
 
 
+## Chemin par défaut. Synchrone : réservé au fil de téléchargement, jamais au thread
+## principal. La connexion est [b]conservée[/b] d'une tuile à l'autre.
+##
+## Sur loopback le gain est modeste — mesuré sur nginx en local, 200 tuiles en 0,55 ms
+## l'une avec une connexion neuve à chaque fois contre 0,43 ms en la conservant, soit
+## 1,3×. Une poignée de main TCP y est quasi gratuite. Ce que la connexion conservée
+## économise vraiment, c'est un aller-retour complet par tuile dès qu'il y a de la latence
+## (davantage encore en TLS, où l'établissement coûte deux à trois RTT). Le prefetch en
+## anneau demandant des dizaines de tuiles par déplacement, cela se voit sur un vrai
+## réseau et jamais sur la machine de développement — d'où cette note.
 func _http_get(url: String) -> Array:
-	# Chemin par défaut. Volontairement simple et synchrone : il ne sert qu'au
-	# préchargement hors chemin critique. La mise en file non bloquante viendra par-dessus.
-	var http := HTTPClient.new()
 	var parts := url.split("://", true, 1)
 	var rest: String = parts[1] if parts.size() > 1 else parts[0]
 	var slash := rest.find("/")
@@ -445,22 +462,44 @@ func _http_get(url: String) -> Array:
 		var hp := host.split(":")
 		host = hp[0]
 		port = int(hp[1])
-	if http.connect_to_host(host, port) != OK:
+	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
+	# ne doit pas se traduire par une tuile manquante.
+	var res := _http_once(host, port, path)
+	if res[0] == 0:
+		_conn = null
+		res = _http_once(host, port, path)
+	return res
+
+
+## Une requête sur la connexion courante, qu'elle rouvre si besoin. [0, vide] signale une
+## connexion inutilisable — à l'appelant de réessayer une fois.
+func _http_once(host: String, port: int, path: String) -> Array:
+	if _conn == null or _conn_host != host or _conn_port != port \
+			or _conn.get_status() != HTTPClient.STATUS_CONNECTED:
+		_conn = HTTPClient.new()
+		_conn_host = host
+		_conn_port = port
+		if _conn.connect_to_host(host, port) != OK:
+			_conn = null
+			return [0, PackedByteArray()]
+		while _conn.get_status() == HTTPClient.STATUS_CONNECTING \
+				or _conn.get_status() == HTTPClient.STATUS_RESOLVING:
+			_conn.poll()
+		if _conn.get_status() != HTTPClient.STATUS_CONNECTED:
+			_conn = null
+			return [0, PackedByteArray()]
+	if _conn.request(HTTPClient.METHOD_GET, path, []) != OK:
 		return [0, PackedByteArray()]
-	while http.get_status() == HTTPClient.STATUS_CONNECTING \
-			or http.get_status() == HTTPClient.STATUS_RESOLVING:
-		http.poll()
-	if http.get_status() != HTTPClient.STATUS_CONNECTED:
+	while _conn.get_status() == HTTPClient.STATUS_REQUESTING:
+		_conn.poll()
+	var code := _conn.get_response_code()
+	if code == 0:
 		return [0, PackedByteArray()]
-	if http.request(HTTPClient.METHOD_GET, path, []) != OK:
-		return [0, PackedByteArray()]
-	while http.get_status() == HTTPClient.STATUS_REQUESTING:
-		http.poll()
-	var code := http.get_response_code()
 	var body := PackedByteArray()
-	while http.get_status() == HTTPClient.STATUS_BODY:
-		http.poll()
-		body.append_array(http.read_response_body_chunk())
+	while _conn.get_status() == HTTPClient.STATUS_BODY:
+		_conn.poll()
+		body.append_array(_conn.read_response_body_chunk())
+	net_requests += 1
 	return [code, body]
 
 
