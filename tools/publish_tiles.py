@@ -73,6 +73,17 @@ FLAG_DEFLATE = 1
 ## 3072 répertoires au niveau n1024 de tarsis_3 au lieu de 12.
 SHARD_TILES = 4096
 
+FLOOR_MAGIC = b"DSFL"
+FLOOR_VERSION = 1
+## Dernier niveau du plancher servi en un seul objet.
+##
+## Une tuile n8 fait 813 km de côté : ces niveaux ne servent pas au sol — mesuré sur une
+## session réelle, 9 % d'entre eux seulement sont lus — mais à la planète vue de loin,
+## où l'on en balaye la sphère entière. Or les demander une par une coûte 1020
+## allers-retours, soit des minutes sur un vrai réseau pour 1,9 Mio. Un objet unique
+## ramène cela à une requête, récupérée à l'approche de la planète.
+FLOOR_NSIDE_MAX = 8
+
 
 def tile_blob(payload, compress):
     """En-tête + charge utile. Le CRC porte sur les octets RÉELLEMENT transmis."""
@@ -103,6 +114,52 @@ def shard_of(ipix):
     return ipix // SHARD_TILES
 
 
+def floor_bundle(pack, compress, nside_max=FLOOR_NSIDE_MAX):
+    """Concatène les niveaux grossiers en un objet unique, index en tête.
+
+    Les charges utiles sont les octets EXACTEMENT servis pour une tuile isolée, si bien
+    que le client se contente de les écrire dans son cache : rien à décoder de plus, et
+    un plancher et une tuile ne peuvent pas diverger.
+    """
+    entries, blobs, off = [], [], 0
+    for nside in pack.levels:
+        if nside > nside_max:
+            continue
+        for ipix in range(12 * nside * nside):
+            if not pack.has_tile(nside, ipix):
+                continue
+            blob = tile_blob(pack.raw_tile(nside, ipix), compress)
+            entries.append((nside, ipix, off, len(blob)))
+            blobs.append(blob)
+            off += len(blob)
+    head = struct.pack("<4sII", FLOOR_MAGIC, FLOOR_VERSION, len(entries))
+    index = b"".join(struct.pack("<IIII", *e) for e in entries)
+    # Les offsets sont relatifs au début des charges utiles, que l'index précède et dont
+    # la taille dépend du nombre d'entrées : on ne peut donc les décaler qu'ici.
+    base = len(head) + len(index)
+    index = b"".join(struct.pack("<IIII", n, i, o + base, ln)
+                     for n, i, o, ln in entries)
+    return head + index + b"".join(blobs)
+
+
+def read_floor_bundle(blob):
+    """Inverse de floor_bundle. Rend [(nside, ipix, octets servis)]."""
+    if len(blob) < 12:
+        raise ValueError("plancher tronqué (%d octets)" % len(blob))
+    magic, ver, count = struct.unpack("<4sII", blob[:12])
+    if magic != FLOOR_MAGIC:
+        raise ValueError("magie %r — ce n'est pas un plancher" % magic)
+    if ver != FLOOR_VERSION:
+        raise ValueError("version de plancher %d non gérée" % ver)
+    out = []
+    for k in range(count):
+        n, i, off, ln = struct.unpack("<IIII", blob[12 + 16 * k:28 + 16 * k])
+        if off + ln > len(blob):
+            raise ValueError("entrée %d hors du plancher" % k)
+        out.append((n, i, blob[off:off + ln]))
+    return out
+
+
 def publish(pack, out_root, planet, version, compress):
     root = os.path.join(out_root, planet, version)
     os.makedirs(root, exist_ok=True)
@@ -131,7 +188,11 @@ def publish(pack, out_root, planet, version, compress):
                 out_bytes += len(blob)
             with open(os.path.join(sdir, "present.bin"), "wb") as fh:
                 fh.write(bits)
-    return written, raw_bytes, out_bytes
+
+    bundle = floor_bundle(pack, compress)
+    with open(os.path.join(root, "floor.bin"), "wb") as fh:
+        fh.write(bundle)
+    return written, raw_bytes, out_bytes, len(bundle)
 
 
 def verify(pack, out_root, planet, version):
@@ -176,7 +237,46 @@ def verify(pack, out_root, planet, version):
                 if got != pack.raw_tile(nside, ipix):
                     print("  CONTENU n%d f%d diffère du pack" % (nside, ipix))
                     bad += 1
+
+    bad += _verify_floor(pack, root)
     return bad, checked
+
+
+def _verify_floor(pack, root):
+    """Le plancher doit livrer EXACTEMENT ce que livrent les tuiles isolées.
+
+    C'est la seule propriété qui compte : un client qui a le plancher et un client qui a
+    téléchargé tuile par tuile doivent voir le même terrain. Deux chemins vers la même
+    donnée, c'est deux occasions de diverger — celle-ci est fermée ici.
+    """
+    path = os.path.join(root, "floor.bin")
+    try:
+        with open(path, "rb") as fh:
+            entries = read_floor_bundle(fh.read())
+    except (OSError, ValueError) as exc:
+        print("  PLANCHER illisible (%s): %s" % (path, exc))
+        return 1
+    bad = 0
+    seen = set()
+    for nside, ipix, blob in entries:
+        seen.add((nside, ipix))
+        try:
+            got = read_tile_blob(blob)
+        except (ValueError, zlib.error) as exc:
+            print("  PLANCHER n%d f%d illisible: %s" % (nside, ipix, exc))
+            bad += 1
+            continue
+        if got != pack.raw_tile(nside, ipix):
+            print("  PLANCHER n%d f%d diffère du pack" % (nside, ipix))
+            bad += 1
+    for nside in pack.levels:
+        if nside > FLOOR_NSIDE_MAX:
+            continue
+        for ipix in range(12 * nside * nside):
+            if pack.has_tile(nside, ipix) and (nside, ipix) not in seen:
+                print("  PLANCHER n%d f%d manquante" % (nside, ipix))
+                bad += 1
+    return bad
 
 
 def _http(url, timeout=10):
@@ -322,15 +422,19 @@ def main(argv=None):
         print("  %d tuiles vérifiées, %d désaccord(s)" % (checked, bad))
         return 1 if bad else 0
 
-    written, raw_bytes, out_bytes = publish(pack, args.out, planet, version, args.compress)
+    written, raw_bytes, out_bytes, floor_bytes = publish(
+        pack, args.out, planet, version, args.compress)
     ptr = os.path.join(args.out, planet, "latest.json")
     with open(ptr, "w", encoding="utf-8") as fh:
         json.dump({"data_version": version, "nside_min": pack.nside_min,
                    "nside_max": pack.nside_max, "tile_res": pack.tile_res,
-                   "shard_tiles": SHARD_TILES}, fh, indent=2)
+                   "shard_tiles": SHARD_TILES,
+                   "floor_nside_max": FLOOR_NSIDE_MAX}, fh, indent=2)
     ratio = (100.0 * out_bytes / raw_bytes) if raw_bytes else 100.0
     print("  %d tuiles publiées, %.1f Mo (%.0f%% de la charge brute)"
           % (written, out_bytes / 1e6, ratio))
+    print("  plancher n1..n%d en un objet : floor.bin, %.2f Mio en une requête"
+          % (FLOOR_NSIDE_MAX, floor_bytes / 1048576.0))
     print("  pointeur : %s" % ptr)
     print("  nginx : immutable/max-age=1y sur <version>/, no-cache sur latest.json")
     return 0

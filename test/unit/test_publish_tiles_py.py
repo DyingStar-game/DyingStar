@@ -10,6 +10,7 @@ Run:  python3 test/unit/test_publish_tiles_py.py
 
 import json
 import os
+import re
 import struct
 import sys
 import tempfile
@@ -114,11 +115,14 @@ class PublishTree(unittest.TestCase):
         return PT.publish(self.pack, self.out, "pubtest", "cafe1234", compress)
 
     def test_publishes_exactly_the_stored_tiles(self):
-        written, _raw, _out = self._publish()
+        written, _raw, _out, _floor = self._publish()
         expected = sum(1 for n in LEVELS for ip in range(12 * n * n) if present(n, ip))
         self.assertEqual(written, expected)
         root = os.path.join(self.out, "pubtest", "cafe1234")
-        files = [f for _d, _s, fs in os.walk(root) for f in fs if f.startswith("f")]
+        # Le motif exact, pas un préfixe : "floor.bin" commence lui aussi par "f", et
+        # présent.bin a déjà valu de compter des cartes pour des tuiles.
+        files = [f for _d, _s, fs in os.walk(root) for f in fs
+                 if re.fullmatch(r"f\d+\.bin", f)]
         self.assertEqual(len(files), expected, "aucune tuile absente ne doit être écrite")
 
     def test_verify_accepts_a_freshly_published_tree(self):
@@ -187,14 +191,89 @@ class PublishTree(unittest.TestCase):
         dense_path = os.path.join(self.dir, "dense.pack")
         write_pack(dense_path, sparse=False)
         pack = PT.Pack(dense_path)
-        written, _r, _o = PT.publish(pack, self.out, "dense", "cafe1234", False)
+        written, _r, _o, _f = PT.publish(pack, self.out, "dense", "cafe1234", False)
         self.assertEqual(written, sum(12 * n * n for n in LEVELS))
         bad, _c = PT.verify(pack, self.out, "dense", "cafe1234")
         self.assertEqual(bad, 0)
 
 
+class FloorBundle(unittest.TestCase):
+    """Le plancher : les niveaux grossiers servis en un objet unique.
+
+    Les demander une par une coûte ~1020 allers-retours pour 1,9 Mio — des secondes de
+    bande passante, des minutes de latence. Ce qui doit tenir ici, c'est que l'objet
+    unique livre EXACTEMENT ce que livrent les tuiles isolées : sinon deux clients voient
+    deux terrains selon le chemin qu'ils ont pris.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "h.pack")
+        write_pack(self.path)
+        self.pack = PT.Pack(self.path)
+
+    def test_bundle_carries_every_published_coarse_tile(self):
+        entries = PT.read_floor_bundle(PT.floor_bundle(self.pack, False))
+        want = {(n, ip) for n in LEVELS for ip in range(12 * n * n)
+                if present(n, ip) and n <= PT.FLOOR_NSIDE_MAX}
+        self.assertEqual({(n, ip) for n, ip, _b in entries}, want)
+
+    def test_bundle_payloads_are_byte_identical_to_served_tiles(self):
+        for n, ip, blob in PT.read_floor_bundle(PT.floor_bundle(self.pack, False)):
+            self.assertEqual(PT.read_tile_blob(blob), self.pack.raw_tile(n, ip))
+
+    def test_bundle_stops_at_the_floor_level(self):
+        # Un plancher qui embarquerait les niveaux fins pèserait la planète entière.
+        entries = PT.read_floor_bundle(PT.floor_bundle(self.pack, False, nside_max=2))
+        self.assertEqual({n for n, _i, _b in entries}, {1, 2})
+
+    def test_compression_reaches_the_bundle_too(self):
+        small = len(PT.floor_bundle(self.pack, True))
+        self.assertLess(small, len(PT.floor_bundle(self.pack, False)))
+        for n, ip, blob in PT.read_floor_bundle(PT.floor_bundle(self.pack, True)):
+            self.assertEqual(PT.read_tile_blob(blob), self.pack.raw_tile(n, ip))
+
+    def test_a_truncated_bundle_is_caught(self):
+        # Un objet coupé en vol ne doit pas se lire comme un plancher partiel valide.
+        blob = PT.floor_bundle(self.pack, False)
+        with self.assertRaises(ValueError):
+            PT.read_floor_bundle(blob[:len(blob) // 2])
+
+    def test_wrong_magic_is_caught(self):
+        with self.assertRaises(ValueError):
+            PT.read_floor_bundle(b"NOPE" + struct.pack("<II", 1, 0))
+
+    def test_publish_writes_the_bundle_and_verify_checks_it(self):
+        out = tempfile.mkdtemp()
+        _w, _r, _o, floor_bytes = PT.publish(self.pack, out, "pubtest", "cafe1234", False)
+        path = os.path.join(out, "pubtest", "cafe1234", "floor.bin")
+        self.assertTrue(os.path.exists(path))
+        self.assertEqual(floor_bytes, os.path.getsize(path))
+        bad, _c = PT.verify(self.pack, out, "pubtest", "cafe1234")
+        self.assertEqual(bad, 0)
+
+    def test_verify_catches_a_corrupted_bundle(self):
+        # C'est tout l'intérêt de le vérifier : une divergence entre le plancher et les
+        # tuiles ne lève aucune erreur chez le joueur, elle donne un terrain faux.
+        out = tempfile.mkdtemp()
+        PT.publish(self.pack, out, "pubtest", "cafe1234", False)
+        path = os.path.join(out, "pubtest", "cafe1234", "floor.bin")
+        blob = bytearray(open(path, "rb").read())
+        blob[-1] ^= 0xFF
+        open(path, "wb").write(bytes(blob))
+        bad, _c = PT.verify(self.pack, out, "pubtest", "cafe1234")
+        self.assertGreater(bad, 0)
+
+    def test_verify_catches_a_missing_bundle(self):
+        out = tempfile.mkdtemp()
+        PT.publish(self.pack, out, "pubtest", "cafe1234", False)
+        os.remove(os.path.join(out, "pubtest", "cafe1234", "floor.bin"))
+        bad, _c = PT.verify(self.pack, out, "pubtest", "cafe1234")
+        self.assertGreater(bad, 0)
+
+
 if __name__ == "__main__":
     suite = unittest.TestSuite()
-    for cls in (TileEnvelope, PublishTree):
+    for cls in (TileEnvelope, PublishTree, FloorBundle):
         suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     sys.exit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)

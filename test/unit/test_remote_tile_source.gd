@@ -40,6 +40,7 @@ func before_each() -> void:
 
 func after_all() -> void:
 	RemoteTileSource._remove_tree(CACHE)
+	RemoteTileSource._remove_tree(FLOOR_DIR)
 
 
 func _fake_fetch(url: String) -> Array:
@@ -240,3 +241,141 @@ func test_purge_removes_other_versions_only() -> void:
 	assert_eq(s.purge_other_versions(), 2, "les deux anciennes versions")
 	assert_true(DirAccess.dir_exists_absolute("%sp/cafe" % CACHE), "la version en cours reste")
 	assert_false(DirAccess.dir_exists_absolute("%sp/old1" % CACHE))
+
+
+# ===================================================================
+# Le plancher servi en un objet unique
+# ===================================================================
+
+const FLOOR_DIR := "user://test_floor/"
+
+
+func _floor_src() -> RemoteTileSource:
+	var rts := RemoteTileSource.new()
+	rts.cache_root = FLOOR_DIR
+	rts.planet = "p"
+	rts.version = "v"
+	rts.base_url = "http://h"
+	rts.tile_res = 4
+	rts.floor_nside_max = 8
+	return rts
+
+
+## Construit un plancher au format du publieur : en-tête, index, puis les charges utiles.
+func _floor_blob(tiles: Array) -> PackedByteArray:
+	var head := PackedByteArray()
+	head.resize(12)
+	head.encode_u32(0, RemoteTileSource.FLOOR_MAGIC)
+	head.encode_u32(4, 1)
+	head.encode_u32(8, tiles.size())
+	var index := PackedByteArray()
+	index.resize(16 * tiles.size())
+	var payloads := PackedByteArray()
+	var base := 12 + index.size()
+	for k in tiles.size():
+		var t: Dictionary = tiles[k]
+		var b: PackedByteArray = t["blob"]
+		index.encode_u32(16 * k, t["nside"])
+		index.encode_u32(16 * k + 4, t["ipix"])
+		index.encode_u32(16 * k + 8, base + payloads.size())
+		index.encode_u32(16 * k + 12, b.size())
+		payloads.append_array(b)
+	return head + index + payloads
+
+
+func _floor_tiles() -> Array:
+	return [
+		{"nside": 1, "ipix": 0, "blob": PackedByteArray([10, 11, 12])},
+		{"nside": 1, "ipix": 5, "blob": PackedByteArray([20, 21])},
+		{"nside": 8, "ipix": 700, "blob": PackedByteArray([30, 31, 32, 33])},
+	]
+
+
+func test_floor_explodes_into_the_tile_cache() -> void:
+	# Les charges utiles sont les octets exactement servis pour une tuile isolée : on les
+	# écrit tels quels, sans les décoder. Un plancher et une tuile ne peuvent pas diverger.
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	var tiles := _floor_tiles()
+	rts.fetcher = func(_url: String) -> Array: return [200, _floor_blob(tiles)]
+
+	assert_eq(rts.fetch_floor(), 3, "les trois tuiles doivent être écrites")
+	for t: Dictionary in tiles:
+		var path := rts.tile_cache_path(t["nside"], t["ipix"])
+		assert_true(FileAccess.file_exists(path), "n%d f%d en cache" % [t["nside"], t["ipix"]])
+		assert_eq(FileAccess.get_file_as_bytes(path), t["blob"] as PackedByteArray,
+				"octets identiques à ce que servirait la tuile isolée")
+
+
+func test_floor_is_fetched_once() -> void:
+	# Une requête à l'approche, pas une par retour sur la planète.
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	var calls := [0]
+	rts.fetcher = func(_url: String) -> Array:
+		calls[0] += 1
+		return [200, _floor_blob(_floor_tiles())]
+
+	rts.fetch_floor()
+	assert_eq(calls[0], 1)
+	assert_eq(rts.fetch_floor(), 0, "le témoin doit court-circuiter le second appel")
+	assert_eq(calls[0], 1, "aucune seconde requête")
+
+
+func test_a_server_without_a_floor_costs_nothing() -> void:
+	# Les 19 autres corps ne sont pas encore republiés : leur manifeste n'annonce pas de
+	# plancher, et le client doit alors se taire et s'en tenir aux tuiles isolées.
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	rts.floor_nside_max = 0
+	var calls := [0]
+	rts.fetcher = func(_url: String) -> Array:
+		calls[0] += 1
+		return [200, PackedByteArray()]
+	assert_eq(rts.fetch_floor(), 0)
+	assert_eq(calls[0], 0, "aucune requête pour un plancher qui n'existe pas")
+
+
+func test_a_truncated_floor_writes_nothing() -> void:
+	# Un objet coupé en vol ne doit pas se poser à moitié dans le cache : le témoin
+	# resterait alors sur un plancher à trous.
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	var full := _floor_blob(_floor_tiles())
+	rts.fetcher = func(_url: String) -> Array: return [200, full.slice(0, full.size() / 2)]
+
+	assert_eq(rts.fetch_floor(), 0)
+	assert_false(FileAccess.file_exists(rts.floor_marker_path()),
+			"pas de témoin sur un plancher illisible")
+	assert_false(FileAccess.file_exists(rts.tile_cache_path(1, 0)))
+
+
+func test_a_wrong_magic_is_rejected() -> void:
+	# Une page d'erreur servie à la place de l'objet ne doit pas être prise pour un plancher.
+	assert_eq(RemoteTileSource.decode_floor("<html>404</html>".to_utf8_buffer()).size(), 0)
+	assert_eq(RemoteTileSource.decode_floor(PackedByteArray()).size(), 0)
+
+
+func test_a_failed_floor_leaves_no_marker() -> void:
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	rts.fetcher = func(_url: String) -> Array: return [404, PackedByteArray()]
+	assert_eq(rts.fetch_floor(), 0)
+	assert_false(FileAccess.file_exists(rts.floor_marker_path()),
+			"un échec doit pouvoir être réessayé")
+
+
+func test_floor_does_not_overwrite_a_fresher_tile() -> void:
+	# La tuile isolée a pu arriver avant le plancher : elle porte la même donnée, la
+	# réécrire ne serait que du travail perdu.
+	RemoteTileSource._remove_tree(FLOOR_DIR)
+	var rts := _floor_src()
+	var path := rts.tile_cache_path(1, 0)
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_buffer(PackedByteArray([99]))
+	f.close()
+	rts.fetcher = func(_url: String) -> Array: return [200, _floor_blob(_floor_tiles())]
+
+	assert_eq(rts.fetch_floor(), 2, "seules les deux tuiles absentes sont écrites")
+	assert_eq(FileAccess.get_file_as_bytes(path), PackedByteArray([99]))
