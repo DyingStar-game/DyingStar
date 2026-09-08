@@ -65,6 +65,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.analyze_pack_sparsity import Pack
+from tools import stream_channels
 
 TILE_MAGIC = b"DSTL"
 TILE_HEADER = 12
@@ -400,6 +401,11 @@ def main(argv=None):
                          "(ex. http://127.0.0.1/dist) au pack local")
     ap.add_argument("--samples", type=int, default=40,
                     help="tuiles tirées par niveau pour --verify-http (défaut 40)")
+    ap.add_argument("--channel", default=stream_channels.PUBLISH_CHANNEL,
+                    choices=stream_channels.CHANNELS,
+                    help="canal alimenté par cette publication (défaut : %s). Les crans "
+                         "supérieurs se remplissent par promotion, pas par publication."
+                         % stream_channels.PUBLISH_CHANNEL)
     args = ap.parse_args(argv)
 
     pack = Pack(args.pack)
@@ -424,18 +430,29 @@ def main(argv=None):
 
     written, raw_bytes, out_bytes, floor_bytes = publish(
         pack, args.out, planet, version, args.compress)
+    entry = {"data_version": version, "nside_min": pack.nside_min,
+             "nside_max": pack.nside_max, "tile_res": pack.tile_res,
+             "shard_tiles": SHARD_TILES,
+             "floor_nside_max": FLOOR_NSIDE_MAX}
+    # Pointeur par corps : le repli quand aucun canal n'est en place, et ce que lisaient
+    # les clients avant les canaux.
     ptr = os.path.join(args.out, planet, "latest.json")
     with open(ptr, "w", encoding="utf-8") as fh:
-        json.dump({"data_version": version, "nside_min": pack.nside_min,
-                   "nside_max": pack.nside_max, "tile_res": pack.tile_res,
-                   "shard_tiles": SHARD_TILES,
-                   "floor_nside_max": FLOOR_NSIDE_MAX}, fh, indent=2)
+        json.dump(entry, fh, indent=2)
+    # Un export n'alimente que le premier cran. Les suivants se remplissent par
+    # promotion, ce qui garantit qu'aucune version n'atteint les joueurs sans avoir
+    # traversé les crans intermédiaires.
+    chan = stream_channels.record(args.out, args.channel, planet, entry)
     ratio = (100.0 * out_bytes / raw_bytes) if raw_bytes else 100.0
     print("  %d tuiles publiées, %.1f Mo (%.0f%% de la charge brute)"
           % (written, out_bytes / 1e6, ratio))
     print("  plancher n1..n%d en un objet : floor.bin, %.2f Mio en une requête"
           % (FLOOR_NSIDE_MAX, floor_bytes / 1048576.0))
     print("  pointeur : %s" % ptr)
+    print("  canal '%s' : %s" % (args.channel, chan))
+    print("  promotion : python3 tools/stream_channels.py --dist %s --to %s --planet %s"
+          % (args.out, stream_channels.CHANNELS[stream_channels.CHANNELS.index(args.channel) + 1]
+             if args.channel != stream_channels.CHANNELS[-1] else args.channel, planet))
     print("  nginx : immutable/max-age=1y sur <version>/, no-cache sur latest.json")
     return 0
 
