@@ -53,6 +53,9 @@ var shard_tiles: int = 4096
 ## Dernier niveau contenu dans floor.bin, annoncé par le serveur. 0 = pas de plancher
 ## servi, on retombe alors sur les tuiles isolées.
 var floor_nside_max: int = 0
+## La version vient-elle du manifeste de canal, ou du pointeur par corps ?
+## Le repli n'a aucune garantie de cohérence entre client et serveur : il faut le voir.
+var from_channel: bool = false
 ## Racine du cache disque. Chaque version a son sous-répertoire, donc changer de version
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
@@ -189,6 +192,14 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 			% [planet_name, src.version, src.tile_res, src.nside_min, src.nside_max,
 			" (%d ancienne(s) version(s) purgée(s))" % dropped if dropped else "",
 			"  %s" % src.lru.stat_line() if src.lru != null else "  cache non borné"])
+	# Cette ligne est la poignée de main : la même dans le journal du client et dans celui
+	# du serveur veut dire mêmes versions pour tous les corps. Différente, c'est un écart
+	# de canal, et il faut le voir avant qu'un joueur ne tombe à travers le sol.
+	print("[StreamChannel] %s" % StreamChannel.fingerprint())
+	if not src.from_channel:
+		push_warning("[StreamChannel] '%s' résolu par latest.json, hors canal : rien ne "
+				% planet_name
+				+ "garantit que le serveur serve la même version.")
 	return src
 
 
@@ -197,13 +208,19 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 func open_planet(p_base_url: String, p_planet: String) -> bool:
 	base_url = p_base_url.rstrip("/")
 	planet = p_planet
-	var res: Array = _request("%s/%s/latest.json" % [base_url, planet])
-	if res[0] != 200:
-		return false
-	var parsed: Variant = JSON.parse_string((res[1] as PackedByteArray).get_string_from_utf8())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return false
-	var d: Dictionary = parsed
+	# Le canal d'abord : un manifeste unique fixe la version des dix-neuf corps à la fois,
+	# donc client et serveur qui partagent le canal partagent les versions sans avoir rien
+	# à négocier. Le pointeur par corps reste le repli quand aucun canal n'est servi.
+	var d: Dictionary = StreamChannel.resolve(base_url, _request).get(planet, {})
+	from_channel = not d.is_empty()
+	if not from_channel:
+		var res: Array = _request("%s/%s/latest.json" % [base_url, planet])
+		if res[0] != 200:
+			return false
+		d = StreamChannel.parse_object(
+				(res[1] as PackedByteArray).get_string_from_utf8())
+		if d.is_empty():
+			return false
 	version = str(d.get("data_version", ""))
 	tile_res = int(d.get("tile_res", 0))
 	nside_min = int(d.get("nside_min", 1))

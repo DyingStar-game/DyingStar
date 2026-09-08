@@ -1153,9 +1153,70 @@ les mesures qui justifient ces chiffres sont en §8.
 
 ### Phase 4 — serveur
 
+#### Canaux et poignée de main de version — ✅ FAIT
+
+Un canal est un manifeste `corps → version`, servi en un objet :
+
+    <dist>/channels/<canal>.json
+
+Les arborescences vivent en `<dist>/<corps>/<version>/` et sont **immuables** : elles ne
+portent pas le nom du canal. Promouvoir fait donc monter le manifeste d'un cran **sans
+recopier un octet**, et la version servie en dev est littéralement la même que celle qui
+passe en preprod — un octet ne peut pas changer entre deux canaux.
+
+C'est là toute la poignée de main. Client et serveur ne négocient rien : ils résolvent le
+même nom de canal, lisent le même manifeste et obtiennent les mêmes versions **par
+construction**. Un seul manifeste fixe les dix-neuf corps à la fois, si bien qu'une
+promotion en cours de partie ne peut pas livrer tarsis_3 dans une version et sa lune dans
+une autre. Et il n'a fallu ajouter aucun message réseau, ce qui compte : le protocole
+client/serveur vit dans `../horizonserver`, hors de ce dépôt.
+
+    unstable  →  dev  →  preprod  →  prod
+
+| canal | pour qui |
+|---|---|
+| `unstable` | ce que quelqu'un vient d'exporter, testé en local par lui seul |
+| `dev` | ce que tous les développeurs partagent |
+| `preprod` | client et serveur construits ensemble ; le canal est figé dans le build |
+| `prod` | les joueurs |
+
+**Une publication n'alimente que le premier cran.** Les suivants ne se remplissent que par
+promotion, donc aucune version n'atteint les joueurs sans avoir traversé les crans
+intermédiaires.
+
+Trois garanties tenues par la promotion, chacune couverte par un test :
+
+- **On ne promeut pas un pointeur en l'air.** L'arborescence visée doit exister, avec son
+  `manifest.json`, son `floor.bin` s'il est annoncé et son niveau le plus fin. Sans ce
+  contrôle, le canal supérieur casse sans que rien ne le dise et le premier à s'en
+  apercevoir est un joueur devant un terrain absent.
+- **Tout ou rien.** Un canal à moitié promu mêle deux exports en silence — pire que pas
+  promu du tout.
+- **Corps par corps.** `--planet tarsis_3` ne fait monter que lui : ré-exporter un corps
+  ne doit pas embarquer dix-huit autres qui n'ont pas été retestés.
+
+Résolution du canal côté processus, même cascade que le reste du streaming :
+`--tile-channel=`, puis `DS_TILE_CHANNEL`, puis `[stream] channel` du `.ini`, puis
+**l'estampille de build** `res://stream_channel.json`, puis `dev`. L'estampille est la
+réponse au cas preprod : client et serveur y sont construits ensemble, donc écrire le
+canal dans le build les lie sans qu'aucun des deux n'ait à être configuré au déploiement.
+Un nom hors de la liste est traité comme une faute de frappe et retombe sur `dev` avec un
+avertissement, plutôt que de demander un manifeste inexistant en silence.
+
+Le seul écart que les canaux ne peuvent pas empêcher, c'est deux processus sur des canaux
+**différents**. `StreamChannel.fingerprint()` l'imprime au démarrage — `canal=preprod
+corps=19 empreinte=ec05a72a` — la même ligne dans les deux journaux valant mêmes versions
+partout. Une planète résolue par `latest.json`, hors canal, émet un avertissement : ce
+repli n'a aucune garantie de cohérence.
+
+Vérifié bout en bout sur l'arborescence publiée : promotion des quatre crans, résolution
+des trois canaux depuis le client, repli sur `dev` pour un nom fautif, et refus de
+promouvoir une version non publiée sans toucher au canal cible.
+
+#### Ce qui reste
+
 - Mode `--prefetch-zone` du même fetcher, lancé au boot / en init container, vers
   un PVC.
-- Handshake : le serveur annonce `planet → data_version`, le client obéit.
 
 ### Phase 5 — éditeur — ✅ FAITE
 
@@ -1215,7 +1276,9 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
   d'élagage projeté à 198 m, soit 34,4 → ~12 Go et 16,8 → 5,8 M de fichiers, sans perte
   de relief.
 - Volume de distribution en `-b 1024` (35,9 Go) ou blocs standard (73,8 Go) ?
-- Combien de versions garder en ligne ? Chacune est une arborescence complète.
+- Combien de versions garder en ligne ? Chacune est une arborescence complète. Les canaux
+  donnent le critère : une version encore référencée par un canal ne se supprime pas, une
+  version qu'aucun canal ne cite est morte. Le ramasse-miettes reste à écrire.
 - ~~**`col=0` côté serveur**~~ **Élucidé** : configuration, pas bug. Le serveur n'avait ni
   pack local (renommé pour le test) ni section `[stream]` dans `server.ini` — donc aucune
   élévation, donc aucune collision. Avec l'une ou l'autre, il construit normalement.
