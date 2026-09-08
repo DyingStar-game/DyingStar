@@ -720,13 +720,49 @@ linéaire sur `_cache_order` — inoffensif à 2 tuiles, à 283 il coûte déjà
 - [x] ~~**Choisir la résolution cible par planète.**~~ Acté : tarsis_3 à 198 m
       (`n1024 × tr32`), les 19 autres planètes et lunes à 4 065 m (`n64 × tr25`).
 
-### Phase 1 — réduire la donnée avant de la streamer — ⚙️ OUTILLÉE ET MESURÉE
+### Phase 1 — réduire la donnée avant de la streamer — ✅ FAITE ET VALIDÉE EN JEU
 
 - DSHP v2 : **uint16** au lieu de float32 (le float32 offre des pas de 0,163 m sur
   10 700 m d'amplitude — sans objet). Gain sur le transfert, pas sur le disque
   (blocs de 4 Kio).
 - Deflate/zstd par tuile.
 - **Pack creux** : voir ci-dessous, désormais mesurable.
+
+#### Résultat (2026-09-08) — livré, exporté, validé en jeu
+
+DSHP v2 : échantillons uint16 et pack creux. Lecteur bi-format (les packs v1 restent
+lisibles, donc les planètes se ré-exportent une par une), écriture en deux passes avec
+élagage **en cascade** — chaque tuile est comparée à la reconstruction que le client
+obtiendra, pas à son parent réel, ce qui borne l'erreur visible à exactement epsilon quelle
+que soit la profondeur.
+
+**tarsis_3_2** (lune, n64 × tr25, 448 m) : 17,9 % élagué, **163,8 Mo → 64,1 Mo (2,6×)**.
+
+**tarsis_3** (n256 × tr32, 794 m, ~30 min) : 35,7 % élagué, **1 318 Mo**, contre 655 Mo à
+2 033 m auparavant — soit **2,6× plus fin pour 2× la taille**. Validé en jeu : la remontée
+de niveau, les coutures et la collision se comportent correctement alors que 41,6 % des
+tuiles du niveau fin sont absentes.
+
+| niveau | n16 | n32 | n64 | n128 | n256 |
+|---|---|---|---|---|---|
+| élagué | 0,1 % | 0,7 % | 6,4 % | 22,1 % | **41,6 %** |
+
+L'élagage double à chaque niveau, exactement comme le prédit la physique du problème :
+l'écart à l'upsample du parent varie comme la dérivée seconde × (taille de cellule)², donc
+il chute d'un facteur 4 par niveau.
+
+**Le ratio cascade/borne est stable à 0,869** (n128 : 22,1/25,6 ; n256 : 41,6/47,6). C'est
+lui qui rend la projection fiable, puisque le sondage ne mesure que la borne :
+
+| | n512 | n1024 | total |
+|---|---|---|---|
+| cascade projetée | 55 % | 70 % | **65 % élagué** |
+| pack à 198 m | | | **~12 Go**, 5,8 M fichiers, **~7 h d'export** |
+
+**Correction d'estimation à retenir** : la durée annoncée était d'abord de 35 h, calée sur
+un export n64 complet. Faux d'un facteur 5 — à n64 l'échantillonnage est minoritaire devant
+les coûts fixes (extraction des contours, décimation, construction du TIN, raster de repli).
+Recalibré sur un run réellement dominé par l'échantillonnage.
 
 #### Le pack creux, et comment décider
 
@@ -898,11 +934,14 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
   580 Ko, manifeste de 537 Mo : les trois arguments du contenu-adressage tombent.
 - **Le streaming n'apporte rien au CPU** (phase 0) — lecture de tuiles à 9,4 % de la
   génération, contre 74 % pour les normales. Chantier séparé.
+- **Phase 1 livrée et validée en jeu** (§ ci-dessus) : uint16 + pack creux, 2,6× sur une
+  lune, 35,7 % d'élagage sur tarsis_3 à 794 m, projection ~12 Go à 198 m.
 
 ### Encore ouverts
 
-- Le *pack creux* (phase 1) vaut-il sa complexité maintenant que 73,8 Go tiennent sans
-  lui ? Il reste le seul levier contre le sur-échantillonnage ×6000 de tarsis_3.
+- ~~Le *pack creux* vaut-il sa complexité ?~~ **Oui, tranché par la mesure** : 65 %
+  d'élagage projeté à 198 m, soit 34,4 → ~12 Go et 16,8 → 5,8 M de fichiers, sans perte
+  de relief.
 - Volume de distribution en `-b 1024` (35,9 Go) ou blocs standard (73,8 Go) ?
 - Combien de versions garder en ligne ? Chacune est une arborescence complète.
 - **`col=0` côté serveur** : aucune résidence de zone demandée alors que le client
