@@ -163,7 +163,8 @@ EXPORT_DIR = os.path.expanduser(
 # le script entre les deux : une erreur ici coûte un export entier, et un export de
 # tarsis_3 à 198 m dure ~35 heures.
 PLANET_TILING = {
-    "tarsis_3": (1024, 32),     # 198 m — la planète jouable
+    # "tarsis_3": (1024, 32),     # 198 m — la planète jouable
+    "tarsis_3": (256, 32),     # 794 m — la planète jouable
 }
 # Tout le reste : 4 065 m. Suffisant pour des corps sans relief travaillé, et 19 × 164 Mo
 # au lieu de 19 × 68 Go.
@@ -533,10 +534,19 @@ def write_pack(tmp_path, chunks_dir, manifest_bytes, levels, total_tiles,
     return kept_total, total_tiles
 
 
-## Débit d'échantillonnage du TIN mesuré sur un export réel : 65 532 tuiles × 50² samples
-## en ~20 min. Sert uniquement à annoncer un ordre de grandeur avant de lancer — un export
-## à 198 m dure des dizaines d'heures, et le découvrir en cours de route est désagréable.
-_REF_SAMPLES_PER_SEC = 65532 * 50 * 50 / (20 * 60)
+## Débit d'échantillonnage du TIN, mesuré sur l'export tarsis_3 n256 × tr32 :
+## 1,07e9 échantillons en un peu moins de 30 min, coûts fixes déduits.
+##
+## Une première version calait ce débit sur un export n64 complet (20 min) et se trompait
+## d'un facteur 5 : à n64 l'échantillonnage des tuiles est MINORITAIRE devant les coûts
+## fixes — extraction de 3,9 M sommets de contours, décimation, construction du TIN
+## (1,86 M triangles), raster de repli 4096×2048. Il faut donc calibrer sur un run
+## réellement dominé par l'échantillonnage, sans quoi l'annonce dissuade d'un export qui
+## tient en une nuit.
+##
+## Ce chiffre ne couvre QUE l'échantillonnage : comptez quelques minutes de plus pour les
+## coûts fixes, qui ne dépendent pas de la résolution.
+_REF_SAMPLES_PER_SEC = 7.0e5
 
 
 def print_plan():
@@ -561,7 +571,7 @@ def print_plan():
           f"{tile_bytes} B/tile, dense max {tiles * tile_bytes / 1e9:.1f} GB")
     print(f"  Sparse     : " + (f"epsilon {SPARSE_EPSILON_M} m" if SPARSE_EPSILON_M > 0
                                 else "off (dense)"))
-    print(f"  Est. time  : ~{hours:.1f} h of TIN sampling")
+    print(f"  Est. time  : ~{hours:.1f} h of TIN sampling (+ a few minutes of fixed cost)")
     print("=" * 64)
 
 
