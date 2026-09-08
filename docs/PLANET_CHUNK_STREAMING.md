@@ -487,7 +487,7 @@ Deux tiers, car leurs durées de vie diffèrent :
 
 ## 9. Phases d'implémentation
 
-### Phase 0 — mesurer avant d'écrire du code — ⚙️ INSTRUMENTATION EN PLACE
+### Phase 0 — mesurer avant d'écrire du code — ✅ FAITE
 
 Le rig est implémenté (`scenes/planet/terrain_profiler.gd`, suite GUT
 `test/unit/test_terrain_profiler.gd`, 13/13). **Il reste à le faire tourner sur une
@@ -950,7 +950,7 @@ Deux remarques :
 - **HTTP/2 ou 3 en production** : une session ouvre des centaines de petites requêtes, et
   le multiplexage change tout. Le relevé ci-dessus était en HTTP/1.1 local.
 
-### Phase 3 — fetcher runtime — 🟡 CLIENT ET GARDE FAITS, RESTE LE CÂBLAGE
+### Phase 3 — fetcher runtime — 🟢 FONCTIONNEL EN JEU, RESTE LE CONFORT
 
 **`scenes/planet/remote_tile_source.gd`** — la moitié cliente du format publié. URL,
 enveloppe de 12 octets, cartes de présence par shard, cache disque cloisonné par version,
@@ -992,13 +992,31 @@ en HTTP décodées en octets identiques au pack local, 5 absences concordant ave
 de présence, 0 désaccord.** La chaîne QGIS → exporteur → pack creux → publieur → nginx →
 client est close.
 
-#### Ce qui reste
+#### Validé en jeu, 2026-09-08
 
-- **Câbler la source** : construire un `RemoteTileSource` par planète depuis un réglage,
-  appeler `open_planet()` et `start()`, purger les autres versions au chargement.
-- **Cache LRU** avec le budget de 400 Mo (§8) et son `index.bin` de derniers usages.
-- **Prefetch en anneau** autour du joueur, biaisé par la vélocité.
-- **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans réseau.
+Câblé (`--tile-stream=` / `DS_TILE_STREAM` / `[stream] tiles_url`), et **testé en retirant
+le pack local** : le client rend tarsis_3 entièrement depuis les tuiles téléchargées, et le
+serveur construit sa collision de la même façon. Le volume descendu est reporté par le
+profilage (`réseau: N tuiles (X Kio) + M cartes (Y Kio)`).
+
+Deux erreurs corrigées en route, toutes deux trouvées par l'instrumentation et non par
+raisonnement :
+
+- Le garde interrogeait la présence par `has_tile()`, qui va chercher la carte d'un shard
+  en **HTTP synchrone**. Appelé pour chaque chunk en attente à chaque frame : **0,2 FPS**.
+  `presence_of()` ne consulte que ce qui est arrivé et met la carte en file.
+- `_read_r32_tile` sortait avant le repli distant quand le pack local manquait, si bien
+  qu'une planète entièrement streamée ne pouvait lire aucune tuile.
+
+#### Ce qui reste — du confort, pas de la correction
+
+- **Prefetch en anneau** autour du joueur, biaisé par la vélocité. C'est le manque le plus
+  visible : une tuile n'est demandée qu'au moment où un chunk en a besoin, donc chaque
+  zone nouvelle coûte au moins un aller-retour avant d'apparaître.
+- **Cache LRU** avec le budget de 400 Mo (§8) et son index de derniers usages : le cache
+  de tuiles grossit aujourd'hui sans limite.
+- **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans
+  réseau et qu'une vue orbitale n'émette aucune requête.
 
 ### Phase 4 — serveur
 
@@ -1039,8 +1057,9 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
   de relief.
 - Volume de distribution en `-b 1024` (35,9 Go) ou blocs standard (73,8 Go) ?
 - Combien de versions garder en ligne ? Chacune est une arborescence complète.
-- **`col=0` côté serveur** : aucune résidence de zone demandée alors que le client
-  construisait 488 chunks. Bug d'entrée de zone, ou configuration ?
+- ~~**`col=0` côté serveur**~~ **Élucidé** : configuration, pas bug. Le serveur n'avait ni
+  pack local (renommé pour le test) ni section `[stream]` dans `server.ini` — donc aucune
+  élévation, donc aucune collision. Avec l'une ou l'autre, il construit normalement.
 
 ---
 
