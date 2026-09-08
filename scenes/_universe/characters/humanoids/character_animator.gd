@@ -121,6 +121,7 @@ var _camera_base_pos: Vector3 = Vector3.ZERO  # first-person camera rest positio
 var _head_rest_body: Vector3 = Vector3.ZERO   # head bone position (body frame) at rest, the follow origin
 var _head_rest_captured: bool = false         # captured lazily on the first idle frame (see _process)
 var _head_bone: int = -1
+var _neck_bone: int = -1
 var _current: StringName = &""
 var _idle: StringName = &""  # resolved idle clip (the set's idle, or the first clip if names don't match)
 var _jump_phase: JumpPhase = JumpPhase.GROUND
@@ -172,6 +173,7 @@ func setup(player_body, is_local: bool) -> void:
 	if _skeleton != null:
 		# Local: hidden in first person; every avatar: tilted to the look pitch.
 		_head_bone = _resolve_bone([&"Head", &"head"])
+		_neck_bone = _resolve_bone([&"Neck", &"neck"])
 		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
@@ -261,8 +263,17 @@ func _process(delta: float) -> void:
 	_play(_select_clip(delta))
 	_anim.speed_scale = _target_speed_scale  # walk speed-warp (1.0 for every other clip)
 	# First person only: shrink our own head every frame (the animation rewrote the pose just before us).
-	if _is_local and _head_bone != -1:
-		_skeleton.set_bone_pose_scale(_head_bone, HEAD_HIDE_SCALE)
+	# Collapse the head AND the neck for the owner. Hiding the head alone left the throat standing, and
+	# no camera height fixes that: looking up or to the side simply swept the view through it. Collapsing
+	# the neck is safe for the first-person camera even though it drags the head bone down with it -- the
+	# camera is anchored to CameraPivot in the scene and only takes a DELTA from the head bone, measured
+	# against a rest captured with the same collapse applied, so a constant shift cancels out. The arms
+	# hang off the spine, not the neck, so they are untouched.
+	if _is_local:
+		if _head_bone != -1:
+			_skeleton.set_bone_pose_scale(_head_bone, HEAD_HIDE_SCALE)
+		if _neck_bone != -1:
+			_skeleton.set_bone_pose_scale(_neck_bone, HEAD_HIDE_SCALE)
 	# Head follows the look on EVERY avatar, added on top of the animation so others see where a player
 	# aims. Pitch always; yaw only matters seated (standing it is 0, the body carries the turn). Both are
 	# clamped so the neck never snaps to an impossible angle. Invisible on our own hidden head, but harmless.
