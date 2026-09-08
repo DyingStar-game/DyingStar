@@ -412,6 +412,39 @@ Cache-Control: public, max-age=31536000, immutable
 - **Changement de version : purge complète du cache.** L'ensemble de travail d'un joueur
   fait ~580 Ko (283 tuiles × 2 048 o) ; le re-télécharger coûte moins cher que toute
   machinerie incrémentale. `ChunkDiskCache._validate_version` fait déjà exactement ça.
+#### Plancher servi en un objet — ✅ FAIT (`floor.bin`)
+
+Les niveaux grossiers n1…n8 ne servent pas au sol. Mesuré sur le cache d'une session
+réelle : **95 des 1 020 tuiles du plancher, soit 9 %**, et zéro en n1/n2 alors même que
+`nside_min = 1`. Une tuile n8 fait 813 km de côté, l'horizon depuis le sol est à quelques
+dizaines de kilomètres. Ce à quoi le plancher sert, c'est la planète vue de loin — en
+orbitant, on en balaye toute la sphère aux niveaux grossiers — et la résilience
+hors-réseau.
+
+| niveau | publié | utilisé en session | côté d'une tuile |
+|---|---|---|---|
+| n1 | 12 | **0** | 6 504 km |
+| n2 | 48 | **0** | 3 252 km |
+| n4 | 192 | 20 | 1 626 km |
+| n8 | 768 | 75 | 813 km |
+
+Le coût n'est donc pas le volume mais le **nombre d'allers-retours** : 1 020 tuiles pour
+1,88 Mio, soit des secondes de bande passante mais des minutes de latence sur un vrai
+réseau. Le publieur émet un `floor.bin` par version — index de 16 octets par entrée, puis
+les charges utiles **exactement telles qu'elles seraient servies pour une tuile isolée**,
+si bien que le client les écrit sans les décoder et qu'un plancher et une tuile ne peuvent
+pas diverger. `--verify` compare les deux chemins.
+
+Récupéré **à l'approche de la planète** et non au menu : le travail est mis en file au
+moment où `for_planet()` construit la source, donc sur le fil de téléchargement, une
+requête, au moment où cela devient utile. Précharger les 19 corps au menu coûterait 36 Mio
+et ne se justifierait que pour jouer réseau coupé.
+
+Vérifié bout en bout sur le pack tarsis_3 et nginx : **1 020 tuiles écrites en une requête,
+277 ms, aucune illisible**. Le témoin `floor.done` n'est posé qu'une fois tout écrit, si
+bien qu'un arrêt en cours se retraduit par un nouveau téléchargement et non par un
+plancher à trous.
+
 - **Plancher local** : les niveaux n1…n8 (1 020 tuiles par corps) restent embarqués dans
   le `.pck`, **26 Mo au total**. La planète est toujours visible sans réseau et une vue
   orbitale n'émet que ~120 requêtes.
@@ -1105,8 +1138,9 @@ les mesures qui justifient ces chiffres sont en §8.
 
 #### Ce qui reste — du confort, pas de la correction
 
-- **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans
-  réseau et qu'une vue orbitale n'émette aucune requête.
+- **Jouer réseau coupé** : il faudrait alors précharger les planchers des 19 corps au
+  menu (36 Mio, 19 requêtes). Écarté pour l'instant — le plancher à l'approche donne la
+  même garantie en jeu pour 1,88 Mio.
 
 ### Phase 4 — serveur
 

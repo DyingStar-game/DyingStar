@@ -32,6 +32,13 @@ enum { PRESENCE_UNKNOWN, PRESENCE_YES, PRESENCE_NO }
 ## Genres de travaux de la file du fil de téléchargement.
 const JOB_TILE := 0
 const JOB_PRESENCE := 1
+const JOB_FLOOR := 2
+
+## En-tête du plancher : magie, version, nombre d'entrées.
+const FLOOR_MAGIC := 0x4C465344
+const FLOOR_HEADER := 12
+## Une entrée d'index : nside, ipix, offset, longueur, en uint32.
+const FLOOR_ENTRY := 16
 
 ## Base servie, sans slash final. Ex. "http://127.0.0.1/dist".
 var base_url: String = ""
@@ -43,6 +50,9 @@ var tile_res: int = 0
 var nside_min: int = 0
 var nside_max: int = 0
 var shard_tiles: int = 4096
+## Dernier niveau contenu dans floor.bin, annoncé par le serveur. 0 = pas de plancher
+## servi, on retombe alors sur les tuiles isolées.
+var floor_nside_max: int = 0
 ## Racine du cache disque. Chaque version a son sous-répertoire, donc changer de version
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
@@ -160,6 +170,10 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 		src.lru.set_budget_mb(budget)
 		src.lru.open("%s%s/%s/" % [src.cache_root, src.planet, src.version])
 	src.start()
+	# À l'approche de la planète, pas au menu : une requête, au moment où cela devient
+	# utile. Sur le fil, donc sans jamais retarder l'affichage.
+	if src.floor_nside_max > 0:
+		src._enqueue(0, 0, JOB_FLOOR)
 	print("[RemoteTileSource] '%s' version=%s tile_res=%d n%d..n%d%s%s"
 			% [planet_name, src.version, src.tile_res, src.nside_min, src.nside_max,
 			" (%d ancienne(s) version(s) purgée(s))" % dropped if dropped else "",
@@ -184,6 +198,7 @@ func open_planet(p_base_url: String, p_planet: String) -> bool:
 	nside_min = int(d.get("nside_min", 1))
 	nside_max = int(d.get("nside_max", 0))
 	shard_tiles = int(d.get("shard_tiles", 4096))
+	floor_nside_max = int(d.get("floor_nside_max", 0))
 	return version != "" and tile_res > 0 and nside_max > 0
 
 
@@ -200,6 +215,17 @@ func tile_url(nside: int, ipix: int) -> String:
 
 ## Chemin du cache disque. La version en fait partie : purger une ancienne version est un
 ## simple effacement de répertoire, et deux versions ne peuvent pas se mélanger.
+## Objet unique portant les niveaux grossiers. Une requête au lieu de ~1020.
+func floor_url() -> String:
+	return "%s/%s/%s/floor.bin" % [base_url, planet, version]
+
+
+## Témoin de plancher déjà éclaté dans le cache. Dans le répertoire de version, donc un
+## ré-export le laisse derrière lui avec le reste de l'ancienne version.
+func floor_marker_path() -> String:
+	return "%s%s/%s/floor.done" % [cache_root, planet, version]
+
+
 func tile_cache_path(nside: int, ipix: int) -> String:
 	@warning_ignore("integer_division")
 	var shard := ipix / shard_tiles
@@ -333,6 +359,80 @@ func fetch_now(nside: int, ipix: int) -> bool:
 	return true
 
 
+## Récupère le plancher et l'éclate dans le cache. Bloquant : fil de téléchargement seul.
+##
+## Les niveaux grossiers ne servent pas au sol — mesuré sur une session réelle, 9 % d'entre
+## eux sont lus — mais à la planète vue de loin, dont on balaye toute la sphère. Les
+## demander une par une coûte ~1020 allers-retours, soit des minutes sur un vrai réseau
+## pour 1,9 Mio ; ici c'est une requête, au moment où l'on approche de la planète.
+##
+## Rend le nombre de tuiles écrites. 0 couvre aussi bien « déjà fait » que « pas de
+## plancher servi » : dans les deux cas il n'y a rien à faire et les tuiles isolées
+## restent le chemin de repli.
+func fetch_floor() -> int:
+	if floor_nside_max <= 0 or FileAccess.file_exists(floor_marker_path()):
+		return 0
+	var res: Array = _request(floor_url())
+	if res[0] != 200:
+		net_failed += 1
+		return 0
+	var blob: PackedByteArray = res[1]
+	var entries := decode_floor(blob)
+	if entries.is_empty():
+		net_failed += 1
+		return 0
+	net_maps += 1
+	net_map_bytes += blob.size()
+	var n := 0
+	for e: Dictionary in entries:
+		var path := tile_cache_path(e["nside"], e["ipix"])
+		if FileAccess.file_exists(path):
+			continue
+		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f == null:
+			continue
+		f.store_buffer(e["blob"])
+		f.close()
+		n += 1
+	# Le témoin n'est posé qu'une fois tout écrit : un arrêt en cours de route se
+	# retraduit par un nouveau téléchargement, pas par un plancher à trous.
+	DirAccess.make_dir_recursive_absolute(floor_marker_path().get_base_dir())
+	var m := FileAccess.open(floor_marker_path(), FileAccess.WRITE)
+	if m != null:
+		m.store_string("%d" % entries.size())
+		m.close()
+	return n
+
+
+## Index du plancher, ou tableau vide si l'objet n'en est pas un.
+##
+## Les charges utiles sont les octets EXACTEMENT servis pour une tuile isolée : on les
+## écrit tels quels dans le cache, sans les décoder. Un plancher et une tuile ne peuvent
+## donc pas diverger, et le CRC de chacune sera vérifié à la lecture comme d'habitude.
+static func decode_floor(blob: PackedByteArray) -> Array:
+	if blob.size() < FLOOR_HEADER:
+		return []
+	if blob.decode_u32(0) != FLOOR_MAGIC or blob.decode_u32(4) != 1:
+		return []
+	var count := blob.decode_u32(8)
+	if FLOOR_HEADER + count * FLOOR_ENTRY > blob.size():
+		return []
+	var out: Array = []
+	for k in count:
+		var at := FLOOR_HEADER + k * FLOOR_ENTRY
+		var off := blob.decode_u32(at + 8)
+		var length := blob.decode_u32(at + 12)
+		if off + length > blob.size():
+			return []
+		out.append({
+			"nside": blob.decode_u32(at),
+			"ipix": blob.decode_u32(at + 4),
+			"blob": blob.slice(off, off + length),
+		})
+	return out
+
+
 ## Supprime du cache toutes les versions de cette planète sauf celle en cours.
 ## Le changement de version est le seul moment où l'on jette : les objets d'une version
 ## donnée sont immuables, donc jamais périmés.
@@ -418,6 +518,10 @@ func _worker() -> void:
 		var item: Vector3i = _queue.pop_front() if not _queue.is_empty() else Vector3i(-1, -1, 0)
 		_mutex.unlock()
 		if item.x < 0:
+			continue
+		if item.z == JOB_FLOOR:
+			fetch_floor()
+			_forget(item.z, item.y, item.x)
 			continue
 		if item.z == JOB_PRESENCE:
 			# Rapatrie la carte du shard. C'est ce qui débloque presence_of() côté
