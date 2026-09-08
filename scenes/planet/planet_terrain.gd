@@ -2493,6 +2493,14 @@ func _queue_mesh_task(info: Dictionary) -> void:
 			return a.center.distance_squared_to(_last_local_cam) < b.center.distance_squared_to(_last_local_cam))
 		return
 
+	# Streaming : une tâche mesh ne peut pas attendre une socket, donc le chunk repart au
+	# backlog tant que ses tuiles manquent. Sans source distante, toujours true.
+	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix):
+		# any() plutôt qu'un helper : évite d'empiler deux fois le même chunk en attente.
+		if not _mesh_task_backlog.any(func(it: Dictionary) -> bool: return it.key == key):
+			_mesh_task_backlog.append(info)
+		return
+
 	var lod: int = info.lod
 	var res := planet_data.get_resolution_for_lod(lod)
 	var chunk_center: Vector3 = info.center
@@ -2532,13 +2540,22 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	task_entry["task_id"] = task_id
 
 
+## Vide le backlog, en BORNANT les tentatives à son contenu initial — sans quoi un chunk
+## remis en attente d'un téléchargement relancerait la boucle sans fin (phase 3 du doc).
+func _drain_backlog() -> void:
+	var tries := _mesh_task_backlog.size()
+	while tries > 0 and _mesh_tasks.size() < max_mesh_tasks:
+		var info: Dictionary = _mesh_task_backlog[0]
+		_mesh_task_backlog.remove_at(0)
+		_queue_mesh_task(info)
+		tries -= 1
+
+
 ## Poll completed mesh tasks and move them to _assemble_queue.
 func _poll_mesh_tasks() -> void:
 	if _mesh_tasks.is_empty():
 		# Drain backlog into mesh slots when available.
-		while _mesh_task_backlog.size() > 0 and _mesh_tasks.size() < max_mesh_tasks:
-			_queue_mesh_task(_mesh_task_backlog[0])
-			_mesh_task_backlog.remove_at(0)
+		_drain_backlog()
 		return
 
 	var completed_keys: Array[String] = []
@@ -2563,9 +2580,7 @@ func _poll_mesh_tasks() -> void:
 		_mesh_tasks.erase(k)
 
 	# Drain backlog into the freed slots.
-	while _mesh_task_backlog.size() > 0 and _mesh_tasks.size() < max_mesh_tasks:
-		_queue_mesh_task(_mesh_task_backlog[0])
-		_mesh_task_backlog.remove_at(0)
+	_drain_backlog()
 
 
 ## Assemble up to MAX_ASSEMBLE_PER_FRAME chunks from _assemble_queue per call.
@@ -2828,9 +2843,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		# Gate on the SAME pyramid tile the mesh sampled (coarse chunks read a
 		# coarse tile, not the finest), so a good coarse bake isn't rejected.
 		var _ht := _chunk_height_tile(info)
-		# has_usable_tile, pas load_chunk_heightmap : sur un pack creux une tuile absente
-		# est normale (le parent la reproduit), et refuser d'y mettre le mesh en cache
-		# empêcherait tout simplement le cache de se remplir.
+		# has_usable_tile : sur un pack creux une tuile absente est normale, et refuser
+		# d'y cacher le mesh empêcherait le cache de se remplir.
 		if _ht[0] >= 0 and planet_data.has_usable_tile(_ht[0], _ht[1]):
 			_chunk_cache.save_mesh(key, lod, mesh)
 
@@ -2932,10 +2946,8 @@ func _create_chunk(info: Dictionary) -> void:
 	_spawn_bridges(info)
 
 	_active_chunks[key] = info
-	# Ce print sortait une ligne PAR CHUNK, inconditionnellement. Chaque print traverse
-	# CustomLogger -> Obs -> le pont OpenTelemetry C# et coûte des millisecondes : sur le
-	# chemin de création de chunk il mesurait surtout son propre coût, et il polluait les
-	# logs serveur en continu. Remplacé par une accumulation + le récapitulatif agrégé.
+	# Ce print sortait une ligne PAR CHUNK : chaque print traverse le pont OpenTelemetry
+	# et coûte des millisecondes, donc il mesurait surtout son propre coût.
 	if PropNet.prof_on:
 		var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 		PropNet.prof_col_calls += 1

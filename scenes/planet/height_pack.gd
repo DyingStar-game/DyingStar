@@ -263,7 +263,13 @@ func slot_of(nside: int, ipix: int) -> int:
 ## uint16 normalisé -> float32 normalisé. 65535 pas sur l'amplitude d'une planète, soit
 ## 0,16 m sur 10 700 m : sous la résolution verticale des contours (50 m).
 func _widen_u16(raw: PackedByteArray) -> PackedByteArray:
-	var n := _tile_res * _tile_res
+	return widen_u16(raw, _tile_res)
+
+
+## Version statique, pour les tuiles qui n'arrivent pas par le pack (cache distant) mais
+## portent le même encodage.
+static func widen_u16(raw: PackedByteArray, tile_res: int) -> PackedByteArray:
+	var n := tile_res * tile_res
 	var out := PackedFloat32Array()
 	out.resize(n)
 	for i in n:
