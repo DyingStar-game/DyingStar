@@ -459,7 +459,18 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## fed the animation straight back into the body position: seated, the view drifted off centre as you
 ## looked around, and the further the camera had been moved from its rest, the further it wandered.
 @onready var camera_pivot_rest: Vector3 = $CameraPivot.position
-## How far above a seat's SitPoint the eye sits (m), along the seat's own up.
+## Where the body's origin sits relative to a seat's marker (m), as a full offset -- not just a height.
+##
+## _ride_seat used to derive it from camera_pivot_rest, which chains the seated body to the STANDING eye
+## height: lowering the pivot by 3.7 cm to fix the on-foot view raised the seated body by exactly that,
+## and the driver floated. Two unrelated settings, one number. The default is the pivot height develop
+## shipped, so the seated pose is unchanged from before any of this. All THREE components matter: the
+## -0.17 on Z is the pivot's own forward set-back, and dropping it slid every seated body 17 cm.
+@export var seat_body_drop: Vector3 = Vector3(0.0, 1.6541, -0.17080691769016806)
+## How far the seated EYE rises above its resting place (m). Applied to the camera pivot ALONE, never to
+## the body. It lived in _ride_seat at first, which derives the BODY origin from it -- so raising the eye
+## lifted the whole model off the seat with it, the two moved rigidly together, and no value ever changed
+## what you saw. Decoupling them is the whole point of this setting.
 ##
 ## The marker is named SitPoint, not EyePoint: it says where the occupant sits, and the eye is above it.
 ## _ride_seat used to land the PIVOT on the marker while the camera hung 6.3 cm higher inside the rig, so
@@ -606,11 +617,10 @@ func _ride_seat(seat: Node3D) -> void:
 		# inheritance (no per-frame world fight against the parent's smoothing) — kills the jitter.
 		var local_eye: Transform3D = (veh as Node3D).global_transform.affine_inverse() * eye
 		transform.basis = local_eye.basis
-		transform.origin = local_eye.origin + local_eye.basis.y * seat_eye_height \
-				- local_eye.basis * camera_pivot_rest
+		transform.origin = local_eye.origin - local_eye.basis * seat_body_drop
 	else:
 		global_transform.basis = eye.basis
-		global_position = eye.origin + eye.basis.y * seat_eye_height - eye.basis * camera_pivot_rest
+		global_position = eye.origin - eye.basis * seat_body_drop
 	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the vehicle
 	# forward, so the view is no longer locked straight ahead. BOTH are clamped: a seated body can't spin
 	# its view around forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
