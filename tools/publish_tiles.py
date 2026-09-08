@@ -58,6 +58,9 @@ import json
 import os
 import struct
 import sys
+import random
+import urllib.error
+import urllib.request
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -176,6 +179,114 @@ def verify(pack, out_root, planet, version):
     return bad, checked
 
 
+def _http(url, timeout=10):
+    """Rend (code, corps, en-têtes). Un 404 est une réponse, pas une exception : sur un
+    pack creux il est ATTENDU pour une tuile absente."""
+    req = urllib.request.Request(url, headers={"User-Agent": "publish_tiles/verify"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(), dict(e.headers)
+
+
+def verify_http(pack, base, planet, version, samples=40, seed=1):
+    """Compare l'arborescence SERVIE au pack local.
+
+    --verify contrôle ce qui a été écrit sur le disque ; celui-ci contrôle ce qu'un client
+    recevra vraiment — chemins, en-têtes, encodage de transport, et le fait qu'une tuile
+    absente réponde bien 404 plutôt qu'une page d'erreur avec un code 200.
+    """
+    base = base.rstrip("/")
+    root = "%s/%s/%s" % (base, planet, version)
+    bad = checked = absent_ok = 0
+    rng = random.Random(seed)
+
+    code, body, hdr = _http("%s/%s/latest.json" % (base, planet))
+    if code != 200:
+        print("  ECHEC latest.json -> HTTP %d" % code)
+        return 1, 0
+    ptr = json.loads(body)
+    if ptr.get("data_version") != version:
+        print("  ECHEC pointeur : latest.json dit %r, le pack dit %r"
+              % (ptr.get("data_version"), version))
+        bad += 1
+    cc = hdr.get("Cache-Control", "(absent)")
+    if "no-cache" not in cc and "no-store" not in cc:
+        print("  ATTENTION latest.json Cache-Control=%r — il doit être re-lu à chaque "
+              "fois, sinon un client resterait sur une version périmée." % cc)
+
+    code, body, _h = _http("%s/manifest.json" % root)
+    if code != 200:
+        print("  ECHEC manifest.json -> HTTP %d" % code)
+        bad += 1
+    elif json.loads(body) != pack.manifest:
+        print("  ECHEC manifest servi != manifeste du pack")
+        bad += 1
+
+    tile_hdr = None
+    for nside in pack.levels:
+        npix = 12 * nside * nside
+        picks = rng.sample(range(npix), min(samples, npix))
+        for ipix in picks:
+            sdir = "%s/n%d/f%d" % (root, nside, shard_of(ipix))
+            base_i = shard_of(ipix) * SHARD_TILES
+            code, bits, _h = _http("%s/present.bin" % sdir)
+            if code != 200:
+                print("  ECHEC %s/present.bin -> HTTP %d" % (sdir, code))
+                bad += 1
+                continue
+            i = ipix - base_i
+            served_present = bool(bits[i >> 3] >> (i & 7) & 1)
+            if served_present != pack.has_tile(nside, ipix):
+                print("  ECHEC présence n%d f%d : servi=%s pack=%s"
+                      % (nside, ipix, served_present, pack.has_tile(nside, ipix)))
+                bad += 1
+                continue
+
+            code, blob, hdr = _http("%s/f%d.bin" % (sdir, ipix))
+            if not served_present:
+                # Une tuile absente DOIT répondre 404. Un 200 signifierait qu'on sert
+                # autre chose sous son nom.
+                if code == 404:
+                    absent_ok += 1
+                else:
+                    print("  ECHEC tuile absente n%d f%d -> HTTP %d (404 attendu)"
+                          % (nside, ipix, code))
+                    bad += 1
+                continue
+            if code != 200:
+                print("  ECHEC tuile n%d f%d -> HTTP %d" % (nside, ipix, code))
+                bad += 1
+                continue
+            checked += 1
+            if tile_hdr is None:
+                tile_hdr = hdr
+            try:
+                payload = read_tile_blob(blob)
+            except (ValueError, zlib.error) as exc:
+                print("  ECHEC enveloppe n%d f%d : %s" % (nside, ipix, exc))
+                bad += 1
+                continue
+            if payload != pack.raw_tile(nside, ipix):
+                print("  ECHEC contenu n%d f%d diffère du pack" % (nside, ipix))
+                bad += 1
+
+    if tile_hdr:
+        print("  en-têtes d'une tuile :")
+        for k in ("Content-Type", "Cache-Control", "Content-Encoding", "ETag",
+                  "Content-Length"):
+            print("      %-17s %s" % (k, tile_hdr.get(k, "(absent)")))
+        tcc = tile_hdr.get("Cache-Control", "")
+        if "immutable" not in tcc:
+            print("  ATTENTION les tuiles n'ont pas Cache-Control: immutable. L'URL porte "
+                  "la version, donc l'objet ne change jamais : sans cela chaque client "
+                  "revalidera inutilement.")
+    print("  %d tuiles vérifiées, %d absences confirmées en 404, %d désaccord(s)"
+          % (checked, absent_ok, bad))
+    return bad, checked
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("pack")
@@ -184,6 +295,11 @@ def main(argv=None):
     ap.add_argument("--compress", action="store_true", help="deflate chaque tuile")
     ap.add_argument("--verify", action="store_true",
                     help="ne publie pas : relit l'arborescence et la compare au pack")
+    ap.add_argument("--verify-http", metavar="URL",
+                    help="ne publie pas : compare l'arborescence SERVIE à cette URL "
+                         "(ex. http://127.0.0.1/dist) au pack local")
+    ap.add_argument("--samples", type=int, default=40,
+                    help="tuiles tirées par niveau pour --verify-http (défaut 40)")
     args = ap.parse_args(argv)
 
     pack = Pack(args.pack)
@@ -196,6 +312,10 @@ def main(argv=None):
     print("%s — DSHP v%d, %s%s, niveaux n%d..n%d, version %s"
           % (planet, pack.version, "uint16" if pack.u16 else "float32",
              ", creux" if pack.sparse else "", pack.nside_min, pack.nside_max, version))
+
+    if args.verify_http:
+        bad, _checked = verify_http(pack, args.verify_http, planet, version, args.samples)
+        return 1 if bad else 0
 
     if args.verify:
         bad, checked = verify(pack, args.out, planet, version)
