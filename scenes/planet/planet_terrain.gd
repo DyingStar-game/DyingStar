@@ -342,6 +342,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			_cache_version += "_colrel1_colbf2_grid8k"
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
+	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
+	planet_data.remote_source = RemoteTileSource.for_planet(planet_data.planet_name)
+
 	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s" % [
 		data.planet_name, data.radius, data.export_nside, server_mode])
 
@@ -1066,6 +1069,13 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 				_chunk_cache.save_collision(key, 0, shape)
 
 		print("[PlanetTerrain] rebuild_chunks: rebuilt '%s'" % key)
+
+
+func _exit_tree() -> void:
+	# Joindre le fil de téléchargement avant que la planète disparaisse.
+	if planet_data != null and planet_data.remote_source != null:
+		planet_data.remote_source.stop()
+		planet_data.remote_source = null
 
 
 # ------------------------------------------------------------------
@@ -2540,8 +2550,8 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	task_entry["task_id"] = task_id
 
 
-## Vide le backlog, en BORNANT les tentatives à son contenu initial — sans quoi un chunk
-## remis en attente d'un téléchargement relancerait la boucle sans fin (phase 3 du doc).
+## Vide le backlog, en BORNANT les tentatives à son contenu initial : sinon un chunk remis
+## en attente d'un téléchargement relancerait la boucle sans fin (phase 3 du doc).
 func _drain_backlog() -> void:
 	var tries := _mesh_task_backlog.size()
 	while tries > 0 and _mesh_tasks.size() < max_mesh_tasks:
@@ -2636,9 +2646,9 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 		# sample so that task doesn't stall on disk I/O, then skip the recipe path
 		# (submitting recipes without a pack is what spams "Invalid Task ID").
 		if planet_data.chunk_heightmaps_dir != "":
-			var _ht := _chunk_height_tile(info)
-			if _ht[0] >= 0:
-				planet_data.load_chunk_heightmap(_ht[0], _ht[1])
+			var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
+			if _ht.x >= 0:
+				planet_data.load_chunk_heightmap(_ht.x, _ht.y)
 			continue
 		# Only prefetch recipes (light I/O), not mesh tasks (CPU-heavy) to
 		# avoid starving the current-frame mesh pipeline.
@@ -2842,10 +2852,10 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	if _chunk_cache and mesh and not info.get("_from_disk_cache", false):
 		# Gate on the SAME pyramid tile the mesh sampled (coarse chunks read a
 		# coarse tile, not the finest), so a good coarse bake isn't rejected.
-		var _ht := _chunk_height_tile(info)
+		var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
 		# has_usable_tile : sur un pack creux une tuile absente est normale, et refuser
 		# d'y cacher le mesh empêcherait le cache de se remplir.
-		if _ht[0] >= 0 and planet_data.has_usable_tile(_ht[0], _ht[1]):
+		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y):
 			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
@@ -3119,20 +3129,6 @@ func _get_export_ipix(info: Dictionary) -> int:
 ## the logic in PlanetChunk (finer→walk up to nside_max; own level if baked).
 ## Returns ipix == -1 when the chunk is coarser than the coarsest baked level
 ## (per-vertex resolution, no single tile to gate a cache write on).
-func _chunk_height_tile(info: Dictionary) -> Array:
-	var hp_nside: int = info.get("nside", 0)
-	var hp_ipix: int = info.get("ipix", -1)
-	var ns: int = planet_data.sample_nside_for(hp_nside)
-	if hp_nside >= planet_data.export_nside:
-		var eipix := hp_ipix
-		var cur := hp_nside
-		while cur > planet_data.export_nside:
-			eipix = HEALPix.parent_pixel(eipix)
-			cur /= 2
-		return [eipix, planet_data.export_nside]
-	return [hp_ipix, ns]
-
-
 ## Check if populate zones contain a specific biome type.
 static func _zones_have_biome(zones: Array, biome_type: String) -> bool:
 	for z in zones:
