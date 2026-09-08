@@ -859,13 +859,16 @@ func _load_chunk_heightmap_impl(ipix: int, nside: int = -1) -> Image:
 ## Thread-safe; safe to call from WorkerThreadPool mesh/collision tasks.
 ## Returns null if the tile is missing/malformed (caller falls back to global).
 func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
+	var img := _read_r32_tile(ipix, nside)
+	if img == null:
+		return null
+	# Compté APRÈS la réussite : placé avant, il comptait aussi les tentatives sur une
+	# tuile inexistante, et un serveur sans pack affichait « 28 937 lectures disque »
+	# alors qu'aucune I/O n'avait eu lieu.
 	if PropNet.prof_on:
 		prof_tile_mutex.lock()
 		prof_tile_disk_reads += 1
 		prof_tile_mutex.unlock()
-	var img := _read_r32_tile(ipix, nside)
-	if img == null:
-		return null
 	_cache_mutex.lock()
 	# Another thread may have loaded the same tile while we read from disk.
 	if _chunk_images.has(key):

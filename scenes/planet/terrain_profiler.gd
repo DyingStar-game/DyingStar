@@ -100,6 +100,9 @@ static func report_now() -> void:
 				% [PropNet.prof_gate_pass, PropNet.prof_gate_defer, PropNet.prof_gate_unknown]
 				+ "| backlog=%d tâches=%d" % [PropNet.prof_backlog, PropNet.prof_tasks])
 	print("[TerrainProf] %s" % normals_line())
+	var net := RemoteTileSource.net_line()
+	if net != "":
+		print("[TerrainProf] %s" % net)
 	print("[TerrainProf] %s" % tile_census_line())
 
 

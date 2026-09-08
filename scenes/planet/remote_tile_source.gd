@@ -58,10 +58,40 @@ var _queued: Dictionary = {}          # "n/p" -> true, pour ne pas redemander
 var _mutex: Mutex = Mutex.new()
 var _sem: Semaphore = Semaphore.new()
 var _quit: bool = false
-## Compteurs, lus par le profilage : ce qui a été demandé, servi, refusé.
+## Compteurs par source, lus par le profilage : ce qui a été demandé, servi, refusé.
 var stat_requested: int = 0
 var stat_fetched: int = 0
 var stat_failed: int = 0
+
+## Cumuls de TOUT le processus, toutes planètes confondues — c'est le volume réellement
+## descendu du réseau que l'on veut voir, pas celui d'une planète en particulier.
+## Comptés sur les octets REÇUS, donc enveloppe et compression comprises : c'est ce qui a
+## traversé le fil, pas ce que ça pèse une fois décodé.
+static var net_tiles: int = 0
+static var net_tile_bytes: int = 0
+static var net_maps: int = 0
+static var net_map_bytes: int = 0
+static var net_failed: int = 0
+
+
+## Une ligne lisible du volume téléchargé depuis le démarrage, ou "" si rien.
+static func net_line() -> String:
+	if net_tiles + net_maps + net_failed == 0:
+		return ""
+	var total := net_tile_bytes + net_map_bytes
+	return "réseau: %d tuiles (%s) + %d cartes (%s) = %s téléchargés, %d échecs" % [
+		net_tiles, human_bytes(net_tile_bytes), net_maps, human_bytes(net_map_bytes),
+		human_bytes(total), net_failed]
+
+
+## Octets en unité lisible. Une tuile pèse ~1,4 Kio : afficher « 0.00 Mio » n'apprendrait
+## rien, et c'est le volume réel que l'on cherche à voir.
+static func human_bytes(n: int) -> String:
+	if n < 1024:
+		return "%d o" % n
+	if n < 1048576:
+		return "%.1f Kio" % (n / 1024.0)
+	return "%.2f Mio" % (n / 1048576.0)
 
 var _present: Dictionary = {}     # "n<nside>/f<shard>" -> PackedByteArray
 var _misses: Dictionary = {}      # URL -> true, pour ne pas redemander un 404
@@ -216,6 +246,8 @@ func has_tile(nside: int, ipix: int) -> bool:
 			return false
 		_mutex.lock()
 		_present[key] = res[1]
+		net_maps += 1
+		net_map_bytes += (res[1] as PackedByteArray).size()
 		_mutex.unlock()
 	_mutex.lock()
 	var bits: PackedByteArray = _present[key]
@@ -253,10 +285,14 @@ func fetch_now(nside: int, ipix: int) -> bool:
 		# Un 404 ici est une incohérence : la carte de présence l'annonçait. On le retient
 		# pour ne pas boucler dessus, et il ressortira dans les compteurs.
 		_misses[url] = true
+		net_failed += 1
 		return false
 	if decode_envelope(res[1]).is_empty():
 		_misses[url] = true
+		net_failed += 1
 		return false
+	net_tiles += 1
+	net_tile_bytes += (res[1] as PackedByteArray).size()
 	var path := tile_cache_path(nside, ipix)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path, FileAccess.WRITE)
