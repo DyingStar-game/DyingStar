@@ -80,7 +80,11 @@ func test_without_a_remote_source_nothing_changes() -> void:
 			"sans source distante, un chunk est toujours prêt")
 
 
-func test_missing_tiles_are_queued_and_the_chunk_is_deferred() -> void:
+func test_the_gate_never_touches_the_network() -> void:
+	# LA régression : request_chunk_tiles tournait avec has_tile(), qui va chercher la
+	# carte d'un shard en HTTP SYNCHRONE quand elle manque. Appelé pour chaque chunk en
+	# attente à chaque frame, cela a fait tomber le jeu à 0,2 FPS. Le garde tourne sur le
+	# thread principal : il ne doit émettre aucune requête, jamais.
 	var pd := _data()
 	var rts := RemoteTileSource.new()
 	rts.cache_root = CACHE
@@ -88,8 +92,27 @@ func test_missing_tiles_are_queued_and_the_chunk_is_deferred() -> void:
 	rts.version = "v"
 	rts.base_url = "http://h"
 	rts.tile_res = 8
-	rts.shard_tiles = 4096
-	# Le service annonce toutes les tuiles présentes, mais aucune n'est téléchargée.
+	var calls := [0]
+	rts.fetcher = func(_url: String) -> Array:
+		calls[0] += 1
+		return [404, PackedByteArray()]
+	pd.remote_source = rts
+
+	assert_false(TileResidency.request_chunk_tiles(pd, 64, 12),
+			"cartes de présence inconnues : le chunk doit être différé")
+	assert_eq(calls[0], 0, "aucune requête ne doit partir du thread principal")
+
+
+func test_unknown_presence_defers_then_resolves() -> void:
+	# Deux temps : la carte manque, le chunk est différé ; le fil de téléchargement la
+	# rapatrie ; la frame suivante, les tuiles sont demandées.
+	var pd := _data()
+	var rts := RemoteTileSource.new()
+	rts.cache_root = CACHE
+	rts.planet = "p"
+	rts.version = "v"
+	rts.base_url = "http://h"
+	rts.tile_res = 8
 	var bits := PackedByteArray()
 	bits.resize(512)
 	bits.fill(0xFF)
@@ -97,10 +120,19 @@ func test_missing_tiles_are_queued_and_the_chunk_is_deferred() -> void:
 		return [200, bits] if url.ends_with("present.bin") else [404, PackedByteArray()]
 	pd.remote_source = rts
 
+	assert_eq(rts.presence_of(64, 12), RemoteTileSource.PRESENCE_UNKNOWN,
+			"première consultation : inconnue, et la carte est mise en file")
+	assert_false(TileResidency.request_chunk_tiles(pd, 64, 12))
+	assert_eq(rts.stat_requested, 0, "aucune TUILE demandée tant que la présence est inconnue")
+
+	# Ce que fait le fil de téléchargement pour un travail JOB_PRESENCE.
+	rts.has_tile(64, 12)
+	assert_eq(rts.presence_of(64, 12), RemoteTileSource.PRESENCE_YES, "carte arrivée")
+
 	assert_false(TileResidency.request_chunk_tiles(pd, 64, 12),
-			"des tuiles manquantes doivent différer le chunk")
+			"les tuiles ne sont toujours pas téléchargées")
 	assert_gt(rts.stat_requested, 1,
-			"la tuile ET ses voisines doivent être demandées, pas seulement la première")
+			"la tuile ET ses voisines doivent maintenant être demandées")
 
 
 func test_queueing_is_idempotent() -> void:
