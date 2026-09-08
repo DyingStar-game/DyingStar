@@ -874,23 +874,81 @@ mauvaise clé de `ChunkDiskCache`**, et croiserait les caches de deux planètes.
 correctif est un patch en place : les deux noms ont la même longueur, `json_len` ne
 bouge pas. `analyze_pack_sparsity.py` signale désormais le désaccord.
 
-### Phase 2 — bake et publication
+### Phase 2 — bake et publication — ✅ FAITE, CHAÎNE HTTP VÉRIFIÉE
 
-- L'exporteur produit `n1024 × tr32` pour tarsis_3 et `n64 × tr25` pour les 19 autres
-  corps, et émet `dist/<planet>/<version>/n<nside>/f<ipix div 4096>/f<ipix>.bin`.
-  Le flag `WRITE_LOOSE_TILES` (`export_elevation.py:156`) écrit déjà l'arborescence
-  `n{nside}/face_{face}/f{ipix}.r32` — c'est la base de départ, à compléter par le
-  sharding, la quantification uint16, la compression et le CRC32 d'en-tête.
-- **Pas de manifeste d'intégrité** : le CRC32 vit dans l'en-tête de chaque tuile, et il
-  est vérifié au téléchargement *et* à la relecture du cache (TLS couvre le transport,
-  pas un disque corrompu ni un mauvais objet CDN).
-- Job CI : export → bake → rsync → bascule du pointeur de version. Garder N versions en
-  ligne (rollback + clients en vol) ; chaque version est une arborescence complète, donc
-  N × le stockage — deux versions de tarsis_3 = 137 Go.
-- nginx : `Cache-Control: public, max-age=31536000, immutable` sur les tuiles,
-  `no-cache` sur le pointeur de version. HTTP/2 ou HTTP/3 (des centaines de petites
-  requêtes → le multiplexage compte). Volume de distribution en `-b 1024` pour ramener
-  l'occupation de 73,8 à 35,9 Go.
+`tools/publish_tiles.py` éclate un `heights.pack` en arborescence servable. Outil séparé
+de l'exporteur : il se rejoue sans ré-exporter, marche sur v1 comme sur v2 (les planètes
+encore en float32 dense se publient sans être ré-exportées), et se teste sur des packs
+synthétiques.
+
+```
+dist/<planet>/latest.json                              pointeur de version, no-cache
+dist/<planet>/<version>/manifest.json
+dist/<planet>/<version>/n<nside>/f<shard>/f<ipix>.bin  une tuile
+dist/<planet>/<version>/n<nside>/f<shard>/present.bin  présence du shard
+```
+
+**La version est dans le chemin**, donc chaque objet est immuable : publier n'invalide
+rien, on écrit un nouvel arbre et on bascule le pointeur. Retour arrière trivial, clients
+en vol non perturbés.
+
+**Carte de présence par shard.** Sur un pack creux 35 à 65 % des tuiles n'existent pas.
+Sans indication le client le découvrirait par un 404 — deux allers-retours sur la majorité
+des requêtes. 512 octets renseignent sur 4096 tuiles voisines d'un coup. C'est
+l'alternative bon marché au manifeste global (537 Mo pour tarsis_3, contre 580 Ko de
+working set).
+
+**Enveloppe de 12 octets par tuile** : magie, CRC32, flags. TLS couvre le transport, pas
+un cache disque corrompu ni un mauvais objet servi par un CDN — et la magie attrape la
+page d'erreur HTML mise en cache à la place d'une tuile. 0,9 % de surcoût.
+
+#### Mesures réelles
+
+| | tuiles | durée | données | disque (blocs 4 Kio) |
+|---|---|---|---|---|
+| tarsis_3_2 | 53 794 | 9 s | 44 Mo | **211 Mo** |
+| tarsis_3 (n256) | 674 624 | 2 min 08 | 849 Mo | **2,6 Go** |
+
+Le deflate ramène les charges utiles à **64 %** du brut. Mais **849 Mo de données occupent
+2,6 Go sur disque** : la tuile médiane fait 1 384 o et un bloc ext4 en fait 4 096. Comme
+pour l'uint16, la compression divise la bande passante par deux et ne gagne rien sur le
+disque — seul un volume en blocs de 1 Kio le fait.
+
+| tarsis_3 à 198 m (projeté) | données | disque |
+|---|---|---|
+| blocs 4 Kio (défaut) | 7 Go | 23,8 Go |
+| **blocs 1 Kio** (`mkfs.ext4 -b 1024`) | 7 Go | **11,9 Go** |
+
+#### Vérification
+
+`--verify` relit l'arborescence écrite et la compare au pack. `--verify-http <URL>` fait
+la même comparaison contre l'arbre **servi** : chemins, en-têtes, enveloppe, contenu, et
+le fait qu'une tuile absente réponde bien 404 plutôt qu'une page d'erreur en 200.
+
+Relevé sur un nginx local : **311 tuiles vérifiées, 21 absences confirmées en 404,
+0 désaccord**.
+
+#### Configuration nginx
+
+La vérification HTTP a trouvé deux en-têtes manquants. nginx sert des ETag, donc sans eux
+un client revalide chaque tuile à chaque session — un aller-retour par tuile, pour un
+objet qui ne peut pas changer.
+
+```nginx
+location ~ ^/dist/[^/]+/latest\.json$ {
+    add_header Cache-Control "no-cache";      # le pointeur DOIT être relu
+}
+location ~ ^/dist/[^/]+/[0-9a-f]+/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    types { }  default_type application/octet-stream;
+}
+```
+
+Deux remarques :
+- **Pas de `gzip` côté nginx** : les tuiles sont déjà deflatées dans leur charge utile.
+  Le compresser une seconde fois coûterait du CPU pour rien.
+- **HTTP/2 ou 3 en production** : une session ouvre des centaines de petites requêtes, et
+  le multiplexage change tout. Le relevé ci-dessus était en HTTP/1.1 local.
 
 ### Phase 3 — fetcher runtime (le gros du travail)
 
