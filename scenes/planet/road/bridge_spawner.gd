@@ -33,6 +33,14 @@ class_name BridgeSpawner
 ## Chunk LOD at or below which bridges are spawned. Deliberately looser than
 ## CaveSpawner's gate: a 300 m deck reads from much further away than a cave
 ## mouth, and a road that visibly stops at a gorge is worse than no road.
+## Couches et masques, lus sur le SCRIPT et non sur le nœud autoload.
+##
+## L'autoload Globals n'est pas @tool : dans l'éditeur ses membres — constantes comprises —
+## ne sont pas accessibles depuis le nœud. Les ponts se posent depuis le pipeline de
+## chunks, qui tourne désormais aussi dans l'éditeur, et y lèveraient. Passer par le script
+## résout les constantes à la compilation, dans l'éditeur comme en jeu.
+const GlobalsDefs := preload("res://scenes/globals/globals.gd")
+
 const MAX_LOD := 3
 
 static var _material_cache: Dictionary = {}
@@ -78,9 +86,9 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 	# over the gorge, so anything that scans the world must find it the same
 	# way. The old placeholder scene left Godot's defaults, which merely
 	# happened to overlap.
-	body.collision_layer = Globals.LAYER_WORLD
-	body.set_collision_layer_value(Globals.LAYER_WORLD, true)
-	body.collision_mask = Globals.MASK_SOLID
+	body.collision_layer = GlobalsDefs.LAYER_WORLD
+	body.set_collision_layer_value(GlobalsDefs.LAYER_WORLD, true)
+	body.collision_mask = GlobalsDefs.MASK_SOLID
 	body.position = geo["origin"]
 	# Grip, read back by the vehicle: Godot's VehicleWheel3D derives its
 	# friction budget from suspension force x wheel_friction_slip and never
