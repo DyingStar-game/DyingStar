@@ -75,10 +75,14 @@ class Pack:
                 raise ValueError("%s : magic DSHP absent" % path)
             (self.version, self.tile_res, self.nside_min, self.nside_max,
              _flags, self.blob_start, json_len) = struct.unpack("<7I", fh.read(28))
-            if self.version != 1:
+            if self.version not in (1, 2):
                 raise ValueError("DSHP v%d non supporté" % self.version)
             self.manifest = json.loads(fh.read(json_len).decode("utf-8"))
 
+        # v2 : bit0 = échantillons uint16, bit1 = creux. v1 n'avait pas de flags.
+        self.u16 = self.version >= 2 and bool(_flags & 1)
+        self.sparse = self.version >= 2 and bool(_flags & 2)
+        self.sample_bytes = 2 if self.u16 else 4
         self.tile_n = self.tile_res * self.tile_res
         self.levels = []
         ns = self.nside_min
@@ -86,12 +90,32 @@ class Pack:
             self.levels.append(ns)
             ns *= 2
 
+        # Cartes de présence, une par niveau, entre le manifeste et le blob.
+        self.present, self.slots, counts = {}, {}, {}
+        if self.sparse:
+            with open(path, "rb") as fh:
+                fh.seek(32 + json_len)
+                for ns in self.levels:
+                    npix = 12 * ns * ns
+                    bits = np.frombuffer(fh.read((npix + 7) // 8), dtype=np.uint8)
+                    flags_arr = np.unpackbits(bits, bitorder="little")[:npix].astype(bool)
+                    self.present[ns] = flags_arr
+                    # Rang de chaque tuile parmi les présentes de son niveau.
+                    self.slots[ns] = np.cumsum(flags_arr) - flags_arr
+                    counts[ns] = int(flags_arr.sum())
+        else:
+            for ns in self.levels:
+                counts[ns] = 12 * ns * ns
+
+        self.counts = counts
         self.base = {}
         off = 0
         for ns in self.levels:
             self.base[ns] = off
-            off += 12 * ns * ns * self.tile_n
-        self._mm = np.memmap(path, dtype="<f4", mode="r", offset=self.blob_start)
+            off += counts[ns] * self.tile_n
+        # memmap typé sur l'encodage réel ; tile() rend toujours du float normalisé.
+        self._mm = np.memmap(path, dtype="<u2" if self.u16 else "<f4", mode="r",
+                             offset=self.blob_start)
 
         # Les valeurs sont normalisées [0,1] ; max_height les remet en mètres.
         self.max_height = float(self.manifest.get("max_height", 1.0))
@@ -119,9 +143,34 @@ class Pack:
         b = self.manifest.get("planet_name")
         return (a, b) if a and b and a != b else None
 
+    def has_tile(self, nside, ipix):
+        """Toujours vrai sur un pack dense. Sur un creux, faux = le parent la reproduit."""
+        return True if not self.sparse else bool(self.present[nside][ipix])
+
+    def slot(self, nside, ipix):
+        """Rang de la tuile dans son niveau, ou -1 si elle n'est pas stockée."""
+        if not self.sparse:
+            return ipix
+        return int(self.slots[nside][ipix]) if self.present[nside][ipix] else -1
+
+    def raw_tile(self, nside, ipix):
+        """Octets bruts de la tuile, tels qu'ils sont sur le disque (u16 ou f32)."""
+        sl = self.slot(nside, ipix)
+        if sl < 0:
+            return b""
+        off = self.base[nside] + sl * self.tile_n
+        return np.asarray(self._mm[off:off + self.tile_n]).tobytes()
+
     def tile(self, nside, ipix):
-        off = self.base[nside] + ipix * self.tile_n
-        return np.asarray(self._mm[off:off + self.tile_n]).reshape(self.tile_res, self.tile_res)
+        """Tuile en valeurs NORMALISÉES [0,1], quel que soit l'encodage sur disque."""
+        sl = self.slot(nside, ipix)
+        if sl < 0:
+            return None
+        off = self.base[nside] + sl * self.tile_n
+        arr = np.asarray(self._mm[off:off + self.tile_n])
+        if self.u16:
+            arr = arr.astype(np.float32) / 65535.0
+        return arr.reshape(self.tile_res, self.tile_res)
 
 
 def _upsampler(tile_res):
@@ -215,12 +264,19 @@ def bound_prune(get_tile, root_nside, root_ipix, target_nside, eps, tile_res, up
 
 
 def predict_error_m(pack, up, parent_nside, parent_ipix, k):
-    """Écart max, en mètres, entre l'enfant k réel et sa prédiction depuis le parent."""
+    """Écart max, en mètres, entre l'enfant k réel et sa prédiction depuis le parent.
+
+    Rend None quand l'une des deux tuiles n'est pas stockée : sur un pack DÉJÀ creux la
+    question ne se pose plus pour elles, et les compter comme un écart nul gonflerait
+    artificiellement le taux « élagable ».
+    """
+    parent = pack.tile(parent_nside, parent_ipix)
+    child = pack.tile(parent_nside * 2, 4 * parent_ipix + k)
+    if parent is None or child is None:
+        return None
     half = pack.tile_res // 2
     dx, dy = k & 1, (k >> 1) & 1
-    quad = pack.tile(parent_nside, parent_ipix)[dy * half:(dy + 1) * half,
-                                                dx * half:(dx + 1) * half]
-    child = pack.tile(parent_nside * 2, 4 * parent_ipix + k)
+    quad = parent[dy * half:(dy + 1) * half, dx * half:(dx + 1) * half]
     return float(np.abs(up(quad) - child).max() * pack.max_height)
 
 
@@ -241,14 +297,24 @@ def analyse(pack, thresholds, sample=0, seed=12345):
             parents = range(n_parents)
             sampled = False
 
-        errs = [predict_error_m(pack, up, parent_ns, int(pip), k)
-                for pip in parents for k in range(4)]
-        errs = np.array(errs)
+        raw = [predict_error_m(pack, up, parent_ns, int(pip), k)
+               for pip in parents for k in range(4)]
+        skipped = sum(1 for e in raw if e is None)
+        errs = np.array([e for e in raw if e is not None])
+        if errs.size == 0:
+            per_level.append({
+                "nside": parent_ns * 2, "tiles_total": 12 * (parent_ns * 2) ** 2,
+                "tiles_measured": 0, "sampled": sampled, "skipped_absent": skipped,
+                "err_median_m": 0.0, "err_p90_m": 0.0,
+                "prunable": {str(t): 0.0 for t in thresholds},
+            })
+            continue
         per_level.append({
             "nside": parent_ns * 2,
             "tiles_total": 12 * (parent_ns * 2) ** 2,
             "tiles_measured": int(errs.size),
             "sampled": sampled,
+            "skipped_absent": skipped,
             "err_median_m": float(np.median(errs)),
             "err_p90_m": float(np.percentile(errs, 90)),
             "prunable": {str(t): float((errs <= t).mean()) for t in thresholds},
@@ -290,9 +356,16 @@ def main(argv=None):
 
     thresholds = [float(t) for t in args.thresholds.split(",")]
     pack = Pack(args.pack)
-    print("%s — DSHP v%d, tile_res=%d, niveaux n%d..n%d, max_height=%.0f m"
+    print("%s — DSHP v%d, tile_res=%d, niveaux n%d..n%d, max_height=%.0f m, %s%s"
           % (pack.planet_name, pack.version, pack.tile_res,
-             pack.nside_min, pack.nside_max, pack.max_height))
+             pack.nside_min, pack.nside_max, pack.max_height,
+             "uint16" if pack.u16 else "float32", ", CREUX" if pack.sparse else ""))
+    if pack.sparse:
+        stored = sum(pack.counts.values())
+        dense = sum(12 * n * n for n in pack.levels)
+        print("  déjà élagué : %d/%d tuiles stockées (%.1f%% absentes). Les paires dont "
+              "une tuile manque sont exclues des mesures ci-dessous."
+              % (stored, dense, 100.0 * (dense - stored) / dense))
     if pack.name_mismatch:
         loose_name, embedded = pack.name_mismatch
         print("ATTENTION : manifest.json dit '%s', l'en-tête du pack dit '%s'. "
