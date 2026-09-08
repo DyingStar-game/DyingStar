@@ -99,10 +99,9 @@ shape = SubResource("CapsuleShape3D_2jk7f")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8999999999941792, 0)
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=1090822478]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6541, -0.17080691769016806)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6171072927820462, -0.08563378561503883)
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=2070954965]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06321329597513792, 0.08517313207512923)
 fov = 100.0
 far = 10000000000000.01
 

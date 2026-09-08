@@ -94,10 +94,17 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## The camera follows the head bone's bob (POSITION only — orientation stays mouse-driven), so the
 ## animated body never clips through a fixed camera. Owner + on foot only (the seat ride owns it seated).
 @export var head_cam_follow: bool = true
-## How much of the head's bob to apply to the camera (0 = none, 1 = full). Lower it if the view feels shaky.
+## How much of the head's BOUNCE to apply (0 = none, 1 = full) -- the up/down and side-to-side of each
+## stride, which is what makes a first-person view sickening. The FORWARD component is never damped:
+## see the follow itself for why the two cannot share a setting.
 @export_range(0.0, 1.0) var head_cam_amount: float = 1.0
 ## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
 @export var head_cam_smooth: float = 12.0
+## How far FORWARD (m) the first-person eye sits from the head bone. The head mesh is collapsed for the
+## owner, but the NECK is a separate bone and its geometry stays -- so as the head bobs at a jog, the
+## camera drifts back over its own throat and you see it. Moving the eye to the front of the skull, the
+## way a real eye sits, leaves the neck behind the camera where it belongs. 0 = the old behaviour.
+@export_range(0.0, 0.4, 0.005) var head_cam_forward: float = 0.12
 
 @export_group("Turn in place")
 ## Turn rate (rad/s) above which a STANDING, still player plays the in-place turn clip (Turn90_L/R) instead
@@ -290,7 +297,25 @@ func _process(delta: float) -> void:
 				_head_rest_body = head_now
 				_camera_base_pos = _player.camera_pivot.position
 				_head_rest_captured = true
-			var target: Vector3 = _camera_base_pos + (head_now - _head_rest_body) * head_cam_amount
+			# Forward in the BODY frame, not the camera's: offsetting along the look direction would drive the
+			# eye into the chest as soon as you looked down. Here it stays at the front of the skull whatever
+			# you are looking at, which is where an eye actually is.
+			# Two motions live in this one offset, and they must be treated differently:
+			#   the BOUNCE -- up/down and side to side, a few times a second. Damping it is the whole point of
+			#     head_cam_amount, and it is what keeps a first-person view from being sickening.
+			#   the LEAN -- forward, as the torso pitches over going from a walk to a jog to a sprint. Damping
+			#     THAT walks the body out from under the camera and you end up looking at your own neck.
+			#
+			# They are split by AXIS, not by a low-pass: a filter slow enough to ignore the stride is also slow
+			# enough to lag a whole gait change, so the neck showed for the half second it took to catch up.
+			# The axes have no such conflict -- the lean is followed in full, and instantly.
+			var offset: Vector3 = head_now - _head_rest_body
+			# Forward in the BODY frame, not the camera's: offsetting along the look direction would drive the
+			# eye into the chest as soon as you looked down. Here it stays at the front of the skull whatever
+			# you are looking at, which is where an eye actually is.
+			var target: Vector3 = _camera_base_pos \
+				+ Vector3(offset.x * head_cam_amount, offset.y * head_cam_amount, offset.z) \
+				+ Vector3(0.0, 0.0, -head_cam_forward)
 			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
 		elif _head_rest_captured:
 			_player.camera_pivot.position = _camera_base_pos  # seated/disabled: hand the camera back to the ride
