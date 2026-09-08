@@ -1085,7 +1085,7 @@ func _exit_tree() -> void:
 func _physics_process(delta: float) -> void:
 	if not _initialized:
 		return
-	TerrainProfiler.maybe_report()
+	TerrainProfiler.maybe_report(_mesh_task_backlog.size(), _mesh_tasks.size())
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:

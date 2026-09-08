@@ -68,9 +68,13 @@ static func commit_mesh(prof: Dictionary) -> void:
 ## Imprime le récapitulatif si l'intervalle est écoulé. No-op quand le rig est éteint.
 ## Ne remet PAS les compteurs à zéro : ce sont des totaux de session, pour que la dernière ligne
 ## du log soit le bilan complet.
-static func maybe_report() -> void:
+static func maybe_report(backlog: int = 0, tasks: int = 0) -> void:
 	if not PropNet.prof_on:
 		return
+	# Instantané du pipeline, pris à chaque appel : c'est l'état à l'instant du rapport
+	# qui intéresse, pas un cumul.
+	PropNet.prof_backlog = backlog
+	PropNet.prof_tasks = tasks
 	var now := Time.get_ticks_msec()
 	if now < _next_report_ms:
 		return
@@ -91,6 +95,10 @@ static func maybe_report() -> void:
 static func report_now() -> void:
 	print("[TerrainProf] %s" % phase_line())
 	print("[TerrainProf] %s" % cost_line())
+	if PropNet.prof_gate_pass + PropNet.prof_gate_defer > 0:
+		print("[TerrainProf] garde: %d acceptés, %d différés (dont %d présence inconnue) "
+				% [PropNet.prof_gate_pass, PropNet.prof_gate_defer, PropNet.prof_gate_unknown]
+				+ "| backlog=%d tâches=%d" % [PropNet.prof_backlog, PropNet.prof_tasks])
 	print("[TerrainProf] %s" % normals_line())
 	print("[TerrainProf] %s" % tile_census_line())
 
