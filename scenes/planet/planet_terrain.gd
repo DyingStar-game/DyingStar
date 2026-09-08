@@ -38,6 +38,7 @@ const MAX_ASSEMBLE_PER_FRAME := 8
 const MAX_SERVER_CHUNK_TASKS := 4
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
+
 ## Tolerance (m) for validating cached chunk geometry against the live surface
 ## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
 ## is 3000-6000 m off.
@@ -1306,6 +1307,7 @@ func _update_terrain() -> void:
 	# Look-ahead: prefetch chunks along the predicted camera trajectory so
 	# they're ready before the player reaches them.
 	_prefetch_look_ahead(local_cam, horizon_dot)
+	TileResidency.prefetch(planet_data, local_cam, _cam_history)
 
 
 # ------------------------------------------------------------------

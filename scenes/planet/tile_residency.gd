@@ -93,3 +93,61 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -
 			if unknown:
 				PropNet.prof_gate_unknown += 1
 	return ready
+
+
+## Multiplicateur appliqué au déplacement récent pour viser en avant du joueur. 8 fois la
+## course des dernières mises à jour de caméra : assez loin pour couvrir un aller-retour
+## réseau, assez près pour ne pas précharger une direction qu'il ne prendra pas.
+const PREFETCH_LEAD := 8.0
+
+
+## Met en file les tuiles autour du joueur, à tous les niveaux de la pyramide.
+##
+## Sans cela une tuile n'est demandée qu'au moment où un chunk en a besoin : le chunk est
+## alors différé d'au moins un aller-retour, et le joueur voit le terrain apparaître avec
+## un temps de retard. Ici on demande AVANT, pendant que le terrain déjà résident s'affiche.
+##
+## Le travail se fait au niveau des TUILES et non des chunks : évaluer la résidence de
+## chaque chunk désiré coûterait une passe sur neuf tuiles et une marche d'ancêtres par
+## chunk, pour les centaines de chunks visibles. Une direction donne directement son ipix
+## à chaque niveau, et l'anneau de ses huit voisins couvre le déplacement.
+##
+## [param local_cam] est la position caméra en repère planète, [param cam_history] ses
+## positions récentes — dès qu'elles décrivent un déplacement on précharge aussi devant le
+## joueur, et c'est ce qui fait arriver le terrain avant qu'on y soit.
+## Rend le nombre de tuiles mises en file.
+static func prefetch(data: PlanetData, local_cam: Vector3, cam_history: PackedVector3Array) -> int:
+	if data == null or data.remote_source == null:
+		return 0
+	if local_cam.length_squared() <= 0.0:
+		return 0
+	var src: RemoteTileSource = data.remote_source
+	var dirs: Array[Vector3] = [local_cam.normalized()]
+	if cam_history.size() >= 2:
+		var ahead := local_cam + (cam_history[-1] - cam_history[0]) * PREFETCH_LEAD
+		if ahead.length_squared() > 0.0:
+			dirs.append(ahead.normalized())
+	var queued := 0
+	var seen := {}
+	# export_nside_min vaut 0 tant que le manifeste n'est pas lu, et ns *= 2 y bouclerait
+	# indéfiniment.
+	var ns: int = maxi(data.export_nside_min, 1)
+	while ns <= data.export_nside:
+		for d in dirs:
+			var centre := HEALPix.vec2pix_nest(ns, d)
+			var ring: Array[int] = [centre]
+			for nb: int in HEALPix.get_neighbors_nest(ns, centre).values():
+				if nb >= 0:
+					ring.append(nb)
+			for ip in ring:
+				var k := "%d/%d" % [ns, ip]
+				if seen.has(k):
+					continue
+				seen[k] = true
+				# presence_of ne bloque jamais : un shard inconnu se met en file tout seul
+				# et l'anneau sera complété au passage suivant.
+				if src.presence_of(ns, ip) == RemoteTileSource.PRESENCE_YES:
+					src.queue(ns, ip)
+					queued += 1
+		ns *= 2
+	return queued
