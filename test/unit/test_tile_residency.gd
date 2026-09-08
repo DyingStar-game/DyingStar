@@ -143,3 +143,144 @@ func test_queueing_is_idempotent() -> void:
 	for _i in 5:
 		rts.queue(64, 3)
 	assert_eq(rts.stat_requested, 1, "une seule demande pour la même tuile")
+
+
+# ===================================================================
+# 3. Le prefetch en anneau
+# ===================================================================
+
+func _ring_source() -> RemoteTileSource:
+	var rts := RemoteTileSource.new()
+	rts.cache_root = CACHE
+	rts.planet = "p"
+	rts.version = "v"
+	rts.base_url = "http://h"
+	rts.tile_res = 8
+	return rts
+
+
+func _ring_data(rts: RemoteTileSource) -> PlanetData:
+	# Une petite pyramide n1..n4 : trois niveaux suffisent à montrer que la boucle les
+	# parcourt tous, et chaque niveau tient dans un seul shard.
+	var pd := _data()
+	pd.export_nside = 4
+	pd.export_nside_min = 1
+	pd.remote_source = rts
+	return pd
+
+
+## Amène les cartes de présence en cache, comme le ferait le fil de téléchargement.
+func _prime(rts: RemoteTileSource, present: bool) -> void:
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF if present else 0x00)
+	rts.fetcher = func(url: String) -> Array:
+		return [200, bits] if url.ends_with("present.bin") else [404, PackedByteArray()]
+	for ns in [1, 2, 4]:
+		rts.has_tile(ns, 0)
+
+
+func test_prefetch_without_a_remote_source_does_nothing() -> void:
+	# Même protection que le garde : les planètes qui ne streament pas ne paient rien.
+	var pd := _data()
+	assert_eq(TileResidency.prefetch(pd, Vector3.UP, PackedVector3Array()), 0)
+
+
+func test_prefetch_never_touches_the_network() -> void:
+	# La même régression que pour le garde, et elle serait pire ici : le prefetch tourne à
+	# chaque mise à jour du terrain et vise une dizaine de tuiles par niveau. Un seul
+	# has_tile() bloquant sur le thread principal et le jeu retombe à 1 FPS.
+	var rts := _ring_source()
+	var calls := [0]
+	rts.fetcher = func(_url: String) -> Array:
+		calls[0] += 1
+		return [404, PackedByteArray()]
+	var pd := _ring_data(rts)
+
+	assert_eq(TileResidency.prefetch(pd, Vector3.UP, PackedVector3Array()), 0,
+			"présences inconnues : rien n'est mis en file")
+	assert_eq(calls[0], 0, "aucune requête ne doit partir du thread principal")
+	assert_eq(rts.stat_requested, 0, "aucune TUILE demandée tant que la présence est inconnue")
+
+
+func test_prefetch_queues_the_centre_and_its_ring_at_every_level() -> void:
+	var rts := _ring_source()
+	var pd := _ring_data(rts)
+	_prime(rts, true)
+
+	var queued := TileResidency.prefetch(pd, Vector3.UP, PackedVector3Array())
+	assert_eq(queued, rts.stat_requested, "tout ce qui est compté est réellement mis en file")
+	# Ce qui compte n'est pas le total — un pixel HEALPix a 7 ou 8 voisins, et moins encore
+	# aux coins de n1 — mais que CHAQUE niveau soit couvert, centre compris. C'est la
+	# propriété qui fait qu'un chunk lointain trouve sa tuile grossière déjà là.
+	var by_level := {}
+	for job: Vector3i in rts._queue:
+		if job.z == RemoteTileSource.JOB_TILE:
+			by_level[job.y] = by_level.get(job.y, 0) + 1
+	for ns in [1, 2, 4]:
+		assert_true(by_level.has(ns), "le niveau n%d doit être préchargé" % ns)
+		assert_gt(int(by_level.get(ns, 0)), 1,
+				"n%d : le centre seul ne suffit pas, il faut l'anneau" % ns)
+		assert_true(rts._queue.has(Vector3i(HEALPix.vec2pix_nest(ns, Vector3.UP), ns,
+				RemoteTileSource.JOB_TILE)), "n%d : la tuile sous le joueur en fait partie" % ns)
+
+
+func test_prefetch_skips_tiles_the_server_does_not_have() -> void:
+	# Un pack creux ne publie pas tout : demander une tuile absente ne coûterait qu'un 404.
+	var rts := _ring_source()
+	var pd := _ring_data(rts)
+	_prime(rts, false)
+	assert_eq(TileResidency.prefetch(pd, Vector3.UP, PackedVector3Array()), 0,
+			"aucune tuile publiée, aucune demande")
+
+
+func test_prefetch_aims_ahead_of_a_moving_player() -> void:
+	# La raison d'être du biais : à l'arrêt on ne couvre que l'anneau courant, en
+	# mouvement on demande aussi là où le joueur arrive — donc strictement plus de tuiles.
+	var still := _ring_source()
+	var pd_still := _ring_data(still)
+	_prime(still, true)
+	var n_still := TileResidency.prefetch(pd_still, Vector3.UP * 1000.0, PackedVector3Array())
+
+	var moving := _ring_source()
+	var pd_moving := _ring_data(moving)
+	_prime(moving, true)
+	var hist := PackedVector3Array([Vector3(0, 1000, 0), Vector3(300, 1000, 0)])
+	var n_moving := TileResidency.prefetch(pd_moving, Vector3.UP * 1000.0, hist)
+
+	assert_gt(n_moving, n_still, "une seconde direction, donc davantage de tuiles")
+
+
+func test_prefetch_ignores_a_history_that_shows_no_movement() -> void:
+	# Caméra immobile : la direction « en avant » vaudrait la direction courante, et
+	# l'anneau serait recalculé pour rien.
+	var rts := _ring_source()
+	var pd := _ring_data(rts)
+	_prime(rts, true)
+	var hist := PackedVector3Array([Vector3.UP * 1000.0, Vector3.UP * 1000.0])
+	var n := TileResidency.prefetch(pd, Vector3.UP * 1000.0, hist)
+
+	var ref := _ring_source()
+	var pd_ref := _ring_data(ref)
+	_prime(ref, true)
+	assert_eq(n, TileResidency.prefetch(pd_ref, Vector3.UP * 1000.0, PackedVector3Array()),
+			"un historique statique ne change rien")
+
+
+func test_prefetch_terminates_before_the_manifest_is_read() -> void:
+	# export_nside_min vaut 0 tant que le manifeste n'est pas chargé, et « ns *= 2 »
+	# tournerait indéfiniment. Ce test se contente de rendre la main.
+	var rts := _ring_source()
+	var pd := _ring_data(rts)
+	pd.export_nside_min = 0
+	_prime(rts, true)
+	assert_gt(TileResidency.prefetch(pd, Vector3.UP, PackedVector3Array()), 0,
+			"la boucle démarre à n1 et se termine")
+
+
+func test_prefetch_at_the_planet_centre_is_a_no_op() -> void:
+	# normalized() d'un vecteur nul rend zéro, et vec2pix_nest en tirerait un pixel arbitraire.
+	var rts := _ring_source()
+	var pd := _ring_data(rts)
+	_prime(rts, true)
+	assert_eq(TileResidency.prefetch(pd, Vector3.ZERO, PackedVector3Array()), 0)

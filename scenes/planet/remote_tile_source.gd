@@ -275,6 +275,10 @@ func take(nside: int, ipix: int) -> PackedByteArray:
 ## Récupère la tuile et la met en cache. Bloquant : réservé au préchargement hors du
 ## chemin critique, jamais depuis une tâche de mesh.
 func fetch_now(nside: int, ipix: int) -> bool:
+	# Déjà en cache : le prefetch redemande volontiers ce qu'il a déjà, et sans ce test
+	# chaque redemande re-téléchargerait la tuile.
+	if FileAccess.file_exists(tile_cache_path(nside, ipix)):
+		return true
 	if not has_tile(nside, ipix):
 		return false
 	var url := tile_url(nside, ipix)
@@ -364,6 +368,18 @@ func _enqueue(nside: int, ipix: int, kind: int) -> void:
 		_sem.post()
 
 
+## Oublie qu'un travail était en file, une fois traité.
+##
+## _queued ne sert qu'à ne pas mettre deux fois le même travail en attente ; le garder
+## indéfiniment en ferait un index de toutes les tuiles jamais demandées — plus d'un
+## million d'entrées sur tarsis_3. Redemander est sans conséquence : fetch_now sort
+## immédiatement quand la tuile est déjà en cache.
+func _forget(kind: int, nside: int, ipix: int) -> void:
+	_mutex.lock()
+	_queued.erase("%d/%d/%d" % [kind, nside, ipix])
+	_mutex.unlock()
+
+
 func _worker() -> void:
 	while true:
 		_sem.wait()
@@ -379,6 +395,7 @@ func _worker() -> void:
 			# Rapatrie la carte du shard. C'est ce qui débloque presence_of() côté
 			# thread principal, sans que celui-ci n'ait jamais touché au réseau.
 			has_tile(item.y, item.x)
+			_forget(item.z, item.y, item.x)
 			continue
 		var ok := fetch_now(item.y, item.x)
 		_mutex.lock()
@@ -387,6 +404,7 @@ func _worker() -> void:
 		else:
 			stat_failed += 1
 		_mutex.unlock()
+		_forget(item.z, item.y, item.x)
 
 
 func _request(url: String) -> Array:
