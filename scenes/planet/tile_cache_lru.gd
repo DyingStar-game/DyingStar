@@ -12,20 +12,22 @@ extends RefCounted
 ## annonce ; on convertit une fois, ici, et on raisonne ensuite en nombre de fichiers.
 ##
 ## Les niveaux grossiers sont [b]épinglés[/b] plutôt que gérés en LRU : une tuile n16
-## couvre 12,7 km de côté et sert des milliers de chunks, la faire évincer par un
-## déplacement au sol serait absurde. n1…n16, c'est la planète entière pour 16 Mo, et une
-## vue orbitale n'émet alors aucune requête.
+## couvre 407 km de côté (12,7 km par échantillon) et sert des milliers de chunks, la
+## faire évincer par un déplacement au sol serait absurde. n1…n16, c'est la planète
+## entière pour 16 Mo, et une vue orbitale n'émet alors aucune requête.
 
 ## Coût disque d'une tuile. Voir plus haut : aucune ne dépasse un bloc.
 const BLOCK_BYTES := 4096
 
 ## Budget par défaut, en mégaoctets de disque.
 ##
-## Un session de jeu réelle mesurée sur l'export n256 tient dans 2,2 Mo (535 tuiles). La
-## résolution visée est cependant n1024, où la même surface au sol demande seize fois plus
-## de tuiles fines : ~35 Mo par session équivalente. 128 Mo, c'est donc trois à quatre
-## longues sessions à la résolution cible — et cela reste sous un vingtième de la planète
-## complète, si bien que le cache ne peut pas dégénérer en « télécharger la planète ».
+## C'est un plafond, pas une cible : une session de jeu réelle mesurée sur l'export n256
+## tient dans 2,2 Mo (535 tuiles), et la même session à la résolution visée n1024 en
+## demanderait 2 095, soit 8,2 Mo. Le budget vaut donc seize fois la session la plus
+## lourde qu'on ait mesurée. Il n'est jamais réservé — il ne coûte rien tant qu'il n'est
+## pas atteint — et n'existe que pour le cas pathologique du joueur qui survole la planète
+## des heures durant. Il reste sous un vingtième de la planète complète, si bien que le
+## cache ne peut pas dégénérer en « télécharger la planète ».
 const DEFAULT_BUDGET_MB := 128
 
 ## Dernier niveau épinglé, jamais évincé. n16 = 4095 tuiles = 16 Mo pour la planète entière.
