@@ -14,6 +14,10 @@ const SPAWN_GROUND_TIMEOUT: float = 20.0
 ## Kept in sync with Player.JUMP — a `match` pattern needs a compile-time constant, so we can't read
 ## `player.JUMP` here.
 const JUMP: String = "jump"
+## Minimum gap (ms) between two step-up refusal prints.
+const STEP_REPORT_MS: int = 500
+## Below this horizontal speed (m/s) a player pressing forward is considered blocked, not walking.
+const BLOCKED_SPEED: float = 0.15
 ## Yaw applied to a carried object per mouse-wheel notch (radians) — see the "carry_rotate" action.
 const CARRY_ROTATE_STEP := deg_to_rad(15.0)
 ## Free-rotate gain: radians of object rotation per unit of streamed mouse motion. The client streams
@@ -90,6 +94,8 @@ var _vault_cooldown: float = 0.0          # seconds before another vault may sta
 ## Step-up: a short, SILENT scripted glide onto a low obstacle (no vault clip, keeps momentum) — smooth,
 ## speed-independent, and no cooldown so stairs climb freely. Same parent-frame (local) convention.
 var _stepping: bool = false
+## Throttle for the step-up refusal print (see _report_step_refusal): it would otherwise fire 60x/s.
+var _step_report_at: int = 0
 var _step_start: Vector3 = Vector3.ZERO
 var _step_end: Vector3 = Vector3.ZERO
 var _step_time: float = 0.0
@@ -1138,40 +1144,58 @@ func _server_update_vault(delta: float) -> void:
 ## _server_update_step). Returns true if a step-up began. Reuses the vault threshold (no gap between "walk
 ## up" and "vault") and the shared _solid_ray. The short step_up_reach keeps it from firing before the step.
 func _try_start_step_up(move_dir: Vector3) -> bool:
-	var up: Vector3 = player.up_direction
-	var fwd: Vector3 = move_dir - up * move_dir.dot(up)
-	if fwd.length() < 0.01:
+	# Geometry lives in the shared StepProbe, so the debug HUD reads the SAME probe the server acts on.
+	var p: Dictionary = StepProbe.probe(player, move_dir, player.vault_min_height)
+	if not bool(p["ok"]):
+		_report_step(p)
 		return false
-	fwd = fwd.normalized()
-	var feet: Vector3 = player.global_position
-	var reach: Vector3 = fwd * player.step_up_reach
-	var max_step: float = player.vault_min_height  # below the vault threshold = a step you walk up
-	# The face of a low obstacle right at the ankles?
-	var low: Dictionary = _solid_ray(feet + up * 0.05, feet + up * 0.05 + reach)
-	if low.is_empty():
-		return false
-	# Clear at step height (else it is tall -> the vault or a wall handles it).
-	if not _solid_ray(feet + up * max_step, feet + up * max_step + reach).is_empty():
-		return false
-	# Probe the top JUST PAST the face (from where the low ray hit), so a THIN obstacle works too — a fixed
-	# forward offset overshoots a shallow step and lands on the ground behind it, finding no top.
-	var face_dist: float = (Vector3(low["position"]) - feet).dot(fwd) + 0.05
-	var over: Vector3 = fwd * face_dist
-	var top: Dictionary = _solid_ray(feet + up * max_step + over, feet + over + up * 0.02)
-	if top.is_empty() or Vector3(top["normal"]).dot(up) < 0.6:
-		return false  # no top, or too steep to stand on
-	var h: float = (Vector3(top["position"]) - feet).dot(up)
-	if h <= 0.03 or h > max_step:
-		return false
-	# Land lifted by h and nudged forward past the face (speed-independent — a lift alone stalled at a slow
-	# walk, waiting on horizontal velocity to clear the edge). Glided, not teleported (see below).
-	var landing: Vector3 = feet + up * (h + 0.03) + fwd * face_dist
+	_report_step(p)
+	var landing: Vector3 = p["landing"]
 	var frame: Node = player.get_parent()
 	_step_start = player.position
 	_step_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
 	_step_time = 0.0
 	_stepping = true
 	return true
+
+## Say ON THE SERVER why a step was turned down, when the movement debug is on.
+##
+## The client's readout cannot answer this one: terrain collision is server-only (residency is driven
+## from server.gd alone), so a probe run on a client is blank against every terrain step — which is
+## exactly the kind we are chasing. Rate-limited, because the refusal repeats every physics frame while
+## you stand against the obstacle, and "clear" is skipped: nothing ahead is not a refusal.
+## Reports the ACCEPTED case as well, not only refusals: an instrument that speaks only on failure
+## leaves silence meaning two different things -- nothing ahead, or this code never ran -- and telling
+## those apart is half of what we are trying to find out.
+func _report_step(p: Dictionary) -> void:
+	if not SettingsManager.is_movement_debug():
+		return
+	var reason: String = String(p["reason"])
+	# "clear" means the probe found nothing ahead. While you are walking that is simply true, and
+	# printing it every frame would bury everything else. But when you are PUSHING FORWARD AND NOT
+	# MOVING, "nothing ahead" is the most interesting reading there is: it says the obstacle stopping
+	# you is invisible to the probe. That case is exactly what silence used to hide.
+	# get_real_velocity(), not velocity: this runs BEFORE move_and_slide, so `velocity` still holds what
+	# the input ASKED for this tick and reads as full walking speed even with your nose against a wall.
+	# get_real_velocity() is what the last move actually achieved -- the only one that knows you are stuck.
+	var vel: Vector3 = player.get_real_velocity()
+	var horizontal: float = (vel - player.up_direction * vel.dot(player.up_direction)).length()
+	if reason == "clear" and horizontal > BLOCKED_SPEED:
+		return
+	# Plain walking on flat ground: the body rose, crossed the WHOLE reach unobstructed, and came back
+	# down to where it started. Nothing was in the way, so there is nothing to report -- and reporting it
+	# anyway buried the two dozen readings that matter under five hundred that did not.
+	if reason == "too low" and float(p["face_dist"]) >= player.step_up_reach - 0.01:
+		return
+	var now: int = Time.get_ticks_msec()
+	if now - _step_report_at < STEP_REPORT_MS:
+		return
+	_step_report_at = now
+	var verdict: String = "MONTE " if bool(p["ok"]) else "refuse"
+	print("[StepUp] %s: %-11s montee=%.3f  avance=%.3f  hauteur=%.3f  plat=%.2f (arete %.2f)  sur=%s" % [
+			verdict, reason, float(p["rise"]), float(p["face_dist"]), float(p["height"]),
+			float(p["flatness"]), float(p["edge_flatness"]), String(p["surface"])])
+
 
 ## Advance the smooth step-up glide: ease the body from its start to the step top over step_up_duration.
 ## No clip and no cooldown (stairs climb freely); the velocity is left untouched, so walking resumes with

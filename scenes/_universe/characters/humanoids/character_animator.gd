@@ -138,6 +138,7 @@ var _vault_seen: String = ""  # last player.vault_key processed, to detect a fre
 var _vault_key: String = ""  # current vault TYPE (vault / climb_1m / climb_2m), selects the pose offset
 var _vault_height: float = 0.0  # obstacle height (m) of the current vault, for the height-based pose offset
 var _vault_debug: Dictionary = {}  # cached VaultProbe result for the debug HUD (sampled in _physics_process)
+var _step_debug: Dictionary = {}   # same, for StepProbe: what the STEP-UP made of what is ahead
 var _walk_max: float = 2.0    # walk -> jog boundary (m/s), derived from the player's walk_speed in setup
 var _sprint_min: float = 4.0  # jog -> sprint boundary (m/s), midpoint of walk_speed and sprint_speed
 
@@ -301,6 +302,16 @@ func _process(delta: float) -> void:
 func _physics_process(_delta: float) -> void:
 	if _is_local and SettingsManager.is_movement_debug():
 		_vault_debug = VaultProbe.probe(_player)
+		# The step-up itself decides on the direction we MOVE in -- sidling along a wall steps up on the
+		# wall's face, not on whatever the camera faces. But a READOUT probed that way is blank exactly
+		# when you want to read it: you stop walking to look at the HUD, input_direction falls to zero,
+		# and it reports "clear" while you stand against a step. So the readout falls back to the body's
+		# facing when still -- the same direction VaultProbe uses on the line above.
+		var move: Vector3 = _player.global_basis * Vector3(
+			_player.input_direction.x, 0.0, _player.input_direction.y)
+		if move.length() < 0.01:
+			move = -_player.global_basis.z
+		_step_debug = StepProbe.probe(_player, move, _player.vault_min_height)
 
 ## Pick the clip for the current state, highest priority first.
 func _select_clip(delta: float) -> StringName:
@@ -736,5 +747,18 @@ func _update_debug_label() -> void:
 	else:
 		can_vault = "— (%s)" % v["reason"]  # nothing ahead
 	var mid_vault: String = ("yes (%s)" % _vault_clip) if _vault_clip != &"" else "no"
-	_debug_label.text = "spd %.2f m/s   wheel %.1f   anim: %s\ncan vault: %s   mid-vault: %s" % [
-		spd, _player.walk_speed_target, _current, can_vault, mid_vault]
+	# Step-up on its own line. The vault line says "low" for anything under its threshold, which tells
+	# you nothing about whether you will actually walk up it — and a 0.21 m step climbing while a 0.18 m
+	# one does not is exactly the question only the step probe can answer.
+	var st: Dictionary = _step_debug
+	var can_step: String
+	if st.is_empty():
+		can_step = "…"
+	elif bool(st["ok"]):
+		can_step = "%.2fm -> yes" % float(st["height"])
+	elif float(st["height"]) > 0.0:
+		can_step = "%.2fm REFUSE (%s)" % [float(st["height"]), st["reason"]]
+	else:
+		can_step = "— (%s)" % st["reason"]
+	_debug_label.text = "spd %.2f m/s   wheel %.1f   anim: %s\ncan vault: %s   mid-vault: %s\ncan step: %s" % [
+		spd, _player.walk_speed_target, _current, can_vault, mid_vault, can_step]
