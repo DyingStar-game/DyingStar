@@ -6,7 +6,7 @@ extends RefCounted
 ## vite que les demandes à la carte qu'il a remplacées.
 ##
 ## [b]Le budget se compte en TUILES, pas en octets.[/b] Mesuré sur l'export tarsis_3 n256 :
-## 674 884 tuiles, 849 Mo de données mais 2,6 Go sur disque. Aucune tuile n'atteint 4 Kio
+## 674 884 tuiles, 849 Mio de données mais 2,6 Gio sur disque. Aucune tuile n'atteint 4 Kio
 ## (max 2060 o, médiane 1383 o), donc chacune occupe exactement un bloc de système de
 ## fichiers. Un budget exprimé en octets de données consommerait donc trois fois ce qu'il
 ## annonce ; on convertit une fois, ici, et on raisonne ensuite en nombre de fichiers.
@@ -14,23 +14,23 @@ extends RefCounted
 ## Les niveaux grossiers sont [b]épinglés[/b] plutôt que gérés en LRU : une tuile n16
 ## couvre 407 km de côté (12,7 km par échantillon) et sert des milliers de chunks, la
 ## faire évincer par un déplacement au sol serait absurde. n1…n16, c'est la planète
-## entière pour 16 Mo, et une vue orbitale n'émet alors aucune requête.
+## entière pour 16 Mio, et une vue orbitale n'émet alors aucune requête.
 
 ## Coût disque d'une tuile. Voir plus haut : aucune ne dépasse un bloc.
 const BLOCK_BYTES := 4096
 
-## Budget par défaut, en mégaoctets de disque.
+## Budget par défaut, en mébioctets de disque (1 Mio = 1024 Kio).
 ##
 ## C'est un plafond, pas une cible : une session de jeu réelle mesurée sur l'export n256
-## tient dans 2,2 Mo (535 tuiles), et la même session à la résolution visée n1024 en
-## demanderait 2 095, soit 8,2 Mo. Le budget vaut donc seize fois la session la plus
+## tient dans 2,2 Mio (535 tuiles), et la même session à la résolution visée n1024 en
+## demanderait 2 095, soit 8,2 Mio. Le budget vaut donc seize fois la session la plus
 ## lourde qu'on ait mesurée. Il n'est jamais réservé — il ne coûte rien tant qu'il n'est
 ## pas atteint — et n'existe que pour le cas pathologique du joueur qui survole la planète
 ## des heures durant. Il reste sous un vingtième de la planète complète, si bien que le
 ## cache ne peut pas dégénérer en « télécharger la planète ».
 const DEFAULT_BUDGET_MB := 128
 
-## Dernier niveau épinglé, jamais évincé. n16 = 4095 tuiles = 16 Mo pour la planète entière.
+## Dernier niveau épinglé, jamais évincé. n16 = 4095 tuiles = 16 Mio pour la planète entière.
 const PIN_NSIDE_MAX := 16
 
 ## On purge jusqu'à cette fraction du budget plutôt que jusqu'au budget, pour ne pas
@@ -56,7 +56,7 @@ var stat_evicted: int = 0
 static var live: TileCacheLru = null
 
 
-## Budget configuré, en mégaoctets. Même cascade que le reste du streaming :
+## Budget configuré, en mébioctets. Même cascade que le reste du streaming :
 ## --tile-cache-mb=, puis DS_TILE_CACHE_MB, puis [stream] tile_cache_mb du .ini.
 ## 0 désactive l'éviction.
 static func configured_budget_mb() -> int:
@@ -204,7 +204,7 @@ func _scan(dir: String, rel: String) -> void:
 func stat_line() -> String:
 	var mb := float(size()) * BLOCK_BYTES / 1048576.0
 	var budget_mb := float(budget_tiles) * BLOCK_BYTES / 1048576.0
-	return "cache tuiles: %d fichiers, %.1f / %.0f Mo disque, %d évincées" \
+	return "cache tuiles: %d fichiers, %.1f / %.0f Mio disque, %d évincées" \
 			% [size(), mb, budget_mb, stat_evicted]
 
 
