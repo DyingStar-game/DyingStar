@@ -950,18 +950,55 @@ Deux remarques :
 - **HTTP/2 ou 3 en production** : une session ouvre des centaines de petites requêtes, et
   le multiplexage change tout. Le relevé ci-dessus était en HTTP/1.1 local.
 
-### Phase 3 — fetcher runtime (le gros du travail)
+### Phase 3 — fetcher runtime — 🟡 CLIENT ET GARDE FAITS, RESTE LE CÂBLAGE
 
-- `RemoteTileSource` derrière l'interface actuelle : pack local → cache
-  `user://tile_cache/<planet>/<version>/` → HTTP.
-- Thread de téléchargement dédié + file de complétion. `read_tile` renvoie
-  « pending », `load_chunk_heightmap` le propage, `planet_terrain` re-queue le
-  chunk. **Ne jamais bloquer une tâche `WorkerThreadPool` sur du réseau.**
-- Prefetch en anneau autour du joueur, par niveau, biaisé par la vélocité (les
-  voisins HEALPix se calculent). Marge disponible : une tuile n1024 dure ~64 s à
-  100 m/s.
-- Plancher local n1…n8 embarqué dans le `.pck`.
-- LRU avec le budget dans `settings.ini` ; purge des autres versions au démarrage.
+**`scenes/planet/remote_tile_source.gd`** — la moitié cliente du format publié. URL,
+enveloppe de 12 octets, cartes de présence par shard, cache disque cloisonné par version,
+et un fil de téléchargement à file dédupliquée.
+
+- **Il ne bloque jamais.** `take()` lit le cache disque et rend vide plutôt qu'attendre ;
+  `fetch_now()` est réservé au préchargement. Le chemin d'échantillonnage tourne sur
+  `WorkerThreadPool` et ne doit sous aucun prétexte attendre une socket.
+- **`has_tile()` répond depuis la carte de présence**, jamais d'un 404 — 512 octets
+  couvrent 4096 tuiles voisines, récupérés une fois par shard.
+- **Le CRC32 est réimplémenté** (Godot n'en expose aucun) et doit rendre exactement ce que
+  `zlib.crc32` rend, sinon toute tuile est rejetée. Figé par des vecteurs de référence
+  produits par le publieur Python, un compressé et un non compressé — ce qui prouve aussi
+  que `decompress_dynamic` lit le deflate de zlib.
+
+**`scenes/planet/tile_residency.gd`** — le garde. Plutôt que de propager un état
+« pending » à travers l'échantillonneur, appelé des milliers de fois par chunk depuis un
+thread worker, on garantit la résidence AVANT de soumettre la tâche de mesh et on diffère
+le chunk sinon. La tâche ne rencontre alors jamais de tuile manquante.
+
+Deux subtilités que les tests verrouillent :
+
+- **Le jeu de tuiles couvre les voisines**, pas seulement celle du chunk : le sampler
+  mélange dans une marge de `BLEND_PIXELS` autour de chaque bord et le noyau bilinéaire
+  déborde d'un texel. Ne précharger que la tuile centrale laisserait les bords se rabattre
+  sur la carte équirectangulaire — la surface plate à l'origine du terrain « des
+  kilomètres sous les props ».
+- **Le drainage du backlog est borné** à son contenu initial. Sans cela, un chunk que
+  `_queue_mesh_task` y remet faute de tuiles téléchargées serait repris aussitôt, et la
+  boucle tournerait sans fin dès que tous les chunks en attente le sont pour cette raison.
+
+**Sans source distante, `request_chunk_tiles` rend toujours true** : les planètes qui ne
+streament pas ne paient rien et ne changent pas de comportement. C'est testé explicitement.
+
+#### Vérifié bout à bout
+
+Contre un nginx local servant l'arbre tarsis_3 n256, depuis Godot : **55 tuiles récupérées
+en HTTP décodées en octets identiques au pack local, 5 absences concordant avec les cartes
+de présence, 0 désaccord.** La chaîne QGIS → exporteur → pack creux → publieur → nginx →
+client est close.
+
+#### Ce qui reste
+
+- **Câbler la source** : construire un `RemoteTileSource` par planète depuis un réglage,
+  appeler `open_planet()` et `start()`, purger les autres versions au chargement.
+- **Cache LRU** avec le budget de 400 Mo (§8) et son `index.bin` de derniers usages.
+- **Prefetch en anneau** autour du joueur, biaisé par la vélocité.
+- **Plancher local** n1…n8 embarqué (~26 Mo), pour que la planète reste visible sans réseau.
 
 ### Phase 4 — serveur
 

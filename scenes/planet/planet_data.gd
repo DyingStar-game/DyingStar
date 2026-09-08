@@ -266,6 +266,10 @@ var _chunk_images: Dictionary = {}
 ##
 ## Peuplé et purgé aux mêmes endroits que _chunk_images, sous le même _cache_mutex.
 var _chunk_floats: Dictionary = {}
+## Source HTTP optionnelle. Quand elle est posée, une tuile absente du pack local est
+## cherchée dans son cache disque — jamais sur le réseau depuis le chemin chaud : c'est
+## PlanetTerrain qui met en file et diffère le chunk (voir request_chunk_tiles).
+var remote_source: RemoteTileSource = null
 var _empty_chunk_logged: bool = false
 var _chunk_format_logged: bool = false
 
@@ -1076,6 +1080,13 @@ func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
 	if pack == null:
 		return null
 	var bytes: PackedByteArray = pack.read_tile(ns, ipix)
+	if bytes.is_empty() and remote_source != null:
+		# Repli sur ce qui a déjà été téléchargé. take() ne touche pas au réseau.
+		var raw := remote_source.take(ns, ipix)
+		if not raw.is_empty():
+			# L'encodage se déduit de la taille : la charge utile publiée est la copie
+			# exacte des octets du pack source, donc u16 ou float32 selon ce dernier.
+			bytes = HeightPack.widen_u16(raw, res) if raw.size() == res * res * 2 else raw
 	if bytes.is_empty():
 		return null
 	if bytes.size() != expected:

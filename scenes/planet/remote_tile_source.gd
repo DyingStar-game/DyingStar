@@ -42,6 +42,20 @@ var cache_root: String = "user://tile_cache/"
 ## Callable(url) -> [code:int, body:PackedByteArray].
 var fetcher: Callable = Callable()
 
+## Fil de téléchargement. Le chemin d'échantillonnage tourne sur WorkerThreadPool ; y
+## attendre une socket gèlerait la génération de terrain. Les demandes sont donc mises en
+## file et servies ici, pendant que l'appelant diffère le chunk concerné.
+var _thread: Thread = null
+var _queue: Array[Vector2i] = []      # (ipix, nside)
+var _queued: Dictionary = {}          # "n/p" -> true, pour ne pas redemander
+var _mutex: Mutex = Mutex.new()
+var _sem: Semaphore = Semaphore.new()
+var _quit: bool = false
+## Compteurs, lus par le profilage : ce qui a été demandé, servi, refusé.
+var stat_requested: int = 0
+var stat_fetched: int = 0
+var stat_failed: int = 0
+
 var _present: Dictionary = {}     # "n<nside>/f<shard>" -> PackedByteArray
 var _misses: Dictionary = {}      # URL -> true, pour ne pas redemander un 404
 
@@ -185,6 +199,62 @@ func purge_other_versions() -> int:
 		name = d.get_next()
 	d.list_dir_end()
 	return removed
+
+
+## Démarre le fil de téléchargement. Idempotent.
+func start() -> void:
+	if _thread != null:
+		return
+	_quit = false
+	_thread = Thread.new()
+	_thread.start(_worker)
+
+
+## Arrête le fil et l'attend. À appeler avant de libérer la source.
+func stop() -> void:
+	if _thread == null:
+		return
+	_mutex.lock()
+	_quit = true
+	_mutex.unlock()
+	_sem.post()
+	_thread.wait_to_finish()
+	_thread = null
+
+
+## Met une tuile en file. Ne bloque pas et ne redemande jamais deux fois la même.
+## Sans effet si la tuile est déjà en cache ou si la carte de présence la nie.
+func queue(nside: int, ipix: int) -> void:
+	var key := "%d/%d" % [nside, ipix]
+	_mutex.lock()
+	var known: bool = _queued.has(key)
+	if not known:
+		_queued[key] = true
+		_queue.append(Vector2i(ipix, nside))
+		stat_requested += 1
+	_mutex.unlock()
+	if not known:
+		_sem.post()
+
+
+func _worker() -> void:
+	while true:
+		_sem.wait()
+		_mutex.lock()
+		if _quit:
+			_mutex.unlock()
+			return
+		var item: Vector2i = _queue.pop_front() if not _queue.is_empty() else Vector2i(-1, -1)
+		_mutex.unlock()
+		if item.x < 0:
+			continue
+		var ok := fetch_now(item.y, item.x)
+		_mutex.lock()
+		if ok:
+			stat_fetched += 1
+		else:
+			stat_failed += 1
+		_mutex.unlock()
 
 
 func _request(url: String) -> Array:
