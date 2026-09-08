@@ -145,23 +145,35 @@ EXPORT_DIR = os.path.expanduser(
     "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/export"
 )
 
-# HEALPix tiling. nside=64 → 12·64² = 49152 chunks (chunk_export_depth=6).
-# This is the FINEST pyramid level (LOD0). Coarser levels down to NSIDE_MIN are
-# baked too, so far/whole-planet LODs read a single coarse tile instead of
-# point-sampling many fine ones (no aliasing, no 49k-tile fetch from orbit).
-NSIDE = 64
+# Découpage HEALPix, PAR CORPS. La clé est le planet_name lu du projet QGIS.
+#
+# L'espacement au sol ne dépend que du PRODUIT nside × tile_res :
+#     espacement = 6 504 266 / (nside × tile_res)   mètres, pour R = 6 356 km
+# Le partage entre les deux, lui, décide de tout le reste (voir
+# docs/PLANET_CHUNK_STREAMING.md §4) :
+#   · l'empreinte réseau d'un joueur croît comme tile_res² — une grosse tuile sur-livre,
+#     puisqu'un chunk-feuille en tire une entière pour n'en lire qu'une poignée de valeurs ;
+#   · le nombre de fichiers croît comme nside² ;
+#   · tile_res doit rester ≥ chunk_resolution (32) — un chunk-feuille échantillonne 33
+#     points par arête dans sa propre tuile — et donner une tuile d'un bloc disque entier
+#     (4 Kio), sans quoi le stockage est gaspillé par le padding.
+# n1024 × 32 coche les trois : 198 m, tuile de 4 096 o en float32 (2 048 en uint16).
+#
+# Cette table existe pour qu'exporter une planète après une autre ne demande PAS d'éditer
+# le script entre les deux : une erreur ici coûte un export entier, et un export de
+# tarsis_3 à 198 m dure ~35 heures.
+PLANET_TILING = {
+    "tarsis_3": (1024, 32),     # 198 m — la planète jouable
+}
+# Tout le reste : 4 065 m. Suffisant pour des corps sans relief travaillé, et 19 × 164 Mo
+# au lieu de 19 × 68 Go.
+DEFAULT_TILING = (64, 25)
+
+NSIDE, TILE_RES = PLANET_TILING.get(PLANET_NAME, DEFAULT_TILING)
+
 # Coarsest pyramid level to bake. 1 → the 12 HEALPix base faces (whole-planet view).
 # Levels baked: NSIDE, NSIDE/2, … , NSIDE_MIN (all powers of two).
 NSIDE_MIN = 1
-# Samples per chunk edge. 50 → ~2.03 km spacing on a 6356 km planet (broad shape;
-# fine detail comes from the quadtree mesh interpolating between samples).
-# The pack is dense, so its size scales with TILE_RES²:
-#   25 → 4.07 km, 164 MB   |   50 → 2.03 km, 655 MB   |   100 → 1.02 km, 2.6 GB
-# Raised from 25 because a summit narrower than the sample spacing is only caught
-# when a sample happens to land on it: tarsis_4's 9000 m peak read 8207 m at
-# 4.07 km, and jittering its position gave anywhere from 6200 m to 9000 m for the
-# same terrain — that spread is grid alignment, not missing data.
-TILE_RES = 50
 
 # Tiles per TIN call, sized to hold the measured sweet spot of ~160k directions per
 # call whatever TILE_RES is. One call per tile wastes ~85% of the time in per-call
@@ -521,7 +533,42 @@ def write_pack(tmp_path, chunks_dir, manifest_bytes, levels, total_tiles,
     return kept_total, total_tiles
 
 
+## Débit d'échantillonnage du TIN mesuré sur un export réel : 65 532 tuiles × 50² samples
+## en ~20 min. Sert uniquement à annoncer un ordre de grandeur avant de lancer — un export
+## à 198 m dure des dizaines d'heures, et le découvrir en cours de route est désagréable.
+_REF_SAMPLES_PER_SEC = 65532 * 50 * 50 / (20 * 60)
+
+
+def print_plan():
+    """Ce que l'export va coûter, AVANT de le lancer."""
+    levels = []
+    n = NSIDE_MIN
+    while n <= NSIDE:
+        levels.append(n)
+        n *= 2
+    tiles = sum(12 * n * n for n in levels)
+    samples = tiles * TILE_RES * TILE_RES
+    spacing = PLANET_RADIUS * math.sqrt(math.pi / 3.0) / (NSIDE * TILE_RES)
+    hours = samples / _REF_SAMPLES_PER_SEC / 3600.0
+    tile_bytes = TILE_RES * TILE_RES * (2 if SAMPLE_U16 else 4)
+    print("=" * 64)
+    print(f"  Planet     : {PLANET_NAME}  (R = {PLANET_RADIUS} m)")
+    print(f"  Tiling     : n{NSIDE} × tile_res {TILE_RES}"
+          + ("" if PLANET_NAME in PLANET_TILING else "   [DEFAULT_TILING]"))
+    print(f"  Spacing    : {spacing:.0f} m")
+    print(f"  Pyramid    : n{NSIDE_MIN}…n{NSIDE}, {tiles} tiles, {samples:.3g} TIN samples")
+    print(f"  Encoding   : {'uint16' if SAMPLE_U16 else 'float32'}, "
+          f"{tile_bytes} B/tile, dense max {tiles * tile_bytes / 1e9:.1f} GB")
+    print(f"  Sparse     : " + (f"epsilon {SPARSE_EPSILON_M} m" if SPARSE_EPSILON_M > 0
+                                else "off (dense)"))
+    print(f"  Est. time  : ~{hours:.1f} h of TIN sampling")
+    print("=" * 64)
+
+
 def run_export():
+    # Annoncer le plan AVANT de calculer quoi que ce soit : à 198 m l'export dure
+    # des dizaines d'heures, et s'en apercevoir en cours de route est désagréable.
+    print_plan()
     global ELEV_MIN, ELEV_MAX
     print("=" * 64)
     print(f"  export_elevation: planet='{PLANET_NAME}' radius={PLANET_RADIUS}m "
