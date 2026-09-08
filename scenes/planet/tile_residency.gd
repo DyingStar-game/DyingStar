@@ -34,8 +34,10 @@ static func chunk_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Arr
 	var ns := primary.y
 	var ip := primary.x
 	var out: Array[Vector2i] = [primary]
-	for key: String in HEALPix.get_neighbors_nest(ns, ip):
-		var nb: int = HEALPix.get_neighbors_nest(ns, ip)[key]
+	# Une seule fois : get_neighbors_nest refait tout le calcul de face à chaque appel.
+	var nbs := HEALPix.get_neighbors_nest(ns, ip)
+	for key: String in nbs:
+		var nb: int = nbs[key]
 		if nb >= 0:
 			out.append(Vector2i(nb, ns))
 	return out
@@ -58,6 +60,7 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -
 	if data.remote_source == null:
 		return true
 	var ready := true
+	var unknown := false
 	for t in chunk_tile_set(data, hp_nside, hp_ipix):
 		if tile_available(data, t.x, t.y):
 			continue
@@ -75,10 +78,18 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -
 		while ns >= data.export_nside_min:
 			var state: int = data.remote_source.presence_of(ns, ip)
 			if state == RemoteTileSource.PRESENCE_UNKNOWN:
+				unknown = true
 				break
 			if state == RemoteTileSource.PRESENCE_YES:
 				data.remote_source.queue(ns, ip)
 				break
 			ns >>= 1
 			ip >>= 2
+	if PropNet.prof_on:
+		if ready:
+			PropNet.prof_gate_pass += 1
+		else:
+			PropNet.prof_gate_defer += 1
+			if unknown:
+				PropNet.prof_gate_unknown += 1
 	return ready

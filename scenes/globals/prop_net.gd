@@ -161,6 +161,13 @@ static var prof_chunk_tile_usec: int = 0
 ## que sur une planète à corundum (tarsis_3), où chaque sommet évalue quatre fois un Voronoï 3D.
 static var prof_norm_sample_usec: int = 0
 static var prof_norm_crack_usec: int = 0
+## Garde de résidence (streaming) : chunks acceptés, différés, et pourquoi.
+static var prof_gate_pass: int = 0
+static var prof_gate_defer: int = 0
+static var prof_gate_unknown: int = 0
+## Instantané du pipeline de mesh : ce qui attend, ce qui tourne.
+static var prof_backlog: int = 0
+static var prof_tasks: int = 0
 ## Assemblage main-thread (MeshInstance3D, MultiMesh végétation, biomes ponctuels).
 static var prof_asm_calls: int = 0
 static var prof_asm_usec: int = 0
@@ -215,6 +222,11 @@ static func prof_reset() -> void:
 	prof_chunk_tile_usec = 0
 	prof_norm_sample_usec = 0
 	prof_norm_crack_usec = 0
+	prof_gate_pass = 0
+	prof_gate_defer = 0
+	prof_gate_unknown = 0
+	prof_backlog = 0
+	prof_tasks = 0
 	prof_asm_calls = 0
 	prof_asm_usec = 0
 	prof_col_calls = 0

@@ -697,6 +697,10 @@ func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
 ## Le pack d'élévation omet-il des tuiles ? Faux pour tout pack dense (v1, ou v2 non
 ## creux), auquel cas aucun appelant ne paie la remontée de niveau.
 func pack_is_sparse() -> bool:
+	# Une source distante implique la remontée de niveau : l'arborescence publiée vient
+	# d'un pack qui peut être creux, et sans pack local il n'y a personne pour le dire.
+	if remote_source != null:
+		return true
 	# Pas d'inférence ici : _ensure_height_pack() ne déclare pas de type de retour.
 	var pack = _ensure_height_pack()
 	return pack != null and pack.is_sparse()
@@ -1076,10 +1080,14 @@ func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
 	var ns := nside if nside > 0 else export_nside
 	var res := chunk_heightmap_res
 	var expected := res * res * 4
+	# Le pack local est FACULTATIF quand une source distante est branchée : une planète
+	# entièrement streamée n'en a pas du tout. Sortir ici parce qu'il manque rendrait le
+	# cache distant inatteignable — exactement le cas d'un test où l'on retire le pack
+	# pour vérifier que le streaming suffit.
 	var pack = _ensure_height_pack()
-	if pack == null:
-		return null
-	var bytes: PackedByteArray = pack.read_tile(ns, ipix)
+	var bytes := PackedByteArray()
+	if pack != null:
+		bytes = pack.read_tile(ns, ipix)
 	if bytes.is_empty() and remote_source != null:
 		# Repli sur ce qui a déjà été téléchargé. take() ne touche pas au réseau.
 		var raw := remote_source.take(ns, ipix)
