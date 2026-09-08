@@ -328,8 +328,17 @@ func _process(delta: float) -> void:
 				+ Vector3(offset.x * head_cam_amount, offset.y * head_cam_amount, offset.z) \
 				+ Vector3(0.0, 0.0, -head_cam_forward)
 			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
-		elif _head_rest_captured:
-			_player.camera_pivot.position = _camera_base_pos  # seated/disabled: hand the camera back to the ride
+		else:
+			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a
+			# player who sat down before it was captured never entered this branch at all: the pivot kept
+			# its raw scene value and seat_eye_height did nothing, whatever it was set to. Capture it here
+			# too -- the pivot is at its rest right now if nobody has moved it yet.
+			# Seated: the ride owns the camera, raised by the seated eye height. That lifts the EYE only --
+			# the body stays on the seat where _ride_seat put it (see Player.seat_eye_height).
+			if not _head_rest_captured:
+				_camera_base_pos = _player.camera_pivot.position
+				_head_rest_captured = true
+			_player.camera_pivot.position = _camera_base_pos + Vector3(0.0, _player.seat_eye_height, 0.0)
 	if _debug_label != null:
 		_update_debug_label()
 
