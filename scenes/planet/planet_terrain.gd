@@ -837,7 +837,7 @@ func _server_poll_chunk_tasks() -> void:
 				PropNet.prof_col_calls += 1
 				PropNet.prof_col_usec += _cu
 			if shape:
-				if _chunk_cache:
+				if _chunk_cache and _persistable(shape):
 					_chunk_cache.save_collision(key, 0, shape)
 				_server_assemble_chunk(key, nside, ipix, shape)
 			else:
@@ -850,6 +850,18 @@ func _server_poll_chunk_tasks() -> void:
 ## (see [method PlanetChunk.generate_collision_shape]).  The CollisionShape3D
 ## is offset by exactly this value — applied in double precision by the node
 ## transform — so the small float32 faces land back on the visual surface.
+## Cette géométrie a-t-elle le droit d'aller dans le cache disque ?
+##
+## Non si un seul de ses sommets a lu un ANCÊTRE faute d'avoir sa propre tuile alors que
+## celle-ci est publiée : la surface obtenue est un parent plus lisse, dont l'écart n'est
+## borné par rien (35,4 m mesurés sur tarsis_3), et une fois persistée plus rien ne la
+## distingue d'une surface correcte — le validateur de version ne regarde que les
+## paramètres de la planète, pas la provenance des hauteurs. La géométrie reste utilisée
+## tout de suite : on refuse seulement de la graver. Voir PlanetData.climb_mark().
+static func _persistable(geom: Resource) -> bool:
+	return geom != null and int(geom.get_meta("provisional_climbs", 0)) == 0
+
+
 func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
 	return PlanetChunk.snap_to_f32(
 		HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
@@ -1087,7 +1099,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 			add_child(body)
 			_server_collision_chunks[key] = body
 			# Update disk cache.
-			if _chunk_cache:
+			if _chunk_cache and _persistable(shape):
 				_chunk_cache.save_collision(key, 0, shape)
 
 		print("[PlanetTerrain] rebuild_chunks: rebuilt '%s'" % key)
@@ -2718,7 +2730,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
 		# has_usable_tile : sur un pack creux une tuile absente est normale, et refuser
 		# d'y cacher le mesh empêcherait le cache de se remplir.
-		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y):
+		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
+				and _persistable(mesh):
 			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
@@ -2773,7 +2786,8 @@ func _create_chunk(info: Dictionary) -> void:
 				while _cns < _epd:
 					_eip *= 4
 					_cns *= 2
-				if planet_data.is_chunk_cached("hp_n%d_p%d" % [_epd, _eip]):
+				if planet_data.is_chunk_cached("hp_n%d_p%d" % [_epd, _eip]) \
+						and _persistable(shape):
 					_chunk_cache.save_collision(key, lod, shape)
 
 		# Server also needs cave/fumarole collision so players don't fall through.

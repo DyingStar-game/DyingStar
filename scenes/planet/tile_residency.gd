@@ -48,7 +48,28 @@ static func chunk_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Arr
 static func tile_available(data: PlanetData, ipix: int, nside: int) -> bool:
 	if not data.load_chunk_floats(ipix, nside).is_empty():
 		return true
-	return data._finest_present_ancestor(ipix, nside).y > 0
+	# Sans source distante, le pack local est l'autorité : ce qu'il n'a pas, il ne l'aura
+	# jamais, et sur un pack creux l'ancêtre EST la tuile — l'exportateur ne l'élague que
+	# si la reconstruction s'en écarte de moins de SPARSE_EPSILON_M (1 m).
+	if data.remote_source == null:
+		return data._finest_present_ancestor(ipix, nside).y > 0
+	# Avec une source distante, « absente ici » ne dit PAS « absente là-haut », et les deux
+	# cas n'ont pas la même garantie :
+	#   - réellement élaguée      → l'ancêtre est à moins d'un mètre, par construction ;
+	#   - publiée mais pas encore téléchargée → l'ancêtre n'est qu'un parent plus lisse, et
+	#     l'écart n'est borné par rien. Mesuré sur tarsis_3 : 35,4 m entre n1024 et son
+	#     parent n512 sur une arête franche (les deux tuiles présentes, simple différence
+	#     de niveau).
+	# Les confondre faisait bâtir la collision sur le parent, puis l'écrire dans le cache
+	# disque, où plus rien ne pouvait la distinguer d'une forme correcte : le joueur se
+	# retrouvait posé des dizaines de mètres au-dessus du sol qu'il voyait.
+	# La carte de présence sait laquelle des deux c'est ; presence_of() ne bloque jamais.
+	if data.remote_source.presence_of(nside, ipix) == RemoteTileSource.PRESENCE_NO:
+		return data._finest_present_ancestor(ipix, nside).y > 0
+	# PRESENCE_YES  → la tuile existe et n'est pas là : attendre, request_chunk_tiles la met
+	#                 en file et le chunk repasse à la frame suivante.
+	# PRESENCE_UNKNOWN → la carte du shard n'est pas arrivée : ne pas deviner non plus.
+	return false
 
 
 ## Met en file ce qui manque pour construire ce chunk, et rend true si tout est déjà là.
