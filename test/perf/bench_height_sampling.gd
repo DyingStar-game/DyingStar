@@ -159,11 +159,82 @@ func _measure(pd, export_ipix: int, hp_ipix: int, label: String) -> void:
 			else:
 				fast += pd.sample_height_boundary(dirs[i], export_ipix, face, xy,
 						nbrs, sample_nside)
-	_report("avec les précalculs du chunk", t, n)
+	_report("précalculs passés à la main", t, n)
+
+	# Le cadre est créé UNE fois par chunk, comme dans generate_mesh.
+	t = Time.get_ticks_usec()
+	var framed := 0.0
+	for r in REPS:
+		var frame: PlanetData.TileFrame = pd.make_tile_frame()
+		for i in n:
+			if interior[i] == 1:
+				framed += pd.sample_height_for_direction(dirs[i], export_ipix, -1,
+						Vector2i(-1, -1), null, sample_nside, frame)
+			else:
+				framed += pd.sample_height_boundary(dirs[i], export_ipix, -1,
+						Vector2i(-1, -1), null, sample_nside, frame)
+	_report("cadre de tuiles du chunk", t, n)
 
 	# Un banc qui mesurerait deux surfaces différentes ne mesurerait rien : les deux formes
 	# d'appel doivent rendre la même hauteur, bit pour bit.
-	print("   hauteurs identiques au bit près : %s" % (plain == fast))
+	print("   hauteurs identiques au bit près : %s (cadre : %s)" % [
+		plain == fast, plain == framed])
+
+	# ── Décomposition du chemin rapide, pour savoir où va ce qui reste ────────────────
+	var acc := 0.0
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for i in n:
+			acc += pd.load_chunk_floats(export_ipix, sample_nside).size()
+	_report("  · lookup de tuile", t, n)
+
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for i in n:
+			acc += pd._direction_to_pixel_uv(dirs[i], export_ipix, sample_nside, face, xy).x
+	_report("  · UV local (trigonométrie)", t, n)
+
+	var floats: PackedFloat32Array = pd.load_chunk_floats(export_ipix, sample_nside)
+	var uvs := PackedVector2Array()
+	for i in n:
+		uvs.append(pd._direction_to_pixel_uv(dirs[i], export_ipix, sample_nside, face, xy))
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for i in n:
+			acc += pd._sample_image_bilinear_healpix(floats, TILE_RES, uvs[i].x, uvs[i].y,
+					export_ipix, nbrs, sample_nside)
+	_report("  · noyau bilinéaire + mélange", t, n)
+	# Intérieur et bord séparés : le bord passe par sample_height_boundary, qui commence par
+	# un vec2pix_nest et peut basculer sur une AUTRE tuile que celle du chunk.
+	var frame2: PlanetData.TileFrame = pd.make_tile_frame()
+	var inner := PackedVector3Array()
+	var edges := PackedVector3Array()
+	for i in n:
+		if interior[i] == 1:
+			inner.append(dirs[i])
+		else:
+			edges.append(dirs[i])
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for d in inner:
+			acc += pd.sample_height_for_direction(d, export_ipix, -1, Vector2i(-1, -1),
+					null, sample_nside, frame2)
+	_report("  · sommets intérieurs (%d)" % inner.size(), t, inner.size())
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for d in edges:
+			acc += pd.sample_height_boundary(d, export_ipix, -1, Vector2i(-1, -1),
+					null, sample_nside, frame2)
+	_report("  · sommets de bord (%d)" % edges.size(), t, edges.size())
+
+	t = Time.get_ticks_usec()
+	for r in REPS:
+		for d in inner:
+			acc += HEALPix.vec2pix_nest(sample_nside, d)
+	_report("  · dont HEALPix.vec2pix_nest", t, inner.size())
+
+	if acc == 0.0:
+		print("   (accumulateur nul — le banc n'a rien lu)")
 
 
 func _report(label: String, t0: int, n: int) -> void:

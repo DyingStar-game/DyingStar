@@ -681,6 +681,61 @@ static func _prof_count_sampler(entry: String) -> void:
 	prof_tile_mutex.unlock()
 
 
+## Cadre d'échantillonnage d'un chunk : tout ce qui ne dépend que de la TUILE, résolu au
+## premier accès et gardé jusqu'à la fin du chunk.
+##
+## Un chunk lit sa propre tuile, et par ses sommets de bord celles qui la touchent : neuf au
+## plus, contre 5 445 échantillons. Sans ce cadre, chaque échantillon refaisait la position
+## dans la face et surtout get_neighbors_nest(), et un sommet de bord qui bascule sur la
+## tuile voisine repartait SANS aucun précalcul — mesuré à 120 µs contre 32 pour un sommet
+## intérieur, soit 31 % du coût d'échantillonnage du chunk pour 12 % des échantillons.
+##
+## Le cadre mémorise aussi les tableaux de floats. Il fige donc les tuiles pour la durée du
+## chunk : si une autre tâche recharge une tuile pendant la construction, ce chunk termine
+## sur celle qu'il a commencé à lire. C'est voulu — un chunk bâti moitié sur l'ancienne
+## tuile, moitié sur la nouvelle, aurait une couture au milieu.
+class TileFrame:
+	extends RefCounted
+
+	## Positions dans une entrée. Un Array indexé par des littéraux, pas un Dictionary ni des
+	## constantes nommées : ce chemin est parcouru des dizaines de milliers de fois par chunk
+	## et chaque résolution de nom s'y voit.
+	##   0 floats · 1 face · 2 position dans la face · 3 voisines
+	var _data: Resource
+	## id de tuile -> entrée
+	var _entries: Dictionary = {}
+
+	func _init(data: Resource) -> void:
+		_data = data
+
+	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.
+	##
+	## Les voisines sont calculées ici même pour une tuile lue seulement par le mélange de
+	## bord, qui n'en a pas besoin : neuf tuiles par chunk au plus, contre un test par
+	## échantillon si on les rendait paresseuses.
+	func entry(ipix: int, nside: int) -> Array:
+		# Même identifiant que le cache de PlanetData (_tile_id), écrit ici plutôt qu'appelé :
+		# un appel statique par échantillon pour un décalage et un « ou ».
+		var id := (nside << 32) | ipix
+		var hit: Variant = _entries.get(id)
+		if hit != null:
+			return hit
+		var npface := nside * nside
+		@warning_ignore("integer_division")
+		var made := [_data.load_chunk_floats(ipix, nside), ipix / npface,
+				HEALPix.nest2xy(ipix % npface), HEALPix.get_neighbors_nest(nside, ipix)]
+		_entries[id] = made
+		return made
+
+	func floats(ipix: int, nside: int) -> PackedFloat32Array:
+		return entry(ipix, nside)[0]
+
+
+## Cadre d'échantillonnage neuf, à garder le temps d'un chunk et à jeter avec lui.
+func make_tile_frame() -> TileFrame:
+	return TileFrame.new(self)
+
+
 ## Identifiant de tuile, pour les dictionnaires du cache.
 ##
 ## Les caches étaient indexés par la chaîne "hp_n<nside>_p<ipix>", reformatée à CHAQUE
@@ -2126,9 +2181,13 @@ func _evict_lru() -> void:
 ## loads it, then samples bilinearly at the correct local UV position.
 ## When [param known_export_ipix] >= 0 it is used directly instead of calling
 ## vec2pix_nest, avoiding mis-classification at the polar/equatorial cap boundary.
+## [param frame] — cadre du chunk appelant ([method make_tile_frame]). Quand il est fourni,
+## il rend les trois paramètres précédents inutiles : c'est LUI qui donne face, position et
+## voisines, pour la tuile réellement lue — après remontée de niveau comprise, ce que des
+## précalculs passés à la main ne peuvent pas suivre.
 func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
-		_cached_neighbors = null, nside: int = -1) -> float:
+		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null) -> float:
 	if PropNet.prof_on:
 		# Les constructeurs de chunks passent TOUJOURS known_export_ipix (ils savent dans
 		# quelle tuile ils travaillent) ; une requête de gameplay ne le connaît pas et le
@@ -2143,7 +2202,7 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		ipix = known_export_ipix
 	else:
 		ipix = HEALPix.vec2pix_nest(ns, dir)
-	var floats := load_chunk_floats(ipix, ns)
+	var floats := frame.floats(ipix, ns) if frame != null else load_chunk_floats(ipix, ns)
 	if floats.is_empty() and pack_is_sparse():
 		# Pack creux : cette tuile n'a pas été stockée parce que l'upsample de son parent
 		# la reproduit à epsilon près. On remonte donc au plus fin ancêtre présent — et
@@ -2153,7 +2212,7 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		if up.y > 0:
 			ipix = up.x
 			ns = up.y
-			floats = load_chunk_floats(ipix, ns)
+			floats = frame.floats(ipix, ns) if frame != null else load_chunk_floats(ipix, ns)
 			# Tout ce que l'appelant a précalculé décrit la tuile DEMANDÉE et ne décrit
 			# plus celle qu'on vient de choisir. Les voisins désigneraient un autre pixel
 			# dans la marge de mélange ; et _precomp_xy, surtout, est la position ENTIÈRE
@@ -2167,6 +2226,14 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 			_cached_neighbors = null
 			_precomp_face = -1
 			_precomp_xy = Vector2i(-1, -1)
+	# Le cadre, lui, est indexé par tuile : il donne les précalculs de celle qu'on lit
+	# vraiment, y compris après la remontée ci-dessus. C'est pour ça qu'il est renseigné
+	# ICI et non chez l'appelant.
+	if frame != null:
+		var pc: Array = frame.entry(ipix, ns)
+		_precomp_face = pc[1]
+		_precomp_xy = pc[2]
+		_cached_neighbors = pc[3]
 	if floats.is_empty():
 		# DEBUG: the per-chunk tile is not available at sample time — this vertex
 		# gets its elevation from the equirect global map, which is a different
@@ -2188,7 +2255,7 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 	if res <= 0:
 		return sample_height_at(dir)
 	var h := _sample_image_bilinear_healpix(floats, res,
-			local_uv.x, local_uv.y, ipix, _cached_neighbors, ns)
+			local_uv.x, local_uv.y, ipix, _cached_neighbors, ns, frame)
 	return (h * max_height + height_offset) * terrain_exaggeration
 
 
@@ -2202,25 +2269,27 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 ## boundary edge case), falls back to chain_ipix's tile — which is always
 ## loaded since we are generating this chunk. This avoids the catastrophic
 ## 0.0m fallback from a missing global heightmap.
+## [param frame] — voir [method sample_height_for_direction]. Il vaut surtout ici : un
+## sommet de bord qui bascule sur la tuile voisine repartait sans aucun précalcul.
 func sample_height_boundary(dir: Vector3, chain_ipix: int,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
-		_cached_neighbors = null, nside: int = -1) -> float:
+		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null) -> float:
 	if PropNet.prof_on:
 		_prof_count_sampler("boundary")
 	var ns := nside if nside > 0 else export_nside
 	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
 		return sample_height_for_direction(dir, chain_ipix,
-				_precomp_face, _precomp_xy, _cached_neighbors, ns)
+				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame)
 	# Prefer the canonical tile (vec_ipix) when loaded — it is symmetric:
 	# both sides of the boundary resolve to the same tile via vec2pix_nest.
 	if load_chunk_heightmap(vec_ipix, ns) != null:
-		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns)
+		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame)
 	# Canonical tile not loaded — fall back to chain_ipix's tile (known-loaded).
 	# UV is clamped to [0,1] by _direction_to_pixel_uv, so the edge pixels are
 	# used rather than the catastrophic 0.0m from a missing global heightmap.
 	return sample_height_for_direction(dir, chain_ipix,
-			_precomp_face, _precomp_xy, _cached_neighbors, ns)
+			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame)
 
 
 ## Sample height for a cube-sphere chunk vertex.
@@ -2367,7 +2436,8 @@ static func _sample_image_bilinear(img: Image, u_norm: float, v_norm: float) -> 
 ##    converge to the same height at the seam.
 func _sample_image_bilinear_healpix(
 		floats: PackedFloat32Array, res: int, u_norm: float, v_norm: float,
-		ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
+		ipix: int, _cached_neighbors = null, nside: int = -1,
+		frame: TileFrame = null) -> float:
 	var ns := nside if nside > 0 else export_nside
 	# Les tuiles sont carrées (tile_res × tile_res) et déjà validées à la lecture du pack.
 	var w := res
@@ -2404,10 +2474,10 @@ func _sample_image_bilinear_healpix(
 				+ a11 * fx * fy)
 	else:
 		# Out-of-bounds kernel pixel — fetch from neighbor tile
-		var v00 := _get_pixel_healpix(floats, x0, y0, w, h, ipix, _cached_neighbors, ns)
-		var v10 := _get_pixel_healpix(floats, x1, y0, w, h, ipix, _cached_neighbors, ns)
-		var v01 := _get_pixel_healpix(floats, x0, y1, w, h, ipix, _cached_neighbors, ns)
-		var v11 := _get_pixel_healpix(floats, x1, y1, w, h, ipix, _cached_neighbors, ns)
+		var v00 := _get_pixel_healpix(floats, x0, y0, w, h, ipix, _cached_neighbors, ns, frame)
+		var v10 := _get_pixel_healpix(floats, x1, y0, w, h, ipix, _cached_neighbors, ns, frame)
+		var v01 := _get_pixel_healpix(floats, x0, y1, w, h, ipix, _cached_neighbors, ns, frame)
+		var v11 := _get_pixel_healpix(floats, x1, y1, w, h, ipix, _cached_neighbors, ns, frame)
 		val = (v00 * (1.0 - fx) * (1.0 - fy)
 				+ v10 * fx * (1.0 - fy)
 				+ v01 * (1.0 - fx) * fy
@@ -2432,14 +2502,14 @@ func _sample_image_bilinear_healpix(
 
 	# Horizontal blend (left or right neighbour).
 	if near_left and neighbors.has("W") and neighbors["W"] >= 0:
-		var nb := load_chunk_floats(neighbors["W"], ns)
+		var nb := _neighbor_floats(neighbors["W"], ns, frame)
 		if nb.size() == w * h:
 			var nb_u := (float(w) + fpx) / float(w)
 			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
 			var t := clampf(1.0 - (fpx + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_right and neighbors.has("E") and neighbors["E"] >= 0:
-		var nb := load_chunk_floats(neighbors["E"], ns)
+		var nb := _neighbor_floats(neighbors["E"], ns, frame)
 		if nb.size() == w * h:
 			var nb_u := clampf((fpx - float(w) + 0.5) / float(w), 0.0, 1.0)
 			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
@@ -2448,14 +2518,14 @@ func _sample_image_bilinear_healpix(
 
 	# Vertical blend (bottom or top neighbour).
 	if near_bot and neighbors.has("S") and neighbors["S"] >= 0:
-		var nb := load_chunk_floats(neighbors["S"], ns)
+		var nb := _neighbor_floats(neighbors["S"], ns, frame)
 		if nb.size() == w * h:
 			var nb_v := (float(h) + fpy) / float(h)
 			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
 			var t := clampf(1.0 - (fpy + 0.5) / blend_margin, 0.0, 1.0)
 			val = lerpf(val, nb_val, t * 0.5)
 	elif near_top and neighbors.has("N") and neighbors["N"] >= 0:
-		var nb := load_chunk_floats(neighbors["N"], ns)
+		var nb := _neighbor_floats(neighbors["N"], ns, frame)
 		if nb.size() == w * h:
 			var nb_v := clampf((fpy - float(h) + 0.5) / float(h), 0.0, 1.0)
 			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
@@ -2465,10 +2535,19 @@ func _sample_image_bilinear_healpix(
 	return val
 
 
+## Tuile voisine, prise dans le cadre du chunk quand il y en a un — le mélange de bord la
+## redemandait au cache à CHAQUE échantillon, et elle est la même pour tout le chunk.
+func _neighbor_floats(nb_ipix: int, ns: int, frame: TileFrame) -> PackedFloat32Array:
+	if frame != null:
+		return frame.floats(nb_ipix, ns)
+	return load_chunk_floats(nb_ipix, ns)
+
+
 ## Read a single heightmap pixel, fetching from the neighbour HEALPix tile
 ## when (px, py) falls outside the current tile [0, w) × [0, h).
 func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
-		w: int, h: int, ipix: int, _cached_neighbors = null, nside: int = -1) -> float:
+		w: int, h: int, ipix: int, _cached_neighbors = null, nside: int = -1,
+		frame: TileFrame = null) -> float:
 	if px >= 0 and px < w and py >= 0 and py < h:
 		return floats[py * w + px]
 
@@ -2499,7 +2578,7 @@ func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
 		nb_py = py - h
 
 	if nb_ipix >= 0:
-		var nb := load_chunk_floats(nb_ipix, ns)
+		var nb := _neighbor_floats(nb_ipix, ns, frame)
 		if nb.size() == w * h:
 			nb_px = clampi(nb_px, 0, w - 1)
 			nb_py = clampi(nb_py, 0, h - 1)
