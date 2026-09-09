@@ -32,16 +32,23 @@ Cycle de vie, du moins stable au plus stable :
   preprod   client et serveur construits ensemble ; le préfixe est figé au build
   prod      les joueurs
 
+Les canaux donnent aussi le critère de suppression : une version qu'AUCUN canal ne cite
+est morte. C'est ce que fait `--gc`, et il en faut un — une version de tarsis_3 à 198 m
+pèse 5,1 millions de fichiers et 20 Gio, si bien que le volume se remplit en trois
+publications.
+
 Run:
     python3 tools/stream_channels.py --dist DIR --list
     python3 tools/stream_channels.py --dist DIR --to dev
     python3 tools/stream_channels.py --dist DIR --to prod --planet tarsis_3
+    python3 tools/stream_channels.py --dist DIR --gc --dry-run
 """
 
 import argparse
 import datetime
 import json
 import os
+import shutil
 import sys
 
 ## Du moins stable au plus stable. Promouvoir, c'est passer au rang suivant.
@@ -170,6 +177,80 @@ def promote(dist, to_channel, planets=None):
     return moved, []
 
 
+def referenced(dist):
+    """Ensemble des (corps, version) qu'au moins un canal cite. Tout le reste est mort.
+
+    On lit TOUS les crans, y compris unstable : une version fraîchement publiée que
+    personne n'a encore promue est du travail en cours, pas un déchet.
+    """
+    live = set()
+    for channel in CHANNELS:
+        for planet, entry in load(dist, channel)["planets"].items():
+            version = entry.get("data_version", "")
+            if version:
+                live.add((planet, version))
+    return live
+
+
+def dead_versions(dist):
+    """Répertoires de version qu'aucun canal ne cite. Rend [(corps, version, chemin)].
+
+    Le pointeur `latest.json` par corps est délibérément IGNORÉ : il suit la dernière
+    publication, donc s'il faisait autorité une version publiée puis abandonnée serait
+    immortelle. Ce sont les canaux qui décident.
+    """
+    live = referenced(dist)
+    dead = []
+    for planet in sorted(os.listdir(dist)):
+        pdir = os.path.join(dist, planet)
+        if planet == "channels" or not os.path.isdir(pdir):
+            continue
+        for version in sorted(os.listdir(pdir)):
+            vdir = os.path.join(pdir, version)
+            if not os.path.isdir(vdir):
+                continue
+            if (planet, version) not in live:
+                dead.append((planet, version, vdir))
+    return dead
+
+
+def measure(path):
+    """(fichiers, octets) sous ce répertoire. Les deux comptent : sur un volume à table
+    d'inodes fixe, ce sont les fichiers qui s'épuisent en premier, pas les octets."""
+    files = size = 0
+    for _root, _dirs, names in os.walk(path):
+        for name in names:
+            try:
+                size += os.stat(os.path.join(_root, name)).st_size
+                files += 1
+            except OSError:
+                pass
+    return files, size
+
+
+def collect(dist, dry_run=True):
+    """Supprime les versions mortes. Rend [(corps, version, fichiers, octets)].
+
+    En dry-run, mesure sans rien toucher — et c'est le mode par défaut : effacer
+    5 millions de fichiers ne se rejoue pas.
+    """
+    out = []
+    for planet, version, vdir in dead_versions(dist):
+        files, size = measure(vdir)
+        if not dry_run:
+            shutil.rmtree(vdir)
+        out.append((planet, version, files, size))
+    return out
+
+
+def human(n):
+    for unit in ("o", "Kio", "Mio", "Gio"):
+        if n < 1024 or unit == "Gio":
+            return "%.1f %s" % (n, unit)
+        n /= 1024.0
+    return "%.1f Gio" % n
+
+
 def describe(dist):
     """Une ligne par canal, du plus stable au moins stable — l'ordre où on veut le lire."""
     out = []
@@ -196,9 +277,28 @@ def main(argv=None):
     ap.add_argument("--planet", action="append",
                     help="ne promouvoir que ce corps (répétable ; défaut : tous)")
     ap.add_argument("--list", action="store_true", help="état des canaux")
+    ap.add_argument("--gc", action="store_true",
+                    help="supprime les versions qu'aucun canal ne cite. Combiner avec "
+                         "--dry-run pour ne que les lister (fortement conseillé d'abord).")
     ap.add_argument("--dry-run", action="store_true",
                     help="dit ce qui serait promu, sans rien écrire")
     args = ap.parse_args(argv)
+
+    if args.gc:
+        found = collect(args.dist, dry_run=args.dry_run)
+        if not found:
+            print("Aucune version morte : tout ce qui est publié est cité par un canal.")
+            return 0
+        files = sum(f for _p, _v, f, _s in found)
+        size = sum(s for _p, _v, _f, s in found)
+        for planet, version, f, s in found:
+            print("  %s %-24s %s  %d fichiers, %s"
+                  % ("listé " if args.dry_run else "SUPPRIMÉ", planet, version, f, human(s)))
+        print("%s : %d version(s), %d fichiers, %s"
+              % ("À libérer" if args.dry_run else "Libéré", len(found), files, human(size)))
+        if args.dry_run:
+            print("Relancer sans --dry-run pour supprimer.")
+        return 0
 
     if args.list or not args.to:
         for line in describe(args.dist):
