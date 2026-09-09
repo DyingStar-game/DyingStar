@@ -52,11 +52,13 @@ jobs:
         id: date
         run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Download planet data
-        run: bash tools/download_planet_data.sh
 
       - name: Delete blender files
         run: rm -fr assets_blender
+
+      - name: Configure server.ini for preprod
+        run: |
+          sed -i 's|channel = "dev"|channel = "preprod"|' server.ini
 
       - name: Build and push
         uses: docker/build-push-action@v7

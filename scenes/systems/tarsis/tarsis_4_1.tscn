@@ -20,7 +20,7 @@ crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_4_1_chunks"
-chunk_heightmap_res = 50
+chunk_heightmap_res = 25
 
 [node name="Tarsis4_1" type="Node3D" unique_id=134586975]
 script = ExtResource("1_mv1ur")

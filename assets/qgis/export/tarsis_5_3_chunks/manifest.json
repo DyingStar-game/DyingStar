@@ -1,0 +1,20 @@
+{
+  "planet_name": "tarsis_5_3",
+  "radius": 3632000.0,
+  "nside": 64,
+  "chunk_export_depth": 6,
+  "tile_res": 25,
+  "format": "u16_normalized",
+  "pyramid": true,
+  "nside_min": 1,
+  "nside_max": 64,
+  "layout": "n{nside}/face_{face}/f{ipix}.r32",
+  "elev_min": 0.0,
+  "elev_max": 1000.0,
+  "height_offset": 0.0,
+  "max_height": 1000.0,
+  "count": 65532,
+  "data_version": "b4d52871f116b7e0",
+  "packed": true,
+  "pack_file": "heights.pack"
+}

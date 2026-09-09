@@ -24,6 +24,12 @@ const GOLDEN_DEFLATED := [68, 83, 84, 76, 106, 79, 61, 27, 1, 0, 0, 0,
 		120, 156, 211, 98, 208, 34, 9, 2, 0, 98, 160, 3, 241]
 
 var _served: Dictionary = {}
+## Nombre d'appels par URL : ce que l'on vérifie ici, c'est souvent qu'une requête N'A PAS
+## été émise, ce qu'aucun état de la source ne dit.
+var _hits: Dictionary = {}
+## Code rendu pour une URL non servie. 404 = définitif, 0 = injoignable ; la source ne
+## doit pas traiter les deux pareil.
+var _miss_code: int = 404
 
 
 func _bytes(a: Array) -> PackedByteArray:
@@ -35,6 +41,8 @@ func _bytes(a: Array) -> PackedByteArray:
 
 func before_each() -> void:
 	_served.clear()
+	_hits.clear()
+	_miss_code = 404
 	RemoteTileSource._remove_tree(CACHE)
 
 
@@ -44,9 +52,10 @@ func after_all() -> void:
 
 
 func _fake_fetch(url: String) -> Array:
+	_hits[url] = int(_hits.get(url, 0)) + 1
 	if _served.has(url):
 		return [200, _served[url]]
-	return [404, PackedByteArray()]
+	return [_miss_code, PackedByteArray()]
 
 
 func _source() -> RemoteTileSource:
@@ -177,6 +186,65 @@ func test_has_tile_fetches_each_shard_map_once() -> void:
 	assert_true(s.has_tile(64, 0))
 	_served.erase(url)            # le service ne répond plus : seul le cache peut servir
 	assert_true(s.has_tile(64, 7), "la carte doit être mémorisée")
+
+
+# ===================================================================
+# Ce que le service publie pour CE corps
+# ===================================================================
+
+func test_a_level_the_service_does_not_publish_is_never_asked_for() -> void:
+	# LA régression : le niveau demandé vient du manifeste de chunks LOCAL, que plusieurs
+	# corps partagent. Une lune publiée jusqu'à n64 réclamait donc du n1024, jamais
+	# exporté — et comme un shard inconnu se remet en file à chaque frame, le journal du
+	# service n'était plus qu'un mur de 404 sur `n1024/.../present.bin`.
+	var s := _serve_pointer()
+	_hits.clear()          # l'ouverture du pointeur, elle, a bien parlé au service
+	assert_eq(s.nside_max, 64, "le service ne publie que jusqu'à n64")
+	assert_eq(s.presence_of(1024, 2911 * 4096), RemoteTileSource.PRESENCE_NO,
+			"un niveau hors du manifeste est NON, pas INCONNU : l'appelant remonte")
+	assert_false(s.has_tile(1024, 2911 * 4096))
+	assert_eq(_hits.size(), 0, "et rien n'est parti sur le fil")
+
+
+func test_a_level_below_the_published_range_is_never_asked_for() -> void:
+	var s := _serve_pointer()
+	_hits.clear()          # l'ouverture du pointeur, elle, a bien parlé au service
+	s.nside_min = 4
+	assert_eq(s.presence_of(2, 0), RemoteTileSource.PRESENCE_NO)
+	assert_eq(_hits.size(), 0)
+
+
+func test_queueing_a_level_outside_the_range_fetches_nothing() -> void:
+	var s := _serve_pointer()
+	s.queue(1024, 0)
+	assert_eq(s.stat_requested, 0, "rien à demander : le service ne publie pas ce niveau")
+
+
+func test_a_shard_map_that_404s_is_asked_for_only_once() -> void:
+	# Sans mémoire du 404, presence_of rend INCONNU, remet le travail en file à la frame
+	# suivante, et redemande la même carte indéfiniment.
+	var s := _serve_pointer()
+	var url := "http://h/dist/p/cafe/n64/f0/present.bin"
+	assert_false(s.has_tile(64, 0))
+	assert_false(s.has_tile(64, 1))
+	assert_eq(_hits.get(url, 0), 1, "un shard sans tuiles ne se redemande pas")
+	assert_eq(s.presence_of(64, 0), RemoteTileSource.PRESENCE_NO,
+			"et le thread principal a une réponse ferme, pas un INCONNU perpétuel")
+
+
+func test_an_unreachable_shard_map_is_retried() -> void:
+	# L'inverse : injoignable est passager. Le retenir condamnerait le shard pour toute la
+	# session sur une coupure d'une seconde.
+	var s := _serve_pointer()
+	var url := "http://h/dist/p/cafe/n64/f0/present.bin"
+	_miss_code = 0
+	assert_false(s.has_tile(64, 0))
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	_served[url] = bits
+	assert_true(s.has_tile(64, 0), "le service revenu, la carte doit être reprise")
+	assert_eq(_hits.get(url, 0), 2)
 
 
 func test_fetch_now_caches_and_take_reads_it_back() -> void:
@@ -440,6 +508,48 @@ func test_an_envelope_decodes_after_the_table_was_emptied() -> void:
 	blob.append_array(payload)
 	RemoteTileSource._crc_table = PackedInt64Array()
 	assert_eq(RemoteTileSource.decode_envelope(blob), payload)
+
+
+# ===================================================================
+# Le schéma de l'URL de base
+# ===================================================================
+
+func test_https_connects_encrypted_on_443() -> void:
+	# LA régression : le schéma était jeté au découpage et tout partait en clair sur le
+	# port 80. Un service publié en https y répond 301 vers lui-même ; ce n'est pas 200,
+	# donc open_planet rendait false et la planète retombait sur son pack local — le
+	# joueur traversait le sol, et le journal du service ne montrait rien.
+	var u := RemoteTileSource.split_url("https://planettech.example/channels/dev.json")
+	assert_eq(u["host"], "planettech.example")
+	assert_eq(u["port"], 443, "https sans port explicite, c'est 443")
+	assert_true(u["tls"], "et c'est chiffré")
+	assert_eq(u["path"], "/channels/dev.json")
+
+
+func test_http_stays_clear_on_80() -> void:
+	var u := RemoteTileSource.split_url("http://127.0.0.1/tarsis_3/latest.json")
+	assert_eq(u["host"], "127.0.0.1")
+	assert_eq(u["port"], 80)
+	assert_false(u["tls"])
+	assert_eq(u["path"], "/tarsis_3/latest.json")
+
+
+func test_an_explicit_port_wins_over_the_scheme_default() -> void:
+	# Le nginx de développement écoute ailleurs qu'en 80 ; le port écrit doit primer,
+	# dans les deux schémas, sans changer le chiffrement.
+	var clear := RemoteTileSource.split_url("http://127.0.0.1:8080/a")
+	assert_eq(clear["port"], 8080)
+	assert_false(clear["tls"])
+	var secure := RemoteTileSource.split_url("https://tiles.example:8443/a")
+	assert_eq(secure["port"], 8443)
+	assert_true(secure["tls"], "un port hors norme reste du TLS si le schéma le dit")
+
+
+func test_a_base_without_a_path_asks_for_the_root() -> void:
+	var u := RemoteTileSource.split_url("https://tiles.example")
+	assert_eq(u["host"], "tiles.example")
+	assert_eq(u["path"], "/")
+	assert_true(u["tls"])
 
 
 func test_an_unreachable_service_returns_instead_of_spinning() -> void:

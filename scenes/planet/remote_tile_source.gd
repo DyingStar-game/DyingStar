@@ -65,6 +65,7 @@ var cache_root: String = "user://tile_cache/"
 var _conn: HTTPClient = null
 var _conn_host: String = ""
 var _conn_port: int = 0
+var _conn_tls: bool = false
 ## Identifiant du fil de téléchargement, seul autorisé à réutiliser _conn. 0 tant qu'il
 ## n'a pas démarré.
 var _worker_tid: int = 0
@@ -76,6 +77,10 @@ var _worker_tid: int = 0
 ## thread principal — dans l'éditeur, cela gèle l'éditeur, et un service en panne ne doit
 ## jamais empêcher d'ouvrir une scène.
 var request_timeout_ms: int = 10000
+
+## Code de la dernière requête d'ouverture, gardé pour le message d'indisponibilité.
+## 0 veut dire que rien n'est revenu du tout.
+var last_http_code: int = 0
 
 ## Borne le cache disque. Null = pas d'éviction (le comportement des tests unitaires,
 ## qui n'écrivent qu'une poignée de tuiles).
@@ -172,8 +177,10 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 		return null
 	var src := RemoteTileSource.new()
 	if not src.open_planet(url, planet_name):
-		print("[RemoteTileSource] indisponible pour '%s' (%s) — pack local"
-				% [planet_name, url])
+		# Le code compte : 0 = injoignable (DNS, port, TLS), 3xx = une base mal écrite
+		# (http:// pour un service qui redirige), 404 = corps absent du service.
+		print("[RemoteTileSource] indisponible pour '%s' (%s, http=%d) — pack local"
+				% [planet_name, url, src.last_http_code])
 		return null
 	# Les objets d'une version sont immuables, donc jamais périmés : le changement de
 	# version est le seul moment où l'on jette.
@@ -215,6 +222,7 @@ func open_planet(p_base_url: String, p_planet: String) -> bool:
 	from_channel = not d.is_empty()
 	if not from_channel:
 		var res: Array = _request("%s/%s/latest.json" % [base_url, planet])
+		last_http_code = int(res[0])
 		if res[0] != 200:
 			return false
 		d = StreamChannel.parse_object(
@@ -280,6 +288,21 @@ static func decode_envelope(blob: PackedByteArray) -> PackedByteArray:
 	return payload
 
 
+## Ce niveau fait-il partie de ce que le service publie pour ce corps ?
+##
+## Le manifeste donne [member nside_min]..[member nside_max] PAR CORPS, et les corps ne
+## sont pas exportés à la même finesse : tarsis_3 va jusqu'à n1024, ses lunes s'arrêtent à
+## n64. Or le niveau demandé vient du manifeste de chunks LOCAL, que plusieurs corps
+## partagent — une lune réclamait donc n1024, que le service n'a jamais publié. Chaque
+## chunk en attente redemandait la carte du shard à chaque frame, et chacune repartait en
+## 404 : le journal du service n'était plus qu'un mur de 404 sur `n1024/.../present.bin`.
+##
+## Répondre NON sans requête est la bonne réponse, pas un pis-aller : l'appelant remonte
+## alors d'un niveau (n1024 → n512 → … → n64) et retrouve l'ancêtre réellement publié.
+func serves(nside: int) -> bool:
+	return nside >= nside_min and nside <= nside_max
+
+
 ## Présence SANS BLOQUER, pour le thread principal.
 ##
 ## [method has_tile] va chercher la carte du shard en HTTP synchrone si elle manque. Appelé
@@ -288,6 +311,8 @@ static func decode_envelope(blob: PackedByteArray) -> PackedByteArray:
 ## variante ne consulte que ce qui est déjà là, met la carte en file si elle manque, et
 ## rend UNKNOWN — à charge pour l'appelant de différer le chunk.
 func presence_of(nside: int, ipix: int) -> int:
+	if not serves(nside):
+		return PRESENCE_NO
 	@warning_ignore("integer_division")
 	var shard := ipix / shard_tiles
 	var key := "n%d/f%d" % [nside, shard]
@@ -308,6 +333,8 @@ func presence_of(nside: int, ipix: int) -> int:
 ## La tuile est-elle publiée ? Va chercher la carte du shard si elle manque, donc
 ## BLOQUANT : réservé au fil de téléchargement. Le thread principal utilise presence_of().
 func has_tile(nside: int, ipix: int) -> bool:
+	if not serves(nside):
+		return false
 	@warning_ignore("integer_division")
 	var shard := ipix / shard_tiles
 	var key := "n%d/f%d" % [nside, shard]
@@ -317,6 +344,14 @@ func has_tile(nside: int, ipix: int) -> bool:
 	if not known:
 		var res: Array = _request("%s/present.bin" % shard_url(nside, ipix))
 		if res[0] != 200:
+			# 404 est définitif : le shard n'a aucune tuile publiée. On retient une carte
+			# vide, sans quoi presence_of rend UNKNOWN, remet le travail en file à la
+			# frame suivante, et redemande la même carte indéfiniment. Tout autre code —
+			# et 0, l'injoignable — est passager : ne rien retenir, pour réessayer.
+			if res[0] == 404:
+				_mutex.lock()
+				_present[key] = PackedByteArray()
+				_mutex.unlock()
 			return false
 		_mutex.lock()
 		_present[key] = res[1]
@@ -513,6 +548,8 @@ func stop() -> void:
 ## Met une tuile en file. Ne bloque pas et ne redemande jamais deux fois la même.
 ## Sans effet si la tuile est déjà en cache ou si la carte de présence la nie.
 func queue(nside: int, ipix: int) -> void:
+	if not serves(nside):
+		return
 	_enqueue(nside, ipix, JOB_TILE)
 
 
@@ -603,32 +640,57 @@ func _request(url: String) -> Array:
 ## anneau demandant des dizaines de tuiles par déplacement, cela se voit sur un vrai
 ## réseau et jamais sur la machine de développement — d'où cette note.
 func _http_get(url: String) -> Array:
+	var u := split_url(url)
+	var host: String = u["host"]
+	var port: int = u["port"]
+	var path: String = u["path"]
+	var tls: bool = u["tls"]
+	if not _reuses_connection():
+		return _http_fresh(host, port, path, tls)
+	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
+	# ne doit pas se traduire par une tuile manquante.
+	var res := _http_once(host, port, path, tls)
+	if res[0] == 0:
+		_conn = null
+		res = _http_once(host, port, path, tls)
+	return res
+
+
+## Options TLS d'une connexion chiffrée, ou null pour du clair. Le client par défaut
+## valide la chaîne avec le magasin d'autorités du système, ce que l'on veut : les
+## tuiles décident du relief sous les pieds du joueur.
+static func _tls_options(tls: bool) -> TLSOptions:
+	return TLSOptions.client() if tls else null
+
+
+## Découpe une URL en `{host, port, path, tls}`.
+##
+## Le schéma décide du chiffrement ET du port par défaut. C'était le trou : le schéma
+## était jeté, toute base partait en clair sur le port 80, et un service en https
+## répondait 301 vers lui-même. 301 n'est pas 200, donc open_planet rendait false et la
+## planète retombait sur son pack local — sans une seule requête dans le journal du
+## service, puisque la redirection est servie par un autre bloc que le site.
+static func split_url(url: String) -> Dictionary:
 	var parts := url.split("://", true, 1)
+	var scheme: String = parts[0].to_lower() if parts.size() > 1 else "http"
 	var rest: String = parts[1] if parts.size() > 1 else parts[0]
 	var slash := rest.find("/")
 	var host: String = rest.substr(0, slash) if slash >= 0 else rest
 	var path: String = rest.substr(slash) if slash >= 0 else "/"
-	var port := 80
+	var tls := scheme == "https"
+	var port := 443 if tls else 80
 	if host.contains(":"):
 		var hp := host.split(":")
 		host = hp[0]
 		port = int(hp[1])
-	if not _reuses_connection():
-		return _http_fresh(host, port, path)
-	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
-	# ne doit pas se traduire par une tuile manquante.
-	var res := _http_once(host, port, path)
-	if res[0] == 0:
-		_conn = null
-		res = _http_once(host, port, path)
-	return res
+	return {"host": host, "port": port, "path": path, "tls": tls}
 
 
 ## Requête sur une connexion jetable, sans toucher à celle du fil de téléchargement.
-func _http_fresh(host: String, port: int, path: String) -> Array:
+func _http_fresh(host: String, port: int, path: String, tls: bool = false) -> Array:
 	var deadline := Time.get_ticks_msec() + request_timeout_ms
 	var http := HTTPClient.new()
-	if http.connect_to_host(host, port) != OK:
+	if http.connect_to_host(host, port, _tls_options(tls)) != OK:
 		return [0, PackedByteArray()]
 	if not _await(http, deadline, true):
 		return [0, PackedByteArray()]
@@ -668,14 +730,15 @@ func _drain(http: HTTPClient, deadline: int) -> Array:
 
 ## Une requête sur la connexion courante, qu'elle rouvre si besoin. [0, vide] signale une
 ## connexion inutilisable — à l'appelant de réessayer une fois.
-func _http_once(host: String, port: int, path: String) -> Array:
+func _http_once(host: String, port: int, path: String, tls: bool = false) -> Array:
 	var deadline := Time.get_ticks_msec() + request_timeout_ms
-	if _conn == null or _conn_host != host or _conn_port != port \
+	if _conn == null or _conn_host != host or _conn_port != port or _conn_tls != tls \
 			or _conn.get_status() != HTTPClient.STATUS_CONNECTED:
 		_conn = HTTPClient.new()
 		_conn_host = host
 		_conn_port = port
-		if _conn.connect_to_host(host, port) != OK:
+		_conn_tls = tls
+		if _conn.connect_to_host(host, port, _tls_options(tls)) != OK:
 			_conn = null
 			return [0, PackedByteArray()]
 		if not _await(_conn, deadline, true):
