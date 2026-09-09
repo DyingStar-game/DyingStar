@@ -49,9 +49,9 @@ chunk_cache/
 
 # Ignore planets definition files (must be exported or grab the archive)
 assets/qgis/.export/
-assets/qgis/export/
 assets/qgis/checksum.txt
 assets/qgis/creationtime.txt
 assets/qgis/export.tar.gz
+heights.pack
 
 addons/dyingstar/network_defs.json

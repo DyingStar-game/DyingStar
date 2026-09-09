@@ -92,6 +92,7 @@ func test_the_gate_never_touches_the_network() -> void:
 	rts.version = "v"
 	rts.base_url = "http://h"
 	rts.tile_res = 8
+	rts.nside_max = 64
 	var calls := [0]
 	rts.fetcher = func(_url: String) -> Array:
 		calls[0] += 1
@@ -113,6 +114,7 @@ func test_unknown_presence_defers_then_resolves() -> void:
 	rts.version = "v"
 	rts.base_url = "http://h"
 	rts.tile_res = 8
+	rts.nside_max = 64
 	var bits := PackedByteArray()
 	bits.resize(512)
 	bits.fill(0xFF)
@@ -135,11 +137,48 @@ func test_unknown_presence_defers_then_resolves() -> void:
 			"la tuile ET ses voisines doivent maintenant être demandées")
 
 
+func test_a_level_the_service_does_not_publish_costs_nothing() -> void:
+	# LE cas des lunes : le manifeste de chunks LOCAL est partagé avec tarsis_3 et annonce
+	# n1024, mais le service ne publie la lune que jusqu'à n64. Le garde doit redescendre
+	# jusqu'au niveau publié sans émettre une seule requête pour les quatre niveaux
+	# intermédiaires — sinon chaque chunk en attente les redemande à chaque frame, et le
+	# journal du service se remplit de 404 sur `n1024/.../present.bin`.
+	var pd := _data()
+	pd.export_nside = 1024
+	var rts := RemoteTileSource.new()
+	rts.cache_root = CACHE
+	rts.planet = "p"
+	rts.version = "v"
+	rts.base_url = "http://h"
+	rts.tile_res = 8
+	rts.nside_min = 1
+	rts.nside_max = 64          # la lune s'arrête là
+	var asked: Array[String] = []
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	rts.fetcher = func(url: String) -> Array:
+		asked.append(url)
+		return [200, bits] if url.ends_with("present.bin") else [404, PackedByteArray()]
+	pd.remote_source = rts
+
+	assert_false(TileResidency.request_chunk_tiles(pd, 1024, 2911 * 4096),
+			"les tuiles ne sont pas encore là : le chunk est différé")
+	assert_eq(asked.size(), 0, "le garde ne parle jamais au réseau depuis le thread principal")
+	for ns in [1024, 512, 256, 128]:
+		assert_eq(rts.presence_of(ns, 2911 * 4096), RemoteTileSource.PRESENCE_NO,
+				"n%d n'est pas publié : NON, sans requête" % ns)
+	assert_eq(asked.size(), 0, "et toujours rien sur le fil")
+	assert_eq(rts.presence_of(64, 2911 * 16), RemoteTileSource.PRESENCE_UNKNOWN,
+			"au niveau publié, en revanche, la carte du shard vaut la peine d'être lue")
+
+
 func test_queueing_is_idempotent() -> void:
 	# Le backlog est réexaminé à chaque frame : redemander à chaque passage saturerait la
 	# file de doublons.
 	var rts := RemoteTileSource.new()
 	rts.cache_root = CACHE
+	rts.nside_max = 64
 	for _i in 5:
 		rts.queue(64, 3)
 	assert_eq(rts.stat_requested, 1, "une seule demande pour la même tuile")
@@ -156,6 +195,12 @@ func _ring_source() -> RemoteTileSource:
 	rts.version = "v"
 	rts.base_url = "http://h"
 	rts.tile_res = 8
+	# Ce que le service publie pour ce corps, aussi large que _data() : rien au-delà de
+	# nside_max ne part sur le fil — voir
+	# test_a_level_the_service_does_not_publish_costs_nothing. Les pyramides n1..n4 des
+	# tests d'anneau tiennent dedans.
+	rts.nside_min = 1
+	rts.nside_max = 64
 	return rts
 
 
