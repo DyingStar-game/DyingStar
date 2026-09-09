@@ -566,10 +566,21 @@ func _apply_residency() -> void:
 	_server_chunk_queue = pruned
 
 	# Load missing chunks (not resident and not already loading / queued).
+	var missing: Array = []
 	for k in effective.keys():
 		var key := k as String
 		if not _server_collision_chunks.has(key) and not _server_chunk_tasks.has(key):
+			var _mn := _parse_nside_from_key(key)
+			var _mi := _parse_ipix_from_key(key)
+			if _mn > 0 and _mi >= 0:
+				missing.append(Vector2i(_mn, _mi))
 			_load_chunk(key)
+
+	# Toutes les tuiles de la zone d'un coup, maintenant que le jeu désiré est connu.
+	# Le garde n'examine que quatre chunks par frame : sans cette passe, une zone neuve
+	# demanderait ses tuiles au compte-gouttes et mettrait des minutes à devenir solide.
+	# Non bloquant, et sans effet sur une planète qui ne streame pas.
+	TileResidency.prefetch_chunks(planet_data, missing)
 
 	# Bridges outlive the chunks that reference them; collect the ones nothing
 	# has claimed back, after the load pass has had its chance to.
@@ -632,14 +643,27 @@ func _unload_chunk(key: String) -> void:
 ## MAX_SERVER_CHUNK_TASKS.  Called after every task completion and after
 ## every _load_chunk() enqueue so the pipeline self-drains each frame.
 func _server_drain_chunk_queue() -> void:
-	while _server_chunk_tasks.size() < MAX_SERVER_CHUNK_TASKS \
+	# Un chunk différé retourne en fin de file. Sans borne, le drain le ressortirait
+	# aussitôt et tournerait sur la file entière à chaque appel — c'est ce motif exact
+	# qui avait fait tomber le CLIENT à 0,2 FPS. Chaque entrée est donc examinée au plus
+	# une fois par passage.
+	# Deux fois les créneaux de tâche, comme le backlog du client : de quoi remplacer ce
+	# qui vient de finir sans réexaminer une zone de plusieurs centaines de chunks à
+	# chaque tick. La passe de prefetch ci-dessus a déjà demandé toutes les tuiles, donc
+	# les différés ne le restent pas longtemps.
+	var budget: int = mini(_server_chunk_queue.size(), MAX_SERVER_CHUNK_TASKS * 2)
+	var deferred: Array[Dictionary] = []
+	while budget > 0 and _server_chunk_tasks.size() < MAX_SERVER_CHUNK_TASKS \
 			and not _server_chunk_queue.is_empty():
+		budget -= 1
 		var entry: Dictionary = _server_chunk_queue[0]
 		_server_chunk_queue.remove_at(0)
 		var key: String = entry["key"]
 		if _server_collision_chunks.has(key) or _server_chunk_tasks.has(key):
 			continue  # Loaded or started since it was queued.
-		_server_start_chunk_load(key, entry["ipix"], entry["col_res"])
+		if not _server_start_chunk_load(key, entry["ipix"], entry["col_res"]):
+			deferred.append(entry)
+	_server_chunk_queue.append_array(deferred)
 
 
 ## Begin async loading for one chunk.  Loads the collision shape from the disk
@@ -647,7 +671,8 @@ func _server_drain_chunk_queue() -> void:
 ## submits generate_heightmap to a worker thread (phase 0).  When that
 ## completes, _server_poll_chunk_tasks() stores the image and submits
 ## generate_collision_shape_healpix (phase 1).
-func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
+## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
+func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 	# Try the disk-cached collision shape (cheap main-thread I/O).
 	var cached_shape: ConcavePolygonShape3D = null
 	if _chunk_cache and _chunk_cache.has_collision(key, 0):
@@ -665,12 +690,27 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 	if cached_shape != null and not _cached_shape_valid(cached_shape, key_nside, ipix, key):
 		cached_shape = null
 
+	# La MÊME garantie que côté client, et elle vaut davantage ici. Sans elle, une tuile
+	# absente ne fait pas échouer l'échantillonnage : il retombe sur la carte
+	# équirectangulaire globale, une surface plus plate de plusieurs centaines de mètres
+	# (voir PlanetData.sample_height_for_direction). La forme est alors bâtie sur ce
+	# repli, ÉCRITE DANS LE CACHE DISQUE, puis attachée — et le joueur traverse le sol
+	# pour atterrir sur le filet de sécurité. _cached_shape_valid ne l'attrape pas : il ne
+	# contrôle que les formes RELUES du cache, et il les compare à une surface vive qui,
+	# tant que les tuiles manquent, est ce même repli. Les deux sont d'accord, à tort.
+	#
+	# Une forme déjà en cache et jugée valide n'a rien à attendre : elle porte du vrai
+	# relief, c'est ce que _cached_shape_valid vient de vérifier.
+	if cached_shape == null \
+			and not TileResidency.request_chunk_tiles(planet_data, key_nside, ipix):
+		return false
+
 	if planet_data.chunk_heightmaps_dir != "":
 		if cached_shape != null:
 			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
-		return
+		return true
 
 	# Fast-path: both image and shape already available — assemble now.
 	if planet_data.is_chunk_cached(key):
@@ -678,14 +718,14 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
-		return
+		return true
 
 	# Phase 0: pre-load recipe data sync on the main thread (~0.5 ms),
 	# then submit the CPU-heavy generate_heightmap to a worker thread.
 	var preloaded := planet_data._load_recipe_data_sync(ipix, key)
 	if preloaded.is_empty():
 		push_warning("[PlanetTerrain] _load_chunk: recipe '%s' not found — skipping." % key)
-		return
+		return true
 
 	var recipe_data: Dictionary = preloaded["recipe"]
 	var resolution: int = planet_data._recipe_resolution
@@ -712,6 +752,7 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> void:
 		result_ref[0] = [img, craters, populate_zones, linear_feats, radial_feats]
 	)
 	task_entry["task_id"] = task_id
+	return true
 
 
 ## Submit a phase-1 WorkerThreadPool task that generates the collision shape.

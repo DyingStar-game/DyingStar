@@ -1240,10 +1240,50 @@ la rend collectable dans la foulée et supprime ce retour arrière. La disciplin
 découle : monter `unstable → dev → preprod`, laisser `prod` derrière le temps de la
 confiance, et ne ramasser qu'après.
 
-#### Ce qui reste
+#### Garde de résidence côté serveur — ✅ FAIT
 
-- Mode `--prefetch-zone` du même fetcher, lancé au boot / en init container, vers
-  un PVC.
+**Ce point était noté comme une optimisation de latence. C'était en réalité une
+correction.** Le garde n'était branché que sur le chemin client (`_queue_mesh_task`) ;
+`set_resident_chunks → _server_start_chunk_load → _server_submit_shape_task` n'en avait
+aucun. Or une tuile absente ne fait pas échouer l'échantillonnage : il retombe sur la
+**carte équirectangulaire globale**, une surface plus plate de plusieurs centaines de
+mètres. Sur un serveur qui streame et dont les tuiles ne sont pas encore en cache :
+
+1. Horizon assigne la zone
+2. le worker échantillonne → tuiles absentes → repli équirectangulaire
+3. une forme de collision est bâtie sur ces hauteurs
+4. elle est **écrite dans le cache disque**, puis attachée
+
+L'étape 4 est la plus coûteuse : la mauvaise forme est *persistée*. Et
+`_cached_shape_valid` ne l'attrape pas — il ne contrôle que les formes **relues** du
+cache, et les compare à une surface vive qui, tant que les tuiles manquent, est ce même
+repli. Les deux sont d'accord, à tort. C'est exactement le mode de défaillance décrit à
+`server.gd:500` : le joueur traverse le sol et atterrit sur le filet de sécurité.
+
+`_server_start_chunk_load` rend désormais false quand les tuiles manquent, et le chunk
+retourne en fin de file. Une forme déjà en cache et jugée valide n'attend rien : elle
+porte du vrai relief, `_cached_shape_valid` vient de le vérifier. Sans source distante le
+garde rend true immédiatement, donc **un serveur à pack local ne change pas de
+comportement**.
+
+#### Préchargement à l'assignation de zone — ✅ FAIT (`TileResidency.prefetch_chunks`)
+
+Pas au boot : la zone n'est pas connue à ce moment-là, elle arrive de Horizon par
+`manage_zone()` à l'exécution. Le bon moment est celui où le jeu désiré devient connu,
+c'est-à-dire `_apply_residency`.
+
+Le garde n'examine que quatre chunks par frame (`MAX_SERVER_CHUNK_TASKS`) : sans cette
+passe, une zone neuve demanderait ses tuiles au compte-gouttes. `prefetch_chunks` les
+demande **toutes d'un coup**, dédoublonnées — des chunks voisins partagent leurs tuiles de
+bord, et sans cela une zone de plusieurs centaines de chunks demanderait neuf fois chaque
+tuile. Elle ne touche pas aux compteurs du garde : ce n'est pas une décision de résidence.
+
+Le drain est borné à `MAX_SERVER_CHUNK_TASKS * 2` par tick, comme le backlog du client. Une
+zone entièrement différée le ferait sinon tourner sur toute la file à chaque tick — le motif
+exact qui avait coûté 0,2 FPS au client.
+
+*L'init container vers un PVC est abandonné : 20 Gio par volume, et il ne remplaçait pas le
+garde.*
 
 ### Phase 5 — éditeur — ✅ FAITE
 

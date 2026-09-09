@@ -284,3 +284,84 @@ func test_prefetch_at_the_planet_centre_is_a_no_op() -> void:
 	var pd := _ring_data(rts)
 	_prime(rts, true)
 	assert_eq(TileResidency.prefetch(pd, Vector3.ZERO, PackedVector3Array()), 0)
+
+
+# ===================================================================
+# 4. Le prefetch de zone (serveur)
+# ===================================================================
+
+func test_prefetch_chunks_without_a_remote_source_does_nothing() -> void:
+	var pd := _data()
+	assert_eq(TileResidency.prefetch_chunks(pd, [Vector2i(64, 12)]), 0,
+			"une planète qui ne streame pas ne paie rien")
+
+
+func test_prefetch_chunks_never_touches_the_network() -> void:
+	# La même propriété que le garde, et pour la même raison : cette passe tourne sur le
+	# thread principal du SERVEUR, à l'arrivée d'une zone, sur des centaines de chunks.
+	# Un seul has_tile() bloquant et le tick s'effondre.
+	var pd := _data()
+	var rts := _ring_source()
+	var calls := [0]
+	rts.fetcher = func(_url: String) -> Array:
+		calls[0] += 1
+		return [404, PackedByteArray()]
+	pd.remote_source = rts
+
+	var chunks: Array = []
+	for i in 50:
+		chunks.append(Vector2i(64, i))
+	assert_eq(TileResidency.prefetch_chunks(pd, chunks), 50)
+	assert_eq(calls[0], 0, "aucune requête ne doit partir du thread principal")
+
+
+func test_prefetch_chunks_asks_for_the_whole_zone_at_once() -> void:
+	# La raison d'être de cette passe : le garde n'examine que quatre chunks par frame,
+	# donc sans elle une zone neuve demanderait ses tuiles au compte-gouttes.
+	var pd := _data()
+	var rts := _ring_source()
+	pd.remote_source = rts
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	rts.fetcher = func(url: String) -> Array:
+		return [200, bits] if url.ends_with("present.bin") else [404, PackedByteArray()]
+	rts.has_tile(64, 0)  # amène la carte, comme le ferait le fil
+
+	var chunks: Array = []
+	for i in 20:
+		chunks.append(Vector2i(64, i))
+	TileResidency.prefetch_chunks(pd, chunks)
+	assert_gt(rts.stat_requested, 20,
+			"bien plus d'une tuile par chunk : les voisines en font partie")
+
+
+func test_prefetch_chunks_does_not_ask_twice_for_a_shared_tile() -> void:
+	# Des chunks voisins partagent leurs tuiles de bord. Sans dédoublonnage, une zone de
+	# plusieurs centaines de chunks demanderait neuf fois chaque tuile.
+	var pd := _data()
+	var rts := _ring_source()
+	pd.remote_source = rts
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	rts.fetcher = func(url: String) -> Array:
+		return [200, bits] if url.ends_with("present.bin") else [404, PackedByteArray()]
+	rts.has_tile(64, 0)
+
+	TileResidency.prefetch_chunks(pd, [Vector2i(64, 5)])
+	var once := rts.stat_requested
+	TileResidency.prefetch_chunks(pd, [Vector2i(64, 5), Vector2i(64, 5), Vector2i(64, 5)])
+	assert_eq(rts.stat_requested, once, "rien de neuf à demander")
+
+
+func test_prefetch_chunks_leaves_the_gate_counters_alone() -> void:
+	# Ce n'est pas une décision de résidence mais une anticipation : la compter comme un
+	# refus du garde rendrait le diagnostic illisible.
+	var pd := _data()
+	var rts := _ring_source()
+	pd.remote_source = rts
+	rts.fetcher = func(_url: String) -> Array: return [404, PackedByteArray()]
+	PropNet.prof_gate_defer = 0
+	TileResidency.prefetch_chunks(pd, [Vector2i(64, 1), Vector2i(64, 2)])
+	assert_eq(PropNet.prof_gate_defer, 0)
