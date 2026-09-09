@@ -106,6 +106,25 @@ static func generate_mesh(
 			_export_ipix = hp_ipix
 		# else: coarser than the coarsest baked level (or legacy flat export) →
 		# leave -1 so each vertex resolves its tile via vec2pix at _sample_nside.
+	# Tuile d'élévation résolue UNE fois pour le chunk : sa face, sa position entière dans
+	# la face, ses huit voisines. Les trois ne dépendent que de (nside, ipix), constants ici.
+	#
+	# Les échantillonneurs de PlanetData acceptent ces trois paramètres depuis longtemps —
+	# generate_collision_mesh les remplit — mais le constructeur visuel, qui produit dix
+	# fois plus d'échantillons, passait null : chaque échantillon refaisait donc le nest2xy
+	# de l'UV, et surtout, dans la marge de mélange de 4 texels du noyau bilinéaire, un
+	# get_neighbors_nest() complet (table d'offsets, huit entrées de dictionnaire, autant de
+	# xy2nest). Mesuré sur un chunk de tarsis_3 dont les sommets tombent dans cette marge :
+	# 101 → 58 µs par échantillon, hauteurs identiques au bit près
+	# (test/perf/bench_height_sampling.gd).
+	var _hp_face: int = -1
+	var _hp_xy: Vector2i = Vector2i(-1, -1)
+	var _tile_neighbors = null
+	if hp_mode and _export_ipix >= 0:
+		@warning_ignore("integer_division")
+		_hp_face = _export_ipix / (_sample_nside * _sample_nside)
+		_hp_xy = HEALPix.nest2xy(_export_ipix % (_sample_nside * _sample_nside))
+		_tile_neighbors = HEALPix.get_neighbors_nest(_sample_nside, _export_ipix)
 
 	# ── Float32 precision fix ──────────────────────────────────────
 	# Vertex positions are stored as float32 in PackedVector3Array.
@@ -417,10 +436,10 @@ static func generate_mesh(
 				# any given direction, so both sides of the seam are consistent.
 				if xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside)
+							_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
 				else:
 					height = data.sample_height_for_direction(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside)
+							_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
 			else:
 				# Snap boundary vertices to exact u_min/u_max/v_min/v_max so
 				# shared edges between adjacent chunks sample identical heights.
@@ -885,15 +904,15 @@ static func generate_mesh(
 				if _pf:
 					_t_sub = Time.get_ticks_usec()
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_l = data.sample_height_boundary(dir_l, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_r = data.sample_height_boundary(dir_r, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_b = data.sample_height_boundary(dir_b, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_t = data.sample_height_boundary(dir_t, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
 				else:
-					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
-					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside)
+					h_l = data.sample_height_for_direction(dir_l, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_r = data.sample_height_for_direction(dir_r, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_b = data.sample_height_for_direction(dir_b, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_t = data.sample_height_for_direction(dir_t, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
 				if _pf:
 					var _now := Time.get_ticks_usec()
 					_t_sm += _now - _t_sub
@@ -1650,7 +1669,7 @@ static func generate_mesh(
 							var _h: float
 							if hp_mode:
 								_h = data.sample_height_for_direction(_dir, _export_ipix,
-										-1, Vector2i(-1, -1), null, _sample_nside)
+										_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
 							else:
 								var _fuv := PlanetData.sphere_to_cube(_dir)
 								_h = data.sample_height_for_chunk(
