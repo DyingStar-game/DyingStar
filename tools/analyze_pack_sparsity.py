@@ -122,10 +122,12 @@ class Pack:
 
         # Le manifest.json posé à côté fait AUTORITÉ sur l'en-tête du pack : c'est lui
         # que PlanetData lit, l'en-tête n'étant qu'un repli quand le fichier manque.
-        # Les deux peuvent diverger — tools/qgis/swap_sandbox_gaea_export.py réécrit le
-        # manifest.json et jamais l'en-tête, si bien qu'après l'échange de créneaux
-        # Sandbox/Gaea les packs de tarsis_3 et tarsis_4 s'annoncent encore sous leur
-        # ancien nom. Inoffensif tant que le manifest.json existe, faux dès qu'il manque.
+        # Les deux PEUVENT diverger, et l'ont fait : un outil d'échange de créneaux
+        # Sandbox/Gaea, depuis supprimé, réécrivait le manifest.json et jamais l'en-tête,
+        # si bien que les packs de tarsis_3 et tarsis_4 se sont annoncés sous le nom l'un
+        # de l'autre. Des packs exportés à l'époque traînent encore, et rien ne recale
+        # leur en-tête : inoffensif tant que le manifest.json existe à côté, faux dès
+        # qu'il manque.
         self.loose = {}
         loose_path = os.path.join(os.path.dirname(os.path.abspath(path)), "manifest.json")
         if os.path.exists(loose_path):
