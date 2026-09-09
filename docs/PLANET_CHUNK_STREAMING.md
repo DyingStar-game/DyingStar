@@ -971,9 +971,10 @@ creux, le gain le moins cher est de ne pas exporter de pyramide pour un corps sa
 relief — le runtime retombe déjà sur une surface lisse quand le pack est absent.
 
 **Bug latent trouvé au passage : le nom de planète de l'en-tête de pack n'est pas mis à
-jour par le swap.** `tools/qgis/swap_sandbox_gaea_export.py` (échange des créneaux
-Sandbox/Gaea) réécrit `manifest.json` mais jamais le JSON embarqué dans l'en-tête de
-`heights.pack`. Résultat : le pack de `tarsis_3_chunks/` s'annonce `tarsis_4`, celui de
+jour par le swap.** L'outil d'échange des créneaux Sandbox/Gaea — `swap_sandbox_gaea_export.py`,
+depuis **supprimé** — réécrivait `manifest.json` mais jamais le JSON embarqué dans l'en-tête de
+`heights.pack`. Le supprimer n'efface pas ses traces : les packs exportés à l'époque portent
+toujours le mauvais nom d'en-tête, et rien ne les recale. Résultat : le pack de `tarsis_3_chunks/` s'annonce `tarsis_4`, celui de
 `tarsis_4_chunks/` s'annonce `tarsis_3`, idem pour les lunes `_1` et `_2`. Inoffensif
 aujourd'hui — `PlanetData` lit le `manifest.json`, qui fait autorité — mais son **repli
 sur l'en-tête quand le fichier manque donnerait le mauvais `planet_name`, donc la

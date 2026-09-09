@@ -13,8 +13,8 @@ Ce qui est couvert :
   2. Les deux extrêmes : une pyramide parfaitement prédictible s'élague à 100 %, une
      pyramide bruitée à 0 %.
   3. La conversion en mètres via max_height, sans quoi tous les seuils sont faux.
-  4. Le désaccord de nom entre manifest.json et en-tête du pack (le cas réel
-     tarsis_3/tarsis_4 après swap_sandbox_gaea_export.py).
+  4. Le désaccord de nom entre manifest.json et en-tête du pack — arrivé pour de vrai
+     sur tarsis_3/tarsis_4, et des packs de cette époque traînent encore.
   5. L'élagage EN CASCADE : la garantie que l'erreur visible reste bornée par epsilon
      quelle que soit la profondeur, et le fait qu'il élague moins que la borne naïve.
      C'est l'algorithme que le baker doit implémenter ; s'il se trompait, on
@@ -150,7 +150,7 @@ class PruningRates(unittest.TestCase):
 class ManifestNaming(unittest.TestCase):
 
     def test_loose_manifest_wins_and_mismatch_is_reported(self):
-        """Le cas réel : swap_sandbox_gaea_export.py réécrit manifest.json, pas l'en-tête."""
+        """Le cas réel : un outil réécrivait le manifest.json et jamais l'en-tête."""
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "heights.pack")
             write_pack(path, constant_pyramid(), planet_name="tarsis_4")
