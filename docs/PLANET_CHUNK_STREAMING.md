@@ -861,7 +861,13 @@ lui qui rend la projection fiable, puisque le sondage ne mesure que la borne :
 | | n512 | n1024 | total |
 |---|---|---|---|
 | cascade projetée | 55 % | 70 % | **65 % élagué** |
-| pack à 198 m | | | **~12 Go**, 5,8 M fichiers, **~7 h d'export** |
+| **cascade MESURÉE** | **58,4 %** | **75,2 %** | **69,5 % élagué** |
+| pack à 198 m, projeté | | | ~12 Go, 5,8 M fichiers, ~7 h |
+| **pack à 198 m, MESURÉ** | | | **9,75 Gio, 5 109 933 fichiers** |
+
+L'export a été fait : la projection était **conservatrice de 4,5 points**, et le pack pèse
+un cinquième de moins qu'annoncé. Le ratio cascade/borne de 0,869 a donc bien tenu deux
+niveaux plus bas que là où il avait été mesuré, ce qui était tout le pari de la méthode.
 
 **Correction d'estimation à retenir** : la durée annoncée était d'abord de 35 h, calée sur
 un export n64 complet. Faux d'un facteur 5 — à n64 l'échantillonnage est minoritaire devant
@@ -1272,13 +1278,18 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
 
 ### Encore ouverts
 
-- ~~Le *pack creux* vaut-il sa complexité ?~~ **Oui, tranché par la mesure** : 65 %
-  d'élagage projeté à 198 m, soit 34,4 → ~12 Go et 16,8 → 5,8 M de fichiers, sans perte
-  de relief.
-- Volume de distribution en `-b 1024` (35,9 Go) ou blocs standard (73,8 Go) ?
-- Combien de versions garder en ligne ? Chacune est une arborescence complète. Les canaux
-  donnent le critère : une version encore référencée par un canal ne se supprime pas, une
-  version qu'aucun canal ne cite est morte. Le ramasse-miettes reste à écrire.
+- ~~Le *pack creux* vaut-il sa complexité ?~~ **Oui, et l'export à 198 m l'a confirmé** :
+  **69,5 % élagué** contre 65 % projeté, soit 34,4 Go → **9,75 Gio** et 16,8 M →
+  **5 109 933** fichiers, sans perte de relief.
+- **Volume de distribution** : `-b 1024` ou blocs standard ? La question n'est plus
+  théorique. Aucune tuile n'atteint 4 Kio (médiane 1383 o), donc en blocs de 4 Kio les
+  5,1 M fichiers occupent **19,5 Gio** pour 6,7 Gio de données. En blocs de 1 Kio, environ
+  la moitié.
+- **Combien de versions garder en ligne** : ce sont les **inodes** qui tranchent, pas les
+  octets. 5,1 M fichiers par version contre 16,7 M libres sur le volume de test, soit
+  **trois versions de tarsis_3 au maximum**. Les canaux donnent le critère de suppression —
+  une version qu'aucun canal ne cite est morte — mais le ramasse-miettes reste à écrire, et
+  il devient nécessaire plutôt que confortable.
 - ~~**`col=0` côté serveur**~~ **Élucidé** : configuration, pas bug. Le serveur n'avait ni
   pack local (renommé pour le test) ni section `[stream]` dans `server.ini` — donc aucune
   élévation, donc aucune collision. Avec l'une ou l'autre, il construit normalement.
