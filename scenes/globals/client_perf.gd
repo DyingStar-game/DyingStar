@@ -143,6 +143,26 @@ var _viewport_rid: RID = RID()
 var _scripts_max: float = 0.0
 var _rcpu_max: float = 0.0
 var _rgpu_max: float = 0.0
+## The LAST third of the idle step, which `scripts=`/`rcpu=` between them cannot see.
+##
+## `proc=162` next to `scripts<=13 rcpu<=1.1 rgpu<=4.4` (log Anthony 2026-09-09, 6.0 fps locked for
+## 195 s) says 145-160 ms a frame is spent AFTER the last _process callback and BEFORE the end of
+## the idle step, and `msgbuf` peaking at 24 KiB rules the deferred-call queue out. What is left
+## there is `MessageQueue::flush()` + `RenderingServer::sync()` (the main thread BLOCKING on the
+## render thread) then `RenderingServer::draw()`. Three probes close it:
+##   - `frame_pre_draw` / `frame_post_draw` fire on the main thread around `draw()`, so tail ->
+##     pre_draw is the flush+sync BLOCK (`sync=`) and pre -> post is the draw itself (`draw=`).
+##   - `get_frame_setup_time_cpu()` is the render-thread work that `viewport_get_measured_render_time_cpu`
+##     explicitly does NOT include — dirty-instance updates, AABB and BVH maintenance, light and
+##     shadow culling setup (`setup=`). At origin_dist=8.05e10 m one float32 ulp is ~8 km, which is
+##     exactly where a render scenario's AABBs would collapse into one blob; see
+##     [[jolt-broadphase-f32-astronomic-coords]] for the same failure one layer down.
+var _tail_usec: int = 0
+var _predraw_usec: int = 0
+var _postdraw_usec: int = 0
+var _sync_max: float = 0.0
+var _draw_max: float = 0.0
+var _setup_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -328,6 +348,10 @@ func _ready() -> void:
 	# read back, not a wall clock), which is fine for a cost that has been steady for five minutes.
 	_viewport_rid = get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(_viewport_rid, true)
+	# Emitted on the MAIN thread, immediately around RenderingServer::draw(). Bound here rather than
+	# read from a monitor because no monitor reports the main thread's wait on the render thread.
+	RenderingServer.frame_pre_draw.connect(_on_frame_pre_draw)
+	RenderingServer.frame_post_draw.connect(_on_frame_post_draw)
 	# Seed the node census so the first hitch line reports a real delta and not the whole tree.
 	_prev_nodes = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	print("[CPerf] performance logging ON — every %.1fs, hitch>%.0fms, census every %d reports. Source: %s" % [
@@ -388,10 +412,16 @@ func _print_boot_detail() -> void:
 
 	# Every screen, not just the current one: a laptop rendering onto a 4K external at 60 Hz while
 	# the game thinks it is on the built-in panel is a classic source of "my fps is half yours".
+	#
+	# `at=` is the screen's ORIGIN on the virtual desktop, and it is not decoration: `window_get_position`
+	# is absolute, so without it a window at x=720 on a machine with a 1760-wide screen #0 reads as
+	# straddling two monitors — which is exactly the false lead we chased for three days on the 6 fps
+	# report, until a screenshot showed the wide screen sits FIRST and the window is entirely inside it.
 	var screens: PackedStringArray = []
 	for i: int in DisplayServer.get_screen_count():
-		screens.append("#%d %s@%.0fHz dpi=%d scale=%.2f" % [
-			i, str(DisplayServer.screen_get_size(i)), DisplayServer.screen_get_refresh_rate(i),
+		screens.append("#%d %s at%s @%.0fHz dpi=%d scale=%.2f" % [
+			i, str(DisplayServer.screen_get_size(i)), str(DisplayServer.screen_get_position(i)),
+			DisplayServer.screen_get_refresh_rate(i),
 			DisplayServer.screen_get_dpi(i), DisplayServer.screen_get_scale(i)])
 	print("[CPerf] window mode=%d size=%s pos=%s on_screen=%d | screens: %s" % [
 		int(DisplayServer.window_get_mode()), str(DisplayServer.window_get_size()),
@@ -537,6 +567,18 @@ func _process(_delta: float) -> void:
 	_scripts_max = maxf(_scripts_max, scripts_ms)
 	_rcpu_max = maxf(_rcpu_max, rcpu_ms)
 	_rgpu_max = maxf(_rgpu_max, rgpu_ms)
+	# The tail of the SAME frame: the tail probe, then draw()'s two signals, all before this call.
+	var sync_ms: float = 0.0
+	var draw_ms: float = 0.0
+	if _tail_usec > 0 and _predraw_usec > _tail_usec:
+		sync_ms = float(_predraw_usec - _tail_usec) / 1000.0
+	if _postdraw_usec > _predraw_usec:
+		draw_ms = float(_postdraw_usec - _predraw_usec) / 1000.0
+	# Render-thread work OUTSIDE any viewport: dirty instances, AABBs, culling structures.
+	var setup_ms: float = RenderingServer.get_frame_setup_time_cpu()
+	_sync_max = maxf(_sync_max, sync_ms)
+	_draw_max = maxf(_draw_max, draw_ms)
+	_setup_max = maxf(_setup_max, setup_ms)
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -561,12 +603,12 @@ func _process(_delta: float) -> void:
 			_hitch_lines += 1
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
-				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f ms"
+				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-				scripts_ms, rcpu_ms, rgpu_ms,
+				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -594,6 +636,9 @@ func _process(_delta: float) -> void:
 	_scripts_max = 0.0
 	_rcpu_max = 0.0
 	_rgpu_max = 0.0
+	_sync_max = 0.0
+	_draw_max = 0.0
+	_setup_max = 0.0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -621,7 +666,7 @@ func _report() -> void:
 	print((
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
-		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f ms"
+		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -631,7 +676,7 @@ func _report() -> void:
 		window, _proc_max,
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-		_scripts_max, _rcpu_max, _rgpu_max,
+		_scripts_max, _rcpu_max, _rgpu_max, _setup_max, _sync_max, _draw_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -1031,4 +1076,16 @@ class _TailProbe extends Node:
 
 ## Called by _TailProbe once every frame, after every other _process in the game.
 func _tail_tick() -> void:
-	_scripts_usec = Time.get_ticks_usec() - _frame_start_usec
+	_tail_usec = Time.get_ticks_usec()
+	_scripts_usec = _tail_usec - _frame_start_usec
+
+
+## Start of RenderingServer::draw(), main thread. Everything between the tail probe and here is the
+## message queue flush plus the sync that waits on the render thread.
+func _on_frame_pre_draw() -> void:
+	_predraw_usec = Time.get_ticks_usec()
+
+
+## End of RenderingServer::draw(), main thread.
+func _on_frame_post_draw() -> void:
+	_postdraw_usec = Time.get_ticks_usec()

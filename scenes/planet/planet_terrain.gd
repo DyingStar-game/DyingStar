@@ -154,6 +154,13 @@ var _bridge_nodes: Dictionary = {}        # span_key → Node3D
 var _bridge_owners: Dictionary = {}       # span_key → { chunk_key: true }
 var _bridge_orphan_since: Dictionary = {} # span_key → msec it lost its last owner
 
+## Prochain rattrapage des travées affamées, en ms depuis le boot. Voir
+## [method _poll_starved_bridge_plans].
+var _next_bridge_retry_ms: int = 0
+## Intervalle entre deux tentatives de rattrapage. Assez court pour que le pont existe bien
+## avant qu'un joueur n'atteigne le gouffre, assez long pour ne rien peser.
+const BRIDGE_RETRY_INTERVAL_MS := 2000
+
 ## Grace period before an unreferenced bridge is actually freed.
 ##
 ## A chunk whose LOD merely changed is REMOVED and re-queued under the SAME key
@@ -1123,6 +1130,7 @@ func _physics_process(delta: float) -> void:
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
+		_poll_starved_bridge_plans()
 		if PropNet.prof_on:
 			var _t0: int = Time.get_ticks_usec()
 			_server_poll_chunk_tasks()
@@ -2839,6 +2847,37 @@ func _create_chunk(info: Dictionary) -> void:
 		var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 		PropNet.prof_col_calls += 1
 		PropNet.prof_col_usec += int(_elapsed_ms * 1000.0)
+
+
+## Rattrape les travées que la planification avait dû refuser faute de tuile d'élévation.
+##
+## Pourquoi cela existe : warm_bridge_plans() tourne dans initialize(), et un serveur qui
+## vient de redémarrer a un cache de tuiles VIDE. Sans rattrapage il imprimait
+## "0 bridge plan(s) — 37 skipped" et gardait ce verdict toute la session, alors que le
+## tablier porte la SEULE collision au-dessus d'un gouffre : le joueur traversait un pont
+## que son client, cache chaud, lui affichait normalement.
+##
+## Cadencé, pas par frame : la planification lit des tuiles, et rien ne presse à 60 Hz.
+func _poll_starved_bridge_plans() -> void:
+	if planet_data == null or not planet_data.bridge_plans_incomplete():
+		return
+	var now := Time.get_ticks_msec()
+	if now < _next_bridge_retry_ms:
+		return
+	_next_bridge_retry_ms = now + BRIDGE_RETRY_INTERVAL_MS
+	if planet_data.retry_starved_bridge_plans().is_empty():
+		return
+	# Un plan né en retard ne se pose pas tout seul : les chunks qui le possèdent sont déjà
+	# résidents et ne rappelleront pas _spawn_bridges. On repasse dessus — l'appel est
+	# idempotent (il saute les travées dont le tablier existe déjà).
+	for key: String in _server_collision_chunks.keys():
+		var ipix := _parse_ipix_from_key(key)
+		if ipix < 0:
+			continue
+		var nside := _parse_nside_from_key(key)
+		if nside <= 0:
+			nside = planet_data.export_nside
+		_spawn_bridges({"key": key, "nside": nside, "ipix": ipix, "lod": 0})
 
 
 ## Spawn a bridge for every road/chasm crossing this chunk owns.
