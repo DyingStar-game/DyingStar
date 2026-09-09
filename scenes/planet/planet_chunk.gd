@@ -57,6 +57,9 @@ static func generate_mesh(
 
 	var res := resolution
 	var vert_count := (res + 1) * (res + 1)
+	# Même garde que le constructeur de collision : un mesh bâti sur un ancêtre supposé
+	# ne doit pas être persisté, sans quoi il survit à l'arrivée de la vraie tuile.
+	data.climb_reset()
 	var vertices := PackedVector3Array()
 	var normals  := PackedVector3Array()
 	var uvs      := PackedVector2Array()
@@ -2288,6 +2291,8 @@ static func generate_mesh(
 		prof["total"] = _now - _t_start
 		prof["tile"] = PlanetData.prof_thread_tile_usec() - _t_tile0
 
+	# Zéro = tous les sommets ont lu leur propre tuile ; le mesh est persistable.
+	mesh.set_meta("provisional_climbs", data.climb_count())
 	return mesh
 
 
@@ -2307,6 +2312,10 @@ static func generate_collision_shape(
 	var res := resolution
 	var u_step := (u_max - u_min) / float(res) if not hp_mode else 0.0
 	var v_step := (v_max - v_min) / float(res) if not hp_mode else 0.0
+	# Combien de sommets vont lire un ancêtre faute d'avoir leur tuile ? La réponse
+	# voyage avec la forme (méta "provisional_climbs") et décide si elle a le droit
+	# d'aller dans le cache disque. Voir PlanetData.climb_mark().
+	data.climb_reset()
 
 	var grid_dirs: Array[PackedVector3Array] = []
 	var _export_ipix: int = -1
@@ -2678,6 +2687,8 @@ static func generate_collision_shape(
 			fi += 6
 
 	var shape := ConcavePolygonShape3D.new()
+	# Zéro = tous les sommets ont lu leur propre tuile ; la forme est persistable.
+	shape.set_meta("provisional_climbs", data.climb_count())
 	# Collide from BOTH sides. Unlike the visual mesh, the collision faces get
 	# no winding correction, so their one-sided front can end up facing inward
 	# (toward the planet centre) — leaving bodies to fall straight through the

@@ -666,6 +666,82 @@ static func prof_tiles_reset() -> void:
 
 ## Temps de lecture de tuile cumulé par le thread appelant. Deux relevés encadrant un travail en
 ## donnent le coût de tuile propre, sans compter celui des autres threads.
+## Remontées d'ancêtre PROVISOIRES, par thread appelant.
+##
+## Une remontée n'est pas anodine de la même façon selon la raison de l'absence :
+##   - tuile réellement élaguée du pack → l'ancêtre est la tuile, à SPARSE_EPSILON_M (1 m) ;
+##   - tuile publiée mais pas encore téléchargée → l'ancêtre est un parent plus lisse, et
+##     l'écart n'est borné par rien (35,4 m mesurés sur tarsis_3).
+## Seul le second cas est compté ici. Il sert à REFUSER la mise en cache disque de la
+## géométrie qui en découle : sans ce refus, une surface bâtie sur une supposition devient
+## indiscernable d'une surface correcte, et le fait pour toujours.
+## Par thread parce que les chunks se construisent sur WorkerThreadPool, un par tâche.
+## Volontairement des membres D'INSTANCE, pas des statiques : planet_data.gd appelle déjà
+## PlanetChunk._query_zones_at_direction(), donc un appel statique en sens inverse ferme un
+## cycle de résolution entre les deux classes — l'éditeur rend alors un PlanetChunk réduit à
+## un GDScript nu ("Nonexistent function 'snap_to_f32' in base 'GDScript'"). Passer par
+## l'instance `data`, que les deux générateurs reçoivent déjà, n'a pas ce problème.
+var _climb_by_thread: Dictionary = {}
+var _climb_mutex: Mutex = Mutex.new()
+## "nside/ipix" -> la remontée depuis cette tuile est-elle une supposition ? Voir
+## [method _climb_is_guess]. Par instance : la carte de présence appartient au corps.
+var _presence_guess: Dictionary = {}
+
+
+## La remontée depuis (nside, ipix) est-elle une SUPPOSITION plutôt qu'un élagage voulu ?
+##
+## Mémoïsé : sur un pack creux à 69,5 % la remontée est le cas NORMAL, donc ce test tombe
+## sur le chemin chaud, une fois par sommet. Or la carte de présence est immuable pour une
+## version de données — un tuple (nside, ipix) donne toujours la même réponse. Le memo
+## ramène des milliers d'appels par chunk à un par tuile, soit ~9.
+func _climb_is_guess(nside: int, ipix: int) -> bool:
+	if remote_source == null:
+		return false
+	var key := "%d/%d" % [nside, ipix]
+	_climb_mutex.lock()
+	var hit: Variant = _presence_guess.get(key)
+	_climb_mutex.unlock()
+	if hit != null:
+		return bool(hit)
+	# Hors du verrou : presence_of prend le sien, et peut mettre une carte de shard en
+	# file. Deux threads qui se croisent ici calculent la même valeur — sans conséquence.
+	var state: int = remote_source.presence_of(nside, ipix)
+	if state == RemoteTileSource.PRESENCE_UNKNOWN:
+		# La carte du shard n'est pas encore là : on ne SAIT pas, donc on suppose le pire
+		# pour cette géométrie-ci — mais on ne le mémoïse SURTOUT pas. Figer un « inconnu »
+		# interdirait pour toujours de cacher les tuiles réellement élaguées de ce shard,
+		# c'est-à-dire la majorité d'un pack creux.
+		return true
+	var guess: bool = state != RemoteTileSource.PRESENCE_NO
+	_climb_mutex.lock()
+	_presence_guess[key] = guess
+	_climb_mutex.unlock()
+	return guess
+
+
+## Compte une remontée provisoire pour le thread courant.
+func climb_mark() -> void:
+	var tid := OS.get_thread_caller_id()
+	_climb_mutex.lock()
+	_climb_by_thread[tid] = int(_climb_by_thread.get(tid, 0)) + 1
+	_climb_mutex.unlock()
+
+
+## Remontées provisoires comptées pour le thread courant depuis le dernier climb_reset().
+func climb_count() -> int:
+	_climb_mutex.lock()
+	var v: int = int(_climb_by_thread.get(OS.get_thread_caller_id(), 0))
+	_climb_mutex.unlock()
+	return v
+
+
+## Remet à zéro le compteur du thread courant. À appeler avant de bâtir une géométrie.
+func climb_reset() -> void:
+	_climb_mutex.lock()
+	_climb_by_thread[OS.get_thread_caller_id()] = 0
+	_climb_mutex.unlock()
+
+
 static func prof_thread_tile_usec() -> int:
 	prof_tile_mutex.lock()
 	var v: int = int(_prof_tile_usec_by_thread.get(OS.get_thread_caller_id(), 0))
@@ -2210,6 +2286,12 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		# remontée vit ici et non dans le chargement de tuile.
 		var up := _finest_present_ancestor(ipix, ns)
 		if up.y > 0:
+			# Élaguée pour de bon, ou simplement pas encore arrivée ? La carte de présence
+			# tranche, et sans jamais bloquer. Dans le doute (carte du shard pas encore
+			# là), on compte la remontée comme provisoire : la géométrie reste utilisable
+			# tout de suite, elle n'est simplement pas persistée.
+			if _climb_is_guess(ns, ipix):
+				climb_mark()
 			ipix = up.x
 			ns = up.y
 			floats = frame.floats(ipix, ns) if frame != null else load_chunk_floats(ipix, ns)
