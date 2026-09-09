@@ -1,6 +1,19 @@
 # Streaming des tuiles d'élévation — étude de conception
 
-**Statut :** étude / non implémenté. Rédigé le 2026-09-07.
+> **Ce document est le journal de conception**, pas un mode d'emploi. Il consigne les mesures,
+> les hypothèses fausses et les décisions dans l'ordre où elles sont tombées — c'est ce qui
+> permet de savoir *pourquoi* la chaîne est faite ainsi, et de ne pas refaire un raisonnement
+> déjà tranché par un chiffre.
+>
+> Pour **s'en servir** — exporter une planète, publier, promouvoir une version, comprendre
+> pourquoi un chunk manque — voir la documentation technique :
+>
+> - [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export)
+> - [Publishing tiles & promoting versions](https://developper.dyingstar-game.com/docs/planetTech/publication_channels)
+> - [How the game reads elevation](https://developper.dyingstar-game.com/docs/planetTech/elevation_runtime)
+
+
+**Statut :** livré. Rédigé le 2026-09-07 comme une étude ; les phases 0 à 5 sont faites et validées en jeu, la phase 6 est abandonnée avec sa justification (§9).
 
 ## Vocabulaire (à lire en premier)
 
