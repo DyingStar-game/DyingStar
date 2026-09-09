@@ -1,4 +1,4 @@
-# Optional configuration for tools/qgis/export_planet.py.
+# Optional configuration for tools/planettech/qgis/export_planet.py.
 # Copy to `export_config.ini` (same directory) and adjust as needed.
 # Values here are overridden by environment variables when both are set.
 

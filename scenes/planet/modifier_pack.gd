@@ -2,7 +2,7 @@
 class_name ModifierPack
 extends RefCounted
 ## Runtime reader for per-chunk terrain-modifier archives (terrainmodifier.pack,
-## format DSMP v1) produced by tools/qgis/link_modifiers.py.
+## format DSMP v1) produced by tools/planettech/qgis/link_modifiers.py.
 ##
 ## Where heights.pack (DSHP) stores a DENSE grid of fixed-size elevation tiles,
 ## this pack stores SPARSE, variable-size vector tiles: roads, craters, linear
@@ -16,7 +16,7 @@ extends RefCounted
 ## a global centerline. That is what makes it impossible for two chunks at
 ## different LODs to both render the same road.
 ##
-## On-disk layout (little-endian; see tools/qgis/export/planet/dsmp.py for the
+## On-disk layout (little-endian; see tools/planettech/qgis/export/planet/dsmp.py for the
 ## authoritative spec):
 ##   magic        "DSMP" (4B)
 ##   version      u32 = 1

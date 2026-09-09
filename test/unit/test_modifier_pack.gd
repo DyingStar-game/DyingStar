@@ -8,7 +8,7 @@ extends GutTest
 ## Every record carries a marker derived from (nside, ipix) so reads can be
 ## verified exactly.
 ##
-## _write_pack() below is the REFERENCE WRITER: tools/qgis/export/planet/dsmp.py
+## _write_pack() below is the REFERENCE WRITER: tools/planettech/qgis/export/planet/dsmp.py
 ## must produce byte-identical output for the same input (see
 ## test/unit/test_modifier_pack_py.py, which compares both against a shared
 ## SHA-256).
@@ -570,7 +570,7 @@ func test_raw_bytes_reported_for_lru_accounting() -> void:
 
 # ── Cross-check against the Python encoder ─────────────────────────────
 
-## SHA-256 of the canonical tile below. tools/qgis/export/planet/dsmp.py builds
+## SHA-256 of the canonical tile below. tools/planettech/qgis/export/planet/dsmp.py builds
 ## the same tile from the same values and test/unit/test_modifier_pack_py.py
 ## asserts this exact string. If the two encoders ever disagree — a reordered
 ## field, a lost padding byte, a different rounding rule — one of the two suites

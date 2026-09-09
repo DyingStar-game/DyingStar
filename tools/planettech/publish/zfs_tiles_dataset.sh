@@ -7,7 +7,7 @@
 #   moyenne 1090 o, médiane 1106 o, AUCUN fichier au-dessus de 2060 o
 #   écrits une fois par publication, relus indéfiniment par nginx
 #   supprimés en bloc, une version entière à la fois
-#   déjà compressés en deflate par tools/publish_tiles.py
+#   déjà compressés en deflate par tools/planettech/publish/publish_tiles.py
 #
 # Deux conséquences dictent tout le reste : les fichiers sont minuscules, et ils sont
 # des millions. Ce n'est pas un stockage d'octets, c'est un stockage de métadonnées.

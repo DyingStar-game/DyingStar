@@ -75,7 +75,7 @@ Vérifié : n64 × tr50 → 655 Mo (fichier réel : 655 320 464 o).
 ### La tuile — l'entrée
 
 Une grille d'altitudes, rien d'autre. Produite par
-`tools/qgis/export_elevation.py` à partir des contours QGIS. Aucune notion de
+`tools/planettech/qgis/export_elevation.py` à partir des contours QGIS. Aucune notion de
 triangle, de LOD, de couleur, de route ni de biome.
 
 ### Le mesh — la sortie
@@ -153,7 +153,7 @@ Une tuile débloque des centaines de chunks ; un mesh n'en débloque qu'un.
 `PlanetTerrain._traverse` a été rejoué à l'identique (mêmes constantes :
 `SUBDIVIDE_FACTOR 1.5`, `BACKFACE_DOT -0.3`, `HORIZON_MARGIN_RAD 0.02`,
 `max_quadtree_depth 14`) avec la vraie géométrie HEALPix de
-`tools/qgis/healpix_utils.py`.
+`tools/planettech/qgis/healpix_utils.py`.
 
 **Combien un joueur doit-il télécharger à l'instant T, sans bouger ?**
 
@@ -878,13 +878,13 @@ reproduit à moins d'epsilon près ; à la lecture le client remonte d'un niveau
 `PlanetData.sample_nside_for()` sait déjà faire.
 
 Le taux d'élagage dépend entièrement du relief et change à chaque ré-export. D'où
-**`tools/analyze_pack_sparsity.py`** : il mesure, sur n'importe quel `heights.pack`,
+**`tools/planettech/analyze_pack_sparsity.py`** : il mesure, sur n'importe quel `heights.pack`,
 l'écart entre chaque tuile et la prédiction depuis son parent, et projette le gain par
 seuil. À rejouer par planète et après toute modification de terrain — c'est l'outil qui
 permet de basculer dense ↔ creux avec un chiffre plutôt qu'une intuition.
 
 ```
-python3 tools/analyze_pack_sparsity.py <pack> [--sample N] [--json rapport.json]
+python3 tools/planettech/analyze_pack_sparsity.py <pack> [--sample N] [--json rapport.json]
 ```
 
 Tests : `python3 test/unit/test_pack_sparsity_py.py` (6 tests). Le plus important couvre
@@ -926,7 +926,7 @@ TIN** contre 1,64 × 10⁸ aujourd'hui — un facteur **105**. L'export actuel p
 l'export dense correspondant demanderait **~34 heures** et 68,7 Go écrits, pour répondre
 à une question binaire.
 
-Cette question n'a pas besoin de toute la planète. **`tools/qgis/probe_pack_sparsity.py`**
+Cette question n'a pas besoin de toute la planète. **`tools/planettech/qgis/probe_pack_sparsity.py`**
 construit le même TIN que l'exporteur (mêmes contours, même décimation, même
 interpolateur), tire quelques centaines de pixels parents au hasard à chaque transition
 de niveau n64→n128 … n512→n1024, échantillonne parents et enfants, et projette le taux
@@ -935,10 +935,10 @@ près.
 
 ```
 # console Python de QGIS, projet de la planète ouvert
-exec(open('.../tools/qgis/probe_pack_sparsity.py').read())
+exec(open('.../tools/planettech/qgis/probe_pack_sparsity.py').read())
 ```
 
-Il réutilise `_upsampler` de `tools/analyze_pack_sparsity.py` : le mapping de quadrant
+Il réutilise `_upsampler` de `tools/planettech/analyze_pack_sparsity.py` : le mapping de quadrant
 NESTED est la seule partie délicate, elle est testée, et elle ne doit exister qu'à un
 seul endroit.
 
@@ -984,7 +984,7 @@ bouge pas. `analyze_pack_sparsity.py` signale désormais le désaccord.
 
 ### Phase 2 — bake et publication — ✅ FAITE, CHAÎNE HTTP VÉRIFIÉE
 
-`tools/publish_tiles.py` éclate un `heights.pack` en arborescence servable. Outil séparé
+`tools/planettech/publish/publish_tiles.py` éclate un `heights.pack` en arborescence servable. Outil séparé
 de l'exporteur : il se rejoue sans ré-exporter, marche sur v1 comme sur v2 (les planètes
 encore en float32 dense se publient sans être ré-exportées), et se teste sur des packs
 synthétiques.
@@ -1229,8 +1229,8 @@ que personne n'a promue est du travail en cours, pas un déchet. Le pointeur `la
 est délibérément ignoré : il suit la dernière publication, donc s'il faisait autorité, une
 version publiée puis abandonnée serait immortelle.
 
-    python3 tools/stream_channels.py --dist DIR --gc --dry-run   # mesure, ne touche rien
-    python3 tools/stream_channels.py --dist DIR --gc             # supprime
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --gc --dry-run   # mesure, ne touche rien
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --gc             # supprime
 
 `--dry-run` est le réflexe à garder : effacer cinq millions de fichiers ne se rejoue pas.
 

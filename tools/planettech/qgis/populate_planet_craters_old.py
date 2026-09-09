@@ -20,7 +20,7 @@ Usage:
     1. Open QGIS with the planet project already set up
     2. Open Python Console (Ctrl+Alt+P)
     3. Run:
-       exec(open('/path/to/StarDeception/tools/qgis/populate_planet_surface.py').read())
+       exec(open('/path/to/StarDeception/tools/planettech/qgis/populate_planet_surface.py').read())
 """
 
 import math

@@ -21,7 +21,7 @@ import tempfile
 import unittest
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(_REPO, "tools", "qgis"))
+sys.path.insert(0, os.path.join(_REPO, "tools", "planettech", "qgis"))
 
 from export.planet import dsmp                                    # noqa: E402
 from export.planet import modifier_geom as mg                     # noqa: E402

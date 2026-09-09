@@ -2,7 +2,7 @@
 class_name PlanetPack
 extends RefCounted
 ## Runtime reader for per-planet .planetpack archives produced by
-## tools/qgis/pack_planet.py.
+## tools/planettech/qgis/pack_planet.py.
 ##
 ## On-disk layout (little-endian, see pack_planet.py for the authoritative spec):
 ##   magic        "DSPP"  (4B)

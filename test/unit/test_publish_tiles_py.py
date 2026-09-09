@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests de tools/publish_tiles.py — l'éclatement d'un pack en arborescence servable.
+"""Tests de tools/planettech/publish/publish_tiles.py — l'éclatement d'un pack en arborescence servable.
 
 Ce que publie cet outil part chez les joueurs. Les défauts qu'il pourrait avoir ne lèvent
 aucune erreur : un décalage de sharding ou une carte de présence inversée donne un terrain
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 try:
     import numpy as np
-    from tools import publish_tiles as PT
+    from tools.planettech.publish import publish_tiles as PT
 except ImportError as exc:  # pragma: no cover
     print("SKIP test_publish_tiles_py: %s" % exc)
     sys.exit(0)

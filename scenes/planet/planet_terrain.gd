@@ -98,7 +98,7 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 @export var editor_snap_height_offset: float = 0.0
 
 ## ── POI import (QGIS) ─────────────────────────────────────────────
-## JSON produced by tools/qgis/export_poi.py. Empty → derived from the planet
+## JSON produced by tools/planettech/qgis/export_poi.py. Empty → derived from the planet
 ## name: res://assets/qgis/export/<planet_name>_poi.json
 @export_file("*.json") var poi_json_path: String = ""
 ## Collision layer/mask applied to the generated POI Area3Ds. 0/0 by default:
@@ -1618,7 +1618,7 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 # ------------------------------------------------------------------
 
 ## Inspector button: rebuild the "POIs" child from the JSON exported by
-## tools/qgis/export_poi.py. Each POI becomes an Area3D named after it, holding
+## tools/planettech/qgis/export_poi.py. Each POI becomes an Area3D named after it, holding
 ## a SphereShape3D of its influence radius, sitting on the terrain surface at
 ## its longitude/latitude. The nodes are owned by the edited scene, so they are
 ## saved into the planet's .tscn and can be tweaked by hand afterwards; the
@@ -1649,7 +1649,7 @@ func import_poi_from_json() -> void:
 		path = "res://assets/qgis/export/%s_poi.json" % data.planet_name
 	if not FileAccess.file_exists(path):
 		push_warning("[PlanetTerrain] Import POI: '%s' not found — run "
-			% path + "tools/qgis/export_poi.py from the QGIS Python console first.")
+			% path + "tools/planettech/qgis/export_poi.py from the QGIS Python console first.")
 		return
 
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))

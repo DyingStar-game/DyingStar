@@ -11,7 +11,7 @@ Usage:
     2. Make sure the contours layer and maritime_river-ocean layer exist
     3. Open Python Console (Ctrl+Alt+P)
     4. Paste this script or run:
-         exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/qgis/generate_elevation.py').read())
+         exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/planettech/qgis/generate_elevation.py').read())
 
 The script populates the contours layer with LineString features.
 After running, use export_planet.py to generate chunked heightmaps.

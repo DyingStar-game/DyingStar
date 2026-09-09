@@ -2,7 +2,7 @@
 QGIS tool: Create a vector layer showing all exported HEALPix chunk boundaries.
 
 Run in the QGIS Python console:
-    exec(open('tools/qgis/create_chunk_grid_layer.py').read())
+    exec(open('tools/planettech/qgis/create_chunk_grid_layer.py').read())
 
 For each chunk in assets/qgis/export/<planet>_chunks/base_<depth>/,
 a polygon is drawn showing the exact boundary of that HEALPix tile.
@@ -34,10 +34,10 @@ EDGE_SAMPLES = 12
 # ────────────────────────────────────────────────────────────────────────────
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(EXPORT_DIR), "../tools/qgis"))
+sys.path.insert(0, os.path.join(os.path.dirname(EXPORT_DIR), "../tools/planettech/qgis"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__) if "__file__" in dir() else ".", ""))
 # Ensure healpix_utils is importable
-_tools_dir = os.path.join(EXPORT_DIR, "../../tools/qgis")
+_tools_dir = os.path.join(EXPORT_DIR, "../../tools/planettech/qgis")
 if _tools_dir not in sys.path:
     sys.path.insert(0, os.path.normpath(_tools_dir))
 

@@ -80,17 +80,31 @@ Round-trip with Godot
     Set these on the PlanetData resource (or let it read manifest.json).
 
 Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/qgis/export_elevation.py').read())
+    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_elevation.py').read())
 """
 import os
 import sys
 import json
 import math
+import time
 import hashlib
 import struct
 import numpy as np
 
 # ── Make tools/ importable so we can reuse healpix_utils + the interpolator ──
+def _repo_root(start):
+    """Remonte jusqu'au dépôt, repéré par project.godot.
+
+    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
+    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
+    """
+    d = start
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "project.godot")):
+            return d
+        d = os.path.dirname(d)
+    return start
+
 _tools_dir = os.path.dirname(os.path.abspath(__file__))
 if _tools_dir not in sys.path:
     sys.path.insert(0, _tools_dir)
@@ -113,10 +127,10 @@ for _name, _mod in list(sys.modules.items()):
 
 import healpix_utils as hpx
 # Le mapping de quadrant NESTED et l'upsample bilinéaire décalé d'une demi-cellule ne
-# doivent exister qu'à un seul endroit : tools/analyze_pack_sparsity.py les porte, et
+# doivent exister qu'à un seul endroit : tools/planettech/analyze_pack_sparsity.py les porte, et
 # test/unit/test_pack_sparsity_py.py les couvre.
-sys.path.insert(0, os.path.dirname(os.path.dirname(_tools_dir)))  # racine du dépôt
-from tools.analyze_pack_sparsity import _upsampler
+sys.path.insert(0, _repo_root(_tools_dir))
+from tools.planettech.analyze_pack_sparsity import _upsampler
 from export.planet.heightmap import (
     extract_contour_points,
     generate_heightmap_from_contours,
@@ -163,8 +177,8 @@ EXPORT_DIR = os.path.expanduser(
 # le script entre les deux : une erreur ici coûte un export entier, et un export de
 # tarsis_3 à 198 m dure ~35 heures.
 PLANET_TILING = {
-    # "tarsis_3": (1024, 32),     # 198 m — la planète jouable
-    "tarsis_3": (256, 32),     # 794 m — la planète jouable
+    "tarsis_3": (1024, 32),     # 198 m — la planète jouable
+    # "tarsis_3": (256, 32),     # 794 m — la planète jouable
 }
 # Tout le reste : 4 065 m. Suffisant pour des corps sans relief travaillé, et 19 × 164 Mo
 # au lieu de 19 × 68 Go.
@@ -756,4 +770,15 @@ def run_export():
     print("=" * 64)
 
 
-run_export()
+# Chronométrer depuis l'appel plutôt que dans run_export() : la fonction a
+# plusieurs sorties anticipées (pas de couche, pas de points…) et on veut le
+# temps total dans tous les cas.
+_t0 = time.perf_counter()
+try:
+    run_export()
+finally:
+    _elapsed = time.perf_counter() - _t0
+    _h, _rem = divmod(int(_elapsed), 3600)
+    _m, _s = divmod(_rem, 60)
+    print(f"  Temps total d'exécution : {_h:02d}h{_m:02d}m{_s:02d}s "
+          f"({_elapsed:.1f} s)")

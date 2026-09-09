@@ -38,10 +38,10 @@ pèse 5,1 millions de fichiers et 20 Gio, si bien que le volume se remplit en tr
 publications.
 
 Run:
-    python3 tools/stream_channels.py --dist DIR --list
-    python3 tools/stream_channels.py --dist DIR --to dev
-    python3 tools/stream_channels.py --dist DIR --to prod --planet tarsis_3
-    python3 tools/stream_channels.py --dist DIR --gc --dry-run
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --list
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --to dev
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --to prod --planet tarsis_3
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --gc --dry-run
 """
 
 import argparse

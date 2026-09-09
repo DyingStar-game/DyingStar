@@ -26,7 +26,7 @@ CE QUE FAIT CE SCRIPT
 3. Compare chaque enfant à l'upsample bilinéaire du quadrant correspondant du parent, et
    rapporte la fraction élaguable par seuil d'erreur.
 
-La comparaison réutilise `_upsampler` de tools/analyze_pack_sparsity.py — le mapping de
+La comparaison réutilise `_upsampler` de tools/planettech/analyze_pack_sparsity.py — le mapping de
 quadrant NESTED est la seule partie délicate, elle est couverte par
 test/unit/test_pack_sparsity_py.py, et elle ne doit exister qu'à un seul endroit.
 
@@ -39,7 +39,7 @@ USAGE
 -----
 Depuis la console Python de QGIS, projet de la planète ouvert :
 
-    exec(open('/chemin/vers/tools/qgis/probe_pack_sparsity.py').read())
+    exec(open('/chemin/vers/tools/planettech/qgis/probe_pack_sparsity.py').read())
 
 Ajustez TARGET_NSIDE / TARGET_TILE_RES pour la résolution visée.
 """
@@ -52,10 +52,23 @@ import numpy as np
 
 # `exec(open(...).read())` depuis la console QGIS n'expose PAS __file__ — d'où le repli,
 # même garde que export_roads.py. Ajustez le chemin si le dépôt est ailleurs.
+def _repo_root(start):
+    """Remonte jusqu'au dépôt, repéré par project.godot.
+
+    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
+    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
+    """
+    d = start
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "project.godot")):
+            return d
+        d = os.path.dirname(d)
+    return start
+
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
     if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/qgis"
-_REPO = os.path.dirname(os.path.dirname(_THIS_DIR))
+    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_REPO = _repo_root(_THIS_DIR)
 for _p in (_THIS_DIR, _REPO):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -77,7 +90,7 @@ for _name, _mod in list(sys.modules.items()):
 import healpix_utils as hpx
 from export.planet.heightmap import extract_contour_points
 from export.planet.spherical_tin import SphericalTIN
-from tools.analyze_pack_sparsity import _upsampler, bound_prune, cascade_prune
+from tools.planettech.analyze_pack_sparsity import _upsampler, bound_prune, cascade_prune
 
 from qgis.core import QgsProject
 

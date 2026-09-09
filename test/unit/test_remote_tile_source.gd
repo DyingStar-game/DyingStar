@@ -1,7 +1,7 @@
 extends GutTest
 ## Suite GUT pour [RemoteTileSource] — la moitié CLIENTE du format publié en phase 2.
 ##
-## Un désaccord entre ce que tools/publish_tiles.py écrit et ce que cette classe lit ne
+## Un désaccord entre ce que tools/planettech/publish/publish_tiles.py écrit et ce que cette classe lit ne
 ## lèverait aucune erreur : il rendrait du terrain faux. Les vecteurs de référence
 ## ci-dessous ont donc été PRODUITS PAR LE PUBLIEUR Python et figés ici — c'est ce qui
 ## vérifie l'accord entre les deux langages sans avoir besoin d'un serveur.
@@ -15,7 +15,7 @@ extends GutTest
 
 const CACHE := "user://test_rts/"
 
-## Produits par tools/publish_tiles.py : tile_blob(bytes(range(16)), compress=True).
+## Produits par tools/planettech/publish/publish_tiles.py : tile_blob(bytes(range(16)), compress=True).
 ## Incompressible, donc stockée telle quelle (flags=0).
 const GOLDEN_PLAIN := [68, 83, 84, 76, 136, 226, 206, 206, 0, 0, 0, 0,
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]

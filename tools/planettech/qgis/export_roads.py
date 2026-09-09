@@ -64,7 +64,7 @@ Legacy GeoJSON layout
     "assets/qgis/export/tarsis_4_roads_buffered.json" (already set on tarsis_4).
 
 Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/qgis/export_roads.py').read())
+    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_roads.py').read())
 """
 import datetime
 import os
@@ -80,13 +80,13 @@ from qgis.core import (
     QgsExpressionContextUtils,
 )
 
-# ── Make tools/qgis importable, then drop stale modules ──────────────────
+# ── Make tools/planettech/qgis importable, then drop stale modules ──────────────────
 # The QGIS Python interpreter outlives the console session, so an edited
 # helper stays cached and you debug code that is no longer on disk. Same guard
 # as export_elevation.py — copy it into any new exporter.
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
     if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/qgis"
+    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 for _name in list(sys.modules):

@@ -37,7 +37,7 @@ Output
     }
 
 Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/qgis/export_poi.py').read())
+    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_poi.py').read())
 """
 import os
 import json

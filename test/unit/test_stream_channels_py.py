@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests de tools/stream_channels.py — les canaux de publication et la promotion.
+"""Tests de tools/planettech/publish/stream_channels.py — les canaux de publication et la promotion.
 
 Ce que ces tests protègent : une promotion fait passer une version d'un cran au suivant
 sans recopier un octet, et c'est précisément ce qui garantit que client et serveur voient
@@ -17,7 +17,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from tools import stream_channels as SC
+from tools.planettech.publish import stream_channels as SC
 
 
 def entry(version="v1", floor=8, nside=64):

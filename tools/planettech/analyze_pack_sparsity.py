@@ -35,7 +35,7 @@ en cascade : si un parent est lui-même élagué, ses enfants sont prédits depu
 grand-parent et l'erreur se cumule. Les taux ci-dessous sont donc une BORNE SUPÉRIEURE
 de ce qu'un bake hiérarchique obtiendrait à epsilon donné.
 
-CONVENTIONS (doivent suivre tools/qgis/healpix_utils.py)
+CONVENTIONS (doivent suivre tools/planettech/qgis/healpix_utils.py)
 -------------------------------------------------------
 * Grille de tuile centrée sur les cellules : t = (i + 0.5) / tile_res, lignes = fy,
   colonnes = fx (meshgrid indexing='xy').
@@ -47,8 +47,8 @@ CONVENTIONS (doivent suivre tools/qgis/healpix_utils.py)
 
 USAGE
 -----
-    python3 tools/analyze_pack_sparsity.py assets/qgis/export/tarsis_3_chunks/heights.pack
-    python3 tools/analyze_pack_sparsity.py <pack> --sample 2000 --json rapport.json
+    python3 tools/planettech/analyze_pack_sparsity.py assets/qgis/export/tarsis_3_chunks/heights.pack
+    python3 tools/planettech/analyze_pack_sparsity.py <pack> --sample 2000 --json rapport.json
 """
 
 import argparse

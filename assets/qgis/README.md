@@ -34,7 +34,7 @@ README.md
 
 `heights.pack` is a single dense archive holding every elevation tile of the
 planet (all pyramid LOD levels, format DSHP v1 — authoritative spec in
-`tools/qgis/export_elevation.py`). It replaces the old loose
+`tools/planettech/qgis/export_elevation.py`). It replaces the old loose
 `n{nside}/face_{face}/f{ipix}.r32` tree (~65 000 tiny files per planet), which
 made archiving, downloading and the Godot export very slow. The runtime
 (`scenes/planet/height_pack.gd`) reads elevation tiles exclusively from this
@@ -71,7 +71,7 @@ If you don't work on the QGIS planet maps, not use this, it's pointless.
 Run the python script to export:
 
 ```sh
-cd tools/qgis/
+cd tools/planettech/qgis/
 python3 export_all_planets.py
 ```
 

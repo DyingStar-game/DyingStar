@@ -5,7 +5,7 @@ AUTHORITATIVE SPEC. scenes/planet/modifier_pack.gd reads what this module
 writes, and test/unit/test_modifier_pack.gd contains a GDScript reference writer
 that must produce byte-identical output for the same input.
 
-Where heights.pack (DSHP, tools/qgis/export_elevation.py) is a DENSE archive of
+Where heights.pack (DSHP, tools/planettech/qgis/export_elevation.py) is a DENSE archive of
 fixed-size elevation tiles — every ipix exists at every level, so a tile's offset
 is pure arithmetic and no index is stored — terrain modifiers are SPARSE and
 variable-size. Roads, craters, rivers and biome polygons touch a tiny fraction of

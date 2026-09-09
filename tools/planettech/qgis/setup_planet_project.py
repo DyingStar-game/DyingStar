@@ -38,7 +38,7 @@ Usage:
     1. Open QGIS
     2. Open Python Console (Ctrl+Alt+P)
     3. Paste this script or run:
-       exec(open('/path/to/StarDeception/tools/qgis/setup_planet_project.py').read())
+       exec(open('/path/to/StarDeception/tools/planettech/qgis/setup_planet_project.py').read())
 """
 
 import os
