@@ -397,6 +397,12 @@ func fetch_now(nside: int, ipix: int) -> bool:
 ## Rend le nombre de tuiles écrites. 0 couvre aussi bien « déjà fait » que « pas de
 ## plancher servi » : dans les deux cas il n'y a rien à faire et les tuiles isolées
 ## restent le chemin de repli.
+##
+## Un seul appelant en pratique — le travail JOB_FLOOR mis en file par for_planet. Deux
+## appels concurrents ne corrompent rien, chaque tuile étant écrite seule et sautée si
+## elle existe déjà, mais ils téléchargent l'objet deux fois : le témoin ne peut pas les
+## départager puisqu'il n'est posé qu'à la fin. Ne l'appelez donc pas à la main pendant
+## que le fil tourne.
 func fetch_floor() -> int:
 	if floor_nside_max <= 0 or FileAccess.file_exists(floor_marker_path()):
 		return 0
