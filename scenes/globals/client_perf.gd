@@ -177,6 +177,30 @@ var _setup_max: float = 0.0
 var _phys_tail_usec: int = 0
 var _gap_max: float = 0.0
 var _pre_max: float = 0.0
+## `pre=` cut in two, using the one hook Godot offers inside it.
+##
+## `SceneTree::process()` (4.7 source, scene/main/scene_tree.cpp) does, in this order and BEFORE it
+## calls a single `_process`: the fixed-timestep-interpolation pass (off here — no
+## `physics/common/physics_interpolation` in project.godot), `MainLoop::process`, `multiplayer->poll()`,
+## `emit_signal("process_frame")`, `MessageQueue::flush()`, `flush_transform_notifications()`.
+## Connecting to `process_frame` therefore plants a timestamp in the middle of the blind window:
+##   - `pf=` phys tail -> process_frame : FTI, MainLoop, multiplayer poll.
+##   - `tf=` process_frame -> first _process : the other `process_frame` handlers (every suspended
+##     `await get_tree().process_frame` in the game resumes HERE, invisible to `scripts=`), the
+##     message queue, and the flush of every transform the 8 physics steps just dirtied — which is
+##     where 482 concave chunk bodies would be pushed back into Jolt at 8e10 m.
+var _pframe_usec: int = 0
+## Ablation for the last suspect inside `tf=`.
+##
+## `planet_body._place_at_time` rewrites the planet's basis a few times a second; every Node3D under
+## it (subtree:Tarsis3 = 9026 nodes) has its global transform invalidated, and every CollisionObject3D
+## among them lands in the transform-change list. The FLUSH of that list is not in the planet_spin
+## scope — it happens later, in `SceneTree::process()`, inside `tf=` — and it pushes each body back
+## into Jolt, whose float32 broadphase quantises to kilometres at 8e10 m. Read by
+## [scenes/planet/planet_body.gd](scenes/planet/planet_body.gd).
+var ablate_planet_spin: bool = false
+var _pf_max: float = 0.0
+var _tf_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -307,6 +331,24 @@ func _ready() -> void:
 	# that has nothing to do with performance, and they cost nothing after boot.
 	_print_machine()
 	ClientConfig.boot_report()
+	# BEFORE _print_boot_detail, which reports `picking=`: run 7 printed `picking=true` on a session
+	# that HAD the ablation on, purely because the line was printed first. A boot line that describes
+	# a state the run does not have is worse than no line.
+	#
+	# Tried and EXONERATED on 2026-09-09 (`godot(7).log`): picking off, still 6.0 fps, `pre` still
+	# 129-156 ms. `Viewport::_process_picking()` was the best candidate in that window and it is not
+	# the cost. Kept because it is one line and it is the only way to re-prove that cheaply.
+	# Only `scenes/interactables/gui_3d.gd` uses 3D picking, so switching it off costs the 3D panels.
+	if ClientConfig.get_bool("debug_no_picking", false):
+		get_viewport().physics_object_picking = false
+		print("[CPerf] !! debug_no_picking=true — 3D object picking is OFF on the root viewport."
+				+ " The gui_3d interactable panels will not respond to the mouse.")
+	# Read here rather than behind `enabled`, because planet_body reads it on every physics tick and
+	# an ablation that only works when the heartbeat is on is an ablation nobody can run cleanly.
+	ablate_planet_spin = ClientConfig.get_bool("debug_no_planet_spin", false)
+	if ablate_planet_spin:
+		print("[CPerf] !! debug_no_planet_spin=true — planets do not rotate. THE WORLD IS WRONG"
+				+ " (no day/night motion, carried bodies are not counter-rotated): measurement mode.")
 	_print_boot_detail()
 
 	# `--no-perf` still wins, so a developer with debug_perf=true in their working client.ini can get
@@ -338,17 +380,6 @@ func _ready() -> void:
 		print("[CPerf] !! debug_no_area_monitoring=true — every Area3D that is NOT in the"
 				+ " `active_monitor` group will be silenced as the census walks the tree."
 				+ " INTERACTIONS MAY BREAK: this is a measurement mode, not a fix.")
-	# The one suspect left standing in `pre=`, and the only one of the four that can plausibly cost
-	# 150 ms: `Viewport::_process_picking()` fires a physics ray from the MAIN THREAD, once per queued
-	# mouse event, straight into a space that holds 482 concave terrain chunks 8e10 m from the origin
-	# (where a float32 broadphase cell is kilometres wide — see the Jolt broadphase note). It is
-	# called by SceneTree right before the process group, and no monitor in the engine reports it.
-	# Only `scenes/interactables/gui_3d.gd` uses 3D picking, so switching it off costs the 3D panels
-	# and nothing else: a real ablation, not a fix.
-	if ClientConfig.get_bool("debug_no_picking", false):
-		get_viewport().physics_object_picking = false
-		print("[CPerf] !! debug_no_picking=true — 3D object picking is OFF on the root viewport."
-				+ " The gui_3d interactable panels will not respond to the mouse.")
 	var _phz: int = ClientConfig.get_int("debug_physics_hz", 0)
 	if _phz > 0:
 		var _was: int = Engine.physics_ticks_per_second
@@ -371,6 +402,9 @@ func _ready() -> void:
 	_tail.phys_tick = _phys_tail_tick
 	_tail.process_physics_priority = 1_000_000
 	add_child(_tail)
+	# Connected from an autoload's _ready, so this handler runs near the FRONT of the signal's
+	# subscriber list: `tf=` then contains the game's own `process_frame` work rather than hiding it.
+	get_tree().process_frame.connect(_on_tree_process_frame)
 	# The renderer's own timers. The GPU figure arrives a frame or two late (it is a timestamp query
 	# read back, not a wall clock), which is fine for a cost that has been steady for five minutes.
 	_viewport_rid = get_viewport().get_viewport_rid()
@@ -617,6 +651,13 @@ func _process(_delta: float) -> void:
 		pre_ms = float(now - _phys_tail_usec) / 1000.0 if _phys_tail_usec > _postdraw_usec else gap_ms
 	_gap_max = maxf(_gap_max, gap_ms)
 	_pre_max = maxf(_pre_max, pre_ms)
+	var pf_ms: float = 0.0
+	var tf_ms: float = 0.0
+	if _pframe_usec > _phys_tail_usec and now > _pframe_usec:
+		pf_ms = float(_pframe_usec - _phys_tail_usec) / 1000.0
+		tf_ms = float(now - _pframe_usec) / 1000.0
+	_pf_max = maxf(_pf_max, pf_ms)
+	_tf_max = maxf(_tf_max, tf_ms)
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -642,12 +683,13 @@ func _process(_delta: float) -> void:
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
 				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
-				+ " gap=%.0f pre=%.0f ms"
+				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f) ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
+				pf_ms, tf_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -680,6 +722,8 @@ func _process(_delta: float) -> void:
 	_setup_max = 0.0
 	_gap_max = 0.0
 	_pre_max = 0.0
+	_pf_max = 0.0
+	_tf_max = 0.0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -708,7 +752,7 @@ func _report() -> void:
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
 		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f"
-		+ " gap<=%.0f pre<=%.0f ms"
+		+ " gap<=%.0f pre<=%.0f (pf<=%.0f tf<=%.0f) ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -719,7 +763,7 @@ func _report() -> void:
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 		_scripts_max, _rcpu_max, _rgpu_max, _setup_max, _sync_max, _draw_max,
-		_gap_max, _pre_max,
+		_gap_max, _pre_max, _pf_max, _tf_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -1133,6 +1177,12 @@ func _tail_tick() -> void:
 ## physics burst itself, and what SceneTree does before it calls a single _process.
 func _phys_tail_tick() -> void:
 	_phys_tail_usec = Time.get_ticks_usec()
+
+
+## SceneTree::process(), after the multiplayer poll and before the message queue, the transform
+## flush and the process group.
+func _on_tree_process_frame() -> void:
+	_pframe_usec = Time.get_ticks_usec()
 
 
 ## Start of RenderingServer::draw(), main thread. Everything between the tail probe and here is the

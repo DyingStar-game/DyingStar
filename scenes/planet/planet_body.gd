@@ -238,6 +238,12 @@ func _physics_process(delta: float) -> void:
 	# conflict for anyone to notice. So the guard lives here rather than in a merge note.
 	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
 		return
+	# Measurement mode (client.ini `debug_no_planet_spin=true`). Rewriting this basis invalidates the
+	# global transform of every node in the subtree, and the FLUSH of that change list happens later,
+	# in SceneTree::process, where the 6 fps collapse has been cornered — outside the scope below, so
+	# no amount of timing here could ever have shown it. Freezing the spin is the only way to ask.
+	if ClientPerf.ablate_planet_spin:
+		return
 	if rotation_period_hours <= 0.0 and _orbit == null:
 		return
 	# Refresh at a few Hz rather than every tick: the planet carries the terrain colliders and every
