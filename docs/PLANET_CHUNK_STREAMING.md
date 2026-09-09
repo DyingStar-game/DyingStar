@@ -1311,9 +1311,32 @@ Trois bugs découverts par cette bascule, tous réels au-delà de l'éditeur :
   atteignables depuis le nœud dans l'éditeur. Quatre sites tombaient dessus une fois le
   pipeline actif. Les constantes se lisent désormais sur le **script**.
 
-### Phase 6 (optionnelle, plus tard) — CDN de meshes borné
+### Phase 6 — CDN de meshes borné — ❌ ABANDONNÉE
 
-Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
+Elle attendait la stabilisation de `v27` / `_brg` / `_cor`. Ce n'est plus la question :
+c'est le streaming lui-même qui lui a retiré sa raison d'être.
+
+**Sa prémisse est tombée.** Un CDN de meshes *borné* ne pré-calcule qu'une partie de
+l'inventaire, et §3 montrait que ses trois plans B pour les manques échouaient tous. Le
+premier — « le client le génère » — était bloqué par *« il lui faut les hauteurs en local,
+donc le problème de disque n'est pas résolu »*. Or les hauteurs **sont** désormais
+streamées : un manque retombe simplement sur la génération locale, qui va chercher ses
+tuiles. Le trou dans le monde n'existe plus, et avec lui le seul argument qui rendait un
+CDN de meshes nécessaire plutôt que confortable.
+
+**Ce qui resterait est un gain de CPU, réel mais impayable.** Une tuile téléchargée
+économise les 623 ms de génération à froid mesurées en phase 0. Mais l'inventaire est
+invalidé par **tout patch de code**, pas seulement par un ré-export — et rien ne versionne
+le code comme les canaux versionnent la donnée. Il faudrait leur ajouter un
+`mesh_version`, et derrière, une ferme de workers Godot headless au lieu de nginx, pour
+rebâtir des téraoctets qu'un correctif de gameplay jette. Le rapport ne tient pas.
+
+**À noter : les canaux ne changent rien à ce calcul.** Ils versionnent `data_version`,
+issu de l'export ; un patch de code ne le déplace pas. S'ils avaient un rôle ici, ce serait
+comme mécanisme *de* la phase 6, pas comme raison de l'abandonner.
+
+Le chantier CPU reste ouvert, mais c'est le sien : phase 0 a mesuré les normales à 74 % du
+temps de génération, et c'est là qu'il faut chercher — localement, pas sur un CDN.
 
 ---
 
@@ -1321,7 +1344,9 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
 
 ### Tranchés
 
-- **Streamer les tuiles, pas les meshes** (§2) — inventaire 73,8 Go contre ~14,5 To.
+- **Streamer les tuiles, pas les meshes** (§2) — inventaire 73,8 Go contre ~14,5 To. Et
+  le CDN de meshes *borné* qui restait en réserve (phase 6) est abandonné : streamer les
+  hauteurs a supprimé le trou dans le monde qui le rendait nécessaire.
 - **Résolution par corps** : tarsis_3 à 198 m (`n1024 × tr32`), les 19 autres planètes
   et lunes à 4 065 m (`n64 × tr25`). tarsis_5 baisse donc de 2 033 m à 4 065 m.
 - **Un fichier par tuile pour les niveaux fins** (§4) — `nside` et `tile_res` sont déjà
