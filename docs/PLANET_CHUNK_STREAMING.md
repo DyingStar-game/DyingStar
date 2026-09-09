@@ -776,6 +776,60 @@ supprimer demande de calculer le gradient par différences finies sur la grille
 coutures, et **change la géométrie** (bump `v27`, re-bake). C'est désormais le seul gros
 poste restant côté génération.
 
+##### Suite du chantier CPU (2) — l'échantillonnage, 2026-09-09
+
+Les 144,8 ms d'échantillonnage laissées par la passe précédente (57 % du temps d'un
+chunk) sont maintenant attribuées, sur un banc reproductible hors du jeu :
+`test/perf/bench_height_sampling.gd`. Il rejoue une grille de chunk entière — 1 089
+sommets, 5 échantillons chacun, comme `generate_mesh` — sur des tuiles synthétiques
+gardées en RAM, ce qui est le cas réel : le relevé à froid comptait 1,29 million de
+demandes pour 29 tuiles distinctes.
+
+Le banc mesure **deux régimes**, et c'est le résultat principal :
+
+| chunk (tarsis_3, n8192 sur tuiles n1024 × tr32) | avant | après |
+|---|---|---|
+| sommets dans la marge de mélange de 4 texels | 101,0 µs/éch. — **550 ms** | 42,5 µs/éch. — **232 ms** |
+| sommets au centre de la tuile | 26,9 µs/éch. — **146 ms** | 19,6 µs/éch. — **107 ms** |
+
+**Un chunk qui touche la marge coûte quatre fois un chunk qui ne la touche pas.** Le
+noyau bilinéaire mélange avec la tuile voisine sur 4 texels de bord ; sur une tuile 32²,
+cette bande couvre 44 % de la surface, et la fenêtre de 4×4 texels d'un chunk fin y tombe
+dans environ 60 % des cas. Ce n'est pas la lecture de la voisine qui coûte, c'est de la
+**redemander** : `HEALPix.get_neighbors_nest()` était rappelée **à chaque échantillon**,
+alors qu'elle ne dépend que de (nside, ipix) — constants pour tout le chunk.
+
+Deux correctifs, tous deux à sortie **bit-identique** (vérifiée par le banc et par
+`test/unit/test_chunk_sampling_precompute.gd`) :
+
+**Correctif 1 — le constructeur visuel remplit enfin les précalculs qu'il recevait.**
+`sample_height_for_direction()` accepte depuis toujours face, position entière et voisines
+de la tuile ; `generate_collision_mesh` les remplit, `generate_mesh` passait `null`. Il les
+résout maintenant une fois par chunk. 101 → 58 µs par échantillon sur le chunk de bord.
+
+**Correctif 2 — le cache de tuiles ne formate plus de clé et ne parcourt plus de liste.**
+Les dictionnaires étaient indexés par la chaîne `"hp_n%d_p%d"`, reformatée à chaque
+demande, et le « touch » LRU faisait un `Array.find()` linéaire suivi d'un
+`remove_at()`/`append()`. Clé entière (`_tile_id`) et rang dans un dictionnaire : le
+lookup passe de 5,1 à 2,2 µs, et l'éviction — qui seule balaie encore — est rare.
+
+**Un bug de terrain trouvé au passage, et c'est le plus important de la passe.** Sur un
+pack **creux**, `sample_height_for_direction` remonte au plus fin ancêtre présent quand la
+tuile demandée est absente. Les précalculs de l'appelant décrivent alors la tuile
+DEMANDÉE, plus celle qui est lue : `_precomp_xy` est la position entière du pixel à son
+niveau, divisée par deux à chaque remontée. La garder décale l'UV local et lit le terrain
+ailleurs. Le constructeur de **collision** remplit ces paramètres depuis longtemps — donc
+sur tarsis_3, dont le pack est élagué à 69,5 %, la collision serveur échantillonnait un
+autre endroit que le rendu partout où la tuile fine est absente. Les précalculs sont
+maintenant lâchés à la remontée ; le test le prouve (0,627 contre 0,641 sans le correctif).
+
+**Ce qui reste, dans l'ordre du relevé** : la marge de mélange, encore — 42,5 µs contre
+19,6 µs par échantillon selon qu'on la touche ou non. Chaque échantillon de la bande
+redemande la tuile voisine (2,2 µs) au lieu de la tenir résolue pour le chunk, et
+`_direction_to_pixel_uv` pèse 5,5 µs de trigonométrie. Un contexte de tuile par chunk —
+floats de la tuile et de ses quatre voisines, résolus une fois — supprimerait le reste ;
+c'est le même objet que réclament les quatre échantillons de gradient par sommet.
+
 ##### Ce que ça ouvre, hors de ce document
 
 `_assemble_visual_chunk` (thread principal, 2,86 ms × 488 à chaud, 6,33 ms × 293 à
@@ -784,12 +838,14 @@ travers un lookup verrouillé) sont les deux vraies cibles du « coût de calcul
 chunks ». Ni l'une ni l'autre n'est touchée par le streaming. Deux pistes visibles dans
 le relevé, à instruire séparément :
 
-- le « touch » LRU de `load_chunk_heightmap` fait un `Array.find()` linéaire sur
-  `_cache_order` plus un formatage de clé `"hp_n%d_p%d"` — à 1,29 million d'appels ;
+- ~~le « touch » LRU de `load_chunk_heightmap` fait un `Array.find()` linéaire sur
+  `_cache_order` plus un formatage de clé `"hp_n%d_p%d"` — à 1,29 million d'appels~~ —
+  fait, voir « Suite du chantier CPU (2) » ci-dessus : clé entière et rang en O(1) ;
 - les quatre échantillons de gradient par sommet retombent presque toujours sur la même
   tuile que le sommet lui-même : la résoudre une fois par sommet, ou calculer le
   gradient depuis la grille de hauteurs déjà chargée, supprimerait l'essentiel du
-  volume.
+  volume. La tuile est désormais résolue une fois par CHUNK (face, position, voisines) ;
+  ce qui reste à hisser, ce sont les tableaux de floats eux-mêmes.
 
 ##### Serveur — toujours aucun chunk de collision
 

@@ -253,7 +253,7 @@ var _road_material_cache: Dictionary = {}
 ## WorkerThreadPool tasks and several can want the same material at once.
 var _road_material_mutex: Mutex = Mutex.new()
 
-## Cache of loaded chunk heightmap images.  Key = "hp_nN_pP" → Image.
+## Cache of loaded chunk heightmap images.  Clé = id de tuile (voir [method _tile_id]) → Image.
 var _chunk_images: Dictionary = {}
 ## Mêmes tuiles que _chunk_images, décodées en PackedFloat32Array.
 ##
@@ -374,8 +374,17 @@ var _chunk_radial_features: Dictionary = {}
 ## ── Recipe-based terrain generation ──────────────────────────────
 ## Pixel resolution per edge for recipe-generated heightmaps.
 var _recipe_resolution: int = 256
-## LRU eviction tracking: ordered list of chunk keys (oldest first).
-var _cache_order: Array[String] = []
+## Suivi LRU : id de tuile → rang d'utilisation, croissant.
+##
+## Remplace la liste ordonnée : son « touch » faisait un Array.find() LINÉAIRE puis un
+## remove_at()/append() à chaque lecture de tuile. Inoffensif à deux tuiles ; mais le chemin
+## d'échantillonnage demande une tuile par échantillon de hauteur — 1,29 million de demandes
+## pour 29 tuiles distinctes sur un relevé de génération (docs/PLANET_CHUNK_STREAMING.md).
+## Une écriture de dictionnaire tient le même rôle en O(1) ; le balayage du minimum n'a lieu
+## qu'à l'éviction, qui est rare (budget d'un gigaoctet pour des tuiles de quelques kilooctets).
+var _cache_tick: Dictionary = {}
+## Compteur monotone alimentant _cache_tick. Protégé par _cache_mutex comme le reste.
+var _cache_seq: int = 0
 ## Current total cache size in bytes (for LRU eviction budget).
 var _cache_bytes: int = 0
 ## Maximum cache budget in bytes.  1024 MB for client.
@@ -385,7 +394,7 @@ var _server_no_evict: bool = false
 ## When true, skip loading 8 neighbor recipes to merge craters in
 ## _load_recipe_heightmap.  Set when the planet has no craters at all.
 var skip_neighbor_crater_merge: bool = false
-## Mutex protecting _chunk_images, _cache_order, and _cache_bytes so that
+## Mutex protecting _chunk_images, _cache_tick, and _cache_bytes so that
 ## mesh generation (WorkerThreadPool tasks) can safely read the image cache
 ## at the same time the main thread stores new recipe results.
 var _cache_mutex: Mutex = Mutex.new()
@@ -672,6 +681,29 @@ static func _prof_count_sampler(entry: String) -> void:
 	prof_tile_mutex.unlock()
 
 
+## Identifiant de tuile, pour les dictionnaires du cache.
+##
+## Les caches étaient indexés par la chaîne "hp_n<nside>_p<ipix>", reformatée à CHAQUE
+## demande de tuile — soit une allocation et un formatage par échantillon de hauteur.
+## Un entier porte la même information sans rien allouer : ipix tient sur 30 bits au plus
+## (12·nside², nside ≤ 8192) et nside sur les bits hauts.
+static func _tile_id(ipix: int, nside: int) -> int:
+	return (nside << 32) | ipix
+
+
+## Même identifiant, depuis la clé textuelle de l'API publique ("hp_n<nside>_p<ipix>").
+## Les points d'entrée par clé (store_chunk_image, is_chunk_cached, invalidate_chunk_cache)
+## sont froids — une fois par tuile, pas une fois par échantillon — donc l'analyse y est
+## sans conséquence.
+static func _tile_id_from_key(key: String) -> int:
+	var p := key.find("_p")
+	if not key.begins_with("hp_n") or p < 0:
+		push_error("[PlanetData] clé de tuile inattendue: '%s'" % key)
+		# Espace d'identifiants disjoint : jamais confondu avec un (ipix, nside) réel.
+		return -absi(key.hash())
+	return _tile_id(key.substr(p + 2).to_int(), key.substr(4, p - 4).to_int())
+
+
 ## Load the .r32 tile (ipix) at pyramid level [param nside]. nside <= 0 means
 ## "finest" (export_nside), which is what every legacy caller gets by default.
 ##
@@ -795,30 +827,28 @@ func load_chunk_floats(ipix: int, nside: int = -1) -> PackedFloat32Array:
 
 func _load_chunk_floats_impl(ipix: int, nside: int = -1) -> PackedFloat32Array:
 	var ns := nside if nside > 0 else export_nside
-	var key := "hp_n%d_p%d" % [ns, ipix]
+	var id := _tile_id(ipix, ns)
 
 	if _server_no_evict:
-		var hit: Variant = _chunk_floats.get(key)
+		var hit: Variant = _chunk_floats.get(id)
 		if hit != null:
 			return hit
-		if chunk_heightmaps_dir != "" and _file_load_and_cache(key, ipix, ns) != null:
-			return _chunk_floats.get(key, PackedFloat32Array())
+		if chunk_heightmaps_dir != "" and _file_load_and_cache(ipix, ns) != null:
+			return _chunk_floats.get(id, PackedFloat32Array())
 		return PackedFloat32Array()
 
 	_cache_mutex.lock()
-	if _chunk_floats.has(key):
-		var idx := _cache_order.find(key)
-		if idx >= 0:
-			_cache_order.remove_at(idx)
-			_cache_order.append(key)
-		var cached: PackedFloat32Array = _chunk_floats[key]
+	var cached: Variant = _chunk_floats.get(id)
+	if cached != null:
+		_cache_seq += 1
+		_cache_tick[id] = _cache_seq
 		_cache_mutex.unlock()
 		return cached
 	_cache_mutex.unlock()
 
-	if chunk_heightmaps_dir != "" and _file_load_and_cache(key, ipix, ns) != null:
+	if chunk_heightmaps_dir != "" and _file_load_and_cache(ipix, ns) != null:
 		_cache_mutex.lock()
-		var loaded: PackedFloat32Array = _chunk_floats.get(key, PackedFloat32Array())
+		var loaded: PackedFloat32Array = _chunk_floats.get(id, PackedFloat32Array())
 		_cache_mutex.unlock()
 		return loaded
 	return PackedFloat32Array()
@@ -826,30 +856,28 @@ func _load_chunk_floats_impl(ipix: int, nside: int = -1) -> PackedFloat32Array:
 
 func _load_chunk_heightmap_impl(ipix: int, nside: int = -1) -> Image:
 	var ns := nside if nside > 0 else export_nside
-	var key := "hp_n%d_p%d" % [ns, ipix]
+	var id := _tile_id(ipix, ns)
 	# Server fast path: cache is read-only after preload, skip mutex + LRU.
 	if _server_no_evict:
-		var cached := _chunk_images.get(key) as Image
+		var cached := _chunk_images.get(id) as Image
 		if cached != null:
 			return cached
 		# File mode: lazily load the exported tile (thread-safe via mutex).
 		if chunk_heightmaps_dir != "":
-			return _file_load_and_cache(key, ipix, ns)
+			return _file_load_and_cache(ipix, ns)
 		return null
 	_cache_mutex.lock()
-	if _chunk_images.has(key):
-		# LRU touch: move to end of order list
-		var idx := _cache_order.find(key)
-		if idx >= 0:
-			_cache_order.remove_at(idx)
-			_cache_order.append(key)
-		var result := _chunk_images[key] as Image
+	var result := _chunk_images.get(id) as Image
+	if result != null:
+		# LRU touch: une écriture, pas un parcours de liste.
+		_cache_seq += 1
+		_cache_tick[id] = _cache_seq
 		_cache_mutex.unlock()
 		return result
 	_cache_mutex.unlock()
 	# File mode: load the per-chunk elevation tile (.r32) directly from disk.
 	if chunk_heightmaps_dir != "":
-		return _file_load_and_cache(key, ipix, ns)
+		return _file_load_and_cache(ipix, ns)
 	# Not cached yet — return null so callers fall back to global heightmap.
 	# The async recipe pipeline in PlanetTerrain will generate and cache it.
 	return null
@@ -858,7 +886,7 @@ func _load_chunk_heightmap_impl(ipix: int, nside: int = -1) -> Image:
 ## Load a per-chunk elevation tile (.r32) and insert it into the image cache.
 ## Thread-safe; safe to call from WorkerThreadPool mesh/collision tasks.
 ## Returns null if the tile is missing/malformed (caller falls back to global).
-func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
+func _file_load_and_cache(ipix: int, nside: int) -> Image:
 	var img := _read_r32_tile(ipix, nside)
 	if img == null:
 		return null
@@ -869,15 +897,17 @@ func _file_load_and_cache(key: String, ipix: int, nside: int) -> Image:
 		prof_tile_mutex.lock()
 		prof_tile_disk_reads += 1
 		prof_tile_mutex.unlock()
+	var id := _tile_id(ipix, nside)
 	_cache_mutex.lock()
 	# Another thread may have loaded the same tile while we read from disk.
-	if _chunk_images.has(key):
-		var existing := _chunk_images[key] as Image
+	var existing := _chunk_images.get(id) as Image
+	if existing != null:
 		_cache_mutex.unlock()
 		return existing
-	_chunk_images[key] = img
-	_chunk_floats[key] = _decode_tile_floats(img)
-	_cache_order.append(key)
+	_chunk_images[id] = img
+	_chunk_floats[id] = _decode_tile_floats(img)
+	_cache_seq += 1
+	_cache_tick[id] = _cache_seq
 	_cache_bytes += img.get_width() * img.get_height() * 4
 	_cache_mutex.unlock()
 	if not _server_no_evict:
@@ -1175,7 +1205,7 @@ func apply_chunk_manifest() -> bool:
 ## [param export_key] has the form "hp_nN_pP".  Thread-safe.
 func is_chunk_cached(export_key: String) -> bool:
 	_cache_mutex.lock()
-	var result := _chunk_images.has(export_key)
+	var result := _chunk_images.has(_tile_id_from_key(export_key))
 	_cache_mutex.unlock()
 	return result
 
@@ -1185,10 +1215,12 @@ func is_chunk_cached(export_key: String) -> bool:
 func store_chunk_image(key: String, img: Image, craters: Array,
 		populate_zones: Array = [], linear_features: Array = [],
 		radial_features: Array = []) -> void:
+	var id := _tile_id_from_key(key)
 	_cache_mutex.lock()
-	_chunk_images[key] = img
-	_chunk_floats[key] = _decode_tile_floats(img)
-	_cache_order.append(key)
+	_chunk_images[id] = img
+	_chunk_floats[id] = _decode_tile_floats(img)
+	_cache_seq += 1
+	_cache_tick[id] = _cache_seq
 	_cache_bytes += img.get_width() * img.get_height() * 4
 	_cache_mutex.unlock()
 	_evict_lru()
@@ -1213,14 +1245,15 @@ func ensure_queries_loaded() -> void:
 ## Call this before re-loading a recipe that has been modified by a biome
 ## injection so the next _load_recipe_heightmap picks up fresh data.
 func invalidate_chunk_cache(export_key: String) -> void:
+	var id := _tile_id_from_key(export_key)
 	_cache_mutex.lock()
-	if _chunk_images.has(export_key):
-		var old_img: Image = _chunk_images[export_key]
+	if _chunk_images.has(id):
+		var old_img: Image = _chunk_images[id]
 		if old_img:
 			_cache_bytes -= old_img.get_width() * old_img.get_height() * 4
-		_chunk_images.erase(export_key)
-		_chunk_floats.erase(export_key)
-		_cache_order.erase(export_key)
+		_chunk_images.erase(id)
+		_chunk_floats.erase(id)
+		_cache_tick.erase(id)
 	_cache_mutex.unlock()
 	_chunk_craters.erase(export_key)
 	_chunk_populate_zones.erase(export_key)
@@ -2068,14 +2101,22 @@ func _evict_lru() -> void:
 	if _server_no_evict:
 		return
 	_cache_mutex.lock()
-	while _cache_bytes > MAX_CACHE_BYTES and _cache_order.size() > 0:
-		var oldest_key: String = _cache_order[0]
-		_cache_order.remove_at(0)
-		var old_img: Image = _chunk_images.get(oldest_key)
+	while _cache_bytes > MAX_CACHE_BYTES and _cache_tick.size() > 0:
+		# Le rang le plus bas est la tuile la moins récemment lue. Le balayage est linéaire,
+		# mais il ne tourne qu'ici — pas sur le chemin d'échantillonnage.
+		var oldest_id: int = -1
+		var oldest_tick: int = 0
+		for id in _cache_tick:
+			var t: int = _cache_tick[id]
+			if oldest_id < 0 or t < oldest_tick:
+				oldest_id = id
+				oldest_tick = t
+		_cache_tick.erase(oldest_id)
+		var old_img: Image = _chunk_images.get(oldest_id)
 		if old_img != null:
 			_cache_bytes -= old_img.get_width() * old_img.get_height() * 4
-		_chunk_images.erase(oldest_key)
-		_chunk_floats.erase(oldest_key)
+		_chunk_images.erase(oldest_id)
+		_chunk_floats.erase(oldest_id)
 	_cache_mutex.unlock()
 
 
@@ -2113,6 +2154,19 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 			ipix = up.x
 			ns = up.y
 			floats = load_chunk_floats(ipix, ns)
+			# Tout ce que l'appelant a précalculé décrit la tuile DEMANDÉE et ne décrit
+			# plus celle qu'on vient de choisir. Les voisins désigneraient un autre pixel
+			# dans la marge de mélange ; et _precomp_xy, surtout, est la position ENTIÈRE
+			# du pixel à son niveau — elle est divisée par deux à chaque remontée, donc la
+			# garder décale l'UV local et lit le terrain ailleurs. (La face, elle, est
+			# invariante par la remontée : le parent d'un pixel est sur la même face.)
+			# Le constructeur de collision remplit ces deux paramètres depuis longtemps :
+			# sur un pack creux — celui de tarsis_3 l'est à 69,5 % — la collision
+			# échantillonnait donc un autre endroit que le rendu partout où la tuile fine
+			# est élaguée.
+			_cached_neighbors = null
+			_precomp_face = -1
+			_precomp_xy = Vector2i(-1, -1)
 	if floats.is_empty():
 		# DEBUG: the per-chunk tile is not available at sample time — this vertex
 		# gets its elevation from the equirect global map, which is a different
