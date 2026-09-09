@@ -813,14 +813,11 @@ linéaire sur `_cache_order` — inoffensif à 2 tuiles, à 283 il coûte déjà
 - [x] ~~Session **client** réelle avec `--perf`~~ — fait, voir ci-dessus.
 - [x] ~~Comparer `tuiles distinctes` mesuré aux 273 simulés~~ — 283, écart 3,7 %.
 - [x] ~~Identifier l'appelant des demandes au repos~~ — `_build_bridge_plans`.
-- [ ] **Sonder tarsis_3** avec `probe_pack_sparsity.py` avant tout export n1024, et
-      trancher dense vs creux sur le chiffre.
-- [ ] **Élucider `col=0` côté serveur** : aucune résidence de zone demandée alors que le
-      client construisait 488 chunks. Bug d'entrée de zone, ou configuration ?
+- [x] ~~**Sonder tarsis_3** avant tout export n1024, trancher dense vs creux~~ — fait,
+      et l'export l'a confirmé : creux, **69,5 % élagué** contre 65 % projeté.
+- [x] ~~**Élucider `col=0` côté serveur**~~ — configuration, pas bug (§10).
 - [x] ~~Relevé client **cache froid**~~ — fait : 623 ms/chunk, normales 74 %, tuiles
       9,4 %. La phase 0 a sa réponse.
-- [ ] Comparer `tuiles distinctes` mesuré aux 273 simulés de la section 3 — un écart
-      important invaliderait le dimensionnement du cache et du prefetch.
 - [x] ~~**Choisir la résolution cible par planète.**~~ Acté : tarsis_3 à 198 m
       (`n1024 × tr32`), les 19 autres planètes et lunes à 4 065 m (`n64 × tr25`).
 
