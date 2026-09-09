@@ -95,6 +95,48 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -
 	return ready
 
 
+## Met en file les tuiles d'un jeu de chunks, sans décider de leur résidence.
+##
+## Le garde n'examine que les chunks qu'un créneau de tâche laisse passer — quatre à la
+## fois côté serveur. À l'arrivée d'une zone, cela demande les tuiles quatre chunks par
+## frame, donc la zone entière au compte-gouttes. Ici on demande TOUT d'un coup, dès que
+## le jeu désiré est connu, et le garde trouve ensuite les tuiles déjà là.
+##
+## Ne compte pas dans les compteurs du garde : ce n'est pas une décision de résidence,
+## c'est une anticipation. Rend le nombre de chunks examinés.
+static func prefetch_chunks(data: PlanetData, keys: Array) -> int:
+	if data == null or data.remote_source == null:
+		return 0
+	var seen := {}
+	var n := 0
+	for entry in keys:
+		var nside: int = entry.x
+		var ipix: int = entry.y
+		n += 1
+		for t in chunk_tile_set(data, nside, ipix):
+			var k := "%d/%d" % [t.y, t.x]
+			if seen.has(k):
+				continue
+			seen[k] = true
+			if tile_available(data, t.x, t.y):
+				continue
+			# Même remontée que le garde : sur un pack creux la tuile exacte peut ne pas
+			# exister, et c'est son ancêtre qu'il faut rapatrier. presence_of() ne bloque
+			# jamais — ce code tourne sur le thread principal.
+			var ns: int = t.y
+			var ip: int = t.x
+			while ns >= data.export_nside_min:
+				var state: int = data.remote_source.presence_of(ns, ip)
+				if state == RemoteTileSource.PRESENCE_UNKNOWN:
+					break
+				if state == RemoteTileSource.PRESENCE_YES:
+					data.remote_source.queue(ns, ip)
+					break
+				ns >>= 1
+				ip >>= 2
+	return n
+
+
 ## Multiplicateur appliqué au déplacement récent pour viser en avant du joueur. 8 fois la
 ## course des dernières mises à jour de caméra : assez loin pour couvrir un aller-retour
 ## réseau, assez près pour ne pas précharger une direction qu'il ne prendra pas.
