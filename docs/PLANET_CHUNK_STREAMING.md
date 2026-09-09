@@ -823,12 +823,49 @@ sur tarsis_3, dont le pack est élagué à 69,5 %, la collision serveur échanti
 autre endroit que le rendu partout où la tuile fine est absente. Les précalculs sont
 maintenant lâchés à la remontée ; le test le prouve (0,627 contre 0,641 sans le correctif).
 
-**Ce qui reste, dans l'ordre du relevé** : la marge de mélange, encore — 42,5 µs contre
-19,6 µs par échantillon selon qu'on la touche ou non. Chaque échantillon de la bande
-redemande la tuile voisine (2,2 µs) au lieu de la tenir résolue pour le chunk, et
-`_direction_to_pixel_uv` pèse 5,5 µs de trigonométrie. Un contexte de tuile par chunk —
-floats de la tuile et de ses quatre voisines, résolus une fois — supprimerait le reste ;
-c'est le même objet que réclament les quatre échantillons de gradient par sommet.
+**Correctif 3 — un cadre de tuiles par chunk (`PlanetData.TileFrame`).** La décomposition
+du chemin restant a désigné un poste qu'aucune des deux hypothèses de départ ne visait :
+
+| sur le chunk de bord | µs/échantillon | part du temps |
+|---|---|---|
+| sommets intérieurs (4 805) | 32,6 | 67 % |
+| **sommets de bord (640)** | **120,1** | **31 %, pour 12 % des échantillons** |
+
+Un sommet de bord passe par `sample_height_boundary`, qui résout la tuile par
+`vec2pix_nest` — et quand elle diffère de celle du chunk, **il repartait sans aucun
+précalcul** : les trois paramètres décrivaient la tuile du chunk, pas celle-là. Les
+sommets de bord repayaient donc le `get_neighbors_nest()` par échantillon que le
+correctif 1 venait de supprimer partout ailleurs.
+
+Un objet passé à la main ne peut pas suivre : la tuile réellement lue change avec le
+sommet (bord) et avec la présence de la donnée (remontée sur pack creux). Le cadre est donc
+**indexé par tuile** — face, position dans la face, voisines et tableau de floats, calculés
+au premier accès. Un chunk touche neuf tuiles au plus, contre 5 445 échantillons. Il
+remplace les trois précalculs dans les deux constructeurs, ce qui supprime aussi, par
+construction, la classe de bug décrite ci-dessus.
+
+##### Où en est le coût d'un chunk
+
+Trois relevés du même banc, sur les mêmes deux chunks, hauteurs identiques au bit près à
+chaque étape :
+
+| chunk (tarsis_3) | départ | + précalculs et clé entière | + cadre de tuiles |
+|---|---|---|---|
+| **dans la marge de mélange** | 550 ms | 252 ms | **188 ms** (−66 %) |
+| **au centre de sa tuile** | 146 ms | 106 ms | **108 ms** (−26 %) |
+
+Le cadre n'apporte rien au chunk du centre — il n'a ni voisines à mélanger ni sommets qui
+basculent — mais il ne lui coûte rien non plus. C'est la marge qui paie.
+
+**Ce qui reste, et pourquoi je m'arrête là.** Sur le chunk de bord, 19,5 µs des 34,5 sont
+dans le noyau de mélange lui-même : deux évaluations bilinéaires supplémentaires, leurs
+`lerp`, et quatre accès à un dictionnaire à clés textuelles (`"W"`, `"E"`, `"S"`, `"N"`)
+par échantillon. Les remplacer par un tableau d'entiers gagnerait peut-être 15 % de plus,
+au prix d'une chirurgie dans l'arithmétique la plus délicate du fichier. Le vrai gain
+suivant n'est pas là : c'est de **ne plus prendre quatre échantillons par sommet** —
+gradient par différences finies sur la grille `_chunk_heights` déjà remplie, avec un halo
+d'un sommet pour l'accord aux coutures. Cela change la géométrie (bump `v27`, re-bake),
+donc c'est une décision, pas une optimisation.
 
 ##### Ce que ça ouvre, hors de ce document
 

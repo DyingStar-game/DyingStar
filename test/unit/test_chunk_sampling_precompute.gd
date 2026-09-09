@@ -208,6 +208,7 @@ func test_a_whole_chunk_samples_identically_with_and_without_precompute() -> voi
 	var xy: Vector2i = HEALPix.nest2xy(export_ipix % (NSIDE * NSIDE))
 	var neighbors := HEALPix.get_neighbors_nest(NSIDE, export_ipix)
 
+	var frame: PlanetData.TileFrame = _pd_dense.make_tile_frame()
 	var grid: Array[PackedVector3Array] = HEALPix.get_pixel_grid(CHUNK_NSIDE, hp_ipix, CHUNK_RES)
 	var eps := HEALPix.pixel_side_length(CHUNK_NSIDE, 1.0) * (0.25 / float(CHUNK_RES))
 	var checked := 0
@@ -225,16 +226,21 @@ func test_a_whole_chunk_samples_identically_with_and_without_precompute() -> voi
 					(dir_c - tan_v * eps).normalized(), (dir_c + tan_v * eps).normalized()]:
 				var plain: float
 				var fast: float
+				var framed: float
 				if edge:
 					plain = _pd_dense.sample_height_boundary(
 							d, export_ipix, -1, Vector2i(-1, -1), null, NSIDE)
 					fast = _pd_dense.sample_height_boundary(
 							d, export_ipix, face, xy, neighbors, NSIDE)
+					framed = _pd_dense.sample_height_boundary(
+							d, export_ipix, -1, Vector2i(-1, -1), null, NSIDE, frame)
 				else:
 					plain = _pd_dense.sample_height_for_direction(
 							d, export_ipix, -1, Vector2i(-1, -1), null, NSIDE)
 					fast = _pd_dense.sample_height_for_direction(
 							d, export_ipix, face, xy, neighbors, NSIDE)
+					framed = _pd_dense.sample_height_for_direction(
+							d, export_ipix, -1, Vector2i(-1, -1), null, NSIDE, frame)
 				if checked == 0:
 					first = plain
 				elif not is_equal_approx(plain, first):
@@ -243,6 +249,10 @@ func test_a_whole_chunk_samples_identically_with_and_without_precompute() -> voi
 				if plain != fast:
 					assert_eq(fast, plain,
 							"sommet (%d, %d) : les précalculs changent la hauteur" % [xi, yi])
+					return
+				if plain != framed:
+					assert_eq(framed, plain,
+							"sommet (%d, %d) : le cadre change la hauteur" % [xi, yi])
 					return
 	assert_gt(checked, 0, "la grille doit avoir été parcourue")
 	assert_true(varied,
@@ -280,3 +290,10 @@ func test_level_up_ignores_the_callers_precomputed_tile_position() -> void:
 			dir, absent, face, xy, neighbors, SPARSE_NSIDE_MAX)
 	assert_eq(fast, plain,
 			"après remontée, les précalculs décrivent la tuile absente, pas celle qui est lue")
+
+	# Le cadre, lui, est indexé par tuile : il ne PEUT pas décrire la mauvaise. C'est la
+	# raison de fond de le préférer aux trois paramètres passés à la main.
+	var framed := _pd_sparse.sample_height_for_direction(
+			dir, absent, -1, Vector2i(-1, -1), null, SPARSE_NSIDE_MAX,
+			_pd_sparse.make_tile_frame())
+	assert_eq(framed, plain, "le cadre doit rendre la hauteur de l'ancêtre")

@@ -106,25 +106,21 @@ static func generate_mesh(
 			_export_ipix = hp_ipix
 		# else: coarser than the coarsest baked level (or legacy flat export) →
 		# leave -1 so each vertex resolves its tile via vec2pix at _sample_nside.
-	# Tuile d'élévation résolue UNE fois pour le chunk : sa face, sa position entière dans
-	# la face, ses huit voisines. Les trois ne dépendent que de (nside, ipix), constants ici.
+	# Cadre d'échantillonnage du chunk : face, position dans la face, voisines et tableau de
+	# floats, résolus au premier accès et mémorisés PAR TUILE. Un chunk en touche neuf au
+	# plus — la sienne et celles que ses sommets de bord atteignent — contre 5 445
+	# échantillons, dont chacun refaisait le travail, get_neighbors_nest() en tête.
 	#
-	# Les échantillonneurs de PlanetData acceptent ces trois paramètres depuis longtemps —
-	# generate_collision_mesh les remplit — mais le constructeur visuel, qui produit dix
-	# fois plus d'échantillons, passait null : chaque échantillon refaisait donc le nest2xy
-	# de l'UV, et surtout, dans la marge de mélange de 4 texels du noyau bilinéaire, un
-	# get_neighbors_nest() complet (table d'offsets, huit entrées de dictionnaire, autant de
-	# xy2nest). Mesuré sur un chunk de tarsis_3 dont les sommets tombent dans cette marge :
-	# 101 → 58 µs par échantillon, hauteurs identiques au bit près
-	# (test/perf/bench_height_sampling.gd).
-	var _hp_face: int = -1
-	var _hp_xy: Vector2i = Vector2i(-1, -1)
-	var _tile_neighbors = null
-	if hp_mode and _export_ipix >= 0:
-		@warning_ignore("integer_division")
-		_hp_face = _export_ipix / (_sample_nside * _sample_nside)
-		_hp_xy = HEALPix.nest2xy(_export_ipix % (_sample_nside * _sample_nside))
-		_tile_neighbors = HEALPix.get_neighbors_nest(_sample_nside, _export_ipix)
+	# Le cadre remplace les trois précalculs qu'on passait à la main, et pas seulement pour
+	# la vitesse : eux décrivaient la tuile DEMANDÉE, alors qu'un sommet de bord bascule sur
+	# la tuile voisine et qu'un pack creux fait remonter à un ancêtre. Le cadre est indexé
+	# par tuile, donc il donne toujours ceux de la tuile réellement lue.
+	#
+	# Mesuré sur un chunk de tarsis_3 dont les sommets tombent dans la marge de mélange de
+	# 4 texels : 550 → 185 ms de génération, dont les sommets de bord 120 → 45 µs. Hauteurs
+	# identiques au bit près (test/perf/bench_height_sampling.gd,
+	# test/unit/test_chunk_sampling_precompute.gd).
+	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
 
 	# ── Float32 precision fix ──────────────────────────────────────
 	# Vertex positions are stored as float32 in PackedVector3Array.
@@ -436,10 +432,10 @@ static func generate_mesh(
 				# any given direction, so both sides of the seam are consistent.
 				if xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _export_ipix,
-							_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
 				else:
 					height = data.sample_height_for_direction(dir, _export_ipix,
-							_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
 			else:
 				# Snap boundary vertices to exact u_min/u_max/v_min/v_max so
 				# shared edges between adjacent chunks sample identical heights.
@@ -904,15 +900,15 @@ static func generate_mesh(
 				if _pf:
 					_t_sub = Time.get_ticks_usec()
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					h_l = data.sample_height_boundary(dir_l, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_r = data.sample_height_boundary(dir_r, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_b = data.sample_height_boundary(dir_b, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_t = data.sample_height_boundary(dir_t, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
 				else:
-					h_l = data.sample_height_for_direction(dir_l, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_r = data.sample_height_for_direction(dir_r, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_b = data.sample_height_for_direction(dir_b, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
-					h_t = data.sample_height_for_direction(dir_t, _export_ipix, _hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
 				if _pf:
 					var _now := Time.get_ticks_usec()
 					_t_sm += _now - _t_sub
@@ -1669,7 +1665,7 @@ static func generate_mesh(
 							var _h: float
 							if hp_mode:
 								_h = data.sample_height_for_direction(_dir, _export_ipix,
-										_hp_face, _hp_xy, _tile_neighbors, _sample_nside)
+										-1, Vector2i(-1, -1), null, _sample_nside, _frame)
 							else:
 								var _fuv := PlanetData.sphere_to_cube(_dir)
 								_h = data.sample_height_for_chunk(
@@ -2425,18 +2421,12 @@ static func generate_collision_shape(
 	var grid: Array[Vector3] = []
 	grid.resize((res + 1) * (res + 1))
 
-	# Pre-compute face/xy/neighbors for the export pixel (constant per chunk).
-	# Passed through to sample_height_* so they skip redundant nest2xy and
-	# get_neighbors_nest calls (14M+ saved for a tarsis_1-sized prebake).
-	var _hp_face: int = -1
-	var _hp_xy: Vector2i = Vector2i(-1, -1)
-	var _hp_neighbors = null
-	if hp_mode and _height_ipix >= 0:
-		@warning_ignore("integer_division")
-		_hp_face = _height_ipix / (_height_nside * _height_nside)
-		var _hp_local := _height_ipix % (_height_nside * _height_nside)
-		_hp_xy = HEALPix.nest2xy(_hp_local)
-		_hp_neighbors = HEALPix.get_neighbors_nest(_height_nside, _height_ipix)
+	# Même cadre que le constructeur visuel (voir generate_mesh). Il remplace les trois
+	# précalculs passés à la main : ceux-ci décrivaient la tuile DEMANDÉE, et restaient en
+	# place quand un pack creux faisait remonter l'échantillonnage à un ancêtre — la
+	# collision lisait alors le terrain à côté du rendu. Le cadre est indexé par tuile,
+	# donc il ne peut pas se désynchroniser.
+	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
 
 	for yi in res + 1:
 		for xi in res + 1:
@@ -2446,10 +2436,10 @@ static func generate_collision_shape(
 				dir = grid_dirs[yi][xi]
 				if xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _height_ipix,
-							_hp_face, _hp_xy, _hp_neighbors, _height_nside)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame)
 				else:
 					height = data.sample_height_for_direction(dir, _height_ipix,
-							_hp_face, _hp_xy, _hp_neighbors, _height_nside)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame)
 			else:
 				var u: float
 				if xi == 0:
