@@ -1217,6 +1217,29 @@ Vérifié bout en bout sur l'arborescence publiée : promotion des quatre crans,
 des trois canaux depuis le client, repli sur `dev` pour un nom fautif, et refus de
 promouvoir une version non publiée sans toucher au canal cible.
 
+#### Ramasse-miettes des versions — ✅ FAIT (`--gc`)
+
+Une version de tarsis_3 à 198 m pèse **5,1 M fichiers et 20 Gio** : le volume se remplit
+en trois publications, et sur une table d'inodes fixe ce sont les fichiers qui s'épuisent
+en premier. La suppression n'est donc plus un confort.
+
+Les canaux donnent le critère, et c'est le seul : **une version qu'aucun canal ne cite est
+morte**. Les quatre crans sont lus, `unstable` compris — une version fraîchement publiée
+que personne n'a promue est du travail en cours, pas un déchet. Le pointeur `latest.json`
+est délibérément ignoré : il suit la dernière publication, donc s'il faisait autorité, une
+version publiée puis abandonnée serait immortelle.
+
+    python3 tools/stream_channels.py --dist DIR --gc --dry-run   # mesure, ne touche rien
+    python3 tools/stream_channels.py --dist DIR --gc             # supprime
+
+`--dry-run` est le réflexe à garder : effacer cinq millions de fichiers ne se rejoue pas.
+
+**Le ramasse-miettes et l'échelle se répondent.** Tant que `prod` cite l'ancienne version,
+elle est protégée — c'est *elle* le retour arrière. Promouvoir les quatre crans d'un coup
+la rend collectable dans la foulée et supprime ce retour arrière. La discipline qui en
+découle : monter `unstable → dev → preprod`, laisser `prod` derrière le temps de la
+confiance, et ne ramasser qu'après.
+
 #### Ce qui reste
 
 - Mode `--prefetch-zone` du même fetcher, lancé au boot / en init container, vers
@@ -1283,11 +1306,11 @@ Voir section 7. Seulement une fois `v27` / `_brg` / `_cor` stabilisés.
   théorique. Aucune tuile n'atteint 4 Kio (médiane 1383 o), donc en blocs de 4 Kio les
   5,1 M fichiers occupent **19,5 Gio** pour 6,7 Gio de données. En blocs de 1 Kio, environ
   la moitié.
-- **Combien de versions garder en ligne** : ce sont les **inodes** qui tranchent, pas les
-  octets. 5,1 M fichiers par version contre 16,7 M libres sur le volume de test, soit
-  **trois versions de tarsis_3 au maximum**. Les canaux donnent le critère de suppression —
-  une version qu'aucun canal ne cite est morte — mais le ramasse-miettes reste à écrire, et
-  il devient nécessaire plutôt que confortable.
+- ~~**Combien de versions garder en ligne**~~ — **tranché par la structure** : autant que
+  de canaux, plus celles en cours de publication. Ce sont les **inodes** qui contraignent,
+  pas les octets : 5,1 M fichiers par version contre 16,7 M libres sur le volume ext4 de
+  test, soit trois versions au maximum ; sur ZFS la table d'inodes n'est pas préallouée et
+  la limite redevient l'espace. `--gc` supprime ce qu'aucun canal ne cite.
 - ~~**`col=0` côté serveur**~~ **Élucidé** : configuration, pas bug. Le serveur n'avait ni
   pack local (renommé pour le test) ni section `[stream]` dans `server.ini` — donc aucune
   élévation, donc aucune collision. Avec l'une ou l'autre, il construit normalement.
