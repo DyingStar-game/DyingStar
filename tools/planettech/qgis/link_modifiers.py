@@ -29,13 +29,13 @@ planet uses.
 
 Usage — from the QGIS Python console (the exporters call link() for you):
 
-    exec(open('.../tools/qgis/link_modifiers.py').read())
+    exec(open('.../tools/planettech/qgis/link_modifiers.py').read())
     link('tarsis_4')
 
 or from a shell:
 
-    python3 tools/qgis/link_modifiers.py tarsis_4
-    python3 tools/qgis/link_modifiers.py tarsis_4 --explode
+    python3 tools/planettech/qgis/link_modifiers.py tarsis_4
+    python3 tools/planettech/qgis/link_modifiers.py tarsis_4 --explode
 
 No QGIS import: this module is pure stdlib + the dsmp encoder.
 """

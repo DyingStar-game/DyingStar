@@ -2810,7 +2810,7 @@ static func _dir_in_populate_zone(dir: Vector3, zone: Dictionary) -> bool:
 ## Outline of a populate zone as a PackedVector2Array of lon/lat points.
 ##
 ## Producers disagree on the key: recipe exports write `vertices` (an Array of
-## [lon, lat] pairs, see tools/qgis/export/planet/recipe.py), while
+## [lon, lat] pairs, see tools/planettech/qgis/export/planet/recipe.py), while
 ## PlanetData.inject_biome_feature() writes `polygon` (a PackedVector2Array).
 ## Reading only one of them silently yields an empty outline for zones from the
 ## other producer — that is how the client mesh lost its cliff drop while the

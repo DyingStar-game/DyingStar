@@ -19,7 +19,7 @@ build/
 assets_blender/
 
 # Not needed for server export (but keep prebake script)
-tools/qgis/
+tools/planettech/qgis/
 tools/localization/
 tools/observability/
 tools/spawn_points/

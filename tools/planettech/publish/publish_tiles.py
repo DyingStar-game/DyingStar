@@ -48,9 +48,9 @@ place d'une tuile.
 
 USAGE
 -----
-    python3 tools/publish_tiles.py assets/qgis/export/tarsis_3_chunks/heights.pack \\
+    python3 tools/planettech/publish/publish_tiles.py assets/qgis/export/tarsis_3_chunks/heights.pack \\
         --out dist/ --compress
-    python3 tools/publish_tiles.py <pack> --out dist/ --verify
+    python3 tools/planettech/publish/publish_tiles.py <pack> --out dist/ --verify
 """
 
 import argparse
@@ -63,9 +63,23 @@ import urllib.error
 import urllib.request
 import zlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tools.analyze_pack_sparsity import Pack
-from tools import stream_channels
+
+def _repo_root(start):
+    """Remonte jusqu'au dépôt, repéré par project.godot.
+
+    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
+    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
+    """
+    d = start
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "project.godot")):
+            return d
+        d = os.path.dirname(d)
+    return start
+
+sys.path.insert(0, _repo_root(os.path.dirname(os.path.abspath(__file__))))
+from tools.planettech.analyze_pack_sparsity import Pack
+from tools.planettech.publish import stream_channels
 
 TILE_MAGIC = b"DSTL"
 TILE_HEADER = 12
@@ -450,7 +464,7 @@ def main(argv=None):
           % (FLOOR_NSIDE_MAX, floor_bytes / 1048576.0))
     print("  pointeur : %s" % ptr)
     print("  canal '%s' : %s" % (args.channel, chan))
-    print("  promotion : python3 tools/stream_channels.py --dist %s --to %s --planet %s"
+    print("  promotion : python3 tools/planettech/publish/stream_channels.py --dist %s --to %s --planet %s"
           % (args.out, stream_channels.CHANNELS[stream_channels.CHANNELS.index(args.channel) + 1]
              if args.channel != stream_channels.CHANNELS[-1] else args.channel, planet))
     print("  nginx : immutable/max-age=1y sur <version>/, no-cache sur latest.json")

@@ -2,7 +2,7 @@
 class_name HeightPack
 extends RefCounted
 ## Runtime reader for dense elevation-tile packs (heights.pack, format DSHP v1)
-## produced by tools/qgis/export_elevation.py.
+## produced by tools/planettech/qgis/export_elevation.py.
 ##
 ## The pack holds every .r32 pyramid tile of one planet in a single file. Tiles
 ## are fixed-size (tile_res² float32) and dense (every ipix exists at every

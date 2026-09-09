@@ -108,7 +108,7 @@ static func is_road_zone(zone: Dictionary) -> bool:
 ## default for the road type.
 ##
 ## `width` is the TOTAL width in metres, as written by
-## tools/qgis/export_roads.py — hence the halving. Note that BiomeQuery stores a
+## tools/planettech/qgis/export_roads.py — hence the halving. Note that BiomeQuery stores a
 ## `half_width_deg` of its own (width / 2, mislabelled: that value is in metres),
 ## which [method prepare_zone] overwrites with the correct degree value.
 static func get_half_width_m(zone: Dictionary) -> float:

@@ -73,7 +73,7 @@ var export_nside_min: int = 0
 ## False for legacy flat layout (face_{face}/f{ipix}.r32).
 var chunk_is_pyramid: bool = false
 ## Fingerprint of the exported elevation data, from manifest["data_version"]
-## (tools/qgis/export_elevation.py compute_data_version). PlanetTerrain folds it
+## (tools/planettech/qgis/export_elevation.py compute_data_version). PlanetTerrain folds it
 ## into its chunk disk-cache key so a re-export automatically invalidates cached
 ## meshes and collision shapes: radius / max_height / height_offset / tile_res can
 ## all stay identical while every elevation changes, which used to leave the cache
@@ -117,7 +117,7 @@ var chunk_data_version: String = ""
 ## Number of vertices per chunk edge at LOD 0 (finest detail).
 @export var chunk_resolution: int = 32
 ## Maximum quadtree subdivision depth. Higher = smaller finest chunks.
-@export var max_quadtree_depth: int = 14
+@export var max_quadtree_depth: int = 13
 
 @export_group("Corundum override")
 ## TEMPORARY whole-planet switch for the "milky corundum with iron" look +
@@ -137,7 +137,7 @@ var chunk_data_version: String = ""
 ## real terrain / crack interiors when diagnosing dark-band artifacts.
 @export var debug_color_skirts: bool = false
 
-## Directory of per-chunk elevation data exported by tools/qgis/export_elevation.py.
+## Directory of per-chunk elevation data exported by tools/planettech/qgis/export_elevation.py.
 ## When non-empty, load_chunk_heightmap() reads raw float32 tiles from the dense
 ## heights.pack archive inside this dir instead of generating heightmaps from
 ## recipes. Path is relative to res://, e.g. "assets/qgis/export/tarsis_5_chunks".
@@ -275,7 +275,7 @@ var _chunk_format_logged: bool = false
 
 ## ── Planet pack (runtime data source) ────────────────────────────
 ## All per-tile recipe binaries + chunk manifest are packed into a single
-## .planetpack file per planet, produced by tools/qgis/pack_planet.py.
+## .planetpack file per planet, produced by tools/planettech/qgis/pack_planet.py.
 ## Recipes are loaded exclusively from the pack at runtime — the old
 ## loose-file layout under assets/qgis/.export/ is no longer read.
 var _pack = null  # PlanetPackScript instance
@@ -284,7 +284,7 @@ var _pack_open_mutex: Mutex = Mutex.new()
 
 ## ── Height pack (dense .r32 tile archive) ────────────────────────
 ## All pyramid elevation tiles of chunk_heightmaps_dir packed into a single
-## heights.pack file (written by tools/qgis/export_elevation.py). This is the
+## heights.pack file (written by tools/planettech/qgis/export_elevation.py). This is the
 ## ONLY source of elevation tiles: O(1) arithmetic offsets, per-thread read
 ## handles (lock-free from WorkerThreadPool tasks) and coarse levels
 ## preloaded in RAM.
@@ -295,7 +295,7 @@ var _height_pack_mutex: Mutex = Mutex.new()
 ## ── Modifier pack (sparse per-chunk vector archive) ──────────────
 ## terrainmodifier.pack: roads, craters, linear features, radial features and
 ## biome populate zones, already clipped to their HEALPix tile and decimated
-## per LOD level (written by tools/qgis/link_modifiers.py from the per-kind
+## per LOD level (written by tools/planettech/qgis/link_modifiers.py from the per-kind
 ## parts each exporter produces).
 ##
 ## Roads in particular are PARTITIONED across tiles, so a chunk draws only its
@@ -968,7 +968,7 @@ func _ensure_modifier_pack():
 			if not FileAccess.file_exists(path):
 				push_warning("[PlanetData] no terrainmodifier.pack at %s — " % path
 						+ "roads, craters, rivers and biome overlays will be "
-						+ "absent. Produce it with tools/qgis/export_roads.py "
+						+ "absent. Produce it with tools/planettech/qgis/export_roads.py "
 						+ "(and the other export_*.py), which relink it.")
 			elif pack.open(path):
 				_modifier_pack = pack
@@ -1126,7 +1126,7 @@ func apply_chunk_manifest() -> bool:
 		# fallback) — every height sample will hit the global heightmap.
 		push_warning("[PlanetData] heights.pack missing in %s — planet has no "
 				% _chunk_base_path()
-				+ "elevation tiles (re-run tools/qgis/export_elevation.py)")
+				+ "elevation tiles (re-run tools/planettech/qgis/export_elevation.py)")
 	var path := _chunk_base_path() + "/manifest.json"
 	var data: Variant
 	if FileAccess.file_exists(path):
@@ -1406,7 +1406,7 @@ func _get_pack():
 
 ## Build (or return cached) safety-net collision triangle face array.
 ## Reads the small "safety_mesh.json" entry from the planet pack
-## (written by tools/qgis/export_planet.py::pack_planet_recipes()) and
+## (written by tools/planettech/qgis/export_planet.py::pack_planet_recipes()) and
 ## generates a coarse triangulated sphere at nside=4 (192 HEALPix pixels →
 ## 384 triangles) whose vertices sit at radius + elev_min - safety_margin.
 ## Returns an empty array when the pack/entry is unavailable; callers
@@ -1730,7 +1730,7 @@ func _apply_overlay(base: Array, list_key: String, ipix: int) -> Array:
 ## The 8-neighbour merge below only exists for RECIPE-sourced craters, whose
 ## export assigned each crater to a single chunk by an equirectangular AABB test
 ## that misses HEALPix face boundaries and high latitudes. The modifier pack has
-## no such gap: tools/qgis/export/planet/modifier_geom.py writes a crater into
+## no such gap: tools/planettech/qgis/export/planet/modifier_geom.py writes a crater into
 ## every tile its influence radius reaches, so a pack-sourced list is already
 ## complete and the merge is skipped.
 func get_chunk_craters(ipix: int) -> Array:

@@ -36,7 +36,7 @@ from QGIS contour lines — no recipe `.planetpack`, no voxels.
    - `EXPORT_DIR` → your `assets/qgis/.export` path
 2. **Run** in the QGIS Python Console:
    ```python
-   exec(open('…/tools/qgis/export_elevation.py').read())
+   exec(open('…/tools/planettech/qgis/export_elevation.py').read())
    ```
    Output: `<EXPORT_DIR>/<planet>_chunks/face_{0..11}/f{ipix}.r32` + `manifest.json`.
 3. **Wire the planet in Godot**: on the planet's `PlanetData` set
@@ -66,7 +66,7 @@ lon/lat → X/Y/Z conversion described in §4.3 no longer has to be done by hand
    terrain height at that spot.
 2. **Export** from the QGIS Python Console:
    ```python
-   exec(open('…/tools/qgis/export_poi.py').read())
+   exec(open('…/tools/planettech/qgis/export_poi.py').read())
    ```
    Output: `<EXPORT_DIR>/<planet>_poi.json` — a flat list of
    `{id, name, poi_type, population, radius, description, lon, lat, elevation}`.
@@ -106,7 +106,7 @@ mesh generator.
    `road_type` drives everything; `width` (total, metres) is optional.
 2. **Export** from the QGIS Python Console:
    ```python
-   exec(open('…/tools/qgis/export_roads.py').read())
+   exec(open('…/tools/planettech/qgis/export_roads.py').read())
    ```
    Two outputs, in this order:
    - `<planet>_chunks/parts/roads.dsmpart` — **what the game reads**, then merged
@@ -145,7 +145,7 @@ two links over unchanged parts produce a byte-identical pack.
 ```python
 # chain several exporters, link once
 NO_LINK = True   # set at the top of each exporter
-exec(open('…/tools/qgis/export_roads.py').read())
+exec(open('…/tools/planettech/qgis/export_roads.py').read())
 import link_modifiers; link_modifiers.link('tarsis_4')
 
 # a checkout that has the pack but no parts/
@@ -311,7 +311,7 @@ to keep aligned instead of three.
    - `EXISTING_FEATURES` — path to your existing `planet_features.geojson` (if any)
 4. Run the script:
    ```python
-   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/qgis/setup_planet_project.py').read())
+   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/planettech/qgis/setup_planet_project.py').read())
    ```
 5. QGIS now has **5 empty layers** ready for editing, plus your existing features loaded:
    - `<planet>_contours` — LineString layer for elevation contour lines
@@ -386,7 +386,7 @@ When your planet design is ready (or whenever you want to test in Godot):
    - `ELEV_MIN` / `ELEV_MAX` — elevation range for heightmap normalization
 2. Run the export:
    ```python
-   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/qgis/export_planet.py').read())
+   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/planettech/qgis/export_planet.py').read())
    ```
 3. The script performs **6 steps** automatically:
    1. **Exports all vector layers** as GeoJSON files to `assets/qgis/export/`

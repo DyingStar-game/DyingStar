@@ -17,7 +17,7 @@ func _initialize() -> void:
 	print("[RecipeBin] Starting recipe binary conversion ...")
 
 	# Optional --planet <name> (repeatable) to restrict conversion to specific
-	# planets, bypassing server.ini. Used by tools/qgis/export_planet.py so an
+	# planets, bypassing server.ini. Used by tools/planettech/qgis/export_planet.py so an
 	# export of a single planet does not iterate all prebake planets.
 	var planets := _read_planet_override()
 	if planets.is_empty():

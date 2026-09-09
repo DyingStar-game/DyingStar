@@ -5,10 +5,10 @@ Opens each planet project from PostgreSQL, runs export_planet.py, and moves on.
 
 Usage:
     /usr/bin/qgis_process run --no-sketcher -- \
-        python3 tools/qgis/export_all_planets.py
+        python3 tools/planettech/qgis/export_all_planets.py
 
     Or standalone (requires PyQGIS on PYTHONPATH):
-        python3 tools/qgis/export_all_planets.py
+        python3 tools/planettech/qgis/export_all_planets.py
 """
 
 import os

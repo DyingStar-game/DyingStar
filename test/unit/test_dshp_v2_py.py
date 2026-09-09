@@ -26,7 +26,7 @@ import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
-                                "tools", "qgis"))
+                                "tools", "planettech", "qgis"))
 
 try:
     import numpy as np
@@ -70,7 +70,7 @@ for _m in ("qgis", "qgis.core", "qgis.PyQt", "qgis.PyQt.QtCore", "osgeo", "osgeo
 sys.modules["qgis"].core = sys.modules["qgis.core"]
 
 _EXPORTER = os.path.abspath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "qgis",
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "planettech", "qgis",
     "export_elevation.py"))
 _SRC = open(_EXPORTER, encoding="utf-8").read().replace("\nrun_export()\n", "\n")
 # __file__ ABSOLU, impérativement : l'exporteur en déduit _tools_dir pour purger de

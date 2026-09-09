@@ -3,7 +3,7 @@ extends GutTest
 ##
 ## Two producers disagreed on where a zone's outline lives:
 ##   · recipe/pack exports write `vertices` — an Array of [lon, lat] pairs
-##     (tools/qgis/export/planet/recipe.py)
+##     (tools/planettech/qgis/export/planet/recipe.py)
 ##   · PlanetData.inject_biome_feature() wrote `polygon` — a PackedVector2Array
 ##
 ## The client cliff displacement (PlanetChunk.generate_mesh) read `polygon`

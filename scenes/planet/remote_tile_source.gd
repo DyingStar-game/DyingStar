@@ -1,7 +1,7 @@
 class_name RemoteTileSource
 extends RefCounted
 ## Récupère des tuiles d'élévation depuis l'arborescence publiée par
-## tools/publish_tiles.py, et les garde dans un cache disque plafonné.
+## tools/planettech/publish/publish_tiles.py, et les garde dans un cache disque plafonné.
 ##
 ## Phase 3 de docs/PLANET_CHUNK_STREAMING.md. C'est la moitié CLIENTE du format publié en
 ## phase 2 : URL, enveloppe, cartes de présence et cache. Un désaccord avec le publieur ne

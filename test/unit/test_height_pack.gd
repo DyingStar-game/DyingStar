@@ -47,7 +47,7 @@ func _manifest_json() -> String:
 	})
 
 
-## Write a valid DSHP v1 pack (same layout as tools/qgis/export_elevation.py).
+## Write a valid DSHP v1 pack (same layout as tools/planettech/qgis/export_elevation.py).
 func _write_pack() -> void:
 	DirAccess.make_dir_recursive_absolute(PACK_DIR)
 	var f := FileAccess.open(PACK_PATH, FileAccess.WRITE)

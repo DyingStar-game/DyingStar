@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests de tools/analyze_pack_sparsity.py — l'outil qui décide dense vs pack creux.
+"""Tests de tools/planettech/analyze_pack_sparsity.py — l'outil qui décide dense vs pack creux.
 
 Cet outil produit LE chiffre sur lequel se prend une décision d'architecture (voir
 docs/PLANET_CHUNK_STREAMING.md, phase 1) et il est destiné à être rejoué par planète et
@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 try:
     import numpy as np
-    import tools.analyze_pack_sparsity as aps
+    import tools.planettech.analyze_pack_sparsity as aps
 except ImportError as exc:  # numpy absent (le job lint CI est stdlib-only)
     print("SKIP test_pack_sparsity_py: %s" % exc)
     sys.exit(0)

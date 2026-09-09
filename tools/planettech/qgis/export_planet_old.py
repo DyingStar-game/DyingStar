@@ -12,7 +12,7 @@ Heightmaps are exported as GeoTIFF (Float32) for maximum precision.
 Resolution target: <50m per pixel where contour data is available.
 
 Usage in QGIS Python Console:
-    exec(open('/path/to/StarDeception/tools/qgis/export_planet.py').read())
+    exec(open('/path/to/StarDeception/tools/planettech/qgis/export_planet.py').read())
 
 Or modify PLANET_NAME and EXPORT_DIR below, then run.
 """
@@ -4412,7 +4412,7 @@ def _split_all_oversized_geojson():
 def _resolve_godot_binary():
     """Resolve the Godot binary path using, in order:
       1. $GODOT_BIN environment variable
-      2. [godot] path = … in tools/qgis/export_config.ini
+      2. [godot] path = … in tools/planettech/qgis/export_config.ini
       3. `godot` on PATH (via shutil.which)
       4. Hard-coded canonical fallback (Godot 4.6.1 mono double-precision build)
     Returns the resolved path, or None if nothing usable was found.
@@ -4465,7 +4465,7 @@ def convert_and_cleanup_recipes_binary():
     if godot_bin is None:
         raise RuntimeError(
             "Could not resolve Godot binary for recipe conversion. "
-            "Set $GODOT_BIN, add [godot] path = … to tools/qgis/export_config.ini, "
+            "Set $GODOT_BIN, add [godot] path = … to tools/planettech/qgis/export_config.ini, "
             "put `godot` on PATH, or install the canonical build at "
             f"{_GODOT_BIN_FALLBACK}"
         )
