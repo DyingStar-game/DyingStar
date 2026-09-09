@@ -163,6 +163,20 @@ var _postdraw_usec: int = 0
 var _sync_max: float = 0.0
 var _draw_max: float = 0.0
 var _setup_max: float = 0.0
+## The part of the frame that lies OUTSIDE everything above, measured the same way.
+##
+## Log `godot(6).log` (2026-09-09) closed the previous gap and opened this one: at 6.0 fps and
+## 160-170 ms a frame, `scripts=1-4 rcpu=1.3 setup=0.1-0.7 sync=0-1 rsdraw=2-5`. Six milliseconds
+## are accounted for, so ~155 ms sit between `frame_post_draw` of one frame and the first `_process`
+## of the next. Only two things live there: the PHYSICS BURST (up to
+## `max_physics_steps_per_frame` = 8 steps, whose wall clock no monitor reports — `phys=` is the max
+## of ONE step, not the sum) and what `SceneTree::process()` does BEFORE the process group: transform
+## notification flush, timers, tweens, and `_process_picking` (the 3D mouse pick, a physics raycast
+## issued from the main thread, invisible to `TIME_PHYSICS_PROCESS`).
+## `gap=` is the whole thing, `pre=` is only its second half.
+var _phys_tail_usec: int = 0
+var _gap_max: float = 0.0
+var _pre_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -324,6 +338,17 @@ func _ready() -> void:
 		print("[CPerf] !! debug_no_area_monitoring=true — every Area3D that is NOT in the"
 				+ " `active_monitor` group will be silenced as the census walks the tree."
 				+ " INTERACTIONS MAY BREAK: this is a measurement mode, not a fix.")
+	# The one suspect left standing in `pre=`, and the only one of the four that can plausibly cost
+	# 150 ms: `Viewport::_process_picking()` fires a physics ray from the MAIN THREAD, once per queued
+	# mouse event, straight into a space that holds 482 concave terrain chunks 8e10 m from the origin
+	# (where a float32 broadphase cell is kilometres wide — see the Jolt broadphase note). It is
+	# called by SceneTree right before the process group, and no monitor in the engine reports it.
+	# Only `scenes/interactables/gui_3d.gd` uses 3D picking, so switching it off costs the 3D panels
+	# and nothing else: a real ablation, not a fix.
+	if ClientConfig.get_bool("debug_no_picking", false):
+		get_viewport().physics_object_picking = false
+		print("[CPerf] !! debug_no_picking=true — 3D object picking is OFF on the root viewport."
+				+ " The gui_3d interactable panels will not respond to the mouse.")
 	var _phz: int = ClientConfig.get_int("debug_physics_hz", 0)
 	if _phz > 0:
 		var _was: int = Engine.physics_ticks_per_second
@@ -343,6 +368,8 @@ func _ready() -> void:
 	# must go quiet in exactly the frames this autoload does, or a paused tree would report the pause
 	# as script time.
 	_tail.process_priority = 1_000_000
+	_tail.phys_tick = _phys_tail_tick
+	_tail.process_physics_priority = 1_000_000
 	add_child(_tail)
 	# The renderer's own timers. The GPU figure arrives a frame or two late (it is a timestamp query
 	# read back, not a wall clock), which is fine for a cost that has been steady for five minutes.
@@ -436,6 +463,7 @@ func _print_boot_detail() -> void:
 		print((
 			"[CPerf] render method=%s | viewport=%s scaling3d=%d x%.2f msaa3d=%d ssaa=%d taa=%s"
 			+ " debanding=%s vrs=%d | shadow_atlas=%d dir_shadow=%s occlusion=%s aniso=%s"
+			+ " picking=%s"
 		) % [
 			str(ProjectSettings.get_setting("rendering/renderer/rendering_method", "?")),
 			str(vp.get_visible_rect().size),
@@ -445,6 +473,7 @@ func _print_boot_detail() -> void:
 			str(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/size", "?")),
 			str(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", "?")),
 			str(ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level", "?")),
+			str(vp.physics_object_picking),
 		])
 
 	print("[CPerf] physics engine=%s ticks=%d separate_thread=%s | worker_threads=%s | time_scale=%.2f | mem_boot avail=%s phys=%s" % [
@@ -579,6 +608,15 @@ func _process(_delta: float) -> void:
 	_sync_max = maxf(_sync_max, sync_ms)
 	_draw_max = maxf(_draw_max, draw_ms)
 	_setup_max = maxf(_setup_max, setup_ms)
+	# From the end of the previous frame's draw to the start of this one's callbacks.
+	var gap_ms: float = 0.0
+	var pre_ms: float = 0.0
+	if _postdraw_usec > 0 and now > _postdraw_usec:
+		gap_ms = float(now - _postdraw_usec) / 1000.0
+		# A frame can run zero physics steps, and then the physics tail is stale and says nothing.
+		pre_ms = float(now - _phys_tail_usec) / 1000.0 if _phys_tail_usec > _postdraw_usec else gap_ms
+	_gap_max = maxf(_gap_max, gap_ms)
+	_pre_max = maxf(_pre_max, pre_ms)
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -603,12 +641,13 @@ func _process(_delta: float) -> void:
 			_hitch_lines += 1
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
-				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f ms"
+				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
+				+ " gap=%.0f pre=%.0f ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms,
+				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -639,6 +678,8 @@ func _process(_delta: float) -> void:
 	_sync_max = 0.0
 	_draw_max = 0.0
 	_setup_max = 0.0
+	_gap_max = 0.0
+	_pre_max = 0.0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -666,7 +707,8 @@ func _report() -> void:
 	print((
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
-		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f ms"
+		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f"
+		+ " gap<=%.0f pre<=%.0f ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -677,6 +719,7 @@ func _report() -> void:
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 		_scripts_max, _rcpu_max, _rgpu_max, _setup_max, _sync_max, _draw_max,
+		_gap_max, _pre_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -1068,16 +1111,28 @@ class _TailProbe extends Node:
 	## class does not declare, and dropping the type to get one back would give up the only checking
 	## GDScript does here.
 	var tick: Callable = Callable()
+	## Same trick on the physics side: the last _physics_process of the last step of the burst.
+	var phys_tick: Callable = Callable()
 
 	func _process(_delta: float) -> void:
 		if not tick.is_null():
 			tick.call()
+
+	func _physics_process(_delta: float) -> void:
+		if not phys_tick.is_null():
+			phys_tick.call()
 
 
 ## Called by _TailProbe once every frame, after every other _process in the game.
 func _tail_tick() -> void:
 	_tail_usec = Time.get_ticks_usec()
 	_scripts_usec = _tail_usec - _frame_start_usec
+
+
+## End of the LAST physics step of the burst, so the frame's dead time can be cut in two: the
+## physics burst itself, and what SceneTree does before it calls a single _process.
+func _phys_tail_tick() -> void:
+	_phys_tail_usec = Time.get_ticks_usec()
 
 
 ## Start of RenderingServer::draw(), main thread. Everything between the tail probe and here is the
