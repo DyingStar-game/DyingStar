@@ -4,6 +4,19 @@ extends Control
 
 static var is_shown: bool = false
 
+## Readable labels for actions whose InputMap name does not say what the key actually does.
+##
+## The action NAME cannot be changed to explain itself: it is an identifier, not a label. "jump"
+## travels to the server inside client_send_action_to_server, and PlayerServer matches on it as a
+## compile-time constant. But a player reading the settings has no way to guess that the jump key is
+## also what starts a vault or a climb -- it was reported as "the vault key is not configurable",
+## when it was configurable all along under a name that never mentioned vaulting.
+##
+## Anything absent here falls back to the action name, so adding a label is one line.
+const ACTION_LABELS: Dictionary = {
+	"jump": "Jump / Vault",
+}
+
 var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 
 var input_map_path = "user://inputs.map"
@@ -44,7 +57,8 @@ func create_action_list():
 		var action_label = action_bt.find_child("LabelAction")
 		var input_label = action_bt.find_child("LabelInput")
 
-		action_label.text = action.replace("_", " ").to_upper()
+		# One styling rule in one place: the override carries the wording, the casing stays uniform.
+		action_label.text = str(ACTION_LABELS.get(action, action.replace("_", " "))).to_upper()
 
 		var events = InputMap.action_get_events(action)
 		if not events.is_empty():
