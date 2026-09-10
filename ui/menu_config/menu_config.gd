@@ -107,25 +107,46 @@ func _on_input_button_pressed(b, a):
 
 func _unhandled_input(event: InputEvent) -> void:
 
-	if visible:
-		if event.is_action_pressed("pause"):
-			return_main_menu_button.emit_signal("pressed")
+	if not visible:
+		return
 
-		if is_remapping:
-			if event is InputEventKey or (event is InputEventMouseButton && event.pressed):
-				InputMap.action_erase_events(action_to_remap)
-				InputMap.action_add_event(action_to_remap, event)
-				_update_action_list(remapping_button, event)
-				if event is InputEventKey:
-					keycode_dic.set(action_to_remap, event.as_text_physical_keycode())
-				elif event is InputEventMouseButton:
-					keycode_dic.set(action_to_remap, "mouse_" + str(event.button_index))
-				is_remapping = false
-				action_to_remap = null
-				remapping_button = null
-				save_config.visible = true
+	# This page owns the keyboard ONLY while it is capturing a binding. Outside that, Esc belongs to
+	# whoever opened the page: the pause menu frees its settings overlay, the settings page has its
+	# Return button. Swallowing every event here is what trapped players in Settings > Controls --
+	# control_settings_page.tscn has no script and nothing is connected to return_main_menu_button
+	# there, so Esc emitted a signal into the void AND was consumed, and the overlay never closed.
+	# (The one node wired to that signal, PauseMenu's $InputSettings, is never made visible by
+	# anything: dead UI whose Esc handling broke the live page.)
+	if not is_remapping:
+		return
 
-		get_viewport().set_input_as_handled()
+	if event.is_action_pressed("pause"):
+		# Esc ABORTS the capture instead of being bound to the action. Both used to happen at once:
+		# the old Esc branch emitted "return", then this one bound Escape to whatever was selected.
+		var kept: Array[InputEvent] = InputMap.action_get_events(action_to_remap)
+		remapping_button.find_child("LabelInput").text = (
+			format_input_label(kept[0]) if not kept.is_empty() else ""
+		)
+		_end_remap()
+	elif event is InputEventKey or (event is InputEventMouseButton && event.pressed):
+		InputMap.action_erase_events(action_to_remap)
+		InputMap.action_add_event(action_to_remap, event)
+		_update_action_list(remapping_button, event)
+		if event is InputEventKey:
+			keycode_dic.set(action_to_remap, event.as_text_physical_keycode())
+		elif event is InputEventMouseButton:
+			keycode_dic.set(action_to_remap, "mouse_" + str(event.button_index))
+		_end_remap()
+		save_config.visible = true
+
+	# The key being bound must not also fire the action it is being bound to.
+	get_viewport().set_input_as_handled()
+
+## Leave capture mode. One place, so a new way of ending a capture cannot forget one of the three.
+func _end_remap() -> void:
+	is_remapping = false
+	action_to_remap = null
+	remapping_button = null
 
 func _update_action_list(button: Button, ev: InputEvent):
 	button.find_child("LabelInput").text = format_input_label(ev)

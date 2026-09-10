@@ -179,9 +179,12 @@ func _unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
 
-	# Escape while typing is handled in _input (closes the input). Here it pauses.
+	# Escape while typing is handled in _input (closes the input). Here it belongs to the pause menu:
+	# we let it through untouched. This used to set the game state to PAUSE_MENU itself WITHOUT
+	# opening any menu, which made the state lie — _menu_open() reads exactly that value to decide
+	# whether player input is locked, so it reported "paused" with nothing on screen. One owner for
+	# the pause state, and it is the node that actually shows the menu.
 	if event.is_action_pressed("pause"):
-		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
 		return
 
 	if not can_write:
