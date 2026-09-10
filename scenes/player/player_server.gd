@@ -404,10 +404,18 @@ func server_action_received(data: Dictionary) -> void:
 				if is_instance_valid(player._seat_node):  # enter succeeded (seat free, door open)
 					_seat_count += 1
 					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
-					player.server_send_properties_to_client({"action": "seat:%s:%d" % [role, _seat_count]})
+					# `seat` is the STATE, `action` the EVENT, and both ride ONE message so Horizon cannot
+					# interleave them. The event is what makes a live observer switch pose now; the state is
+					# the only thing a LATER arrival ever reads. `action` is a single field shared by seven
+					# event kinds and Horizon keeps just the last, so the seat used to be erased from the
+					# snapshot one frame later by server_stow_tools' "stow:<n>" — a seated player was then
+					# replicated STANDING to anyone joining or entering the zone afterwards.
+					player.server_send_properties_to_client(
+						{"action": "seat:%s:%d" % [role, _seat_count], "seat": role}
+					)
 				else:  # refused (seat occupied / door blocked) -> undo the client optimistic entry
 					_seat_count += 1
-					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count})
+					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
 		"exit_vehicle":
 			var veh_out = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):
@@ -415,7 +423,7 @@ func server_action_received(data: Dictionary) -> void:
 				veh_out.server_exit(player)
 				if was_seated:
 					_seat_count += 1
-					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count})
+					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
 		"vehicle_input":
 			var veh_in = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_in != null and veh_in._pilot == player and veh_in.has_method("set_drive_input"):
