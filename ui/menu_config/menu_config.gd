@@ -19,7 +19,6 @@ const ACTION_LABELS: Dictionary = {
 
 var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 
-var input_map_path = "user://inputs.map"
 var is_remapping = false
 var action_to_remap = null
 var remapping_button = null
@@ -36,8 +35,13 @@ var last_press = ""
 func _ready() -> void:
 	is_shown = false
 	if GameOrchestrator.is_server(): return
+	# Back to the project defaults, then the player's saved remaps over them. The LOADING lives in
+	# SettingsManager, which applies it at BOOT for the whole game: this page must not be the only
+	# thing that applies a remap, or the bindings depend on having opened it once. One parser, one
+	# owner. Removing the dead MenuConfig copy from pause_menu.tscn is what exposed that.
 	InputMap.load_from_project_settings()
-	import_input_map()
+	SettingsManager.load_keybindings()
+	keycode_dic = SettingsManager.keybindings.duplicate()
 	create_action_list()
 
 func create_action_list():
@@ -168,46 +172,13 @@ func _on_text_edit_text_changed(new_text: String) -> void:
 func _on_save_button_pressed() -> void:
 	# "\t" = indentation
 	var json := JSON.stringify(keycode_dic, "\t")
-	var file := FileAccess.open(input_map_path, FileAccess.WRITE)
+	var file := FileAccess.open(SettingsManager.INPUT_MAP_FILEPATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("[DyingStar] could not write the keybindings file — this session only.")
+		return
 	file.store_string(json)
 	file.close()
 
-	print("Actions exportées vers :", input_map_path)
+	# Keep the runtime owner in step with the file, so nothing re-reads it to know the truth.
+	SettingsManager.keybindings = keycode_dic.duplicate()
 	save_config.visible = false
-
-func import_input_map() -> void:
-	if not FileAccess.file_exists(input_map_path):
-		print("Fichier introuvable :", input_map_path)
-		return
-
-	var file := FileAccess.open(input_map_path, FileAccess.READ)
-	var content := file.get_as_text()
-	file.close()
-
-	var result : Dictionary = JSON.parse_string(content)
-	if typeof(result) != TYPE_DICTIONARY:
-		print("Fichier JSON invalide")
-		return
-
-	for action_name in result.keys():
-		InputMap.action_erase_events(action_name)
-		var ev_str = str(result[action_name])
-		keycode_dic[action_name] = ev_str
-		var input_event
-		if ev_str.begins_with("mouse_"):
-			input_event = InputEventMouseButton.new()
-			input_event.button_index = int(ev_str.split("_")[1])
-		else:
-			input_event = InputEventKey.new()
-			# find_keycode_from_string encodes modifiers in the high bits; split them back out so a
-			# saved "Alt + ²" reloads WITH its Alt (else remapped modifier bindings lose the modifier).
-			var kc: int = OS.find_keycode_from_string(ev_str)
-			input_event.physical_keycode = kc & KEY_CODE_MASK
-			input_event.alt_pressed = (kc & KEY_MASK_ALT) != 0
-			input_event.ctrl_pressed = (kc & KEY_MASK_CTRL) != 0
-			input_event.shift_pressed = (kc & KEY_MASK_SHIFT) != 0
-			input_event.meta_pressed = (kc & KEY_MASK_META) != 0
-		print("ev : " + ev_str + " for " + action_name)
-		InputMap.action_add_event(action_name, input_event)
-
-	print("Actions importées depuis :", input_map_path)
