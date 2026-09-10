@@ -86,6 +86,7 @@ sfx_climb_1m_db = -19.0
 sfx_climb_2m = ExtResource("10_1u1sw")
 sfx_climb_2m_db = -19.0
 seat_eye_height = 0.02
+passenger_eye_offset = 0.05
 metadata/client_uuid = ""
 
 [node name="Puppet" parent="." unique_id=771997724 instance=ExtResource("9_genst")]

@@ -347,7 +347,14 @@ func _process(delta: float) -> void:
 			if not _head_rest_captured:
 				_camera_base_pos = _player.camera_pivot.position
 				_head_rest_captured = true
-			_player.camera_pivot.position = _camera_base_pos + Vector3(0.0, _player.seat_eye_height, 0.0)
+			# Per ROLE: the seat pose is chosen by role a few lines down (sit_driving vs sit_passenger)
+			# and the two clips do not put the head in the same place. One eye height for both left the
+			# passenger looking from too low. The offset is a DELTA off the driver's tuning, so it is zero
+			# until someone says otherwise (see Player.passenger_eye_offset).
+			var eye: float = _player.seat_eye_height
+			if not bool(_player.locomotion_sample.get("driver", false)):
+				eye += _player.passenger_eye_offset
+			_player.camera_pivot.position = _camera_base_pos + Vector3(0.0, eye, 0.0)
 	if _debug_label != null:
 		_update_debug_label()
 
