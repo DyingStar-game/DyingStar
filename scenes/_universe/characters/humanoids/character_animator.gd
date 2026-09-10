@@ -12,8 +12,13 @@ extends Node
 ## Jump's little state machine: ground -> launch (start) -> airborne (loop/fall) -> land -> ground.
 enum JumpPhase { GROUND, START, LOOP, LAND }
 
-## Locomotion speed tier, with hysteresis on the boundaries (see _tier_for_speed).
-enum Tier { WALK, JOG, SPRINT }
+## Locomotion speed tier, with hysteresis on the boundary (see _tier_for_speed).
+##
+## Two tiers, and that is deliberate: the whole mouse-wheel range is a WALK, played faster as the
+## wheel goes up, and SPRINT is the gait the player asks for with a key. There used to be a JOG tier
+## in between, entered at the last wheel notch -- so winding the wheel to the top silently changed
+## gait, which reads as the character breaking into a run when the player only asked to walk faster.
+enum Tier { WALK, SPRINT }
 
 ## Emote sequence: none -> (enter) -> hold (loop or one-shot) -> (exit) -> none. See _emote_clip.
 enum EmotePhase { NONE, ENTER, HOLD, EXIT }
@@ -30,9 +35,11 @@ const HEAD_HIDE_SCALE: Vector3 = Vector3(0.001, 0.001, 0.001)
 ## planar_speed / this (clamped) to kill foot-sliding at other walk speeds. Calibrated in-game.
 const WALK_REF_SPEED: float = 1.0
 const WARP_MIN: float = 0.4
-const WARP_MAX: float = 1.8
-## Speed margin (m/s) a tier boundary must be crossed by to switch tiers, so a speed sitting ON a
-## boundary (e.g. wheel 2.5) does not jitter between Walk and Jog.
+## Absolute ceiling on the walk warp. The real cap is derived per player in setup() -- the top of the
+## mouse wheel -- and this only guards against an absurd walk_speed_max in a scene.
+const WARP_MAX: float = 4.0
+## Speed margin (m/s) a tier boundary must be crossed by to switch tiers, so a speed sitting ON the
+## boundary does not jitter between Walk and Sprint.
 const TIER_HYSTERESIS: float = 0.35
 ## Minimum time (s) spent in a locomotion tier before it may change again. The hysteresis above
 ## bounds the AMPLITUDE of the speed noise; this bounds its FREQUENCY, which is what actually stops
@@ -101,7 +108,7 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
 @export var head_cam_smooth: float = 12.0
 ## How far FORWARD (m) the first-person eye sits from the head bone. The head mesh is collapsed for the
-## owner, but the NECK is a separate bone and its geometry stays -- so as the head bobs at a jog, the
+## owner, but the NECK is a separate bone and its geometry stays -- so as the head bobs at a fast walk, the
 ## camera drifts back over its own throat and you see it. Moving the eye to the front of the skull, the
 ## way a real eye sits, leaves the neck behind the camera where it belongs. 0 = the old behaviour.
 @export_range(0.0, 0.4, 0.005) var head_cam_forward: float = 0.12
@@ -147,8 +154,8 @@ var _vault_key: String = ""  # current vault TYPE (vault / climb_1m / climb_2m),
 var _vault_height: float = 0.0  # obstacle height (m) of the current vault, for the height-based pose offset
 var _vault_debug: Dictionary = {}  # cached VaultProbe result for the debug HUD (sampled in _physics_process)
 var _step_debug: Dictionary = {}   # same, for StepProbe: what the STEP-UP made of what is ahead
-var _walk_max: float = 2.0    # walk -> jog boundary (m/s), derived from the player's walk_speed in setup
-var _sprint_min: float = 4.0  # jog -> sprint boundary (m/s), midpoint of walk_speed and sprint_speed
+var _warp_max: float = 3.0    # fastest walk playback, = walk_speed_max / WALK_REF_SPEED (see setup)
+var _sprint_min: float = 4.0  # walk -> sprint boundary (m/s), midpoint of walk_speed_max and sprint_speed
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
@@ -158,13 +165,15 @@ func _ready() -> void:
 func setup(player_body, is_local: bool) -> void:
 	_player = player_body
 	_is_local = is_local
-	# Speed tiers from the player's actual stats (GDD: walk is mouse-wheel-variable 0.5-3, sprint 5). The
-	# calm Walk clip covers the lower/normal walk; the top walk tiers look like a Jog; sprint gets the
-	# Sprint clip. Carrying (x0.5), crouch and walking backward are all slow -> Walk.
+	# Speed tiers from the player's actual stats (GDD: walk is mouse-wheel-variable 0.5-3, sprint 5).
+	# The Walk clip covers the WHOLE wheel range, sped up with the wheel; only sprint changes gait.
+	# Carrying (x0.5), crouch and walking backward are all slow -> the same Walk, played slower.
 	var wmax: float = _player.walk_speed_max
-	var wstep: float = _player.walk_speed_step
 	var ss: float = _player.sprint_speed
-	_walk_max = wmax - wstep         # fast mouse-wheel walk (top tiers) -> Jog clip
+	# The fastest playback the wheel can ask for, rather than a hand-tuned constant: the warp exists to
+	# match the feet to the ground, so its ceiling IS the top walk speed. Capped by WARP_MAX so an odd
+	# walk_speed_max in a scene cannot ask for a playback nobody would call walking.
+	_warp_max = clampf(wmax / WALK_REF_SPEED, 1.0, WARP_MAX)
 	_sprint_min = (wmax + ss) * 0.5  # sprint -> Sprint clip; the walk range never reaches it
 	_puppet = get_parent() as Node3D
 	if _puppet != null:
@@ -314,7 +323,7 @@ func _process(delta: float) -> void:
 			# Two motions live in this one offset, and they must be treated differently:
 			#   the BOUNCE -- up/down and side to side, a few times a second. Damping it is the whole point of
 			#     head_cam_amount, and it is what keeps a first-person view from being sickening.
-			#   the LEAN -- forward, as the torso pitches over going from a walk to a jog to a sprint. Damping
+			#   the LEAN -- forward, as the torso pitches over going from a walk to a sprint. Damping
 			#     THAT walks the body out from under the camera and you end up looking at your own neck.
 			#
 			# They are split by AXIS, not by a low-pass: a filter slow enough to ignore the stride is also slow
@@ -398,7 +407,7 @@ func _select_clip(delta: float) -> StringName:
 		if emote_clip != &"":
 			_reset_idle()
 			return emote_clip
-	# Crouch / prone: enter/exit transitions + directional gait, overriding walk/jog/sprint. A one-shot
+	# Crouch / prone: enter/exit transitions + directional gait, overriding walk/sprint. A one-shot
 	# transition plays out first, then the steady gait for the shown stance. _on_anim_finished commits it.
 	# Standing <-> crouch/prone uses enter/exit; crouch <-> prone goes DIRECT (no standing up between) —
 	# its dedicated clip doesn't exist in UAL yet, so it crossfades until crouch_to_prone/prone_to_crouch
@@ -614,8 +623,8 @@ func _on_anim_finished(finished: StringName) -> void:
 		_end_emote()  # a one-shot emote finished -> back to idle
 
 ## Directional locomotion clip for the current speed tier, from the body-frame move (forward = -Z,
-## right = +X). Walk tier = slow (forward only in UAL); jog tier = default gait (fully directional);
-## sprint tier = sprint_speed (forward).
+## right = +X). Walk tier = the whole mouse-wheel range, fully directional and speed-warped;
+## sprint tier = sprint_speed (forward only).
 func _locomotion_clip(speed: float, forward: float, right: float) -> StringName:
 	var tier: Tier = _tier_for_speed(speed)
 	if tier == Tier.SPRINT:
@@ -625,42 +634,31 @@ func _locomotion_clip(speed: float, forward: float, right: float) -> StringName:
 	var nr: float = right / mag if mag > 0.0001 else 0.0
 	var fs: int = (1 if nf > DIR_DEADZONE else (-1 if nf < -DIR_DEADZONE else 0))
 	var rs: int = (1 if nr > DIR_DEADZONE else (-1 if nr < -DIR_DEADZONE else 0))
-	if tier == Tier.JOG:  # fully directional (playback not warped yet — needs calibration)
-		return _clip_or(_run_dir(fs, rs), _clip_or(anim_set.run_fwd, _idle))
-	# walk tier (forward only in UAL): warp playback to the ground speed so the feet don't slide.
-	_target_speed_scale = clampf(speed / WALK_REF_SPEED, WARP_MIN, WARP_MAX)
+	# Walk tier, i.e. the entire mouse-wheel range: warp playback to the ground speed so the feet do
+	# not slide. This IS the fast-walk gait at the top of the wheel -- the same clip, played faster,
+	# rather than a different one. _warp_max reaches the top wheel notch, so the fastest walk still
+	# plants its feet; the old 1.8 ceiling would have made them skate above 1.8 m/s.
+	_target_speed_scale = clampf(speed / WALK_REF_SPEED, WARP_MIN, _warp_max)
 	return _clip_or(_walk_dir(fs, rs), _clip_or(anim_set.walk_fwd, _idle))
 
 ## Locomotion tier with hysteresis: once in a tier, the speed must cross the boundary by TIER_HYSTERESIS
-## to switch, so a speed hovering on a boundary (e.g. wheel 2.5) does not jitter between Walk and Jog.
+## to switch, so a speed hovering on the boundary does not jitter between Walk and Sprint.
 func _tier_for_speed(speed: float) -> Tier:
 	# Hold the tier for a moment after each change: see TIER_MIN_HOLD. Without it, a speed parked on
-	# a boundary flaps between Walk and Jog every few frames.
+	# the boundary flaps between Walk and Sprint every few frames.
 	if _tier_held < TIER_MIN_HOLD:
 		return _current_tier
 	var previous: Tier = _current_tier
 	match _current_tier:
 		Tier.WALK:
-			if speed >= _walk_max + TIER_HYSTERESIS:
-				_current_tier = Tier.JOG
-		Tier.JOG:
-			if speed < _walk_max - TIER_HYSTERESIS:
-				_current_tier = Tier.WALK
-			elif speed >= _sprint_min + TIER_HYSTERESIS:
+			if speed >= _sprint_min + TIER_HYSTERESIS:
 				_current_tier = Tier.SPRINT
 		Tier.SPRINT:
 			if speed < _sprint_min - TIER_HYSTERESIS:
-				_current_tier = Tier.JOG
+				_current_tier = Tier.WALK
 	if _current_tier != previous:
 		_tier_held = 0.0
 	return _current_tier
-
-func _run_dir(fs: int, rs: int) -> StringName:
-	if fs > 0:
-		return anim_set.run_fwd_left if rs < 0 else (anim_set.run_fwd_right if rs > 0 else anim_set.run_fwd)
-	if fs < 0:
-		return anim_set.run_bwd_left if rs < 0 else (anim_set.run_bwd_right if rs > 0 else anim_set.run_bwd)
-	return anim_set.run_left if rs < 0 else (anim_set.run_right if rs > 0 else anim_set.run_fwd)
 
 func _walk_dir(fs: int, rs: int) -> StringName:
 	if fs > 0:
