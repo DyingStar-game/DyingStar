@@ -674,3 +674,59 @@ func client_channel_data_update(data: Dictionary) -> void:
 ## Called by the network layer when the parent node changes.
 func client_parent_change(_new_parent: Node) -> void:
 	pass
+
+
+# -- Editor flight ---------------------------------------------------------------------------------
+#
+# The editor's free camera has a FIXED up, world +Y, while a body's up is RADIAL. Away from its pole
+# you fly tilted or upside down and the controls stop matching the eye. Godot exposes no way to fix
+# that: the 3D viewport camera is driven by an internal cursor no public API can write
+# (godot-proposals#12112), and a transform written onto it survives a single frame.
+#
+# So the BODY is brought under the camera instead of the camera being turned. PlanetTerrain computes
+# where it must sit (see its editor-flight section); this node only wears the result and — the part
+# that matters — keeps it out of the scene file.
+
+## The transform the scene declares, captured before flight ever touches it.
+var _editor_authored: Transform3D = Transform3D.IDENTITY
+## The transform currently worn for flight. Identity when not flying.
+var _editor_flight: Transform3D = Transform3D.IDENTITY
+var _editor_authored_captured: bool = false
+
+## Wear `t` for editor flight. No-op in a running game.
+func editor_set_flight_transform(t: Transform3D) -> void:
+	if not Engine.is_editor_hint():
+		return
+	_capture_authored()
+	_editor_flight = t
+	transform = t
+
+## Back to the transform the scene declares.
+func editor_end_flight() -> void:
+	if not Engine.is_editor_hint():
+		return
+	_capture_authored()
+	_editor_flight = Transform3D.IDENTITY
+	transform = _editor_authored
+
+func _capture_authored() -> void:
+	if _editor_authored_captured:
+		return
+	_editor_authored = transform
+	_editor_authored_captured = true
+
+## Keep the flight transform OUT of the scene file.
+##
+## Godot serialises a node's transform, so a body left mid-flight would ship where the camera happened
+## to be. On a client that would be harmless — _place_at_time rebuilds basis AND position from the
+## axial tilt, the orbit and the time on every frame — but the DEDICATED SERVER skips that function
+## entirely, so it would STAND: every ground position on that body would then be resolved against a
+## planet parked wherever someone was flying. Restoring the authored transform around the save is the
+## whole guarantee, so it lives next to the thing it protects rather than in a plugin.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_EDITOR_PRE_SAVE:
+		_capture_authored()
+		transform = _editor_authored
+	elif what == NOTIFICATION_EDITOR_POST_SAVE:
+		transform = _editor_flight if _editor_flight != Transform3D.IDENTITY else _editor_authored
+

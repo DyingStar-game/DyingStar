@@ -1126,6 +1126,10 @@ func _exit_tree() -> void:
 func _physics_process(delta: float) -> void:
 	if not _initialized:
 		return
+	# Editor flight: drive the body under the viewport camera BEFORE anything reads a
+	# transform this frame, so the LOD and the camera agree on where the body is.
+	if Engine.is_editor_hint():
+		_editor_flight_step()
 	TerrainProfiler.maybe_report(_mesh_task_backlog.size(), _mesh_tasks.size())
 
 	# ── Server: poll async collision chunk loading ────────────────
@@ -3115,3 +3119,108 @@ func _get_reference_position() -> Vector3:
 		if _active_chunks.is_empty():
 				print("[PlanetTerrain] _get_reference_position: NO viewport")
 	return Vector3.INF
+
+
+# -- Editor flight ---------------------------------------------------------------------------------
+#
+# Fly the editor viewport as if it were over the body: local up always world up, forward following
+# the curvature. The camera cannot be driven (see Planet's editor-flight section), so the BODY is
+# moved under it instead — and the trick is that only the camera's DELTA matters, so it works whatever
+# the editor does with the camera.
+#
+# Each frame:
+#   * the body centre goes on the world -Y axis under the camera, at radius + altitude. The local up
+#     where the camera stands is then world +Y BY CONSTRUCTION, wherever the editor put it;
+#   * the body is turned so the tracked ground point sits under the camera;
+#   * the camera's movement since the last frame is split: its vertical part changes the altitude, its
+#     horizontal part ROLLS the tracked point across the surface by distance / (radius + altitude).
+
+## Fly the editor camera in this body's frame instead of the world's. EDITOR ONLY: the body's
+## transform is driven while this is on, and never saved (see Planet.editor_set_flight_transform).
+##
+## Normally toggled from the "Fly in planet frame" button in the 3D viewport toolbar rather than
+## here — the toolbar keeps it reachable while you have the object you are PLACING selected, which
+## is the whole point. This export is the state the button reads and writes.
+@export var editor_planet_flight: bool = false
+
+## Ground point under the camera, as a unit direction in the BODY's own frame.
+var _flight_dir: Vector3 = Vector3.UP
+## Height of the camera above the reference sphere, in metres.
+var _flight_alt: float = 0.0
+## Camera world position last frame; INF means "not seeded yet".
+var _flight_last_cam: Vector3 = Vector3.INF
+var _flight_was_on: bool = false
+
+## A camera move larger than this fraction of (radius + altitude) is a TELEPORT, not flying — pressing
+## F to frame a node, or typing coordinates. Rolling the surface by it would fling you across the
+## globe, so the tracked point is re-seeded from where the camera actually is instead.
+const FLIGHT_JUMP_FRACTION: float = 0.05
+
+## Drive the body under the editor camera. Called every frame from _physics_process, editor only.
+func _editor_flight_step() -> void:
+	var planet := get_parent() as Planet
+	if planet == null or planet_data == null:
+		return
+	if not editor_planet_flight:
+		if _flight_was_on:
+			_flight_was_on = false
+			_flight_last_cam = Vector3.INF
+			planet.editor_end_flight()
+		return
+
+	var cam := _editor_camera_world()
+	if cam == Vector3.INF:
+		return
+	var radius: float = planet_data.radius
+
+	# Seeding, and re-seeding after a teleport: keep the camera exactly where it is and read the
+	# ground point and altitude from the body as it stands right now, so switching the mode on (or
+	# pressing F) never moves the view.
+	var jumped: bool = _flight_last_cam != Vector3.INF 		and _flight_last_cam.distance_to(cam) > (radius + _flight_alt) * FLIGHT_JUMP_FRACTION
+	if not _flight_was_on or _flight_last_cam == Vector3.INF or jumped:
+		var to_cam: Vector3 = cam - planet.global_position
+		var dist: float = to_cam.length()
+		if dist < 1.0:
+			return  # inside the centre: no direction to read
+		_flight_alt = dist - radius
+		_flight_dir = (planet.global_transform.basis.inverse() * (to_cam / dist)).normalized()
+		_flight_was_on = true
+		_flight_last_cam = cam
+		_editor_flight_place(planet, cam, radius)
+		return
+
+	var move: Vector3 = cam - _flight_last_cam
+	_flight_last_cam = cam
+
+	# Vertical: straight onto the altitude. Clamped well above the centre so radius + altitude can
+	# never reach zero, which would make the roll angle explode.
+	_flight_alt = maxf(_flight_alt + move.y, -radius * 0.5)
+
+	# Horizontal: roll the tracked point along the surface by the arc the camera just covered.
+	var flat := Vector3(move.x, 0.0, move.z)
+	var span: float = flat.length()
+	if span > 0.0:
+		var angle: float = span / maxf(radius + _flight_alt, 1.0)
+		# Done in WORLD space and converted back, rather than reasoning about local axes: the tracked
+		# point is at world +Y by construction, so rotating THAT is unambiguous.
+		var axis: Vector3 = Vector3.UP.cross(flat / span)
+		if axis.length_squared() > 0.000001:
+			var moved: Vector3 = Basis(axis.normalized(), angle) * Vector3.UP
+			_flight_dir = (planet.global_transform.basis.inverse() * moved).normalized()
+
+	_editor_flight_place(planet, cam, radius)
+
+## Put the body where the camera stands over `_flight_dir` at `_flight_alt`.
+func _editor_flight_place(planet: Planet, cam: Vector3, radius: float) -> void:
+	# Rotation taking the tracked ground point to world +Y, then the centre straight down from the
+	# camera by radius + altitude. Both together put the camera over that point, upright.
+	var basis := Basis(Quaternion(_flight_dir, Vector3.UP))
+	var origin: Vector3 = cam - Vector3.UP * (radius + _flight_alt)
+	planet.editor_set_flight_transform(Transform3D(basis, origin))
+
+## The editor viewport camera in WORLD space. _get_editor_camera_local() answers relative to this
+## body, which is no use here — flight is what moves the body.
+func _editor_camera_world() -> Vector3:
+	var local := _get_editor_camera_local()
+	return Vector3.INF if local == Vector3.INF else global_position + local
+

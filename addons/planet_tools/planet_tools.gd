@@ -2,14 +2,19 @@
 extends EditorPlugin
 ## Editor helpers for placing objects on a planet surface.
 ##
-## Adds a "Snap to surface" button to the 3D viewport toolbar (and a
+## Adds two things to the 3D viewport toolbar: a "Snap to surface" button (and a
 ## Ctrl+Shift+G shortcut). It moves the currently selected object(s) onto the
 ## planet terrain along their radial direction from the planet centre — the
 ## correct "down" on a sphere — using PlanetTerrain.compute_surface_transform.
 ## Unlike Godot's built-in "Snap Object to Floor", it needs no collision and
 ## works anywhere on the planet, not just near the north pole.
+##
+## And a "Fly in planet frame" toggle, shown only when the edited scene HAS a body: it flies the
+## viewport as if it were over that body — local up always world up, forward following the curvature.
+## See PlanetTerrain's editor-flight section for how, and why the body moves rather than the camera.
 
 var _snap_button: Button
+var _fly_button: Button
 
 
 func _enter_tree() -> void:
@@ -22,12 +27,32 @@ func _enter_tree() -> void:
 	_snap_button.pressed.connect(_snap_selection)
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _snap_button)
 
+	_fly_button = Button.new()
+	_fly_button.text = "Fly in planet frame"
+	_fly_button.flat = true
+	_fly_button.toggle_mode = true
+	_fly_button.focus_mode = Control.FOCUS_NONE
+	_fly_button.tooltip_text = "Fly the viewport over the body: up stays up and " \
+		+ "forward follows the curvature. Middle-mouse pan strafes along the ground."
+	_fly_button.toggled.connect(_set_flight)
+	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _fly_button)
+
+	# The toolbar is where this belongs rather than the inspector: flying is something you do WHILE
+	# working on something else, and an inspector checkbox would mean selecting the terrain node —
+	# and losing the toggle the moment you select the object you actually came to place.
+	scene_changed.connect(_refresh_fly_button)
+	_refresh_fly_button(null)
+
 
 func _exit_tree() -> void:
 	if _snap_button:
 		remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _snap_button)
 		_snap_button.queue_free()
 		_snap_button = null
+	if _fly_button:
+		remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _fly_button)
+		_fly_button.queue_free()
+		_fly_button = null
 
 
 ## Ctrl+Shift+G triggers the same snap as the toolbar button.
@@ -84,3 +109,27 @@ func _find_planet_terrain(node: Node) -> Node:
 		if found:
 			return found
 	return null
+
+## Show the flight toggle only when the edited scene actually has a body to fly over, and mirror what
+## that scene already carries. The button is a VIEW of PlanetTerrain.editor_planet_flight, never a
+## second source of truth — set_pressed_no_signal so reading the state cannot write it back.
+func _refresh_fly_button(_scene_root) -> void:
+	if _fly_button == null:
+		return
+	var terrain := _edited_planet_terrain()
+	_fly_button.visible = terrain != null
+	if terrain != null:
+		_fly_button.set_pressed_no_signal(terrain.editor_planet_flight)
+
+
+func _set_flight(on: bool) -> void:
+	var terrain := _edited_planet_terrain()
+	if terrain == null:
+		return
+	terrain.editor_planet_flight = on
+
+
+## The body of the scene being edited, or null. Guards the empty-editor case, where there is no root.
+func _edited_planet_terrain() -> PlanetTerrain:
+	var root := EditorInterface.get_edited_scene_root()
+	return null if root == null else _find_planet_terrain(root) as PlanetTerrain
