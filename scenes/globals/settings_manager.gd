@@ -22,11 +22,21 @@ signal microphone_muted_changed(muted: bool)
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
 const CONFIG_FILEPATH : String = "user://settings.ini"
+## A player's remapped keys, written by the controls page. Loaded HERE, at boot: applying them is a
+## STARTUP job, not a menu job. It used to happen in MenuConfig._ready(), which only worked because a
+## copy of that page was instanced inside pause_menu.tscn and therefore spawned with the player —
+## remove that copy (it was dead UI, never shown) and every remap silently reverted to the project
+## defaults until the player opened Settings > Controls once. Same lesson as the window settings just
+## above: loaded but never applied reads exactly like "it did not persist".
+const INPUT_MAP_FILEPATH : String = "user://inputs.map"
 ## Audio settings key -> the audio bus it drives. Sliders are 0..100 (linear), applied as dB.
 const AUDIO_BUSES : Dictionary = {
 	"general": "Master", "music": "Music", "sfx": "SFX", "voip": "VoIP",
 }
 var config : ConfigFile = ConfigFile.new()
+## The saved keybindings as action -> key text, empty when nothing was ever remapped. Kept so the
+## controls page can show and re-save them without parsing the file a second time.
+var keybindings : Dictionary = {}
 
 func _ready() -> void:
 	if OS.has_feature("dedicated_server"):
@@ -38,6 +48,47 @@ func _ready() -> void:
 	# Re-apply the saved settings to the window on startup (this is what was missing: they were
 	# loaded but never applied, so they appeared not to persist).
 	apply_settings()
+	load_keybindings()
+
+## Apply the saved keybindings over the project defaults. Safe to call again: it rebuilds each action
+## from scratch. Returns quietly when the player never remapped anything.
+func load_keybindings() -> void:
+	keybindings = {}
+	if not FileAccess.file_exists(INPUT_MAP_FILEPATH):
+		return
+	var file := FileAccess.open(INPUT_MAP_FILEPATH, FileAccess.READ)
+	if file == null:
+		return
+	var content := file.get_as_text()
+	file.close()
+	var parsed = JSON.parse_string(content)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("[DyingStar] inputs.map is not valid JSON — keeping the default bindings.")
+		return
+	for action_name in (parsed as Dictionary).keys():
+		if not InputMap.has_action(action_name):
+			continue  # an action renamed or removed since the file was written
+		var ev_str: String = str(parsed[action_name])
+		keybindings[action_name] = ev_str
+		InputMap.action_erase_events(action_name)
+		InputMap.action_add_event(action_name, _event_from_text(ev_str))
+
+## Rebuild an InputEvent from the text the controls page saved.
+static func _event_from_text(ev_str: String) -> InputEvent:
+	if ev_str.begins_with("mouse_"):
+		var mouse := InputEventMouseButton.new()
+		mouse.button_index = int(ev_str.split("_")[1])
+		return mouse
+	var key := InputEventKey.new()
+	# find_keycode_from_string encodes modifiers in the high bits; split them back out so a saved
+	# "Alt + ²" reloads WITH its Alt (else remapped modifier bindings lose the modifier).
+	var kc: int = OS.find_keycode_from_string(ev_str)
+	key.physical_keycode = kc & KEY_CODE_MASK
+	key.alt_pressed = (kc & KEY_MASK_ALT) != 0
+	key.ctrl_pressed = (kc & KEY_MASK_CTRL) != 0
+	key.shift_pressed = (kc & KEY_MASK_SHIFT) != 0
+	key.meta_pressed = (kc & KEY_MASK_META) != 0
+	return key
 
 func initialize_settings():
 	config.set_value("video", "fullscreen", false)
