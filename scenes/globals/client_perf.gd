@@ -796,6 +796,7 @@ func _report() -> void:
 	if not parts.is_empty():
 		print("[CPerf+] %s | %s" % [_clock(), " | ".join(parts)])
 
+	_print_frame_signal_subs()
 	_report_extras(fps)
 	# Measured and reported, because this monitor prints ~6 lines per heartbeat through a logger that
 	# costs milliseconds: any figure it produces has to be readable NEXT to the price of producing it,
@@ -1194,3 +1195,36 @@ func _on_frame_pre_draw() -> void:
 ## End of RenderingServer::draw(), main thread.
 func _on_frame_post_draw() -> void:
 	_postdraw_usec = Time.get_ticks_usec()
+
+## Who is parked on `process_frame`, and who on `physics_frame`.
+##
+## `godot(8).log` (2026-09-09) cornered the 6 fps collapse to `tf=` — `pf<=0`, `tf<=163` — which in
+## the 4.7 source (scene/main/scene_tree.cpp:713-719) is exactly three statements:
+## `emit_signal("process_frame")`, `MessageQueue::flush()`, `flush_transform_notifications()`, then
+## the process group. The message queue is out (`msgbuf` peaks at 44 KiB), so it is the OTHER
+## subscribers of that signal or the transform flush — and this line tells them apart, because every
+## suspended `await get_tree().process_frame` in the game IS a subscriber and resumes right there,
+## where `scripts=` cannot see it. A count of 1 (this autoload alone) points at the flush instead.
+func _print_frame_signal_subs() -> void:
+	var out: PackedStringArray = []
+	for sig_name: StringName in [&"process_frame", &"physics_frame"]:
+		# Signal(object, name), not get(): signals are not properties, and `get` would hand back null.
+		var conns: Array = Signal(get_tree(), sig_name).get_connections()
+		var by: Dictionary = {}
+		for c: Dictionary in conns:
+			var cb: Callable = c.get("callable", Callable())
+			var owner_obj: Object = cb.get_object()
+			var who: String = "<freed>"
+			if owner_obj != null:
+				var sc: Script = owner_obj.get_script() as Script
+				who = sc.resource_path.get_file() if sc != null else owner_obj.get_class()
+			var key: String = "%s::%s" % [who, str(cb.get_method())]
+			by[key] = int(by.get(key, 0)) + 1
+		var keys: Array = by.keys()
+		keys.sort_custom(func(a: String, b: String) -> bool: return int(by[a]) > int(by[b]))
+		var top: PackedStringArray = []
+		for k: String in keys.slice(0, 8):
+			top.append("%s=%d" % [k, int(by[k])])
+		out.append("%s subs=%d%s" % [
+			str(sig_name), conns.size(), (" " + " ".join(top)) if not top.is_empty() else ""])
+	print("[CPerf&] %s | %s" % [_clock(), " | ".join(out)])
