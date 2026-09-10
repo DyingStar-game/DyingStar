@@ -61,7 +61,6 @@ var _sprint_held: bool = false
 var _stance: int = 0  # 0 = standing, 1 = crouched, 2 = prone (server-authoritative, replicated as "stance")
 var _stance_request: int = 0  # last stance the owner asked for; validated + applied in the physics step
 var _collider: CollisionShape3D = null  # physics capsule (OWN copy — resized per stance, see setup)
-var _stand_collider_height: float = 1.8  # standing capsule height, captured from the scene at setup
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 ## Landing: the server emits a "land:<n>" event (via the whitelisted `action` field, like the jump) the
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
@@ -250,15 +249,11 @@ func setup() -> void:
 	_collider = player.get_node_or_null("Placeholder_Collider") as CollisionShape3D
 	if _collider != null and _collider.shape is CapsuleShape3D:
 		_collider.shape = _collider.shape.duplicate()
-		_stand_collider_height = (_collider.shape as CapsuleShape3D).height
 
-## Physics-capsule height (m) for a stance: standing (from the scene), crouched, or prone.
+## Physics-capsule height (m) for a stance. Delegated: Player.stance_height is the single answer,
+## shared with the client, which hangs the name tag at that height (see PlayerClient._update_name_tag).
 func _stance_height(stance: int) -> float:
-	if stance == 1:
-		return player.crouch_collider_height
-	if stance == 2:
-		return player.prone_collider_height
-	return _stand_collider_height
+	return player.stance_height(stance)
 
 ## Shrink/restore the physics capsule for the stance, keeping its bottom (feet) on the ground.
 func _apply_stance_collider(stance: int) -> void:

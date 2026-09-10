@@ -4,6 +4,9 @@ extends Node
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
+## Gap (m) between the HEAD BONE and the label. Measured from the crown of the animated skull, not
+## from the feet, so it is the one number to tweak if the tag sits too close or too far above a head.
+const NAME_TAG_CLEARANCE: float = 0.45
 ## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
@@ -1063,7 +1066,18 @@ func _update_name_tag() -> void:
 	if _name_tag == null:
 		return
 	var cam := get_viewport().get_camera_3d()
-	var head: Vector3 = player.global_position + player.global_transform.basis.y * 2.2
+	# Anchored on the ANIMATED HEAD, not on a height. The tag used to sit at a fixed 2.2 m above
+	# the feet, so it never moved; keying it to the stance only turned that into three discrete
+	# heights, which SNAP -- a capsule height is a physics abstraction with three values, while a
+	# head moves continuously, through the crouch/prone TRANSITIONS as much as through the stride.
+	# head_mount is the attachment point the torch already rides, built for every avatar, so this
+	# costs nothing new and is right by construction: wherever the animation puts the head, the
+	# label follows. The stance height stays the fallback for the frames before the rig exists.
+	var crown: Vector3 = (
+		player.head_mount.global_position if is_instance_valid(player.head_mount)
+		else player.global_position + player.global_transform.basis.y * player.stance_height()
+	)
+	var head: Vector3 = crown + player.global_transform.basis.y * NAME_TAG_CLEARANCE
 	# Hide when behind the camera or farther than the cutoff (too far to read anyway).
 	if cam == null or cam.is_position_behind(head) \
 			or player.global_position.distance_to(cam.global_position) > NAME_TAG_MAX_DISTANCE:
