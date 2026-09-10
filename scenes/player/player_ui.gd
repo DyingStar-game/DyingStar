@@ -24,8 +24,11 @@ var crosshair_manager: CrosshairManager = null
 @onready var button_microphone: Button = $HUD/Control/AudioContainer/ButtonMicrophone
 
 func _ready() -> void:
-	if not is_multiplayer_authority():
-		hide()
+	# Setup-time guard. The body already hides and process-disables this subtree for a remote avatar
+	# (Player._enter_tree), but _ready() runs regardless, so the one-off wiring below still has to be
+	# skipped. `remote_player` is the project's own test; is_multiplayer_authority() stood here and
+	# gated nothing — no player body is ever given an authority, so it answered true on all of them.
+	if owner != null and "remote_player" in owner and owner.remote_player:
 		return
 	bus_master_index = AudioServer.get_bus_index("Master")
 	_setup_crosshair_manager()

@@ -2,7 +2,6 @@
 
 [ext_resource type="PackedScene" uid="uid://c77xahaiy4r4r" path="res://ui/pause_page/pause_page.tscn" id="1_jbgdu"]
 [ext_resource type="Script" uid="uid://cexbpgnkjpswe" path="res://ui/pause_menu/pause_menu.gd" id="1_le02u"]
-[ext_resource type="PackedScene" uid="uid://drbfy20lnxnl0" path="res://ui/menu_config/MenuConfig.tscn" id="2_le02u"]
 
 [node name="PauseMenu" type="Control" unique_id=1404734823]
 visible = false
@@ -20,7 +19,3 @@ visible = false
 layout_mode = 1
 mouse_filter = 2
 
-[node name="InputSettings" parent="." unique_id=92632296 instance=ExtResource("2_le02u")]
-visible = false
-layout_mode = 1
-mouse_filter = 2

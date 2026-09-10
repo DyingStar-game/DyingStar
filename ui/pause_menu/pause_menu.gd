@@ -1,6 +1,5 @@
 extends Control
 
-var actual_page: Control = null
 ## The full settings menu (general / graphics / audio / controls) — reused from the main menu.
 var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
@@ -9,7 +8,6 @@ var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.
 var _settings_overlay: Node = null
 
 @onready var main_pause_menu: Control = $PausePage
-@onready var input_settings_menu: Control = $InputSettings
 
 func _ready() -> void:
 	main_pause_menu.settings_button.pressed.connect(
@@ -25,19 +23,29 @@ func _ready() -> void:
 		_on_pause_menu_button_pressed.bind("resume_game_button")
 	)
 
-	input_settings_menu.return_main_menu_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("return_main_menu_button")
-	)
-
+## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
+## disables its whole UserInterface subtree (Player._enter_tree), which is the single place that
+## knows the body is not ours. `is_multiplayer_authority()` used to stand here and gated nothing:
+## players are replicated through Horizon, not Godot's high-level multiplayer, so every body keeps
+## the default authority and the test was true on all of them.
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority(): return
-
 	if not visible:
 		if event.is_action_pressed("pause"):
+			# Show the menu ONLY if the game agrees it is paused. change_game_state(PAUSE_MENU) accepts
+			# the transition from PLAYING and from nothing else -- every other current state falls to
+			# its `_` branch, which returns NO_CHANGE and leaves current_state untouched. This used to
+			# be called and ignored, so the menu appeared while the game stayed unpaused underneath:
+			# _menu_open() reads that same state, so the input lock never engaged, the cursor was
+			# re-captured on the next frame and the camera kept turning behind the menu. Seated in a
+			# vehicle it is blatant -- _ride_seat applies the look directly.
+			#
+			# Tested on current_state rather than on the return code on purpose: NO_CHANGE also means
+			# "already PAUSE_MENU", which is a perfectly good outcome. What must never happen is the
+			# menu being visible while the rest of the game believes it is playing.
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PAUSE_MENU)
-			visible = true
-			main_pause_menu.visible = true
-			actual_page = main_pause_menu
+			if GameOrchestrator.current_state != GameOrchestrator.GameStates.PAUSE_MENU:
+				return
+			_open()
 	else:
 		if event.is_action_pressed("pause"):
 			# Settings open on top: Esc goes BACK (closes settings), it does NOT un-pause. Only Esc from
@@ -47,9 +55,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_settings_overlay = null
 			else:
 				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
-				visible = false
-				main_pause_menu.visible = false
-				actual_page = null
+				_close()
 
 		# Only "pause" (Esc) or the Resume button leaves the pause menu — a click in the void must not
 		# resume the game (it used to un-pause on ANY mouse button).
@@ -74,17 +80,24 @@ func _on_pause_menu_button_pressed(button_pressed: String) -> void:
 			# still publishing our microphone from the menu.
 			NetworkOrchestrator.release_network_agent()
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
-			visible = false
-			main_pause_menu.visible = false
-			actual_page = null
+			_close()
 		"resume_game_button":
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
-			visible = false
-			main_pause_menu.visible = false
-			actual_page = null
-		"return_main_menu_button":
-			actual_page.visible = false
-			actual_page = main_pause_menu
-			actual_page.visible = true
+			_close()
 		_:
 			pass
+
+
+## Show the menu. Paired with _close() so the two halves cannot drift apart.
+func _open() -> void:
+	visible = true
+	main_pause_menu.visible = true
+
+
+## Hide the menu. THREE paths close it — Esc, Resume, Return to menu — and each used to repeat the
+## same assignments; one of them forgetting a line is precisely how a menu ends up half-closed, which
+## is the family of bug this file just came out of. The state change stays at the call site: closing
+## to PLAYING and closing to UNIVERSE_MENU are different decisions, and only the hiding is shared.
+func _close() -> void:
+	visible = false
+	main_pause_menu.visible = false

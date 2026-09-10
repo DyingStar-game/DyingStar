@@ -505,6 +505,17 @@ func _enter_tree() -> void:
 	if remote_player:
 		position = spawn_position
 		$UserInterface.visible = false
+		# Hiding it is not enough: Godot keeps calling _process and _unhandled_input on hidden nodes,
+		# so every UI child of a REMOTE body kept answering the local player's keys. This scene is
+		# instanced once per visible avatar, so the pause menu was running in as many copies as there
+		# were players on screen — invisible ones, which is why nobody ever saw the second menu, only
+		# its effects (Esc opening several menus, the next Esc consumed by one of them while another
+		# stayed "open" over an unpaused game).
+		#
+		# Disabling the whole subtree states the rule ONCE, where the body already knows it is not
+		# ours, instead of adding an "am I the local player?" guard to each UI child — and it covers
+		# the next child for free. _ready() still runs, so setup-time work keeps its own guard.
+		$UserInterface.process_mode = Node.PROCESS_MODE_DISABLED
 		# Don't hide CameraPivot: it still drives where a remote player is looking (its pitch is
 		# replicated), and the camera is made non-current in _ready, so it never renders for us anyway.
 		# The Torch used to live under it and had to stay lit; it now rides the head bone instead
