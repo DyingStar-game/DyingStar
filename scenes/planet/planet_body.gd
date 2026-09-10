@@ -582,6 +582,17 @@ func surface_altitude_of(world_pos: Vector3) -> float:
 	return centre_dist - planet_data.radius - terrain_height
 
 
+## Height of `world_pos` above this body's REFERENCE SPHERE — the altitude an altimeter shows, and the
+## one the atmosphere's density profiles are written against.
+##
+## NOT surface_altitude_of, which is the CLEARANCE over the terrain under you: standing anywhere, that
+## one reads ~0, so on a 4 km plateau the two differ by 4 km. Both are useful and they are easy to
+## confuse — a debug readout showing the clearance made a mountaintop look like sea level.
+func elevation_of(world_pos: Vector3) -> float:
+	if planet_data == null:
+		return 0.0
+	return (world_pos - global_position).length() - planet_data.radius
+
 ## Longitude/latitude (degrees, EPSG:4326) of `world_pos` on this planet. Uses the SAME body-fixed local
 ## direction the heightmap is sampled with (surface_altitude_of), so it matches the terrain geography and
 ## the editor_goto_* coordinates. Body-fixed means a fixed ground point keeps its lon/lat as the planet

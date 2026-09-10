@@ -238,9 +238,9 @@ func current_profile() -> AtmosphereProfile:
 ## are written against — not the height above the terrain, which on a plateau differs by kilometres.
 func altitude_above_sphere() -> float:
 	var body := current_body()
-	if body == null or body.planet_data == null:
+	if body == null:
 		return 0.0
-	return (player.global_position - body.global_position).length() - body.planet_data.radius
+	return body.elevation_of(player.global_position)  # one formula, shared with the debug readout
 
 
 ## How far to raise the haze ceiling, in metres. See debug_pretend_lowlands.
