@@ -673,7 +673,14 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		# It also ends the loop a reparent starts by dropping and re-entering every area: once adopted,
 		# the planet is our ancestor and the test is false.
 		# Deferred because reparenting inside an Area3D callback is illegal.
-		if OS.has_feature("dedicated_server") and area.name == "PlanetGravity":
+		# ...and with a SECOND exception: while seated, the VEHICLE owns our frame
+		# (Vehicle.server_enter parents us to it). A reparent drops and re-enters every area, so
+		# boarding fires this very branch — adopting the planet here would tear us straight back
+		# out of the cab, silently, one frame after taking the seat. The planet is normally
+		# already an ancestor through the vehicle and the test below is false anyway; this makes
+		# it false BY INTENT rather than by where the truck happens to be parked.
+		if OS.has_feature("dedicated_server") and area.name == "PlanetGravity" \
+				and not is_instance_valid(_seat_node):
 			var planet: Node = area.get_parent().get_parent()
 			if not planet.is_ancestor_of(self):
 				call_deferred("_safe_reparent_and_sync", planet)

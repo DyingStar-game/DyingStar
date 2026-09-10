@@ -734,11 +734,17 @@ func _enter_seat(seat: Node) -> void:
 	})
 	player.active = false  # lock walking while seated
 	player.set_seated(true)
-	# Ride by transform inheritance: parent to the vehicle so we move WITH it (no jitter). The
-	# vehicle stays server-authoritative; this is the local camera ride.
-	if veh is Node3D and player.get_parent() != veh:
-		player.reparent(veh)
-		player.net_reset_interp()
+	# The FRAME is not ours to choose. The server decides it and announces it as `parent_id`;
+	# client.player_update then reparents us and applies the position measured in that frame,
+	# atomically. This used to reparent optimistically right here, and it was invisible only
+	# because the server never reparented too: with one writer, nobody could disagree.
+	#
+	# The moment the server started declaring the vehicle as our frame, the two raced — for the
+	# round trip in between, the server was still publishing PLANET-local coordinates while we
+	# already believed we were in the truck's frame. A planet-local position read as
+	# truck-local is tens of thousands of kilometres off: the body left, the camera landed in
+	# nothing (a grey screen) and the seat pose came out sideways.
+	# See dyingstar-parenting-server-authority: the client applies the frame, never picks it.
 	if player._seat_is_driver and veh.has_method("set_driver_hud"):
 		veh.set_driver_hud(true)
 
@@ -751,12 +757,8 @@ func _leave_vehicle(notify_server: bool = true) -> void:
 	player.active = true  # walking again
 	player.set_seated(false)
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
-	# Un-parent from the vehicle, back into the world (the server repositions us beside it).
-	if is_instance_valid(player._seat_vehicle_node) and player.get_parent() == player._seat_vehicle_node:
-		var world: Node = player._seat_vehicle_node.get_parent()
-		if world != null:
-			player.reparent(world)
-			player.net_reset_interp()
+	# No un-parenting here either: server_exit puts us back in the vehicle's own frame and
+	# says so. Doing it locally would re-open the same race, in the other direction.
 	if player._seat_is_driver and is_instance_valid(player._seat_vehicle_node) \
 			and player._seat_vehicle_node.has_method("set_driver_hud"):
 		player._seat_vehicle_node.set_driver_hud(false)

@@ -30,7 +30,14 @@ func _frame_suffix() -> String:
 	var parent_node: Node = (player as Node).get_parent()
 	if not is_instance_valid(parent_node):
 		return "\nframe: (none)"
-	return "\nframe: %s" % parent_node.name
+	# The uuid alongside the name, because that is what actually travels as parent_id and what
+	# the server prints in its frame line: with only a name you cannot tell whether the two
+	# sides agree. NO UUID is the one to watch for -- `position` is published local to the
+	# DIRECT parent, and a parent carrying none is not a frame Horizon can recompose against,
+	# so the coordinates go out declared as world ones. A vehicle SEAT is exactly such a node.
+	var frame_uuid: String = str(parent_node.uuid) if "uuid" in parent_node else ""
+	var tag: String = frame_uuid.substr(0, 8) if frame_uuid != "" else "NO UUID"
+	return "\nframe: %s [%s]" % [parent_node.name, tag]
 
 func _altitude_only() -> String:
 	var player: Node = owner
