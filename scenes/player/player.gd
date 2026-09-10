@@ -481,6 +481,17 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## Better still, one day: raise the SitPoint markers by this much and set this to 0 -- the seat is the
 ## right place to say where its occupant's eye goes. Kept here for now so vehicle scenes stay untouched.
 @export var seat_eye_height: float = 0.063
+## How much HIGHER the passenger's eye sits than the driver's (m). Zero means the two are the same.
+##
+## They are not, and one number could not say so: the seat pose is chosen by ROLE (sit_driving vs
+## sit_passenger, see CharacterAnimator._locomotion_clip) and the two clips do not put the head in
+## the same place. seat_eye_height above is measured from the camera pivot's RESTING position, not
+## from the head, so it cannot absorb that difference — tuned for the driver, it left the passenger
+## looking from too low.
+##
+## A DELTA rather than a second absolute value, deliberately: it names the thing that actually
+## differs, it defaults to no change at all, and the driver's tuning stays the single reference.
+@export var passenger_eye_offset: float = 0.0
 
 @onready var direct_chat: DirectChat = $UserInterface/DirectChat
 
