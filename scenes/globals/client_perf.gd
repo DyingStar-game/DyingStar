@@ -253,6 +253,31 @@ var _phys_by_script: Dictionary = {}
 ## side — which is where that bug's whole frame lives — had none.
 var _proc_by_class: Dictionary = {}
 var _proc_by_script: Dictionary = {}
+## Per-script `_process` cost, measured WITHOUT touching a single game script.
+##
+## `godot(10).log` (2026-09-10): once this autoload was pinned first, `scripts=137-160` on every
+## frame — the whole collapse is in the game's own `_process` callbacks, and the census can only say
+## WHICH scripts run, not what each costs. So the census hands out priorities: every script that has
+## processing nodes at the default priority 0 gets a band (base = _BAND_BASE + k * _BAND_STEP), its
+## nodes go to base + 1, and a probe node sits at base to timestamp the start of the band. The cost of
+## a script is then probe(k+1) - probe(k), read here on the next frame like every other figure. Two
+## fixed probes close the layout: one at -1 (end of the last band; nodes that started processing
+## after the census still sit at 0 and land after it) and one at +1 (before the scripts that set
+## their own positive priority: sun 100, atmosphere 110, moons 120).
+##
+## It REORDERS `_process` among priority-0 nodes — which the engine already sorts with an unstable
+## sort, so nothing correct can depend on that order. Still a measurement mode: `debug_perf_by_script`.
+const _BAND_BASE: int = -500_000
+const _BAND_STEP: int = 1_000
+var _bands_on: bool = false
+var _band_scripts: Array[String] = []
+var _band_probes: Array[Node] = []
+var _band_t: PackedInt64Array = PackedInt64Array()
+var _band_rest_probe: Node = null
+var _band_pos_probe: Node = null
+var _band_rest_usec: int = 0
+var _band_pos_usec: int = 0
+var _band_max: Dictionary = {}
 ## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
 ## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
 ## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
@@ -414,6 +439,12 @@ func _ready() -> void:
 	_tail.phys_tick = _phys_tail_tick
 	_tail.process_physics_priority = 1_000_000
 	add_child(_tail)
+	_bands_on = ClientConfig.get_bool("debug_perf_by_script", true)
+	if _bands_on:
+		_band_rest_probe = _band_probe(-1, _band_rest_tick)
+		_band_pos_probe = _band_probe(1, _band_pos_tick)
+		print("[CPerf] !! debug_perf_by_script=true — _process order among priority-0 nodes is"
+			+ " regrouped by script so each script's _process cost can be timed ([CPerf%] line).")
 	# Connected from an autoload's _ready, so this handler runs near the FRONT of the signal's
 	# subscriber list: `tf=` then contains the game's own `process_frame` work rather than hiding it.
 	get_tree().process_frame.connect(_on_tree_process_frame)
@@ -677,6 +708,8 @@ func _process(_delta: float) -> void:
 	_tf_max = maxf(_tf_max, tf_ms)
 	_mq_max = maxf(_mq_max, mq_ms)
 	_xf_max = maxf(_xf_max, xf_ms)
+	if _bands_on:
+		_band_collect()
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -745,6 +778,7 @@ func _process(_delta: float) -> void:
 	_tf_max = 0.0
 	_mq_max = 0.0
 	_xf_max = 0.0
+	_band_max.clear()
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -818,6 +852,7 @@ func _report() -> void:
 		print("[CPerf+] %s | %s" % [_clock(), " | ".join(parts)])
 
 	_print_frame_signal_subs()
+	_print_bands()
 	_report_extras(fps)
 	# Measured and reported, because this monitor prints ~6 lines per heartbeat through a logger that
 	# costs milliseconds: any figure it produces has to be readable NEXT to the price of producing it,
@@ -1101,6 +1136,8 @@ func _walk(node: Node, planet: String) -> void:
 		var pscr: Script = node.get_script()
 		var pname: String = pscr.resource_path.get_file() if pscr != null else "<no script>"
 		_proc_by_script[pname] = int(_proc_by_script.get(pname, 0)) + 1
+		if _bands_on and node.process_priority == 0 and node != self:
+			node.process_priority = _band_priority(pname) + 1
 	if node.is_physics_processing():
 		_phys_procs += 1
 		_phys_by_class[cls] = int(_phys_by_class.get(cls, 0)) + 1
@@ -1269,3 +1306,66 @@ func _print_frame_signal_subs() -> void:
 		out.append("%s subs=%d%s" % [
 			str(sig_name), conns.size(), (" " + " ".join(top)) if not top.is_empty() else ""])
 	print("[CPerf&] %s | %s" % [_clock(), " | ".join(out)])
+
+
+## The band for a script, created on first sight: a probe at its base priority, its name in the list.
+func _band_priority(script_name: String) -> int:
+	var k: int = _band_scripts.find(script_name)
+	if k < 0:
+		k = _band_scripts.size()
+		_band_scripts.append(script_name)
+		_band_t.append(0)
+		_band_probes.append(_band_probe(_BAND_BASE + k * _BAND_STEP, _band_tick.bind(k)))
+	return _BAND_BASE + k * _BAND_STEP
+
+
+func _band_probe(priority: int, tick: Callable) -> Node:
+	var probe: _TailProbe = _TailProbe.new()
+	probe.name = "CPerfBand%d" % priority
+	probe.tick = tick
+	probe.process_priority = priority
+	add_child(probe)
+	return probe
+
+
+func _band_tick(k: int) -> void:
+	_band_t[k] = Time.get_ticks_usec()
+
+
+func _band_rest_tick() -> void:
+	_band_rest_usec = Time.get_ticks_usec()
+
+
+func _band_pos_tick() -> void:
+	_band_pos_usec = Time.get_ticks_usec()
+
+
+## Read the previous frame's band timestamps into per-window maxima. Band k ends where band k+1
+## starts; the last band ends at the -1 probe; from there to the +1 probe are the nodes still at
+## priority 0 (`rest0`); from the +1 probe to the tail are the scripts with a positive priority.
+func _band_collect() -> void:
+	var n: int = _band_scripts.size()
+	for k: int in n:
+		var t0: int = _band_t[k]
+		var t1: int = _band_t[k + 1] if k + 1 < n else _band_rest_usec
+		if t0 > 0 and t1 >= t0:
+			var name_k: String = _band_scripts[k]
+			_band_max[name_k] = maxf(float(_band_max.get(name_k, 0.0)), float(t1 - t0) / 1000.0)
+	if _band_rest_usec > 0 and _band_pos_usec >= _band_rest_usec:
+		_band_max["rest0"] = maxf(float(_band_max.get("rest0", 0.0)),
+				float(_band_pos_usec - _band_rest_usec) / 1000.0)
+	if _band_pos_usec > 0 and _tail_usec >= _band_pos_usec:
+		_band_max["prio+"] = maxf(float(_band_max.get("prio+", 0.0)),
+				float(_tail_usec - _band_pos_usec) / 1000.0)
+
+
+## Worst frame of the window, per script. Sorted, so the culprit is the first word on the line.
+func _print_bands() -> void:
+	if not _bands_on or _band_max.is_empty():
+		return
+	var keys: Array = _band_max.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return float(_band_max[a]) > float(_band_max[b]))
+	var parts: PackedStringArray = []
+	for k: String in keys.slice(0, 12):
+		parts.append("%s=%.1f" % [k, float(_band_max[k])])
+	print("[CPerf%%] %s _process worst ms by script: %s" % [_clock(), " ".join(parts)])
