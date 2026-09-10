@@ -201,6 +201,11 @@ var _pframe_usec: int = 0
 var ablate_planet_spin: bool = false
 var _pf_max: float = 0.0
 var _tf_max: float = 0.0
+## `tf=` cut in two by a deferred call planted from the `process_frame` handler: `mq=` is the message
+## queue flush, `xf=` is `flush_transform_notifications()` plus the process group's own prologue.
+var _mq_usec: int = 0
+var _mq_max: float = 0.0
+var _xf_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -325,6 +330,13 @@ func _ready() -> void:
 		return
 	_boot_ms = Time.get_ticks_msec()
 	_mem_avail_boot = int(OS.get_memory_info().get("available", -1))
+	# `scripts=` and `tf=` both assume this autoload is the FIRST node whose _process runs. Being an
+	# autoload only guarantees TREE order; the process group is sorted by priority with sort_custom,
+	# which is NOT stable, so among the ~100 nodes at the default priority 0 this one could land
+	# anywhere — and then `scripts=` would time a random SUFFIX of the game's callbacks while `tf=`
+	# quietly swallowed the rest. Nothing in five logs proved that was not happening. One line makes
+	# the assumption true instead of hopeful.
+	process_priority = -1_000_000
 
 	# ALWAYS, whatever debug_perf says. These lines are printed once and describe the machine the
 	# game is about to run on; they are worth having in EVERY log, including the ones sent for a bug
@@ -653,11 +665,18 @@ func _process(_delta: float) -> void:
 	_pre_max = maxf(_pre_max, pre_ms)
 	var pf_ms: float = 0.0
 	var tf_ms: float = 0.0
+	var mq_ms: float = 0.0
+	var xf_ms: float = 0.0
 	if _pframe_usec > _phys_tail_usec and now > _pframe_usec:
 		pf_ms = float(_pframe_usec - _phys_tail_usec) / 1000.0
 		tf_ms = float(now - _pframe_usec) / 1000.0
+		if _mq_usec > _pframe_usec and now > _mq_usec:
+			mq_ms = float(_mq_usec - _pframe_usec) / 1000.0
+			xf_ms = float(now - _mq_usec) / 1000.0
 	_pf_max = maxf(_pf_max, pf_ms)
 	_tf_max = maxf(_tf_max, tf_ms)
+	_mq_max = maxf(_mq_max, mq_ms)
+	_xf_max = maxf(_xf_max, xf_ms)
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -683,13 +702,13 @@ func _process(_delta: float) -> void:
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
 				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
-				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f) ms"
+				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
-				pf_ms, tf_ms,
+				pf_ms, tf_ms, mq_ms, xf_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -724,6 +743,8 @@ func _process(_delta: float) -> void:
 	_pre_max = 0.0
 	_pf_max = 0.0
 	_tf_max = 0.0
+	_mq_max = 0.0
+	_xf_max = 0.0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -752,7 +773,7 @@ func _report() -> void:
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
 		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f"
-		+ " gap<=%.0f pre<=%.0f (pf<=%.0f tf<=%.0f) ms"
+		+ " gap<=%.0f pre<=%.0f (pf<=%.0f tf<=%.0f mq<=%.0f xf<=%.0f) ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -763,7 +784,7 @@ func _report() -> void:
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 		_scripts_max, _rcpu_max, _rgpu_max, _setup_max, _sync_max, _draw_max,
-		_gap_max, _pre_max, _pf_max, _tf_max,
+		_gap_max, _pre_max, _pf_max, _tf_max, _mq_max, _xf_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -1121,6 +1142,14 @@ func _walk(node: Node, planet: String) -> void:
 		_bump("rigidbodies")
 	elif node is Area3D:
 		_bump("areas")
+	# CSG, because a CSG node that is NOT the root of its own tree rebuilds the WHOLE root brush on
+	# every transform change, and it does it through `call_deferred` — so the cost lands in the
+	# message queue flush inside `tf=`, where no probe has ever looked, while `msgbuf` stays at a few
+	# KiB because a deferred call is small to STORE and expensive to RUN.
+	if node is CSGShape3D:
+		_bump("csg")
+		if node.get_parent() is CSGShape3D:
+			_bump("csg_child")
 	if node.is_in_group("cargo_depots"):
 		_bump("cargo_depots")
 	elif node.is_in_group("miningrock"):
@@ -1184,6 +1213,18 @@ func _phys_tail_tick() -> void:
 ## flush and the process group.
 func _on_tree_process_frame() -> void:
 	_pframe_usec = Time.get_ticks_usec()
+	# The probe that splits what follows. `MessageQueue::flush()` is the very next statement
+	# (scene_tree.cpp:715) and runs FIFO, so this call sits behind everything already queued: when
+	# `_mq_probe` fires that flush is essentially done. A deferred call costs a few BYTES (`msgbuf`
+	# peaks at 44 KiB, which is why the queue looked innocent) and can cost a hundred milliseconds to
+	# RUN — a CSG rebuild, for one, is a `call_deferred(_update_shape)`.
+	_mq_usec = 0
+	_mq_probe.call_deferred()
+
+
+## Runs inside the MessageQueue flush that sits between `process_frame` and the transform flush.
+func _mq_probe() -> void:
+	_mq_usec = Time.get_ticks_usec()
 
 
 ## Start of RenderingServer::draw(), main thread. Everything between the tail probe and here is the
