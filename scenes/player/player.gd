@@ -122,6 +122,8 @@ const TELEPORT_TARGETS := {
 ## shrinks so a crouched/prone player fits under low obstacles; feet stay on the ground.
 @export var crouch_collider_height: float = 1.2
 @export var prone_collider_height: float = 0.6
+## Standing height, captured from the scene's capsule in _ready (see stance_height).
+var stand_body_height: float = 1.8
 @export var jump_height: float = 0.5
 @export var regular_climb_speed: float = 6.0
 @export var fast_climb_speed: float = 8.0
@@ -534,6 +536,12 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
 
+	# Standing height, read from the scene's capsule — on BOTH roles, and before PlayerServer.setup()
+	# duplicates and starts shrinking that shape, so this stays the STANDING value.
+	var capsule := get_node_or_null("Placeholder_Collider") as CollisionShape3D
+	if capsule != null and capsule.shape is CapsuleShape3D:
+		stand_body_height = (capsule.shape as CapsuleShape3D).height
+
 	# Apply the configurable interaction reach to the ray (forward = -Z). Everything that reads
 	# interact_ray (grab, line of sight, carry distance) picks this up.
 	interact_ray.target_position = Vector3(0.0, 0.0, -interact_ray_length)
@@ -643,6 +651,21 @@ func _ride_seat(seat: Node3D) -> void:
 		deg_to_rad(-80.0), deg_to_rad(80.0))
 	mouse_motion = Vector2.ZERO
 	velocity = Vector3.ZERO
+
+## How tall this body is right now (m), or in a given stance. THE answer to that question, for both
+## roles: the SERVER sizes the physics capsule from it, the CLIENT hangs the name tag above it.
+##
+## They used to answer it separately, and the client's answer was a constant: the tag sat 2.2 m above
+## the feet whatever the stance, so a crouched or prone player kept a label floating where their head
+## would have been standing. The stance is already replicated, so nothing had to travel — the number
+## was simply computed in a place the client could not reach.
+func stance_height(for_stance: int = -1) -> float:
+	var s: int = stance if for_stance < 0 else for_stance
+	if s == 1:
+		return crouch_collider_height
+	if s == 2:
+		return prone_collider_height
+	return stand_body_height
 
 ## Returns surface gravity scaled by inverse-square distance from the area centre.
 ## At the surface (dist == gravity_point_unit_distance) the result equals area.gravity.
