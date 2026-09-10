@@ -44,18 +44,32 @@ func _altitude_only() -> String:
 	if not (planet is Planet) or (planet as Planet).planet_data == null:
 		return "alt --"
 	var data := (planet as Planet).planet_data
-	# Altitude above the real terrain surface (samples the heightmap), ~0 when standing on the ground —
-	# not distance to the core, which would read the planet radius.
-	var altitude: float = (planet as Planet).surface_altitude_of((player as Node3D).global_position)
+	# TWO numbers, because either one alone lies. `elevation` is the height above the reference
+	# sphere -- what an altimeter reads, and what the atmosphere profiles are written against.
+	# `clearance` is the gap to the terrain UNDER your feet, which is ~0 wherever you stand.
+	# Showing only the clearance made a 4 km plateau read "alt 0 m", i.e. sea level.
+	var here: Vector3 = (player as Node3D).global_position
+	var elevation: float = (planet as Planet).elevation_of(here)
+	var clearance: float = (planet as Planet).surface_altitude_of(here)
 	# In the air while below the atmosphere top, in space above it. Airless bodies (no profile, or a
 	# zero shell) read as space above the ground.
 	var atmosphere_top: float = data.get_atmosphere_top()
-	var in_air: bool = atmosphere_top > 0.0 and altitude <= atmosphere_top
+	var in_air: bool = atmosphere_top > 0.0 and elevation <= atmosphere_top
 	var where: String = "atmosphere" if in_air else "space"
-	var alt_str: String = "%.2f km" % (altitude / 1000.0) if absf(altitude) >= 1000.0 else "%.0f m" % altitude
 	# Longitude/latitude on the same "where am I" readout, in compass form (N/S, E/O), matching the
 	# terrain geography. On its own line under the altitude, above the moving-frame suffix.
 	var lonlat: Vector2 = (planet as Planet).lonlat_of((player as Node3D).global_position)
 	var lat_str: String = "%.4f° %s" % [absf(lonlat.y), "N" if lonlat.y >= 0.0 else "S"]
 	var lon_str: String = "%.4f° %s" % [absf(lonlat.x), "E" if lonlat.x >= 0.0 else "O"]
-	return "alt %s  (%s)\n%s  %s" % [alt_str, where, lat_str, lon_str]
+	return "alt %s  ·  sol %s  (%s)\n%s  %s" % [
+		_metres(elevation), _signed(clearance), where, lat_str, lon_str
+	]
+
+## Metres under a kilometre, kilometres above it -- one formatter, so both altitudes read alike.
+static func _metres(v: float) -> String:
+	return "%.2f km" % (v / 1000.0) if absf(v) >= 1000.0 else "%.0f m" % v
+
+## Same, with an explicit sign: the clearance is a DIFFERENCE, and "+0 m" says "standing on it"
+## where a bare "0 m" reads like a missing value.
+static func _signed(v: float) -> String:
+	return ("+" if v >= 0.0 else "") + _metres(v)

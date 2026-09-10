@@ -241,6 +241,7 @@ func _process(_delta: float) -> void:
 		player._interp.update(player, _delta)  # entity interpolation: glide between server updates
 		_update_name_tag()
 		return
+	_update_debug_coordinates()  # before the seated return below, so a driver's readout keeps moving
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
@@ -359,9 +360,15 @@ func _process(_delta: float) -> void:
 	# 	emit_signal("hs_client_action_move", input_direction, global_rotation)
 	player.update_last_basis()
 
-	player.labelx.text = str("%0.2f" % player.global_position[0])
-	player.labely.text = str("%0.2f" % player.global_position[1])
-	player.labelz.text = str("%0.2f" % player.global_position[2])
+## The owner's X/Y/Z debug readout. ONE call site, placed BEFORE the seated early return.
+##
+## It used to be three lines duplicated at the end of _process AND of _physics_process -- and BOTH
+## copies sat after the "seated in a vehicle" return, so climbing into a truck froze the coordinates
+## while everything else kept updating. Two copies of a thing is also two places to forget it.
+func _update_debug_coordinates() -> void:
+	player.labelx.text = "%0.2f" % player.global_position.x
+	player.labely.text = "%0.2f" % player.global_position.y
+	player.labelz.text = "%0.2f" % player.global_position.z
 
 ## Fixed-step OWNER input sampling: relay drive input while seated, else sample walking input and
 ## emit the move only on change. Runs on this role's own child node → only on a client (never the
@@ -421,10 +428,6 @@ func _physics_process(delta: float) -> void:
 			player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 1 else 1})
 		elif Input.is_action_just_pressed("prone"):
 			player.client_send_action_to_server({"action": "stance", "value": 0 if player.stance == 2 else 2})
-
-	player.labelx.text = str("%0.2f" % player.global_position[0])
-	player.labely.text = str("%0.2f" % player.global_position[1])
-	player.labelz.text = str("%0.2f" % player.global_position[2])
 
 ## Owner: send our driving input to the server (only when it changes; the server holds it).
 ## `locked` means a panel owns the keyboard: we then send neutral, so nothing typed under it drives.
