@@ -1182,6 +1182,13 @@ func client_channel_data_update(data: Dictionary) -> void:
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
 			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose
+		if data.has("seat"):
+			# The seat STATE ("driver" / "passenger" / ""), not the "seat:"/"unseat:" EVENT handled
+			# above. Both arrive together on a live change, and only this one survives in Horizon's
+			# snapshot — `action` is overwritten by the next event on that shared field. This is
+			# therefore what tells a client arriving LATER (fresh connection, or the player walking
+			# into its GORC zone) that the avatar it just built is sitting rather than standing.
+			player.seated_role = str(data["seat"])
 		if data.has("conversation"):
 			print("RECU!!!")
 			if _conversation_text == null:
