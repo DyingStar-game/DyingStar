@@ -143,6 +143,69 @@ var _viewport_rid: RID = RID()
 var _scripts_max: float = 0.0
 var _rcpu_max: float = 0.0
 var _rgpu_max: float = 0.0
+## The LAST third of the idle step, which `scripts=`/`rcpu=` between them cannot see.
+##
+## `proc=162` next to `scripts<=13 rcpu<=1.1 rgpu<=4.4` (log Anthony 2026-09-09, 6.0 fps locked for
+## 195 s) says 145-160 ms a frame is spent AFTER the last _process callback and BEFORE the end of
+## the idle step, and `msgbuf` peaking at 24 KiB rules the deferred-call queue out. What is left
+## there is `MessageQueue::flush()` + `RenderingServer::sync()` (the main thread BLOCKING on the
+## render thread) then `RenderingServer::draw()`. Three probes close it:
+##   - `frame_pre_draw` / `frame_post_draw` fire on the main thread around `draw()`, so tail ->
+##     pre_draw is the flush+sync BLOCK (`sync=`) and pre -> post is the draw itself (`draw=`).
+##   - `get_frame_setup_time_cpu()` is the render-thread work that `viewport_get_measured_render_time_cpu`
+##     explicitly does NOT include — dirty-instance updates, AABB and BVH maintenance, light and
+##     shadow culling setup (`setup=`). At origin_dist=8.05e10 m one float32 ulp is ~8 km, which is
+##     exactly where a render scenario's AABBs would collapse into one blob; see
+##     [[jolt-broadphase-f32-astronomic-coords]] for the same failure one layer down.
+var _tail_usec: int = 0
+var _predraw_usec: int = 0
+var _postdraw_usec: int = 0
+var _sync_max: float = 0.0
+var _draw_max: float = 0.0
+var _setup_max: float = 0.0
+## The part of the frame that lies OUTSIDE everything above, measured the same way.
+##
+## Log `godot(6).log` (2026-09-09) closed the previous gap and opened this one: at 6.0 fps and
+## 160-170 ms a frame, `scripts=1-4 rcpu=1.3 setup=0.1-0.7 sync=0-1 rsdraw=2-5`. Six milliseconds
+## are accounted for, so ~155 ms sit between `frame_post_draw` of one frame and the first `_process`
+## of the next. Only two things live there: the PHYSICS BURST (up to
+## `max_physics_steps_per_frame` = 8 steps, whose wall clock no monitor reports — `phys=` is the max
+## of ONE step, not the sum) and what `SceneTree::process()` does BEFORE the process group: transform
+## notification flush, timers, tweens, and `_process_picking` (the 3D mouse pick, a physics raycast
+## issued from the main thread, invisible to `TIME_PHYSICS_PROCESS`).
+## `gap=` is the whole thing, `pre=` is only its second half.
+var _phys_tail_usec: int = 0
+var _gap_max: float = 0.0
+var _pre_max: float = 0.0
+## `pre=` cut in two, using the one hook Godot offers inside it.
+##
+## `SceneTree::process()` (4.7 source, scene/main/scene_tree.cpp) does, in this order and BEFORE it
+## calls a single `_process`: the fixed-timestep-interpolation pass (off here — no
+## `physics/common/physics_interpolation` in project.godot), `MainLoop::process`, `multiplayer->poll()`,
+## `emit_signal("process_frame")`, `MessageQueue::flush()`, `flush_transform_notifications()`.
+## Connecting to `process_frame` therefore plants a timestamp in the middle of the blind window:
+##   - `pf=` phys tail -> process_frame : FTI, MainLoop, multiplayer poll.
+##   - `tf=` process_frame -> first _process : the other `process_frame` handlers (every suspended
+##     `await get_tree().process_frame` in the game resumes HERE, invisible to `scripts=`), the
+##     message queue, and the flush of every transform the 8 physics steps just dirtied — which is
+##     where 482 concave chunk bodies would be pushed back into Jolt at 8e10 m.
+var _pframe_usec: int = 0
+## Ablation for the last suspect inside `tf=`.
+##
+## `planet_body._place_at_time` rewrites the planet's basis a few times a second; every Node3D under
+## it (subtree:Tarsis3 = 9026 nodes) has its global transform invalidated, and every CollisionObject3D
+## among them lands in the transform-change list. The FLUSH of that list is not in the planet_spin
+## scope — it happens later, in `SceneTree::process()`, inside `tf=` — and it pushes each body back
+## into Jolt, whose float32 broadphase quantises to kilometres at 8e10 m. Read by
+## [scenes/planet/planet_body.gd](scenes/planet/planet_body.gd).
+var ablate_planet_spin: bool = false
+var _pf_max: float = 0.0
+var _tf_max: float = 0.0
+## `tf=` cut in two by a deferred call planted from the `process_frame` handler: `mq=` is the message
+## queue flush, `xf=` is `flush_transform_notifications()` plus the process group's own prologue.
+var _mq_usec: int = 0
+var _mq_max: float = 0.0
+var _xf_max: float = 0.0
 ## Physics steps actually achieved per second, against the configured target. The one number that
 ## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
 ## so the physics step does not sit inside the render frame and a fat physics figure next to a
@@ -190,6 +253,31 @@ var _phys_by_script: Dictionary = {}
 ## side — which is where that bug's whole frame lives — had none.
 var _proc_by_class: Dictionary = {}
 var _proc_by_script: Dictionary = {}
+## Per-script `_process` cost, measured WITHOUT touching a single game script.
+##
+## `godot(10).log` (2026-09-10): once this autoload was pinned first, `scripts=137-160` on every
+## frame — the whole collapse is in the game's own `_process` callbacks, and the census can only say
+## WHICH scripts run, not what each costs. So the census hands out priorities: every script that has
+## processing nodes at the default priority 0 gets a band (base = _BAND_BASE + k * _BAND_STEP), its
+## nodes go to base + 1, and a probe node sits at base to timestamp the start of the band. The cost of
+## a script is then probe(k+1) - probe(k), read here on the next frame like every other figure. Two
+## fixed probes close the layout: one at -1 (end of the last band; nodes that started processing
+## after the census still sit at 0 and land after it) and one at +1 (before the scripts that set
+## their own positive priority: sun 100, atmosphere 110, moons 120).
+##
+## It REORDERS `_process` among priority-0 nodes — which the engine already sorts with an unstable
+## sort, so nothing correct can depend on that order. Still a measurement mode: `debug_perf_by_script`.
+const _BAND_BASE: int = -500_000
+const _BAND_STEP: int = 1_000
+var _bands_on: bool = false
+var _band_scripts: Array[String] = []
+var _band_probes: Array[Node] = []
+var _band_t: PackedInt64Array = PackedInt64Array()
+var _band_rest_probe: Node = null
+var _band_pos_probe: Node = null
+var _band_rest_usec: int = 0
+var _band_pos_usec: int = 0
+var _band_max: Dictionary = {}
 ## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
 ## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
 ## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
@@ -267,12 +355,37 @@ func _ready() -> void:
 		return
 	_boot_ms = Time.get_ticks_msec()
 	_mem_avail_boot = int(OS.get_memory_info().get("available", -1))
+	# `scripts=` and `tf=` both assume this autoload is the FIRST node whose _process runs. Being an
+	# autoload only guarantees TREE order; the process group is sorted by priority with sort_custom,
+	# which is NOT stable, so among the ~100 nodes at the default priority 0 this one could land
+	# anywhere — and then `scripts=` would time a random SUFFIX of the game's callbacks while `tf=`
+	# quietly swallowed the rest. Nothing in five logs proved that was not happening. One line makes
+	# the assumption true instead of hopeful.
+	process_priority = -1_000_000
 
 	# ALWAYS, whatever debug_perf says. These lines are printed once and describe the machine the
 	# game is about to run on; they are worth having in EVERY log, including the ones sent for a bug
 	# that has nothing to do with performance, and they cost nothing after boot.
 	_print_machine()
 	ClientConfig.boot_report()
+	# BEFORE _print_boot_detail, which reports `picking=`: run 7 printed `picking=true` on a session
+	# that HAD the ablation on, purely because the line was printed first. A boot line that describes
+	# a state the run does not have is worse than no line.
+	#
+	# Tried and EXONERATED on 2026-09-09 (`godot(7).log`): picking off, still 6.0 fps, `pre` still
+	# 129-156 ms. `Viewport::_process_picking()` was the best candidate in that window and it is not
+	# the cost. Kept because it is one line and it is the only way to re-prove that cheaply.
+	# Only `scenes/interactables/gui_3d.gd` uses 3D picking, so switching it off costs the 3D panels.
+	if ClientConfig.get_bool("debug_no_picking", false):
+		get_viewport().physics_object_picking = false
+		print("[CPerf] !! debug_no_picking=true — 3D object picking is OFF on the root viewport."
+				+ " The gui_3d interactable panels will not respond to the mouse.")
+	# Read here rather than behind `enabled`, because planet_body reads it on every physics tick and
+	# an ablation that only works when the heartbeat is on is an ablation nobody can run cleanly.
+	ablate_planet_spin = ClientConfig.get_bool("debug_no_planet_spin", false)
+	if ablate_planet_spin:
+		print("[CPerf] !! debug_no_planet_spin=true — planets do not rotate. THE WORLD IS WRONG"
+				+ " (no day/night motion, carried bodies are not counter-rotated): measurement mode.")
 	_print_boot_detail()
 
 	# `--no-perf` still wins, so a developer with debug_perf=true in their working client.ini can get
@@ -323,11 +436,26 @@ func _ready() -> void:
 	# must go quiet in exactly the frames this autoload does, or a paused tree would report the pause
 	# as script time.
 	_tail.process_priority = 1_000_000
+	_tail.phys_tick = _phys_tail_tick
+	_tail.process_physics_priority = 1_000_000
 	add_child(_tail)
+	_bands_on = ClientConfig.get_bool("debug_perf_by_script", true)
+	if _bands_on:
+		_band_rest_probe = _band_probe(-1, _band_rest_tick)
+		_band_pos_probe = _band_probe(1, _band_pos_tick)
+		print("[CPerf] !! debug_perf_by_script=true — _process order among priority-0 nodes is"
+			+ " regrouped by script so each script's _process cost can be timed ([CPerf%] line).")
+	# Connected from an autoload's _ready, so this handler runs near the FRONT of the signal's
+	# subscriber list: `tf=` then contains the game's own `process_frame` work rather than hiding it.
+	get_tree().process_frame.connect(_on_tree_process_frame)
 	# The renderer's own timers. The GPU figure arrives a frame or two late (it is a timestamp query
 	# read back, not a wall clock), which is fine for a cost that has been steady for five minutes.
 	_viewport_rid = get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(_viewport_rid, true)
+	# Emitted on the MAIN thread, immediately around RenderingServer::draw(). Bound here rather than
+	# read from a monitor because no monitor reports the main thread's wait on the render thread.
+	RenderingServer.frame_pre_draw.connect(_on_frame_pre_draw)
+	RenderingServer.frame_post_draw.connect(_on_frame_post_draw)
 	# Seed the node census so the first hitch line reports a real delta and not the whole tree.
 	_prev_nodes = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	print("[CPerf] performance logging ON — every %.1fs, hitch>%.0fms, census every %d reports. Source: %s" % [
@@ -388,10 +516,16 @@ func _print_boot_detail() -> void:
 
 	# Every screen, not just the current one: a laptop rendering onto a 4K external at 60 Hz while
 	# the game thinks it is on the built-in panel is a classic source of "my fps is half yours".
+	#
+	# `at=` is the screen's ORIGIN on the virtual desktop, and it is not decoration: `window_get_position`
+	# is absolute, so without it a window at x=720 on a machine with a 1760-wide screen #0 reads as
+	# straddling two monitors — which is exactly the false lead we chased for three days on the 6 fps
+	# report, until a screenshot showed the wide screen sits FIRST and the window is entirely inside it.
 	var screens: PackedStringArray = []
 	for i: int in DisplayServer.get_screen_count():
-		screens.append("#%d %s@%.0fHz dpi=%d scale=%.2f" % [
-			i, str(DisplayServer.screen_get_size(i)), DisplayServer.screen_get_refresh_rate(i),
+		screens.append("#%d %s at%s @%.0fHz dpi=%d scale=%.2f" % [
+			i, str(DisplayServer.screen_get_size(i)), str(DisplayServer.screen_get_position(i)),
+			DisplayServer.screen_get_refresh_rate(i),
 			DisplayServer.screen_get_dpi(i), DisplayServer.screen_get_scale(i)])
 	print("[CPerf] window mode=%d size=%s pos=%s on_screen=%d | screens: %s" % [
 		int(DisplayServer.window_get_mode()), str(DisplayServer.window_get_size()),
@@ -406,6 +540,7 @@ func _print_boot_detail() -> void:
 		print((
 			"[CPerf] render method=%s | viewport=%s scaling3d=%d x%.2f msaa3d=%d ssaa=%d taa=%s"
 			+ " debanding=%s vrs=%d | shadow_atlas=%d dir_shadow=%s occlusion=%s aniso=%s"
+			+ " picking=%s"
 		) % [
 			str(ProjectSettings.get_setting("rendering/renderer/rendering_method", "?")),
 			str(vp.get_visible_rect().size),
@@ -415,6 +550,7 @@ func _print_boot_detail() -> void:
 			str(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/size", "?")),
 			str(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", "?")),
 			str(ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level", "?")),
+			str(vp.physics_object_picking),
 		])
 
 	print("[CPerf] physics engine=%s ticks=%d separate_thread=%s | worker_threads=%s | time_scale=%.2f | mem_boot avail=%s phys=%s" % [
@@ -537,6 +673,43 @@ func _process(_delta: float) -> void:
 	_scripts_max = maxf(_scripts_max, scripts_ms)
 	_rcpu_max = maxf(_rcpu_max, rcpu_ms)
 	_rgpu_max = maxf(_rgpu_max, rgpu_ms)
+	# The tail of the SAME frame: the tail probe, then draw()'s two signals, all before this call.
+	var sync_ms: float = 0.0
+	var draw_ms: float = 0.0
+	if _tail_usec > 0 and _predraw_usec > _tail_usec:
+		sync_ms = float(_predraw_usec - _tail_usec) / 1000.0
+	if _postdraw_usec > _predraw_usec:
+		draw_ms = float(_postdraw_usec - _predraw_usec) / 1000.0
+	# Render-thread work OUTSIDE any viewport: dirty instances, AABBs, culling structures.
+	var setup_ms: float = RenderingServer.get_frame_setup_time_cpu()
+	_sync_max = maxf(_sync_max, sync_ms)
+	_draw_max = maxf(_draw_max, draw_ms)
+	_setup_max = maxf(_setup_max, setup_ms)
+	# From the end of the previous frame's draw to the start of this one's callbacks.
+	var gap_ms: float = 0.0
+	var pre_ms: float = 0.0
+	if _postdraw_usec > 0 and now > _postdraw_usec:
+		gap_ms = float(now - _postdraw_usec) / 1000.0
+		# A frame can run zero physics steps, and then the physics tail is stale and says nothing.
+		pre_ms = float(now - _phys_tail_usec) / 1000.0 if _phys_tail_usec > _postdraw_usec else gap_ms
+	_gap_max = maxf(_gap_max, gap_ms)
+	_pre_max = maxf(_pre_max, pre_ms)
+	var pf_ms: float = 0.0
+	var tf_ms: float = 0.0
+	var mq_ms: float = 0.0
+	var xf_ms: float = 0.0
+	if _pframe_usec > _phys_tail_usec and now > _pframe_usec:
+		pf_ms = float(_pframe_usec - _phys_tail_usec) / 1000.0
+		tf_ms = float(now - _pframe_usec) / 1000.0
+		if _mq_usec > _pframe_usec and now > _mq_usec:
+			mq_ms = float(_mq_usec - _pframe_usec) / 1000.0
+			xf_ms = float(now - _mq_usec) / 1000.0
+	_pf_max = maxf(_pf_max, pf_ms)
+	_tf_max = maxf(_tf_max, tf_ms)
+	_mq_max = maxf(_mq_max, mq_ms)
+	_xf_max = maxf(_xf_max, xf_ms)
+	if _bands_on:
+		_band_collect()
 	if ms > _worst_ms:
 		_worst_ms = ms
 		_worst_at = _uptime()
@@ -561,12 +734,14 @@ func _process(_delta: float) -> void:
 			_hitch_lines += 1
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
-				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f ms"
+				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
+				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
 				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-				scripts_ms, rcpu_ms, rgpu_ms,
+				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
+				pf_ms, tf_ms, mq_ms, xf_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
@@ -594,6 +769,16 @@ func _process(_delta: float) -> void:
 	_scripts_max = 0.0
 	_rcpu_max = 0.0
 	_rgpu_max = 0.0
+	_sync_max = 0.0
+	_draw_max = 0.0
+	_setup_max = 0.0
+	_gap_max = 0.0
+	_pre_max = 0.0
+	_pf_max = 0.0
+	_tf_max = 0.0
+	_mq_max = 0.0
+	_xf_max = 0.0
+	_band_max.clear()
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -621,7 +806,8 @@ func _report() -> void:
 	print((
 		"[CPerf] %s up=%.1fs | fps=%.1f worst=%.0fms@%.1fs hitches=%d"
 		+ " | win=%.1fs proc<=%.0f phys<=%.0f@%.0f/%dHz nav=%.2f ms"
-		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f ms"
+		+ " | scripts<=%.0f rcpu<=%.1f rgpu<=%.1f setup<=%.1f sync<=%.0f rsdraw<=%.0f"
+		+ " gap<=%.0f pre<=%.0f (pf<=%.0f tf<=%.0f mq<=%.0f xf<=%.0f) ms"
 		+ " | draw=%d obj=%d prim=%s | 3d act=%d pairs=%d isl=%d"
 		+ " | nav maps=%d reg=%d poly=%d | nodes=%d orphan=%d res=%d"
 		+ " | mem=%s vram=%s | pipe+=%s"
@@ -631,7 +817,8 @@ func _report() -> void:
 		window, _proc_max,
 		_phys_max, phys_hz, Engine.physics_ticks_per_second,
 		Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-		_scripts_max, _rcpu_max, _rgpu_max,
+		_scripts_max, _rcpu_max, _rgpu_max, _setup_max, _sync_max, _draw_max,
+		_gap_max, _pre_max, _pf_max, _tf_max, _mq_max, _xf_max,
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 		Globals.format_thousands(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
@@ -664,6 +851,8 @@ func _report() -> void:
 	if not parts.is_empty():
 		print("[CPerf+] %s | %s" % [_clock(), " | ".join(parts)])
 
+	_print_frame_signal_subs()
+	_print_bands()
 	_report_extras(fps)
 	# Measured and reported, because this monitor prints ~6 lines per heartbeat through a logger that
 	# costs milliseconds: any figure it produces has to be readable NEXT to the price of producing it,
@@ -947,6 +1136,8 @@ func _walk(node: Node, planet: String) -> void:
 		var pscr: Script = node.get_script()
 		var pname: String = pscr.resource_path.get_file() if pscr != null else "<no script>"
 		_proc_by_script[pname] = int(_proc_by_script.get(pname, 0)) + 1
+		if _bands_on and node.process_priority == 0 and node != self:
+			node.process_priority = _band_priority(pname) + 1
 	if node.is_physics_processing():
 		_phys_procs += 1
 		_phys_by_class[cls] = int(_phys_by_class.get(cls, 0)) + 1
@@ -988,6 +1179,14 @@ func _walk(node: Node, planet: String) -> void:
 		_bump("rigidbodies")
 	elif node is Area3D:
 		_bump("areas")
+	# CSG, because a CSG node that is NOT the root of its own tree rebuilds the WHOLE root brush on
+	# every transform change, and it does it through `call_deferred` — so the cost lands in the
+	# message queue flush inside `tf=`, where no probe has ever looked, while `msgbuf` stays at a few
+	# KiB because a deferred call is small to STORE and expensive to RUN.
+	if node is CSGShape3D:
+		_bump("csg")
+		if node.get_parent() is CSGShape3D:
+			_bump("csg_child")
 	if node.is_in_group("cargo_depots"):
 		_bump("cargo_depots")
 	elif node.is_in_group("miningrock"):
@@ -1023,12 +1222,150 @@ class _TailProbe extends Node:
 	## class does not declare, and dropping the type to get one back would give up the only checking
 	## GDScript does here.
 	var tick: Callable = Callable()
+	## Same trick on the physics side: the last _physics_process of the last step of the burst.
+	var phys_tick: Callable = Callable()
 
 	func _process(_delta: float) -> void:
 		if not tick.is_null():
 			tick.call()
 
+	func _physics_process(_delta: float) -> void:
+		if not phys_tick.is_null():
+			phys_tick.call()
+
 
 ## Called by _TailProbe once every frame, after every other _process in the game.
 func _tail_tick() -> void:
-	_scripts_usec = Time.get_ticks_usec() - _frame_start_usec
+	_tail_usec = Time.get_ticks_usec()
+	_scripts_usec = _tail_usec - _frame_start_usec
+
+
+## End of the LAST physics step of the burst, so the frame's dead time can be cut in two: the
+## physics burst itself, and what SceneTree does before it calls a single _process.
+func _phys_tail_tick() -> void:
+	_phys_tail_usec = Time.get_ticks_usec()
+
+
+## SceneTree::process(), after the multiplayer poll and before the message queue, the transform
+## flush and the process group.
+func _on_tree_process_frame() -> void:
+	_pframe_usec = Time.get_ticks_usec()
+	# The probe that splits what follows. `MessageQueue::flush()` is the very next statement
+	# (scene_tree.cpp:715) and runs FIFO, so this call sits behind everything already queued: when
+	# `_mq_probe` fires that flush is essentially done. A deferred call costs a few BYTES (`msgbuf`
+	# peaks at 44 KiB, which is why the queue looked innocent) and can cost a hundred milliseconds to
+	# RUN — a CSG rebuild, for one, is a `call_deferred(_update_shape)`.
+	_mq_usec = 0
+	_mq_probe.call_deferred()
+
+
+## Runs inside the MessageQueue flush that sits between `process_frame` and the transform flush.
+func _mq_probe() -> void:
+	_mq_usec = Time.get_ticks_usec()
+
+
+## Start of RenderingServer::draw(), main thread. Everything between the tail probe and here is the
+## message queue flush plus the sync that waits on the render thread.
+func _on_frame_pre_draw() -> void:
+	_predraw_usec = Time.get_ticks_usec()
+
+
+## End of RenderingServer::draw(), main thread.
+func _on_frame_post_draw() -> void:
+	_postdraw_usec = Time.get_ticks_usec()
+
+## Who is parked on `process_frame`, and who on `physics_frame`.
+##
+## `godot(8).log` (2026-09-09) cornered the 6 fps collapse to `tf=` — `pf<=0`, `tf<=163` — which in
+## the 4.7 source (scene/main/scene_tree.cpp:713-719) is exactly three statements:
+## `emit_signal("process_frame")`, `MessageQueue::flush()`, `flush_transform_notifications()`, then
+## the process group. The message queue is out (`msgbuf` peaks at 44 KiB), so it is the OTHER
+## subscribers of that signal or the transform flush — and this line tells them apart, because every
+## suspended `await get_tree().process_frame` in the game IS a subscriber and resumes right there,
+## where `scripts=` cannot see it. A count of 1 (this autoload alone) points at the flush instead.
+func _print_frame_signal_subs() -> void:
+	var out: PackedStringArray = []
+	for sig_name: StringName in [&"process_frame", &"physics_frame"]:
+		# Signal(object, name), not get(): signals are not properties, and `get` would hand back null.
+		var conns: Array = Signal(get_tree(), sig_name).get_connections()
+		var by: Dictionary = {}
+		for c: Dictionary in conns:
+			var cb: Callable = c.get("callable", Callable())
+			var owner_obj: Object = cb.get_object()
+			var who: String = "<freed>"
+			if owner_obj != null:
+				var sc: Script = owner_obj.get_script() as Script
+				who = sc.resource_path.get_file() if sc != null else owner_obj.get_class()
+			var key: String = "%s::%s" % [who, str(cb.get_method())]
+			by[key] = int(by.get(key, 0)) + 1
+		var keys: Array = by.keys()
+		keys.sort_custom(func(a: String, b: String) -> bool: return int(by[a]) > int(by[b]))
+		var top: PackedStringArray = []
+		for k: String in keys.slice(0, 8):
+			top.append("%s=%d" % [k, int(by[k])])
+		out.append("%s subs=%d%s" % [
+			str(sig_name), conns.size(), (" " + " ".join(top)) if not top.is_empty() else ""])
+	print("[CPerf&] %s | %s" % [_clock(), " | ".join(out)])
+
+
+## The band for a script, created on first sight: a probe at its base priority, its name in the list.
+func _band_priority(script_name: String) -> int:
+	var k: int = _band_scripts.find(script_name)
+	if k < 0:
+		k = _band_scripts.size()
+		_band_scripts.append(script_name)
+		_band_t.append(0)
+		_band_probes.append(_band_probe(_BAND_BASE + k * _BAND_STEP, _band_tick.bind(k)))
+	return _BAND_BASE + k * _BAND_STEP
+
+
+func _band_probe(priority: int, tick: Callable) -> Node:
+	var probe: _TailProbe = _TailProbe.new()
+	probe.name = "CPerfBand%d" % priority
+	probe.tick = tick
+	probe.process_priority = priority
+	add_child(probe)
+	return probe
+
+
+func _band_tick(k: int) -> void:
+	_band_t[k] = Time.get_ticks_usec()
+
+
+func _band_rest_tick() -> void:
+	_band_rest_usec = Time.get_ticks_usec()
+
+
+func _band_pos_tick() -> void:
+	_band_pos_usec = Time.get_ticks_usec()
+
+
+## Read the previous frame's band timestamps into per-window maxima. Band k ends where band k+1
+## starts; the last band ends at the -1 probe; from there to the +1 probe are the nodes still at
+## priority 0 (`rest0`); from the +1 probe to the tail are the scripts with a positive priority.
+func _band_collect() -> void:
+	var n: int = _band_scripts.size()
+	for k: int in n:
+		var t0: int = _band_t[k]
+		var t1: int = _band_t[k + 1] if k + 1 < n else _band_rest_usec
+		if t0 > 0 and t1 >= t0:
+			var name_k: String = _band_scripts[k]
+			_band_max[name_k] = maxf(float(_band_max.get(name_k, 0.0)), float(t1 - t0) / 1000.0)
+	if _band_rest_usec > 0 and _band_pos_usec >= _band_rest_usec:
+		_band_max["rest0"] = maxf(float(_band_max.get("rest0", 0.0)),
+				float(_band_pos_usec - _band_rest_usec) / 1000.0)
+	if _band_pos_usec > 0 and _tail_usec >= _band_pos_usec:
+		_band_max["prio+"] = maxf(float(_band_max.get("prio+", 0.0)),
+				float(_tail_usec - _band_pos_usec) / 1000.0)
+
+
+## Worst frame of the window, per script. Sorted, so the culprit is the first word on the line.
+func _print_bands() -> void:
+	if not _bands_on or _band_max.is_empty():
+		return
+	var keys: Array = _band_max.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return float(_band_max[a]) > float(_band_max[b]))
+	var parts: PackedStringArray = []
+	for k: String in keys.slice(0, 12):
+		parts.append("%s=%.1f" % [k, float(_band_max[k])])
+	print("[CPerf%%] %s _process worst ms by script: %s" % [_clock(), " ".join(parts)])

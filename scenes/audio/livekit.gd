@@ -2,7 +2,17 @@ extends Node
 
 const RECORD_BUS_NAME := "Record"
 const MIC_CHANNELS := 1
-const MIC_QUEUE_SIZE := 9600  # ~200ms @ 48kHz mono
+## Third argument of LiveKitAudioSource.create: `queue_size_ms`, MILLISECONDS — not samples. The
+## previous value, 9600 "~200ms @ 48kHz mono", therefore asked for a 9.6-second buffered queue, and
+## the SDK's buffered mode makes capture_frame() BLOCK until the native side has consumed the frame,
+## i.e. paced at real time (livekit-sdk/include/livekit/audio_source.h, "Blocking semantics"). The mic
+## pump below pushes everything captured since the last frame in 10 ms chunks: a 165 ms frame pushes
+## 16 chunks that block ~10 ms each, the frame gets longer, so the next one pushes more — a lock that
+## settled at 6.0 fps on every client with the microphone unmuted, and touched nobody with it muted.
+## Measured at 151-157 ms per frame in livekit.gd's _process (ClientPerf [CPerf%], 2026-09-10).
+## 0 is the SDK's real-time capture mode, recommended for a microphone: frames are forwarded
+## synchronously and the call returns at once. The audio thread already paces the capture ring.
+const MIC_QUEUE_SIZE := 0
 const _DEBUG_INTERVAL: float = 5.0
 
 var livekit_url: String = ""
@@ -315,6 +325,7 @@ func _find_player_node(participant_id: String) -> Node:
 	return null
 
 func _process(delta: float) -> void:
+	var _poll_token: int = ClientPerf.scope_begin()
 	for key in _audio_bridges.keys():
 		var bridge: Dictionary = _audio_bridges[key]
 		if not is_instance_valid(bridge["player"]):
@@ -327,6 +338,7 @@ func _process(delta: float) -> void:
 		var pushed: int = frames_before - frames_after
 		if pushed > 0:
 			_debug_frames_pushed[key] = _debug_frames_pushed.get(key, 0) + pushed
+	ClientPerf.scope_end("livekit_poll", _poll_token)
 
 	_debug_timer += delta
 	if _debug_timer >= _DEBUG_INTERVAL:
@@ -352,6 +364,9 @@ func _process(delta: float) -> void:
 	# Pump local mic frames from the Record bus → LiveKit.
 	if _mic_capture == null or _mic_source == null:
 		return
+	# Timed, because this is where the 6 fps lock lived and no log could say so until it was
+	# measured: [CPerf+] reports it as livekit_mic=<ms/s>.
+	var _mic_token: int = ClientPerf.scope_begin()
 	# ALWAYS drain the capture ring, even while muted: the audio thread fills it no matter what, and
 	# a full buffer would replay ~100 ms of what was said during the mute as soon as we unmute.
 	var available := _mic_capture.get_frames_available()
@@ -369,6 +384,7 @@ func _process(delta: float) -> void:
 					_debug_mic_peak = absf(mono)
 
 	if not _mic_enabled:
+		ClientPerf.scope_end("livekit_mic", _mic_token)
 		return  # nothing accumulated, and above all no capture_frame() -> we emit nothing at all
 
 	# Drain in fixed 10ms chunks (LiveKit/WebRTC requirement).
@@ -377,6 +393,7 @@ func _process(delta: float) -> void:
 		_mic_pending = _mic_pending.slice(_mic_chunk_samples)
 		# capture_frame(data, sample_rate, num_channels, samples_per_channel)
 		_mic_source.capture_frame(chunk, _mic_sample_rate, MIC_CHANNELS, _mic_chunk_samples)
+	ClientPerf.scope_end("livekit_mic", _mic_token)
 
 func _on_data_received(_data, _participant, _kind, _topic):
 	# print("[livekit] Data from ", _participant.get_identity(), ": ", _data.get_string_from_utf8())

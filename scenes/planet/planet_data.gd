@@ -343,6 +343,21 @@ var _bridge_spans_mutex: Mutex = Mutex.new()
 ## either of them runs, is what makes that impossible.
 var _bridge_plans: Dictionary = {}            # span key → plan
 var _bridge_excl: Dictionary = {}             # feature_id → Array[Vector2] merged
+## feature_id → Array[Vector2] BRUTS, avant fusion. Gardés parce qu'un plan qui arrive en
+## retard doit refusionner les intervalles de SA route, et refusionner exige les originaux.
+var _bridge_excl_raw: Dictionary = {}
+## Travées refusées faute de tuile d'élévation — et elles seules. Une travée dont le plan a
+## échoué pour de bon (BridgePlan.ok == false) est un verdict déterministe, elle n'est PAS
+## là-dedans : la rejouer redonnerait le même non.
+##
+## Sur un serveur, ce cas est la règle et non l'exception : le pod redémarre avec un cache
+## de tuiles vide, et warm_bridge_plans() tourne dans initialize(), avant que le streaming
+## n'ait livre quoi que ce soit. Sans rattrapage, la planète perd ses 37 ponts pour toute
+## la session — or le tablier porte la SEULE collision au-dessus d'un gouffre, donc le
+## joueur traverse un pont que son client, lui, affiche (son cache à lui est chaud).
+var _bridge_spans_starved: Array[Dictionary] = []
+## Budget total du préchargement des tuiles de travée, en millisecondes.
+const BRIDGE_PREFETCH_BUDGET_MS := 5000
 var _bridge_plans_built: bool = false
 var _bridge_plans_mutex: Mutex = Mutex.new()
 var _whole_roads_by_fid: Dictionary = {}
@@ -2090,6 +2105,14 @@ func get_bridge_exclusions_for_feature(fid: int) -> Array:
 ## thread-safe to populate — a worker filling this table while another reads it
 ## is the same race that once left patches of terrain untextured.
 func warm_bridge_plans() -> void:
+	# Rapatrier d'abord les tuiles des travées : elles sont peu nombreuses (37 sur
+	# tarsis_3, une par gouffre, au niveau export) et sans elles la planification ne peut
+	# que refuser. Sur un serveur fraîchement démarré c'est LA différence entre 21 ponts
+	# et zéro tablier — donc entre un pont et un trou.
+	#
+	# AVANT _ensure_bridge_plans, donc hors du verrou : fetch_now bloque, et le tenir sous
+	# _bridge_plans_mutex ferait attendre là tout worker demandant un plan.
+	_prefetch_bridge_span_tiles(get_bridge_spans())
 	_ensure_bridge_plans()
 
 
@@ -2097,6 +2120,8 @@ func clear_bridge_plans() -> void:
 	_bridge_plans_mutex.lock()
 	_bridge_plans.clear()
 	_bridge_excl.clear()
+	_bridge_excl_raw.clear()
+	_bridge_spans_starved.clear()
 	_whole_roads_by_fid.clear()
 	_bridge_plans_built = false
 	_bridge_plans_mutex.unlock()
@@ -2115,6 +2140,116 @@ func _ensure_bridge_plans() -> void:
 	_bridge_plans_mutex.unlock()
 
 
+## Rapatrie, en bloquant mais sous budget, les tuiles d'élévation dont la planification des
+## travées a besoin. Appelé au chargement, sur le thread principal, hors du chemin critique
+## — c'est exactement l'usage prévu de RemoteTileSource.fetch_now().
+##
+## Le budget existe pour une raison précise : fetch_now attend jusqu'à request_timeout_ms
+## (10 s) par tuile. Sans borne, un service de tuiles en panne transformerait 37 travées en
+## six minutes de démarrage bloqué. Ce qui n'est pas arrivé à temps n'est pas perdu : la
+## travée part dans _bridge_spans_starved et le rattrapage la reprendra.
+func _prefetch_bridge_span_tiles(spans: Array) -> void:
+	if remote_source == null or spans.is_empty():
+		return
+	var deadline := Time.get_ticks_msec() + BRIDGE_PREFETCH_BUDGET_MS
+	var wanted := {}
+	for s in spans:
+		if s.get("truncated", false):
+			continue
+		var ipix: int = HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
+		wanted[ipix] = true
+	var got := 0
+	for ipix: int in wanted:
+		if Time.get_ticks_msec() > deadline:
+			break
+		if remote_source.fetch_now(export_nside, ipix):
+			got += 1
+	print("[PlanetData] préchargement des travées de '%s' : %d/%d tuile(s) n%d en %d ms max"
+			% [planet_name, got, wanted.size(), export_nside, BRIDGE_PREFETCH_BUDGET_MS])
+
+
+## Planifie UNE travée. Rend true si un plan en est sorti.
+##
+## Une travée refusée faute de tuile est mémorisée pour rattrapage ; une travée dont
+## BridgePlan dit non est un refus définitif et n'est pas mémorisée.
+func _plan_one_span(s: Dictionary, profile: BridgeProfile) -> bool:
+	if s.get("truncated", false):
+		return true      # Hors sujet, pas un échec : ne pas la compter comme sautée.
+	var fid: int = int(s.get("feature_id", -1))
+	var road: Dictionary = _whole_roads_by_fid.get(fid, {})
+	if road.is_empty():
+		return true
+	# The tile is pinned to the span's own midpoint at export_nside, so the
+	# plan cannot depend on which chunk asked for it — that dependency is
+	# what let the client and the server disagree about a deck's altitude.
+	var ipix: int = HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
+	if load_chunk_heightmap(ipix, export_nside) == null:
+		# No tile means sample_height_for_direction would silently fall back
+		# to the global equirect map — a flatter, different surface, the one
+		# that once put props kilometres above the terrain. Refusing here
+		# keeps deck and ribbon consistent: no plan, no deck, and no cut.
+		# Mais refuser DÉFINITIVEMENT laisserait le gouffre sans tablier, donc sans
+		# collision : on met la travée de côté au lieu de l'abandonner — sauf si la tuile
+		# n'existe pas non plus en amont, auquel cas attendre serait attendre pour rien et
+		# la file de rattrapage ne se viderait jamais.
+		if remote_source != null:
+			if remote_source.presence_of(export_nside, ipix) == RemoteTileSource.PRESENCE_NO:
+				return false
+			remote_source.queue(export_nside, ipix)
+		_bridge_spans_starved.append(s)
+		return false
+	var plan := BridgePlan.compute(profile, s, road, radius,
+			bridge_height_sampler(ipix), terrain_vertex_spacing_m())
+	if not bool(plan.get("ok", false)):
+		return false
+	_bridge_plans[bridge_span_key(s)] = plan
+	if not _bridge_excl_raw.has(fid):
+		_bridge_excl_raw[fid] = []
+	(_bridge_excl_raw[fid] as Array).append(
+			Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
+	return true
+
+
+## Refusionne les intervalles d'exclusion de chaque route.
+##
+## Fusionnés avant que quiconque les voie : deux gorges assez proches pour que leurs rampes
+## se recouvrent laisseraient sinon un ruban en écharpe entre deux tabliers, c'est-à-dire un
+## trou dans lequel on roule.
+func _remerge_bridge_exclusions() -> void:
+	for fid: int in _bridge_excl_raw:
+		_bridge_excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw[fid])
+
+
+## Y a-t-il des travées en attente de leur tuile ?
+func bridge_plans_incomplete() -> bool:
+	return not _bridge_spans_starved.is_empty()
+
+
+## Rejoue les travées affamées, et elles seules. Rend la liste des clés de travées dont un
+## plan vient de naître — vide si rien n'a bougé.
+##
+## Appelé périodiquement par PlanetTerrain tant que bridge_plans_incomplete() : ne parcourt
+## que la poignée en attente, jamais les 37, donc le tick n'en souffre pas.
+func retry_starved_bridge_plans() -> PackedStringArray:
+	var born := PackedStringArray()
+	if _bridge_spans_starved.is_empty():
+		return born
+	_bridge_plans_mutex.lock()
+	var pending := _bridge_spans_starved.duplicate()
+	_bridge_spans_starved.clear()
+	var profile := get_bridge_profile()
+	for s: Dictionary in pending:
+		if _plan_one_span(s, profile):
+			born.append(bridge_span_key(s))
+	if not born.is_empty():
+		_remerge_bridge_exclusions()
+	_bridge_plans_mutex.unlock()
+	if not born.is_empty():
+		print("[PlanetData] %d pont(s) planifié(s) en rattrapage sur '%s' — %d travée(s) encore en attente de tuile"
+				% [born.size(), planet_name, _bridge_spans_starved.size()])
+	return born
+
+
 func _build_bridge_plans() -> void:
 	var spans := get_bridge_spans()
 	for r in get_whole_roads():
@@ -2122,41 +2257,11 @@ func _build_bridge_plans() -> void:
 	if spans.is_empty():
 		return
 	var profile := get_bridge_profile()
-	var by_feature: Dictionary = {}
 	var skipped := 0
 	for s in spans:
-		if s.get("truncated", false):
-			continue
-		var fid: int = int(s.get("feature_id", -1))
-		var road: Dictionary = _whole_roads_by_fid.get(fid, {})
-		if road.is_empty():
-			continue
-		# The tile is pinned to the span's own midpoint at export_nside, so the
-		# plan cannot depend on which chunk asked for it — that dependency is
-		# what let the client and the server disagree about a deck's altitude.
-		var ipix: int = HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
-		if load_chunk_heightmap(ipix, export_nside) == null:
-			# No tile means sample_height_for_direction would silently fall back
-			# to the global equirect map — a flatter, different surface, the one
-			# that once put props kilometres above the terrain. Refusing here
-			# keeps deck and ribbon consistent: no plan, no deck, and no cut.
+		if not _plan_one_span(s, profile):
 			skipped += 1
-			continue
-		var plan := BridgePlan.compute(profile, s, road, radius,
-				bridge_height_sampler(ipix), terrain_vertex_spacing_m())
-		if not bool(plan.get("ok", false)):
-			skipped += 1
-			continue
-		_bridge_plans[bridge_span_key(s)] = plan
-		if not by_feature.has(fid):
-			by_feature[fid] = []
-		by_feature[fid].append(Vector2(float(plan["excl_lo_along"]),
-				float(plan["excl_hi_along"])))
-	for fid in by_feature:
-		# Merged before anyone sees them: two gorges close enough for their
-		# ramps to overlap would otherwise leave a sliver of ribbon between two
-		# decks, which is a hole you drive into.
-		_bridge_excl[fid] = RoadCut.merge_intervals(by_feature[fid])
+	_remerge_bridge_exclusions()
 	var stranded: PackedStringArray = []
 	var steepened := 0
 	for k in _bridge_plans:
