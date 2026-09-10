@@ -2476,6 +2476,22 @@ func server_enter(player: Node, seat_name: String = "") -> void:
 	else:
 		print("🚚 Vehicle %s: passenger enter (%s)" % [uuid, seat_name])
 
+	# THE SERVER DECIDES THE FRAME. The player becomes a child of this vehicle, so its replicated
+	# position is expressed in the vehicle's frame and stops changing while we drive: the network
+	# carries "in the seat, unmoving" instead of re-sending the truck's motion every tick, and
+	# _ride_seat rides by transform inheritance instead of fighting the vehicle's smoothing in
+	# world space each frame.
+	#
+	# Parented to the VEHICLE, never to the seat: `position` travels local to the DIRECT parent,
+	# and only a node carrying a uuid is a frame Horizon can recompose (PropSpawn.parent_frame_uuid).
+	# A seat carries none — the debug HUD shows such a parent as [NO UUID].
+	#
+	# The client does NOT anticipate this: it applies the parent_id we announce, and applies it
+	# atomically with the position measured in that frame (client.player_update). Two writers is
+	# exactly what broke this the first time round.
+	if player.has_method("_safe_reparent_and_sync"):
+		player.call_deferred("_safe_reparent_and_sync", self)
+
 ## Server: the player leaves whatever seat it occupies; frees the seat (and the pilot if it
 ## was the driver seat).
 func server_exit(player: Node) -> void:
@@ -2509,6 +2525,14 @@ func server_exit(player: Node) -> void:
 	# Put the player back on the ground beside the vehicle, on the side of the seat it used.
 	if player is Node3D:
 		(player as Node3D).global_position = _exit_position_for_seat(seat)
+		# Back to the frame the vehicle itself lives in — the planet, or the city it is parked in.
+		# The world position is set on the line ABOVE on purpose: reparent() preserves it, so the
+		# single move this emits already carries the spot beside the cab, not the seat we left.
+		if player.has_method("_safe_reparent_and_sync"):
+			var frame: Node = PropSpawn.find_net_parent(self)
+			if frame == null:
+				frame = get_parent()  # no networked ancestor: at least do not leave them in the cab
+			player.call_deferred("_safe_reparent_and_sync", frame)
 	print("🚚 Vehicle %s: seat exit" % uuid)
 
 ## Drop position beside the vehicle, on the side of the given seat (left vs right, derived from
