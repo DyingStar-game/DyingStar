@@ -1,0 +1,86 @@
+[gd_scene format=3 uid="uid://dyoytajqysjhf"]
+
+[ext_resource type="Script" uid="uid://benrdfvgfceb1" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.gd" id="1_tele"]
+[ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="2_gui3d"]
+[ext_resource type="Script" uid="uid://d0di0eip2q2wk" path="res://scenes/_universe/structures/buildings/teleporter/teleporter_ui.gd" id="3_teleui"]
+[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="4_screenzone"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(2.8, 1.44)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_touch"]
+size = Vector3(2.8, 1.44, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_console"]
+size = Vector3(5, 3, 1.4479473294841227)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_interior"]
+size = Vector3(7.2, 4.6, 11.2)
+
+[node name="Teleporter" type="Node3D" unique_id=928753654]
+script = ExtResource("1_tele")
+
+[node name="Blockout" type="CSGBox3D" parent="." unique_id=134378902]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(8, 5, 12)
+
+[node name="Hollow" type="CSGBox3D" parent="Blockout" unique_id=977835533]
+operation = 2
+size = Vector3(7.2, 4.6, 11.2)
+
+[node name="Doorway" type="CSGBox3D" parent="Blockout" unique_id=1484751627]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -5.8)
+operation = 2
+size = Vector3(5, 4.2, 1.2)
+
+[node name="Gui3D" parent="." unique_id=1298231762 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area") instance=ExtResource("2_gui3d")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 5.55)
+node_viewport = NodePath("SubViewport")
+node_quad = NodePath("ScreenMesh")
+node_area = NodePath("ScreenMesh/TouchScreen")
+
+[node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=350506883]
+disable_3d = true
+handle_input_locally = false
+size = Vector2i(1400, 720)
+render_target_update_mode = 4
+
+[node name="TeleporterUI" type="Panel" parent="Gui3D/SubViewport" unique_id=1325706075]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3_teleui")
+
+[node name="ScreenMesh" type="MeshInstance3D" parent="Gui3D" unique_id=878626265]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+mesh = SubResource("QuadMesh_screen")
+
+[node name="TouchScreen" type="Area3D" parent="Gui3D/ScreenMesh" unique_id=1491182034]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Gui3D/ScreenMesh/TouchScreen" unique_id=731312543]
+shape = SubResource("BoxShape3D_touch")
+
+[node name="ScreenDetector" type="Area3D" parent="Gui3D" unique_id=1018252341 groups=["screen_area"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -2.5)
+input_ray_pickable = false
+script = ExtResource("4_screenzone")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Gui3D/ScreenDetector" unique_id=65419078]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.7760262)
+shape = SubResource("BoxShape3D_console")
+
+[node name="Interior" type="Area3D" parent="." unique_id=1175525139]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Interior" unique_id=366441831]
+shape = SubResource("BoxShape3D_interior")

@@ -587,7 +587,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# The chat is gated the same way: the LineEdit swallows most keys, but not all of them, and
 	# nothing the player types should ever reach gameplay. (NOT _input_locked() here — that one also
 	# covers an open wheel, whose press/release lifecycle _handle_radial_wheels still needs to see.)
-	if _menu_open() or _chat_writing(): return
+	# A 3D screen holding the keyboard is gated for the same reason as the chat, and must be gated
+	# HERE rather than only in _input_locked: this handler must not consume the keys the screen's
+	# fields are waiting for. Returning early leaves them unhandled, which is exactly how they reach
+	# the SubViewport (Gui3D._unhandled_input pushes them in).
+	if _menu_open() or _chat_writing() or _screen_typing(): return
 	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
 	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
 	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
@@ -971,12 +975,23 @@ func _menu_open() -> bool:
 func _chat_writing() -> bool:
 	return player.direct_chat != null and player.direct_chat.can_write
 
+## The 3D screen we are standing at has the keyboard — somebody is typing into one of its fields (the
+## teleporter's coordinates, say). Same reason as [method _chat_writing], and the same danger: polled
+## reads are not shielded by GUI focus, so typing "1750" into a height field would equip the mining
+## tool (1) on the way past. Optional half of the screen contract: a screen that never takes text
+## simply has no is_typing(), and nothing changes for it.
+func _screen_typing() -> bool:
+	var screen: Node3D = player.screen_interacting
+	return is_instance_valid(screen) and screen.has_method("is_typing") and screen.is_typing()
+
 ## Player input is locked: the pause menu is up, a radial wheel is open, OR the chat has the
 ## keyboard. No movement and no action fires (see _physics_process / _unhandled_input). A 3D screen
-## does NOT lock input — you leave it by walking out of its zone, so movement must stay available
-## while facing one.
+## does NOT lock input by merely being faced — you leave it by walking out of its zone, so movement
+## must stay available while looking at one; it locks only while it actually holds the keyboard, and
+## Escape gives that back (TeleporterUI._input).
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() \
+		or _screen_typing()
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.
