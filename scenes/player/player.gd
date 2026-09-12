@@ -615,6 +615,21 @@ func set_seated(seated: bool) -> void:
 		collision_layer = _saved_collision_layer
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
+		# Standing up INSIDE a screen's zone gets the screen back. The zone was dropped by the branch
+		# above, but our AreaDetector never actually LEFT it — sitting down changes the BODY's layers,
+		# not the detector's — so no area_entered will ever fire to hand it back. Without this you have
+		# to walk out of the zone and back in before the console answers again: measured on the
+		# teleporter, where arriving by truck and stepping out is the normal way to use it.
+		_restore_screen_from_overlaps()
+
+
+## Re-resolve which 3D screen we are standing at from the zones the detector overlaps RIGHT NOW,
+## rather than waiting for an entry event that has already happened.
+func _restore_screen_from_overlaps() -> void:
+	for area: Area3D in $AreaDetector.get_overlapping_areas():
+		if area.is_in_group("screen_area"):
+			_set_screen(_screen_owner_of(area))
+			return
 
 
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
