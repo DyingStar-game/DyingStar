@@ -24,9 +24,11 @@ const DEV_TOOL: StringName = &"teleporter"
 const RETURN_CLEARANCE_M: float = 2.0
 ## Metres of air left under a vehicle that travels with you: enough to settle onto its wheels.
 const VEHICLE_CLEARANCE_M: float = 0.5
-## Most vehicles one trip carries. A cabin holds one truck comfortably; the cap is only there so a
-## shape query can never walk an unbounded list.
-const MAX_VEHICLES: int = 8
+## Most things one trip carries. A cabin holds a truck and a few people comfortably; the cap is only
+## there so a shape query can never walk an unbounded list.
+const MAX_TRAVELLERS: int = 16
+## Metres of air left under a passenger who travels with you.
+const PASSENGER_CLEARANCE_M: float = 2.0
 ## Physics frames between the player's arrival and the vehicles'.
 ##
 ## ⚠️ NOT cosmetic, and not a guess at a race. Moving both in the SAME tick asks GORC to work out two
@@ -50,7 +52,7 @@ var _actor: Player = null
 ## Server: a validated trip waiting for a physics frame to sweep the garage in. See _physics_process.
 var _pending: Dictionary = {}
 ## Server: what the sweep found, and the trip it belongs to, while they wait their turn to follow.
-var _riders: Array[Vehicle] = []
+var _riders: Array[Node3D] = []
 var _rider_trip: Dictionary = {}
 var _rider_wait: int = 0
 
@@ -80,7 +82,7 @@ func _physics_process(_delta: float) -> void:
 	if not _pending.is_empty():
 		var trip: Dictionary = _pending
 		_pending = {}
-		_riders = _vehicles_inside()  # the ONE place the space state answers
+		_riders = _travellers_inside()  # the ONE place the space state answers
 		call_deferred("_move_actor", trip["body"], trip["pos"])
 		if _riders.is_empty():
 			set_physics_process(false)
@@ -177,7 +179,7 @@ func _move_actor(body: Planet, local_pos: Vector3) -> void:
 ## offsets are read here, at the last moment, rather than captured earlier.
 func _move_riders() -> void:
 	var trip: Dictionary = _rider_trip
-	var riders: Array[Vehicle] = _riders
+	var riders: Array[Node3D] = _riders
 	_rider_trip = {}
 	_riders = []
 	var body: Planet = trip.get("body") as Planet
@@ -190,20 +192,40 @@ func _move_riders() -> void:
 	var cabin_inv: Basis = global_transform.basis.orthonormalized().inverse()
 	var landing: Basis = _frame_for_up(local_pos.normalized())
 	var moved: int = 0
-	for vehicle: Vehicle in riders:
-		# Frames have passed since the sweep: a vehicle could have been deleted in between.
-		if not is_instance_valid(vehicle) or not vehicle.is_inside_tree():
+	for rider: Node3D in riders:
+		# Frames have passed since the sweep: a rider could have been deleted in between.
+		if not is_instance_valid(rider) or not rider.is_inside_tree():
 			continue
 		moved += 1
-		var offset: Vector3 = cabin_inv * (vehicle.global_position - global_position)
+		var offset: Vector3 = cabin_inv * (rider.global_position - global_position)
 		var spot: Vector3 = local_pos + landing * Vector3(offset.x, 0.0, offset.z)
+		var passenger := rider as Player
+		if passenger != null:
+			_place_passenger(passenger, body, spot, int(trip["mode"]))
+			continue
+		var vehicle := rider as Vehicle
 		# Heading is carried the same way the offset is: read in the cabin's frame, replayed in the
 		# landing one. A truck that was nose-out of the door arrives nose-out of nothing in particular,
 		# but at least it does not arrive across its own axis.
 		var nose: Vector3 = cabin_inv * (-vehicle.global_basis.z)
 		_place_vehicle(vehicle, body, spot, offset.y, int(trip["mode"]),
 				landing * Vector3(nose.x, 0.0, nose.z))
-	print("[Teleporter] %d vehicle(s) followed" % moved)
+	print("[Teleporter] %d traveller(s) followed" % moved)
+
+
+## Send a PASSENGER — somebody else who was standing in the cabin — to [param spot] (planet-local).
+##
+## Goes through the same Player API the actor uses, so a passenger arrives exactly as correctly as
+## the person who pressed the button: reparented, velocity cleared, ground hold re-armed.
+## Somebody SEATED in a travelling vehicle is not here and does not need to be — they hang from the
+## vehicle in the tree, so they move with it and their parent-local position never changes.
+func _place_passenger(passenger: Player, body: Planet, spot: Vector3, height_mode: int) -> void:
+	var dir: Vector3 = spot.normalized()
+	var radius: float = spot.length()
+	if height_mode == TeleportDestination.Height.GROUND and body.planet_data != null:
+		TeleportGround.ensure_tile(body.planet_data, dir)
+		radius = body.planet_data.crack_aware_surface_dist(dir) + PASSENGER_CLEARANCE_M
+	passenger.server_teleport_to(body, dir * radius)
 
 
 ## Put [param vehicle] down at [param spot] (planet-local) on [param body], upright on that spot's own
@@ -232,10 +254,11 @@ func _place_vehicle(vehicle: Vehicle, body: Planet, spot: Vector3, lift: float,
 	# already puts them in ONE payload whenever the parent changes, which is exactly this case.
 
 
-## SERVER: the vehicles parked inside the cabin. Swept on demand with a shape query — the project's
-## rule is one active monitor, the player, so a volume like this is never left monitoring.
-func _vehicles_inside() -> Array[Vehicle]:
-	var out: Array[Vehicle] = []
+## SERVER: everything inside the cabin that should travel — parked vehicles, and any player other
+## than the one who pressed the button. Swept on demand with a shape query: the project's rule is
+## one active monitor, the player, so a volume like this is never left monitoring.
+func _travellers_inside() -> Array[Node3D]:
+	var out: Array[Node3D] = []
 	var shape: CollisionShape3D = _interior.get_node_or_null("CollisionShape3D")
 	if shape == null or shape.shape == null:
 		return out
@@ -245,12 +268,15 @@ func _vehicles_inside() -> Array[Vehicle]:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = shape.shape
 	query.transform = shape.global_transform
-	query.collision_mask = 1 << (Globals.LAYER_VEHICLE - 1)
+	query.collision_mask = (1 << (Globals.LAYER_VEHICLE - 1)) | (1 << (Globals.LAYER_PLAYER - 1))
 	query.collide_with_bodies = true
-	for hit in space.intersect_shape(query, MAX_VEHICLES):
-		var vehicle := hit.get("collider") as Vehicle
-		if vehicle != null and not out.has(vehicle):
-			out.append(vehicle)
+	for hit in space.intersect_shape(query, MAX_TRAVELLERS):
+		var node = hit.get("collider")
+		# The actor is excluded: they are sent first, by _move_actor.
+		if node == _actor or not (node is Vehicle or node is Player):
+			continue
+		if not out.has(node):
+			out.append(node)
 	return out
 
 
