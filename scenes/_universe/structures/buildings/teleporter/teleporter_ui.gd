@@ -52,17 +52,6 @@ func _ready() -> void:
 	_build()
 
 
-## Escape releases the field instead of pausing the game, and the game must not act on it either.
-## Exactly the chat's problem and the chat's answer: a focused LineEdit consumes keys before
-## _unhandled_input ever sees them, so anything that has to beat the field is caught here.
-func _input(event: InputEvent) -> void:
-	if not is_typing():
-		return
-	if event.is_action_pressed("pause"):
-		_release_fields()
-		get_viewport().set_input_as_handled()
-
-
 # ---------------------------------------------------------------------------------------------
 # Public API — used by Teleporter
 # ---------------------------------------------------------------------------------------------
@@ -168,7 +157,7 @@ func _on_go_pressed() -> void:
 	var dest: TeleportDestination = _typed_destination()
 	if dest == null:
 		return
-	_release_fields()
+	release_fields()
 	teleport_requested.emit(dest.to_payload())
 	_say("Sent: %s" % dest.describe(), ACCENT)
 
@@ -176,7 +165,7 @@ func _on_go_pressed() -> void:
 func _on_return_pressed() -> void:
 	if not _enabled or _return_dest == null:
 		return
-	_release_fields()
+	release_fields()
 	teleport_requested.emit(_return_dest.to_payload())
 	_say("Returning to %s" % _return_dest.describe(), ACCENT)
 
@@ -200,7 +189,9 @@ func _typed_destination() -> TeleportDestination:
 	return dest
 
 
-func _release_fields() -> void:
+## Give the keyboard back to the game. Called by the cabin when Escape is pressed, and by the
+## buttons once a trip is sent.
+func release_fields() -> void:
 	for field: LineEdit in [_filter, _lon, _lat, _height]:
 		if field != null and field.has_focus():
 			field.release_focus()
