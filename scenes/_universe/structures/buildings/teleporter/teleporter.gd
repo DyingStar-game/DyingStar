@@ -100,6 +100,22 @@ func _physics_process(_delta: float) -> void:
 	set_physics_process(false)
 
 
+## CLIENT: Escape gives the keyboard back to the game rather than opening the pause menu — but only
+## while one of our fields actually holds it.
+##
+## Handled HERE and not in the interface, which is where it was first written and where it did not
+## work: that interface lives in a SubViewport, so its get_viewport() IS the SubViewport and
+## set_input_as_handled() marks the event handled for that viewport alone. The pause menu, sitting in
+## the main window, saw Escape anyway — so one press both released the field AND opened the menu.
+## The cabin is a plain node of the main scene, so consuming it here consumes it for everybody.
+func _input(event: InputEvent) -> void:
+	if GameOrchestrator.is_server() or _ui == null or not _ui.is_typing():
+		return
+	if event.is_action_pressed("pause"):
+		_ui.release_fields()
+		get_viewport().set_input_as_handled()
+
+
 # ---------------------------------------------------------------------------------------------
 # Screen contract (see ScreenZone)
 # ---------------------------------------------------------------------------------------------
@@ -239,6 +255,17 @@ func _place_vehicle(vehicle: Vehicle, body: Planet, spot: Vector3, lift: float,
 		TeleportGround.ensure_tile(body.planet_data, dir)
 		radius = body.planet_data.crack_aware_surface_dist(dir) + maxf(lift, 0.0) + VEHICLE_CLEARANCE_M
 	var local: Vector3 = dir * radius
+	# ⚠️ KNOWN LIMITATION (WIP). Somebody still SEATED travels with the vehicle through the scene
+	# tree — the server places them correctly and other clients see them in the seat — but THEIR OWN
+	# client comes out of the jump wrong: the view ends up somewhere else in the cab and their input
+	# stops answering. Measured, not reproduced in a diagnosis yet, and it lives in the seat/
+	# replication path rather than here. Said out loud so a broken passenger is a known limit rather
+	# than a mystery; get out before jumping until it is fixed.
+	for child: Node in vehicle.get_children():
+		if child is Player:
+			push_warning("[Teleporter] %s travels with somebody seated in it — that passenger's own client"
+					% vehicle.name + " is known to come out of the jump broken (WIP). Step out before jumping.")
+			break
 	if vehicle.get_parent() != body:
 		vehicle.reparent(body)
 	# A RigidBody that was asleep stays asleep through a teleport, and both PropNet.server_tick and

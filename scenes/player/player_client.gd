@@ -242,6 +242,7 @@ func _process(_delta: float) -> void:
 		_update_name_tag()
 		return
 	_update_debug_coordinates()  # before the seated return below, so a driver's readout keeps moving
+	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
@@ -980,6 +981,27 @@ func _chat_writing() -> bool:
 ## reads are not shielded by GUI focus, so typing "1750" into a height field would equip the mining
 ## tool (1) on the way past. Optional half of the screen contract: a screen that never takes text
 ## simply has no is_typing(), and nothing changes for it.
+## The owner looks through the owner's camera. Always. Anything else is a bug, and this both says so
+## and undoes it.
+##
+## ⚠️ WHY IT CAN BE STOLEN AT ALL. A Camera3D entering a viewport that has NO current camera makes
+## ITSELF current — Godot does that for you. So any moment where ours stops being current hands the
+## view to whichever camera happens to enter next, and the world is full of candidates: every remote
+## avatar carries one (PlayerClient.setup switches it off), and every vehicle carries three for its
+## mirrors. Losing it for a single frame is enough, and it never comes back on its own.
+##
+## Measured: a player seated in a truck that teleported ended up watching through the truck's
+## rear-view camera, unable to move — the body was fine and other clients saw them correctly, so only
+## the view had gone. Re-asserting costs one property read per frame.
+func _keep_camera_ours() -> void:
+	if player.camera == null or player.camera.current:
+		return
+	var thief: Camera3D = player.get_viewport().get_camera_3d()
+	push_warning("[Camera] the owner's camera was taken by '%s' — taking it back"
+			% (thief.get_path() if thief != null else "nobody"))
+	player.camera.make_current()
+
+
 func _screen_typing() -> bool:
 	var screen: Node3D = player.screen_interacting
 	return is_instance_valid(screen) and screen.has_method("is_typing") and screen.is_typing()
