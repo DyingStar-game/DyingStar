@@ -1854,6 +1854,16 @@ func remove_player(event: Dictionary) -> void:
 		var player = players_list[player_uuid]
 		print("player has quit the game: %s" % player_uuid)
 		players_list.erase(player_uuid)
+		# A player who quits while SEATED leaves the seat first, the same way as on foot: the seat
+		# is freed now (not by the vehicle noticing a dead reference a tick later), the body gets its
+		# collision layers back and is reparented out of the vehicle before it is freed. Freeing a
+		# collision-less body straight out of a VehicleBody3D's frame is the sequence that preceded
+		# the 2026-09-13 preprod flood of invalid-ObjectID errors and the crash that followed.
+		# players_list no longer holds the uuid, so the move this emits is dropped by _on_player_move.
+		if "_seat_node" in player and is_instance_valid(player._seat_node):
+			var vehicle: Node = player._seat_node.get_parent()
+			if vehicle != null and vehicle.has_method("server_exit"):
+				vehicle.server_exit(player)
 		player.queue_free()
 	# Clear any pending spawn messages for this player
 	for msg in pending_messages_player_parenting.duplicate():

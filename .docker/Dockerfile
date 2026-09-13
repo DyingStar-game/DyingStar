@@ -162,7 +162,9 @@ COPY --from=builder /cache/ /root/.local/share/godot/app_userdata/DyingStar/chun
 # prints a full backtrace of all threads to stdout instead of dying silently.
 # Set DEBUG_GDB=0 in the container env to bypass gdb (production default).
 COPY .docker/run-server.sh /app/run-server.sh
-RUN chmod +x dyingstar_server.x86_64 /app/run-server.sh && ls -la /app/
+# createdump must be executable or .NET cannot write a dump when the process dies (DOTNET_DbgEnableMiniDump below):
+# the 2026-09-13 SIGSEGV left "Problem launching createdump ... Permission denied" and no core.
+RUN chmod +x dyingstar_server.x86_64 /app/run-server.sh data_DyingStar_linuxbsd_x86_64/createdump && ls -la /app/
 
 # .NET diagnostics: enable mini-dumps on managed crashes (written to /tmp).
 ENV DOTNET_DbgEnableMiniDump=1 \
