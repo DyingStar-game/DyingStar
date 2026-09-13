@@ -1264,6 +1264,16 @@ func player_update(message: Dictionary) -> void:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
+							# TAKE THE VIEW BACK. reparent() is remove-then-add, so OUR camera leaves the
+							# viewport and comes back — and a viewport whose current camera leaves has
+							# none, which any Camera3D entering meanwhile claims for itself (Godot makes
+							# an entering camera current when there is no other). Arriving somewhere new
+							# is exactly when that crowd shows up: every avatar and every NPC spawning in
+							# the new zone carries one. Ours re-enters, finds the seat taken, and never
+							# gets it back — a player left watching through an NPC's eyes.
+							# Costs nothing when nobody took it: it is already ours.
+							if player.camera != null:
+								player.camera.make_current()
 							# Rare event (teleporter / cross-zone) — worth a trace.
 							print("[client] server reparent -> %s at local (%.0f, %.0f, %.0f)"
 									% [parent.name, ppos.x, ppos.y, ppos.z])
