@@ -79,6 +79,27 @@ extends Resource
 @export_range(0.0, 3.0, 0.01) var terrain_roughness: float = 1.0
 
 # ---------------------------------------------------------------------------
+# Relief — a light, deterministic undulation ADDED to the heightmap on this
+# biome's zones, in the mesh and in the collision alike (see BiomeRelief).
+# Off unless relief_max_m > relief_min_m. Wavelengths under ~2 vertex pitches
+# (~27 m at the finest LOD) cannot exist in the mesh: keep it tens of metres
+# and leave finer detail to the shader bump.
+# ---------------------------------------------------------------------------
+@export_group("Relief")
+## Deepest dip below the heightmap, in metres (≤ 0).
+@export_range(-20.0, 0.0, 0.05) var relief_min_m: float = 0.0
+## Highest bump above the heightmap, in metres (≥ 0).
+@export_range(0.0, 20.0, 0.05) var relief_max_m: float = 0.0
+## Size of the undulations in metres; a second octave at a third of it adds detail.
+@export_range(5.0, 2000.0, 1.0) var relief_wavelength_m: float = 60.0
+@export_group("")
+
+
+## Does this biome displace the ground with a relief noise?
+func has_relief() -> bool:
+	return relief_max_m > relief_min_m and relief_wavelength_m > 0.0
+
+# ---------------------------------------------------------------------------
 # Vegetation
 # ---------------------------------------------------------------------------
 ## Whether this biome can have vegetation at all.

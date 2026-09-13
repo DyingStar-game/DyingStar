@@ -1,0 +1,359 @@
+{
+ "rocks": {
+  "corundum_black": {
+   "colors": [
+    "#082567",
+    "#111111"
+   ],
+   "description": "Al2O3 saturated with iron and titanium — near-opaque.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Ti",
+     "ions": [
+      "Ti4+"
+     ],
+     "optional": false,
+     "ppm_max": 400,
+     "ppm_min": 100
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe2+",
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 50000,
+     "ppm_min": 20000
+    }
+   ],
+   "label": "Black corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_black",
+   "surface": true
+  },
+  "corundum_blue": {
+   "colors": [
+    "#82C8E5",
+    "#0F52BA"
+   ],
+   "description": "Al2O3 coloured by the Fe2+/Ti4+ charge-transfer pair.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Ti",
+     "ions": [
+      "Ti4+"
+     ],
+     "optional": false,
+     "ppm_max": 100,
+     "ppm_min": 50
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe2+"
+     ],
+     "optional": false,
+     "ppm_max": 3000,
+     "ppm_min": 100
+    }
+   ],
+   "label": "Blue corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_blue",
+   "surface": true
+  },
+  "corundum_chameleon": {
+   "colors": [
+    "#B4C4D9",
+    "#3A325E"
+   ],
+   "description": "Al2O3 coloured by V3+ — grey-blue in daylight, purple-mauve at night.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "V",
+     "ions": [
+      "V3+"
+     ],
+     "optional": false,
+     "ppm_max": 3500,
+     "ppm_min": 100
+    }
+   ],
+   "label": "Chameleon corundum (grey-blue / purple)",
+   "minerals": [],
+   "night_colors": [
+    "#D1C0D4",
+    "#5E2750"
+   ],
+   "purity": null,
+   "slug": "corundum_chameleon",
+   "surface": true
+  },
+  "corundum_green": {
+   "colors": [
+    "#A2B997",
+    "#2E4732"
+   ],
+   "description": "Al2O3 with both Fe2+ and Fe3+ — mixed blue/yellow absorption reads green.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe2+",
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 8000,
+     "ppm_min": 1000
+    }
+   ],
+   "label": "Green corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_green",
+   "surface": true
+  },
+  "corundum_grey_blue": {
+   "colors": [
+    "#7393B3",
+    "#263855"
+   ],
+   "description": "Al2O3 with Fe2+/Ti4+ plus Fe3+ — more iron, duller blue.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Ti",
+     "ions": [
+      "Ti4+"
+     ],
+     "optional": false,
+     "ppm_max": 200,
+     "ppm_min": 50
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe2+",
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 15000,
+     "ppm_min": 400
+    }
+   ],
+   "label": "Grey-blue corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_grey_blue",
+   "surface": true
+  },
+  "corundum_orange": {
+   "colors": [
+    "#F4A460",
+    "#C04000"
+   ],
+   "description": "Al2O3 with a little Cr3+ over dominant Fe3+.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Cr",
+     "ions": [
+      "Cr3+"
+     ],
+     "optional": false,
+     "ppm_max": 250,
+     "ppm_min": 50
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 5000,
+     "ppm_min": 2500
+    }
+   ],
+   "label": "Orange corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_orange",
+   "surface": true
+  },
+  "corundum_pink": {
+   "colors": [
+    "#FFC0CB",
+    "#C71585"
+   ],
+   "description": "Al2O3 lightly coloured by Cr3+, optional Fe3+.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Cr",
+     "ions": [
+      "Cr3+"
+     ],
+     "optional": false,
+     "ppm_max": 1000,
+     "ppm_min": 100
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe3+"
+     ],
+     "optional": true,
+     "ppm_max": 1500,
+     "ppm_min": 0
+    }
+   ],
+   "label": "Pink corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_pink",
+   "surface": true
+  },
+  "corundum_red": {
+   "colors": [
+    "#B84A39",
+    "#4A1512"
+   ],
+   "description": "Al2O3 with high Cr3+ and Fe3+ — ruby range.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Cr",
+     "ions": [
+      "Cr3+"
+     ],
+     "optional": false,
+     "ppm_max": 4500,
+     "ppm_min": 1500
+    },
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 6000,
+     "ppm_min": 3000
+    }
+   ],
+   "label": "Red corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_red",
+   "surface": true
+  },
+  "corundum_white": {
+   "colors": [
+    "#FAFAFA",
+    "#D9D9D9"
+   ],
+   "description": "Anhydrous crystallised aluminium oxide of very high purity (> 99.5 %).",
+   "formula": "Al2O3",
+   "impurities": [],
+   "label": "White corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": 0.995,
+   "slug": "corundum_white",
+   "surface": true
+  },
+  "corundum_yellow": {
+   "colors": [
+    "#FCE698",
+    "#D4AF37"
+   ],
+   "description": "Al2O3 coloured by Fe3+ alone.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 6000,
+     "ppm_min": 300
+    }
+   ],
+   "label": "Yellow corundum",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_yellow",
+   "surface": true
+  },
+  "emery": {
+   "colors": [
+    "#654321",
+    "#2B1B17"
+   ],
+   "description": "Corundum saturated with iron, trapping distinct iron sub-minerals.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe2+",
+      "Fe3+"
+     ],
+     "optional": false,
+     "ppm_max": 50000,
+     "ppm_min": 10000
+    }
+   ],
+   "label": "Emery (brown corundum)",
+   "minerals": [
+    {
+     "formula": "Fe3O4",
+     "name": "magnetite"
+    },
+    {
+     "formula": "Fe2O3",
+     "name": "hematite"
+    },
+    {
+     "formula": "FeAl2O4",
+     "name": "hercynite"
+    }
+   ],
+   "night_colors": null,
+   "purity": null,
+   "slug": "emery",
+   "surface": true
+  },
+  "hercynite_oxidised": {
+   "colors": [
+    "#233D2E",
+    "#0E1A13"
+   ],
+   "description": "Iron-aluminium spinel; cannot survive at the surface (oxygen) — underground only.",
+   "formula": "FeAl2O4",
+   "impurities": [],
+   "label": "Oxidised hercynite",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "hercynite_oxidised",
+   "surface": false
+  }
+ },
+ "version": 1
+}

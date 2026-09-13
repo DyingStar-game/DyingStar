@@ -2,9 +2,17 @@
 Export the `roads` line layer to the buffered-polygon GeoJSON Godot renders.
 ===========================================================================
 
-The roads layer is created by setup_planet_project.py as a PostGIS LineString
-table (EPSG:4326) with the fields `name`, `road_type`, `width`, `lanes`,
-`surface`, `speed_limit`, `has_sidewalk` and `has_lighting`.
+Road layers are created by setup_planet_project.py (layers/roads.py) as one
+PostGIS LineString table per road type — `highway`, `road`, `path`, `trail`, `railway` —
+each carrying the `road_type` custom property and the fields `name`, `width`,
+`lanes`, `surface`, `speed_limit`, `has_sidewalk` and `has_lighting` — except
+`railway`, which only has `name`, `tracks` and `speed_limit` (its bed width is
+derived from `tracks`, see export/planet/roads.py railway_half_width_m).
+`highway` and `road` also carry an optional `max_slope_degrees`: when set the
+road is exported as grade-limited and Godot builds it on a profile with
+cuttings, tunnels and viaducts, like a railway.  The
+legacy single `roads` table with a per-feature `road_type` field is still read
+when present, so older planets export unchanged.
 
 Why polygons and not lines
 --------------------------
@@ -147,8 +155,8 @@ BUFFER_SEGMENTS = 8
 # a single link at the end (then call link_modifiers.link('<planet>')).
 NO_LINK = False
 
-# Layer name candidates, in priority order, before the substring search.
-_LAYER_NAMES = ("roads", f"{PLANET_NAME}_roads")
+# Legacy single-table layout: name candidates, in priority order.
+_LEGACY_LAYER_NAMES = ("roads", f"{PLANET_NAME}_roads")
 
 
 # ============================================================
@@ -161,18 +169,28 @@ def find_layers_by_keyword(keyword):
             if kw in l.name().lower()]
 
 
-def _find_roads_layer():
-    """Exact name match first, then any line vector layer named like a road one."""
-    layers = list(QgsProject.instance().mapLayers().values())
-    for wanted in _LAYER_NAMES:
+def _find_road_layers():
+    """``[(layer, road_type), …]`` — one entry per road-type layer.
+
+    New layout first: every line layer carrying the ``road_type`` custom
+    property (set by layers/roads.py).  Otherwise the legacy single ``roads``
+    layer, whose road type is a per-feature field (road_type=None here).
+    """
+    layers = [l for l in QgsProject.instance().mapLayers().values()
+              if isinstance(l, QgsVectorLayer)
+              and l.geometryType() == QgsWkbTypes.LineGeometry]
+    typed = [(l, str(l.customProperty("road_type")))
+             for l in layers if l.customProperty("road_type", "")]
+    if typed:
+        return sorted(typed, key=lambda item: item[1])
+    for wanted in _LEGACY_LAYER_NAMES:
         for l in layers:
-            if l.name().lower() == wanted.lower() and isinstance(l, QgsVectorLayer):
-                return l
+            if l.name().lower() == wanted.lower():
+                return [(l, None)]
     for l in find_layers_by_keyword("road"):
-        if isinstance(l, QgsVectorLayer) \
-                and l.geometryType() == QgsWkbTypes.LineGeometry:
-            return l
-    return None
+        if l in layers:
+            return [(l, None)]
+    return []
 
 
 def _is_null(value):
@@ -297,12 +315,14 @@ def run_export():
     print(f"  Roads export — planet '{PLANET_NAME}'")
     print("=" * 64)
 
-    layer = _find_roads_layer()
-    if layer is None:
-        print("  ✗ No roads layer found. Expected a line layer named 'roads' "
-              "(created by setup_planet_project.py).")
+    road_layers = _find_road_layers()
+    if not road_layers:
+        print("  ✗ No road layer found. Expected the highway/road/path/trail/railway "
+              "layers (created by setup_planet_project.py) or a legacy 'roads' layer.")
         return
-    print(f"  Layer      : {layer.name()} ({layer.featureCount()} features)")
+    for layer, road_type in road_layers:
+        print(f"  Layer      : {layer.name()} ({layer.featureCount()} features)"
+              + (f" → road_type={road_type}" if road_type else " (legacy, per-feature road_type)"))
 
     m_per_deg = PLANET_RADIUS * math.pi / 180.0
     features = []
@@ -312,7 +332,7 @@ def run_export():
     skipped_empty_buffer = 0
     defaulted_width = 0
 
-    for feat in layer.getFeatures():
+    for feat, road_type in ((f, rt) for layer, rt in road_layers for f in layer.getFeatures()):
         props = {}
         for field in ROAD_FIELDS:
             value = _attr(feat, field)
@@ -320,6 +340,9 @@ def run_export():
                 # json.dump can't serialise QVariant-wrapped values.
                 props[field] = value if isinstance(value, (int, float, str)) \
                     else str(value)
+        # New layout: the type is the layer, not a field.
+        if road_type and not props.get("road_type"):
+            props["road_type"] = road_type
 
         parts = _line_parts(feat.geometry())
         if not parts:

@@ -54,10 +54,14 @@ extends RefCounted
 ##                 u32 feature_id | u32 point_count
 ##                 point_count × { i32 lon | i32 lat | f32 cum_length_m }
 ##   ROAD          u16 road_type_sid | u16 surface_sid | u16 name_sid
-##                 u16 lanes (0xFFFF = unset)
+##                 u16 lanes (0xFFFF = unset; the number of TRACKS for a railway)
 ##                 f32 width_m (TOTAL width) | f32 total_length_m
 ##                 u32 feature_id | u32 point_count
+##                 u8 flags (bit0 = max slope set) | u8 max_slope_deg | u16 pad
 ##                 point_count × { i32 lon | i32 lat | f32 along_m }
+##                 The 4-byte tail is record layout 2, announced by the road
+##                 part manifest ("parts"."road"."record_layout"); layout 1
+##                 packs (no key) stop at point_count.
 ##   POPULATE      u16 biome_type_sid | u8 coverage | u8 prop_count
 ##                 i32 biome_index | u16 vertex_count | u16 rsv
 ##                 prop_count × { u16 key_sid | u8 vtype | u8 pad | u32 value }
@@ -117,6 +121,8 @@ const COORD_SCALE := 1.0e-7
 
 ## u16 string id meaning "absent".
 const SID_NONE := 0xFFFF
+## ROAD record (layout 2) flags byte: bit0 = max_slope_deg is set.
+const ROAD_FLAG_MAX_SLOPE := 1
 
 ## Fixed record sizes, in bytes.
 const CRATER_SIZE := 16
@@ -136,6 +142,9 @@ var _index_start: int = 0
 var _blob_start: int = 0
 var _manifest: Dictionary = {}
 var _strings: PackedStringArray = PackedStringArray()
+## ROAD record layout revision from the road part manifest (1 = 24-byte header,
+## 2 = + flags/max_slope tail). Old packs carry no key.
+var _road_layout: int = 1
 ## nside -> {"base": byte offset into _index_blob, "count": entry_count}
 var _levels: Dictionary = {}
 var _levels_sorted: PackedInt64Array = PackedInt64Array()
@@ -185,6 +194,8 @@ func open(res_path: String) -> bool:
 	_strings.resize(raw_strings.size())
 	for i in raw_strings.size():
 		_strings[i] = String(raw_strings[i])
+	var road_part: Dictionary = (_manifest.get("parts", {}) as Dictionary).get("road", {})
+	_road_layout = int(road_part.get("record_layout", 1))
 
 	var file_len := fa.get_length()
 	if _index_start < 32 or _blob_start < _index_start or _blob_start > file_len:
@@ -245,6 +256,7 @@ func close() -> void:
 	_path = ""
 	_manifest = {}
 	_strings = PackedStringArray()
+	_road_layout = 1
 	_levels = {}
 	_levels_sorted = PackedInt64Array()
 	_index_blob = PackedByteArray()
@@ -549,8 +561,9 @@ func _decode_roads(b: PackedByteArray, off: int, count: int,
 		m_per_deg: float) -> Array:
 	var out: Array = []
 	var p := off
+	var header := 28 if _road_layout >= 2 else 24
 	for _i in count:
-		if p + 24 > b.size():
+		if p + header > b.size():
 			break
 		var road_type := _sid(b.decode_u16(p))
 		var surface := _sid(b.decode_u16(p + 2))
@@ -560,7 +573,10 @@ func _decode_roads(b: PackedByteArray, off: int, count: int,
 		var total_length_m := b.decode_float(p + 12)
 		var feature_id := b.decode_u32(p + 16)
 		var point_count := b.decode_u32(p + 20)
-		p += 24
+		var max_slope_deg := -1
+		if header >= 28 and (b.decode_u8(p + 24) & ROAD_FLAG_MAX_SLOPE) != 0:
+			max_slope_deg = b.decode_u8(p + 25)
+		p += header
 		var poly := _decode_polyline(b, p, point_count)
 		p += point_count * POINT_SIZE
 
@@ -582,8 +598,25 @@ func _decode_roads(b: PackedByteArray, off: int, count: int,
 			"_cum_lengths": poly[1],
 			"_total_length": total_length_m,
 		}
-		if lanes_raw != SID_NONE:
+		# The u16 slot is `lanes` for a road and the number of `tracks` for a
+		# railway — the record exposes it under the name that matches the type.
+		if road_type == "railway":
+			var tracks := lanes_raw if lanes_raw != SID_NONE else 0
+			if lanes_raw != SID_NONE:
+				road["tracks"] = tracks
+			# A railway's bed follows its number of tracks, whatever `width_m`
+			# the pack stored (an older export wrote the QGIS pre-fill). Fixing
+			# it here keeps every reader of `half_width_m` — the ribbon, the
+			# prop spawners' suppression, the bridge finder and the deck — on
+			# the same number.
+			half_width_m = RailwaySettings.railway_half_width_m(tracks)
+			road["half_width_m"] = half_width_m
+		elif lanes_raw != SID_NONE:
 			road["lanes"] = lanes_raw
+		# Only a highway / road may be grade-limited; the exporter never sets
+		# the flag on another type, the check here keeps a hand-made pack honest.
+		if max_slope_deg >= 0 and road_type in RoadTerrain.GRADED_TYPES:
+			road["max_slope_degrees"] = max_slope_deg
 		if m_per_deg > 0.0:
 			road["half_width_deg"] = half_width_m / m_per_deg
 			road["_road_hw_converted"] = true

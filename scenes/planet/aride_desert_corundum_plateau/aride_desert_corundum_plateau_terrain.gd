@@ -103,14 +103,10 @@ static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -
 	return -depth_m * (1.0 - t2 * t2)          # flat floor, steep walls (1 − t⁴)
 
 
-## Deterministic per-cell jitter in [0,1)³ — the classic fract(sin(dot))
-## hash.  Identical on client and server because it uses only IEEE doubles
-## and no engine state.
+## Deterministic per-cell jitter in [0,1)³ — SurfaceNoise.hash3, kept under
+## its old name so the crack network reads as before.
 static func _hash3(c: Vector3) -> Vector3:
-	var x := sin(c.dot(Vector3(127.1, 311.7, 74.7))) * 43758.5453123
-	var y := sin(c.dot(Vector3(269.5, 183.3, 246.1))) * 43758.5453123
-	var z := sin(c.dot(Vector3(113.5, 271.9, 124.6))) * 43758.5453123
-	return Vector3(x - floor(x), y - floor(y), z - floor(z))
+	return SurfaceNoise.hash3(c)
 
 
 ## Distance (in cell units) from [param x] to the nearest Voronoi cell
@@ -160,10 +156,7 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 static func iron_tint(dir: Vector3, radius: float, base: Color) -> Color:
 	var lo := MILKY.lerp(base, 0.35)
 	var hi := IRON.lerp(base, 0.25)
-	var blotch := _vnoise(dir * (radius / IRON_BLOTCH_M))
-	var streak := _vnoise(dir * (radius / IRON_STREAK_M))
-	var t := clampf(blotch * 0.7 + streak * 0.3, 0.0, 1.0)
-	return lo.lerp(hi, t)
+	return lo.lerp(hi, SurfaceNoise.mottle(dir, radius, IRON_BLOTCH_M, IRON_STREAK_M))
 
 
 ## Darken / warm the interior of a crack toward iron staining, proportional to
@@ -176,31 +169,9 @@ static func crack_stain(col: Color, crack_off: float, crack_depth_m: float) -> C
 	return col.lerp(stain, f * 0.6)
 
 
-# ── Value noise (scalar, deterministic) ────────────────────────────
-# Trilinearly-interpolated lattice noise built on the same _hash3 as the
-# crack network, so client and server stay in lock-step.
-
-static func _hash1(c: Vector3) -> float:
-	return _hash3(c).x
-
+# ── Value noise ─────────────────────────────────────────────────────
+# Lives in SurfaceNoise (shared with the per-rock tints); kept as a thin
+# alias for the callers below.
 
 static func _vnoise(p: Vector3) -> float:
-	var i := p.floor()
-	var f := p - i
-	# Quintic smoothstep for C² continuity (no lattice creases).
-	var w := f * f * f * (f * (f * 6.0 - Vector3(15, 15, 15)) + Vector3(10, 10, 10))
-	var c000 := _hash1(i + Vector3(0, 0, 0))
-	var c100 := _hash1(i + Vector3(1, 0, 0))
-	var c010 := _hash1(i + Vector3(0, 1, 0))
-	var c110 := _hash1(i + Vector3(1, 1, 0))
-	var c001 := _hash1(i + Vector3(0, 0, 1))
-	var c101 := _hash1(i + Vector3(1, 0, 1))
-	var c011 := _hash1(i + Vector3(0, 1, 1))
-	var c111 := _hash1(i + Vector3(1, 1, 1))
-	var x00 := lerpf(c000, c100, w.x)
-	var x10 := lerpf(c010, c110, w.x)
-	var x01 := lerpf(c001, c101, w.x)
-	var x11 := lerpf(c011, c111, w.x)
-	var y0 := lerpf(x00, x10, w.y)
-	var y1 := lerpf(x01, x11, w.y)
-	return lerpf(y0, y1, w.z)
+	return SurfaceNoise.vnoise(p)

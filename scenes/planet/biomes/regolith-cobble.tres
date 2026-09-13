@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bh467llh2063k"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "regolith-cobble"
+biome_index = 103
+display_name = "Cobble"
+description = "Fist-sized to boulder-sized fragments of the host rock, scattered on the ground."
+category = "barren"
+color = Color(0.588, 0.541, 0.471, 1)
+terrain_roughness = 0.9
+movement_speed_factor = 0.8
+detail_texture_scale = 3.0

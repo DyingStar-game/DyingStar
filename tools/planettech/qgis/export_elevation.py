@@ -178,7 +178,7 @@ EXPORT_DIR = os.path.expanduser(
 # tarsis_3 à 198 m dure ~35 heures.
 PLANET_TILING = {
     "tarsis_3": (1024, 32),     # 198 m — la planète jouable
-    # "tarsis_3": (256, 32),     # 794 m — la planète jouable
+    "tarsis_8": (256, 32),
 }
 # Tout le reste : 4 065 m. Suffisant pour des corps sans relief travaillé, et 19 × 164 Mo
 # au lieu de 19 × 68 Go.
@@ -226,7 +226,7 @@ SPARSE_EPSILON_M = 1.0
 # élévations produites sans toucher à une seule constante ci-dessus (nouvel
 # interpolateur, changement de convention de grille, agrégation différente). Les valeurs
 # des constantes, elles, entrent déjà dans data_version toutes seules.
-ALGO_VERSION = 1
+ALGO_VERSION = 2
 
 # Global interpolation raster (equirectangular, width = 2 × height).
 HEIGHTMAP_SIZE = (4096, 2048)

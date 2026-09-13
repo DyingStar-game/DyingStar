@@ -20,8 +20,17 @@ HALF_WIDTH_M = {
     "road": 3.0,      # 6 m
     "path": 1.0,      # 2 m
     "trail": 0.5,     # 1 m
+    "railway": 2.5,   # 5 m ballast bed when `lanes` is unset (see below)
 }
 DEFAULT_HALF_WIDTH_M = 0.5
+
+#: Railway bed geometry — MUST match RailwaySettings (scenes/planet/road/
+#: railway_settings.gd). One track is a full sleeper (two mirrored halves of
+#: railroad_01.glb, 1.22 m each); tracks are laid TRACK_GAP_M apart, sleeper
+#: end to sleeper end, and the ballast bed adds a shoulder on each side.
+RAIL_TRACK_W_M = 2.44
+RAIL_TRACK_GAP_M = 1.0
+RAIL_SHOULDER_M = 0.5
 
 #: The detection polygon in the legacy GeoJSON is wider than the visual road so
 #: chunk-level bbox sampling catches narrow roads — RoadTerrain.DETECTION_MULTIPLIER.
@@ -29,20 +38,58 @@ DEFAULT_HALF_WIDTH_M = 0.5
 #: GeoJSON export still writes it while BiomeQuery remains the fallback source.
 DETECTION_MULTIPLIER = 3.0
 
-#: Attributes copied verbatim from the QGIS layer.
-ROAD_FIELDS = ("name", "road_type", "width", "lanes", "surface",
-               "speed_limit", "has_sidewalk", "has_lighting")
+#: Attributes copied verbatim from the QGIS layer.  A column absent from a
+#: layer is simply skipped: a railway has `tracks` and none of width / surface /
+#: has_sidewalk / has_lighting.
+ROAD_FIELDS = ("name", "road_type", "width", "lanes", "tracks", "surface",
+               "speed_limit", "has_sidewalk", "has_lighting", "max_slope_degrees")
+
+#: Road types whose `max_slope_degrees` is honoured (grade-limited profile with
+#: cuttings, tunnels and viaducts in Godot).  Other types ignore the column.
+GRADED_TYPES = ("highway", "road")
 
 #: Roads with fewer points than this after decimation are dropped: a ribbon
 #: needs two points to be extruded at all.
 MIN_POINTS = 2
 
 
+def railway_half_width_m(tracks):
+    """Half-width of a railway's ballast bed from its number of tracks.
+
+    Mirrors RailwaySettings.railway_half_width_m(): 1 track → 3.44 m bed,
+    2 → 6.88 m. Falls back to the plain road_type default when `tracks` is
+    unset or zero.
+    """
+    tracks = _int_or_none(tracks)
+    if tracks is None or tracks <= 0:
+        return HALF_WIDTH_M["railway"]
+    return (tracks * RAIL_TRACK_W_M + (tracks - 1) * RAIL_TRACK_GAP_M) * 0.5 \
+        + RAIL_SHOULDER_M
+
+
+def railway_tracks(props):
+    """`tracks` of a railway record; `lanes` for a planet still drawn on the
+    legacy single `roads` table, where the track count lived in that column."""
+    tracks = props.get("tracks")
+    return tracks if tracks is not None else props.get("lanes")
+
+
+def max_slope_deg(props):
+    """Integer max slope of a graded road, or None (follows the terrain)."""
+    if (props.get("road_type") or "trail") not in GRADED_TYPES:
+        return None
+    return _int_or_none(props.get("max_slope_degrees"))
+
+
 def half_width_m(props):
     """Per-feature `width` when the designer set one, else the road_type default.
 
     Mirrors RoadTerrain.get_half_width_m(): `width` is the TOTAL width in metres.
+    A railway is the exception: it has no `width` — its bed is a function of
+    `tracks`.
     """
+    if (props.get("road_type") or "trail") == "railway":
+        return railway_half_width_m(railway_tracks(props))
     width = props.get("width")
     if width is not None:
         try:
@@ -62,6 +109,9 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
 
     roads: [{"centerline": [(lon, lat), …], "road_type", "width", "lanes",
              "surface", "name"}, …] — `width` is the TOTAL width in metres.
+    A railway carries "tracks" instead of "width"/"lanes"/"surface"; it is
+    stored in the record's `lanes` slot (the u16 is "lanes, or tracks for a
+    railway").
     table: a dsmp_strings.StringTable, interned into (and left dirty for the
            caller to save).
 
@@ -91,7 +141,10 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
             "road_type_sid": table.intern(r.get("road_type") or "trail"),
             "surface_sid": table.intern(r.get("surface")),
             "name_sid": table.intern(r.get("name")),
-            "lanes": _int_or_none(r.get("lanes")),
+            "lanes": _int_or_none(railway_tracks(r)
+                                  if (r.get("road_type") or "trail") == "railway"
+                                  else r.get("lanes")),
+            "max_slope_deg": max_slope_deg(r),
         })
 
     levels = []
@@ -111,7 +164,8 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
                         dsmp.pack_road(
                             road["road_type_sid"], road["surface_sid"],
                             road["name_sid"], road["lanes"], road["width_m"],
-                            road["total_length_m"], road["fid"], piece))
+                            road["total_length_m"], road["fid"], piece,
+                            max_slope_deg=road["max_slope_deg"]))
         tiles = []
         n_records = 0
         for ipix in sorted(per_tile):
@@ -135,6 +189,11 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
         "assignment": "partition",
         "decimation": {"frac_of_vertex_spacing": 0.25,
                        "frac_of_influence": 0.5, "res_max": res_max},
+        # Read by ModifierPack before any tile: which ROAD header the records
+        # use, and whether a grade-limited road exists at all (PlanetData warms
+        # the profiles only when one does).
+        "record_layout": dsmp.ROAD_RECORD_LAYOUT,
+        "profiled_roads": sum(1 for r in prepared if r["max_slope_deg"] is not None),
     }
     return levels, manifest
 

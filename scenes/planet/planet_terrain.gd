@@ -68,17 +68,16 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 @export var editor_goto_lon: float = 0.0
 ## Latitude (degrees) used by the "Go to lon/lat" button below.
 @export var editor_goto_lat: float = 0.0
-## Inspector button: recenter the editor preview on the lon/lat above,
-## update the x/y/z fields to match, and drop a focus marker (press F in the
-## viewport to fly to it).
+## Inspector button: put the viewport 200 m above the lon/lat above, upright,
+## and update the x/y/z fields to match. Nothing else to press.
 @export_tool_button("Go to lon/lat") var _goto_lonlat_action = _goto_lonlat
 ## Planet-local X/Y/Z used by the "Go to coordinates" button below. Any point
 ## in space is projected onto the surface along its direction from the centre.
 @export var editor_goto_x: float = 0.0
 @export var editor_goto_y: float = 0.0
 @export var editor_goto_z: float = 0.0
-## Inspector button: recenter the editor preview on the x/y/z above, update
-## the lon/lat fields to match, and drop a focus marker.
+## Inspector button: put the viewport 200 m above the x/y/z above, upright,
+## and update the lon/lat fields to match.
 @export_tool_button("Go to coordinates") var _goto_coords_action = _goto_coordinates
 ## When enabled, the editor camera fly speed and near/far clip planes are
 ## auto-tuned to the planet radius on load — essential for large planets,
@@ -124,7 +123,7 @@ var is_server: bool = false
 var _editor_biome_entries: Array[Dictionary] = []
 ## Currently selected biome index in the dropdown (-1 = none).
 var _editor_selected_biome_idx: int = -1
-## Marker node placed at the selected biome so the user can press F to frame it.
+## Marker node dropped at the last "Go to" point (not saved, not selected).
 var _editor_biome_focus: Node3D = null
 
 ## Camera altitude above the ACTUAL (crack-aware) terrain surface, sampled
@@ -160,6 +159,15 @@ var _next_bridge_retry_ms: int = 0
 ## Intervalle entre deux tentatives de rattrapage. Assez court pour que le pont existe bien
 ## avant qu'un joueur n'atteigne le gouffre, assez long pour ne rien peser.
 const BRIDGE_RETRY_INTERVAL_MS := 2000
+## Same catch-up for the profiled lines (railways, graded roads), whose tiles
+## are far more numerous than a bridge's: see [method _poll_starved_grade_profiles].
+var _next_grade_retry_ms: int = 0
+## Bumped every time a profile is born late. A mesh task stamped with an
+## older generation was built without that profile: its result is dropped if
+## the chunk stands on the line, so the chunk is queued again with the bed.
+var _grade_generation: int = 0
+## Export tiles (and neighbours) of every line whose profile was born late.
+var _grade_reborn_tiles: Dictionary = {}
 
 ## Grace period before an unreferenced bridge is actually freed.
 ##
@@ -289,9 +297,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v25: crack depth no longer LOD-ramped (full depth wherever drawn) so
 		#      the visual crack floor matches the full-depth physics floor.
 		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d" % [
-			int(data.corundum_override_whole_planet), data.crack_spacing_m,
+			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
-			int(data.debug_color_skirts)] if data.corundum_override_whole_planet else ""
+			int(data.debug_color_skirts)] if data.corundum_default_biome else ""
 		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
 		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
 		# data.chunk_data_version is the exporter's own fingerprint of the baked
@@ -311,15 +319,45 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# must invalidate the meshes. Materials are deliberately NOT in that
 		# signature — they change how a bridge looks, not where the road stops.
 		var _brg := ""
-		if data.corundum_override_whole_planet:
+		if data.corundum_default_biome:
 			_brg = "_brg%s" % data.get_bridge_profile().signature()
+		# A profiled line (railway, graded road) is baked geometry too: the bed
+		# sits on its own profile, the cuttings displace the grid and the fine
+		# collision carries both. Every constant those depend on is folded into
+		# the key by GradeSettings; a road's own max slope comes from the pack.
+		var _rw := ""
+		if data.has_profiled_lines():
+			_rw = "_rw%s" % GradeSettings.signature()
+		# Biome regions bake the vertex colours (rock tints) and the surface
+		# split (outcrop material): the populate part's fingerprint, written by
+		# export_biomes.py and echoed into the pack manifest, re-keys the cache
+		# on every re-export of the regions.
+		var _pz := ""
+		var _pz_fp := data.populate_fingerprint()
+		if _pz_fp != "":
+			_pz = "_pz%s" % _pz_fp.substr(0, 12)
 		# v26 → v27: the road ribbon's perpendicular is now taken in metric
 		# space. That widens every road that is not east-west, on EVERY planet
 		# with roads, so it is a runtime change no data field captures.
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v27%s%s%s" % [
+		# v27 → v28: biome zones with a terrain_material_override are emitted as
+		# their own mesh surface (outcrop rock), and rock_type zones bake the
+		# rock tint — a runtime change no data field captures.
+		# v28 → v29: biomes with relief_* displace the ground (BiomeRelief),
+		# flattened under roads; mesh and collision shapes alike.
+		# v29 → v30: the flat band under roads scales with the vertex pitch
+		# (the interpolated surface pierced ribbons and beds).
+		# v30 → v31: coarse LODs shave the terrain to the bed top around a
+		# profiled line (GradeBed.make_coarse_ctx) instead of leaving it uncut.
+		# v31 → v32: the cutting's refinement patch is built on surface-override
+		# cells too (it skipped them as "overlay" — buried roads on outcrops).
+		# v32 → v33: corundum is a DEFAULT biome, not an override: a zone naming
+		# a known biome keeps its own colour / detail and is left uncarved, in
+		# the mesh and in the collision — meshes baked with cracks and iron
+		# tint under every zone are stale.
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v33%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _brg, _dv]
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -421,6 +459,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# and the main thread disagree about where a bridge starts, and the ribbon
 	# would be cut open where nothing spans it.
 	planet_data.warm_bridge_plans()
+	# Same reason, same place: the railway profiles feed the bed builders on
+	# the mesh workers and the viaduct spawner on the main thread.
+	planet_data.warm_grade_profiles()
 
 	_initialized = true
 
@@ -808,6 +849,9 @@ func _server_poll_chunk_tasks() -> void:
 		_server_chunk_tasks.erase(key)
 
 		if entry.get("evicted", false):
+			# Evicted to be rebuilt (a profile born under it), not dropped.
+			if entry.get("reload", false):
+				_load_chunk(key)
 			continue
 
 		var phase: int = entry["phase"]
@@ -844,7 +888,8 @@ func _server_poll_chunk_tasks() -> void:
 				PropNet.prof_col_calls += 1
 				PropNet.prof_col_usec += _cu
 			if shape:
-				if _chunk_cache and _persistable(shape):
+				if _chunk_cache and _persistable(shape) \
+						and not planet_data.grade_chunk_provisional(nside, ipix):
 					_chunk_cache.save_collision(key, 0, shape)
 				_server_assemble_chunk(key, nside, ipix, shape)
 			else:
@@ -961,6 +1006,17 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 	# sub-chunks pinned under bodies don't duplicate them.
 	if nside == planet_data.export_nside:
 		_spawn_chunk_features(key, nside, ipix)
+	# Rail modules stand on their own box colliders (RailwayTrack): the bed is
+	# in the chunk shape, the rails are not. Built at the collision level, where
+	# the chunk's pieces partition the track exactly once.
+	if nside == planet_data.collision_detail_nside() and planet_data.has_railways():
+		var rail_body := RailwayTrack.make_collision_body(
+			planet_data, nside, ipix, _chunk_collision_origin(nside, ipix), key)
+		if rail_body:
+			_chunks_node.add_child(rail_body)
+			if not _server_feature_nodes.has(key):
+				_server_feature_nodes[key] = []
+			(_server_feature_nodes[key] as Array).append(rail_body)
 	# Bridges. This path — not _create_chunk — is the live server residency, and
 	# it did not build them: the deck existed on the client and nowhere else, so
 	# a vehicle drove along the visible ribbon and fell through the gorge. The
@@ -1106,7 +1162,8 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 			add_child(body)
 			_server_collision_chunks[key] = body
 			# Update disk cache.
-			if _chunk_cache and _persistable(shape):
+			if _chunk_cache and _persistable(shape) \
+					and not planet_data.grade_chunk_provisional(nside, ipix):
 				_chunk_cache.save_collision(key, 0, shape)
 
 		print("[PlanetTerrain] rebuild_chunks: rebuilt '%s'" % key)
@@ -1131,6 +1188,9 @@ func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		_editor_flight_step()
 	TerrainProfiler.maybe_report(_mesh_task_backlog.size(), _mesh_tasks.size())
+
+	# A line profile born late changes the chunks under it, on both sides.
+	_poll_starved_grade_profiles()
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
@@ -1519,33 +1579,65 @@ func _goto_coordinates() -> void:
 			editor_goto_x, editor_goto_y, editor_goto_z, lonlat.x, lonlat.y])
 
 
-## Recenter the editor preview on a surface point (unit [param dir]) and drop
-## a focus marker the user can frame with F. Shared by the biome dropdown and
-## the "Go to lon/lat" button.
+## Put the editor viewport 200 m above the ground at unit [param dir], upright.
+## Shared by the biome dropdown and the two "Go to" buttons.
+##
+## The camera cannot be driven (see the editor-flight section), so the BODY is
+## brought under it — the same trick as flight, applied once: the camera keeps
+## its world position and the body is placed so that this ground point sits
+## straight below it, at GOTO_ALTITUDE. That replaces the old "select a marker,
+## then press F" dance, which also placed the camera wrongly: F only moves the
+## orbit target and keeps the current orbit DISTANCE, so after zooming out over
+## a planet the camera landed tens of kilometres behind the marker along the
+## view direction — underground unless you happened to be looking down.
+##
+## With flight on, the flight state is re-seeded so the next step carries on
+## from here instead of dragging the body back. With flight off the body is
+## left where it was put (never saved: see Planet.editor_set_flight_transform),
+## and switching flight on later seeds from it.
+##
+## A focus marker is still dropped as a child, for whoever wants to find the
+## point again in the scene tree — it is NOT selected, so the inspector stays
+## on this node.
 func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
-	var surface_local: Vector3 = surface_point_for_direction(dir)
-	# 200 m above the GROUND, not above sea level.
-	var world_pos: Vector3 = surface_local + dir * 200.0
+	if planet_data == null:
+		return
+	var altitude: float = planet_data.sample_height_for_direction(dir) + GOTO_ALTITUDE
+	# Above the GROUND, not above sea level — planet-local.
+	var local_pos: Vector3 = dir * (planet_data.radius + altitude)
 
-	# Create or move the focus marker so the user can press F to frame it.
 	if not _editor_biome_focus or not is_instance_valid(_editor_biome_focus):
 		_editor_biome_focus = Node3D.new()
 		_editor_biome_focus.name = "BiomeFocus"
 		add_child(_editor_biome_focus)
 		# Ensure the marker is not saved with the scene.
 		_editor_biome_focus.owner = null
-	_editor_biome_focus.position = world_pos
+	_editor_biome_focus.position = local_pos
 
-	# Le repère suffit : le terrain se construit autour de la caméra, donc il apparaît
-	# quand on l'y amène — exactement comme en jeu. Rien à recentrer à la main.
-	# Select the marker so the user can press F to frame it.
-	var ei = Engine.get_singleton("EditorInterface")
-	if ei:
-		ei.get_selection().clear()
-		ei.get_selection().add_node(_editor_biome_focus)
+	var placed := _editor_bring_under_camera(dir, altitude)
+	print("[PlanetTerrain] Go to %s — local=(%d, %d, %d)%s" % [
+		label, int(local_pos.x), int(local_pos.y), int(local_pos.z),
+		"" if placed else " — no editor camera: select BiomeFocus and press F"])
 
-	print("[PlanetTerrain] Go to %s — world=(%d, %d, %d) — press F to frame" % [
-		label, int(world_pos.x), int(world_pos.y), int(world_pos.z)])
+
+## Place the body so that ground point [param dir] (unit, body frame) sits
+## straight below the editor camera, [param altitude] metres above the
+## reference sphere. Returns false when there is no editor camera to read.
+func _editor_bring_under_camera(dir: Vector3, altitude: float) -> bool:
+	var planet := get_parent() as Planet
+	if planet == null or planet_data == null:
+		return false
+	var cam := _editor_camera_world()
+	if cam == Vector3.INF:
+		return false
+	_flight_dir = dir
+	_flight_alt = altitude
+	# The camera has not moved: the next flight step must see no delta and no jump.
+	_flight_last_cam = cam
+	if editor_planet_flight:
+		_flight_was_on = true
+	_editor_flight_place(planet, cam, planet_data.radius)
+	return true
 
 
 ## Auto-tune the editor 3D viewport camera to the planet's scale: a far clip
@@ -2417,6 +2509,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	# Un Dictionary PAR TÂCHE : seul le thread de cette tâche y écrit, et le thread
 	# principal ne le lit qu'après is_task_completed(). Aucun verrou nécessaire.
 	var prof: Dictionary = {}
+	info["grade_gen"] = _grade_generation
 	var task_entry := {
 		"task_id": -1,
 		"result_ref": result_ref,
@@ -2498,6 +2591,13 @@ func _process_assemble_queue() -> void:
 		var mesh: ArrayMesh = item.mesh
 		# Guard against stale entries (chunk was removed while mesh was computing).
 		if _active_chunks.has(info.key):
+			assembled += 1
+			continue
+		# Built before a line profile was born under it: the mesh has the
+		# terrain-hugging ribbon where the bed now goes. Dropped, so that
+		# _update_terrain queues the chunk again on the new tables.
+		if int(info.get("grade_gen", _grade_generation)) != _grade_generation \
+				and _chunk_touches_tiles(info.nside, info.ipix, _grade_reborn_tiles):
 			assembled += 1
 			continue
 		_assemble_visual_chunk(info, mesh)
@@ -2686,6 +2786,39 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				_chunks_node.add_child(tree_mmi)
 				info["forest"] = tree_mmi
 
+	# ---------- Railway: rail modules + their collision boxes ----------
+	# The bed itself is part of the chunk mesh/shape; the modules are instanced
+	# here, one MultiMesh per stretch of track (see RailwayTrack), and stand on
+	# box colliders in their own body. The transforms are computed once and
+	# shared by both.
+	if lod <= RailwaySettings.RAIL_MAX_LOD and planet_data.has_railways():
+		var rail_xforms := RailwayTrack.module_transforms(
+			planet_data, info.nside, info.ipix, chunk_center)
+		if not rail_xforms.is_empty():
+			var rails := Node3D.new()
+			rails.name = key + "_rails"
+			rails.position = chunk_center
+			var corners_rail: Array = HEALPix.get_pixel_corners(info.nside, info.ipix)
+			var rail_diag: float = (corners_rail[0] * planet_data.radius).distance_to(
+				corners_rail[2] * planet_data.radius)
+			for grp in RailwayTrack.build_multimeshes(rail_xforms, lod):
+				var rail_mmi := MultiMeshInstance3D.new()
+				rail_mmi.multimesh = grp["mm"]
+				rail_mmi.position = grp["center"]
+				rail_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				rail_mmi.visibility_range_end = rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG
+				rail_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				rail_mmi.layers = mi.layers
+				rails.add_child(rail_mmi)
+			_chunks_node.add_child(rails)
+			info["railway_rails"] = rails
+			if lod == 0:
+				var rail_body := RailwayTrack.make_collision_body(
+					planet_data, info.nside, info.ipix, chunk_center, key)
+				if rail_body:
+					_chunks_node.add_child(rail_body)
+					info["railway_rails_col"] = rail_body
+
 	# ---------- Point-biome 3D instances at close LODs ----------
 	if lod <= 2:
 		var _pz_point := _get_chunk_populate_zones(info)
@@ -2742,8 +2875,11 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
 		# has_usable_tile : sur un pack creux une tuile absente est normale, et refuser
 		# d'y cacher le mesh empêcherait le cache de se remplir.
+		# Nor a chunk on a line whose profile is still waiting for its tiles:
+		# it carries the terrain-hugging ribbon now and the bed later.
 		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
-				and _persistable(mesh):
+				and _persistable(mesh) \
+				and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
 			_chunk_cache.save_mesh(key, lod, mesh)
 
 	_active_chunks[key] = info
@@ -2799,7 +2935,8 @@ func _create_chunk(info: Dictionary) -> void:
 					_eip *= 4
 					_cns *= 2
 				if planet_data.is_chunk_cached("hp_n%d_p%d" % [_epd, _eip]) \
-						and _persistable(shape):
+						and _persistable(shape) \
+						and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
 					_chunk_cache.save_collision(key, lod, shape)
 
 		# Server also needs cave/fumarole collision so players don't fall through.
@@ -2884,6 +3021,92 @@ func _poll_starved_bridge_plans() -> void:
 		_spawn_bridges({"key": key, "nside": nside, "ipix": ipix, "lod": 0})
 
 
+## Rattrape les lignes profilées (voies ferrées, routes à pente bornée) que warm_grade_profiles()
+## avait dû laisser sans profil faute de tuiles.
+##
+## Pourquoi cela existe : une voie de 600 km (tarsis_3) traverse ~190 tuiles d'export, à
+## ~150 ms la tuile sur le réseau — le préchargement de 5 s n'en ramène qu'un tiers, et
+## le verdict « 0 profil » tenait toute la session : le lit suivait le terrain et la
+## voie s'enfonçait dans la colline là où le profil aurait creusé un tunnel. Ici, une
+## fois les tuiles arrivées (elles sont en file sur le fil de streaming), le profil naît
+## et les chunks déjà bâtis sur la ligne sont refaits : leur lit, leurs tranchées et
+## leurs tunnels sont cuits DANS le mesh et la collision, pas posés à côté.
+##
+## Cadencé comme les ponts, des deux côtés : le client cuit le lit dans ses meshes, le
+## serveur dans sa collision.
+func _poll_starved_grade_profiles() -> void:
+	if planet_data == null or not planet_data.grade_profiles_incomplete():
+		return
+	var now := Time.get_ticks_msec()
+	if now < _next_grade_retry_ms:
+		return
+	_next_grade_retry_ms = now + BRIDGE_RETRY_INTERVAL_MS
+	var born := planet_data.retry_starved_grade_profiles()
+	if born.is_empty():
+		return
+	var tiles := {}
+	for fid: int in born:
+		tiles.merge(planet_data.grade_line_export_tiles(fid))
+	_grade_reborn_tiles.merge(tiles)
+	_grade_generation += 1
+	_rebuild_chunks_on_tiles(tiles)
+
+
+## Does chunk (nside, ipix) stand on one of [param tiles] (export ipix)?
+func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary) -> bool:
+	if tiles.is_empty() or nside <= 0 or ipix < 0:
+		return false
+	var export_nside: int = planet_data.export_nside
+	if nside >= export_nside:
+		var e := ipix
+		var ns := nside
+		while ns > export_nside:
+			e >>= 2
+			ns >>= 1
+		return tiles.has(e)
+	var shift := 0
+	var ns := nside
+	while ns < export_nside:
+		shift += 2
+		ns <<= 1
+	for t: int in tiles:
+		if (t >> shift) == ipix:
+			return true
+	return false
+
+
+## Throw away and rebuild every resident chunk standing on [param tiles]:
+## the client's visual chunks (removed; _update_terrain queues them again),
+## the server's collision chunks (unloaded; the residency reloads them) and
+## the tasks in flight on either side (their result is dropped, then
+## queued again). Idempotent for anything not on the tiles.
+func _rebuild_chunks_on_tiles(tiles: Dictionary) -> void:
+	if tiles.is_empty():
+		return
+	var n := 0
+	if is_server:
+		for key: String in _server_collision_chunks.keys().duplicate():
+			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key), tiles):
+				_unload_chunk(key)
+				n += 1
+		for key: String in _server_chunk_tasks.keys():
+			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key), tiles):
+				_server_chunk_tasks[key]["evicted"] = true
+				_server_chunk_tasks[key]["reload"] = true
+				n += 1
+		_apply_residency()
+	else:
+		for key: String in _active_chunks.keys().duplicate():
+			var info: Dictionary = _active_chunks[key]
+			if _chunk_touches_tiles(int(info.get("nside", 0)), int(info.get("ipix", -1)), tiles):
+				_remove_chunk(key)
+				n += 1
+		# Tasks already running were stamped with the old generation and are
+		# dropped at assembly; the backlog is stamped when it is submitted.
+	print("[PlanetTerrain] %d chunk(s) de '%s' refait(s) sur les %d tuile(s) d'une ligne profilée née en rattrapage"
+			% [n, planet_data.planet_name, tiles.size()])
+
+
 ## Spawn a bridge for every road/chasm crossing this chunk owns.
 ##
 ## Ownership is by span MIDPOINT, resolved at EXPORT_NSIDE — deliberately not at
@@ -2905,7 +3128,9 @@ func _poll_starved_bridge_plans() -> void:
 func _spawn_bridges(info: Dictionary) -> void:
 	if planet_data == null or int(info.get("lod", 99)) > BridgeSpawner.MAX_LOD:
 		return
-	var spans := planet_data.get_bridge_spans()
+	# Road bridges over the crack field, plus railway viaducts over valleys:
+	# same span shape, same ownership rule, same spawner.
+	var spans := planet_data.get_bridge_spans() + planet_data.get_grade_spans()
 	if spans.is_empty():
 		return
 	var eipix := _get_export_ipix(info)
@@ -2934,8 +3159,7 @@ func _spawn_bridges(info: Dictionary) -> void:
 
 ## Stable identity of a span, independent of the chunk that reported it.
 static func _bridge_span_key(span: Dictionary) -> String:
-	return "f%d_%d" % [int(span.get("feature_id", -1)),
-			int(span.get("along_start", 0.0))]
+	return PlanetData.bridge_span_key(span)
 
 
 ## Drop [param chunk_key]'s claim on every bridge. Nothing is freed here — a
@@ -2989,6 +3213,10 @@ func _remove_chunk(key: String) -> void:
 		info.meadow.queue_free()
 	if info.has("forest") and info.forest:
 		info.forest.queue_free()
+	if info.has("railway_rails") and info.railway_rails:
+		info.railway_rails.queue_free()
+	if info.has("railway_rails_col") and info.railway_rails_col:
+		info.railway_rails_col.queue_free()
 	if info.has("collision_shape") and info.collision_shape:
 		info.collision_shape.queue_free()
 	_active_chunks.erase(key)
@@ -3155,6 +3383,9 @@ var _flight_was_on: bool = false
 ## F to frame a node, or typing coordinates. Rolling the surface by it would fling you across the
 ## globe, so the tracked point is re-seeded from where the camera actually is instead.
 const FLIGHT_JUMP_FRACTION: float = 0.05
+
+## Height above the GROUND at which the "Go to" buttons put the camera, in metres.
+const GOTO_ALTITUDE: float = 200.0
 
 ## Drive the body under the editor camera. Called every frame from _physics_process, editor only.
 func _editor_flight_step() -> void:

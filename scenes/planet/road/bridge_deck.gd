@@ -141,6 +141,11 @@ static func _stations(profile: BridgeProfile, plan: Dictionary,
 	for c in cum:
 		if c > lo and c < hi:
 			raw.append(c)
+	# A profile viaduct's deck follows a kinked profile (GradeProfile.plan_of):
+	# its knots inside the deck are stations too, or the kink would be cut.
+	for e in plan.get("extra_stations", PackedFloat64Array()):
+		if float(e) > lo and float(e) < hi:
+			raw.append(float(e))
 	var sorted := Array(raw)
 	sorted.sort()
 	var out := PackedFloat64Array()
@@ -207,6 +212,10 @@ static func _profiles(profile: BridgeProfile, plan: Dictionary, radius: float,
 		# the end it belongs to and keeps descending from there, so the join is
 		# a change of gradient and never a step.
 		var top: float = r_lo + (r_hi - r_lo) * ((s - deck_lo) / deck_len)
+		# A plan may pin the deck top to a profile of its own instead of the
+		# straight run between the ends (railway viaducts do).
+		if plan.has("top_r_at") and s >= deck_lo and s <= deck_hi:
+			top = float((plan["top_r_at"] as Callable).call(s))
 		if s < deck_lo:
 			d = deck_lo - s
 			t_side = tan_lo

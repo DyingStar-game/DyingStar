@@ -1054,6 +1054,11 @@ func _summarise() -> void:
 		" ".join(parts) if not parts.is_empty() else "none"])
 
 
+## The orchestrator's agent can be freed on disconnect while the autoload keeps its reference.
+func agent_valid() -> bool:
+	return "network_agent" in NetworkOrchestrator and is_instance_valid(NetworkOrchestrator.network_agent)
+
+
 ## Game-specific context: where the local player is, in which frame, and how big the tree hanging
 ## off each planet has grown. The last one is the cost driver of planet_body's 3 Hz refresh, and it
 ## is the number that a zone duplication silently doubles.
@@ -1066,8 +1071,12 @@ func _world_context() -> PackedStringArray:
 	# The local player is the one node whose distance from the world origin sets the f32 quantisation
 	# every other physics number in this log inherits. NetworkOrchestrator owns it; nothing else here
 	# depends on the network being up, so a null agent just drops the field.
-	var agent: Node = NetworkOrchestrator.network_agent if "network_agent" in NetworkOrchestrator else null
-	var me: Node = agent.player_entity if agent != null and "player_entity" in agent else null
+	var agent: Node = NetworkOrchestrator.network_agent if agent_valid() else null
+	# UNTYPED on purpose: player_entity is a dangling reference for the few frames between the old
+	# player being freed (respawn, zone change) and the new one being assigned, and assigning a freed
+	# instance to a typed Node var raises "Trying to assign invalid previously freed instance".
+	var me_ref: Variant = agent.player_entity if agent != null and "player_entity" in agent else null
+	var me: Node = me_ref if is_instance_valid(me_ref) and me_ref is Node else null
 	if me is Node3D and (me as Node3D).is_inside_tree():
 		var me3: Node3D = me as Node3D
 		# NOT "%.3e": GDScript's % operator has no scientific conversion, so that spec raised

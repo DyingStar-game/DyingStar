@@ -91,7 +91,7 @@ const TELEPORT_TARGETS := {
 	## tilt of 15 degrees keeps the star between -3 and +27 degrees over the year. Grazing light and
 	## maximum extinction at once — the hardest case in the model.
 	"sandbox_polar": {
-		"planet": "tarsis_3",
+		"planet": "tarsis_8",
 		"pos": Vector3(1296735.8, 6216897.1, 225010.8),
 	},
 }

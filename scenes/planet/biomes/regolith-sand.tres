@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b0hlj46g7i244"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "regolith-sand"
+biome_index = 101
+display_name = "Sand"
+description = "Sand-sized grains of the host rock, forming ripples and dunes."
+category = "barren"
+color = Color(0.851, 0.776, 0.604, 1)
+terrain_roughness = 0.5
+detail_texture_scale = 3.0

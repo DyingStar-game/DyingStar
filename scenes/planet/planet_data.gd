@@ -119,14 +119,16 @@ var chunk_data_version: String = ""
 ## Maximum quadtree subdivision depth. Higher = smaller finest chunks.
 @export var max_quadtree_depth: int = 13
 
-@export_group("Corundum override")
-## TEMPORARY whole-planet switch for the "milky corundum with iron" look +
-## procedural blocky crack network.  When true, every chunk is rendered with
-## the aride_desert-corundum_plateau material (and, once Phase 2 lands, carved
-## with the crack network) regardless of its actual biome.  Later this can be
-## turned OFF and the same logic driven by the QGIS corundum_plateau biome
-## polygon instead — no code change, just flip this flag.
-@export var corundum_override_whole_planet: bool = false
+@export_group("Corundum default biome")
+## Makes aride_desert-corundum_plateau the planet's DEFAULT biome: the "milky
+## corundum with iron" look + the procedural blocky crack network, wherever no
+## populate zone names a biome. A zone whose biome_type resolves to a
+## BiomeDefinition wins over it — its colour, its detail texture, its own
+## material, and NO crack (the cracks are corundum geology, they stop at the
+## zone edge, in the mesh and in the collision alike). A zone that names no
+## biome (rock_type or colour only) does not count: corundum stays underneath.
+## See [method corundum_applies_at] for the one rule every path shares.
+@export var corundum_default_biome: bool = false
 ## Approximate size of a monolithic block between cracks, in metres.
 @export var crack_spacing_m: float = 90.0
 ## Width of each carved crack at the surface, in metres.
@@ -362,6 +364,50 @@ var _bridge_plans_built: bool = false
 var _bridge_plans_mutex: Mutex = Mutex.new()
 var _whole_roads_by_fid: Dictionary = {}
 var _bridge_profile_cache: BridgeProfile = null
+
+## Grade-limited lines — railways and highways / roads with a
+## `max_slope_degrees`: one longitudinal profile per feature (see
+## GradeProfile), the viaduct spans it implies, their deck plans and the bed
+## exclusions under the decks. Same discipline as the bridge tables above:
+## built ONCE on the main thread (warm_grade_profiles) before any mesh worker
+## needs them, because the bed builder on a worker and the viaduct spawner on
+## the main thread must read the same numbers.
+var _grade_profiles: Dictionary = {}          # feature_id → profile
+var _grade_spans: Array = []                  # viaduct spans, kind railway / profiled_road
+var _grade_plans: Dictionary = {}             # span key → deck plan
+var _grade_excl: Dictionary = {}              # feature_id → Array[Vector2] merged
+var _grade_built: bool = false
+var _grade_mutex: Mutex = Mutex.new()
+## Lines refused at warm-up for a tile not yet downloaded: {road, tiles}.
+## Same discipline as _bridge_spans_starved — the tiles are queued on the
+## streaming source and retry_starved_grade_profiles() replays the line once
+## they are all on disk. Measured on tarsis_3: the 600 km railway crosses
+## ~190 export tiles at ~150 ms each over the network, so the 5 s prefetch
+## below could never build it and, without this, the session kept the
+## verdict "0 profile(s)" for ever — the track ran into the hills.
+var _grade_starved: Array[Dictionary] = []
+## Export ipix (at export_nside) under a starved line and their neighbours:
+## a chunk there bakes a bed that will change the moment the profile is
+## born, so its geometry must not be persisted meanwhile.
+var _grade_starved_tiles: Dictionary = {}
+## feature_id → the export tiles under that line — the 5 m walk of a 600 km
+## line costs seconds, so it is done once, not on every retry.
+var _grade_tiles_by_fid: Dictionary = {}
+## Profiles being computed on the WorkerThreadPool: feature_id →
+## {task_id, result_ref, road, tiles}. GradeProfile.compute samples the
+## terrain every 5 m: 12 s for tarsis_3's 556 km railway and ~35 s for its
+## graded road, measured — far too long for the main thread at planet load,
+## where warm_grade_profiles() used to run it. A line being profiled is
+## handled exactly like a starved one: its chunks are provisional, and they
+## are rebuilt by PlanetTerrain when the profile is born.
+var _grade_pending: Dictionary = {}
+## -1 unknown, 0 no, 1 yes — memoised because collision_detail_nside() asks
+## on every residency pass.
+var _has_railways: int = -1
+var _has_profiled_lines: int = -1
+var _has_relief_biomes: int = -1
+## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
+const GRADE_PREFETCH_BUDGET_MS := 5000
 
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
@@ -2058,6 +2104,7 @@ func clear_bridge_spans() -> void:
 	_bridge_spans_built = false
 	_bridge_spans_mutex.unlock()
 	clear_bridge_plans()
+	clear_grade_profiles()
 
 
 ## The bridge settings for this planet, defaulting to a stock profile.
@@ -2071,7 +2118,15 @@ func get_bridge_profile() -> BridgeProfile:
 
 ## Stable identity of a span. Mirrors PlanetTerrain's bridge-node key.
 static func bridge_span_key(span: Dictionary) -> String:
-	return "f%d_%d" % [int(span.get("feature_id", -1)),
+	# Profile spans (railway / graded road) never collide with crack spans of
+	# the same feature: they get a kind prefix.
+	var kind := str(span.get("kind", ""))
+	var prefix := ""
+	if kind == GradeSettings.SPAN_KIND_RAILWAY:
+		prefix = "rw_"
+	elif kind == GradeSettings.SPAN_KIND_ROAD:
+		prefix = "rp_"
+	return "%sf%d_%d" % [prefix, int(span.get("feature_id", -1)),
 			int(span.get("along_start", 0.0))]
 
 
@@ -2092,7 +2147,7 @@ func get_bridge_plan(span: Dictionary) -> Dictionary:
 ## non-overlapping [lo, hi] along-road intervals. The ribbon must not be drawn
 ## there: it would lie across the ramps and hang over the gorge.
 func get_bridge_exclusions_for_feature(fid: int) -> Array:
-	if not corundum_override_whole_planet:
+	if not corundum_default_biome:
 		return []
 	_ensure_bridge_plans()
 	return _bridge_excl.get(fid, [])
@@ -2283,6 +2338,465 @@ func _build_bridge_plans() -> void:
 				+ "Even sloping the deck to its cap leaves more height than a "
 				+ "ramp can make up — the road crosses a cliff rather than a "
 				+ "gorge, or ends at one. Re-route it or move the crossing.")
+
+
+# ── Grade-limited lines (railways, graded roads) ──────────────────────────
+
+## Does this planet's modifier pack carry at least one railway? Cheap and
+## available before the profiles are built: the pack's string table lists
+## every road_type it interns. Gates the RAIL-only work (modules, rail
+## collision); the profile machinery asks has_profiled_lines() instead.
+func has_railways() -> bool:
+	if _has_railways >= 0:
+		return _has_railways == 1
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		# Not memoised: the pack may simply not be configured yet.
+		return false
+	var strings: Array = pack.get_manifest().get("strings", [])
+	var found := strings.has("railway")
+	_has_railways = 1 if found else 0
+	return found
+
+
+## Does this planet carry a region of a biome with a relief noise
+## (BiomeDefinition.relief_*)? The pack's string table interns every zone's
+## biome_type, so this is known before any tile is read. Gates the fine server
+## collision: the relief exists in the mesh only where the grid can carry it,
+## and the collision must be on that same grid.
+func has_relief_biomes() -> bool:
+	if _has_relief_biomes >= 0:
+		return _has_relief_biomes == 1
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return false
+	var strings: Array = pack.get_manifest().get("strings", [])
+	var found := false
+	_auto_load_all_biomes()
+	for bd in _all_biomes:
+		if bd != null and bd.has_relief() and strings.has(bd.biome_type):
+			found = true
+			break
+	_has_relief_biomes = 1 if found else 0
+	return found
+
+
+## Fingerprint of the biome regions part (parts/biomes.dsmpart) as echoed into
+## the pack manifest, "" when the pack has no regions. PlanetTerrain folds it
+## into the chunk cache key.
+func populate_fingerprint() -> String:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	return str((parts.get("populate", {}) as Dictionary).get("fingerprint", ""))
+
+
+## Does this planet carry any line that rides a grade-limited profile — a
+## railway, or a highway / road exported with a max slope? The road part
+## manifest counts the latter ("profiled_roads", written by export_roads.py),
+## so the answer is known before any tile is read.
+func has_profiled_lines() -> bool:
+	if _has_profiled_lines >= 0:
+		return _has_profiled_lines == 1
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return false
+	var found := has_railways()
+	if not found:
+		var parts: Dictionary = pack.get_manifest().get("parts", {})
+		var road_part: Dictionary = parts.get("road", {})
+		found = int(road_part.get("profiled_roads", 0)) > 0
+	_has_profiled_lines = 1 if found else 0
+	return found
+
+
+## Build every profile now, on the calling thread. Call it on the MAIN
+## thread at load time, right after warm_bridge_plans(): the bed builders on
+## the mesh workers read these tables, and PlanetData's lazy caches are not
+## thread-safe to populate.
+func warm_grade_profiles() -> void:
+	if not has_profiled_lines():
+		return
+	# Outside the lock, like the bridge prefetch: fetch_now blocks.
+	_prefetch_grade_tiles()
+	_ensure_grade_profiles()
+
+
+func clear_grade_profiles() -> void:
+	# A task in flight cannot be cancelled: let it finish, then forget it.
+	for fid: int in _grade_pending.keys():
+		WorkerThreadPool.wait_for_task_completion(int((_grade_pending[fid] as Dictionary)["task_id"]))
+	_grade_pending.clear()
+	_grade_mutex.lock()
+	_grade_profiles.clear()
+	_grade_spans.clear()
+	_grade_plans.clear()
+	_grade_excl.clear()
+	_grade_starved.clear()
+	_grade_starved_tiles.clear()
+	_grade_tiles_by_fid.clear()
+	_grade_built = false
+	_has_railways = -1
+	_has_profiled_lines = -1
+	_has_relief_biomes = -1
+	_grade_mutex.unlock()
+
+
+## The profile of line [param fid], or {} when it has none (not profiled, or
+## its terrain tiles were not available when the profiles were built).
+func get_grade_profile(fid: int) -> Dictionary:
+	if not has_profiled_lines():
+		return {}
+	_ensure_grade_profiles()
+	return _grade_profiles.get(fid, {})
+
+
+## Every viaduct span of every profiled line (kind railway / profiled_road),
+## in RoadBridge's shape.
+func get_grade_spans() -> Array:
+	if not has_profiled_lines():
+		return []
+	_ensure_grade_profiles()
+	return _grade_spans
+
+
+## The deck plan of a viaduct [param span], or {} when it has none.
+func get_grade_plan(span: Dictionary) -> Dictionary:
+	if not has_profiled_lines():
+		return {}
+	_ensure_grade_profiles()
+	return _grade_plans.get(bridge_span_key(span), {})
+
+
+## Stretches of line [param fid] a viaduct deck occupies, as merged, sorted
+## [lo, hi] along-intervals. The bed must not be built there.
+func get_grade_exclusions_for_feature(fid: int) -> Array:
+	if not has_profiled_lines():
+		return []
+	_ensure_grade_profiles()
+	return _grade_excl.get(fid, [])
+
+
+func _ensure_grade_profiles() -> void:
+	if _grade_built:
+		return
+	_grade_mutex.lock()
+	if not _grade_built:
+		_build_grade_profiles()
+		_grade_built = true
+	_grade_mutex.unlock()
+
+
+## The whole profiled-line records, from the pack's coarsest level.
+func _whole_profiled_lines() -> Array:
+	var out: Array = []
+	for r in get_whole_roads():
+		if GradeSettings.is_profiled(r):
+			out.append(r)
+	return out
+
+
+## Export tiles under the stations of [param road], every STATION_STEP_M —
+## exactly the directions GradeProfile.compute samples. Memoised per feature.
+func _grade_tiles(road: Dictionary) -> Dictionary:
+	var fid := int(road.get("feature_id", -1))
+	if _grade_tiles_by_fid.has(fid):
+		return _grade_tiles_by_fid[fid]
+	var cl: PackedVector2Array = road.get("centerline", PackedVector2Array())
+	var cum: PackedFloat64Array = road.get("_cum_lengths", PackedFloat64Array())
+	var tiles := {}
+	if cl.size() < 2 or cum.size() != cl.size():
+		return tiles
+	var s: float = cum[0]
+	var last: float = cum[cum.size() - 1]
+	while s <= last:
+		tiles[HEALPix.vec2pix_nest(export_nside, GradeGeom.dir_at(cl, cum, s))] = true
+		s += GradeSettings.STATION_STEP_M
+	tiles[HEALPix.vec2pix_nest(export_nside, GradeGeom.dir_at(cl, cum, last))] = true
+	_grade_tiles_by_fid[fid] = tiles
+	return tiles
+
+
+## The export tiles under line [param fid] AND their eight neighbours: the
+## bed's skirts and a cutting's walls reach a few tens of metres past the
+## centreline, so a chunk in the tile next door can carry them too. This is
+## the set of chunks whose geometry depends on the line's profile.
+func grade_line_export_tiles(fid: int) -> Dictionary:
+	var out := {}
+	var tiles: Dictionary = _grade_tiles_by_fid.get(fid, {})
+	for ipix: int in tiles:
+		out[ipix] = true
+		for nb: int in HEALPix.get_neighbors_nest(export_nside, ipix).values():
+			if nb >= 0:
+				out[nb] = true
+	return out
+
+
+## Are the tiles of a line all readable? Returns
+## { missing: int, hopeless: bool } — hopeless when at least one missing tile
+## can never arrive (no streaming source, or the service publishes no tile
+## there and the pack has nothing to climb to), so waiting would be for
+## nothing. Queues every missing tile on the streaming source otherwise.
+func _grade_tiles_missing(tiles: Dictionary) -> Dictionary:
+	var missing := 0
+	var hopeless := false
+	for ipix: int in tiles:
+		if _grade_tile_available(ipix):
+			continue
+		missing += 1
+		if remote_source == null:
+			hopeless = true
+			continue
+		if remote_source.presence_of(export_nside, ipix) == RemoteTileSource.PRESENCE_NO \
+				and not (pack_is_sparse() and _finest_present_ancestor(ipix, export_nside).y > 0):
+			hopeless = true
+			continue
+		remote_source.queue(export_nside, ipix)
+	return {"missing": missing, "hopeless": hopeless}
+
+
+## Is the export tile [param ipix] readable for the profile sampler — stored,
+## or pruned from a sparse pack with a present ancestor to climb to?
+func _grade_tile_available(ipix: int) -> bool:
+	if not load_chunk_floats(ipix, export_nside).is_empty():
+		return true
+	if not pack_is_sparse():
+		return false
+	var up := _finest_present_ancestor(ipix, export_nside)
+	return up.y > 0 and not _climb_is_guess(export_nside, ipix)
+
+
+## Blocking, budgeted fetch of the tiles under every profiled line (remote packs).
+func _prefetch_grade_tiles() -> void:
+	if remote_source == null:
+		return
+	var wanted := {}
+	for r in _whole_profiled_lines():
+		wanted.merge(_grade_tiles(r))
+	if wanted.is_empty():
+		return
+	var deadline := Time.get_ticks_msec() + GRADE_PREFETCH_BUDGET_MS
+	var got := 0
+	for ipix: int in wanted:
+		if Time.get_ticks_msec() > deadline:
+			break
+		if remote_source.fetch_now(export_nside, ipix):
+			got += 1
+	print("[PlanetData] préchargement des voies ferrées de '%s' : %d/%d tuile(s) n%d en %d ms max"
+			% [planet_name, got, wanted.size(), export_nside, GRADE_PREFETCH_BUDGET_MS])
+
+
+## The profile sampler: the finest tile under each direction, resolved per
+## call (a line crosses hundreds of export tiles, unlike a bridge span).
+## Identical on the client and the server, which is the whole point.
+func grade_height_sampler() -> Callable:
+	var ns := export_nside
+	# One frame for the whole walk: the per-tile precomputations (floats,
+	# face, neighbours) are then paid once per tile crossed, not per station.
+	var frame := make_tile_frame()
+	return func(dir: Vector3) -> float:
+		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, ns, frame)
+
+
+func _build_grade_profiles() -> void:
+	var lines := _whole_profiled_lines()
+	if lines.is_empty():
+		return
+	var skipped := 0
+	var t0 := Time.get_ticks_msec()
+	for road in lines:
+		# Every tile under the line must be readable: one missing tile would
+		# make sample_height_for_direction fall back to the flat global map
+		# for that stretch, and the client and the server would then lay the
+		# track at different altitudes. No profile, no bed on the profile —
+		# the chunk falls back to the terrain-hugging ribbon instead. A line
+		# whose tiles are merely not downloaded yet is set aside for the
+		# catch-up, not abandoned (see retry_starved_grade_profiles); one
+		# whose tiles are all here is profiled on a worker thread.
+		var tiles := _grade_tiles(road)
+		var state := _grade_tiles_missing(tiles)
+		if int(state["missing"]) > 0:
+			if not bool(state["hopeless"]):
+				_grade_starve(road, tiles)
+			else:
+				skipped += 1
+			continue
+		_grade_submit(road, tiles)
+	print("[PlanetData] %s — %d ms" % [_grade_summary(), Time.get_ticks_msec() - t0]
+			+ (" — %d skipped (terrain tiles not available)" % skipped if skipped else "")
+			+ (" — %d awaiting tiles" % _grade_starved.size() if not _grade_starved.is_empty() else "")
+			+ (" — %d profiling in the background" % _grade_pending.size() if not _grade_pending.is_empty() else ""))
+	if skipped:
+		push_warning("[PlanetData] '%s': %d line(s) left without a profile; their bed "
+				% [planet_name, skipped]
+				+ "follows the terrain until the elevation tiles under them are available.")
+
+
+## Set [param road] aside until its [param tiles] are all on disk.
+func _grade_starve(road: Dictionary, tiles: Dictionary) -> void:
+	_grade_starved.append({"road": road, "tiles": tiles})
+	_grade_starve_tiles_only(tiles)
+
+
+## Profile [param road] on a worker thread; its chunks stay provisional
+## until retry_starved_grade_profiles() collects the result. The sampler and
+## its TileFrame are created INSIDE the task: a frame is a per-thread cache,
+## like the one every mesh task makes for itself.
+func _grade_submit(road: Dictionary, tiles: Dictionary) -> void:
+	var fid := int(road.get("feature_id", -1))
+	if _grade_pending.has(fid):
+		return
+	var result_ref: Array = [null]
+	var task_id := WorkerThreadPool.add_task(
+		func():
+			result_ref[0] = GradeProfile.compute(road, grade_height_sampler()),
+		false, "grade profile %s fid %d" % [planet_name, fid])
+	_grade_pending[fid] = {"task_id": task_id, "result_ref": result_ref,
+			"road": road, "tiles": tiles}
+	_grade_starve_tiles_only(tiles)
+
+
+## Register a computed profile: the profile itself, its viaduct spans and
+## deck plans, and the bed exclusions under the decks. Returns false when
+## GradeProfile itself said no (a definitive refusal).
+func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
+	if not bool(profile.get("ok", false)):
+		return false
+	var fid := int(road.get("feature_id", -1))
+	_grade_profiles[fid] = profile
+	var plans: Array = []
+	for span in GradeProfile.spans_of(profile, road):
+		var plan := GradeProfile.plan_of(profile, span, road, radius)
+		if not bool(plan.get("ok", false)):
+			continue
+		_grade_spans.append(span)
+		_grade_plans[bridge_span_key(span)] = plan
+		plans.append(plan)
+	_grade_excl[fid] = GradeProfile.exclusions_of(plans)
+	return true
+
+
+func _grade_summary() -> String:
+	var n_gorge := 0
+	var n_tunnel := 0
+	var n_bridge := 0
+	for fid: int in _grade_profiles:
+		for seg in (_grade_profiles[fid] as Dictionary)["segments"]:
+			match int(seg["kind"]):
+				GradeSettings.Kind.GORGE: n_gorge += 1
+				GradeSettings.Kind.TUNNEL: n_tunnel += 1
+				GradeSettings.Kind.BRIDGE: n_bridge += 1
+	return "%d line profile(s) on '%s' — %d cutting(s), %d tunnel(s), %d viaduct(s)" % [
+			_grade_profiles.size(), planet_name, n_gorge, n_tunnel, n_bridge]
+
+
+## Is at least one profiled line still without its profile — waiting for
+## its tiles, or being computed?
+func grade_profiles_incomplete() -> bool:
+	return not _grade_starved.is_empty() or not _grade_pending.is_empty()
+
+
+## Does the geometry of chunk (nside, ipix) depend on a profile that is not
+## born yet? True inside the tiles of a starved or pending line (and their
+## neighbours): such a chunk carries the terrain-hugging ribbon now and the
+## bed, the cutting or the tunnel later, so PlanetTerrain must not persist it.
+func grade_chunk_provisional(nside: int, ipix: int) -> bool:
+	if _grade_starved_tiles.is_empty() or nside <= 0 or ipix < 0:
+		return false
+	if nside >= export_nside:
+		var e := ipix
+		var ns := nside
+		while ns > export_nside:
+			e >>= 2
+			ns >>= 1
+		return _grade_starved_tiles.has(e)
+	# A chunk coarser than the export level covers several export tiles:
+	# provisional if any starved tile descends from it.
+	var shift := 0
+	var ns := nside
+	while ns < export_nside:
+		shift += 2
+		ns <<= 1
+	for t: int in _grade_starved_tiles:
+		if (t >> shift) == ipix:
+			return true
+	return false
+
+
+## Collect the profiles whose computation has finished, and submit the
+## starved lines whose tiles have all arrived. Returns the feature ids whose
+## profile was just born — empty when nothing moved. Called periodically by
+## PlanetTerrain while grade_profiles_incomplete(); the tile walk is
+## memoised, so a retry costs one availability check per tile.
+## [param block] waits for the computations instead of skipping the ones
+## still running — tools only; a task once waited for is gone from the pool,
+## so is_task_completed() cannot be asked about it afterwards.
+func retry_starved_grade_profiles(block: bool = false) -> PackedInt32Array:
+	var born := PackedInt32Array()
+	if _grade_starved.is_empty() and _grade_pending.is_empty():
+		return born
+	_grade_mutex.lock()
+	for fid: int in _grade_pending.keys():
+		var entry: Dictionary = _grade_pending[fid]
+		if not block and not WorkerThreadPool.is_task_completed(int(entry["task_id"])):
+			continue
+		WorkerThreadPool.wait_for_task_completion(int(entry["task_id"]))
+		_grade_pending.erase(fid)
+		var profile: Dictionary = entry["result_ref"][0] if entry["result_ref"][0] != null else {}
+		if _grade_register(entry["road"], profile):
+			born.append(fid)
+	var pending := _grade_starved.duplicate()
+	_grade_starved.clear()
+	for entry: Dictionary in pending:
+		var tiles: Dictionary = entry["tiles"]
+		var state := _grade_tiles_missing(tiles)
+		if int(state["missing"]) > 0:
+			if not bool(state["hopeless"]):
+				_grade_starved.append(entry)
+			continue
+		_grade_submit(entry["road"], tiles)
+	# The provisional set shrinks to what is still waiting or computing.
+	_grade_starved_tiles.clear()
+	for entry: Dictionary in _grade_starved:
+		_grade_starve_tiles_only(entry["tiles"])
+	for fid: int in _grade_pending:
+		_grade_starve_tiles_only((_grade_pending[fid] as Dictionary)["tiles"])
+	_grade_mutex.unlock()
+	if not born.is_empty():
+		print("[PlanetData] %d profil(s) de ligne né(s) sur '%s' — %s — %d ligne(s) en attente de tuile, %d en calcul"
+				% [born.size(), planet_name, _grade_summary(), _grade_starved.size(), _grade_pending.size()])
+	return born
+
+
+## BLOCKING: bring every profile to birth now — fetch the tiles of the
+## starved lines (streaming source), wait for the worker tasks, register.
+## For tools and tests (the railway probe); the game never waits, it polls.
+## Returns the feature ids born. [param max_rounds] bounds the fetch loops.
+func flush_grade_profiles(max_rounds: int = 3) -> PackedInt32Array:
+	var born := PackedInt32Array()
+	if not has_profiled_lines():
+		return born
+	_ensure_grade_profiles()
+	for _round in max_rounds:
+		if not grade_profiles_incomplete():
+			break
+		if remote_source != null:
+			for entry: Dictionary in _grade_starved:
+				for ipix: int in (entry["tiles"] as Dictionary):
+					remote_source.fetch_now(export_nside, ipix)
+		born.append_array(retry_starved_grade_profiles(true))
+	# Tasks submitted by the last retry.
+	born.append_array(retry_starved_grade_profiles(true))
+	return born
+
+
+func _grade_starve_tiles_only(tiles: Dictionary) -> void:
+	for ipix: int in tiles:
+		_grade_starved_tiles[ipix] = true
+		for nb: int in HEALPix.get_neighbors_nest(export_nside, ipix).values():
+			if nb >= 0:
+				_grade_starved_tiles[nb] = true
 
 
 ## Vertex spacing, in metres, of the FINEST terrain mesh this planet builds.
@@ -2872,12 +3386,39 @@ func sample_height_at(dir: Vector3) -> float:
 ## sample nside so a coarse chunk is validated against its own coarse tile
 ## rather than the finest level (which legitimately differs by kilometres on
 ## steep terrain and would false-trip the cache validator). nside <= 0 → finest.
+## The biome relief (BiomeRelief, ≤ a couple of metres) is deliberately NOT
+## added: it stays under the 3 m anti-tunnel margin and far under the cache
+## validator's tolerance. The crack, at up to crack_depth_m, is not in that
+## league, so it follows the same zone rule as the chunks (corundum_applies_at):
+## no crack is added where another biome's zone has left the ground uncarved.
 func crack_aware_surface_dist(dir: Vector3, nside: int = -1) -> float:
 	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside)
-	if corundum_override_whole_planet:
+	if corundum_applies_at(dir):
 		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
 			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0)
 	return radius + alt
+
+
+## Whether the corundum default biome is what the ground is made of along
+## [param dir]: the flag is on and no populate zone naming a KNOWN biome covers
+## the point. This is the single rule PlanetChunk applies per vertex, in the
+## visual mesh and in the collision shape — see [method corundum_applies_to_zone]
+## for the zone half, which the chunks call with the zone they already looked up.
+func corundum_applies_at(dir: Vector3) -> bool:
+	if not corundum_default_biome:
+		return false
+	return biome_at(dir) == null
+
+
+## The zone half of [method corundum_applies_at]: given the FIRST populate zone
+## containing a vertex (empty when none does), does corundum still apply there?
+## Only a zone whose biome_type resolves to a BiomeDefinition displaces it.
+func corundum_applies_to_zone(first_zone: Dictionary) -> bool:
+	if not corundum_default_biome:
+		return false
+	if first_zone.is_empty():
+		return true
+	return get_biome_by_type(String(first_zone.get("biome_type", ""))) == null
 
 
 ## HEALPix nside for server COLLISION chunks pinned under active bodies.
@@ -2889,10 +3430,18 @@ func crack_aware_surface_dist(dir: Vector3, nside: int = -1) -> float:
 ## the collision surface is bit-identical to the visual mesh and the player
 ## can't stand above/below the rendered cracks.
 ##
+## A profiled line (railway, graded road) is the other case: its cuttings are
+## carved only into the finest grid (GradeBed.carve_enabled) and its bed's
+## collision is part of the
+## chunk shape, so a coarse collision would leave a player standing inside a
+## cutting's coarse faces.
+##
 ## Only applied in file (chunk-heightmap) mode, whose shape task re-resolves
 ## the export tiles per vertex.
 func collision_detail_nside() -> int:
-	if chunk_heightmaps_dir == "" or not corundum_override_whole_planet:
+	if chunk_heightmaps_dir == "" \
+			or not (corundum_default_biome or has_profiled_lines()
+					or has_relief_biomes()):
 		return export_nside
 	return 1 << max_quadtree_depth
 
@@ -3035,11 +3584,17 @@ const _BIOME_FILES: PackedStringArray = [
 	"rocky_landform-perforated_limestone.tres",
 	"volcanic_geothermal-pele_haire.tres",
 	"icy-frozen_methane.tres",
+	"regolith-dust.tres", "regolith-sand.tres", "regolith-gravel.tres",
+	"regolith-cobble.tres", "regolith-crystal.tres",
+	"outcrop-plateau.tres", "outcrop-volcanic.tres",
+	"volcanic_geothermal-fumarole_field.tres",
 ]
 
 
 ## Scan the biomes directory and load every .tres file as a BiomeDefinition.
-## Called once; the result is cached in the static _all_biomes array.
+## Called once; the result is cached in the static _all_biomes array — for the
+## whole editor process: a .tres added while the editor runs is only seen after
+## a restart (symptom: get_biome_by_type() returns null for the new biome).
 ## Uses DirAccess first (works in editor), then falls back to the hardcoded
 ## _BIOME_FILES list (required for exported / packed builds).
 static func _auto_load_all_biomes() -> void:
@@ -3333,6 +3888,13 @@ const DETAIL_BY_BIOME: Dictionary = {
 	"aride_desert-corundum_plateau": 2,                            # rock
 	"aride_desert-corundum_sand_desert": 1,                        # sand
 	"rocky_landform-arachnoide": 2,                                # rock
+	# regolith / outcrop: the rock is a per-zone attribute (rock_type), the
+	# detail layer only says how fine the ground is.
+	"regolith-dust": 1, "regolith-sand": 1,                          # sand
+	"regolith-gravel": 8,                                            # lunar ground (grainy)
+	"regolith-cobble": 2, "regolith-crystal": 2,                     # rock
+	"outcrop-plateau": 2, "outcrop-volcanic": 2,                     # rock
+	"volcanic_geothermal-fumarole_field": 2,                         # rock
 	"rocky_landform-perforated_limestone": 2,                     # rock
 	"volcanic_geothermal-lava_dome": 2,                            # rock
 	"volcanic_geothermal-pele_haire": 2,                          # rock

@@ -21,7 +21,7 @@ const STITCH_RIGHT  := 2
 const STITCH_BOTTOM := 4
 const STITCH_TOP    := 8
 
-# One-shot guard for the corundum-override debug print (temporary).
+# One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
 
 
@@ -151,6 +151,32 @@ static func generate_mesh(
 	var _cr_arr: Array = _rbd[3]     # sub-pixel craters
 	var _road_arr: Array = _rbd[4]   # road pieces, already clipped to this chunk
 
+	# Cuttings of profiled lines (railways, graded roads): the per-vertex rule
+	# of GradeBed.apply, armed only on the finest grid (see
+	# GradeBed.carve_enabled) and only when such a line
+	# with a profile runs through this chunk or one of its eight neighbours.
+	# `_rw_band` remembers which vertices it moved, so the normal pass below
+	# carves its gradient probes the same way (sharp walls) and nowhere else.
+	var _rw_ctx: Dictionary = {}
+	var _rw_band := PackedByteArray()
+	# Final coarse heights in double, for the refinement patch (the f32
+	# _chunk_heights below is for the skirt sizing only).
+	var _rw_h := PackedFloat64Array()
+	# On the coarser LODs the cutting is not carved (the grid cannot hold it),
+	# but the terrain is still shaved down to the bed top around the line so
+	# it never pierces the bed — `_rw_shave` (visual only, see GradeBed).
+	var _rw_shave: Dictionary = {}
+	if hp_mode and res > 0 and data.has_profiled_lines():
+		var _rw_pitch := HEALPix.pixel_side_length(hp_nside, data.radius) / float(res)
+		_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _rw_pitch)
+		if not _rw_ctx.is_empty():
+			_rw_band.resize((res + 1) * (res + 1))
+			_rw_h.resize((res + 1) * (res + 1))
+		else:
+			_rw_shave = GradeBed.make_coarse_ctx(data, hp_nside, hp_ipix, _rw_pitch)
+			if not _rw_shave.is_empty():
+				_rw_band.resize((res + 1) * (res + 1))
+
 	# Quick check: does this chunk potentially overlap any liquid/shallow zone?
 	# Derived from recipe data — no GeoJSON needed.
 	var has_liquid_overlap := false
@@ -168,6 +194,16 @@ static func generate_mesh(
 	var has_cliff_overlap := false
 	var has_dry_river_bed_overlap := false
 	var _dry_river_bed_zones: Array[Dictionary] = []  # linear features matching dry riverbed
+	# Biomes whose BiomeDefinition carries a (non-liquid) terrain_material_override
+	# — an outcrop's hex-tiled rock, say: their quads leave the base surface for
+	# one surface per material. Index 0 = none; k = _surface_mats[k - 1].
+	var has_surface_override_overlap := false
+	var _surface_mats: Array = []
+	var _surface_mat_index: Dictionary = {}   # material path → k
+	# Biomes with a relief noise (BiomeDefinition.relief_*): k = _relief_bds[k - 1].
+	var has_relief_overlap := false
+	var _relief_bds: Array = []
+	var _relief_index: Dictionary = {}        # biome_type → k
 
 	# Road overlay. Normally the tile from terrainmodifier.pack already holds
 	# this chunk's own disjoint stretch, so the test is just "is it empty".
@@ -236,6 +272,17 @@ static func generate_mesh(
 			has_cliff_overlap = true
 		if SpatialCraterTerrain.is_crater_biome(_bd):
 			has_crater_overlap = true
+		if _bd.terrain_material_override and not _bd.is_liquid:
+			has_surface_override_overlap = true
+			var _om_path: String = _bd.terrain_material_override.resource_path
+			if not _surface_mat_index.has(_om_path):
+				_surface_mats.append(_bd.terrain_material_override)
+				_surface_mat_index[_om_path] = _surface_mats.size()
+		if _bd.has_relief():
+			has_relief_overlap = true
+			if not _relief_index.has(_bd.biome_type):
+				_relief_bds.append(_bd)
+				_relief_index[_bd.biome_type] = _relief_bds.size()
 
 	# Linear features (rivers, canyons, crevasses, lava rivers, etc.).
 	for _lf in _lf_arr:
@@ -307,6 +354,19 @@ static func generate_mesh(
 	if has_forest_ground_overlap:
 		is_forest_ground_vertex.resize(vert_count)
 
+	# Per-vertex: surface-override material index (0 = none).
+	var surface_override_vertex: PackedInt32Array = PackedInt32Array()
+	if has_surface_override_overlap:
+		surface_override_vertex.resize(vert_count)
+
+	# Per-vertex: relief biome index (0 = none) and its road weight, so the
+	# normal probes re-evaluate the same relief at their own directions.
+	var relief_vertex: PackedInt32Array = PackedInt32Array()
+	var relief_road_w: PackedFloat32Array = PackedFloat32Array()
+	if has_relief_overlap:
+		relief_vertex.resize(vert_count)
+		relief_road_w.resize(vert_count)
+
 	# Per-vertex: cliff flag for cliff face material overlay.
 	var is_cliff_vertex: PackedByteArray = PackedByteArray()
 	if has_cliff_overlap:
@@ -352,25 +412,33 @@ static func generate_mesh(
 	# Ensure the detail texture array is built so the shader has it.
 	data.get_detail_texture_array()
 
-	# ── Corundum whole-planet override ─────────────────────────────
-	# When enabled, every vertex is coloured / detailed as the
-	# aride_desert-corundum_plateau biome regardless of its real biome.
-	# (Phase 2 will also carve the procedural crack network here.)
+	# ── Corundum default biome ─────────────────────────────────────
+	# When enabled, a vertex that no populate zone assigns a KNOWN biome is
+	# coloured / detailed as aride_desert-corundum_plateau and carved with the
+	# crack network; a vertex inside a biome's zone is that biome's, uncarved
+	# (PlanetData.corundum_applies_to_zone — the collision applies the same).
 	var _corundum_bd: BiomeDefinition = null
-	# Mesh vertex spacing (m) for this chunk — used to LOD-fade the crack carve
-	# so mid-distance chunks don't alias the crack pattern into a spiky mess.
+	# Mesh vertex spacing (m) for this chunk — the LOD gate of every feature
+	# that must exist in the mesh and the collision alike (the crack carve is
+	# skipped past half its width, the biome relief past half its wavelength).
 	var _crack_vtx_spacing := 0.0
-	if data.corundum_override_whole_planet:
+	if hp_mode and res > 0:
+		_crack_vtx_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
+				* data.radius / float(res)
+	if data.corundum_default_biome:
 		_corundum_bd = data.get_biome_by_type(
 				ArideDesertCorundumPlateauTerrain.BIOME_TYPE)
-		if hp_mode and res > 0:
-			_crack_vtx_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
-					* data.radius / float(res)
 		if not _corundum_logged:
 			_corundum_logged = true
-			print("[PlanetChunk] corundum override ACTIVE on planet=%s  bd=%s  spacing=%.0f width=%.0f depth=%.0f" % [
+			print("[PlanetChunk] corundum default biome ACTIVE on planet=%s  bd=%s  spacing=%.0f width=%.0f depth=%.0f" % [
 				data.planet_name, str(_corundum_bd != null),
 				data.crack_spacing_m, data.crack_width_m, data.crack_depth_m])
+
+	# Roads flatten the relief: the chunk's pieces plus its neighbours'.
+	var _relief_roads: Array = []
+	var _relief_mpd := data.radius * PI / 180.0
+	if has_relief_overlap and hp_mode:
+		_relief_roads = BiomeRelief.gather_roads(data, hp_nside, hp_ipix)
 
 	# ── Recipe crater data ─────────────────────────────────────────
 	# Craters from recipes are too small to resolve in the recipe heightmap
@@ -471,6 +539,12 @@ static func generate_mesh(
 					first_zone = _vz[0]
 					bd = data.get_biome_by_type(first_zone.get("biome_type", ""))
 					zone_color_hex = first_zone.get("color_hex", "")
+			# The corundum default yields to a zone that names a known biome —
+			# and only to that (a first_zone with no biome is a rock_type /
+			# colour-only zone, which sits ON the corundum, not instead of it).
+			# Geometry hangs on this flag alone, never on _corundum_bd: the
+			# collision shape carves by the same rule and has no colour to bake.
+			var _cor_here: bool = data.corundum_applies_to_zone(first_zone)
 
 			# River depression — V-shaped cross-section with progressive width.
 			# The recipe heightmap resolution (~122m/pixel at nside=64) is too
@@ -552,6 +626,13 @@ static func generate_mesh(
 			if has_lunar_ground_overlap and bd \
 					and SpatialLunarGroundTerrain.matches_zone(bd):
 				is_lunar_ground_vertex[idx] = 1
+
+			# Surface override — the biome's own material replaces the base
+			# shader on this vertex's quads (outcrop rock, tinted by COLOR).
+			if has_surface_override_overlap and bd \
+					and bd.terrain_material_override and not bd.is_liquid:
+				surface_override_vertex[idx] = int(_surface_mat_index.get(
+						bd.terrain_material_override.resource_path, 0))
 
 			# Meadow — flag for grass ground material overlay surface.
 			if has_meadow_overlap and bd \
@@ -748,16 +829,28 @@ static func generate_mesh(
 						_cl_drop = RockyLandformCliffTerrain.DROP_M
 					height -= RockyLandformCliffTerrain.height_offset(_cl_dist_m, _cl_drop)
 
+			# ── Biome relief ───────────────────────────────────────
+			# Pure function of dir + the biome's constants, flattened near
+			# roads; the collision builder applies the very same call.
+			if has_relief_overlap and bd and bd.has_relief():
+				var _rl_w := BiomeRelief.road_weight(HEALPix.vec2lonlat(dir),
+						_relief_roads, _relief_mpd, _crack_vtx_spacing)
+				if _rl_w > 0.0:
+					height += _rl_w * BiomeRelief.offset(dir, data.radius, bd, _crack_vtx_spacing)
+					relief_vertex[idx] = int(_relief_index.get(bd.biome_type, 0))
+					relief_road_w[idx] = _rl_w
+
 			# ── Corundum crack network ─────────────────────────────
 			# Pure function of dir + PlanetData params → identical on the
-			# server collision path (see generate_collision_shape).  Gate the
-			# GEOMETRY on the override flag (not the biome definition) so the
-			# visual carve always matches collision — the biome definition is
-			# only needed below for the crack COLOUR staining.
-			# Offset (≤ 0) is reused below to stain the crack interiors.
+			# server collision path (see generate_collision_shape), which
+			# gates it on the very same zone rule (corundum_applies_to_zone):
+			# a crack stops at the edge of another biome's zone, in both.
+			# Offset (≤ 0) is reused below to stain the crack interiors; the
+			# INF edge distance of an uncarved vertex also tells the normal
+			# pass below that its probes have nothing to carve.
 			var _crack_off := 0.0
 			var _crack_d := INF
-			if data.corundum_override_whole_planet:
+			if _cor_here:
 				_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 					dir, data.radius, data.crack_spacing_m,
 					data.crack_width_m, _crack_vtx_spacing)
@@ -765,6 +858,20 @@ static func generate_mesh(
 					_crack_d, data.crack_width_m, data.crack_depth_m)
 				height += _crack_off
 			_crack_edge[idx] = _crack_d
+
+			# ── Profiled-line cutting ──────────────────────────────
+			# Same rule, same pieces, same profile as the collision builder.
+			if not _rw_ctx.is_empty():
+				var _rw_carved := GradeBed.apply(height, HEALPix.vec2lonlat(dir), _rw_ctx)
+				if _rw_carved != height:
+					height = _rw_carved
+					_rw_band[idx] = 1
+				_rw_h[idx] = height
+			elif not _rw_shave.is_empty():
+				var _rw_shaved := GradeBed.apply(height, HEALPix.vec2lonlat(dir), _rw_shave)
+				if _rw_shaved != height:
+					height = _rw_shaved
+					_rw_band[idx] = 1
 
 			_chunk_heights[idx] = height
 			vertices[idx] = _world_to_local(dir * (data.radius + height), cc_f32, _wp_f32)
@@ -777,13 +884,21 @@ static func generate_mesh(
 			# boundaries at ~6 m spacing, making expensive multi-sample
 			# jittering unnecessary.
 			var base_col := Color(0.45, 0.35, 0.25)  # fallback
-			if _corundum_bd:
+			if _cor_here and _corundum_bd:
 				# Milky-white ↔ iron-yellow mottling ("iron impurities"),
 				# then darken/stain the interiors of the cracks.
 				base_col = ArideDesertCorundumPlateauTerrain.iron_tint(
 					dir, data.radius, _corundum_bd.color)
 				base_col = ArideDesertCorundumPlateauTerrain.crack_stain(
 					base_col, _crack_off, data.crack_depth_m)
+			elif first_zone.has("rock_type") \
+					and RockCatalogue.has(str(first_zone["rock_type"])):
+				# The zone's rock: every shade between its light and dark
+				# tints, from a deterministic mottling (same on every client).
+				var _rock_fallback: Color = bd.color if bd \
+						else (Color(zone_color_hex) if not zone_color_hex.is_empty() else base_col)
+				base_col = RockCatalogue.tint(dir, data.radius,
+						str(first_zone["rock_type"]), _rock_fallback)
 			elif bd:
 				base_col = bd.color
 			elif not zone_color_hex.is_empty():
@@ -793,7 +908,7 @@ static func generate_mesh(
 			colors[idx] = base_col
 
 			# Detail texture info → UV2.
-			var _detail_bd: BiomeDefinition = _corundum_bd if _corundum_bd else bd
+			var _detail_bd: BiomeDefinition = _corundum_bd if (_cor_here and _corundum_bd) else bd
 			var detail_layer := data.get_detail_layer(_detail_bd)
 			var detail_scale := data.get_detail_scale_for_layer(detail_layer)
 			uv2s[idx] = Vector2(float(detail_layer), detail_scale)
@@ -922,7 +1037,7 @@ static func generate_mesh(
 				# offsets soient nuls par construction : le résultat est identique, sans
 				# les quatre Voronoï. Mesuré à 39 % du temps des normales, soit 29 % de la
 				# génération d'un chunk sur tarsis_3.
-				if data.corundum_override_whole_planet \
+				if data.corundum_default_biome \
 						and _crack_edge[idx] < _crack_skip_m:
 					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
 						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
@@ -932,6 +1047,22 @@ static func generate_mesh(
 						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
 					h_t += ArideDesertCorundumPlateauTerrain.crack_offset(
 						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+				# Biome relief on the probes: the vertex's own road weight is
+				# reused (a quarter-cell away it is the same to the eye), the
+				# noise is evaluated at each probe's exact direction.
+				if has_relief_overlap and relief_vertex[idx] > 0:
+					var _rl_bd: BiomeDefinition = _relief_bds[relief_vertex[idx] - 1]
+					var _rl_wv: float = relief_road_w[idx]
+					h_l += _rl_wv * BiomeRelief.offset(dir_l, data.radius, _rl_bd, _crack_vtx_spacing)
+					h_r += _rl_wv * BiomeRelief.offset(dir_r, data.radius, _rl_bd, _crack_vtx_spacing)
+					h_b += _rl_wv * BiomeRelief.offset(dir_b, data.radius, _rl_bd, _crack_vtx_spacing)
+					h_t += _rl_wv * BiomeRelief.offset(dir_t, data.radius, _rl_bd, _crack_vtx_spacing)
+				var _rw_probe_ctx: Dictionary = _rw_ctx if not _rw_ctx.is_empty() else _rw_shave
+				if not _rw_probe_ctx.is_empty() and _rw_band[idx] == 1:
+					h_l = GradeBed.apply(h_l, HEALPix.vec2lonlat(dir_l), _rw_probe_ctx)
+					h_r = GradeBed.apply(h_r, HEALPix.vec2lonlat(dir_r), _rw_probe_ctx)
+					h_b = GradeBed.apply(h_b, HEALPix.vec2lonlat(dir_b), _rw_probe_ctx)
+					h_t = GradeBed.apply(h_t, HEALPix.vec2lonlat(dir_t), _rw_probe_ctx)
 				if _pf:
 					_t_ck += Time.get_ticks_usec() - _t_sub
 				var world_l := dir_l * (data.radius + h_l)
@@ -1192,6 +1323,25 @@ static func generate_mesh(
 				for oi in range(qi, qi + 6):
 					forest_ground_indices.append(indices[oi])
 
+	# --- collect surface-override quad indices, one list per material -------
+	# Any flagged vertex claims the quad (like the other overlays); the
+	# material is the first flagged vertex's, so a quad never straddles two.
+	var surface_override_indices: Array = []   # k-1 → PackedInt32Array
+	if has_surface_override_overlap:
+		for _k in _surface_mats.size():
+			surface_override_indices.append(PackedInt32Array())
+		for qi in range(0, res * res * 6, 6):
+			var _k := 0
+			for oi in [qi, qi + 2, qi + 1, qi + 5]:
+				_k = surface_override_vertex[indices[oi]]
+				if _k > 0:
+					break
+			if _k > 0:
+				var _lst: PackedInt32Array = surface_override_indices[_k - 1]
+				for oi in range(qi, qi + 6):
+					_lst.append(indices[oi])
+				surface_override_indices[_k - 1] = _lst
+
 	# --- collect cliff face indices for steep triangles only ---------------
 	# Only triangles within the cliff biome whose face normal is steep
 	# (dot with planet-up < SLOPE_THRESHOLD) get the cliff ORMMaterial3D.
@@ -1265,12 +1415,62 @@ static func generate_mesh(
 					and (is_cliff_vertex[i00] == 1 \
 					or is_cliff_vertex[i10] == 1 \
 					or is_cliff_vertex[i01] == 1 \
-					or is_cliff_vertex[i11] == 1)):
+					or is_cliff_vertex[i11] == 1)) \
+				or (has_surface_override_overlap \
+					and (surface_override_vertex[i00] > 0 \
+					or surface_override_vertex[i10] > 0 \
+					or surface_override_vertex[i01] > 0 \
+					or surface_override_vertex[i11] > 0)):
 			_quad_has_overlay[qi_idx] = 1
+	# Profile refinement patch: the cells a cutting or a tunnel mouth runs
+	# through are re-meshed finer (GradeRefine); their coarse quads leave the
+	# base surface and the patch's triangles join it below.
+	var _rw_ref: Dictionary = {}
+	if not _rw_ctx.is_empty():
+		var _rw_ref_sampler := func(d: Vector3) -> float:
+			return data.sample_height_for_direction(d, _export_ipix, -1,
+					Vector2i(-1, -1), null, _sample_nside, _frame)
+		# Overlay quads stay coarse (lava, meadow… are drawn by their own
+		# surface on the coarse grid) — EXCEPT the surface-override quads: an
+		# outcrop's rock is a full replacement of the base surface, so its
+		# cells must be refined like any other, and their patch triangles are
+		# routed to the override surface below.
+		var _rw_skip := _quad_has_overlay
+		if has_surface_override_overlap:
+			_rw_skip = _quad_has_overlay.duplicate()
+			for qi_idx in _grid_quad_count:
+				if _rw_skip[qi_idx] == 0:
+					continue
+				var qi := qi_idx * 6
+				if surface_override_vertex[indices[qi]] > 0 \
+						or surface_override_vertex[indices[qi + 2]] > 0 \
+						or surface_override_vertex[indices[qi + 1]] > 0 \
+						or surface_override_vertex[indices[qi + 5]] > 0:
+					_rw_skip[qi_idx] = 0
+		_rw_ref = GradeRefine.build(data, hp_nside, hp_ipix, res, grid_dirs, _rw_h,
+				_rw_band, _rw_ctx, _rw_skip, _rw_ref_sampler, true)
+	var _rw_ref_quads: PackedByteArray = _rw_ref.get("quads", PackedByteArray())
+	# A refined override quad is drawn by its patch triangles, not by the
+	# coarse quad: drop those from the override lists.
+	if not _rw_ref_quads.is_empty() and not surface_override_indices.is_empty():
+		for _k in surface_override_indices.size():
+			var _src: PackedInt32Array = surface_override_indices[_k]
+			var _kept := PackedInt32Array()
+			for oi in range(0, _src.size(), 6):
+				# The quad id is recovered from its first index (row-major grid).
+				var _v0 := _src[oi]
+				@warning_ignore("integer_division")
+				var _qi_idx := (_v0 / (res + 1)) * res + (_v0 % (res + 1))
+				if _qi_idx < _grid_quad_count and _rw_ref_quads[_qi_idx] == 1:
+					continue
+				for j in 6:
+					_kept.append(_src[oi + j])
+			surface_override_indices[_k] = _kept
 	# Build filtered base indices: non-overlay grid quads + all skirt tris.
 	var base_indices := PackedInt32Array()
 	for qi_idx in _grid_quad_count:
-		if _quad_has_overlay[qi_idx] == 0:
+		if _quad_has_overlay[qi_idx] == 0 \
+				and (_rw_ref_quads.is_empty() or _rw_ref_quads[qi_idx] == 0):
 			var qi := qi_idx * 6
 			for oi in range(qi, qi + 6):
 				base_indices.append(indices[oi])
@@ -1278,6 +1478,75 @@ static func generate_mesh(
 	var _skirt_start := _grid_quad_count * 6
 	for si in range(_skirt_start, indices.size()):
 		base_indices.append(indices[si])
+	# Append the refinement patch: its sub-vertices go at the end of every
+	# per-vertex array (colour bilinear from the cell's corners, detail layer
+	# from the nearest corner, no skirt offset), its triangles re-indexed.
+	if not _rw_ref.is_empty():
+		var _rf_pos: Array = _rw_ref["pos"]
+		var _rf_dirs: PackedVector3Array = _rw_ref["dirs"]
+		var _rf_norms: PackedVector3Array = _rw_ref["normals"]
+		var _rf_quad: PackedInt32Array = _rw_ref["quad_of"]
+		var _rf_frac: PackedVector2Array = _rw_ref["frac"]
+		var _rf_base := vertices.size()
+		var _rf_ncoarse := (res + 1) * (res + 1)
+		for _ri in _rf_pos.size():
+			var _qi: int = _rf_quad[_ri]
+			@warning_ignore("integer_division")
+			var _c00: int = (_qi / res) * (res + 1) + (_qi % res)
+			var _c10 := _c00 + 1
+			var _c01 := _c00 + res + 1
+			var _c11 := _c01 + 1
+			var _f: Vector2 = _rf_frac[_ri]
+			var _near: int = _c00
+			if _f.x >= 0.5:
+				_near = _c11 if _f.y >= 0.5 else _c10
+			elif _f.y >= 0.5:
+				_near = _c01
+			vertices.append(_world_to_local(_rf_pos[_ri], cc_f32, _wp_f32))
+			normals.append(_rf_norms[_ri])
+			uvs.append(PlanetData.direction_to_uv(_rf_dirs[_ri]))
+			uv2s.append(uv2s[_near])
+			colors.append(colors[_c00].lerp(colors[_c10], _f.x).lerp(
+					colors[_c01].lerp(colors[_c11], _f.x), _f.y))
+			skirt_offsets.append(0.0)
+			skirt_offsets.append(0.0)
+			skirt_offsets.append(0.0)
+		var _rf_tris: PackedInt32Array = _rw_ref["tris"]
+		var _patch_base := PackedInt32Array()
+		var _patch_over: Array = []          # k-1 → PackedInt32Array
+		for _k in surface_override_indices.size():
+			_patch_over.append(PackedInt32Array())
+		for _t0 in range(0, _rf_tris.size(), 3):
+			# The cell of this sub-triangle: any of its sub-vertices tells
+			# (a refined cell has no triangle made of three coarse corners).
+			var _cell := -1
+			for j in 3:
+				var _ti := _rf_tris[_t0 + j]
+				if _ti >= _rf_ncoarse:
+					_cell = _rf_quad[_ti - _rf_ncoarse]
+					break
+			var _dst_k := -1
+			if _cell >= 0 and has_surface_override_overlap:
+				var _cq := _cell * 6
+				for oi in [_cq, _cq + 2, _cq + 1, _cq + 5]:
+					var _kk := surface_override_vertex[indices[oi]]
+					if _kk > 0:
+						_dst_k = _kk - 1
+						break
+			for j in 3:
+				var _ti := _rf_tris[_t0 + j]
+				var _vi := _ti if _ti < _rf_ncoarse else _rf_base + (_ti - _rf_ncoarse)
+				if _dst_k >= 0:
+					var _lst: PackedInt32Array = _patch_over[_dst_k]
+					_lst.append(_vi)
+					_patch_over[_dst_k] = _lst
+				else:
+					_patch_base.append(_vi)
+		base_indices.append_array(_patch_base)
+		for _k in _patch_over.size():
+			var _merged: PackedInt32Array = surface_override_indices[_k]
+			_merged.append_array(_patch_over[_k])
+			surface_override_indices[_k] = _merged
 
 	# --- compute tangents ---------------------------------------------------
 	# Required for normal-mapped terrain materials. We compute tangents
@@ -1340,6 +1609,28 @@ static func generate_mesh(
 			var lv_surface_idx := mesh.get_surface_count()
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, lv_arrays)
 			mesh.surface_set_material(lv_surface_idx, lava_mat)
+
+	# --- surface override: the biome's own material, tinted by COLOR ---------
+	# One surface per material; same vertex arrays as the base (the shader
+	# reads COLOR for the rock tint and shares the instance uniforms) plus
+	# CUSTOM0 so planet_surface.gdshader keeps its triplanar position.
+	for _k in surface_override_indices.size():
+		var _so_idx: PackedInt32Array = surface_override_indices[_k]
+		if _so_idx.is_empty():
+			continue
+		var _so_arrays: Array = []
+		_so_arrays.resize(Mesh.ARRAY_MAX)
+		_so_arrays[Mesh.ARRAY_VERTEX]  = vertices
+		_so_arrays[Mesh.ARRAY_NORMAL]  = normals
+		_so_arrays[Mesh.ARRAY_TEX_UV]  = uvs
+		_so_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+		_so_arrays[Mesh.ARRAY_COLOR]   = colors
+		_so_arrays[Mesh.ARRAY_CUSTOM0] = skirt_offsets
+		_so_arrays[Mesh.ARRAY_INDEX]   = _so_idx
+		var _so_surface := mesh.get_surface_count()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _so_arrays,
+				[], {}, _c0_fmt)
+		mesh.surface_set_material(_so_surface, _surface_mats[_k])
 
 	# --- lunar ground: ORMMaterial3D overlay on lunar ground terrain ----------
 	# Build local tiling UVs from world-space position so the texture repeats
@@ -1535,8 +1826,20 @@ static func generate_mesh(
 					RoadTerrain.prepare_zone(_z, data.radius)
 					_rd_sources.append(_z)
 
+		# Profiled lines — railways and graded roads — leave the ribbon path:
+		# their bed is built at the profile's altitude by GradeBed below. One
+		# WITHOUT a profile (tiles not available at warm-up) stays here and
+		# gets the terrain-hugging ribbon on its material — the degraded mode.
+		var _rw_zones: Array = []
+
 		for _rd_zone in _rd_sources:
 			var _rd_rt := RoadTerrain.get_road_type(_rd_zone)
+			if GradeSettings.is_profiled(_rd_zone):
+				var _rw_prof: Dictionary = data.get_grade_profile(
+					int(_rd_zone.get("feature_id", -1)))
+				if not _rw_prof.is_empty():
+					_rw_zones.append([_rd_zone, _rw_prof])
+					continue
 			# Half-width in metres, then degrees. The pack pre-computes both
 			# (width_m is the total width, halved once by the decoder); the
 			# legacy path gets them from RoadTerrain.prepare_zone(). This is
@@ -1610,7 +1913,7 @@ static func generate_mesh(
 			# so it would stretch one quad straight over the gorge.
 			var _rd_pieces: Array = [[_rd_cl_full, _rd_cum_full]]
 			if _rd_cum_full.size() == _rd_cl_full.size() \
-					and data.corundum_override_whole_planet:
+					and data.corundum_default_biome:
 				var _rd_excl: Array = data.get_bridge_exclusions_for_feature(
 					int(_rd_zone.get("feature_id", -1)))
 				if not _rd_excl.is_empty():
@@ -1705,6 +2008,86 @@ static func generate_mesh(
 			grp["norms"] = grp_norms
 			grp["uvs"] = grp_uvs
 			grp["indices"] = grp_indices
+
+		# --- profiled bed: level top on the profile, skirts to the ground -----
+		# Railways (ballast) and graded roads (asphalt) share this builder; each
+		# zone goes to the road_groups entry of its own bed material, so the UV
+		# recentring and the surface emission below serve them unchanged.
+		# The stations are spaced on the chunk's own vertex pitch, the same
+		# rule the collision builder applies, so the two beds are one geometry.
+		if not _rw_zones.is_empty() and hp_mode:
+			var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
+					/ float(res) * 0.5
+			var _rw_sampler := func(d: Vector3) -> float:
+				return data.sample_height_for_direction(d, _export_ipix, -1,
+						Vector2i(-1, -1), null, _sample_nside, _frame)
+			# Tunnels (tube + headwalls) only where the grid is fine enough to
+			# be carved — the same gate as the cuttings, so a coarse LOD shows
+			# the mountain whole rather than a tube buried in it.
+			var _rw_struct: Dictionary = {}
+			if not _rw_ctx.is_empty():
+				var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
+				if not road_groups.has(_rw_smat):
+					road_groups[_rw_smat] = {
+						"verts": PackedVector3Array(),
+						"norms": PackedVector3Array(),
+						"uvs": PackedVector2Array(),
+						"indices": PackedInt32Array(),
+						"tile_m": RoadTerrain.get_tile_size("railway"),
+					}
+				_rw_struct = road_groups[_rw_smat]
+			for _rw_pair in _rw_zones:
+				var _rw_zone: Dictionary = _rw_pair[0]
+				var _rw_prof: Dictionary = _rw_pair[1]
+				var _rw_fid := int(_rw_zone.get("feature_id", -1))
+				var _rw_rt := RoadTerrain.get_road_type(_rw_zone)
+				var _rw_mat := GradeSettings.bed_material_of(_rw_zone)
+				if not road_groups.has(_rw_mat):
+					road_groups[_rw_mat] = {
+						"verts": PackedVector3Array(),
+						"norms": PackedVector3Array(),
+						"uvs": PackedVector2Array(),
+						"indices": PackedInt32Array(),
+						"tile_m": RoadTerrain.get_tile_size(_rw_rt),
+					}
+				var _rw_grp: Dictionary = road_groups[_rw_mat]
+				var _rw_verts: PackedVector3Array = _rw_grp["verts"]
+				var _rw_norms: PackedVector3Array = _rw_grp["norms"]
+				var _rw_uvs: PackedVector2Array = _rw_grp["uvs"]
+				var _rw_indices: PackedInt32Array = _rw_grp["indices"]
+				var _rw_cl: PackedVector2Array = _rw_zone.get("centerline", PackedVector2Array())
+				var _rw_cum: PackedFloat64Array = _rw_zone.get("_cum_lengths", PackedFloat64Array())
+				var _rw_bed := GradeBed.build_piece(_rw_cl, _rw_cum,
+					_rw_prof, data.get_grade_exclusions_for_feature(_rw_fid),
+					_rd_m_per_deg, data.radius, _rw_sampler, _rw_step_m, cc_f32,
+					true, true)
+				var _rw_base := _rw_verts.size()
+				_rw_verts.append_array(_rw_bed["verts"])
+				_rw_norms.append_array(_rw_bed["norms"])
+				_rw_uvs.append_array(_rw_bed["uvs"])
+				for _rw_i in (_rw_bed["indices"] as PackedInt32Array):
+					_rw_indices.append(_rw_base + _rw_i)
+				_rw_grp["verts"] = _rw_verts
+				_rw_grp["norms"] = _rw_norms
+				_rw_grp["uvs"] = _rw_uvs
+				_rw_grp["indices"] = _rw_indices
+				if not _rw_struct.is_empty():
+					var _rw_tun := GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_prof,
+						data.radius, cc_f32, true, true)
+					var _rw_sv: PackedVector3Array = _rw_struct["verts"]
+					var _rw_sn: PackedVector3Array = _rw_struct["norms"]
+					var _rw_su: PackedVector2Array = _rw_struct["uvs"]
+					var _rw_si: PackedInt32Array = _rw_struct["indices"]
+					var _rw_sbase := _rw_sv.size()
+					_rw_sv.append_array(_rw_tun["verts"])
+					_rw_sn.append_array(_rw_tun["norms"])
+					_rw_su.append_array(_rw_tun["uvs"])
+					for _rw_j in (_rw_tun["indices"] as PackedInt32Array):
+						_rw_si.append(_rw_sbase + _rw_j)
+					_rw_struct["verts"] = _rw_sv
+					_rw_struct["norms"] = _rw_sn
+					_rw_struct["uvs"] = _rw_su
+					_rw_struct["indices"] = _rw_si
 
 		# Offset flow-aligned UVs per group so values stay near zero
 		# (prevents GPU float32 precision artifacts on large planets).
@@ -2353,12 +2736,30 @@ static func generate_collision_shape(
 	var _col_lf_arr: Array = []
 	var _col_rf_arr: Array = []
 	var _col_cr_arr: Array = []
+	# Profiled beds ride their own profile, not the terrain, so unlike the road
+	# ribbon they DO get collision — built into this very shape (same origin,
+	# same lifetime) from the chunk's own clipped pieces.
+	var _col_rw: Array = []
 	if hp_mode:
 		var _col_eipix := _export_ipix
 		_col_pz_zones = data.get_chunk_populate_zones(_col_eipix)
 		_col_lf_arr = data.get_chunk_linear_features(_col_eipix)
 		_col_rf_arr = data.get_chunk_radial_features(_col_eipix)
 		_col_cr_arr = data.get_chunk_craters(_col_eipix)
+		if data.has_profiled_lines():
+			for _rw_r in GradeBed.profiled_pieces(data.get_roads_for_chunk(hp_nside, hp_ipix)):
+				var _rw_p: Dictionary = data.get_grade_profile(int(_rw_r.get("feature_id", -1)))
+				if not _rw_p.is_empty():
+					_col_rw.append([_rw_r, _rw_p])
+	# Profiled-line cuttings, on the same finest-grid gate as the visual mesh.
+	var _col_rw_ctx: Dictionary = {}
+	var _col_rw_band := PackedByteArray()
+	var _col_rw_h := PackedFloat64Array()
+	if hp_mode and data.has_profiled_lines():
+		_col_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _col_crack_spacing)
+		if not _col_rw_ctx.is_empty():
+			_col_rw_band.resize((res + 1) * (res + 1))
+			_col_rw_h.resize((res + 1) * (res + 1))
 
 	var has_liquid_overlap := false
 	var has_linear_overlap := false
@@ -2368,6 +2769,8 @@ static func generate_collision_shape(
 	var has_cliff_overlap := false
 	var has_river_overlap := false
 	var _col_river_zones: Array[Dictionary] = []
+	# Biome relief (same gate, same roads, same call as generate_mesh).
+	var has_relief_overlap := false
 
 	# Populate zones (polygon/point biomes).
 	for _pz in _col_pz_zones:
@@ -2375,6 +2778,8 @@ static func generate_collision_shape(
 		var _bd = data.get_biome_by_type(_bt)
 		if _bd == null:
 			continue
+		if _bd.has_relief():
+			has_relief_overlap = true
 		if _bd.is_liquid and data.has_ocean:
 			has_liquid_overlap = true
 		if CaveTerrain.is_cave_biome(_bd) \
@@ -2386,6 +2791,10 @@ static func generate_collision_shape(
 			has_crater_overlap = true
 		if RockyLandformCliffTerrain.matches_zone(_bd):
 			has_cliff_overlap = true
+	var _col_relief_roads: Array = []
+	var _col_relief_mpd := data.radius * PI / 180.0
+	if has_relief_overlap and hp_mode:
+		_col_relief_roads = BiomeRelief.gather_roads(data, hp_nside, hp_ipix)
 
 	# Linear features.
 	for _lf in _col_lf_arr:
@@ -2647,15 +3056,43 @@ static func generate_collision_shape(
 							height -= RockyLandformCliffTerrain.height_offset(_cl_dist, _cl_drop)
 						break
 
+			# ── Biome relief (collision) ───────────────────────────
+			# The mesh takes the FIRST zone containing the vertex and its biome;
+			# same rule here, same pure offset, same road flattening.
+			if has_relief_overlap:
+				var _rl_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				if not _rl_zones.is_empty():
+					var _rl_bd := data.get_biome_by_type(_rl_zones[0].get("biome_type", ""))
+					if _rl_bd and _rl_bd.has_relief():
+						var _rl_w := BiomeRelief.road_weight(HEALPix.vec2lonlat(dir),
+								_col_relief_roads, _col_relief_mpd, _col_crack_spacing)
+						if _rl_w > 0.0:
+							height += _rl_w * BiomeRelief.offset(dir, data.radius, _rl_bd, _col_crack_spacing)
+
 			# ── Corundum crack network (collision) ─────────────────
 			# Same pure crack_offset() and params as the visual mesh, with the
 			# same LOD fade keyed on this grid's spacing — so where the collision
 			# grid is fine enough it matches the client, and where it's too coarse
 			# it fades to flat (and skips the Voronoi → server stays fast).
-			if data.corundum_override_whole_planet:
+			# Same zone rule too: the mesh carves only where the FIRST zone
+			# containing the vertex names no known biome (corundum by default).
+			var _cor_here := data.corundum_default_biome
+			if _cor_here and not _col_pz_zones.is_empty():
+				var _cor_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				_cor_here = data.corundum_applies_to_zone(
+						_cor_zones[0] if not _cor_zones.is_empty() else {})
+			if _cor_here:
 				height += ArideDesertCorundumPlateauTerrain.crack_offset(
 					dir, data.radius, data.crack_spacing_m,
 					data.crack_width_m, data.crack_depth_m, _col_crack_spacing)
+
+			# ── Profiled-line cutting (collision) ──────────────────
+			if not _col_rw_ctx.is_empty():
+				var _rw_carved := GradeBed.apply(height, HEALPix.vec2lonlat(dir), _col_rw_ctx)
+				if _rw_carved != height:
+					height = _rw_carved
+					_col_rw_band[yi * (res + 1) + xi] = 1
+				_col_rw_h[yi * (res + 1) + xi] = height
 
 			# ── Write final vertex position ────────────────────────
 			if not _is_hole_vertex:
@@ -2685,6 +3122,56 @@ static func generate_collision_shape(
 			faces[fi + 4] = grid[i + res + 1] - col_origin
 			faces[fi + 5] = grid[i + res + 2] - col_origin
 			fi += 6
+
+	# ── Profiled lines: refinement patch, bed, tunnels (collision) ───
+	# Wound with the grid's own sign, so the one-shot flip in
+	# PlanetTerrain._make_chunk_collision_body (navmesh CW-front) treats bed
+	# and ground alike. Stations on the collision grid's pitch, like the mesh.
+	if not _col_rw.is_empty() or not _col_rw_ctx.is_empty():
+		var _rw_outward := true
+		if faces.size() >= 3:
+			var _rw_n := (faces[1] - faces[0]).cross(faces[2] - faces[0])
+			_rw_outward = _rw_n.dot(HEALPix.pix2vec_nest(hp_nside, hp_ipix)) > 0.0
+		var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
+				/ float(res) * 0.5
+		var _rw_mpd := data.radius * PI / 180.0
+		var _rw_sampler := func(d: Vector3) -> float:
+			return data.sample_height_for_direction(d, _height_ipix, -1,
+					Vector2i(-1, -1), null, _height_nside, _frame)
+		# The same patch the mesh builder gets (same grid, same inputs): the
+		# refined cells' coarse faces are dropped and the patch's appended.
+		if not _col_rw_ctx.is_empty():
+			var _rw_ref := GradeRefine.build(data, hp_nside, hp_ipix, res, grid_dirs,
+					_col_rw_h, _col_rw_band, _col_rw_ctx, PackedByteArray(),
+					_rw_sampler, _rw_outward)
+			if not _rw_ref.is_empty():
+				var _rq: PackedByteArray = _rw_ref["quads"]
+				var _kept := PackedVector3Array()
+				for _qi in res * res:
+					if _rq[_qi] == 0:
+						for _e in 6:
+							_kept.append(faces[_qi * 6 + _e])
+				faces = _kept
+				var _rf_pos: Array = _rw_ref["pos"]
+				var _rf_n := (res + 1) * (res + 1)
+				for _ti in (_rw_ref["tris"] as PackedInt32Array):
+					if _ti < _rf_n:
+						faces.append(grid[_ti] - col_origin)
+					else:
+						faces.append((_rf_pos[_ti - _rf_n] as Vector3) - col_origin)
+		for _rw_pair in _col_rw:
+			var _rw_zone: Dictionary = _rw_pair[0]
+			var _rw_cl: PackedVector2Array = _rw_zone.get("centerline", PackedVector2Array())
+			var _rw_cum: PackedFloat64Array = _rw_zone.get("_cum_lengths", PackedFloat64Array())
+			var _rw_bed := GradeBed.build_piece(_rw_cl, _rw_cum, _rw_pair[1],
+				data.get_grade_exclusions_for_feature(int(_rw_zone.get("feature_id", -1))),
+				_rw_mpd, data.radius, _rw_sampler, _rw_step_m, col_origin,
+				false, _rw_outward)
+			faces.append_array(_rw_bed["faces"])
+			if not _col_rw_ctx.is_empty():
+				var _rw_tun := GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_pair[1],
+					data.radius, col_origin, false, _rw_outward)
+				faces.append_array(_rw_tun["faces"])
 
 	var shape := ConcavePolygonShape3D.new()
 	# Zéro = tous les sommets ont lu leur propre tuile ; la forme est persistable.

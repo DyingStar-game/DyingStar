@@ -7,11 +7,17 @@ const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
 ## How long a prop may sit half-received before it counts as lost rather than merely in transit. Well
 ## past any plausible gap between two channels of the same zone entry.
 const STUCK_PROP_MS: int = 8000
-## How long we wait, after the server acknowledged our session (init_ack), for the zone entry that
-## CREATES our own player. The server streams our movement from the first tick, but the creation
-## itself only reaches us once its parent object enters our GORC zones, so a few seconds of "moves
-## for a player that does not exist yet" is normal. Minutes of it is not: the loading splash is
-## lifted by the player itself, so without this watchdog the client sits on it forever.
+## How long we wait, WITHOUT ANY ZONE ENTRY ARRIVING, for the one that CREATES our own player (or
+## its parent). The server streams our movement from the first tick, but the creation itself only
+## reaches us once its parent object enters our GORC zones, so a few seconds of "moves for a player
+## that does not exist yet" is normal. Minutes of it is not: the loading splash is lifted by the
+## player itself, so without this watchdog the client sits on it forever.
+##
+## The clock restarts after every zone entry we finish building, not once at init_ack: Horizon
+## sends the whole zone in a burst (~230 entries in 20 ms) but the client BUILDS them one by one in
+## the inbound drain, and a planet alone (biomes, bridge plans, railway profiles, moons) can hold
+## that drain well past 45 s. Counting from init_ack turned that slow entry into a fake "parent
+## never arrived" while the parent was still queued a few packets further.
 const SPAWN_TIMEOUT_MS: int = 45000
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
@@ -46,8 +52,9 @@ var my_player_uuid: String = ""
 ## True once create_player() actually built our own body. Distinguishes "not spawned YET" (the server
 ## is still streaming the world to us) from "was there and is gone" — only the second one is fatal.
 var my_player_created: bool = false
-## Ticks (ms) at which the server acknowledged the session, i.e. when our spawn became due. -1 until
-## init_ack, and reset to -1 once the body exists so the watchdog stops looking.
+## Ticks (ms) of the last moment our spawn was still plausibly on its way: init_ack, then every zone
+## entry finished since (see SPAWN_TIMEOUT_MS). -1 until init_ack, and reset to -1 once the body
+## exists so the watchdog stops looking.
 var my_player_spawn_due_since: int = -1
 ## The "moves for a player we never built" warning is worth exactly one line, not one per frame.
 var _own_player_missing_reported: bool = false
@@ -344,6 +351,11 @@ func _process(_delta: float) -> void:
 						"gorc_zone_enter":
 							# When an object enter in my zone (GorcPlayer, planet, miningrock...)
 							create_object(event)
+							# The zone is still streaming in, so our parent may simply be further down
+							# the queue: give the watchdog a fresh SPAWN_TIMEOUT_MS from the end of
+							# this build, not from the start (a single planet can outlast the timeout).
+							if my_player_spawn_due_since >= 0 and not my_player_created:
+								my_player_spawn_due_since = Time.get_ticks_msec()
 						"gorc_zone_exit":
 							# When an object exit from my zone (GorcPlayer, planet, miningrock...)
 							delete_object(event)

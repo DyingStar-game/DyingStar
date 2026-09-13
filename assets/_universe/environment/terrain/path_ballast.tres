@@ -1,0 +1,13 @@
+[gd_resource type="ORMMaterial3D" format=3 uid="uid://rp6rp7z95fggt"]
+
+[ext_resource type="Texture2D" uid="uid://dxsq6js1jejgb" path="res://assets/_universe/environment/terrain/cliff_albedo.png" id="albedo"]
+[ext_resource type="Texture2D" uid="uid://b8pbpa4c6iph7" path="res://assets/_universe/environment/terrain/cliff_normal.png" id="normal"]
+[ext_resource type="Texture2D" uid="uid://b1gycoq728hbe" path="res://assets/_universe/environment/terrain/cliff_orm.png" id="orm"]
+
+[resource]
+resource_name = "path_ballast"
+albedo_color = Color(0.58, 0.56, 0.53, 1)
+albedo_texture = ExtResource("albedo")
+orm_texture = ExtResource("orm")
+normal_enabled = true
+normal_texture = ExtResource("normal")
