@@ -52,6 +52,11 @@ var my_player_uuid: String = ""
 ## True once create_player() actually built our own body. Distinguishes "not spawned YET" (the server
 ## is still streaming the world to us) from "was there and is gone" — only the second one is fatal.
 var my_player_created: bool = false
+## True once the disappearance of my own body has been reported (see _watch_own_player_alive).
+var _own_player_lost: bool = false
+## Physics frames between two network heartbeats (~5 s at 60 Hz).
+const _NET_HEARTBEAT: int = 300
+var _net_beat: int = 0
 ## Ticks (ms) of the last moment our spawn was still plausibly on its way: init_ack, then every zone
 ## entry finished since (see SPAWN_TIMEOUT_MS). -1 until init_ack, and reset to -1 once the body
 ## exists so the watchdog stops looking.
@@ -266,6 +271,7 @@ func _process(_delta: float) -> void:
 	var _watch_tok: int = _net_t()
 	_report_stuck_pre_creations()
 	_watch_own_player_spawn()
+	_watch_own_player_alive()
 	_net_t_end("net:watch", _watch_tok)
 	# `net:pending` — the every-30-frames rescan of the two parenting queues. It walks BOTH queues in
 	# full and calls _search_parent_node per entry, so it is a candidate for the ~650 ms of net:poll
@@ -426,6 +432,49 @@ func _process(_delta: float) -> void:
 		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
 	ClientPerf.scope_end("net:poll", _net_tok)
+
+
+## Network heartbeat, deliberately on the PHYSICS loop.
+##
+## set_process(false) does not touch _physics_process, and that is the whole point: the symptom
+## under investigation is a client that freezes with zero events in and out while its camera still
+## answers. If the idle loop were simply switched off, a probe living in it would fall silent and
+## say nothing — the same trap that cost three rounds of the camera hunt. This one keeps talking
+## whatever happens to _process, and reports which loop is actually alive.
+func _physics_process(_delta: float) -> void:
+	_net_beat += 1
+	if _net_beat % _NET_HEARTBEAT != 1:
+		return
+	if socket == null:
+		return
+	var state: int = socket.get_ready_state()
+	print("[net] beat — idle loop %s | socket state %d | sent %d | received %d"
+			% ["on" if is_processing() else "OFF", state, network_events_sent, network_events_received])
+
+
+## Says the moment our own body stops existing. Silent for a whole session when all is well.
+##
+## It lives HERE and not on the player on purpose: a probe carried by the body goes quiet exactly
+## when the body dies, and that silence reads as "nothing happened" — which is how the hunt for
+## the bug above cost three rounds of testing. This node outlives it, so it reports the death
+## instead of sharing it. Kept because losing your own body is never normal, and because the line
+## it prints (why, which ancestors were protected, which delete was held) is what identified the
+## cause in one reproduction.
+func _watch_own_player_alive() -> void:
+	if not my_player_created:
+		return
+	if is_instance_valid(player_entity) and player_entity.is_inside_tree():
+		_own_player_lost = false
+		return
+	if _own_player_lost:
+		return  # said once; saying it every frame would cost more than it explains
+	_own_player_lost = true
+	var why: String = "freed" if not is_instance_valid(player_entity) else "out of the tree"
+	var held: String = "none"
+	if pending_parent_delete_event != null:
+		held = str(pending_parent_delete_event.get("object_id", "?"))
+	push_warning("[client] MY PLAYER IS GONE (%s). ancestors I was protecting: %s | delete held back: %s"
+			% [why, str(my_parents_uuids), held])
 
 
 func _collect_parents_uuids(node: Node) -> Array:
@@ -1221,6 +1270,18 @@ func _update_generic_object(event: Dictionary) -> void:
 
 func delete_player(event: Dictionary) -> void:
 	if not int(event["channel"]) == 0:
+		return
+	# NEVER our own body. players_list holds it alongside every remote one, and this function used to
+	# free whatever uuid it was handed — so a zone exit naming OUR player deleted the body we are
+	# playing, and with it our camera and our input. The view then fell to whatever camera was left
+	# (an NPC's, a truck's mirror) and nothing answered any more.
+	#
+	# A zone exit for ourselves is not something to obey: we are, by construction, always in our own
+	# zone. Whatever made the server or Horizon say otherwise, the body is not ours to delete here —
+	# it is created by create_player and it leaves with the session.
+	if event["object_id"] == my_player_uuid:
+		push_warning("[client] ignoring a zone exit for MY OWN player (%s) — we are always in our own zone"
+				% event["object_id"])
 		return
 	if players_list.has(event["object_id"]):
 		var remote_player = players_list[event["object_id"]]
