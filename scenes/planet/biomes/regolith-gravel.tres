@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://ca10ia5gg4032"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "regolith-gravel"
+biome_index = 102
+display_name = "Gravel"
+description = "Loose angular gravel, a few millimetres to a few centimetres."
+category = "barren"
+color = Color(0.702, 0.647, 0.549, 1)
+terrain_roughness = 0.7
+detail_texture_scale = 3.0

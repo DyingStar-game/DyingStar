@@ -1,0 +1,26 @@
+{
+  "id": "mat_mineral_corundum_outcrop",
+  "display_name": "mat_mineral_corundum_outcrop",
+  "tags": [
+    "rock",
+    "terrain",
+    "ground",
+    "exterior"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "https://polyhaven.com/a/rock_face_03",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_mineral_corundum_outcrop_albedo.png",
+    "normal": "tex_mineral_corundum_outcrop_normal.png",
+    "roughness": "tex_mineral_corundum_outcrop_roughness.png"
+  }
+}

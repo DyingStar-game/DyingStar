@@ -74,10 +74,15 @@ Padding keeps every f32/i32 field 4-byte aligned.
                    u32 feature_id | u32 point_count
                    point_count x { i32 lon | i32 lat | f32 cum_length_m }
     ROAD           u16 road_type_sid | u16 surface_sid | u16 name_sid
-                   u16 lanes (0xFFFF = unset)
+                   u16 lanes (0xFFFF = unset; the number of TRACKS for a railway)
                    f32 width_m (TOTAL width) | f32 total_length_m
                    u32 feature_id | u32 point_count
+                   u8 flags (bit0 = max_slope set) | u8 max_slope_deg | u16 pad
                    point_count x { i32 lon | i32 lat | f32 along_m }
+                   The 4-byte flags/slope tail is record layout 2 (the road part
+                   manifest says "record_layout": 2); layout 1 parts stop at
+                   point_count and the runtime decoder walks 24-byte headers
+                   for them.
     POPULATE       u16 biome_type_sid | u8 coverage | u8 prop_count
                    i32 biome_index | u16 vertex_count | u16 rsv
                    prop_count x { u16 key_sid | u8 vtype | u8 pad | u32 value }
@@ -133,6 +138,11 @@ COVERAGE_BY_NAME = {
 
 #: u16 string id meaning "absent".
 SID_NONE = 0xFFFF
+
+#: ROAD record header size per layout revision (see the format spec above).
+ROAD_HEADER_SIZE = {1: 24, 2: 28}
+ROAD_RECORD_LAYOUT = 2
+ROAD_FLAG_MAX_SLOPE = 1
 
 #: Coordinates are i32 in units of 1e-7 degree.
 COORD_SCALE = 1.0e-7
@@ -220,19 +230,29 @@ def pack_linear(type_sid, profile_sid, width_start_m, width_end_m,
 
 
 def pack_road(road_type_sid, surface_sid, name_sid, lanes, width_m,
-              total_length_m, feature_id, points):
-    """points: iterable of (lon, lat, along_m) from the road's true start."""
+              total_length_m, feature_id, points, max_slope_deg=None):
+    """points: iterable of (lon, lat, along_m) from the road's true start.
+
+    max_slope_deg: integer degrees for a grade-limited road (highway / road with
+    a QGIS max_slope_degrees), None when the road follows the terrain.
+    """
     pts = list(points)
     if len(pts) < 2:
         raise DsmpError("a road needs at least 2 points")
     lanes_v = SID_NONE if lanes is None else int(lanes)
     if lanes_v != SID_NONE and (lanes_v < 0 or lanes_v > 0xFFFE):
         raise DsmpError("lanes %d out of u16 range" % lanes_v)
+    flags, slope_v = 0, 0
+    if max_slope_deg is not None:
+        slope_v = int(max_slope_deg)
+        if slope_v < 0 or slope_v > 90:
+            raise DsmpError("max_slope_deg %d out of range 0..90" % slope_v)
+        flags |= ROAD_FLAG_MAX_SLOPE
     out = bytearray()
     out += struct.pack(
-        "<HHHHffII", _sid(road_type_sid), _sid(surface_sid), _sid(name_sid),
+        "<HHHHffIIBBH", _sid(road_type_sid), _sid(surface_sid), _sid(name_sid),
         lanes_v, float(width_m), float(total_length_m),
-        int(feature_id) & 0xFFFFFFFF, len(pts))
+        int(feature_id) & 0xFFFFFFFF, len(pts), flags, slope_v, 0)
     for lon, lat, along in pts:
         _pt(out, lon, lat, along)
     return bytes(out)

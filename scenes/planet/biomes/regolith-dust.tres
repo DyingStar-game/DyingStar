@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b06alihj374gj"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "regolith-dust"
+biome_index = 100
+display_name = "Dust"
+description = "Very fine particles (silt-sized). Kicks up in storms and under vehicles."
+category = "barren"
+color = Color(0.812, 0.788, 0.749, 1)
+terrain_roughness = 0.3
+detail_texture_scale = 3.0

@@ -1,0 +1,27 @@
+{
+  "id": "mat_mineral_corundum_outcrop_marble_01",
+  "display_name": "mat_mineral_corundum_outcrop_marble_01",
+  "tags": [
+    "rock",
+    "mineral",
+    "ground",
+    "exterior",
+    "terrain"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "https://polyhaven.com/a/marble_rock_01",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_mineral_corundum_outcrop_marble_01_albedo.png",
+    "normal": "tex_mineral_corundum_outcrop_marble_01_normal.png",
+    "roughness": "tex_mineral_corundum_outcrop_marble_01_roughness.png"
+  }
+}

@@ -10,7 +10,10 @@ class_name RoadTerrain
 ## Unlike biome overlays, roads do NOT depress the terrain.  They are
 ## flat texture overlays sitting slightly above the ground to avoid
 ## z-fighting, using flow-aligned UVs so the texture follows the road
-## direction.
+## direction — UNLESS a highway / road carries a `max_slope_degrees`: such a
+## graded road rides a grade-limited profile with cuttings, tunnels and
+## viaducts, built by the same GradeBed / GradeTunnel as a railway, and then
+## it does have its own collision (see GradeSettings).
 ##
 ## The material used depends on road_type × biome crossed:
 ##   • highway / road  → always asphalt (fixed texture)
@@ -26,6 +29,7 @@ const HALF_WIDTH_M := {
 	"road":    3.0,   # 6 m total
 	"path":    1.0,   # 2 m total
 	"trail":   0.5,   # 1 m total
+	"railway": 2.5,   # ballast bed when `tracks` is unset — see RailwaySettings
 }
 
 ## Detection polygon is wider than the visual road so chunk-level sampling
@@ -40,13 +44,19 @@ const TILE_M := {
 	"road":    6.0,
 	"path":    3.0,
 	"trail":   2.0,
+	"railway": 4.0,
 }
 
 ## Small offset above terrain (metres) to prevent z-fighting.
 const SURFACE_OFFSET := 0.05
 
-## Road types that always use asphalt regardless of biome.
-const FIXED_MATERIAL_TYPES: PackedStringArray = ["highway", "road"]
+## Road types whose QGIS `max_slope_degrees` is honoured (the exporter writes
+## the flag only for these; ModifierPack drops it on any other type).
+const GRADED_TYPES: PackedStringArray = ["highway", "road"]
+
+## Road types that always use asphalt regardless of biome. A railway is fixed
+## too, on its own ballast material (see [method get_material_path]).
+const FIXED_MATERIAL_TYPES: PackedStringArray = ["highway", "road", "railway"]
 
 ## Road types that adapt their material to the underlying biome.
 const ADAPTIVE_MATERIAL_TYPES: PackedStringArray = ["path", "trail"]
@@ -96,6 +106,16 @@ static func get_road_type(zone: Dictionary) -> String:
 	return rt
 
 
+## A highway / road with a grade limit set — it is built on a profile.
+static func is_graded_road(zone: Dictionary) -> bool:
+	return get_road_type(zone) in GRADED_TYPES and zone.has("max_slope_degrees")
+
+
+## Steepest grade (rise / run) of a graded road, from its degrees.
+static func max_grade(zone: Dictionary) -> float:
+	return tan(deg_to_rad(clampf(float(zone.get("max_slope_degrees", 0)), 0.0, 89.0)))
+
+
 ## Returns [code]true[/code] if this zone describes a valid road
 ## (has a centerline with ≥ 2 points).
 static func is_road_zone(zone: Dictionary) -> bool:
@@ -112,6 +132,10 @@ static func is_road_zone(zone: Dictionary) -> bool:
 ## `half_width_deg` of its own (width / 2, mislabelled: that value is in metres),
 ## which [method prepare_zone] overwrites with the correct degree value.
 static func get_half_width_m(zone: Dictionary) -> float:
+	# A railway has no `width`: its bed is a function of `tracks` (same rule
+	# in the exporter).
+	if RailwaySettings.is_railway(zone):
+		return RailwaySettings.railway_half_width_m(int(zone.get("tracks", 0)))
 	var width_m: float = float(zone.get("width", 0.0))
 	if width_m > 0.0:
 		return width_m * 0.5
@@ -201,7 +225,7 @@ static func point_on_any_road(lon: float, lat: float, roads: Array,
 		var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
 		if cl.size() < 2:
 			continue
-		var hw_m: float = float(r.get("half_width_m", get_half_width_m(r))) + extra_margin_m
+		var hw_m: float = get_half_width_m(r) + extra_margin_m
 		var hw_deg := hw_m / m_per_deg
 		var hw_sq := hw_deg * hw_deg
 		for i in cl.size() - 1:
@@ -217,10 +241,12 @@ static func is_fixed_material(road_type: String) -> bool:
 
 
 ## Get the material path for a road segment.
-## [param road_type] — "highway", "road", "path", or "trail"
+## [param road_type] — "highway", "road", "path", "trail" or "railway"
 ## [param biome_type] — the biome_type of the terrain under this segment
 ##                       (only used for adaptive road types)
 static func get_material_path(road_type: String, biome_type: String = "") -> String:
+	if road_type == "railway":
+		return RailwaySettings.BALLAST_MATERIAL_PATH
 	if is_fixed_material(road_type):
 		return ASPHALT_MATERIAL_PATH
 	# Adaptive: look up biome → path material.

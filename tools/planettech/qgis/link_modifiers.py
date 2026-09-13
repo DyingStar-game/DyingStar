@@ -183,6 +183,11 @@ def link(planet_name, export_dir=None, verbose=True):
             "source_layer": m.get("source_layer"),
             "counts": m.get("counts", {}),
         }
+        # Per-kind metadata the runtime decoder needs before it reads a tile:
+        # the ROAD record layout revision and whether any road is grade-limited.
+        for key in ("record_layout", "profiled_roads", "fingerprint", "priority_rule"):
+            if key in m:
+                part_info[name][key] = m[key]
 
     # The invariant the whole design rests on: a chunk finer than the deepest
     # baked ROAD level would fall back to a shared ancestor tile, and a shared

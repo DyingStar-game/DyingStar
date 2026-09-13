@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(_REPO, "tools", "planettech", "qgis"))
 from export.planet import dsmp                                    # noqa: E402
 from export.planet import modifier_geom as mg                     # noqa: E402
 from export.planet import roads as roads_mod                      # noqa: E402
+from export.planet import biomes as biomes_mod                    # noqa: E402
 from export.planet.dsmp_strings import StringTable                # noqa: E402
 import link_modifiers                                             # noqa: E402
 
@@ -37,7 +38,7 @@ MPD = mg.m_per_deg(RADIUS)
 #: writer and the GDScript reference writer cannot drift apart silently.
 #: Changing the record layout means changing it here AND there, deliberately.
 CANONICAL_TILE_SHA256 = \
-    "48a8bbc56e8a7627a45e56ca417f4b0ea3d88f5672cc56760c39dd56cdebf0c5"
+    "40cbdc6f494f4d00f2f21ed46feca2329315ef7d4d3dd125e344618565635de7"
 
 
 # ── The canonical tile, byte-identical on both sides ────────────────────
@@ -72,9 +73,6 @@ def _canonical_sha():
     return hashlib.sha256(canonical_tile()).hexdigest()
 
 
-CANONICAL_TILE_SHA256 = _canonical_sha()
-
-
 # ── Record encoding ─────────────────────────────────────────────────────
 
 class TestRecordEncoding(unittest.TestCase):
@@ -106,6 +104,20 @@ class TestRecordEncoding(unittest.TestCase):
         self.assertEqual(len(with_) - len(without), 4, "one extra f32")
         self.assertEqual(without[4], 0, "flags bit0 clear")
         self.assertEqual(with_[4], 1, "flags bit0 set")
+
+    def test_road_max_slope_tail(self):
+        # Layout 2: 4-byte tail after point_count — flags bit0 + degrees.
+        pts = [(1.0, 2.0, 0.0), (1.01, 2.0, 50.0)]
+        plain = dsmp.pack_road(0, 1, 2, 2, 6.0, 50.0, 7, pts)
+        graded = dsmp.pack_road(0, 1, 2, 2, 6.0, 50.0, 7, pts, max_slope_deg=6)
+        self.assertEqual(len(plain), dsmp.ROAD_HEADER_SIZE[2] + 2 * dsmp.POINT_SIZE)
+        self.assertEqual(struct.unpack_from("<BBH", plain, 24), (0, 0, 0))
+        self.assertEqual(struct.unpack_from("<BBH", graded, 24),
+                         (dsmp.ROAD_FLAG_MAX_SLOPE, 6, 0))
+        # The points start right after the tail on both.
+        self.assertEqual(plain[28:], graded[28:])
+        with self.assertRaises(dsmp.DsmpError):
+            dsmp.pack_road(0, 1, 2, 2, 6.0, 50.0, 7, pts, max_slope_deg=91)
 
     def test_road_lanes_unset_sentinel(self):
         r = dsmp.pack_road(0, 0, 0, None, 6.0, 10.0, 0, [(0, 0, 0), (1, 1, 10)])
@@ -402,6 +414,27 @@ class TestRoadPart(unittest.TestCase):
         self.assertEqual(roads_mod.half_width_m({}), 0.5, "defaults to trail")
         self.assertEqual(roads_mod.half_width_m({"width": 0}), 0.5)
 
+    def test_railway_half_width_follows_tracks(self):
+        # One track = a 2.44 m sleeper + 0.5 m shoulders; two tracks add a 1 m gap.
+        self.assertAlmostEqual(roads_mod.railway_half_width_m(1), 1.72)
+        self.assertAlmostEqual(roads_mod.railway_half_width_m(2), 3.44)
+        self.assertAlmostEqual(roads_mod.railway_half_width_m("2"), 3.44)
+        self.assertEqual(roads_mod.railway_half_width_m(None), 2.5)
+        self.assertEqual(roads_mod.railway_half_width_m(0), 2.5)
+        # A railway has no `width`: `tracks` decides.  A stray `width` (legacy
+        # single-table planet) is ignored, and `lanes` — where the track count
+        # lived on that table — still counts when `tracks` is absent.
+        self.assertAlmostEqual(
+            roads_mod.half_width_m({"road_type": "railway", "tracks": 2}), 3.44)
+        self.assertAlmostEqual(
+            roads_mod.half_width_m({"road_type": "railway", "width": 5.0, "lanes": 2}),
+            3.44)
+        self.assertAlmostEqual(
+            roads_mod.half_width_m({"road_type": "railway", "tracks": 1, "lanes": 2}),
+            1.72)
+        self.assertEqual(
+            roads_mod.half_width_m({"road_type": "railway", "width": 5.0}), 2.5)
+
     def test_build_part_partitions_across_levels(self):
         table = StringTable()
         road = {
@@ -420,12 +453,157 @@ class TestRoadPart(unittest.TestCase):
         self.assertGreater(counts[1024], counts[64])
         self.assertGreaterEqual(counts[64], 1)
 
+    def test_build_part_stores_railway_tracks_in_lanes_slot(self):
+        # The record layout has one u16 for lanes; a railway's `tracks` goes
+        # there (no format change) and its surface is the unset sentinel.
+        table = StringTable()
+        railway = {
+            "centerline": [(-39.7 + 0.01 * i, 24.6) for i in range(20)],
+            "road_type": "railway", "tracks": 2, "name": "ligne 1",
+        }
+        levels, _manifest = roads_mod.build_road_part(
+            [railway], RADIUS, export_nside=8, max_quadtree_nside=8,
+            table=table, verbose=False)
+        _n, tiles = levels[0]
+        _count, rec = dsmp.split_part_tile(tiles[0][1])   # first record starts at 0
+        self.assertEqual(table.as_list()[struct.unpack_from("<H", rec, 0)[0]], "railway")
+        self.assertEqual(struct.unpack_from("<H", rec, 2)[0], dsmp.SID_NONE)   # surface
+        self.assertEqual(struct.unpack_from("<H", rec, 6)[0], 2)               # tracks
+        self.assertAlmostEqual(struct.unpack_from("<f", rec, 8)[0], 6.88, places=5)
+
+    def test_build_part_marks_graded_roads(self):
+        table = StringTable()
+        cl = [(-39.7 + 0.01 * i, 24.6) for i in range(20)]
+        roads = [
+            {"centerline": cl, "road_type": "road", "width": 6.0, "max_slope_degrees": 6},
+            {"centerline": cl, "road_type": "highway", "width": 12.0},
+            # A trail's max_slope_degrees is ignored: only highway / road grade.
+            {"centerline": cl, "road_type": "trail", "max_slope_degrees": 3},
+        ]
+        levels, manifest = roads_mod.build_road_part(
+            roads, RADIUS, export_nside=8, max_quadtree_nside=8,
+            table=table, verbose=False)
+        self.assertEqual(manifest["record_layout"], 2)
+        self.assertEqual(manifest["profiled_roads"], 1)
+        _n, tiles = levels[0]
+        _count, blob = dsmp.split_part_tile(tiles[0][1])
+        flags = []
+        p = 0
+        while p < len(blob):
+            npts = struct.unpack_from("<I", blob, p + 20)[0]
+            flags.append(struct.unpack_from("<BB", blob, p + 24))
+            p += dsmp.ROAD_HEADER_SIZE[2] + npts * dsmp.POINT_SIZE
+        self.assertEqual(flags, [(1, 6), (0, 0), (0, 0)])
+
     def test_build_part_skips_degenerate_roads(self):
         table = StringTable()
         levels, manifest = roads_mod.build_road_part(
             [{"centerline": [(0.0, 0.0)]}], RADIUS, 64, 64, table, verbose=False)
         self.assertEqual(manifest["counts"]["features"], 0)
         self.assertTrue(all(len(t) == 0 for _n, t in levels))
+
+
+# ── Populate part (biome regions) ───────────────────────────────────────
+
+def _records_of(payload):
+    """[(coverage, biome_index, props {key: value}, vertex_count), …] of a part tile."""
+    _count, blob = dsmp.split_part_tile(payload)
+    out = []
+    p = 0
+    while p < len(blob):
+        _sid, cov, nprops, bidx, nverts, _rsv = struct.unpack_from("<HBBiHH", blob, p)
+        p += 12
+        props = {}
+        for _ in range(nprops):
+            key, vtype, _pad = struct.unpack_from("<HBB", blob, p)
+            raw = blob[p + 4:p + 8]
+            props[key] = (vtype, struct.unpack("<f", raw)[0] if vtype == dsmp.VTYPE_F32
+                          else struct.unpack("<I", raw)[0] if vtype == dsmp.VTYPE_SID
+                          else struct.unpack("<i", raw)[0])
+            p += 8
+        if cov == dsmp.COVERAGE_POINT:
+            p += 8
+        elif cov == dsmp.COVERAGE_PARTIAL:
+            p += 8 * nverts
+        out.append((cov, bidx, props, nverts))
+    return out
+
+
+class TestPopulatePart(unittest.TestCase):
+    SQUARE = [(-45.0, 20.0), (-30.0, 20.0), (-30.0, 32.0), (-45.0, 32.0)]
+
+    def test_bbox_inside_ring(self):
+        ring = [(0, 0), (10, 0), (10, 10), (0, 10)]
+        self.assertTrue(mg.bbox_inside_ring((1, 2, 1, 2), ring))
+        self.assertFalse(mg.bbox_inside_ring((-1, 2, 1, 2), ring), "a corner outside")
+        # A notch of the ring cutting through a box whose 4 corners are inside.
+        notch = [(0, 0), (10, 0), (10, 10), (5, 10), (5, 3), (4, 3), (4, 10), (0, 10)]
+        self.assertFalse(mg.bbox_inside_ring((3.5, 5.5, 2, 4), notch))
+        self.assertTrue(mg.bbox_inside_ring((1, 3, 1, 2), notch))
+
+    def test_full_and_partial_records_with_rock_props(self):
+        table = StringTable()
+        zone = {"ring": self.SQUARE, "biome_type": "outcrop-plateau", "biome_index": 105,
+                "props": {"rock_type": "corundum_blue", "clarity": "milky",
+                          "name": "Grand plateau", "density": 0.5, "fid": 7}}
+        levels, manifest = biomes_mod.build_populate_part(
+            [zone], 3467000.0, export_nside=64, max_quadtree_nside=64,
+            table=table, verbose=False)
+        self.assertEqual(manifest["kind"], "populate")
+        self.assertEqual(manifest["max_nside"], 64)
+        self.assertEqual(manifest["priority_rule"], "first-match")
+        self.assertEqual(len(manifest["fingerprint"]), 40)
+        nside, tiles = levels[-1]
+        self.assertEqual(nside, 64)
+        covs = {dsmp.COVERAGE_FULL: 0, dsmp.COVERAGE_PARTIAL: 0}
+        strings = table.as_list()
+        for _ipix, payload in tiles:
+            for cov, bidx, props, nverts in _records_of(payload):
+                covs[cov] += 1
+                self.assertEqual(bidx, 105)
+                named = {strings[k]: v for k, v in props.items()}
+                self.assertEqual(strings[named["rock_type"][1]], "corundum_blue")
+                self.assertEqual(strings[named["clarity"][1]], "milky")
+                self.assertAlmostEqual(named["density"][1], 0.5, places=6)
+                self.assertNotIn("fid", named, "housekeeping fields are not props")
+                if cov == dsmp.COVERAGE_PARTIAL:
+                    self.assertGreaterEqual(nverts, 3)
+                else:
+                    self.assertEqual(nverts, 0)
+        self.assertGreater(covs[dsmp.COVERAGE_FULL], 0, "interior tiles are full")
+        self.assertGreater(covs[dsmp.COVERAGE_PARTIAL], 0, "edge tiles are clipped")
+
+    def test_overlapping_zones_are_ordered_by_priority_then_area(self):
+        table = StringTable()
+        big = self.SQUARE
+        small = [(-38.0, 25.0), (-36.0, 25.0), (-36.0, 27.0), (-38.0, 27.0)]
+        # Drawn big first with the HIGHER priority… the small one must still
+        # come second; then swap priorities and the small one comes first.
+        def order(p_big, p_small):
+            levels, _m = biomes_mod.build_populate_part(
+                [{"ring": big, "biome_type": "outcrop-plateau", "biome_index": 105,
+                  "priority": p_big, "props": {}},
+                 {"ring": small, "biome_type": "regolith-sand", "biome_index": 101,
+                  "priority": p_small, "props": {}}],
+                3467000.0, 64, 64, table, verbose=False)
+            _n, tiles = levels[-1]
+            for _ipix, payload in tiles:
+                recs = _records_of(payload)
+                if len(recs) == 2:
+                    return [r[1] for r in recs]
+            self.fail("no tile holds both zones")
+        self.assertEqual(order(200, 100), [105, 101], "higher priority first")
+        self.assertEqual(order(100, 200), [101, 105])
+        self.assertEqual(order(0, 0), [101, 105], "equal priority: smaller area first")
+
+    def test_deterministic_fingerprint(self):
+        zone = {"ring": self.SQUARE, "biome_type": "x", "biome_index": 1, "props": {"a": 1}}
+        _l1, m1 = biomes_mod.build_populate_part([zone], 3467000.0, 16, 16, StringTable(), verbose=False)
+        _l2, m2 = biomes_mod.build_populate_part([zone], 3467000.0, 16, 16, StringTable(), verbose=False)
+        self.assertEqual(m1["fingerprint"], m2["fingerprint"])
+        zone2 = dict(zone, props={"a": 2})
+        _l3, m3 = biomes_mod.build_populate_part([zone2], 3467000.0, 16, 16, StringTable(), verbose=False)
+        self.assertNotEqual(m1["fingerprint"], m3["fingerprint"])
 
 
 # ── Linker ──────────────────────────────────────────────────────────────

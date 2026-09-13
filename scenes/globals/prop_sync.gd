@@ -257,7 +257,7 @@ func _apply_carry_collision_exception(parent: Node) -> void:
 		return
 	var agent = NetworkOrchestrator.network_agent
 	var local_player = agent.player_entity if agent != null and "player_entity" in agent else null
-	if local_player == null or not (local_player is PhysicsBody3D):
+	if not is_instance_valid(local_player) or not (local_player is PhysicsBody3D):
 		return
 	if parent == local_player:
 		body.add_collision_exception_with(local_player)

@@ -397,6 +397,37 @@ def tile_bbox(nside, ipix, margin_deg=0.0):
     return hpx.get_tile_lonlat_bbox(nside, ipix, margin_deg=margin_deg)
 
 
+def bbox_inside_ring(box, ring):
+    """Is the lon/lat [param box] entirely inside the polygon [param ring]?
+
+    The four corners must be inside AND no ring vertex may lie strictly inside
+    the box: a concave ring can wrap all four corners while a notch of it cuts
+    through the box. (An edge crossing the box without a vertex inside it would
+    put a corner outside, so the two tests together are sufficient.) This is
+    the "full coverage" test of a POPULATE record — the tile needs no geometry.
+    """
+    lon_min, lon_max, lat_min, lat_max = box
+    for lon, lat in ((lon_min, lat_min), (lon_max, lat_min),
+                     (lon_max, lat_max), (lon_min, lat_max)):
+        if not point_in_ring(lon, lat, ring):
+            return False
+    for p in ring:
+        if lon_min < p[0] < lon_max and lat_min < p[1] < lat_max:
+            return False
+    return True
+
+
+def simplify_ring(ring, eps_deg):
+    """Douglas-Peucker on a closed ring (first vertex pinned, closure implied)."""
+    if len(ring) <= 3 or eps_deg <= 0.0:
+        return list(ring)
+    closed = [(p[0], p[1], 0.0) for p in ring] + [(ring[0][0], ring[0][1], 0.0)]
+    out = [(p[0], p[1]) for p in douglas_peucker(closed, eps_deg)]
+    if len(out) > 1 and out[0] == out[-1]:
+        out.pop()
+    return out
+
+
 def _inside(p, edge, box):
     lon_min, lon_max, lat_min, lat_max = box
     if edge == 0:

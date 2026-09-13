@@ -43,6 +43,7 @@ const STRINGS := [
 	"density",                # 8  prop key (float)
 	"undergrowth",            # 9  prop key (string)
 	"fern",                   # 10 prop value (string)
+	"railway",                # 11 road_type of the railway record
 ]
 
 const SID_LINEAR_TYPE := 0
@@ -56,8 +57,12 @@ const SID_BIOME := 7
 const SID_DENSITY := 8
 const SID_UNDERGROWTH := 9
 const SID_FERN := 10
+const SID_RAILWAY := 11
 
 var _levels: Array[int] = []
+## ROAD record layout the fixture pack announces (2 = flags/max_slope tail).
+## A test sets it to 1 before _write_pack() to build a legacy pack.
+var _road_layout: int = 2
 var _m_per_deg: float = RADIUS * PI / 180.0
 
 
@@ -184,11 +189,70 @@ func _block_road(nside: int, ipix: int) -> PackedByteArray:
 	_put_f32(b, 2400.0)    # total_length_m
 	_put_u32(b, ipix + 1000)
 	_put_u32(b, 2)         # point_count
+	_put_u8(b, 0)          # flags: no max slope
+	_put_u8(b, 0)          # max_slope_deg
+	_put_u16(b, 0)         # pad
 	var lon := _marker_lon(nside, ipix)
 	var lat := _marker_lat(nside, ipix)
 	_put_point(b, lon, lat, 800.0)
 	_put_point(b, lon + 0.005, lat, 1100.0)
 	return b
+
+
+## A railway record: no surface, and the u16 `lanes` slot holds its track count.
+func _block_railway(tracks: int) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_RAILWAY)
+	_put_u16(b, 0xFFFF)    # surface unset
+	_put_u16(b, 0xFFFF)    # name unset
+	_put_u16(b, tracks)
+	_put_f32(b, 5.0)       # width_m the exporter derived — the decoder recomputes it
+	_put_f32(b, 300.0)     # total_length_m
+	_put_u32(b, 77)
+	_put_u32(b, 2)         # point_count
+	_put_u8(b, 0)          # flags
+	_put_u8(b, 0)
+	_put_u16(b, 0)
+	_put_point(b, 10.0, 20.0, 0.0)
+	_put_point(b, 10.003, 20.0, 300.0)
+	return b
+
+
+## A layout-2 road record with an optional grade limit. [param max_slope]
+## < 0 leaves the flag clear; [param layout] 1 writes the legacy 24-byte header.
+func _block_graded_road(type_sid: int, max_slope: int, layout: int = 2) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, type_sid)
+	_put_u16(b, SID_SURFACE)
+	_put_u16(b, 0xFFFF)    # name unset
+	_put_u16(b, 2)         # lanes
+	_put_f32(b, 6.0)
+	_put_f32(b, 300.0)
+	_put_u32(b, 78)
+	_put_u32(b, 2)         # point_count
+	if layout >= 2:
+		_put_u8(b, 1 if max_slope >= 0 else 0)
+		_put_u8(b, maxi(max_slope, 0))
+		_put_u16(b, 0)
+	_put_point(b, 10.0, 20.0, 0.0)
+	_put_point(b, 10.003, 20.0, 300.0)
+	return b
+
+
+## One-kind tile payload holding the given road blocks.
+func _road_only_payload(blocks: Array) -> PackedByteArray:
+	var body := PackedByteArray()
+	for blk in blocks:
+		body.append_array(blk as PackedByteArray)
+	var payload := PackedByteArray()
+	_put_u16(payload, 1)                       # tile_version
+	_put_u16(payload, 1)                       # one kind
+	_put_u8(payload, ModifierPackScript.KIND_ROAD)
+	_put_u8(payload, 0)
+	_put_u16(payload, blocks.size())
+	_put_u32(payload, body.size())
+	payload.append_array(body)
+	return payload
 
 
 ## Partial-coverage zone with 4 vertices and 2 props (one float, one string).
@@ -255,6 +319,8 @@ func _manifest_dict() -> Dictionary:
 		"kind_max_nside": caps,
 		"coord_scale": ModifierPackScript.COORD_SCALE,
 		"strings": STRINGS,
+		# What link_modifiers.py echoes from the road part manifest.
+		"parts": {"road": {"record_layout": _road_layout, "profiled_roads": 0}},
 	}
 
 
@@ -497,6 +563,63 @@ func test_linear_cum_lengths_survive_clipping() -> void:
 	pack.close()
 
 
+func test_railway_record_exposes_tracks_not_lanes() -> void:
+	# QGIS gives a railway `tracks` (no width / surface); the pack stores it in
+	# the record's u16 lanes slot and the decoder hands it back as `tracks`.
+	var pack = _open()
+	var t := pack.decode_tile(_road_only_payload([_block_railway(2)]), _m_per_deg)
+	assert_eq((t["roads"] as Array).size(), 1, "one railway record")
+	var rd: Dictionary = t["roads"][0]
+	assert_eq(rd["road_type"], "railway", "road_type")
+	assert_eq(rd["surface"], "", "no surface on a railway")
+	assert_eq(rd.get("tracks", -1), 2, "track count exposed as `tracks`")
+	assert_false(rd.has("lanes"), "and not as `lanes`")
+	assert_almost_eq(rd["half_width_m"], 3.44, 1e-6,
+			"bed half-width derived from the tracks, not from the stored width")
+	pack.close()
+
+
+func test_graded_road_exposes_max_slope_degrees() -> void:
+	# Layout 2: a highway / road may carry a grade limit in the record tail;
+	# the flag clear means "follows the terrain" and the key is absent. A
+	# railway record never gets the key even if a hand-made pack sets the bit.
+	var pack = _open()
+	var t := pack.decode_tile(_road_only_payload([
+		_block_graded_road(SID_ROAD_TYPE, 6),
+		_block_graded_road(SID_ROAD_TYPE, -1),
+		_block_graded_road(SID_RAILWAY, 6),
+	]), _m_per_deg)
+	var roads: Array = t["roads"]
+	assert_eq(roads.size(), 3, "three records walked with the 28-byte header")
+	assert_eq(int(roads[0].get("max_slope_degrees", -1)), 6, "graded road → 6°")
+	assert_false(roads[1].has("max_slope_degrees"), "flag clear → no key")
+	assert_false(roads[2].has("max_slope_degrees"), "railway ignores the slope byte")
+	assert_almost_eq(float(roads[0]["_cum_lengths"][1]), 300.0, 1e-3,
+			"points read after the tail")
+	pack.close()
+
+
+func test_legacy_layout1_pack_still_decodes() -> void:
+	# A pack whose road part manifest has no record_layout (tarsis_3 on disk)
+	# is walked with the 24-byte header, so old planets keep loading.
+	_road_layout = 1
+	_write_pack(PACK_PATH)
+	var pack = _open()
+	var t := pack.decode_tile(_road_only_payload([
+		_block_graded_road(SID_ROAD_TYPE, 6, 1),
+		_block_graded_road(SID_ROAD_TYPE, 6, 1),
+	]), _m_per_deg)
+	var roads: Array = t["roads"]
+	assert_eq(roads.size(), 2, "two legacy records walked with the 24-byte header")
+	assert_false(roads[0].has("max_slope_degrees"), "no tail, no grade")
+	assert_almost_eq(float(roads[1]["_cum_lengths"][1]), 300.0, 1e-3,
+			"second record's points start where the first ended")
+	pack.close()
+	# Put the layout-2 fixture back for the tests that follow.
+	_road_layout = 2
+	_write_pack(PACK_PATH)
+
+
 func test_road_along_m_survives_clipping() -> void:
 	var pack = _open()
 	var t := pack.decode_tile(pack.read_tile(8, 14), _m_per_deg)
@@ -576,7 +699,7 @@ func test_raw_bytes_reported_for_lru_accounting() -> void:
 ## field, a lost padding byte, a different rounding rule — one of the two suites
 ## goes red instead of the game silently misreading packs.
 const CANONICAL_TILE_SHA256 := \
-	"48a8bbc56e8a7627a45e56ca417f4b0ea3d88f5672cc56760c39dd56cdebf0c5"
+	"40cbdc6f494f4d00f2f21ed46feca2329315ef7d4d3dd125e344618565635de7"
 
 
 ## One record of each kind with fixed values — no nside/ipix dependence.
@@ -640,6 +763,9 @@ func _canonical_tile() -> PackedByteArray:
 	_put_f32(road, 2400.0)
 	_put_u32(road, 1042)
 	_put_u32(road, 2)
+	_put_u8(road, 0)             # layout 2 tail: flags, max_slope_deg, pad
+	_put_u8(road, 0)
+	_put_u16(road, 0)
 	_put_point(road, 3.0, 4.0, 800.0)
 	_put_point(road, 3.005, 4.0, 1100.0)
 

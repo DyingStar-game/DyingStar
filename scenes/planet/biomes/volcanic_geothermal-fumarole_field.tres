@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://bl7116giag572"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "volcanic_geothermal-fumarole_field"
+biome_index = 107
+display_name = "Fumarole Field"
+description = "An area Godot scatters fumaroles over at the given density."
+category = "volcanic"
+color = Color(0.627, 0.541, 0.376, 1)
+terrain_roughness = 0.6
+damage_per_second = 0.0
+detail_texture_scale = 3.0

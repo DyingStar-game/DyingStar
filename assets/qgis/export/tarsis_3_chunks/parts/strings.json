@@ -5,5 +5,16 @@
  "road_fv01_mv03",
  "trail",
  "road_fv01_mv04",
- "road to mining_village_01"
+ "road to mining_village_01",
+ "highway",
+ "railway",
+ "outcrop-plateau",
+ "clarity",
+ "milky",
+ "color_hex",
+ "#8a7080",
+ "rock_type",
+ "corundum_blue",
+ "emery",
+ "corundum_white"
 ]

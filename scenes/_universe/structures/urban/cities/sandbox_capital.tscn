@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://b6lxyooye64g2" path="res://scenes/_universe/structures/urban/cities/sandbox_capital.gd" id="1_hvdt3"]
 [ext_resource type="PackedScene" uid="uid://c0kkjodme127u" path="res://assets/_universe/environment/terrain/trees/tree_01.glb" id="3_4sslq"]
-[ext_resource type="Material" uid="uid://degky8mc31ncp" path="res://scenes/planet/terrain_mat.tres" id="3_16y2p"]
 [ext_resource type="PackedScene" uid="uid://b01xrsa73pp6v" path="res://assets/_universe/environment/terrain/trees/tree001.glb" id="4_khu6c"]
 [ext_resource type="Material" uid="uid://n4tc2h3dlvp0" path="res://assets/_universe/environment/terrain/path_asphalt.tres" id="5_khu6c"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="6_wcgoa"]
@@ -17,7 +16,7 @@
 [ext_resource type="PackedScene" uid="uid://cynv06ddhi8kr" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="16_47dne"]
 [ext_resource type="Material" uid="uid://0j1nxxxq4kpn" path="res://assets/_universe/environment/terrain/regolith_grey_2.tres" id="16_a2whl"]
 [ext_resource type="Material" uid="uid://cfw4xedexidi0" path="res://assets/_universe/environment/terrain/regolith_grey_simple.tres" id="19_vaq7g"]
-[ext_resource type="PackedScene" uid="uid://dwem02tr2umhq" path="res://assets/_universe/structures/buildings/conteneur.glb" id="20_cnlw1"]
+[ext_resource type="PackedScene" uid="uid://ckdpxy43ybrym" path="res://assets/_universe/structures/buildings/conteneur.glb" id="20_cnlw1"]
 [ext_resource type="Material" uid="uid://bnthx4tb3gfkk" path="res://assets/_universe/environment/terrain/biome_plateau.tres" id="20_g2xcy"]
 [ext_resource type="PackedScene" uid="uid://ddtv6gpwx74ug" path="res://assets/_universe/structures/buildings/habitat_6x2.6.glb" id="21_0ulh1"]
 [ext_resource type="PackedScene" uid="uid://by4r4otbmsenr" path="res://assets/_universe/structures/buildings/habitat_12x2.6.glb" id="22_1kput"]
@@ -27,6 +26,7 @@
 [ext_resource type="PackedScene" uid="uid://dqbngk5x7vnma" path="res://assets/_universe/structures/buildings/habitat_square_container.glb" id="26_0ulh1"]
 [ext_resource type="PackedScene" uid="uid://dxajkuw7y5byw" path="res://scenes/_universe/props/containers/test_containers_6x2.6.tscn" id="27_w88le"]
 [ext_resource type="PackedScene" uid="uid://bk3qu7kpd2xa8" path="res://scenes/_universe/props/containers/test_containers_12x2.6.tscn" id="28_npgr1"]
+[ext_resource type="Material" uid="uid://crixbiyq86br" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/corundum_outcrop_surface.tres" id="corundum_outcrop_mat"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
@@ -127,9 +127,8 @@ environment = SubResource("Environment_sky")
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1185914396]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1121.2927777104087, -24.999999999999886, 0.8867248943877541)
 calculate_tangents = false
-use_collision = false
 size = Vector3(2755.928776162543, 50, 5000)
-material = ExtResource("3_16y2p")
+material = ExtResource("corundum_outcrop_mat")
 
 [node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1930928826]
 transform = Transform3D(0.7071067811865476, -0.7071067811865475, 0, 0.7071067811865475, 0.7071067811865476, 0, 0, 0, 1, -252.62343885606333, -70.84747955145684, 0)

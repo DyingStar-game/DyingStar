@@ -1,0 +1,26 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://crixbiyq86br"]
+
+[ext_resource type="Shader" uid="uid://c7qhbapjm7cns" path="res://scenes/planet/planet_surface.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://bgp7aegwjfrkc" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/tex_mineral_corundum_pure_albedo.png" id="2_albedo"]
+[ext_resource type="Texture2D" uid="uid://b84763mu8gagf" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/tex_mineral_corundum_pure_height.png" id="3_height"]
+[ext_resource type="Texture2D" uid="uid://bo3af516qou8i" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop_marble_01/tex_mineral_corundum_outcrop_marble_01_normal.png" id="4_normal"]
+[ext_resource type="Texture2D" uid="uid://cd3fcuvfvh0l7" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop_marble_01/tex_mineral_corundum_outcrop_marble_01_roughness.png" id="5_rough"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/albedo_texture = ExtResource("2_albedo")
+shader_parameter/normal_texture = ExtResource("4_normal")
+shader_parameter/normal_strength = 1.0
+shader_parameter/roughness_texture = ExtResource("5_rough")
+shader_parameter/roughness_channel = 0
+shader_parameter/roughness = 0.999999977648
+shader_parameter/metallic = 0.0
+shader_parameter/height_texture = ExtResource("3_height")
+shader_parameter/height_scale = 0.09499999787656
+shader_parameter/height_blend = 1.0
+shader_parameter/vertex_color_strength = 1.0
+shader_parameter/tile_scale = 0.10000000475
+shader_parameter/rot_strength = 0.999999977648
+shader_parameter/contrast_adjust = 0.78999998234192
+shader_parameter/triplanar_sharpness = 4.0000000447036

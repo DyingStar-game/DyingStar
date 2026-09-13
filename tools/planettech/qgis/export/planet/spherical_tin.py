@@ -74,15 +74,24 @@ class SphericalTIN:
             if verbose:
                 print("    (Qhull retry with joggled input)")
             hull = ConvexHull(self.xyz, qhull_options="QJ")
-        self.triangles = np.asarray(hull.simplices, dtype=np.int64)
-
-        # The ray-triangle solve below assumes the hull encloses the origin, which
-        # holds iff the samples surround the sphere. Contours covering only part of
-        # a planet still work (the gap becomes a few very large triangles) but the
-        # interpolation across that gap is a smooth blend, not real data.
-        if verbose and not np.all(hull.equations[:, 3] < 0.0):
-            print("    ⚠ contour points do not enclose the sphere — "
-                  "elevations in the uncovered region are extrapolated")
+        # A hull face is part of the Delaunay surface only when the origin lies on
+        # its inner side (Qhull's outward-normal equation n·x + d = 0 gives d < 0
+        # there). That is every face when the samples surround the sphere. When
+        # they cover only a cap — a planet with two contours drawn in one corner —
+        # the hull is a thin lens: its upper faces are the Delaunay of the cap, its
+        # UNDERSIDE is the cap's outline triangulated flat, all at the outer
+        # contour's elevation. Both sides face the origin from a distance of
+        # nearly 1, so the centroid KD-tree returns them mixed, and the ray test
+        # cannot tell them apart either (it pierces the underside first, at
+        # t < 1, with a positive weight sum). Whichever came first won, tile by
+        # tile: measured on tarsis_8, a plateau drawn flat at 300 m came out
+        # pocked with 30 m holes and its slope with 300 m spikes.
+        outer_side = hull.equations[:, 3] < 0.0
+        self.triangles = np.asarray(hull.simplices, dtype=np.int64)[outer_side]
+        if verbose and not outer_side.all():
+            print(f"    ⚠ contour points do not enclose the sphere — "
+                  f"{int((~outer_side).sum())} underside faces dropped; "
+                  "directions outside the covered cap take the nearest sample")
 
         # Per triangle, the matrix whose COLUMNS are its three vertex directions.
         # Solving M·w = d expresses the query direction d in that basis, and the

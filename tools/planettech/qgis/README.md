@@ -10,10 +10,14 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 
 | File | Runs In | Purpose |
 |---|---|---|
-| `setup_planet_project.py` | QGIS Python Console | Creates a new QGIS project with all the standard layers (contours, biomes, roads, POI, water) pre-configured |
+| `setup_planet_project.py` | QGIS Python Console | Creates/refreshes a planet's QGIS project + PostGIS schema. Interactive: asks the planet name/radius, then which layers (and which per-planet values, e.g. rock types) to create. |
+| `layers/` | library | **Where the layers are defined.** One small declarative module per category (`layers/biomes/forest.py`, `layers/roads.py`…); `layers/core.py` is the PostGIS plumbing, `layers/dialog.py` the picker. See "Layer definitions" below. |
 | `export_elevation.py` | QGIS Python Console | **Elevation-only**: builds the whole height pyramid into a single `heights.pack`. Documented at [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export). |
 | `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
 | `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
+| `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
+| `export_rocks.py` | QGIS console or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
+| `export/planet/biomes.py` | library | The POPULATE part builder: tiling, full / partial coverage, overlap order. |
 | `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
@@ -89,8 +93,10 @@ inside `PlanetChunk.generate_mesh()`, so they appear as soon as the data file
 exists — in the running game *and* in the editor preview, which calls the same
 mesh generator.
 
-1. **Draw the roads** in QGIS on the `roads` layer (see "Draw Roads" below).
-   `road_type` drives everything; `width` (total, metres) is optional.
+1. **Draw the roads** in QGIS on the `highway` / `road` / `path` / `trail` / `railway` layers
+   (see "Draw Roads" below). The layer *is* the road type and drives everything;
+   `width` (total, metres) is pre-filled and optional. A legacy single `roads`
+   layer with a `road_type` field is still exported when present.
 2. **Export** from the QGIS Python Console:
    ```python
    exec(open('…/tools/planettech/qgis/export_roads.py').read())
@@ -104,6 +110,100 @@ mesh generator.
    `chunk_heightmaps_dir` directly. Reopen the scene to regenerate the preview.
 
 ---
+
+## Regions pipeline (`export_biomes.py`)
+
+A **region** is a polygon drawn on one of the Region layers (`outcrop/plateau`,
+`regolith/sand`, `maritime river/ocean`…). Its biome identity is a property of
+the layer (`biome_type`, `biome_index`, `color_hex`, `ds_priority` — set by
+`setup_planet_project.py`); what varies per polygon are its fields: `rock_type`
+and `clarity` (see `layers/rocks.py`), `name`, `density`…
+
+1. **Draw** the regions in QGIS.
+2. **Export** from the QGIS Python Console:
+   ```python
+   exec(open('…/tools/planettech/qgis/export_biomes.py').read())
+   ```
+   Outputs `<planet>_chunks/parts/biomes.dsmpart`, relinks
+   `terrainmodifier.pack`, and rewrites `assets/_universe/_shared/materials/rocks.json`.
+3. **Godot** reads the pack directly (nothing to click): `PlanetChunk` asks the
+   tile for its zones, finds the first zone containing each vertex, and colours
+   it — with the rock's tints when the zone has a `rock_type` (see below), else
+   the `BiomeDefinition` colour, else the layer's `color_hex`.
+
+### How a region is stored
+
+Godot never sees the whole polygon. For every level n1 … export_nside (n256 on
+tarsis_8, 13.9 km tiles) and every HEALPix tile the polygon touches
+(`modifier_geom.tiles_for_polygon`), the exporter writes ONE POPULATE record:
+
+- **full** — the tile's lon/lat box lies entirely inside the polygon
+  (`modifier_geom.bbox_inside_ring`): 12 bytes + props, no geometry, and every
+  vertex of the tile matches;
+- **partial** — the polygon clipped to the tile (`clip_polygon_to_bbox`) and
+  simplified to a quarter of the level's vertex pitch (`simplify_ring`): the
+  runtime does a point-in-polygon test on that small ring.
+
+So a chunk only ever loads the zones of its own tile: thousands of regions on a
+planet cost nothing to a chunk that sees two of them. Only the OUTER ring of a
+polygon is exported — an enclave is another region drawn on top.
+
+### Overlap rule
+
+Records of a tile are written by descending **category priority**
+(`Category.priority` in `layers/`: liquids 300, regolith 200, outcrop 100,
+everything else 0) and, at equal priority, smallest area first. Godot keeps its
+"first matching zone wins" rule, so the file order IS the priority: loose cover
+beats bedrock, a small zone beats the large one it sits in.
+
+### Props
+
+`rock_type`, `clarity`, `name` and the layer's `color_hex` as string ids, plus
+every other non-null field — numbers as f32 (`density`, `canopy_height`,
+`depth`…), anything else as a string id. The runtime readers today:
+`rock_type` (colour), `color_hex` (fallback colour), `density` (vegetation),
+`depth` (cliffs).
+
+### Rocks: catalogue + tint
+
+The rock itself is **not** in the pack. `rocks.json` (from `layers/rocks.py`)
+holds, per slug, the colour range `[light, dark]`, the night range of chameleon
+rocks, the impurities in ppm per element, the sub-minerals and the `surface`
+flag. `RockCatalogue` (Godot) loads it once; `RockCatalogue.tint(dir, radius,
+slug)` blends the light tint toward the dark one with a deterministic two-octave
+value noise of the position (`SurfaceNoise`, the same hash the corundum cracks
+use) — a pure function of the vertex direction, so every client and the server
+bake the same shades, and a zone shows every hue between its two tints instead
+of one flat colour.
+
+An **outcrop** biome (`outcrop-plateau`, `outcrop-volcanic`) also carries a
+`terrain_material_override` — the hex-tiled corundum rock of SandboxCapital,
+saved as `mat_mineral_corundum_pure/corundum_outcrop_surface.tres` with
+`vertex_color_strength = 1`: `PlanetChunk` emits the quads of such zones as a
+separate mesh surface with that material, and the rock tint in COLOR multiplies
+the (white) texture. Region edges are hard between the two surfaces for now.
+
+The part manifest's `fingerprint` is echoed into the pack manifest and into the
+chunk cache key, so re-exporting the regions re-bakes the vertex colours.
+
+### Relief
+
+A biome may add a light undulation to the ground of its zones —
+`BiomeDefinition.relief_min_m / relief_max_m / relief_wavelength_m` (the outcrop
+plateau uses −0.5 m … +1 m over ~60 m, the volcanic outcrop −1 … +2 m over 40 m).
+`BiomeRelief.offset()` is a pure function of the vertex direction (value noise +
+a finer octave at a third of the wavelength), applied identically by the mesh,
+its normal probes and the collision shape, and dropped — never faded — on any
+grid whose vertex pitch reaches half the wavelength, so the two geometries never
+disagree. Keep wavelengths at tens of metres: the finest grid is ~13.5 m.
+
+Roads flatten it: the relief is 0 within `half-width + 1.5 vertex pitches` of
+any road / railway centreline (≥ 2 m) and ramps back to full at `+ 3 pitches`
+(≥ 10 m) — the relief lives on vertices and the surface between them is
+interpolated, so every vertex of a triangle touching the road must be flat for
+the ribbon or the bed (both on the raw heightmap) not to be pierced. A planet with such a
+biome switches the server to the fine collision grid, like cracks and profiled
+lines (`PlanetData.collision_detail_nside()`).
 
 ## Terrain-modifier pack (`terrainmodifier.pack`)
 
@@ -233,6 +333,60 @@ landmark is no longer a landmark — while
 is the placeholder module the spawner tiles. Replace its primitives with the
 finished art and keep the metadata block.
 
+### Grade-limited lines: railways, and roads with `max_slope_degrees`
+
+Two kinds of line leave the terrain-hugging ribbon and are built on a
+**longitudinal profile** — `scenes/planet/road/grade_*.gd`, one code path:
+
+- a `railway` (KIND_ROAD record, `road_type = "railway"`; its `tracks` count
+  travels in the record's `lanes` slot and the decoder hands it back as `tracks`);
+- a `highway` or `road` whose QGIS `max_slope_degrees` is set. The exporter
+  writes it in the record's layout-2 tail (`u8 flags | u8 max_slope_deg | u16 pad`
+  after `point_count`) and counts such roads in the road part manifest
+  (`"profiled_roads"`); the road part manifest also says `"record_layout": 2`,
+  and a pack without that key (older exports) is still decoded with the
+  24-byte header — nothing to re-export.
+
+What differs between the two is asked in one place, `GradeSettings`
+(`is_profiled`, `max_grade_of`, `climbs_at_max_grade_of`, `half_width_of`,
+`bed_material_of`, `span_kind_of`); `RailwaySettings` keeps what is physically
+rail (track module, bed width per track, ballast, the 4 % "stay level" policy),
+`RoadTerrain` the road answers (width from the record, asphalt, climb at
+`tan(max_slope_degrees)`).
+
+- **Profile** (`GradeProfile`, computed once per line at planet load, from the
+  same `heights.pack` sampler on the client and the server): the line starts at
+  the terrain's altitude and is laid in 200 m windows; when the terrain at the
+  end of a window is further than the max grade allows from the current
+  altitude, a railway stays level through that window
+  (`RailwaySettings.CLIMB_AT_MAX_GRADE`) while a graded road climbs at exactly
+  its max grade toward the terrain. Every 5 m the terrain is classified against
+  the line: **cutting** (terrain above, less than 10 m), **tunnel** (10 m or
+  more), **viaduct** (terrain more than 2 m below), or ground.
+- **Bed** (`GradeBed`): a ribbon at the profile's altitude — ballast for a
+  railway, asphalt for a road — with skirts down to the ground, built into the
+  chunk mesh *and* the chunk collision shape.
+- **Rails** (railway only, `RailwayTrack`): `railroad_01.glb` (half a track:
+  half a sleeper + one rail, 1.12 m) instanced every 1.12 m, two mirrored halves
+  per track, tracks 1 m apart at the sleeper ends, in one `MultiMeshInstance3D`
+  per 64 m of line. Collision is a box per track per straight run, not the model.
+- **Cuttings** carve the finest grid (vertices lowered to a floor + 45° walls)
+  in both the mesh and the fine collision; the cells they cross are re-meshed
+  8× finer (`GradeRefine`).
+- **Tunnels** (`GradeTunnel`): an arched concrete tube with a headwall at each
+  mouth; the terrain triangles crossing the bore are dropped in the refined patch.
+- **Viaducts**: `BridgeDeck` decks pinned to the profile, at most 400 m each;
+  span kind `"railway"` or `"profiled_road"` (asphalt deck), never confused with
+  the crack-based road bridges.
+- A planet with any profiled line switches the server to fine collision
+  (`PlanetData.collision_detail_nside()` → the finest quadtree level), like
+  the corundum planets.
+
+Widths: `tracks` decides for a railway (see the table below), which has no
+`width` field; a graded road keeps its `width`. Bench:
+`godot --headless --path . res://test/parity/railway_probe.tscn` writes the
+profile summary and a mesh/collision parity check to `user://railway_probe.txt`.
+
 ### Why buffered polygons (legacy GeoJSON)
 
 Godot loads that file through `BiomeQuery`, whose parser **only accepts `Polygon`
@@ -249,7 +403,8 @@ The pack needs neither: its tiles are partitioned, not bbox-tested. This file
 disappears once `PlanetData.roads_geojson` is retired.
 
 Roads do **not** displace the terrain, and have no collision of their own — they
-ride on the terrain collision.
+ride on the terrain collision — except a `highway` / `road` with
+`max_slope_degrees`, which is built like a railway (see above).
 
 ### Width
 
@@ -263,6 +418,12 @@ default applies.
 | `road` | 6 m | asphalt (fixed) |
 | `path` | 2 m | biome-adaptive (grass / dirt / sand / snow) |
 | `trail` | 1 m | biome-adaptive |
+| `railway` | `tracks`·2.44 m + (`tracks`−1)·1 m + 1 m shoulders (3.44 m for one track, 6.88 m for two); 5 m when `tracks` is unset | ballast bed + rail modules (`railroad_01.glb`) |
+
+A railway is the one type with no `width` field at all: its layer only has
+`name`, `tracks` and `speed_limit`, and the ballast bed is derived from
+`tracks` in both `RailwaySettings.railway_half_width_m()` and
+`export/planet/roads.py`.
 
 `HALF_WIDTH_M` in [`scenes/planet/road/road_terrain.gd`](../../scenes/planet/road/road_terrain.gd)
 and `HALF_WIDTH_M` in [`export/planet/roads.py`](export/planet/roads.py) **must
@@ -290,24 +451,79 @@ to keep aligned instead of three.
 
 ### Step 1: Create a New Planet Project in QGIS
 
-1. Open **QGIS**
-2. Open the **Python Console**: menu **Plugins → Python Console** (or press **Ctrl+Alt+P**)
-3. In the console, **edit the configuration** at the top of `setup_planet_project.py`:
-   - `PLANET_NAME` — your planet identifier (e.g., `"tarsis_4"`)
-   - `WORK_DIR` — path to `assets/qgis/` in your project
-   - `EXISTING_FEATURES` — path to your existing `planet_features.geojson` (if any)
+1. Open **QGIS** and make sure the PostgreSQL connection **`DyingStar`** exists
+   (**Layer → Data Source Manager → PostgreSQL**).
+2. Open the **Python Console** (**Plugins → Python Console**, or **Ctrl+Alt+P**)
+3. Optionally edit the defaults at the top of `setup_planet_project.py`
+   (`PLANET_NAME`, `PLANET_RADIUS_M`, `WORK_DIR`, `EXISTING_FEATURES`)
 4. Run the script:
    ```python
-   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/planettech/qgis/setup_planet_project.py').read())
+   exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/setup_planet_project.py').read())
    ```
-5. QGIS now has **5 empty layers** ready for editing, plus your existing features loaded:
-   - `<planet>_contours` — LineString layer for elevation contour lines
-   - `<planet>_biomes` — Polygon layer for biome zones (forest, desert, ocean…)
-   - `<planet>_roads` — LineString layer for roads and paths
-   - `<planet>_poi` — Point layer for cities, stations, spawn points
-   - `<planet>_water` — Polygon layer for oceans and lakes
+5. Two dialogs:
+   - **planet name + radius** — the name is the PostGIS schema and the `.qgz` name
+   - **layer picker** — a checkable tree `Region / POI / Lines → category → layer`.
+     Untick what this planet will never use. Under a layer that declares a value
+     list (rock types…), tick the values that exist on this planet: they become
+     that field's dropdown. On a re-run, layers already in the database are
+     pre-ticked. Unticking removes the layer from the project and drops its
+     table **only if it is empty** — drawn data is never deleted.
+6. The layer tree is organised by **geometry**, then by category:
+   - **Region** — polygon layers: `world border`, `region`, then one sub-group per
+     biome category (`forest/temperate forest`, `aride desert/sandy desert`…)
+   - **POI** — point layers: `poi` (cities, stations, spawn points), `spatial/crater`,
+     `volcanic geothermal/ice geyser`…
+   - **Lines** — line layers: `contours`, `roads/highway|road|path|trail|railway`,
+     `maritime river/river`, `icy/ice crevasse`…
 
-The project is auto-saved to `assets/qgis/<planet_name>.qgz`.
+Each layer is a PostGIS table named after its slug (`sandy_desert`, `river`,
+`highway`) in the schema `<planet_name>`. Re-running the script on an existing
+planet loads the tables untouched and re-applies widgets/styles from the
+definitions. The project is saved to `<WORK_DIR>/<planet_name>/<planet_name>.qgz`.
+
+#### Layer definitions (`layers/`)
+
+```
+layers/
+  __init__.py      registry: discovers categories, creates the tree (setup_all)
+  model.py         Category / BiomeCategory / Layer / Field / Range / Color / ValueMap
+  core.py          PostGIS: schema, tables, last_updated trigger, widgets, symbols
+  dialog.py        the two Qt dialogs
+  rocks.py         ROCK_TYPES shared value list + rock_field()
+  base.py          world border, contours, region
+  poi.py           poi
+  roads.py         highway / road / path / trail / railway (one layer each)
+  biomes/
+    forest.py, icy.py, maritime_river.py, …   one module per biome category
+```
+
+A biome is three lines in its category module:
+
+```python
+CATEGORY.biome(
+    11, 'temperate_forest', '#2d5a1e',
+    'Forest formation composed of deciduous trees or mixed stands…',
+    planet_type='terrestrial',
+    fields=[
+        Field('density', 'double', 'Vegetation density 0.0-1.0', widget=Range(0.0, 1.0, 0.01)),
+        Field('canopy_height', 'integer', 'Canopy height in metres', widget=Range(0, 200, 1)),
+    ],
+)
+```
+
+`biome_type` becomes `<category>-<slug>` (`forest-temperate_forest`), the table
+`<slug>`, the QGIS name `<slug with spaces>`. `geom='LineString'` / `'Point'`
+moves the layer to **Lines** / **POI**; `terrain_modifier=True` flags biomes that
+alter the heightmap. `fields=[rock_field()]` adds the per-planet rock dropdown.
+Every biome layer carries `biome_type`, `biome_index`, `color_hex`,
+`terrain_modifier`, `planet_type`, `ds_category`, `ds_layer` as QGIS custom
+properties — that is what the export scripts read.
+
+To add a category: create `layers/biomes/<name>.py` with
+`CATEGORY = BiomeCategory('<name>')`. Nothing to register. Unique tables,
+`biome_type` and `biome_index` are enforced at load time. `BiomeCategory(...,
+priority=N)` sets the overlap priority of its Region layers (written on the
+layer as `ds_priority`, applied by `export_biomes.py` — see "Regions pipeline").
 
 ---
 
@@ -319,7 +535,7 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 - **Y = Latitude**: −90° (south pole) to +90° (north pole)
 
 #### Draw Elevation Contours
-1. Select the `<planet>_contours` layer in the Layers panel
+1. Select the **Lines → contours** layer in the Layers panel
 2. Click the **pencil icon** (Toggle Editing) in the toolbar
 3. Click **Add Line Feature** (the line drawing tool)
 4. Draw a contour line on the map — each click adds a vertex, double-click to finish
@@ -328,34 +544,37 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 7. Click the **floppy disk icon** to save edits
 
 #### Draw Biome Zones
-1. Select the `<planet>_biomes` layer → Toggle Editing
-2. Click **Add Polygon Feature**
-3. Draw the outline of a biome zone (e.g., a forest area) — double-click to close the polygon
-4. In the popup, fill in:
-   - `biome_type`: e.g., `forest`, `desert`, `ocean`, `meadow_steppe-meadow`, `tundra`, `snow`
-   - `biome_index`: the index into your biome texture array (0–7)
-   - `density`: vegetation density from 0.0 to 1.0
-   - `color_hex`: dominant color for ultra-far LOD (e.g., `#2d5a1e` for forest)
+1. Select the biome's layer (e.g. **Region → forest → temperate forest**) → Toggle Editing
+2. Click **Add Polygon Feature** (or line / point for biomes living under **Lines** / **POI**)
+3. Draw the zone — double-click to close the polygon
+4. In the popup, fill in the biome-specific fields (`name`, `density`, `canopy_height`,
+   `radius`, `width_start`…). The biome type and index are properties of the layer,
+   not of the feature — nothing to type.
 5. Save edits
 
 #### Draw Roads
-1. Select the `<planet>_roads` layer → Toggle Editing
-2. Click **Add Line Feature** and draw road paths
-3. Fill in: `name`, `road_type` (highway/road/path/trail), `width` in meters, `lanes`, `surface`
+1. Select the road type's layer (**Lines → roads → highway / road / path / trail / railway**) → Toggle Editing
+2. Click **Add Line Feature** and draw the road
+3. `width`, `lanes`, `surface`, `speed_limit`… are pre-filled for that road type; override per feature if needed.
+   A railway only asks for `tracks` (and `speed_limit`) — its bed width follows the track count.
+   On a `highway` / `road`, `max_slope_degrees` is empty by default (the road hugs the
+   terrain); set it and Godot builds the road on a grade-limited profile with cuttings,
+   tunnels and viaducts
 4. **Tip**: enable snapping (**Project → Snapping Options** or press **S**) so roads connect at intersections
 5. Save edits
 
 #### Place Points of Interest
-1. Select the `<planet>_poi` layer → Toggle Editing
+1. Select the **POI → poi** layer → Toggle Editing
 2. Click **Add Point Feature** and click where you want to place a city, station, or spawn point
 3. Fill in: `name`, `poi_type` (city/station/landmark/spawn_point), `population`,
    `radius` (influence radius in metres) and `description`
 4. Save edits, then see the POI pipeline section above to get them into Godot
 
 #### Draw Water Bodies
-1. Select the `<planet>_water` layer → Toggle Editing
-2. Click **Add Polygon Feature** and outline ocean or lake areas
-3. Fill in: `name`, `water_type` (ocean/lake/river), `depth`
+1. Select **Region → maritime river → ocean** (or `lake`, `delta`…; rivers are
+   lines under **Lines → maritime river → river**) → Toggle Editing
+2. Click **Add Polygon Feature** and outline the area
+3. Fill in the optional fields (`name`, `water_color`, `salinity`…)
 4. Save edits
 
 > **Tip**: Save your QGIS project often (**Ctrl+S**). You can reopen it anytime from `assets/qgis/<planet>.qgz`.

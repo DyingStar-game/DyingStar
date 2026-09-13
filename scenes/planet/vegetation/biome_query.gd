@@ -403,6 +403,10 @@ func _append_single_feature(feature: Dictionary) -> void:
 	var _surface = props.get("surface", "")
 	var _road_name = props.get("name", "")
 	var _lanes = props.get("lanes", 0)
+	# A railway has `tracks` instead of `lanes` (older exports wrote `lanes`).
+	var _tracks = props.get("tracks", props.get("lanes", 0))
+	# Optional grade limit of a highway / road (null when it follows the terrain).
+	var _max_slope = props.get("max_slope_degrees", null)
 	var _centerline_raw = props.get("centerline", [])
 	var _centerline := PackedVector2Array()
 	if _centerline_raw is Array and not (_centerline_raw as Array).is_empty():
@@ -434,12 +438,15 @@ func _append_single_feature(feature: Dictionary) -> void:
 		"surface": str(_surface) if _surface != null else "",
 		"road_name": str(_road_name) if _road_name != null else "",
 		"lanes": int(_lanes) if _lanes != null else 0,
+		"tracks": int(_tracks) if _tracks != null else 0,
 		"centerline": _centerline,
 		"half_width_deg": _eff_w / 2.0 if _eff_w > 0.0 else 0.0,
 		"polygon": polygon,
 		"bbox_min": bb_min,
 		"bbox_max": bb_max,
 	}
+	if _max_slope != null:
+		zone["max_slope_degrees"] = int(_max_slope)
 	_zones.append(zone)
 
 

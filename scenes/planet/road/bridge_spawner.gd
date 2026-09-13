@@ -63,7 +63,13 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 		# Too oblique to bridge — re-route the road instead. Reported by
 		# PlanetData.get_bridge_spans() so it is not silently dropped.
 		return null
-	var plan := planet_data.get_bridge_plan(span)
+	# A profile viaduct (railway, graded road) is planned by GradeProfile (deck
+	# pinned to the line's profile, no ramps) and built with that line's own
+	# deck settings; a crack-based road bridge by BridgePlan with the planet's
+	# profile. Same deck builder, same body, same lifecycle.
+	var is_profile := GradeSettings.is_profile_span(span)
+	var plan := planet_data.get_grade_plan(span) if is_profile \
+			else planet_data.get_bridge_plan(span)
 	if plan.is_empty() or not bool(plan.get("ok", false)):
 		# No plan means no ribbon cut either, so the road stays whole and the
 		# player drives over a gorge on a ribbon instead of into a gap.
@@ -72,7 +78,8 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 	if road.is_empty():
 		return null
 
-	var profile := planet_data.get_bridge_profile()
+	var profile := GradeSettings.viaduct_profile_for_span(span) if is_profile \
+			else planet_data.get_bridge_profile()
 	var ipix: int = HEALPix.vec2pix_nest(planet_data.export_nside,
 			span["mid_dir"])
 	var geo := BridgeDeck.build(profile, plan, road, planet_data.radius,

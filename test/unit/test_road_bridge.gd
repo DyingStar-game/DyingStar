@@ -31,7 +31,7 @@ func before_each() -> void:
 	_pd = PlanetDataScript.new()
 	_pd.planet_name = "testbridge"
 	_pd.radius = RADIUS
-	_pd.corundum_override_whole_planet = true
+	_pd.corundum_default_biome = true
 	_pd.crack_spacing_m = SPACING
 	_pd.crack_width_m = WIDTH
 	_pd.crack_depth_m = DEPTH
@@ -67,7 +67,7 @@ func test_finds_crossings_on_a_long_road() -> void:
 
 
 func test_no_crossings_when_corundum_is_off() -> void:
-	_pd.corundum_override_whole_planet = false
+	_pd.corundum_default_biome = false
 	assert_eq(RoadBridge.find_spans_in_road(_pd, _road(40000.0)).size(), 0,
 			"no crack network → nothing to bridge")
 

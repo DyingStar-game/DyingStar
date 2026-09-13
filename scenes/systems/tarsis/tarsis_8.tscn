@@ -10,22 +10,24 @@
 script = ExtResource("2_dyiev")
 planet_name = "tarsis_8"
 surface_gravity = 3.48
-chunk_export_depth = 6
+chunk_export_depth = 8
 terrain_material = ExtResource("3_hifpj")
-max_quadtree_depth = 13
 crack_spacing_m = 4000.0
 crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_8_chunks"
+chunk_heightmap_res = 32
+mining_zone_minerals = PackedStringArray("iron", "gold", "cryptonite")
+mining_zone_mineral_weights = PackedFloat32Array(0.6, 0.3, 0.1)
 
 [node name="Tarsis8" type="Node3D" unique_id=134586975]
 script = ExtResource("1_q3h20")
 planet_data = SubResource("PlanetData_tarsis4")
-rotation_period_hours = 76.8974824125262
+map_color = Color(0.55, 0.38, 0.32, 1)
 display_name = "Tarsis VIII"
 map_radius_km = 3467.5
-map_color = Color(0.550, 0.380, 0.320, 1)
+rotation_period_hours = 76.8974824125262
 axial_tilt_deg = 9.90259686733704
 orbit_periapsis_au = 16.2399839089388
 orbit_apoapsis_au = 16.2800914316724
@@ -38,11 +40,12 @@ orbit_primary_mass_kg = 1.5088184368786238e+30
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("4_r06it")
-editor_goto_lon = -39.55558187662332
-editor_goto_lat = 24.85200755796846
-editor_goto_x = 4450891.0
-editor_goto_y = 2673782.0
-editor_goto_z = -3676289.0
+editor_goto_lon = -104.339
+editor_goto_lat = -24.08
+editor_goto_x = -783917.9102435682
+editor_goto_y = -1414589.1371000207
+editor_goto_z = -3066709.5213398947
+editor_planet_flight = true
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("5_xpeml")

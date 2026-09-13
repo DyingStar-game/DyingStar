@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b067532g42a21"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dcor0utcr0psrf" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/corundum_outcrop_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "outcrop-plateau"
+biome_index = 105
+display_name = "Rock Plateau"
+description = "High plateau of bare bedrock with sharp edges, barely touched by erosion."
+category = "mineral"
+color = Color(0.541, 0.439, 0.502, 1)
+terrain_material_override = ExtResource("2")
+terrain_roughness = 0.2
+surface_family = "rock"
+detail_texture_scale = 3.0
+relief_min_m = -0.5
+relief_max_m = 1.0
+relief_wavelength_m = 60.0

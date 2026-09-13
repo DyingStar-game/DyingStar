@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeDefinition" format=3 uid="uid://b4ba3hkjl0g44"]
+
+[ext_resource type="Script" uid="uid://bb7d783yo3g5g" path="res://scenes/planet/biome_definition.gd" id="1"]
+[ext_resource type="Material" uid="uid://dcor0utcr0psrf" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/corundum_outcrop_surface.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+biome_type = "outcrop-volcanic"
+biome_index = 106
+display_name = "Volcanic Outcrop"
+description = "Bedrock brought up and reshaped by volcanism — domes, flows and columns of the host rock."
+category = "volcanic"
+color = Color(0.353, 0.290, 0.314, 1)
+terrain_material_override = ExtResource("2")
+terrain_roughness = 0.9
+surface_family = "rock"
+detail_texture_scale = 3.0
+relief_min_m = -1.0
+relief_max_m = 2.0
+relief_wavelength_m = 40.0
