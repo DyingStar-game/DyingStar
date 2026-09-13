@@ -18,7 +18,6 @@ class_name GradeTunnel
 ## to the caller's origin, both wound with the chunk grid's sign (the caller
 ## says which).
 
-const Kind := GradeSettings.Kind
 
 ## Stations along the tube, on an absolute grid.
 const STATION_M := 4.0
@@ -53,7 +52,7 @@ static func inside_bore(profile: Dictionary, along: float, lat_m: float, z: floa
 		return false
 	var hood := GradeSettings.PORTAL_HOOD_M
 	for seg in profile.get("segments", []):
-		if int(seg["kind"]) != Kind.TUNNEL:
+		if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 			continue
 		if along >= float(seg["lo"]) - hood and along <= float(seg["hi"]) + hood:
 			return true
@@ -118,7 +117,7 @@ static func tri_hits_bore_local(prof: Dictionary, l0: Vector3, l1: Vector3, l2: 
 static func profile_tunnels(profile: Dictionary) -> Array:
 	var out: Array = []
 	for seg in profile.get("segments", []):
-		if int(seg["kind"]) == Kind.TUNNEL:
+		if int(seg["kind"]) == GradeSettings.Kind.TUNNEL:
 			out.append(seg)
 	return out
 
@@ -230,7 +229,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var collar := _collar_section(bw)
 	var hood := GradeSettings.PORTAL_HOOD_M
 	for seg in profile["segments"]:
-		if int(seg["kind"]) != Kind.TUNNEL:
+		if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 			continue
 		var t_lo: float = float(seg["lo"]) - hood
 		var t_hi: float = float(seg["hi"]) + hood
@@ -309,14 +308,14 @@ static func _shell(acc: Dictionary, frames: Array, stations: PackedFloat64Array,
 static func _feet(acc: Dictionary, frames: Array, inner: PackedVector2Array,
 		outer: PackedVector2Array, origin: Vector3) -> void:
 	for side in [[0, 0], [inner.size() - 1, outer.size() - 1]]:
-		var pi_: Vector2 = inner[side[0]]
+		var p_in: Vector2 = inner[side[0]]
 		var po: Vector2 = outer[side[1]]
 		for k in frames.size() - 1:
 			var fa: Dictionary = frames[k]
 			var fb: Dictionary = frames[k + 1]
 			var down_a: Vector3 = -(fa["up"] as Vector3)
 			var down_b: Vector3 = -(fb["up"] as Vector3)
-			_emit_quad(acc, _at(fa, pi_, origin), _at(fb, pi_, origin),
+			_emit_quad(acc, _at(fa, p_in, origin), _at(fb, p_in, origin),
 					_at(fa, po, origin), _at(fb, po, origin), down_a, down_b,
 					Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO)
 

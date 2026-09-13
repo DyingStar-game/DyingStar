@@ -41,7 +41,6 @@ class_name GradeProfile
 ##                [along0, along1], `kind` a GradeSettings.Kind),
 ##     seg_lo: PackedFloat64Array   (segment starts, for the binary search) }
 
-const Kind := GradeSettings.Kind
 
 
 ## Compute the profile of [param road] (a WHOLE decoded record: `centerline`,
@@ -191,13 +190,13 @@ static func _segments(profile: Dictionary) -> Array:
 		var d: float = st[i] - z_track_at(profile, sa[i])
 		diffs[i] = d
 		if d >= GradeSettings.TUNNEL_MIN_COVER_M:
-			kinds[i] = Kind.TUNNEL
+			kinds[i] = GradeSettings.Kind.TUNNEL
 		elif d > GradeSettings.GORGE_MIN_M:
-			kinds[i] = Kind.GORGE
+			kinds[i] = GradeSettings.Kind.GORGE
 		elif d < -GradeSettings.BED_THICKNESS_M:
-			kinds[i] = Kind.BRIDGE
+			kinds[i] = GradeSettings.Kind.BRIDGE
 		else:
-			kinds[i] = Kind.GROUND
+			kinds[i] = GradeSettings.Kind.GROUND
 
 	var runs := _rle(kinds, sa, diffs, profile["along1"])
 	# Hysteresis, a few passes until stable: a tunnel too short to bore is a
@@ -208,18 +207,18 @@ static func _segments(profile: Dictionary) -> Array:
 		for i in runs.size():
 			var r: Dictionary = runs[i]
 			var len_m: float = r["hi"] - r["lo"]
-			if r["kind"] == Kind.TUNNEL and len_m < GradeSettings.MIN_TUNNEL_M:
-				r["kind"] = Kind.GORGE
+			if r["kind"] == GradeSettings.Kind.TUNNEL and len_m < GradeSettings.MIN_TUNNEL_M:
+				r["kind"] = GradeSettings.Kind.GORGE
 				changed = true
-			elif r["kind"] == Kind.GORGE \
+			elif r["kind"] == GradeSettings.Kind.GORGE \
 					and len_m < GradeSettings.MIN_GORGE_BETWEEN_TUNNELS_M \
 					and i > 0 and i + 1 < runs.size() \
-					and runs[i - 1]["kind"] == Kind.TUNNEL \
-					and runs[i + 1]["kind"] == Kind.TUNNEL:
-				r["kind"] = Kind.TUNNEL
+					and runs[i - 1]["kind"] == GradeSettings.Kind.TUNNEL \
+					and runs[i + 1]["kind"] == GradeSettings.Kind.TUNNEL:
+				r["kind"] = GradeSettings.Kind.TUNNEL
 				changed = true
-			elif r["kind"] == Kind.BRIDGE and len_m < GradeSettings.MIN_SPAN_M:
-				r["kind"] = Kind.GROUND
+			elif r["kind"] == GradeSettings.Kind.BRIDGE and len_m < GradeSettings.MIN_SPAN_M:
+				r["kind"] = GradeSettings.Kind.GROUND
 				changed = true
 		if changed:
 			runs = _merge_runs(runs)
@@ -279,7 +278,7 @@ static func spans_of(profile: Dictionary, road: Dictionary) -> Array:
 	var fid := int(profile["feature_id"])
 	var road_w: float = 2.0 * float(profile["hw_m"])
 	for seg in profile["segments"]:
-		if seg["kind"] != Kind.BRIDGE:
+		if seg["kind"] != GradeSettings.Kind.BRIDGE:
 			continue
 		var lo: float = seg["lo"]
 		var hi: float = seg["hi"]

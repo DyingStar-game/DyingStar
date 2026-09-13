@@ -20,7 +20,6 @@ class_name GradeBed
 ##     otherwise not see the track just across it, and the two chunks sharing
 ##     that edge would carve it differently.
 
-const Kind := GradeSettings.Kind
 
 
 ## The grade-limited records among [param roads] (railways, graded roads).
@@ -153,7 +152,7 @@ static func shaved_height(h: float, prof: Dictionary, along: float, lat_m: float
 	if seg.is_empty():
 		return h
 	var kind := int(seg["kind"])
-	if kind != Kind.GROUND and kind != Kind.GORGE:
+	if kind != GradeSettings.Kind.GROUND and kind != GradeSettings.Kind.GORGE:
 		return h
 	if absf(lat_m) > float(prof["hw_m"]) + band_m:
 		return h
@@ -169,7 +168,7 @@ static func carved_height(h: float, prof: Dictionary, along: float, lat_m: float
 	if seg.is_empty():
 		return h
 	var kind := int(seg["kind"])
-	if kind != Kind.GROUND and kind != Kind.GORGE:
+	if kind != GradeSettings.Kind.GROUND and kind != GradeSettings.Kind.GORGE:
 		return h
 	var hw_floor: float = float(prof["hw_m"]) + floor_margin
 	var depth: float = maxf(GradeSettings.TUNNEL_MIN_COVER_M, float(seg["max_depth"]))
