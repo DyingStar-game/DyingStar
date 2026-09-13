@@ -21,7 +21,10 @@ assets_blender/
 # Not needed for server export (but keep prebake script)
 tools/planettech/qgis/
 tools/localization/
-tools/observability/
+# tools/observability/ stays IN the context: Obs is an autoload (project.godot) and an
+# autoload cannot be dropped per export preset, so excluding the folder only produced
+# "Failed to instantiate an autoload ... obs.gd" at every server boot. obs.gd itself is
+# inert on the dedicated server (no C# OpenTelemetry bridge, no custom logger).
 tools/spawn_points/
 tools/generate_biome_folders.py
 tools/generate_detail_textures.py
