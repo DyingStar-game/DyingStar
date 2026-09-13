@@ -60,6 +60,8 @@ var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame)
 var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to derive the yaw rate (in-place turn)
 var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
+## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
+var _camera_thief: String = ""
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
@@ -994,11 +996,24 @@ func _chat_writing() -> bool:
 ## rear-view camera, unable to move — the body was fine and other clients saw them correctly, so only
 ## the view had gone. Re-asserting costs one property read per frame.
 func _keep_camera_ours() -> void:
-	if player.camera == null or player.camera.current:
+	if player.camera == null:
 		return
-	var thief: Camera3D = player.get_viewport().get_camera_3d()
-	push_warning("[Camera] the owner's camera was taken by '%s' — taking it back"
-			% (thief.get_path() if thief != null else "nobody"))
+	# ⚠️ ASK THE VIEWPORT, never our own `current` flag. `current` is a property EACH camera carries,
+	# and several can hold it at once — the viewport then renders whichever registered last. The first
+	# version of this guard tested `player.camera.current`, so when somebody else's camera took the
+	# view while our flag stayed true it returned immediately: no fix, and no warning either. That is
+	# exactly what a driver saw, watching through an NPC's eyes with a silent log.
+	var active: Camera3D = player.get_viewport().get_camera_3d()
+	if active == player.camera:
+		_camera_thief = ""
+		return
+	# Reported on CHANGE only. If a camera were to take the view back every frame, push_warning goes
+	# through CustomLogger -> Obs -> the OpenTelemetry bridge and costs milliseconds a frame: the
+	# probe would drown the log and the frame rate it is meant to explain.
+	var who: String = str(active.get_path()) if active != null else "nobody"
+	if who != _camera_thief:
+		_camera_thief = who
+		push_warning("[Camera] the owner's camera was taken by '%s' — taking it back" % who)
 	player.camera.make_current()
 
 
