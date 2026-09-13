@@ -341,8 +341,14 @@ func server_action_received(data: Dictionary) -> void:
 				player.velocity = Vector3.ZERO
 				player.server_send_properties_to_client({"eva": player.eva_mode})
 		"screen_state":
-			# A 3D screen (mining depot) button was pressed: route it to that screen.
+			# A 3D screen (mining depot, teleporter) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
+				# Hand the ACTOR over when the screen asks for one. Two players can stand at the same
+				# console, so "whoever walked up last" (screen_focus_changed) is not necessarily who
+				# pressed the button — and WHOSE action this is must never be read from the payload,
+				# which the client wrote. Screens that do not care are untouched.
+				if player.screen_interacting.has_method("set_screen_actor"):
+					player.screen_interacting.set_screen_actor(player)
 				player.screen_interacting.update_screen(data)
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative side-effects we
@@ -2403,12 +2409,14 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	if radial < 0.0:
 		player.velocity -= up_world * radial
 
-## Deferred teleport onto a system (e.g. a teleporter target): reparent under
-## `destination`, place the player at `local_pos` expressed in that node's frame,
-## then emit the move AFTER the reparent so the server receives the position
-## relative to the new parent. Deferred because reparenting during an Area3D
-## signal callback is illegal, and the callback can fire repeatedly.
-func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
+## Teleport onto a body: reparent under `destination`, place the player at `local_pos` expressed in
+## that node's frame, then emit the move AFTER the reparent so the server receives the position
+## relative to the new parent.
+##
+## ⚠️ MUST be called DEFERRED. Reparenting a CharacterBody3D inside a physics or Area3D callback is
+## illegal ("Removing a CollisionObject during a physics callback is not allowed") and corrupts the
+## body. Every caller goes through call_deferred.
+func teleport_to(destination: Node, local_pos: Vector3) -> void:
 	if destination == null or not is_instance_valid(destination):
 		return
 	if not player.is_inside_tree() or not destination.is_inside_tree():
@@ -2421,7 +2429,22 @@ func _teleport_to_system(destination: Node, local_pos: Vector3) -> void:
 	# on a spinning planet a world-axes offset would keep the landing spot fixed in space while the
 	# ground turned underneath, and the pad would drift a full circle of longitude every day.
 	player.global_position = destination.global_position + destination.global_basis * local_pos
+	# You do not keep the speed you had before the jump: arriving with the run you were carrying sends
+	# you sliding off whatever you land on, and on a new body it does it before the ground exists.
+	player.velocity = Vector3.ZERO
+	rearm_ground_hold()
 	# BUG FIXED IN PASSING: this emitted on `self` (PlayerServer, a plain Node that does NOT declare
 	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
 	# Going through the body's single emitter removes the whole class of mistake.
 	player.emit_move()
+
+
+## Put the "wait for the ground to exist" net back on watch (see [method _hold_until_ground]).
+##
+## That net is a ONE-SHOT: `_ground_seen` latches true the first time terrain is found and is never
+## cleared, because a body walking off the edge of loaded terrain is a different problem. A teleport
+## breaks that assumption — it drops the player somewhere the server has built nothing, which is the
+## spawn situation all over again — so the net has to be re-armed rather than a second one written.
+func rearm_ground_hold() -> void:
+	_ground_seen = false
+	_ground_wait = 0.0

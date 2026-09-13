@@ -60,6 +60,8 @@ var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame)
 var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to derive the yaw rate (in-place turn)
 var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
+## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
+var _camera_thief: String = ""
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
@@ -242,6 +244,7 @@ func _process(_delta: float) -> void:
 		_update_name_tag()
 		return
 	_update_debug_coordinates()  # before the seated return below, so a driver's readout keeps moving
+	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
@@ -587,7 +590,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# The chat is gated the same way: the LineEdit swallows most keys, but not all of them, and
 	# nothing the player types should ever reach gameplay. (NOT _input_locked() here — that one also
 	# covers an open wheel, whose press/release lifecycle _handle_radial_wheels still needs to see.)
-	if _menu_open() or _chat_writing(): return
+	# A 3D screen holding the keyboard is gated for the same reason as the chat, and must be gated
+	# HERE rather than only in _input_locked: this handler must not consume the keys the screen's
+	# fields are waiting for. Returning early leaves them unhandled, which is exactly how they reach
+	# the SubViewport (Gui3D._unhandled_input pushes them in).
+	if _menu_open() or _chat_writing() or _screen_typing(): return
 	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
 	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
 	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
@@ -971,12 +978,57 @@ func _menu_open() -> bool:
 func _chat_writing() -> bool:
 	return player.direct_chat != null and player.direct_chat.can_write
 
+## The 3D screen we are standing at has the keyboard — somebody is typing into one of its fields (the
+## teleporter's coordinates, say). Same reason as [method _chat_writing], and the same danger: polled
+## reads are not shielded by GUI focus, so typing "1750" into a height field would equip the mining
+## tool (1) on the way past. Optional half of the screen contract: a screen that never takes text
+## simply has no is_typing(), and nothing changes for it.
+## The owner looks through the owner's camera. Always. Anything else is a bug, and this both says so
+## and undoes it.
+##
+## ⚠️ WHY IT CAN BE STOLEN AT ALL. A Camera3D entering a viewport that has NO current camera makes
+## ITSELF current — Godot does that for you. So any moment where ours stops being current hands the
+## view to whichever camera happens to enter next, and the world is full of candidates: every remote
+## avatar carries one (PlayerClient.setup switches it off), and every vehicle carries three for its
+## mirrors. Losing it for a single frame is enough, and it never comes back on its own.
+##
+## Measured: a player seated in a truck that teleported ended up watching through the truck's
+## rear-view camera, unable to move — the body was fine and other clients saw them correctly, so only
+## the view had gone. Re-asserting costs one property read per frame.
+func _keep_camera_ours() -> void:
+	if player.camera == null:
+		return
+	# ⚠️ ASK THE VIEWPORT, never our own `current` flag. `current` is a property EACH camera carries,
+	# and several can hold it at once — the viewport then renders whichever registered last. The first
+	# version of this guard tested `player.camera.current`, so when somebody else's camera took the
+	# view while our flag stayed true it returned immediately: no fix, and no warning either. That is
+	# exactly what a driver saw, watching through an NPC's eyes with a silent log.
+	var active: Camera3D = player.get_viewport().get_camera_3d()
+	if active == player.camera:
+		_camera_thief = ""
+		return
+	# Reported on CHANGE only. If a camera were to take the view back every frame, push_warning goes
+	# through CustomLogger -> Obs -> the OpenTelemetry bridge and costs milliseconds a frame: the
+	# probe would drown the log and the frame rate it is meant to explain.
+	var who: String = str(active.get_path()) if active != null else "nobody"
+	if who != _camera_thief:
+		_camera_thief = who
+		push_warning("[Camera] the owner's camera was taken by '%s' — taking it back" % who)
+	player.camera.make_current()
+
+
+func _screen_typing() -> bool:
+	var screen: Node3D = player.screen_interacting
+	return is_instance_valid(screen) and screen.has_method("is_typing") and screen.is_typing()
+
 ## Player input is locked: the pause menu is up, a radial wheel is open, OR the chat has the
 ## keyboard. No movement and no action fires (see _physics_process / _unhandled_input). A 3D screen
-## does NOT lock input — you leave it by walking out of its zone, so movement must stay available
-## while facing one.
+## does NOT lock input by merely being faced — you leave it by walking out of its zone, so movement
+## must stay available while looking at one; it locks only while it actually holds the keyboard, and
+## Escape gives that back (TeleporterUI._input).
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() \
+		or _screen_typing()
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.

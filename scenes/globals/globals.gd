@@ -35,6 +35,11 @@ const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body 
 ## their bindings are kept ON PURPOSE — we will need them again — so this is the single switch:
 ## PlayerClient skips building the tool, and the controls menu hides its binding (a key that does
 ## nothing must not be rebindable). Delete an entry to bring the tool back, nothing else to change.
+##
+## A tool with NO binding may use a plain name instead (see Teleporter.DEV_TOOL, "teleporter" — you
+## walk into it, you do not press it). The controls menu simply never looks such a key up. What does
+## not change is WHERE the switch is read: a tool is switched off where it RUNS. The teleporter is
+## server-authoritative, so the server refuses; greying the interface out is only a courtesy.
 const DISABLED_DEV_TOOLS: Dictionary = {
 	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
 	"zapette": true,      # admin cleanup tool (key 2) — testing phase over
