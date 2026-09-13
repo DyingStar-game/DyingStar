@@ -169,7 +169,7 @@ static func module_transforms(planet_data: PlanetData, nside: int, ipix: int,
 static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: float,
 		chunk_center: Vector3) -> Array:
 	var out: Array = []
-	var L := RailwaySettings.MODULE_LEN_M
+	var mod_len := RailwaySettings.MODULE_LEN_M
 	var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
 	var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
 	if cl.size() < 2 or cum.size() != cl.size():
@@ -177,9 +177,9 @@ static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: flo
 	var tracks := maxi(int(prof.get("tracks", 1)), 1)
 	var z_at := func(along: float) -> float:
 		return GradeProfile.z_track_at(prof, along)
-	var rng := GradeGeom.module_range(cum[0], cum[cum.size() - 1], L)
+	var rng := GradeGeom.module_range(cum[0], cum[cum.size() - 1], mod_len)
 	for i in range(rng.x, rng.y):
-		var s := (float(i) + 0.5) * L
+		var s := (float(i) + 0.5) * mod_len
 		var f := GradeGeom.frame_at(cl, cum, s, z_at, radius)
 		var up: Vector3 = f["up"]
 		var t: Vector3 = f["t"]
@@ -250,7 +250,7 @@ static func collision_boxes(planet_data: PlanetData, nside: int, ipix: int,
 static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float,
 		chunk_center: Vector3) -> Array:
 	var out: Array = []
-	var L := RailwaySettings.MODULE_LEN_M
+	var mod_len := RailwaySettings.MODULE_LEN_M
 	var h := RailwaySettings.MODULE_H_M
 	var w := RailwaySettings.TRACK_W_M
 	var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
@@ -277,11 +277,11 @@ static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float
 			var hi: float = cuts[j + 1]
 			var mid := 0.5 * (lo + hi)
 			var f := GradeGeom.frame_at(cl, cum, mid, z_at, radius,
-					0.5 * maxf(hi - lo, L))
+					0.5 * maxf(hi - lo, mod_len))
 			var up: Vector3 = f["up"]
 			var t: Vector3 = f["t"]
 			var n: Vector3 = f["n"]
-			var len_m := maxf(hi - lo, L)
+			var len_m := maxf(hi - lo, mod_len)
 			var base: Vector3 = (f["pos"] as Vector3) - chunk_center \
 					+ up * (RoadTerrain.SURFACE_OFFSET - RailwaySettings.MODULE_BELOW_M + 0.5 * h)
 			for k in tracks:
