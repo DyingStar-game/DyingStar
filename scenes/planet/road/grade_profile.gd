@@ -89,6 +89,7 @@ static func compute(road: Dictionary, sampler: Callable, climb_override: Variant
 		"max_grade": max_grade,
 		"tracks": tracks,
 		"hw_m": GradeSettings.half_width_of(road),
+		"lanes": RoadTerrain.lanes_of(road),
 		"along0": a0,
 		"along1": a1,
 		"knots_along": knots_along,
@@ -320,7 +321,7 @@ static func plan_of(profile: Dictionary, span: Dictionary, road: Dictionary,
 	var deck_hi := minf(road_hi, along_end + abut_hi)
 	if deck_hi - deck_lo < BridgePlan.EPS_M:
 		return {"ok": false}
-	var base := radius + RoadTerrain.SURFACE_OFFSET
+	var base := radius + RoadTerrain.SURFACE_THICKNESS_M
 	var top_r_at := func(along: float) -> float:
 		return base + z_track_at(profile, along)
 	var extra := PackedFloat64Array()

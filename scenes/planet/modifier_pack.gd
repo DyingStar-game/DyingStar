@@ -601,18 +601,17 @@ func _decode_roads(b: PackedByteArray, off: int, count: int,
 		# The u16 slot is `lanes` for a road and the number of `tracks` for a
 		# railway — the record exposes it under the name that matches the type.
 		if road_type == "railway":
-			var tracks := lanes_raw if lanes_raw != SID_NONE else 0
 			if lanes_raw != SID_NONE:
-				road["tracks"] = tracks
-			# A railway's bed follows its number of tracks, whatever `width_m`
-			# the pack stored (an older export wrote the QGIS pre-fill). Fixing
-			# it here keeps every reader of `half_width_m` — the ribbon, the
-			# prop spawners' suppression, the bridge finder and the deck — on
-			# the same number.
-			half_width_m = RailwaySettings.railway_half_width_m(tracks)
-			road["half_width_m"] = half_width_m
+				road["tracks"] = lanes_raw
 		elif lanes_raw != SID_NONE:
 			road["lanes"] = lanes_raw
+		# The bed width is a function of the RECORD, not of the stored width_m:
+		# a railway follows its `tracks`, a highway its `lanes` (an older export
+		# wrote the QGIS pre-fill, 12 m, for both). One call keeps every reader
+		# of `half_width_m` — the ribbon, the prop spawners' suppression, the
+		# bridge finder and the deck — on the number RoadTerrain would give.
+		half_width_m = RoadTerrain.get_half_width_m(road)
+		road["half_width_m"] = half_width_m
 		# Only a highway / road may be grade-limited; the exporter never sets
 		# the flag on another type, the check here keeps a hand-made pack honest.
 		if max_slope_deg >= 0 and road_type in RoadTerrain.GRADED_TYPES:

@@ -217,22 +217,9 @@ static func generate_mesh(
 	# HEALPix lon/lat bounding box (reused for road overlay).
 	var _cbb: Array[Vector2] = []
 	if hp_mode:
-		var _hp_corners: Array = HEALPix.get_pixel_corners(hp_nside, hp_ipix)
-		var _hp_cdir := HEALPix.pix2vec_nest(hp_nside, hp_ipix)
-		var _cbb_mn := Vector2(INF, INF)
-		var _cbb_mx := Vector2(-INF, -INF)
-		var _bbox_dirs: Array[Vector3] = []
-		for _ci in _hp_corners.size():
-			_bbox_dirs.append(_hp_corners[_ci])
-			_bbox_dirs.append((_hp_corners[_ci] + _hp_corners[(_ci + 1) % _hp_corners.size()]).normalized())
-		_bbox_dirs.append(_hp_cdir)
-		for _bs in _bbox_dirs:
-			var _bll := HEALPix.vec2lonlat(_bs)
-			_cbb_mn.x = minf(_cbb_mn.x, _bll.x)
-			_cbb_mn.y = minf(_cbb_mn.y, _bll.y)
-			_cbb_mx.x = maxf(_cbb_mx.x, _bll.x)
-			_cbb_mx.y = maxf(_cbb_mx.y, _bll.y)
-		_cbb = [_cbb_mn, _cbb_mx]
+		_cbb = _healpix_lonlat_bbox(hp_nside, hp_ipix)
+		var _cbb_mn: Vector2 = _cbb[0]
+		var _cbb_mx: Vector2 = _cbb[1]
 		if rq and rq.is_loaded():
 			for _rz in rq.get_zones_for_region(_cbb_mn, _cbb_mx):
 				if BiomeQuery._aabb_overlap(_cbb_mn, _cbb_mx, _rz.bbox_min, _rz.bbox_max):
@@ -1811,7 +1798,7 @@ static func generate_mesh(
 				face, u_min, u_max, v_min, v_max)
 		var _rd_cbb_min: Vector2 = _rd_cbb[0]
 		var _rd_cbb_max: Vector2 = _rd_cbb[1]
-		# Group strip geometry by material path.
+		# Group slab geometry by material path — see _road_group().
 		var road_groups: Dictionary = {}
 
 		# Pack path: _road_arr holds this chunk's own pieces, already clipped.
@@ -1829,8 +1816,19 @@ static func generate_mesh(
 		# Profiled lines — railways and graded roads — leave the ribbon path:
 		# their bed is built at the profile's altitude by GradeBed below. One
 		# WITHOUT a profile (tiles not available at warm-up) stays here and
-		# gets the terrain-hugging ribbon on its material — the degraded mode.
+		# gets the terrain-hugging slab on its material — the degraded mode.
 		var _rw_zones: Array = []
+
+		# The slab's height sampler — the one the collision builder uses too,
+		# so the slab the client draws is the slab the server collides with.
+		var _rd_height_at := func(d: Vector3) -> float:
+			if hp_mode:
+				return data.sample_height_for_direction(d, _export_ipix,
+						-1, Vector2i(-1, -1), null, _sample_nside, _frame)
+			var _fuv := PlanetData.sphere_to_cube(d)
+			return data.sample_height_for_chunk(
+				_fuv["face"], _fuv["u"], _fuv["v"], u_min, u_max, v_min, v_max)
+		var _max_seg_deg := _ribbon_pitch_deg(_rd_cbb, res)
 
 		for _rd_zone in _rd_sources:
 			var _rd_rt := RoadTerrain.get_road_type(_rd_zone)
@@ -1847,8 +1845,6 @@ static func generate_mesh(
 			# with width/2 in METRES and prepare_zone() overwrote it in degrees.
 			var _rd_hw_m: float = float(_rd_zone.get(
 				"half_width_m", RoadTerrain.get_half_width_m(_rd_zone)))
-			var _rd_hw_deg: float = float(_rd_zone.get(
-				"half_width_deg", _rd_hw_m / _rd_m_per_deg))
 			var _rd_tile_m: float = RoadTerrain.get_tile_size(_rd_rt)
 			var _rd_cl_full: PackedVector2Array = _rd_zone.get(
 				"centerline", PackedVector2Array())
@@ -1861,45 +1857,10 @@ static func generate_mesh(
 			var _rd_cum_full: PackedFloat64Array = _rd_zone.get(
 				"_cum_lengths", PackedFloat64Array())
 
-			var _rd_mid_ll := (_rd_cl_full[0]
-				+ _rd_cl_full[_rd_cl_full.size() - 1]) * 0.5
-			var _rd_biome_type := ""
-			if not _pz_zones.is_empty():
-				var _rd_mid_lon := deg_to_rad(_rd_mid_ll.x)
-				var _rd_mid_lat := deg_to_rad(_rd_mid_ll.y)
-				var _rd_mid_dir := Vector3(
-					cos(_rd_mid_lat) * cos(_rd_mid_lon),
-					sin(_rd_mid_lat),
-					cos(_rd_mid_lat) * sin(_rd_mid_lon))
-				var _rd_mid_zones := _query_zones_at_direction(_rd_mid_dir, _pz_zones)
-				if not _rd_mid_zones.is_empty():
-					var _rd_mid_bd := data.get_biome_by_type(
-						_rd_mid_zones[0].get("biome_type", ""))
-					if _rd_mid_bd:
-						_rd_biome_type = _rd_mid_bd.biome_type
-
-			var _mat_path := RoadTerrain.get_material_path(
-				_rd_rt, _rd_biome_type)
-
-			if not road_groups.has(_mat_path):
-				road_groups[_mat_path] = {
-					"verts": PackedVector3Array(),
-					"norms": PackedVector3Array(),
-					"uvs": PackedVector2Array(),
-					"indices": PackedInt32Array(),
-					"tile_m": _rd_tile_m,
-				}
-			var grp: Dictionary = road_groups[_mat_path]
-			var grp_verts: PackedVector3Array = grp["verts"]
-			var grp_norms: PackedVector3Array = grp["norms"]
-			var grp_uvs: PackedVector2Array = grp["uvs"]
-			var grp_indices: PackedInt32Array = grp["indices"]
-
-			# Use chunk degree span (not cube-face UV span) so subdivision
-			# matches the centerline's coordinate system (degrees).
-			var _max_seg_deg := maxf(
-				_rd_cbb_max.x - _rd_cbb_min.x,
-				_rd_cbb_max.y - _rd_cbb_min.y) / float(res) * 0.5
+			var _rd_surf := _road_surface_for(data, _rd_cl_full, _rd_rt,
+					_pz_zones, _corundum_bd)
+			var grp := _road_group(road_groups, _rd_surf["mat_path"], _rd_tile_m,
+					_rd_surf["uv_mode"], _rd_surf["tinted"])
 
 			# Take the ribbon out from under the bridges. Only the pack path can
 			# be cut: the exclusion intervals are stated in absolute along-road
@@ -1920,99 +1881,24 @@ static func generate_mesh(
 					_rd_pieces = RoadCut.split(
 						_rd_cl_full, _rd_cum_full, _rd_excl)
 
+			# One slab per carriageway: a highway's two strips leave the median
+			# gap open (the ground shows through), any other road is one strip.
+			var _rd_layout := RoadTerrain.lane_layout(
+					_rd_rt, RoadTerrain.lanes_of(_rd_zone), _rd_hw_m)
 			for _rd_piece in _rd_pieces:
-				var _rd_cl: PackedVector2Array = _rd_piece[0]
-				var _rd_cum: PackedFloat64Array = _rd_piece[1]
-				if _rd_cl.size() < 2:
-					continue
-				var _strip_base: int = grp_verts.size()
-				# Fallback when no per-point distances are stored (legacy zones):
-				# accumulate from this piece's start, as before.
-				var _rd_have_cum := _rd_cum.size() == _rd_cl.size()
-				var along_m := 0.0
-
-				for _seg_i in _rd_cl.size() - 1:
-					var p0 := _rd_cl[_seg_i]
-					var p1 := _rd_cl[_seg_i + 1]
-					var seg_dir := p1 - p0
-					var seg_len_deg := seg_dir.length()
-					if seg_len_deg < 1e-12:
-						along_m += seg_len_deg * _rd_m_per_deg
-						continue
-
-					# Metric perpendicular: rotating the raw lon/lat delta is
-					# NOT a rotation, and extruded every road that is not
-					# east-west too narrow and sheared. See RoadTerrain.perp_deg.
-					var perp := RoadTerrain.perp_deg(p0, p1)
-					var n_sub := maxi(1, ceili(seg_len_deg / _max_seg_deg))
-					# Along-road distance at this segment's two ends. From the pack
-					# these are absolute (measured from the road's start), so the
-					# texture runs continuously across chunk boundaries.
-					var _seg_a0: float = _rd_cum[_seg_i] if _rd_have_cum else along_m
-					var _seg_a1: float = _rd_cum[_seg_i + 1] if _rd_have_cum \
-						else along_m + seg_len_deg * _rd_m_per_deg
-
-					for _sub_j in n_sub + 1:
-						if _sub_j == n_sub and _seg_i < _rd_cl.size() - 2:
-							continue
-						var frac := float(_sub_j) / float(n_sub)
-						var pt := p0 + seg_dir * frac
-						var along_here := _seg_a0 + (_seg_a1 - _seg_a0) * frac
-						var pt_l := pt + perp * _rd_hw_deg
-						var pt_r := pt - perp * _rd_hw_deg
-
-						for _side_ll in [pt_l, pt_r]:
-							var _lon_r := deg_to_rad(_side_ll.x)
-							var _lat_r := deg_to_rad(_side_ll.y)
-							var _dir := Vector3(
-								cos(_lat_r) * cos(_lon_r),
-								sin(_lat_r),
-								cos(_lat_r) * sin(_lon_r))
-							var _h: float
-							if hp_mode:
-								_h = data.sample_height_for_direction(_dir, _export_ipix,
-										-1, Vector2i(-1, -1), null, _sample_nside, _frame)
-							else:
-								var _fuv := PlanetData.sphere_to_cube(_dir)
-								_h = data.sample_height_for_chunk(
-									_fuv["face"], _fuv["u"], _fuv["v"],
-									u_min, u_max, v_min, v_max)
-							var _pos := _dir * (data.radius + _h + RoadTerrain.SURFACE_OFFSET)
-							grp_verts.append(_world_to_local(_pos, cc_f32, _wp_f32))
-							grp_norms.append(_dir)
-
-						var _u_along := along_here / _rd_tile_m
-						grp_uvs.append(Vector2(_u_along, _rd_hw_m / _rd_tile_m))
-						grp_uvs.append(Vector2(_u_along, -_rd_hw_m / _rd_tile_m))
-
-					along_m += seg_len_deg * _rd_m_per_deg
-
-				# Build quad-strip indices: pairs [L0,R0, L1,R1, ...].
-				var _pair_count: int = (grp_verts.size() - _strip_base) / 2
-				for _pi in _pair_count - 1:
-					var _li := _strip_base + _pi * 2      # left  current
-					var _ri := _li + 1                     # right current
-					var _ln := _li + 2                     # left  next
-					var _rn := _li + 3                     # right next
-					grp_indices.append(_li)
-					grp_indices.append(_ln)
-					grp_indices.append(_ri)
-					grp_indices.append(_ri)
-					grp_indices.append(_ln)
-					grp_indices.append(_rn)
-
-			# Write modified packed arrays back to the dictionary.
-			# PackedArray types use copy-on-write so the dictionary must
-			# be updated explicitly after local modifications.
-			grp["verts"] = grp_verts
-			grp["norms"] = grp_norms
-			grp["uvs"] = grp_uvs
-			grp["indices"] = grp_indices
+				for _rd_strip in _rd_layout["strips"]:
+					_road_group_append(grp, RoadRibbon.emit_strip(
+							_rd_piece[0], _rd_piece[1], _rd_strip, _rd_m_per_deg,
+							data.radius, _max_seg_deg, _rd_height_at, cc_f32,
+							true, true, _rd_surf["uv_mode"], _rd_tile_m,
+							_rd_surf["tint"]))
 
 		# --- profiled bed: level top on the profile, skirts to the ground -----
-		# Railways (ballast) and graded roads (asphalt) share this builder; each
-		# zone goes to the road_groups entry of its own bed material, so the UV
-		# recentring and the surface emission below serve them unchanged.
+		# Railways (ballast) and graded roads (asphalt, or melted corundum on
+		# the plateau) share this builder; each zone goes to the road_groups
+		# entry of its own bed material, so the UV recentring and the surface
+		# emission below serve them unchanged. A highway bed's median strip
+		# goes to the structure group instead of being left open.
 		# The stations are spaced on the chunk's own vertex pitch, the same
 		# rule the collision builder applies, so the two beds are one geometry.
 		if not _rw_zones.is_empty() and hp_mode:
@@ -2021,76 +1907,45 @@ static func generate_mesh(
 			var _rw_sampler := func(d: Vector3) -> float:
 				return data.sample_height_for_direction(d, _export_ipix, -1,
 						Vector2i(-1, -1), null, _sample_nside, _frame)
-			# Tunnels (tube + headwalls) only where the grid is fine enough to
-			# be carved — the same gate as the cuttings, so a coarse LOD shows
-			# the mountain whole rather than a tube buried in it.
-			var _rw_struct: Dictionary = {}
-			if not _rw_ctx.is_empty():
-				var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
-				if not road_groups.has(_rw_smat):
-					road_groups[_rw_smat] = {
-						"verts": PackedVector3Array(),
-						"norms": PackedVector3Array(),
-						"uvs": PackedVector2Array(),
-						"indices": PackedInt32Array(),
-						"tile_m": RoadTerrain.get_tile_size("railway"),
-					}
-				_rw_struct = road_groups[_rw_smat]
+			var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
+			var _rw_stile := RoadTerrain.get_tile_size("railway")
 			for _rw_pair in _rw_zones:
 				var _rw_zone: Dictionary = _rw_pair[0]
 				var _rw_prof: Dictionary = _rw_pair[1]
 				var _rw_fid := int(_rw_zone.get("feature_id", -1))
 				var _rw_rt := RoadTerrain.get_road_type(_rw_zone)
-				var _rw_mat := GradeSettings.bed_material_of(_rw_zone)
-				if not road_groups.has(_rw_mat):
-					road_groups[_rw_mat] = {
-						"verts": PackedVector3Array(),
-						"norms": PackedVector3Array(),
-						"uvs": PackedVector2Array(),
-						"indices": PackedInt32Array(),
-						"tile_m": RoadTerrain.get_tile_size(_rw_rt),
-					}
-				var _rw_grp: Dictionary = road_groups[_rw_mat]
-				var _rw_verts: PackedVector3Array = _rw_grp["verts"]
-				var _rw_norms: PackedVector3Array = _rw_grp["norms"]
-				var _rw_uvs: PackedVector2Array = _rw_grp["uvs"]
-				var _rw_indices: PackedInt32Array = _rw_grp["indices"]
 				var _rw_cl: PackedVector2Array = _rw_zone.get("centerline", PackedVector2Array())
 				var _rw_cum: PackedFloat64Array = _rw_zone.get("_cum_lengths", PackedFloat64Array())
+				# The bed material: ballast / asphalt from the profile, or the
+				# corundum surface when this highway crosses the plateau.
+				var _rw_surf := _road_surface_for(data, _rw_cl, _rw_rt,
+						_pz_zones, _corundum_bd)
+				var _rw_mat: String = _rw_surf["mat_path"] if _rw_surf["tinted"] \
+						else GradeSettings.bed_material_of(_rw_zone)
+				var _rw_grp := _road_group(road_groups, _rw_mat,
+						RoadTerrain.get_tile_size(_rw_rt), _rw_surf["uv_mode"],
+						_rw_surf["tinted"])
 				var _rw_bed := GradeBed.build_piece(_rw_cl, _rw_cum,
 					_rw_prof, data.get_grade_exclusions_for_feature(_rw_fid),
 					_rd_m_per_deg, data.radius, _rw_sampler, _rw_step_m, cc_f32,
-					true, true)
-				var _rw_base := _rw_verts.size()
-				_rw_verts.append_array(_rw_bed["verts"])
-				_rw_norms.append_array(_rw_bed["norms"])
-				_rw_uvs.append_array(_rw_bed["uvs"])
-				for _rw_i in (_rw_bed["indices"] as PackedInt32Array):
-					_rw_indices.append(_rw_base + _rw_i)
-				_rw_grp["verts"] = _rw_verts
-				_rw_grp["norms"] = _rw_norms
-				_rw_grp["uvs"] = _rw_uvs
-				_rw_grp["indices"] = _rw_indices
-				if not _rw_struct.is_empty():
-					var _rw_tun := GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_prof,
-						data.radius, cc_f32, true, true)
-					var _rw_sv: PackedVector3Array = _rw_struct["verts"]
-					var _rw_sn: PackedVector3Array = _rw_struct["norms"]
-					var _rw_su: PackedVector2Array = _rw_struct["uvs"]
-					var _rw_si: PackedInt32Array = _rw_struct["indices"]
-					var _rw_sbase := _rw_sv.size()
-					_rw_sv.append_array(_rw_tun["verts"])
-					_rw_sn.append_array(_rw_tun["norms"])
-					_rw_su.append_array(_rw_tun["uvs"])
-					for _rw_j in (_rw_tun["indices"] as PackedInt32Array):
-						_rw_si.append(_rw_sbase + _rw_j)
-					_rw_struct["verts"] = _rw_sv
-					_rw_struct["norms"] = _rw_sn
-					_rw_struct["uvs"] = _rw_su
-					_rw_struct["indices"] = _rw_si
+					true, true, _rw_surf["uv_mode"], _rw_surf["tint"])
+				_road_group_append(_rw_grp, _rw_bed)
+				var _rw_median: Dictionary = _rw_bed["median"]
+				if not (_rw_median["verts"] as PackedVector3Array).is_empty():
+					_road_group_append(_road_group(road_groups, _rw_smat, _rw_stile,
+							RoadRibbon.UvMode.FLOW, false), _rw_median)
+				# Tunnels (tube + headwalls) only where the grid is fine enough to
+				# be carved — the same gate as the cuttings, so a coarse LOD shows
+				# the mountain whole rather than a tube buried in it.
+				if not _rw_ctx.is_empty():
+					_road_group_append(_road_group(road_groups, _rw_smat, _rw_stile,
+							RoadRibbon.UvMode.FLOW, false),
+							GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_prof,
+									data.radius, cc_f32, true, true))
 
 		# Offset flow-aligned UVs per group so values stay near zero
-		# (prevents GPU float32 precision artifacts on large planets).
+		# (prevents GPU float32 precision artifacts on large planets). Both
+		# UV modes survive a whole-tile shift.
 		for _grp_key in road_groups:
 			var _off_uvs: PackedVector2Array = road_groups[_grp_key]["uvs"]
 			if _off_uvs.size() == 0:
@@ -2112,7 +1967,9 @@ static func generate_mesh(
 			var rv: PackedVector3Array = grp["verts"]
 			var rn: PackedVector3Array = grp["norms"]
 			var ru: PackedVector2Array = grp["uvs"]
+			var rc: PackedColorArray = grp["colors"]
 			var ri: PackedInt32Array = grp["indices"]
+			var _tinted: bool = grp["tinted"]
 			if rv.size() == 0:
 				continue
 			# Load the road material. This runs on a WorkerThreadPool task, so
@@ -2133,8 +1990,11 @@ static func generate_mesh(
 				bm.render_priority = 2
 				# Disable deep parallax — auto-generated tangents are
 				# sufficient for normal mapping but parallax on a flat
-				# overlay adds cost without visual benefit.
-				bm.heightmap_enabled = false
+				# overlay adds cost without visual benefit. The engraved
+				# corundum surface is the exception: its 5 cm grooves ARE
+				# the parallax.
+				bm.heightmap_enabled = bm.heightmap_enabled \
+						and RoadTerrain.keeps_parallax(mat_path)
 				# Render both faces to avoid winding-order issues.
 				bm.cull_mode = BaseMaterial3D.CULL_DISABLED
 			# Build surface via SurfaceTool so tangents are generated
@@ -2144,6 +2004,8 @@ static func generate_mesh(
 			for _vi in rv.size():
 				st.set_normal(rn[_vi])
 				st.set_uv(ru[_vi])
+				if _tinted:
+					st.set_color(rc[_vi])
 				st.add_vertex(rv[_vi])
 			for _idx in ri:
 				st.add_index(_idx)
@@ -2740,17 +2602,25 @@ static func generate_collision_shape(
 	# ribbon they DO get collision — built into this very shape (same origin,
 	# same lifetime) from the chunk's own clipped pieces.
 	var _col_rw: Array = []
+	# Terrain-hugging roads are slabs with their own collision too (RoadRibbon):
+	# every road piece of the chunk that is NOT built on a profile — a
+	# profiled line whose profile is missing falls back here like the mesh.
+	var _col_rd: Array = []
 	if hp_mode:
 		var _col_eipix := _export_ipix
 		_col_pz_zones = data.get_chunk_populate_zones(_col_eipix)
 		_col_lf_arr = data.get_chunk_linear_features(_col_eipix)
 		_col_rf_arr = data.get_chunk_radial_features(_col_eipix)
 		_col_cr_arr = data.get_chunk_craters(_col_eipix)
-		if data.has_profiled_lines():
-			for _rw_r in GradeBed.profiled_pieces(data.get_roads_for_chunk(hp_nside, hp_ipix)):
-				var _rw_p: Dictionary = data.get_grade_profile(int(_rw_r.get("feature_id", -1)))
+		for _rd_r in data.get_roads_for_chunk(hp_nside, hp_ipix):
+			if not RoadTerrain.is_road_zone(_rd_r):
+				continue
+			if GradeSettings.is_profiled(_rd_r):
+				var _rw_p: Dictionary = data.get_grade_profile(int(_rd_r.get("feature_id", -1)))
 				if not _rw_p.is_empty():
-					_col_rw.append([_rw_r, _rw_p])
+					_col_rw.append([_rd_r, _rw_p])
+					continue
+			_col_rd.append(_rd_r)
 	# Profiled-line cuttings, on the same finest-grid gate as the visual mesh.
 	var _col_rw_ctx: Dictionary = {}
 	var _col_rw_band := PackedByteArray()
@@ -3127,7 +2997,7 @@ static func generate_collision_shape(
 	# Wound with the grid's own sign, so the one-shot flip in
 	# PlanetTerrain._make_chunk_collision_body (navmesh CW-front) treats bed
 	# and ground alike. Stations on the collision grid's pitch, like the mesh.
-	if not _col_rw.is_empty() or not _col_rw_ctx.is_empty():
+	if not _col_rw.is_empty() or not _col_rw_ctx.is_empty() or not _col_rd.is_empty():
 		var _rw_outward := true
 		if faces.size() >= 3:
 			var _rw_n := (faces[1] - faces[0]).cross(faces[2] - faces[0])
@@ -3172,6 +3042,30 @@ static func generate_collision_shape(
 				var _rw_tun := GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_pair[1],
 					data.radius, col_origin, false, _rw_outward)
 				faces.append_array(_rw_tun["faces"])
+		# Road slabs: the same strips, stations and sampler as the mesh's
+		# RoadRibbon.emit_strip calls, minus the visual arrays.
+		if not _col_rd.is_empty():
+			var _rd_pitch := _ribbon_pitch_deg(_healpix_lonlat_bbox(hp_nside, hp_ipix), res)
+			for _rd_zone in _col_rd:
+				var _rd_cl: PackedVector2Array = _rd_zone.get("centerline", PackedVector2Array())
+				var _rd_cum: PackedFloat64Array = _rd_zone.get("_cum_lengths", PackedFloat64Array())
+				var _rd_hw_m: float = float(_rd_zone.get(
+					"half_width_m", RoadTerrain.get_half_width_m(_rd_zone)))
+				var _rd_pieces: Array = [[_rd_cl, _rd_cum]]
+				if _rd_cum.size() == _rd_cl.size() and data.corundum_default_biome:
+					var _rd_excl: Array = data.get_bridge_exclusions_for_feature(
+						int(_rd_zone.get("feature_id", -1)))
+					if not _rd_excl.is_empty():
+						_rd_pieces = RoadCut.split(_rd_cl, _rd_cum, _rd_excl)
+				var _rd_layout := RoadTerrain.lane_layout(
+						RoadTerrain.get_road_type(_rd_zone),
+						RoadTerrain.lanes_of(_rd_zone), _rd_hw_m)
+				for _rd_piece in _rd_pieces:
+					for _rd_strip in _rd_layout["strips"]:
+						faces.append_array(RoadRibbon.emit_strip(
+								_rd_piece[0], _rd_piece[1], _rd_strip, _rw_mpd,
+								data.radius, _rd_pitch, _rw_sampler, col_origin,
+								false, _rw_outward)["faces"])
 
 	var shape := ConcavePolygonShape3D.new()
 	# Zéro = tous les sommets ont lu leur propre tuile ; la forme est persistable.
@@ -3224,6 +3118,177 @@ static func _world_to_local(world_pos: Vector3, cc_f32: Vector3,
 	var local := world_pos - cc_f32
 	buf[0] = local.x; buf[1] = local.y; buf[2] = local.z
 	return Vector3(buf[0], buf[1], buf[2])
+
+
+## Lon/lat bounding box (degrees) of a HEALPix chunk: its corners, edge
+## midpoints and centre. Shared by the mesh and the collision builders so
+## the road slab's stations fall on the same pitch on both sides.
+static func _healpix_lonlat_bbox(hp_nside: int, hp_ipix: int) -> Array[Vector2]:
+	var corners: Array = HEALPix.get_pixel_corners(hp_nside, hp_ipix)
+	var cdir := HEALPix.pix2vec_nest(hp_nside, hp_ipix)
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	var dirs: Array[Vector3] = []
+	for ci in corners.size():
+		dirs.append(corners[ci])
+		dirs.append((corners[ci] + corners[(ci + 1) % corners.size()]).normalized())
+	dirs.append(cdir)
+	for d in dirs:
+		var ll := HEALPix.vec2lonlat(d)
+		mn.x = minf(mn.x, ll.x)
+		mn.y = minf(mn.y, ll.y)
+		mx.x = maxf(mx.x, ll.x)
+		mx.y = maxf(mx.y, ll.y)
+	return [mn, mx]
+
+
+## Station pitch of the road slab, in degrees along the centerline: half the
+## chunk's vertex pitch. Chunk degree span (not cube-face UV span) so the
+## subdivision matches the centerline's coordinate system.
+static func _ribbon_pitch_deg(cbb: Array[Vector2], res: int) -> float:
+	return maxf(cbb[1].x - cbb[0].x, cbb[1].y - cbb[0].y) / float(maxi(res, 1)) * 0.5
+
+
+# ------------------------------------------------------------------
+# Road surface groups (generate_mesh)
+# ------------------------------------------------------------------
+
+## The road_groups entry for [param mat_path], created on first use: one
+## surface per material, with the UV mode and vertex-tint rule of that
+## material. Every group carries `colors` (padded WHITE by
+## [method _road_group_append]) so the emitter can index them blindly.
+static func _road_group(groups: Dictionary, mat_path: String, tile_m: float,
+		uv_mode: int, tinted: bool) -> Dictionary:
+	if not groups.has(mat_path):
+		groups[mat_path] = {
+			"verts": PackedVector3Array(),
+			"norms": PackedVector3Array(),
+			"uvs": PackedVector2Array(),
+			"colors": PackedColorArray(),
+			"indices": PackedInt32Array(),
+			"tile_m": tile_m,
+			"uv_mode": uv_mode,
+			"tinted": tinted,
+		}
+	return groups[mat_path]
+
+
+## Append a builder's {verts, norms, uvs, indices[, colors]} to a group,
+## rebasing the indices. PackedArrays are copy-on-write, so the arrays are
+## written back to the dictionary explicitly.
+static func _road_group_append(grp: Dictionary, part: Dictionary) -> void:
+	var pv: PackedVector3Array = part["verts"]
+	if pv.is_empty():
+		return
+	var verts: PackedVector3Array = grp["verts"]
+	var norms: PackedVector3Array = grp["norms"]
+	var uvs: PackedVector2Array = grp["uvs"]
+	var colors: PackedColorArray = grp["colors"]
+	var indices: PackedInt32Array = grp["indices"]
+	var base := verts.size()
+	verts.append_array(pv)
+	norms.append_array(part["norms"])
+	uvs.append_array(part["uvs"])
+	var pc: PackedColorArray = part.get("colors", PackedColorArray())
+	if pc.size() == pv.size():
+		colors.append_array(pc)
+	else:
+		for _i in pv.size():
+			colors.append(Color.WHITE)
+	for _i in (part["indices"] as PackedInt32Array):
+		indices.append(base + _i)
+	grp["verts"] = verts
+	grp["norms"] = norms
+	grp["uvs"] = uvs
+	grp["colors"] = colors
+	grp["indices"] = indices
+
+
+## Which surface a road piece gets: {mat_path, uv_mode, tint, tinted}.
+##
+## The MATERIAL is decided once per piece, from the first populate zone at
+## its midpoint; the TINT is resolved per vertex from [param pz_zones], the
+## chunk's populate zones — a coarse chunk's piece can run for kilometres
+## and cross a rock outcrop that its midpoint is nowhere near. See
+## [method road_surface_for_zone].
+static func _road_surface_for(data: PlanetData, cl: PackedVector2Array,
+		road_type: String, pz_zones: Array,
+		corundum_bd: BiomeDefinition) -> Dictionary:
+	var mid_ll := (cl[0] + cl[cl.size() - 1]) * 0.5
+	var mid_dir := RoadBridge.lonlat_to_dir(mid_ll.x, mid_ll.y)
+	var first_mid: Dictionary = {}
+	if not pz_zones.is_empty():
+		var mid_zones := _query_zones_at_direction(mid_dir, pz_zones)
+		if not mid_zones.is_empty():
+			first_mid = mid_zones[0]
+	return road_surface_for_zone(data, road_type, first_mid, corundum_bd, pz_zones)
+
+
+## The surface of a road piece whose ground is [param first_zone] (the first
+## populate zone containing its midpoint, {} when none does): {mat_path,
+## uv_mode, tint, tinted}.
+##
+## A highway on corundum ground — the planet's DEFAULT biome (typically NO
+## zone contains the point), a corundum biome, or an outcrop zone whose rock
+## is a corundum variety (RoadTerrain.is_corundum_ground) — gets the melted
+## corundum surface: lane UVs and the GROUND'S OWN colour baked into the
+## vertex colour ([method road_ground_tint]), so the road matches the ground
+## around it. With [param pz_zones] the tint looks the zone up per vertex;
+## without, every vertex takes [param first_zone]'s. Shared with
+## BridgeSpawner (a deck is the same road).
+static func road_surface_for_zone(data: PlanetData, road_type: String,
+		first_zone: Dictionary, corundum_bd: BiomeDefinition = null,
+		pz_zones: Array = []) -> Dictionary:
+	var biome_type := ""
+	var zone_bd: BiomeDefinition = null
+	if not first_zone.is_empty():
+		zone_bd = data.get_biome_by_type(String(first_zone.get("biome_type", "")))
+		if zone_bd:
+			biome_type = zone_bd.biome_type
+	var rock_type := str(first_zone.get("rock_type", ""))
+	var on_cor := road_type == "highway" and RoadTerrain.is_corundum_ground(
+			biome_type, rock_type, data.corundum_applies_to_zone(first_zone))
+	var mat_path := RoadTerrain.get_material_path(road_type, biome_type, on_cor)
+	var out := {
+		"mat_path": mat_path,
+		"uv_mode": RoadRibbon.UvMode.FLOW,
+		"tint": Callable(),
+		"tinted": false,
+	}
+	if not RoadTerrain.is_corundum_surface(mat_path):
+		return out
+	var cor_bd: BiomeDefinition = corundum_bd if corundum_bd \
+			else data.get_biome_by_type(RoadTerrain.CORUNDUM_BIOME_TYPE)
+	out["uv_mode"] = RoadRibbon.UvMode.LANE
+	out["tinted"] = true
+	if pz_zones.is_empty():
+		out["tint"] = func(d: Vector3) -> Color:
+			return road_ground_tint(data, d, first_zone, cor_bd)
+	else:
+		out["tint"] = func(d: Vector3) -> Color:
+			var here := _query_zones_at_direction(d, pz_zones)
+			return road_ground_tint(data, d,
+					here[0] if not here.is_empty() else {}, cor_bd)
+	return out
+
+
+## The ground's colour at [param d] under [param zone] (its first populate
+## zone, {} for none) — the three cases of the terrain's biome colour pass,
+## in its order: the corundum iron tint where corundum is the default, the
+## zone's RockCatalogue tint where it names a rock, the biome colour else.
+static func road_ground_tint(data: PlanetData, d: Vector3, zone: Dictionary,
+		cor_bd: BiomeDefinition) -> Color:
+	var zone_bd: BiomeDefinition = null
+	if not zone.is_empty():
+		zone_bd = data.get_biome_by_type(String(zone.get("biome_type", "")))
+	var base: Color = zone_bd.color if zone_bd else (
+			cor_bd.color if cor_bd else Color(0.823, 0.784, 0.69))
+	if data.corundum_applies_to_zone(zone):
+		return ArideDesertCorundumPlateauTerrain.iron_tint(d, data.radius, base)
+	var rock_type := str(zone.get("rock_type", ""))
+	if not rock_type.is_empty() and RockCatalogue.has(rock_type):
+		return RockCatalogue.tint(d, data.radius, rock_type, base)
+	return base
 
 
 ## Snap a Vector3 to float32 precision.

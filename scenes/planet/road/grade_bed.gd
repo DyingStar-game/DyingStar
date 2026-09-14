@@ -194,26 +194,45 @@ static func carved_height(h: float, prof: Dictionary, along: float, lat_m: float
 ## [param outward] — wind the collision faces so their geometric normal
 ## points OUT of the bed (true) or into it (false): the caller matches the
 ## chunk grid's own winding, which PlanetTerrain flips once for the navmesh.
+## [param uv_mode] / [param tint] — the top's texturing, see RoadRibbon
+## (a highway on the corundum plateau: lane UVs, vertex-tinted).
 ##
-## Returns {verts, norms, uvs, indices, faces}: the first four for a road
-## group (indices are 0-based on `verts`), `faces` the collision triangles,
-## both local to [param origin].
+## Returns {verts, norms, uvs, colors, indices, faces, median}: the first
+## five for a road group (indices are 0-based on `verts`), `faces` the
+## collision triangles, both local to [param origin]. `median` is the
+## {verts, norms, uvs, indices} of a highway's central strip, for the
+## STRUCTURE material's group (empty arrays when the road has no median).
+## The collision is always the whole bed: one slab across the median.
 static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 		profile: Dictionary, exclusions: Array, m_per_deg: float,
 		radius: float, sampler: Callable, max_step_m: float, origin: Vector3,
-		want_visual: bool, outward: bool) -> Dictionary:
+		want_visual: bool, outward: bool, uv_mode: int = RoadRibbon.UvMode.FLOW,
+		tint: Callable = Callable()) -> Dictionary:
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 	var faces := PackedVector3Array()
-	var out := {"verts": verts, "norms": norms, "uvs": uvs,
-			"indices": indices, "faces": faces}
+	var md_verts := PackedVector3Array()
+	var md_norms := PackedVector3Array()
+	var md_uvs := PackedVector2Array()
+	var md_indices := PackedInt32Array()
+	var median := {"verts": md_verts, "norms": md_norms, "uvs": md_uvs,
+			"indices": md_indices}
+	var out := {"verts": verts, "norms": norms, "uvs": uvs, "colors": colors,
+			"indices": indices, "faces": faces, "median": median}
 	if cl.size() < 2 or cum.size() != cl.size() or profile.is_empty():
 		return out
 	var hw_m: float = float(profile["hw_m"])
 	var hw_deg := hw_m / m_per_deg
-	var tile_m := RoadTerrain.get_tile_size(str(profile.get("road_type", "railway")))
+	var road_type := str(profile.get("road_type", "railway"))
+	var tile_m := RoadTerrain.get_tile_size(road_type)
+	var layout := RoadTerrain.lane_layout(road_type, int(profile.get("lanes", 0)), hw_m)
+	var strips: Array = layout["strips"]
+	var md_strip: Vector2 = layout["median"]
+	var has_median := md_strip != Vector2.ZERO
+	var tinted := tint.is_valid()
 	var step := maxf(max_step_m, 0.5)
 	var knots: PackedFloat64Array = profile["knots_along"]
 	var seg_lo: PackedFloat64Array = profile["seg_lo"]
@@ -227,13 +246,18 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 		var pcum: PackedFloat64Array = piece[1]
 		if pcl.size() < 2:
 			continue
-		# Station positions of this piece: top L/R, skirt bottom L/R.
+		# Station positions of this piece: top L/R, skirt bottom L/R, and the
+		# frame (centre point, perpendicular, top radius) to place the extra
+		# top vertices of a lane layout at any lateral offset.
 		var st_tl := PackedVector3Array()
 		var st_tr := PackedVector3Array()
 		var st_bl := PackedVector3Array()
 		var st_br := PackedVector3Array()
 		var st_along := PackedFloat64Array()
 		var st_up := PackedVector3Array()
+		var st_pt := PackedVector2Array()
+		var st_perp := PackedVector2Array()
+		var st_top := PackedFloat64Array()
 		for i in pcl.size() - 1:
 			var p0 := pcl[i]
 			var p1 := pcl[i + 1]
@@ -251,7 +275,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 				var pr := pt - perp * hw_deg
 				var dl := RoadBridge.lonlat_to_dir(pl.x, pl.y)
 				var dr := RoadBridge.lonlat_to_dir(pr.x, pr.y)
-				var top := radius + zt + RoadTerrain.SURFACE_OFFSET
+				var top := radius + zt + RoadTerrain.SURFACE_THICKNESS_M
 				var hl: float = float(sampler.call(dl))
 				var hr: float = float(sampler.call(dr))
 				var bot_l := radius + minf(zt, hl) - GradeSettings.SKIRT_BURY_M
@@ -262,43 +286,103 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 				st_br.append(PlanetChunk.snap_to_f32(dr * bot_r - origin))
 				st_along.append(along)
 				st_up.append((dl + dr).normalized())
+				st_pt.append(pt)
+				st_perp.append(perp)
+				st_top.append(top)
 		var n := st_tl.size()
 		if n < 2:
 			continue
-		# Collision: three quads per station pair.
+		# Collision: three quads per station pair — the WHOLE bed, median
+		# included (a wheel rolls flat across it).
 		for k in n - 1:
 			_quad(faces, st_tl[k], st_tl[k + 1], st_tr[k], st_tr[k + 1], outward)
 			_quad(faces, st_bl[k], st_bl[k + 1], st_tl[k], st_tl[k + 1], outward)
 			_quad(faces, st_tr[k], st_tr[k + 1], st_br[k], st_br[k + 1], outward)
 		if not want_visual:
 			continue
-		# Visual: six vertices per station (top L/R, left skirt top/bottom,
-		# right skirt top/bottom) so each face keeps its own normal.
+		# Visual: per station, two top vertices per strip (hi / lo — the +perp
+		# side first, like st_tl / st_tr), then left skirt top/bottom and
+		# right skirt top/bottom, so each face keeps its own normal.
+		var n_strips := strips.size()
+		var stride := 2 * n_strips + 4
 		var base := verts.size()
+		var md_base := md_verts.size()
 		for k in n:
 			var up: Vector3 = st_up[k]
 			var left: Vector3 = (st_tl[k] - st_tr[k]).normalized()
-			var u: float = st_along[k] / tile_m
+			var along: float = st_along[k]
+			var u: float = along / tile_m
 			var skirt_l: float = st_tl[k].distance_to(st_bl[k]) / tile_m
 			var skirt_r: float = st_tr[k].distance_to(st_br[k]) / tile_m
-			verts.append(st_tl[k]); norms.append(up); uvs.append(Vector2(u, hw_m / tile_m))
-			verts.append(st_tr[k]); norms.append(up); uvs.append(Vector2(u, -hw_m / tile_m))
-			verts.append(st_tl[k]); norms.append(left); uvs.append(Vector2(u, 0.0))
-			verts.append(st_bl[k]); norms.append(left); uvs.append(Vector2(u, skirt_l))
-			verts.append(st_tr[k]); norms.append(-left); uvs.append(Vector2(u, 0.0))
-			verts.append(st_br[k]); norms.append(-left); uvs.append(Vector2(u, skirt_r))
+			var col_l: Color = Color.WHITE
+			var col_r: Color = Color.WHITE
+			if tinted:
+				col_l = tint.call(RoadBridge.lonlat_to_dir(
+						st_pt[k].x + st_perp[k].x * hw_deg, st_pt[k].y + st_perp[k].y * hw_deg))
+				col_r = tint.call(RoadBridge.lonlat_to_dir(
+						st_pt[k].x - st_perp[k].x * hw_deg, st_pt[k].y - st_perp[k].y * hw_deg))
+			for strip in strips:
+				var s: Vector2 = strip
+				for off in [s.y, s.x]:
+					var o: float = off
+					var t := (o + hw_m) / (2.0 * hw_m)   # 0 at the -hw edge, 1 at +hw
+					verts.append(_top_at(st_pt[k], st_perp[k], o, m_per_deg, st_top[k],
+							origin, st_tl[k], st_tr[k], hw_m))
+					norms.append(up)
+					uvs.append(RoadRibbon.surface_uv(uv_mode, along, o, s, tile_m))
+					colors.append(col_r.lerp(col_l, t))
+			verts.append(st_tl[k]); norms.append(left); colors.append(col_l)
+			uvs.append(RoadRibbon.flank_uv(uv_mode, along, 0.0, tile_m))
+			verts.append(st_bl[k]); norms.append(left); colors.append(col_l)
+			uvs.append(RoadRibbon.flank_uv(uv_mode, along, skirt_l * tile_m, tile_m))
+			verts.append(st_tr[k]); norms.append(-left); colors.append(col_r)
+			uvs.append(RoadRibbon.flank_uv(uv_mode, along, 0.0, tile_m))
+			verts.append(st_br[k]); norms.append(-left); colors.append(col_r)
+			uvs.append(RoadRibbon.flank_uv(uv_mode, along, skirt_r * tile_m, tile_m))
+			if has_median:
+				for off in [md_strip.y, md_strip.x]:
+					var o: float = off
+					md_verts.append(_top_at(st_pt[k], st_perp[k], o, m_per_deg, st_top[k],
+							origin, st_tl[k], st_tr[k], hw_m))
+					md_norms.append(up)
+					md_uvs.append(Vector2(u, o / tile_m))
 		for k in n - 1:
-			var a := base + k * 6
-			var b := a + 6
-			_quad_idx(indices, a, b, a + 1, b + 1)          # top
-			_quad_idx(indices, a + 3, b + 3, a + 2, b + 2)  # left skirt (bottom → top)
-			_quad_idx(indices, a + 4, b + 4, a + 5, b + 5)  # right skirt (top → bottom)
+			var a := base + k * stride
+			var b := a + stride
+			for si in n_strips:
+				_quad_idx(indices, a + 2 * si, b + 2 * si, a + 2 * si + 1, b + 2 * si + 1)
+			var sk := 2 * n_strips
+			_quad_idx(indices, a + sk + 1, b + sk + 1, a + sk, b + sk)          # left skirt (bottom → top)
+			_quad_idx(indices, a + sk + 2, b + sk + 2, a + sk + 3, b + sk + 3)  # right skirt (top → bottom)
+			if has_median:
+				var ma := md_base + k * 2
+				_quad_idx(md_indices, ma, ma + 2, ma + 1, ma + 3)
 	out["verts"] = verts
 	out["norms"] = norms
 	out["uvs"] = uvs
+	out["colors"] = colors
 	out["indices"] = indices
 	out["faces"] = faces
+	median["verts"] = md_verts
+	median["norms"] = md_norms
+	median["uvs"] = md_uvs
+	median["indices"] = md_indices
 	return out
+
+
+## A top vertex at lateral offset [param off_m] of a station. The bed's two
+## edges are the stored (float32-snapped) stations themselves, so a strip
+## that ends on an edge meets the skirt exactly; an inner offset is placed on
+## the same sphere as the edges.
+static func _top_at(pt: Vector2, perp: Vector2, off_m: float, m_per_deg: float,
+		top_r: float, origin: Vector3, edge_l: Vector3, edge_r: Vector3,
+		hw_m: float) -> Vector3:
+	if is_equal_approx(off_m, hw_m):
+		return edge_l
+	if is_equal_approx(off_m, -hw_m):
+		return edge_r
+	var p := pt + perp * (off_m / m_per_deg)
+	return PlanetChunk.snap_to_f32(RoadBridge.lonlat_to_dir(p.x, p.y) * top_r - origin)
 
 
 ## Along-values of the stations on one centerline segment [a0, a1]: an even
@@ -333,14 +417,8 @@ static func _stations(a0: float, a1: float, step: float, knots: PackedFloat64Arr
 ## geometric normal (a1-a0)×(b0-a0) when [param outward], reversed otherwise.
 static func _quad(faces: PackedVector3Array, a0: Vector3, a1: Vector3,
 		b0: Vector3, b1: Vector3, outward: bool) -> void:
-	if outward:
-		faces.append(a0); faces.append(a1); faces.append(b0)
-		faces.append(b0); faces.append(a1); faces.append(b1)
-	else:
-		faces.append(a0); faces.append(b0); faces.append(a1)
-		faces.append(b0); faces.append(b1); faces.append(a1)
+	RoadRibbon.quad_faces(faces, a0, a1, b0, b1, outward)
 
 
 static func _quad_idx(indices: PackedInt32Array, a0: int, a1: int, b0: int, b1: int) -> void:
-	indices.append(a0); indices.append(a1); indices.append(b0)
-	indices.append(b0); indices.append(a1); indices.append(b1)
+	RoadRibbon.quad_indices(indices, a0, a1, b0, b1)

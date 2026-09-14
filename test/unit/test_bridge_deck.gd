@@ -371,3 +371,95 @@ func _nearest_along(p: Vector3, road: Dictionary, plan: Dictionary) -> float:
 			best_s = s
 		s += 0.5
 	return best_s
+
+
+# ── Highway: two carriageways, structure median, corundum surface ──────
+
+func _highway_road() -> Dictionary:
+	var road := _straight_road(9000.0)
+	road["road_type"] = "highway"
+	road["half_width_m"] = 7.25
+	return road
+
+
+func _highway_span(road: Dictionary, a: float, b: float) -> Dictionary:
+	var span := _span(road, a, b)
+	span["road_width_m"] = 14.5
+	return span
+
+
+func test_highway_deck_splits_the_top_around_a_structure_median() -> void:
+	var road := _highway_road()
+	var plan := BridgePlan.compute(_profile, _highway_span(road, 4000.0, 4250.0),
+			road, RADIUS, _flat)
+	var geo := BridgeDeck.build(_profile, plan, road, RADIUS, _flat)
+	assert_false(geo.is_empty())
+	var mesh: ArrayMesh = geo["mesh"]
+	var top_v: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var struct_v: PackedVector3Array = mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX]
+	var origin: Vector3 = geo["origin"]
+	var r: float = float(plan["deck_top_r"])
+	# The driving surface has 2 strips per station pair (12 vertices); the
+	# structure holds the 0.5 m median at deck-top radius.
+	assert_eq(top_v.size() % 12, 0, "two strips of two triangles per station pair")
+	var median_at_top := 0
+	for v in struct_v:
+		if absf((v + origin).length() - r) < 0.01:
+			median_at_top += 1
+	assert_gt(median_at_top, 0, "the median strip sits on the deck top, in surface 1")
+	var road_geo := BridgeDeck.build(_profile,
+			BridgePlan.compute(_profile, _span(_straight_road(9000.0), 4000.0, 4250.0),
+					_straight_road(9000.0), RADIUS, _flat),
+			_straight_road(9000.0), RADIUS, _flat)
+	var road_top: PackedVector3Array = (road_geo["mesh"] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	assert_eq(road_top.size() % 6, 0, "a road deck stays one strip")
+
+
+func test_highway_deck_bakes_lane_uvs_and_tint() -> void:
+	var road := _highway_road()
+	var plan := BridgePlan.compute(_profile, _highway_span(road, 4000.0, 4250.0),
+			road, RADIUS, _flat)
+	var tint := func(d: Vector3) -> Color:
+		return Color(0.7, d.y, 0.2)
+	var geo := BridgeDeck.build(_profile, plan, road, RADIUS, _flat,
+			RoadRibbon.UvMode.LANE, tint)
+	var arrays: Array = (geo["mesh"] as ArrayMesh).surface_get_arrays(0)
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	assert_eq(colors.size(), verts.size(), "vertex colours committed")
+	# LANE puts the along-road distance on uv.y over 3 m tiles; FLOW puts it
+	# on uv.x over the 8 m highway tile. Both are recentred by whole tiles, so
+	# compare the SPANS: the same deck length, 8/3 times more lane tiles.
+	# The two carriageways face opposite traffic, so their v runs in opposite
+	# directions: two clusters of v, each spanning the deck length over 3 m.
+	var flow := BridgeDeck.build(_profile, plan, road, RADIUS, _flat)
+	var flow_uvs: PackedVector2Array = (flow["mesh"] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+	var want := _uv_span(flow_uvs, 0) * RoadTerrain.get_tile_size("highway") \
+			/ RoadTerrain.GAUFRAGE_ALONG_M
+	var vs := PackedFloat64Array()
+	for uv in uvs:
+		vs.append(uv.y)
+	vs.sort()
+	var gap_at := 1
+	for i in range(1, vs.size()):
+		if vs[i] - vs[i - 1] > vs[gap_at] - vs[gap_at - 1]:
+			gap_at = i
+	assert_almost_eq(vs[gap_at - 1] - vs[0], want, 0.01, "carriageway 1: 3 m per tile along")
+	assert_almost_eq(vs[vs.size() - 1] - vs[gap_at], want, 0.01, "carriageway 2: 3 m per tile along")
+	assert_gt(_uv_span(uvs, 0), 2.0, "across: at least the two lanes of a strip")
+	var origin: Vector3 = geo["origin"]
+	# Colours are stored as 8-bit in the mesh.
+	assert_almost_eq(colors[0].g, (verts[0] + origin).normalized().y, 0.01,
+			"tint(dir) of the station")
+	assert_almost_eq(colors[0].r, 0.7, 0.01)
+
+
+func _uv_span(uvs: PackedVector2Array, axis: int) -> float:
+	var lo := INF
+	var hi := -INF
+	for uv in uvs:
+		lo = minf(lo, uv[axis])
+		hi = maxf(hi, uv[axis])
+	return hi - lo
+

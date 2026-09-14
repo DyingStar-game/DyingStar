@@ -264,7 +264,7 @@ func test_plan_of_pins_the_deck_to_the_track() -> void:
 	var span: Dictionary = GradeProfile.spans_of(p, road)[0]
 	var plan := GradeProfile.plan_of(p, span, road, RADIUS)
 	assert_true(plan["ok"])
-	var top := RADIUS + RoadTerrain.SURFACE_OFFSET + 100.0
+	var top := RADIUS + RoadTerrain.SURFACE_THICKNESS_M + 100.0
 	assert_almost_eq(float(plan["deck_lo_r"]), top, 1e-6)
 	assert_almost_eq(float(plan["deck_hi_r"]), top, 1e-6)
 	assert_almost_eq(float(plan["deck_lo_along"]), 998.0, 1e-6, "abutment margin")
@@ -317,7 +317,7 @@ func test_viaduct_deck_follows_the_kinked_profile() -> void:
 		var along := _east_m(world.normalized())
 		if along < float(plan["deck_lo_along"]) + 0.5 or along > float(plan["deck_hi_along"]) - 0.5:
 			continue
-		var want := RADIUS + RoadTerrain.SURFACE_OFFSET + GradeProfile.z_track_at(p, along)
+		var want := RADIUS + RoadTerrain.SURFACE_THICKNESS_M + GradeProfile.z_track_at(p, along)
 		assert_almost_eq(world.length(), want, 0.05, "deck top on the profile at %.0f m" % along)
 		checked += 1
 	assert_gt(checked, 10)

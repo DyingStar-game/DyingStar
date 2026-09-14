@@ -184,7 +184,7 @@ static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: flo
 		var up: Vector3 = f["up"]
 		var t: Vector3 = f["t"]
 		var n: Vector3 = f["n"]
-		var p: Vector3 = (f["pos"] as Vector3) + up * RoadTerrain.SURFACE_OFFSET - chunk_center
+		var p: Vector3 = (f["pos"] as Vector3) + up * RoadTerrain.SURFACE_THICKNESS_M - chunk_center
 		for k in tracks:
 			var c: float = (float(k) - 0.5 * float(tracks - 1)) * RailwaySettings.TRACK_PITCH_M
 			var centre := p + n * c
@@ -283,7 +283,7 @@ static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float
 			var n: Vector3 = f["n"]
 			var len_m := maxf(hi - lo, mod_len)
 			var base: Vector3 = (f["pos"] as Vector3) - chunk_center \
-					+ up * (RoadTerrain.SURFACE_OFFSET - RailwaySettings.MODULE_BELOW_M + 0.5 * h)
+					+ up * (RoadTerrain.SURFACE_THICKNESS_M - RailwaySettings.MODULE_BELOW_M + 0.5 * h)
 			for k in tracks:
 				var c: float = (float(k) - 0.5 * float(tracks - 1)) * RailwaySettings.TRACK_PITCH_M
 				out.append({"xform": Transform3D(Basis(n, up, -t), base + n * c),

@@ -82,8 +82,24 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 			else planet_data.get_bridge_profile()
 	var ipix: int = HEALPix.vec2pix_nest(planet_data.export_nside,
 			span["mid_dir"])
+	# A highway deck on the corundum plateau carries the road's own melted
+	# corundum surface (lane UVs, ground tint) instead of the profile's deck
+	# material — the bridge is the same road, not a foreign slab.
+	var deck_mat: String = profile.deck_material_path
+	var uv_mode: int = RoadRibbon.UvMode.FLOW
+	var tint := Callable()
+	if RoadTerrain.get_road_type(road) == "highway":
+		var mid_dir: Vector3 = span["mid_dir"]
+		var surf := PlanetChunk.road_surface_for_zone(planet_data, "highway",
+				planet_data.first_zone_at(mid_dir), null,
+				planet_data.get_chunk_populate_zones(
+						HEALPix.vec2pix_nest(planet_data.export_nside, mid_dir)))
+		if surf["tinted"]:
+			deck_mat = surf["mat_path"]
+			uv_mode = surf["uv_mode"]
+			tint = surf["tint"]
 	var geo := BridgeDeck.build(profile, plan, road, planet_data.radius,
-			planet_data.bridge_height_sampler(ipix))
+			planet_data.bridge_height_sampler(ipix), uv_mode, tint)
 	if geo.is_empty():
 		return null
 
@@ -112,7 +128,7 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 	mi.name = "Deck"
 	mi.mesh = geo["mesh"]
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	_apply_materials(mi, profile)
+	_apply_materials(mi, deck_mat, profile.structure_material_path)
 	body.add_child(mi)
 
 	var col := CollisionShape3D.new()
@@ -127,8 +143,9 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 
 ## Surface 0 is the driving surface, surface 1 the structure — the order
 ## BridgeDeck commits them in.
-static func _apply_materials(mi: MeshInstance3D, profile: BridgeProfile) -> void:
-	var paths := [profile.deck_material_path, profile.structure_material_path]
+static func _apply_materials(mi: MeshInstance3D, deck_path: String,
+		structure_path: String) -> void:
+	var paths := [deck_path, structure_path]
 	for i in mini(paths.size(), mi.mesh.get_surface_count()):
 		var mat := _load_material(String(paths[i]))
 		if mat != null:

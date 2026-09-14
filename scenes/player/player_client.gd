@@ -112,9 +112,9 @@ func setup() -> void:
 	player.walk_speed_target = _walk_speed_target
 
 	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Currently switched off (see
-	# Globals.DISABLED_DEV_TOOLS) — the wheel is simply never built, and everything downstream
+	# Globals.ENABLED_DEV_TOOLS) — the wheel is simply never built, and everything downstream
 	# already handles a null wheel (_service_wheel, _any_wheel_open), so nothing else changes.
-	if not Globals.is_dev_tool_disabled(&"spawn_wheel"):
+	if Globals.is_dev_tool_enabled(&"spawn_wheel"):
 		player._spawn_wheel = RadialMenu.new()
 		player._spawn_wheel.title = "Spawn"
 		player.get_node("UserInterface").add_child(player._spawn_wheel)
@@ -128,8 +128,8 @@ func setup() -> void:
 
 	# Admin cleanup tool (key 2): raycast + red aim line, left click deletes the targeted
 	# player-spawned prop (rock / box / depot) down to the database. Currently switched off (see
-	# Globals.DISABLED_DEV_TOOLS) — never built, and its only other caller already null-checks it.
-	if not Globals.is_dev_tool_disabled(&"zapette"):
+	# Globals.ENABLED_DEV_TOOLS) — never built, and its only other caller already null-checks it.
+	if Globals.is_dev_tool_enabled(&"zapette"):
 		player.admin_cleanup_tool = AdminCleanupTool.new()
 		player.add_child(player.admin_cleanup_tool)
 		player.admin_cleanup_tool.setup(player.camera, player)
@@ -629,7 +629,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
-	if event.is_action_pressed("toggle_eva") and not Globals.is_dev_tool_disabled("toggle_eva"):
+	if event.is_action_pressed("toggle_eva") and Globals.is_dev_tool_enabled("toggle_eva"):
 		# EVA (dev free-flight): just request the toggle; the server owns the state and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
 		player.client_send_action_to_server({"action": "toggle_eva"})
@@ -892,7 +892,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 
 	# Sky clock. Echo is allowed on purpose: holding the key sweeps the sky, which is the only
 	# practical way to judge a sunset.
-	if not Globals.is_dev_tool_disabled("debug_time"):
+	if Globals.is_dev_tool_enabled("debug_time"):
 		var step: float = 0.0
 		if event.is_action_pressed("debug_time_forward", true):
 			step = Globals.DEBUG_TIME_STEP
@@ -903,7 +903,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
 	if (event.is_action_pressed("debug_toggle_moon_lights") and _alt_held(event)
-			and not Globals.is_dev_tool_disabled("debug_toggle_moon_lights")):
+			and Globals.is_dev_tool_enabled("debug_toggle_moon_lights")):
 		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
 		var moons = player.get_node_or_null("MoonLights")
 		if moons != null:
@@ -912,7 +912,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 
 	# Removes one light contributor at a time, to attribute what is lighting a surface.
 	if (event.is_action_pressed("debug_isolate_light") and _alt_held(event)
-			and not Globals.is_dev_tool_disabled("debug_isolate_light")):
+			and Globals.is_dev_tool_enabled("debug_isolate_light")):
 		var renderer = player.get_node_or_null("AtmosphereRenderer")
 		if renderer != null:
 			var labels := [

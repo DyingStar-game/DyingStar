@@ -410,9 +410,47 @@ class TestRoadPart(unittest.TestCase):
 
     def test_half_width_matches_gdscript_rules(self):
         self.assertEqual(roads_mod.half_width_m({"width": 6.0}), 3.0)
-        self.assertEqual(roads_mod.half_width_m({"road_type": "highway"}), 6.0)
+        self.assertEqual(roads_mod.half_width_m({"road_type": "road", "width": 8.0}), 4.0)
         self.assertEqual(roads_mod.half_width_m({}), 0.5, "defaults to trail")
         self.assertEqual(roads_mod.half_width_m({"width": 0}), 0.5)
+
+    def test_highway_half_width_follows_lanes(self):
+        # A highway is lanes × 3.5 m + a 0.5 m median; its `width` is ignored.
+        self.assertEqual(roads_mod.half_width_m({"road_type": "highway"}), 7.25)
+        self.assertEqual(roads_mod.half_width_m({"road_type": "highway", "width": 12.0}), 7.25)
+        self.assertEqual(roads_mod.half_width_m({"road_type": "highway", "lanes": 2}), 3.75)
+        self.assertEqual(roads_mod.half_width_m({"road_type": "highway", "lanes": 3}), 5.5)
+        self.assertEqual(roads_mod.half_width_m({"road_type": "highway", "lanes": 0}), 7.25)
+        self.assertEqual(roads_mod.lanes_of({"road_type": "highway"}), 4)
+        self.assertEqual(roads_mod.lanes_of({"road_type": "highway", "lanes": "6"}), 6)
+        self.assertEqual(roads_mod.lanes_of({"road_type": "road"}), 0)
+        self.assertEqual(roads_mod.HALF_WIDTH_M["highway"], 7.25)
+
+    def test_build_part_always_writes_highway_lanes(self):
+        # The pack states the lane count a highway's width came from, even
+        # when the designer left `lanes` empty; a road keeps "only when set".
+        table = StringTable()
+        cl = [(-39.7 + 0.01 * i, 24.6) for i in range(20)]
+        roads = [
+            {"centerline": cl, "road_type": "highway", "width": 12.0},
+            {"centerline": cl, "road_type": "road", "width": 6.0},
+        ]
+        levels, _manifest = roads_mod.build_road_part(
+            roads, RADIUS, export_nside=8, max_quadtree_nside=8,
+            table=table, verbose=False)
+        _n, tiles = levels[0]
+        _count, blob = dsmp.split_part_tile(tiles[0][1])
+        off = 0
+        seen = {}
+        while off < len(blob):
+            rt = table.as_list()[struct.unpack_from("<H", blob, off)[0]]
+            seen[rt] = (struct.unpack_from("<H", blob, off + 6)[0],
+                        struct.unpack_from("<f", blob, off + 8)[0])
+            npts = struct.unpack_from("<I", blob, off + 20)[0]
+            off += dsmp.ROAD_HEADER_SIZE[2] + npts * dsmp.POINT_SIZE
+        self.assertEqual(seen["highway"][0], 4)
+        self.assertAlmostEqual(seen["highway"][1], 14.5, places=5)
+        self.assertEqual(seen["road"][0], dsmp.SID_NONE)
 
     def test_railway_half_width_follows_tracks(self):
         # One track = a 2.44 m sleeper + 0.5 m shoulders; two tracks add a 1 m gap.

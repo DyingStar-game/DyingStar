@@ -354,7 +354,21 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# a known biome keeps its own colour / detail and is left uncarved, in
 		# the mesh and in the collision — meshes baked with cracks and iron
 		# tint under every zone are stale.
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v33%s%s%s%s%s" % [
+		# v33 → v34: a highway is lanes × 3.5 m + a 0.5 m median (two
+		# carriageways, structure strip on a bed), every road is an 8 cm slab
+		# with its own collision (RoadRibbon, in the chunk's shape too), and a
+		# corundum highway bakes the ground tint into its vertex colour.
+		# v34 → v35: the corundum highway surface also covers outcrop zones of
+		# a corundum rock (corundum_white, emery — tarsis_3's), tinted like
+		# that ground; v34 baked them as asphalt.
+		# v35 → v36: the gaufrage tile faces each carriageway's own traffic
+		# (rotated 180° on the +along side); v35 had the logo upside down there.
+		# v36 → v37: the marking's left/right was mirrored — the planet frame
+		# (east, north, up) is left-handed, +perp is the +along driver's RIGHT.
+		# v37 → v38: the corundum highway's tint is resolved per VERTEX from
+		# the chunk's zones (a coarse piece's midpoint missed the outcrop it
+		# crossed: far road milky, near deck emery).
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v38%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz]

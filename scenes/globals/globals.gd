@@ -31,14 +31,18 @@ const VEHICLE_ZONE_LAYER := 16
 const RENDER_MASK_LOCAL := 1  # layer 1: terrain, props, players, vehicles, vegetation
 const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body far-LOD spheres
 
-## Dev/test tools that are currently switched OFF, keyed by their InputMap action. Their code and
-## their bindings are kept ON PURPOSE — we will need them again — so this is the single switch:
-## PlayerClient skips building the tool, and the controls menu hides its binding (a key that does
-## nothing must not be rebindable). Delete an entry to bring the tool back, nothing else to change.
-const DISABLED_DEV_TOOLS: Dictionary = {
+## Dev/test tools, keyed by their InputMap action: `true` = switched ON, `false` = switched OFF.
+## A tool that is switched off keeps its code and its binding ON PURPOSE — we will need it again —
+## so this is the single switch: PlayerClient skips building the tool, and the controls menu hides
+## its binding (a key that does nothing must not be rebindable). Flip the value to bring a tool back,
+## nothing else to change. A tool missing from this dictionary counts as OFF (see is_dev_tool_enabled).
+const ENABLED_DEV_TOOLS: Dictionary = {
 	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
-	"zapette": true,      # admin cleanup tool (key 2) — testing phase over
+	"zapette": false,      # admin cleanup tool (key 2) — testing phase over
 	"toggle_eva": true,   # EVA free-flight ($) — testing phase over, normal play only
+	"debug_time": true,    # sky clock sweep (debug_time_forward / debug_time_back)
+	"debug_toggle_moon_lights": true,  # moon lights on/off (Alt+key)
+	"debug_isolate_light": true,       # remove one light contributor at a time (Alt+key)
 }
 
 ## Simulation-time acceleration. 1.0 = REAL time: a 25 h day and a 42-day orbit are then imperceptible,
@@ -63,9 +67,9 @@ var is_gut_running: bool = false
 ## Seconds to add to the local clock to land on the reference one. See sync_clock().
 var _clock_offset: float = 0.0
 
-## True when a dev tool is switched off (see DISABLED_DEV_TOOLS).
-static func is_dev_tool_disabled(action: StringName) -> bool:
-	return DISABLED_DEV_TOOLS.has(String(action))
+## True only when a dev tool is listed in ENABLED_DEV_TOOLS AND switched on. An unknown tool is OFF.
+static func is_dev_tool_enabled(action: StringName) -> bool:
+	return ENABLED_DEV_TOOLS.get(String(action), false) == true
 
 func print_rich_distinguished(message: String, extras: Array) -> void:
 	var peer_id: int = -1
