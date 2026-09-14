@@ -23,6 +23,9 @@
 	  - Hex-tiled normal, roughness and height maps (same three samples /
 	    weights); height drives a one-step parallax and the blend bias.
 	  - Integer hash instead of sin(): stable whatever the vertex index.
+	  - ONE hex grid per plane (the parallax reuses the blend's height taps),
+	    no anisotropic filtering on the scalar maps, and a per-client quality
+	    global (planet_hex_quality) — see the cost notes at each of them.
 
 	MIT License
 
@@ -62,7 +65,12 @@ uniform float normal_strength : hint_range(0.0, 4.0, 0.05) = 1.0;
 // Roughness map, hex-tiled with the same samples.  Unset = white (1.0), so
 // `roughness` alone drives the result.  Read from `roughness_channel`: R for
 // a plain *_rough map, G for an ORM (occlusion / roughness / metallic) map.
-uniform sampler2D roughness_texture : hint_roughness_r, filter_linear_mipmap_anisotropic, repeat_enable;
+// filter_linear_mipmap, NOT anisotropic, here and on height_texture: every tap in
+// this shader is a textureGrad, and textureGrad + anisotropic is the slow path
+// of AMD samplers (a RX 5700 XT spent 30 ms of GPU per frame on this shader
+// where a RTX 3080 spent 3).  Albedo and normal keep it — they are what is seen
+// at grazing angles — the two scalar maps do not need it.
+uniform sampler2D roughness_texture : hint_roughness_r, filter_linear_mipmap, repeat_enable;
 uniform int roughness_channel : hint_enum("R", "G", "B", "A") = 0;
 // Multiplies the roughness map (1.0 = map as is).
 uniform float roughness : hint_range(0.0, 2.0, 0.01) = 1.0;
@@ -72,12 +80,22 @@ uniform float metallic  : hint_range(0.0, 1.0, 0.01) = 0.0;
 // as the blend bias between the three hex samples (height_blend: 1 = the
 // higher tile wins the transition, 0 = Mikkelsen's luminance heuristic).
 // Without a map the texture is white → no parallax shift, flat blend bias.
-uniform sampler2D height_texture : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D height_texture : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float height_scale : hint_range(0.0, 0.5, 0.005) = 0.05;
 uniform float height_blend : hint_range(0.0, 1.0, 0.01) = 1.0;
 // Tint the texture by the vertex colour (the biome colour on terrain chunks).
 // 0 = pure texture, 1 = texture * COLOR.
 uniform float vertex_color_strength : hint_range(0.0, 1.0, 0.01) = 0.0;
+
+// Cost dial, set once per client from client.ini (`debug_hex_quality`, see
+// client_perf.gd) through the shader global declared in project.godot:
+//   2  hex-tiled albedo, height, normal and roughness (the look)
+//   1  hex-tiled albedo + height; normal and roughness from one plain tap
+//   0  no hex tiling at all: plain triplanar texture() taps, visible repetition
+// 0 is the measurement mode: it is the same shader with the sampler's fast path
+// (implicit derivatives, no textureGrad), so a client whose rgpu collapses at 0
+// has named its cost.
+global uniform int planet_hex_quality;
 
 group_uniforms hex_tiling;
 // Texture repeats per metre (0.25 = one tile every 4 m).  Snapped to 1/4096 so
@@ -298,19 +316,6 @@ vec3 hex_weights(vec3 D, vec3 w, float r) {
 	return W;
 }
 
-// Blended height alone (parallax pre-pass): grid + three height taps.
-float hex_height(vec2 p, vec2 dSTdx, vec2 dSTdy, float s, int k, float rotStrength, float r) {
-	vec2 st1, st2, st3;
-	mat2 rot1, rot2, rot3;
-	vec3 w;
-	hex_grid(p, s, k, rotStrength, st1, st2, st3, rot1, rot2, rot3, w);
-	vec3 H = vec3(textureGrad(height_texture, st1, rot1 * dSTdx, rot1 * dSTdy).r,
-	              textureGrad(height_texture, st2, rot2 * dSTdx, rot2 * dSTdy).r,
-	              textureGrad(height_texture, st3, rot3 * dSTdx, rot3 * dSTdy).r);
-	vec3 W = hex_weights(H, w, r);
-	return dot(W, H);
-}
-
 /*
 	One hex-tiled plane, all maps.
 	  p        plane coordinate of the fragment (two components of tri_pos, metres)
@@ -318,22 +323,21 @@ float hex_height(vec2 p, vec2 dSTdx, vec2 dSTdy, float s, int k, float rotStreng
 	  view_t   view direction (fragment → camera, world) projected on the plane
 	Returns the blended albedo; nxy gets the blended tangent-space normal xy,
 	rough the blended roughness.
+
+	ONE hex grid per plane.  The original ran a full second grid (three hashes,
+	three rotations, three height taps) for the parallax pre-pass, then
+	re-sampled the height for the blend bias: 15 taps per plane.  The height is
+	now sampled once at the unshifted tile UVs and serves both — the parallax
+	shift (a few centimetres against tiles of metres) is applied in tile-UV
+	space to the three sample coordinates, and the blend bias reads the
+	unshifted heights, whose difference is below what a blend weight can show.
+	12 taps per plane, one grid.
 */
 vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 		float rotStrength, float r, out vec2 nxy, out float rough) {
 	// Texture-space derivatives for mipmapping (before manipulating UVs).
 	vec2 dSTdx = dpdx * s;
 	vec2 dSTdy = dpdy * s;
-
-	// Parallax (offset-limited, one step): the point actually seen sits where the
-	// relief meets the view ray, shifted toward the camera by the height.  Done
-	// in metres on the plane coordinate, so it needs no tangent frame and no
-	// per-plane sign juggling.  1/(V.N) is dropped on purpose (no swimming at
-	// grazing angles).
-	if (height_scale > 0.0) {
-		float h = hex_height(p, dSTdx, dSTdy, s, k, rotStrength, r);
-		p += view_t * ((h - 0.5) * height_scale);
-	}
 
 	vec2 st1, st2, st3;
 	mat2 rot1, rot2, rot3;
@@ -344,6 +348,28 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	vec2 g1x = rot1 * dSTdx, g1y = rot1 * dSTdy;
 	vec2 g2x = rot2 * dSTdx, g2y = rot2 * dSTdy;
 	vec2 g3x = rot3 * dSTdx, g3y = rot3 * dSTdy;
+
+	// Height: one set of taps for the parallax AND the blend bias.
+	vec3 H = vec3(1.0);
+	if (height_scale > 0.0 || height_blend > 0.0) {
+		H = vec3(textureGrad(height_texture, st1, g1x, g1y).r,
+		         textureGrad(height_texture, st2, g2x, g2y).r,
+		         textureGrad(height_texture, st3, g3x, g3y).r);
+	}
+
+	// Parallax (offset-limited, one step): the point actually seen sits where the
+	// relief meets the view ray, shifted toward the camera by the height.  The
+	// shift is metres on the plane, i.e. view_t * s in tile UV, rotated into
+	// each tile's frame.  1/(V.N) is dropped on purpose (no swimming at grazing
+	// angles).
+	if (height_scale > 0.0) {
+		vec3 W0 = hex_weights(mix(vec3(1.0), H, height_blend), w, r);
+		vec2 shift = view_t * ((dot(W0, H) - 0.5) * height_scale * s);
+		st1 += rot1 * shift;
+		st2 += rot2 * shift;
+		st3 += rot3 * shift;
+	}
+
 	vec4 c1 = textureGrad(albedo_texture, st1, g1x, g1y);
 	vec4 c2 = textureGrad(albedo_texture, st2, g2x, g2y);
 	vec4 c3 = textureGrad(albedo_texture, st3, g3x, g3y);
@@ -351,32 +377,44 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// Blend bias: luminance (Mikkelsen) or real height, per height_blend.
 	vec3 Lw = vec3(0.299, 0.587, 0.114);
 	vec3 D = vec3(dot(c1.rgb, Lw), dot(c2.rgb, Lw), dot(c3.rgb, Lw));
-	if (height_blend > 0.0) {
-		vec3 H = vec3(textureGrad(height_texture, st1, g1x, g1y).r,
-		              textureGrad(height_texture, st2, g2x, g2y).r,
-		              textureGrad(height_texture, st3, g3x, g3y).r);
-		D = mix(D, H, height_blend);
-	}
+	D = mix(D, H, height_blend);
 	vec3 W = hex_weights(D, w, r);
 
-	// Normal map: same samples, same weights.  Godot normal maps are OpenGL
-	// (+Y = image top) while the plane's v axis runs down the image, so y is
-	// flipped; then the tile was rotated by rot in UV space, so its gradient
-	// rotates back by rotᵀ.
-	const vec2 FLIP_V = vec2(1.0, -1.0);
-	vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
-	nxy = W.x * n1 + W.y * n2 + W.z * n3;
+	if (planet_hex_quality >= 2) {
+		// Normal map: same samples, same weights.  Godot normal maps are OpenGL
+		// (+Y = image top) while the plane's v axis runs down the image, so y is
+		// flipped; then the tile was rotated by rot in UV space, so its gradient
+		// rotates back by rotᵀ.
+		const vec2 FLIP_V = vec2(1.0, -1.0);
+		vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
+		vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
+		vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
+		nxy = W.x * n1 + W.y * n2 + W.z * n3;
 
-	// Roughness: same samples, same weights, one channel.
-	vec4 r1 = textureGrad(roughness_texture, st1, g1x, g1y);
-	vec4 r2 = textureGrad(roughness_texture, st2, g2x, g2y);
-	vec4 r3 = textureGrad(roughness_texture, st3, g3x, g3y);
-	rough = W.x * r1[roughness_channel] + W.y * r2[roughness_channel] + W.z * r3[roughness_channel];
+		// Roughness: same samples, same weights, one channel.
+		vec4 r1 = textureGrad(roughness_texture, st1, g1x, g1y);
+		vec4 r2 = textureGrad(roughness_texture, st2, g2x, g2y);
+		vec4 r3 = textureGrad(roughness_texture, st3, g3x, g3y);
+		rough = W.x * r1[roughness_channel] + W.y * r2[roughness_channel] + W.z * r3[roughness_channel];
+	} else {
+		// Quality 1: the two secondary maps from one untiled tap each.  Their
+		// repetition is far less visible than the albedo's.
+		vec2 st = p * s;
+		nxy = (textureGrad(normal_texture, st, dSTdx, dSTdy).xy * 2.0 - 1.0) * vec2(1.0, -1.0);
+		rough = textureGrad(roughness_texture, st, dSTdx, dSTdy)[roughness_channel];
+	}
 
 	// Blend the 3 samples together using calculated weights
 	return W.x * c1.rgb + W.y * c2.rgb + W.z * c3.rgb;
+}
+
+// Quality 0: plain triplanar, no hex grid, implicit-derivative texture() taps —
+// the sampler's fast path.  Repetition shows; this is the measurement floor.
+vec3 plain_plane(vec2 p, float s, out vec2 nxy, out float rough) {
+	vec2 st = p * s;
+	nxy = (texture(normal_texture, st).xy * 2.0 - 1.0) * vec2(1.0, -1.0);
+	rough = texture(roughness_texture, st)[roughness_channel];
+	return texture(albedo_texture, st).rgb;
 }
 
 /*
@@ -420,20 +458,33 @@ void fragment() {
 	float rt;
 	// Planes with a negligible weight are skipped: a fragment usually needs one
 	// plane, two near an edge, three only in the corners.
-	if (n.x > 0.002) {
-		albedo += hex_plane(tri_pos.yz, dpx.yz, dpy.yz, view_w.yz, s, k, rot_strength, contrast_adjust, nt, rt) * n.x;
+	if (planet_hex_quality <= 0) {
+		// Uniform control flow (a global), so the implicit derivatives inside are safe.
+		albedo += plain_plane(tri_pos.yz, s, nt, rt) * n.x;
 		delta  += vec3(0.0, nt.x, nt.y) * n.x;
 		rough  += rt * n.x;
-	}
-	if (n.y > 0.002) {
-		albedo += hex_plane(tri_pos.xz, dpx.xz, dpy.xz, view_w.xz, s, k, rot_strength, contrast_adjust, nt, rt) * n.y;
+		albedo += plain_plane(tri_pos.xz, s, nt, rt) * n.y;
 		delta  += vec3(nt.x, 0.0, nt.y) * n.y;
 		rough  += rt * n.y;
-	}
-	if (n.z > 0.002) {
-		albedo += hex_plane(tri_pos.xy, dpx.xy, dpy.xy, view_w.xy, s, k, rot_strength, contrast_adjust, nt, rt) * n.z;
+		albedo += plain_plane(tri_pos.xy, s, nt, rt) * n.z;
 		delta  += vec3(nt.x, nt.y, 0.0) * n.z;
 		rough  += rt * n.z;
+	} else {
+		if (n.x > 0.002) {
+			albedo += hex_plane(tri_pos.yz, dpx.yz, dpy.yz, view_w.yz, s, k, rot_strength, contrast_adjust, nt, rt) * n.x;
+			delta  += vec3(0.0, nt.x, nt.y) * n.x;
+			rough  += rt * n.x;
+		}
+		if (n.y > 0.002) {
+			albedo += hex_plane(tri_pos.xz, dpx.xz, dpy.xz, view_w.xz, s, k, rot_strength, contrast_adjust, nt, rt) * n.y;
+			delta  += vec3(nt.x, 0.0, nt.y) * n.y;
+			rough  += rt * n.y;
+		}
+		if (n.z > 0.002) {
+			albedo += hex_plane(tri_pos.xy, dpx.xy, dpy.xy, view_w.xy, s, k, rot_strength, contrast_adjust, nt, rt) * n.z;
+			delta  += vec3(nt.x, nt.y, 0.0) * n.z;
+			rough  += rt * n.z;
+		}
 	}
 
 	// Perturb the TRUE geometric normal with each plane's tangent gradient mapped

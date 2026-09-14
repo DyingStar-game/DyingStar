@@ -102,7 +102,7 @@ static func compute(profile: BridgeProfile, span: Dictionary, road: Dictionary,
 			float(sampler.call(_dir_at(cl, cum, deck_lo))))
 	var hi_ground: float = maxf(end_alt,
 			float(sampler.call(_dir_at(cl, cum, deck_hi))))
-	var base: float = radius + RoadTerrain.SURFACE_OFFSET + profile.deck_clearance_m
+	var base: float = radius + RoadTerrain.SURFACE_THICKNESS_M + profile.deck_clearance_m
 	var deck_lo_r: float = base + lo_ground
 	var deck_hi_r: float = base + hi_ground
 
@@ -304,7 +304,7 @@ static func _solve(ds: PackedFloat64Array, grs: PackedFloat64Array,
 static func _ground_r(cl: PackedVector2Array, cum: PackedFloat64Array,
 		radius: float, sampler: Callable, along: float) -> float:
 	return radius + float(sampler.call(_dir_at(cl, cum, along))) \
-			+ RoadTerrain.SURFACE_OFFSET
+			+ RoadTerrain.SURFACE_THICKNESS_M
 
 
 static func _dir_at(cl: PackedVector2Array, cum: PackedFloat64Array,

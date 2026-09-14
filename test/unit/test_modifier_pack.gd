@@ -44,6 +44,7 @@ const STRINGS := [
 	"undergrowth",            # 9  prop key (string)
 	"fern",                   # 10 prop value (string)
 	"railway",                # 11 road_type of the railway record
+	"highway",                # 12 road_type of the highway record
 ]
 
 const SID_LINEAR_TYPE := 0
@@ -58,6 +59,7 @@ const SID_DENSITY := 8
 const SID_UNDERGROWTH := 9
 const SID_FERN := 10
 const SID_RAILWAY := 11
+const SID_HIGHWAY := 12
 
 var _levels: Array[int] = []
 ## ROAD record layout the fixture pack announces (2 = flags/max_slope tail).
@@ -209,6 +211,26 @@ func _block_railway(tracks: int) -> PackedByteArray:
 	_put_f32(b, 5.0)       # width_m the exporter derived — the decoder recomputes it
 	_put_f32(b, 300.0)     # total_length_m
 	_put_u32(b, 77)
+	_put_u32(b, 2)         # point_count
+	_put_u8(b, 0)          # flags
+	_put_u8(b, 0)
+	_put_u16(b, 0)
+	_put_point(b, 10.0, 20.0, 0.0)
+	_put_point(b, 10.003, 20.0, 300.0)
+	return b
+
+
+## A highway record: [param lanes] in the u16 slot (0xFFFF = unset), and the
+## width_m an OLDER export wrote — the QGIS pre-fill the decoder must ignore.
+func _block_highway(lanes: int, width_m: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_HIGHWAY)
+	_put_u16(b, SID_SURFACE)
+	_put_u16(b, 0xFFFF)    # name unset
+	_put_u16(b, lanes)
+	_put_f32(b, width_m)
+	_put_f32(b, 300.0)     # total_length_m
+	_put_u32(b, 78)
 	_put_u32(b, 2)         # point_count
 	_put_u8(b, 0)          # flags
 	_put_u8(b, 0)
@@ -576,6 +598,29 @@ func test_railway_record_exposes_tracks_not_lanes() -> void:
 	assert_false(rd.has("lanes"), "and not as `lanes`")
 	assert_almost_eq(rd["half_width_m"], 3.44, 1e-6,
 			"bed half-width derived from the tracks, not from the stored width")
+	pack.close()
+
+
+func test_highway_half_width_follows_lanes_not_stored_width() -> void:
+	# An older pack stored the QGIS pre-fill (12 m) for a highway; the bed is
+	# lanes × 3.5 m + the 0.5 m median whatever width_m says, and an unset
+	# lane count means the type's default (4).
+	var pack = _open()
+	var t := pack.decode_tile(_road_only_payload([
+		_block_highway(0xFFFF, 12.0),
+		_block_highway(2, 12.0),
+		_block_highway(3, 40.0),
+	]), _m_per_deg)
+	var roads: Array = t["roads"]
+	assert_eq(roads.size(), 3, "three highway records")
+	assert_false(roads[0].has("lanes"), "unset lanes stay absent")
+	assert_almost_eq(roads[0]["half_width_m"], 7.25, 1e-6, "4 lanes by default")
+	assert_almost_eq(roads[0]["half_width_deg"], 7.25 / _m_per_deg, 1e-12,
+			"the degree value follows the recomputed metres")
+	assert_almost_eq(roads[0]["width_m"], 12.0, 1e-6, "the stored width is kept as data")
+	assert_eq(int(roads[1]["lanes"]), 2, "lanes exposed")
+	assert_almost_eq(roads[1]["half_width_m"], 3.75, 1e-6, "2 lanes")
+	assert_almost_eq(roads[2]["half_width_m"], 5.5, 1e-6, "3 lanes; width_m ignored")
 	pack.close()
 
 

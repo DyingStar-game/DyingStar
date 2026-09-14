@@ -54,7 +54,7 @@ func test_modules_every_pitch_two_halves_per_track() -> void:
 		assert_almost_eq(a.origin.distance_to(b.origin), 0.0, 1e-6, "same centre")
 		assert_lt(a.basis.x.dot(b.basis.x), -0.999, "half B is half A turned about up")
 		assert_gt(a.basis.y.dot(b.basis.y), 0.999)
-		assert_almost_eq(a.origin.length(), RADIUS + 100.0 + RoadTerrain.SURFACE_OFFSET, 1e-3)
+		assert_almost_eq(a.origin.length(), RADIUS + 100.0 + RoadTerrain.SURFACE_THICKNESS_M, 1e-3)
 	# Consecutive modules are one pitch apart.
 	var p0: Vector3 = (xf[0]["xform"] as Transform3D).origin
 	var p1: Vector3 = (xf[2]["xform"] as Transform3D).origin
@@ -131,9 +131,9 @@ func test_collision_boxes_cover_the_piece() -> void:
 		var bottom: Vector3 = xf * Vector3(0.0, -0.5 * size.y, 0.0)
 		var top: Vector3 = xf * Vector3(0.0, 0.5 * size.y, 0.0)
 		assert_almost_eq(bottom.length() - RADIUS,
-				100.0 + RoadTerrain.SURFACE_OFFSET - RailwaySettings.MODULE_BELOW_M, 1e-3)
+				100.0 + RoadTerrain.SURFACE_THICKNESS_M - RailwaySettings.MODULE_BELOW_M, 1e-3)
 		assert_almost_eq(top.length() - RADIUS,
-				100.0 + RoadTerrain.SURFACE_OFFSET - RailwaySettings.MODULE_BELOW_M
+				100.0 + RoadTerrain.SURFACE_THICKNESS_M - RailwaySettings.MODULE_BELOW_M
 				+ RailwaySettings.MODULE_H_M, 1e-3)
 	assert_almost_eq(covered, 100.0, 1e-6)
 	# Every module centre falls inside a box of its track.

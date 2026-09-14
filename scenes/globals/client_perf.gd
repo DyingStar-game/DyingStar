@@ -386,6 +386,17 @@ func _ready() -> void:
 	if ablate_planet_spin:
 		print("[CPerf] !! debug_no_planet_spin=true — planets do not rotate. THE WORLD IS WRONG"
 				+ " (no day/night motion, carried bodies are not counter-rotated): measurement mode.")
+	# Cost dial of planet_surface.gdshader (the hex-tiled corundum ground), a shader global so no
+	# material has to be swapped: 2 = full, 1 = hex albedo only, 0 = plain triplanar texture(). A
+	# RX 5700 XT spent 30 ms of GPU per frame on the full version where a RTX 3080 spent 3, and
+	# textureGrad + anisotropic sampling is the suspected AMD-specific cost; 0 is the same shader on
+	# the sampler's fast path, so a player's rgpu at 0 versus 2 names it in one session.
+	var hex_q: int = clampi(ClientConfig.get_int("debug_hex_quality", 2), 0, 2)
+	if hex_q != 2:
+		RenderingServer.global_shader_parameter_set("planet_hex_quality", hex_q)
+		print("[CPerf] !! debug_hex_quality=%d — planet ground hex tiling reduced (%s)." % [hex_q,
+				"hex albedo, plain normal/roughness" if hex_q == 1
+				else "NO hex tiling, plain triplanar: repetition is visible"])
 	_print_boot_detail()
 
 	# `--no-perf` still wins, so a developer with debug_perf=true in their working client.ini can get

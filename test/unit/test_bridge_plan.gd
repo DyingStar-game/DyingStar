@@ -104,7 +104,7 @@ func test_each_deck_end_clears_its_own_rim() -> void:
 	# difference — 236 m at the worst tarsis_3 crossing, which no ramp climbs.
 	var p := _plan(_east_slope)
 	assert_true(p["ok"], "a plain span must plan")
-	var clear: float = RoadTerrain.SURFACE_OFFSET + _profile.deck_clearance_m
+	var clear: float = RoadTerrain.SURFACE_THICKNESS_M + _profile.deck_clearance_m
 	assert_gte(float(p["deck_lo_r"]) - RADIUS,
 			float(p["start_alt_m"]) + clear - 1e-6,
 			"the west end stands a clearance above the west rim")
@@ -149,7 +149,7 @@ func test_a_capped_deck_still_clears_the_high_rim() -> void:
 	# The cap is applied by lowering the LOW end, never the high one: dropping
 	# the high end would bury the deck in the rim it leaves from.
 	var p := _plan(_steep_east)
-	var clear: float = RoadTerrain.SURFACE_OFFSET + _profile.deck_clearance_m
+	var clear: float = RoadTerrain.SURFACE_THICKNESS_M + _profile.deck_clearance_m
 	assert_gte(float(p["deck_hi_r"]) - RADIUS,
 			float(p["end_alt_m"]) + clear - 1e-6,
 			"the high end keeps its clearance")
@@ -222,7 +222,7 @@ func test_ramp_toe_ends_below_the_ground() -> void:
 	var p := _plan(_flat)
 	var toe_r: float = (float(p["deck_lo_r"])
 			- float(p["ramp_lo_m"]) * _profile.ramp_tan())
-	var ground_r: float = RADIUS + 100.0 + RoadTerrain.SURFACE_OFFSET
+	var ground_r: float = RADIUS + 100.0 + RoadTerrain.SURFACE_THICKNESS_M
 	assert_almost_eq(toe_r, ground_r - _profile.ramp_bury_m, 0.01,
 			"the toe is driven ramp_bury_m under the road surface")
 

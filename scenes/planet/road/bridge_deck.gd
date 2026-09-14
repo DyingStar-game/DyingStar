@@ -44,8 +44,14 @@ const RAMP_UNDERSIDE_BURY_M := 0.30
 ## be built. Surface 0 is the driving surface (asphalt), surface 1 the
 ## structure; the caller assigns the materials, which keeps this file free of
 ## resource loading and therefore unit-testable with no assets.
+##
+## [param uv_mode] / [param tint] texture the driving surface (RoadRibbon):
+## lane UVs and a per-station vertex tint for the melted-corundum highway.
+## A highway's median strip goes to surface 1 (structure) rather than being
+## left open — a deck over a gorge has no ground to show through.
 static func build(profile: BridgeProfile, plan: Dictionary, road: Dictionary,
-		radius: float, sampler: Callable) -> Dictionary:
+		radius: float, sampler: Callable, uv_mode: int = RoadRibbon.UvMode.FLOW,
+		tint: Callable = Callable()) -> Dictionary:
 	if profile == null or plan.is_empty() or not bool(plan.get("ok", false)):
 		return {}
 	var cl: PackedVector2Array = road.get("centerline", PackedVector2Array())
@@ -60,7 +66,13 @@ static func build(profile: BridgeProfile, plan: Dictionary, road: Dictionary,
 	var road_w: float = float(plan.get("road_width_m", 0.0))
 	if road_w <= 0.0:
 		road_w = 2.0 * RoadTerrain.get_half_width_m(road)
-	var tile_m: float = RoadTerrain.get_tile_size(RoadTerrain.get_road_type(road))
+	var road_type := RoadTerrain.get_road_type(road)
+	var tile_m: float = RoadTerrain.get_tile_size(road_type)
+	var road_ctx := {
+		"layout": RoadTerrain.lane_layout(road_type, RoadTerrain.lanes_of(road), 0.5 * road_w),
+		"uv_mode": uv_mode,
+		"tint": tint,
+	}
 
 	var frames := _frames(cl, cum, stations)
 	var origin := PlanetChunk.snap_to_f32(
@@ -79,7 +91,7 @@ static func build(profile: BridgeProfile, plan: Dictionary, road: Dictionary,
 	var faces := PackedVector3Array()
 
 	_prism(frames, origin, deck_hw, top_r, bot_r, stations, tile_m,
-			top, struct, faces, true)
+			top, struct, faces, true, 0.0, road_ctx)
 
 	# Parapets: outer face flush with the unflared deck edge, so they border the
 	# road rather than eat into it. Their thickness is a PHYSICS budget — a
@@ -240,7 +252,7 @@ static func _profiles(profile: BridgeProfile, plan: Dictionary, radius: float,
 			# slab would be as deep as the gorge.
 			var ground: float = (radius
 					+ float(sampler.call((frames[i] as Dictionary)["up"]))
-					+ RoadTerrain.SURFACE_OFFSET)
+					+ RoadTerrain.SURFACE_THICKNESS_M)
 			bottom = minf(bottom, ground - RAMP_UNDERSIDE_BURY_M)
 		bot_out.append(bottom)
 
@@ -250,12 +262,14 @@ static func _profiles(profile: BridgeProfile, plan: Dictionary, radius: float,
 ## [param lateral] shifts the whole prism sideways along the frame normal, which
 ## is how the two parapets are placed without a second code path.
 ## [param top_is_road] routes the top strip to the asphalt accumulator and gives
-## it the ribbon's own flow-aligned UVs.
+## it the ribbon's own flow-aligned UVs; [param road_ctx] {layout, uv_mode,
+## tint} then splits it into the lane layout's strips (the median strip going
+## to [param side_acc], the structure).
 static func _prism(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 		top_r: PackedFloat64Array, bot_r: PackedFloat64Array,
 		stations: PackedFloat64Array, tile_m: float, top_acc: Dictionary,
 		side_acc: Dictionary, faces: PackedVector3Array, top_is_road: bool,
-		lateral: float = 0.0) -> void:
+		lateral: float = 0.0, road_ctx: Dictionary = {}) -> void:
 	var n := stations.size()
 	var tl := PackedVector3Array()
 	var tr := PackedVector3Array()
@@ -280,13 +294,8 @@ static func _prism(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 		var n1: Vector3 = f1["n"]
 		# Top — outward is +up, so the geometric normal comes out -up: CW-front.
 		if top_is_road:
-			var v0: float = hw[i] / tile_m
-			var v1: float = hw[i + 1] / tile_m
-			_strip(top_acc, faces, tl[i], tr[i], tl[i + 1], tr[i + 1], u0, u1,
-					Vector2(stations[i] / tile_m, v0),
-					Vector2(stations[i] / tile_m, -v0),
-					Vector2(stations[i + 1] / tile_m, v1),
-					Vector2(stations[i + 1] / tile_m, -v1))
+			_road_top(frames, origin, hw, top_r, stations, tile_m, top_acc,
+					side_acc, faces, i, road_ctx)
 		else:
 			_strip_plain(top_acc, faces, tl[i], tr[i], tl[i + 1], tr[i + 1],
 					u0, u1, stations, i, tile_m)
@@ -309,15 +318,77 @@ static func _prism(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 	_tri(side_acc, faces, tl[last], br[last], bl[last], lt["t"] as Vector3)
 
 
+## The driving surface between stations [param i] and i+1: one strip per
+## carriageway of the lane layout (outer edges following the deck's own,
+## flared, half-width; inner edges on the median), the median strip to the
+## structure. Without a layout, the whole width as one strip.
+static func _road_top(frames: Array, origin: Vector3, hw: PackedFloat64Array,
+		top_r: PackedFloat64Array, stations: PackedFloat64Array, tile_m: float,
+		top_acc: Dictionary, side_acc: Dictionary, faces: PackedVector3Array,
+		i: int, road_ctx: Dictionary) -> void:
+	var f0: Dictionary = frames[i]
+	var f1: Dictionary = frames[i + 1]
+	var u0: Vector3 = f0["up"]
+	var u1: Vector3 = f1["up"]
+	var n0: Vector3 = f0["n"]
+	var n1: Vector3 = f1["n"]
+	var layout: Dictionary = road_ctx.get("layout", {})
+	var uv_mode: int = int(road_ctx.get("uv_mode", RoadRibbon.UvMode.FLOW))
+	var tint: Callable = road_ctx.get("tint", Callable())
+	var strips: Array = layout.get("strips", [])
+	var median: Vector2 = layout.get("median", Vector2.ZERO)
+	var c0 := Color.WHITE
+	var c1 := Color.WHITE
+	if tint.is_valid():
+		c0 = tint.call(u0)
+		c1 = tint.call(u1)
+	var s0: float = stations[i]
+	var s1: float = stations[i + 1]
+	if strips.is_empty():
+		strips = [Vector2(-INF, INF)]
+	var last := strips.size() - 1
+	for si in strips.size():
+		var sv: Vector2 = strips[si]
+		# The outer edges are the deck's own (flared, parapet-wide) half-width
+		# — the parapets stand on the top — the inner ones the lane layout's.
+		var lo0: float = -hw[i] if si == 0 else sv.x
+		var hi0: float = hw[i] if si == last else sv.y
+		var lo1: float = -hw[i + 1] if si == 0 else sv.x
+		var hi1: float = hw[i + 1] if si == last else sv.y
+		var uv_strip := sv if sv.x > -INF else Vector2(lo0, hi0)
+		_strip(top_acc, faces,
+				_local(u0 * top_r[i] + n0 * hi0, origin),
+				_local(u0 * top_r[i] + n0 * lo0, origin),
+				_local(u1 * top_r[i + 1] + n1 * hi1, origin),
+				_local(u1 * top_r[i + 1] + n1 * lo1, origin),
+				u0, u1,
+				RoadRibbon.surface_uv(uv_mode, s0, hi0, uv_strip, tile_m),
+				RoadRibbon.surface_uv(uv_mode, s0, lo0, uv_strip, tile_m),
+				RoadRibbon.surface_uv(uv_mode, s1, hi1, uv_strip, tile_m),
+				RoadRibbon.surface_uv(uv_mode, s1, lo1, uv_strip, tile_m),
+				c0, c1)
+	if median != Vector2.ZERO:
+		_strip(side_acc, faces,
+				_local(u0 * top_r[i] + n0 * median.y, origin),
+				_local(u0 * top_r[i] + n0 * median.x, origin),
+				_local(u1 * top_r[i + 1] + n1 * median.y, origin),
+				_local(u1 * top_r[i + 1] + n1 * median.x, origin),
+				u0, u1,
+				Vector2(s0 / tile_m, 0.0), Vector2(s0 / tile_m, 1.0),
+				Vector2(s1 / tile_m, 0.0), Vector2(s1 / tile_m, 1.0))
+
+
 ## One quad of a strip, as two CW-front triangles. [param a]/[param b] are the
 ## near pair and [param c]/[param d] the far one; the outward normal is the
 ## cross product implied by that order (see the class header).
+## [param ca]/[param cc] tint the near and the far pair.
 static func _strip(acc: Dictionary, faces: PackedVector3Array,
 		a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 		na: Vector3, nc: Vector3,
-		ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2) -> void:
-	_push(acc, faces, a, b, c, na, na, nc, ua, ub, uc)
-	_push(acc, faces, b, d, c, na, nc, nc, ub, ud, uc)
+		ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2,
+		ca: Color = Color.WHITE, cc: Color = Color.WHITE) -> void:
+	_push(acc, faces, a, b, c, na, na, nc, ua, ub, uc, ca, ca, cc)
+	_push(acc, faces, b, d, c, na, nc, nc, ub, ud, uc, ca, cc, cc)
 
 
 ## Same, with structural UVs: along the road over the tile size, across the
@@ -341,16 +412,21 @@ static func _tri(acc: Dictionary, faces: PackedVector3Array,
 
 static func _push(acc: Dictionary, faces: PackedVector3Array,
 		a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3,
-		nc: Vector3, ua: Vector2, ub: Vector2, uc: Vector2) -> void:
+		nc: Vector3, ua: Vector2, ub: Vector2, uc: Vector2,
+		ca: Color = Color.WHITE, cb: Color = Color.WHITE,
+		cc: Color = Color.WHITE) -> void:
 	var v: PackedVector3Array = acc["v"]
 	var nrm: PackedVector3Array = acc["n"]
 	var uv: PackedVector2Array = acc["uv"]
+	var col: PackedColorArray = acc["col"]
 	v.append(a); v.append(b); v.append(c)
 	nrm.append(na); nrm.append(nb); nrm.append(nc)
 	uv.append(ua); uv.append(ub); uv.append(uc)
+	col.append(ca); col.append(cb); col.append(cc)
 	acc["v"] = v
 	acc["n"] = nrm
 	acc["uv"] = uv
+	acc["col"] = col
 	faces.append(a); faces.append(b); faces.append(c)
 
 
@@ -375,7 +451,7 @@ static func _recenter_uvs(acc: Dictionary) -> void:
 
 static func _acc() -> Dictionary:
 	return {"v": PackedVector3Array(), "n": PackedVector3Array(),
-			"uv": PackedVector2Array()}
+			"uv": PackedVector2Array(), "col": PackedColorArray()}
 
 
 ## Add one accumulator to [param mesh] as a surface, with tangents — the road
@@ -386,11 +462,13 @@ static func _commit(mesh: ArrayMesh, acc: Dictionary) -> void:
 		return
 	var nrm: PackedVector3Array = acc["n"]
 	var uv: PackedVector2Array = acc["uv"]
+	var col: PackedColorArray = acc["col"]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in v.size():
 		st.set_normal(nrm[i])
 		st.set_uv(uv[i])
+		st.set_color(col[i])
 		st.add_vertex(v[i])
 	st.generate_tangents()
 	st.commit(mesh)

@@ -54,8 +54,8 @@ func create_action_list():
 			continue
 		# A switched-off dev tool keeps its binding in the InputMap (so it can be brought back
 		# without re-adding one), but must not be listed here: rebinding a key that does nothing
-		# would just be confusing. See Globals.DISABLED_DEV_TOOLS.
-		if Globals.is_dev_tool_disabled(action):
+		# would just be confusing. See Globals.ENABLED_DEV_TOOLS.
+		if Globals.ENABLED_DEV_TOOLS.has(action) and not Globals.is_dev_tool_enabled(action):
 			continue
 		var action_bt = input_button_scene.instantiate()
 		var action_label = action_bt.find_child("LabelAction")

@@ -336,7 +336,7 @@ func server_action_received(data: Dictionary) -> void:
 			# Checked HERE as well as on the client, and this is the check that counts: movement is
 			# server-authoritative, so a client that asked anyway — an old build, a modified one —
 			# would still fly. Switching a tool off has to happen where the tool actually runs.
-			if not Globals.is_dev_tool_disabled("toggle_eva"):
+			if Globals.is_dev_tool_enabled("toggle_eva"):
 				player.eva_mode = not player.eva_mode
 				player.velocity = Vector3.ZERO
 				player.server_send_properties_to_client({"eva": player.eva_mode})

@@ -406,6 +406,7 @@ var _grade_pending: Dictionary = {}
 var _has_railways: int = -1
 var _has_profiled_lines: int = -1
 var _has_relief_biomes: int = -1
+var _has_roads: int = -1
 ## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
 const GRADE_PREFETCH_BUDGET_MS := 5000
 
@@ -2392,6 +2393,23 @@ func populate_fingerprint() -> String:
 	return str((parts.get("populate", {}) as Dictionary).get("fingerprint", ""))
 
 
+## Does this planet carry any road at all (the pack's road part has features)?
+## Gates the fine server collision: a road is an 8 cm slab with its own
+## collision (RoadRibbon), which only makes sense on the grid the mesh uses.
+func has_roads() -> bool:
+	if _has_roads >= 0:
+		return _has_roads == 1
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return false
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	var road_part: Dictionary = parts.get("road", {})
+	var counts: Dictionary = road_part.get("counts", {})
+	var found := int(counts.get("features", 0)) > 0
+	_has_roads = 1 if found else 0
+	return found
+
+
 ## Does this planet carry any line that rides a grade-limited profile — a
 ## railway, or a highway / road exported with a max slope? The road part
 ## manifest counts the latter ("profiled_roads", written by export_roads.py),
@@ -3430,6 +3448,8 @@ func corundum_applies_to_zone(first_zone: Dictionary) -> bool:
 ## the collision surface is bit-identical to the visual mesh and the player
 ## can't stand above/below the rendered cracks.
 ##
+## A road is another: its 8 cm slab (RoadRibbon) is part of the collision
+## shape, and only makes sense on the grid the mesh uses.
 ## A profiled line (railway, graded road) is the other case: its cuttings are
 ## carved only into the finest grid (GradeBed.carve_enabled) and its bed's
 ## collision is part of the
@@ -3441,7 +3461,7 @@ func corundum_applies_to_zone(first_zone: Dictionary) -> bool:
 func collision_detail_nside() -> int:
 	if chunk_heightmaps_dir == "" \
 			or not (corundum_default_biome or has_profiled_lines()
-					or has_relief_biomes()):
+					or has_relief_biomes() or has_roads()):
 		return export_nside
 	return 1 << max_quadtree_depth
 
@@ -3484,16 +3504,26 @@ func sample_biome_at(dir: Vector3) -> Color:
 ## would mean matching the nearest of 126 biome colours. A footstep built on that guess would sound
 ## confident and be wrong; null lets the caller fall back honestly.
 func biome_at(dir: Vector3) -> BiomeDefinition:
-	if export_nside <= 0:
+	var zone := first_zone_at(dir)
+	if zone.is_empty():
 		return null
+	return get_biome_by_type(String(zone.get("biome_type", "")))
+
+
+## The FIRST populate zone containing [param dir] — the one the chunk builders
+## colour and detail a vertex from — or an empty Dictionary when none does.
+## Main thread only (loads the export pixel's zones).
+func first_zone_at(dir: Vector3) -> Dictionary:
+	if export_nside <= 0:
+		return {}
 	var eipix := HEALPix.vec2pix_nest(export_nside, dir)
 	var pz := get_chunk_populate_zones(eipix)
 	if pz.is_empty():
-		return null
+		return {}
 	var matched := PlanetChunk._query_zones_at_direction(dir, pz)
 	if matched.is_empty():
-		return null
-	return get_biome_by_type(String(matched[0].get("biome_type", "")))
+		return {}
+	return matched[0]
 
 
 # ---------------------------------------------------------------------------

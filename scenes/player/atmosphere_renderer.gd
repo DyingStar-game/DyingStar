@@ -17,7 +17,8 @@ var player: Node3D = null
 ## The sun whose star direction we reuse (set by PlayerClient; never recomputed here).
 var sun: PlayerSunLight = null
 
-## Trades quality for cost on the main view. Wired to the graphics settings later.
+## Trades quality for cost on the main view. Wired to the graphics settings later; until then
+## `debug_atmo_view_steps` / `debug_atmo_light_steps` in client.ini override them (see _ready).
 @export var view_steps: int = 32
 @export var light_steps: int = 8
 ## Multiplies the physical-to-engine exposure derived below. 1.0 = the derived value; this is the
@@ -92,8 +93,43 @@ func _ready() -> void:
 	# Run AFTER PlayerSunLight (priority 100) so the star direction we read is this frame's, not the
 	# previous one — otherwise the sky lags the light by a frame at sunrise and sunset.
 	process_priority = 110
+	# Bisection switches, read from client.ini (client_config.gd) because a packaged build takes no
+	# command line. One RX 5700 XT spends ~30 ms of GPU per frame on the spawn a RTX 3080 renders in
+	# 3 ms, and turning shadows off changed nothing; the two full-screen raymarches owned here
+	# (view_steps x light_steps samples per pixel, dynamic loop bounds) are the next suspect, and the
+	# player's rgpu line answers in one session once they can be thinned or removed.
+	view_steps = maxi(1, ClientConfig.get_int("debug_atmo_view_steps", view_steps))
+	light_steps = maxi(1, ClientConfig.get_int("debug_atmo_light_steps", light_steps))
+	if ClientConfig.has_key("debug_atmo_view_steps") or ClientConfig.has_key("debug_atmo_light_steps"):
+		print("[Atmosphere] !! debug_atmo_*_steps — atmosphere sampled at %d x %d instead of 32 x 8."
+			% [view_steps, light_steps])
+	if ClientConfig.get_bool("debug_no_atmosphere", false):
+		print("[Atmosphere] !! debug_no_atmosphere=true — plain procedural sky, no atmosphere shader,"
+			+ " no aerial perspective. THE SKY IS WRONG on purpose; a measurement mode.")
+		_build_plain_environment()
+		return
 	_build_environment()
+	if ClientConfig.get_bool("debug_no_aerial", false):
+		print("[Atmosphere] !! debug_no_aerial=true — sky dome kept, aerial perspective pass removed.")
+		return
 	_build_aerial_quad()
+
+
+## debug_no_atmosphere: a stock ProceduralSkyMaterial in place of both shaders, so the frame keeps a
+## sky, an ambient and a reflection source but not one scattering sample. _process() stays inert
+## because _sky_material is never created.
+func _build_plain_environment() -> void:
+	var sky := Sky.new()
+	sky.sky_material = ProceduralSkyMaterial.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.glow_enabled = true
+	env.volumetric_fog_enabled = false
+	player.get_world_3d().environment = env
+	player.get_world_3d().camera_attributes = _build_camera_attributes()
 
 
 ## The Environment lives on the WORLD, not on the player camera, so EVERY camera in this world gets

@@ -8,24 +8,41 @@ class_name RoadTerrain
 ## loaded by a dedicated BiomeQuery instance.
 ##
 ## Unlike biome overlays, roads do NOT depress the terrain.  They are
-## flat texture overlays sitting slightly above the ground to avoid
-## z-fighting, using flow-aligned UVs so the texture follows the road
-## direction — UNLESS a highway / road carries a `max_slope_degrees`: such a
-## graded road rides a grade-limited profile with cuttings, tunnels and
-## viaducts, built by the same GradeBed / GradeTunnel as a railway, and then
-## it does have its own collision (see GradeSettings).
+## slabs SURFACE_THICKNESS_M thick laid on the ground (top face, two flanks,
+## and their own collision — see RoadRibbon), using flow-aligned UVs so the
+## texture follows the road direction — UNLESS a highway / road carries a
+## `max_slope_degrees`: such a graded road rides a grade-limited profile with
+## cuttings, tunnels and viaducts, built by the same GradeBed / GradeTunnel as
+## a railway (see GradeSettings).
+##
+## A highway is built as LANES: `lanes` × LANE_WIDTH_M plus a MEDIAN_GAP_M
+## central gap where nothing is laid (the ground shows; a profiled bed or a
+## deck fills it with the structure material). Its QGIS `width` is ignored.
 ##
 ## The material used depends on road_type × biome crossed:
-##   • highway / road  → always asphalt (fixed texture)
+##   • highway         → asphalt, or the melted-corundum engraved surface on
+##                        the corundum plateau (CORUNDUM_HIGHWAY_MATERIAL_PATH)
+##   • road            → always asphalt (fixed texture)
 ##   • path / trail    → biome-adaptive (path_grass in meadow_steppe-meadow,
 ##                        path_dirt on rock, etc.)
 
 # ── Road type constants ──────────────────────────────────────────────
 
+## Width of one driving lane, metres.
+const LANE_WIDTH_M := 3.5
+## Central gap between the two carriageways of a lane-built road, metres.
+const MEDIAN_GAP_M := 0.5
+## Road types built from their lane count (QGIS `width` is ignored for them).
+const MEDIAN_TYPES: PackedStringArray = ["highway"]
+## Lane count when the feature carries none.
+const DEFAULT_LANES := {"highway": 4}
+
 ## Half-widths per road_type in metres.
-## These match the QGIS auto-fill defaults in setup_planet_project.py.
+## These match the QGIS auto-fill defaults in setup_planet_project.py. The
+## highway entry is only the [method get_half_width] fallback: a highway zone
+## is sized from its lanes (see [method lane_half_width_m]).
 const HALF_WIDTH_M := {
-	"highway": 6.0,   # 12 m total
+	"highway": 7.25,  # 4 lanes × 3.5 m + 0.5 m median = 14.5 m total
 	"road":    3.0,   # 6 m total
 	"path":    1.0,   # 2 m total
 	"trail":   0.5,   # 1 m total
@@ -47,8 +64,15 @@ const TILE_M := {
 	"railway": 4.0,
 }
 
-## Small offset above terrain (metres) to prevent z-fighting.
-const SURFACE_OFFSET := 0.05
+## Thickness of the surfacing, metres: the top of every road — ribbon,
+## profiled bed, deck — sits this far above the ground / the profile.
+const SURFACE_THICKNESS_M := 0.08
+
+## How far below the ground the ribbon's flanks reach, metres. The terrain
+## collision interpolates between its vertices while the ribbon samples the
+## true height, so a slab that stopped at the ground would show daylight
+## underneath on rough terrain.
+const RIBBON_BURY_M := 0.10
 
 ## Road types whose QGIS `max_slope_degrees` is honoured (the exporter writes
 ## the flag only for these; ModifierPack drops it on any other type).
@@ -72,6 +96,29 @@ const MATERIAL_DIR := "res://assets/_universe/environment/terrain/"
 
 ## Fixed materials for highway/road.
 const ASPHALT_MATERIAL_PATH := MATERIAL_DIR + "path_asphalt.tres"
+
+## The corundum plateau's highway: melted corundum, vertex-tinted like the
+## ground, engraved with the gaufrage (normal map + parallax height map).
+const CORUNDUM_HIGHWAY_MATERIAL_PATH := MATERIAL_DIR + "road_corundum_melted.tres"
+## The biome whose highways get that surface. Kept as a string rather than
+## ArideDesertCorundumPlateauTerrain.BIOME_TYPE so this module does not pull a
+## biome module in at load (see the note in RailwaySettings).
+const CORUNDUM_BIOME_TYPE := "aride_desert-corundum_plateau"
+## Every corundum biome (plateau, sand desert, …) shares this prefix.
+const CORUNDUM_BIOME_PREFIX := "aride_desert-corundum"
+## Road materials whose parallax the chunk emitter must keep — it strips
+## heightmap_enabled from every other road material (flat overlay, no gain).
+const PARALLAX_MATERIAL_PATHS: PackedStringArray = [CORUNDUM_HIGHWAY_MATERIAL_PATH]
+## Vehicles keep to the RIGHT of their direction of travel. Mind the planet's
+## chirality: with dir = (cos lat·cos lon, sin lat, cos lat·sin lon) the frame
+## (east, north, up) is LEFT-handed — facing +along, the +perp side (positive
+## lateral offsets, see [method lane_layout] and [method perp_deg]) is on the
+## driver's RIGHT. So the +perp carriageway travels +along and the -perp one
+## -along. Decides which way each carriageway's road markings face.
+const RIGHT_HAND_TRAFFIC := true
+## The engraved tile: one lane across, GAUFRAGE_ALONG_M along the road.
+const GAUFRAGE_ACROSS_M := LANE_WIDTH_M
+const GAUFRAGE_ALONG_M := 3.0
 
 ## Biome-adaptive material mapping:  biome_type → .tres path.
 ## For path/trail road types, the material is selected based on the
@@ -125,7 +172,8 @@ static func is_road_zone(zone: Dictionary) -> bool:
 
 ## Half-width in metres for [param zone]: the per-feature `width` exported from
 ## QGIS when the designer filled it in, otherwise the [constant HALF_WIDTH_M]
-## default for the road type.
+## default for the road type. A railway follows its `tracks` and a highway its
+## `lanes` ([method lane_half_width_m]) — their `width` is ignored.
 ##
 ## `width` is the TOTAL width in metres, as written by
 ## tools/planettech/qgis/export_roads.py — hence the halving. Note that BiomeQuery stores a
@@ -136,10 +184,58 @@ static func get_half_width_m(zone: Dictionary) -> float:
 	# in the exporter).
 	if RailwaySettings.is_railway(zone):
 		return RailwaySettings.railway_half_width_m(int(zone.get("tracks", 0)))
+	# A highway is a function of its lanes — `width` is deliberately ignored.
+	var rt := get_road_type(zone)
+	if has_median(rt):
+		return lane_half_width_m(lanes_of(zone))
 	var width_m: float = float(zone.get("width", 0.0))
 	if width_m > 0.0:
 		return width_m * 0.5
-	return HALF_WIDTH_M.get(get_road_type(zone), 0.5)
+	return HALF_WIDTH_M.get(rt, 0.5)
+
+
+## Lane count of [param zone]: its `lanes` when set (> 0), else the type's
+## default. A legacy GeoJSON zone stores 0 for "unset".
+static func lanes_of(zone: Dictionary) -> int:
+	var n := int(zone.get("lanes", 0))
+	if n <= 0:
+		n = int(DEFAULT_LANES.get(get_road_type(zone), 0))
+	return n
+
+
+## Is [param road_type] built as lanes around a central median?
+static func has_median(road_type: String) -> bool:
+	return road_type in MEDIAN_TYPES
+
+
+## Half-width of a lane-built road: [param lanes] × LANE_WIDTH_M + the median.
+static func lane_half_width_m(lanes: int) -> float:
+	return (float(maxi(lanes, 1)) * LANE_WIDTH_M + MEDIAN_GAP_M) * 0.5
+
+
+## Cross-section of a road as lateral intervals in metres from the centerline.
+## POSITIVE offsets are on the `+perp` side (the ribbon's `pt_l`, see
+## [method perp_deg]) — the one convention every builder shares.
+##
+## Returns {"strips": Array of Vector2(lo, hi) — the driving surfaces, in
+## ascending offset; "median": Vector2(lo, hi), or Vector2.ZERO when the road
+## has none}. The median comes after floor(lanes / 2) lanes counted from the
+## -hw edge; a road without a median (or fewer than 2 lanes) is one strip.
+static func lane_layout(road_type: String, lanes: int, hw_m: float) -> Dictionary:
+	if not has_median(road_type) or lanes < 2:
+		return {"strips": [Vector2(-hw_m, hw_m)], "median": Vector2.ZERO}
+	@warning_ignore("integer_division")
+	var m_lo := -hw_m + float(lanes / 2) * LANE_WIDTH_M
+	var m_hi := m_lo + MEDIAN_GAP_M
+	return {
+		"strips": [Vector2(-hw_m, m_lo), Vector2(m_hi, hw_m)],
+		"median": Vector2(m_lo, m_hi),
+	}
+
+
+## [method lane_layout] of a zone dictionary.
+static func lane_layout_of(zone: Dictionary) -> Dictionary:
+	return lane_layout(get_road_type(zone), lanes_of(zone), get_half_width_m(zone))
 
 
 ## Convert the road half-width from metres to degrees and cache it
@@ -240,13 +336,39 @@ static func is_fixed_material(road_type: String) -> bool:
 	return road_type in FIXED_MATERIAL_TYPES
 
 
+## Does the chunk emitter keep this material's parallax? (It strips it from
+## every other road material.)
+static func keeps_parallax(mat_path: String) -> bool:
+	return mat_path in PARALLAX_MATERIAL_PATHS
+
+
+## Is this the engraved corundum surface (lane UVs, vertex tint)?
+static func is_corundum_surface(mat_path: String) -> bool:
+	return mat_path == CORUNDUM_HIGHWAY_MATERIAL_PATH
+
+
+## Is the ground corundum — the corundum DEFAULT biome ([param on_default],
+## see PlanetData.corundum_applies_to_zone), a corundum biome, or a zone whose
+## rock is a corundum variety (corundum_white, corundum_blue, … and emery, the
+## impure corundum)? A highway on such ground is melted corundum.
+static func is_corundum_ground(biome_type: String, rock_type: String = "",
+		on_default: bool = false) -> bool:
+	if on_default or biome_type.begins_with(CORUNDUM_BIOME_PREFIX):
+		return true
+	return rock_type.begins_with("corundum") or rock_type == "emery"
+
+
 ## Get the material path for a road segment.
 ## [param road_type] — "highway", "road", "path", "trail" or "railway"
 ## [param biome_type] — the biome_type of the terrain under this segment
-##                       (only used for adaptive road types)
-static func get_material_path(road_type: String, biome_type: String = "") -> String:
+##                       (adaptive road types, and the corundum highway)
+## [param on_corundum] — the ground here is corundum ([method is_corundum_ground])
+static func get_material_path(road_type: String, biome_type: String = "",
+		on_corundum: bool = false) -> String:
 	if road_type == "railway":
 		return RailwaySettings.BALLAST_MATERIAL_PATH
+	if road_type == "highway" and is_corundum_ground(biome_type, "", on_corundum):
+		return CORUNDUM_HIGHWAY_MATERIAL_PATH
 	if is_fixed_material(road_type):
 		return ASPHALT_MATERIAL_PATH
 	# Adaptive: look up biome → path material.

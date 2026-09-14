@@ -76,7 +76,7 @@ func test_top_sits_on_the_profile_and_skirts_reach_under_the_ground() -> void:
 	var verts: PackedVector3Array = bed["verts"]
 	assert_gt(verts.size(), 0)
 	assert_eq(verts.size() % 6, 0, "six vertices per station")
-	var top := RADIUS + 100.0 + RoadTerrain.SURFACE_OFFSET
+	var top := RADIUS + 100.0 + RoadTerrain.SURFACE_THICKNESS_M
 	var bottom := RADIUS + 100.0 - GradeSettings.SKIRT_BURY_M
 	for k in verts.size() / 6:
 		assert_almost_eq(_r(verts[k * 6]), top, 0.01, "top left")
@@ -94,7 +94,7 @@ func test_skirts_follow_the_ground_down_into_a_dip() -> void:
 	for k in verts.size() / 6:
 		var top_r := _r(verts[k * 6]) - RADIUS
 		var bot_r := _r(verts[k * 6 + 3]) - RADIUS
-		assert_almost_eq(top_r, 100.05, 0.01, "the top never leaves the profile")
+		assert_almost_eq(top_r, 100.0 + RoadTerrain.SURFACE_THICKNESS_M, 0.01, "the top never leaves the profile")
 		if absf(bot_r - (98.5 - GradeSettings.SKIRT_BURY_M)) < 0.02:
 			found = true
 	assert_true(found, "some skirt bottom reached the dip floor")
