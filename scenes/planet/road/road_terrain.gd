@@ -106,6 +106,9 @@ const CORUNDUM_HIGHWAY_MATERIAL_PATH := MATERIAL_DIR + "road_corundum_melted.tre
 const CORUNDUM_BIOME_TYPE := "aride_desert-corundum_plateau"
 ## Every corundum biome (plateau, sand desert, …) shares this prefix.
 const CORUNDUM_BIOME_PREFIX := "aride_desert-corundum"
+## The same melted corundum without the engraving, for the slab's flanks and
+## a bed's skirts — the gaufrage is a road marking, it belongs on the top only.
+const CORUNDUM_HIGHWAY_SIDE_MATERIAL_PATH := MATERIAL_DIR + "road_corundum_melted_side.tres"
 ## Road materials whose parallax the chunk emitter must keep — it strips
 ## heightmap_enabled from every other road material (flat overlay, no gain).
 const PARALLAX_MATERIAL_PATHS: PackedStringArray = [CORUNDUM_HIGHWAY_MATERIAL_PATH]
@@ -345,6 +348,14 @@ static func keeps_parallax(mat_path: String) -> bool:
 ## Is this the engraved corundum surface (lane UVs, vertex tint)?
 static func is_corundum_surface(mat_path: String) -> bool:
 	return mat_path == CORUNDUM_HIGHWAY_MATERIAL_PATH
+
+
+## The material of a road's SIDES (flanks, skirts) given its top's: the
+## engraved corundum gets the plain one, every other material is its own.
+static func side_material_path(mat_path: String) -> String:
+	if is_corundum_surface(mat_path):
+		return CORUNDUM_HIGHWAY_SIDE_MATERIAL_PATH
+	return mat_path
 
 
 ## Is the ground corundum — the corundum DEFAULT biome ([param on_default],

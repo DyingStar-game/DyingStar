@@ -105,7 +105,10 @@ func test_collision_faces_match_the_visual_quads() -> void:
 	var faces: PackedVector3Array = bed["faces"]
 	var indices: PackedInt32Array = bed["indices"]
 	assert_eq(faces.size() % 3, 0)
-	assert_eq(faces.size(), indices.size(), "one collision triangle per visual triangle")
+	var side_indices: PackedInt32Array = bed["side_indices"]
+	assert_eq(faces.size(), indices.size() + side_indices.size(),
+			"one collision triangle per visual triangle, top and skirts together")
+	assert_eq(side_indices.size(), indices.size() * 2, "two skirts for one top")
 	var no_vis := _bed(_flat, false)
 	assert_eq((no_vis["verts"] as PackedVector3Array).size(), 0)
 	assert_eq((no_vis["faces"] as PackedVector3Array).size(), faces.size())

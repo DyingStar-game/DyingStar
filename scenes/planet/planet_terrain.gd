@@ -368,10 +368,21 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v37 → v38: the corundum highway's tint is resolved per VERTEX from
 		# the chunk's zones (a coarse piece's midpoint missed the outcrop it
 		# crossed: far road milky, near deck emery).
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v38%s%s%s%s%s" % [
+		# v38 → v39: road_corundum_melted.tres is less glossy (0.45, no
+		# clearcoat) — the road materials are DUPLICATED INTO the cached mesh,
+		# so a material tweak needs a bump too.
+		# v39 → v40: road tops (ribbon, bed, median, skirts) are wound
+		# FRONT-facing (RoadRibbon.quad_indices) — they were back faces, lit
+		# with a flipped normal by the cull-disabled road materials: black.
+		# v40 → v41: the corundum road's flanks / skirts get the plain melted
+		# corundum (no engraving), the top 0.3 roughness + clearcoat again.
+		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
+		# geometry too: a mesh cached with skirts must not be served without.
+		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v41%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz]
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-

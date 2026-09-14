@@ -119,6 +119,14 @@ func test_mesh_carries_the_corundum_slab_surface() -> void:
 					"milky / iron corundum tint, not white: %s" % c)
 			assert_eq((mat as StandardMaterial3D).cull_mode, BaseMaterial3D.CULL_DISABLED)
 	assert_true(found, "one surface uses the melted-corundum material with parallax kept")
+	var side_found := false
+	for si in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(si)
+		if mat is StandardMaterial3D and (mat as StandardMaterial3D).vertex_color_use_as_albedo \
+				and not (mat as StandardMaterial3D).heightmap_enabled \
+				and (mat as StandardMaterial3D).normal_texture == null:
+			side_found = true
+	assert_true(side_found, "the flanks / skirts use the plain melted corundum, no engraving")
 
 
 func test_collision_holds_the_slab_above_the_ground() -> void:

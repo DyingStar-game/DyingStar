@@ -83,10 +83,12 @@ static func flank_uv(mode: int, along_m: float, drop_m: float, tile_m: float) ->
 ## [param tint]: func(dir: Vector3) -> Color baked into the vertex colour, or
 ## an invalid Callable for WHITE.
 ##
-## Returns {verts, norms, uvs, colors, indices, faces}: per station 6 visual
-## vertices — top hi/lo, hi flank top/bottom, lo flank top/bottom, each face
-## with its own normal — and 3 collision quads per station pair (top, hi
-## flank, lo flank).
+## Returns {verts, norms, uvs, colors, indices, side_indices, faces}: per
+## station 6 visual vertices — top hi/lo, hi flank top/bottom, lo flank
+## top/bottom, each face with its own normal — `indices` the top's triangles,
+## `side_indices` the flanks' (same vertex arrays; the engraved surface is
+## for the top only, so a caller can give the flanks another material), and
+## 3 collision quads per station pair (top, hi flank, lo flank).
 static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 		strip: Vector2, m_per_deg: float, radius: float, max_seg_deg: float,
 		height_at: Callable, origin: Vector3, want_visual: bool, outward: bool,
@@ -97,9 +99,10 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
+	var side_indices := PackedInt32Array()
 	var faces := PackedVector3Array()
 	var out := {"verts": verts, "norms": norms, "uvs": uvs, "colors": colors,
-			"indices": indices, "faces": faces}
+			"indices": indices, "side_indices": side_indices, "faces": faces}
 	if cl.size() < 2 or m_per_deg <= 0.0 or max_seg_deg <= 0.0:
 		return out
 	var have_cum := cum.size() == cl.size()
@@ -193,9 +196,9 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 	for k in n - 1:
 		var a := k * 6
 		var b := a + 6
-		quad_indices(indices, a, b, a + 1, b + 1)          # top
-		quad_indices(indices, a + 3, b + 3, a + 2, b + 2)  # hi flank (bottom → top)
-		quad_indices(indices, a + 4, b + 4, a + 5, b + 5)  # lo flank (top → bottom)
+		quad_indices(indices, a, b, a + 1, b + 1)               # top
+		quad_indices(side_indices, a + 3, b + 3, a + 2, b + 2)  # hi flank (bottom → top)
+		quad_indices(side_indices, a + 4, b + 4, a + 5, b + 5)  # lo flank (top → bottom)
 	return out
 
 
@@ -211,8 +214,15 @@ static func quad_faces(faces: PackedVector3Array, a0: Vector3, a1: Vector3,
 		faces.append(b0); faces.append(b1); faces.append(a1)
 
 
-## Two visual triangles for the quad (a0, a1) × (b0, b1), as vertex indices.
+## Two visual triangles for the quad (a0, a1) × (b0, b1), as vertex indices,
+## FRONT-facing for the (a → b, along) order [method quad_faces] calls
+## outward: Godot's front face is clockwise, i.e. the geometric normal
+## (v1-v0)×(v2-v0) points AWAY from the viewer — INTO the slab for its top
+## (the convention BridgeDeck documents and renders with). The road
+## materials disable culling, and Godot then lights a back face with its
+## normal FLIPPED (DO_SIDE_CHECK): the old (a0, a1, b0) order was that back
+## face, and every road top was lit from below — black under any tint.
 static func quad_indices(indices: PackedInt32Array, a0: int, a1: int,
 		b0: int, b1: int) -> void:
-	indices.append(a0); indices.append(a1); indices.append(b0)
-	indices.append(b0); indices.append(a1); indices.append(b1)
+	indices.append(a0); indices.append(b0); indices.append(a1)
+	indices.append(b0); indices.append(b1); indices.append(a1)

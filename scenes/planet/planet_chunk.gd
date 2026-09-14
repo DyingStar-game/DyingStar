@@ -24,6 +24,11 @@ const STITCH_TOP    := 8
 # One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
 
+# The Globals SCRIPT, not the autoload: this file is @tool and builds chunks in the
+# editor too, where a non-tool autoload is only a placeholder instance (calling a
+# method on it errors out). Constants and static funcs read fine off the script.
+const _GlobalsScript := preload("res://scenes/globals/globals.gd")
+
 
 ## Generate a visual [ArrayMesh] for one terrain chunk.
 ## [param data] — planet configuration (heightmap, radius, etc.)
@@ -1129,119 +1134,121 @@ static func generate_mesh(
 	# neighbour. Sizing from whole-chunk relief (× exaggeration) produced
 	# kilometre-deep walls and crushing overdraw; the seam mismatch is only a
 	# couple of cells of slope, so max_step × 6 (+ margin) covers it cheaply.
-	var _max_step := 0.0
-	var _stride := res + 1
-	for _yi in res + 1:
-		for _xi in res + 1:
-			var _i := _yi * _stride + _xi
-			var _hc := _chunk_heights[_i]
-			if _xi > 0:
-				_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - 1]))
-			if _yi > 0:
-				_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - _stride]))
-	var skirt_drop := maxf(_max_step * 6.0 + 25.0, 40.0)  # metres below surface
-	# Corundum cracks create ~crack_depth single-cell steps, which would inflate
-	# skirt_drop into kilometre-tall walls (overdraw + dark vertical faces at LOD
-	# seams).  A LOD-seam mismatch never exceeds the crack depth, so cap it there.
-	if _corundum_bd:
-		skirt_drop = minf(skirt_drop, data.crack_depth_m * 1.5 + 40.0)
-	var skirt_nudge := 0.1  # metres along surface, outward from chunk interior
-	var edge_indices_list: Array[int] = []
-	# Bottom edge (yi == 0, all xi)
-	for xi in res + 1:
-		edge_indices_list.append(0 * (res + 1) + xi)
-	# Top edge (yi == res, all xi)
-	for xi in res + 1:
-		edge_indices_list.append(res * (res + 1) + xi)
-	# Left edge (xi == 0, yi 1..res-1) — corners already included above
-	for yi in range(1, res):
-		edge_indices_list.append(yi * (res + 1) + 0)
-	# Right edge (xi == res, yi 1..res-1)
-	for yi in range(1, res):
-		edge_indices_list.append(yi * (res + 1) + res)
+	# Build switch (Globals.ENABLED_DEV_TOOLS): OFF bakes the bare grid, seams exposed.
+	if _GlobalsScript.is_dev_tool_enabled(&"build_chunk_skirts"):
+		var _max_step := 0.0
+		var _stride := res + 1
+		for _yi in res + 1:
+			for _xi in res + 1:
+				var _i := _yi * _stride + _xi
+				var _hc := _chunk_heights[_i]
+				if _xi > 0:
+					_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - 1]))
+				if _yi > 0:
+					_max_step = maxf(_max_step, absf(_hc - _chunk_heights[_i - _stride]))
+		var skirt_drop := maxf(_max_step * 6.0 + 25.0, 40.0)  # metres below surface
+		# Corundum cracks create ~crack_depth single-cell steps, which would inflate
+		# skirt_drop into kilometre-tall walls (overdraw + dark vertical faces at LOD
+		# seams).  A LOD-seam mismatch never exceeds the crack depth, so cap it there.
+		if _corundum_bd:
+			skirt_drop = minf(skirt_drop, data.crack_depth_m * 1.5 + 40.0)
+		var skirt_nudge := 0.1  # metres along surface, outward from chunk interior
+		var edge_indices_list: Array[int] = []
+		# Bottom edge (yi == 0, all xi)
+		for xi in res + 1:
+			edge_indices_list.append(0 * (res + 1) + xi)
+		# Top edge (yi == res, all xi)
+		for xi in res + 1:
+			edge_indices_list.append(res * (res + 1) + xi)
+		# Left edge (xi == 0, yi 1..res-1) — corners already included above
+		for yi in range(1, res):
+			edge_indices_list.append(yi * (res + 1) + 0)
+		# Right edge (xi == res, yi 1..res-1)
+		for yi in range(1, res):
+			edge_indices_list.append(yi * (res + 1) + res)
 
-	# Map: original vertex index → skirt (dropped) vertex index
-	var skirt_map: Dictionary = {}
-	for ei in edge_indices_list:
-		if skirt_map.has(ei):
-			continue
-		var world_pos := vertices[ei] + cc_f32
-		var dir_s := world_pos.normalized()
-		# Compute outward nudge: push the skirt base slightly beyond the
-		# chunk edge so it tucks under the neighbour's terrain surface.
-		var _sk_xi: int = ei % (res + 1)
-		@warning_ignore("integer_division")
-		var _sk_yi: int = ei / (res + 1)
-		var nudge := Vector3.ZERO
-		if _sk_yi == 0:  # bottom edge → nudge toward yi = -1
-			nudge += vertices[ei] - vertices[1 * (res + 1) + _sk_xi]
-		if _sk_yi == res:  # top edge → nudge toward yi = res+1
-			nudge += vertices[ei] - vertices[(res - 1) * (res + 1) + _sk_xi]
-		if _sk_xi == 0:  # left edge → nudge toward xi = -1
-			nudge += vertices[ei] - vertices[_sk_yi * (res + 1) + 1]
-		if _sk_xi == res:  # right edge → nudge toward xi = res+1
-			nudge += vertices[ei] - vertices[_sk_yi * (res + 1) + (res - 1)]
-		# Project onto tangent plane and scale to SKIRT_NUDGE metres.
-		if nudge.length_squared() > 0.0:
-			nudge = nudge - dir_s * nudge.dot(dir_s)
+		# Map: original vertex index → skirt (dropped) vertex index
+		var skirt_map: Dictionary = {}
+		for ei in edge_indices_list:
+			if skirt_map.has(ei):
+				continue
+			var world_pos := vertices[ei] + cc_f32
+			var dir_s := world_pos.normalized()
+			# Compute outward nudge: push the skirt base slightly beyond the
+			# chunk edge so it tucks under the neighbour's terrain surface.
+			var _sk_xi: int = ei % (res + 1)
+			@warning_ignore("integer_division")
+			var _sk_yi: int = ei / (res + 1)
+			var nudge := Vector3.ZERO
+			if _sk_yi == 0:  # bottom edge → nudge toward yi = -1
+				nudge += vertices[ei] - vertices[1 * (res + 1) + _sk_xi]
+			if _sk_yi == res:  # top edge → nudge toward yi = res+1
+				nudge += vertices[ei] - vertices[(res - 1) * (res + 1) + _sk_xi]
+			if _sk_xi == 0:  # left edge → nudge toward xi = -1
+				nudge += vertices[ei] - vertices[_sk_yi * (res + 1) + 1]
+			if _sk_xi == res:  # right edge → nudge toward xi = res+1
+				nudge += vertices[ei] - vertices[_sk_yi * (res + 1) + (res - 1)]
+			# Project onto tangent plane and scale to SKIRT_NUDGE metres.
 			if nudge.length_squared() > 0.0:
-				nudge = nudge.normalized() * skirt_nudge
-		var dropped := _world_to_local(world_pos + nudge - dir_s * skirt_drop, cc_f32, _wp_f32)
-		var surface_local := vertices[ei]
-		var surface_offset := surface_local - dropped
-		var skirt_idx := vertices.size()
-		# Store the DROPPED position directly as VERTEX so the geometry is
-		# correct even without shader support for CUSTOM0.  CUSTOM0 holds
-		# the inverse offset (dropped → surface) so the shader can recover
-		# the surface position for triplanar UV continuity:
-		#   surface_pos = VERTEX + CUSTOM0
-		vertices.append(dropped)
-		normals.append(normals[ei])
-		uvs.append(uvs[ei])
-		uv2s.append(uv2s[ei])
-		# Debug: paint skirt curtains bright magenta so they can be told apart
-		# from real terrain / crack interiors in-game.
-		colors.append(Color.MAGENTA if data.debug_color_skirts else colors[ei])
-		skirt_offsets.append(surface_offset.x)
-		skirt_offsets.append(surface_offset.y)
-		skirt_offsets.append(surface_offset.z)
-		skirt_map[ei] = skirt_idx
+				nudge = nudge - dir_s * nudge.dot(dir_s)
+				if nudge.length_squared() > 0.0:
+					nudge = nudge.normalized() * skirt_nudge
+			var dropped := _world_to_local(world_pos + nudge - dir_s * skirt_drop, cc_f32, _wp_f32)
+			var surface_local := vertices[ei]
+			var surface_offset := surface_local - dropped
+			var skirt_idx := vertices.size()
+			# Store the DROPPED position directly as VERTEX so the geometry is
+			# correct even without shader support for CUSTOM0.  CUSTOM0 holds
+			# the inverse offset (dropped → surface) so the shader can recover
+			# the surface position for triplanar UV continuity:
+			#   surface_pos = VERTEX + CUSTOM0
+			vertices.append(dropped)
+			normals.append(normals[ei])
+			uvs.append(uvs[ei])
+			uv2s.append(uv2s[ei])
+			# Debug: paint skirt curtains bright magenta so they can be told apart
+			# from real terrain / crack interiors in-game.
+			colors.append(Color.MAGENTA if data.debug_color_skirts else colors[ei])
+			skirt_offsets.append(surface_offset.x)
+			skirt_offsets.append(surface_offset.y)
+			skirt_offsets.append(surface_offset.z)
+			skirt_map[ei] = skirt_idx
 
-	# Connect skirt triangles along each continuous edge strip.
-	# For each consecutive pair of edge vertices (a, b), form a quad
-	# with their dropped counterparts (sa, sb) → 2 triangles.
-	# Bottom edge (left to right)
-	for xi in res:
-		var a := 0 * (res + 1) + xi
-		var b := 0 * (res + 1) + xi + 1
-		var sa: int = skirt_map[a]
-		var sb: int = skirt_map[b]
-		indices.append(a);  indices.append(sa); indices.append(b)
-		indices.append(b);  indices.append(sa); indices.append(sb)
-	# Top edge (left to right)
-	for xi in res:
-		var a := res * (res + 1) + xi
-		var b := res * (res + 1) + xi + 1
-		var sa: int = skirt_map[a]
-		var sb: int = skirt_map[b]
-		indices.append(a);  indices.append(b);  indices.append(sa)
-		indices.append(b);  indices.append(sb); indices.append(sa)
-	# Left edge (bottom to top)
-	for yi in res:
-		var a := yi * (res + 1) + 0
-		var b := (yi + 1) * (res + 1) + 0
-		var sa: int = skirt_map[a]
-		var sb: int = skirt_map[b]
-		indices.append(a);  indices.append(b);  indices.append(sa)
-		indices.append(b);  indices.append(sb); indices.append(sa)
-	# Right edge (bottom to top)
-	for yi in res:
-		var a := yi * (res + 1) + res
-		var b := (yi + 1) * (res + 1) + res
-		var sa: int = skirt_map[a]
-		var sb: int = skirt_map[b]
-		indices.append(a);  indices.append(sa); indices.append(b)
-		indices.append(b);  indices.append(sa); indices.append(sb)
+		# Connect skirt triangles along each continuous edge strip.
+		# For each consecutive pair of edge vertices (a, b), form a quad
+		# with their dropped counterparts (sa, sb) → 2 triangles.
+		# Bottom edge (left to right)
+		for xi in res:
+			var a := 0 * (res + 1) + xi
+			var b := 0 * (res + 1) + xi + 1
+			var sa: int = skirt_map[a]
+			var sb: int = skirt_map[b]
+			indices.append(a);  indices.append(sa); indices.append(b)
+			indices.append(b);  indices.append(sa); indices.append(sb)
+		# Top edge (left to right)
+		for xi in res:
+			var a := res * (res + 1) + xi
+			var b := res * (res + 1) + xi + 1
+			var sa: int = skirt_map[a]
+			var sb: int = skirt_map[b]
+			indices.append(a);  indices.append(b);  indices.append(sa)
+			indices.append(b);  indices.append(sb); indices.append(sa)
+		# Left edge (bottom to top)
+		for yi in res:
+			var a := yi * (res + 1) + 0
+			var b := (yi + 1) * (res + 1) + 0
+			var sa: int = skirt_map[a]
+			var sb: int = skirt_map[b]
+			indices.append(a);  indices.append(b);  indices.append(sa)
+			indices.append(b);  indices.append(sb); indices.append(sa)
+		# Right edge (bottom to top)
+		for yi in res:
+			var a := yi * (res + 1) + res
+			var b := (yi + 1) * (res + 1) + res
+			var sa: int = skirt_map[a]
+			var sb: int = skirt_map[b]
+			indices.append(a);  indices.append(sa); indices.append(b)
+			indices.append(b);  indices.append(sa); indices.append(sb)
 
 	if _pf:
 		var _now := Time.get_ticks_usec()
@@ -1887,11 +1894,12 @@ static func generate_mesh(
 					_rd_rt, RoadTerrain.lanes_of(_rd_zone), _rd_hw_m)
 			for _rd_piece in _rd_pieces:
 				for _rd_strip in _rd_layout["strips"]:
-					_road_group_append(grp, RoadRibbon.emit_strip(
-							_rd_piece[0], _rd_piece[1], _rd_strip, _rd_m_per_deg,
-							data.radius, _max_seg_deg, _rd_height_at, cc_f32,
-							true, true, _rd_surf["uv_mode"], _rd_tile_m,
-							_rd_surf["tint"]))
+					_road_group_append_slab(road_groups, grp, _rd_surf, _rd_tile_m,
+							RoadRibbon.emit_strip(
+									_rd_piece[0], _rd_piece[1], _rd_strip, _rd_m_per_deg,
+									data.radius, _max_seg_deg, _rd_height_at, cc_f32,
+									true, true, _rd_surf["uv_mode"], _rd_tile_m,
+									_rd_surf["tint"]))
 
 		# --- profiled bed: level top on the profile, skirts to the ground -----
 		# Railways (ballast) and graded roads (asphalt, or melted corundum on
@@ -1929,7 +1937,8 @@ static func generate_mesh(
 					_rw_prof, data.get_grade_exclusions_for_feature(_rw_fid),
 					_rd_m_per_deg, data.radius, _rw_sampler, _rw_step_m, cc_f32,
 					true, true, _rw_surf["uv_mode"], _rw_surf["tint"])
-				_road_group_append(_rw_grp, _rw_bed)
+				_road_group_append_slab(road_groups, _rw_grp, _rw_surf,
+						RoadTerrain.get_tile_size(_rw_rt), _rw_bed)
 				var _rw_median: Dictionary = _rw_bed["median"]
 				if not (_rw_median["verts"] as PackedVector3Array).is_empty():
 					_road_group_append(_road_group(road_groups, _rw_smat, _rw_stile,
@@ -3202,6 +3211,33 @@ static func _road_group_append(grp: Dictionary, part: Dictionary) -> void:
 	grp["uvs"] = uvs
 	grp["colors"] = colors
 	grp["indices"] = indices
+
+
+## Append a slab builder's part — {…, indices, side_indices} — to its top
+## group [param grp], and its sides to the group of
+## RoadTerrain.side_material_path(): the engraved corundum's flanks and
+## skirts go to the plain melted corundum, any other material keeps its
+## sides with its top (one append, indices merged).
+static func _road_group_append_slab(groups: Dictionary, grp: Dictionary,
+		surf: Dictionary, tile_m: float, part: Dictionary) -> void:
+	var side_idx: PackedInt32Array = part.get("side_indices", PackedInt32Array())
+	var mat_path: String = surf["mat_path"]
+	var side_mat := RoadTerrain.side_material_path(mat_path)
+	if side_mat == mat_path or side_idx.is_empty():
+		if not side_idx.is_empty():
+			var merged := part.duplicate()
+			var idx: PackedInt32Array = (part["indices"] as PackedInt32Array).duplicate()
+			idx.append_array(side_idx)
+			merged["indices"] = idx
+			_road_group_append(grp, merged)
+		else:
+			_road_group_append(grp, part)
+		return
+	_road_group_append(grp, part)
+	var sides := part.duplicate()
+	sides["indices"] = side_idx
+	_road_group_append(_road_group(groups, side_mat, tile_m,
+			RoadRibbon.UvMode.FLOW, surf["tinted"]), sides)
 
 
 ## Which surface a road piece gets: {mat_path, uv_mode, tint, tinted}.

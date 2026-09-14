@@ -94,6 +94,10 @@ func test_corundum_ground_rule() -> void:
 	assert_true(RoadTerrain.keeps_parallax(RoadTerrain.CORUNDUM_HIGHWAY_MATERIAL_PATH))
 	assert_false(RoadTerrain.keeps_parallax(RoadTerrain.ASPHALT_MATERIAL_PATH))
 	assert_true(RoadTerrain.is_corundum_surface(RoadTerrain.CORUNDUM_HIGHWAY_MATERIAL_PATH))
+	assert_eq(RoadTerrain.side_material_path(RoadTerrain.CORUNDUM_HIGHWAY_MATERIAL_PATH),
+			RoadTerrain.CORUNDUM_HIGHWAY_SIDE_MATERIAL_PATH, "engraving on the top only")
+	assert_eq(RoadTerrain.side_material_path(RoadTerrain.ASPHALT_MATERIAL_PATH),
+			RoadTerrain.ASPHALT_MATERIAL_PATH, "asphalt keeps its sides")
 
 
 func test_surface_constants() -> void:
