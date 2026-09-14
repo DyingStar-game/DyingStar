@@ -42,6 +42,29 @@ static func chunk_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Arr
 	return out
 
 
+## The parent-level tiles a stitched chunk's border rows read (see
+## PlanetChunk._stitch_edge_heights): the parent's own tile and its eight
+## neighbours at the parent's sample level. Empty when the parent reads the
+## same tile level as the chunk (nothing more to fetch).
+static func stitch_parent_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if hp_nside < 2:
+		return out
+	@warning_ignore("integer_division")
+	var p_nside: int = hp_nside / 2
+	if data.sample_nside_for(p_nside) == data.sample_nside_for(hp_nside):
+		return out
+	return chunk_tile_set(data, p_nside, hp_ipix >> 2)
+
+
+## Every tile of [param tiles] readable locally (see tile_available)?
+static func tiles_available(data: PlanetData, tiles: Array[Vector2i]) -> bool:
+	for t in tiles:
+		if not tile_available(data, t.x, t.y):
+			return false
+	return true
+
+
 ## Une hauteur est-elle disponible localement pour cette tuile, directement ou via un
 ## ancêtre ? Ne déclenche aucun réseau.
 static func tile_available(data: PlanetData, ipix: int, nside: int) -> bool:
@@ -76,12 +99,21 @@ static func tile_available(data: PlanetData, ipix: int, nside: int) -> bool:
 ## C'est le point d'accroche qui évite de propager un état « pending » à travers
 ## l'échantillonneur : PlanetTerrain diffère le chunk tant que ceci rend false, et la
 ## tâche de mesh ne rencontre jamais de tuile manquante.
-static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int) -> bool:
+## [param with_parent] — the chunk will be STITCHED (PlanetChunk.STITCH_*): its
+## border rows read the PARENT pyramid level, so the parent's tile set must be
+## resident too. Without it the border fell back to whatever ancestor was on
+## disk (the coarse floor levels), hundreds of metres off on a cliff: a wall
+## along the chunk edge, 400-1300 m tall, seen from 7-27 km (2026-09-14).
+static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int,
+		with_parent: bool = false) -> bool:
 	if data.remote_source == null:
 		return true
 	var ready := true
 	var unknown := false
-	for t in chunk_tile_set(data, hp_nside, hp_ipix):
+	var tiles := chunk_tile_set(data, hp_nside, hp_ipix)
+	if with_parent and hp_nside >= 2:
+		tiles.append_array(stitch_parent_tile_set(data, hp_nside, hp_ipix))
+	for t in tiles:
 		if tile_available(data, t.x, t.y):
 			continue
 		ready = false

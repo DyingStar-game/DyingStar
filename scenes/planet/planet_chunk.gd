@@ -27,6 +27,17 @@ const STITCH_TOP    := 8  # yi == res ("N")
 ## parent's, row STITCH_BLEND_ROWS the chunk's own. Spreads the level-to-level
 ## data step over that many cells instead of one.
 const STITCH_BLEND_ROWS := 3
+## An edge is stitched only if bending the chunk onto the parent's border
+## costs at most this slope over the rows it is spread on: past it the
+## coarse neighbour's chord is nowhere near the terrain (tarsis_3 has 600 m
+## cliffs inside one 200 m texel: the parent chord sits 300-800 m off the
+## surface there) and the stitch would raise a sloped block along the
+## border. Such an edge keeps its own heights and its skirt hides the seam
+## as before — a vertical curtain where the terrain is a cliff anyway.
+## 5 %: a 35 m level-to-level mismatch on a dune (what the stitch is for)
+## spreads over 3 rows of 400 m at n1024 well under it; a 160 m one — the
+## mesa's edge seen from 15 km — does not, and stays a curtain.
+const STITCH_MAX_SLOPE := 0.05
 
 # One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
@@ -492,8 +503,17 @@ static func generate_mesh(
 	var _st_edge: Dictionary = {}   # vertex index → base height forced by the stitch
 	var _st_blend: Dictionary = {}  # vertex index → Vector2(weight, parent-level height)
 	if stitch != 0 and hp_mode and edge_stitch_applies(data, hp_nside):
-		_stitch_edge_heights(data, hp_nside, hp_ipix, res, grid_dirs, stitch,
-				_frame, _st_edge, _st_blend)
+		# The border reads the PARENT level: only with its tiles here. A
+		# missing one would climb to the coarse floor levels and put the
+		# border hundreds of metres off on a cliff — then an unstitched
+		# border (a small seam under the skirt) is the lesser evil, and the
+		# mesh is marked provisional so it is not cached under this mask.
+		if TileResidency.tiles_available(data,
+				TileResidency.stitch_parent_tile_set(data, hp_nside, hp_ipix)):
+			_stitch_edge_heights(data, hp_nside, hp_ipix, res, grid_dirs, stitch,
+					_frame, _st_edge, _st_blend)
+		else:
+			data.climb_mark()
 
 	if _pf:
 		var _now := Time.get_ticks_usec()
@@ -1591,17 +1611,21 @@ static func generate_mesh(
 
 	var mesh := ArrayMesh.new()
 	var _c0_fmt := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, _c0_fmt)
-
-	# Apply terrain material — use the one from PlanetData if provided,
-	# otherwise fall back to a default vertex-colour material.
-	if data.terrain_material:
-		mesh.surface_set_material(0, data.terrain_material)
-	else:
-		var mat := StandardMaterial3D.new()
-		mat.vertex_color_use_as_albedo = true
-		mat.cull_mode = BaseMaterial3D.CULL_BACK
-		mesh.surface_set_material(0, mat)
+	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
+	# covering it whole) and that bakes without skirts has NO base triangle:
+	# an empty index array is refused by the renderer (five errors per
+	# chunk), and the material would then land on the first overlay surface.
+	if not base_indices.is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, _c0_fmt)
+		# Apply terrain material — use the one from PlanetData if provided,
+		# otherwise fall back to a default vertex-colour material.
+		if data.terrain_material:
+			mesh.surface_set_material(0, data.terrain_material)
+		else:
+			var mat := StandardMaterial3D.new()
+			mat.vertex_color_use_as_albedo = true
+			mat.cull_mode = BaseMaterial3D.CULL_BACK
+			mesh.surface_set_material(0, mat)
 
 	# --- volcanic_active: lava material on top of the terrain ---------------
 	# Overlay quads are excluded from the base terrain surface (see above),
@@ -3187,28 +3211,44 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 
 	# Vertex indices of each stitched edge, in order along the edge.
 	var edges: Array[PackedInt32Array] = []
+	var edge_bit_list: Array[int] = []
 	if stitch & STITCH_LEFT:
 		var e := PackedInt32Array()
 		for yi in stride:
 			e.append(yi * stride)
 		edges.append(e)
+		edge_bit_list.append(STITCH_LEFT)
 	if stitch & STITCH_RIGHT:
 		var e := PackedInt32Array()
 		for yi in stride:
 			e.append(yi * stride + res)
 		edges.append(e)
+		edge_bit_list.append(STITCH_RIGHT)
 	if stitch & STITCH_BOTTOM:
 		var e := PackedInt32Array()
 		for xi in stride:
 			e.append(xi)
 		edges.append(e)
+		edge_bit_list.append(STITCH_BOTTOM)
 	if stitch & STITCH_TOP:
 		var e := PackedInt32Array()
 		for xi in stride:
 			e.append(res * stride + xi)
 		edges.append(e)
+		edge_bit_list.append(STITCH_TOP)
 
+	var own_sample := data.sample_nside_for(hp_nside)
+	var same_level := p_sample == own_sample
+	var cell_m: float = (grid_dirs[0][0] as Vector3).angle_to(grid_dirs[0][1]) * r
+	# Rows the bend is spread over: the blend band when the parent reads
+	# another tile level, the single border cell when it reads the same one.
+	var bend_rows: int = 1 if same_level or STITCH_BLEND_ROWS < 2 else STITCH_BLEND_ROWS
+	var max_step: float = STITCH_MAX_SLOPE * float(bend_rows) * cell_m
+	var kept := 0  # edges actually stitched, as STITCH_* bits
+	var ei := 0
 	for e in edges:
+		var bit: int = edge_bit_list[ei]
+		ei += 1
 		var hs := PackedFloat64Array()
 		hs.resize(stride)
 		for k in range(0, stride, 2):
@@ -3228,23 +3268,35 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 			@warning_ignore("integer_division")
 			var pb: Vector3 = grid_dirs[ib / stride][ib % stride] * (r + hs[k + 1])
 			hs[k] = ((pa + pb) * 0.5).length() - r
+		# How far the parent's border is from the chunk's own surface there.
+		var worst := 0.0
+		for k in stride:
+			var idx := e[k]
+			@warning_ignore("integer_division")
+			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
+			var own := data.sample_height_boundary(d, -1, -1, Vector2i(-1, -1),
+					null, own_sample, frame)
+			worst = maxf(worst, absf(hs[k] - own))
+		if worst > max_step:
+			continue  # cliff under the seam: skirt, not stitch
 		for k in stride:
 			edge_out[e[k]] = hs[k]
+		kept |= bit
 
-	if p_sample == data.sample_nside_for(hp_nside) or STITCH_BLEND_ROWS < 2:
+	if same_level or STITCH_BLEND_ROWS < 2 or kept == 0:
 		return
 	# Ramp rows 1 .. STITCH_BLEND_ROWS-1 behind each stitched edge. A vertex in
 	# the band of two stitched edges keeps the stronger (nearer-edge) weight.
 	for yi in range(1, res):
 		for xi in range(1, res):
 			var d_min := STITCH_BLEND_ROWS
-			if stitch & STITCH_LEFT:
+			if kept & STITCH_LEFT:
 				d_min = mini(d_min, xi)
-			if stitch & STITCH_RIGHT:
+			if kept & STITCH_RIGHT:
 				d_min = mini(d_min, res - xi)
-			if stitch & STITCH_BOTTOM:
+			if kept & STITCH_BOTTOM:
 				d_min = mini(d_min, yi)
-			if stitch & STITCH_TOP:
+			if kept & STITCH_TOP:
 				d_min = mini(d_min, res - yi)
 			if d_min >= STITCH_BLEND_ROWS:
 				continue

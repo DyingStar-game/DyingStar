@@ -387,10 +387,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# reaches into (not only cells with a carved corner) and re-samples
 		# the chunk-border edge when both chunks refine that cell — the
 		# coarse triangles no longer run above the rails on ground runs.
+		# v43 → v44: the stitch waits for the parent tiles and refuses an
+		# edge over a cliff (STITCH_MAX_SLOPE); v43 caches hold stitched
+		# borders built on floor-level ancestors, hundreds of metres off.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v43%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v44%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
@@ -408,8 +411,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
 	planet_data.remote_source = RemoteTileSource.for_planet(planet_data.planet_name)
 
-	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s" % [
-		data.planet_name, data.radius, data.export_nside, server_mode])
+	# The geometry version is what a client and a server must SHARE for their
+	# terrains to agree (the sampler, the carve, the stitch are all in it):
+	# grep it in both logs before hunting a client/server height mismatch.
+	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s geometry=%s" % [
+		data.planet_name, data.radius, data.export_nside, server_mode,
+		_chunk_cache.version if _chunk_cache else "no-cache"])
 
 	# Chunks container
 	if has_node("Chunks"):
@@ -1019,6 +1026,15 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 	var body := _make_chunk_collision_body(key, nside, ipix, shape)
 	add_child(body)
 	_server_collision_chunks[key] = body
+	# A shape that read an ANCESTOR tile for some vertex (its own not resident
+	# yet) is a smoother parent surface — off by nothing on a plain, by
+	# hundreds of metres on tarsis_3's mesa cliffs — and it stays attached
+	# until the chunk unloads. Say so: it is the first thing to look for when
+	# a player stands in the air or under the ground he sees.
+	var _climbs := int(shape.get_meta("provisional_climbs", 0))
+	if _climbs > 0:
+		push_warning("[PlanetTerrain] SERVER collision %s built with %d vertex(es) on ancestor tiles"
+				% [key, _climbs] + " — its surface may differ from the clients' by the parent/child gap")
 	if PropNet.prof_on:
 		PropNet.prof_chunk_loads += 1  # TEMPORARY (étape 0d): measure the churn under the player
 	var faces: PackedVector3Array = shape.get_faces()
@@ -2647,7 +2663,8 @@ func _queue_mesh_task(info: Dictionary) -> void:
 
 	# Streaming : une tâche mesh ne peut pas attendre une socket, donc le chunk repart au
 	# backlog tant que ses tuiles manquent. Sans source distante, toujours true.
-	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix):
+	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix,
+			int(info.get("stitch", 0)) != 0):
 		# any() plutôt qu'un helper : évite d'empiler deux fois le même chunk en attente.
 		if not _mesh_task_backlog.any(func(it: Dictionary) -> bool: return it.key == key):
 			_mesh_task_backlog.append(info)
@@ -2840,6 +2857,12 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	var key: String = info.key
 	var lod: int = info.lod
 	var chunk_center: Vector3 = info.center
+	# Same warning as the server's collision (see _server_assemble_chunk): a
+	# visual built on an ancestor tile is not persisted, but it IS shown.
+	var _climbs := int(mesh.get_meta("provisional_climbs", 0))
+	if _climbs > 0 and not info.get("_from_disk_cache", false):
+		push_warning("[PlanetTerrain] CLIENT mesh %s lod%d built with %d vertex(es) on ancestor tiles"
+				% [key, lod, _climbs] + " — the surface shown may differ from the server's collision")
 
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh

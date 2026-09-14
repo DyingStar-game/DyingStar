@@ -26,6 +26,10 @@ var cache_saves: int = 0
 
 var _planet_dir: String
 var _enabled: bool = true
+## The geometry version this cache was opened with (PlanetTerrain's
+## _cache_version) — printed at init so a client log and a server log can
+## be compared.
+var version: String = ""
 
 
 ## [param base_dir] selects the root folder.
@@ -38,6 +42,7 @@ func _init(planet_name: String, version_hash: String,
 		return
 
 	_planet_dir = base_dir + planet_name + "/"
+	version = version_hash
 
 	# Handle --clean-chunks-cache CLI argument
 	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
