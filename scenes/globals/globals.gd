@@ -47,7 +47,7 @@ const ENABLED_DEV_TOOLS: Dictionary = {
 	# dropped under every chunk border that hide LOD seams) only when ON — OFF bakes bare grids,
 	# to see the seams themselves or measure the skirt's share of the build. Part of the mesh
 	# cache key (PlanetTerrain), so flipping it re-bakes instead of serving cached skirts.
-	"build_chunk_skirts": true,
+	"build_chunk_skirts": false,
 }
 
 ## Simulation-time acceleration. 1.0 = REAL time: a 25 h day and a 42-day orbit are then imperceptible,

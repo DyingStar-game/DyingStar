@@ -25,6 +25,7 @@ const EXPORT_NSIDE := 8
 const RES := 8
 const RADIUS := 6356000.0
 const MAX_HEIGHT := 2000.0
+const CLIFF_RADIUS := 20000.0
 ## Border vertices are float32 in the mesh, relative to each chunk's own
 ## centre: at these synthetic nsides a chunk spans hundreds of km and the
 ## two chunks' quantisation grids differ by a few cm. The controls miss by
@@ -32,42 +33,66 @@ const MAX_HEIGHT := 2000.0
 const TOL_M := 0.25
 const CONTROL_MIN_M := 5.0
 
+## Smooth relief, the SAME on every pyramid level (each texel samples one
+## function of its direction): levels differ only by their sampling, as a
+## real pyramid's do. The stitch engages here.
 var _pd: PlanetData = null
+## Every level carries its OWN relief, hundreds of metres apart: a cliff
+## under every seam. The stitch must refuse those edges (STITCH_MAX_SLOPE).
+var _pd_cliff: PlanetData = null
 
 
 func before_all() -> void:
-	_pd = PlanetData.new()
-	_pd.planet_name = "stitch"
-	_pd.radius = RADIUS
-	_pd.max_height = MAX_HEIGHT
-	_pd.height_offset = 0.0
-	_pd.terrain_exaggeration = 1.0
-	_pd.chunk_heightmap_res = TILE_RES
-	_pd.export_nside = EXPORT_NSIDE
-	_pd.export_nside_min = 1
-	_pd.chunk_is_pyramid = true
-	_pd.chunk_heightmaps_dir = ""
-	# Every pyramid level, dense. Each level carries its OWN relief so that a
-	# vertex reading the wrong level is visible (a real pyramid's coarse
-	# levels are the fine one averaged — same kind of difference, smaller).
-	var ns := 1
-	while ns <= EXPORT_NSIDE:
-		for ipix in 12 * ns * ns:
-			_pd.store_chunk_image("hp_n%d_p%d" % [ns, ipix], _tile_image(ns, ipix), [])
-		ns *= 2
+	_pd = _planet(false)
+	_pd_cliff = _planet(true)
 	# The first mesh build prints once (detail texture array), and every print
 	# crosses the OpenTelemetry bridge, whose error GUT would count against the
 	# test in progress. Outside a test nobody minds.
 	_pd.get_detail_texture_array()
+	_pd_cliff.get_detail_texture_array()
 
 
-func _tile_image(nside: int, ipix: int) -> Image:
+func _planet(per_level_relief: bool) -> PlanetData:
+	var pd := PlanetData.new()
+	pd.planet_name = "stitch_cliff" if per_level_relief else "stitch"
+	# The cliff planet is small: STITCH_MAX_SLOPE is a slope over the
+	# chunk's cells, so the levels' hundreds of metres of disagreement must
+	# stand over cells of a few hundred metres, not of a hundred kilometres.
+	pd.radius = CLIFF_RADIUS if per_level_relief else RADIUS
+	pd.max_height = MAX_HEIGHT
+	pd.height_offset = 0.0
+	pd.terrain_exaggeration = 1.0
+	pd.chunk_heightmap_res = TILE_RES
+	pd.export_nside = EXPORT_NSIDE
+	pd.export_nside_min = 1
+	pd.chunk_is_pyramid = true
+	pd.chunk_heightmaps_dir = ""
+	var ns := 1
+	while ns <= EXPORT_NSIDE:
+		for ipix in 12 * ns * ns:
+			pd.store_chunk_image("hp_n%d_p%d" % [ns, ipix],
+					_tile_image(ns, ipix, per_level_relief), [])
+		ns *= 2
+	return pd
+
+
+func _tile_image(nside: int, ipix: int, per_level_relief: bool) -> Image:
 	var img := Image.create_empty(TILE_RES, TILE_RES, false, Image.FORMAT_RF)
+	@warning_ignore("integer_division")
+	var face: int = ipix / (nside * nside)
+	var xy := HEALPix.nest2xy(ipix % (nside * nside))
 	for y in TILE_RES:
 		for x in TILE_RES:
-			# Smooth-ish, level-dependent, never flat.
-			var v := 0.5 + 0.25 * sin(float(x) * 0.7 + float(ipix) * 0.3 + float(nside)) \
-					* cos(float(y) * 0.5 + float(nside) * 1.3)
+			var v: float
+			if per_level_relief:
+				# Level-dependent, never flat.
+				v = 0.5 + 0.25 * sin(float(x) * 0.7 + float(ipix) * 0.3 + float(nside)) \
+						* cos(float(y) * 0.5 + float(nside) * 1.3)
+			else:
+				# One smooth function of the texel's direction on the sphere.
+				var d := HEALPix._face_xy_to_vec(face, float(xy.x) + (x + 0.5) / float(TILE_RES),
+						float(xy.y) + (y + 0.5) / float(TILE_RES), nside)
+				v = 0.5 + 0.05 * sin(d.x * 45.0) * cos(d.y * 35.0) + 0.05 * sin(d.z * 55.0)
 			img.set_pixel(x, y, Color(v, 0.0, 0.0))
 	return img
 
@@ -91,11 +116,14 @@ func _center(nside: int, ipix: int) -> Vector3:
 
 
 func _build(nside: int, ipix: int, stitch: int) -> PackedVector3Array:
-	var mesh := PlanetChunk.generate_mesh_healpix(_pd, nside, ipix, RES,
-			_center(nside, ipix), {}, stitch)
+	return _build_on(_pd, nside, ipix, stitch)
+
+
+func _build_on(pd: PlanetData, nside: int, ipix: int, stitch: int) -> PackedVector3Array:
+	var c := PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(nside, ipix) * pd.radius)
+	var mesh := PlanetChunk.generate_mesh_healpix(pd, nside, ipix, RES, c, {}, stitch)
 	assert_not_null(mesh)
 	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var c := _center(nside, ipix)
 	var out := PackedVector3Array()
 	out.resize((RES + 1) * (RES + 1))
 	for i in out.size():
@@ -174,7 +202,7 @@ func test_seam_matches_when_parent_reads_a_coarser_tile() -> void:
 	var miss := 0.0
 	for k in range(0, RES + 1, 2):
 		miss = maxf(miss, _nearest_m(bare[k], coarse))
-	assert_gt(miss, CONTROL_MIN_M, "témoin — deux niveaux de pyramide devraient différer au bord")
+	assert_gt(miss, 1.0, "témoin — deux niveaux de pyramide devraient différer au bord")
 
 
 func test_stitch_is_not_applied_above_twice_export_nside() -> void:
@@ -229,6 +257,18 @@ func test_no_blend_when_parent_reads_the_same_tile() -> void:
 		for xi in range(1, RES + 1):
 			assert_eq(st[yi * stride + xi], bare[yi * stride + xi],
 					"même tuile : seul le bord bouge (xi=%d yi=%d)" % [xi, yi])
+
+
+func test_an_edge_over_a_cliff_is_left_to_the_skirt() -> void:
+	# The cliff planet: every level is another relief, so the parent's border
+	# sits hundreds of metres from the chunk's own surface. Stitching there
+	# would raise a sloped block along the seam; the edge keeps its heights.
+	for n in [EXPORT_NSIDE, 2 * EXPORT_NSIDE]:
+		var ip := _fine_ipix(n)
+		var st := _build_on(_pd_cliff, n, ip, PlanetChunk.STITCH_LEFT)
+		var bare := _build_on(_pd_cliff, n, ip, 0)
+		for i in st.size():
+			assert_eq(st[i], bare[i], "n%d : falaise sous la couture, le bord garde ses hauteurs" % n)
 
 
 # ===================================================================
