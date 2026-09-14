@@ -1207,6 +1207,25 @@ func _ensure_modifier_pack():
 							+ "max_quadtree_depth=%d needs n%d — deep chunks will "
 							% [max_quadtree_depth, quadtree_nside]
 							+ "clip at runtime. Re-export roads.")
+				# The pack's along-metres, degree half-widths and buffers were
+				# all measured with the radius its exporter had — the QGIS
+				# project variable `planet_radius_m`. Against another radius
+				# every length along a line is off by the ratio (tarsis_3: a
+				# road part at 5 875 km on a 6 356 km planet, 7.6 %). The
+				# rail modules size themselves by the true metric (see
+				# GradeGeom.frame_at), the rest does not: re-export.
+				var pack_radius := float(pack.get_manifest().get("radius", 0.0))
+				if pack_radius > 0.0 and radius > 0.0 \
+						and absf(pack_radius - radius) > 0.001 * radius:
+					push_error("[PlanetData] '%s': terrainmodifier.pack was exported for a "
+							% planet_name
+							+ "planet radius of %.0f m but this planet's radius is %.0f m "
+							% [pack_radius, radius]
+							+ "(%.1f %% off): every along-line length in it is wrong. Set the "
+							% (100.0 * absf(pack_radius - radius) / radius)
+							+ "QGIS project variable planet_radius_m to %.0f and re-run "
+							% radius
+							+ "export_roads.py / export_biomes.py (they relink the pack).")
 				print("[PlanetData] terrainmodifier.pack opened: %s (levels %s)"
 						% [path, str(pack.get_levels())])
 	_modifier_pack_mutex.unlock()

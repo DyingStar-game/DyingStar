@@ -128,11 +128,30 @@ def _planet_meta(parts, chunks_dir):
                     "part %s disagrees on %s (%r vs %r) — re-export the stale "
                     "part" % (os.path.basename(c["path"]), key, meta[key], m[key]))
             meta[key] = m[key]
-    # Fall back to the elevation manifest for anything no part declared.
+    # Fall back to the elevation manifest for anything no part declared —
+    # and refuse a part measured against ANOTHER planet than the elevation:
+    # the parts' along-metres, degree half-widths and buffers all come from
+    # the exporter's radius (the QGIS project variable planet_radius_m), and
+    # the runtime takes the planet's radius from the elevation manifest. A
+    # road part at 5 875 km on tarsis_3's 6 356 km laid every length along
+    # the railway 7.6 % short: a 10 cm gap in every rail joint.
     hm_path = os.path.join(chunks_dir, "manifest.json")
     if os.path.exists(hm_path):
         with open(hm_path, "r", encoding="utf-8") as fh:
             hm = json.load(fh)
+        hm_radius = hm.get("radius")
+        if hm_radius and meta.get("radius") \
+                and abs(float(meta["radius"]) - float(hm_radius)) > 0.001 * float(hm_radius):
+            raise dsmp.DsmpError(
+                "the parts were exported for a planet radius of %s m but the "
+                "elevation (manifest.json) is at %s m — set the QGIS project "
+                "variable planet_radius_m to %s and re-export every part"
+                % (meta["radius"], hm_radius, hm_radius))
+        if hm.get("planet_name") and meta.get("planet_name") \
+                and meta["planet_name"] != hm.get("planet_name"):
+            raise dsmp.DsmpError(
+                "the parts are for planet %r but the elevation is %r"
+                % (meta["planet_name"], hm.get("planet_name")))
         meta.setdefault("planet_name", hm.get("planet_name"))
         meta.setdefault("radius", hm.get("radius"))
         meta.setdefault("export_nside", hm.get("nside_max", hm.get("nside")))
