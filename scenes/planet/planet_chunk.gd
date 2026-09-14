@@ -34,7 +34,7 @@ static var _corundum_logged := false
 # The Globals SCRIPT, not the autoload: this file is @tool and builds chunks in the
 # editor too, where a non-tool autoload is only a placeholder instance (calling a
 # method on it errors out). Constants and static funcs read fine off the script.
-const _GlobalsScript := preload("res://scenes/globals/globals.gd")
+const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 
 
 ## Generate a visual [ArrayMesh] for one terrain chunk.
@@ -1158,7 +1158,7 @@ static func generate_mesh(
 	# kilometre-deep walls and crushing overdraw; the seam mismatch is only a
 	# couple of cells of slope, so max_step × 6 (+ margin) covers it cheaply.
 	# Build switch (Globals.ENABLED_DEV_TOOLS): OFF bakes the bare grid, seams exposed.
-	if _GlobalsScript.is_dev_tool_enabled(&"build_chunk_skirts"):
+	if GlobalsDefs.is_dev_tool_enabled(&"build_chunk_skirts"):
 		var _max_step := 0.0
 		var _stride := res + 1
 		for _yi in res + 1:
