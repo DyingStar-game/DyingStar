@@ -220,8 +220,10 @@ func test_patch_refines_the_carved_cells_and_seals_their_borders() -> void:
 		var xi: int = qi % res
 		var f: Vector2 = frac[i]
 		# The cutting runs along x, so the refined cells reach the x = res
-		# border: its sub-vertices must lie on the coarse edge there.
-		if xi == res - 1 and f.x == 1.0:
+		# border: its sub-vertices must lie on the coarse edge there — except
+		# on the edge the bed itself crosses (rows res/2 - 1 and res/2, the
+		# track at lat 0), which both chunks re-sample and carve.
+		if xi == res - 1 and f.x == 1.0 and (yi < res / 2 - 1 or yi > res / 2):
 			var ia := yi * (res + 1) + res
 			var ib := ia + res + 1
 			var a: Vector3 = (grid_dirs[yi][res] as Vector3) * (RADIUS + grid_h[ia])

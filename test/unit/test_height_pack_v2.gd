@@ -20,9 +20,9 @@ extends GutTest
 
 const HeightPackScript := preload("res://scenes/planet/height_pack.gd")
 
-## 16 et non 2 : le sampler de PlanetData mélange avec les tuiles voisines dans une marge
-## de BLEND_PIXELS (4) autour de chaque bord. À tile_res 2 la tuile entière est dans cette
-## marge et aucun échantillon ne rend sa propre valeur. À 16, le centre en est hors.
+## 16 et non 2 : le noyau bilinéaire du sampler de PlanetData déborde d'un texel dans les
+## tuiles voisines aux bords. À tile_res 2 aucun échantillon ne rend sa seule propre
+## valeur ; à 16, le centre en est hors.
 const TILE_RES := 16
 const NSIDE_MIN := 1
 ## n32 porte 12 288 tuiles, donc plus d'un bloc de rang (4096) : c'est ce qui exerce

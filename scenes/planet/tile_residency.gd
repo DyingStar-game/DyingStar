@@ -13,10 +13,9 @@ extends RefCounted
 
 ## Tuiles dont la construction d'un chunk a réellement besoin.
 ##
-## Pas seulement la sienne : l'échantillonneur mélange avec les tuiles voisines dans une
-## marge de BLEND_PIXELS autour de chaque bord, et le noyau bilinéaire déborde d'un texel
-## aux extrémités. Précharger la seule tuile centrale laisserait donc des bords se
-## rabattre sur la carte globale.
+## Pas seulement la sienne : le noyau bilinéaire de l'échantillonneur déborde d'un texel
+## aux extrémités, dans les tuiles voisines (diagonales comprises). Précharger la seule
+## tuile centrale laisserait donc des bords se rabattre sur la carte globale.
 ## La tuile qu'un chunk échantillonne : la sienne quand il est plus grossier que
 ## nside_max, sinon celle de son ancêtre au niveau d'échantillonnage.
 static func chunk_tile(data: PlanetData, hp_nside: int, hp_ipix: int) -> Vector2i:

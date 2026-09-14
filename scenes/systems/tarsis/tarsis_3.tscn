@@ -139,9 +139,9 @@ orbit_primary_mass_kg = 1.5088183999999998e+30
 script = ExtResource("script_terrain")
 editor_goto_lon = -39.561
 editor_goto_lat = 24.806
-editor_goto_x = 4451969.107305386
-editor_goto_y = 2669008.9549854477
-editor_goto_z = -3677887.745562669
+editor_goto_x = 4451969.03903513
+editor_goto_y = 2669008.9140566094
+editor_goto_z = -3677887.68916283
 editor_planet_flight = true
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
