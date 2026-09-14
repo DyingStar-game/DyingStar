@@ -73,7 +73,14 @@ func test_arrays_are_paired_and_collision_matches_visual() -> void:
 	assert_eq((slab["colors"] as PackedColorArray).size(), verts.size())
 	var faces: PackedVector3Array = slab["faces"]
 	var indices: PackedInt32Array = slab["indices"]
-	assert_eq(faces.size(), indices.size(), "one collision triangle per visual triangle")
+	var side_indices: PackedInt32Array = slab["side_indices"]
+	assert_eq(faces.size(), indices.size() + side_indices.size(),
+			"one collision triangle per visual triangle, top and flanks together")
+	assert_eq(side_indices.size(), indices.size() * 2, "two flanks for one top")
+	for i in indices:
+		assert_true(i % 6 < 2, "the top's indices only touch the top vertices")
+	for i in side_indices:
+		assert_true(i % 6 >= 2, "the flanks' only the flank vertices")
 	var stations := verts.size() / 6
 	assert_eq(faces.size(), (stations - 1) * 3 * 6, "three quads per station pair")
 	var no_vis := _strip(Vector2(-3.0, 3.0), false)

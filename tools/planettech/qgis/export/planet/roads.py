@@ -14,9 +14,18 @@ import math
 from . import dsmp
 from . import modifier_geom as mg
 
+#: Lane geometry of a lane-built road — MUST match RoadTerrain.LANE_WIDTH_M /
+#: MEDIAN_GAP_M / MEDIAN_TYPES / DEFAULT_LANES (scenes/planet/road/road_terrain.gd).
+#: Such a road is `lanes` × LANE_WIDTH_M plus a central median; its QGIS
+#: `width` is ignored.
+LANE_WIDTH_M = 3.5
+MEDIAN_GAP_M = 0.5
+MEDIAN_TYPES = ("highway",)
+DEFAULT_LANES = {"highway": 4}
+
 #: Half-widths per road_type in metres — MUST match RoadTerrain.HALF_WIDTH_M.
 HALF_WIDTH_M = {
-    "highway": 6.0,   # 12 m total
+    "highway": (4 * LANE_WIDTH_M + MEDIAN_GAP_M) * 0.5,   # 14.5 m; fallback only, see lanes_of
     "road": 3.0,      # 6 m
     "path": 1.0,      # 2 m
     "trail": 0.5,     # 1 m
@@ -81,15 +90,35 @@ def max_slope_deg(props):
     return _int_or_none(props.get("max_slope_degrees"))
 
 
+def lanes_of(props):
+    """Lane count of a road: its `lanes` when set (> 0), else the type's default (0 if none).
+
+    Mirrors RoadTerrain.lanes_of().
+    """
+    n = _int_or_none(props.get("lanes"))
+    if n is not None and n > 0:
+        return n
+    return DEFAULT_LANES.get(props.get("road_type") or "trail", 0)
+
+
+def lane_half_width_m(lanes):
+    """Half-width of a lane-built road. Mirrors RoadTerrain.lane_half_width_m()."""
+    return (max(int(lanes), 1) * LANE_WIDTH_M + MEDIAN_GAP_M) * 0.5
+
+
 def half_width_m(props):
     """Per-feature `width` when the designer set one, else the road_type default.
 
     Mirrors RoadTerrain.get_half_width_m(): `width` is the TOTAL width in metres.
-    A railway is the exception: it has no `width` — its bed is a function of
-    `tracks`.
+    Two exceptions: a railway has no `width` — its bed is a function of
+    `tracks`; a highway (MEDIAN_TYPES) is a function of its `lanes`, and its
+    `width` is ignored.
     """
-    if (props.get("road_type") or "trail") == "railway":
+    road_type = props.get("road_type") or "trail"
+    if road_type == "railway":
         return railway_half_width_m(railway_tracks(props))
+    if road_type in MEDIAN_TYPES:
+        return lane_half_width_m(lanes_of(props))
     width = props.get("width")
     if width is not None:
         try:
@@ -97,7 +126,6 @@ def half_width_m(props):
                 return float(width) * 0.5
         except (TypeError, ValueError):
             pass
-    road_type = props.get("road_type") or "trail"
     return HALF_WIDTH_M.get(road_type, DEFAULT_HALF_WIDTH_M)
 
 
@@ -141,9 +169,13 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
             "road_type_sid": table.intern(r.get("road_type") or "trail"),
             "surface_sid": table.intern(r.get("surface")),
             "name_sid": table.intern(r.get("name")),
+            # A lane-built road always states the count its width came from;
+            # any other type keeps "only when the designer set it".
             "lanes": _int_or_none(railway_tracks(r)
                                   if (r.get("road_type") or "trail") == "railway"
-                                  else r.get("lanes")),
+                                  else (lanes_of(r)
+                                        if (r.get("road_type") or "trail") in MEDIAN_TYPES
+                                        else r.get("lanes"))),
             "max_slope_deg": max_slope_deg(r),
         })
 

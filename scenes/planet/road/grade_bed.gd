@@ -197,9 +197,11 @@ static func carved_height(h: float, prof: Dictionary, along: float, lat_m: float
 ## [param uv_mode] / [param tint] — the top's texturing, see RoadRibbon
 ## (a highway on the corundum plateau: lane UVs, vertex-tinted).
 ##
-## Returns {verts, norms, uvs, colors, indices, faces, median}: the first
-## five for a road group (indices are 0-based on `verts`), `faces` the
-## collision triangles, both local to [param origin]. `median` is the
+## Returns {verts, norms, uvs, colors, indices, side_indices, faces, median}:
+## the first five for a road group (indices are 0-based on `verts`; `indices`
+## the top's triangles, `side_indices` the skirts' — so the engraved corundum
+## can stay on the top), `faces` the collision triangles, both local to
+## [param origin]. `median` is the
 ## {verts, norms, uvs, indices} of a highway's central strip, for the
 ## STRUCTURE material's group (empty arrays when the road has no median).
 ## The collision is always the whole bed: one slab across the median.
@@ -213,6 +215,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
+	var side_indices := PackedInt32Array()
 	var faces := PackedVector3Array()
 	var md_verts := PackedVector3Array()
 	var md_norms := PackedVector3Array()
@@ -221,7 +224,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var median := {"verts": md_verts, "norms": md_norms, "uvs": md_uvs,
 			"indices": md_indices}
 	var out := {"verts": verts, "norms": norms, "uvs": uvs, "colors": colors,
-			"indices": indices, "faces": faces, "median": median}
+			"indices": indices, "side_indices": side_indices, "faces": faces,
+			"median": median}
 	if cl.size() < 2 or cum.size() != cl.size() or profile.is_empty():
 		return out
 	var hw_m: float = float(profile["hw_m"])
@@ -352,8 +356,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 			for si in n_strips:
 				_quad_idx(indices, a + 2 * si, b + 2 * si, a + 2 * si + 1, b + 2 * si + 1)
 			var sk := 2 * n_strips
-			_quad_idx(indices, a + sk + 1, b + sk + 1, a + sk, b + sk)          # left skirt (bottom → top)
-			_quad_idx(indices, a + sk + 2, b + sk + 2, a + sk + 3, b + sk + 3)  # right skirt (top → bottom)
+			_quad_idx(side_indices, a + sk + 1, b + sk + 1, a + sk, b + sk)          # left skirt (bottom → top)
+			_quad_idx(side_indices, a + sk + 2, b + sk + 2, a + sk + 3, b + sk + 3)  # right skirt (top → bottom)
 			if has_median:
 				var ma := md_base + k * 2
 				_quad_idx(md_indices, ma, ma + 2, ma + 1, ma + 3)
@@ -362,6 +366,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	out["uvs"] = uvs
 	out["colors"] = colors
 	out["indices"] = indices
+	out["side_indices"] = side_indices
 	out["faces"] = faces
 	median["verts"] = md_verts
 	median["norms"] = md_norms

@@ -60,6 +60,17 @@ jobs:
         run: |
           sed -i 's|channel = "dev"|channel = "preprod"|' server.ini
 
+      - name: Switch off dev tools for the build
+        run: |
+          # Globals.ENABLED_DEV_TOOLS ships ON in the repo so devs keep the tools;
+          # a build must not. Each key is checked after the sed so a renamed or
+          # removed key fails the build instead of silently shipping the tool.
+          for tool in spawn_wheel zapette toggle_eva build_chunk_skirts; do
+            sed -i -E "s/^([[:space:]]+\"$tool\": )true,/\1false,/" scenes/globals/globals.gd
+            grep -qE "^[[:space:]]+\"$tool\": false," scenes/globals/globals.gd \
+              || { echo "::error::dev tool '${tool}' not switched off in globals.gd"; exit 1; }
+          done
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:

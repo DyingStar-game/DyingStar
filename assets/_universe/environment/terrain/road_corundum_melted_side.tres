@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "road_corundum_melted_side"
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = false
+albedo_color = Color(1, 1, 1, 1)
+metallic = 0.0
+roughness = 0.3
+clearcoat_enabled = true
+clearcoat = 0.5
+clearcoat_roughness = 0.15

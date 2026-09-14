@@ -29,8 +29,10 @@ Width
 -----
     `width` is the TOTAL road width in metres. The designer may leave it at
     its QGIS auto-fill value or override it; when it is null or <= 0 we fall
-    back to HALF_WIDTH_M for the road type. RoadTerrain.get_half_width_m()
-    applies exactly the same rule on the Godot side — keep the two in sync.
+    back to HALF_WIDTH_M for the road type. A highway ignores `width`: it is
+    `lanes` × LANE_WIDTH_M + MEDIAN_GAP_M (see export/planet/roads.py).
+    RoadTerrain.get_half_width_m() applies exactly the same rules on the Godot
+    side — keep the two in sync.
 
 Two outputs
 -----------

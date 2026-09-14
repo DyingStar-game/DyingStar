@@ -397,24 +397,41 @@ buffered into a polygon and the original line is kept in `properties.centerline`
   `DETECTION_MULTIPLIER` = 3× wider than the road) so a chunk crossed by a narrow
   trail is never missed by the bounding-box test;
 - the **visible ribbon** is extruded from the centerline at the real half-width,
-  with flow-aligned UVs, and sits `SURFACE_OFFSET` = 5 cm above the ground.
+  with flow-aligned UVs, as a slab `SURFACE_THICKNESS_M` = 8 cm thick laid on
+  the ground (top face at +8 cm, flanks buried 10 cm).
 
 The pack needs neither: its tiles are partitioned, not bbox-tested. This file
 disappears once `PlanetData.roads_geojson` is retired.
 
-Roads do **not** displace the terrain, and have no collision of their own — they
-ride on the terrain collision — except a `highway` / `road` with
-`max_slope_degrees`, which is built like a railway (see above).
+Roads do **not** displace the terrain. Every road surface has its own
+collision: the ribbon slab is built into the chunk's collision shape
+(`RoadRibbon`, same stations as the visual mesh), and a `highway` / `road` with
+`max_slope_degrees` is built like a railway (see above). A planet with roads
+therefore uses the fine collision grid (`PlanetData.collision_detail_nside()`).
+
+### Highway lanes and median
+
+A `highway` is built from its **lanes**: `lanes` × 3.5 m plus a 0.5 m central
+median, so the default 4 lanes give 14.5 m. Its `width` field is **ignored**
+(the layer's pre-fill only documents the result). The median comes after
+`floor(lanes / 2)` lanes and is a gap in the ribbon — the ground shows through,
+8 cm lower; on a profiled bed and on a bridge deck the 0.5 m strip is filled
+with the structure material (regolith) instead. On corundum ground — the
+corundum default biome (`corundum_default_biome`), a corundum biome, or an
+outcrop zone whose `rock_type` is a corundum variety (`corundum_*`, `emery`) —
+a highway's surface is melted corundum: tinted by the ground's own colour rule
+(iron tint / rock tint), glossy, engraved with the ARES gaufrage tile (one lane
+across, 3 m along — `road_corundum_melted.tres`). Elsewhere it is asphalt.
 
 ### Width
 
 `RoadTerrain.get_half_width_m()` and the exporter apply the same rule: the
 per-feature `width` from QGIS wins when it is set, otherwise the `road_type`
-default applies.
+default applies — except a `highway` (lanes) and a `railway` (tracks).
 
 | road_type | default total width | material |
 |---|---|---|
-| `highway` | 12 m | asphalt (fixed) |
+| `highway` | `lanes`·3.5 m + 0.5 m median (14.5 m for 4 lanes); `width` ignored | asphalt (fixed); melted corundum on the corundum plateau |
 | `road` | 6 m | asphalt (fixed) |
 | `path` | 2 m | biome-adaptive (grass / dirt / sand / snow) |
 | `trail` | 1 m | biome-adaptive |
@@ -425,8 +442,9 @@ A railway is the one type with no `width` field at all: its layer only has
 `tracks` in both `RailwaySettings.railway_half_width_m()` and
 `export/planet/roads.py`.
 
-`HALF_WIDTH_M` in [`scenes/planet/road/road_terrain.gd`](../../scenes/planet/road/road_terrain.gd)
-and `HALF_WIDTH_M` in [`export/planet/roads.py`](export/planet/roads.py) **must
+`HALF_WIDTH_M`, `LANE_WIDTH_M`, `MEDIAN_GAP_M` and `DEFAULT_LANES` in
+[`scenes/planet/road/road_terrain.gd`](../../scenes/planet/road/road_terrain.gd)
+and their namesakes in [`export/planet/roads.py`](export/planet/roads.py) **must
 stay in sync**. The Python side now lives in that one module (imported by
 `export_roads.py`) rather than being duplicated, so there are exactly two copies
 to keep aligned instead of three.

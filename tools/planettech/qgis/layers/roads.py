@@ -32,7 +32,8 @@ SURFACES = [
 
 # slug: (description, colour, symbol width, width_m, lanes, speed_limit, surface, sidewalk, lighting)
 ROAD_TYPES = {
-    "highway": ("Multi-lane, high-speed, asphalt",       "#505050", "3.0", 12.0, 4, 120, "asphalt", 0, 1),
+    "highway": ("Multi-lane, high-speed, asphalt — width is lanes × 3.5 m + 0.5 m median (`width` ignored)",
+                "#505050", "3.0", 14.5, 4, 120, "asphalt", 0, 1),
     "road":    ("Standard two-lane, paved surface",       "#8c8278", "2.0",  6.0, 2,  60, "asphalt", 1, 1),
     "path":    ("Narrow pedestrian / vehicle track",      "#b4a078", "1.2",  2.0, 0,  20, "gravel",  0, 0),
     "trail":   ("Unpaved footpath, follows the terrain",  "#78643c", "0.8",  1.0, 0,   5, "dirt",    0, 0),
