@@ -101,22 +101,26 @@ static func _clear_dir(path: String) -> void:
 
 # ── Path helpers ──────────────────────────────────────────────────
 
-func _res_path(chunk_key: String, lod: int, suffix: String) -> String:
+## [param stitch] — the LOD-seam stitch mask baked into a visual mesh
+## (PlanetChunk.STITCH_*): a chunk has one file per mask it was built with.
+func _res_path(chunk_key: String, lod: int, suffix: String, stitch: int = 0) -> String:
+	if stitch != 0:
+		return "%s%s_lod%d_st%d_%s.res" % [_planet_dir, chunk_key, lod, stitch, suffix]
 	return "%s%s_lod%d_%s.res" % [_planet_dir, chunk_key, lod, suffix]
 
 
 # ── Mesh cache ────────────────────────────────────────────────────
 
-func has_mesh(chunk_key: String, lod: int) -> bool:
+func has_mesh(chunk_key: String, lod: int, stitch: int = 0) -> bool:
 	if not _enabled:
 		return false
-	return FileAccess.file_exists(_res_path(chunk_key, lod, "mesh"))
+	return FileAccess.file_exists(_res_path(chunk_key, lod, "mesh", stitch))
 
 
-func load_mesh(chunk_key: String, lod: int) -> ArrayMesh:
+func load_mesh(chunk_key: String, lod: int, stitch: int = 0) -> ArrayMesh:
 	if not _enabled:
 		return null
-	var path := _res_path(chunk_key, lod, "mesh")
+	var path := _res_path(chunk_key, lod, "mesh", stitch)
 	if not FileAccess.file_exists(path):
 		return null
 	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
@@ -131,10 +135,10 @@ func load_mesh(chunk_key: String, lod: int) -> ArrayMesh:
 	return null
 
 
-func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh) -> void:
+func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) -> void:
 	if not _enabled:
 		return
-	var path := _res_path(chunk_key, lod, "mesh")
+	var path := _res_path(chunk_key, lod, "mesh", stitch)
 	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var err := ResourceSaver.save(mesh, path, ResourceSaver.FLAG_COMPRESS)
 	if _t0 != 0:

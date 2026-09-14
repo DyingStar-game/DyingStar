@@ -376,10 +376,21 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# with a flipped normal by the cull-disabled road materials: black.
 		# v40 → v41: the corundum road's flanks / skirts get the plain melted
 		# corundum (no engraving), the top 0.3 roughness + clearcoat again.
+		# v41 → v42: (a) LOD-seam stitch — a chunk's edges facing a one-level-
+		# coarser neighbour are baked on the parent grid (PlanetChunk
+		# STITCH_*), one cached file per mask; (b) the tile sampler lost its
+		# 4-texel edge blend and reads corner texels from the diagonal tile
+		# (PlanetData._sample_image_bilinear_healpix): every vertex within
+		# 800 m of a tile edge moves, cliffs at tile corners by hundreds of
+		# metres. Collision shapes share this version and re-bake too.
+		# v42 → v43: GradeRefine also refines every cell the bed's floor
+		# reaches into (not only cells with a carved corner) and re-samples
+		# the chunk-border edge when both chunks refine that cell — the
+		# coarse triangles no longer run above the rails on ground runs.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v41%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v43%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
@@ -1360,6 +1371,7 @@ func _update_terrain() -> void:
 	var desired: Dictionary = {}
 	for base_pix in BASE_PIXEL_COUNT:
 		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired)
+	_balance_and_stitch(desired, local_cam)
 
 	# One-shot: log chunk count breakdown by LOD
 	if _active_chunks.is_empty() and not desired.is_empty():
@@ -1408,10 +1420,18 @@ func _update_terrain() -> void:
 
 	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
 	for key in desired:
-		if _active_chunks.has(key) and _active_chunks[key].lod != desired[key].lod:
-			if not _is_chunk_in_pipeline(key):
-				_remove_chunk(key)
-				_try_create_or_defer(desired[key])
+		if not _active_chunks.has(key) or _is_chunk_in_pipeline(key):
+			continue
+		var _act: Dictionary = _active_chunks[key]
+		var _want: Dictionary = desired[key]
+		if _act.lod != _want.lod:
+			_remove_chunk(key)
+			_try_create_or_defer(_want)
+		elif int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
+			# Only the seam edges change: keep the old mesh on screen (its
+			# skirt still covers the seam) until the re-baked one is assembled.
+			_want["_swap"] = true
+			_try_create_or_defer(_want)
 
 	# Bridges outlive the chunks that ask for them, so they are collected here
 	# rather than in _remove_chunk — after steps 1-3 have had their chance to
@@ -2045,6 +2065,125 @@ func _traverse(nside: int, ipix: int, depth: int,
 		}
 
 
+## The leaf record _traverse would have written for (nside, ipix) — for the
+## chunks the 2:1 balance pass adds after the traversal.
+func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictionary:
+	var center_dir := HEALPix.pix2vec_nest(nside, ipix)
+	var _cam_r := local_cam.length()
+	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
+	var _surface_dist := (_cam_dir_l - center_dir).length() * planet_data.radius
+	var dist := maxf(_surface_dist, _cam_alt_above_surface)
+	var key := _chunk_key_hp(nside, ipix)
+	return {
+		"key": key,
+		"nside": nside,
+		"ipix": ipix,
+		"depth": depth,
+		"center": PlanetChunk.snap_to_f32(center_dir * planet_data.radius),
+		"lod": planet_data.get_lod_level(dist),
+	}
+
+
+## 2:1 balance of the leaf set, then the LOD-seam stitch mask of every leaf.
+##
+## Balance: no leaf may share an edge with a leaf more than ONE quadtree level
+## coarser — the stitch (PlanetChunk._stitch_edge_heights) bakes a chunk's
+## border on its PARENT grid, which is only the neighbour's grid at exactly
+## one level of difference. The split factor makes deeper jumps rare, not
+## impossible (HEALPix pixels distort near the poles); a too-coarse neighbour
+## is split until it is one level away. A culled neighbour (horizon / back
+## face, absent from the set) constrains nothing.
+##
+## Mask (client only — the server's finest-grid collision never stitches):
+## bit per edge whose same-level neighbour is absent while its parent is a
+## leaf. Left to 0 on the levels PlanetChunk.edge_stitch_applies rules out,
+## so those chunks keep one cache file and never re-bake for a neighbour.
+func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
+	if desired.is_empty():
+		return
+	# Integer leaf ids: (nside << 32) | ipix — the traversal walks thousands
+	# of neighbours here, no string keys on that path.
+	var leaves: Dictionary = {}
+	for key in desired:
+		var d: Dictionary = desired[key]
+		leaves[(int(d.nside) << 32) | int(d.ipix)] = key
+	var edge_dirs := ["W", "E", "S", "N"]
+
+	# ── 2:1 balance ─────────────────────────────────────────────
+	var changed := true
+	var guard := 0
+	while changed and guard < 16:
+		changed = false
+		guard += 1
+		for id in leaves.keys():
+			if not leaves.has(id):
+				continue  # split away earlier in this pass
+			var nside: int = id >> 32
+			var ipix: int = id & 0xFFFFFFFF
+			if nside < 4:
+				continue
+			var nb := HEALPix.get_neighbors_nest(nside, ipix)
+			for dname in edge_dirs:
+				var nip: int = nb[dname]
+				if nip < 0:
+					continue
+				if leaves.has((nside << 32) | nip) 						or leaves.has(((nside >> 1) << 32) | (nip >> 2)):
+					continue
+				# Same level and parent absent: is an older ancestor the leaf?
+				var a_nside: int = nside >> 2
+				var a_ipix: int = nip >> 4
+				while a_nside >= 1:
+					var aid := (a_nside << 32) | a_ipix
+					if leaves.has(aid):
+						_split_leaf(desired, leaves, aid, local_cam)
+						changed = true
+						break
+					a_nside >>= 1
+					a_ipix >>= 2
+
+	# ── Stitch mask ─────────────────────────────────────────────
+	if is_server:
+		return
+	var edge_bits := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT,
+			PlanetChunk.STITCH_BOTTOM, PlanetChunk.STITCH_TOP]
+	for id in leaves:
+		var nside: int = id >> 32
+		if not PlanetChunk.edge_stitch_applies(planet_data, nside):
+			continue
+		var ipix: int = id & 0xFFFFFFFF
+		var mine: Dictionary = desired[leaves[id]]
+		var nb := HEALPix.get_neighbors_nest(nside, ipix)
+		var mask := 0
+		for i in edge_dirs.size():
+			var nip: int = nb[edge_dirs[i]]
+			if nip < 0 or leaves.has((nside << 32) | nip):
+				continue
+			var pid := ((nside >> 1) << 32) | (nip >> 2)
+			if not leaves.has(pid):
+				continue
+			# The stitch bakes the parent grid at THIS chunk's resolution: it
+			# only meets a neighbour drawn at that same resolution. A coarser-
+			# quality neighbour (distance LOD) keeps the skirt, as before.
+			if int(desired[leaves[pid]].lod) == int(mine.lod):
+				mask |= edge_bits[i]
+		if mask != 0:
+			mine["stitch"] = mask
+
+
+## Replace leaf [param id] by its four children in both [param desired] and
+## the integer index [param leaves].
+func _split_leaf(desired: Dictionary, leaves: Dictionary, id: int, local_cam: Vector3) -> void:
+	var key: String = leaves[id]
+	var depth: int = int(desired[key].depth)
+	desired.erase(key)
+	leaves.erase(id)
+	var nside: int = (id >> 32) << 1
+	for cip in HEALPix.child_pixels(id & 0xFFFFFFFF):
+		var info := _leaf_info(nside, cip, depth + 1, local_cam)
+		desired[info.key] = info
+		leaves[(nside << 32) | cip] = info.key
+
+
 # ------------------------------------------------------------------
 # Async pipeline helpers
 # ------------------------------------------------------------------
@@ -2217,8 +2356,9 @@ func _try_create_or_defer(info: Dictionary) -> void:
 			_create_chunk(info)
 			return
 		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
-		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod):
-			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod)
+		var _st: int = int(info.get("stitch", 0))
+		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st):
+			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st)
 			if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 				info["_from_disk_cache"] = true
 				_assemble_queue.append({"info": info, "mesh": cached_mesh})
@@ -2241,8 +2381,9 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		return
 
 	# ── Client: check disk cache first ──────────────────────────────
-	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod):
-		var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod)
+	var _st_r: int = int(info.get("stitch", 0))
+	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st_r):
+		var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st_r)
 		if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 			info["_from_disk_cache"] = true
 			# Still trigger recipe generation for vegetation height sampling
@@ -2543,10 +2684,11 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	}
 	_mesh_tasks[key] = task_entry
 
+	var stitch: int = int(info.get("stitch", 0))
 	var task_id := WorkerThreadPool.add_task(
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
-				pd, nside, ipix, res, chunk_center, prof)
+				pd, nside, ipix, res, chunk_center, prof, stitch)
 			result_ref[0] = mesh
 	)
 	task_entry["task_id"] = task_id
@@ -2616,8 +2758,12 @@ func _process_assemble_queue() -> void:
 		var mesh: ArrayMesh = item.mesh
 		# Guard against stale entries (chunk was removed while mesh was computing).
 		if _active_chunks.has(info.key):
-			assembled += 1
-			continue
+			if not info.get("_swap", false):
+				assembled += 1
+				continue
+			# Stitch-mask swap: the replacement is ready, the old mesh can go.
+			_remove_chunk(info.key)
+			info.erase("_swap")
 		# Built before a line profile was born under it: the mesh has the
 		# terrain-hugging ribbon where the bed now goes. Dropped, so that
 		# _update_terrain queues the chunk again on the new tables.
@@ -2905,7 +3051,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
 				and _persistable(mesh) \
 				and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
-			_chunk_cache.save_mesh(key, lod, mesh)
+			_chunk_cache.save_mesh(key, lod, mesh, int(info.get("stitch", 0)))
 
 	_active_chunks[key] = info
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0

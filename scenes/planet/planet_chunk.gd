@@ -15,11 +15,18 @@ class_name PlanetChunk
 ##   Overlay: RoadTerrain (biome-adaptive road textures)
 
 
-## Bitmask constants for LOD-stitching edges (reserved for future use).
-const STITCH_LEFT   := 1
-const STITCH_RIGHT  := 2
-const STITCH_BOTTOM := 4
-const STITCH_TOP    := 8
+## LOD-seam stitch mask: which edges of the chunk face a neighbour ONE quadtree
+## level coarser (PlanetTerrain sets it from the balanced leaf set; see
+## [method edge_stitch_applies] and [method _stitch_edge_heights]).
+const STITCH_LEFT   := 1  # xi == 0   (HEALPix "W" neighbour)
+const STITCH_RIGHT  := 2  # xi == res ("E")
+const STITCH_BOTTOM := 4  # yi == 0   ("S")
+const STITCH_TOP    := 8  # yi == res ("N")
+## Rows blended from the parent level towards the chunk's own level behind a
+## stitched edge, when the two read DIFFERENT pyramid tiles: row 0 is fully the
+## parent's, row STITCH_BLEND_ROWS the chunk's own. Spreads the level-to-level
+## data step over that many cells instead of one.
+const STITCH_BLEND_ROWS := 3
 
 # One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
@@ -45,7 +52,8 @@ static func generate_mesh(
 		chunk_center: Vector3 = Vector3.ZERO,
 		hp_nside: int = 0,
 		hp_ipix: int = -1,
-		prof: Dictionary = {}) -> ArrayMesh:
+		prof: Dictionary = {},
+		stitch: int = 0) -> ArrayMesh:
 
 	# Découpage du coût de génération, phase 0 de docs/PLANET_CHUNK_STREAMING.md.
 	# Cette fonction tourne sur WorkerThreadPool : on n'écrit QUE dans `prof`, qui
@@ -477,6 +485,16 @@ static func generate_mesh(
 	var _crack_edge := PackedFloat32Array()
 	_crack_edge.resize((res + 1) * (res + 1))
 
+	# ── LOD-seam stitch ──────────────────────────────────────────────
+	# Edges facing a one-level-coarser neighbour take the PARENT grid's heights
+	# (see _stitch_edge_heights), so the two meshes share their border exactly
+	# instead of leaving a gap for the skirt to hide.
+	var _st_edge: Dictionary = {}   # vertex index → base height forced by the stitch
+	var _st_blend: Dictionary = {}  # vertex index → Vector2(weight, parent-level height)
+	if stitch != 0 and hp_mode and edge_stitch_applies(data, hp_nside):
+		_stitch_edge_heights(data, hp_nside, hp_ipix, res, grid_dirs, stitch,
+				_frame, _st_edge, _st_blend)
+
 	if _pf:
 		var _now := Time.get_ticks_usec()
 		prof["prepare"] = _now - _t_phase
@@ -493,12 +511,17 @@ static func generate_mesh(
 				# _export_ipix (at HEALPix face or export-tile seams).
 				# sample_height_boundary picks the same canonical export tile for
 				# any given direction, so both sides of the seam are consistent.
-				if xi == 0 or xi == res or yi == 0 or yi == res:
+				if _st_edge.has(idx):
+					height = _st_edge[idx]
+				elif xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _export_ipix,
 							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
 				else:
 					height = data.sample_height_for_direction(dir, _export_ipix,
 							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					if _st_blend.has(idx):
+						var _sb: Vector2 = _st_blend[idx]
+						height = lerpf(height, _sb.y, _sb.x)
 			else:
 				# Snap boundary vertices to exact u_min/u_max/v_min/v_max so
 				# shared edges between adjacent chunks sample identical heights.
@@ -3097,9 +3120,138 @@ static func generate_mesh_healpix(
 		ipix: int,
 		resolution: int,
 		chunk_center: Vector3 = Vector3.ZERO,
-		prof: Dictionary = {}) -> ArrayMesh:
+		prof: Dictionary = {},
+		stitch: int = 0) -> ArrayMesh:
 	return generate_mesh(data, 0, 0.0, 0.0, 0.0, 0.0, resolution,
-			chunk_center, nside, ipix, prof)
+			chunk_center, nside, ipix, prof, stitch)
+
+
+# ------------------------------------------------------------------
+# LOD-seam stitch
+# ------------------------------------------------------------------
+
+## True when a chunk at [param hp_nside] must honour a stitch mask.
+##
+## Two adjacent chunks one quadtree level apart only share their border when
+## the finer one's odd border vertices sit on the coarser one's chords. Both
+## read the same tile whenever the PARENT is finer than export_nside, and
+## that tile's bilinear knots (texel centres) then fall ON parent grid points,
+## never strictly between two of them — so the finer chunk's own samples
+## already lie on the chords, bit-exact, and no stitch is needed. From the
+## parent == export_nside level down, either the knots sit at the parent's
+## cell midpoints (the seam is off by the local slope change × half a cell)
+## or the parent reads a coarser pyramid tile altogether (a whole other
+## relief, tens of metres on a dune crest): those levels stitch.
+static func edge_stitch_applies(data: PlanetData, hp_nside: int) -> bool:
+	return hp_nside >= 2 and hp_nside <= 2 * data.export_nside
+
+
+## Fill [param edge_out] (vertex index → base height) for every edge of the
+## [param stitch] mask, and [param blend_out] (vertex index → Vector2(weight,
+## parent-level height)) for the rows behind them.
+##
+## Stitched edge: even vertices along the edge ARE parent grid points — they
+## take the parent level's own sample (sample_height_boundary at the parent's
+## pyramid level, the very call the coarser neighbour makes for that point);
+## odd vertices take the CHORD midpoint of their two even neighbours, i.e.
+## exactly where the coarser mesh draws its straight edge. Corners are even
+## on both of their edges, so a corner is parent-sampled whenever either
+## edge is stitched — and its mate across the unstitched edge, which faces
+## the same coarse neighbour diagonally, resolves it the same way.
+##
+## Blend rows exist only when the parent reads a different pyramid tile than
+## the chunk: they ramp the interior from the parent's relief (row 0) to the
+## chunk's own over STITCH_BLEND_ROWS cells. Same tile → the interior already
+## agrees with the edge and the ramp is skipped.
+static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
+		res: int, grid_dirs: Array[PackedVector3Array], stitch: int,
+		frame: PlanetData.TileFrame, edge_out: Dictionary, blend_out: Dictionary) -> void:
+	if res < 2 or res % 2 != 0:
+		return
+	@warning_ignore("integer_division")
+	var p_nside: int = hp_nside / 2
+	var p_sample := data.sample_nside_for(p_nside)
+	# Chain ipix at the parent's sample level — same resolution rule as the
+	# chunk's own _export_ipix in generate_mesh, one level up.
+	var p_chain: int = -1
+	if p_nside >= data.export_nside:
+		p_chain = hp_ipix >> 2
+		var _ns := p_nside
+		while _ns > data.export_nside:
+			p_chain >>= 2
+			_ns /= 2
+	elif p_nside == p_sample:
+		p_chain = hp_ipix >> 2
+	var stride := res + 1
+	var r := data.radius
+
+	# Vertex indices of each stitched edge, in order along the edge.
+	var edges: Array[PackedInt32Array] = []
+	if stitch & STITCH_LEFT:
+		var e := PackedInt32Array()
+		for yi in stride:
+			e.append(yi * stride)
+		edges.append(e)
+	if stitch & STITCH_RIGHT:
+		var e := PackedInt32Array()
+		for yi in stride:
+			e.append(yi * stride + res)
+		edges.append(e)
+	if stitch & STITCH_BOTTOM:
+		var e := PackedInt32Array()
+		for xi in stride:
+			e.append(xi)
+		edges.append(e)
+	if stitch & STITCH_TOP:
+		var e := PackedInt32Array()
+		for xi in stride:
+			e.append(res * stride + xi)
+		edges.append(e)
+
+	for e in edges:
+		var hs := PackedFloat64Array()
+		hs.resize(stride)
+		for k in range(0, stride, 2):
+			var idx := e[k]
+			if edge_out.has(idx):  # corner already resolved by the other edge
+				hs[k] = edge_out[idx]
+				continue
+			@warning_ignore("integer_division")
+			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
+			hs[k] = data.sample_height_boundary(d, p_chain, -1, Vector2i(-1, -1),
+					null, p_sample, frame)
+		for k in range(1, stride, 2):
+			var ia := e[k - 1]
+			var ib := e[k + 1]
+			@warning_ignore("integer_division")
+			var pa: Vector3 = grid_dirs[ia / stride][ia % stride] * (r + hs[k - 1])
+			@warning_ignore("integer_division")
+			var pb: Vector3 = grid_dirs[ib / stride][ib % stride] * (r + hs[k + 1])
+			hs[k] = ((pa + pb) * 0.5).length() - r
+		for k in stride:
+			edge_out[e[k]] = hs[k]
+
+	if p_sample == data.sample_nside_for(hp_nside) or STITCH_BLEND_ROWS < 2:
+		return
+	# Ramp rows 1 .. STITCH_BLEND_ROWS-1 behind each stitched edge. A vertex in
+	# the band of two stitched edges keeps the stronger (nearer-edge) weight.
+	for yi in range(1, res):
+		for xi in range(1, res):
+			var d_min := STITCH_BLEND_ROWS
+			if stitch & STITCH_LEFT:
+				d_min = mini(d_min, xi)
+			if stitch & STITCH_RIGHT:
+				d_min = mini(d_min, res - xi)
+			if stitch & STITCH_BOTTOM:
+				d_min = mini(d_min, yi)
+			if stitch & STITCH_TOP:
+				d_min = mini(d_min, res - yi)
+			if d_min >= STITCH_BLEND_ROWS:
+				continue
+			var w := float(STITCH_BLEND_ROWS - d_min) / float(STITCH_BLEND_ROWS)
+			var hp := data.sample_height_for_direction(grid_dirs[yi][xi], p_chain,
+					-1, Vector2i(-1, -1), null, p_sample, frame)
+			blend_out[yi * stride + xi] = Vector2(w, hp)
 
 
 ## Generate a [ConcavePolygonShape3D] for one HEALPix terrain chunk.

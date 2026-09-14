@@ -3145,26 +3145,32 @@ static func _sample_image_bilinear(img: Image, u_norm: float, v_norm: float) -> 
 			+ v11 * fx * fy)
 
 
-## Cross-tile bilinear sampling for HEALPix tiles with boundary blend zone.
+## Cross-tile bilinear sampling for HEALPix tiles.
 ##
-## Two problems are solved here:
-## 1) When the 2×2 bilinear kernel extends past the tile edge, out-of-
-##    bounds pixels are fetched from the neighbour tile (_get_pixel_healpix).
-## 2) A blend zone (BLEND_PIXELS wide on each side) linearly fades between
-##    the current tile's sample and the neighbour's sample so both tiles
-##    converge to the same height at the seam.
+## When the 2×2 bilinear kernel extends past the tile edge, out-of-bounds
+## texels are fetched from the neighbour tile (_get_pixel_healpix) — edge
+## AND diagonal ones. That alone makes the surface continuous across the
+## tile mosaic: the pack's tiles are samples of ONE relief at their texel
+## centres, so the interpolation between the last texel of a tile and the
+## first of its neighbour is the same from either side.
+##
+## There used to be a BLEND zone on top (4 texels wide, the sample faded
+## towards the W/E then the S/N neighbour's own sample). It was asymmetric
+## at tile CORNERS: two tiles sharing an edge faded towards DIFFERENT south
+## neighbours, so their values along that edge disagreed — by 300 m within
+## 800 m of a corner where tarsis_3's mesa cliff runs along the tile row
+## (n1024 3358752/3358753 over 3358730/3358731). A chunk edge lying on that
+## tile boundary picks tile A or B per vertex (vec2pix rounding), so its
+## border row stepped away from its interior: the "landslide" wall along a
+## chunk edge. Off the corners it still bent every slope within 4 texels of
+## every tile edge by up to half a texel of relief. Gone — bilinear only.
 func _sample_image_bilinear_healpix(
 		floats: PackedFloat32Array, res: int, u_norm: float, v_norm: float,
 		ipix: int, _cached_neighbors = null, nside: int = -1,
 		frame: TileFrame = null) -> float:
-	var ns := nside if nside > 0 else export_nside
 	# Les tuiles sont carrées (tile_res × tile_res) et déjà validées à la lecture du pack.
 	var w := res
 	var h := res
-
-	# How many pixels from each tile edge to blend.  Higher = smoother
-	# transition but slightly blurs the terrain at tile boundaries.
-	const BLEND_PIXELS := 4
 
 	# Continuous pixel position (pixel centres are at +0.5)
 	var fpx := u_norm * float(w) - 0.5
@@ -3180,78 +3186,25 @@ func _sample_image_bilinear_healpix(
 	var fx := clampf(fpx - floorf(fpx), 0.0, 1.0)
 	var fy := clampf(fpy - floorf(fpy), 0.0, 1.0)
 
-	# ── Sample current tile (always needed) ────────────────────────
-	var val: float
 	if x0 >= 0 and x1 < w and y0 >= 0 and y1 < h:
 		var a00 := floats[y0 * w + x0]
 		var a10 := floats[y0 * w + x1]
 		var a01 := floats[y1 * w + x0]
 		var a11 := floats[y1 * w + x1]
-		val = (a00 * (1.0 - fx) * (1.0 - fy)
+		return (a00 * (1.0 - fx) * (1.0 - fy)
 				+ a10 * fx * (1.0 - fy)
 				+ a01 * (1.0 - fx) * fy
 				+ a11 * fx * fy)
-	else:
-		# Out-of-bounds kernel pixel — fetch from neighbor tile
-		var v00 := _get_pixel_healpix(floats, x0, y0, w, h, ipix, _cached_neighbors, ns, frame)
-		var v10 := _get_pixel_healpix(floats, x1, y0, w, h, ipix, _cached_neighbors, ns, frame)
-		var v01 := _get_pixel_healpix(floats, x0, y1, w, h, ipix, _cached_neighbors, ns, frame)
-		var v11 := _get_pixel_healpix(floats, x1, y1, w, h, ipix, _cached_neighbors, ns, frame)
-		val = (v00 * (1.0 - fx) * (1.0 - fy)
-				+ v10 * fx * (1.0 - fy)
-				+ v01 * (1.0 - fx) * fy
-				+ v11 * fx * fy)
-
-	# ── Fast path: not near any edge → done ────────────────────────
-	var near_left  := fpx < float(BLEND_PIXELS)
-	var near_right := fpx > float(w - 1 - BLEND_PIXELS)
-	var near_bot   := fpy < float(BLEND_PIXELS)
-	var near_top   := fpy > float(h - 1 - BLEND_PIXELS)
-
-	if not (near_left or near_right or near_bot or near_top):
-		return val
-
-	# ── Blend with neighbour tile(s) in the margin zone ────────────
-	var blend_margin := float(BLEND_PIXELS)
-	var neighbors: Dictionary
-	if _cached_neighbors != null:
-		neighbors = _cached_neighbors
-	else:
-		neighbors = HEALPix.get_neighbors_nest(ns, ipix)
-
-	# Horizontal blend (left or right neighbour).
-	if near_left and neighbors.has("W") and neighbors["W"] >= 0:
-		var nb := _neighbor_floats(neighbors["W"], ns, frame)
-		if nb.size() == w * h:
-			var nb_u := (float(w) + fpx) / float(w)
-			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
-			var t := clampf(1.0 - (fpx + 0.5) / blend_margin, 0.0, 1.0)
-			val = lerpf(val, nb_val, t * 0.5)
-	elif near_right and neighbors.has("E") and neighbors["E"] >= 0:
-		var nb := _neighbor_floats(neighbors["E"], ns, frame)
-		if nb.size() == w * h:
-			var nb_u := clampf((fpx - float(w) + 0.5) / float(w), 0.0, 1.0)
-			var nb_val := _sample_floats_bilinear(nb, w, h, nb_u, v_norm)
-			var t := clampf(1.0 - (float(w) - 0.5 - fpx) / blend_margin, 0.0, 1.0)
-			val = lerpf(val, nb_val, t * 0.5)
-
-	# Vertical blend (bottom or top neighbour).
-	if near_bot and neighbors.has("S") and neighbors["S"] >= 0:
-		var nb := _neighbor_floats(neighbors["S"], ns, frame)
-		if nb.size() == w * h:
-			var nb_v := (float(h) + fpy) / float(h)
-			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
-			var t := clampf(1.0 - (fpy + 0.5) / blend_margin, 0.0, 1.0)
-			val = lerpf(val, nb_val, t * 0.5)
-	elif near_top and neighbors.has("N") and neighbors["N"] >= 0:
-		var nb := _neighbor_floats(neighbors["N"], ns, frame)
-		if nb.size() == w * h:
-			var nb_v := clampf((fpy - float(h) + 0.5) / float(h), 0.0, 1.0)
-			var nb_val := _sample_floats_bilinear(nb, w, h, u_norm, nb_v)
-			var t := clampf(1.0 - (float(h) - 0.5 - fpy) / blend_margin, 0.0, 1.0)
-			val = lerpf(val, nb_val, t * 0.5)
-
-	return val
+	# Out-of-bounds kernel pixel — fetch from the neighbour tile(s)
+	var ns := nside if nside > 0 else export_nside
+	var v00 := _get_pixel_healpix(floats, x0, y0, w, h, ipix, _cached_neighbors, ns, frame)
+	var v10 := _get_pixel_healpix(floats, x1, y0, w, h, ipix, _cached_neighbors, ns, frame)
+	var v01 := _get_pixel_healpix(floats, x0, y1, w, h, ipix, _cached_neighbors, ns, frame)
+	var v11 := _get_pixel_healpix(floats, x1, y1, w, h, ipix, _cached_neighbors, ns, frame)
+	return (v00 * (1.0 - fx) * (1.0 - fy)
+			+ v10 * fx * (1.0 - fy)
+			+ v01 * (1.0 - fx) * fy
+			+ v11 * fx * fy)
 
 
 ## Tuile voisine, prise dans le cadre du chunk quand il y en a un — le mélange de bord la
@@ -3263,7 +3216,10 @@ func _neighbor_floats(nb_ipix: int, ns: int, frame: TileFrame) -> PackedFloat32A
 
 
 ## Read a single heightmap pixel, fetching from the neighbour HEALPix tile
-## when (px, py) falls outside the current tile [0, w) × [0, h).
+## when (px, py) falls outside the current tile [0, w) × [0, h) — the
+## DIAGONAL tile when it is out on both axes: a corner kernel texel used to
+## be read from the W/E tile's far row, i.e. one tile off, which left the
+## sampled surface discontinuous within a texel of every tile corner.
 func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
 		w: int, h: int, ipix: int, _cached_neighbors = null, nside: int = -1,
 		frame: TileFrame = null) -> float:
@@ -3277,24 +3233,23 @@ func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
 		neighbors = _cached_neighbors
 	else:
 		neighbors = HEALPix.get_neighbors_nest(ns, ipix)
-	var nb_ipix := -1
 	var nb_px := px
 	var nb_py := py
-
+	var ew := ""
+	var sn := ""
 	if px < 0:
-		nb_ipix = neighbors.get("W", -1)
+		ew = "W"
 		nb_px = w + px
 	elif px >= w:
-		nb_ipix = neighbors.get("E", -1)
+		ew = "E"
 		nb_px = px - w
 	if py < 0:
-		if nb_ipix < 0:
-			nb_ipix = neighbors.get("S", -1)
+		sn = "S"
 		nb_py = h + py
 	elif py >= h:
-		if nb_ipix < 0:
-			nb_ipix = neighbors.get("N", -1)
+		sn = "N"
 		nb_py = py - h
+	var nb_ipix: int = neighbors.get(sn + ew, -1)
 
 	if nb_ipix >= 0:
 		var nb := _neighbor_floats(nb_ipix, ns, frame)

@@ -8,10 +8,14 @@ class_name GradeRefine
 ## How it stays seamless:
 ##   · a refined cell's CORNERS are the coarse vertices themselves (already
 ##     carved by the coarse pass);
-##   · a sub-vertex on an edge shared with an UNREFINED cell — or on the
-##     chunk border, where the neighbour chunk knows nothing of this — is
-##     interpolated along the coarse edge, so it lies exactly on the coarse
-##     triangle's edge: no T-junction crack;
+##   · a sub-vertex on an edge shared with an UNREFINED cell is interpolated
+##     along the coarse edge, so it lies exactly on the coarse triangle's
+##     edge: no T-junction crack. On the CHUNK BORDER the same holds unless
+##     both cells — ours and the neighbour chunk's — are refined for holding
+##     the bed (`near_track`, a pure function of the corner directions, which
+##     the neighbour evaluates identically): then the edge is re-sampled
+##     and carved on both sides, so the bed no longer sinks under a coarse
+##     border edge wherever the line crosses from one chunk into the next;
 ##   · a sub-vertex on an edge shared by two refined cells, and every interior
 ##     one, is re-sampled from the heightfield and carved by the railway rule.
 ##
@@ -57,7 +61,9 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	var radius: float = data.radius
 	# One coarse pitch of lateral slack around a portal: a coarse vertex up
 	# to a cell away from the collar still owns a quad the collar cuts.
-	var pitch: float = HEALPix.pixel_side_length(hp_nside, radius) / float(res)
+	# Measured on the grid itself, so a synthetic grid (tests) and the
+	# HEALPix one agree with what the cells really span.
+	var pitch: float = (grid_dirs[0][0] as Vector3).angle_to(grid_dirs[0][1]) * radius
 	var mpd: float = float(rw_ctx["m_per_deg"])
 	var pieces: Array = rw_ctx["pieces"]
 	var profiles: Dictionary = rw_ctx["profiles"]
@@ -66,6 +72,16 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	# reach this chunk at all (the bore test is only paid then).
 	var near_portal := PackedByteArray()
 	near_portal.resize(n_coarse)
+	# Which coarse vertices stand within a cell of the bed on a ground /
+	# cutting run. A cell the track crosses must be refined even when the
+	# carve moved NONE of its corners: a corner 12 m off the line is left
+	# alone as long as it sits under the 45° wall envelope (up to ~6 m above
+	# the track), and the coarse triangles spanning the cell then ran ABOVE
+	# the bed — rails vanishing under a gentle slope. The refined patch's
+	# interior sub-vertices are carved by the rule, so they lay the floor.
+	var near_track := PackedByteArray()
+	near_track.resize(n_coarse)
+	var floor_margin: float = float(rw_ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M))
 	var has_portal := false
 	var reach := GradeSettings.PORTAL_REFINE_M + GradeSettings.PORTAL_HOOD_M
 	for yi in res + 1:
@@ -77,12 +93,15 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			var prof: Dictionary = profiles.get(int(q["fid"]), {})
 			if prof.is_empty():
 				continue
+			var along: float = float(q["along"])
+			var lat_abs := absf(float(q["lat_m"]))
+			if _near_track(q, prof, floor_margin, pitch):
+				near_track[idx] = 1
 			var lat_reach: float = GradeTunnel.bore_half_width(float(prof["hw_m"])) \
 					+ GradeSettings.TUNNEL_WALL_M + GradeSettings.PORTAL_COLLAR_M \
 					+ pitch
-			if absf(float(q["lat_m"])) > lat_reach:
+			if lat_abs > lat_reach:
 				continue
-			var along: float = float(q["along"])
 			for seg in prof["segments"]:
 				if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 					continue
@@ -91,7 +110,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 					has_portal = true
 					break
 
-	# Cells to refine: a carved corner, or a corner near a mouth.
+	# Cells to refine: a carved corner, a corner within a cell of the bed, or
+	# a corner near a mouth.
 	var quads := PackedByteArray()
 	quads.resize(res * res)
 	var any := false
@@ -105,6 +125,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			var c01 := c00 + res + 1
 			var c11 := c01 + 1
 			if band[c00] == 1 or band[c10] == 1 or band[c01] == 1 or band[c11] == 1 \
+					or near_track[c00] == 1 or near_track[c10] == 1 \
+					or near_track[c01] == 1 or near_track[c11] == 1 \
 					or near_portal[c00] == 1 or near_portal[c10] == 1 \
 					or near_portal[c01] == 1 or near_portal[c11] == 1:
 				quads[qi] = 1
@@ -127,6 +149,9 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	var tris := PackedInt32Array()
 	# Shared edge sub-vertices: key → global index.
 	var edge_cache := {}
+	# near_track of the neighbour chunks' corners one row past our border,
+	# keyed "gx_gy" on the extended grid (gx or gy = -1 or res + 1).
+	var outer_nt := {}
 	# Track coordinates per vertex index, for the bore test (a vertex is
 	# shared by up to six triangles).
 	var local_cache := {}
@@ -171,13 +196,23 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 							c_to = c_from + 1
 							j = a
 							var oy := yi - 1 if b == 0 else yi + 1
-							other_refined = oy >= 0 and oy < res and quads[oy * res + xi] == 1
+							if oy >= 0 and oy < res:
+								other_refined = quads[oy * res + xi] == 1
+							else:
+								other_refined = _border_cell_shared(near_track, res, xi, yi,
+										xi, oy, xi + 1, oy, outer_nt, grid_dirs, pieces,
+										profiles, mpd, floor_margin, pitch)
 						else:
 							c_from = yi * (res + 1) + (xi + a_end)
 							c_to = c_from + res + 1
 							j = b
 							var ox := xi - 1 if a == 0 else xi + 1
-							other_refined = ox >= 0 and ox < res and quads[yi * res + ox] == 1
+							if ox >= 0 and ox < res:
+								other_refined = quads[yi * res + ox] == 1
+							else:
+								other_refined = _border_cell_shared(near_track, res, xi, yi,
+										ox, yi, ox, yi + 1, outer_nt, grid_dirs, pieces,
+										profiles, mpd, floor_margin, pitch)
 						var key := (c_from * n_coarse + c_to) * (k + 1) + j
 						if edge_cache.has(key):
 							gidx = int(edge_cache[key])
@@ -242,6 +277,98 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 							pieces, profiles, mpd, radius, local_cache)
 	return {"quads": quads, "pos": pos, "dirs": dirs, "normals": normals,
 			"quad_of": quad_of, "frac": frac, "tris": tris}
+
+
+## Does the corner described by [param q] (GradeGeom.nearest_on_pieces) sit
+## within half a cell of the bed's floor on a ground / cutting run of
+## [param prof]? A cell the floor reaches into has a corner that close: a
+## straight line through a square passes within half a side of one of its
+## corners. Half a pitch and not a whole one — the band is two to three
+## cells wide instead of four to five, and each refined cell costs 64
+## sampled-and-carved sub-vertices.
+static func _near_track(q: Dictionary, prof: Dictionary, floor_margin: float,
+		pitch: float) -> bool:
+	if absf(float(q["lat_m"])) > float(prof["hw_m"]) + floor_margin + 0.5 * pitch + 0.5:
+		return false
+	var seg := GradeProfile.segment_at(prof, float(q["along"]))
+	if seg.is_empty():
+		return false
+	var kind := int(seg["kind"])
+	return kind == GradeSettings.Kind.GROUND or kind == GradeSettings.Kind.GORGE
+
+
+## Is the border edge of cell (xi, yi) re-sampled rather than interpolated?
+## Yes when our cell AND the neighbour chunk's cell across the border both
+## hold the bed (near_track), the neighbour's cell being judged from the two
+## corners it shares with us plus its two outer corners (gx0, gy0) /
+## (gx1, gy1) on the extended grid. Both chunks run this same test on the
+## same four directions, so both re-sample or neither does.
+static func _border_cell_shared(near_track: PackedByteArray, res: int, xi: int, yi: int,
+		gx0: int, gy0: int, gx1: int, gy1: int, outer_nt: Dictionary,
+		grid_dirs: Array, pieces: Array, profiles: Dictionary, mpd: float,
+		floor_margin: float, pitch: float) -> bool:
+	# Our cell — by near_track alone, never by a carved corner: the neighbour
+	# judges our cell from these same four directions.
+	var c00 := yi * (res + 1) + xi
+	if near_track[c00] == 0 and near_track[c00 + 1] == 0 \
+			and near_track[c00 + res + 1] == 0 and near_track[c00 + res + 2] == 0:
+		return false
+	# The neighbour's cell: the two corners it shares with us…
+	var s0: int
+	var s1: int
+	if gy0 == gy1:
+		var row := 0 if gy0 < 0 else res
+		s0 = row * (res + 1) + xi
+		s1 = s0 + 1
+	else:
+		var col := 0 if gx0 < 0 else res
+		s0 = yi * (res + 1) + col
+		s1 = s0 + res + 1
+	if near_track[s0] == 1 or near_track[s1] == 1:
+		return true
+	# …and its two outer corners, one row or column past our border.
+	for g in [Vector2i(gx0, gy0), Vector2i(gx1, gy1)]:
+		var key := "%d_%d" % [g.x, g.y]
+		if not outer_nt.has(key):
+			outer_nt[key] = _outer_near_track(g.x, g.y, res, grid_dirs, pieces, profiles,
+					mpd, floor_margin, pitch)
+		if bool(outer_nt[key]):
+			return true
+	return false
+
+
+## near_track of a corner of the neighbour chunk at extended-grid
+## coordinates (gx, gy) — one row or column past our border — extrapolated
+## from our two nearest grid directions. On a body the size of a planet the
+## extrapolation misses the neighbour's true corner by microns (second
+## order in the cell's angle), and it holds across a HEALPix face border,
+## where the neighbour's grid is rotated and its face coordinates are not
+## ours. The neighbour extrapolates OUR inner corners the same way, so both
+## sides run the threshold test on the same points.
+static func _outer_near_track(gx: int, gy: int, res: int, grid_dirs: Array, pieces: Array,
+		profiles: Dictionary, mpd: float, floor_margin: float, pitch: float) -> bool:
+	var near: Vector3
+	var next: Vector3
+	if gy < 0:
+		near = grid_dirs[0][gx]
+		next = grid_dirs[1][gx]
+	elif gy > res:
+		near = grid_dirs[res][gx]
+		next = grid_dirs[res - 1][gx]
+	elif gx < 0:
+		near = grid_dirs[gy][0]
+		next = grid_dirs[gy][1]
+	else:
+		near = grid_dirs[gy][res]
+		next = grid_dirs[gy][res - 1]
+	var dir := (near * 2.0 - next).normalized()
+	var q := GradeGeom.nearest_on_pieces(pieces, HEALPix.vec2lonlat(dir), mpd)
+	if not q["hit"]:
+		return false
+	var prof: Dictionary = profiles.get(int(q["fid"]), {})
+	if prof.is_empty():
+		return false
+	return _near_track(q, prof, floor_margin, pitch)
 
 
 static func _resample(face: int, base_ix: float, base_iy: float, nside: int,
