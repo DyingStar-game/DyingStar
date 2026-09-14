@@ -124,7 +124,9 @@ func test_collision_boxes_cover_the_piece() -> void:
 		var size: Vector3 = b["size"]
 		assert_almost_eq(size.x, RailwaySettings.TRACK_W_M, 1e-9)
 		assert_almost_eq(size.y, RailwaySettings.MODULE_H_M, 1e-9)
-		assert_almost_eq(size.z, 20.0, 1e-6)
+		# The box is as long as the run REALLY is — at the track's altitude,
+		# 100 m above the radius the along-metres were measured at.
+		assert_almost_eq(size.z, 20.0 * (RADIUS + 100.0) / RADIUS, 1e-3)
 		var xf: Transform3D = b["xform"]
 		assert_gt(xf.basis.determinant(), 0.0)
 		# Box bottom at the sleeper's underside, top at the rail head.
@@ -211,3 +213,40 @@ func test_module_asset_has_three_tiers_at_the_expected_size() -> void:
 		assert_almost_eq(aabb.size.z, RailwaySettings.MODULE_LEN_M, 0.02)
 		assert_almost_eq(aabb.position.y, -RailwaySettings.MODULE_BELOW_M, 0.02)
 	assert_lt(prev, 100, "the far tier is a few boxes")
+
+
+## The exporter's along-metres are whatever it measured with (tarsis_3's
+## road part came out 7.6 % short of the elevation's radius): modules laid
+## every MODULE_LEN_M of along are stretched by the true metres per
+## along-metre, so the rails still meet — and the collision boxes still
+## cover the run — with a metric 10 % short.
+func test_modules_meet_whatever_the_along_metric() -> void:
+	var road := _road(100.0, 1)
+	var cum: PackedFloat64Array = road["_cum_lengths"]
+	for i in cum.size():
+		cum[i] *= 0.9
+	road["_cum_lengths"] = cum
+	var prof := GradeProfile.compute(road, _flat)
+	var mods := RailwayTrack.piece_module_transforms(road, prof, RADIUS, Vector3.ZERO)
+	# Half A of every module: appended first, so the even entries.
+	var end_a := Vector3(RailwaySettings.RAIL_CENTRE_M, 0.2, -0.5 * RailwaySettings.MODULE_LEN_M)
+	var start_b := Vector3(RailwaySettings.RAIL_CENTRE_M, 0.2, 0.5 * RailwaySettings.MODULE_LEN_M)
+	var worst := 0.0
+	var pairs := 0
+	for i in range(2, mods.size(), 2):
+		var prev: Transform3D = mods[i - 2]["xform"]
+		var cur: Transform3D = mods[i]["xform"]
+		worst = maxf(worst, (prev * end_a).distance_to(cur * start_b))
+		pairs += 1
+	assert_gt(pairs, 50)
+	assert_lt(worst, 1.0e-3, "consecutive rail modules must meet end to end")
+	# The stretch is the true metres per along-metre: 1/0.9 at the altitude.
+	var xf: Transform3D = mods[0]["xform"]
+	assert_almost_eq(xf.basis.z.length(), (RADIUS + 100.0) / RADIUS / 0.9, 1e-4)
+	assert_almost_eq(xf.basis.x.length(), 1.0, 1e-9, "no stretch across the track")
+	var boxes := RailwayTrack.piece_collision_boxes(road, prof, RADIUS, Vector3.ZERO)
+	var covered := 0.0
+	for b in boxes:
+		covered += (b["size"] as Vector3).z
+	assert_almost_eq(covered, 100.0 * (RADIUS + 100.0) / RADIUS, 1e-3,
+			"the boxes cover the run's TRUE length")

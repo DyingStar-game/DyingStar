@@ -182,7 +182,11 @@ static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: flo
 		var s := (float(i) + 0.5) * mod_len
 		var f := GradeGeom.frame_at(cl, cum, s, z_at, radius)
 		var up: Vector3 = f["up"]
-		var t: Vector3 = f["t"]
+		# Stretched along the track by the true metres per along-metre, so
+		# modules laid every MODULE_LEN_M of along meet end to end in world
+		# space whatever metric the exporter measured along in (see
+		# GradeGeom.frame_at).
+		var t: Vector3 = (f["t"] as Vector3) * float(f["k"])
 		var n: Vector3 = f["n"]
 		var p: Vector3 = (f["pos"] as Vector3) + up * RoadTerrain.SURFACE_THICKNESS_M - chunk_center
 		for k in tracks:
@@ -281,7 +285,8 @@ static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float
 			var up: Vector3 = f["up"]
 			var t: Vector3 = f["t"]
 			var n: Vector3 = f["n"]
-			var len_m := maxf(hi - lo, mod_len)
+			# True length of the run (see GradeGeom.frame_at's `k`).
+			var len_m := maxf(hi - lo, mod_len) * float(f["k"])
 			var base: Vector3 = (f["pos"] as Vector3) - chunk_center \
 					+ up * (RoadTerrain.SURFACE_THICKNESS_M - RailwaySettings.MODULE_BELOW_M + 0.5 * h)
 			for k in tracks:

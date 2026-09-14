@@ -96,12 +96,19 @@ static func pos_at(cl: PackedVector2Array, cum: PackedFloat64Array,
 
 
 ## Orthonormal frame of the track at [param along], following the GRADE of the
-## profile and not just the map: {pos, up, t, n} with `t` the unit tangent in
-## the direction of increasing along, `up` the outward radial made
+## profile and not just the map: {pos, up, t, n, k} with `t` the unit tangent
+## in the direction of increasing along, `up` the outward radial made
 ## perpendicular to it, and `n = t × up` pointing to the LEFT of travel
 ## (positive lat_m). All three are right-handed as (n, up, -t) and (-n, up, t),
 ## which is what a mirrored rail module is placed with — never a negative
 ## scale.
+##
+## `k` is the TRUE metres per along-metre there (grade included): the along
+## axis is the exporter's cumulative length, and anything laid by along
+## count — rail modules, collision boxes — must be sized by k to meet in
+## world space. On tarsis_3 the road part was exported with a planet radius
+## 7.6 % smaller than the elevation's (plus a per-line cos(lat)), so 1.12 m
+## modules stood 1.22 m apart: a 10 cm gap in every rail joint.
 ##
 ## Longitude is atan2(z, x), so the naive (east, north, up) triple is
 ## left-handed in Godot's Y-up world; building the frame from 3-D positions
@@ -117,17 +124,20 @@ static func frame_at(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var pos := pos_at(cl, cum, along, z_at, radius)
 	var up := pos.normalized()
 	var t: Vector3
+	var k := 1.0
 	if s1 - s0 > 1e-6:
 		t = pos_at(cl, cum, s1, z_at, radius) - pos_at(cl, cum, s0, z_at, radius)
+		k = t.length() / (s1 - s0)
 	else:
 		t = Vector3.ZERO
 	if t.length_squared() < 1e-24:
 		t = up.cross(Vector3.UP)
 		if t.length_squared() < 1e-24:
 			t = up.cross(Vector3.RIGHT)
+		k = 1.0
 	t = t.normalized()
 	up = (up - t * up.dot(t)).normalized()
-	return {"pos": pos, "up": up, "t": t, "n": t.cross(up).normalized()}
+	return {"pos": pos, "up": up, "t": t, "n": t.cross(up).normalized(), "k": k}
 
 
 ## Range of module indices whose CENTRE `(i + 0.5) * len_m` lies in
