@@ -54,9 +54,18 @@ const CLIMB_AT_MAX_GRADE := true
 # ── Rendering ────────────────────────────────────────────────────────────
 
 ## Rail modules are instanced on chunks at this LOD or finer; the module's
-## `railroad LOD0/1/2` nodes (2 736 / 900 / 18 triangles) are the tiers, one
-## per chunk LOD, so LOD 2 draws the far stretches as bare boxes.
-const RAIL_MAX_LOD := 2
+## `railroad LOD0/1/2` nodes (2 736 / 900 / 18 triangles) are the tiers,
+## drawn per stretch by distance (RAIL_TIER_RANGES_M). LOD 0 = the chunks
+## within 5 km, where a 2.4 m track is still a pixel wide; LOD 1 and 2
+## (5-200 km) only ever held groups no camera could see — 3 300
+## MultiMeshInstance3D and as many draw calls on tarsis_3 for nothing, and
+## their creation was the render-setup spike of every chunk assembly.
+const RAIL_MAX_LOD := 0
+## Beyond this distance (m) no rail group is drawn at all, whatever the
+## chunk's size: a 2.4 m track is under a pixel at 6 km, and the bare-box
+## tier of 210 km of instanced track was 6.8 M triangles and 3 300 draw
+## calls per frame (2026-09-16 heartbeat: prim=13.8 M, draw=7 100, 30 fps).
+const RAIL_FAR_VISIBILITY_M := 6000.0
 ## One MultiMeshInstance3D per this many metres of track, so the importer's
 ## automatic mesh LOD — chosen per node, not per instance — degrades the far
 ## stretches while the near ones stay sharp.
