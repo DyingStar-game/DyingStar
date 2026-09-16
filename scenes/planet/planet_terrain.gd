@@ -33,6 +33,12 @@ const MAX_CONCURRENT_RECIPES := 8
 ## Maximum chunks assembled (MeshInstance3D + vegetation) per physics frame.
 ## 4 matches the number of HEALPix children so a full split assembles in one frame.
 const MAX_ASSEMBLE_PER_FRAME := 8
+## Wall-clock budget of one assembly batch. A count alone let a warm-cache
+## world entry sit at 5-20 fps for 25 s: eight chunks a frame at 5-20 ms each
+## (`terrain_assemble=35-170ms` on every hitch line of the 2026-09-16 log), a
+## rail chunk costing 400 ms on its own. The batch now stops once it has spent
+## this long, and always assembles at least one chunk so the queue drains.
+const ASSEMBLE_BUDGET_MS := 6.0
 ## Maximum concurrent server collision-chunk loading tasks (heightmap or shape phase).
 const MAX_SERVER_CHUNK_TASKS := 4
 ## Ring-buffer size for camera history (look-ahead prefetch).
@@ -406,10 +412,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# chunks built on the floor levels and counted as legitimate climbs.
 		# v46 → v47: no road overlay on LOD 2-3 meshes (RoadTerrain.
 		# OVERLAY_MIN_RES); cached far meshes still carried theirs.
+		# v47 → v48: tunnel tubes get a floor slab (GradeTunnel.FLOOR_M), in
+		# the mesh and in the collision faces.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v47%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v48%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
@@ -1288,9 +1296,14 @@ func _physics_process(_delta: float) -> void:
 	# This minimises the latency between a task finishing and its result
 	# appearing on screen.  The actual heavy work runs on worker threads;
 	# these polls are cheap (flag checks + bounded assembly).
+	# Timed by ClientPerf (client.ini debug_perf): the heartbeat's hitch lines
+	# then say whether a long frame sat in the assembly of finished meshes
+	# (main-thread node creation + cache write) or in the LOD update below.
+	var _tk := _perf_begin()
 	_poll_pending_recipes()
 	_poll_mesh_tasks()
 	_process_assemble_queue()
+	_perf_end("terrain_assemble", _tk)
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
 	if not _initial_ready_emitted and not _active_chunks.is_empty() \
@@ -1306,7 +1319,23 @@ func _physics_process(_delta: float) -> void:
 	if now_msec - _last_update_msec < int(UPDATE_INTERVAL * 1000.0):
 		return
 	_last_update_msec = now_msec
+	_tk = _perf_begin()
 	_update_terrain()
+	_perf_end("terrain_update", _tk)
+
+
+## ClientPerf scopes, editor-safe: the autoload is not @tool, so its members
+## do not exist under the editor preview (see _compute_star_dir), and the
+## terrain's physics step runs there too. 0 = no timing, like scope_begin.
+func _perf_begin() -> int:
+	if Engine.is_editor_hint():
+		return 0
+	return ClientPerf.scope_begin()
+
+
+func _perf_end(scope_name: String, token: int) -> void:
+	if token != 0:
+		ClientPerf.scope_end(scope_name, token)
 
 
 ## World-space unit direction from this planet's centre to the system star, in DOUBLE precision (exact
@@ -1414,9 +1443,14 @@ func _update_terrain() -> void:
 		horizon_dot = cos(horizon_angle)
 
 	var desired: Dictionary = {}
+	var _tk := _perf_begin()
 	for base_pix in BASE_PIXEL_COUNT:
 		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired)
+	_perf_end("terrain_traverse", _tk)
+	_tk = _perf_begin()
 	_balance_and_stitch(desired, local_cam)
+	_perf_end("terrain_balance", _tk)
+	_tk = _perf_begin()
 
 	# One-shot: log chunk count breakdown by LOD
 	if _active_chunks.is_empty() and not desired.is_empty():
@@ -1434,19 +1468,25 @@ func _update_terrain() -> void:
 	# Sort by distance to camera so nearby (LOD0) chunks get pipeline priority
 	# over distant (LOD2/LOD3) chunks — avoids far chunks starving the recipe
 	# and mesh-task slots while the player sees no terrain underfoot.
-	var _sorted_keys := desired.keys()
-	_sorted_keys.sort_custom(func(a: String, b: String) -> bool:
-		return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
 	# One snapshot of the pipeline's keys for the whole pass: the per-key
 	# query scanned the backlog, the assembly queue and the recipe waiters
 	# linearly — 570 keys × a 500-entry backlog at world entry, four times
 	# per second, inside the physics step. Keys this pass queues are added
 	# as it goes, so the snapshot stays exact.
 	var pipeline := _pipeline_keys()
-	for key in _sorted_keys:
+	# Only what is neither on screen nor in flight gets sorted: in steady
+	# state that is a handful of keys, where sorting all ~480 with a distance
+	# lambda cost 4 ms of every update.
+	var _new_keys: Array = []
+	for key in desired:
 		if not _active_chunks.has(key) and not pipeline.has(key):
-			_try_create_or_defer(desired[key])
-			pipeline[key] = true
+			_new_keys.append(key)
+	if _new_keys.size() > 1:
+		_new_keys.sort_custom(func(a: String, b: String) -> bool:
+			return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
+	for key in _new_keys:
+		_try_create_or_defer(desired[key])
+		pipeline[key] = true
 
 	# Step 2 — Remove chunks no longer desired, but only after their
 	# replacements (finer children or coarser parent) are queued above.
@@ -1487,6 +1527,8 @@ func _update_terrain() -> void:
 			_try_create_or_defer(_want)
 			pipeline[key] = true
 
+	_perf_end("terrain_steps", _tk)
+
 	# Bridges outlive the chunks that ask for them, so they are collected here
 	# rather than in _remove_chunk — after steps 1-3 have had their chance to
 	# claim them back.
@@ -1494,8 +1536,10 @@ func _update_terrain() -> void:
 
 	# Look-ahead: prefetch chunks along the predicted camera trajectory so
 	# they're ready before the player reaches them.
+	_tk = _perf_begin()
 	_prefetch_look_ahead(local_cam, horizon_dot)
 	TileResidency.prefetch(planet_data, local_cam, _cam_history)
+	_perf_end("terrain_prefetch", _tk)
 
 
 # ------------------------------------------------------------------
@@ -2308,11 +2352,9 @@ func _split_leaf(desired: Dictionary, leaves: Dictionary, id: int, local_cam: Ve
 # Async pipeline helpers
 # ------------------------------------------------------------------
 
-## Returns true if the chunk key is anywhere in the async pipeline:
-## recipe_waiters, mesh_tasks, mesh_task_backlog, or assemble_queue.
-## Every chunk key currently in the async pipeline, as one Dictionary — the
-## set _is_chunk_in_pipeline tests one key against, built once for a pass
-## that tests hundreds.
+## Every chunk key currently in the async pipeline — recipe_waiters,
+## mesh_tasks, mesh_task_backlog, assemble_queue — as one Dictionary, built
+## once for a pass that tests hundreds of keys.
 func _pipeline_keys() -> Dictionary:
 	var out := {}
 	for mk: String in _mesh_tasks:
@@ -2325,21 +2367,6 @@ func _pipeline_keys() -> Dictionary:
 		for ck in _recipe_waiters[ek]:
 			out[String(ck)] = true
 	return out
-
-
-func _is_chunk_in_pipeline(key: String) -> bool:
-	if _mesh_tasks.has(key):
-		return true
-	for item in _assemble_queue:
-		if item.info.key == key:
-			return true
-	for item in _mesh_task_backlog:
-		if item.key == key:
-			return true
-	for ek in _recipe_waiters:
-		if _recipe_waiters[ek].has(key):
-			return true
-	return false
 
 
 ## Returns true when the area of chunk (nside, ipix) is FULLY covered by
@@ -2889,7 +2916,10 @@ func _process_assemble_queue() -> void:
 		_assemble_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return a.info.center.distance_squared_to(_last_local_cam) < b.info.center.distance_squared_to(_last_local_cam))
 	var assembled := 0
+	var _batch_t0 := Time.get_ticks_usec()
 	while assembled < MAX_ASSEMBLE_PER_FRAME and not _assemble_queue.is_empty():
+		if assembled > 0 and (Time.get_ticks_usec() - _batch_t0) / 1000.0 >= ASSEMBLE_BUDGET_MS:
+			break
 		var item: Dictionary = _assemble_queue[0]
 		_assemble_queue.remove_at(0)
 		var info: Dictionary = item.info
@@ -2939,8 +2969,10 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 	for base_pix in BASE_PIXEL_COUNT:
 		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired)
 
+	# One snapshot, not one linear scan of the backlog per predicted key.
+	var pipeline := _pipeline_keys()
 	for key in prefetch_desired:
-		if _active_chunks.has(key) or _is_chunk_in_pipeline(key):
+		if _active_chunks.has(key) or pipeline.has(key):
 			continue
 		var info: Dictionary = prefetch_desired[key]
 		# File/pyramid mode has no recipe pipeline — chunks lazy-load their .r32
@@ -2991,6 +3023,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		push_warning("[PlanetTerrain] CLIENT mesh %s lod%d built with %d vertex(es) on ancestor tiles"
 				% [key, lod, _climbs] + " — the surface shown may differ from the server's collision")
 
+	# Phased ClientPerf scopes: the heartbeat's `asm:*` totals say which part
+	# of a chunk's assembly the main thread pays for.
+	var _tk := _perf_begin()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.name = key
@@ -3009,6 +3044,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	mi.layers = GlobalsDefs.RENDER_MASK_CELESTIAL if _chunks_on_celestial else GlobalsDefs.RENDER_MASK_LOCAL
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
+	_perf_end("asm:mesh", _tk)
+	_tk = _perf_begin()
 
 	# ---------- Vegetation MultiMesh ----------
 	var res := planet_data.get_resolution_for_lod(lod)
@@ -3107,6 +3144,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				_chunks_node.add_child(tree_mmi)
 				info["forest"] = tree_mmi
 
+	_perf_end("asm:flora", _tk)
+	_tk = _perf_begin()
 	# ---------- Railway: rail modules + their collision boxes ----------
 	# The bed itself is part of the chunk mesh/shape; the modules are instanced
 	# here, one MultiMesh per stretch of track (see RailwayTrack), and stand on
@@ -3148,6 +3187,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 					_chunks_node.add_child(rail_body)
 					info["railway_rails_col"] = rail_body
 
+	_perf_end("asm:rails", _tk)
+	_tk = _perf_begin()
 	# ---------- Point-biome 3D instances at close LODs ----------
 	if lod <= 2:
 		var _pz_point := _get_chunk_populate_zones(info)
@@ -3190,6 +3231,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 
 	_spawn_bridges(info)
 
+	_perf_end("asm:zones", _tk)
+	_tk = _perf_begin()
 	# Save terrain mesh to disk cache for future restarts — but ONLY if the
 	# chunk's export elevation tile is actually available. If the .r32 tile was
 	# missing/unreadable when the mesh was built, generate_mesh sampled the flat
@@ -3216,10 +3259,13 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# chunk the moment a finer one covers part of its area — the coarse
 	# ribbon rides the coarse relief, metres to tens of metres from the fine
 	# one, and a coarse chunk lingers while its other children load.
+	_perf_end("asm:cache", _tk)
+	_tk = _perf_begin()
 	_split_road_surfaces(info, mi, mesh)
 	_active_chunks[key] = info
 	_count_active_descendant(info.nside, info.ipix, 1)
 	_refresh_road_visibility_around(info.nside, info.ipix)
+	_perf_end("asm:roads", _tk)
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 	if PropNet.prof_on:
 		PropNet.prof_asm_calls += 1

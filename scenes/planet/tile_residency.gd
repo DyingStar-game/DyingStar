@@ -222,6 +222,18 @@ static func prefetch_chunks(data: PlanetData, keys: Array) -> int:
 ## réseau, assez près pour ne pas précharger une direction qu'il ne prendra pas.
 const PREFETCH_LEAD := 8.0
 
+## Dernier passage de prefetch par planète (clé : id d'instance du PlanetData,
+## pour ne pas retenir l'objet) :
+## le pixel visé à chaque niveau ne change qu'en franchissant une tuile, et
+## refaire les anneaux sans bouger coûtait 9-19 ms toutes les 0,25 s dans le
+## pas physique (`terrain_prefetch` du relevé du 2026-09-16) — onze niveaux,
+## deux directions, neuf tuiles, deux verrous et un réveil du fil de
+## téléchargement par tuile déjà en cache. Le passage est refait quand la
+## direction change de pixel au niveau le plus fin, quand une carte de
+## présence manquait, ou au plus tard toutes les PREFETCH_REFRESH_MS.
+static var _prefetch_memo: Dictionary = {}
+const PREFETCH_REFRESH_MS := 5000
+
 
 ## Met en file les tuiles autour du joueur, à tous les niveaux de la pyramide.
 ##
@@ -249,6 +261,15 @@ static func prefetch(data: PlanetData, local_cam: Vector3, cam_history: PackedVe
 		var ahead := local_cam + (cam_history[-1] - cam_history[0]) * PREFETCH_LEAD
 		if ahead.length_squared() > 0.0:
 			dirs.append(ahead.normalized())
+	var stamp := PackedInt64Array()
+	for d in dirs:
+		stamp.append(HEALPix.vec2pix_nest(data.export_nside, d))
+	var now := Time.get_ticks_msec()
+	var memo: Dictionary = _prefetch_memo.get(data.get_instance_id(), {})
+	if not memo.is_empty() and bool(memo["complete"]) and memo["stamp"] == stamp \
+			and now - int(memo["msec"]) < PREFETCH_REFRESH_MS:
+		return 0
+	var complete := true
 	var queued := 0
 	var seen := {}
 	# export_nside_min vaut 0 tant que le manifeste n'est pas lu, et ns *= 2 y bouclerait
@@ -268,8 +289,12 @@ static func prefetch(data: PlanetData, local_cam: Vector3, cam_history: PackedVe
 				seen[k] = true
 				# presence_of ne bloque jamais : un shard inconnu se met en file tout seul
 				# et l'anneau sera complété au passage suivant.
-				if src.presence_of(ns, ip) == RemoteTileSource.PRESENCE_YES:
+				var state := src.presence_of(ns, ip)
+				if state == RemoteTileSource.PRESENCE_YES:
 					src.queue(ns, ip)
 					queued += 1
+				elif state == RemoteTileSource.PRESENCE_UNKNOWN:
+					complete = false
 		ns *= 2
+	_prefetch_memo[data.get_instance_id()] = {"stamp": stamp, "complete": complete, "msec": now}
 	return queued
