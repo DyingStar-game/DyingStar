@@ -2069,6 +2069,12 @@ static func generate_mesh(
 			var rd_si := mesh.get_surface_count()
 			st.commit(mesh)
 			mesh.surface_set_material(rd_si, rd_mat)
+			# Told to the assembler (meta "road_surfaces"): the road slabs and
+			# beds go on their own node, hidden while a finer chunk covers
+			# part of this one — see PlanetTerrain._split_road_surfaces.
+			var _rd_list: PackedInt32Array = mesh.get_meta("road_surfaces", PackedInt32Array())
+			_rd_list.append(rd_si)
+			mesh.set_meta("road_surfaces", _rd_list)
 
 	# --- lava_river: hot lava surface sitting ON TOP of the depression ------
 	# Like the river water overlay, the lava surface is built as a separate

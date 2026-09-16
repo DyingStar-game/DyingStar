@@ -313,7 +313,35 @@ func set_movement_debug(on: bool) -> void:
 	movement_debug_changed.emit(on)
 
 func is_movement_debug() -> bool:
+	# A dedicated server never loads settings.ini (see _ready), so this used
+	# to be a constant false there — and the server is the one side whose
+	# step-up probe sees terrain (collision is server-only). The server
+	# reads `[debug] movement=true` in server.ini instead (same file and
+	# `srvini=` override as its `perf` key), resolved once.
+	if OS.has_feature("dedicated_server"):
+		if _server_movement_debug < 0:
+			_server_movement_debug = 1 if _server_ini_flag("debug", "movement") else 0
+		return _server_movement_debug == 1
 	return config.get_value("general", "movement_debug", false)
+
+
+## -1 unresolved, else 0/1 — see is_movement_debug.
+var _server_movement_debug: int = -1
+
+
+## A boolean key of the server's ini, accepting the bare `true` / `1` / `yes`
+## a hand-edited file carries (ConfigFile hands those back as String).
+static func _server_ini_flag(section: String, key: String) -> bool:
+	var ini := "server.ini"
+	for a: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.contains("srvini="):
+			ini = a.split("=")[1]
+	var cfg := ConfigFile.new()
+	if cfg.load(ini) != OK:
+		return false
+	var v: Variant = cfg.get_value(section, key, false)
+	return (v is bool and bool(v)) or (v is int and int(v) != 0) \
+			or (v is String and String(v).strip_edges().to_lower() in ["true", "1", "yes"])
 
 ## Surface debug: an on-screen readout of the ground under your feet — the taxonomy family, how it was
 ## worked out, and whether a footstep sample exists for it. Its own toggle rather than a line added to

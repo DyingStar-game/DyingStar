@@ -153,7 +153,8 @@ func test_cutting_lowers_the_ground_to_floor_then_wall() -> void:
 	var hw_floor: float = float(prof["hw_m"]) + GradeSettings.GORGE_FLOOR_MARGIN_M
 	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, 0.0), 100.0, 1e-6, "floor")
 	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, -hw_floor), 100.0, 1e-6)
-	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, hw_floor + 3.0), 103.0, 1e-6, "wall at 45°")
+	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, hw_floor + 3.0),
+			100.0 + 3.0 * GradeSettings.GORGE_WALL_SLOPE, 1e-6, "wall at GORGE_WALL_SLOPE")
 	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, hw_floor + 12.0), 109.0, 1e-6, "wall meets the ground")
 	assert_almost_eq(GradeBed.carved_height(109.0, prof, 700.0, 60.0), 109.0, 1e-6, "outside the band")
 	assert_almost_eq(GradeBed.carved_height(99.0, prof, 700.0, 0.0), 99.0, 1e-6, "never raised")

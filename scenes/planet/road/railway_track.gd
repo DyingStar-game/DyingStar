@@ -201,15 +201,19 @@ static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: flo
 	return out
 
 
-## One MultiMesh per RAIL_MMI_GROUP_M of track, on the mesh of LOD tier
-## [param lod]: [{mm: MultiMesh, center: Vector3 (relative to chunk_center)}].
-## Instance transforms are relative to the group's own centre so the node's
-## distance — what the mesh LOD is picked from — is the group's.
+## One MultiMesh per RAIL_MMI_GROUP_M of track AND per module tier from
+## [param lod] down to the coarsest: [{mm: MultiMesh, center: Vector3
+## (relative to chunk_center), range_begin: float, range_end: float}], the
+## ranges in metres from the group (RailwaySettings.RAIL_TIER_RANGES_M; the
+## last tier's end is 0.0 = "up to the caller's own limit"). A chunk at LOD 1
+## never carries tier 0. Instance transforms are relative to the group's own
+## centre so the node's distance — what the range is tested against — is
+## the group's.
 static func build_multimeshes(transforms: Array, lod: int) -> Array:
 	var meshes := module_meshes()
 	if meshes.is_empty() or transforms.is_empty():
 		return []
-	var mesh: Mesh = meshes[clampi(lod, 0, meshes.size() - 1)]
+	var first_tier := clampi(lod, 0, meshes.size() - 1)
 	var groups := {}
 	for m in transforms:
 		var g := int(floor(float(m["along"]) / RailwaySettings.RAIL_MMI_GROUP_M))
@@ -224,14 +228,20 @@ static func build_multimeshes(transforms: Array, lod: int) -> Array:
 			centre += (m["xform"] as Transform3D).origin
 		centre /= float(members.size())
 		centre = PlanetChunk.snap_to_f32(centre)
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = mesh
-		mm.instance_count = members.size()
-		for i in members.size():
-			var xf: Transform3D = members[i]["xform"]
-			mm.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
-		out.append({"mm": mm, "center": centre})
+		var ranges := RailwaySettings.RAIL_TIER_RANGES_M
+		for tier in range(first_tier, meshes.size()):
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = meshes[tier]
+			mm.instance_count = members.size()
+			for i in members.size():
+				var xf: Transform3D = members[i]["xform"]
+				mm.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
+			# A tier below the chunk's first one starts at 0: what the chunk's
+			# LOD already left out is not drawn closer by a finer tier.
+			var r_begin: float = 0.0 if tier == first_tier else float(ranges[mini(tier - 1, ranges.size() - 1)])
+			var r_end: float = 0.0 if tier >= ranges.size() else float(ranges[tier])
+			out.append({"mm": mm, "center": centre, "range_begin": r_begin, "range_end": r_end})
 	return out
 
 

@@ -137,6 +137,52 @@ func test_unknown_presence_defers_then_resolves() -> void:
 			"la tuile ET ses voisines doivent maintenant être demandées")
 
 
+func test_a_pruned_tile_needs_its_finest_published_ancestor_not_any_local_one() -> void:
+	# n64 élaguée (présence NON), n32 publiée (OUI) mais pas téléchargée, n1 (plancher)
+	# sur disque. L'ancien garde voyait « élaguée + un ancêtre présent » et laissait
+	# bâtir sur le plancher — terrasses de centaines de mètres, profils de ligne
+	# différents d'une machine à l'autre. La tuile n'est disponible que quand n32 est là.
+	var pd := _data()
+	var rts := RemoteTileSource.new()
+	rts.cache_root = CACHE
+	rts.planet = "p"
+	rts.version = "v"
+	rts.base_url = "http://h"
+	rts.tile_res = 8
+	rts.nside_max = 64
+	var none := PackedByteArray()
+	none.resize(512)
+	none.fill(0x00)
+	var all := PackedByteArray()
+	all.resize(512)
+	all.fill(0xFF)
+	rts._present["n64/f0"] = none
+	rts._present["n32/f0"] = all
+	rts._present["n16/f0"] = none
+	rts._present["n8/f0"] = none
+	rts._present["n4/f0"] = none
+	rts._present["n2/f0"] = none
+	rts._present["n1/f0"] = all
+	pd.remote_source = rts
+	# The floor tile is on disk (a real 8×8 tile), nothing finer.
+	var img := Image.create_empty(8, 8, false, Image.FORMAT_RF)
+	img.fill(Color(0.5, 0.0, 0.0))
+	pd.store_chunk_image("hp_n1_p0", img, [])
+	assert_gt(pd._finest_present_ancestor(0, 64).y, 0, "un ancêtre local existe bien (n1)")
+	assert_eq(TileResidency.finest_published_ancestor_state(pd, 0, 64),
+			TileResidency.PUBLISHED_ABSENT, "le plus fin niveau publié est n32, absent")
+	assert_false(TileResidency.tile_available(pd, 0, 64),
+			"pas disponible : bâtir sur n1 n'a rien d'une reconstruction au mètre")
+	assert_true(pd._climb_is_guess(64, 0), "et la remontée du sampler serait une supposition")
+	assert_false(TileResidency.request_chunk_tiles(pd, 64, 0))
+	# n32 arrives.
+	pd.store_chunk_image("hp_n32_p0", img, [])
+	assert_eq(TileResidency.finest_published_ancestor_state(pd, 0, 64),
+			TileResidency.PUBLISHED_PRESENT)
+	assert_true(TileResidency.tile_available(pd, 0, 64), "n32 là : la tuile élaguée se lit dessus")
+	assert_false(pd._climb_is_guess(64, 0), "remontée légitime, persistable")
+
+
 func test_a_level_the_service_does_not_publish_costs_nothing() -> void:
 	# LE cas des lunes : le manifeste de chunks LOCAL est partagé avec tarsis_3 et annonce
 	# n1024, mais le service ne publie la lune que jusqu'à n64. Le garde doit redescendre

@@ -60,7 +60,13 @@ const VIADUCT_MAX_SPAN_M := 400.0
 ## sleepers.
 const GORGE_FLOOR_MARGIN_M := 2.0
 ## Rise of the cutting wall per metre of lateral distance (1.0 = 45°).
-const GORGE_WALL_SLOPE := 1.0
+## 0.75 (37°), clearly UNDER the character's floor_max_angle (Godot's 45°):
+## at exactly 45° the wall was floor on one tick and wall on the next, and
+## a player on the cutting's flank — the road's shoulder, 11 m off the
+## centreline before the tarsis_3 highway tunnel — hopped in place and could
+## not walk to the portal ("mon personnage saute de lui-même"). A flank the
+## player can walk down is also what a sand cutting looks like.
+const GORGE_WALL_SLOPE := 0.75
 ## Extra lateral reach of the cutting rule past the wall's theoretical top.
 const GORGE_BAND_MARGIN_M := 2.0
 ## The cutting is carved only into a grid at least this fine — binary, never

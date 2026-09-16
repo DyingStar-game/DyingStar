@@ -63,6 +63,15 @@ const RAIL_MAX_LOD := 2
 const RAIL_MMI_GROUP_M := 64.0
 ## Visibility of a rail group, as a multiple of the chunk diagonal.
 const RAIL_VISIBILITY_DIAG := 3.0
+## Distance (m) up to which a group draws each module tier: tier 0 (2 736
+## triangles per half-sleeper) only this close, tier 1 (900) up to the second
+## value, tier 2 (18, bare boxes) beyond. Every tier is its own
+## MultiMeshInstance3D on the same transforms with a visibility range, so the
+## renderer switches per GROUP by distance — the chunk's LOD alone drew the
+## full tier 0 over every LOD-0 chunk (5 km): 655 modules × 2 × 2 736 = 3.6 M
+## triangles per 800 m of track, 16-19 M on screen, 30-100 ms of GPU per
+## frame (2026-09-14 heartbeat).
+const RAIL_TIER_RANGES_M: PackedFloat32Array = [200.0, 1000.0]
 
 ## Same directory as GradeSettings.MATERIAL_DIR — spelled out because this
 ## class must not depend on GradeSettings: GradeSettings → RoadTerrain →

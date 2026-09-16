@@ -177,7 +177,15 @@ var _grade_reborn_tiles: Dictionary = {}
 ## as the rebuild takes — on the server, a hole in the bridge. Waiting a few
 ## seconds costs one idle mesh and makes that impossible.
 const BRIDGE_GRACE_MS := 5000
-var _update_timer: float = 0.0
+## Last rendered frame the client pipeline ran in, and the wall-clock stamp of
+## the last LOD update (see _physics_process).
+var _last_poll_frame: int = -1
+var _last_update_msec: int = 0
+## _balance_and_stitch memo: the last traversal's leaves (key → lod) and what
+## the pass answered for it (leaves it split in, masks it set).
+var _bal_prev_trav: Dictionary = {}
+var _bal_prev_out: Dictionary = {}
+var _bal_prev_removed: Array[String] = []
 var _initialized: bool = false
 
 ## Server fixed-collision mode: all export-nside chunks loaded at startup.
@@ -390,10 +398,16 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v43 → v44: the stitch waits for the parent tiles and refuses an
 		# edge over a cliff (STITCH_MAX_SLOPE); v43 caches hold stitched
 		# borders built on floor-level ancestors, hundreds of metres off.
+		# v44 → v45: meshes carry the "road_surfaces" meta the assembler
+		# splits the road slabs off with (_split_road_surfaces); a v44 mesh
+		# without it would keep its roads drawn under a finer chunk.
+		# v45 → v46: a pruned tile now waits for its finest PUBLISHED
+		# ancestor (TileResidency.tile_available); v45 caches may hold
+		# chunks built on the floor levels and counted as legitimate climbs.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v44%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v46%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
@@ -1232,7 +1246,7 @@ func _exit_tree() -> void:
 # Frame update
 # ------------------------------------------------------------------
 
-func _physics_process(delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	if not _initialized:
 		return
 	# Editor flight: drive the body under the viewport camera BEFORE anything reads a
@@ -1255,7 +1269,20 @@ func _physics_process(delta: float) -> void:
 		_server_poll_chunk_tasks()
 		return
 
-	# ── Poll completed async work EVERY frame (not rate-limited) ───────
+	# ── Once per RENDERED frame, whatever the physics clock does ──────
+	# This runs in the physics step, and a slow frame makes the engine run up
+	# to max_physics_steps_per_frame (8) catch-up steps in a row. Everything
+	# below used to run in each of them: eight assembly batches, and the LOD
+	# update — 100-250 ms of traversal, balance and diff — every 8/60 s of
+	# SIMULATED time, i.e. every second frame instead of every 0.25 s. A slow
+	# frame made the next one slower: the 1.4-3.1 s frames of the 2026-09-14
+	# heartbeat (`gap<=3062 phys<=959`). Wall clock and frame count decide now.
+	var frame := Engine.get_process_frames()
+	if frame == _last_poll_frame:
+		return
+	_last_poll_frame = frame
+
+	# ── Poll completed async work every frame (not rate-limited) ───────
 	# This minimises the latency between a task finishing and its result
 	# appearing on screen.  The actual heavy work runs on worker threads;
 	# these polls are cheap (flag checks + bounded assembly).
@@ -1272,11 +1299,11 @@ func _physics_process(delta: float) -> void:
 		initial_chunks_ready.emit()
 		print("[PlanetTerrain] initial_chunks_ready emitted (active=%d)" % _active_chunks.size())
 
-	# ── Rate-limited LOD update ──────────────────────────────────────
-	_update_timer += delta
-	if _update_timer < UPDATE_INTERVAL:
+	# ── Rate-limited LOD update, on the wall clock ───────────────────
+	var now_msec := Time.get_ticks_msec()
+	if now_msec - _last_update_msec < int(UPDATE_INTERVAL * 1000.0):
 		return
-	_update_timer = 0.0
+	_last_update_msec = now_msec
 	_update_terrain()
 
 
@@ -2116,13 +2143,45 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 ## so those chunks keep one cache file and never re-bake for a neighbour.
 func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 	if desired.is_empty():
+		_bal_prev_trav.clear()
+		_bal_prev_out.clear()
+		_bal_prev_removed.clear()
 		return
+	# Same leaf set as last time (the common case: the camera has not crossed
+	# a split threshold since 0.25 s ago) → same splits and masks. The pass
+	# costs 60 ms on tarsis_3's ~570 leaves, three times the traversal; the
+	# cached answer is a dictionary copy. LODs are part of the answer (a mask
+	# needs same-quality neighbours), so a changed lod invalidates it.
+	var same := desired.size() == _bal_prev_trav.size()
+	if same:
+		for key in desired:
+			var prev: Variant = _bal_prev_trav.get(key)
+			if prev == null or int(prev) != int(desired[key].lod):
+				same = false
+				break
+	if same:
+		for key in _bal_prev_removed:
+			desired.erase(key)  # a leaf the balance split away
+		for key in _bal_prev_out:
+			var cached: Dictionary = _bal_prev_out[key]
+			if desired.has(key):
+				if cached.has("stitch"):
+					desired[key]["stitch"] = cached["stitch"]
+			else:
+				desired[key] = cached  # a leaf the balance split in
+		return
+	_bal_prev_trav.clear()
+	for key in desired:
+		_bal_prev_trav[key] = int(desired[key].lod)
+
 	# Integer leaf ids: (nside << 32) | ipix — the traversal walks thousands
-	# of neighbours here, no string keys on that path.
+	# of neighbours here, no string keys on that path. Neighbours are looked
+	# up once per leaf and kept for the mask pass.
 	var leaves: Dictionary = {}
 	for key in desired:
 		var d: Dictionary = desired[key]
 		leaves[(int(d.nside) << 32) | int(d.ipix)] = key
+	var nbs_of: Dictionary = {}
 	var edge_dirs := ["W", "E", "S", "N"]
 
 	# ── 2:1 balance ─────────────────────────────────────────────
@@ -2138,12 +2197,18 @@ func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 			var ipix: int = id & 0xFFFFFFFF
 			if nside < 4:
 				continue
-			var nb := HEALPix.get_neighbors_nest(nside, ipix)
+			var nb: Dictionary
+			if nbs_of.has(id):
+				nb = nbs_of[id]
+			else:
+				nb = HEALPix.get_neighbors_nest(nside, ipix)
+				nbs_of[id] = nb
 			for dname in edge_dirs:
 				var nip: int = nb[dname]
 				if nip < 0:
 					continue
-				if leaves.has((nside << 32) | nip) 						or leaves.has(((nside >> 1) << 32) | (nip >> 2)):
+				if leaves.has((nside << 32) | nip) \
+						or leaves.has(((nside >> 1) << 32) | (nip >> 2)):
 					continue
 				# Same level and parent absent: is an older ancestor the leaf?
 				var a_nside: int = nside >> 2
@@ -2158,32 +2223,47 @@ func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 					a_ipix >>= 2
 
 	# ── Stitch mask ─────────────────────────────────────────────
-	if is_server:
-		return
-	var edge_bits := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT,
-			PlanetChunk.STITCH_BOTTOM, PlanetChunk.STITCH_TOP]
-	for id in leaves:
-		var nside: int = id >> 32
-		if not PlanetChunk.edge_stitch_applies(planet_data, nside):
-			continue
-		var ipix: int = id & 0xFFFFFFFF
-		var mine: Dictionary = desired[leaves[id]]
-		var nb := HEALPix.get_neighbors_nest(nside, ipix)
-		var mask := 0
-		for i in edge_dirs.size():
-			var nip: int = nb[edge_dirs[i]]
-			if nip < 0 or leaves.has((nside << 32) | nip):
+	if not is_server:
+		var edge_bits := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT,
+				PlanetChunk.STITCH_BOTTOM, PlanetChunk.STITCH_TOP]
+		for id in leaves:
+			var nside: int = id >> 32
+			if not PlanetChunk.edge_stitch_applies(planet_data, nside):
 				continue
-			var pid := ((nside >> 1) << 32) | (nip >> 2)
-			if not leaves.has(pid):
-				continue
-			# The stitch bakes the parent grid at THIS chunk's resolution: it
-			# only meets a neighbour drawn at that same resolution. A coarser-
-			# quality neighbour (distance LOD) keeps the skirt, as before.
-			if int(desired[leaves[pid]].lod) == int(mine.lod):
-				mask |= edge_bits[i]
-		if mask != 0:
-			mine["stitch"] = mask
+			var ipix: int = id & 0xFFFFFFFF
+			var mine: Dictionary = desired[leaves[id]]
+			var nb: Dictionary
+			if nbs_of.has(id):
+				nb = nbs_of[id]
+			else:
+				nb = HEALPix.get_neighbors_nest(nside, ipix)
+			var mask := 0
+			for i in edge_dirs.size():
+				var nip: int = nb[edge_dirs[i]]
+				if nip < 0 or leaves.has((nside << 32) | nip):
+					continue
+				var pid := ((nside >> 1) << 32) | (nip >> 2)
+				if not leaves.has(pid):
+					continue
+				# The stitch bakes the parent grid at THIS chunk's resolution: it
+				# only meets a neighbour drawn at that same resolution. A coarser-
+				# quality neighbour (distance LOD) keeps the skirt, as before.
+				if int(desired[leaves[pid]].lod) == int(mine.lod):
+					mask |= edge_bits[i]
+			if mask != 0:
+				mine["stitch"] = mask
+
+	# Remember the answer for the next identical traversal: masks, the leaves
+	# the balance added and the ones it split away.
+	_bal_prev_out.clear()
+	_bal_prev_removed.clear()
+	for key in desired:
+		var d: Dictionary = desired[key]
+		if d.has("stitch") or not _bal_prev_trav.has(key):
+			_bal_prev_out[key] = d
+	for key in _bal_prev_trav:
+		if not desired.has(key):
+			_bal_prev_removed.append(key)
 
 
 ## Replace leaf [param id] by its four children in both [param desired] and
@@ -2995,13 +3075,20 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 			var corners_rail: Array = HEALPix.get_pixel_corners(info.nside, info.ipix)
 			var rail_diag: float = (corners_rail[0] * planet_data.radius).distance_to(
 				corners_rail[2] * planet_data.radius)
+			var rail_far: float = rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG
 			for grp in RailwayTrack.build_multimeshes(rail_xforms, lod):
 				var rail_mmi := MultiMeshInstance3D.new()
 				rail_mmi.multimesh = grp["mm"]
 				rail_mmi.position = grp["center"]
 				rail_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-				rail_mmi.visibility_range_end = rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG
-				rail_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				# One node per module tier, each visible in its own distance
+				# band (see RailwayTrack.build_multimeshes): the renderer
+				# picks the tier per group, the coarsest one up to the chunk's
+				# own limit.
+				var r_end: float = float(grp["range_end"])
+				rail_mmi.visibility_range_begin = float(grp["range_begin"])
+				rail_mmi.visibility_range_end = rail_far if r_end <= 0.0 else minf(r_end, rail_far)
+				rail_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				rail_mmi.layers = mi.layers
 				rails.add_child(rail_mmi)
 			_chunks_node.add_child(rails)
@@ -3076,7 +3163,15 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
 			_chunk_cache.save_mesh(key, lod, mesh, int(info.get("stitch", 0)))
 
+	# The road slabs and beds on their own node (after the cache write: the
+	# cached mesh keeps every surface), so they can be hidden on a coarse
+	# chunk the moment a finer one covers part of its area — the coarse
+	# ribbon rides the coarse relief, metres to tens of metres from the fine
+	# one, and a coarse chunk lingers while its other children load.
+	_split_road_surfaces(info, mi, mesh)
 	_active_chunks[key] = info
+	_count_active_descendant(info.nside, info.ipix, 1)
+	_refresh_road_visibility_around(info.nside, info.ipix)
 	var _elapsed_ms := (Time.get_ticks_usec() - _t0) / 1000.0
 	if PropNet.prof_on:
 		PropNet.prof_asm_calls += 1
@@ -3388,6 +3483,91 @@ func _sweep_orphan_bridges() -> void:
 		_bridge_nodes.erase(sk)
 
 
+## Move the road surfaces of [param mesh] (meta "road_surfaces", set by
+## PlanetChunk.generate_mesh) to a MeshInstance3D of their own under
+## [param mi], kept in info["roads_mi"]. The chunk mesh itself is left whole.
+func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh) -> void:
+	assert(mi.mesh == mesh)
+	var road_surfaces: PackedInt32Array = mesh.get_meta("road_surfaces", PackedInt32Array())
+	if road_surfaces.is_empty():
+		return
+	var roads_mesh := ArrayMesh.new()
+	var sorted := Array(road_surfaces)
+	sorted.sort()
+	for si: int in sorted:
+		if si < 0 or si >= mesh.get_surface_count():
+			continue
+		var arrays := mesh.surface_get_arrays(si)
+		var out_si := roads_mesh.get_surface_count()
+		roads_mesh.add_surface_from_arrays(mesh.surface_get_primitive_type(si), arrays)
+		roads_mesh.surface_set_material(out_si, mesh.surface_get_material(si))
+	# Then out of the chunk mesh, highest index first. This mesh is ours: the
+	# worker's fresh result, or a cache load with CACHE_MODE_IGNORE — and the
+	# cache file was written with every surface, just above.
+	sorted.reverse()
+	for si: int in sorted:
+		if si >= 0 and si < mesh.get_surface_count():
+			mesh.surface_remove(si)
+	mesh.remove_meta("road_surfaces")
+	var roads_mi := MeshInstance3D.new()
+	roads_mi.name = String(info.key) + "_roads"
+	roads_mi.mesh = roads_mesh
+	roads_mi.layers = mi.layers
+	roads_mi.cast_shadow = mi.cast_shadow
+	mi.add_child(roads_mi)
+	info["roads_mi"] = roads_mi
+
+
+## Number of ACTIVE chunks strictly finer than each ancestor pixel, keyed
+## (nside << 32) | ipix, maintained by _assemble_visual_chunk / _remove_chunk
+## — so "does a finer chunk cover part of this one" is one lookup, not a
+## walk of 340 descendant keys per chunk event.
+var _active_desc_count: Dictionary = {}
+
+
+## Add [param delta] to the finer-active count of every ancestor of (nside, ipix).
+func _count_active_descendant(nside: int, ipix: int, delta: int) -> void:
+	var ns := nside >> 1
+	var ip := ipix >> 2
+	while ns >= 1:
+		var id := (ns << 32) | ip
+		var n := int(_active_desc_count.get(id, 0)) + delta
+		if n <= 0:
+			_active_desc_count.erase(id)
+		else:
+			_active_desc_count[id] = n
+		if ns == 1:
+			break
+		ns >>= 1
+		ip >>= 2
+
+
+## Show the roads (slabs, beds, rail modules) of an active chunk only while no
+## finer active chunk covers part of it: the fine chunk's roads ride the fine
+## relief, the coarse chunk's ride the coarse one, and both drawn at once is
+## the "road floating above / sunk under the ground" of a lingering coarse
+## chunk. Called for (nside, ipix) and every ancestor whenever a chunk is
+## assembled or removed there.
+func _refresh_road_visibility_around(nside: int, ipix: int) -> void:
+	var ns := nside
+	var ip := ipix
+	while ns >= 1:
+		var key := _chunk_key_hp(ns, ip)
+		if _active_chunks.has(key):
+			var info: Dictionary = _active_chunks[key]
+			var show := int(_active_desc_count.get((ns << 32) | ip, 0)) == 0
+			var roads_mi: Variant = info.get("roads_mi")
+			if roads_mi != null and is_instance_valid(roads_mi):
+				(roads_mi as MeshInstance3D).visible = show
+			var rails: Variant = info.get("railway_rails")
+			if rails != null and is_instance_valid(rails):
+				(rails as Node3D).visible = show
+		if ns == 1:
+			break
+		ns >>= 1
+		ip >>= 2
+
+
 func _remove_chunk(key: String) -> void:
 	if not _active_chunks.has(key):
 		return
@@ -3414,6 +3594,12 @@ func _remove_chunk(key: String) -> void:
 	if info.has("collision_shape") and info.collision_shape:
 		info.collision_shape.queue_free()
 	_active_chunks.erase(key)
+	# A coarser chunk over this area may be showing again (its finer cover is
+	# gone): give it its roads back — or keep them hidden if another finer
+	# chunk remains. The roads node dies with mesh_instance (its child).
+	if not is_server and int(info.get("nside", 0)) > 0 and info.has("mesh_instance"):
+		_count_active_descendant(int(info.nside), int(info.ipix), -1)
+		_refresh_road_visibility_around(int(info.nside), int(info.ipix))
 
 
 func _clear_all_chunks() -> void:
