@@ -28,6 +28,14 @@ class_name RoadTerrain
 
 # ── Road type constants ──────────────────────────────────────────────
 
+## The road overlay (slabs, beds, tunnel tubes) is built only on a chunk
+## grid at least this fine — LOD 0 and 1, i.e. chunks within 50 km. Coarser
+## chunks (res 8 / 4, 50-200 km) drew a ribbon of a few pixels for hundreds
+## of draw calls and a build cost per chunk, like the far rail modules.
+const OVERLAY_MIN_RES := 16
+## Beyond this distance (m) a chunk's road node is not drawn at all: a 14.5 m
+## highway is a pixel-wide line at 15 km, a 4 m road half of one.
+const FAR_VISIBILITY_M := 15000.0
 ## Width of one driving lane, metres.
 const LANE_WIDTH_M := 3.5
 ## Central gap between the two carriageways of a lane-built road, metres.

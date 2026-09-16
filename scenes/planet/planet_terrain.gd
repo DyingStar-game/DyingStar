@@ -404,10 +404,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v45 → v46: a pruned tile now waits for its finest PUBLISHED
 		# ancestor (TileResidency.tile_available); v45 caches may hold
 		# chunks built on the floor levels and counted as legitimate climbs.
+		# v46 → v47: no road overlay on LOD 2-3 meshes (RoadTerrain.
+		# OVERLAY_MIN_RES); cached far meshes still carried theirs.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v46%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v47%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
@@ -1435,9 +1437,16 @@ func _update_terrain() -> void:
 	var _sorted_keys := desired.keys()
 	_sorted_keys.sort_custom(func(a: String, b: String) -> bool:
 		return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
+	# One snapshot of the pipeline's keys for the whole pass: the per-key
+	# query scanned the backlog, the assembly queue and the recipe waiters
+	# linearly — 570 keys × a 500-entry backlog at world entry, four times
+	# per second, inside the physics step. Keys this pass queues are added
+	# as it goes, so the snapshot stays exact.
+	var pipeline := _pipeline_keys()
 	for key in _sorted_keys:
-		if not _active_chunks.has(key) and not _is_chunk_in_pipeline(key):
+		if not _active_chunks.has(key) and not pipeline.has(key):
 			_try_create_or_defer(desired[key])
+			pipeline[key] = true
 
 	# Step 2 — Remove chunks no longer desired, but only after their
 	# replacements (finer children or coarser parent) are queued above.
@@ -1463,18 +1472,20 @@ func _update_terrain() -> void:
 
 	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
 	for key in desired:
-		if not _active_chunks.has(key) or _is_chunk_in_pipeline(key):
+		if not _active_chunks.has(key) or pipeline.has(key):
 			continue
 		var _act: Dictionary = _active_chunks[key]
 		var _want: Dictionary = desired[key]
 		if _act.lod != _want.lod:
 			_remove_chunk(key)
 			_try_create_or_defer(_want)
+			pipeline[key] = true
 		elif int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
 			# Only the seam edges change: keep the old mesh on screen (its
 			# skirt still covers the seam) until the re-baked one is assembled.
 			_want["_swap"] = true
 			_try_create_or_defer(_want)
+			pipeline[key] = true
 
 	# Bridges outlive the chunks that ask for them, so they are collected here
 	# rather than in _remove_chunk — after steps 1-3 have had their chance to
@@ -2033,17 +2044,30 @@ func _resolve_planet_data() -> PlanetData:
 # Quadtree traversal
 # ------------------------------------------------------------------
 
+## Per-node geometry of the quadtree, memoised: (nside << 32) | ipix →
+## [center_dir, chunk_diag]. The traversal visits the same ~800 nodes every
+## 0.25 s and each visit cost three pix2vec and the corner trigonometry —
+## 20 ms of the update, i.e. of the physics step. Bounded by the nodes ever
+## visited on this planet (a few thousand); cleared with the chunks.
+var _node_geom: Dictionary = {}
+
+
 func _traverse(nside: int, ipix: int, depth: int,
 		local_cam: Vector3, horizon_dot: float, out: Dictionary) -> void:
 
-	var center_dir := HEALPix.pix2vec_nest(nside, ipix)
+	var node_id := (nside << 32) | ipix
+	var geom: Array = _node_geom.get(node_id, [])
+	if geom.is_empty():
+		var cd := HEALPix.pix2vec_nest(nside, ipix)
+		# Approximate chunk diagonal using two diagonal corners
+		var corners: Array = HEALPix.get_pixel_corners(nside, ipix)
+		var corner_a: Vector3 = corners[0] * planet_data.radius  # SW
+		var corner_b: Vector3 = corners[2] * planet_data.radius  # NE
+		geom = [cd, corner_a.distance_to(corner_b)]
+		_node_geom[node_id] = geom
+	var center_dir: Vector3 = geom[0]
 	var center_pos := center_dir * planet_data.radius
-
-	# Approximate chunk diagonal using two diagonal corners
-	var corners: Array = HEALPix.get_pixel_corners(nside, ipix)
-	var corner_a: Vector3 = corners[0] * planet_data.radius  # SW
-	var corner_b: Vector3 = corners[2] * planet_data.radius  # NE
-	var chunk_diag: float = corner_a.distance_to(corner_b)
+	var chunk_diag: float = geom[1]
 
 	# LOD distance = max(surface distance to the chunk, camera altitude above
 	# the ACTUAL terrain surface).  Straight-line distance to the sea-level
@@ -2286,6 +2310,23 @@ func _split_leaf(desired: Dictionary, leaves: Dictionary, id: int, local_cam: Ve
 
 ## Returns true if the chunk key is anywhere in the async pipeline:
 ## recipe_waiters, mesh_tasks, mesh_task_backlog, or assemble_queue.
+## Every chunk key currently in the async pipeline, as one Dictionary — the
+## set _is_chunk_in_pipeline tests one key against, built once for a pass
+## that tests hundreds.
+func _pipeline_keys() -> Dictionary:
+	var out := {}
+	for mk: String in _mesh_tasks:
+		out[mk] = true
+	for item in _assemble_queue:
+		out[String(item.info.key)] = true
+	for item in _mesh_task_backlog:
+		out[String(item.key)] = true
+	for ek in _recipe_waiters:
+		for ck in _recipe_waiters[ek]:
+			out[String(ck)] = true
+	return out
+
+
 func _is_chunk_in_pipeline(key: String) -> bool:
 	if _mesh_tasks.has(key):
 		return true
@@ -2884,7 +2925,13 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 	vel /= float(_cam_history.size() - 1)
 	# Predict two seconds ahead (UPDATE_INTERVAL * frames / interval).
 	const LOOKAHEAD_S := 2.0
-	var predicted_cam := local_cam + vel * (LOOKAHEAD_S / UPDATE_INTERVAL)
+	var lead: Vector3 = vel * (LOOKAHEAD_S / UPDATE_INTERVAL)
+	# A camera that has not moved a chunk's worth predicts the leaf set the
+	# main traversal just built: a second full traversal for nothing (20 ms
+	# in the physics step, every 0.25 s, standing still).
+	if lead.length() < 50.0:
+		return
+	var predicted_cam := local_cam + lead
 
 	# Traverse from predicted position — only register chunks not already
 	# active or in pipeline (don't duplicate work already queued).
@@ -3075,7 +3122,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 			var corners_rail: Array = HEALPix.get_pixel_corners(info.nside, info.ipix)
 			var rail_diag: float = (corners_rail[0] * planet_data.radius).distance_to(
 				corners_rail[2] * planet_data.radius)
-			var rail_far: float = rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG
+			var rail_far: float = minf(rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG,
+					RailwaySettings.RAIL_FAR_VISIBILITY_M)
 			for grp in RailwayTrack.build_multimeshes(rail_xforms, lod):
 				var rail_mmi := MultiMeshInstance3D.new()
 				rail_mmi.multimesh = grp["mm"]
@@ -3514,6 +3562,12 @@ func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh)
 	roads_mi.mesh = roads_mesh
 	roads_mi.layers = mi.layers
 	roads_mi.cast_shadow = mi.cast_shadow
+	# Not drawn past RoadTerrain.FAR_VISIBILITY_M from the chunk's centre,
+	# like the rail modules. A flat cap, not a chunk-diagonal multiple: a
+	# LOD-0 chunk lives up to 5 km away and its road must not vanish before
+	# the chunk itself changes LOD.
+	roads_mi.visibility_range_end = RoadTerrain.FAR_VISIBILITY_M
+	roads_mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	mi.add_child(roads_mi)
 	info["roads_mi"] = roads_mi
 
@@ -3605,6 +3659,7 @@ func _remove_chunk(key: String) -> void:
 func _clear_all_chunks() -> void:
 	for key in _active_chunks.keys():
 		_remove_chunk(key)
+	_node_geom.clear()
 
 
 # ------------------------------------------------------------------

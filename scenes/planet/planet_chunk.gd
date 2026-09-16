@@ -234,6 +234,9 @@ static func generate_mesh(
 	# The BiomeQuery/roads_geojson path below is the transition fallback for
 	# planets that have not been re-exported yet (and for use_modifier_pack=off).
 	var has_road_overlap := not _road_arr.is_empty()
+	# Far LODs carry no road overlay at all (RoadTerrain.OVERLAY_MIN_RES);
+	# the carve and the relief flattening below stay, they are the ground.
+	var _road_overlay_wanted := res >= RoadTerrain.OVERLAY_MIN_RES
 	var rq = null
 	if not has_road_overlap and data.get_modifier_pack() == null:
 		rq = data.get_road_query()  # may be null
@@ -1842,7 +1845,7 @@ static func generate_mesh(
 	#
 	# Material selection: highways/roads → fixed asphalt; paths/trails →
 	# biome-adaptive (e.g. path_grass in meadow, path_dirt in forest).
-	if has_road_overlap:
+	if has_road_overlap and _road_overlay_wanted:
 		var _rd_m_per_deg := data.radius * PI / 180.0
 		var _rd_cbb: Array[Vector2]
 		if hp_mode:
