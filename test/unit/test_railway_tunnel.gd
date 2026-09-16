@@ -31,6 +31,13 @@ static func _east_m(dir: Vector3) -> float:
 	return (lon - LON0) * MPD * cos(deg_to_rad(LAT))
 
 
+## Metres north of the track's latitude — the lateral offset of a point
+## beside this east-west track.
+static func _north_m(dir: Vector3) -> float:
+	var lat := rad_to_deg(asin(clampf(dir.y, -1.0, 1.0)))
+	return (lat - LAT) * MPD
+
+
 func _sampler(f: Callable) -> Callable:
 	return func(dir: Vector3) -> float:
 		return float(f.call(_east_m(dir)))
@@ -124,6 +131,26 @@ func test_tube_and_headwalls_are_built_once_and_sit_on_the_track() -> void:
 			+ GradeSettings.PORTAL_COLLAR_M, 0.05, "the headwall's crown")
 	assert_almost_eq(min_along, 500.0 - GradeSettings.PORTAL_HOOD_M, 0.6, "the hood starts in front of the face")
 	assert_almost_eq(max_along, 2000.0 + GradeTunnel.HEADWALL_THICKNESS_M * 0.5, 1.0)
+	# The bore is closed at the bottom: a floor slab across its full width,
+	# just under the track, in the collision as well as on screen (the
+	# terrain under a tunnel is the mountain, dropped where it crosses the
+	# bore — without the slab the margin beside the bed opened on the void).
+	var floor_tris := 0
+	for i in range(0, faces.size(), 3):
+		var on_floor := true
+		var lat_lo := INF
+		var lat_hi := -INF
+		for j in 3:
+			var v: Vector3 = faces[i + j]
+			if absf(_r(v) - RADIUS - (100.0 - GradeTunnel.FLOOR_M)) > 0.05:
+				on_floor = false
+				break
+			var lat := _north_m((v + _origin).normalized())
+			lat_lo = minf(lat_lo, lat)
+			lat_hi = maxf(lat_hi, lat)
+		if on_floor and lat_lo < -bw + 0.1 and lat_hi > bw - 0.1:
+			floor_tris += 1
+	assert_gt(floor_tris, 0, "floor triangles span the bore, wall to wall")
 	# Determinism.
 	var again := GradeTunnel.build_piece(road["centerline"], road["_cum_lengths"], p,
 			RADIUS, _origin, false, true)

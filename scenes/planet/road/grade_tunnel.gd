@@ -8,7 +8,8 @@ class_name GradeTunnel
 ## stations sit on an absolute 4 m grid so two chunks sharing a tunnel meet
 ## on the same ring. The section is the bore — the ballast bed plus the
 ## cutting's floor margin on each side, so the walls stand on the carved floor
-## — under an arched ceiling, with TUNNEL_WALL_M of concrete around it. The
+## — under an arched ceiling, with TUNNEL_WALL_M of concrete around it, and
+## closed by a floor slab across the whole bore (FLOOR_M). The
 ## tube reaches PORTAL_HOOD_M out of the mountain at each end (a gallery in
 ## front of the face); the headwall is a thick collar planted in the face,
 ## wide enough to hide the ragged hole the terrain patch leaves around the
@@ -31,6 +32,14 @@ const HEADWALL_OFFSET_M := 0.0
 const HEADWALL_THICKNESS_M := 2.0
 ## Below the track level the walls reach into the bed.
 const FOOT_M := 0.5
+## The floor slab's level below the track. The bore is the bed plus a margin
+## on each side, and under a TUNNEL segment the terrain is left as it is (the
+## mountain, metres above) then dropped where it crosses the bore — so
+## between the bed's edge and each wall there was nothing at all, a view
+## straight through the planet. The slab spans the whole bore, just under
+## the ballast's top (SURFACE_THICKNESS_M above the track) and within the
+## bed's buried skirt (SKIRT_BURY_M below), so the join hides in the bed.
+const FLOOR_M := 0.05
 
 
 ## Inner bore half-width for a bed of half-width [param hw_m].
@@ -227,6 +236,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var inner := _inner_section(bw)
 	var outer := _outer_section(bw)
 	var collar := _collar_section(bw)
+	var floor_sec := PackedVector2Array([Vector2(bw, -FLOOR_M), Vector2(-bw, -FLOOR_M)])
 	var hood := GradeSettings.PORTAL_HOOD_M
 	for seg in profile["segments"]:
 		if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
@@ -250,6 +260,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 			_shell(acc, frames, stations, outer, origin, false)
 			# Feet: close the wall between the inner and outer bases.
 			_feet(acc, frames, inner, outer, origin)
+			# Floor: one slab across the bore, normal up (inward).
+			_shell(acc, frames, stations, floor_sec, origin, true)
 		# Headwalls, one per mouth, owned by the piece holding the mouth
 		# (half-open on the far end so two pieces never both build one).
 		for end in [[float(seg["lo"]), -1.0], [float(seg["hi"]), 1.0]]:
