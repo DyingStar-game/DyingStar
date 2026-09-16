@@ -185,14 +185,30 @@ func test_multimesh_groups_by_stretch() -> void:
 	if RailwayTrack.module_meshes().is_empty():
 		assert_eq(groups.size(), 0, "no asset, no group")
 		return
-	assert_eq(groups.size(), int(ceil(200.0 / RailwaySettings.RAIL_MMI_GROUP_M)))
+	# One MultiMesh per stretch AND per module tier, each tier in its own
+	# distance band: tier 0 from 0 m, tier 1 from the first range, the last
+	# tier open-ended (0.0) for the caller's own limit.
+	var tiers := RailwayTrack.module_meshes().size()
+	var stretches := int(ceil(200.0 / RailwaySettings.RAIL_MMI_GROUP_M))
+	assert_eq(groups.size(), stretches * tiers)
 	var total := 0
 	for g in groups:
 		var mm: MultiMesh = g["mm"]
 		total += mm.instance_count
 		# Instances are relative to the group's centre: small numbers.
 		assert_lt(mm.get_instance_transform(0).origin.length(), RailwaySettings.RAIL_MMI_GROUP_M)
-	assert_eq(total, xf.size())
+		var rb: float = g["range_begin"]
+		var re: float = g["range_end"]
+		assert_true(re == 0.0 or re > rb, "a tier's band is ordered")
+	assert_eq(total, xf.size() * tiers)
+	var first: Dictionary = groups[0]
+	assert_eq(float(first["range_begin"]), 0.0, "the finest tier starts at the group")
+	var last: Dictionary = groups[tiers - 1]
+	assert_eq(float(last["range_end"]), 0.0, "the coarsest tier is open-ended")
+	# A chunk at LOD 1 carries no tier 0 at all, and its first tier starts at 0.
+	var coarse := RailwayTrack.build_multimeshes(xf, 1)
+	assert_eq(coarse.size(), stretches * (tiers - 1))
+	assert_eq(float((coarse[0] as Dictionary)["range_begin"]), 0.0)
 
 
 func test_module_asset_has_three_tiers_at_the_expected_size() -> void:

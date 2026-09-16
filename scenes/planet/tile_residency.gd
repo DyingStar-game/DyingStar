@@ -85,13 +85,48 @@ static func tile_available(data: PlanetData, ipix: int, nside: int) -> bool:
 	# Les confondre faisait bâtir la collision sur le parent, puis l'écrire dans le cache
 	# disque, où plus rien ne pouvait la distinguer d'une forme correcte : le joueur se
 	# retrouvait posé des dizaines de mètres au-dessus du sol qu'il voyait.
-	# La carte de présence sait laquelle des deux c'est ; presence_of() ne bloque jamais.
-	if data.remote_source.presence_of(nside, ipix) == RemoteTileSource.PRESENCE_NO:
-		return data._finest_present_ancestor(ipix, nside).y > 0
-	# PRESENCE_YES  → la tuile existe et n'est pas là : attendre, request_chunk_tiles la met
-	#                 en file et le chunk repasse à la frame suivante.
-	# PRESENCE_UNKNOWN → la carte du shard n'est pas arrivée : ne pas deviner non plus.
-	return false
+	#
+	# Et « élaguée » ne suffit pas non plus : la garantie du mètre vaut pour le plus fin
+	# ancêtre PUBLIÉ, pas pour le plus fin ancêtre PRÉSENT ICI. Une tuile n1024 élaguée
+	# dont le parent n512 est publié mais pas téléchargé remontait jusqu'aux niveaux
+	# plancher (n128, texels de 1,6 km) : terrasses de plusieurs centaines de mètres dans
+	# le maillage, profils de ligne bâtis sur ce relief-là — différents d'une machine à
+	# l'autre selon ce que chacune avait sur disque (client 9 viaducs, serveur 8, même
+	# session du 2026-09-14), lits de route 350 m au-dessus du sol. On remonte donc la
+	# chaîne de présence : le premier niveau PUBLIÉ rencontré doit être là, sinon on
+	# attend ; un niveau inconnu, on attend aussi (request_chunk_tiles met la carte en
+	# file).
+	return finest_published_ancestor_state(data, ipix, nside) == PUBLISHED_PRESENT
+
+
+## États de [method finest_published_ancestor_state].
+const PUBLISHED_PRESENT := 1   # le plus fin niveau publié de la chaîne est sur disque
+const PUBLISHED_ABSENT := 0    # il est publié mais pas encore téléchargé
+const PUBLISHED_UNKNOWN := -1  # une carte de présence manque encore
+const PUBLISHED_NONE := -2     # rien de publié jusqu'à nside_min : sans espoir
+
+
+## Remonte la chaîne des ancêtres de (ipix, nside) — le niveau demandé compris — jusqu'au
+## premier que le service PUBLIE, et dit s'il est sur disque. Ne déclenche aucun réseau ;
+## une carte de présence absente est mise en file par presence_of() et rend
+## PUBLISHED_UNKNOWN. Avec [param queue] vrai, la tuile publiée absente est demandée.
+static func finest_published_ancestor_state(data: PlanetData, ipix: int, nside: int,
+		queue: bool = false) -> int:
+	var ns := nside
+	var ip := ipix
+	while ns >= data.export_nside_min:
+		var state: int = data.remote_source.presence_of(ns, ip)
+		if state == RemoteTileSource.PRESENCE_UNKNOWN:
+			return PUBLISHED_UNKNOWN
+		if state == RemoteTileSource.PRESENCE_YES:
+			if not data.load_chunk_floats(ip, ns).is_empty():
+				return PUBLISHED_PRESENT
+			if queue:
+				data.remote_source.queue(ns, ip)
+			return PUBLISHED_ABSENT
+		ns >>= 1
+		ip >>= 2
+	return PUBLISHED_NONE
 
 
 ## Met en file ce qui manque pour construire ce chunk, et rend true si tout est déjà là.
@@ -114,9 +149,8 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int,
 	if with_parent and hp_nside >= 2:
 		tiles.append_array(stitch_parent_tile_set(data, hp_nside, hp_ipix))
 	for t in tiles:
-		if tile_available(data, t.x, t.y):
+		if not data.load_chunk_floats(t.x, t.y).is_empty():
 			continue
-		ready = false
 		# Demander la plus fine tuile réellement publiée : sur un pack creux la tuile
 		# exacte peut ne pas exister, et c'est son ancêtre qu'il faut rapatrier.
 		#
@@ -125,18 +159,12 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int,
 		# Appelé pour chaque chunk en attente à chaque frame, cela a fait tomber le jeu
 		# à 0,2 FPS. Ici, une carte inconnue met le chunk en attente d'une frame de plus
 		# — le fil de téléchargement la rapatrie pendant ce temps.
-		var ns := t.y
-		var ip := t.x
-		while ns >= data.export_nside_min:
-			var state: int = data.remote_source.presence_of(ns, ip)
-			if state == RemoteTileSource.PRESENCE_UNKNOWN:
-				unknown = true
-				break
-			if state == RemoteTileSource.PRESENCE_YES:
-				data.remote_source.queue(ns, ip)
-				break
-			ns >>= 1
-			ip >>= 2
+		var state := finest_published_ancestor_state(data, t.x, t.y, true)
+		if state == PUBLISHED_PRESENT:
+			continue
+		ready = false
+		if state == PUBLISHED_UNKNOWN:
+			unknown = true
 	if PropNet.prof_on:
 		if ready:
 			PropNet.prof_gate_pass += 1

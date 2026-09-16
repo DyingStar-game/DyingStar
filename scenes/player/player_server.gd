@@ -942,6 +942,12 @@ func _physics_process_impl(delta: float) -> void:
 		PropNet.prof_slide_count += player.get_slide_collision_count()
 		PropNet.prof_slide_ticks += 1
 
+	# Movement trace (server.ini [debug] movement=true): what the body stands on and slides against,
+	# every 200 ms while it moves or is airborne — the step-up probe only speaks when it fires, and a
+	# body that hops by itself never asks it anything.
+	if SettingsManager.is_movement_debug():
+		_report_move()
+
 	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
 	# clients end the jump loop crisply (it can't overstay). The counter defeats delta compression.
 	var grounded_now: bool = player.is_on_floor()
@@ -1160,6 +1166,40 @@ func _try_start_step_up(move_dir: Vector3) -> bool:
 	_step_time = 0.0
 	_stepping = true
 	return true
+
+## One `[Move]` line per 200 ms while the body moves or is in the air: floor state, vertical speed
+## along up, and every slide collision of the last move (collider name, its normal's tilt from up,
+## penetration depth). A body hopping on the spot shows here as alternating on_floor=true/false with a
+## collider whose tilt is near the floor angle, or two colliders answering for the same ground.
+var _move_report_at: int = 0
+func _report_move() -> void:
+	var now: int = Time.get_ticks_msec()
+	if now - _move_report_at < 200:
+		return
+	var up: Vector3 = player.up_direction
+	var vel: Vector3 = player.get_real_velocity()
+	var vup: float = vel.dot(up)
+	var horizontal: float = (vel - up * vup).length()
+	var on_floor: bool = player.is_on_floor()
+	if on_floor and horizontal < BLOCKED_SPEED and absf(vup) < 0.05:
+		return  # standing still on the ground: nothing to say
+	_move_report_at = now
+	var cols := ""
+	for i in player.get_slide_collision_count():
+		var kc: KinematicCollision3D = player.get_slide_collision(i)
+		var col := kc.get_collider()
+		var cname: String = String(col.name) if col is Node else str(col)
+		var tilt: float = rad_to_deg(acos(clampf(kc.get_normal().dot(up), -1.0, 1.0)))
+		cols += " [%s tilt=%.1f depth=%.3f]" % [cname, tilt, kc.get_depth()]
+	var alt: float = -1.0
+	var grav: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+	if grav and grav.gravity_point:
+		alt = (player.global_position - grav.global_position).length()
+	print("[Move] on_floor=%s vup=%+.2f vh=%.2f floor_tilt=%.1f alt=%.2f pos=%s%s" % [
+			str(on_floor), vup, horizontal,
+			rad_to_deg(acos(clampf(player.get_floor_normal().dot(up), -1.0, 1.0))) if on_floor else -1.0,
+			alt, str(player.global_position.snapped(Vector3(0.01, 0.01, 0.01))), cols])
+
 
 ## Say ON THE SERVER why a step was turned down, when the movement debug is on.
 ##
@@ -2397,6 +2437,12 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
 	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
 		return  # at/near or above the surface — the collision handles it
+	# Under the RAW relief — but a cutting or a tunnel of a profiled line is
+	# ground carved away on purpose, and the body is standing on its floor.
+	# The dearer carved test only runs here, where the raw one has spoken.
+	surface_dist = pdata.carved_surface_dist(dir)
+	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
+		return
 	player.global_position = planet.global_position + planet_basis * (dir * surface_dist)
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	var radial: float = player.velocity.dot(up_world)

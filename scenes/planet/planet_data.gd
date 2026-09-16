@@ -767,14 +767,20 @@ func _climb_is_guess(nside: int, ipix: int) -> bool:
 		return bool(hit)
 	# Hors du verrou : presence_of prend le sien, et peut mettre une carte de shard en
 	# file. Deux threads qui se croisent ici calculent la même valeur — sans conséquence.
-	var state: int = remote_source.presence_of(nside, ipix)
-	if state == RemoteTileSource.PRESENCE_UNKNOWN:
-		# La carte du shard n'est pas encore là : on ne SAIT pas, donc on suppose le pire
-		# pour cette géométrie-ci — mais on ne le mémoïse SURTOUT pas. Figer un « inconnu »
-		# interdirait pour toujours de cacher les tuiles réellement élaguées de ce shard,
-		# c'est-à-dire la majorité d'un pack creux.
+	#
+	# Toute la chaîne, pas le seul niveau demandé : une tuile élaguée dont le parent
+	# publié n'est pas encore téléchargé fait remonter le sampler jusqu'au plancher, et
+	# ce relief-là n'a rien d'une reconstruction au mètre (voir
+	# TileResidency.tile_available). La remontée n'est légitime que si le plus fin
+	# ancêtre PUBLIÉ est celui qu'on lit, c'est-à-dire s'il est sur disque.
+	var state: int = TileResidency.finest_published_ancestor_state(self, ipix, nside)
+	if state == TileResidency.PUBLISHED_UNKNOWN or state == TileResidency.PUBLISHED_ABSENT:
+		# On ne SAIT pas encore (carte de shard en route) ou la tuile arrive : on suppose
+		# le pire pour cette géométrie-ci — mais on ne le mémoïse SURTOUT pas. Figer un
+		# « inconnu » interdirait pour toujours de cacher les tuiles réellement élaguées
+		# de ce shard, c'est-à-dire la majorité d'un pack creux.
 		return true
-	var guess: bool = state != RemoteTileSource.PRESENCE_NO
+	var guess: bool = state != TileResidency.PUBLISHED_PRESENT
 	_climb_mutex.lock()
 	_presence_guess[key] = guess
 	_climb_mutex.unlock()
@@ -2473,6 +2479,7 @@ func clear_grade_profiles() -> void:
 	_grade_starved.clear()
 	_grade_starved_tiles.clear()
 	_grade_tiles_by_fid.clear()
+	_carve_pieces_cache.clear()
 	_grade_built = false
 	_has_railways = -1
 	_has_profiled_lines = -1
@@ -2585,23 +2592,22 @@ func _grade_tiles_missing(tiles: Dictionary) -> Dictionary:
 		if remote_source == null:
 			hopeless = true
 			continue
-		if remote_source.presence_of(export_nside, ipix) == RemoteTileSource.PRESENCE_NO \
-				and not (pack_is_sparse() and _finest_present_ancestor(ipix, export_nside).y > 0):
+		# The finest PUBLISHED ancestor is what the profile must read (see
+		# TileResidency.tile_available): ask for it; nothing published at
+		# all down the chain is the hopeless case.
+		if TileResidency.finest_published_ancestor_state(self, ipix, export_nside, true) \
+				== TileResidency.PUBLISHED_NONE:
 			hopeless = true
-			continue
-		remote_source.queue(export_nside, ipix)
 	return {"missing": missing, "hopeless": hopeless}
 
 
 ## Is the export tile [param ipix] readable for the profile sampler — stored,
-## or pruned from a sparse pack with a present ancestor to climb to?
+## or pruned from a sparse pack with its finest PUBLISHED ancestor here to
+## climb to? The same rule as the chunk builders (TileResidency), so the
+## profile and the terrain it lays the bed on come from the same tiles —
+## on the client AND on the server.
 func _grade_tile_available(ipix: int) -> bool:
-	if not load_chunk_floats(ipix, export_nside).is_empty():
-		return true
-	if not pack_is_sparse():
-		return false
-	var up := _finest_present_ancestor(ipix, export_nside)
-	return up.y > 0 and not _climb_is_guess(export_nside, ipix)
+	return TileResidency.tile_available(self, ipix, export_nside)
 
 
 ## Blocking, budgeted fetch of the tiles under every profiled line (remote packs).
@@ -3389,6 +3395,60 @@ func crack_aware_surface_dist(dir: Vector3, nside: int = -1) -> float:
 		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
 			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0)
 	return radius + alt
+
+
+## The distance from the planet centre of the ground a body can STAND on
+## along [param dir]: [method crack_aware_surface_dist] lowered to what a
+## profiled line (railway, graded road) carved out of it — the floor of a
+## cutting, the bed inside a tunnel — where the point lies within the line's
+## band. Cracks and cuttings both remove ground; the raw relief knows neither.
+##
+## For the server's below-surface catch (PlayerServer): measured against the
+## raw relief, a player driving into a 10 m cutting or a tunnel was "3 m under
+## the ground" and thrown back onto the mountain every physics tick — the
+## body hopping in the air before the tarsis_3 highway tunnel (2026-09-16).
+## Costs the finest chunk's pieces and a nearest-segment walk: call it only
+## once the cheap raw test has said "below".
+var _carve_pieces_cache: Dictionary = {}
+func carved_surface_dist(dir: Vector3) -> float:
+	var raw := crack_aware_surface_dist(dir)
+	if not has_profiled_lines():
+		return raw
+	var nside: int = 1 << max_quadtree_depth
+	var ipix := HEALPix.vec2pix_nest(nside, dir)
+	# The pieces of the finest chunk and its neighbours, kept per chunk: a
+	# body in a tunnel asks every physics tick, and gathering them is the
+	# bulk of the 0.5 ms this costs.
+	var pieces: Array
+	if _carve_pieces_cache.has(ipix):
+		pieces = _carve_pieces_cache[ipix]
+	else:
+		pieces = GradeBed.gather_pieces(self, nside, ipix)
+		if _carve_pieces_cache.size() >= 64:
+			_carve_pieces_cache.clear()
+		_carve_pieces_cache[ipix] = pieces
+	if pieces.is_empty():
+		return raw
+	var lonlat := HEALPix.vec2lonlat(dir)
+	var q := GradeGeom.nearest_on_pieces(pieces, lonlat, radius * PI / 180.0)
+	if not q["hit"]:
+		return raw
+	var prof := get_grade_profile(int(q["fid"]))
+	if prof.is_empty():
+		return raw
+	var along := float(q["along"])
+	var lat_m := absf(float(q["lat_m"]))
+	var seg := GradeProfile.segment_at(prof, along)
+	if seg.is_empty():
+		return raw
+	var h := raw - radius
+	match int(seg["kind"]):
+		GradeSettings.Kind.GROUND, GradeSettings.Kind.GORGE:
+			h = GradeBed.carved_height(h, prof, along, lat_m)
+		GradeSettings.Kind.TUNNEL:
+			if lat_m <= GradeTunnel.bore_half_width(float(prof["hw_m"])):
+				h = minf(h, GradeProfile.z_track_at(prof, along))
+	return radius + h
 
 
 ## Whether the corundum default biome is what the ground is made of along
