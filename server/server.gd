@@ -5,7 +5,7 @@ signal populated_universe
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## Tick interval (frames) for the active-body chunk-pin sweep.
-const PIN_TICK_INTERVAL: int = 6
+const PIN_INTERVAL_MS: int = 250
 ## Prop type names in props_list that may contain RigidBody3D instances
 ## we want to pin chunks for.  "planets" intentionally excluded.
 const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
@@ -186,10 +186,8 @@ var _cull_indexed_total: int = -1
 ## safety-net coarse mesh) so a 17-planet boot doesn't load 836k shapes.
 var _zone_initialized: bool = false
 
-## Tick counter for the active-body chunk-pin sweep.  Runs every
-## PIN_TICK_INTERVAL frames in _process to refresh which planet chunks
-## must stay resident because an awake RigidBody3D is sitting on them.
-var _pin_tick_counter: int = 0
+## Wall-clock time (ms) of the last active-body chunk-pin sweep (every PIN_INTERVAL_MS in _process).
+var _pin_last_ms: int = 0
 ## Number of debug lines printed by the pin sweep so far (capped to keep
 ## logs readable).  Reset/incremented in _pin_node_to_planet_chunk.
 var _pin_debug_logged: int = 0
@@ -252,6 +250,132 @@ func _physics_process(_delta: float) -> void:
 ## the 2026-08 TPS investigation. One switch for the whole rig, resolved by PropNet (`--perf`, or
 ## `DS_PERF=1`, or `[debug] perf=true` in server.ini) — see the comment on PropNet.prof_on.
 var _perf_report: bool = PropNet.prof_on
+var _perf_census_counter: int = 4  # first census on the first report
+## server.gd _process sweeps (every PIN_INTERVAL_MS): chunk pins + mining planner, culler.
+var _perf_pins_usec: int = 0
+var _perf_planner_usec: int = 0
+var _perf_pins_players_usec: int = 0
+var _perf_pins_props_usec: int = 0
+var _perf_pins_apply_usec: int = 0
+var _perf_cull_usec: int = 0
+var _perf_sweeps: int = 0
+var _perf_census: Dictionary = {}
+## Two probe nodes bracketing every scripted _process of the tree (process_priority orders the WHOLE
+## tree): the span between them is what user scripts cost per frame; TIME_PROCESS minus that is the
+## engine's own idle work (internal processing of engine nodes, deferred calls, navigation sync).
+## Frame anatomy, from four probe nodes (first/last in _physics_process and in _process, via the
+## process priorities, which order the WHOLE tree). Per Main::iteration the sequence is
+##   [step 1: scripts phys | engine (nav physics, Jolt step)] ... [step n] [scripts process] [engine idle:
+##   deferred flush, nav sync, RenderingServer sync/draw, frame delay]
+## so with the timestamps of the four probes every frame splits into: scripted physics (A), engine
+## work between steps (B, ≈ Jolt), engine work from the last step to _process (C), scripted process (D),
+## engine idle tail to the next frame's first step (E). TIME_PROCESS = D + E − frame delay.
+var _perf_probe_first: Node = null
+var _perf_probe_last: Node = null
+var _perf_probe_phys_first: Node = null
+var _perf_probe_phys_last: Node = null
+var _perf_probe_frames: int = 0
+var _perf_t_phys_first: int = 0   # this frame's first step start
+var _perf_t_phys_step: int = 0    # current step's scripted start
+var _perf_t_phys_last: int = 0    # last step's scripted end
+var _perf_t_proc_first: int = 0
+var _perf_t_proc_last: int = 0    # previous frame's process end (0 = none yet)
+var _perf_steps_in_frame: int = 0
+var _perf_steps_total: int = 0
+var _perf_a_usec: int = 0
+var _perf_b_usec: int = 0
+var _perf_c_usec: int = 0
+var _perf_d_usec: int = 0
+var _perf_e_usec: int = 0
+
+## Per-script attribution of the physics step (`[debug] perf_bands=true`): every physics-processing
+## node whose process_physics_priority is 0 is moved into a priority BAND owned by its script, with a
+## probe node at the start of each band; the time between two probes is that band's scripts. Bands
+## start above 0 so nodes added after the last census (still at 0) run first and show as "unbanded".
+## It reorders _physics_process across scripts (not within one), which is why it is opt-in.
+const _BAND_BASE: int = 100000
+const _BAND_STEP: int = 1000
+var _bands_on: bool = SettingsManager._server_ini_flag("debug", "perf_bands")
+var _band_scripts: Array = []
+var _band_probes: Array = []
+var _band_usec: Array = []
+var _band_prev_t: int = 0
+var _band_unbanded_usec: int = 0
+
+class _PerfProbe extends Node:
+	var tick: Callable
+	var phys: bool = false
+	func _process(_d: float) -> void:
+		if not phys:
+			tick.call()
+	func _physics_process(_d: float) -> void:
+		if phys:
+			tick.call()
+
+func _perf_phys_first_tick() -> void:
+	var now: int = Time.get_ticks_usec()
+	if _perf_steps_in_frame == 0:
+		_perf_t_phys_first = now
+		if _perf_t_proc_last > 0:
+			_perf_e_usec += now - _perf_t_proc_last  # engine idle tail of the previous frame
+	else:
+		_perf_b_usec += now - _perf_t_phys_last  # engine between two steps (Jolt)
+	_perf_t_phys_step = now
+	_perf_steps_in_frame += 1
+
+func _perf_phys_last_tick() -> void:
+	var now: int = Time.get_ticks_usec()
+	_perf_a_usec += now - _perf_t_phys_step
+	_perf_t_phys_last = now
+	if not _band_scripts.is_empty():
+		_band_usec[_band_scripts.size() - 1] += now - _band_prev_t
+
+func _perf_band_tick(k: int) -> void:
+	var now: int = Time.get_ticks_usec()
+	if k == 0:
+		_band_unbanded_usec += now - _perf_t_phys_step
+	else:
+		_band_usec[k - 1] += now - _band_prev_t
+	_band_prev_t = now
+
+func _perf_band_index(label: String) -> int:
+	var k: int = _band_scripts.find(label)
+	if k < 0:
+		k = _band_scripts.size()
+		_band_scripts.append(label)
+		_band_usec.append(0)
+		var probe := _PerfProbe.new()
+		probe.tick = _perf_band_tick.bind(k)
+		probe.phys = true
+		probe.process_physics_priority = _BAND_BASE + k * _BAND_STEP
+		add_child(probe)
+		_band_probes.append(probe)
+	return k
+
+func _perf_probe_first_tick() -> void:
+	var now: int = Time.get_ticks_usec()
+	_perf_t_proc_first = now
+	if _perf_steps_in_frame > 0:
+		_perf_c_usec += now - _perf_t_phys_last
+	_perf_steps_total += _perf_steps_in_frame
+	_perf_steps_in_frame = 0
+
+func _perf_probe_last_tick() -> void:
+	var now: int = Time.get_ticks_usec()
+	_perf_d_usec += now - _perf_t_proc_first
+	_perf_t_proc_last = now
+	_perf_probe_frames += 1
+
+func _perf_make_probe(priority: int, tick: Callable, phys: bool) -> Node:
+	var probe := _PerfProbe.new()
+	probe.tick = tick
+	probe.phys = phys
+	if phys:
+		probe.process_physics_priority = priority
+	else:
+		probe.process_priority = priority
+	add_child(probe)
+	return probe
 var _perf_timer: float = 0.0
 var _perf_frames: int = 0
 ## Real time at the last report. `_perf_timer` accumulates the FIXED physics delta (1/60), so it
@@ -320,10 +444,17 @@ func _perf_tick(delta: float) -> void:
 		var pl = players_list[puuid]
 		if is_instance_valid(pl) and "is_npc" in pl and pl.is_npc:
 			npcs += 1
+	# NPC navmesh cache: boxes = shared bakes alive, q/inflight = bakes waiting / running, parses =
+	# main-thread geometry collections in the window (with their main-thread ms), bakes = bakes landed
+	# (with wall ms from collection start to publish), obst = registered obstacles (parked vehicles).
+	# With 50 NPCs on one spot this must read boxes=1 parses=1 bakes=1 then ~0 — it was 50 maps and
+	# ~5 bakes/s before the cache, and that alone held the server at 5 TPS.
+	var _nav: Dictionary = NpcNavCache.perf_snapshot(true)
 	print(("[Perf] %s up=%.0fs win=%.1fs tps=%.0f/%d fps=%.0f"
 			+ "  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
 			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d"
-			+ " | players=%d npcs=%d navmaps=%d | pending upd props=%d players=%d") % [
+			+ " | players=%d npcs=%d navmaps=%d | nav boxes=%d q=%d inflight=%d parses=%d(%.0fms) bakes=%d(%.0fms) obst=%d"
+			+ " | pending upd props=%d players=%d") % [
 		Time.get_time_string_from_system(),
 		float(Time.get_ticks_msec()) / 1000.0,
 		_wall_s,
@@ -337,6 +468,9 @@ func _perf_tick(delta: float) -> void:
 		awake, unfrozen, total,
 		chunks, planets_with_chunks, props_list["planets"].size(), loading, queued,
 		players_list.size(), npcs, NavigationServer3D.get_maps().size(),
+		_nav["boxes"], _nav["queued"], _nav["inflight"],
+		_nav["parses"], float(_nav["parse_usec"]) / 1000.0, _nav["bakes"], float(_nav["bake_usec"]) / 1000.0,
+		_nav["obstacles"],
 		props_update.size(), players_newposition.size(),
 	])
 	# Replication cost, split into the three layers the engine profiler conflates into one
@@ -416,6 +550,95 @@ func _perf_tick(delta: float) -> void:
 			_player_ms, _p_pre, _p_vault, _p_step, _p_move, _p_emit,
 			_player_ms - (_p_pre + _p_vault + _p_step + _p_move + _p_emit),
 		])
+		if _perf_probe_first == null:
+			_perf_probe_first = _perf_make_probe(-1000000, _perf_probe_first_tick, false)
+			_perf_probe_last = _perf_make_probe(1000000, _perf_probe_last_tick, false)
+			_perf_probe_phys_first = _perf_make_probe(-1000000, _perf_phys_first_tick, true)
+			_perf_probe_phys_last = _perf_make_probe(1000000, _perf_phys_last_tick, true)
+		# Who is running per frame. proc= (TIME_PROCESS) rose ~0.7 ms per NPC with nothing of ours
+		# instrumented to show for it: the answer is in which nodes process, by script and class.
+		# A full tree walk, so only every 5th report (10 s).
+		_perf_census_counter += 1
+		if _perf_census_counter >= 5:
+			_perf_census_counter = 0
+			_perf_node_census()
+		# The _process side of the main loop (TIME_PROCESS): what the Horizon socket cost, by message
+		# kind, and server.gd's own _process. Per wall second so it compares with [Perf/phys].
+		var _hz: Array = []
+		for k in PropNet.prof_horizon_by_type.keys():
+			_hz.append([k, PropNet.prof_horizon_by_type[k][0], PropNet.prof_horizon_by_type[k][1]])
+		_hz.sort_custom(func(a, b): return a[2] > b[2])
+		var _hz_txt: String = ""
+		for i in mini(6, _hz.size()):
+			_hz_txt += " %s=%d(%.0fms)" % [_hz[i][0], _hz[i][1], _hz[i][2] / 1000.0 / _wall_s]
+		var _pf: float = float(maxi(_perf_probe_frames, 1))
+		print(("[Perf/frame] %.1f frames/s, %.1f steps/frame | per frame ms: scripted phys=%.1f"
+				+ " engine between steps (Jolt)=%.1f last step->process=%.1f scripted process=%.1f"
+				+ " ENGINE IDLE TAIL=%.1f (nav sync=%.2f rs setup=%.2f) | TIME_PROCESS=%.1f TIME_PHYSICS(max step)=%.1f") % [
+			_perf_probe_frames / _wall_s, _perf_steps_total / _pf,
+			_perf_a_usec / 1000.0 / _pf, _perf_b_usec / 1000.0 / _pf, _perf_c_usec / 1000.0 / _pf,
+			_perf_d_usec / 1000.0 / _pf, _perf_e_usec / 1000.0 / _pf,
+			Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
+			RenderingServer.get_frame_setup_time_cpu(),
+			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+			Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		])
+		if _bands_on and not _band_scripts.is_empty():
+			var _steps: float = float(maxi(_perf_steps_total, 1))
+			var _rows: Array = []
+			for k in _band_scripts.size():
+				_rows.append([_band_scripts[k], _band_usec[k]])
+				_band_usec[k] = 0
+			_rows.sort_custom(func(a, b): return a[1] > b[1])
+			var _btxt: String = ""
+			for i in mini(12, _rows.size()):
+				_btxt += " %s=%.2f" % [_rows[i][0], _rows[i][1] / 1000.0 / _steps]
+			print("[Perf/bands] scripted physics per step (ms): unbanded=%.2f |%s" % [
+					_band_unbanded_usec / 1000.0 / _steps, _btxt])
+			_band_unbanded_usec = 0
+		var _sw: float = float(maxi(_perf_sweeps, 1))
+		print(("[Perf/proc] per wall second: horizon msgs=%.0f/s %.0fms | server.gd _process=%.0fms"
+				+ " (sweeps=%d: pins+planner=%.1fms each [players=%.1f planner=%.1f props=%.1f apply=%.1f];"
+				+ " cull=%.1fms each) | top:%s") % [
+			PropNet.prof_horizon_msgs / _wall_s, PropNet.prof_horizon_usec / 1000.0 / _wall_s,
+			PropNet.prof_server_process_usec / 1000.0 / _wall_s,
+			_perf_sweeps, _perf_pins_usec / 1000.0 / _sw, _perf_pins_players_usec / 1000.0 / _sw,
+			_perf_planner_usec / 1000.0 / _sw, _perf_pins_props_usec / 1000.0 / _sw,
+			_perf_pins_apply_usec / 1000.0 / _sw,
+			_perf_cull_usec / 1000.0 / _sw, _hz_txt if _hz_txt != "" else " none",
+		])
+		_perf_pins_usec = 0
+		_perf_planner_usec = 0
+		_perf_pins_players_usec = 0
+		_perf_pins_props_usec = 0
+		_perf_pins_apply_usec = 0
+		_perf_cull_usec = 0
+		_perf_sweeps = 0
+		_perf_probe_frames = 0
+		_perf_steps_total = 0
+		_perf_a_usec = 0
+		_perf_b_usec = 0
+		_perf_c_usec = 0
+		_perf_d_usec = 0
+		_perf_e_usec = 0
+		# NPCs: their whole tick (a subset of [Perf/player] total) and the NavigationServer query time
+		# inside it. `q/s` is the query rate: repath is 1/s per NPC; a stuck NPC adds 12 detour probes
+		# (each a closest-point + a path query) every 2.5 s, which on a large map is what eats the tick.
+		print(("[Perf/npc] tick=%.2fms/frame (%.0f calls/s) | nav queries=%.2fms/frame (%.0f q/s, %.3fms each)"
+				+ " | grav+orient=%.2f coverage=%.2f move_and_slide=%.2f emit=%.2f stuck=%.2f (ms/frame)") % [
+			PropNet.prof_npc_usec / 1000.0 / _fr, PropNet.prof_npc_calls / _wall_s,
+			PropNet.prof_npc_nav_usec / 1000.0 / _fr, PropNet.prof_npc_nav_queries / _wall_s,
+			(PropNet.prof_npc_nav_usec / 1000.0 / PropNet.prof_npc_nav_queries) if PropNet.prof_npc_nav_queries > 0 else 0.0,
+			PropNet.prof_npc_grav_usec / 1000.0 / _fr, PropNet.prof_npc_cov_usec / 1000.0 / _fr,
+			PropNet.prof_npc_move_usec / 1000.0 / _fr, PropNet.prof_npc_emit_usec / 1000.0 / _fr,
+			PropNet.prof_npc_stuck_usec / 1000.0 / _fr,
+		])
+		var _cv: Array = PropNet.prof_npc_cov
+		print(("[Perf/npc] coverage path per window: fast=%d | slow: no_cache=%d no_box=%d pending=%d"
+				+ " dirty/freed=%d periodic=%d outside_inner=%d | nav ms/frame: path=%.2f widen=%.2f detour=%.2f") % [
+			_cv[0], _cv[1], _cv[2], _cv[3], _cv[4], _cv[5], _cv[6],
+			PropNet.prof_npc_path_usec / 1000.0 / _fr, PropNet.prof_npc_widen_usec / 1000.0 / _fr,
+			PropNet.prof_npc_detour_usec / 1000.0 / _fr])
 		# The two candidate causes of the collision-query cost, side by side. `slides` above ~1 means
 		# move_and_slide keeps re-casting against an unstable contact; chunk load/unload counts show
 		# whether terrain colliders are being rebuilt under the walking player. Plus the gravity Area3D
@@ -442,6 +665,12 @@ func _perf_tick(delta: float) -> void:
 		PropNet.prof_reset()
 
 func _process(_delta: float) -> void:
+	var _tp: int = Time.get_ticks_usec() if _perf_report else 0
+	_process_impl()
+	if _perf_report:
+		PropNet.prof_server_process_usec += Time.get_ticks_usec() - _tp
+
+func _process_impl() -> void:
 	if check_pending_objects_timer == 20:
 		# every 20 frames, check pending players parenting
 		for pending_message in pending_messages_player_parenting.duplicate():
@@ -477,15 +706,67 @@ func _process(_delta: float) -> void:
 	else:
 		check_pending_objects_timer += 1
 
-	# Active-body chunk pinning.  At ~60 fps this fires every ~100 ms,
-	# refreshing which planet chunks must stay resident because an awake
-	# RigidBody3D is sitting on them.  See _refresh_active_body_pins().
-	_pin_tick_counter += 1
-	if _pin_tick_counter >= PIN_TICK_INTERVAL:
-		_pin_tick_counter = 0
+	# Active-body chunk pinning: refresh which planet chunks must stay resident because an awake
+	# RigidBody3D (or a player) is sitting on them.  See _refresh_active_body_pins().  Paced by WALL
+	# time, not frames: counted in frames it ran 10x/s at 60 fps and each sweep costs ~25 ms with
+	# 48 players — a quarter of the CPU, and a 25 ms stall every 6th frame that pushed the physics
+	# clock into catch-up.  Chunks load asynchronously over seconds anyway; 4 sweeps/s is plenty.
+	var _now_pins: int = Time.get_ticks_msec()
+	if _now_pins - _pin_last_ms >= PIN_INTERVAL_MS:
+		_pin_last_ms = _now_pins
+		var _tq: int = Time.get_ticks_usec() if _perf_report else 0
 		_refresh_active_body_pins()
+		if _perf_report:
+			var _tq2: int = Time.get_ticks_usec()
+			_perf_pins_usec += _tq2 - _tq
+			_tq = _tq2
 		_cull_settled_bodies()
+		if _perf_report:
+			_perf_cull_usec += Time.get_ticks_usec() - _tq
+			_perf_sweeps += 1
 
+
+## [Perf/nodes]: how many nodes process / physics-process, by script (or class when scriptless),
+## plus the internal-processing ones (engine nodes such as AnimationPlayer, NavigationAgent3D,
+## AudioStreamPlayer3D whose per-frame work never shows in any script counter).
+func _perf_node_census() -> void:
+	_perf_census = {"nodes": 0, "proc": {}, "phys": {}, "internal": {}, "areas": {}}
+	_perf_walk(get_tree().root)
+	var parts: Array = []
+	for key in ["proc", "phys", "internal", "areas"]:
+		var d: Dictionary = _perf_census[key]
+		var rows: Array = []
+		for k in d.keys():
+			rows.append([k, d[k]])
+		rows.sort_custom(func(a, b): return a[1] > b[1])
+		var txt: String = ""
+		var total: int = 0
+		for r in rows:
+			total += r[1]
+		for i in mini(8, rows.size()):
+			txt += " %s=%d" % [rows[i][0], rows[i][1]]
+		parts.append("%s=%d:%s" % [key, total, txt if txt != "" else " none"])
+	print("[Perf/nodes] total=%d | %s" % [_perf_census["nodes"], " | ".join(parts)])
+
+func _perf_walk(node: Node) -> void:
+	_perf_census["nodes"] += 1
+	var scr: Script = node.get_script()
+	var label: String = scr.resource_path.get_file() if scr != null else "<%s>" % node.get_class()
+	if node.is_processing():
+		_perf_census["proc"][label] = int(_perf_census["proc"].get(label, 0)) + 1
+	if node.is_physics_processing():
+		_perf_census["phys"][label] = int(_perf_census["phys"].get(label, 0)) + 1
+		if _bands_on and node.process_physics_priority == 0 and node != self and not (node is _PerfProbe):
+			node.process_physics_priority = _BAND_BASE + _perf_band_index(label) * _BAND_STEP + 1
+	if node.is_processing_internal() or node.is_physics_processing_internal():
+		_perf_census["internal"][label] = int(_perf_census["internal"].get(label, 0)) + 1
+	if node is Area3D and (node as Area3D).monitoring:
+		# Every monitoring area is a Jolt sensor whose overlaps are refreshed each step; a moving one
+		# (a player's detector) is a broadphase query per step. Counted by script and collision mask.
+		var akey: String = "%s(mask=%d)" % [label, (node as Area3D).collision_mask]
+		_perf_census["areas"][akey] = int(_perf_census["areas"].get(akey, 0)) + 1
+	for c in node.get_children(true):
+		_perf_walk(c)
 
 ## Sweep all RigidBody3D-based props, identify the planet chunk under
 ## each awake body, and push the resulting per-planet pin set so those
@@ -515,6 +796,7 @@ func _refresh_active_body_pins() -> void:
 	# real collision even before (or without) a Horizon zone assignment.
 	# The same walk feeds MiningZonePlanner: it needs exactly the chunk under each player, which
 	# _pin_node_to_planet_chunk is already computing here, so seeding costs no extra sweep.
+	var _tpa: int = Time.get_ticks_usec() if _perf_report else 0
 	_mining_planner.begin_sweep()
 	for player_uuid in players_list.keys():
 		var player_node = players_list[player_uuid]
@@ -523,11 +805,20 @@ func _refresh_active_body_pins() -> void:
 		if not (player_node is Node3D):
 			continue
 		_pin_node_to_planet_chunk(player_node as Node3D, pins_by_planet)
+		if "is_npc" in player_node and player_node.is_npc:
+			continue  # NPCs do not mine: no mining zone to plan around them (47 of them cost a sweep each)
 		var player_planet: Planet = _planet_ancestor_of(player_node as Node3D)
 		if player_planet != null:
+			var _tpl: int = Time.get_ticks_usec() if _perf_report else 0
 			_mining_planner.plan_for_player(
 				player_planet, player_node as Node3D, player_uuid as String)
+			if _perf_report:
+				_perf_planner_usec += Time.get_ticks_usec() - _tpl
 	_mining_planner.end_sweep()
+	if _perf_report:
+		var _tpb: int = Time.get_ticks_usec()
+		_perf_pins_players_usec += _tpb - _tpa
+		_tpa = _tpb
 
 	if _zone_initialized:
 		for ptype in PIN_PROP_TYPES:
@@ -550,6 +841,10 @@ func _refresh_active_body_pins() -> void:
 				# near the depot crates). Only FROZEN bodies can safely lose their ground.
 				_pin_node_to_planet_chunk(rb, pins_by_planet)
 
+	if _perf_report:
+		var _tpc: int = Time.get_ticks_usec()
+		_perf_pins_props_usec += _tpc - _tpa
+		_tpa = _tpc
 	# Push pin set to each planet (empty array clears pins).
 	for puuid in pins_by_planet.keys():
 		var planet_node = props_list["planets"][puuid]
@@ -564,6 +859,8 @@ func _refresh_active_body_pins() -> void:
 		for k in pins_by_planet[puuid].keys():
 			keys.append(k as String)
 		planet.planet_terrain.set_pinned_chunks(keys)
+	if _perf_report:
+		_perf_pins_apply_usec += Time.get_ticks_usec() - _tpa
 
 
 ## Physics activity freeze (Part A): freeze props that have SETTLED and are far from every player so
@@ -884,12 +1181,27 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 	# PlanetData.collision_detail_nside); export nside otherwise.
 	var nside: int = pd.collision_detail_nside()
 	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
-	# Pin the chunk under the body. At the fine collision nside (crack planets)
-	# each chunk is small (~sub-km), so pin 2 neighbour rings for a walkable
-	# margin that streams as the body moves. Coarse export chunks are ~100 km —
-	# one already covers the body amply, so no ring there.
+	var planet_pins: Dictionary = pins_by_planet[best_uuid]
+	for key in _pin_keys_for_tile(nside, ipix, nside > pd.export_nside):
+		planet_pins[key] = true
+
+
+## The chunk keys pinned by a body standing on HEALPix tile (nside, ipix): the tile itself, plus 2
+## neighbour rings at the fine collision nside (crack planets — each chunk is small, sub-km, so the
+## rings give a walkable margin that streams as the body moves; a coarse export chunk is ~100 km and
+## covers the body on its own). The ring is a pure function of the tile, so it is CACHED: the BFS
+## costs ~9 GDScript HEALPix neighbour lookups (~0.6 ms), and it used to run for each of 48 players
+## on every sweep — 28 ms per sweep, a quarter of the server's CPU, for tiles that never change.
+var _pin_ring_cache: Dictionary = {}
+const _PIN_RING_CACHE_MAX: int = 4096
+
+func _pin_keys_for_tile(nside: int, ipix: int, rings: bool) -> PackedStringArray:
+	var ck: String = "%d:%d:%d" % [nside, ipix, 1 if rings else 0]
+	var cached = _pin_ring_cache.get(ck)
+	if cached != null:
+		return cached
 	var pin_ipix := {ipix: true}
-	if nside > pd.export_nside:
+	if rings:
 		# BFS outward 2 rings over the HEALPix neighbour graph.
 		var frontier: Array = [ipix]
 		for _ring in 2:
@@ -902,8 +1214,13 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 						pin_ipix[nb] = true
 						next_frontier.append(nb)
 			frontier = next_frontier
+	var keys := PackedStringArray()
 	for pi in pin_ipix:
-		pins_by_planet[best_uuid]["hp_n%d_p%d" % [nside, pi]] = true
+		keys.append("hp_n%d_p%d" % [nside, pi])
+	if _pin_ring_cache.size() >= _PIN_RING_CACHE_MAX:
+		_pin_ring_cache.clear()  # a wanderer's trail; cheap to rebuild the few tiles in use
+	_pin_ring_cache[ck] = keys
+	return keys
 
 
 ## Helper for debug log: list the N closest planets and their distances.
@@ -1522,7 +1839,7 @@ func create_player(event: Dictionary) -> void:
 
 	spawned_entity_instance.set_uuid(player_uuid)
 	players_list.set(player_uuid, spawned_entity_instance)
-	# Ask for the collision under this player NOW rather than up to PIN_TICK_INTERVAL render frames from
+	# Ask for the collision under this player NOW rather than up to PIN_INTERVAL_MS from
 	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
 	# frame of pinning latency is a frame of frozen player. Idempotent — the sweep pushes the whole set,
 	# so calling it early cannot drop another player's pins.
