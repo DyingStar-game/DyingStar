@@ -531,6 +531,14 @@ var _scrub_last_sample: AudioStream = null
 var _wheels: Array[VehicleWheel3D] = []
 ## Tick counter for the grip diagnostic (see _log_wheel_contacts).
 var _grip_log_ticks: int = 0
+## Physics frame of the last _integrate_forces, i.e. of the last time the engine re-cast the wheel
+## rays (both run from the same body-state callback). A wheel's contact body is a RAW pointer inside
+## VehicleWheel3D that is only rewritten by that ray cast: while the body sleeps (parked truck) the
+## callback never runs, and once the terrain chunk under the wheels is swapped by a LOD/residency
+## change the pointer dangles — get_contact_body() then hands GDScript freed memory
+## ("Condition slot >= slot_max is true" from ObjectDB). Anything reading contact bodies must be
+## gated on this stamp being the current frame.
+var _wheel_contacts_frame: int = -1
 var _throttle: float = 0.0
 var _pilot: Node3D = null
 var _chase_cam: Node3D = null
@@ -554,6 +562,14 @@ var _net_last_parent_id: String = ""
 ## Consecutive server ticks the pilotless vehicle has been quasi-still — after
 ## 30 (0.5 s) the body is put to sleep to stop suspension micro-jitter.
 var _idle_still_ticks: int = 0
+## SERVER: true while this vehicle is registered as a PARKED obstacle with the NPC navmesh cache (asleep
+## with nobody at the wheel). A VehicleBody3D is a RigidBody: no navmesh bake ever sees it on its own.
+var _nav_parked: bool = false
+## Tick phase for the reduced-rate scans of a parked vehicle (see _physics_process_impl).
+var _parked_scan_phase: int = randi() % 10
+## Local AABB of the body's own compound collision, computed once per _rebuild (see nav_footprint_aabb).
+var _nav_footprint: AABB = AABB()
+var _nav_footprint_valid: bool = false
 var _net_throttle: float = 0.0  # pilot input relayed by the server (networked)
 var _net_steer: float = 0.0
 var _net_brake: bool = false
@@ -710,6 +726,7 @@ func _rebuild() -> void:
 	_wheels.clear()
 	_cargo_area = null
 	_cab_cam = null
+	_nav_footprint_valid = false  # the collision shapes are about to be regenerated
 	_build_collision()
 	if not _has_real_model():
 		_build_body_visual()  # procedural blockout only when there is no real GLB model
@@ -1975,10 +1992,23 @@ func _physics_process_impl(delta: float) -> void:
 		if not GameOrchestrator.is_server():
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
-		_apply_surface_grip()  # grip follows the surface under each wheel (bridge deck vs terrain)
-		_check_rollover_unlock()  # spill the load if the truck is tipped over
+		# Parked (asleep, no pilot) <-> moving edge for the NPC navmesh. Detected HERE, on the actual
+		# `sleeping` state, rather than where the settle block below sets it: Jolt also sleeps a body
+		# on its own and wakes it on any collision, and neither passes through that block.
+		var _parked_now: bool = sleeping and not is_instance_valid(_pilot)
+		if _parked_now != _nav_parked:
+			_nav_parked = _parked_now
+			_nav_obstacle_set_parked(_parked_now)
+		# A parked truck (asleep, nobody aboard) cannot change grip, tip over or shift its load between
+		# two ticks: the wheel-contact, rollover and bay scans run at 6 Hz instead of 60 (16 parked
+		# trucks cost ~1 ms of every physics step at the depot). Anything that would matter — a crate
+		# thrown into the bay, a collision — wakes the body, and the full cadence resumes.
+		_parked_scan_phase += 1
+		if not _nav_parked or _parked_scan_phase % 10 == 0:
+			_apply_surface_grip()  # grip follows the surface under each wheel (bridge deck vs terrain)
+			_check_rollover_unlock()  # spill the load if the truck is tipped over
+			_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
-		_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
 		# Settle & sleep an idle vehicle. Wheel-suspension micro-forces on the
 		# terrain trimesh otherwise keep the body awake forever, wandering by
 		# millimetres every tick — replicated to every client as endless
@@ -2035,6 +2065,10 @@ func _physics_process_impl(delta: float) -> void:
 ## does not simply gets the default, which is the value every wheel used to be
 ## given unconditionally — so this changes nothing until a surface asks it to.
 func _apply_surface_grip() -> void:
+	# No ray cast this frame (asleep / frozen / just woken): the contact bodies may point at freed
+	# colliders, and the grip cannot have changed anyway since the wheels did not move.
+	if _wheel_contacts_frame != Engine.get_physics_frames():
+		return
 	for wheel in _wheels:
 		var slip := wheel_friction_slip_default
 		if wheel.is_in_contact():
@@ -2360,7 +2394,77 @@ func _exit_tree() -> void:
 	if Engine.is_editor_hint():
 		return
 	if _is_networked() and GameOrchestrator.is_server():
+		if _nav_parked:
+			_nav_parked = false
+			_nav_obstacle_set_parked(false)  # a despawned truck must stop blocking NPCs
 		emit_signal("hs_server_prop_delete", uuid, type_name)
+
+# ------------------------------------------------------------------------------
+# NPC navigation: a parked vehicle is an obstacle
+# ------------------------------------------------------------------------------
+
+## SERVER: register / unregister this vehicle's footprint as a carved obstacle with the NPC navmesh
+## cache and mark the boxes under it for a re-bake — both when it parks (NPCs must walk around it) and
+## when it drives off (the hole must close). Only PARKED vehicles count: a moving truck would leave a
+## trail of stale holes behind it, and NPCs do not path around moving things anyway.
+func _nav_obstacle_set_parked(on: bool) -> void:
+	var bb: AABB = _nav_footprint_get()
+	if not bb.has_volume():
+		return  # no collision yet (bench / not rebuilt): nothing to register
+	if on:
+		var lo := bb.position
+		var hi := bb.end
+		NpcNavCache.set_static_obstacle(self, PackedVector3Array([
+			Vector3(lo.x, 0.0, lo.z), Vector3(hi.x, 0.0, lo.z), Vector3(hi.x, 0.0, hi.z), Vector3(lo.x, 0.0, hi.z),
+		]), lo.y, bb.size.y, true)
+	else:
+		NpcNavCache.clear_static_obstacle(self)
+	NpcNavCache.invalidate_around_all(global_position, Vector2(bb.size.x, bb.size.z).length() * 0.5 + 2.0)
+
+## The body's own compound collision as one local AABB, computed once per _rebuild.
+func _nav_footprint_get() -> AABB:
+	if not _nav_footprint_valid:
+		var shapes: Array = []
+		for c in get_children():
+			if c is CollisionShape3D:
+				shapes.append(c)
+		_nav_footprint = nav_footprint_aabb(shapes)
+		_nav_footprint_valid = true
+	return _nav_footprint
+
+## Merged local AABB of a list of CollisionShape3D nodes (each corner passed through the node's own
+## transform). Only the body's DIRECT CollisionShape3D children belong here — the seat / cargo / loading
+## zones are Area3D grandchildren and must not fatten the footprint. Boxes and convex hulls are exact;
+## anything else is measured through its debug mesh.
+static func nav_footprint_aabb(shapes: Array) -> AABB:
+	var out := AABB()
+	var first := true
+	for cs in shapes:
+		if not (cs is CollisionShape3D) or (cs as CollisionShape3D).shape == null:
+			continue
+		var shape: Shape3D = (cs as CollisionShape3D).shape
+		var corners := PackedVector3Array()
+		if shape is BoxShape3D:
+			var h: Vector3 = (shape as BoxShape3D).size * 0.5
+			corners = _aabb_corners(AABB(-h, h * 2.0))
+		elif shape is ConvexPolygonShape3D:
+			corners = (shape as ConvexPolygonShape3D).points
+		else:
+			corners = _aabb_corners(shape.get_debug_mesh().get_aabb())
+		for c: Vector3 in corners:
+			var w: Vector3 = (cs as CollisionShape3D).transform * c
+			if first:
+				out = AABB(w, Vector3.ZERO)
+				first = false
+			else:
+				out = out.expand(w)
+	return out
+
+static func _aabb_corners(bb: AABB) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for i in 8:
+		out.append(bb.get_endpoint(i))
+	return out
 
 ## Client: apply the replicated state (position/rotation/pilot) from the server.
 func client_channel_data_update(data: Dictionary) -> void:
@@ -2673,6 +2777,7 @@ func _apply_drive(delta: float) -> void:
 ## suspension keeps holding the truck up. Stays DYNAMIC: a collision impulse is far bigger than
 ## handbrake_hold * step, so a hit still pushes it (it then re-settles).
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	_wheel_contacts_frame = Engine.get_physics_frames()  # wheel rays re-cast in this same callback
 	# Capture the real "up" from the gravity acting on us (radial on a planet, world-up on the bench,
 	# zero in space). This is the ONLY place the actual gravity vector is exposed. Used by the rollover
 	# check + reset_upright, which must measure tilt against the LOCAL vertical, not world Y — at

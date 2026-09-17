@@ -82,6 +82,7 @@ func _process(delta: float) -> void:
 			if peer.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
 				# print("SERVER - Received packet: %s" % [packet_text])
+				var _th: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 				var message = JSON.parse_string(packet_text)
 				if message != null:
 					# Horizon's own clock, on the packet it just sent. Feeding it here rather than in
@@ -91,6 +92,8 @@ func _process(delta: float) -> void:
 					if message is Dictionary and message.has("timestamp"):
 						Globals.sync_clock(float(message["timestamp"]))
 					dispatch_horizon_message(message)
+					if PropNet.prof_on:
+						_prof_horizon(message, Time.get_ticks_usec() - _th)
 					if devmode:
 						_devmode_horizon_mapping(message)
 			else:
@@ -250,6 +253,26 @@ func dispatch_horizon_message(message: Dictionary):
 				NetworkOrchestrator.network_agent.player_move(message)
 			"action":
 				NetworkOrchestrator.network_agent.player_action(message)
+
+## [Perf] accounting of one Horizon message: parse + dispatch time under a key naming what it was
+## (namespace/event, plus the object type or the player action name), so the proc= column of the
+## [Perf] line can be attributed. 47 NPC brains chatter a lot; this says what that costs.
+func _prof_horizon(message: Variant, usec: int) -> void:
+	PropNet.prof_horizon_msgs += 1
+	PropNet.prof_horizon_usec += usec
+	var key: String = "?"
+	if message is Dictionary:
+		key = str(message.get("namespace", "?")) + "/" + str(message.get("event", "?"))
+		var data: Variant = message.get("data")
+		if data is Dictionary:
+			if data.has("object_type"):
+				key += "/" + str(data["object_type"])
+			elif data.has("action"):
+				key += "/" + str(data["action"])
+	var entry: Array = PropNet.prof_horizon_by_type.get(key, [0, 0])
+	entry[0] += 1
+	entry[1] += usec
+	PropNet.prof_horizon_by_type[key] = entry
 
 func send_message(message: Dictionary, message_type: String):
 	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:

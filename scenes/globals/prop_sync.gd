@@ -113,11 +113,24 @@ func _on_host_sleeping_state_changed() -> void:
 	var rb: RigidBody3D = body
 	set_physics_process(not rb.sleeping or PropNet.rides_parent(rb))
 
+## A host that is NOT a RigidBody3D (StaticBody3D shelves and rocks, Node3D props) never moves on its
+## own, so its tick can only ever find the pose it found last time — yet ~200 of them cost ~2.6 ms of
+## every physics step at the depot, for zero emits. They are sampled at 60 / STATIC_TICK_EVERY Hz
+## instead; a script that moves one is still replicated within a sixth of a second. Never applied while
+## the host rides a Player / Vehicle (a carried prop re-sends every tick on purpose, see server_tick).
+const STATIC_TICK_EVERY: int = 10
+var _static_phase: int = randi() % STATIC_TICK_EVERY
+
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 	if uuid == "":
 		return  # not networked yet (e.g. an in-scene placeholder before/without dispatch) — don't replicate
+	var host := _body()
+	if host != null and not (host is RigidBody3D) and not PropNet.rides_parent(host):
+		_static_phase += 1
+		if _static_phase % STATIC_TICK_EVERY != 0:
+			return
 	if PropNet.prof_on:
 		# Measured HERE, not inside server_tick: this is the inclusive per-call cost (body + emit +
 		# server.gd's handler), which is exactly what the engine profiler claimed was 5.9 ms.

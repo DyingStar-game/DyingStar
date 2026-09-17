@@ -113,6 +113,32 @@ static var prof_p_vault_usec: int = 0 # _try_start_vault -> VaultProbe.probe (up
 static var prof_p_step_usec: int = 0  # _try_start_step_up
 static var prof_p_move_usec: int = 0  # move_and_slide
 static var prof_p_emit_usec: int = 0  # the hs_server_move replication at the end
+## NPC slice of the player tick: the whole _npc_physics_process, and inside it the NavigationServer
+## queries (map_get_path / map_get_closest_point from repath, corner widening, detour sampling, snap).
+## A crowd of STUCK NPCs samples 12 detour paths each every 2.5 s — that is the number to watch.
+static var prof_npc_usec: int = 0
+static var prof_npc_calls: int = 0
+static var prof_npc_nav_usec: int = 0
+static var prof_npc_nav_queries: int = 0
+## Split of prof_npc_nav_usec: map_get_path itself, corner widening (closest-point probes), detours.
+static var prof_npc_path_usec: int = 0
+static var prof_npc_widen_usec: int = 0
+static var prof_npc_detour_usec: int = 0
+## Finer split of the NPC tick (all per window, usec): gravity + orientation, coverage bookkeeping
+## (_npc_ensure_coverage), move_and_slide, replication (emit_move), stuck watchdog + detours.
+static var prof_npc_grav_usec: int = 0
+static var prof_npc_cov_usec: int = 0
+static var prof_npc_move_usec: int = 0
+static var prof_npc_emit_usec: int = 0
+static var prof_npc_stuck_usec: int = 0
+## Why _npc_ensure_coverage left its fast path: [fast, no_cache, no_box, pending, dirty_or_freed, periodic, outside_inner]
+static var prof_npc_cov: Array = [0, 0, 0, 0, 0, 0, 0]
+## Main-loop _process side (TIME_PROCESS): Horizon message dispatch, by "namespace/event[/type]"
+## key -> [count, usec], plus server.gd's own _process. proc= in [Perf] had nobody to blame.
+static var prof_horizon_msgs: int = 0
+static var prof_horizon_usec: int = 0
+static var prof_horizon_by_type: Dictionary = {}
+static var prof_server_process_usec: int = 0
 # Étape 0d: 97% of the walking cost is collision queries (engine + move_and_slide). These counters
 # discriminate between the two candidate causes — a move_and_slide that keeps re-iterating against an
 # unstable contact, versus terrain collision chunks being built/freed under the walking player.
@@ -206,6 +232,23 @@ static func prof_reset() -> void:
 	prof_p_step_usec = 0
 	prof_p_move_usec = 0
 	prof_p_emit_usec = 0
+	prof_npc_usec = 0
+	prof_npc_calls = 0
+	prof_npc_nav_usec = 0
+	prof_npc_nav_queries = 0
+	prof_npc_path_usec = 0
+	prof_npc_widen_usec = 0
+	prof_npc_detour_usec = 0
+	prof_npc_grav_usec = 0
+	prof_npc_cov_usec = 0
+	prof_npc_move_usec = 0
+	prof_npc_emit_usec = 0
+	prof_npc_stuck_usec = 0
+	prof_npc_cov = [0, 0, 0, 0, 0, 0, 0]
+	prof_horizon_msgs = 0
+	prof_horizon_usec = 0
+	prof_horizon_by_type.clear()
+	prof_server_process_usec = 0
 	prof_slide_count = 0
 	prof_slide_ticks = 0
 	prof_chunk_loads = 0
