@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="VehicleEngineSpec" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/vehicles/vehicle_engine_spec.gd" id="1_spec"]
+
+[resource]
+script = ExtResource("1_spec")
+display_name = "T1 Electric Motor"
+kind = 0
+tier = 1
+mass_kg = 120.0
+propulsion = 0
+power_w = 100000.0
+torque_nm = 600.0
+efficiency = 0.9
