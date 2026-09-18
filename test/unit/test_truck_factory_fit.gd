@@ -80,3 +80,71 @@ func test_wheel_radius_follows_the_sheet() -> void:
 	# revert to the old 0.34.
 	assert_almost_eq(_truck.wheel_radius, 0.30, 0.001,
 			"wheel radius must follow the sheet, not the current mesh")
+
+
+func test_truck_has_four_generic_bays() -> void:
+	# The four hatches are four identical boxes, so no bay declares what it takes. How many engines
+	# the chassis will run is the CHASSIS's business (max_engines), which keeps game design out of
+	# the scene and keeps a bay's node name — the key of the persisted table — a statement about
+	# WHERE it is, never about what someone put in it.
+	var bays: Array = _truck.bays().all()
+	assert_eq(bays.size(), 4, "the mini truck model carries four hatches")
+	for b in bays:
+		assert_ne(b.door_id, "", "every bay names the hatch guarding it: %s" % b.name)
+		assert_true(b.is_free(), "a bay starts empty: %s" % b.name)
+		assert_false("Engine" in str(b.name) or "Battery" in str(b.name),
+				"a bay is named for its place, not its contents: %s" % b.name)
+
+
+func test_the_chassis_caps_the_engine_count_at_the_sheet_figure() -> void:
+	# The sheet says "Nb moteur T1 = 3" for the MVP. With four bays available, something has to
+	# refuse the fourth engine, and it has to say WHY — a refusal the player cannot read is
+	# indistinguishable from a bug.
+	assert_eq(_truck.max_engines, 3, "the MVP column of the sheet says 3 T1 motors")
+	var bays := _truck.bays()
+	bays.max_engines = _truck.max_engines
+	var engine := VehicleEngineSpec.new()
+	engine.display_name = "T1 Electric Motor"
+	assert_eq(bays.fitted_count(VehicleComponentSpec.Kind.ENGINE), 0, "nothing fitted yet")
+	assert_eq(bays.refuse_reason(engine), "", "an empty chassis takes an engine")
+	assert_ne(bays.refuse_reason(null), "", "and refuses something that is not a part at all")
+	# A kind with no limit declared is never refused, so shipping a battery needs no new rule.
+	var battery := VehicleComponentSpec.new()
+	battery.kind = VehicleComponentSpec.Kind.BATTERY
+	assert_eq(bays.limit_for(VehicleComponentSpec.Kind.BATTERY), -1, "no cap on batteries yet")
+	assert_eq(bays.refuse_reason(battery), "", "so a battery is accepted")
+
+
+func test_every_bay_hatch_has_a_handle_to_open_it() -> void:
+	# A bay names the hatch guarding it by door_id; without a matching VehicleDoorHandle that hatch
+	# can never be opened, so the bay would be sealed for good — and nothing would say why.
+	var handles: Array = _truck.find_children("*", "VehicleDoorHandle", true, false)
+	var by_door := {}
+	for h in handles:
+		by_door[h.door_id] = h
+	for b in _truck.bays().all():
+		assert_true(by_door.has(b.door_id),
+				"%s is guarded by '%s', which needs a handle" % [b.name, b.door_id])
+	# The two cab doors keep theirs, and each bay adds one: six in all.
+	assert_eq(handles.size(), 6, "two cab doors plus four hatches")
+
+
+func test_hatch_meshes_named_by_the_handles_exist_in_the_model() -> void:
+	# door_id is resolved against the GLB by NAME. A typo fails silently: the door simply never
+	# moves, and the handle still answers the player.
+	#
+	# Looked up directly rather than through Vehicle._door_mesh(), which goes via _find_model_root()
+	# and returns null outside the tree — the truck here is instantiated but never added, on
+	# purpose. Asking the scene for the names is the same question without the dependency.
+	for h in _truck.find_children("*", "VehicleDoorHandle", true, false):
+		assert_true(_model_has_node_named(h.door_id),
+				"the model has no mesh named '%s'" % h.door_id)
+
+
+## Is there a node of that name anywhere under the truck? Case-insensitive, like _door_mesh().
+func _model_has_node_named(wanted: String) -> bool:
+	var low := wanted.to_lower()
+	for n in _truck.find_children("*", "Node3D", true, false):
+		if str(n.name).to_lower() == low:
+			return true
+	return false

@@ -129,6 +129,11 @@ const SCRUB_SAMPLE_S: float = 0.5
 ## Ground rolling resistance: 0.001 on good road, 0.01 default, 0.3 on soft sand. A per-surface
 ## value could come from SurfaceProbe later; one number is enough while nothing samples it.
 @export var rolling_coefficient: float = 0.01
+## How many engines this chassis will run — the sheet's "Nb moteur T1" per vehicle. It belongs to
+## the CHASSIS, not to any one bay: the truck's four hatches are four identical boxes, and typing a
+## kind into each would freeze game design into a scene. -1 = no limit. Other kinds of component
+## get their own line in _component_limit() when they ship.
+@export var max_engines: int = 3
 ## Air density (kg/m3) where the vehicle drives. Sandbox is 1.26 at sea level. Could later be read
 ## from the planet's atmosphere; it only matters once a chassis is drag-limited rather than
 ## engine-limited, which the MVP truck is not.
@@ -634,6 +639,9 @@ var _powertrain := VehiclePowertrain.new()
 ## list changes, never per frame. _sync_powertrain runs at 60 Hz from _apply_drive, and walking the
 ## fitted engines in there would show up in PropNet.prof_vehicle_usec across every truck at once.
 var _drive_spec := VehicleDriveSpec.new()
+## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
+## purpose — see VehicleComponentBays.
+var _bays: VehicleComponentBays = null
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
@@ -1804,7 +1812,12 @@ func _apply_door(door_id: String, open: bool, sfx: bool = true) -> void:
 			_anim.play(clip)
 		return
 	var angle: float = handle.open_angle_deg if handle != null else door_open_angle_deg
-	var tw := _swing_door(door_id, open, angle, reverse, not sfx)
+	# Per-door hinge when the handle names one, else the vehicle's: a cab door turns about the
+	# vertical and a bay hatch usually does not.
+	var axis: Vector3 = door_hinge_axis
+	if handle != null and handle.hinge_axis.length_squared() > 0.000001:
+		axis = handle.hinge_axis
+	var tw := _swing_door(door_id, open, angle, reverse, axis, not sfx)
 	if not sfx:
 		return  # late-join replay: nobody just moved it, so there is nothing to hear
 	if open or tw == null:
@@ -1842,7 +1855,7 @@ func _play_door_sfx(door_id: String, open: bool) -> void:
 ## Returns the Tween doing the swinging, or null when the door was put in place at once — the
 ## caller uses that to decide whether a closing clang has to wait for the leaf to land.
 func _swing_door(door_id: String, open: bool, angle_deg: float, reverse: bool,
-		instant: bool = false) -> Tween:
+		axis: Vector3, instant: bool = false) -> Tween:
 	var door := _door_mesh(door_id)
 	if door == null:
 		return null
@@ -1858,26 +1871,26 @@ func _swing_door(door_id: String, open: bool, angle_deg: float, reverse: bool,
 	var from_deg: float = float(door.get_meta("swing_deg", 0.0))
 	if instant or door_swing_secs <= 0.0 or not is_inside_tree() \
 			or is_equal_approx(from_deg, target_deg):
-		_set_door_angle(target_deg, door)
+		_set_door_angle(target_deg, door, axis)
 		return null
 	# Time it by the distance actually left, so shutting a half-open door does not take as long as
 	# shutting a fully open one.
 	var span: float = absf(target_deg - from_deg) / maxf(absf(angle_deg), 1.0)
 	var tw := create_tween()
 	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw.tween_method(_set_door_angle.bind(door), from_deg, target_deg, door_swing_secs * span)
+	tw.tween_method(_set_door_angle.bind(door, axis), from_deg, target_deg, door_swing_secs * span)
 	_door_tweens[door_id] = tw
 	return tw
 
 ## Put a door mesh at a hinge angle (deg) and remember it: that angle is the swing's state, and
 ## the next one starts from it. transform.basis = … on a Node3D is a no-op (transform returns a
 ## copy), so copy-modify-assign.
-func _set_door_angle(deg: float, door: Node3D) -> void:
+func _set_door_angle(deg: float, door: Node3D, axis: Vector3) -> void:
 	if not is_instance_valid(door):
 		return
 	var rest: Basis = door.get_meta("rest_basis")
 	var t := door.transform
-	t.basis = rest.rotated(door_hinge_axis.normalized(), deg_to_rad(deg))
+	t.basis = rest.rotated(axis.normalized(), deg_to_rad(deg))
 	door.transform = t
 	door.set_meta("swing_deg", deg)
 
@@ -3051,19 +3064,11 @@ func is_headlights_on() -> bool:
 func _forward_speed_kmh() -> float:
 	return -global_transform.basis.z.dot(linear_velocity) * 3.6
 
-## The engines currently driving this vehicle. For now the factory fit only; the component slots
-## will add to this list once they exist, and this is the ONLY place that will need to know.
-func _fitted_engines() -> Array[VehicleEngineSpec]:
-	var out: Array[VehicleEngineSpec] = []
-	for e in factory_engines:
-		if e != null:
-			out.append(e)
-	return out
-
 ## Rebuild the sizing model from what is fitted RIGHT NOW. Called when the engine list changes —
 ## never per frame, see _drive_spec.
 func _rebuild_drive_spec() -> void:
-	_drive_spec.motors = _fitted_engines()
+	bays().max_engines = max_engines
+	_drive_spec.motors = bays().engines()
 	_drive_spec.wheel_radius = wheel_radius
 	_drive_spec.pump_efficiency = pump_efficiency
 	_drive_spec.hydraulic_efficiency = hydraulic_efficiency
@@ -3075,6 +3080,12 @@ func _rebuild_drive_spec() -> void:
 	_drive_spec.air_density = air_density
 	_drive_spec.gravity = _gravity_mag
 
+## What is fitted to this vehicle, and what it will accept. Never null.
+func bays() -> VehicleComponentBays:
+	if _bays == null:
+		_bays = VehicleComponentBays.new(self)   # lazily: _ready returns early in the editor
+	return _bays
+
 ## The sizing model for this vehicle. Never null. Gravity is refreshed here rather than cached, so
 ## the climbable slope follows the planet we are actually standing on — it is one float.
 func get_drive_spec() -> VehicleDriveSpec:
@@ -3083,7 +3094,7 @@ func get_drive_spec() -> VehicleDriveSpec:
 
 ## How many wheels the engine actually drives. Godot applies engine_force to EACH wheel flagged
 ## use_as_traction, so the per-wheel figure is the total pull divided by this. Never zero.
-func driven_wheel_count() -> int:
+func _driven_wheel_count() -> int:
 	var n: int = 0
 	for w in _wheels:
 		if w.use_as_traction:

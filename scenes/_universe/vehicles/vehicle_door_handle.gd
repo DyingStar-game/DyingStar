@@ -18,6 +18,10 @@ extends Area3D
 @export var open_angle_deg: float = 75.0
 ## Reverse the opening: the door swings the other way (fallback), or its clip plays backwards (anim).
 @export var reverse: bool = false
+## Fallback swing ONLY: the hinge axis of THIS door, in the vehicle's local frame. Leave at zero to
+## use the vehicle's door_hinge_axis. A cab door turns about the vertical, a bay hatch usually does
+## not, and one axis for the whole vehicle cannot serve both.
+@export var hinge_axis: Vector3 = Vector3.ZERO
 ## The collision box (a child CollisionShape3D) looked at from OUTSIDE, on foot — placed proud of the
 ## exterior door surface. Assigned in the inspector; used for the server line-of-sight check. Optional:
 ## unassigned = no sightline gate (the door just opens when looked at).

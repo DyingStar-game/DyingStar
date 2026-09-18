@@ -1,0 +1,47 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/vehicles/vehicle_component.gd" id="1_comp"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="2_spec"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_engine"]
+size = Vector3(0.3, 0.4, 0.55)
+
+[sub_resource type="BoxMesh" id="BoxMesh_engine"]
+size = Vector3(0.3, 0.4, 0.55)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_engine"]
+albedo_color = Color(0.22, 0.24, 0.27, 1)
+metallic = 0.8
+roughness = 0.45
+
+[node name="EngineT1" type="RigidBody3D"]
+collision_layer = 8
+collision_mask = 15
+mass = 120.0
+script = ExtResource("1_comp")
+spec = ExtResource("2_spec")
+sfx_pick_up = ExtResource("sfx_pick")
+sfx_landing = ExtResource("sfx_landing")
+id_type = "MOTR"
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("propsync_1")
+type_name = "vehicle_component"
+enable_carry = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_engine")
+surface_material_override/0 = SubResource("StandardMaterial3D_engine")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_engine")
+
+[node name="Area3D" type="Area3D" parent="."]
+monitoring = false
+collision_layer = 32
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("BoxShape3D_engine")
