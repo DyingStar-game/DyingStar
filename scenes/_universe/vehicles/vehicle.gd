@@ -105,6 +105,35 @@ const SCRUB_SAMPLE_S: float = 0.5
 ## (0,0,0) = balanced on the wheels; lower Y (negative) for roll stability, shift Z for a weight bias.
 @export var center_of_mass_offset: Vector3 = Vector3.ZERO
 
+@export_group("Chassis physics")
+## What this chassis is made of, in the design sheet's terms. These belong to the VEHICLE, not to
+## the engines bolted into it: the transmission, the bodywork and the tyres are the chassis. They
+## feed VehicleDriveSpec, which turns them plus the fitted engines into force and top speed.
+##
+## Engines fitted at the factory. The chassis leaves the works with these, and they are what makes
+## it drivable before anyone opens a hatch. Leave empty for a vehicle that must be equipped first.
+@export var factory_engines: Array[VehicleEngineSpec] = []
+## Drag coefficient (Cx): 1.05 for a perfect cube, 0.2 for a sports car, 0.45 for a jeep.
+@export var drag_coefficient: float = 1.0
+## Frontal area facing the airflow (m2) — width x height, near enough.
+@export var frontal_area_m2: float = 3.0
+## Transmission losses downstream of the motor's own efficiency. The design sheet splits them in
+## two stages, a pump and a hydraulic one, both typically 0.8.
+@export_range(0.0, 1.0, 0.01) var pump_efficiency: float = 0.8
+@export_range(0.0, 1.0, 0.01) var hydraulic_efficiency: float = 0.8
+## Fixed gearing of the chassis: how its transmission trades speed for pull. A hauler uses a high
+## factor (more torque, less speed), a buggy a low one. Applied to TORQUE only.
+@export var torque_factor: float = 1.0
+## Tyre correction on top of the ground's own rolling resistance (soft tyres drag more).
+@export var rolling_factor: float = 1.0
+## Ground rolling resistance: 0.001 on good road, 0.01 default, 0.3 on soft sand. A per-surface
+## value could come from SurfaceProbe later; one number is enough while nothing samples it.
+@export var rolling_coefficient: float = 0.01
+## Air density (kg/m3) where the vehicle drives. Sandbox is 1.26 at sea level. Could later be read
+## from the planet's atmosphere; it only matters once a chassis is drag-limited rather than
+## engine-limited, which the MVP truck is not.
+@export var air_density: float = 1.26
+
 @export_group("Steering")
 ## Maximum steering angle of the front wheels, in degrees.
 @export var max_steer_deg: float = 30.0
@@ -584,6 +613,10 @@ var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), cha
 ## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
 ## measure tilt against THIS, not world Y. Defaults to world up until the first physics step.
 var _gravity_up: Vector3 = Vector3.UP
+## Strength of that same gravity (m/s2), read from the physics engine alongside _gravity_up. It
+## drives rolling resistance and the climbable slope, so those follow the planet the truck is on.
+## Sandbox's 6.867 until the first physics step tells us better.
+var _gravity_mag: float = 6.867
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
@@ -593,6 +626,10 @@ var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
+## Sizing model for the engines actually fitted. CACHED on purpose: it is rebuilt when the engine
+## list changes, never per frame. _sync_powertrain runs at 60 Hz from _apply_drive, and walking the
+## fitted engines in there would show up in PropNet.prof_vehicle_usec across every truck at once.
+var _drive_spec := VehicleDriveSpec.new()
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
@@ -638,6 +675,7 @@ func _ready() -> void:
 		_cargo_debug = SettingsManager.is_cargo_debug()  # dev aid: green envelope on locked cargo
 		SettingsManager.cargo_debug_changed.connect(_on_cargo_debug_changed)
 	_sync_powertrain()
+	_rebuild_drive_spec()  # the sizing model of what is fitted; rebuilt whenever that changes
 	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
 	# Real-model drop-ins (no-op when the vehicle uses the blockout): reparent the GLB wheel meshes
 	# under the physics wheels, find the steering wheel + the GLB AnimationPlayer, and start closed.
@@ -2817,6 +2855,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var g: Vector3 = state.total_gravity
 	if g.length_squared() > 0.001:
 		_gravity_up = -g.normalized()
+		_gravity_mag = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y
@@ -2952,6 +2991,45 @@ func is_headlights_on() -> bool:
 ## Forward speed in km/h (positive when driving toward the cab, -Z).
 func _forward_speed_kmh() -> float:
 	return -global_transform.basis.z.dot(linear_velocity) * 3.6
+
+## The engines currently driving this vehicle. For now the factory fit only; the component slots
+## will add to this list once they exist, and this is the ONLY place that will need to know.
+func _fitted_engines() -> Array[VehicleEngineSpec]:
+	var out: Array[VehicleEngineSpec] = []
+	for e in factory_engines:
+		if e != null:
+			out.append(e)
+	return out
+
+## Rebuild the sizing model from what is fitted RIGHT NOW. Called when the engine list changes —
+## never per frame, see _drive_spec.
+func _rebuild_drive_spec() -> void:
+	_drive_spec.motors = _fitted_engines()
+	_drive_spec.wheel_radius = wheel_radius
+	_drive_spec.pump_efficiency = pump_efficiency
+	_drive_spec.hydraulic_efficiency = hydraulic_efficiency
+	_drive_spec.torque_factor = torque_factor
+	_drive_spec.drag_coefficient = drag_coefficient
+	_drive_spec.frontal_area = frontal_area_m2
+	_drive_spec.rolling_coefficient = rolling_coefficient
+	_drive_spec.rolling_factor = rolling_factor
+	_drive_spec.air_density = air_density
+	_drive_spec.gravity = _gravity_mag
+
+## The sizing model for this vehicle. Never null. Gravity is refreshed here rather than cached, so
+## the climbable slope follows the planet we are actually standing on — it is one float.
+func get_drive_spec() -> VehicleDriveSpec:
+	_drive_spec.gravity = _gravity_mag
+	return _drive_spec
+
+## How many wheels the engine actually drives. Godot applies engine_force to EACH wheel flagged
+## use_as_traction, so the per-wheel figure is the total pull divided by this. Never zero.
+func driven_wheel_count() -> int:
+	var n: int = 0
+	for w in _wheels:
+		if w.use_as_traction:
+			n += 1
+	return maxi(1, n)
 
 ## Engine/motor RPM for the gauge (depends on the powertrain).
 ## Copy the inspector powertrain settings into the helper (cheap; lets values be tuned
