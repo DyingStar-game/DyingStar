@@ -15,9 +15,9 @@ extends CanvasLayer
 ## bodies that have no elements of their own — the moons, which keep a network offset — and those do
 ## need to be loaded to be placed.
 
-## Where the system's bodies are defined. Every *.tscn here whose root carries orbit_* elements is a
-## body the chart can place on its own.
-const SYSTEM_DIR: String = "res://scenes/systems/tarsis"
+## The system this chart draws. Every body scene in it whose root carries orbit_* elements is one the
+## chart can place on its own; [SystemScenes] does the reading.
+const SYSTEM: String = "tarsis"
 
 ## One unit = one million km. The system is ~16 AU across (2400 units), a planet ~6000 km (0.006).
 const UNITS_PER_METRE: float = 1.0e-9
@@ -301,39 +301,36 @@ func _rebuild() -> void:
 
 	_add_star()
 	# Bodies the chart can place on its own, read straight from the scene FILES.
-	# SORTED, because a moon's position is relative to its planet and _process resolves primaries in
-	# index order: "tarsis_3" must be built before "tarsis_3_1".
-	var files: PackedStringArray = _system_scene_files()
-	files.sort()
+	# body_files() returns them SORTED, which matters here: a moon's position is relative to its
+	# planet and _process resolves primaries in index order, so "tarsis_3" must be built before
+	# "tarsis_3_1".
+	var files: PackedStringArray = SystemScenes.body_files(SYSTEM)
 	var known: Dictionary = {}
 	var index_of: Dictionary = {}  # scene key -> index in _bodies
 	for file_name: String in files:
 		var key: String = file_name.get_basename()
-		var props: Dictionary = _root_properties(SYSTEM_DIR + "/" + file_name)
+		var props: Dictionary = SystemScenes.root_properties(SystemScenes.path_of(SYSTEM, file_name))
 		if float(props.get("orbit_periapsis_au", 0.0)) <= 0.0 \
 			and float(props.get("orbit_apoapsis_au", 0.0)) <= 0.0:
 			continue  # no elements: it can only be placed from a live node (see below)
 		known[key] = true
 		# A moon's elements are measured from its PLANET, not the star, so its drawn position is its
-		# planet's plus its own. The primary comes from the naming convention — "tarsis_3_1" under
-		# "tarsis_3" — which is how the scenes are laid out and what the network parenting mirrors.
+		# planet's plus its own. SystemScenes owns the naming convention that pairs the two.
 		var primary: int = -1
-		var cut: int = key.rfind("_")
-		if cut > 0 and index_of.has(key.substr(0, cut)):
-			primary = index_of[key.substr(0, cut)]
+		var parent_key: String = SystemScenes.parent_key_of(key, index_of)
+		if parent_key != "":
+			primary = index_of[parent_key]
 		index_of[key] = _bodies.size()
 		# Name and colour come from the SCENE, which carries what the GDD says about the body — its
 		# proper name, and a colour derived from its description (Tarsis III's corundum dust storm,
 		# Tarsis VIII's tholins) or from its physics where the GDD is silent. The by-type guess is only
 		# a fallback for a scene that has been given neither.
-		var label_text: String = str(props.get("display_name", ""))
-		if label_text == "":
-			label_text = key
+		var label_text: String = SystemScenes.display_name_of(key, props)
 		var colour: Color = MOON_COLOR if primary >= 0 else PLANET_COLOR
 		if props.has("map_color"):
 			colour = props["map_color"]
 		_add_body(label_text, colour,
-				_radius_of(props), _orbit_from(props), null,
+				SystemScenes.radius_of(props), _orbit_from(props), null,
 				float(props.get("rotation_period_hours", 0.0)),
 				float(props.get("axial_tilt_deg", 0.0)), primary)
 		# The panel wants the semi-major axis, and the elements are right here.
@@ -342,7 +339,7 @@ func _rebuild() -> void:
 
 	# Bodies with no elements of their own — the moons. They keep a network offset, so they can only
 	# be drawn when they are actually loaded, and their position is read live.
-	for body: Planet in _live_planets():
+	for body: Planet in PlanetRegistry.live_planets():
 		var key: String = ""
 		if body.planet_data != null:
 			key = body.planet_data.planet_name
@@ -454,45 +451,6 @@ func _add_body(label_text: String, colour: Color, radius_m: float, orbit: Kepler
 	})
 
 
-func _system_scene_files() -> PackedStringArray:
-	var out: PackedStringArray = PackedStringArray()
-	var dir: DirAccess = DirAccess.open(SYSTEM_DIR)
-	if dir == null:
-		push_warning("[StarMap] cannot open %s — the chart will only show loaded bodies" % SYSTEM_DIR)
-		return out
-	for f: String in dir.get_files():
-		# Exported builds rename .tscn to .scn/.remap; strip the suffix and keep the scene name.
-		if f.ends_with(".tscn") or f.ends_with(".scn"):
-			out.append(f)
-	return out
-
-
-## The root node's saved property overrides, WITHOUT instantiating the scene — instantiating a planet
-## would build its terrain, which is exactly what this chart exists to avoid.
-func _root_properties(path: String) -> Dictionary:
-	var out: Dictionary = {}
-	var packed: PackedScene = load(path) as PackedScene
-	if packed == null:
-		return out
-	var state: SceneState = packed.get_state()
-	if state.get_node_count() == 0:
-		return out
-	for i: int in range(state.get_node_property_count(0)):
-		out[state.get_node_property_name(0, i)] = state.get_node_property_value(0, i)
-	return out
-
-
-## ⚠️ NOT planet_data.radius: in a SAVED scene that property still holds its 1000 m default, because the
-## real value is only applied at runtime by apply_chunk_manifest(). Reading files statically — which is
-## how this chart lists bodies it has never spawned — made every planet a kilometre wide, invisible and
-## framed absurdly close on a click.
-func _radius_of(props: Dictionary) -> float:
-	var km: float = float(props.get("map_radius_km", 0.0))
-	if km > 0.0:
-		return km * 1000.0
-	return 6.0e6  # plausible terrestrial radius, for a body nobody has filled in
-
-
 func _orbit_from(props: Dictionary) -> KeplerOrbit:
 	return KeplerOrbit.new(
 			float(props.get("orbit_periapsis_au", 0.0)) / Planet.DISTANCE_FACTOR,
@@ -503,23 +461,6 @@ func _orbit_from(props: Dictionary) -> KeplerOrbit:
 			deg_to_rad(float(props.get("orbit_mean_anomaly_deg", 0.0))),
 			float(props.get("orbit_primary_mass_kg", 0.0)),
 			float(props.get("orbit_mass_earths", 0.0)) * Planet.MASS_EARTH)
-
-
-func _live_planets() -> Array[Planet]:
-	var out: Array[Planet] = []
-	_walk_planets(NetworkOrchestrator.universe_scene, out)
-	return out
-
-
-func _walk_planets(node: Node, out: Array[Planet]) -> void:
-	if node == null:
-		return
-	for child: Node in node.get_children():
-		if child is PlanetTerrain:
-			continue  # chunk nodes, never a body
-		if child is Planet:
-			out.append(child as Planet)
-		_walk_planets(child, out)
 
 
 func _orbit_mesh(orbit: KeplerOrbit, colour: Color) -> ImmediateMesh:

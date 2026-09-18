@@ -28,6 +28,7 @@
 [ext_resource type="PackedScene" uid="uid://bk3qu7kpd2xa8" path="res://scenes/_universe/props/containers/test_containers_12x2.6.tscn" id="28_npgr1"]
 [ext_resource type="Material" uid="uid://crixbiyq86br" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/corundum_outcrop_surface.tres" id="corundum_outcrop_mat"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="99_telept"]
 
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
 rayleigh_coefficient = 2.5
@@ -110,9 +111,6 @@ size = Vector3(690.5352568304834, 135.52, 279.48)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_3pv0l"]
 resource_name = "metal"
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
-size = Vector3(0.44462238568098655, 1.6645963120454326, 0.6993179991577563)
 
 [node name="SandoxCapital" type="StaticBody3D" unique_id=300574500 groups=["navigation_mesh"]]
 script = ExtResource("1_hvdt3")
@@ -474,52 +472,8 @@ transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.3283107377782457, -0.41813909033715335, 0.5638479982708873)
 text = "Bardock house"
 
-[node name="PlanetTeleporter" type="Node3D" parent="." unique_id=1976552097]
-
-[node name="tarsis_3_2" type="Area3D" parent="PlanetTeleporter" unique_id=123347451 groups=["teleporter"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 94.13877190071942)
-collision_layer = 16
-collision_mask = 0
-monitoring = false
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_3_2" unique_id=648478695]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035, 0.150341)
-shape = SubResource("BoxShape3D_gy7pr")
-
-[node name="tarsis_3_orbital" type="Area3D" parent="PlanetTeleporter" unique_id=1951402626 groups=["teleporter"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 92.53287770641572)
-collision_layer = 16
-collision_mask = 0
-monitoring = false
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlanetTeleporter/tarsis_3_orbital" unique_id=321300656]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5081757094400103, -0.22956035000000008, 0.04837152991072457)
-shape = SubResource("BoxShape3D_gy7pr")
-
-[node name="CSGBox3D" type="CSGBox3D" parent="PlanetTeleporter" unique_id=1368652612]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819000000003143, 1.25, 88.97299999999814)
-use_collision = true
-collision_mask = 0
-size = Vector3(2, 2.5, 12)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="PlanetTeleporter/CSGBox3D" unique_id=914471878]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 5.287659798198121)
-operation = 2
-size = Vector3(1, 1.9, 0.9)
-
-[node name="Label3D" type="Label3D" parent="PlanetTeleporter/CSGBox3D" unique_id=1973100552]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.8498875009151492, 5.320268427470822)
-text = "Tarsis_4_2"
-
-[node name="CSGBox3D2" type="CSGBox3D" parent="PlanetTeleporter/CSGBox3D" unique_id=848328139]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5709999999962747, -0.25, 3.587156230187972)
-operation = 2
-size = Vector3(1, 1.9, 0.9)
-
-[node name="Label3D2" type="Label3D" parent="PlanetTeleporter/CSGBox3D" unique_id=2074633057]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 1.026668834760068, 0.9986601328201252, 3.593846440102908)
-text = "Orbital
-Sandbox"
+[node name="Teleporter" parent="." instance=ExtResource("99_telept")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.819, 0, 88.973)
 
 [node name="test_container_6_2_6" parent="." unique_id=869382386 instance=ExtResource("27_w88le")]
 transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -53.79194213987919, 1.414960480339289e-06, -58.168610350413765)

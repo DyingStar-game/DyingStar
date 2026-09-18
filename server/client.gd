@@ -19,6 +19,10 @@ const STUCK_PROP_MS: int = 8000
 ## that drain well past 45 s. Counting from init_ack turned that slow entry into a fake "parent
 ## never arrived" while the parent was still queued a few packets further.
 const SPAWN_TIMEOUT_MS: int = 45000
+## Below this distance (m) a DEFERRED zone exit is treated as stale and dropped — see
+## _flush_pending_parent_delete. Deliberately generous: the two cases it separates are metres
+## apart and millions of kilometres apart, so there is nothing to tune between them.
+const STALE_EXIT_RANGE: float = 500.0
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -52,6 +56,11 @@ var my_player_uuid: String = ""
 ## True once create_player() actually built our own body. Distinguishes "not spawned YET" (the server
 ## is still streaming the world to us) from "was there and is gone" — only the second one is fatal.
 var my_player_created: bool = false
+## True once the disappearance of my own body has been reported (see _watch_own_player_alive).
+var _own_player_lost: bool = false
+## Physics frames between two network heartbeats (~5 s at 60 Hz).
+const _NET_HEARTBEAT: int = 300
+var _net_beat: int = 0
 ## Ticks (ms) of the last moment our spawn was still plausibly on its way: init_ack, then every zone
 ## entry finished since (see SPAWN_TIMEOUT_MS). -1 until init_ack, and reset to -1 once the body
 ## exists so the watchdog stops looking.
@@ -266,6 +275,7 @@ func _process(_delta: float) -> void:
 	var _watch_tok: int = _net_t()
 	_report_stuck_pre_creations()
 	_watch_own_player_spawn()
+	_watch_own_player_alive()
 	_net_t_end("net:watch", _watch_tok)
 	# `net:pending` — the every-30-frames rescan of the two parenting queues. It walks BOTH queues in
 	# full and calls _search_parent_node per entry, so it is a candidate for the ~650 ms of net:poll
@@ -426,6 +436,49 @@ func _process(_delta: float) -> void:
 		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
 	ClientPerf.scope_end("net:poll", _net_tok)
+
+
+## Network heartbeat, deliberately on the PHYSICS loop.
+##
+## set_process(false) does not touch _physics_process, and that is the whole point: the symptom
+## under investigation is a client that freezes with zero events in and out while its camera still
+## answers. If the idle loop were simply switched off, a probe living in it would fall silent and
+## say nothing — the same trap that cost three rounds of the camera hunt. This one keeps talking
+## whatever happens to _process, and reports which loop is actually alive.
+func _physics_process(_delta: float) -> void:
+	_net_beat += 1
+	if _net_beat % _NET_HEARTBEAT != 1:
+		return
+	if socket == null:
+		return
+	var state: int = socket.get_ready_state()
+	print("[net] beat — idle loop %s | socket state %d | sent %d | received %d"
+			% ["on" if is_processing() else "OFF", state, network_events_sent, network_events_received])
+
+
+## Says the moment our own body stops existing. Silent for a whole session when all is well.
+##
+## It lives HERE and not on the player on purpose: a probe carried by the body goes quiet exactly
+## when the body dies, and that silence reads as "nothing happened" — which is how the hunt for
+## the bug above cost three rounds of testing. This node outlives it, so it reports the death
+## instead of sharing it. Kept because losing your own body is never normal, and because the line
+## it prints (why, which ancestors were protected, which delete was held) is what identified the
+## cause in one reproduction.
+func _watch_own_player_alive() -> void:
+	if not my_player_created:
+		return
+	if is_instance_valid(player_entity) and player_entity.is_inside_tree():
+		_own_player_lost = false
+		return
+	if _own_player_lost:
+		return  # said once; saying it every frame would cost more than it explains
+	_own_player_lost = true
+	var why: String = "freed" if not is_instance_valid(player_entity) else "out of the tree"
+	var held: String = "none"
+	if pending_parent_delete_event != null:
+		held = str(pending_parent_delete_event.get("object_id", "?"))
+	push_warning("[client] MY PLAYER IS GONE (%s). ancestors I was protecting: %s | delete held back: %s"
+			% [why, str(my_parents_uuids), held])
 
 
 func _collect_parents_uuids(node: Node) -> Array:
@@ -712,6 +765,27 @@ func _flush_pending_parent_delete() -> void:
 	if props_list.has(type) and props_list[type].has(event["object_id"]):
 		var prop_instance = props_list[type][event["object_id"]]
 		if is_instance_valid(prop_instance):
+			# A HELD VERDICT MUST BE RE-CHECKED BEFORE IT IS OBEYED.
+			#
+			# This exit was computed while we were still a CHILD of the object, i.e. while our
+			# position WAS its position — so "you are out of its zone" could not have been true when
+			# it was written. Obeying it a moment later freed the truck a passenger had just stepped
+			# out of, one metre away: gone for them, still there for everyone else, and back only
+			# after driving out of the zone and in again, which recreates the object.
+			#
+			# The distance is what separates a stale verdict from a real one, and it separates them
+			# by orders of magnitude: a vehicle we just left is metres away, a planet we genuinely
+			# teleported off is millions of kilometres. Anything still this close contradicts the
+			# exit, so we drop it and wait for one computed while we are no longer aboard.
+			var me: Node = players_list.get(my_player_uuid)
+			if is_instance_valid(me) and prop_instance is Node3D \
+					and (me as Node3D).global_position.distance_to(
+					(prop_instance as Node3D).global_position) < STALE_EXIT_RANGE:
+				push_warning("[client] dropping a stale zone exit for %s '%s': still %.1f m away"
+						% [type, event["object_id"],
+						(me as Node3D).global_position.distance_to(
+						(prop_instance as Node3D).global_position)])
+				return
 			prop_instance.queue_free()
 		props_list[type].erase(event["object_id"])
 
@@ -1222,6 +1296,18 @@ func _update_generic_object(event: Dictionary) -> void:
 func delete_player(event: Dictionary) -> void:
 	if not int(event["channel"]) == 0:
 		return
+	# NEVER our own body. players_list holds it alongside every remote one, and this function used to
+	# free whatever uuid it was handed — so a zone exit naming OUR player deleted the body we are
+	# playing, and with it our camera and our input. The view then fell to whatever camera was left
+	# (an NPC's, a truck's mirror) and nothing answered any more.
+	#
+	# A zone exit for ourselves is not something to obey: we are, by construction, always in our own
+	# zone. Whatever made the server or Horizon say otherwise, the body is not ours to delete here —
+	# it is created by create_player and it leaves with the session.
+	if event["object_id"] == my_player_uuid:
+		push_warning("[client] ignoring a zone exit for MY OWN player (%s) — we are always in our own zone"
+				% event["object_id"])
+		return
 	if players_list.has(event["object_id"]):
 		var remote_player = players_list[event["object_id"]]
 		players_list.erase(event["object_id"])
@@ -1264,6 +1350,16 @@ func player_update(message: Dictionary) -> void:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
+							# TAKE THE VIEW BACK. reparent() is remove-then-add, so OUR camera leaves the
+							# viewport and comes back — and a viewport whose current camera leaves has
+							# none, which any Camera3D entering meanwhile claims for itself (Godot makes
+							# an entering camera current when there is no other). Arriving somewhere new
+							# is exactly when that crowd shows up: every avatar and every NPC spawning in
+							# the new zone carries one. Ours re-enters, finds the seat taken, and never
+							# gets it back — a player left watching through an NPC's eyes.
+							# Costs nothing when nobody took it: it is already ours.
+							if player.camera != null:
+								player.camera.make_current()
 							# Rare event (teleporter / cross-zone) — worth a trace.
 							print("[client] server reparent -> %s at local (%.0f, %.0f, %.0f)"
 									% [parent.name, ppos.x, ppos.y, ppos.z])
