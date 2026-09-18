@@ -93,6 +93,8 @@ var player_scene_path: String = "res://scenes/player/player.tscn"
 var player_scene: PackedScene = preload("res://scenes/player/player.tscn")
 var box50cm_scene: PackedScene = preload("res://scenes/_universe/props/containers/box_50cm.tscn")
 var props_scene: Dictionary = {
+	'scenes/_universe/props/vehicles/engine_t1.tscn':
+		preload('res://scenes/_universe/props/vehicles/engine_t1.tscn'),
 	'scenes/_universe/props/containers/container_benne_1200x240x240.tscn':
 		preload('res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn'),
 	'scenes/_universe/props/containers/container_liquid_1200x240x240.tscn':

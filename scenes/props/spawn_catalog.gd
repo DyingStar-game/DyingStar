@@ -62,6 +62,10 @@ const ENTRIES := {
 		"label": "Hauling", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
 		"type": "crate_container", "distance": 2.0, "origin_height": 0.3,
 	},
+	"engine_t1": {
+		"label": "Moteur T1", "scene": "res://scenes/_universe/props/vehicles/engine_t1.tscn",
+		"type": "vehicle_component", "distance": 2.0, "origin_height": 0.3,
+	},
 	"truck": {
 		"label": "Camion", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
@@ -74,6 +78,7 @@ const WHEEL := [
 	{"text": "Rocher", "keys": ["rock", "rock_medium", "rock_large"]},
 	{"text": "Caisse", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
 			"pallet_crate", "pallet_benne", "pallet_liquid"]},
+	{"key": "engine_t1"},
 	{"key": "truck"},
 ]
 

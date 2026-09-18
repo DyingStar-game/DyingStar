@@ -73,10 +73,21 @@ func _process(delta: float) -> void:
 		+ "[Hold Space <3km/h] handbrake   [H] horn   [Alt+H] special horn   [R] flip")
 	_label.text = (
 		"Speed: %3.0f km/h%s%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
-		+ "Total weight: %.0f kg\nLoad: %.0f / %.0f kg%s\n%s\n%s\n%s") % [
+		+ "Total weight: %.0f kg\nLoad: %.0f / %.0f kg%s\n%s\n%s\n%s\n%s") % [
 		speed, handbrake, ignition, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(),
 		trans_suffix, _vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn,
-		_model_line(total), _measured_line(total), keys]
+		_bays_line(), _model_line(total), _measured_line(total), keys]
+
+## The component bays this vehicle carries and what sits in each. Worth a line of its own: an empty
+## bay is invisible with the hatch shut, and the bay names are the keys the network table uses.
+func _bays_line() -> String:
+	var all_bays: Array = _vehicle.bays().all()
+	if all_bays.is_empty():
+		return "── Bays: none"
+	var parts: PackedStringArray = PackedStringArray()
+	for b in all_bays:
+		parts.append("%s %s" % [b.name, b.occupant_name()])
+	return "── Bays: " + " · ".join(parts)
 
 ## What the drive model PREDICTS for the engines currently fitted, at the current total mass.
 func _model_line(total_mass: float) -> String:
