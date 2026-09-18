@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://p8lbfuk68g7s"]
 
 [ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/_universe/vehicles/vehicle.gd" id="1_vehicle"]
+[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="90_t1"]
 [ext_resource type="AudioStream" uid="uid://c4882t4qc0ryu" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg" id="2_urxpd"]
 [ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/_universe/vehicles/vehicle_seat.gd" id="3_seat"]
 [ext_resource type="AudioStream" uid="uid://bkuepip360vt2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg" id="3_udf22"]
@@ -36,6 +37,7 @@ collision_layer = 4
 collision_mask = 15
 mass = 1000.0
 script = ExtResource("1_vehicle")
+factory_engines = Array[VehicleEngineSpec]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("90_t1")])
 engine_power = 850.0
 max_speed_kmh = 55.0
 steer_speed = 0.8
@@ -43,7 +45,7 @@ steer_return_speed = 1.0
 steering_wheel_ratio = 4.0
 steering_wheel_axis = Vector3(0, -1, 0)
 bed_wall_height = 0.6
-wheel_radius = 0.34
+wheel_radius = 0.3
 wheelbase = 2.0
 suspension_stiffness = 40.0
 suspension_damping_compression = 0.38
