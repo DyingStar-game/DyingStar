@@ -19,6 +19,10 @@ const STUCK_PROP_MS: int = 8000
 ## that drain well past 45 s. Counting from init_ack turned that slow entry into a fake "parent
 ## never arrived" while the parent was still queued a few packets further.
 const SPAWN_TIMEOUT_MS: int = 45000
+## Below this distance (m) a DEFERRED zone exit is treated as stale and dropped — see
+## _flush_pending_parent_delete. Deliberately generous: the two cases it separates are metres
+## apart and millions of kilometres apart, so there is nothing to tune between them.
+const STALE_EXIT_RANGE: float = 500.0
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -761,6 +765,27 @@ func _flush_pending_parent_delete() -> void:
 	if props_list.has(type) and props_list[type].has(event["object_id"]):
 		var prop_instance = props_list[type][event["object_id"]]
 		if is_instance_valid(prop_instance):
+			# A HELD VERDICT MUST BE RE-CHECKED BEFORE IT IS OBEYED.
+			#
+			# This exit was computed while we were still a CHILD of the object, i.e. while our
+			# position WAS its position — so "you are out of its zone" could not have been true when
+			# it was written. Obeying it a moment later freed the truck a passenger had just stepped
+			# out of, one metre away: gone for them, still there for everyone else, and back only
+			# after driving out of the zone and in again, which recreates the object.
+			#
+			# The distance is what separates a stale verdict from a real one, and it separates them
+			# by orders of magnitude: a vehicle we just left is metres away, a planet we genuinely
+			# teleported off is millions of kilometres. Anything still this close contradicts the
+			# exit, so we drop it and wait for one computed while we are no longer aboard.
+			var me: Node = players_list.get(my_player_uuid)
+			if is_instance_valid(me) and prop_instance is Node3D \
+					and (me as Node3D).global_position.distance_to(
+					(prop_instance as Node3D).global_position) < STALE_EXIT_RANGE:
+				push_warning("[client] dropping a stale zone exit for %s '%s': still %.1f m away"
+						% [type, event["object_id"],
+						(me as Node3D).global_position.distance_to(
+						(prop_instance as Node3D).global_position)])
+				return
 			prop_instance.queue_free()
 		props_list[type].erase(event["object_id"])
 
