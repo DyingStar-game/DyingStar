@@ -302,10 +302,14 @@ const SCRUB_SAMPLE_S: float = 0.5
 ## Spin axis of a real wheel mesh, in the mesh's local space (its axle). Blender +Y-up export
 ## usually leaves the axle on local X. Flip/change if real wheels spin around the wrong axis.
 @export var real_wheel_spin_axis: Vector3 = Vector3.RIGHT
-## Door fallback ONLY (when a door has no Blender animation clip): instant hinge angle in degrees…
+## Door fallback ONLY (when a door has no Blender animation clip): open hinge angle in degrees…
 @export var door_open_angle_deg: float = 75.0
-## …about this local axis (the door's hinge). The real swing is authored in Blender.
+## …about this local axis (the door's hinge). A proper swing can still be authored in Blender, and
+## a clip named "<door_id>_open" / "_close" takes precedence over the code swing below.
 @export var door_hinge_axis: Vector3 = Vector3.UP
+## How long that fallback swing takes (s). 0 = snap instantly, which is what every door did before
+## — the truck GLB carries no animation at all, so this path is the one every door actually uses.
+@export_range(0.0, 2.0, 0.05) var door_swing_secs: float = 0.45
 
 @export_group("Electric")
 ## ELECTRIC only. Full torque from a standstill up to this speed (constant-torque region),
@@ -657,6 +661,9 @@ var _horn_fade_left: float = 0.0            # client: seconds left of the horn's
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
 var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
+## door_id -> the Tween swinging it right now, so a second toggle can cancel the first one
+## instead of stacking on top of it. Server and client both run these (see _swing_door).
+var _door_tweens: Dictionary = {}
 var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
 ## SERVER: last replicated wheel heights (cm, vehicle frame), change detection. CLIENT: the heights
 ## received, applied instead of the flat rest pose so a replica shows the real suspension.
@@ -1785,42 +1792,94 @@ func _door_handle(door_id: String) -> VehicleDoorHandle:
 ## per-door open angle / reverse come from the door's VehicleDoorHandle (falls back to the exports).
 ## `sfx` is false for the late-join replay (the door is set to its CURRENT state — nobody just opened it).
 func _apply_door(door_id: String, open: bool, sfx: bool = true) -> void:
-	if sfx:
-		if open:
-			_play_sfx(sfx_door_open, sfx_door_open_db, sfx_door_open_falloff, sfx_door_open_distance,
-					sfx_door_open_attenuation, _door_mesh(door_id))
-		else:
-			_play_sfx(sfx_door_close, sfx_door_close_db, sfx_door_close_falloff, sfx_door_close_distance,
-					sfx_door_close_attenuation, _door_mesh(door_id))
 	var handle := _door_handle(door_id)
 	var reverse: bool = handle.reverse if handle != null else false
 	var clip := door_id + ("_open" if open else "_close")
 	if _anim != null and _anim.has_animation(clip):
+		if sfx:
+			_play_door_sfx(door_id, open)
 		if reverse:
 			_anim.play_backwards(clip)
 		else:
 			_anim.play(clip)
 		return
 	var angle: float = handle.open_angle_deg if handle != null else door_open_angle_deg
-	_snap_door(door_id, open, angle, reverse)
+	var tw := _swing_door(door_id, open, angle, reverse, not sfx)
+	if not sfx:
+		return  # late-join replay: nobody just moved it, so there is nothing to hear
+	if open or tw == null:
+		# Opening, the handle clacks and the leaf starts moving: the sound belongs at the START.
+		# A door that SNAPPED (swing turned off) is already shut, so its clang belongs now too.
+		_play_door_sfx(door_id, open)
+	else:
+		# Closing, the clang IS the leaf meeting the frame — wait for the swing to land. kill()
+		# does not emit finished, so re-opening mid-close never clangs, which is right: the door
+		# never shut.
+		tw.finished.connect(_play_door_sfx.bind(door_id, false), CONNECT_ONE_SHOT)
 
-## Fallback for a door with no Blender clip: set the mesh named door_id to its open/closed hinge
-## angle instantly (the proper swing is authored in Blender). transform.basis = … on a Node3D is a
-## no-op (transform returns a copy), so copy-modify-assign.
-func _snap_door(door_id: String, open: bool, angle_deg: float, reverse: bool) -> void:
+## The open or close sound of one door, played at its leaf so it comes from the right side of the
+## cab. No-op on the server and in the editor (see _play_sfx).
+func _play_door_sfx(door_id: String, open: bool) -> void:
+	if open:
+		_play_sfx(sfx_door_open, sfx_door_open_db, sfx_door_open_falloff, sfx_door_open_distance,
+				sfx_door_open_attenuation, _door_mesh(door_id))
+	else:
+		_play_sfx(sfx_door_close, sfx_door_close_db, sfx_door_close_falloff,
+				sfx_door_close_distance, sfx_door_close_attenuation, _door_mesh(door_id))
+
+## Fallback for a door with no Blender clip: swing the mesh named door_id to its open or closed
+## hinge angle. A Tween drives it, NOT _process or _physics_process — _physics_process_impl
+## returns early as soon as the vehicle falls asleep, so a parked truck would freeze its door
+## half open, and _process returns early on the server. A Tween runs itself, and runs headless.
+##
+## It swings on the SERVER as well as on every client, and it has to: _attach_door_handles
+## reparents each handle UNDER its door, and the server line-of-sight-checks a toggle against the
+## handle's real position. Were the server to snap while clients swing, then for the length of a
+## swing the player would be aiming at something the server does not see there.
+##
+## `instant` skips the swing for a state nobody just changed — the late-join replay, same flag as
+## the silent sfx: no one opened it, so there is nothing to watch moving.
+## Returns the Tween doing the swinging, or null when the door was put in place at once — the
+## caller uses that to decide whether a closing clang has to wait for the leaf to land.
+func _swing_door(door_id: String, open: bool, angle_deg: float, reverse: bool,
+		instant: bool = false) -> Tween:
 	var door := _door_mesh(door_id)
 	if door == null:
-		return
+		return null
 	if not door.has_meta("rest_basis"):
 		door.set_meta("rest_basis", door.transform.basis)
-	var rest: Basis = door.get_meta("rest_basis")
-	var target: Basis = rest
+	var target_deg: float = 0.0
 	if open:
-		var a: float = -angle_deg if reverse else angle_deg
-		target = rest.rotated(door_hinge_axis.normalized(), deg_to_rad(a))
+		target_deg = -angle_deg if reverse else angle_deg
+	var running = _door_tweens.get(door_id)
+	if running != null and is_instance_valid(running):
+		running.kill()  # hammering E must not stack two swings on the same door
+		_door_tweens.erase(door_id)
+	var from_deg: float = float(door.get_meta("swing_deg", 0.0))
+	if instant or door_swing_secs <= 0.0 or not is_inside_tree() \
+			or is_equal_approx(from_deg, target_deg):
+		_set_door_angle(target_deg, door)
+		return null
+	# Time it by the distance actually left, so shutting a half-open door does not take as long as
+	# shutting a fully open one.
+	var span: float = absf(target_deg - from_deg) / maxf(absf(angle_deg), 1.0)
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_method(_set_door_angle.bind(door), from_deg, target_deg, door_swing_secs * span)
+	_door_tweens[door_id] = tw
+	return tw
+
+## Put a door mesh at a hinge angle (deg) and remember it: that angle is the swing's state, and
+## the next one starts from it. transform.basis = … on a Node3D is a no-op (transform returns a
+## copy), so copy-modify-assign.
+func _set_door_angle(deg: float, door: Node3D) -> void:
+	if not is_instance_valid(door):
+		return
+	var rest: Basis = door.get_meta("rest_basis")
 	var t := door.transform
-	t.basis = target
+	t.basis = rest.rotated(door_hinge_axis.normalized(), deg_to_rad(deg))
 	door.transform = t
+	door.set_meta("swing_deg", deg)
 
 # ------------------------------------------------------------------------------
 # Audio SFX
