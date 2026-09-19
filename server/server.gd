@@ -32,14 +32,14 @@ var datas_to_spawn_count: int = 0
 
 var clients_peers_ids: Array[int] = []
 
-var server_zone = {
-	"x_start": -100000.0,
-	"x_end": 100000.0,
-	"y_start": -100000.0,
-	"y_end": 100000.0,
-	"z_start": -100000.0,
-	"z_end": 100000.0
-}
+## The zones this server owns, as sent by Horizon (server/zone). One entry per zone:
+##   {"id": String, "world": "space" | "planet", "planet_uuid": String, "planet_name": String,
+##    "bounds": null | {"min_x", "max_x", "min_y", "max_y", "min_z", "max_z"}}
+## A zone is a WORLD (the root world = open space, or one planet's own World3D) optionally
+## restricted by BOUNDS. Bounds are expressed in that world's coordinates: planet-local for a
+## planet (== node.global_position inside the planet's SubViewport, the planet sits at its
+## origin), universe coordinates for space. bounds == null means the whole world.
+var server_zones: Array = []
 
 var max_players_allowed = 40
 var players_list = {}
@@ -184,7 +184,7 @@ var _cull_indexed_total: int = -1
 ## True once manage_zone() has received an authoritative zone assignment
 ## from Horizon.  Until then, planets keep zero resident chunks (only their
 ## safety-net coarse mesh) so a 17-planet boot doesn't load 836k shapes.
-var _zone_initialized: bool = false
+var _zones_initialized: bool = false
 
 ## Wall-clock time (ms) of the last active-body chunk-pin sweep (every PIN_INTERVAL_MS in _process).
 var _pin_last_ms: int = 0
@@ -233,6 +233,7 @@ func _physics_process(_delta: float) -> void:
 		# wall clock — with no assumption about how many substeps a frame ran.
 		_perf_gap_usec += _t0 - _perf_prev_exit_usec
 	_perf_tick(_delta)
+	_tps_ticks += 1
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
 		_horizon_update_counter = 0
@@ -777,14 +778,14 @@ func _perf_walk(node: Node) -> void:
 ## bodies (collision shapes disabled by the culler) may lose their chunk with the zone churn.
 ##
 ## Players (CharacterBody3D) are ALWAYS pinned regardless of
-## _zone_initialized: in single-server / no-mesh deployments Horizon never
+## _zones_initialized: in single-server / no-mesh deployments Horizon never
 ## sends a manage_zone() event, so without this fallback the per-chunk
 ## collision never loads and the player falls through onto the
 ## safety-net coarse mesh ~hundreds of metres below the visible surface.
 func _refresh_active_body_pins() -> void:
 	if props_list["planets"].is_empty():
 		return
-	if _zone_initialized == false and players_list.is_empty():
+	if _zones_initialized == false and players_list.is_empty():
 		return
 
 	# planet_node → Dictionary[chunk_key, true]
@@ -815,12 +816,13 @@ func _refresh_active_body_pins() -> void:
 			if _perf_report:
 				_perf_planner_usec += Time.get_ticks_usec() - _tpl
 	_mining_planner.end_sweep()
+	_pin_prewarm_positions(pins_by_planet)
 	if _perf_report:
 		var _tpb: int = Time.get_ticks_usec()
 		_perf_pins_players_usec += _tpb - _tpa
 		_tpa = _tpb
 
-	if _zone_initialized:
+	if _zones_initialized:
 		for ptype in PIN_PROP_TYPES:
 			if not props_list.has(ptype):
 				continue
@@ -1121,6 +1123,11 @@ func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 	rb.angular_velocity = Vector3.ZERO
 	rb.remove_meta("_culled_frozen")
 	_cull_index_active(rb)  # back into the per-tick active set, out of its cell bucket
+	if rb.has_meta(ZONE_FROZEN_META):
+		# Another server simulates this body: awake for the culler, still frozen for the zone.
+		rb.freeze = true
+		rb.set_physics_process(false)
+		_set_prop_sync_ticking(rb, false)
 	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
 	# The replication state lives on the PropSync component when the prop has one, on the root for a
 	# not-yet-migrated legacy prop — reading it off the root only would silently skip every PropSync
@@ -1166,7 +1173,17 @@ func _pin_node_to_planet_chunk(body: Node3D, pins_by_planet: Dictionary) -> void
 		return  # planet not (yet) registered in props_list["planets"]
 	if best_planet.planet_data == null:
 		return
-	var body_pos := body.global_position
+	_pin_pos_to_planet_chunk(best_planet, body.global_position, pins_by_planet)
+
+
+## Pin the chunk (and its rings) under planet-world position [param pos] of [param best_planet].
+## Shared by bodies standing there and by Horizon's prewarm requests for bodies ABOUT to arrive.
+func _pin_pos_to_planet_chunk(best_planet: Planet, body_pos: Vector3, pins_by_planet: Dictionary) -> void:
+	var best_uuid: String = best_planet.uuid
+	if not pins_by_planet.has(best_uuid):
+		return
+	if best_planet.planet_data == null:
+		return
 	# Planet-LOCAL (body-frame) direction, through the planet's own conversion — the SAME one
 	# PlanetTerrain.collision_chunk_key uses to answer "is the ground here loaded?". They must agree on
 	# the tile, or a body waits on terrain nobody asked for. Since the origin rebase the planet sits at
@@ -1325,6 +1342,33 @@ func player_action(message: Dictionary):
 			player.server_action_received(message["data"])
 
 
+## Achieved PHYSICS ticks per second over the last metrics window (~1 s). This is the rate that
+## decides whether the simulation keeps up, and what Horizon's split rule ("tps:N") looks at.
+## Main-loop FPS is a different number: headless the main loop idles and runs several physics
+## ticks per frame, so a low fps next to a healthy tps means nothing (see _perf_tick).
+var _tps_ticks: int = 0
+var _tps_window_start_usec: int = 0
+
+func _measure_tps() -> int:
+	var now: int = Time.get_ticks_usec()
+	var wall_s: float = float(now - _tps_window_start_usec) / 1000000.0 if _tps_window_start_usec > 0 else 1.0
+	var tps: int = int(round(float(_tps_ticks) / maxf(wall_s, 0.001)))
+	_tps_ticks = 0
+	_tps_window_start_usec = now
+	return tps
+
+## Terrain collision chunks still being built or waiting to be (summed over every planet).
+## Horizon reads it in serverinfo to know when a server that just received its zones is
+## actually ready to take players over — tps back at 60 and nothing left to load.
+func _chunks_loading() -> int:
+	var loading := 0
+	for puuid in props_list["planets"].keys():
+		var p = props_list["planets"][puuid]
+		if p is Planet and (p as Planet).planet_terrain != null:
+			var pt = (p as Planet).planet_terrain
+			loading += pt._server_chunk_tasks.size() + pt._server_chunk_queue.size()
+	return loading
+
 func _send_metrics():
 	while true:
 		await get_tree().create_timer(1.0).timeout
@@ -1340,7 +1384,8 @@ func _send_metrics():
 					{
 						"uuid": serverinfo_uuid,
 						"type": "serverinfo",
-						"fps": int(Performance.get_monitor(Performance.TIME_FPS)),
+						"tps": _measure_tps(),
+						"chunks_loading": _chunks_loading(),
 						"objects_number": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 						"players_number": players_list.size(),
 						"scenes_number": nb_scenes,
@@ -1479,6 +1524,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 		prep["out_of_zone"] = serverinfo_uuid
 		print("erase player (2): %s" % client_uuid)
 		players_list.erase(client_uuid)
+		_release_carried_for_transfer(player)
 		player.queue_free()
 	players_newposition[client_uuid] = prep
 
@@ -1556,7 +1602,49 @@ func send_props_update_to_horizon():
 		return
 	_send_props_update_impl()
 
+## Zone slack (m) for a moving prop: wider than a walking player's, a truck at speed jitters more
+## at the border and must not bounce between two servers on consecutive flushes.
+const PROP_ZONE_MARGIN: float = 2.0
+## A prop that just spawned (created or adopted from another server) is not zone-checked for this
+## long, the same protection as players_list_creationdate.
+const PROP_ZONE_GRACE_MS: int = 1000
+var props_list_creationdate: Dictionary = {}
+
+## The moving props of this flush that drove out of our zones. Only a prop parented directly to a
+## world (planet or space) crosses by itself; whatever rides inside another prop (cargo, seated
+## players) travels with its carrier. The entry gets `out_of_zone` (the same contract as players)
+## and the prop is zone-frozen here: Horizon hands the whole subtree to the server owning the
+## destination and confirms with freeze_object.
+func _flag_props_out_of_zone() -> void:
+	if not _zones_initialized or Time.get_ticks_msec() < check_out_of_zone_after_split:
+		return
+	var now: int = Time.get_ticks_msec()
+	for entry in props_update.values():
+		if entry.has("out_of_zone"):
+			continue
+		var uuid: String = str(entry.get("uuid", ""))
+		var type: String = str(entry.get("type", ""))
+		if type == "player" or not props_list.has(type) or not props_list[type].has(uuid):
+			continue
+		var prop = props_list[type][uuid]
+		if prop == null or not is_instance_valid(prop) or not (prop is Node3D):
+			continue
+		if prop.has_meta(ZONE_FROZEN_META):
+			continue
+		if now < int(props_list_creationdate.get(uuid, 0)):
+			continue
+		var parent: Node = prop.get_parent()
+		if parent == null or (not (parent is Planet) and parent != universe_scene):
+			continue  # carried by something else: crosses with it
+		if _in_server_zones(prop, PROP_ZONE_MARGIN):
+			continue
+		print("====== Prop %s (%s) is out of zone: local=%s zones=[%s]" % [uuid, type, prop.global_position, _zones_summary()])
+		entry["out_of_zone"] = serverinfo_uuid
+		_zone_freeze_prop(prop)
+
+
 func _send_props_update_impl() -> void:
+	_flag_props_out_of_zone()
 	debug_message_number = debug_message_number + 1
 	var message = {
 		"namespace": "props",
@@ -1804,6 +1892,7 @@ func create_player(event: Dictionary) -> void:
 			parented = true
 			parent.add_child(spawned_entity_instance)
 
+	var adopted_planet: Planet = null
 	if not parented:
 		# ORIGIN REBASE: an unparented player arrives in TRUE universe coordinates. Inside a
 		# planet's region they must live in that planet's physics world (terrain collision is
@@ -1813,12 +1902,13 @@ func create_player(event: Dictionary) -> void:
 			player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
 		var owner_planet := _owning_planet(abs_pos)
 		if owner_planet != null:
-			# The physics parent becomes the planet, but the NETWORK contract stays exactly what
-			# Horizon believes: parent "" and UNIVERSE-absolute positions. player_server's
-			# _net_position() adds the orbital offset back at every emit. Replicating the reparent
-			# instead was tried and is UNSAFE: the players-position channel and the parenting
-			# events are not atomic across Horizon, so the client applied planet-local positions
-			# in its old frame and teleported thousands of km onto empty terrain (measured).
+			# The physics parent becomes the planet and the position becomes planet-local. Horizon
+			# still believes parent "" (it asked for that), so the FIRST move packet must announce
+			# the planet as parent_id in the SAME packet as its planet-local position: Horizon
+			# resolves a packet against the parent it carries, never against the stored one (the
+			# stale-parent resolution was what once threw players ~6360 km away for a frame).
+			# See the players_list_last_parent seed below.
+			adopted_planet = owner_planet
 			owner_planet.add_child(spawned_entity_instance)
 			var local_pos: Vector3 = abs_pos - _planet_orbital_abs(owner_planet)
 			player_data["position"] = {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z}
@@ -1854,16 +1944,93 @@ func create_player(event: Dictionary) -> void:
 	# mismatch look like a real move.
 	players_list_last_movement[player_uuid] = spawned_entity_instance.position
 	players_list_last_rotation[player_uuid] = spawned_entity_instance.rotation
-	# Seed the frame memo with the parent we just attached to: Horizon asked for it, so it already
-	# knows. Without this the very first tick would re-announce a frame nobody changed.
-	players_list_last_parent[player_uuid] = PropSpawn.parent_frame_uuid(spawned_entity_instance)
+	# Seed the frame memo with what HORIZON believes, not with the node we chose. When Horizon asked
+	# for a parent it already knows it, and re-announcing it on the first tick would be noise. When
+	# WE adopted the player into a planet world, Horizon still has parent "" while the positions we
+	# emit are planet-local: the memo stays "" so the first _on_player_move announces the planet.
+	players_list_last_parent[player_uuid] = "" if adopted_planet != null \
+			else PropSpawn.parent_frame_uuid(spawned_entity_instance)
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
 	spawned_entity_instance.connect("hs_server_player_update", _on_player_update)
+
+	# Handed over seated: the vehicle came first (adopted with its replicated seat map), the
+	# player arrives parented under it. Put them back in their seat, driver included.
+	var seat_parent: Node = spawned_entity_instance.get_parent()
+	if seat_parent is Vehicle and seat_parent.has_method("seat_name_of"):
+		var seat_name: String = seat_parent.seat_name_of(player_uuid)
+		if seat_name != "":
+			seat_parent.server_enter(spawned_entity_instance, seat_name, true)
+			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 
 func set_serverinfo(uuid: String) -> void:
 	serverinfo_uuid = uuid
+
+## A zone-frozen prop handed over by another server: re-place it at the pose the sender saw last,
+## reset its physics state there, restore the state its script needs to take players back (seats,
+## pilot, doors) and let it live. The sender's payload is planet-local (position local to the same
+## parent), so the pose applies as is.
+## A player about to be freed because another server takes them over: whatever they carry is
+## parented under them and would be freed with them — and PropSync would report that free as a
+## world DELETE to Horizon, erasing the crate for everyone. Mark those props as merely leaving
+## the tree and forget them here; the destination server (re)creates them under the player.
+func _release_carried_for_transfer(player: Node) -> void:
+	var stack: Array = player.get_children()
+	while not stack.is_empty():
+		var child: Node = stack.pop_back()
+		stack.append_array(child.get_children())
+		if not ("uuid" in child) or str(child.uuid) == "":
+			continue
+		var net = PropSync.of(child)
+		if net == null:
+			net = child
+		if "server_reparenting" in net:
+			net.server_reparenting = true
+		var uuid: String = str(child.uuid)
+		for proptype in props_list.keys():
+			if proptype != "planets" and props_list[proptype].has(uuid):
+				props_list[proptype].erase(uuid)
+		props_update.erase(uuid)
+		props_list_creationdate.erase(uuid)
+		if child is RigidBody3D:
+			_cull_forget(child.get_instance_id())
+		print("[zone] %s leaves with player %s" % [uuid, player.client_uuid if "client_uuid" in player else "?"])
+
+
+func _adopt_transferred_prop(prop: Node3D, object_data: Dictionary) -> void:
+	# The sender may have moved it under a new parent (a crate picked up: parent = the player).
+	var wanted_parent: String = str(object_data.get("parent_id", ""))
+	if wanted_parent != "":
+		var parent: Node = _search_parent_node(wanted_parent)
+		if parent != null and parent != prop.get_parent():
+			var net = PropSync.of(prop)
+			if net == null:
+				net = prop
+			if net.has_method("server_parent_change"):
+				net.server_parent_change(parent)
+			else:
+				prop.reparent(parent)
+	if object_data.has("position"):
+		prop.position = Vector3(object_data["position"]["x"], object_data["position"]["y"], object_data["position"]["z"])
+	if object_data.has("rotation"):
+		prop.rotation = Vector3(object_data["rotation"]["x"], object_data["rotation"]["y"], object_data["rotation"]["z"])
+	if prop is RigidBody3D:
+		PhysicsServer3D.body_set_state(prop.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, prop.global_transform)
+		prop.linear_velocity = Vector3.ZERO
+		prop.angular_velocity = Vector3.ZERO
+	if prop.has_method("server_adopt_state"):
+		prop.server_adopt_state(object_data)
+	_zone_unfreeze_prop(prop)
+	var carrier: Node = prop.get_parent()
+	if carrier is Player and carrier.has_method("server_adopt_carried"):
+		carrier.server_adopt_carried(prop)
+	var uuid: String = str(object_data.get("uuid", ""))
+	if "uuid" in prop:
+		uuid = str(prop.uuid)
+	props_list_creationdate[uuid] = Time.get_ticks_msec() + PROP_ZONE_GRACE_MS
+	print("[zone] adopted %s at %s from another server" % [uuid, prop.position])
+
 
 func create_generic_object(event: Dictionary) -> void:
 	# spawn genericprops
@@ -1878,6 +2045,12 @@ func create_generic_object(event: Dictionary) -> void:
 	if _existing_uuid != "" and props_list.has(_existing_type) \
 			and props_list[_existing_type].has(_existing_uuid) \
 			and is_instance_valid(props_list[_existing_type][_existing_uuid]):
+		var existing = props_list[_existing_type][_existing_uuid]
+		if existing.has_meta(ZONE_FROZEN_META):
+			# Another server was simulating this prop and just handed it to us: it drove into
+			# our zone. We already hold a frozen copy — adopt it where the sender says it is.
+			_adopt_transferred_prop(existing, object_data)
+			return
 		push_warning("[Server] create_generic_object: skipping duplicate uuid=%s type=%s (already created)" % [_existing_uuid, _existing_type])
 		return
 
@@ -1951,6 +2124,8 @@ func create_generic_object(event: Dictionary) -> void:
 				parent.add_child(spawnable_prop_instance)
 				if parent.has_method("request_nav_rebake"):
 					parent.request_nav_rebake()
+				if parent is Player and parent.has_method("server_adopt_carried"):
+					parent.server_adopt_carried(spawnable_prop_instance)  # handed over in their hands
 			else:
 				universe_scene.add_child(spawnable_prop_instance)
 		elif owner_planet != null:
@@ -1967,21 +2142,18 @@ func create_generic_object(event: Dictionary) -> void:
 
 	props_list_last_movement[event["data"]["object_uuid"]] = Vector3.ZERO
 	props_list_last_rotation[event["data"]["object_uuid"]] = Vector3.ZERO
+	props_list_creationdate[event["data"]["object_uuid"]] = Time.get_ticks_msec() + PROP_ZONE_GRACE_MS
 	if not props_list.has(event["data"]["object_type"]):
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
 
-	# check if position in zone, if not, freeze it (TRUE universe coords: the zone comes from
-	# Horizon in absolute coordinates, the prop may live in a planet world near its origin)
+	# check if the prop lives in one of our zones (its world = the planet it is parented under,
+	# or space; its position compared to the zone bounds in that world's coordinates); if not,
+	# keep it frozen: we need it for collisions but another server simulates it.
 	var pos = _true_position(spawnable_prop_instance)
-	if pos[0] < server_zone["x_start"] or pos[0] > server_zone["x_end"] \
-			or pos[1] < server_zone["y_start"] or pos[1] > server_zone["y_end"] \
-			or pos[2] < server_zone["z_start"] or pos[2] > server_zone["z_end"]:
+	if not _in_server_zones(spawnable_prop_instance):
 		#  we are out of zone, keep it frozen
-		spawnable_prop_instance.set_physics_process(false)
-		_set_prop_sync_ticking(spawnable_prop_instance, false)
-		if is_instance_of(spawnable_prop_instance, RigidBody3D):
-			spawnable_prop_instance.freeze = true
+		_zone_freeze_prop(spawnable_prop_instance)
 	else:
 		# At server boot there are NO players yet, so every reloaded body would spawn awake and re-run
 		# collision for ~SETTLE_TICKS before the settle-culler freezes it — a startup CPU spike with
@@ -2205,6 +2377,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 			var player = players_list[object["object_uuid"]]
 			print("erase player (1): %s" % object["object_uuid"])
 			players_list.erase(object["object_uuid"])
+			_release_carried_for_transfer(player)
 			player.queue_free()
 			return true
 		return false
@@ -2220,10 +2393,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(object["object_uuid"]):
 			var prop = props_list[proptype][object["object_uuid"]]
-			prop.set_physics_process(false)
-			_set_prop_sync_ticking(prop, false)
-			if is_instance_of(prop, RigidBody3D):
-				prop.freeze = true
+			_zone_freeze_prop(prop)
 			found = true
 			break
 	if not found:
@@ -2233,40 +2403,261 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 		return false
 	return true
 
+## Ground to load AHEAD of players Horizon is about to hand us: {planet_uuid: [{pos, until_ms}]}.
+## A player transferred from another server is held (no gravity, no moves) until the collision
+## under their feet exists — building an n8192 chunk takes seconds, and that was the 5-15 s freeze
+## at every border crossing. Horizon knows who approaches a border and who a split moves, and
+## tells us with server/prewarm so the chunk is there when the body arrives.
+var _prewarm_pins: Dictionary = {}
+const PREWARM_DEFAULT_TTL_MS: int = 15000
+
+func prewarm_chunks(event: Dictionary) -> void:
+	var data: Dictionary = event.get("data", {})
+	var planet_uuid: String = str(data.get("planet_uuid", ""))
+	if planet_uuid == "" or not props_list["planets"].has(planet_uuid):
+		return
+	var until: int = Time.get_ticks_msec() + int(data.get("ttl_ms", PREWARM_DEFAULT_TTL_MS))
+	var entries: Array = _prewarm_pins.get(planet_uuid, [])
+	for p in data.get("positions", []):
+		entries.append({"pos": Vector3(p["x"], p["y"], p["z"]), "until": until})
+	_prewarm_pins[planet_uuid] = entries
+
+
+## Pin the chunks of every live prewarm request; drop the expired ones.
+func _pin_prewarm_positions(pins_by_planet: Dictionary) -> void:
+	if _prewarm_pins.is_empty():
+		return
+	var now: int = Time.get_ticks_msec()
+	for planet_uuid in _prewarm_pins.keys():
+		var planet_node = props_list["planets"].get(planet_uuid)
+		var live: Array = []
+		for entry in _prewarm_pins[planet_uuid]:
+			if entry["until"] < now:
+				continue
+			live.append(entry)
+			if planet_node is Planet and is_instance_valid(planet_node):
+				_pin_pos_to_planet_chunk(planet_node as Planet, entry["pos"], pins_by_planet)
+		if live.is_empty():
+			_prewarm_pins.erase(planet_uuid)
+		else:
+			_prewarm_pins[planet_uuid] = live
+
+
+## A released server (zones: []) simulates nothing: drop every prop and player so the memory can
+## be reused. Planets stay — they are the reference frames and cost ~7 s to respawn; their chunks
+## unload through residency/pins. Horizon resends everything with initial_object when the server
+## is given zones again. The delete guard keeps PropSync from reporting each free as a world
+## delete to Horizon.
+func _unload_world_objects() -> void:
+	var freed := 0
+	for proptype in props_list.keys():
+		if proptype == "planets":
+			continue
+		for prop_uuid in props_list[proptype].keys():
+			var prop = props_list[proptype][prop_uuid]
+			if prop == null or not is_instance_valid(prop):
+				continue
+			var net = PropSync.of(prop)
+			if net == null:
+				net = prop
+			if "server_reparenting" in net:
+				net.server_reparenting = true
+			if prop is RigidBody3D:
+				_cull_forget(prop.get_instance_id())
+			prop.queue_free()
+			freed += 1
+		props_list[proptype] = {}
+	for player_uuid in players_list.keys():
+		var player = players_list[player_uuid]
+		if is_instance_valid(player):
+			player.queue_free()
+			freed += 1
+	players_list.clear()
+	players_list_last_movement.clear()
+	players_list_last_rotation.clear()
+	players_list_last_parent.clear()
+	players_list_creationdate.clear()
+	players_newposition.clear()
+	props_update.clear()
+	props_list_last_movement.clear()
+	props_list_last_rotation.clear()
+	props_list_creationdate.clear()
+	pending_messages_player_parenting.clear()
+	pending_messages_generic_objects_parenting.clear()
+	pending_freeze_objects.clear()
+	_prewarm_pins.clear()
+	print("[zone] released: unloaded %d objects, planets kept" % freed)
+
+
 func manage_zone(event: Dictionary) -> void:
 	var zone_data = event["data"]
-	server_zone["x_start"] = zone_data["min_x"]
-	server_zone["x_end"] = zone_data["max_x"]
-	server_zone["y_start"] = zone_data["min_y"]
-	server_zone["y_end"] = zone_data["max_y"]
-	server_zone["z_start"] = zone_data["min_z"]
-	server_zone["z_end"] = zone_data["max_z"]
+	server_zones = []
+	if zone_data.has("zones"):
+		for zone in zone_data["zones"]:
+			server_zones.append(zone)
+	elif zone_data.has("min_x"):
+		# Transitional: a Horizon that still sends one universe-wide AABB. Read it as one
+		# space zone with those bounds so the old contract keeps working for one release.
+		server_zones.append({
+			"id": "", "world": "space",
+			"bounds": {
+				"min_x": zone_data["min_x"], "max_x": zone_data["max_x"],
+				"min_y": zone_data["min_y"], "max_y": zone_data["max_y"],
+				"min_z": zone_data["min_z"], "max_z": zone_data["max_z"],
+			},
+		})
 
 	set_serverinfo(event["server_uuid"])
 	serverinfo_name = event["server_name"]
 	check_out_of_zone_after_split = Time.get_ticks_msec() + 5000
+	print("[zone] %d zone(s): %s" % [server_zones.size(), _zones_summary()])
 
 	# Push HEALPix chunk residency to every spawned planet so collision
-	# memory tracks our authoritative zone.  See _push_zone_residency_*.
-	_zone_initialized = true
+	# memory tracks our authoritative zones.  See _push_zone_residency_*.
+	_zones_initialized = true
 	_push_zone_residency_to_all()
+	if server_zones.is_empty():
+		_unload_world_objects()
+	else:
+		_apply_zones_to_existing_objects()
 
 
-## The authoritative zone AABB, in TRUE UNIVERSE coordinates — Horizon speaks that frame and only
-## that one. Server-side scene positions are per-planet-world since the origin rebase, so every
-## comparison against this box goes through _true_position / _planet_orbital_abs.
-func _server_zone_aabb_world() -> AABB:
-	var pmin := Vector3(
-		server_zone["x_start"], server_zone["y_start"], server_zone["z_start"])
-	var pmax := Vector3(
-		server_zone["x_end"], server_zone["y_end"], server_zone["z_end"])
-	return AABB(pmin, pmax - pmin)
+func _zones_summary() -> String:
+	var parts: PackedStringArray = []
+	for zone in server_zones:
+		var label: String = str(zone.get("world", "?"))
+		if label == "planet":
+			label += ":" + str(zone.get("planet_name", zone.get("planet_uuid", "?")))
+		var b = zone.get("bounds")
+		if b != null:
+			label += "[x %.0f..%.0f y %.0f..%.0f z %.0f..%.0f]" % [
+				b["min_x"], b["max_x"], b["min_y"], b["max_y"], b["min_z"], b["max_z"]]
+		parts.append(label)
+	return ", ".join(parts)
+
+
+## Whether [param zone] contains a body living in [param planet]'s world (null = space) at
+## [param local] (planet-local, or universe coordinates in space). [param margin] grows the
+## bounds on every side to absorb physics jitter at the border.
+func _zone_contains_node(zone: Dictionary, planet: Planet, local: Vector3, margin: float = 0.0) -> bool:
+	match str(zone.get("world", "")):
+		"space":
+			if planet != null:
+				return false
+		"planet":
+			if planet == null or planet.uuid != str(zone.get("planet_uuid", "")):
+				return false
+		_:
+			return false
+	var b = zone.get("bounds")
+	if b == null:
+		return true
+	return local.x >= b["min_x"] - margin and local.x <= b["max_x"] + margin \
+			and local.y >= b["min_y"] - margin and local.y <= b["max_y"] + margin \
+			and local.z >= b["min_z"] - margin and local.z <= b["max_z"] + margin
+
+
+## Whether [param node] lives inside one of this server's zones. Its world is the nearest Planet
+## ancestor (or space), its position is global_position — which IS planet-local inside a planet's
+## own World3D (the planet sits at the origin) and universe coordinates in the root world.
+## Before Horizon sent any zone (single-server deployments) everything is ours.
+func _in_server_zones(node: Node3D, margin: float = 0.0) -> bool:
+	if not _zones_initialized:
+		return true
+	var planet := _planet_ancestor_of(node)
+	var local: Vector3 = node.global_position
+	for zone in server_zones:
+		if _zone_contains_node(zone, planet, local, margin):
+			return true
+	return false
+
+
+## A prop frozen because ANOTHER server simulates it. The meta remembers the state the freeze
+## replaced, so waking it up restores exactly that — and nothing else is ever touched: props
+## freeze themselves for their own reasons (a crate settled in a container, cargo locked in a
+## truck bed, a rock waiting for its cuts, generic_prop keeping its tick off) and a blanket
+## `freeze = false` on every member prop woke all of them up at every zone update (measured:
+## 300 % CPU and crates raining out of their containers). Culled-frozen bodies belong to the
+## settle-culler and are left alone too.
+const ZONE_FROZEN_META := "_zone_frozen"
+
+func _zone_freeze_prop(prop: Node) -> void:
+	if prop.has_meta(ZONE_FROZEN_META):
+		return
+	if prop is RigidBody3D and (prop as RigidBody3D).get_meta("_culled_frozen", false):
+		return
+	prop.set_meta(ZONE_FROZEN_META, {
+		"physics": prop.is_physics_processing(),
+		"freeze": (prop as RigidBody3D).freeze if prop is RigidBody3D else false,
+	})
+	prop.set_physics_process(false)
+	_set_prop_sync_ticking(prop, false)
+	if prop is RigidBody3D:
+		(prop as RigidBody3D).freeze = true
+
+
+func _zone_unfreeze_prop(prop: Node) -> void:
+	if not prop.has_meta(ZONE_FROZEN_META):
+		return
+	var prev: Dictionary = prop.get_meta(ZONE_FROZEN_META)
+	prop.remove_meta(ZONE_FROZEN_META)
+	prop.set_physics_process(prev.get("physics", false))
+	_set_prop_sync_ticking(prop, true)
+	if prop is RigidBody3D:
+		(prop as RigidBody3D).freeze = prev.get("freeze", false)
+
+
+## Re-evaluates every spawned prop against the zones we just received: a prop we froze because it
+## belonged to another server wakes up when its zone comes back (merge), a prop that left our
+## zones goes to sleep (split). Only zone freezes are touched (see _zone_freeze_prop). Players are
+## NOT handled here: Horizon moves them explicitly (freeze_object / initial_object) and
+## _check_out_of_zone is the backstop.
+func _apply_zones_to_existing_objects() -> void:
+	var frozen := 0
+	var woken := 0
+	for proptype in props_list.keys():
+		if proptype == "planets":
+			continue
+		for prop_uuid in props_list[proptype].keys():
+			var prop = props_list[proptype][prop_uuid]
+			if prop == null or not is_instance_valid(prop) or not (prop is Node3D):
+				continue
+			if _in_server_zones(prop):
+				if prop.has_meta(ZONE_FROZEN_META):
+					_zone_unfreeze_prop(prop)
+					woken += 1
+			elif not prop.has_meta(ZONE_FROZEN_META):
+				_zone_freeze_prop(prop)
+				frozen += 1
+	if frozen > 0 or woken > 0:
+		print("[zone] props frozen=%d woken=%d" % [frozen, woken])
+
+
+## The BOUNDED zones we own on [param planet], as planet-local AABBs. A whole-planet zone
+## (bounds == null) contributes nothing on purpose: blanketing a planet from a giant box only
+## samples 14 arbitrary directions (corners and faces) plus their neighbours — ~5 chunks of
+## 131k triangles per planet where nobody stands, ×19 planets, for no gameplay benefit (measured:
+## 104 resident chunks, 14 TPS). The chunks that matter, under players and awake bodies, are
+## pinned by _refresh_active_body_pins on every planet, exactly like fine-collision planets
+## already rely on. Only a real region (a zone cut by a split) is worth pre-loading.
+func _planet_zone_aabbs(planet: Planet) -> Array[AABB]:
+	var out: Array[AABB] = []
+	for zone in server_zones:
+		if str(zone.get("world", "")) != "planet" or str(zone.get("planet_uuid", "")) != planet.uuid:
+			continue
+		var b = zone.get("bounds")
+		if b == null:
+			continue
+		var pmin := Vector3(b["min_x"], b["min_y"], b["min_z"])
+		var pmax := Vector3(b["max_x"], b["max_y"], b["max_z"])
+		out.append(AABB(pmin, pmax - pmin))
+	return out
 
 
 ## Push the current zone-derived chunk residency to one planet.
-## No-op when zone is not yet initialised or planet has no terrain.
+## No-op when zones are not yet initialised or planet has no terrain.
 func _push_zone_residency_to_planet(planet_node: Node) -> void:
-	if not _zone_initialized:
+	if not _zones_initialized:
 		return
 	if planet_node == null or not is_instance_valid(planet_node):
 		return
@@ -2288,18 +2679,20 @@ func _push_zone_residency_to_planet(planet_node: Node) -> void:
 	if planet.planet_data.collision_detail_nside() > planet.planet_data.export_nside:
 		planet.planet_terrain.set_resident_chunks(PackedStringArray())
 		return
-	# Convert zone AABB from TRUE universe coords → planet-local by subtracting the ORBITAL
-	# position (the node itself sits at the origin of its own world — rebase, see create_planet).
-	var aabb_world := _server_zone_aabb_world()
-	var aabb_local := AABB(
-		aabb_world.position - _planet_orbital_abs(planet), aabb_world.size)
-	var keys := planet.planet_data.chunks_in_aabb_world(aabb_local, 1)
+	# Zone bounds are already planet-local (the planet sits at the origin of its own world),
+	# so no orbital conversion is needed. A planet none of our zones cover, or that we own
+	# whole, keeps no blanket chunk: the pins load the ground under players and awake bodies.
+	var keys := PackedStringArray()
+	for aabb_local in _planet_zone_aabbs(planet):
+		for key in planet.planet_data.chunks_in_aabb_world(aabb_local, 1):
+			if not keys.has(key):
+				keys.append(key)
 	planet.planet_terrain.set_resident_chunks(keys)
 
 
 ## Push the current zone-derived chunk residency to every spawned planet.
 func _push_zone_residency_to_all() -> void:
-	if not _zone_initialized:
+	if not _zones_initialized:
 		return
 	for planet_uuid in props_list["planets"].keys():
 		_push_zone_residency_to_planet(props_list["planets"][planet_uuid])
@@ -2313,13 +2706,24 @@ func _check_out_of_zone(player_uuid: String = "") -> bool:
 			return false
 		if Time.get_ticks_msec() < players_list_creationdate[player_uuid]:
 			return false
-		#print("go...")
-		var pos = _true_position(players_list[player_uuid])  # zone bounds are TRUE universe coords
+		var player = players_list[player_uuid]
+		if not (player is Node3D):
+			return false
+		# A player riding a prop (seated in a vehicle, on its bed...) crosses WITH the prop: it
+		# is the prop that gets zone-checked and handed over, its subtree follows.
+		var carrier: Node = player.get_parent()
+		if carrier != null and carrier != universe_scene and not (carrier is Planet) \
+				and "uuid" in carrier and str(carrier.uuid) != "" and not (carrier is Player):
+			for proptype in props_list.keys():
+				if proptype != "planets" and props_list[proptype].has(str(carrier.uuid)):
+					return false
+		# 0.4 m of slack at the border absorbs physics jitter (the same body must not bounce
+		# between two servers on every tick).
 		var magicnumber = 0.400
-		if pos[0] < (server_zone["x_start"] - magicnumber) or pos[0] > (server_zone["x_end"] + magicnumber) \
-				or pos[1] < (server_zone["y_start"] - magicnumber) or pos[1] > (server_zone["y_end"] + magicnumber) \
-				or pos[2] < (server_zone["z_start"] - magicnumber) or pos[2] > (server_zone["z_end"] + magicnumber):
-			print("====== Player %s is out of zone at position %s" % [player_uuid, pos])
-			print(server_zone)
+		if not _in_server_zones(player, magicnumber):
+			var planet := _planet_ancestor_of(player)
+			print("====== Player %s is out of zone: world=%s local=%s zones=[%s]" % [
+				player_uuid, planet.uuid if planet != null else "space",
+				player.global_position, _zones_summary()])
 			return true
 	return false
