@@ -45,6 +45,7 @@ func _init() -> void:
 	_measure(pd, base_ipix, _child_at(base_ipix, 0, 0), "chunk sur le bord de sa tuile")
 	_measure(pd, base_ipix, _child_at(base_ipix, TILE_RES / 2, TILE_RES / 2),
 			"chunk au centre de sa tuile")
+	_measure_mountains(pd, base_ipix, _child_at(base_ipix, TILE_RES / 2, TILE_RES / 2))
 	quit()
 
 
@@ -235,6 +236,89 @@ func _measure(pd, export_ipix: int, hp_ipix: int, label: String) -> void:
 
 	if acc == 0.0:
 		print("   (accumulateur nul — le banc n'a rien lu)")
+
+
+## Surcoût des montagnes procédurales (MountainRelief) sur le même chunk, chemin du cadre
+## comme generate_mesh, puis le chemin gameplay (sans cadre, pas 0 = plein détail). Cibles
+## du plan : (b) ≤ +40 % du chemin de base, (c) ≤ +60 %, (d) ≤ +50 %, (e) ≤ 10 µs/appel.
+func _measure_mountains(pd, export_ipix: int, hp_ipix: int) -> void:
+	pd.max_quadtree_depth = 13
+	pd.chunk_resolution = CHUNK_RES
+	var grid: Array[PackedVector3Array] = HEALPix.get_pixel_grid(HP_NSIDE, hp_ipix, CHUNK_RES)
+	var eps := HEALPix.pixel_side_length(HP_NSIDE, 1.0) * (0.25 / float(CHUNK_RES))
+	var sample_nside: int = pd.sample_nside_for(HP_NSIDE)
+	var pitch: float = HEALPix.pixel_side_length(HP_NSIDE, pd.radius) / float(CHUNK_RES)
+	var dirs := PackedVector3Array()
+	var interior := PackedInt32Array()
+	for yi in CHUNK_RES + 1:
+		for xi in CHUNK_RES + 1:
+			var dir_c: Vector3 = grid[yi][xi]
+			var arbitrary := Vector3.UP if absf(dir_c.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
+			var tan_u := dir_c.cross(arbitrary).normalized()
+			var tan_v := dir_c.cross(tan_u).normalized()
+			var edge := xi == 0 or xi == CHUNK_RES or yi == 0 or yi == CHUNK_RES
+			for d in [dir_c,
+					(dir_c - tan_u * eps).normalized(), (dir_c + tan_u * eps).normalized(),
+					(dir_c - tan_v * eps).normalized(), (dir_c + tan_v * eps).normalized()]:
+				dirs.append(d)
+				interior.append(0 if edge else 1)
+	var n := dirs.size()
+	print("\n── montagnes procédurales sur ce chunk (pas de sommet %.1f m)" % pitch)
+
+	var c_ll: Vector2 = HEALPix.vec2lonlat(HEALPix.pix2vec_nest(HP_NSIDE, hp_ipix))
+	var mpd: float = pd.radius * PI / 180.0
+	var clat := cos(deg_to_rad(c_ll.y))
+	var style := {"amplitude_m": 600.0, "wavelength_m": 6000.0, "octaves": 8, "ridge": 0.6,
+			"exponent": 1.5, "seed": 3}
+	# (b) zone pleine couverture.
+	var full := style.duplicate()
+	full["coverage"] = "full"
+	# (c) anneau de 16 sommets, 600 m de rayon, décalé de 300 m : il coupe le chunk.
+	var ring := PackedVector2Array()
+	for i in 16:
+		var a := TAU * i / 16.0
+		ring.append(c_ll + Vector2((300.0 + 600.0 * cos(a)) / mpd / clat, 600.0 * sin(a) / mpd))
+	var partial := style.duplicate()
+	partial["coverage"] = "partial"
+	partial["polygon"] = ring
+	# (d) crête de 12 segments en travers du chunk.
+	var crest := PackedVector2Array()
+	for i in 13:
+		crest.append(c_ll + Vector2((-1200.0 + 200.0 * i) / mpd / clat, (80.0 * sin(i * 0.9)) / mpd))
+	var ridge := {"coverage": "partial", "polygon": crest, "height_m": 200.0, "width_m": 500.0,
+			"roughness": 0.3, "warp_m": 40.0, "asymmetry": 0.4}
+
+	var cases := [
+		["(a) sans montagnes", [], []],
+		["(b) zone pleine, 8 octaves", [full], []],
+		["(c) zone partielle, anneau 16", [partial], []],
+		["(d) crête 12 segments", [], [ridge]],
+	]
+	var acc := 0.0
+	for cs in cases:
+		pd.set_mountain_overrides(cs[1], cs[2])
+		var t := Time.get_ticks_usec()
+		for r in REPS:
+			var frame: PlanetData.TileFrame = pd.make_tile_frame()
+			pd.prepare_mountain_frame(frame, HP_NSIDE, hp_ipix)
+			for i in n:
+				if interior[i] == 1:
+					acc += pd.sample_height_for_direction(dirs[i], export_ipix, -1,
+							Vector2i(-1, -1), null, sample_nside, frame, pitch)
+				else:
+					acc += pd.sample_height_boundary(dirs[i], export_ipix, -1,
+							Vector2i(-1, -1), null, sample_nside, frame, pitch)
+		_report(cs[0], t, n)
+	# (e) chemin gameplay : pas de cadre, plein détail, zone partielle + crête.
+	pd.set_mountain_overrides([partial], [ridge])
+	var t := Time.get_ticks_usec()
+	for r in REPS:
+		for i in n:
+			acc += pd.sample_height_for_direction(dirs[i])
+	_report("(e) gameplay sans cadre", t, n)
+	pd.set_mountain_overrides([], [])
+	if acc == 0.0:
+		print("   (accumulateur nul)")
 
 
 func _report(label: String, t0: int, n: int) -> void:

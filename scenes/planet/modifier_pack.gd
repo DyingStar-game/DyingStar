@@ -107,6 +107,11 @@ const KIND_LINEAR := 2
 const KIND_RADIAL := 3
 const KIND_POPULATE := 4
 const KIND_ROAD := 5
+## Procedural mountains (MountainRelief): POPULATE record layout, own kinds
+## because the linker holds one part per kind. MOUNTAIN = mountain_range
+## polygons, RIDGE = crest polylines (the vertex list is an open line).
+const KIND_MOUNTAIN := 6
+const KIND_RIDGE := 7
 
 ## Bit masks for decode_tile()'s kind_mask (1 << kind).
 const MASK_CRATER := 1 << KIND_CRATER
@@ -114,7 +119,10 @@ const MASK_LINEAR := 1 << KIND_LINEAR
 const MASK_RADIAL := 1 << KIND_RADIAL
 const MASK_POPULATE := 1 << KIND_POPULATE
 const MASK_ROAD := 1 << KIND_ROAD
-const MASK_ALL := MASK_CRATER | MASK_LINEAR | MASK_RADIAL | MASK_POPULATE | MASK_ROAD
+const MASK_MOUNTAIN := 1 << KIND_MOUNTAIN
+const MASK_RIDGE := 1 << KIND_RIDGE
+const MASK_ALL := MASK_CRATER | MASK_LINEAR | MASK_RADIAL | MASK_POPULATE | MASK_ROAD \
+		| MASK_MOUNTAIN | MASK_RIDGE
 
 ## Coordinates are stored as int32 in units of 1e-7 degree (~1.1 cm).
 const COORD_SCALE := 1.0e-7
@@ -298,6 +306,8 @@ static func kind_name(kind: int) -> String:
 		KIND_RADIAL: return "radial"
 		KIND_POPULATE: return "populate"
 		KIND_ROAD: return "road"
+		KIND_MOUNTAIN: return "mountain"
+		KIND_RIDGE: return "ridge"
 	return ""
 
 
@@ -403,8 +413,10 @@ func _sid(i: int) -> String:
 ## for biome polygons, and the server collision path never pays for roads.
 ##
 ## Returns {"craters", "linear_features", "radial_features", "populate_zones",
-## "roads", "_raw_bytes"}. Every element matches the schema the runtime already
-## consumes, so callers need no field renaming.
+## "roads", "mountain_zones", "ridge_lines", "_raw_bytes"}. Every element
+## matches the schema the runtime already consumes, so callers need no field
+## renaming; the two mountain lists come prepared (MountainRelief.Zone /
+## Ridge), which needs [param m_per_deg] for the ridge lengths.
 func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 		kind_mask: int = MASK_ALL) -> Dictionary:
 	var out := {
@@ -413,6 +425,9 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 		"radial_features": [],
 		"populate_zones": [],
 		"roads": [],
+		"mountain_zones": [],
+		"ridge_lines": [],
+		"mountain_set": null,
 		"_raw_bytes": bytes.size(),
 	}
 	if bytes.size() < 4:
@@ -450,6 +465,18 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 				out["roads"] = _decode_roads(bytes, start, record_count, m_per_deg)
 			KIND_POPULATE:
 				out["populate_zones"] = _decode_populate(bytes, start, record_count)
+			KIND_MOUNTAIN:
+				var mz: Array = []
+				for z in _decode_populate(bytes, start, record_count):
+					mz.append(MountainRelief.prepare_zone(z))
+				out["mountain_zones"] = mz
+			KIND_RIDGE:
+				var rl: Array = []
+				for z in _decode_populate(bytes, start, record_count):
+					rl.append(MountainRelief.prepare_ridge(z, m_per_deg))
+				out["ridge_lines"] = rl
+	if not out["mountain_zones"].is_empty() or not out["ridge_lines"].is_empty():
+		out["mountain_set"] = MountainRelief.build_set(out["mountain_zones"], out["ridge_lines"])
 	return out
 
 

@@ -350,6 +350,18 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _pz_fp := data.populate_fingerprint()
 		if _pz_fp != "":
 			_pz = "_pz%s" % _pz_fp.substr(0, 12)
+		# Procedural mountains (MountainRelief) displace the ground inside the
+		# sampler: the mountain + ridge parts' fingerprint re-keys every chunk
+		# on a re-export of the features; the debug injection keys on its own
+		# fields. No part and no debug → empty, byte-identical key.
+		var _mt := ""
+		var _mt_fp := data.mountain_fingerprint()
+		if _mt_fp != "":
+			_mt = "_mt%s" % _mt_fp
+		elif data.debug_mountain_enabled:
+			_mt = "_mtdbg%08x" % (hash(str([data.debug_mountain_lonlat,
+					data.debug_mountain_radius_km, data.debug_mountain_style,
+					data.debug_ridge_points, data.debug_ridge_style])) & 0xFFFFFFFF)
 		# v26 → v27: the road ribbon's perpendicular is now taken in metric
 		# space. That widens every road that is not east-west, on EVERY planet
 		# with roads, so it is a runtime change no data field captures.
@@ -417,10 +429,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v48%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v48%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _sk]
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -515,6 +527,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# Pre-load biome/road queries on the main thread so that background mesh
 	# generation tasks see them as purely read-only (no lazy-init side-effects).
 	planet_data.ensure_queries_loaded()
+	# Procedural mountains: resolve the planet gate and the debug features on
+	# THIS thread, before the bridge spans and grade profiles below read the
+	# sampler — they must stand on the mountains too.
+	planet_data.warm_mountains()
 
 	# Find the road/chasm crossings now rather than on the first chunk that
 	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
@@ -1840,14 +1856,23 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 	var xform := n3.global_transform
 	if planet_data == null:
 		return xform
-	var planet_center := global_position
-	var local_pos := n3.global_position - planet_center
+	# Sample in the PLANET frame, not the world frame. The heightmap is
+	# indexed by body-local direction (HEALPix lon/lat), and the body is
+	# rotated whenever "Fly in planet frame" is on (Planet.editor_set_flight_
+	# transform), when the system scene places it with a tilt, or by the spin
+	# at runtime. Feeding the world-space direction to the sampler then reads
+	# the altitude of some OTHER point of the planet — on a mountain that put
+	# the snapped object hundreds of metres under the ground.
+	var planet_xform := global_transform
+	var local_pos := planet_xform.affine_inverse() * n3.global_position
 	if local_pos.length_squared() < 1.0:
 		return xform  # at the planet centre — no radial direction
-	var dir := local_pos.normalized()
-	var h := planet_data.sample_height_for_direction(dir)
-	var surface_pos := planet_center \
-		+ dir * (planet_data.radius + h + editor_snap_height_offset)
+	var local_dir := local_pos.normalized()
+	var h := planet_data.sample_height_for_direction(local_dir)
+	var surface_pos: Vector3 = planet_xform \
+		* (local_dir * (planet_data.radius + h + editor_snap_height_offset))
+	# Radial "up" in world space, for the alignment below.
+	var dir := (planet_xform.basis * local_dir).normalized()
 
 	if not editor_snap_align_to_normal:
 		# Position only — preserve the current rotation and scale.
@@ -2584,12 +2609,12 @@ func _try_create_or_defer(info: Dictionary) -> void:
 ## (PlanetData.sample_nside_for(hp_nside)); the live surface is sampled at the
 ## same level so a coarse chunk isn't compared against the finest tile.
 func _cached_geom_valid(first_vertex: Vector3, origin: Vector3, key: String,
-		sample_nside: int = -1) -> bool:
+		sample_nside: int = -1, vtx_spacing_m: float = 0.0) -> bool:
 	var p := origin + first_vertex
 	var r := p.length()
 	if r <= 0.0:
 		return false
-	var surf: float = planet_data.crack_aware_surface_dist(p / r, sample_nside)
+	var surf: float = planet_data.crack_aware_surface_dist(p / r, sample_nside, vtx_spacing_m)
 	if absf(r - surf) <= _CACHE_GEOM_TOLERANCE_M:
 		return true
 	print("[PlanetTerrain] cache STALE for '%s': cached radial=%.0fm vs live surface=%.0fm — discarding, will regenerate" % [
@@ -2604,8 +2629,13 @@ func _cached_mesh_valid(mesh: ArrayMesh, info: Dictionary) -> bool:
 	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	if verts.is_empty():
 		return false
+	var _ns: int = info.get("nside", 0)
+	var _res: int = planet_data.get_resolution_for_lod(info.get("lod", 0))
+	var _pitch := 0.0
+	if _ns > 0 and _res > 0:
+		_pitch = HEALPix.pixel_side_length(_ns, planet_data.radius) / float(_res)
 	return _cached_geom_valid(Vector3(verts[0]), info.center, info.key,
-			planet_data.sample_nside_for(info.get("nside", 0)))
+			planet_data.sample_nside_for(_ns), _pitch)
 
 
 ## Collision variant of _cached_geom_valid: pulls the first face vertex.
@@ -2613,8 +2643,12 @@ func _cached_shape_valid(shape: ConcavePolygonShape3D, nside: int, ipix: int, ke
 	var faces := shape.get_faces()
 	if faces.is_empty():
 		return false
+	var _pitch := 0.0
+	var _cres := planet_data.collision_col_res_for(nside)
+	if nside > 0 and _cres > 0:
+		_pitch = HEALPix.pixel_side_length(nside, planet_data.radius) / float(_cres)
 	return _cached_geom_valid(Vector3(faces[0]), _chunk_collision_origin(nside, ipix), key,
-			planet_data.sample_nside_for(nside))
+			planet_data.sample_nside_for(nside), _pitch)
 
 
 ## Submit a recipe task if one isn't already in-flight or deferred.

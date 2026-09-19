@@ -2551,9 +2551,13 @@ func client_parent_change(parent: Node) -> void:
 # ------------------------------------------------------------------------------
 ## Server: a player takes a seat (by node name). Refuses if the seat is unknown or taken.
 ## The driver seat becomes the pilot (control + HUD); passengers just ride along.
-func server_enter(player: Node, seat_name: String = "") -> void:
+## [param force] skips the free-seat and door gates: a player handed over by another server
+## was already sitting there.
+func server_enter(player: Node, seat_name: String = "", force: bool = false) -> void:
 	var seat: Node = _find_seat(seat_name)
-	if seat == null or not seat.is_free() or _seat_door_blocked(seat):
+	if seat == null:
+		return
+	if not force and (not seat.is_free() or _seat_door_blocked(seat)):
 		return
 	# Both hands are on what you carry: put it down before you climb in. Refused here rather than
 	# silently dropping the load, because dropping someone's crate for them -- possibly into the
@@ -2645,6 +2649,31 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 	var seat_local: Vector3 = to_local((seat as Node3D).global_position)
 	var side: float = -1.0 if seat_local.x <= 0.0 else 1.0
 	return to_global(Vector3(side * (body_width * 0.5 + 1.0), 1.0, seat_local.z))
+
+## Server, on a hand-over from another zone's server: the state the sender replicated that we
+## need to take its players back — who sits where, who drives, which doors are open. The regular
+## channel update is a no-op on the server on purpose (we simulate), hence this dedicated hook.
+func server_adopt_state(data: Dictionary) -> void:
+	if data.has("seats"):
+		_net_seats = (data["seats"] as Dictionary).duplicate()
+	if data.has("pilot_uuid"):
+		pilot_uuid = str(data["pilot_uuid"])
+	if data.has("doors"):
+		_door_state = (data["doors"] as Dictionary).duplicate()
+		_net_last_doors = _door_state.duplicate()
+	_handbrake = bool(data.get("handbrake", _handbrake))
+
+## The seat the sender replicated for [param player_uuid] ("" when it was not aboard): the seat
+## map first, the pilot slot as a fallback for a vehicle replicated before seats existed.
+func seat_name_of(player_uuid: String) -> String:
+	for seat_name in _net_seats.keys():
+		if str(_net_seats[seat_name]) == player_uuid:
+			return str(seat_name)
+	if pilot_uuid == player_uuid:
+		for seat in _seats():
+			if seat.is_driver_seat():
+				return str(seat.name)
+	return ""
 
 ## All seats of this vehicle (designer-placed VehicleSeat children).
 func _seats() -> Array:

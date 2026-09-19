@@ -45,6 +45,11 @@ const STRINGS := [
 	"fern",                   # 10 prop value (string)
 	"railway",                # 11 road_type of the railway record
 	"highway",                # 12 road_type of the highway record
+	"mountain_range",         # 13 MOUNTAIN record type
+	"amplitude_m",            # 14 mountain prop key (f32)
+	"ridge",                  # 15 RIDGE record type
+	"height_m",               # 16 ridge prop key (f32)
+	"seed",                   # 17 prop key (i32)
 ]
 
 const SID_LINEAR_TYPE := 0
@@ -60,6 +65,11 @@ const SID_UNDERGROWTH := 9
 const SID_FERN := 10
 const SID_RAILWAY := 11
 const SID_HIGHWAY := 12
+const SID_MOUNTAIN_RANGE := 13
+const SID_AMPLITUDE := 14
+const SID_RIDGE := 15
+const SID_HEIGHT := 16
+const SID_SEED := 17
 
 var _levels: Array[int] = []
 ## ROAD record layout the fixture pack announces (2 = flags/max_slope tail).
@@ -717,6 +727,89 @@ func test_kind_mask_skips_blocks() -> void:
 			ModifierPackScript.MASK_ALL & ~ModifierPackScript.MASK_ROAD)
 	assert_eq((no_roads["roads"] as Array).size(), 0, "roads skipped")
 	assert_eq((no_roads["craters"] as Array).size(), 1, "craters still decoded")
+	pack.close()
+
+
+## A MOUNTAIN block (kind 6) and a RIDGE block (kind 7): the POPULATE record
+## layout, decoded into prepared MountainRelief objects plus the C# set.
+func _block_mountain(lon: float, lat: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_MOUNTAIN_RANGE)
+	_put_u8(b, ModifierPackScript.COVERAGE_PARTIAL)
+	_put_u8(b, 2)          # prop_count
+	_put_s32(b, 0)         # feature index
+	_put_u16(b, 4)         # vertex_count
+	_put_u16(b, 0)
+	_put_u16(b, SID_AMPLITUDE)
+	_put_u8(b, 0)
+	_put_u8(b, 0)
+	_put_f32(b, 512.0)
+	_put_u16(b, SID_SEED)
+	_put_u8(b, 2)
+	_put_u8(b, 0)
+	_put_s32(b, 77)
+	for d in [Vector2(0.0, 0.0), Vector2(0.5, 0.0), Vector2(0.5, 0.5), Vector2(0.0, 0.5)]:
+		_put_s32(b, _e7(lon + d.x))
+		_put_s32(b, _e7(lat + d.y))
+	return b
+
+
+func _block_ridge(lon: float, lat: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_RIDGE)
+	_put_u8(b, ModifierPackScript.COVERAGE_PARTIAL)
+	_put_u8(b, 1)
+	_put_s32(b, 0)
+	_put_u16(b, 2)         # an OPEN two-point line
+	_put_u16(b, 0)
+	_put_u16(b, SID_HEIGHT)
+	_put_u8(b, 0)
+	_put_u8(b, 0)
+	_put_f32(b, 333.0)
+	_put_s32(b, _e7(lon))
+	_put_s32(b, _e7(lat))
+	_put_s32(b, _e7(lon + 0.2))
+	_put_s32(b, _e7(lat))
+	return b
+
+
+func test_decode_mountain_and_ridge_kinds() -> void:
+	var pack = _open()
+	var mb := _block_mountain(10.0, 20.0)
+	var rb := _block_ridge(10.0, 20.1)
+	var out := PackedByteArray()
+	_put_u16(out, 1)
+	_put_u16(out, 2)
+	_put_u8(out, ModifierPackScript.KIND_MOUNTAIN)
+	_put_u8(out, 0)
+	_put_u16(out, 1)
+	_put_u32(out, mb.size())
+	_put_u8(out, ModifierPackScript.KIND_RIDGE)
+	_put_u8(out, 0)
+	_put_u16(out, 1)
+	_put_u32(out, rb.size())
+	out.append_array(mb)
+	out.append_array(rb)
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_MOUNTAIN), "mountain")
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_RIDGE), "ridge")
+	var t := pack.decode_tile(out, _m_per_deg)
+	assert_eq((t["mountain_zones"] as Array).size(), 1, "one mountain zone")
+	var z: MountainRelief.Zone = t["mountain_zones"][0]
+	assert_false(z.full)
+	assert_eq(z.polygon.size(), 4)
+	assert_eq(z.prm.amplitude_m, 512.0, "f32 prop into Params")
+	assert_eq(z.prm.seed, 77, "i32 prop into Params")
+	assert_eq(z.prm.feather_m, MountainRelief.FEATHER_MIN_M, "feather floored")
+	assert_eq((t["ridge_lines"] as Array).size(), 1, "one ridge")
+	var r: MountainRelief.Ridge = t["ridge_lines"][0]
+	assert_eq(r.centerline.size(), 2, "open line kept whole")
+	assert_eq(r.height_m, 333.0)
+	assert_almost_eq(r.length_m, 0.2 * _m_per_deg * cos(deg_to_rad(20.1)), 1.0, "length in metres")
+	assert_true(t["mountain_set"] != null, "C# set built for the tile")
+	# The mask skips them like any other kind.
+	var none := pack.decode_tile(out, _m_per_deg, ModifierPackScript.MASK_ROAD)
+	assert_eq((none["mountain_zones"] as Array).size(), 0)
+	assert_true(none["mountain_set"] == null)
 	pack.close()
 
 

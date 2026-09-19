@@ -12,6 +12,8 @@ Reassemble <planet>_chunks/terrainmodifier.pack from the per-kind parts.
             caves.dsmpart           written by export_caves.py
             rivers.dsmpart          written by export_rivers.py
             biomes.dsmpart          written by export_biomes.py
+            mountains.dsmpart       written by export_mountains.py
+            ridges.dsmpart          written by export_mountains.py
 
 Each exporter rewrites only its own part and then calls link(), so exporting
 roads cannot disturb craters. That is the whole reason the pack is a derived
@@ -344,6 +346,8 @@ _PART_BASENAMES = {
     "radial": "caves",
     "linear": "rivers",
     "populate": "biomes",
+    "mountain": "mountains",
+    "ridge": "ridges",
 }
 
 

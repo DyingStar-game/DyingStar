@@ -50,6 +50,9 @@ except ImportError:  # pragma: no cover - depends on how the caller set sys.path
 #: stay at export_nside: they are point and polygon QUERIES, never emitted
 #: geometry, so there is no doubling risk — and baking a biome polygon that
 #: covers a quarter of a planet down to n8192 would need ~200 million tiles.
+#: MOUNTAIN / RIDGE are pure functions evaluated per vertex (MountainRelief):
+#: a chunk finer than export_nside reads its export-level ancestor's records,
+#: so export_nside is enough for them too.
 _DEEP_KINDS = ("road", "linear")
 
 #: One unit of the packed i32 coordinate encoding (dsmp.COORD_SCALE), ~1.1 cm.
@@ -61,7 +64,7 @@ COORD_QUANTUM_DEG = 1.0e-7
 def level_policy(export_nside, max_quadtree_nside, min_nside=1):
     """{kind: {"min": nside, "max": nside}} for this planet."""
     out = {}
-    for kind in ("crater", "linear", "radial", "populate", "road"):
+    for kind in ("crater", "linear", "radial", "populate", "road", "mountain", "ridge"):
         deep = kind in _DEEP_KINDS
         out[kind] = {
             "min": min_nside,
