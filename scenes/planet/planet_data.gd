@@ -139,6 +139,25 @@ var chunk_data_version: String = ""
 ## real terrain / crack interiors when diagnosing dark-band artifacts.
 @export var debug_color_skirts: bool = false
 
+@export_group("Debug mountain")
+## DEV: a synthetic mountain_range polygon + one ridge, injected as if the
+## modifier pack carried them — to iterate on MountainRelief before the QGIS
+## layer exists. Ignored once the pack has a mountain part. Every field below
+## is baked into the chunk cache key.
+@export var debug_mountain_enabled: bool = false
+## Centre of the debug massif (lon, lat in degrees) and its radius (km).
+@export var debug_mountain_lonlat: Vector2 = Vector2.ZERO
+@export var debug_mountain_radius_km: float = 15.0
+## Style keys of MountainNoise.Params (amplitude_m, wavelength_m, octaves,
+## persistence, ridge, exponent, terrace_step_m, terrace_width, warp, lift_m,
+## feather_m, seed). Missing keys take the defaults.
+@export var debug_mountain_style: Dictionary = {"amplitude_m": 600.0, "wavelength_m": 6000.0, "octaves": 7, "ridge": 0.6, "exponent": 1.5}
+## Debug ridge: crest points (lon, lat) — empty = no ridge — and its style
+## keys (height_m, width_m, sharpness, roughness, warp_m, asymmetry,
+## terrace_step_m, terrace_width, seed).
+@export var debug_ridge_points: PackedVector2Array = PackedVector2Array()
+@export var debug_ridge_style: Dictionary = {"height_m": 400.0, "width_m": 1200.0, "sharpness": 0.7, "asymmetry": 0.5}
+
 ## Directory of per-chunk elevation data exported by tools/planettech/qgis/export_elevation.py.
 ## When non-empty, load_chunk_heightmap() reads raw float32 tiles from the dense
 ## heights.pack archive inside this dir instead of generating heightmaps from
@@ -407,6 +426,20 @@ var _has_railways: int = -1
 var _has_profiled_lines: int = -1
 var _has_relief_biomes: int = -1
 var _has_roads: int = -1
+## -1 unknown, 0 no, 1 yes — the planet has procedural mountains (pack
+## mountain / ridge parts, or the debug injection). Warmed on the main thread
+## by warm_mountains(); the sampler only compares it.
+var _has_mountains: int = -1
+## Finest vertex pitch of this planet (terrain_vertex_spacing_m()), memoised
+## by warm_mountains(): the floor of every mountain LOD gate, so a gameplay
+## query (pitch 0 = "full detail") drops exactly the octaves the finest chunk
+## drops.
+var _mtn_finest_spacing: float = 0.0
+## Prepared MountainRelief.Zone / Ridge lists that stand in for the pack
+## (debug injection, tests). Built on the main thread, read-only afterwards.
+var _mtn_override_zones: Array = []
+var _mtn_override_ridges: Array = []
+var _mtn_override_set: RefCounted = null
 ## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
 const GRADE_PREFETCH_BUDGET_MS := 5000
 
@@ -848,6 +881,14 @@ class TileFrame:
 	var _data: Resource
 	## id de tuile -> entrée
 	var _entries: Dictionary = {}
+	## Mountain features of the chunk this frame serves (prepare_mountain_frame):
+	## MountainRelief.Zone and Ridge lists. While mtn_ready is false the sampler
+	## looks them up per direction instead.
+	var mtn: Array = []
+	var rdg: Array = []
+	## MountainSetNative of the two lists (null → GDScript path).
+	var mtn_set: RefCounted = null
+	var mtn_ready := false
 
 	func _init(data: Resource) -> void:
 		_data = data
@@ -2418,6 +2459,161 @@ func populate_fingerprint() -> String:
 	return str((parts.get("populate", {}) as Dictionary).get("fingerprint", ""))
 
 
+## Does this planet carry procedural mountains — a mountain or ridge part in
+## the pack, or the debug / test injection? Gates the fine server collision
+## like the relief biomes: the mountains exist in the mesh only where the
+## grid carries their octaves, and the collision must be on that same grid.
+func has_mountains() -> bool:
+	if _has_mountains >= 0:
+		return _has_mountains == 1
+	warm_mountains()
+	return _has_mountains == 1
+
+
+## Resolve has_mountains() and the finest pitch, and build the debug features.
+## MAIN THREAD, before the first chunk task (PlanetTerrain.initialize does it
+## before the bridge spans, whose profiles must already see the relief).
+func warm_mountains() -> void:
+	_mtn_finest_spacing = terrain_vertex_spacing_m()
+	var found := false
+	var pack = _ensure_modifier_pack()
+	if pack != null:
+		var parts: Dictionary = pack.get_manifest().get("parts", {})
+		for kind in ["mountain", "ridge"]:
+			var counts: Dictionary = (parts.get(kind, {}) as Dictionary).get("counts", {})
+			if int(counts.get("features", 0)) > 0:
+				found = true
+	if not found and debug_mountain_enabled and _mtn_override_zones.is_empty() \
+			and _mtn_override_ridges.is_empty():
+		_build_debug_mountains()
+	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+		found = true
+	_has_mountains = 1 if found else 0
+
+
+## Tests / tools: stand-in features for the whole planet (every tile returns
+## them). [param zones] / [param ridges] are record Dictionaries in the pack's
+## decoded shape (see ModifierPack._decode_populate + MountainRelief.prepare_*).
+## Main thread only; call before any chunk is built.
+func set_mountain_overrides(zones: Array, ridges: Array) -> void:
+	_mtn_override_zones.clear()
+	_mtn_override_ridges.clear()
+	var mpd := radius * PI / 180.0
+	for z in zones:
+		_mtn_override_zones.append(MountainRelief.prepare_zone(z))
+	for r in ridges:
+		_mtn_override_ridges.append(MountainRelief.prepare_ridge(r, mpd))
+	_mtn_override_set = MountainRelief.build_set(_mtn_override_zones, _mtn_override_ridges)
+	_has_mountains = -1
+	warm_mountains()
+
+
+func _build_debug_mountains() -> void:
+	var zones: Array = []
+	var ridges: Array = []
+	if debug_mountain_radius_km > 0.0:
+		var mpd := radius * PI / 180.0
+		var r_deg := debug_mountain_radius_km * 1000.0 / mpd
+		var lat_c := cos(deg_to_rad(clampf(debug_mountain_lonlat.y, -89.5, 89.5)))
+		var poly := PackedVector2Array()
+		for i in 32:
+			var a := TAU * float(i) / 32.0
+			poly.append(debug_mountain_lonlat + Vector2(cos(a) * r_deg / maxf(lat_c, 0.05), sin(a) * r_deg))
+		var z := debug_mountain_style.duplicate()
+		z["coverage"] = "partial"
+		z["polygon"] = poly
+		z["name"] = "debug"
+		zones.append(z)
+	if debug_ridge_points.size() >= 2:
+		var rd := debug_ridge_style.duplicate()
+		rd["polygon"] = debug_ridge_points
+		rd["name"] = "debug"
+		ridges.append(rd)
+	set_mountain_overrides(zones, ridges)
+
+
+## Fingerprint of the mountain and ridge parts as echoed into the pack
+## manifest ("" without them) — PlanetTerrain folds it into the cache key.
+func mountain_fingerprint() -> String:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	var a := str((parts.get("mountain", {}) as Dictionary).get("fingerprint", ""))
+	var b := str((parts.get("ridge", {}) as Dictionary).get("fingerprint", ""))
+	if a == "" and b == "":
+		return ""
+	return (a + "-" + b).sha1_text().substr(0, 12)
+
+
+## Prepared mountain_range zones for the pack tile ([param level], [param ipix])
+## — `level` ≤ export_nside, the kind is baked n1..export_nside. Overrides
+## replace the pack wholesale (debug / tests).
+func get_chunk_mountain_zones(level: int, ipix: int) -> Array:
+	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+		return _mtn_override_zones
+	return get_chunk_modifiers(level, ipix).get("mountain_zones", [])
+
+
+func get_chunk_ridges(level: int, ipix: int) -> Array:
+	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+		return _mtn_override_ridges
+	return get_chunk_modifiers(level, ipix).get("ridge_lines", [])
+
+
+## The MountainSetNative of that tile (null → GDScript path over the lists).
+func get_chunk_mountain_set(level: int, ipix: int) -> RefCounted:
+	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+		return _mtn_override_set
+	return get_chunk_modifiers(level, ipix).get("mountain_set", null)
+
+
+## Give [param frame] the mountain features of chunk (hp_nside, hp_ipix): the
+## records of its export-level tile — or, for a chunk coarser than that, of
+## its own level (a 3 km massif must show from LOD 3). Called right after
+## make_tile_frame() by both chunk builders; the stitch shares the frame.
+func prepare_mountain_frame(frame: TileFrame, hp_nside: int, hp_ipix: int) -> void:
+	if frame == null:
+		return
+	if _has_mountains != 1 or hp_nside <= 0 or hp_ipix < 0:
+		frame.mtn_ready = true
+		return
+	var level := hp_nside
+	var ip := hp_ipix
+	while level > export_nside:
+		ip >>= 2
+		level >>= 1
+	frame.mtn = get_chunk_mountain_zones(level, ip)
+	frame.rdg = get_chunk_ridges(level, ip)
+	frame.mtn_set = get_chunk_mountain_set(level, ip)
+	frame.mtn_ready = true
+
+
+## The mountain offset (m) at [param dir] — see sample_height_for_direction.
+## Worker-thread safe: the frame is the caller's own, get_chunk_modifiers has
+## its mutex, and MountainRelief is pure.
+func _mountain_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float) -> float:
+	var zones: Array
+	var ridges: Array
+	var mset: RefCounted
+	if frame != null and frame.mtn_ready:
+		zones = frame.mtn
+		ridges = frame.rdg
+		mset = frame.mtn_set
+	else:
+		var ip := HEALPix.vec2pix_nest(export_nside, dir)
+		mset = get_chunk_mountain_set(export_nside, ip)
+		if mset == null:
+			zones = get_chunk_mountain_zones(export_nside, ip)
+			ridges = get_chunk_ridges(export_nside, ip)
+	var eff := maxf(vtx_spacing_m, _mtn_finest_spacing)
+	if mset != null:
+		return mset.Offset(dir, radius, eff)
+	if zones.is_empty() and ridges.is_empty():
+		return 0.0
+	return MountainRelief.offset(dir, radius, zones, ridges, eff)
+
+
 ## Does this planet carry any road at all (the pack's road part has features)?
 ## Gates the fine server collision: a road is an 8 cm slab with its own
 ## collision (RoadRibbon), which only makes sense on the grid the mesh uses.
@@ -2923,7 +3119,31 @@ func _evict_lru() -> void:
 ## il rend les trois paramètres précédents inutiles : c'est LUI qui donne face, position et
 ## voisines, pour la tuile réellement lue — après remontée de niveau comprise, ce que des
 ## précalculs passés à la main ne peuvent pas suivre.
+## [param vtx_spacing_m] — vertex pitch of the grid being built, the LOD gate
+## of the procedural mountains (MountainRelief): 0 = "full detail", what every
+## gameplay query wants, and what the finest chunk gets too (the gate is
+## floored at the finest pitch). Chunk builders, normal probes and the LOD
+## stitch pass their own pitch. Without mountains the value is never read.
 func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
+		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
+		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null,
+		vtx_spacing_m: float = 0.0) -> float:
+	var h := _base_height_for_direction(dir, known_export_ipix,
+			_precomp_face, _precomp_xy, _cached_neighbors, nside, frame)
+	if _has_mountains != 1:
+		return h
+	# Hot path of every mountain chunk (5 samples a vertex): the frame's C#
+	# set is answered right here, one call; everything else goes through
+	# _mountain_offset.
+	if frame != null and frame.mtn_ready and frame.mtn_set != null:
+		return h + frame.mtn_set.Offset(dir, radius, maxf(vtx_spacing_m, _mtn_finest_spacing))
+	return h + _mountain_offset(dir, frame, vtx_spacing_m)
+
+
+## The heightmap alone (pack tiles, pyramid climb, equirect fallback) — the
+## body sample_height_for_direction wraps. Both fallback returns live here, so
+## the mountain offset applies to every path.
+func _base_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null) -> float:
 	if PropNet.prof_on:
@@ -3017,23 +3237,25 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 ## sommet de bord qui bascule sur la tuile voisine repartait sans aucun précalcul.
 func sample_height_boundary(dir: Vector3, chain_ipix: int,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
-		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null) -> float:
+		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null,
+		vtx_spacing_m: float = 0.0) -> float:
 	if PropNet.prof_on:
 		_prof_count_sampler("boundary")
 	var ns := nside if nside > 0 else export_nside
 	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
 		return sample_height_for_direction(dir, chain_ipix,
-				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame)
+				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m)
 	# Prefer the canonical tile (vec_ipix) when loaded — it is symmetric:
 	# both sides of the boundary resolve to the same tile via vec2pix_nest.
 	if load_chunk_heightmap(vec_ipix, ns) != null:
-		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame)
+		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame,
+				vtx_spacing_m)
 	# Canonical tile not loaded — fall back to chain_ipix's tile (known-loaded).
 	# UV is clamped to [0,1] by _direction_to_pixel_uv, so the edge pixels are
 	# used rather than the catastrophic 0.0m from a missing global heightmap.
 	return sample_height_for_direction(dir, chain_ipix,
-			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame)
+			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m)
 
 
 ## Sample height for a cube-sphere chunk vertex.
@@ -3389,8 +3611,10 @@ func sample_height_at(dir: Vector3) -> float:
 ## validator's tolerance. The crack, at up to crack_depth_m, is not in that
 ## league, so it follows the same zone rule as the chunks (corundum_applies_at):
 ## no crack is added where another biome's zone has left the ground uncarved.
-func crack_aware_surface_dist(dir: Vector3, nside: int = -1) -> float:
-	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside)
+## The procedural mountains (hundreds of metres) come with the sampler itself;
+## [param vtx_spacing_m] picks their LOD (0 = full detail, the finest chunk).
+func crack_aware_surface_dist(dir: Vector3, nside: int = -1, vtx_spacing_m: float = 0.0) -> float:
+	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside, null, vtx_spacing_m)
 	if corundum_applies_at(dir):
 		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
 			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0)
@@ -3495,7 +3719,7 @@ func corundum_applies_to_zone(first_zone: Dictionary) -> bool:
 func collision_detail_nside() -> int:
 	if chunk_heightmaps_dir == "" \
 			or not (corundum_default_biome or has_profiled_lines()
-					or has_relief_biomes() or has_roads()):
+					or has_relief_biomes() or has_roads() or has_mountains()):
 		return export_nside
 	return 1 << max_quadtree_depth
 

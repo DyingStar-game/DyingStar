@@ -148,6 +148,10 @@ static func generate_mesh(
 	# identiques au bit près (test/perf/bench_height_sampling.gd,
 	# test/unit/test_chunk_sampling_precompute.gd).
 	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
+	# The procedural mountains of this chunk (MountainRelief), resolved once per
+	# frame so the sampler never looks them up per vertex.
+	if _frame != null:
+		data.prepare_mountain_frame(_frame, hp_nside, hp_ipix)
 
 	# ── Float32 precision fix ──────────────────────────────────────
 	# Vertex positions are stored as float32 in PackedVector3Array.
@@ -514,7 +518,7 @@ static func generate_mesh(
 		if TileResidency.tiles_available(data,
 				TileResidency.stitch_parent_tile_set(data, hp_nside, hp_ipix)):
 			_stitch_edge_heights(data, hp_nside, hp_ipix, res, grid_dirs, stitch,
-					_frame, _st_edge, _st_blend)
+					_frame, _st_edge, _st_blend, _crack_vtx_spacing)
 		else:
 			data.climb_mark()
 
@@ -538,10 +542,10 @@ static func generate_mesh(
 					height = _st_edge[idx]
 				elif xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 				else:
 					height = data.sample_height_for_direction(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 					if _st_blend.has(idx):
 						var _sb: Vector2 = _st_blend[idx]
 						height = lerpf(height, _sb.y, _sb.x)
@@ -1056,15 +1060,15 @@ static func generate_mesh(
 				if _pf:
 					_t_sub = Time.get_ticks_usec()
 				if xi == 0 or xi == res or yi == 0 or yi == res:
-					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 				else:
-					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
-					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame)
+					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 				if _pf:
 					var _now := Time.get_ticks_usec()
 					_t_sm += _now - _t_sub
@@ -1469,7 +1473,7 @@ static func generate_mesh(
 	if not _rw_ctx.is_empty():
 		var _rw_ref_sampler := func(d: Vector3) -> float:
 			return data.sample_height_for_direction(d, _export_ipix, -1,
-					Vector2i(-1, -1), null, _sample_nside, _frame)
+					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 		# Overlay quads stay coarse (lava, meadow… are drawn by their own
 		# surface on the coarse grid) — EXCEPT the surface-override quads: an
 		# outcrop's rock is a full replacement of the base surface, so its
@@ -1881,7 +1885,7 @@ static func generate_mesh(
 		var _rd_height_at := func(d: Vector3) -> float:
 			if hp_mode:
 				return data.sample_height_for_direction(d, _export_ipix,
-						-1, Vector2i(-1, -1), null, _sample_nside, _frame)
+						-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 			var _fuv := PlanetData.sphere_to_cube(d)
 			return data.sample_height_for_chunk(
 				_fuv["face"], _fuv["u"], _fuv["v"], u_min, u_max, v_min, v_max)
@@ -1964,7 +1968,7 @@ static func generate_mesh(
 					/ float(res) * 0.5
 			var _rw_sampler := func(d: Vector3) -> float:
 				return data.sample_height_for_direction(d, _export_ipix, -1,
-						Vector2i(-1, -1), null, _sample_nside, _frame)
+						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 			var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
 			var _rw_stile := RoadTerrain.get_tile_size("railway")
 			for _rw_pair in _rw_zones:
@@ -2780,6 +2784,8 @@ static func generate_collision_shape(
 	# collision lisait alors le terrain à côté du rendu. Le cadre est indexé par tuile,
 	# donc il ne peut pas se désynchroniser.
 	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
+	if _frame != null:
+		data.prepare_mountain_frame(_frame, hp_nside, hp_ipix)
 
 	for yi in res + 1:
 		for xi in res + 1:
@@ -2789,10 +2795,10 @@ static func generate_collision_shape(
 				dir = grid_dirs[yi][xi]
 				if xi == 0 or xi == res or yi == 0 or yi == res:
 					height = data.sample_height_boundary(dir, _height_ipix,
-							-1, Vector2i(-1, -1), null, _height_nside, _frame)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
 				else:
 					height = data.sample_height_for_direction(dir, _height_ipix,
-							-1, Vector2i(-1, -1), null, _height_nside, _frame)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
 			else:
 				var u: float
 				if xi == 0:
@@ -3072,7 +3078,7 @@ static func generate_collision_shape(
 		var _rw_mpd := data.radius * PI / 180.0
 		var _rw_sampler := func(d: Vector3) -> float:
 			return data.sample_height_for_direction(d, _height_ipix, -1,
-					Vector2i(-1, -1), null, _height_nside, _frame)
+					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
@@ -3198,9 +3204,16 @@ static func edge_stitch_applies(data: PlanetData, hp_nside: int) -> bool:
 ## agrees with the edge and the ramp is skipped.
 static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 		res: int, grid_dirs: Array[PackedVector3Array], stitch: int,
-		frame: PlanetData.TileFrame, edge_out: Dictionary, blend_out: Dictionary) -> void:
+		frame: PlanetData.TileFrame, edge_out: Dictionary, blend_out: Dictionary,
+		vtx_spacing_m: float = 0.0) -> void:
 	if res < 2 or res % 2 != 0:
 		return
+	# The coarser neighbour builds those border points on a grid of TWICE this
+	# pitch: the mountain octaves it carries are the ones of that pitch, so the
+	# parent rows — and the cliff check against them — must be evaluated there,
+	# or an octave the parent drops would open the seam / refuse every stitch
+	# inside a massif.
+	var p_spacing := vtx_spacing_m * 2.0
 	@warning_ignore("integer_division")
 	var p_nside: int = hp_nside / 2
 	var p_sample := data.sample_nside_for(p_nside)
@@ -3268,7 +3281,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 			@warning_ignore("integer_division")
 			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
 			hs[k] = data.sample_height_boundary(d, p_chain, -1, Vector2i(-1, -1),
-					null, p_sample, frame)
+					null, p_sample, frame, p_spacing)
 		for k in range(1, stride, 2):
 			var ia := e[k - 1]
 			var ib := e[k + 1]
@@ -3284,7 +3297,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 			@warning_ignore("integer_division")
 			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
 			var own := data.sample_height_boundary(d, -1, -1, Vector2i(-1, -1),
-					null, own_sample, frame)
+					null, own_sample, frame, p_spacing)
 			worst = maxf(worst, absf(hs[k] - own))
 		if worst > max_step:
 			continue  # cliff under the seam: skirt, not stitch
@@ -3311,7 +3324,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 				continue
 			var w := float(STITCH_BLEND_ROWS - d_min) / float(STITCH_BLEND_ROWS)
 			var hp := data.sample_height_for_direction(grid_dirs[yi][xi], p_chain,
-					-1, Vector2i(-1, -1), null, p_sample, frame)
+					-1, Vector2i(-1, -1), null, p_sample, frame, p_spacing)
 			blend_out[yi * stride + xi] = Vector2(w, hp)
 
 
@@ -3576,12 +3589,30 @@ static func _resolve_export_ipix(hp_nside: int, hp_ipix: int,
 ## before. Roads are read at THIS chunk's own level, so the record it gets is
 ## already clipped to this chunk — which is what stops a neighbouring chunk at a
 ## coarser LOD from extruding the same stretch of road at a different altitude.
+##
+## A chunk COARSER than the export level has no export ancestor; it reads the
+## pack tile of its own level instead (the linker writes every kind at every
+## level, decimated and clipped for it, exactly like prepare_mountain_frame
+## does for the mountains). Reading nothing there is how a distant massif lost
+## its biome: with no zone at all, the corundum default painted it white while
+## the same relief was red from the finest LOD.
 static func _get_recipe_biome_data(data: PlanetData,
 		hp_nside: int, hp_ipix: int) -> Array:
 	if hp_nside <= 0:
 		return [[], [], [], [], []]
-	var eip := _resolve_export_ipix(hp_nside, hp_ipix, data.export_nside)
 	var roads: Array = data.get_roads_for_chunk(hp_nside, hp_ipix)
+	var eip := _resolve_export_ipix(hp_nside, hp_ipix, data.export_nside)
+	if eip < 0:
+		# {} without a pack: a legacy (recipe-only) planet keeps its old
+		# behaviour, no modifier at all on the coarse levels.
+		var own: Dictionary = data.get_chunk_modifiers(hp_nside, hp_ipix)
+		return [
+			own.get("populate_zones", []),
+			own.get("linear_features", []),
+			own.get("radial_features", []),
+			own.get("craters", []),
+			roads,
+		]
 	return [
 		data.get_chunk_populate_zones(eip),
 		data.get_chunk_linear_features(eip),

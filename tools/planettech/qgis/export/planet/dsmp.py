@@ -117,6 +117,12 @@ KIND_LINEAR = 2
 KIND_RADIAL = 3
 KIND_POPULATE = 4
 KIND_ROAD = 5
+#: Procedural mountains (scenes/planet/mountain_relief.gd): the POPULATE record
+#: layout under their own kinds, because the linker holds one part per kind.
+#: MOUNTAIN = mountain_range polygons, RIDGE = crest polylines (the record's
+#: vertex list is an OPEN line, never clipped).
+KIND_MOUNTAIN = 6
+KIND_RIDGE = 7
 
 KIND_NAMES = {
     KIND_CRATER: "crater",
@@ -124,6 +130,8 @@ KIND_NAMES = {
     KIND_RADIAL: "radial",
     KIND_POPULATE: "populate",
     KIND_ROAD: "road",
+    KIND_MOUNTAIN: "mountain",
+    KIND_RIDGE: "ridge",
 }
 KIND_BY_NAME = {v: k for k, v in KIND_NAMES.items()}
 
@@ -259,11 +267,13 @@ def pack_road(road_type_sid, surface_sid, name_sid, lanes, width_m,
 
 
 def pack_populate(biome_type_sid, biome_index, coverage, props=(),
-                  vertices=(), lon=None, lat=None):
+                  vertices=(), lon=None, lat=None, min_vertices=3):
     """coverage: "full" | "partial" | "point" (or the numeric code).
 
     props: iterable of (key_sid, vtype, value). For VTYPE_SID the value is a
     string id; for VTYPE_F32 a float; for VTYPE_I32 a signed int.
+    min_vertices: a partial record is a ring (3+) — except the RIDGE kind,
+    whose vertex list is an open polyline (2+).
     """
     cov = coverage if isinstance(coverage, int) else COVERAGE_BY_NAME.get(coverage)
     if cov is None:
@@ -272,8 +282,8 @@ def pack_populate(biome_type_sid, biome_index, coverage, props=(),
     if len(props) > 255:
         raise DsmpError("a populate zone carries at most 255 props")
     verts = list(vertices) if cov == COVERAGE_PARTIAL else []
-    if cov == COVERAGE_PARTIAL and len(verts) < 3:
-        raise DsmpError("a partial-coverage zone needs at least 3 vertices")
+    if cov == COVERAGE_PARTIAL and len(verts) < min_vertices:
+        raise DsmpError("a partial-coverage zone needs at least %d vertices" % min_vertices)
     if len(verts) > 0xFFFF:
         raise DsmpError("a populate zone carries at most 65535 vertices")
     if cov == COVERAGE_POINT and (lon is None or lat is None):

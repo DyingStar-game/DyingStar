@@ -1010,6 +1010,11 @@ func _aimed_carriable() -> Node:
 	return prop
 
 # receive properties from the client, often the actions
+## Server: an item handed over by another zone's server goes back into these hands.
+func server_adopt_carried(item: Node) -> void:
+	if _role != null and _role.has_method("server_adopt_carried"):
+		_role.server_adopt_carried(item)
+
 func server_action_received(data: Dictionary) -> void:
 	# Server authority: delegate to the PlayerServer role (only the dedicated server receives this).
 	_role.server_action_received(data)

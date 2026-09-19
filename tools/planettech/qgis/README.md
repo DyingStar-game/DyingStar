@@ -16,8 +16,11 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
 | `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
+| `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
 | `export_rocks.py` | QGIS console or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
 | `export/planet/biomes.py` | library | The POPULATE part builder: tiling, full / partial coverage, overlap order. |
+| `export/planet/mountains.py` | library | The MOUNTAIN / RIDGE part builders and the style presets (`PRESETS`, `RIDGE_PRESETS`). |
+| `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test, future preview raster. |
 | `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
@@ -204,6 +207,57 @@ interpolated, so every vertex of a triangle touching the road must be flat for
 the ribbon or the bed (both on the raw heightmap) not to be pierced. A planet with such a
 biome switches the server to the fine collision grid, like cracks and profiled
 lines (`PlanetData.collision_detail_nside()`).
+
+## Procedural mountains (`export_mountains.py`)
+
+Drawing 50 m contours for every massif is too slow, and `heights.pack` cannot
+carry a cliff anyway (198 m texels on tarsis_3, 35 h per export). The mountains
+are therefore **generated in Godot** and only *described* in QGIS, in two
+layers of the `mountains` category (`layers/mountains.py`):
+
+| Layer | Geometry | What it says |
+|---|---|---|
+| `mountain_range` | Polygon | The footprint of a massif and its noise style. The relief fades to zero over `feather_m` **inside** the outline — draw it where the massif should end. Overlapping ranges add up. |
+| `ridge` | LineString | A crest: `height_m` on the line, zero `width_m` away on each flank, tapered at both ends. `sharpness` 0 = rounded bell, 1 = knife edge; `asymmetry` > 0 makes the **left** flank (drawing direction) the long gentle one and the right one steep — the cliff-layer convention. |
+
+Pick a `style` preset (`rolling`, `hills`, `alpine`, `mesa`, `cliffs` for a range;
+`soft`, `sharp`, `escarpment`, `stepped` for a ridge) and leave the other fields
+NULL, or set any of them to override the preset. The knobs that make the
+difference between gentle and abrupt: `ridge` (fbm → sharp crests), `exponent`
+(flat lowlands + spikes), `terrace_step_m` / `terrace_width` (banded, near
+vertical walls — the wall takes `terrace_width` of a step's horizontal run, so
+the `cliffs` preset's 250 m bands at 0.05 measure ~85° on a 13.5 m grid),
+and on a ridge `sharpness` and `asymmetry`.
+
+Run it from the QGIS console like the other exporters:
+
+```python
+exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_mountains.py').read())
+```
+
+It takes seconds: the pack only gets the polygons / lines and their numbers
+(POPULATE record layout under two kinds of their own, `KIND_MOUNTAIN = 6` and
+`KIND_RIDGE = 7`, baked n1…export_nside). Two details of the tiling matter for
+correctness and live in `export/planet/mountains.py`: a range's clip box is
+expanded by its feather (+ a probe slack) so the feather never measures against
+a synthetic clip edge, and the ring is never simplified; a ridge record carries
+the whole line in every tile within its reach.
+
+At runtime (`scenes/planet/mountain_relief.gd`, C# twins under
+`scenes/planet/native/`) the offset is a pure function of the vertex direction
+added **inside** `PlanetData.sample_height_for_direction`, so the mesh, the
+collision, the server's below-surface catch, the road / rail grade profiles,
+the bridges and the spawners all stand on the same relief; a coarser grid drops
+the octaves it cannot carry (pitch ≥ half the wavelength), never fades them.
+The noise hash is integer arithmetic — no `sin`, no libm — so a Windows client
+and a Linux server agree bit for bit (`test/unit/test_mountain_noise.gd` pins
+the values against `mountain_noise.py`). A re-export changes the parts'
+fingerprint, which is part of the chunk cache key: only the chunks under the
+features re-bake; `heights.pack` and `data_version` are untouched.
+
+To iterate before the layers exist, `PlanetData` has a **Debug mountain**
+group (a synthetic 32-gon range + one ridge, `debug_mountain_*` /
+`debug_ridge_*`), ignored as soon as the pack carries a mountain part.
 
 ## Terrain-modifier pack (`terrainmodifier.pack`)
 
