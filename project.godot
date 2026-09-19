@@ -355,7 +355,6 @@ pathfinding/max_threads=-1
 
 [physics]
 
-3d/run_on_separate_thread=true
 3d/physics_engine="Jolt Physics"
 jolt_physics_3d/limits/max_body_pairs=131072
 3d/default_gravity=0.0
