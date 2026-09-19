@@ -2,10 +2,6 @@
 
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="6_0lykg"]
 [ext_resource type="PackedScene" uid="uid://bn1lq4a5rqcgr" path="res://scenes/_universe/structures/industrial/wind_valley.tscn" id="7_5a8bp"]
-[ext_resource type="PackedScene" uid="uid://d14u2bcesufk6" path="res://scenes/_universe/structures/buildings/spawn_building.tscn" id="9_gvfsn"]
-[ext_resource type="Script" uid="uid://btll1iyh6lphs" path="res://addons/dyingstar/server_props_root.gd" id="9_lnjns"]
-[ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="11_p7cvs"]
-[ext_resource type="PackedScene" uid="uid://cnwg7illbpt26" path="res://scenes/_universe/structures/buildings/planet_teleporter.tscn" id="15_gthms"]
 [ext_resource type="Resource" uid="uid://dv2jf80uor3c" path="res://scenes/planet/atmospheres/tarsis_3.tres" id="atmosphere_tarsis4"]
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
@@ -776,38 +772,3 @@ font_size = 96
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D19" unique_id=800817383]
 transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.32667270000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
-
-[node name="PlanetTeleporter" parent="." unique_id=1302203990 instance=ExtResource("15_gthms")]
-transform = Transform3D(0.5157330366358723, 0.6992550173228066, 0.49503722655091664, -0.856749150193788, 0.4213134673335648, 0.2974489130684326, -0.00057320551704126, -0.5775269543426097, 0.8163714157435846, 4450638.631, 2674140.854, -3675752.28)
-visible = false
-
-[node name="dyingstarNetwork" type="Node3D" parent="." unique_id=1456665529]
-script = ExtResource("9_lnjns")
-
-[node name="tarsis_4-M001" parent="dyingstarNetwork" unique_id=1280922415 instance=ExtResource("9_gvfsn")]
-transform = Transform3D(0.6559693686560827, 0.699072212887068, 0.2846089045587264, -0.6990724615734509, 0.42051924496267334, 0.5783262557464075, 0.2846082937206444, -0.5783265563547992, 0.7645498763064597, 4447392.808952209, 2675280.5097906673, -3679227.010520488)
-cols = 3
-
-[node name="tarsis_4-M002" parent="dyingstarNetwork" unique_id=1388411588 instance=ExtResource("9_gvfsn")]
-transform = Transform3D(0.33284495928810387, 0.699070363985441, 0.6328624331351671, -0.9071985150001283, 0.42051342412417686, 0.012621985300376837, -0.2573034928990734, -0.5783330237230296, 0.7741613696209042, 4447387.716167163, 2675247.4904975444, -3679273.6726759323)
-cols = 3
-
-[node name="tarsis_4-M003" parent="dyingstarNetwork" unique_id=1460983489 instance=ExtResource("9_gvfsn")]
-transform = Transform3D(0.7138111003276224, 0.6990542328099031, -0.04238977045970799, -0.3624399972286395, 0.4205267980592369, 0.8317418232378062, 0.5992586765813016, -0.5783427977459417, 0.5535419106422057, 4447307.499928519, 2675346.053499034, -3679354.392300207)
-cols = 5
-
-[node name="tarsis_4-M004" parent="dyingstarNetwork" unique_id=7533597 instance=ExtResource("9_gvfsn")]
-transform = Transform3D(0.7138295209929619, 0.699035185204439, -0.04239368827024237, -0.3624289157198874, 0.4205410102100044, 0.8317394662883659, 0.5992434363504248, -0.5783554863384153, 0.5535451520997987, 4447206.056461813, 2675448.3424887024, -3679451.4440355306)
-cols = 8
-
-[node name="Truck" parent="dyingstarNetwork" unique_id=1579985098 instance=ExtResource("11_p7cvs")]
-transform = Transform3D(0.6559918049671855, 0.6990497611592342, 0.28461233852226375, -0.6990550469149414, 0.4205308789104914, 0.5783388464088497, 0.28459935558367544, -0.5783452353966333, 0.7645390738839773, 4447282.337277638, 2675373.991913085, -3679372.6185713448)
-
-[node name="Truck2" parent="dyingstarNetwork" unique_id=1793285104 instance=ExtResource("11_p7cvs")]
-transform = Transform3D(0.6559918049671855, 0.6990497611592342, 0.28461233852226375, -0.6990550469149414, 0.4205308789104914, 0.5783388464088497, 0.28459935558367544, -0.5783452353966333, 0.7645390738839773, 4447278.01889571, 2675362.236678338, -3679391.538969148)
-
-[node name="Truck4" parent="dyingstarNetwork" unique_id=831212753 instance=ExtResource("11_p7cvs")]
-transform = Transform3D(0.6559918049671855, 0.6990497611592342, 0.28461233852226375, -0.6990550469149414, 0.4205308789104914, 0.5783388464088497, 0.28459935558367544, -0.5783452353966333, 0.7645390738839773, 4447297.295759103, 2675362.999779804, -3679360.191641657)
-
-[node name="Truck3" parent="dyingstarNetwork" unique_id=941096301 instance=ExtResource("11_p7cvs")]
-transform = Transform3D(0.6559918049671855, 0.6990497611592342, 0.28461233852226375, -0.6990550469149414, 0.4205308789104914, 0.5783388464088497, 0.28459935558367544, -0.5783452353966333, 0.7645390738839773, 4447294.611656712, 2675341.559044523, -3679382.074214994)
