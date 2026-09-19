@@ -161,11 +161,8 @@ func index_path() -> String:
 func save() -> void:
 	if _dir == "" or not _dirty:
 		return
-	var f := FileAccess.open(index_path(), FileAccess.WRITE)
-	if f == null:
+	if not AtomicFile.write_var(index_path(), _use):
 		return
-	f.store_var(_use)
-	f.close()
 	_dirty = false
 
 

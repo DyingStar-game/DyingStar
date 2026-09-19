@@ -411,12 +411,8 @@ func fetch_now(nside: int, ipix: int) -> bool:
 	net_tiles += 1
 	net_tile_bytes += (res[1] as PackedByteArray).size()
 	var path := tile_cache_path(nside, ipix)
-	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
+	if not AtomicFile.write_buffer(path, res[1]):
 		return false
-	f.store_buffer(res[1])
-	f.close()
 	if lru != null:
 		lru.admit(nside, path)
 	return true
@@ -457,20 +453,12 @@ func fetch_floor() -> int:
 		var path := tile_cache_path(e["nside"], e["ipix"])
 		if FileAccess.file_exists(path):
 			continue
-		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
-		var f := FileAccess.open(path, FileAccess.WRITE)
-		if f == null:
+		if not AtomicFile.write_buffer(path, e["blob"]):
 			continue
-		f.store_buffer(e["blob"])
-		f.close()
 		n += 1
 	# Le témoin n'est posé qu'une fois tout écrit : un arrêt en cours de route se
 	# retraduit par un nouveau téléchargement, pas par un plancher à trous.
-	DirAccess.make_dir_recursive_absolute(floor_marker_path().get_base_dir())
-	var m := FileAccess.open(floor_marker_path(), FileAccess.WRITE)
-	if m != null:
-		m.store_string("%d" % entries.size())
-		m.close()
+	AtomicFile.write_string(floor_marker_path(), "%d" % entries.size())
 	return n
 
 

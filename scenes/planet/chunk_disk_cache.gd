@@ -69,10 +69,7 @@ func _validate_version(version_hash: String) -> void:
 
 	_clear_dir(_planet_dir)
 	DirAccess.make_dir_recursive_absolute(_planet_dir)
-	var f := FileAccess.open(version_path, FileAccess.WRITE)
-	if f:
-		f.store_string(version_hash)
-		f.close()
+	AtomicFile.write_string(version_path, version_hash)
 
 
 ## Remove all client visual mesh caches for all planets.
@@ -145,7 +142,7 @@ func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) ->
 		return
 	var path := _res_path(chunk_key, lod, "mesh", stitch)
 	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
-	var err := ResourceSaver.save(mesh, path, ResourceSaver.FLAG_COMPRESS)
+	var err := AtomicFile.save_resource(mesh, path, ResourceSaver.FLAG_COMPRESS)
 	if _t0 != 0:
 		PropNet.prof_cache_save_calls += 1
 		PropNet.prof_cache_save_usec += Time.get_ticks_usec() - _t0
@@ -186,7 +183,7 @@ func save_collision(chunk_key: String, lod: int, shape: ConcavePolygonShape3D) -
 		return
 	var path := _res_path(chunk_key, lod, "col")
 	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
-	var err := ResourceSaver.save(shape, path, ResourceSaver.FLAG_COMPRESS)
+	var err := AtomicFile.save_resource(shape, path, ResourceSaver.FLAG_COMPRESS)
 	if _t0 != 0:
 		PropNet.prof_cache_save_calls += 1
 		PropNet.prof_cache_save_usec += Time.get_ticks_usec() - _t0
