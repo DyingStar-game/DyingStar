@@ -565,6 +565,12 @@ func server_action_received(data: Dictionary) -> void:
 					var prev_parent = parent_node.get_parent()
 					if prev_parent.has_method("release_cargo"):
 						prev_parent.release_cargo(parent_node)
+					# A part taken back out of a bay frees it, the same way a crate frees a shelf slot.
+					if parent_node.has_meta("component_slot_ref"):
+						var fitted_slot = parent_node.get_meta("component_slot_ref")
+						parent_node.remove_meta("component_slot_ref")
+						if is_instance_valid(fitted_slot) and fitted_slot.vehicle() != null:
+							fitted_slot.vehicle().bays().remove(fitted_slot)
 					# If it was stored in a shelf slot, free that slot (the crate is parented to the world,
 					# not the shelf, so the release goes through the meta the shelf left on it, not prev_parent).
 					if parent_node.has_meta("shelf_ref"):
@@ -2388,6 +2394,13 @@ func _server_drop_carried_item() -> void:
 	# Drop INTO a bed -> load it onto that truck. We load it if we stand in the bed, OR if we
 	# drop it from outside but it lands inside a nearby truck's cargo bay.
 	if item != null:
+		var bay_hit: Dictionary = _component_bay_for_drop(place["position"], item)
+		if not bay_hit.is_empty():
+			bay_hit["vehicle"].bays().install(bay_hit["slot"], item)
+			item.set_meta("component_slot_ref", bay_hit["slot"])  # so picking it up frees the bay
+			player.hands_item = null
+			player.server_send_properties_to_client({"carrying": false})
+			return
 		var bed = _cargo_bed_for_drop(place["position"])
 		if bed != null:
 			bed.lock_dropped_cargo(item)
@@ -2491,6 +2504,8 @@ func _compute_carry_prompt() -> String:
 		# The PLACEMENT point decides, not where the crate rides: it sits on our chest now, while E
 		# puts it down on the disc under the crosshair (which may be metres away, in a bed or a slot).
 		var point: Vector3 = _place["position"] if _place.has("position") else player.global_position
+		if not _component_bay_for_drop(point, player.hands_item).is_empty():
+			return "install"  # dropping here bolts it into a vehicle bay
 		if _cargo_bed_for_drop(point) != null:
 			return "cargo"  # dropping here loads it into the bed (sticks)
 		if _place.get("shelf") != null:
@@ -2513,6 +2528,21 @@ func _cargo_bed_for_drop(world_point: Vector3) -> Vehicle:
 		if v is Vehicle and v.is_point_in_loading_zone(world_point):
 			return v
 	return null
+
+## Which vehicle bay should take a PART put down at this world point, as {vehicle, slot}, or {}.
+## Only a VehicleComponent is ever considered — a crate dropped next to an open hatch is still
+## freight. The bay itself refuses a shut hatch, an occupied slot, or one engine too many.
+func _component_bay_for_drop(world_point: Vector3, item: Node) -> Dictionary:
+	if item == null or not (item is VehicleComponent):
+		return {}
+	var spec: VehicleComponentSpec = (item as VehicleComponent).spec
+	for v in get_tree().get_nodes_in_group("vehicle"):
+		if not (v is Vehicle):
+			continue
+		var slot = v.bays().slot_for_point(world_point, spec)
+		if slot != null:
+			return {"vehicle": v, "slot": slot}
+	return {}
 
 ## Which shelf should swallow a crate dropped at this world point: any shelf with a free slot within
 ## snap range of it (see shelf.gd). Returns the shelf node (StaticBody3D) so the caller can store into

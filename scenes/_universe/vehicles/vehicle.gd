@@ -54,6 +54,11 @@ const TYRE_SILENT := 0.001
 const BAY_SCAN_FRAMES := 6
 ## How long (s) a sampled surface family is reused before probing again. See _scrub_surface_family.
 const SCRUB_SAMPLE_S: float = 0.5
+## How long after spawning the server keeps trying to re-link restored parts to their bays, and how
+## often it retries. 600 frames at 60 Hz is ten seconds, which is the same order the shelf uses to
+## find its own crates again.
+const REBIND_WINDOW_FRAMES: int = 600
+const REBIND_EVERY_FRAMES: int = 30
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -672,6 +677,11 @@ var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 ## door_id -> the Tween swinging it right now, so a second toggle can cancel the first one
 ## instead of stacking on top of it. Server and client both run these (see _swing_door).
 var _door_tweens: Dictionary = {}
+var _net_last_components: Dictionary = {}   # SERVER: last replicated bay occupancy, change detection
+## SERVER: frames left to keep looking for parts that came back from the database and still have to
+## be re-linked to their bay. A window rather than a one-shot, because a prop and its vehicle are
+## recreated independently and in no guaranteed order — the part may not exist yet when we spawn.
+var _rebind_frames: int = REBIND_WINDOW_FRAMES
 var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
 ## SERVER: last replicated wheel heights (cm, vehicle frame), change detection. CLIENT: the heights
 ## received, applied instead of the flat rest pose so a replica shows the real suspension.
@@ -1037,6 +1047,8 @@ func _apply_view() -> void:
 func lock_dropped_cargo(body: Node) -> void:
 	if body == null or body is Vehicle or _locked_cargo.has(body):
 		return
+	if body is VehicleComponent:
+		return  # a vehicle part goes in a BAY, never in the bed — see VehicleComponentBays
 	if body is RigidBody3D and body.mass > 0.0:
 		_lock_cargo(body)
 
@@ -1072,6 +1084,8 @@ func _scan_bay_for_settled_cargo() -> void:
 		var rb := body as RigidBody3D
 		if rb.mass <= 0.0 or rb.get_parent() is Player:
 			continue  # carried items ride under a Player — not free cargo, don't absorb them
+		if rb is VehicleComponent:
+			continue  # bolted into a bay: part of the vehicle, not a load it is carrying
 		if rb.linear_velocity.length() <= cargo_settle_speed:
 			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
@@ -1295,7 +1309,15 @@ func _spill_cargo(body: Node) -> void:
 		(body as Node3D).reparent(world)
 
 func _refresh_mass() -> void:
-	mass = _empty_mass + get_cargo_mass()
+	# A replica is TOLD its mass; recomputing here would fight the replicated value, and writing
+	# `mass` on a RigidBody3D wakes it (see client_channel_data_update), so it would also stop the
+	# truck ever sleeping.
+	if _is_networked() and not GameOrchestrator.is_server():
+		return
+	# Components count as part of the VEHICLE, not of its payload: putting them through
+	# get_cargo_mass() would eat the load limiter's budget and could immobilise a truck for being
+	# overloaded by its own engines.
+	mass = _empty_mass + bays().total_mass() + get_cargo_mass()
 
 ## Body mass (kg) of a seated player, added to the truck's weight while they ride.
 func _player_mass(player: Node) -> float:
@@ -2119,6 +2141,8 @@ func _physics_process_impl(delta: float) -> void:
 			_check_rollover_unlock()  # spill the load if the truck is tipped over
 			_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
+		bays().pin()  # and the bolted-in parts, which drift the same way for the same reason
+		_rebind_restored_components()
 		# Settle & sleep an idle vehicle. Wheel-suspension micro-forces on the
 		# terrain trimesh otherwise keep the body awake forever, wandering by
 		# millimetres every tick — replicated to every client as endless
@@ -2160,6 +2184,7 @@ func _physics_process_impl(delta: float) -> void:
 	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
+	bays().pin()
 	_scan_bay_for_settled_cargo()
 	if _pilot != null:
 		_apply_drive(delta)
@@ -2486,12 +2511,49 @@ func _replicate_transform() -> void:
 	if my_seats != _net_last_seats:
 		data["seats"] = my_seats.duplicate()
 		_net_last_seats = my_seats.duplicate()
+	var my_components: Dictionary = bays().occupancy()
+	if my_components != _net_last_components:
+		data["components"] = my_components.duplicate()
+		_net_last_components = my_components.duplicate()
 	var suspension: Array = _sample_suspension()
 	if suspension != _net_last_suspension:
 		data["suspension"] = suspension
 		_net_last_suspension = suspension.duplicate()
 
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
+
+## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
+## the truth about a truck someone else has been working on.
+##
+## The part itself is resolved out of our OWN children: a fitted component is reparented to the
+## vehicle, so if we can see the truck we can see what is in it. That hands the replica the real
+## spec — and therefore the real top speed — rather than a guess. A bay whose part has not arrived
+## yet stays empty and fills in on a later update, instead of inventing one.
+func _apply_components(table: Dictionary) -> void:
+	for slot in bays().all():
+		var wanted: String = str(table.get(str(slot.name), ""))
+		slot.occupant_uuid = wanted
+		slot.occupant = null
+		if wanted == "":
+			continue
+		for child in get_children():
+			if child is VehicleComponent and str(child.uuid) == wanted:
+				slot.occupant = child
+				break
+	_rebuild_drive_spec()
+
+## SERVER: pick up parts restored from the database and put them back in charge of their bay.
+## Without this a fitted component comes back parented to the truck with the right pose but frozen
+## by nobody, so it drops straight through the floor. Stops as soon as every part that names a bay
+## has found it, or when the window runs out.
+func _rebind_restored_components() -> void:
+	if _rebind_frames <= 0:
+		return
+	_rebind_frames -= 1
+	if _rebind_frames % REBIND_EVERY_FRAMES != 0:
+		return
+	if bays().rebind() > 0 and bays().occupancy() == _net_last_components:
+		_net_last_components = {}  # force the table back onto the wire: the replicas need it too
 
 ## SERVER: current per-seat occupancy (seat name -> occupant uuid, "" when free). Replicated so ANY
 ## client can tell a seat is taken (driver AND passenger, one system — see PlayerClient._seat_is_taken).
@@ -2634,6 +2696,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("pilot_uuid"):
 		var new_pilot := str(data["pilot_uuid"])
 		pilot_uuid = str(data["pilot_uuid"])
+	if data.has("components"):
+		_apply_components(data["components"])
 	if data.has("doors"):
 		var new_doors: Dictionary = data["doors"]
 		for door_id in new_doors:  # animate only the doors whose state actually changed
@@ -3084,7 +3148,14 @@ func _rebuild_drive_spec() -> void:
 func bays() -> VehicleComponentBays:
 	if _bays == null:
 		_bays = VehicleComponentBays.new(self)   # lazily: _ready returns early in the editor
+		_bays.changed.connect(_on_bays_changed)
 	return _bays
+
+## Something was fitted or removed: the drive model and the weight both follow from what is bolted
+## in, so both are rebuilt here — the ONE place that has to know.
+func _on_bays_changed() -> void:
+	_rebuild_drive_spec()
+	_refresh_mass()
 
 ## The sizing model for this vehicle. Never null. Gravity is refreshed here rather than cached, so
 ## the climbable slope follows the planet we are actually standing on — it is one float.
