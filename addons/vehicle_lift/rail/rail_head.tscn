@@ -1,0 +1,37 @@
+[gd_scene format=3 uid="uid://bg4jnjpbvyb56"]
+
+[ext_resource type="ArrayMesh" uid="uid://bd0dfm7dp2ly" path="res://addons/vehicle_lift/rail/rail_head_lod0.mesh" id="1_xtw8d"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="2_3extq"]
+[ext_resource type="Shape3D" uid="uid://ds7i3u80wm1ux" path="res://addons/vehicle_lift/rail/rail_head_collider.shape" id="2_3su1a"]
+[ext_resource type="ArrayMesh" uid="uid://cxkgm42a8uxe1" path="res://addons/vehicle_lift/rail/rail_head_lod1.mesh" id="3_3extq"]
+[ext_resource type="ArrayMesh" uid="uid://c3mq3shb44hh8" path="res://addons/vehicle_lift/rail/rail_head_lod2.mesh" id="4_tqnie"]
+
+[node name="Rail Head" type="StaticBody3D" unique_id=1437786343]
+collision_mask = 0
+
+[node name="Visuals" type="Node3D" parent="." unique_id=881112154]
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Visuals" unique_id=1763318421]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 10.0
+visibility_range_end_margin = 1.0
+mesh = ExtResource("1_xtw8d")
+surface_material_override/0 = ExtResource("2_3extq")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Visuals" unique_id=1763677755]
+visibility_parent = NodePath("../Visual LOD2")
+visibility_range_begin = 10.0
+visibility_range_begin_margin = 1.0
+visibility_range_end = 20.0
+visibility_range_end_margin = 1.0
+mesh = ExtResource("3_3extq")
+surface_material_override/0 = ExtResource("2_3extq")
+
+[node name="Visual LOD2" type="MeshInstance3D" parent="Visuals" unique_id=517284361]
+visibility_range_begin = 20.0
+visibility_range_begin_margin = 1.0
+mesh = ExtResource("4_tqnie")
+surface_material_override/0 = ExtResource("2_3extq")
+
+[node name="Collider" type="CollisionShape3D" parent="." unique_id=179796204]
+shape = ExtResource("2_3su1a")

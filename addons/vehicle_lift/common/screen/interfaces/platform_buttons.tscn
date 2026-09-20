@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://bl2utlkoofibq"]
+
+[ext_resource type="Script" uid="uid://dj4kjwycxh70v" path="res://addons/vehicle_lift/common/screen/interfaces/platform_buttons.gd" id="1_k1pk8"]
+
+[node name="Platform Buttons" type="VBoxContainer" unique_id=2017485620]
+theme_override_constants/separation = 16
+alignment = 1
+script = ExtResource("1_k1pk8")
+
+[node name="Button Up" type="Button" parent="." unique_id=335757696]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "UP"
+
+[node name="Button Stop" type="Button" parent="." unique_id=758842375]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "STOP"
+
+[node name="Button Down" type="Button" parent="." unique_id=473744513]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "DOWN"

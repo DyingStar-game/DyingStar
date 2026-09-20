@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://dxy75eubflyid"]
+
+[ext_resource type="ArrayMesh" uid="uid://4ehg70ebkvs6" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridge_lod0.mesh" id="1_ur314"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="3_hkg67"]
+[ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://addons/vehicle_lift/common/materials/platform_walk.material" id="4_2jqiv"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
+size = Vector3(6.47, 0.25, 0.75)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_slx45"]
+size = Vector3(0.5, 0.5, 0.75)
+
+[node name="Dynamic Bridge" type="StaticBody3D" unique_id=35786266]
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="." unique_id=536060285]
+mesh = ExtResource("1_ur314")
+surface_material_override/0 = ExtResource("3_hkg67")
+surface_material_override/1 = ExtResource("4_2jqiv")
+
+[node name="Collider 01" type="CollisionShape3D" parent="." unique_id=700929467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.125, 0.375)
+shape = SubResource("BoxShape3D_fti8b")
+
+[node name="Collider 02" type="CollisionShape3D" parent="." unique_id=1705088795]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.967, -0.5, 0.375)
+shape = SubResource("BoxShape3D_slx45")

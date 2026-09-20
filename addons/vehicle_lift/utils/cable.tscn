@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cx3q7nx6h5w4f"]
+
+[ext_resource type="Script" uid="uid://bnofiap06m5rt" path="res://addons/vehicle_lift/utils/cable_from_path_3d.gd" id="1_y82nb"]
+
+[sub_resource type="Curve3D" id="Curve3D_df2n1"]
+_data = {
+"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -0.0069766045, 2.304579, 0, 0, 0, 0, 0, 0, 0, 1.3158689, 1.3577608, 0, 0, 0, 0, 0, 0, 0, 0.50330114, -0.0720906, 0),
+"tilts": PackedFloat32Array(0, 0, 0)
+}
+point_count = 3
+
+[node name="Cable" type="Path3D" unique_id=569316382]
+curve = SubResource("Curve3D_df2n1")
+script = ExtResource("1_y82nb")

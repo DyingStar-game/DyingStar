@@ -1,0 +1,167 @@
+[gd_scene format=3 uid="uid://duni0rc7ofqdu"]
+
+[ext_resource type="Script" uid="uid://bg6kpxuibruga" path="res://addons/vehicle_lift/common/kiosk/kiosk.gd" id="1_bbrg4"]
+[ext_resource type="ArrayMesh" uid="uid://bvixtv4gbbhy6" path="res://addons/vehicle_lift/common/kiosk/kiosk_base_lod0.mesh" id="1_x3hut"]
+[ext_resource type="Material" uid="uid://uwdsv4o1gqj2" path="res://addons/vehicle_lift/common/materials/platform_railing.material" id="2_bbtt4"]
+[ext_resource type="ArrayMesh" uid="uid://b5lagwp8mph1p" path="res://addons/vehicle_lift/common/kiosk/kiosk_pivot_lod0.mesh" id="3_sa7al"]
+[ext_resource type="ArrayMesh" uid="uid://ckiay5ffh4kc7" path="res://addons/vehicle_lift/common/kiosk/kiosk_arm01_lod0.mesh" id="4_bbtt4"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="5_sa7al"]
+[ext_resource type="ArrayMesh" uid="uid://7hyppq4fkjwi" path="res://addons/vehicle_lift/common/kiosk/kiosk_arm02_lod0.mesh" id="6_sa7al"]
+[ext_resource type="Material" uid="uid://dlktdpj4lvd5a" path="res://addons/vehicle_lift/common/materials/platform_shiny_metal.material" id="7_1t20m"]
+[ext_resource type="ArrayMesh" uid="uid://bwb1onmgqi5sj" path="res://addons/vehicle_lift/common/kiosk/kiosk_zpivot_arm02_balljoint_lod0.mesh" id="8_sa7al"]
+[ext_resource type="ArrayMesh" uid="uid://bqfl1gv5h8msp" path="res://addons/vehicle_lift/common/kiosk/kiosk_balljoint_lod0.mesh" id="9_sa7al"]
+[ext_resource type="ArrayMesh" uid="uid://6ftxlr7q1fmn" path="res://addons/vehicle_lift/common/screen/kiosk_screen_lod0.mesh" id="11_1qmqh"]
+[ext_resource type="Material" uid="uid://cnd4glaqf4nwr" path="res://addons/vehicle_lift/common/materials/screen_border.material" id="11_1t20m"]
+[ext_resource type="Script" uid="uid://gmxncvkf487h" path="res://scenes/interactables/gui_3d.gd" id="13_1qmqh"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
+height = 0.03140869
+radius = 0.037597656
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_p4l2t"]
+size = Vector3(0.36073303, 0.04020996, 0.04082031)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_87i4o"]
+size = Vector3(0.30054474, 0.040161133, 0.04057617)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
+size = Vector3(0.6269531, 0.3503418, 0.05987549)
+
+[sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_juo2k"]
+data = PackedVector3Array(0.25, -0.14999999, 0, -0.25, -0.14999999, 0, 0.25, 0.14999999, 0, -0.25, -0.14999999, 0, -0.25, 0.14999999, 0, 0.25, 0.14999999, 0)
+
+[sub_resource type="QuadMesh" id="QuadMesh_p3p18"]
+size = Vector2(0.5, 0.3)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_cpwqv"]
+resource_local_to_scene = true
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1qmqh"]
+size = Vector3(0.0341169753610302, 0.3, 0.5)
+
+[node name="Kiosk" type="Node3D" unique_id=1785488499]
+script = ExtResource("1_bbrg4")
+
+[node name="Kiosk Base" type="StaticBody3D" parent="." unique_id=565891801]
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Base" unique_id=606463192]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.005769143, 0)
+mesh = ExtResource("1_x3hut")
+surface_material_override/0 = ExtResource("2_bbtt4")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Base" unique_id=1966357760]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02144165, 0)
+shape = SubResource("CylinderShape3D_fti8b")
+
+[node name="Kiosk Pivot Base Arm 01" type="Node3D" parent="." unique_id=256960048]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.036963567, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01" unique_id=831072488]
+mesh = ExtResource("3_sa7al")
+surface_material_override/0 = ExtResource("2_bbtt4")
+
+[node name="Kiosk Arm 01" type="StaticBody3D" parent="Kiosk Pivot Base Arm 01" unique_id=375864068]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.027945705, 0)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01" unique_id=1019439980]
+mesh = ExtResource("4_bbtt4")
+surface_material_override/0 = ExtResource("5_sa7al")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01" unique_id=1486313481]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.16028595, 8.545071e-05, -9.765476e-05)
+shape = SubResource("BoxShape3D_p4l2t")
+
+[node name="Kiosk Pivot Z Arm 01 Arm 02" type="Node3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01" unique_id=1702487776]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3226374, -5.1105395e-05, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02" unique_id=683703480]
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, -3.0897476e-09, 0.024689503, 0)
+mesh = ExtResource("3_sa7al")
+surface_material_override/0 = ExtResource("2_bbtt4")
+
+[node name="Kiosk Pivot Y Arm 01 Arm 02" type="Node3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02" unique_id=538122674]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.656613e-10, 0.024817217, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02" unique_id=2129293730]
+mesh = ExtResource("3_sa7al")
+surface_material_override/0 = ExtResource("2_bbtt4")
+
+[node name="Kiosk Arm 02" type="StaticBody3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02" unique_id=260210006]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.025005192, 0)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02" unique_id=1326582377]
+mesh = ExtResource("6_sa7al")
+surface_material_override/0 = ExtResource("5_sa7al")
+surface_material_override/1 = ExtResource("7_1t20m")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02" unique_id=1043188837]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.13034439, 0.00018312037, -0.00026855618)
+shape = SubResource("BoxShape3D_87i4o")
+
+[node name="Kiosk Z Pivot Arm 02 BallJoint" type="Node3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02" unique_id=230500914]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.261, 0, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint" unique_id=1391234307]
+mesh = ExtResource("8_sa7al")
+surface_material_override/0 = ExtResource("2_bbtt4")
+
+[node name="Kiosk Ball Joint" type="Node3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint" unique_id=1478456564]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.060953178, -0.002328962, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint" unique_id=527537591]
+mesh = ExtResource("9_sa7al")
+surface_material_override/0 = ExtResource("2_bbtt4")
+surface_material_override/1 = ExtResource("7_1t20m")
+
+[node name="Kiosk Tablet" type="StaticBody3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint" unique_id=2093927511]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.013287008, 0.043)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet" unique_id=276523861]
+mesh = ExtResource("11_1qmqh")
+surface_material_override/0 = ExtResource("5_sa7al")
+surface_material_override/1 = ExtResource("7_1t20m")
+surface_material_override/2 = ExtResource("11_1t20m")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet" unique_id=199834966]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0501709, 0.04708862)
+shape = SubResource("BoxShape3D_fti8b")
+
+[node name="Screen Display" type="StaticBody3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet" unique_id=1168414045 node_paths=PackedStringArray("node_quad", "node_area")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 0.99999994, 0, 0, 0, 0.99999994, 0, -0.049999997, 0.054648)
+collision_layer = 32
+collision_mask = 0
+script = ExtResource("13_1qmqh")
+node_quad = NodePath("Screen Display Visual")
+node_area = NodePath("Screen Display Visual/TouchScreen")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display" unique_id=1504362186]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.9999999, 0, 0, 0)
+shape = SubResource("ConcavePolygonShape3D_juo2k")
+
+[node name="Screen Display Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display" unique_id=1010779678]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.9999999, 0, 0, 0)
+mesh = SubResource("QuadMesh_p3p18")
+surface_material_override/0 = SubResource("StandardMaterial3D_cpwqv")
+
+[node name="TouchScreen" type="Area3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display/Screen Display Visual" unique_id=628297974]
+transform = Transform3D(6.123233995736764e-17, 0, 0.9999999999999998, 0, 0.9999999999999998, 0, -0.9999999999999998, 0, 6.123233995736764e-17, 0, 0, 0.030678513452973885)
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display/Screen Display Visual/TouchScreen" unique_id=601299958]
+transform = Transform3D(0.9999999999999905, 0, -1.9598263e-30, 0, 0.9999999999999905, 0, 6.162976e-32, 0, 1, 0.011577542608390112, 0, -6.6136333e-18)
+shape = SubResource("BoxShape3D_1qmqh")
+debug_color = Color(0.70196074, 0.31287596, 0.24275212, 0.41960785)

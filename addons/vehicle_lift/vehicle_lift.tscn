@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bao10qqj47qp1"]
+
+[ext_resource type="Script" uid="uid://dsw35nohgq6b" path="res://addons/vehicle_lift/vehicle_lift.gd" id="1_uycjk"]
+
+[node name="Vehicle Elevator" type="Node3D" unique_id=749990997]
+script = ExtResource("1_uycjk")
