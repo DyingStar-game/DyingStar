@@ -2042,6 +2042,8 @@ func _physics_process_impl(delta: float) -> void:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
 		else:
 			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
+		# Safety net: a truck that tunneled under the planet surface (the same net the player has).
+		_catch_if_below_surface()
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
@@ -2830,6 +2832,67 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		v_flat = v_flat.move_toward(Vector3.ZERO, handbrake_hold * state.step)
 	state.linear_velocity = v_up + v_flat
 	state.angular_velocity = state.angular_velocity.move_toward(Vector3.ZERO, handbrake_hold * state.step)
+
+## SERVER safety net: put the truck back on the theoretical surface when it has clearly tunneled under
+## the planet. Same net as PlayerServer._catch_if_below_surface, for the same reason: the terrain
+## collision is a thin trimesh built chunk by chunk on worker threads, and a 2 t truck at 80 km/h can
+## reach a chunk whose body does not exist yet (or fail to get one — the Jolt body pool was full on
+## preprod 2026-09-20, 5 min before a driver went through tarsis_3). Only players had the net: the
+## truck sank, the driver climbed out under the ground, and HIS net threw him to the surface — 200 m
+## from a truck still falling towards the fallback shells.
+##
+## Measured against the CARVED ground (cuttings, tunnels) once the cheap raw test says "below", with
+## the player's 3 m margin. The truck is placed with its wheels at ground level, radial velocity cut,
+## the rest kept — a moving truck lands rolling. Cheap: one height sample per tick, and only for an
+## awake body (the sleeping branch above returns before this point; a parked truck cannot fall).
+const _SURFACE_CATCH_MARGIN := 3.0
+var _catch_logged_ms: int = -100000
+
+func _catch_if_below_surface() -> void:
+	var planet: Node = get_parent()
+	while planet != null and not (planet is Planet):
+		planet = planet.get_parent()
+	if planet == null:
+		return  # bench, a hangar in space, the world frame: no surface to be under
+	var pdata = planet.get("planet_data")
+	if pdata == null:
+		return
+	var planet_basis: Basis = planet.global_transform.basis
+	var local_body: Vector3 = planet_basis.inverse() * (global_position - planet.global_position)
+	if local_body.length_squared() < 1.0:
+		return
+	var dir: Vector3 = local_body.normalized()
+	var body_dist: float = local_body.length()
+	# Ride height: the chassis origin sits this far above the wheels' contact points, so the
+	# wheels are at body_dist - clearance from the centre.
+	var clearance: float = _ground_clearance()
+	var wheels_dist: float = body_dist - clearance
+	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
+	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
+		return  # at or above the ground — the collision handles it
+	surface_dist = pdata.carved_surface_dist(dir)
+	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
+		return
+	var up_world: Vector3 = (planet_basis * dir).normalized()
+	# One line a second at most: with no ground at all the net fires every tick (fall, catch, fall),
+	# and a print per tick is a known server-cost trap.
+	var now_ms: int = Time.get_ticks_msec()
+	if now_ms - _catch_logged_ms >= 1000:
+		_catch_logged_ms = now_ms
+		print("🚚 Vehicle %s: %.1f m under the surface — put back on the ground" % [
+			uuid, surface_dist - wheels_dist])
+	global_position = planet.global_position + planet_basis * (dir * (surface_dist + clearance))
+	var radial: float = linear_velocity.dot(up_world)
+	if radial < 0.0:
+		linear_velocity -= up_world * radial
+
+## How far above the wheels' contact points the chassis origin sits (m): the deepest wheel mount,
+## plus its suspension at rest and the tyre. 0 for a vehicle built without wheels.
+func _ground_clearance() -> float:
+	var deepest: float = 0.0
+	for wheel in _wheels:
+		deepest = maxf(deepest, -wheel.position.y + wheel.wheel_rest_length + wheel.wheel_radius)
+	return deepest
 
 ## No driver aboard (the pilot left — possibly bailing "en marche" with the throttle still held): cut
 ## the drive. engine_force PERSISTS from the last _apply_drive, so without this the empty truck keeps
