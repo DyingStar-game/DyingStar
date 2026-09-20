@@ -35,15 +35,16 @@ size = Vector3(2.185217537648896, 0.851504158613352, 2.1983872583680295)
 size = Vector3(0.03758665739610478, 0.1044873444532186, 0.14503269956207987)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hatch"]
-size = Vector3(0.2, 0.45, 0.65)
+size = Vector3(0.22, 0.7, 0.65)
 
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 collision_layer = 4
 collision_mask = 15
-mass = 1000.0
+mass = 1425.0
 script = ExtResource("1_vehicle")
 engine_power = 850.0
 max_speed_kmh = 55.0
+max_payload = 1200.0
 factory_engines = Array[ExtResource("2_fjb8t")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("90_t1")])
 steer_speed = 0.8
 steer_return_speed = 1.0
@@ -289,9 +290,10 @@ door_id = "Cube_007"
 open_angle_deg = 60.0
 reverse = true
 outdoor_shape = NodePath("CollisionShape3D_out")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FL" unique_id=372280171]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.17, -0.18)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -304,9 +306,10 @@ script = ExtResource("7_tuoiw")
 door_id = "Cube_006"
 open_angle_deg = 60.0
 outdoor_shape = NodePath("CollisionShape3D_out")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FR" unique_id=372280172]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.17, -0.18)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -319,9 +322,10 @@ script = ExtResource("7_tuoiw")
 door_id = "Cube_004"
 open_angle_deg = 60.0
 outdoor_shape = NodePath("CollisionShape3D_out")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RL" unique_id=372280173]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.17, 0.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -335,9 +339,10 @@ door_id = "Cube_005"
 open_angle_deg = 60.0
 reverse = true
 outdoor_shape = NodePath("CollisionShape3D_out")
+metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RR" unique_id=372280174]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, -0.17, 0.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 

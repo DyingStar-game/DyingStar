@@ -311,7 +311,12 @@ func _process(_delta: float) -> void:
 
 	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: E opens/closes it.
 	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
-	if not player.interact_label.visible and (is_instance_valid(player._nearby_seat) or player._seat_vehicle_uuid != ""):
+	# A handle is offered wherever it can be SEEN, not only where a seat happens to be. The seat
+	# test that used to gate this was written for cab doors, which always sit beside one — and it
+	# silently made every other hatch on a vehicle impossible to aim at, whatever the size or the
+	# placement of its box. Priority over the seat prompt is kept by ORDER: this block runs first,
+	# so aiming at a handle inside a seat zone still shows the door action.
+	if not player.interact_label.visible:
 		var aimed_handle = _aimed_door_handle()
 		if aimed_handle != null:
 			player.interact_label.text = _door_prompt(aimed_handle)
@@ -337,13 +342,22 @@ func _process(_delta: float) -> void:
 		if player._carry_prompt == "drop":
 			player.interact_label.text = "[E] Drop"
 			player.interact_label.show()
+		elif player._carry_prompt == "install":
+			player.interact_label.text = "[E] Fit"  # dropping here bolts the part into a vehicle bay
+			player.interact_label.show()
 		elif player._carry_prompt == "cargo":
 			player.interact_label.text = "[E] Cargo"  # dropping here loads it onto the truck (sticks)
 			player.interact_label.show()
 		elif player._carry_prompt == "carry":
-			player.interact_label.text = "[E] Carry"
+			# Name what you are about to pick up when the prop knows its own name. The server
+			# decided WHETHER we can carry it; what it is called is on the object in front of us,
+			# so saying it costs nothing on the wire.
+			var aimed = player._aimed_carriable()
+			var what: String = ""
+			if aimed != null and aimed.has_method("part_name"):
+				what = " " + str(aimed.part_name())
+			player.interact_label.text = "[E] Carry" + what
 			player.interact_label.show()
-
 
 	var dir_vect = Vector3.ZERO
 
@@ -693,10 +707,19 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed("action"):
 		player.interact_ray.force_raycast_update()
-		# On foot, looking at a door handle from a boarding zone: open/close that door (server-auth).
-		# Priority over boarding, so aiming at the handle in the zone operates the door.
+		# On foot, looking at a door handle: open/close that door (server-authoritative).
+		#
+		# NOT gated on standing in a boarding zone. That test was written when every door was a cab
+		# door, next to a seat; it made a bay hatch impossible to OPERATE even though the prompt
+		# offered it — the prompt and the action were gated in two separate places, and only one of
+		# them had been lifted. Priority over boarding is kept by ORDER: this branch runs first.
+		#
+		# Hands free only. Carrying, E puts the load down (or fits it into a bay) instead of working
+		# a door — the same choice the boarding branch below already makes. It is also what lets you
+		# aim INTO an open hatch to fit a part: the handle's box covers the whole door, so without
+		# this you would shut the hatch instead of filling it.
 		var handle = _aimed_door_handle()
-		if handle != null and is_instance_valid(player._nearby_seat):
+		if handle != null and not player._owner_carrying:
 			_toggle_door(handle)
 			return
 		# Standing in a seat box: E boards — but only once the seat's gating door is open (open it

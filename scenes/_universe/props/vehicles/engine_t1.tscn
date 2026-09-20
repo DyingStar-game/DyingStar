@@ -20,7 +20,7 @@ roughness = 0.45
 [node name="EngineT1" type="RigidBody3D"]
 collision_layer = 8
 collision_mask = 15
-mass = 120.0
+mass = 25.0
 script = ExtResource("1_comp")
 spec = ExtResource("2_spec")
 sfx_pick_up = ExtResource("sfx_pick")

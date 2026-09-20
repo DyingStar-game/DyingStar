@@ -15,8 +15,19 @@ extends RefCounted
 ## is the key the replicated and persisted table is written with, so it has to describe WHERE the
 ## bay is and nothing else.
 
+## Fitted or removed something. The vehicle listens and rebuilds its drive model and its mass —
+## a signal rather than a call back into vehicle.gd, which is already at gdlint's public-method
+## ceiling and has no business growing a component API.
+signal changed
+
 ## The vehicle these bays belong to. Untyped to avoid a cyclic class dependency with Vehicle.
 var vehicle: Node = null
+
+## Fitted part -> its pose in the vehicle's frame, re-asserted every physics frame. Deliberately
+## SEPARATE from the bed's _locked_cargo_local: a bolted-in part is not cargo, it must not count
+## towards the payload, and it must not be thrown out by the rollover spill. Sharing that dict
+## would have given the pinning for free and cost the two rules that matter.
+var _pinned: Dictionary = {}
 
 ## What the chassis will run, by component kind. -1 = no limit. Filled from the vehicle's exports.
 var max_engines: int = -1
@@ -107,3 +118,121 @@ func occupancy() -> Dictionary:
 	for s in all():
 		occ[str(s.name)] = s.occupant_uuid
 	return occ
+
+
+## Bolt a part into a bay. Returns "" on success, or the reason it was refused — a refusal the
+## player cannot read is indistinguishable from a bug.
+##
+## Server only. The pose, the freeze and the reparent follow Vehicle._lock_cargo: the part keeps
+## its collision LAYER (so it can still be aimed at to take it back out) and only stops fighting
+## the truck body, and it goes through server_parent_change so PropSync does not fire a delete on
+## the way (a raw reparent() makes a prop vanish from Horizon).
+func install(slot: Node, part: Node) -> String:
+	if slot == null or part == null:
+		return "Nothing to fit"
+	if not slot.is_free():
+		return "That bay is taken"
+	if slot.door_id != "" and not vehicle.is_door_open(slot.door_id):
+		return "Open the hatch first"
+	var spec = part.spec if "spec" in part else null
+	var refused: String = refuse_reason(spec)
+	if refused != "":
+		return refused
+	part.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	part.freeze = true
+	vehicle.add_collision_exception_with(part)
+	if part.has_method("server_parent_change"):
+		part.server_parent_change(vehicle)
+	else:
+		part.reparent(vehicle)
+	part.transform = vehicle.global_transform.affine_inverse() * slot.global_transform
+	part.slot_id = str(slot.name)
+	slot.occupant = part
+	slot.occupant_uuid = str(part.uuid)
+	_pinned[part] = part.transform
+	part.send_properties_to_client(str(vehicle.uuid))
+	changed.emit()
+	return ""
+
+
+## Take the part out of a bay and hand it back, loose and dynamic again. Returns it, or null.
+func remove(slot: Node) -> Node:
+	if slot == null or slot.occupant == null:
+		return null
+	var part: Node = slot.occupant
+	_pinned.erase(part)
+	slot.occupant = null
+	slot.occupant_uuid = ""
+	if is_instance_valid(part):
+		part.slot_id = ""
+		vehicle.remove_collision_exception_with(part)
+		part.freeze = false
+		part.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	changed.emit()
+	return part
+
+
+## Re-assert every fitted part's pose. A KINEMATIC child drifts under a parent that moves, so this
+## runs each physics frame alongside the bed's own pinning.
+func pin() -> void:
+	for part in _pinned.keys():
+		if is_instance_valid(part):
+			(part as Node3D).transform = _pinned[part]
+		else:
+			_pinned.erase(part)
+
+
+## The free bay nearest a world point that would take `spec`, or null. Used to decide whether a
+## part being put down lands in a bay rather than in the bed — the two overlap on this truck, two
+## of its four hatches sit inside the cargo loading zone.
+func slot_for_point(world_point: Vector3, spec: VehicleComponentSpec) -> Node:
+	var best: Node = null
+	var best_d: float = INF
+	for s in all():
+		if not s.is_free():
+			continue
+		if s.door_id != "" and not vehicle.is_door_open(s.door_id):
+			continue
+		var d: float = world_point.distance_to(s.global_position)
+		if d <= s.snap_range and d < best_d:
+			best_d = d
+			best = s
+	if best != null and refuse_reason(spec) != "":
+		return null
+	return best
+
+
+## Re-establish the link between a bay and the part that came back inside it after a restart.
+##
+## Persistence returns the part parented to the vehicle with the right pose, but nothing says which
+## BAY it belongs to — so it is neither frozen nor pinned, and it falls straight through the truck.
+## slot_id is what closes that gap: the part carries the name of its bay, so the answer is looked up
+## rather than guessed. (The shelf has to work the same thing out geometrically, every reload, with
+## a tolerance and a retry window. Naming it is a function we get to not write.)
+##
+## Nothing is MOVED here: the pose came back with the prop and is authoritative. Returns how many
+## were rebound, so the caller can stop asking.
+func rebind() -> int:
+	if vehicle == null:
+		return 0
+	var done: int = 0
+	for child in vehicle.get_children():
+		if not (child is VehicleComponent):
+			continue
+		var sid: String = str(child.slot_id)
+		if sid == "":
+			continue
+		var slot: Node = find(sid)
+		if slot == null or not slot.is_free():
+			continue
+		child.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		child.freeze = true
+		vehicle.add_collision_exception_with(child)
+		child.set_meta("component_slot_ref", slot)  # so taking it back out frees the bay
+		slot.occupant = child
+		slot.occupant_uuid = str(child.uuid)
+		_pinned[child] = child.transform
+		done += 1
+	if done > 0:
+		changed.emit()
+	return done

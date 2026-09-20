@@ -52,6 +52,24 @@ func test_truck_leaves_the_works_with_three_t1_motors() -> void:
 		assert_eq(e.tier, 1, "a T1 is tier 1")
 
 
+func test_masses_close_the_sheet() -> void:
+	# The sheet's mVide INCLUDES the modules (confirmed by its author), so the scene carries the
+	# BARE chassis and the factory fit makes up the rest: 1425 + 3 x 25 = 1500 = mVide. Payload is
+	# mCharge - mVide, so a fully loaded truck weighs 2700 exactly like the sheet says.
+	assert_almost_eq(_truck.mass, 1425.0, 0.1, "bare chassis, modules excluded")
+	var fitted: float = 0.0
+	for e in _truck.factory_engines:
+		fitted += e.mass_kg
+	assert_almost_eq(e_mass_of(_truck), 25.0, 0.01, "a T1 weighs 25 kg — light enough to carry")
+	assert_almost_eq(_truck.mass + fitted, SHEET_EMPTY_MASS, 0.1, "chassis + modules = mVide")
+	assert_almost_eq(_truck.max_payload, 2700.0 - SHEET_EMPTY_MASS, 0.1, "payload = mCharge - mVide")
+
+
+## Mass of one factory engine.
+func e_mass_of(truck: Vehicle) -> float:
+	return float(truck.factory_engines[0].mass_kg)
+
+
 func test_chassis_matches_the_mvp_column() -> void:
 	assert_almost_eq(_truck.drag_coefficient, 1.0, 0.001, "Cx")
 	assert_almost_eq(_truck.frontal_area_m2, 3.0, 0.001, "frontal area (m2)")
@@ -148,3 +166,30 @@ func _model_has_node_named(wanted: String) -> bool:
 		if str(n.name).to_lower() == low:
 			return true
 	return false
+
+
+func test_a_bay_behind_a_shut_hatch_refuses_the_part() -> void:
+	# Every bay names a hatch, and nothing is open on a freshly loaded scene, so nothing can be
+	# fitted yet. This is what stops a part being posted through closed bodywork — the same rule
+	# VehicleSeat uses to keep you out of a seat behind a shut door.
+	#
+	# Checked through install() rather than slot_for_point(): the latter needs global_position,
+	# which errors on a truck that was instantiated but never added to the tree. install() refuses
+	# on the hatch before it touches any transform, which is exactly the rule under test.
+	var bays := _truck.bays()
+	var packed: PackedScene = load("res://scenes/_universe/props/vehicles/engine_t1.tscn")
+	var part := packed.instantiate()
+	for b in bays.all():
+		assert_ne(b.door_id, "", "%s is gated by a hatch" % b.name)
+		assert_false(_truck.is_door_open(b.door_id), "%s starts shut" % b.door_id)
+		assert_eq(bays.install(b, part), "Open the hatch first",
+				"%s must refuse a part while its hatch is shut" % b.name)
+	part.free()
+
+
+func test_fitting_refuses_nonsense_before_it_touches_anything() -> void:
+	var bays := _truck.bays()
+	assert_eq(bays.install(null, null), "Nothing to fit", "no bay, no part")
+	assert_eq(bays.install(bays.all()[0], null), "Nothing to fit", "a bay but nothing to put in it")
+	assert_null(bays.remove(null), "removing from no bay yields nothing")
+	assert_null(bays.remove(bays.all()[0]), "removing from an empty bay yields nothing")
