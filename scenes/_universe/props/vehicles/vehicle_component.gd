@@ -25,6 +25,13 @@ func _ready() -> void:
 	# weigh one thing lying on the ground and another bolted into a truck.
 	if spec != null and spec.mass_kg > 0.0:
 		mass = spec.mass_kg
+	# A part that already knows it is fitted must NEVER simulate, not even for one frame. Spawned
+	# dynamic, it is born inside the vehicle and shoves it about until something freezes it — a
+	# truck visibly nudged by its own engines appearing. slot_id is set from the network payload
+	# before _ready runs, so by here we know.
+	if slot_id != "":
+		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		freeze = true
 
 ## PropSync applies the replicated transform, then hands us the rest of the payload.
 func apply_prop_data(data: Dictionary) -> void:

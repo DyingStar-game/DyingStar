@@ -8,6 +8,7 @@ extends Control
 @onready var _celestial_gizmos: Button = $ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos/Button
 @onready var _movement_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/MovementDebug/Button
 @onready var _surface_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug/Button
+@onready var _vehicle_hud: Button = $ScrollContainer/MarginContainer/VBoxContainer/VehicleHud/Button
 
 func _ready() -> void:
 	_show_debug.toggle_mode = true
@@ -35,6 +36,11 @@ func _ready() -> void:
 	_surface_debug.text = "On" if _surface_debug.button_pressed else "Off"
 	_surface_debug.toggled.connect(_on_surface_debug_toggled)
 
+	_vehicle_hud.toggle_mode = true
+	_vehicle_hud.button_pressed = SettingsManager.is_vehicle_hud()
+	_vehicle_hud.text = "On" if _vehicle_hud.button_pressed else "Off"
+	_vehicle_hud.toggled.connect(_on_vehicle_hud_toggled)
+
 ## Show/hide the in-game debug panels. Kept in sync with the toggle_debug key via SettingsManager.
 func _on_show_debug_toggled(on: bool) -> void:
 	_show_debug.text = "On" if on else "Off"
@@ -58,3 +64,8 @@ func _on_movement_debug_toggled(on: bool) -> void:
 func _on_surface_debug_toggled(on: bool) -> void:
 	_surface_debug.text = "On" if on else "Off"
 	SettingsManager.set_surface_debug(on)
+
+## Show/hide the vehicle dashboard overlay shown to the driver (speed, rpm, weight, bays, model).
+func _on_vehicle_hud_toggled(on: bool) -> void:
+	_vehicle_hud.text = "On" if on else "Off"
+	SettingsManager.set_vehicle_hud(on)

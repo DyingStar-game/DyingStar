@@ -2407,9 +2407,11 @@ func _server_drop_carried_item() -> void:
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
+		# Only give up the item if the bed ACTUALLY took it. A bed that refuses (a part that belongs
+		# in a bay, say) must fall through to the ordinary drop below, or the crate is left mounted
+		# on the carrier with nobody holding it — invisible to physics and impossible to put down.
 		var bed = _cargo_bed_for_drop(place["position"])
-		if bed != null:
-			bed.lock_dropped_cargo(item)
+		if bed != null and bed.lock_dropped_cargo(item):
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return

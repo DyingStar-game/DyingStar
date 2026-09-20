@@ -25,9 +25,7 @@ signal hs_server_prop_delete
 ## Which wheels receive engine force: FRONT = FWD, REAR = RWD, ALL = 4x4.
 enum DriveMode {FRONT, REAR, ALL}
 ## Powertrain: ELECTRIC = single-speed instant torque; THERMAL = gearbox with auto-shift.
-enum PropulsionType {ELECTRIC, THERMAL}
 ## Driving view: CHASE = 3rd-person orbit, CAB = 1st-person from the cab.
-enum ViewMode {CHASE, CAB}
 
 
 # Meta marker put on every node we generate, so a rebuild can clear the old ones.
@@ -37,9 +35,6 @@ const GENERATED := "vehicle_generated"
 const GRIP_META := "grip_slip"
 # Thickness of the generated bed floor / walls (m). Shared by the collider and the cargo-rest math.
 const BED_WALL_THICKNESS := 0.08
-# Bench: the real mining rock scene, reused to test loading the bed.
-const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn")
-const UUID_UTIL := preload("res://addons/uuid/uuid.gd")
 ## Group a dev adds to any Light3D in their vehicle scene to make it a head light (drop-in, no code).
 const LIGHT_GROUP := "vehicle_light"
 ## Group put (in Godot) on the instanced real 3D model (GLB) root. Its presence (or real wheels)
@@ -65,19 +60,6 @@ const REBIND_EVERY_FRAMES: int = 30
 ## Ignition: the engine must be started (key I, driver only) before the vehicle can drive, and it can
 ## only be switched on/off while standing still — below this speed (km/h). A vehicle spawns engine off.
 @export_range(0.0, 20.0, 0.5) var ignition_max_kmh: float = 3.0
-## Powertrain. ELECTRIC = single-speed, instant torque (cars/EV trucks). THERMAL = gearbox
-## with automatic shifting. Switching it changes which settings below are editable.
-@export var propulsion_type: PropulsionType = PropulsionType.ELECTRIC:
-	set(v):
-		propulsion_type = v
-		notify_property_list_changed()  # show the matching settings group
-## Base motor/engine torque applied per driven wheel. Total pull = this x driven wheels (x the
-## gear ratio in THERMAL). Must beat m*g*sin(slope) to climb.
-@export var engine_power: float = 1200.0
-## Top speed (km/h).
-@export var max_speed_kmh: float = 45.0
-## Reverse top speed (km/h).
-@export var reverse_max_kmh: float = 15.0
 ## How fast the applied torque ramps to the throttle (1/s). Lower = gentler launch (keeps a
 ## heavy vehicle from leaping off the line).
 @export var torque_response: float = 2.5
@@ -139,6 +121,27 @@ const REBIND_EVERY_FRAMES: int = 30
 ## kind into each would freeze game design into a scene. -1 = no limit. Other kinds of component
 ## get their own line in _component_limit() when they ship.
 @export var max_engines: int = 3
+## Mass of the BARE chassis (kg): modules and payload excluded. The design sheet's mVide MINUS the
+## factory modules — 1500 - 3 x 25 for the MVP truck.
+##
+## DECLARED, not captured from `mass` at _ready, and that distinction is a bug fix. A persisted
+## vehicle has its replicated mass written BEFORE _ready runs: create_generic_object applies the
+## channel data first, and `uuid` is still empty at that point, so the "the server never applies
+## channel updates" guard does not fire. The old snapshot therefore captured a TOTAL — chassis plus
+## whatever was fitted and whoever sat in it last session — and the vehicle grew heavier at every
+## single reload.
+@export var empty_mass: float = 1425.0
+## Top speed in reverse, as a fraction of the forward top speed. A fraction rather than a km/h so
+## it follows whatever engines are fitted instead of contradicting them.
+@export_range(0.0, 1.0, 0.01) var reverse_max_ratio: float = 0.15
+## Width of the band below top speed over which the drive tapers off (km/h).
+##
+## The design sheet is an EQUILIBRIUM model: it predicts the speed a vehicle settles at, not a
+## torque curve. Used as a curve it has no constant-power region at all, so the force would fall
+## from 100%% to 0 in 0.1 km/h — a wall, not a taper. The game models no aerodynamic drag, so that
+## wall is the ONLY thing holding the speed down, and pointing downhill at full throttle there is
+## nothing left to limit it. A short band gives the truck somewhere to run out of breath.
+@export_range(0.0, 30.0, 0.5) var speed_taper_kmh: float = 10.0
 ## Air density (kg/m3) where the vehicle drives. Sandbox is 1.26 at sea level. Could later be read
 ## from the planet's atmosphere; it only matters once a chassis is drag-limited rather than
 ## engine-limited, which the MVP truck is not.
@@ -321,29 +324,9 @@ const REBIND_EVERY_FRAMES: int = 30
 ## — the truck GLB carries no animation at all, so this path is the one every door actually uses.
 @export_range(0.0, 2.0, 0.05) var door_swing_secs: float = 0.45
 
-@export_group("Electric")
-## ELECTRIC only. Full torque from a standstill up to this speed (constant-torque region),
-## then torque tapers to zero at max_speed_kmh (constant-power region) — the real EV curve.
-@export var base_speed_kmh: float = 25.0
-## ELECTRIC only. Motor RPM shown on the gauge at top speed (single-speed reduction, no gears).
-## RPM = motor_max_rpm * (speed / max_speed_kmh). Slider so the gauge feel is easy to tune.
-@export_range(0.0, 12000.0, 100.0) var motor_max_rpm: float = 4500.0
-
-@export_group("Thermal gearbox")
-## THERMAL only. Per-gear torque multiplier, 1st to last (1st = strongest/slowest). Shifts
-## automatically on engine RPM.
-@export var gear_ratios: Array[float] = [2.5, 1.7, 1.25, 1.0, 0.8]
-## THERMAL only. Engine RPM the gearbox shifts UP at.
-@export var shift_up_rpm: float = 3400.0
-## THERMAL only. Engine RPM the gearbox shifts DOWN at. Keep a wide gap with shift_up_rpm, or the box
-## hunts between two gears.
-@export var shift_down_rpm: float = 1400.0
-## THERMAL only. Reverse gear torque multiplier.
-@export var reverse_ratio: float = 2.5
-## THERMAL only. Idle engine RPM — the bottom of the needle's sweep within each gear.
-@export var idle_rpm: float = 800.0
-## THERMAL only. Redline engine RPM — the top of that sweep, and the pitch ceiling of the engine sound.
-@export var redline_rpm: float = 4000.0
+# The engine's own settings — propulsion type, motor speed, gearbox — are NOT here any more.
+# They belong to the PART that is fitted (VehicleEngineSpec), so that swapping an engine changes
+# how the vehicle drives. See _sync_powertrain, which reads them from bays.first_engine().
 
 @export_group("Debug")
 ## Tint the driven wheels green (idle wheels stay dark) to see FWD / RWD / 4x4 at a glance.
@@ -584,10 +567,8 @@ var _grip_log_ticks: int = 0
 var _wheel_contacts_frame: int = -1
 var _throttle: float = 0.0
 var _pilot: Node3D = null
-var _chase_cam: Node3D = null
 var _cab_cam: Camera3D = null
-var _view: ViewMode = ViewMode.CAB  # bench (F6) enters in first-person cab view, like in-game (F5); F4 toggles to chase
-var _empty_mass: float = 0.0
+var _empty_mass: float = 0.0  # runtime copy of empty_mass (see _ready)
 var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
 var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed into the load
 var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
@@ -640,6 +621,9 @@ var _net_last_headlights: bool = false  # server: last replicated head lights, c
 var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer angle (rad)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
+## True while a driver is seated: the HUD is WANTED. Whether it is SHOWN also depends on the
+## player's setting — keeping the two apart is what lets the toggle work mid-drive.
+var _hud_wanted: bool = false
 var _powertrain := VehiclePowertrain.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
 ## purpose — see VehicleComponentBays.
@@ -685,6 +669,10 @@ var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 ## instead of stacking on top of it. Server and client both run these (see _swing_door).
 var _door_tweens: Dictionary = {}
 var _net_last_components: Dictionary = {}   # SERVER: last replicated bay occupancy, change detection
+## CLIENT: the bay table as last received. Kept because a part named in it may not EXIST yet — props
+## and their vehicle are created independently — so the table has to be re-applied until every part
+## it names has turned up. Without that, a late part stays a loose dynamic body and falls out.
+var _net_components: Dictionary = {}
 ## SERVER: frames left to keep looking for parts that came back from the database and still have to
 ## be re-linked to their bay. A window rather than a one-shot, because a prop and its vehicle are
 ## recreated independently and in no guaranteed order — the part may not exist yet when we spawn.
@@ -699,7 +687,7 @@ var _net_suspension: Array = []
 var _net_seats: Dictionary = {}             # CLIENT: seat name -> occupant uuid ("" = free), for prompts
 
 func _ready() -> void:
-	_empty_mass = mass
+	_empty_mass = empty_mass
 	_rebuild()
 	if Engine.is_editor_hint():
 		return
@@ -748,41 +736,6 @@ func _is_local_driver() -> bool:
 	if agent == null or agent.player_entity == null:
 		return false
 	return str(agent.player_entity.client_uuid) == pilot_uuid
-
-func _unhandled_input(event: InputEvent) -> void:
-	if Engine.is_editor_hint():
-		return
-	if _is_networked():
-		return  # in-game: the bench debug/pilot keys are off; control goes via the player + server
-	# While driving: leave with the exit action, toggle cab/chase view with F4.
-	if _pilot != null:
-		if event.is_action_pressed("exit"):
-			exit_vehicle()
-			return
-		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F4:
-			_view = ViewMode.CAB if _view == ViewMode.CHASE else ViewMode.CHASE
-			_apply_view()
-		if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
-			reset_upright()
-		# Ignition + horns, same keys as in game (in game they travel player -> server; here we are
-		# the authority ourselves). Without this the bench truck could not even be started.
-		if event.is_action_pressed("vehicle_ignition"):
-			toggle_engine()
-		if event.is_action_pressed("vehicle_horn_special", false, true):
-			set_horn(true, true)
-		elif event.is_action_pressed("vehicle_horn", false, true):
-			set_horn(true)
-		elif event.is_action_released("vehicle_horn") or event.is_action_released("vehicle_horn_special"):
-			set_horn(false)
-
-## Show only the settings relevant to the chosen powertrain in the inspector.
-func _validate_property(property: Dictionary) -> void:
-	var electric_only := ["base_speed_kmh", "motor_max_rpm"]
-	var thermal_only := ["gear_ratios", "shift_up_rpm", "shift_down_rpm", "reverse_ratio", "idle_rpm", "redline_rpm"]
-	if propulsion_type == PropulsionType.ELECTRIC and property.name in thermal_only:
-		property.usage &= ~PROPERTY_USAGE_EDITOR
-	elif propulsion_type == PropulsionType.THERMAL and property.name in electric_only:
-		property.usage &= ~PROPERTY_USAGE_EDITOR
 
 func _rebuild_deferred() -> void:
 	if is_inside_tree():
@@ -976,53 +929,6 @@ func _driver_seat() -> VehicleSeat:
 			return c
 	return null
 
-# ------------------------------------------------------------------------------
-# Enter / exit (pilot)
-# ------------------------------------------------------------------------------
-## A pilot takes the wheel: it stops walking, the vehicle becomes drivable, camera switches.
-func enter_vehicle(pilot: Node3D) -> void:
-	if _pilot != null:
-		return
-	_pilot = pilot
-	if _chase_cam == null:
-		_chase_cam = get_tree().get_first_node_in_group("chase_cam")
-	if pilot.has_method("set_driving"):
-		pilot.set_driving(self)
-	# Seat the pilot in the cab: it rides rigidly with the truck (physics off on its side).
-	pilot.reparent(self)
-	pilot.position = _seat_position()
-	pilot.rotation = Vector3.ZERO  # face the truck's forward (-Z)
-	if _chase_cam != null and _chase_cam.has_method("set_target"):
-		_chase_cam.set_target(self)
-	_apply_view()
-
-## The pilot steps out beside the cab; control and camera go back to it.
-func exit_vehicle() -> void:
-	if _pilot == null:
-		return
-	var pilot := _pilot
-	_pilot = null
-	engine_force = 0.0
-	_throttle = 0.0
-	# Put the pilot back in the world, just left of the cab (raised so it drops onto the ground).
-	var drop: Vector3 = to_global(Vector3(
-		-(body_width * 0.5 + 1.0), 1.0, -(body_length * 0.5 - cab_length * 0.5)))
-	if get_parent() != null:
-		pilot.reparent(get_parent())
-	pilot.global_position = drop
-	if pilot.has_method("set_walking"):
-		pilot.set_walking()
-	if _chase_cam != null and _chase_cam.has_method("set_target"):
-		_chase_cam.set_target(pilot)
-		_chase_cam.make_current()
-
-## Local seat position in the cab (driver side), where the pilot rides while driving.
-func _seat_position() -> Vector3:
-	return Vector3(
-		-body_width * 0.28,
-		body_height * 0.5 + 0.5,
-		-(body_length * 0.5 - cab_length * 0.55))
-
 ## Flip the vehicle back onto its wheels (GDD anti-rollover): keep the heading, cancel pitch
 ## and roll, lift it a touch and zero the velocities so it settles upright.
 func reset_upright() -> void:
@@ -1041,25 +947,23 @@ func reset_upright() -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 
-## Activate the camera for the current driving view (cab = 1st person, chase = 3rd person).
-func _apply_view() -> void:
-	if _pilot == null:
-		return
-	if _view == ViewMode.CAB and _cab_cam != null:
-		_cab_cam.make_current()
-	elif _chase_cam != null and _chase_cam.has_method("make_current"):
-		_chase_cam.make_current()
-
 ## Load a crate the player just dropped while standing in this bed. Replaces the old per-frame
 ## bay polling: the bed no longer monitors, so the carrier (the single monitor that knows it is in
 ## the bed) hands the crate straight to the truck. Server-authoritative; ignores non-cargo bodies.
-func lock_dropped_cargo(body: Node) -> void:
-	if body == null or body is Vehicle or _locked_cargo.has(body):
-		return
-	if body is VehicleComponent:
-		return  # a vehicle part goes in a BAY, never in the bed — see VehicleComponentBays
+## Returns TRUE when the bed took it. The caller MUST honour a false: the drop path hands the item
+## over and then forgets it, so a silent refusal here strands the crate — still mounted on the
+## carrier, phantom and frozen, with nobody holding it any more.
+func lock_dropped_cargo(body: Node) -> bool:
+	if body == null or body is Vehicle:
+		return false
+	if _locked_cargo.has(body):
+		return true  # already aboard: the caller's job is done either way
+	if body is VehicleComponent and (body as VehicleComponent).is_fitted():
+		return false  # bolted into a bay: part of the vehicle, not a load it is carrying
 	if body is RigidBody3D and body.mass > 0.0:
 		_lock_cargo(body)
+		return true
+	return false
 
 ## Catch a carriable that FELL, bounced or was thrown into the bed (the carry-drop path only locks an
 ## item released BY HAND inside the zone). Every few frames, ask the PHYSICS ENGINE which prop bodies
@@ -1093,8 +997,11 @@ func _scan_bay_for_settled_cargo() -> void:
 		var rb := body as RigidBody3D
 		if rb.mass <= 0.0 or rb.get_parent() is Player:
 			continue  # carried items ride under a Player — not free cargo, don't absorb them
-		if rb is VehicleComponent:
-			continue  # bolted into a bay: part of the vehicle, not a load it is carrying
+		# A LOOSE part is ordinary cargo — hauling a spare motor is the point of the feature. Only a
+		# FITTED one is refused: two of the hatches sit inside the loading zone, so the engines
+		# bolted into them overlap this query and would otherwise be absorbed as a load.
+		if rb is VehicleComponent and (rb as VehicleComponent).is_fitted():
+			continue
 		if rb.linear_velocity.length() <= cargo_settle_speed:
 			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
@@ -1378,29 +1285,6 @@ func is_handbraked() -> bool:
 	if _is_networked() and not GameOrchestrator.is_server():
 		return _net_handbrake
 	return _handbrake
-
-## Drop a real mining rock above the bed so it falls in and loads the truck (bench load
-## test, reusing the actual rock_mining scene). Called by the bench debug node; in game the
-## real mining flow replaces it.
-func spawn_cargo_rock(rock_mass: float) -> void:
-	var rock := ROCK_SCENE.instantiate()
-	rock.uuid = UUID_UTIL.v4()
-	if "mass" in rock:
-		rock.mass = rock_mass
-	rock.add_to_group("cargo")
-	# Drop point: above the bed centre, with a small random offset so rocks pile naturally.
-	var top: float = body_height * 0.5
-	var bed_len: float = body_length - cab_length
-	var bed_z: float = (body_length - bed_len) * 0.5
-	var local := Vector3(
-		randf_range(-0.4, 0.4),
-		top + bed_wall_height + 0.9,
-		bed_z + randf_range(-bed_len * 0.3, bed_len * 0.3))
-	var host := get_parent()
-	if host == null:
-		return
-	host.add_child(rock)
-	rock.global_position = to_global(local)
 
 func _build_body_visual() -> void:
 	var body := CSGCombiner3D.new()
@@ -1953,6 +1837,8 @@ func _sfx_muted() -> bool:
 func toggle_engine() -> void:
 	if not _engine_on and absf(get_display_speed_kmh()) > ignition_max_kmh:
 		return  # can't START above walking pace; stopping (the else) is unrestricted
+	if not _engine_on and bays.first_engine() == null:
+		return  # nothing to run: an empty bay has no ignition
 	set_engine(not _engine_on)
 
 ## Engine on/off, on the server as well as on each replica (which gets it replicated). Switching it ON
@@ -2001,8 +1887,11 @@ func _update_engine_sound(delta: float) -> void:
 ## idle_rpm and redline_rpm within each gear (so the note falls back on every shift, like a real
 ## gearbox); ELECTRIC has no gears: the RPM just tracks the speed up to motor_max_rpm.
 func _rev_ratio() -> float:
-	var low: float = idle_rpm if propulsion_type == PropulsionType.THERMAL else 0.0
-	var high: float = redline_rpm if propulsion_type == PropulsionType.THERMAL else motor_max_rpm
+	# Read from the POWERTRAIN, not from exports: those figures come from the engine that is
+	# actually fitted now, so the note follows the part rather than a setting on the chassis.
+	var thermal: bool = _powertrain.type == VehiclePowertrain.Type.THERMAL
+	var low: float = _powertrain.idle_rpm if thermal else 0.0
+	var high: float = _powertrain.redline_rpm if thermal else _powertrain.motor_max_rpm
 	return clampf((get_engine_rpm() - low) / maxf(high - low, 1.0), 0.0, 1.0)
 
 ## Create + start (or stop) the looping engine player. The node is kept between runs, not freed.
@@ -2105,6 +1994,11 @@ func _process(delta: float) -> void:
 	# rides the smoothly-interpolated body (no per-frame world jitter). Server stays authoritative.
 	_interp.update(self, delta)
 	_update_wheels_visual(delta)
+	# A part named in the bay table may not have been created yet — props and their vehicle are
+	# recreated independently and in no order. Re-apply until every one has turned up, or a late
+	# part stays a loose dynamic body and drops out of the truck while the server holds it pinned.
+	if not _net_components.is_empty() and _components_pending():
+		_apply_components(_net_components)
 	if _cargo_debug:
 		_cargo_debug_accum += delta
 		if _cargo_debug_accum >= 0.5:  # cheap periodic refresh; this only runs when the toggle is ON
@@ -2189,15 +2083,14 @@ func _physics_process_impl(delta: float) -> void:
 		_catch_if_below_surface()
 		_replicate_transform()
 		return
-	# Bench / standalone: drive locally.
+	# Standalone (a vehicle dropped straight into a scene, with no uuid): it still holds its load
+	# and rights itself, but nobody can take the wheel — driving is the server's, through a seat.
 	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
 	bays.pin()
 	_scan_bay_for_settled_cargo()
-	if _pilot != null:
-		_apply_drive(delta)
-	elif _handbrake:
+	if _handbrake:
 		_hold_handbrake(delta)
 	else:
 		_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
@@ -2431,10 +2324,25 @@ func get_display_speed_kmh() -> float:
 ## Show/hide the driver HUD. Called by the local pilot client on enter/exit (reliable,
 ## no dependency on pilot_uuid replication).
 func set_driver_hud(show: bool) -> void:
-	if show and _hud == null:
+	_hud_wanted = show
+	if show and not SettingsManager.vehicle_hud_changed.is_connected(_on_vehicle_hud_setting):
+		# Connected only while someone drives, so a parked truck carries no listener.
+		SettingsManager.vehicle_hud_changed.connect(_on_vehicle_hud_setting)
+	elif not show and SettingsManager.vehicle_hud_changed.is_connected(_on_vehicle_hud_setting):
+		SettingsManager.vehicle_hud_changed.disconnect(_on_vehicle_hud_setting)
+	_refresh_driver_hud()
+
+## The setting changed while we are at the wheel: appear or vanish without leaving the seat.
+func _on_vehicle_hud_setting(_on: bool) -> void:
+	_refresh_driver_hud()
+
+## The overlay exists only when BOTH are true: someone is driving, and the player wants to see it.
+func _refresh_driver_hud() -> void:
+	var want: bool = _hud_wanted and SettingsManager.is_vehicle_hud()
+	if want and _hud == null:
 		_hud = VehicleDebugHud.new()
 		add_child(_hud)
-	elif not show and _hud != null:
+	elif not want and _hud != null:
 		_hud.queue_free()
 		_hud = null
 
@@ -2538,6 +2446,13 @@ func _replicate_transform() -> void:
 ## vehicle, so if we can see the truck we can see what is in it. That hands the replica the real
 ## spec — and therefore the real top speed — rather than a guess. A bay whose part has not arrived
 ## yet stays empty and fills in on a later update, instead of inventing one.
+## CLIENT: true when the table names a part we have not resolved yet, so it is worth re-applying.
+func _components_pending() -> bool:
+	for slot in bays.all():
+		if str(slot.occupant_uuid) != "" and slot.occupant == null:
+			return true
+	return false
+
 func _apply_components(table: Dictionary) -> void:
 	for slot in bays.all():
 		var wanted: String = str(table.get(str(slot.name), ""))
@@ -2547,9 +2462,18 @@ func _apply_components(table: Dictionary) -> void:
 			continue
 		for child in get_children():
 			if child is VehicleComponent and str(child.uuid) == wanted:
-				slot.occupant = child
+				# Hold it, through the bay's own seating — the same call the server makes. Knowing
+				# WHICH part is in a bay is not enough on a replica: the part arrives as an ordinary
+				# dynamic prop, so it simply falls out of the truck while the server keeps it
+				# pinned, and the server's figures and what the player sees then disagree.
+				slot.seat(child)
 				break
 	bays.rebuild_drive_spec()
+	# And re-sync the powertrain, which on a REPLICA nothing else ever does: _sync_powertrain is
+	# called from _apply_drive, and that is server-only. The client was left with the helper's
+	# defaults (9000 rpm, 45 km/h), so the rev counter jumped to full scale the moment the truck
+	# crept forward with the hand brake off.
+	_sync_powertrain()
 
 ## SERVER: pick up parts restored from the database and put them back in charge of their bay.
 ## Without this a fitted component comes back parented to the truck with the right pose but frozen
@@ -2755,7 +2679,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 		var new_pilot := str(data["pilot_uuid"])
 		pilot_uuid = str(data["pilot_uuid"])
 	if data.has("components"):
-		_apply_components(data["components"])
+		_net_components = (data["components"] as Dictionary).duplicate()
+		_apply_components(_net_components)
 	if data.has("doors"):
 		var new_doors: Dictionary = data["doors"]
 		for door_id in new_doors:  # animate only the doors whose state actually changed
@@ -2972,17 +2897,12 @@ func set_drive_input(throttle: float, steer: float, braking: bool) -> void:
 	_net_brake = braking
 
 func _apply_drive(delta: float) -> void:
-	var throttle_in: float
-	var turn: float
-	var braking: bool
-	if _is_networked():
-		throttle_in = _net_throttle  # forward axis sent by the pilot client
-		turn = _net_steer            # steer axis
-		braking = _net_brake
-	else:
-		throttle_in = Input.get_axis("move_back", "move_forward")  # bench: local input
-		turn = Input.get_axis("move_right", "move_left")
-		braking = Input.is_physical_key_pressed(KEY_SPACE)
+	# The axes always come off the wire: driving belongs to the server, and a seated player is the
+	# only way to take the wheel. (There used to be a local-keyboard branch here for the test
+	# bench; the bench is gone, and with it the second, divergent control path.)
+	var throttle_in: float = _net_throttle  # forward axis sent by the pilot client
+	var turn: float = _net_steer            # steer axis
+	var braking: bool = _net_brake
 	# Engine off: no propulsion (steering + braking below still work). Zero the throttle so pressing
 	# forward does nothing — not even releasing the hand brake, which stays on until the engine runs.
 	if not _engine_on:
@@ -3190,7 +3110,13 @@ func _forward_speed_kmh() -> float:
 ## in, so both are rebuilt here — the ONE place that has to know.
 func _on_bays_changed() -> void:
 	bays.rebuild_drive_spec()
+	_sync_powertrain()
 	_refresh_mass()
+	# Pulling the last motor out stops the vehicle dead: it keeps neither its idle note nor its
+	# dashboard. Left alone, the ignition state would survive the part that justifies it — engine
+	# running, gauges lit, nothing under the bonnet.
+	if _engine_on and bays.first_engine() == null:
+		set_engine(false)
 
 ## How many wheels the engine actually drives. Godot applies engine_force to EACH wheel flagged
 ## use_as_traction, so the per-wheel figure is the total pull divided by this. Never zero.
@@ -3205,18 +3131,39 @@ func _driven_wheel_count() -> int:
 ## Copy the inspector powertrain settings into the helper (cheap; lets values be tuned
 ## live in the bench). The gearbox state (current gear) is preserved across syncs.
 func _sync_powertrain() -> void:
-	_powertrain.type = VehiclePowertrain.Type.ELECTRIC if propulsion_type == PropulsionType.ELECTRIC else VehiclePowertrain.Type.THERMAL
-	_powertrain.engine_power = engine_power
-	_powertrain.max_speed_kmh = max_speed_kmh
-	_powertrain.reverse_max_kmh = reverse_max_kmh
-	_powertrain.base_speed_kmh = base_speed_kmh
-	_powertrain.motor_max_rpm = motor_max_rpm
-	_powertrain.gear_ratios = gear_ratios
-	_powertrain.shift_up_rpm = shift_up_rpm
-	_powertrain.shift_down_rpm = shift_down_rpm
-	_powertrain.reverse_ratio = reverse_ratio
-	_powertrain.idle_rpm = idle_rpm
-	_powertrain.redline_rpm = redline_rpm
+	var spec: VehicleDriveSpec = bays.drive_spec()
+	var engine: VehicleEngineSpec = bays.first_engine()
+	if engine == null or not spec.is_valid():
+		# Nothing fitted: the vehicle does not move. At all. Zero the REV fields too — leaving them
+		# at their defaults made the gauge read 9000 rpm standing still, because engine_rpm divides
+		# by max(max_speed_kmh, 0.1) and any movement then saturates the ratio at 1.
+		_powertrain.engine_power = 0.0
+		_powertrain.max_speed_kmh = 0.0
+		_powertrain.base_speed_kmh = 0.0
+		_powertrain.reverse_max_kmh = 0.0
+		_powertrain.motor_max_rpm = 0.0
+		return
+	# engine_force is applied to EACH driven wheel, not to the body — measured, not assumed: two
+	# identical rigs, four driven wheels against two, accelerated 6.995 against 3.673 m/s2, a ratio
+	# of 1.904. So the sheet's TOTAL pull is divided here.
+	#
+	# Rolling resistance comes off here too. Godot models none while accelerating (engine_brake
+	# only applies when coasting), and the sheet defines acc_max as (F_av - F_roll)/m — taking it
+	# off at the source is what makes the two agree.
+	var top_kmh: float = spec.v_max_ms(mass) * 3.6
+	var electric: bool = engine.propulsion == VehicleEngineSpec.Propulsion.ELECTRIC
+	_powertrain.type = VehiclePowertrain.Type.ELECTRIC if electric else VehiclePowertrain.Type.THERMAL
+	_powertrain.engine_power = spec.net_force_n(mass) / float(_driven_wheel_count())
+	_powertrain.max_speed_kmh = top_kmh
+	_powertrain.base_speed_kmh = maxf(0.0, top_kmh - speed_taper_kmh)
+	_powertrain.reverse_max_kmh = top_kmh * reverse_max_ratio
+	_powertrain.motor_max_rpm = spec.motor_rpm_max()
+	_powertrain.gear_ratios = engine.gear_ratios
+	_powertrain.shift_up_rpm = engine.shift_up_rpm
+	_powertrain.shift_down_rpm = engine.shift_down_rpm
+	_powertrain.reverse_ratio = engine.reverse_ratio
+	_powertrain.idle_rpm = engine.idle_rpm
+	_powertrain.redline_rpm = engine.redline_rpm
 
 func get_engine_rpm() -> float:
 	# Base it on the DISPLAY speed (replicated) so the gauge works on the client replica too —
@@ -3229,7 +3176,7 @@ func get_gear_label() -> String:
 
 ## HUD label of the powertrain (electric or thermal).
 func get_propulsion_name() -> String:
-	return "Electric" if propulsion_type == PropulsionType.ELECTRIC else "Thermal"
+	return "Electric" if _powertrain.type == VehiclePowertrain.Type.ELECTRIC else "Thermal"
 
 ## Human-readable label of the current drive mode (for the debug HUD).
 func get_drive_mode_name() -> String:

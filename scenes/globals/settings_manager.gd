@@ -6,6 +6,7 @@ signal cargo_debug_changed(on: bool)
 signal fov_changed(fov: float)
 ## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
 signal show_debug_changed(on: bool)
+signal vehicle_hud_changed(on: bool)
 signal movement_debug_changed(on: bool)
 signal surface_debug_changed(on: bool)
 ## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
@@ -107,6 +108,8 @@ func initialize_settings():
 	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
 	config.set_value("general", "show_debug", true)
 	config.set_value("general", "movement_debug", false)
+	# Shown by default: it is the driver's only dashboard until the in-cab one exists (GDD).
+	config.set_value("general", "vehicle_hud", true)
 	config.set_value("general", "surface_debug", false)
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
@@ -304,6 +307,17 @@ func set_show_debug(on: bool) -> void:
 
 func is_show_debug() -> bool:
 	return config.get_value("general", "show_debug", true)
+
+## Show/hide the vehicle dashboard overlay while driving (speed, rpm, weight, bays, drive model).
+## Separate from show_debug on purpose: that one governs the player panels, and someone who wants a
+## clean view from the cab should not have to give up the rest. Emits so it toggles WHILE seated.
+func set_vehicle_hud(on: bool) -> void:
+	config.set_value("general", "vehicle_hud", on)
+	save_settings()
+	vehicle_hud_changed.emit(on)
+
+func is_vehicle_hud() -> bool:
+	return config.get_value("general", "vehicle_hud", true)
 
 ## Movement debug: a small on-screen readout (speed / mouse-wheel walk tier / current animation clip).
 ## Lives under [general]; emits so the player HUD toggles live. Default off (dev/calibration aid).
