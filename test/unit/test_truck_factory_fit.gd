@@ -105,7 +105,7 @@ func test_truck_has_four_generic_bays() -> void:
 	# the chassis will run is the CHASSIS's business (max_engines), which keeps game design out of
 	# the scene and keeps a bay's node name — the key of the persisted table — a statement about
 	# WHERE it is, never about what someone put in it.
-	var bays: Array = _truck.bays().all()
+	var bays: Array = _truck.bays.all()
 	assert_eq(bays.size(), 4, "the mini truck model carries four hatches")
 	for b in bays:
 		assert_ne(b.door_id, "", "every bay names the hatch guarding it: %s" % b.name)
@@ -119,7 +119,7 @@ func test_the_chassis_caps_the_engine_count_at_the_sheet_figure() -> void:
 	# refuse the fourth engine, and it has to say WHY — a refusal the player cannot read is
 	# indistinguishable from a bug.
 	assert_eq(_truck.max_engines, 3, "the MVP column of the sheet says 3 T1 motors")
-	var bays := _truck.bays()
+	var bays := _truck.bays
 	bays.max_engines = _truck.max_engines
 	var engine := VehicleEngineSpec.new()
 	engine.display_name = "T1 Electric Motor"
@@ -140,7 +140,7 @@ func test_every_bay_hatch_has_a_handle_to_open_it() -> void:
 	var by_door := {}
 	for h in handles:
 		by_door[h.door_id] = h
-	for b in _truck.bays().all():
+	for b in _truck.bays.all():
 		assert_true(by_door.has(b.door_id),
 				"%s is guarded by '%s', which needs a handle" % [b.name, b.door_id])
 	# The two cab doors keep theirs, and each bay adds one: six in all.
@@ -176,7 +176,7 @@ func test_a_bay_behind_a_shut_hatch_refuses_the_part() -> void:
 	# Checked through install() rather than slot_for_point(): the latter needs global_position,
 	# which errors on a truck that was instantiated but never added to the tree. install() refuses
 	# on the hatch before it touches any transform, which is exactly the rule under test.
-	var bays := _truck.bays()
+	var bays := _truck.bays
 	var packed: PackedScene = load("res://scenes/_universe/props/vehicles/engine_t1.tscn")
 	var part := packed.instantiate()
 	for b in bays.all():
@@ -188,7 +188,7 @@ func test_a_bay_behind_a_shut_hatch_refuses_the_part() -> void:
 
 
 func test_fitting_refuses_nonsense_before_it_touches_anything() -> void:
-	var bays := _truck.bays()
+	var bays := _truck.bays
 	assert_eq(bays.install(null, null), "Nothing to fit", "no bay, no part")
 	assert_eq(bays.install(bays.all()[0], null), "Nothing to fit", "a bay but nothing to put in it")
 	assert_null(bays.remove(null), "removing from no bay yields nothing")

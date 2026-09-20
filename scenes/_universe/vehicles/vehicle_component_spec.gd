@@ -22,6 +22,9 @@ enum Kind {ENGINE, BATTERY, TANK}
 @export var kind: Kind = Kind.ENGINE
 ## T1, T2, T4... A higher tier is meant to be BETTER, not merely more numerous.
 @export var tier: int = 1
+## The prop scene this part spawns as. A spec DESCRIBES a component; this is how a vehicle turns
+## one into a real object it can fit. Kept here so a new tier is still just a .tres.
+@export_file("*.tscn") var scene_path: String = ""
 ## Dry mass (kg). Added to the VEHICLE's own mass when fitted, never to its payload: a bolted-in
 ## part is part of the truck, not cargo the truck carries. See Vehicle.get_component_mass().
 @export var mass_kg: float = 0.0
