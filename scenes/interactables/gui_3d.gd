@@ -108,6 +108,8 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 		event_pos_2d.x *= node_viewport.size.x
 		event_pos_2d.y *= node_viewport.size.y
 		# We need to do these conversions so the event's position is in the viewport's coordinate system.
+		
+		#print_rich("[color=gold]mouse_input_event[/color] quad_mesh_size = %.1v, event_pos_2d = %.1v" % [quad_mesh_size, event_pos_2d])
 
 	elif last_event_pos_2d != null:
 		# Fall back to the last known event position.

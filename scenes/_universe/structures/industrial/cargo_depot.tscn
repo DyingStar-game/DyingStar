@@ -8,6 +8,19 @@
 [ext_resource type="Texture2D" uid="uid://cwvt1f2vco38o" path="res://assets/_universe/_shared/materials/urban_wire_fence_heightmap.png" id="9_fh7er"]
 [ext_resource type="Texture2D" uid="uid://danjruw88tstg" path="res://assets/_universe/_shared/materials/urban_wire_fence_normal.png" id="10_lv7gl"]
 [ext_resource type="Texture2D" uid="uid://biqvnkv0741u8" path="res://assets/_universe/_shared/materials/urban_wire_fence_orm.png" id="11_r75w6"]
+[ext_resource type="Script" uid="uid://dsw35nohgq6b" path="res://addons/vehicle_lift/vehicle_lift.gd" id="11_vjcb7"]
+[ext_resource type="PackedScene" uid="uid://cvtyt3n81dr60" path="res://addons/vehicle_lift/base/base.tscn" id="12_f04kl"]
+[ext_resource type="Script" uid="uid://cqqaqhnjdsut2" path="res://addons/vehicle_lift/base/base.gd" id="13_rqetv"]
+[ext_resource type="PackedScene" uid="uid://bep27aycqjf0e" path="res://addons/vehicle_lift/landings/upper_landing/upper_landing.tscn" id="14_v6dxg"]
+[ext_resource type="Script" uid="uid://cyuoy1jwii232" path="res://addons/vehicle_lift/landings/upper_landing/upper_landing.gd" id="15_y5n88"]
+[ext_resource type="PackedScene" uid="uid://b3hlyftcu0jwf" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing.tscn" id="16_3kuq8"]
+[ext_resource type="Script" uid="uid://bkmet5fi5fn0v" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing.gd" id="17_iefjf"]
+[ext_resource type="PackedScene" uid="uid://bg4jnjpbvyb56" path="res://addons/vehicle_lift/rail/rail_head.tscn" id="18_28chm"]
+[ext_resource type="PackedScene" uid="uid://cxblcc8fd5rha" path="res://addons/vehicle_lift/rail/rail_segment.tscn" id="19_cy3r6"]
+[ext_resource type="PackedScene" uid="uid://dxd4y8meoyuug" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridges.tscn" id="20_y2bbb"]
+[ext_resource type="Script" uid="uid://cnfambc42bpp4" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridges.gd" id="21_j5wvp"]
+[ext_resource type="PackedScene" uid="uid://dka1rqn80pvup" path="res://addons/vehicle_lift/platform/platform.tscn" id="22_6wx41"]
+[ext_resource type="Script" uid="uid://dac0gs8klexye" path="res://addons/vehicle_lift/platform/platform_system.gd" id="23_76an4"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 
@@ -45,6 +58,9 @@ heightmap_max_layers = 32
 heightmap_texture = ExtResource("9_fh7er")
 uv1_offset = Vector3(0, 0.52, 0.5)
 uv1_triplanar = true
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ru7yw"]
+size = Vector3(2.67, 12, 0.5)
 
 [node name="CargoDepot" type="Node3D" unique_id=693024100]
 script = ExtResource("script_cargo")
@@ -649,6 +665,66 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.939721307763206, 1.53139373
 use_collision = true
 size = Vector3(0.1, 0.7777388577569582, 7.001030949551932)
 material = SubResource("ORMMaterial3D_n6irm")
+
+[node name="VehicleLift" type="Node3D" parent="." unique_id=421622051]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 11.23414336105641, 8.644735103784486, 50)
+script = ExtResource("11_vjcb7")
+descent_depth = 7.5
+metadata/_custom_type_script = "uid://dsw35nohgq6b"
+
+[node name="Base" type="StaticBody3D" parent="VehicleLift" unique_id=1056703103 instance=ExtResource("12_f04kl")]
+collision_mask = 0
+script = ExtResource("13_rqetv")
+
+[node name="Upper Landing" type="StaticBody3D" parent="VehicleLift" unique_id=327375662 instance=ExtResource("14_v6dxg")]
+collision_mask = 0
+script = ExtResource("15_y5n88")
+
+[node name="Lower Landing" type="StaticBody3D" parent="VehicleLift" unique_id=814693587 instance=ExtResource("16_3kuq8")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.5, 0)
+collision_mask = 0
+script = ExtResource("17_iefjf")
+
+[node name="Rail Head" type="StaticBody3D" parent="VehicleLift" unique_id=1437786343 instance=ExtResource("18_28chm")]
+collision_mask = 0
+
+[node name="Rail Segments" type="StaticBody3D" parent="VehicleLift" unique_id=1172513547]
+collision_mask = 0
+
+[node name="Visuals" type="Node3D" parent="VehicleLift/Rail Segments" unique_id=808140451]
+
+[node name="Rail Segment 0" type="Node3D" parent="VehicleLift/Rail Segments/Visuals" unique_id=1692596584 instance=ExtResource("19_cy3r6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.5, 0)
+
+[node name="Rail Segment 1" type="Node3D" parent="VehicleLift/Rail Segments/Visuals" unique_id=1912281324 instance=ExtResource("19_cy3r6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
+
+[node name="Rail Segment 2" type="Node3D" parent="VehicleLift/Rail Segments/Visuals" unique_id=1137386481 instance=ExtResource("19_cy3r6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.5, 0)
+
+[node name="Rail Segment 3" type="Node3D" parent="VehicleLift/Rail Segments/Visuals" unique_id=861228398 instance=ExtResource("19_cy3r6")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -10.5, 0)
+
+[node name="Collider" type="CollisionShape3D" parent="VehicleLift/Rail Segments" unique_id=1624212868]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -6, 2.25)
+shape = SubResource("BoxShape3D_ru7yw")
+
+[node name="Dynamic Bridges" type="Node3D" parent="VehicleLift" unique_id=1956084928 instance=ExtResource("20_y2bbb")]
+script = ExtResource("21_j5wvp")
+
+[node name="Platform" type="AnimatableBody3D" parent="VehicleLift" unique_id=1202092757 node_paths=PackedStringArray("_platform_interface") instance=ExtResource("22_6wx41")]
+process_mode = 4
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.175, 2.075)
+disable_mode = 1
+collision_layer = 4
+collision_mask = 15
+axis_lock_linear_x = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+script = ExtResource("23_76an4")
+_platform_interface = NodePath("Screen Display Interface/Platform Interface")
 
 [connection signal="body_entered" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_entered"]
 [connection signal="body_exited" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_exited"]
