@@ -1,0 +1,107 @@
+[gd_scene format=3 uid="uid://cvtyt3n81dr60"]
+
+[ext_resource type="Script" uid="uid://cqqaqhnjdsut2" path="res://addons/vehicle_lift/base/base.gd" id="1_yme62"]
+[ext_resource type="ArrayMesh" uid="uid://d21co8wyxetpb" path="res://addons/vehicle_lift/base/base_lod0.mesh" id="2_hlor3"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="2_i1idv"]
+[ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://addons/vehicle_lift/common/materials/platform_walk.material" id="4_2vxik"]
+[ext_resource type="Material" uid="uid://dlktdpj4lvd5a" path="res://addons/vehicle_lift/common/materials/platform_shiny_metal.material" id="5_i1idv"]
+[ext_resource type="ArrayMesh" uid="uid://cajst568q0afd" path="res://addons/vehicle_lift/base/base_lod1.mesh" id="5_ijcob"]
+[ext_resource type="ArrayMesh" uid="uid://dylaeq7cgxmr7" path="res://addons/vehicle_lift/base/base_clamping_chuk.mesh" id="6_fe8tl"]
+[ext_resource type="Material" uid="uid://cqhumvo7yd1ic" path="res://addons/vehicle_lift/common/materials/clamping_chunk_black01.material" id="7_hlor3"]
+[ext_resource type="Material" uid="uid://b5jlo3uqwiput" path="res://addons/vehicle_lift/common/materials/clamping_chunk_black02.material" id="9_2vxik"]
+[ext_resource type="Shape3D" uid="uid://c60ptvj5helxj" path="res://addons/vehicle_lift/base/base_p02_collider.shape" id="10_2vxik"]
+[ext_resource type="ArrayMesh" uid="uid://dhovktwtxcwvh" path="res://addons/vehicle_lift/base/base_clamping_chuk_lod1.mesh" id="10_07sbw"]
+[ext_resource type="Shape3D" uid="uid://b2p3fa1wby2la" path="res://addons/vehicle_lift/base/base_p01p03_collider.shape" id="11_ijcob"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_fti8b"]
+resource_local_to_scene = true
+top_radius = 0.11
+bottom_radius = 0.11
+height = 0.55
+radial_segments = 32
+rings = 0
+cap_top = false
+cap_bottom = false
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_87i4o"]
+top_radius = 0.75
+bottom_radius = 0.75
+height = 0.1
+radial_segments = 32
+rings = 0
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
+resource_local_to_scene = true
+height = 1.1
+radius = 0.21
+
+[node name="Base" type="StaticBody3D" unique_id=1056703103]
+collision_mask = 0
+script = ExtResource("1_yme62")
+
+[node name="Visuals" type="Node3D" parent="." unique_id=1669501657]
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Visuals" unique_id=2044381036]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 10.0
+visibility_range_end_margin = 1.0
+mesh = ExtResource("2_hlor3")
+surface_material_override/0 = ExtResource("2_i1idv")
+surface_material_override/1 = ExtResource("4_2vxik")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Visuals" unique_id=1039961865]
+visibility_range_begin = 10.0
+visibility_range_begin_margin = 1.0
+mesh = ExtResource("5_ijcob")
+surface_material_override/0 = ExtResource("2_i1idv")
+surface_material_override/1 = ExtResource("4_2vxik")
+
+[node name="Animated Axis" type="Node3D" parent="." unique_id=2009952330]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.138, 0.97538173)
+
+[node name="Clamping Chuk Visuals" type="Node3D" parent="Animated Axis" unique_id=620056043]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.12362611)
+
+[node name="Clamping Chuk Visual LOD0" type="MeshInstance3D" parent="Animated Axis/Clamping Chuk Visuals" unique_id=1163648949]
+visibility_parent = NodePath("../Clamping Chuk Visual LOD1")
+visibility_range_end = 10.0
+visibility_range_end_margin = 1.0
+mesh = ExtResource("6_fe8tl")
+surface_material_override/0 = ExtResource("7_hlor3")
+surface_material_override/1 = ExtResource("5_i1idv")
+surface_material_override/2 = ExtResource("9_2vxik")
+
+[node name="Clamping Chuk Visual LOD1" type="MeshInstance3D" parent="Animated Axis/Clamping Chuk Visuals" unique_id=367778745]
+visibility_range_begin = 10.0
+visibility_range_begin_margin = 1.0
+mesh = ExtResource("10_07sbw")
+surface_material_override/0 = ExtResource("7_hlor3")
+surface_material_override/1 = ExtResource("5_i1idv")
+surface_material_override/2 = ExtResource("9_2vxik")
+
+[node name="Parametric" type="Node3D" parent="Animated Axis" unique_id=531940555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.479)
+
+[node name="Animated Axis Visual" type="MeshInstance3D" parent="Animated Axis/Parametric" unique_id=1128716730]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0.32303596)
+mesh = SubResource("CylinderMesh_fti8b")
+surface_material_override/0 = ExtResource("5_i1idv")
+
+[node name="Wheel Visual" type="MeshInstance3D" parent="Animated Axis/Parametric" unique_id=791870247]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0.60389495)
+mesh = SubResource("CylinderMesh_87i4o")
+surface_material_override/0 = ExtResource("5_i1idv")
+
+[node name="Collider P02" type="CollisionShape3D" parent="." unique_id=1489488700]
+shape = ExtResource("10_2vxik")
+
+[node name="Collider P01 P03" type="CollisionShape3D" parent="." unique_id=1382890713]
+shape = ExtResource("11_ijcob")
+
+[node name="Collider Axis" type="CollisionShape3D" parent="." unique_id=131166335]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 1.138, 1.7)
+shape = SubResource("CylinderShape3D_fti8b")
