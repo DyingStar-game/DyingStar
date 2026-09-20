@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://cxblcc8fd5rha"]
+
+[ext_resource type="ArrayMesh" uid="uid://c7qidrfk7yt1o" path="res://addons/vehicle_lift/rail/rail_segment_lod0.mesh" id="1_o51ne"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="2_l8ker"]
+[ext_resource type="ArrayMesh" uid="uid://b8evhqvl2i4pf" path="res://addons/vehicle_lift/rail/rail_segment_lod1.mesh" id="3_jf5x4"]
+[ext_resource type="ArrayMesh" uid="uid://bqubxpk4qa45a" path="res://addons/vehicle_lift/rail/rail_segment_lod2.mesh" id="4_l8ker"]
+
+[node name="Rail Segment" type="Node3D" unique_id=1692596584]
+
+[node name="Rail Segment LOD0" type="MeshInstance3D" parent="." unique_id=1572457101]
+unique_name_in_owner = true
+visibility_parent = NodePath("../Rail Segment LOD1")
+visibility_range_end = 15.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("1_o51ne")
+surface_material_override/0 = ExtResource("2_l8ker")
+
+[node name="Rail Segment LOD1" type="MeshInstance3D" parent="." unique_id=710247500]
+unique_name_in_owner = true
+visibility_parent = NodePath("../Rail Segment LOD2")
+visibility_range_begin = 15.0
+visibility_range_begin_margin = 0.5
+visibility_range_end = 50.0
+visibility_range_end_margin = 2.0
+mesh = ExtResource("3_jf5x4")
+surface_material_override/0 = ExtResource("2_l8ker")
+
+[node name="Rail Segment LOD2" type="MeshInstance3D" parent="." unique_id=309134062]
+unique_name_in_owner = true
+visibility_range_begin = 50.0
+visibility_range_begin_margin = 2.0
+mesh = ExtResource("4_l8ker")
+surface_material_override/0 = ExtResource("2_l8ker")

@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://0dmhlbkhu2fo"]
+
+[ext_resource type="Script" uid="uid://didlplvqk1nsd" path="res://addons/vehicle_lift/common/screen/interfaces/landings_buttons.gd" id="1_inabv"]
+
+[node name="Landings Buttons" type="VBoxContainer" unique_id=1847986601]
+theme_override_constants/separation = 16
+alignment = 1
+script = ExtResource("1_inabv")
+
+[node name="Button Call" type="Button" parent="." unique_id=1085923265]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "CALL"

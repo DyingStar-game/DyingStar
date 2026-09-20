@@ -1,0 +1,89 @@
+[gd_scene format=3 uid="uid://p11tqhe0oamf"]
+
+[ext_resource type="ArrayMesh" uid="uid://bvixtv4gbbhy6" path="res://addons/vehicle_lift/common/kiosk/kiosk_base_lod0.mesh" id="1_6yvxj"]
+[ext_resource type="ArrayMesh" uid="uid://b5lagwp8mph1p" path="res://addons/vehicle_lift/common/kiosk/kiosk_pivot_lod0.mesh" id="2_6yvxj"]
+[ext_resource type="ArrayMesh" uid="uid://ckiay5ffh4kc7" path="res://addons/vehicle_lift/common/kiosk/kiosk_arm01_lod0.mesh" id="3_6yvxj"]
+[ext_resource type="ArrayMesh" uid="uid://7hyppq4fkjwi" path="res://addons/vehicle_lift/common/kiosk/kiosk_arm02_lod0.mesh" id="4_6yvxj"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
+height = 0.035634764
+radius = 0.045
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_87i4o"]
+height = 0.024765626
+radius = 0.0126953125
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
+size = Vector3(0.29237604, 0.039916992, 0.041778564)
+
+[node name="Kiosk" type="Node3D" unique_id=1785488499]
+
+[node name="Kiosk Base" type="StaticBody3D" parent="." unique_id=2018436021]
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Base" unique_id=606463192]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.005815855, 0)
+mesh = ExtResource("1_6yvxj")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Base" unique_id=25022026]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.017817382, 0)
+shape = SubResource("CylinderShape3D_fti8b")
+
+[node name="Joint Y Base Arm 01" type="Generic6DOFJoint3D" parent="." unique_id=1241987029]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.048537653, 0)
+node_a = NodePath("../Kiosk Base")
+node_b = NodePath("../Kiosk Pivot Base Arm 01")
+angular_limit_y/enabled = false
+
+[node name="Kiosk Pivot Base Arm 01" type="RigidBody3D" parent="." unique_id=174207081]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.036963567, 0)
+axis_lock_linear_x = true
+axis_lock_linear_y = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_z = true
+mass = 0.3
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Base Arm 01" unique_id=831072488]
+mesh = ExtResource("2_6yvxj")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Base Arm 01" unique_id=918610938]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.012264065, 0)
+shape = SubResource("CylinderShape3D_87i4o")
+
+[node name="Joint Z Base Arm 01" type="Generic6DOFJoint3D" parent="." unique_id=587747428]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.065122366, 0)
+node_a = NodePath("../Kiosk Pivot Base Arm 01")
+node_b = NodePath("../Kiosk Arm 01")
+angular_limit_z/upper_angle = 0.34906584
+
+[node name="Kiosk Arm 01" type="RigidBody3D" parent="." unique_id=1055738612]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06490927, 0)
+center_of_mass_mode = 1
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Arm 01" unique_id=1019439980]
+mesh = ExtResource("3_6yvxj")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Arm 01" unique_id=771106388]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.16018128, 0.00042725354, -0.00019836426)
+shape = SubResource("BoxShape3D_fti8b")
+
+[node name="Joint Z Base Arm 01 Pivot Arm 02" type="Generic6DOFJoint3D" parent="." unique_id=1644305666]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3206782, 0.065122366, 0)
+node_a = NodePath("../Kiosk Pivot Z Arm 01 Arm 02")
+node_b = NodePath("../Kiosk Arm 01")
+angular_limit_z/enabled = false
+
+[node name="Kiosk Pivot Z Arm 01 Arm 02" type="RigidBody3D" parent="." unique_id=1859331715]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32066184, 0.06516334, 0)
+
+[node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Z Arm 01 Arm 02" unique_id=1014708221]
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0, 0.025208414, 0)
+mesh = ExtResource("2_6yvxj")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Pivot Z Arm 01 Arm 02" unique_id=378095248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.012977913, 0)
+shape = SubResource("CylinderShape3D_87i4o")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Kiosk Pivot Z Arm 01 Arm 02" unique_id=716765542]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.039413422, 0)
+mesh = ExtResource("4_6yvxj")

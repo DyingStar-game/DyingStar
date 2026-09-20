@@ -1,0 +1,424 @@
+[gd_scene format=3 uid="uid://b3hlyftcu0jwf"]
+
+[ext_resource type="Script" uid="uid://bkmet5fi5fn0v" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing.gd" id="1_h5sj0"]
+[ext_resource type="ArrayMesh" uid="uid://br2iakdf4ydfl" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing_p01_lod0.mesh" id="2_mmf5p"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="3_327fs"]
+[ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://addons/vehicle_lift/common/materials/platform_walk.material" id="4_u7hay"]
+[ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="5_w0hml"]
+[ext_resource type="Shape3D" uid="uid://bgscei6rdby1d" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing_p01_collider.shape" id="5_yhg7b"]
+[ext_resource type="ArrayMesh" uid="uid://q81b66fx6eag" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing_p02_lod0.mesh" id="6_3mb64"]
+[ext_resource type="PackedScene" uid="uid://0dmhlbkhu2fo" path="res://addons/vehicle_lift/common/screen/interfaces/landings_buttons.tscn" id="6_7hahd"]
+[ext_resource type="Shape3D" uid="uid://17jobup1c75i" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing_p02_collider.shape" id="7_rvali"]
+[ext_resource type="ArrayMesh" uid="uid://cxt80mf7v8g1b" path="res://addons/vehicle_lift/railing/railing_type01_lod0.mesh" id="8_rvali"]
+[ext_resource type="Material" uid="uid://uwdsv4o1gqj2" path="res://addons/vehicle_lift/common/materials/platform_railing.material" id="9_1lu48"]
+[ext_resource type="ArrayMesh" uid="uid://cqu48gkcjdxyd" path="res://addons/vehicle_lift/railing/railing_type01_lod1.mesh" id="10_jo2ru"]
+[ext_resource type="ArrayMesh" uid="uid://bwpdani728esx" path="res://addons/vehicle_lift/railing/railing_type02_lod0.mesh" id="11_nliok"]
+[ext_resource type="ArrayMesh" uid="uid://7r8rrysn0cxj" path="res://addons/vehicle_lift/railing/railing_type02_lod1.mesh" id="12_gpjxo"]
+[ext_resource type="Shape3D" uid="uid://rilipci3f8ei" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing_railing_collider.shape" id="13_1lu48"]
+[ext_resource type="Texture2D" uid="uid://b76jotj2bpcr2" path="res://addons/vehicle_lift/common/decals/upper_landing_signage_platform.png" id="14_nliok"]
+[ext_resource type="Texture2D" uid="uid://we0hua72cf0c" path="res://addons/vehicle_lift/common/decals/upper_landing_signage_wait.png" id="15_gpjxo"]
+[ext_resource type="ArrayMesh" uid="uid://c0j587jkhrtiy" path="res://addons/vehicle_lift/railing/railing_type02_lod2.mesh" id="17_1vhs6"]
+[ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://addons/vehicle_lift/common/kiosk/kiosk.tscn" id="18_0mqw1"]
+[ext_resource type="PackedScene" uid="uid://ls2ntiaejh3w" path="res://addons/vehicle_lift/common/beacon/beacon.tscn" id="18_1vhs6"]
+[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="19_0mqw1"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
+height = 0.9
+radius = 0.05
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rsfnm"]
+size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
+
+[node name="Lower Landing" type="StaticBody3D" unique_id=814693587]
+collision_mask = 0
+script = ExtResource("1_h5sj0")
+
+[node name="Visuals" type="Node3D" parent="." unique_id=697792308]
+
+[node name="Visuals P01" type="Node3D" parent="Visuals" unique_id=1868618565]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.985, 4.5)
+
+[node name="Visual P01 LOD0" type="MeshInstance3D" parent="Visuals/Visuals P01" unique_id=97783144]
+mesh = ExtResource("2_mmf5p")
+surface_material_override/0 = ExtResource("3_327fs")
+surface_material_override/1 = ExtResource("4_u7hay")
+
+[node name="Visuals P02" type="Node3D" parent="Visuals" unique_id=1011042021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.2, -1.985, 4.5)
+
+[node name="Visual P02 LOD0" type="MeshInstance3D" parent="Visuals/Visuals P02" unique_id=12309269]
+mesh = ExtResource("6_3mb64")
+surface_material_override/0 = ExtResource("3_327fs")
+surface_material_override/1 = ExtResource("4_u7hay")
+
+[node name="Visuals P03" type="Node3D" parent="Visuals" unique_id=1916424526]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -7.2, -1.985, 4.5)
+
+[node name="Visual P03 LOD0" type="MeshInstance3D" parent="Visuals/Visuals P03" unique_id=1737624022]
+mesh = ExtResource("6_3mb64")
+surface_material_override/0 = ExtResource("3_327fs")
+surface_material_override/1 = ExtResource("4_u7hay")
+
+[node name="Collider P01" type="CollisionShape3D" parent="." unique_id=1308416651]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.985, 4.5)
+shape = ExtResource("5_yhg7b")
+
+[node name="Collider P02" type="CollisionShape3D" parent="." unique_id=280860571]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.2, -1.985, 4.5)
+shape = ExtResource("7_rvali")
+
+[node name="Collider P03" type="CollisionShape3D" parent="." unique_id=773140411]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -7.2, -1.985, 4.5)
+shape = ExtResource("7_rvali")
+
+[node name="Railing" type="Node3D" parent="." unique_id=975097890]
+
+[node name="Visuals" type="Node3D" parent="Railing" unique_id=792669018]
+
+[node name="Railing Segment 0" type="Node3D" parent="Railing/Visuals" unique_id=1657712810]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.084002, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 0" unique_id=1336315480]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 0" unique_id=1574217909]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 1" type="Node3D" parent="Railing/Visuals" unique_id=1976492166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3990018, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 1" unique_id=1405315654]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 1" unique_id=1072458523]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 2" type="Node3D" parent="Railing/Visuals" unique_id=1414114464]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7140019, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 2" unique_id=878611515]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 2" unique_id=1871977140]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 3" type="Node3D" parent="Railing/Visuals" unique_id=711113336]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.029002, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 3" unique_id=1021083242]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 3" unique_id=65578789]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 4" type="Node3D" parent="Railing/Visuals" unique_id=765040757]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3440019, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 4" unique_id=1810700178]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 4" unique_id=1194441948]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 5" type="Node3D" parent="Railing/Visuals" unique_id=587256740]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3409981, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 5" unique_id=1925341817]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 5" unique_id=1075440136]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 6" type="Node3D" parent="Railing/Visuals" unique_id=180153999]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0259981, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 6" unique_id=617690978]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 6" unique_id=1448946216]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 7" type="Node3D" parent="Railing/Visuals" unique_id=791028456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.710998, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 7" unique_id=269697563]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 7" unique_id=1707625702]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 8" type="Node3D" parent="Railing/Visuals" unique_id=1945700286]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.395998, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 8" unique_id=1818787037]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 8" unique_id=1067719378]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 9" type="Node3D" parent="Railing/Visuals" unique_id=394082351]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.080998, 0, 7.608281)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 9" unique_id=1146615504]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("11_nliok")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 9" unique_id=737438258]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("12_gpjxo")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 10" type="Node3D" parent="Railing/Visuals" unique_id=1231700125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.084002, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 10" unique_id=1314396977]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 10" unique_id=416643367]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 11" type="Node3D" parent="Railing/Visuals" unique_id=1122064995]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3990018, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 11" unique_id=1934404135]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 11" unique_id=1429948774]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 12" type="Node3D" parent="Railing/Visuals" unique_id=7081056]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7140019, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 12" unique_id=1333466711]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("11_nliok")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 12" unique_id=913815850]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("12_gpjxo")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 13" type="Node3D" parent="Railing/Visuals" unique_id=221858596]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.710998, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 13" unique_id=1813982007]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 13" unique_id=1599250565]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 14" type="Node3D" parent="Railing/Visuals" unique_id=1586792628]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.395998, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 14" unique_id=335670188]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("8_rvali")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 14" unique_id=1370818285]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("10_jo2ru")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Railing Segment 15" type="Node3D" parent="Railing/Visuals" unique_id=435587035]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.080998, 0, 1.3918284)
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 15" unique_id=875340711]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("11_nliok")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 15" unique_id=1973652991]
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("12_gpjxo")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Collider" type="StaticBody3D" parent="Railing" unique_id=1079315957]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4.538)
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Railing/Collider" unique_id=1463088933]
+shape = ExtResource("13_1lu48")
+
+[node name="Platform Signage" type="Decal" parent="." unique_id=2062257423]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4.5)
+size = Vector3(6.3, 0.1, 4.5)
+texture_albedo = ExtResource("14_nliok")
+
+[node name="Wait Signage 01" type="Decal" parent="." unique_id=1886478059]
+transform = Transform3D(-4.3711385e-08, 0.2419219, 0.9702956, 0, 0.9702957, -0.24192187, -0.99999994, -1.0574742e-08, -4.241297e-08, 4.377131, -0.2462062, 4.5)
+size = Vector3(3.5, 0.1, 0.998)
+texture_albedo = ExtResource("15_gpjxo")
+
+[node name="Wait Signage 02" type="Decal" parent="." unique_id=830489122]
+transform = Transform3D(1.192488e-08, -0.2419219, -0.9702956, 0, 0.9702957, -0.24192187, 0.99999994, 2.8848899e-09, 1.1570659e-08, -4.377, -0.246, 4.5)
+size = Vector3(3.5, 0.1, 0.998)
+texture_albedo = ExtResource("15_gpjxo")
+
+[node name="Beacon Right" parent="." unique_id=573036365 instance=ExtResource("18_1vhs6")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.3957903, 0.9049356, 1.3898019)
+
+[node name="Beacon Left" parent="." unique_id=2057791618 instance=ExtResource("18_1vhs6")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.396, 0.905, 1.3898019)
+
+[node name="Kiosk Railing" type="StaticBody3D" parent="." unique_id=1115277037]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.1549196, -0.43649012, 7.605969)
+collision_mask = 0
+
+[node name="Visuals" type="Node3D" parent="Kiosk Railing" unique_id=922454564]
+
+[node name="Visual LOD0" type="MeshInstance3D" parent="Kiosk Railing/Visuals" unique_id=67605647]
+visibility_parent = NodePath("../Visual LOD1")
+visibility_range_end = 5.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("11_nliok")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD1" type="MeshInstance3D" parent="Kiosk Railing/Visuals" unique_id=1670561028]
+visibility_parent = NodePath("../Visual LOD2")
+visibility_range_begin = 5.0
+visibility_range_begin_margin = 0.5
+visibility_range_end = 15.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("12_gpjxo")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Visual LOD2" type="MeshInstance3D" parent="Kiosk Railing/Visuals" unique_id=1960822832]
+visibility_range_begin = 15.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("17_1vhs6")
+surface_material_override/0 = ExtResource("9_1lu48")
+
+[node name="Collider" type="CollisionShape3D" parent="Kiosk Railing" unique_id=1384269663]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45703608, 0)
+shape = SubResource("CylinderShape3D_fti8b")
+
+[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport", "screen_interaction_area") instance=ExtResource("18_0mqw1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.1545362, 0.4567987, 7.605912)
+pivot_base_rotation = 90.0
+pivot_arm01_z_rotation = 20.0
+pivot_arm02_y_rotation = 180.0
+pivot_arm02_z_rotation = 20.0
+pivot_balljoint_y_rotation = 90.0
+ball_joint_rotation = Vector2(25, 0)
+screen_display_viewport = NodePath("../Screen Display Interface")
+screen_interaction_area = NodePath("../ScreenDetector")
+
+[node name="ScreenDetector" type="Area3D" parent="." unique_id=136395465 groups=["screen_area"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.245936506532395, 0.21703245945570748, 6.143362127545709)
+input_ray_pickable = false
+script = ExtResource("19_0mqw1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ScreenDetector" unique_id=398459682]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
+shape = SubResource("BoxShape3D_rsfnm")
+
+[node name="Screen Display Interface" type="SubViewport" parent="." unique_id=331619490]
+disable_3d = true
+handle_input_locally = false
+size = Vector2i(500, 300)
+
+[node name="Lower Landing Interface" parent="Screen Display Interface" unique_id=78026496 instance=ExtResource("5_w0hml")]
+unique_name_in_owner = true
+button_group_scene = ExtResource("6_7hahd")
+landing = 2

@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://dxd4y8meoyuug"]
+
+[ext_resource type="Script" uid="uid://cnfambc42bpp4" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridges.gd" id="1_ywulh"]
+[ext_resource type="ArrayMesh" uid="uid://4ehg70ebkvs6" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridge_lod0.mesh" id="2_kunjv"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="2_ywulh"]
+[ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://addons/vehicle_lift/common/materials/platform_walk.material" id="3_o08yq"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ywulh"]
+resource_local_to_scene = true
+size = Vector3(6.47, 0.25, 0.75)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ery87"]
+resource_local_to_scene = true
+size = Vector3(0.5, 0.49923047, 0.75)
+
+[node name="Dynamic Bridges" type="Node3D" unique_id=1956084928]
+script = ExtResource("1_ywulh")
+
+[node name="Right Bridge" type="StaticBody3D" parent="." unique_id=35786266]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.567, 0, -0.75)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Right Bridge" unique_id=536060285]
+mesh = ExtResource("2_kunjv")
+surface_material_override/0 = ExtResource("2_ywulh")
+surface_material_override/1 = ExtResource("3_o08yq")
+
+[node name="Collider 01" type="CollisionShape3D" parent="Right Bridge" unique_id=700929467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.125, 0.375)
+shape = SubResource("BoxShape3D_ywulh")
+
+[node name="Collider 02" type="CollisionShape3D" parent="Right Bridge" unique_id=208005615]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9666891, -0.49961525, 0.375)
+shape = SubResource("BoxShape3D_ery87")
+
+[node name="Left Bridge" type="StaticBody3D" parent="." unique_id=243964928]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.567, 0, -0.75)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Left Bridge" unique_id=690109233]
+mesh = ExtResource("2_kunjv")
+surface_material_override/0 = ExtResource("2_ywulh")
+surface_material_override/1 = ExtResource("3_o08yq")
+
+[node name="Collider 01" type="CollisionShape3D" parent="Left Bridge" unique_id=155539812]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.125, 0.375)
+shape = SubResource("BoxShape3D_ywulh")
+
+[node name="Collider 02" type="CollisionShape3D" parent="Left Bridge" unique_id=1502066525]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.967, -0.5, 0.375)
+shape = SubResource("BoxShape3D_ery87")
