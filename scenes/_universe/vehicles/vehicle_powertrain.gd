@@ -37,6 +37,11 @@ func force(throttle: float, forward_kmh: float) -> float:
 
 ## Engine/motor RPM for the gauge (depends on the powertrain).
 func engine_rpm(forward_kmh: float) -> float:
+	# No top speed means nothing is driving this vehicle. Guard it here as well as at the caller:
+	# the maxf(..., 0.1) below would otherwise make ANY movement read as full revs, and a gauge
+	# that jumps to the red line while standing still is worse than one that reads nothing.
+	if max_speed_kmh <= 0.0:
+		return 0.0
 	if type == Type.ELECTRIC:
 		return motor_max_rpm * clampf(absf(forward_kmh) / maxf(max_speed_kmh, 0.1), 0.0, 1.0)
 	return _gearbox_rpm(forward_kmh, current_gear)

@@ -2,10 +2,9 @@ class_name VehicleDebugHud
 extends CanvasLayer
 
 ## Vehicle dashboard overlay: speed (km/h), motor RPM, transmission, powertrain, weight /
-## payload. Used both as the bench dev overlay (spawned when debug_hud is on) and as the
-## in-game driver HUD (shown by Vehicle.set_driver_hud on enter). The shortcut hints adapt to
-## the mode: bench exposes the debug keys (T spawn rock, N cycle traction), in-game only the
-## keys the networked control path handles. The real in-cab dashboard (GDD) comes later.
+## payload, and what is bolted into the bays. Shown to the driver by Vehicle.set_driver_hud on
+## enter, and hidden entirely by the "Vehicle dashboard" setting in General. The real in-cab
+## dashboard (GDD) comes later.
 ##
 ## It is also THE INSTRUMENT for the drive model: it prints what VehicleDriveSpec predicts next
 ## to what the truck actually does. A model you cannot compare against a measurement is a model
@@ -62,20 +61,16 @@ func _process(delta: float) -> void:
 	# The engine must be started (I) before the truck drives at all — say so loudly when it is off.
 	var ignition := "" if _vehicle.is_engine_on() else "   🔑 ENGINE OFF — press [I] to start"
 	_label.add_theme_color_override("font_color", Color(1, 0.3, 0.2) if overloaded else Color(1, 1, 1))
-	# In-game (networked replica) the bench debug keys are off, so only advertise what the
-	# player -> server control path handles. An empty uuid means the local bench.
-	var in_game: bool = _vehicle.uuid != ""
-	var trans_suffix := "" if in_game else "   (N)"
+	# One control path now: everything a driver can do travels player -> server, so there is one
+	# list of keys to advertise. (The second list was the test bench's own debug keys.)
 	var keys := (
 		"[I] engine on/off (stopped)   [Y] exit   [Space] brake   [Hold Space <3km/h] handbrake\n"
-		+ "[H] horn   [Alt+H] special horn   [L] lights   [R] flip" if in_game
-		else "[I] engine on/off (stopped)   [T] rock   [N] drive mode   [Space] brake\n"
-		+ "[Hold Space <3km/h] handbrake   [H] horn   [Alt+H] special horn   [R] flip")
+		+ "[H] horn   [Alt+H] special horn   [L] lights   [R] flip")
 	_label.text = (
 		"Speed: %3.0f km/h%s%s\nEngine: %5.0f rpm\n%sTransmission: %s%s\nPowertrain: %s\n"
 		+ "Total weight: %.0f kg\nLoad: %.0f / %.0f kg%s\n%s\n%s\n%s\n%s") % [
 		speed, handbrake, ignition, rpm, _vehicle.get_gear_label(), _vehicle.get_drive_mode_name(),
-		trans_suffix, _vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn,
+		"", _vehicle.get_propulsion_name(), total, cargo, _vehicle.max_payload, warn,
 		_bays_line(), _model_line(total), _measured_line(total), keys]
 
 ## The component bays this vehicle carries and what sits in each. Worth a line of its own: an empty

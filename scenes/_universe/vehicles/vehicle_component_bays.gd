@@ -29,6 +29,13 @@ var vehicle: Node = null
 ## would have given the pinning for free and cost the two rules that matter.
 var _pinned: Dictionary = {}
 
+## The bays themselves, resolved once. They are scene children and never appear or disappear at
+## runtime, while find_children() walks the whole truck (GLB included) on every call — and this is
+## asked on the CLIENT once a frame, per truck, to know whether a named part has turned up yet.
+## A recursive scan at that cadence is exactly what cost the surface probe its frame rate.
+## Empty until the vehicle is in the tree, so a premature call caches nothing and simply retries.
+var _slots: Array = []
+
 ## The sizing model for what is fitted. Lives here rather than on the Vehicle because the answer
 ## depends on the BAYS; the chassis only contributes its fixed numbers, which are read on rebuild.
 var _drive_spec := VehicleDriveSpec.new()
@@ -44,12 +51,19 @@ func _init(owner_vehicle: Node) -> void:
 ## rather than through a global group: a bay only ever belongs to one vehicle, and this works
 ## before the vehicle is in the tree. Same reasoning as Vehicle._door_handle().
 func all() -> Array:
-	var out: Array = []
+	if not _slots.is_empty():
+		return _slots
 	if vehicle == null:
-		return out
+		return _slots
 	for n in vehicle.find_children("*", "VehicleComponentSlot", true, false):
-		out.append(n)
-	return out
+		_slots.append(n)
+	return _slots
+
+
+## Can a part be put into this bay right now — is the hatch that guards it open? Asked both when
+## a drop point is resolved and when the fit itself is attempted, and the two must agree.
+func _hatch_open(slot: Node) -> bool:
+	return slot.door_id == "" or vehicle.is_door_open(slot.door_id)
 
 
 ## A bay by its node name — the key the network table is written with, so it must stay stable
@@ -89,15 +103,14 @@ func refuse_reason(spec: VehicleComponentSpec) -> String:
 	return ""
 
 
-## The engines actually driving the vehicle: those bolted into bays, plus the ones the chassis
-## leaves the works with. Both count the same way — a factory engine is not a special case, it is
-## simply one nobody has taken out yet.
+## The engines actually driving the vehicle: what is BOLTED IN, and nothing else.
+##
+## factory_engines is deliberately NOT added here. It is the list the chassis leaves the works
+## with, and Vehicle._fit_factory_engines() turns it into real parts sitting in bays — so counting
+## it too would count every factory engine twice (a truck read 7 motors: 3 ghosts + 4 real ones).
+## What you can see in the bays IS what drives the truck; that is the whole point of the feature.
 func engines() -> Array[VehicleEngineSpec]:
 	var out: Array[VehicleEngineSpec] = []
-	if vehicle != null:
-		for e in vehicle.factory_engines:
-			if e != null:
-				out.append(e)
 	for s in all():
 		if s.occupant != null and s.occupant.spec is VehicleEngineSpec:
 			out.append(s.occupant.spec)
@@ -136,24 +149,18 @@ func install(slot: Node, part: Node) -> String:
 		return "Nothing to fit"
 	if not slot.is_free():
 		return "That bay is taken"
-	if slot.door_id != "" and not vehicle.is_door_open(slot.door_id):
+	if not _hatch_open(slot):
 		return "Open the hatch first"
 	var spec = part.spec if "spec" in part else null
 	var refused: String = refuse_reason(spec)
 	if refused != "":
 		return refused
-	part.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-	part.freeze = true
-	vehicle.add_collision_exception_with(part)
 	if part.has_method("server_parent_change"):
 		part.server_parent_change(vehicle)
 	else:
 		part.reparent(vehicle)
-	part.transform = vehicle.global_transform.affine_inverse() * slot.global_transform
+	_pinned[part] = slot.seat(part)
 	part.slot_id = str(slot.name)
-	slot.occupant = part
-	slot.occupant_uuid = str(part.uuid)
-	_pinned[part] = part.transform
 	part.send_properties_to_client(str(vehicle.uuid))
 	changed.emit()
 	return ""
@@ -165,13 +172,9 @@ func remove(slot: Node) -> Node:
 		return null
 	var part: Node = slot.occupant
 	_pinned.erase(part)
-	slot.occupant = null
-	slot.occupant_uuid = ""
-	if is_instance_valid(part):
+	part = slot.release()
+	if part != null:
 		part.slot_id = ""
-		vehicle.remove_collision_exception_with(part)
-		part.freeze = false
-		part.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	changed.emit()
 	return part
 
@@ -193,9 +196,7 @@ func slot_for_point(world_point: Vector3, spec: VehicleComponentSpec) -> Node:
 	var best: Node = null
 	var best_d: float = INF
 	for s in all():
-		if not s.is_free():
-			continue
-		if s.door_id != "" and not vehicle.is_door_open(s.door_id):
+		if not s.is_free() or not _hatch_open(s):
 			continue
 		var d: float = world_point.distance_to(s.global_position)
 		if d <= s.snap_range and d < best_d:
@@ -214,8 +215,9 @@ func slot_for_point(world_point: Vector3, spec: VehicleComponentSpec) -> Node:
 ## rather than guessed. (The shelf has to work the same thing out geometrically, every reload, with
 ## a tolerance and a retry window. Naming it is a function we get to not write.)
 ##
-## Nothing is MOVED here: the pose came back with the prop and is authoritative. Returns how many
-## were rebound, so the caller can stop asking.
+## The part is re-seated on its bay: a fitted component is at its bay by definition, and a freshly
+## spawned one has usually fallen a little before we get to it. Returns how many were rebound, so
+## the caller can stop asking.
 func rebind() -> int:
 	if vehicle == null:
 		return 0
@@ -229,13 +231,8 @@ func rebind() -> int:
 		var slot: Node = find(sid)
 		if slot == null or not slot.is_free():
 			continue
-		child.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-		child.freeze = true
-		vehicle.add_collision_exception_with(child)
 		child.set_meta("component_slot_ref", slot)  # so taking it back out frees the bay
-		slot.occupant = child
-		slot.occupant_uuid = str(child.uuid)
-		_pinned[child] = child.transform
+		_pinned[child] = slot.seat(child)
 		done += 1
 	if done > 0:
 		changed.emit()
@@ -268,4 +265,13 @@ func rebuild_drive_spec() -> void:
 	_drive_spec.rolling_coefficient = vehicle.rolling_coefficient
 	_drive_spec.rolling_factor = vehicle.rolling_factor
 	_drive_spec.air_density = vehicle.air_density
-	_drive_spec.gravity = vehicle.gravity_magnitude
+
+
+## The first engine fitted, or null. The powertrain takes its propulsion type and its gearbox from
+## here: those belong to the ENGINE, not to the chassis. Mixing types in one vehicle is out of
+## scope, so the first one speaks for all.
+func first_engine() -> VehicleEngineSpec:
+	for e in engines():
+		if e != null:
+			return e
+	return null
