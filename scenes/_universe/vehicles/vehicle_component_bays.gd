@@ -29,6 +29,10 @@ var vehicle: Node = null
 ## would have given the pinning for free and cost the two rules that matter.
 var _pinned: Dictionary = {}
 
+## The sizing model for what is fitted. Lives here rather than on the Vehicle because the answer
+## depends on the BAYS; the chassis only contributes its fixed numbers, which are read on rebuild.
+var _drive_spec := VehicleDriveSpec.new()
+
 ## What the chassis will run, by component kind. -1 = no limit. Filled from the vehicle's exports.
 var max_engines: int = -1
 
@@ -236,3 +240,32 @@ func rebind() -> int:
 	if done > 0:
 		changed.emit()
 	return done
+
+
+## The drive model for what is bolted in right now. Never null. Rebuilt on every change (see the
+## `changed` signal), so reading it is free — gravity alone is refreshed, to follow the planet the
+## vehicle is standing on.
+func drive_spec() -> VehicleDriveSpec:
+	if vehicle != null:
+		_drive_spec.gravity = vehicle.gravity_magnitude
+	return _drive_spec
+
+
+## Recompute the model from the chassis numbers plus what is fitted. Called when the engine list
+## changes, never per frame: _sync_powertrain runs at 60 Hz and walking the bays there would land
+## in PropNet.prof_vehicle_usec across every truck at once.
+func rebuild_drive_spec() -> void:
+	if vehicle == null:
+		return
+	max_engines = vehicle.max_engines
+	_drive_spec.motors = engines()
+	_drive_spec.wheel_radius = vehicle.wheel_radius
+	_drive_spec.pump_efficiency = vehicle.pump_efficiency
+	_drive_spec.hydraulic_efficiency = vehicle.hydraulic_efficiency
+	_drive_spec.torque_factor = vehicle.torque_factor
+	_drive_spec.drag_coefficient = vehicle.drag_coefficient
+	_drive_spec.frontal_area = vehicle.frontal_area_m2
+	_drive_spec.rolling_coefficient = vehicle.rolling_coefficient
+	_drive_spec.rolling_factor = vehicle.rolling_factor
+	_drive_spec.air_density = vehicle.air_density
+	_drive_spec.gravity = vehicle.gravity_magnitude

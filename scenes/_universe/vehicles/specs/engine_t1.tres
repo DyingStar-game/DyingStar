@@ -8,6 +8,7 @@ display_name = "T1 Electric Motor"
 kind = 0
 tier = 1
 mass_kg = 25.0
+scene_path = "res://scenes/_universe/props/vehicles/engine_t1.tscn"
 propulsion = 0
 power_w = 100000.0
 torque_nm = 600.0

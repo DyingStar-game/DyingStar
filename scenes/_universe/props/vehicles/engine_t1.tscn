@@ -7,10 +7,10 @@
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_engine"]
-size = Vector3(0.3, 0.4, 0.55)
+size = Vector3(0.4, 0.3, 0.6)
 
 [sub_resource type="BoxMesh" id="BoxMesh_engine"]
-size = Vector3(0.3, 0.4, 0.55)
+size = Vector3(0.4, 0.3, 0.6)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_engine"]
 albedo_color = Color(0.22, 0.24, 0.27, 1)

@@ -576,7 +576,7 @@ func server_action_received(data: Dictionary) -> void:
 						var fitted_slot = parent_node.get_meta("component_slot_ref")
 						parent_node.remove_meta("component_slot_ref")
 						if is_instance_valid(fitted_slot) and fitted_slot.vehicle() != null:
-							fitted_slot.vehicle().bays().remove(fitted_slot)
+							fitted_slot.vehicle().bays.remove(fitted_slot)
 					# If it was stored in a shelf slot, free that slot (the crate is parented to the world,
 					# not the shelf, so the release goes through the meta the shelf left on it, not prev_parent).
 					if parent_node.has_meta("shelf_ref"):
@@ -2402,7 +2402,7 @@ func _server_drop_carried_item() -> void:
 	if item != null:
 		var bay_hit: Dictionary = _component_bay_for_drop(place["position"], item)
 		if not bay_hit.is_empty():
-			bay_hit["vehicle"].bays().install(bay_hit["slot"], item)
+			bay_hit["vehicle"].bays.install(bay_hit["slot"], item)
 			item.set_meta("component_slot_ref", bay_hit["slot"])  # so picking it up frees the bay
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
@@ -2545,7 +2545,7 @@ func _component_bay_for_drop(world_point: Vector3, item: Node) -> Dictionary:
 	for v in get_tree().get_nodes_in_group("vehicle"):
 		if not (v is Vehicle):
 			continue
-		var slot = v.bays().slot_for_point(world_point, spec)
+		var slot = v.bays.slot_for_point(world_point, spec)
 		if slot != null:
 			return {"vehicle": v, "slot": slot}
 	return {}

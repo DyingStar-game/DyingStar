@@ -81,7 +81,7 @@ func _process(delta: float) -> void:
 ## The component bays this vehicle carries and what sits in each. Worth a line of its own: an empty
 ## bay is invisible with the hatch shut, and the bay names are the keys the network table uses.
 func _bays_line() -> String:
-	var all_bays: Array = _vehicle.bays().all()
+	var all_bays: Array = _vehicle.bays.all()
 	if all_bays.is_empty():
 		return "── Bays: none"
 	var parts: PackedStringArray = PackedStringArray()
@@ -91,7 +91,7 @@ func _bays_line() -> String:
 
 ## What the drive model PREDICTS for the engines currently fitted, at the current total mass.
 func _model_line(total_mass: float) -> String:
-	var spec: VehicleDriveSpec = _vehicle.get_drive_spec()
+	var spec: VehicleDriveSpec = _vehicle.bays.drive_spec()
 	if not spec.is_valid():
 		return "── Model: NO ENGINE — fit one in a hatch"
 	return "── Model: %d motor(s) · %.0f N · Vmax %.1f km/h (%s) · a %.2f m/s² · slope %.1f°" % [

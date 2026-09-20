@@ -629,8 +629,9 @@ var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), cha
 var _gravity_up: Vector3 = Vector3.UP
 ## Strength of that same gravity (m/s2), read from the physics engine alongside _gravity_up. It
 ## drives rolling resistance and the climbable slope, so those follow the planet the truck is on.
-## Sandbox's 6.867 until the first physics step tells us better.
-var _gravity_mag: float = 6.867
+## Sandbox's 6.867 until the first physics step tells us better. Public because the drive model
+## reads it — as a variable rather than a getter, vehicle.gd being at gdlint's method ceiling.
+var gravity_magnitude: float = 6.867
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
@@ -640,12 +641,18 @@ var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
 var _powertrain := VehiclePowertrain.new()
-## Sizing model for the engines actually fitted. CACHED on purpose: it is rebuilt when the engine
-## list changes, never per frame. _sync_powertrain runs at 60 Hz from _apply_drive, and walking the
-## fitted engines in there would show up in PropNet.prof_vehicle_usec across every truck at once.
-var _drive_spec := VehicleDriveSpec.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
 ## purpose — see VehicleComponentBays.
+##
+## Exposed as a PROPERTY, not a getter: vehicle.gd sits exactly on gdlint's 40 public-method ceiling
+## on develop, so there is no room for another one. Built lazily because _ready() returns early in
+## the editor, and it is where the "something changed" wiring is made.
+var bays: VehicleComponentBays:
+	get:
+		if _bays == null:
+			_bays = VehicleComponentBays.new(self)
+			_bays.changed.connect(_on_bays_changed)
+		return _bays
 var _bays: VehicleComponentBays = null
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
@@ -682,6 +689,8 @@ var _net_last_components: Dictionary = {}   # SERVER: last replicated bay occupa
 ## be re-linked to their bay. A window rather than a one-shot, because a prop and its vehicle are
 ## recreated independently and in no guaranteed order — the part may not exist yet when we spawn.
 var _rebind_frames: int = REBIND_WINDOW_FRAMES
+## SERVER: the factory fit has been turned into real parts (once per vehicle, ever).
+var _factory_fitted: bool = false
 var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
 ## SERVER: last replicated wheel heights (cm, vehicle frame), change detection. CLIENT: the heights
 ## received, applied instead of the flat rest pose so a replica shows the real suspension.
@@ -700,7 +709,7 @@ func _ready() -> void:
 		_cargo_debug = SettingsManager.is_cargo_debug()  # dev aid: green envelope on locked cargo
 		SettingsManager.cargo_debug_changed.connect(_on_cargo_debug_changed)
 	_sync_powertrain()
-	_rebuild_drive_spec()  # the sizing model of what is fitted; rebuilt whenever that changes
+	bays.rebuild_drive_spec()  # the model of what is fitted; rebuilt whenever that changes
 	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
 	# Real-model drop-ins (no-op when the vehicle uses the blockout): reparent the GLB wheel meshes
 	# under the physics wheels, find the steering wheel + the GLB AnimationPlayer, and start closed.
@@ -1317,7 +1326,7 @@ func _refresh_mass() -> void:
 	# Components count as part of the VEHICLE, not of its payload: putting them through
 	# get_cargo_mass() would eat the load limiter's budget and could immobilise a truck for being
 	# overloaded by its own engines.
-	mass = _empty_mass + bays().total_mass() + get_cargo_mass()
+	mass = _empty_mass + bays.total_mass() + get_cargo_mass()
 
 ## Body mass (kg) of a seated player, added to the truck's weight while they ride.
 func _player_mass(player: Node) -> float:
@@ -2141,7 +2150,7 @@ func _physics_process_impl(delta: float) -> void:
 			_check_rollover_unlock()  # spill the load if the truck is tipped over
 			_scan_bay_for_settled_cargo()  # lock a crate that FELL/bounced into the bay (carry-drop already locks)
 		_pin_locked_cargo()  # hold the load rigidly in the bed (constant local pose) as the truck moves
-		bays().pin()  # and the bolted-in parts, which drift the same way for the same reason
+		bays.pin()  # and the bolted-in parts, which drift the same way for the same reason
 		_rebind_restored_components()
 		# Settle & sleep an idle vehicle. Wheel-suspension micro-forces on the
 		# terrain trimesh otherwise keep the body awake forever, wandering by
@@ -2184,7 +2193,7 @@ func _physics_process_impl(delta: float) -> void:
 	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
-	bays().pin()
+	bays.pin()
 	_scan_bay_for_settled_cargo()
 	if _pilot != null:
 		_apply_drive(delta)
@@ -2511,7 +2520,7 @@ func _replicate_transform() -> void:
 	if my_seats != _net_last_seats:
 		data["seats"] = my_seats.duplicate()
 		_net_last_seats = my_seats.duplicate()
-	var my_components: Dictionary = bays().occupancy()
+	var my_components: Dictionary = bays.occupancy()
 	if my_components != _net_last_components:
 		data["components"] = my_components.duplicate()
 		_net_last_components = my_components.duplicate()
@@ -2530,7 +2539,7 @@ func _replicate_transform() -> void:
 ## spec — and therefore the real top speed — rather than a guess. A bay whose part has not arrived
 ## yet stays empty and fills in on a later update, instead of inventing one.
 func _apply_components(table: Dictionary) -> void:
-	for slot in bays().all():
+	for slot in bays.all():
 		var wanted: String = str(table.get(str(slot.name), ""))
 		slot.occupant_uuid = wanted
 		slot.occupant = null
@@ -2540,7 +2549,7 @@ func _apply_components(table: Dictionary) -> void:
 			if child is VehicleComponent and str(child.uuid) == wanted:
 				slot.occupant = child
 				break
-	_rebuild_drive_spec()
+	bays.rebuild_drive_spec()
 
 ## SERVER: pick up parts restored from the database and put them back in charge of their bay.
 ## Without this a fitted component comes back parented to the truck with the right pose but frozen
@@ -2552,8 +2561,57 @@ func _rebind_restored_components() -> void:
 	_rebind_frames -= 1
 	if _rebind_frames % REBIND_EVERY_FRAMES != 0:
 		return
-	if bays().rebind() > 0 and bays().occupancy() == _net_last_components:
+	# Restored parts FIRST, and the factory fit only once they have had time to come back. A prop
+	# and its vehicle are recreated independently, so right after a spawn the bays look empty even
+	# on a truck somebody equipped: fitting the factory set now would bolt a second engine on top
+	# of one already on its way back.
+	if _rebind_frames <= REBIND_WINDOW_FRAMES / 2:
+		_fit_factory_engines()
+	if bays.rebind() > 0 and bays.occupancy() == _net_last_components:
 		_net_last_components = {}  # force the table back onto the wire: the replicas need it too
+
+## SERVER: turn the chassis's factory engines into REAL parts sitting in its bays — once, ever.
+##
+## Until they are props they are ghosts: the drive model counts them, nothing can take them out,
+## and a truck with four empty bays still drives off. Spawning them means what you see in the bays
+## IS what drives the truck, which is the whole point of the feature.
+##
+## The uuid is DERIVED from the vehicle and the bay (stable_uuid), never random. A restart therefore
+## recreates the SAME uuid and upserts it, instead of adding a second set every time — the failure
+## that once doubled the whole world's contents. Nothing is installed here: the parts are spawned
+## parented to us, carrying their slot_id, and rebind() above adopts them on a later frame. One path
+## for parts that come from the factory and parts that come back from the database.
+func _fit_factory_engines() -> void:
+	if _factory_fitted or factory_engines.is_empty() or str(uuid) == "":
+		return
+	var free_bays: Array = []
+	for s in bays.all():
+		if s.is_free():
+			free_bays.append(s)
+	if free_bays.is_empty():
+		_factory_fitted = true  # already equipped (restored from the database): nothing to do
+		return
+	var i: int = 0
+	for spec in factory_engines:
+		if spec == null or str(spec.scene_path) == "" or i >= free_bays.size():
+			continue
+		var slot: Node = free_bays[i]
+		i += 1
+		var pose: Transform3D = global_transform.affine_inverse() * slot.global_transform
+		NetworkOrchestrator.spawn_prop_authoritative({
+			"type": "vehicle_component",
+			"uuid": PropSpawn.stable_uuid("%s:%s" % [str(uuid), str(slot.name)]),
+			"position": {"x": pose.origin.x, "y": pose.origin.y, "z": pose.origin.z},
+			"rotation": _euler_dict(pose.basis.get_euler()),
+			"scenename": str(spec.scene_path).trim_prefix("res://"),
+			"parent_id": str(uuid),
+			"slot_id": str(slot.name),
+		})
+	_factory_fitted = true
+
+## Euler angles as the dictionary the network carries.
+func _euler_dict(e: Vector3) -> Dictionary:
+	return {"x": e.x, "y": e.y, "z": e.z}
 
 ## SERVER: current per-seat occupancy (seat name -> occupant uuid, "" when free). Replicated so ANY
 ## client can tell a seat is taken (driver AND passenger, one system — see PlayerClient._seat_is_taken).
@@ -2991,7 +3049,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var g: Vector3 = state.total_gravity
 	if g.length_squared() > 0.001:
 		_gravity_up = -g.normalized()
-		_gravity_mag = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
+		gravity_magnitude = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y
@@ -3128,40 +3186,11 @@ func is_headlights_on() -> bool:
 func _forward_speed_kmh() -> float:
 	return -global_transform.basis.z.dot(linear_velocity) * 3.6
 
-## Rebuild the sizing model from what is fitted RIGHT NOW. Called when the engine list changes —
-## never per frame, see _drive_spec.
-func _rebuild_drive_spec() -> void:
-	bays().max_engines = max_engines
-	_drive_spec.motors = bays().engines()
-	_drive_spec.wheel_radius = wheel_radius
-	_drive_spec.pump_efficiency = pump_efficiency
-	_drive_spec.hydraulic_efficiency = hydraulic_efficiency
-	_drive_spec.torque_factor = torque_factor
-	_drive_spec.drag_coefficient = drag_coefficient
-	_drive_spec.frontal_area = frontal_area_m2
-	_drive_spec.rolling_coefficient = rolling_coefficient
-	_drive_spec.rolling_factor = rolling_factor
-	_drive_spec.air_density = air_density
-	_drive_spec.gravity = _gravity_mag
-
-## What is fitted to this vehicle, and what it will accept. Never null.
-func bays() -> VehicleComponentBays:
-	if _bays == null:
-		_bays = VehicleComponentBays.new(self)   # lazily: _ready returns early in the editor
-		_bays.changed.connect(_on_bays_changed)
-	return _bays
-
 ## Something was fitted or removed: the drive model and the weight both follow from what is bolted
 ## in, so both are rebuilt here — the ONE place that has to know.
 func _on_bays_changed() -> void:
-	_rebuild_drive_spec()
+	bays.rebuild_drive_spec()
 	_refresh_mass()
-
-## The sizing model for this vehicle. Never null. Gravity is refreshed here rather than cached, so
-## the climbable slope follows the planet we are actually standing on — it is one float.
-func get_drive_spec() -> VehicleDriveSpec:
-	_drive_spec.gravity = _gravity_mag
-	return _drive_spec
 
 ## How many wheels the engine actually drives. Godot applies engine_force to EACH wheel flagged
 ## use_as_traction, so the per-wheel figure is the total pull divided by this. Never zero.
