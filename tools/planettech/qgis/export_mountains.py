@@ -212,7 +212,8 @@ def export_parts(zones, lines):
 
     print(f"  Building mountain part (export_nside={export_nside})")
     levels, manifest = mountains_lib.build_mountain_part(
-        zones, PLANET_RADIUS, export_nside, max_quadtree_nside, table)
+        zones, PLANET_RADIUS, export_nside, max_quadtree_nside, table,
+        planet_name=PLANET_NAME)
     manifest.update(stamp, source_layer="mountain_range")
     p1 = link_modifiers.part_path(PLANET_NAME, "mountain", EXPORT_DIR)
     dsmp.write_part(p1, dsmp.KIND_MOUNTAIN, levels, manifest)
@@ -220,7 +221,8 @@ def export_parts(zones, lines):
 
     print(f"  Building ridge part")
     levels, manifest = mountains_lib.build_ridge_part(
-        lines, PLANET_RADIUS, export_nside, max_quadtree_nside, table)
+        lines, PLANET_RADIUS, export_nside, max_quadtree_nside, table,
+        planet_name=PLANET_NAME)
     manifest.update(stamp, source_layer="ridge")
     p2 = link_modifiers.part_path(PLANET_NAME, "ridge", EXPORT_DIR)
     dsmp.write_part(p2, dsmp.KIND_RIDGE, levels, manifest)

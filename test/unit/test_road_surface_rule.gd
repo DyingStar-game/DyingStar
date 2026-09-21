@@ -26,15 +26,18 @@ func before_each() -> void:
 	_pd.corundum_default_biome = true
 
 
-func test_highway_on_the_corundum_default_is_iron_tinted() -> void:
+func test_highway_on_the_corundum_default_takes_the_default_rock_tint() -> void:
 	var surf := PlanetChunk.road_surface_for_zone(_pd, "highway", {})
 	assert_eq(surf["mat_path"], RoadTerrain.CORUNDUM_HIGHWAY_MATERIAL_PATH)
 	assert_eq(int(surf["uv_mode"]), RoadRibbon.UvMode.LANE)
 	assert_true(surf["tinted"])
 	var bd := _pd.get_biome_by_type(RoadTerrain.CORUNDUM_BIOME_TYPE)
 	assert_not_null(bd, "the corundum biome ships")
-	var want := ArideDesertCorundumPlateauTerrain.iron_tint(DIR.normalized(), _pd.radius, bd.color)
-	assert_eq((surf["tint"] as Callable).call(DIR.normalized()), want, "the terrain's own tint")
+	var d := DIR.normalized()
+	# The road knows its station height and hands it over (RoadRibbon does).
+	var want := RockImpurity.ground_tint(_pd, d, _pd.corundum_default_rock, bd.color, 12.0)
+	assert_eq((surf["tint"] as Callable).call(d, 12.0), want, "the terrain's own tint")
+	assert_eq(_pd.corundum_default_rock, "corundum_milky", "the plateau's milky rock by default")
 
 
 func test_highway_in_a_corundum_rock_outcrop_takes_the_rock_tint() -> void:
@@ -45,8 +48,8 @@ func test_highway_in_a_corundum_rock_outcrop_takes_the_rock_tint() -> void:
 	assert_true(surf["tinted"])
 	var bd := _pd.get_biome_by_type(KNOWN_BIOME)
 	var d := DIR.normalized()
-	assert_eq((surf["tint"] as Callable).call(d),
-			RockCatalogue.tint(d, _pd.radius, "corundum_white", bd.color),
+	assert_eq((surf["tint"] as Callable).call(d, 3.0),
+			RockImpurity.ground_tint(_pd, d, "corundum_white", bd.color, 3.0),
 			"the zone's rock tint, as the ground vertices get it")
 
 
@@ -85,13 +88,13 @@ func test_tint_is_resolved_per_vertex_from_the_chunk_zones() -> void:
 	var outside := RoadBridge.lonlat_to_dir(12.0, 20.0)
 	var bd := _pd.get_biome_by_type(KNOWN_BIOME)
 	var cor_bd := _pd.get_biome_by_type(RoadTerrain.CORUNDUM_BIOME_TYPE)
-	assert_eq(tint.call(inside), RockCatalogue.tint(inside, _pd.radius, "emery", bd.color),
+	assert_eq(tint.call(inside, 0.0), RockImpurity.ground_tint(_pd, inside, "emery", bd.color, 0.0),
 			"inside the outcrop: the emery tint")
-	assert_eq(tint.call(outside),
-			ArideDesertCorundumPlateauTerrain.iron_tint(outside, _pd.radius, cor_bd.color),
+	assert_eq(tint.call(outside, 0.0),
+			RockImpurity.ground_tint(_pd, outside, _pd.corundum_default_rock, cor_bd.color, 0.0),
 			"outside it: the corundum default tint, like the ground there")
 	# Without the chunk's zones every vertex takes the midpoint zone's tint.
 	var flat := PlanetChunk.road_surface_for_zone(_pd, "highway", emery)
-	assert_eq((flat["tint"] as Callable).call(outside),
-			RockCatalogue.tint(outside, _pd.radius, "emery", bd.color))
+	assert_eq((flat["tint"] as Callable).call(outside, 0.0),
+			RockImpurity.ground_tint(_pd, outside, "emery", bd.color, 0.0))
 

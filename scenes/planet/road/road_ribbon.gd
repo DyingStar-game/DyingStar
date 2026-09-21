@@ -120,6 +120,9 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var st_along := PackedFloat64Array()
 	var st_dir_h := PackedVector3Array()
 	var st_dir_l := PackedVector3Array()
+	# Surface heights of the stations, handed to the tint (its strata need them).
+	var st_h_h := PackedFloat64Array()
+	var st_h_l := PackedFloat64Array()
 	var along_m := 0.0
 	for seg_i in cl.size() - 1:
 		var p0 := cl[seg_i]
@@ -155,6 +158,8 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 			st_along.append(a0 + (a1 - a0) * frac)
 			st_dir_h.append(dh)
 			st_dir_l.append(dl)
+			st_h_h.append(hh)
+			st_h_l.append(hl)
 		along_m += seg_len_deg * m_per_deg
 	var n := st_th.size()
 	if n < 2:
@@ -176,8 +181,8 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 		var along: float = st_along[k]
 		var drop_h: float = st_th[k].distance_to(st_bh[k])
 		var drop_l: float = st_tl[k].distance_to(st_bl[k])
-		var col_h: Color = tint.call(dh) if tinted else Color.WHITE
-		var col_l: Color = tint.call(dl) if tinted else Color.WHITE
+		var col_h: Color = tint.call(dh, st_h_h[k]) if tinted else Color.WHITE
+		var col_l: Color = tint.call(dl, st_h_l[k]) if tinted else Color.WHITE
 		# Top hi / lo.
 		verts.append(st_th[k]); norms.append(dh)
 		uvs.append(surface_uv(uv_mode, along, strip.y, strip, tile_m)); colors.append(col_h)

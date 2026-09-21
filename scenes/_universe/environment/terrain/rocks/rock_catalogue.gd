@@ -6,6 +6,7 @@ class_name RockCatalogue
 ## res://assets/_universe/_shared/materials/rocks.json by export_rocks.py
 ## (export_biomes.py refreshes it with every biome export). Per rock:
 ##   label, formula, colors [light, dark] (hex), night_colors (chameleon rocks),
+##   core_colors (the deep / reduced-iron hue, see RockImpurity.tint),
 ##   impurities [{element, ppm_min, ppm_max, ions, optional}], minerals
 ##   [{name, formula}], purity, surface (false = underground only).
 ##
@@ -24,6 +25,7 @@ const STREAK_M := 700.0
 static var _rocks: Dictionary = {}
 static var _colors: Dictionary = {}     # slug → [Color light, Color dark]
 static var _night: Dictionary = {}      # slug → [Color, Color] (chameleon only)
+static var _core: Dictionary = {}       # slug → [Color, Color] (rocks with a deep hue)
 static var _loaded := false
 static var _mutex := Mutex.new()
 
@@ -42,6 +44,7 @@ static func _load() -> void:
 	var rocks := {}
 	var colors := {}
 	var night := {}
+	var core := {}
 	if FileAccess.file_exists(PATH):
 		var txt := FileAccess.get_file_as_string(PATH)
 		var parsed: Variant = JSON.parse_string(txt)
@@ -57,9 +60,13 @@ static func _load() -> void:
 		var npair := _pair(r.get("night_colors"))
 		if not npair.is_empty():
 			night[slug] = npair
+		var cpair := _pair(r.get("core_colors"))
+		if not cpair.is_empty():
+			core[slug] = cpair
 	_rocks = rocks
 	_colors = colors
 	_night = night
+	_core = core
 
 
 static func _pair(v: Variant) -> Array:
@@ -102,6 +109,13 @@ static func colors_of(slug: String) -> Array:
 static func night_colors_of(slug: String) -> Array:
 	_ensure_loaded()
 	return _night.get(slug, [])
+
+
+## [light, dark] tints of the rock's deep, reduced-iron state (blue and green
+## corundums), or [] for a rock whose hue does not change with depth.
+static func core_colors_of(slug: String) -> Array:
+	_ensure_loaded()
+	return _core.get(slug, [])
 
 
 ## Does this rock exist at the surface (false: underground only, e.g. hercynite)?

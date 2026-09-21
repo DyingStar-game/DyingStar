@@ -32,6 +32,16 @@ Both kinds are baked n1…export_nside (modifier_geom.level_policy): a finer
 chunk reads its export-level ancestor's records, and the runtime adds every
 record of the tile — there is no overlap rule, features stack.
 
+impurity_intensity
+------------------
+    The one field with no preset: NULL is resolved HERE, by
+    :func:`resolve_impurity`, to a float written in the record — never at
+    runtime, so the client and the server can only read the same number.  The
+    derived value hashes the feature's centroid quantised to 0.01° (~1 km)
+    with the planet name, so a re-export gives the same value unless the
+    massif itself moved, and maps it to 0.6–1.4: an auto massif is never
+    sterile, 0 has to be typed.
+
 Presets
 -------
     ``PRESETS`` / ``RIDGE_PRESETS`` are the single source of truth for the
@@ -43,8 +53,10 @@ Presets
 
 import hashlib
 import math
+import zlib
 
 from . import dsmp
+from . import mountain_noise
 from . import modifier_geom as mg
 from .biomes import props_of, ring_area_deg2, MIN_RING_POINTS
 
@@ -119,6 +131,36 @@ def resolve_style(fields, presets, default):
     return out
 
 
+#: Range an auto-derived impurity_intensity falls in.
+IMPURITY_AUTO_MIN = 0.6
+IMPURITY_AUTO_MAX = 1.4
+#: Ceiling of a typed value (layers/mountains.py offers 0–2).
+IMPURITY_MAX = 3.0
+
+
+def auto_impurity(points, planet_name):
+    """The impurity_intensity a feature gets when its field is NULL: a
+    deterministic function of its centroid (quantised to 0.01°) and the planet
+    name, in [IMPURITY_AUTO_MIN, IMPURITY_AUTO_MAX]."""
+    if not points:
+        return 1.0
+    lon = sum(p[0] for p in points) / len(points)
+    lat = sum(p[1] for p in points) / len(points)
+    ix = int(round(lon * 100.0))
+    iy = int(round(lat * 100.0))
+    seed = zlib.crc32(str(planet_name or "").encode("utf-8")) & 0x7FFFFFFF
+    u = mountain_noise.cell(ix, iy, 0, seed)
+    return IMPURITY_AUTO_MIN + (IMPURITY_AUTO_MAX - IMPURITY_AUTO_MIN) * u
+
+
+def resolve_impurity(value, points, planet_name):
+    """A concrete impurity_intensity for the record: the typed value clamped,
+    or the auto value when it is NULL / empty."""
+    if value is None or value == "":
+        return auto_impurity(points, planet_name)
+    return min(max(float(value), 0.0), IMPURITY_MAX)
+
+
 def _slack_m(max_quadtree_nside, radius_m):
     return SLACK_PITCHES * mg.pixel_side_m(max_quadtree_nside, radius_m) / 32.0
 
@@ -135,11 +177,12 @@ def _expanded_box(nside, ipix, margin_m, radius_m):
 
 
 def build_mountain_part(zones, radius_m, export_nside, max_quadtree_nside, table,
-                        verbose=True):
+                        verbose=True, planet_name=""):
     """Build the MOUNTAIN part's levels and manifest.
 
     zones: [{"ring": [(lon, lat), …], "props": {field: value, …}}, …] — the
            props are the feature's fields, NULLs already dropped.
+    planet_name: seeds the auto impurity_intensity (resolve_impurity).
     Returns (levels, manifest) for dsmp.write_part(path, dsmp.KIND_MOUNTAIN, …).
     """
     policy = mg.level_policy(export_nside, max_quadtree_nside)["mountain"]
@@ -153,6 +196,8 @@ def build_mountain_part(zones, radius_m, export_nside, max_quadtree_nside, table
             continue
         fields = resolve_style(z.get("props", {}), PRESETS, "alpine")
         fields["feather_m"] = max(float(fields.get("feather_m", FEATHER_MIN_M)), FEATHER_MIN_M)
+        fields["impurity_intensity"] = resolve_impurity(
+            fields.get("impurity_intensity"), ring, planet_name)
         prepared.append({
             "ring": ring,
             "area": ring_area_deg2(ring),
@@ -217,10 +262,11 @@ def build_mountain_part(zones, radius_m, export_nside, max_quadtree_nside, table
 
 
 def build_ridge_part(lines, radius_m, export_nside, max_quadtree_nside, table,
-                     verbose=True):
+                     verbose=True, planet_name=""):
     """Build the RIDGE part's levels and manifest.
 
     lines: [{"points": [(lon, lat), …], "props": {field: value, …}}, …]
+    planet_name: seeds the auto impurity_intensity (resolve_impurity).
     Returns (levels, manifest) for dsmp.write_part(path, dsmp.KIND_RIDGE, …).
     """
     policy = mg.level_policy(export_nside, max_quadtree_nside)["ridge"]
@@ -233,6 +279,8 @@ def build_ridge_part(lines, radius_m, export_nside, max_quadtree_nside, table,
         if len(pts) < 2:
             continue
         fields = resolve_style(ln.get("props", {}), RIDGE_PRESETS, "sharp")
+        fields["impurity_intensity"] = resolve_impurity(
+            fields.get("impurity_intensity"), pts, planet_name)
         reach = float(fields["width_m"]) * (1.0 + abs(float(fields["asymmetry"]))) \
             + float(fields["warp_m"])
         prepared.append({

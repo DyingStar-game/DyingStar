@@ -14,11 +14,14 @@ public partial class MountainRidgeNative : RefCounted
     private double _height = 300.0, _width = 800.0, _sharpness = 0.5, _roughness = 0.3, _warp;
     private double _asymmetry, _terraceStep, _terraceWidth = 0.15;
     private long _seed;
+    /// <summary>MountainRelief.Ridge.impurity — scales Core().</summary>
+    private double _impurity = 1.0;
 
     public void Configure(Vector2[] centerline, double heightM, double widthM, double sharpness,
                           double roughness, double warpM, double asymmetry, double terraceStepM,
-                          double terraceWidth, long seed, double mPerDeg)
+                          double terraceWidth, long seed, double mPerDeg, double impurity = 1.0)
     {
+        _impurity = impurity;
         _height = heightM;
         _width = widthM;
         _sharpness = sharpness;
@@ -79,11 +82,42 @@ public partial class MountainRidgeNative : RefCounted
                             double lon, double lat)
     {
         if (effSpacing >= _width) return 0.0;
+        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper))
+            return 0.0;
+        double h = _height * prof * taper;
+        if (_roughness > 0.0)
+        {
+            double f = radius / (2.0 * _width);
+            h *= 1.0 + _roughness * MountainNoiseCore.Snoise(dx * f, dy * f, dz * f, _seed + 11);
+        }
+        return MountainNoiseCore.Terrace(h, _terraceStep, _terraceWidth);
+    }
+
+    /// <summary>The ridge's term of MountainRelief.core: flank profile × end
+    /// taper × impurity — no pitch gate, no roughness, no terrace.</summary>
+    public double Core(Vector3 dir, double radius)
+        => CoreD(dir.X, dir.Y, dir.Z, radius, double.NaN, double.NaN);
+
+    internal double CoreD(double dx, double dy, double dz, double radius, double lon, double lat)
+    {
+        if (_impurity <= 0.0) return 0.0;
+        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper))
+            return 0.0;
+        return prof * taper * _impurity;
+    }
+
+    /// <summary>MountainRelief._ridge_profile: the flank profile and the end
+    /// taper at dir, false past the reach. lon/lat NaN → computed here.</summary>
+    private bool ProfileD(double dx, double dy, double dz, double radius, double lon, double lat,
+                          out double prof, out double taper)
+    {
+        prof = 0.0;
+        taper = 0.0;
         int n = _cx.Length;
-        if (n < 2) return 0.0;
+        if (n < 2) return false;
         if (double.IsNaN(lon))
             MountainNoiseCore.ToLonLat(dx, dy, dz, out lon, out lat);
-        if (lon < _bx0 || lat < _by0 || lon >= _bx1 || lat >= _by1) return 0.0;
+        if (lon < _bx0 || lat < _by0 || lon >= _bx1 || lat >= _by1) return false;
         double mPerDeg = radius * Math.PI / 180.0;
         double latScale = Math.Cos(MountainNoiseCore.DegToRad(MountainNoiseCore.Clamp(lat, -89.5, 89.5)));
         if (latScale < 1e-6) latScale = 1e-6;
@@ -95,7 +129,7 @@ public partial class MountainRidgeNative : RefCounted
             if (dsq < bestSq) { bestSq = dsq; bestI = i; }
         }
         double dM = Math.Sqrt(bestSq) * mPerDeg;
-        if (dM >= Reach()) return 0.0;
+        if (dM >= Reach()) return false;
         double ax = _cx[bestI], ay = _cy[bestI], bx = _cx[bestI + 1], by = _cy[bestI + 1];
         double ex = (bx - ax) * latScale, ey = by - ay;
         double px = (lon - ax) * latScale, py = lat - ay;
@@ -107,23 +141,17 @@ public partial class MountainRidgeNative : RefCounted
             dM = Math.Max(dM + _warp * MountainNoiseCore.Snoise(dx * f, dy * f, dz * f, _seed + 7), 0.0);
         }
         double t = dM / wSide;
-        if (t >= 1.0) return 0.0;
+        if (t >= 1.0) return false;
         double bell = 1.0 - MountainNoiseCore.Smoothstep(0.0, 1.0, t);
         double knife = 1.0 - t;
-        double prof = MountainNoiseCore.Lerp(bell, knife, _sharpness);
+        prof = MountainNoiseCore.Lerp(bell, knife, _sharpness);
         double segSq = ex * ex + ey * ey;
         double ts = 0.0;
         if (segSq > 1e-24)
             ts = MountainNoiseCore.Clamp((px * ex + py * ey) / segSq, 0.0, 1.0);
         double s = _cum[bestI] + ts * (_cum[bestI + 1] - _cum[bestI]);
         double endD = Math.Min(s, _length - s);
-        double taper = MountainNoiseCore.Smoothstep(0.0, Math.Min(_width, _length * 0.5), endD);
-        double h = _height * prof * taper;
-        if (_roughness > 0.0)
-        {
-            double f = radius / (2.0 * _width);
-            h *= 1.0 + _roughness * MountainNoiseCore.Snoise(dx * f, dy * f, dz * f, _seed + 11);
-        }
-        return MountainNoiseCore.Terrace(h, _terraceStep, _terraceWidth);
+        taper = MountainNoiseCore.Smoothstep(0.0, Math.Min(_width, _length * 0.5), endD);
+        return true;
     }
 }

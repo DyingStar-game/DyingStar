@@ -310,10 +310,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		#      when biome defs are unavailable — invalidates flat-baked meshes.
 		# v25: crack depth no longer LOD-ramped (full depth wherever drawn) so
 		#      the visual crack floor matches the full-depth physics floor.
-		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d" % [
+		# corundum_default_rock is baked colour: a planet switched from the
+		# milky rock to a red one must not serve milky meshes.
+		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s" % [
 			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
-			int(data.debug_color_skirts)] if data.corundum_default_biome else ""
+			int(data.debug_color_skirts), data.corundum_default_rock] \
+			if data.corundum_default_biome else ""
 		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
 		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
 		# data.chunk_data_version is the exporter's own fingerprint of the baked
@@ -426,13 +429,22 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# OVERLAY_MIN_RES); cached far meshes still carried theirs.
 		# v47 → v48: tunnel tubes get a floor slab (GradeTunnel.FLOOR_M), in
 		# the mesh and in the collision faces.
+		# v48 → v49: rock vertex colours come from RockImpurity (mountain core,
+		# carve depth, strata, dust) and the corundum default ground is the
+		# catalogue rock corundum_default_rock — a v48 mesh holds the old
+		# iron_tint / flat rock mottling.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v48%s%s%s%s%s%s%s" % [
+		# The rock catalogue (rocks.json) is baked colour too: a tint retouched
+		# in rocks.py and re-exported must not be served from old meshes.
+		var _rk := ""
+		if FileAccess.file_exists(RockCatalogue.PATH):
+			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v49%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk]
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-

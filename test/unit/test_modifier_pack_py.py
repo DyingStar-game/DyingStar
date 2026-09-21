@@ -777,6 +777,44 @@ class TestMountainParts(unittest.TestCase):
         _l, m3 = mountains_mod.build_mountain_part([z2], 3467000.0, 16, 16, StringTable(), verbose=False)
         self.assertNotEqual(m1["fingerprint"], m3["fingerprint"])
 
+    def test_impurity_intensity_is_resolved_at_export_and_stable(self):
+        # NULL → derived from the centroid + planet name, inside the auto range;
+        # a re-export with an unmoved massif gives the same number, a typed
+        # value is kept (clamped), and the record carries it as a float.
+        auto = mountains_mod.auto_impurity(self.SQUARE, "tarsis_8")
+        self.assertGreaterEqual(auto, mountains_mod.IMPURITY_AUTO_MIN)
+        self.assertLessEqual(auto, mountains_mod.IMPURITY_AUTO_MAX)
+        jittered = [(x + 0.001, y - 0.001) for x, y in self.SQUARE]
+        self.assertEqual(mountains_mod.auto_impurity(jittered, "tarsis_8"), auto,
+                         "a vertex nudged by 100 m does not reshuffle the massif")
+        self.assertNotEqual(mountains_mod.auto_impurity(self.SQUARE, "tarsis_3"), auto)
+        self.assertEqual(mountains_mod.resolve_impurity(None, self.SQUARE, "tarsis_8"), auto)
+        self.assertEqual(mountains_mod.resolve_impurity("", self.SQUARE, "tarsis_8"), auto)
+        self.assertEqual(mountains_mod.resolve_impurity(0, self.SQUARE, "tarsis_8"), 0.0)
+        self.assertEqual(mountains_mod.resolve_impurity(9.0, self.SQUARE, "tarsis_8"),
+                         mountains_mod.IMPURITY_MAX)
+        table = StringTable()
+        zone = {"ring": self.SQUARE, "props": {"style": "rolling"}}
+        levels, _m = mountains_mod.build_mountain_part(
+            [zone], 3467000.0, export_nside=16, max_quadtree_nside=16,
+            table=table, verbose=False, planet_name="tarsis_8")
+        seen = 0
+        for _ipix, payload in levels[-1][1]:
+            for _cov, _bidx, props, _nv in _records_of(payload):
+                named = self._named(table, props)
+                self.assertEqual(named["impurity_intensity"][0], dsmp.VTYPE_F32)
+                self.assertAlmostEqual(named["impurity_intensity"][1], auto, places=5)
+                seen += 1
+        self.assertGreater(seen, 0)
+        line = {"points": self.SQUARE[:2], "props": {"style": "sharp", "impurity_intensity": 1.7}}
+        levels, _m = mountains_mod.build_ridge_part(
+            [line], 3467000.0, export_nside=16, max_quadtree_nside=16,
+            table=table, verbose=False, planet_name="tarsis_8")
+        for _ipix, payload in levels[-1][1]:
+            for _cov, _bidx, props, _nv in _records_of(payload):
+                self.assertAlmostEqual(self._named(table, props)["impurity_intensity"][1], 1.7,
+                                       places=5)
+
     def test_level_policy_stops_at_export_nside(self):
         pol = mg.level_policy(64, 8192)
         self.assertEqual(pol["mountain"]["max"], 64)

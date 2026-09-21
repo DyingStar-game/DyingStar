@@ -17,12 +17,17 @@ public partial class MountainZoneNative : RefCounted
     private bool _full = true;
     private double[] _px = Array.Empty<double>(), _py = Array.Empty<double>();
     private double _bx0, _by0, _bx1, _by1;
+    /// <summary>MountainRelief.Zone.impurity — scales Core().</summary>
+    private double _impurity = 1.0;
+    /// <summary>MountainRelief.CORE_PITCH_DIV.</summary>
+    private const double CorePitchDiv = 8.0;
 
     public void Configure(double wavelength, int octaves, double persistence, double ridge,
                           double exponent, double warp, long seed, double liftM, double amplitudeM,
                           double terraceStepM, double terraceWidth, double featherM,
-                          Vector2[] polygon)
+                          Vector2[] polygon, double impurity = 1.0)
     {
+        _impurity = impurity;
         _wavelength = wavelength;
         _octaves = Math.Clamp(octaves, 1, MountainNoiseCore.MaxOctaves);
         _persistence = persistence;
@@ -160,6 +165,27 @@ public partial class MountainZoneNative : RefCounted
         if (s >= 0.0)
             h += MountainNoiseCore.Terrace(_amplitude * s, _terraceStep, _terraceWidth);
         return env * h;
+    }
+
+    /// <summary>The zone's term of MountainRelief.core: envelope × the two
+    /// coarsest octaves of the shape × impurity (0 for a sterile zone).</summary>
+    public double Core(Vector3 dir, double radius)
+        => CoreD(dir.X, dir.Y, dir.Z, radius, double.NaN, double.NaN);
+
+    internal double CoreD(double dx, double dy, double dz, double radius, double lon, double lat)
+    {
+        if (_impurity <= 0.0) return 0.0;
+        double env = 1.0;
+        if (!_full)
+        {
+            if (double.IsNaN(lon))
+                MountainNoiseCore.ToLonLat(dx, dy, dz, out lon, out lat);
+            env = Envelope(lon, lat, radius * Math.PI / 180.0);
+            if (env <= 0.0) return 0.0;
+        }
+        double s = ShapeD(dx, dy, dz, radius, _wavelength / CorePitchDiv);
+        if (s <= 0.0) return 0.0;
+        return env * s * _impurity;
     }
 
     public bool IsFull() => _full;

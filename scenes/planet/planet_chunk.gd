@@ -436,6 +436,25 @@ static func generate_mesh(
 	# crack network; a vertex inside a biome's zone is that biome's, uncarved
 	# (PlanetData.corundum_applies_to_zone — the collision applies the same).
 	var _corundum_bd: BiomeDefinition = null
+	# ── Rock impurity provenance ───────────────────────────────────
+	# A vertex whose ground is a catalogue rock (the corundum default rock, or
+	# a zone's rock_type) is shaded by RockImpurity from where its rock came
+	# from: the mountain core and the carve depth below the sampled surface.
+	# Both are measured in the vertex loop; the colour itself is baked in a
+	# pass AFTER the normals, which the dust on the flats needs. Slot 0 = not
+	# a rock vertex; else 1 + index into _imp_slugs.
+	var _imp_slugs: Array[String] = []
+	var _imp_slot := PackedByteArray()
+	var _imp_core := PackedFloat32Array()
+	var _imp_carve := PackedFloat32Array()
+	# Distance outward from the nearest crack wall (INF = no crack network
+	# here): the vein halo of RockImpurity.
+	var _imp_wall := PackedFloat32Array()
+	_imp_slot.resize(vert_count)
+	_imp_core.resize(vert_count)
+	_imp_carve.resize(vert_count)
+	_imp_wall.resize(vert_count)
+	_imp_wall.fill(INF)
 	# Mesh vertex spacing (m) for this chunk — the LOD gate of every feature
 	# that must exist in the mesh and the collision alike (the crack carve is
 	# skipped past half its width, the biome relief past half its wavelength).
@@ -569,6 +588,10 @@ static func generate_mesh(
 				dir = PlanetData.cube_to_sphere(face, u, v)
 				height = data.sample_height_for_chunk(
 						face, u, v, u_min, u_max, v_min, v_max)
+
+			# The surface as sampled (relief + mountains, before any carve):
+			# what the carve depth of the impurity provenance is measured from.
+			var _h_sampled := height
 
 			# ── Single biome query per vertex (from populate zones) ──────
 			# Reused for liquid detection, colour, AND detail texture.
@@ -926,21 +949,42 @@ static func generate_mesh(
 			# boundaries at ~6 m spacing, making expensive multi-sample
 			# jittering unnecessary.
 			var base_col := Color(0.45, 0.35, 0.25)  # fallback
+			# The rock this vertex is made of, when it is a catalogue rock:
+			# the planet's default rock on the corundum default, the zone's
+			# rock_type else. Its shade is baked after the normals (see
+			# _imp_slot); here only the provenance and the fallback colour.
+			var _imp_rock := ""
 			if _cor_here and _corundum_bd:
-				# Milky-white ↔ iron-yellow mottling ("iron impurities"),
-				# then darken/stain the interiors of the cracks.
-				base_col = ArideDesertCorundumPlateauTerrain.iron_tint(
-					dir, data.radius, _corundum_bd.color)
-				base_col = ArideDesertCorundumPlateauTerrain.crack_stain(
-					base_col, _crack_off, data.crack_depth_m)
+				_imp_rock = data.corundum_default_rock
+				base_col = _corundum_bd.color
 			elif first_zone.has("rock_type") \
 					and RockCatalogue.has(str(first_zone["rock_type"])):
-				# The zone's rock: every shade between its light and dark
-				# tints, from a deterministic mottling (same on every client).
-				var _rock_fallback: Color = bd.color if bd \
+				_imp_rock = str(first_zone["rock_type"])
+				base_col = bd.color if bd \
 						else (Color(zone_color_hex) if not zone_color_hex.is_empty() else base_col)
-				base_col = RockCatalogue.tint(dir, data.radius,
-						str(first_zone["rock_type"]), _rock_fallback)
+			if not _imp_rock.is_empty():
+				var _imp_i := _imp_slugs.find(_imp_rock)
+				if _imp_i < 0:
+					_imp_i = _imp_slugs.size()
+					_imp_slugs.append(_imp_rock)
+				_imp_slot[idx] = _imp_i + 1
+				# 0 until PlanetData.warm_mountains has run (main thread, before
+				# the first chunk) — never resolved from a worker here.
+				_imp_core[idx] = data.mountain_core(dir, _frame)
+				_imp_carve[idx] = maxf(_h_sampled - height, 0.0)
+				# Veins follow the planet's fracture network: the carved cracks
+				# on the corundum default ground, and the SAME network, uncarved
+				# (hairline fractures the fluids used), under a zone that keeps
+				# its own rock — a pure function of dir, so the collision path,
+				# which has no colour, needs nothing. INF where the planet has
+				# no network or the pitch cannot carry it (LOD fade).
+				var _imp_d := _crack_d
+				if is_inf(_imp_d) and not _cor_here and data.corundum_default_biome:
+					_imp_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
+						dir, data.radius, data.crack_spacing_m,
+						data.crack_width_m, _crack_vtx_spacing)
+				if not is_inf(_imp_d):
+					_imp_wall[idx] = _imp_d - data.crack_width_m * 0.5
 			elif bd:
 				base_col = bd.color
 			elif not zone_color_hex.is_empty():
@@ -1173,6 +1217,32 @@ static func generate_mesh(
 	if _pf:
 		var _now := Time.get_ticks_usec()
 		prof["normals"] = _now - _t_phase
+		_t_phase = _now
+	# --- rock impurity shading ----------------------------------------------
+	# The rock vertices' colours, now that the normals give the slope: the
+	# rock's light → dark tint by its impurity concentration at the vertex
+	# (mountain core + carve depth + strata), paled by dust on the flats of a
+	# massif. Pure per vertex, so the cache bakes it and every client agrees.
+	if not _imp_slugs.is_empty():
+		for yi in res + 1:
+			for xi in res + 1:
+				var idx := yi * (res + 1) + xi
+				var slot := _imp_slot[idx]
+				if slot == 0:
+					continue
+				var slope := 0.0
+				if hp_mode:
+					slope = 1.0 - normals[idx].dot(grid_dirs[yi][xi])
+				# Cube-sphere path (legacy): the direction back from the local
+				# vertex, chunk centre added — float32-exact enough for a tint.
+				var vdir: Vector3 = grid_dirs[yi][xi] if hp_mode \
+						else (vertices[idx] + cc_f32).normalized()
+				colors[idx] = RockImpurity.tint(_imp_slugs[slot - 1], vdir, data.radius,
+						_chunk_heights[idx], _imp_core[idx], _imp_carve[idx], slope, colors[idx],
+						_imp_wall[idx])
+	if _pf:
+		var _now := Time.get_ticks_usec()
+		prof["impurity"] = _now - _t_phase
 		_t_phase = _now
 	# --- skirt geometry to hide chunk boundary seams -------------------------
 	# Duplicate every edge vertex, nudge outward from the chunk interior
@@ -3523,33 +3593,37 @@ static func road_surface_for_zone(data: PlanetData, road_type: String,
 			else data.get_biome_by_type(RoadTerrain.CORUNDUM_BIOME_TYPE)
 	out["uv_mode"] = RoadRibbon.UvMode.LANE
 	out["tinted"] = true
+	# tint(d, h): the ground colour at d; h = the surface height there when
+	# the caller has it (RoadRibbon does), else sampled.
 	if pz_zones.is_empty():
-		out["tint"] = func(d: Vector3) -> Color:
-			return road_ground_tint(data, d, first_zone, cor_bd)
+		out["tint"] = func(d: Vector3, h: float = NAN) -> Color:
+			return road_ground_tint(data, d, first_zone, cor_bd, h)
 	else:
-		out["tint"] = func(d: Vector3) -> Color:
+		out["tint"] = func(d: Vector3, h: float = NAN) -> Color:
 			var here := _query_zones_at_direction(d, pz_zones)
 			return road_ground_tint(data, d,
-					here[0] if not here.is_empty() else {}, cor_bd)
+					here[0] if not here.is_empty() else {}, cor_bd, h)
 	return out
 
 
 ## The ground's colour at [param d] under [param zone] (its first populate
 ## zone, {} for none) — the three cases of the terrain's biome colour pass,
-## in its order: the corundum iron tint where corundum is the default, the
-## zone's RockCatalogue tint where it names a rock, the biome colour else.
+## in its order: the planet's default rock where corundum is the default, the
+## zone's rock where it names one (both shaded by RockImpurity at the surface,
+## level, uncarved), the biome colour else. [param height_m] is the surface
+## height when the caller has it; NAN samples it.
 static func road_ground_tint(data: PlanetData, d: Vector3, zone: Dictionary,
-		cor_bd: BiomeDefinition) -> Color:
+		cor_bd: BiomeDefinition, height_m: float = NAN) -> Color:
 	var zone_bd: BiomeDefinition = null
 	if not zone.is_empty():
 		zone_bd = data.get_biome_by_type(String(zone.get("biome_type", "")))
 	var base: Color = zone_bd.color if zone_bd else (
 			cor_bd.color if cor_bd else Color(0.823, 0.784, 0.69))
 	if data.corundum_applies_to_zone(zone):
-		return ArideDesertCorundumPlateauTerrain.iron_tint(d, data.radius, base)
+		return RockImpurity.ground_tint(data, d, data.corundum_default_rock, base, height_m)
 	var rock_type := str(zone.get("rock_type", ""))
 	if not rock_type.is_empty() and RockCatalogue.has(rock_type):
-		return RockCatalogue.tint(d, data.radius, rock_type, base)
+		return RockImpurity.ground_tint(data, d, rock_type, base, height_m)
 	return base
 
 

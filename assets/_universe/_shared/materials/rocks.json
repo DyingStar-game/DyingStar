@@ -5,6 +5,7 @@
     "#082567",
     "#111111"
    ],
+   "core_colors": null,
    "description": "Al2O3 saturated with iron and titanium — near-opaque.",
    "formula": "Al2O3",
    "impurities": [
@@ -40,6 +41,10 @@
     "#82C8E5",
     "#0F52BA"
    ],
+   "core_colors": [
+    "#5C9FD1",
+    "#081F6B"
+   ],
    "description": "Al2O3 coloured by the Fe2+/Ti4+ charge-transfer pair.",
    "formula": "Al2O3",
    "impurities": [
@@ -74,6 +79,7 @@
     "#B4C4D9",
     "#3A325E"
    ],
+   "core_colors": null,
    "description": "Al2O3 coloured by V3+ — grey-blue in daylight, purple-mauve at night.",
    "formula": "Al2O3",
    "impurities": [
@@ -102,6 +108,10 @@
     "#A2B997",
     "#2E4732"
    ],
+   "core_colors": [
+    "#8CBAB0",
+    "#1E4A48"
+   ],
    "description": "Al2O3 with both Fe2+ and Fe3+ — mixed blue/yellow absorption reads green.",
    "formula": "Al2O3",
    "impurities": [
@@ -127,6 +137,10 @@
    "colors": [
     "#7393B3",
     "#263855"
+   ],
+   "core_colors": [
+    "#5F86B8",
+    "#1B3466"
    ],
    "description": "Al2O3 with Fe2+/Ti4+ plus Fe3+ — more iron, duller blue.",
    "formula": "Al2O3",
@@ -158,11 +172,38 @@
    "slug": "corundum_grey_blue",
    "surface": true
   },
+  "corundum_milky": {
+   "colors": [
+    "#E7E0D1",
+    "#D0AD69"
+   ],
+   "core_colors": null,
+   "description": "Translucent Al2O3 with traces of Fe3+ — milky white stained iron-yellow.",
+   "formula": "Al2O3",
+   "impurities": [
+    {
+     "element": "Fe",
+     "ions": [
+      "Fe3+"
+     ],
+     "optional": true,
+     "ppm_max": 1500,
+     "ppm_min": 100
+    }
+   ],
+   "label": "Milky corundum (iron traces)",
+   "minerals": [],
+   "night_colors": null,
+   "purity": null,
+   "slug": "corundum_milky",
+   "surface": true
+  },
   "corundum_orange": {
    "colors": [
     "#F4A460",
     "#C04000"
    ],
+   "core_colors": null,
    "description": "Al2O3 with a little Cr3+ over dominant Fe3+.",
    "formula": "Al2O3",
    "impurities": [
@@ -197,6 +238,7 @@
     "#FFC0CB",
     "#C71585"
    ],
+   "core_colors": null,
    "description": "Al2O3 lightly coloured by Cr3+, optional Fe3+.",
    "formula": "Al2O3",
    "impurities": [
@@ -231,6 +273,7 @@
     "#B84A39",
     "#4A1512"
    ],
+   "core_colors": null,
    "description": "Al2O3 with high Cr3+ and Fe3+ — ruby range.",
    "formula": "Al2O3",
    "impurities": [
@@ -265,6 +308,7 @@
     "#FAFAFA",
     "#D9D9D9"
    ],
+   "core_colors": null,
    "description": "Anhydrous crystallised aluminium oxide of very high purity (> 99.5 %).",
    "formula": "Al2O3",
    "impurities": [],
@@ -280,6 +324,7 @@
     "#FCE698",
     "#D4AF37"
    ],
+   "core_colors": null,
    "description": "Al2O3 coloured by Fe3+ alone.",
    "formula": "Al2O3",
    "impurities": [
@@ -305,6 +350,7 @@
     "#654321",
     "#2B1B17"
    ],
+   "core_colors": null,
    "description": "Corundum saturated with iron, trapping distinct iron sub-minerals.",
    "formula": "Al2O3",
    "impurities": [
@@ -344,6 +390,7 @@
     "#233D2E",
     "#0E1A13"
    ],
+   "core_colors": null,
    "description": "Iron-aluminium spinel; cannot survive at the surface (oxygen) — underground only.",
    "formula": "FeAl2O4",
    "impurities": [],
