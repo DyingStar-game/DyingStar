@@ -129,6 +129,13 @@ var chunk_data_version: String = ""
 ## biome (rock_type or colour only) does not count: corundum stays underneath.
 ## See [method corundum_applies_at] for the one rule every path shares.
 @export var corundum_default_biome: bool = false
+## The rock the corundum default ground is made of — a RockCatalogue slug
+## (rocks.json). Its light ↔ dark tints, shaded by RockImpurity (deeper toward
+## the crests and the crevasse floors, banded by the strata), are what the
+## default ground bakes into its vertex colours; a zone with its own rock_type
+## keeps its own rock. "corundum_milky" is the milky white ↔ iron yellow the
+## plateau always had.
+@export var corundum_default_rock: String = "corundum_milky"
 ## Approximate size of a monolithic block between cracks, in metres.
 @export var crack_spacing_m: float = 90.0
 ## Width of each carved crack at the surface, in metres.
@@ -2612,6 +2619,34 @@ func _mountain_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float) -> f
 	if zones.is_empty() and ridges.is_empty():
 		return 0.0
 	return MountainRelief.offset(dir, radius, zones, ridges, eff)
+
+
+## How deep inside a massif [param dir] is — MountainRelief.core over the
+## same features [method _mountain_offset] sums, 0 without mountains. Feeds
+## the rock impurity fields (RockImpurity): the chunk builders bake it into
+## the vertex colours, the server reads it at a mined point. Worker-thread
+## safe for the same reasons as the offset.
+func mountain_core(dir: Vector3, frame: TileFrame = null) -> float:
+	if _has_mountains != 1:
+		return 0.0
+	var zones: Array
+	var ridges: Array
+	var mset: RefCounted
+	if frame != null and frame.mtn_ready:
+		zones = frame.mtn
+		ridges = frame.rdg
+		mset = frame.mtn_set
+	else:
+		var ip := HEALPix.vec2pix_nest(export_nside, dir)
+		mset = get_chunk_mountain_set(export_nside, ip)
+		if mset == null:
+			zones = get_chunk_mountain_zones(export_nside, ip)
+			ridges = get_chunk_ridges(export_nside, ip)
+	if mset != null:
+		return mset.Core(dir, radius)
+	if zones.is_empty() and ridges.is_empty():
+		return 0.0
+	return MountainRelief.core(dir, radius, zones, ridges)
 
 
 ## Does this planet carry any road at all (the pack's road part has features)?

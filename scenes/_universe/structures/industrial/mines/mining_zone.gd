@@ -307,11 +307,16 @@ func _physics_process(_delta: float) -> void:
 
 
 ## The PlanetTerrain of the planet this zone sits on, or null (a zone on a station / in a city).
-func _planet_terrain() -> PlanetTerrain:
+func _planet() -> Planet:
 	var n: Node = get_parent()
 	while n != null and not (n is Planet):
 		n = n.get_parent()
-	return (n as Planet).planet_terrain if n != null else null
+	return n as Planet
+
+
+func _planet_terrain() -> PlanetTerrain:
+	var p := _planet()
+	return p.planet_terrain if p != null else null
 
 
 ## True when the terrain under the zone centre already carries its collision body — i.e. the ground
@@ -372,6 +377,8 @@ func _build_spawn_queue() -> void:
 	var poi_margin: float = terrain.planet_data.mining_zone_poi_margin \
 		if terrain != null and terrain.planet_data != null else 0.0
 	var culled: int = 0
+	# The planet under the field, for the per-rock richness (see below); null on a station.
+	var planet: Planet = _planet()
 
 	var index: int = 0
 	for point in points:
@@ -388,6 +395,16 @@ func _build_spawn_queue() -> void:
 			culled += 1
 			continue
 		var normal: Vector3 = hit["normal"]
+		# A rock is as rich as the ground it sits on: the zone's `richness` is the base, and
+		# the provenance of the rock exposed there — inside a massif (mountain core), at the
+		# floor of a crevasse or a cutting (the collision surface below the sampled relief) —
+		# lifts it, the same RockImpurity rule that darkens the terrain's own colour. Pure
+		# function of the ground point, so a re-run re-draws the same field.
+		var target: float = richness
+		if planet != null and planet.planet_data != null:
+			target = RockImpurity.ore_richness(richness,
+				planet.planet_data.mountain_core(planet.local_dir_of(ground)),
+				maxf(-planet.surface_altitude_of(ground), 0.0))
 		var spawn_world: Vector3 = ground + normal.normalized() * SPAWN_CLEARANCE
 		var local_pos: Vector3 = to_parent_local * spawn_world
 		var local_rot: Vector3 = PropSpawn.surface_euler(
@@ -399,7 +416,7 @@ func _build_spawn_queue() -> void:
 			"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
 			"scenename": _pick_scene(rng),
 			"parent_id": parent_uuid,
-			"ore_seed": _ore_seed_for_richness(seed_str, index),
+			"ore_seed": _ore_seed_for_richness(seed_str, index, target),
 			"mineral_id": mineral_id,
 			# Both: the id paints the rock (exterior texture / relief / finish) and the density
 			# weighs it. They come from the same resolved host rock, so they cannot disagree —
@@ -534,15 +551,18 @@ func _resolved_host_rock_id() -> String:
 		return terrain.planet_data.mining_zone_host_rock
 	return ""
 
-## Pick an ore_seed whose DERIVED richness (the same hash the rock uses) lands closest to the
-## zone target. ore_seed is replicated, so this controls ore amount with no extra plumbing.
-func _ore_seed_for_richness(seed_str: String, index: int) -> String:
+## Pick an ore_seed whose DERIVED richness (the same hash the rock uses) lands closest to
+## [param target] — the zone's `richness` lifted by the ground under that rock. ore_seed is
+## replicated, so this controls ore amount with no extra plumbing.
+func _ore_seed_for_richness(seed_str: String, index: int, target: float = -1.0) -> String:
+	if target < 0.0:
+		target = richness
 	var best_seed: String = "%s|ore%d" % [seed_str, index]
 	var best_err: float = 1.0
 	for k in 48:
 		var candidate: String = "%s|ore%d|%d" % [seed_str, index, k]
 		var rich: float = float(absi(candidate.hash()) % 1000) / 1000.0
-		var err: float = absf(rich - richness)
+		var err: float = absf(rich - target)
 		if err < best_err:
 			best_err = err
 			best_seed = candidate

@@ -388,3 +388,80 @@ func test_native_and_gdscript_paths_build_the_same_planet_surface() -> void:
 			k += 1
 	MountainRelief.use_native = true
 	assert_lt(worst, 1e-9, "paths disagree by %.12f m" % worst)
+
+
+# ===================================================================
+# Core (the rock impurity provenance)
+# ===================================================================
+
+func test_core_is_zero_on_the_plain_scaled_by_the_intensity_and_lod_free() -> void:
+	var c := Vector2(12.0, 20.0)
+	var z := MountainRelief.prepare_zone(_zone(c, 20.0, {"impurity_intensity": 1.3}))
+	var half := MountainRelief.prepare_zone(_zone(c, 20.0, {"impurity_intensity": 0.65}))
+	var sterile := MountainRelief.prepare_zone(_zone(c, 20.0, {"impurity_intensity": 0.0}))
+	var far := HEALPix.lonlat2vec(c.x + 5.0, c.y)
+	assert_eq(MountainRelief.core(far, RADIUS, [z], []), 0.0, "outside the polygon")
+	var seen := 0.0
+	for i in 200:
+		var ll := _ll_offset(c, fmod(i * 7919.0, 30000.0) - 15000.0, fmod(i * 104729.0, 30000.0) - 15000.0)
+		var d := HEALPix.lonlat2vec(ll.x, ll.y)
+		var v := MountainRelief.core(d, RADIUS, [z], [])
+		assert_between(v, 0.0, 1.3 + 1e-9, "envelope × shape × intensity")
+		assert_almost_eq(MountainRelief.core(d, RADIUS, [half], []), v * 0.5, 1e-9, "linear in the intensity")
+		assert_eq(MountainRelief.core(d, RADIUS, [sterile], []), 0.0, "a sterile massif")
+		seen = maxf(seen, v)
+	assert_gt(seen, 0.3, "the massif has a core")
+	# Unlike offset(), the core takes no pitch: it cannot pop between LODs.
+	var dz := HEALPix.lonlat2vec(c.x, c.y)
+	assert_eq(MountainRelief.core(dz, RADIUS, [z], []), MountainRelief.core(dz, RADIUS, [z], []))
+
+
+func test_ridge_core_peaks_on_the_crest_and_fades_to_the_foot() -> void:
+	var c := Vector2(12.0, 20.0)
+	var r := MountainRelief.prepare_ridge(_ridge(c, 30.0, {"impurity_intensity": 1.0}), _mpd)
+	var crest := MountainRelief.core(HEALPix.lonlat2vec(c.x, c.y), RADIUS, [], [r])
+	assert_almost_eq(crest, 1.0, 1e-6, "profile 1 × taper 1 on the crest")
+	var prev := crest
+	for off in [400.0, 1000.0, 1600.0, 1999.0]:
+		var ll := _ll_offset(c, 0.0, off)
+		var v := MountainRelief.core(HEALPix.lonlat2vec(ll.x, ll.y), RADIUS, [], [r])
+		assert_lt(v, prev, "fades down the flank at %.0f m" % off)
+		prev = v
+	var foot := _ll_offset(c, 0.0, 2100.0)
+	assert_eq(MountainRelief.core(HEALPix.lonlat2vec(foot.x, foot.y), RADIUS, [], [r]), 0.0)
+
+
+func test_native_core_equals_the_gdscript_reference() -> void:
+	assert_true(MountainRelief.native_available(), "the C# assembly must be built")
+	var c := Vector2(12.0, 20.0)
+	var zones: Array = [
+		MountainRelief.prepare_zone(_zone(c, 20.0, {"feather_m": 3000.0, "warp": 0.3, "impurity_intensity": 1.2})),
+		MountainRelief.prepare_zone(_zone(_ll_offset(c, 5000.0, 0.0), 8.0, {"seed": 4, "exponent": 2.0, "ridge": 0.9, "impurity_intensity": 0.7})),
+	]
+	var zf := _zone(c, 20.0)
+	zf["coverage"] = "full"
+	zf.erase("polygon")
+	zones.append(MountainRelief.prepare_zone(zf))
+	var ridges: Array = [
+		MountainRelief.prepare_ridge(_ridge(c, 30.0, {"roughness": 0.4, "warp_m": 200.0, "asymmetry": 0.3, "impurity_intensity": 1.4}), _mpd),
+	]
+	var mset: RefCounted = MountainRelief.build_set(zones, ridges)
+	assert_true(mset != null, "set built")
+	var worst := 0.0
+	var nonzero := 0
+	for i in 4000:
+		var ll := _ll_offset(c, fmod(i * 7919.0, 52000.0) - 26000.0, fmod(i * 104729.0, 52000.0) - 26000.0)
+		var d := HEALPix.lonlat2vec(ll.x, ll.y)
+		var gd := MountainRelief.core(d, RADIUS, zones, ridges)
+		var cs: float = mset.Core(d, RADIUS)
+		worst = maxf(worst, absf(gd - cs))
+		if gd != 0.0:
+			nonzero += 1
+	assert_gt(nonzero, 2000)
+	assert_lt(worst, 1e-9, "C# and GDScript cores disagree by %.12f" % worst)
+	# And the planet-level query answers through the same set.
+	_pd.set_mountain_overrides([_zone(c, 20.0, {"impurity_intensity": 1.2})], [])
+	var d0 := HEALPix.lonlat2vec(c.x, c.y)
+	assert_almost_eq(_pd.mountain_core(d0), MountainRelief.core(d0, RADIUS, _pd._mtn_override_zones, []), 1e-9)
+	_pd.set_mountain_overrides([], [])
+	assert_eq(_pd.mountain_core(d0), 0.0, "no mountains, no core")

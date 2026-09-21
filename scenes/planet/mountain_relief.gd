@@ -24,6 +24,12 @@ class_name MountainRelief
 
 ## Below this the exporter's expanded clip box would not cover the feather.
 const FEATHER_MIN_M := 250.0
+## Ceiling of a record's impurity_intensity (the exporter clamps to the same).
+const IMPURITY_MAX := 3.0
+## [method core] reads a zone's shape at wavelength / this: its two coarsest
+## octaves only, whatever grid asks — the impurity colour baked from it must
+## not pop between LODs, and the octave gate is what makes a pitch LOD-stable.
+const CORE_PITCH_DIV := 8.0
 
 ## The C# twins (scenes/planet/native/Mountain*Native.cs): the same arithmetic,
 ## one call per sample instead of ~120 — 5.8 µs against 75 µs measured. The
@@ -58,6 +64,9 @@ class Zone:
 	## Empty for a full-coverage record (env == 1 everywhere in the tile).
 	var polygon := PackedVector2Array()
 	var full := false
+	## Ore / colour richness of the massif (the pack's impurity_intensity,
+	## resolved at export — never derived here): scales [method core].
+	var impurity := 1.0
 	## lon/lat bounds of the polygon — the cheap reject.
 	var bbox := Rect2()
 	var name := ""
@@ -89,6 +98,8 @@ class Ridge:
 	var terrace_step_m := 0.0
 	var terrace_width := 0.15
 	var seed := 0
+	## See Zone.impurity.
+	var impurity := 1.0
 	var name := ""
 	## MountainRidgeNative, null without the assembly.
 	var native: RefCounted = null
@@ -105,6 +116,7 @@ static func prepare_zone(z: Dictionary) -> Zone:
 	out.prm = MountainNoise.Params.from_zone(z)
 	out.prm.feather_m = maxf(out.prm.feather_m, FEATHER_MIN_M)
 	out.name = str(z.get("name", ""))
+	out.impurity = clampf(float(z.get("impurity_intensity", 1.0)), 0.0, IMPURITY_MAX)
 	var poly: PackedVector2Array = z.get("polygon", PackedVector2Array())
 	if str(z.get("coverage", "partial")) == "full" or poly.size() < 3:
 		out.full = true
@@ -117,7 +129,7 @@ static func prepare_zone(z: Dictionary) -> Zone:
 		var nz: RefCounted = _zone_script.new()
 		nz.Configure(p.wavelength_m, p.octaves, p.persistence, p.ridge, p.exponent, p.warp,
 				p.seed, p.lift_m, p.amplitude_m, p.terrace_step_m, p.terrace_width, p.feather_m,
-				poly)
+				poly, out.impurity)
 		out.native = nz
 	return out
 
@@ -135,6 +147,7 @@ static func prepare_ridge(z: Dictionary, m_per_deg: float) -> Ridge:
 	out.terrace_step_m = maxf(float(z.get("terrace_step_m", out.terrace_step_m)), 0.0)
 	out.terrace_width = clampf(float(z.get("terrace_width", out.terrace_width)), 0.01, 1.0)
 	out.seed = int(z.get("seed", out.seed))
+	out.impurity = clampf(float(z.get("impurity_intensity", 1.0)), 0.0, IMPURITY_MAX)
 	var cl: PackedVector2Array = z.get("polygon", PackedVector2Array())
 	out.centerline = cl
 	out.cum.resize(cl.size())
@@ -150,7 +163,8 @@ static func prepare_ridge(z: Dictionary, m_per_deg: float) -> Ridge:
 	if native_available():
 		var nr: RefCounted = _ridge_script.new()
 		nr.Configure(cl, out.height_m, out.width_m, out.sharpness, out.roughness, out.warp_m,
-				out.asymmetry, out.terrace_step_m, out.terrace_width, out.seed, m_per_deg)
+				out.asymmetry, out.terrace_step_m, out.terrace_width, out.seed, m_per_deg,
+				out.impurity)
 		out.native = nr
 	return out
 
@@ -208,6 +222,46 @@ static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
 	return total
 
 
+## How deep inside a massif [param dir] is, for the rock impurity fields
+## (RockImpurity): per zone, envelope × the two coarsest octaves of its shape
+## × impurity; per ridge, its flank profile × end taper × impurity. Features
+## add, like the relief — 0 on the plain, ~1 on a crest of intensity 1, more
+## where features overlap or the intensity is above 1 (the consumer clamps).
+## Pure, LOD-independent (a fixed pitch per zone, no pitch gate on ridges)
+## and pinned equal to MountainSetNative.Core by test_mountain_relief.gd.
+static func core(dir: Vector3, radius: float, zones: Array, ridges: Array) -> float:
+	var total := 0.0
+	var m_per_deg := radius * PI / 180.0
+	var have_ll := false
+	var ll := Vector2.ZERO
+	for zv in zones:
+		var z: Zone = zv
+		if z.impurity <= 0.0:
+			continue
+		var env := 1.0
+		if not z.full:
+			if not have_ll:
+				ll = HEALPix.vec2lonlat(dir)
+				have_ll = true
+			env = envelope(ll, z, m_per_deg)
+			if env <= 0.0:
+				continue
+		var s := MountainNoise.shape(dir, radius, z.prm, z.prm.wavelength_m / CORE_PITCH_DIV)
+		if s > 0.0:
+			total += env * s * z.impurity
+	for rv in ridges:
+		var rd: Ridge = rv
+		if rd.impurity <= 0.0:
+			continue
+		if not have_ll:
+			ll = HEALPix.vec2lonlat(dir)
+			have_ll = true
+		var prof := _ridge_profile(ll, dir, radius, rd)
+		if prof.x > 0.0:
+			total += prof.x * prof.y * rd.impurity
+	return total
+
+
 ## Feather weight of [param zone] at [param ll]: 0 outside the polygon, 1
 ## deeper than feather_m inside, smooth in between.
 static func envelope(ll: Vector2, zone: Zone, m_per_deg: float) -> float:
@@ -236,8 +290,21 @@ static func envelope(ll: Vector2, zone: Zone, m_per_deg: float) -> float:
 
 ## Height (m) the ridge [param rd] adds at [param ll] / [param dir].
 static func ridge_height(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) -> float:
-	if rd.centerline.size() < 2 or not rd.bbox.has_point(ll):
+	var prof := _ridge_profile(ll, dir, radius, rd)
+	if prof.x <= 0.0:
 		return 0.0
+	var h := rd.height_m * prof.x * prof.y
+	if rd.roughness > 0.0:
+		h *= 1.0 + rd.roughness * MountainNoise.snoise(dir * (radius / (2.0 * rd.width_m)), rd.seed + 11)
+	return MountainNoise.terrace(h, rd.terrace_step_m, rd.terrace_width)
+
+
+## The ridge's (flank profile, end taper) at [param ll] / [param dir], both in
+## [0, 1] — Vector2.ZERO past its reach. ridge_height multiplies them by the
+## height (in that order, which the C# twin keeps), core by the impurity.
+static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) -> Vector2:
+	if rd.centerline.size() < 2 or not rd.bbox.has_point(ll):
+		return Vector2.ZERO
 	var m_per_deg := radius * PI / 180.0
 	var lat_scale := cos(deg_to_rad(clampf(ll.y, -89.5, 89.5)))
 	if lat_scale < 1e-6:
@@ -252,7 +319,7 @@ static func ridge_height(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) ->
 			best_i = i
 	var d_m := sqrt(best_sq) * m_per_deg
 	if d_m >= rd.reach_m():
-		return 0.0
+		return Vector2.ZERO
 	# Which flank: sign of the cross product in the metric frame, left > 0.
 	var a := cl[best_i]
 	var b := cl[best_i + 1]
@@ -266,7 +333,7 @@ static func ridge_height(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) ->
 		d_m = maxf(d_m + rd.warp_m * MountainNoise.snoise(dir * (radius / (4.0 * rd.width_m)), rd.seed + 7), 0.0)
 	var t := d_m / w_side
 	if t >= 1.0:
-		return 0.0
+		return Vector2.ZERO
 	var bell := 1.0 - smoothstep(0.0, 1.0, t)
 	var knife := 1.0 - t
 	var prof := lerpf(bell, knife, rd.sharpness)
@@ -278,10 +345,7 @@ static func ridge_height(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) ->
 	var s := rd.cum[best_i] + ts * (rd.cum[best_i + 1] - rd.cum[best_i])
 	var end_d := minf(s, rd.length_m - s)
 	var taper := smoothstep(0.0, minf(rd.width_m, rd.length_m * 0.5), end_d)
-	var h := rd.height_m * prof * taper
-	if rd.roughness > 0.0:
-		h *= 1.0 + rd.roughness * MountainNoise.snoise(dir * (radius / (2.0 * rd.width_m)), rd.seed + 11)
-	return MountainNoise.terrace(h, rd.terrace_step_m, rd.terrace_width)
+	return Vector2(prof, taper)
 
 
 static func _point_in_polygon(p: Vector2, poly: PackedVector2Array) -> bool:

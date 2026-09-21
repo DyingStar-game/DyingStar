@@ -8,6 +8,11 @@ Each :class:`Rock` carries three kinds of data, consumed in three places:
               the middle of the range; close-up the shader lerps between the two
               bounds with noise so a zone is not one flat tint.  Chameleon rocks
               have a second range for night.
+  core_colors the same range for the rock's DEEP, reduced state — iron as Fe2+
+              instead of Fe3+ (blue and green corundums): the runtime slides from
+              ``colors`` to ``core_colors`` with the provenance depth, so a crest
+              or a crevasse floor shifts hue, not only shade (RockImpurity).
+              None = the rock has one hue whatever its depth.
   impurities  per ELEMENT ppm ranges (with the ions responsible for the hue) —
               the mining yield: Al2O3 base plus Fe / Ti / Cr / V drawn in range.
   minerals    distinct sub-minerals trapped in the rock (emery) — mined as their
@@ -51,6 +56,7 @@ class Rock:
     formula: str                         # host crystal, e.g. "Al2O3"
     colors: Optional[tuple] = None       # (hex_light, hex_dark); None = not decided yet
     night_colors: Optional[tuple] = None # chameleon rocks only
+    core_colors: Optional[tuple] = None  # deep / reduced-iron hue, see module doc
     impurities: tuple = ()
     minerals: tuple = ()
     purity: Optional[float] = None       # host-crystal fraction when known (white: > 0.995)
@@ -69,14 +75,24 @@ ROCKS = [
          purity=0.995,
          description="Anhydrous crystallised aluminium oxide of very high purity (> 99.5 %)."),
 
+    # The planet-wide default ground of the corundum planets (PlanetData.
+    # corundum_default_rock): the milky white ↔ iron yellow the plateau always
+    # had, now a catalogue rock like any other.
+    Rock("corundum_milky", "Milky corundum (iron traces)", _AL2O3,
+         colors=("#E7E0D1", "#D0AD69"),   # milky white → iron yellow
+         impurities=(Impurity("Fe", 100, 1500, ("Fe3+",), optional=True),),
+         description="Translucent Al2O3 with traces of Fe3+ — milky white stained iron-yellow."),
+
     Rock("corundum_blue", "Blue corundum", _AL2O3,
          colors=("#82C8E5", "#0F52BA"),
+         core_colors=("#5C9FD1", "#081F6B"),   # deep: Fe2+ intact, a purer sapphire
          impurities=(Impurity("Ti", 50, 100, ("Ti4+",)),
                      Impurity("Fe", 100, 3000, ("Fe2+",))),
          description="Al2O3 coloured by the Fe2+/Ti4+ charge-transfer pair."),
 
     Rock("corundum_grey_blue", "Grey-blue corundum", _AL2O3,
          colors=("#7393B3", "#263855"),
+         core_colors=("#5F86B8", "#1B3466"),   # deep: less Fe3+ grey, more Fe2+/Ti blue
          impurities=(Impurity("Ti", 50, 200, ("Ti4+",)),
                      Impurity("Fe", 400, 15000, ("Fe2+", "Fe3+"))),
          description="Al2O3 with Fe2+/Ti4+ plus Fe3+ — more iron, duller blue."),
@@ -93,7 +109,8 @@ ROCKS = [
          description="Al2O3 coloured by Fe3+ alone."),
 
     Rock("corundum_green", "Green corundum", _AL2O3,
-         colors=("#A2B997", "#2E4732"),
+         colors=("#A2B997", "#2E4732"),       # shallow: Fe3+ pulls it yellow-green
+         core_colors=("#8CBAB0", "#1E4A48"),  # deep: Fe2+ pulls it blue-green
          impurities=(Impurity("Fe", 1000, 8000, ("Fe2+", "Fe3+")),),
          description="Al2O3 with both Fe2+ and Fe3+ — mixed blue/yellow absorption reads green."),
 
@@ -153,16 +170,21 @@ def rock_field(name="rock_type", comment="Dominant rock type of the zone", under
     return Field(name, "string", comment, choices=rock_choices(underground))
 
 
+# Clarity is orthogonal to the impurity CONCENTRATION (RockImpurity: it rises
+# with the depth the exposed rock came from, crests and crevasses alike): a
+# clear crystal carries the same colouring elements, in a limpid lattice
+# instead of a translucent one — mined as coloured gems, not as ppm of ore.
 CLARITIES = [
-    ("Milky — translucent, carries the impurities (surface)", "milky"),
-    ("Clear — gem grade, no impurities (caves, deep rock)", "clear"),
+    ("Milky — translucent, mined as ore (surface)", "milky"),
+    ("Clear — gem grade, mined as coloured gems (caves, deep rock)", "clear"),
 ]
 
 
 def clarity_field(default="milky"):
     """Crystal clarity of the zone's rock.  Surface rock is milky; deep or
-    cave rock, sheltered from weathering, is clear."""
-    return Field("clarity", "string", "Crystal clarity: milky (impurities) or clear",
+    cave rock, sheltered from weathering, is clear.  Both carry the rock's
+    impurities — clarity says what is mined (ore / gems), not how much."""
+    return Field("clarity", "string", "Crystal clarity: milky (ore) or clear (gems)",
                  widget=ValueMap(CLARITIES), default=f"'{default}'")
 
 

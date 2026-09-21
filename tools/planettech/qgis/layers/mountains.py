@@ -31,6 +31,15 @@ export_mountains.py turns them into parts/mountains.dsmpart and ridges.dsmpart.
 
 The preset values live in export/planet/mountains.py (PRESETS): the exporter
 fills the NULL fields from them, so Godot never needs the table.
+
+``impurity_intensity`` (both layers)
+    How rich the massif is in the colouring / ore elements of its rock
+    (RockImpurity, scenes/planet/rock_impurity.gd): the runtime darkens the
+    rock toward the crest in proportion, and the mining yield follows.  NULL =
+    derived at EXPORT from the feature's position (a stable hash of its
+    centroid, 0.6–1.4 — never sterile), so every re-export, the client and
+    the server read the same number from the pack.  0 = sterile, 2 = twice
+    the reference.
 """
 
 from .model import Category, Layer, Field, Widget, ValueMap, Range
@@ -98,6 +107,9 @@ CATEGORY.add(Layer(
               widget=_opt(250, 20000, 50)),
         Field("seed", "integer", "Noise seed — change it to reshuffle the peaks",
               widget=_opt(0, 1000000, 1)),
+        Field("impurity_intensity", "double",
+              "Ore / colour richness: NULL = from the position (0.6-1.4), 0 = sterile, 2 = twice",
+              widget=_opt(0.0, 2.0, 0.05)),
     ],
 ))
 
@@ -130,5 +142,8 @@ CATEGORY.add(Layer(
         Field("terrace_width", "double", "Share of each step taken by the wall, 0.02–1",
               widget=_opt(0.02, 1.0, 0.02)),
         Field("seed", "integer", "Noise seed", widget=_opt(0, 1000000, 1)),
+        Field("impurity_intensity", "double",
+              "Ore / colour richness: NULL = from the position (0.6-1.4), 0 = sterile, 2 = twice",
+              widget=_opt(0.0, 2.0, 0.05)),
     ],
 ))

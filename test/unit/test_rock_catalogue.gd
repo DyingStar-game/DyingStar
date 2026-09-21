@@ -33,6 +33,8 @@ func test_colours_and_impurities_come_through() -> void:
 	assert_has(elements, "Ti")
 	assert_eq(RockCatalogue.night_colors_of("corundum_chameleon").size(), 2, "chameleon has night tints")
 	assert_eq(RockCatalogue.night_colors_of("corundum_blue").size(), 0)
+	assert_eq(RockCatalogue.core_colors_of("corundum_blue").size(), 2, "blue has a deep hue")
+	assert_eq(RockCatalogue.core_colors_of("corundum_yellow").size(), 0, "yellow is all Fe3+")
 
 
 func test_hercynite_is_underground_only() -> void:

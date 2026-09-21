@@ -46,4 +46,20 @@ public partial class MountainSetNative : RefCounted
             total += _ridges[i].HeightD(dx, dy, dz, radius, effSpacing, lon, lat);
         return total;
     }
+
+    /// <summary>MountainRelief.core: how deep inside a massif dir is, for the
+    /// rock impurity fields — features add, LOD-independent.</summary>
+    public double Core(Vector3 dir, double radius)
+    {
+        double dx = dir.X, dy = dir.Y, dz = dir.Z;
+        double lon = double.NaN, lat = double.NaN;
+        if (_needLonLat)
+            MountainNoiseCore.ToLonLat(dx, dy, dz, out lon, out lat);
+        double total = 0.0;
+        for (int i = 0; i < _zones.Count; i++)
+            total += _zones[i].CoreD(dx, dy, dz, radius, lon, lat);
+        for (int i = 0; i < _ridges.Count; i++)
+            total += _ridges[i].CoreD(dx, dy, dz, radius, lon, lat);
+        return total;
+    }
 }

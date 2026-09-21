@@ -16,13 +16,9 @@ const BIOME_INDEX := 91
 ## Category tag for grouping.
 const CATEGORY := "terrestrial"
 
-## Feature size of the large iron-rich blotches, in metres.
-const IRON_BLOTCH_M := 2800.0
-## Feature size of the finer iron streaks, in metres.
-const IRON_STREAK_M := 700.0
-## Iron-poor tone (cool milky white) and iron-rich tone (warm ochre-yellow).
-const MILKY := Color(0.905, 0.880, 0.820)
-const IRON  := Color(0.815, 0.680, 0.410)
+# The plateau's colour — milky white stained iron-yellow — is no longer here:
+# it is the catalogue rock "corundum_milky" (rocks.py), the planet's
+# corundum_default_rock, shaded by RockImpurity like every other rock.
 
 
 # ── Procedural crack network ───────────────────────────────────────
@@ -142,36 +138,3 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 				if diff.dot(diff) > 1.0e-5:   # skip the closest cell itself
 					edge = minf(edge, (0.5 * (mr + r)).dot(diff.normalized()))
 	return edge
-
-
-# ── Iron-impurity colouring ────────────────────────────────────────
-# Milky corundum stained with iron gives a white↔yellow mottling.  We bake
-# this into the vertex colour (albedo) as a pure function of direction, so
-# it needs no shader change and only affects the corundum surface.
-# Tuning constants (IRON_BLOTCH_M, MILKY, …) live in the constants section.
-
-## Blend a corundum surface colour between milky-white and iron-yellow using
-## two octaves of value noise.  [param base] (the biome colour) is folded in
-## so tweaking the .tres still shifts the overall hue.
-static func iron_tint(dir: Vector3, radius: float, base: Color) -> Color:
-	var lo := MILKY.lerp(base, 0.35)
-	var hi := IRON.lerp(base, 0.25)
-	return lo.lerp(hi, SurfaceNoise.mottle(dir, radius, IRON_BLOTCH_M, IRON_STREAK_M))
-
-
-## Darken / warm the interior of a crack toward iron staining, proportional to
-## how deep the carve is ([param crack_off] ≤ 0).  Solid blocks are unchanged.
-static func crack_stain(col: Color, crack_off: float, crack_depth_m: float) -> Color:
-	if crack_off >= 0.0 or crack_depth_m <= 0.0:
-		return col
-	var f := clampf(-crack_off / crack_depth_m, 0.0, 1.0)   # 0 at rim, 1 at floor
-	var stain := IRON * 0.55                                # dark rusty shadow tone
-	return col.lerp(stain, f * 0.6)
-
-
-# ── Value noise ─────────────────────────────────────────────────────
-# Lives in SurfaceNoise (shared with the per-rock tints); kept as a thin
-# alias for the callers below.
-
-static func _vnoise(p: Vector3) -> float:
-	return SurfaceNoise.vnoise(p)
