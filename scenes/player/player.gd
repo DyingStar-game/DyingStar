@@ -470,6 +470,20 @@ func _enter_tree() -> void:
 		# ours, instead of adding an "am I the local player?" guard to each UI child — and it covers
 		# the next child for free. _ready() still runs, so setup-time work keeps its own guard.
 		$UserInterface.process_mode = Node.PROCESS_MODE_DISABLED
+		# Same rule for the zone probe: "the single active monitor of the game" is the OWNER's (see
+		# connect_area_detect, the only place it gets its mask). Left at the scene default, every
+		# remote avatar kept monitoring too, on the default mask (the world layer, terrain included)
+		# — one world overlap query per avatar per physics step, for overlaps nobody reads.
+		$AreaDetector.monitoring = false
+		# No physics presence either. The server owns every collision a remote avatar takes part in,
+		# and nothing on this client queries the player layer (tool and sight rays use MASK_OBSTACLE,
+		# the probe scans zones only). What a body that DOES collide costs here is a broadphase pass
+		# per physics step, on float32 AABBs that are kilometres wide at 8e10 m from the origin —
+		# log 2026-09-22: the physics burst went from ~45 to ~120 ms a frame as 37 NPC bodies
+		# streamed in, 37 -> 8 fps, with every other column flat. Layer AND mask cleared: the body
+		# still exists (the capsule gives the standing height), it just meets nothing.
+		collision_layer = 0
+		collision_mask = 0
 		# Don't hide CameraPivot: it still drives where a remote player is looking (its pitch is
 		# replicated), and the camera is made non-current in _ready, so it never renders for us anyway.
 		# The Torch used to live under it and had to stay lit; it now rides the head bone instead

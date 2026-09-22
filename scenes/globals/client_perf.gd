@@ -859,6 +859,7 @@ func _report() -> void:
 	for k: String in _gauges.keys():
 		parts.append("%s=%s" % [k, str(_gauges[k])])
 	parts.append_array(_world_context())
+	parts.append_array(_host_cpu_context(window))
 	if not parts.is_empty():
 		print("[CPerf+] %s | %s" % [_clock(), " | ".join(parts)])
 
@@ -1073,6 +1074,34 @@ func agent_valid() -> bool:
 ## Game-specific context: where the local player is, in which frame, and how big the tree hanging
 ## off each planet has grown. The last one is the cost driver of planet_body's 3 Hz refresh, and it
 ## is the number that a zone duplication silently doubles.
+## Is the CLIENT being starved by the rest of the machine? A local test runs the game server (30 NPC
+## brains, nav bakes) and the editor on the same box, and no in-process scope can tell "our frame is
+## slow" from "we are not being scheduled". Linux only (/proc): `cpu=` is this process's CPU time
+## over the window as a share of ONE core (a healthy client runs at 100-300 %), `load=` the 1-minute
+## load average against the core count (above 1.0 the runnable threads outnumber the cores).
+var _cpu_prev_ticks: int = -1
+
+func _host_cpu_context(window: float) -> PackedStringArray:
+	var out: PackedStringArray = []
+	if not OS.has_feature("linuxbsd"):
+		return out
+	var stat: FileAccess = FileAccess.open("/proc/self/stat", FileAccess.READ)
+	if stat == null:
+		return out
+	# Fields after the parenthesised comm: utime then stime, in clock ticks (100 Hz). Read by line:
+	# /proc files report a zero length, so get_as_text() comes back empty.
+	var rest: String = stat.get_line().get_slice(") ", 1)
+	var fields: PackedStringArray = rest.split(" ", false)
+	if fields.size() > 13:
+		var ticks: int = int(fields[11]) + int(fields[12])
+		if _cpu_prev_ticks >= 0:
+			out.append("cpu=%.0f%%" % (float(ticks - _cpu_prev_ticks) / 100.0 / window * 100.0))
+		_cpu_prev_ticks = ticks
+	var load: FileAccess = FileAccess.open("/proc/loadavg", FileAccess.READ)
+	if load != null:
+		out.append("load=%s/%d" % [load.get_line().get_slice(" ", 0), OS.get_processor_count()])
+	return out
+
 func _world_context() -> PackedStringArray:
 	var out: PackedStringArray = []
 	var tree: SceneTree = get_tree()
