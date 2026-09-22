@@ -9,6 +9,16 @@ const NAME_TAG_MAX_DISTANCE: float = 25.0
 const NAME_TAG_CLEARANCE: float = 0.45
 ## Name of the shared CanvasLayer under the tree root that carries every remote name tag.
 const NAME_TAG_LAYER_NAME: StringName = &"PlayerNameTags"
+## Remote presentation LOD, re-evaluated at this interval (s) from the avatar's distance to the camera.
+const REMOTE_LOD_INTERVAL: float = 1.0
+## Farther than this (m) the remote presentation (locomotion, footsteps, interpolation, tag, tool)
+## ticks every other frame; back to every frame nearer than the EXIT value (hysteresis, no flicker).
+const REMOTE_HALF_RATE_ENTER: float = 15.0
+const REMOTE_HALF_RATE_EXIT: float = 12.0
+## Farther than this (m) the remote puppet casts no sun shadow (unreadable at that distance in the far
+## cascades, yet a full extra pass per cascade); cast again nearer than the EXIT value.
+const REMOTE_SHADOW_OFF: float = 32.0
+const REMOTE_SHADOW_ON: float = 28.0
 ## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
@@ -49,6 +59,13 @@ var player
 var _name_tag: Label = null
 
 var _conversation_text: Label = null
+
+## Remote LOD state (see _refresh_remote_lod): far avatars tick at half rate and cast no shadow.
+var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
+var _half_rate := HalfRateTicker.new()
+var _remote_far: bool = false
+var _remote_no_shadow: bool = false
+var _puppet_meshes: Array[MeshInstance3D] = []  # the puppet's meshes, whose cast_shadow the LOD flips
 
 ## Audio SFX state (the exported knobs live on the Player facade — see its "Audio SFX" group).
 ## False until the first replicated update has been digested: the state a REMOTE player arrives with
@@ -112,6 +129,7 @@ func setup() -> void:
 		_setup_conversation_text()
 		if animator != null:
 			_setup_animation_dormancy(animator)
+		_puppet_meshes.assign(player.puppet.find_children("*", "MeshInstance3D", true, false))
 		return
 
 	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
@@ -248,12 +266,21 @@ func setup() -> void:
 ## HUD prompts / mouse capture / input sampling. Runs on this role's own child node, so the engine
 ## calls it only on a client (never the dedicated server). Reaches the shared body through `player`.
 func _process(_delta: float) -> void:
-	_sample_locomotion(_delta)  # one shared computation for the footsteps AND the puppet animator
-	_update_footsteps(_delta)  # own body AND remote avatars: everyone hears everyone walk
 	if player.remote_player:
-		player._interp.update(player, _delta)  # entity interpolation: glide between server updates
+		_lod_elapsed += _delta
+		if _lod_elapsed >= REMOTE_LOD_INTERVAL:
+			_lod_elapsed = 0.0
+			_refresh_remote_lod()
+		var dt: float = _half_rate.due(_delta)  # far avatar: every other frame, with both frames' time
+		if dt < 0.0:
+			return
+		_sample_locomotion(dt)  # one shared computation for the footsteps AND the puppet animator
+		_update_footsteps(dt)  # remote avatars too: everyone hears everyone walk
+		player._interp.update(player, dt)  # entity interpolation: glide between server updates
 		_update_name_tag()
 		return
+	_sample_locomotion(_delta)
+	_update_footsteps(_delta)
 	_update_debug_coordinates()  # before the seated return below, so a driver's readout keeps moving
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
@@ -1164,6 +1191,31 @@ func _setup_conversation_text() -> void:
 	italic.base_font = _conversation_text.get_theme_font("font")
 	italic.variation_transform = Transform2D(Vector2(1.0, 0.415), Vector2(0.0, 1.0), Vector2.ZERO)
 	_conversation_text.add_theme_font_override("font", italic)
+
+## Distance LOD of a remote avatar, once a second: beyond REMOTE_HALF_RATE_* its presentation (this
+## role's _process and the MiningTool's) ticks every other frame — the network feeds it at 30 Hz
+## anyway — and beyond REMOTE_SHADOW_* its puppet stops casting the sun shadow. Both thresholds carry
+## a hysteresis so an avatar loitering at the boundary does not flip every second.
+func _refresh_remote_lod() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var d: float = cam.global_position.distance_to(player.global_position)
+	_remote_far = _beyond(_remote_far, d, REMOTE_HALF_RATE_ENTER, REMOTE_HALF_RATE_EXIT)
+	_half_rate.enabled = _remote_far
+	player.mining_tool.half_rate.enabled = _remote_far
+	var no_shadow: bool = _beyond(_remote_no_shadow, d, REMOTE_SHADOW_OFF, REMOTE_SHADOW_ON)
+	if no_shadow != _remote_no_shadow:
+		_remote_no_shadow = no_shadow
+		var mode := GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if no_shadow \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		for mesh in _puppet_meshes:
+			if is_instance_valid(mesh):
+				mesh.cast_shadow = mode
+
+## Threshold with hysteresis: cross `enter` to become true, fall back below `exit` to become false.
+static func _beyond(current: bool, d: float, enter: float, exit: float) -> bool:
+	return d > exit if current else d > enter
 
 ## Freeze a remote avatar's animation while nobody can see it: out of the camera frustum (a
 ## VisibleOnScreenNotifier3D on the body, sized for every stance and a vault) or with the puppet

@@ -2,7 +2,7 @@ extends Node3D
 ## Cost of N REMOTE avatars on THIS machine, using the real player.tscn on its remote path
 ## (remote_player = true, PlayerClient presentation, CharacterAnimator, name tag, footsteps).
 ## Run WITH a display:
-##   godot --path . res://test/perf/remote_players_bench.tscn -- count=30 [move=0] [noanim] [notag]
+##   godot --path . res://test/perf/remote_players_bench.tscn -- count=30 [move=0] [dist=14] [noanim] [notag]
 ##       [nopuppet] [noshadow] [nophys] [noskel] [noscript] [sharedtag] [torch] [budget] [behind] [sun=0]
 ## The avatars walk in small circles (move=1, default) fed at 30 Hz through net_set_target, like the
 ## network does, so the walk animation, interpolation and footsteps all run. Prints one line
@@ -14,6 +14,7 @@ const PLAYER_SCENE := preload("res://scenes/player/player.tscn")
 
 var _count := 30
 var _move := true
+var _dist := 14.0
 var _flags: Dictionary = {}
 var _players: Array[Node3D] = []
 var _origins: Array[Vector3] = []
@@ -40,6 +41,8 @@ func _ready() -> void:
 			_count = int(a.substr(6))
 		elif a.begins_with("move="):
 			_move = int(a.substr(5)) != 0
+		elif a.begins_with("dist="):
+			_dist = float(a.substr(5))  # camera distance (m) to the crowd's first row
 		else:
 			_flags[a] = true
 	get_window().size = Vector2i(1920, 1080)
@@ -81,7 +84,7 @@ func _ready() -> void:
 
 	# Camera at standing height, the crowd spread on a grid 2.5 m apart in front of it (all on screen).
 	var cam := Camera3D.new()
-	cam.position = Vector3(0.0, 1.7, 14.0)
+	cam.position = Vector3(0.0, 1.7, _dist)
 	cam.rotation_degrees = Vector3(-6.0, 0.0, 0.0)
 	cam.fov = 90.0
 	add_child(cam)
