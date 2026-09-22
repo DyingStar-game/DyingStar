@@ -408,11 +408,25 @@ func server_action_received(data: Dictionary) -> void:
 		"exit_vehicle":
 			var veh_out = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_out != null and veh_out.has_method("server_exit"):
-				var was_seated := is_instance_valid(player._seat_node)
 				veh_out.server_exit(player)
-				if was_seated:
-					_seat_count += 1
+				# ANSWER WHAT IS TRUE NOW, not what was asked. server_exit refuses a seat whose door is
+				# shut and returns in silence, so the request alone says nothing about the outcome: read
+				# the seat again AFTER the call and reply with that. Every request gets an answer, so a
+				# confirmation lost on the way is repaired by simply pressing Y again.
+				#
+				# Announcing "unseat" on a REFUSAL is what locked a player inside a truck on preprod
+				# (2026-09-22): the client had stood up on its own, the server still held them seated and
+				# parented to the cab, and the reply cemented the split instead of healing it.
+				_seat_count += 1
+				if not is_instance_valid(player._seat_node):
 					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
+				else:
+					# Refused (door shut). Re-announce the seat we are STILL in, so a client that believes
+					# otherwise — and every observer around it — is put back on the truth.
+					var exit_role := "driver" if player._seat_node.is_driver_seat() else "passenger"
+					player.server_send_properties_to_client(
+						{"action": "seat:%s:%d" % [exit_role, _seat_count], "seat": exit_role}
+					)
 		"vehicle_input":
 			var veh_in = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh_in != null and veh_in._pilot == player and veh_in.has_method("set_drive_input"):

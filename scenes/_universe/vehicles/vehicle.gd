@@ -2995,10 +2995,24 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 ## from a truck still falling towards the fallback shells.
 ##
 ## Measured against the CARVED ground (cuttings, tunnels) once the cheap raw test says "below", with
-## the player's 3 m margin. The truck is placed with its wheels at ground level, radial velocity cut,
-## the rest kept — a moving truck lands rolling. Cheap: one height sample per tick, and only for an
-## awake body (the sleeping branch above returns before this point; a parked truck cannot fall).
+## the player's 3 m margin. The truck is DROPPED from _SURFACE_CATCH_DROP above the ground, radial
+## velocity cut, the rest kept — a moving truck lands rolling. Cheap: one height sample per tick, and
+## only for an awake body (the sleeping branch above returns before this point; a parked truck cannot
+## fall).
+##
+## The drop is what breaks the ping-pong. Placing the wheels EXACTLY at ground level respawns the
+## chassis inside the terrain trimesh, and the depenetration pushes it straight back under: on preprod
+## (2026-09-22) an abandoned truck logged this catch 542 times in a row, every one of them at the same
+## "3.1 m under", every ~1.8 s, for a quarter of an hour. Landing from above instead means the body
+## arrives with its collider entirely OUTSIDE the mesh, so the contact resolves the normal way. It also
+## buys margin: the truck must now sink _SURFACE_CATCH_DROP + _SURFACE_CATCH_MARGIN before the net can
+## fire again, which a truck that is merely settling never does.
+##
+## Falling a few metres is the cheap side of this trade — the truck lands on its wheels and the
+## suspension takes it. Being stuck under the ground is not recoverable at all.
 const _SURFACE_CATCH_MARGIN := 3.0
+## How high above the ground the caught truck is released, in metres.
+const _SURFACE_CATCH_DROP := 4.0
 var _catch_logged_ms: int = -100000
 
 func _catch_if_below_surface() -> void:
@@ -3032,9 +3046,13 @@ func _catch_if_below_surface() -> void:
 	var now_ms: int = Time.get_ticks_msec()
 	if now_ms - _catch_logged_ms >= 1000:
 		_catch_logged_ms = now_ms
-		print("🚚 Vehicle %s: %.1f m under the surface — put back on the ground" % [
-			uuid, surface_dist - wheels_dist])
-	global_position = planet.global_position + planet_basis * (dir * (surface_dist + clearance))
+		print("🚚 Vehicle %s: %.1f m under the surface — dropped back from %.0f m above it" % [
+			uuid, surface_dist - wheels_dist, _SURFACE_CATCH_DROP])
+	global_position = planet.global_position \
+			+ planet_basis * (dir * (surface_dist + clearance + _SURFACE_CATCH_DROP))
+	# Cut whatever downward speed it had built up sinking, so it starts the drop from rest and lands
+	# on its wheels instead of punching back through the mesh it was just lifted out of. Horizontal
+	# and upward motion are kept: a truck caught mid-drive lands rolling.
 	var radial: float = linear_velocity.dot(up_world)
 	if radial < 0.0:
 		linear_velocity -= up_world * radial
