@@ -238,6 +238,9 @@ func dispatch_horizon_message(message: Dictionary):
 			"zone":
 				# zone management
 				NetworkOrchestrator.network_agent.manage_zone(message)
+			"prewarm":
+				# players are about to arrive at these positions: load the ground first
+				NetworkOrchestrator.network_agent.prewarm_chunks(message)
 			"update_biome":
 				# Terrain biome update (cave, road, etc.) — rebuild affected chunks
 				NetworkOrchestrator.network_agent.update_planet_biome(message)

@@ -2042,6 +2042,8 @@ func _physics_process_impl(delta: float) -> void:
 			_hold_handbrake(delta)  # parked: the hand brake stays on after the driver leaves
 		else:
 			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
+		# Safety net: a truck that tunneled under the planet surface (the same net the player has).
+		_catch_if_below_surface()
 		_replicate_transform()
 		return
 	# Bench / standalone: drive locally.
@@ -2551,9 +2553,13 @@ func client_parent_change(parent: Node) -> void:
 # ------------------------------------------------------------------------------
 ## Server: a player takes a seat (by node name). Refuses if the seat is unknown or taken.
 ## The driver seat becomes the pilot (control + HUD); passengers just ride along.
-func server_enter(player: Node, seat_name: String = "") -> void:
+## [param force] skips the free-seat and door gates: a player handed over by another server
+## was already sitting there.
+func server_enter(player: Node, seat_name: String = "", force: bool = false) -> void:
 	var seat: Node = _find_seat(seat_name)
-	if seat == null or not seat.is_free() or _seat_door_blocked(seat):
+	if seat == null:
+		return
+	if not force and (not seat.is_free() or _seat_door_blocked(seat)):
 		return
 	# Both hands are on what you carry: put it down before you climb in. Refused here rather than
 	# silently dropping the load, because dropping someone's crate for them -- possibly into the
@@ -2645,6 +2651,31 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 	var seat_local: Vector3 = to_local((seat as Node3D).global_position)
 	var side: float = -1.0 if seat_local.x <= 0.0 else 1.0
 	return to_global(Vector3(side * (body_width * 0.5 + 1.0), 1.0, seat_local.z))
+
+## Server, on a hand-over from another zone's server: the state the sender replicated that we
+## need to take its players back — who sits where, who drives, which doors are open. The regular
+## channel update is a no-op on the server on purpose (we simulate), hence this dedicated hook.
+func server_adopt_state(data: Dictionary) -> void:
+	if data.has("seats"):
+		_net_seats = (data["seats"] as Dictionary).duplicate()
+	if data.has("pilot_uuid"):
+		pilot_uuid = str(data["pilot_uuid"])
+	if data.has("doors"):
+		_door_state = (data["doors"] as Dictionary).duplicate()
+		_net_last_doors = _door_state.duplicate()
+	_handbrake = bool(data.get("handbrake", _handbrake))
+
+## The seat the sender replicated for [param player_uuid] ("" when it was not aboard): the seat
+## map first, the pilot slot as a fallback for a vehicle replicated before seats existed.
+func seat_name_of(player_uuid: String) -> String:
+	for seat_name in _net_seats.keys():
+		if str(_net_seats[seat_name]) == player_uuid:
+			return str(seat_name)
+	if pilot_uuid == player_uuid:
+		for seat in _seats():
+			if seat.is_driver_seat():
+				return str(seat.name)
+	return ""
 
 ## All seats of this vehicle (designer-placed VehicleSeat children).
 func _seats() -> Array:
@@ -2801,6 +2832,67 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		v_flat = v_flat.move_toward(Vector3.ZERO, handbrake_hold * state.step)
 	state.linear_velocity = v_up + v_flat
 	state.angular_velocity = state.angular_velocity.move_toward(Vector3.ZERO, handbrake_hold * state.step)
+
+## SERVER safety net: put the truck back on the theoretical surface when it has clearly tunneled under
+## the planet. Same net as PlayerServer._catch_if_below_surface, for the same reason: the terrain
+## collision is a thin trimesh built chunk by chunk on worker threads, and a 2 t truck at 80 km/h can
+## reach a chunk whose body does not exist yet (or fail to get one — the Jolt body pool was full on
+## preprod 2026-09-20, 5 min before a driver went through tarsis_3). Only players had the net: the
+## truck sank, the driver climbed out under the ground, and HIS net threw him to the surface — 200 m
+## from a truck still falling towards the fallback shells.
+##
+## Measured against the CARVED ground (cuttings, tunnels) once the cheap raw test says "below", with
+## the player's 3 m margin. The truck is placed with its wheels at ground level, radial velocity cut,
+## the rest kept — a moving truck lands rolling. Cheap: one height sample per tick, and only for an
+## awake body (the sleeping branch above returns before this point; a parked truck cannot fall).
+const _SURFACE_CATCH_MARGIN := 3.0
+var _catch_logged_ms: int = -100000
+
+func _catch_if_below_surface() -> void:
+	var planet: Node = get_parent()
+	while planet != null and not (planet is Planet):
+		planet = planet.get_parent()
+	if planet == null:
+		return  # bench, a hangar in space, the world frame: no surface to be under
+	var pdata = planet.get("planet_data")
+	if pdata == null:
+		return
+	var planet_basis: Basis = planet.global_transform.basis
+	var local_body: Vector3 = planet_basis.inverse() * (global_position - planet.global_position)
+	if local_body.length_squared() < 1.0:
+		return
+	var dir: Vector3 = local_body.normalized()
+	var body_dist: float = local_body.length()
+	# Ride height: the chassis origin sits this far above the wheels' contact points, so the
+	# wheels are at body_dist - clearance from the centre.
+	var clearance: float = _ground_clearance()
+	var wheels_dist: float = body_dist - clearance
+	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
+	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
+		return  # at or above the ground — the collision handles it
+	surface_dist = pdata.carved_surface_dist(dir)
+	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
+		return
+	var up_world: Vector3 = (planet_basis * dir).normalized()
+	# One line a second at most: with no ground at all the net fires every tick (fall, catch, fall),
+	# and a print per tick is a known server-cost trap.
+	var now_ms: int = Time.get_ticks_msec()
+	if now_ms - _catch_logged_ms >= 1000:
+		_catch_logged_ms = now_ms
+		print("🚚 Vehicle %s: %.1f m under the surface — put back on the ground" % [
+			uuid, surface_dist - wheels_dist])
+	global_position = planet.global_position + planet_basis * (dir * (surface_dist + clearance))
+	var radial: float = linear_velocity.dot(up_world)
+	if radial < 0.0:
+		linear_velocity -= up_world * radial
+
+## How far above the wheels' contact points the chassis origin sits (m): the deepest wheel mount,
+## plus its suspension at rest and the tyre. 0 for a vehicle built without wheels.
+func _ground_clearance() -> float:
+	var deepest: float = 0.0
+	for wheel in _wheels:
+		deepest = maxf(deepest, -wheel.position.y + wheel.wheel_rest_length + wheel.wheel_radius)
+	return deepest
 
 ## No driver aboard (the pilot left — possibly bailing "en marche" with the throttle still held): cut
 ## the drive. engine_force PERSISTS from the last _apply_drive, so without this the empty truck keeps

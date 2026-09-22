@@ -2,13 +2,13 @@ extends Node
 
 signal set_player_global_position(pos, rot)
 
-signal set_gameserver_server_fps(fps)
+signal set_gameserver_server_tps(tps)
 signal set_gameserver_number_players(number_players_server)
 signal set_gameserver_number_objects(number_objects_server)
 signal set_gameserver_number_scenes(number_scenes_server)
 signal set_universe_servers(number_servers)
 signal set_universe_players(number_players)
-signal set_gameserver_coordinates(coordinates)
+signal set_gameserver_zones(zones)
 signal set_gameserver_name(name)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
@@ -301,12 +301,8 @@ func _on_mqtt_sdo_received_message(topic, message):
 			if server.name == server_name:
 				server_sdo_id = int(server.id)
 				is_sdo_active = true
-				network_agent.server_zone.x_start = float(server.x_start)
-				network_agent.server_zone.x_end = float(server.x_end)
-				network_agent.server_zone.y_start = float(server.y_start)
-				network_agent.server_zone.y_end = float(server.y_end)
-				network_agent.server_zone.z_start = float(server.z_start)
-				network_agent.server_zone.z_end = float(server.z_end)
+				# Legacy SDO zone AABB: the server now owns a list of zones (server_zones) pushed
+				# by Horizon through server/zone; the MQTT/SDO path is not wired any more.
 
 				mqtt_client_sdo.unsubscribe("sdo/serverslist")
 				mqtt_client_sdo.subscribe("sdo/serverschanges")
@@ -354,12 +350,8 @@ func _on_mqtt_sdo_received_message(topic, message):
 			if server.name == server_name:
 				server_sdo_id = server.id
 				is_sdo_active = true
-				network_agent.server_zone.x_start = server.x_start
-				network_agent.server_zone.x_end = server.x_end
-				network_agent.server_zone.y_start = server.y_start
-				network_agent.server_zone.y_end = server.y_end
-				network_agent.server_zone.z_start = server.z_start
-				network_agent.server_zone.z_end = server.z_end
+				# Legacy SDO zone AABB: the server now owns a list of zones (server_zones) pushed
+				# by Horizon through server/zone; the MQTT/SDO path is not wired any more.
 
 				mqtt_client_sdo.unsubscribe("sdo/serverslist")
 				mqtt_client_sdo.subscribe("sdo/serverschanges")
@@ -373,12 +365,8 @@ func _on_mqtt_sdo_received_message(topic, message):
 				if server.to_merge_server_id != null:
 					network_agent.set_server_inactive(int(server.to_merge_server_id))
 
-				network_agent.server_zone.x_start = server.x_start
-				network_agent.server_zone.x_end = server.x_end
-				network_agent.server_zone.y_start = server.y_start
-				network_agent.server_zone.y_end = server.y_end
-				network_agent.server_zone.z_start = server.z_start
-				network_agent.server_zone.z_end = server.z_end
+				# Legacy SDO zone AABB: the server now owns a list of zones (server_zones) pushed
+				# by Horizon through server/zone; the MQTT/SDO path is not wired any more.
 				# if changing_zone == true:
 				# 	pass
 			# TODO udpate server properties

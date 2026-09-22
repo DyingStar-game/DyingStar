@@ -612,6 +612,35 @@ func server_action_received(data: Dictionary) -> void:
 					# Grabbed nothing: tell the owner to undo its optimistic stow (issue #124).
 					player.server_send_properties_to_client({"carrying": false})
 
+## Hand-over from another zone's server: [param item] was in this player's hands there and has
+## just been (re)parented under them here. Mount it the way a pickup does — minus the grab checks,
+## the other server already made that decision — so the carry keeps working on this side.
+func server_adopt_carried(item: Node) -> void:
+	if item == null or not (item is RigidBody3D):
+		return
+	if player.hands_item == item:
+		return
+	if not item.has_meta("pre_carry_layer"):
+		item.set_meta("pre_carry_layer", item.collision_layer)
+		item.set_meta("pre_carry_mask", item.collision_mask)
+	item.collision_layer = 0
+	item.collision_mask = 0
+	item.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	item.freeze = true
+	item.linear_velocity = Vector3.ZERO
+	item.angular_velocity = Vector3.ZERO
+	item.set_physics_process(true)
+	_carry_basis = Basis.IDENTITY
+	_place = {}
+	item.transform = Transform3D(_carry_basis, player.carry_mount_offset)
+	if item.has_method("send_properties_to_client"):
+		item.send_properties_to_client(player.client_uuid)
+	player.hands_item = item
+	if item.has_method("set_carried"):
+		item.set_carried(true)
+	player.server_send_properties_to_client({"carrying": true})
+	print("[zone] player %s carries %s again after the hand-over" % [player.client_uuid, item.uuid if "uuid" in item else item.name])
+
 ## Find a spawned mining rock by its uuid (server-side).
 ## Walk up from a raycast hit to the vehicle node it belongs to (group "vehicle"), else null.
 func _find_vehicle(target_uuid: String) -> Node:

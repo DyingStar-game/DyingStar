@@ -5,6 +5,7 @@
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_hifpj"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_r06it"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_xpeml"]
+[ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="6_dyiev"]
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("2_dyiev")
@@ -16,6 +17,11 @@ crack_spacing_m = 4000.0
 crack_width_m = 250.0
 crack_depth_m = 180.0
 debug_color_skirts = true
+debug_mountain_enabled = true
+debug_mountain_lonlat = Vector2(-103, -22.8)
+debug_mountain_radius_km = 0.0
+debug_ridge_points = PackedVector2Array(-103.35, -22.95, -103, -22.8, -102.65, -22.65)
+debug_ridge_style = {"height_m": 400.0, "width_m": 1200.0, "sharpness": 0.8, "roughness": 0.35, "warp_m": 150.0, "asymmetry": 0.0, "terrace_step_m": 0.0, "terrace_width": 0.15, "seed": 0}
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_8_chunks"
 chunk_heightmap_res = 32
 mining_zone_minerals = PackedStringArray("iron", "gold", "cryptonite")
@@ -40,12 +46,15 @@ orbit_primary_mass_kg = 1.5088184368786238e+30
 
 [node name="PlanetTerrain" type="Node3D" parent="." unique_id=1620902558]
 script = ExtResource("4_r06it")
-editor_goto_lon = -104.339
-editor_goto_lat = -24.08
-editor_goto_x = -783917.9102435682
-editor_goto_y = -1414589.1371000207
-editor_goto_z = -3066709.5213398947
+editor_goto_lon = -103.0
+editor_goto_lat = -22.8
+editor_goto_x = -718966.8396245812
+editor_goto_y = -1343518.1767591746
+editor_goto_z = -3114187.5202441984
 editor_planet_flight = true
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("5_xpeml")
+
+[node name="CargoDepot" parent="." unique_id=693024100 instance=ExtResource("6_dyiev")]
+transform = Transform3D(0.9297877213987021, -0.20737311572445685, -0.30412363277282417, 0.2073743504594535, -0.38751645675979607, 0.8982354226548026, -0.3041227908390431, -0.8982357077154435, -0.3173041781590773, -718963.5069790384, -1343521.2649951787, -3114187.160938387)

@@ -27,6 +27,7 @@ from export.planet import dsmp                                    # noqa: E402
 from export.planet import modifier_geom as mg                     # noqa: E402
 from export.planet import roads as roads_mod                      # noqa: E402
 from export.planet import biomes as biomes_mod                    # noqa: E402
+from export.planet import mountains as mountains_mod              # noqa: E402
 from export.planet.dsmp_strings import StringTable                # noqa: E402
 import link_modifiers                                             # noqa: E402
 
@@ -644,6 +645,146 @@ class TestPopulatePart(unittest.TestCase):
         self.assertNotEqual(m1["fingerprint"], m3["fingerprint"])
 
 
+# ── Mountains ───────────────────────────────────────────────────────────
+
+class TestMountainParts(unittest.TestCase):
+    """mountain_range polygons and ridge lines → KIND_MOUNTAIN / KIND_RIDGE."""
+    SQUARE = [(-45.0, 20.0), (-30.0, 20.0), (-30.0, 32.0), (-45.0, 32.0)]
+
+    def _named(self, table, props):
+        strings = table.as_list()
+        return {strings[k]: v for k, v in props.items()}
+
+    def test_presets_fill_null_fields_and_keep_overrides(self):
+        f = mountains_mod.resolve_style({"style": "mesa", "amplitude_m": 777.0, "octaves": None},
+                                        mountains_mod.PRESETS, "alpine")
+        self.assertEqual(f["style"], "mesa")
+        self.assertEqual(f["amplitude_m"], 777.0, "an explicit value wins")
+        self.assertEqual(f["terrace_step_m"], mountains_mod.PRESETS["mesa"]["terrace_step_m"],
+                         "NULL takes the preset")
+        self.assertIsInstance(f["octaves"], int)
+        self.assertEqual(f["octaves"], mountains_mod.PRESETS["mesa"]["octaves"])
+        g = mountains_mod.resolve_style({}, mountains_mod.PRESETS, "alpine")
+        self.assertEqual(g["style"], "alpine")
+        for preset in mountains_mod.PRESETS.values():
+            self.assertIn(preset["exponent"], (0.5, 1.0, 1.5, 2.0, 3.0),
+                          "presets stay in MountainNoise.pow_fast's exact set")
+
+    def test_mountain_part_expands_the_clip_box_by_the_feather(self):
+        table = StringTable()
+        zone = {"ring": self.SQUARE, "props": {"style": "rolling", "feather_m": 20000.0,
+                                               "name": "Massif", "fid": 3}}
+        levels, manifest = mountains_mod.build_mountain_part(
+            [zone], 3467000.0, export_nside=64, max_quadtree_nside=64,
+            table=table, verbose=False)
+        self.assertEqual(manifest["kind"], "mountain")
+        self.assertEqual(manifest["priority_rule"], "additive")
+        self.assertEqual(manifest["counts"]["features"], 1)
+        nside, tiles = levels[-1]
+        self.assertEqual(nside, 64)
+        covs = {dsmp.COVERAGE_FULL: 0, dsmp.COVERAGE_PARTIAL: 0}
+        mpd = mg.m_per_deg(3467000.0)
+        for ipix, payload in tiles:
+            box = mg.tile_bbox(nside, ipix, 0.0)
+            for cov, _bidx, props, nverts in _records_of(payload):
+                covs[cov] += 1
+                named = self._named(table, props)
+                self.assertAlmostEqual(named["feather_m"][1], 20000.0, places=1)
+                self.assertAlmostEqual(named["amplitude_m"][1],
+                                       mountains_mod.PRESETS["rolling"]["amplitude_m"], places=1)
+                self.assertNotIn("fid", named)
+                if cov == dsmp.COVERAGE_FULL:
+                    # Every point of the tile is ≥ feather inside the ring: the
+                    # box grown by the feather still fits in it.
+                    grown = mountains_mod._expanded_box(nside, ipix, 20000.0, 3467000.0)
+                    self.assertTrue(mg.bbox_inside_ring(grown, self.SQUARE))
+                else:
+                    self.assertGreaterEqual(nverts, 3)
+                    # A tile within the feather of the edge but fully inside the
+                    # ring is PARTIAL, not full — the runtime needs the edge.
+                    # (Sanity: such tiles exist with a 20 km feather on 60 km tiles.)
+        self.assertGreater(covs[dsmp.COVERAGE_FULL], 0)
+        self.assertGreater(covs[dsmp.COVERAGE_PARTIAL], 0)
+        # A tile strictly inside the ring but closer than the feather to the
+        # edge must be partial.
+        inner_partial = 0
+        for ipix, payload in tiles:
+            box = mg.tile_bbox(nside, ipix, 0.0)
+            if not mg.bbox_inside_ring(box, self.SQUARE):
+                continue
+            for cov, _b, _p, _n in _records_of(payload):
+                if cov == dsmp.COVERAGE_PARTIAL:
+                    inner_partial += 1
+        self.assertGreater(inner_partial, 0, "inside-but-within-feather tiles carry the ring")
+
+    def test_mountain_part_never_simplifies_the_ring(self):
+        # A ring with a tiny notch that Douglas-Peucker would drop.
+        ring = [(-45.0, 20.0), (-37.5, 20.0), (-37.5, 20.0005), (-37.49, 20.0005),
+                (-37.49, 20.0), (-30.0, 20.0), (-30.0, 32.0), (-45.0, 32.0)]
+        table = StringTable()
+        levels, _m = mountains_mod.build_mountain_part(
+            [{"ring": ring, "props": {"style": "rolling", "feather_m": 250.0}}],
+            3467000.0, 64, 64, table, verbose=False)
+        _n, tiles = levels[-1]
+        notch_pix = mg.pix_of(64, -37.495, 20.0002)
+        for ipix, payload in tiles:
+            if ipix != notch_pix:
+                continue
+            recs = _records_of(payload)
+            self.assertTrue(any(r[3] >= 7 for r in recs), "the notch vertices survive")
+            return
+        self.fail("notch tile not emitted")
+
+    def test_ridge_part_carries_the_whole_line_in_every_tile(self):
+        table = StringTable()
+        pts = [(-40.0 + 0.05 * i, 25.0 + 0.01 * i) for i in range(30)]
+        line = {"points": pts, "props": {"style": "escarpment", "width_m": 3000.0, "name": "Crête"}}
+        levels, manifest = mountains_mod.build_ridge_part(
+            [line], 3467000.0, 64, 64, table, verbose=False)
+        self.assertEqual(manifest["kind"], "ridge")
+        self.assertEqual(manifest["counts"]["features"], 1)
+        nside, tiles = levels[-1]
+        self.assertGreater(len(tiles), 1)
+        for _ipix, payload in tiles:
+            for cov, _bidx, props, nverts in _records_of(payload):
+                self.assertEqual(cov, dsmp.COVERAGE_PARTIAL)
+                self.assertEqual(nverts, 30, "never clipped")
+                named = self._named(table, props)
+                self.assertAlmostEqual(named["width_m"][1], 3000.0, places=1)
+                self.assertAlmostEqual(named["asymmetry"][1],
+                                       mountains_mod.RIDGE_PRESETS["escarpment"]["asymmetry"], places=5)
+        # The reach: a tile two pixels away along the perpendicular is still in.
+        reach_m = 3000.0 * (1.0 + 0.7) + mountains_mod.RIDGE_PRESETS["escarpment"]["warp_m"]
+        mpd = mg.m_per_deg(3467000.0)
+        lon, lat = pts[15]
+        far = mg.pix_of(64, lon, lat + 0.9 * reach_m / mpd)
+        self.assertIn(far, [ip for ip, _p in tiles])
+
+    def test_two_point_ridge_is_accepted(self):
+        table = StringTable()
+        levels, _m = mountains_mod.build_ridge_part(
+            [{"points": [(-40.0, 25.0), (-39.9, 25.05)], "props": {}}],
+            3467000.0, 16, 16, table, verbose=False)
+        _n, tiles = levels[-1]
+        self.assertGreater(len(tiles), 0)
+
+    def test_fingerprints_follow_the_features(self):
+        z = {"ring": self.SQUARE, "props": {"style": "alpine"}}
+        _l, m1 = mountains_mod.build_mountain_part([z], 3467000.0, 16, 16, StringTable(), verbose=False)
+        _l, m2 = mountains_mod.build_mountain_part([z], 3467000.0, 16, 16, StringTable(), verbose=False)
+        self.assertEqual(m1["fingerprint"], m2["fingerprint"])
+        z2 = {"ring": self.SQUARE, "props": {"style": "alpine", "seed": 9}}
+        _l, m3 = mountains_mod.build_mountain_part([z2], 3467000.0, 16, 16, StringTable(), verbose=False)
+        self.assertNotEqual(m1["fingerprint"], m3["fingerprint"])
+
+    def test_level_policy_stops_at_export_nside(self):
+        pol = mg.level_policy(64, 8192)
+        self.assertEqual(pol["mountain"]["max"], 64)
+        self.assertEqual(pol["ridge"]["max"], 64)
+        self.assertEqual(dsmp.KIND_NAMES[dsmp.KIND_MOUNTAIN], "mountain")
+        self.assertEqual(dsmp.KIND_NAMES[dsmp.KIND_RIDGE], "ridge")
+
+
 # ── Linker ──────────────────────────────────────────────────────────────
 
 class TestLinker(unittest.TestCase):
@@ -725,6 +866,36 @@ class TestLinker(unittest.TestCase):
                          "craters untouched by a roads re-export")
         self.assertNotEqual(before[dsmp.KIND_ROAD], after[dsmp.KIND_ROAD],
                             "roads did change")
+
+    def _write_mountains(self):
+        rec = dsmp.pack_populate(self.table.intern("mountain_range"), 0, dsmp.COVERAGE_FULL,
+                                 [(self.table.intern("amplitude_m"), dsmp.VTYPE_F32, 500.0)])
+        levels = [(64, [(5, dsmp.part_tile(1, rec))])]
+        dsmp.write_part(link_modifiers.part_path(self.planet, "mountain", self.export_dir),
+                        dsmp.KIND_MOUNTAIN, levels, self._base_manifest("mountain"))
+        rec2 = dsmp.pack_populate(self.table.intern("ridge"), 0, dsmp.COVERAGE_PARTIAL,
+                                  [(self.table.intern("height_m"), dsmp.VTYPE_F32, 300.0)],
+                                  vertices=[(1.0, 2.0), (1.1, 2.1)], min_vertices=2)
+        levels = [(64, [(5, dsmp.part_tile(1, rec2)), (9, dsmp.part_tile(1, rec2))])]
+        dsmp.write_part(link_modifiers.part_path(self.planet, "ridge", self.export_dir),
+                        dsmp.KIND_RIDGE, levels, self._base_manifest("ridge"))
+        self.table.save(self.parts)
+
+    def test_link_carries_mountain_and_ridge_kinds(self):
+        self._write_roads()
+        self._write_craters()
+        self._write_mountains()
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        pack = self._read_pack()
+        blocks = self._blocks_at(pack, 64, 5)
+        self.assertEqual(sorted(blocks), [dsmp.KIND_CRATER, dsmp.KIND_ROAD,
+                                          dsmp.KIND_MOUNTAIN, dsmp.KIND_RIDGE])
+        self.assertEqual(sorted(self._blocks_at(pack, 64, 9)), [dsmp.KIND_CRATER, dsmp.KIND_RIDGE])
+        parts = pack["manifest"]["parts"]
+        self.assertIn("mountain", parts)
+        self.assertIn("ridge", parts)
+        self.assertEqual(os.path.basename(parts["mountain"]["file"]), "mountains.dsmpart")
+        self.assertEqual(os.path.basename(parts["ridge"]["file"]), "ridges.dsmpart")
 
     def test_link_is_idempotent(self):
         self._write_roads()

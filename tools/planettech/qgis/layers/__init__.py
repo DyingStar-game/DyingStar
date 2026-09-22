@@ -42,9 +42,9 @@ from .model import (  # noqa: F401 — re-exported for convenience
 # ============================================================
 def all_categories():
     """Non-biome categories first, then ``layers/biomes/*`` in alphabetical order."""
-    from . import base, poi, roads
+    from . import base, poi, roads, mountains
     from . import biomes as biomes_pkg
-    cats = [base.CATEGORY, poi.CATEGORY, roads.CATEGORY]
+    cats = [base.CATEGORY, poi.CATEGORY, roads.CATEGORY, mountains.CATEGORY]
     for info in sorted(pkgutil.iter_modules(biomes_pkg.__path__), key=lambda m: m.name):
         if info.name.startswith("_"):
             continue
