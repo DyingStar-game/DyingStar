@@ -22,7 +22,7 @@ const REMOTE_HALF_RATE_EXIT: float = 12.0
 ## cascades, yet a full extra pass per cascade). ONE distance, deliberately: a shadow that goes out at
 ## 32 m and only comes back at 28 is something a player walking back and forth sees, and calls a bug.
 ## The half-rate switch below keeps its hysteresis because nobody can see that one flip.
-const REMOTE_SHADOW_DISTANCE: float = 32.0
+const REMOTE_SHADOW_DISTANCE: float = 40.0
 ## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
