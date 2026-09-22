@@ -157,9 +157,25 @@ var _step_debug: Dictionary = {}   # same, for StepProbe: what the STEP-UP made 
 var _warp_max: float = 3.0    # fastest walk playback, = walk_speed_max / WALK_REF_SPEED (see setup)
 var _sprint_min: float = 4.0  # walk -> sprint boundary (m/s), midpoint of walk_speed_max and sprint_speed
 
+var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
+
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
 	set_physics_process(false)
+
+## Freeze or resume the whole animation of this avatar: the AnimationPlayer stops posing the skeleton
+## and this state machine stops running. For a REMOTE avatar that is off-screen or hidden — the pose
+## is not seen, yet the engine kept posing 53 bones per avatar per frame (1.3 ms for 30 hidden
+## puppets, test/perf/remote_players_bench `noskel`), plus this script on top (0.7 ms). Resuming
+## simply continues the current clip; a one-shot (emote, vault, stance transition) waits, paused,
+## and finishes once back on screen. PlayerClient drives it from a VisibleOnScreenNotifier3D.
+func set_dormant(dormant: bool) -> void:
+	if dormant == _dormant:
+		return
+	_dormant = dormant
+	if _anim != null:
+		_anim.active = not dormant
+	set_process(not dormant and _anim != null and anim_set != null)
 
 ## Called by PlayerClient once `player` and the puppet are in the tree.
 func setup(player_body, is_local: bool) -> void:

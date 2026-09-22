@@ -7,6 +7,8 @@ const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## Gap (m) between the HEAD BONE and the label. Measured from the crown of the animated skull, not
 ## from the feet, so it is the one number to tweak if the tag sits too close or too far above a head.
 const NAME_TAG_CLEARANCE: float = 0.45
+## Name of the shared CanvasLayer under the tree root that carries every remote name tag.
+const NAME_TAG_LAYER_NAME: StringName = &"PlayerNameTags"
 ## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
@@ -106,6 +108,8 @@ func setup() -> void:
 		player.camera.current = false
 		_setup_name_tag(str(player.name))
 		_setup_conversation_text()
+		if animator != null:
+			_setup_animation_dormancy(animator)
 		return
 
 	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
@@ -1105,12 +1109,27 @@ func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float)
 		}
 	)
 
-## Build the 2D screen-space name tag for a remote player. A CanvasLayer keeps it in screen space
-## (immune to the 3D camera), and _update_name_tag positions it over the head every frame. The tag
-## and its layer are children of the BODY (player), so they follow it and free with it.
+## The ONE CanvasLayer every remote name tag (and conversation line) is drawn on, created on demand
+## under the tree root. Each avatar used to carry two CanvasLayers of its own; a CanvasLayer is a
+## separate canvas pass for the renderer, and 60 of them cost 1.8 ms/frame with 30 players on
+## screen — the same 30 labels on one layer cost nothing measurable (test/perf/remote_players_bench,
+## `sharedtag`). The labels are still owned by this role: freed with it (see _notification).
+static var _tag_layer: CanvasLayer = null
+
+static func _name_tag_layer(tree: SceneTree) -> CanvasLayer:
+	if not is_instance_valid(_tag_layer):
+		_tag_layer = CanvasLayer.new()
+		_tag_layer.name = NAME_TAG_LAYER_NAME
+		# Deferred: an avatar built inside a scene's _ready (a bench, a test) finds the root busy
+		# setting up that scene, and a plain add_child fails. The labels join the layer meanwhile and
+		# enter the tree with it.
+		tree.root.add_child.call_deferred(_tag_layer)
+	return _tag_layer
+
+## Build the 2D screen-space name tag for a remote player. The shared CanvasLayer keeps it in screen
+## space (immune to the 3D camera), and _update_name_tag positions it over the head every frame.
 func _setup_name_tag(player_name: String) -> void:
-	var layer := CanvasLayer.new()
-	player.add_child(layer)
+	var layer := _name_tag_layer(get_tree())
 	_name_tag = Label.new()
 	_name_tag.text = player_name
 	_name_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1121,8 +1140,7 @@ func _setup_name_tag(player_name: String) -> void:
 	layer.add_child(_name_tag)
 
 func _setup_conversation_text() -> void:
-	var layer := CanvasLayer.new()
-	player.add_child(layer)
+	var layer := _name_tag_layer(get_tree())
 	_conversation_text = Label.new()
 	_conversation_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_conversation_text.add_theme_font_size_override("font_size", 15)
@@ -1139,6 +1157,44 @@ func _setup_conversation_text() -> void:
 	italic.base_font = _conversation_text.get_theme_font("font")
 	italic.variation_transform = Transform2D(Vector2(1.0, 0.415), Vector2(0.0, 1.0), Vector2.ZERO)
 	_conversation_text.add_theme_font_override("font", italic)
+
+## Freeze a remote avatar's animation while nobody can see it: out of the camera frustum (a
+## VisibleOnScreenNotifier3D on the body, sized for every stance and a vault) or with the puppet
+## hidden. Both conditions feed one refresh, so the pose resumes only when it is actually seen again.
+## Not for the owner: its body is always around the camera (and its head-hide runs every frame).
+func _setup_animation_dormancy(animator: Node) -> void:
+	var notifier := VisibleOnScreenNotifier3D.new()
+	notifier.name = "OnScreenNotifier"
+	# Body frame: feet at the origin, up is +Y. Wide enough for prone and the arms of an emote, tall
+	# enough for a 2 m climb — a box that is too tight would freeze a visible avatar mid-stride.
+	notifier.aabb = AABB(Vector3(-1.2, -0.3, -1.2), Vector3(2.4, 2.8, 2.4))
+	player.add_child(notifier)
+	var refresh := func() -> void:
+		if not is_instance_valid(animator) or not is_instance_valid(player.puppet):
+			return
+		animator.set_dormant(not notifier.is_on_screen() or not player.puppet.is_visible_in_tree())
+	notifier.screen_entered.connect(refresh)
+	notifier.screen_exited.connect(refresh)
+	player.puppet.visibility_changed.connect(refresh)
+	# is_on_screen() is only known once the renderer has culled a frame, and an avatar spawned
+	# BEHIND us never gets a screen_exited (it was never on screen): check once the first frames
+	# are drawn, then let the signals drive.
+	_refresh_dormancy_later(refresh)
+
+func _refresh_dormancy_later(refresh: Callable) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_inside_tree():
+		refresh.call()
+
+## The tag and the conversation line live on the shared layer, not under the body, so they no
+## longer free with it: do it here, when this role dies with its player.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		if is_instance_valid(_name_tag):
+			_name_tag.queue_free()
+		if is_instance_valid(_conversation_text):
+			_conversation_text.queue_free()
 
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.
