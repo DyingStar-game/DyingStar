@@ -132,6 +132,8 @@ var _perforator_rest_pos: Vector3 = Vector3.ZERO
 var _bit_rest: Vector3 = Vector3.ZERO
 var _rock_ray: RayCast3D = null
 var _belt: Node3D = null  # cached shared belt mount (bone attachment on the puppet) — see _belt_mount
+## Half-rate cadence of this tool's per-frame update, enabled by PlayerClient on a FAR remote avatar.
+var half_rate := HalfRateTicker.new()
 var _crosshair_shown: bool = false
 var _target_rock_uuid: String = ""     # rock aimed when the perforation started
 var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
@@ -188,6 +190,11 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 		_perforator.add_child(_tip_gizmo)
 
 func _process(delta: float) -> void:
+	# A far remote avatar's tool ticks every other frame (PlayerClient's remote LOD flips this); the
+	# ticker hands back the time both frames covered, so the easings below integrate the same.
+	var dt: float = half_rate.due(delta)
+	if dt < 0.0:
+		return
 	# Aim the held tool at the point under the crosshair on EVERY instance: the
 	# owner uses its real camera; remote players use the camera driven by the
 	# synced body rotation + "head" pitch -> the tool points where they aim, with
@@ -213,7 +220,7 @@ func _process(delta: float) -> void:
 		_tip_gizmo.position = bit_tip_offset
 	# Stow/unstow + reach drive where the perforator sits and its visibility. Runs on
 	# EVERY instance, so the stow lerp is seen by all players (issue #124).
-	_update_stow_and_reach(delta)
+	_update_stow_and_reach(dt)
 	if _perforator != null:
 		_perforator.position = _perforator_base   # default; the visuals jab on top of it
 		# Stowed: holster the tool on the shared belt mount (a bone attachment on the animated puppet) with
@@ -223,9 +230,9 @@ func _process(delta: float) -> void:
 		if belt != null and not _perforator_active():
 			_perforator.global_transform = belt.global_transform * _holster_transform()
 	# Perforation visual runs on EVERY instance, driven by is_perforating.
-	_update_perforation_visual(delta)
+	_update_perforation_visual(dt)
 	# Off-fault "rejected" jab (owner-local feedback): the bit lunges out then snaps back.
-	_update_reject_visual(delta)
+	_update_reject_visual(dt)
 	# Audio from the replicated state (loop + equip click), on every instance so all players hear it.
 	_update_sfx()
 
