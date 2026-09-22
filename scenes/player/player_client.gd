@@ -661,11 +661,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			_star_map.open()
 		return
 	if _star_map_open(): return
-	# Leave the seat we occupy (driver or passenger) with Y — but only if this seat's door is open
-	# (open it first by looking at its handle). A seat with no door_id leaves directly.
+	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
+	# (the seat's door must be open — open it first by looking at its handle) and we stand up when it
+	# says so, in the `unseat` branch of _apply_replicated_action.
+	#
+	# This used to test the door HERE and stand up immediately. Two gates reading two copies of the
+	# same door state, and a truck on preprod (2026-09-22) found the gap: the client saw the door open,
+	# left the seat and cleared _seat_vehicle_uuid; the server saw it shut, refused, and kept the player
+	# seated and parented to the cab. From then on the test just below could never be true again, so Y
+	# was dead and the player stood inside a truck they could not leave, until they relogged.
+	#
+	# Asking unconditionally costs one round trip before standing up and makes the request IDEMPOTENT:
+	# a refusal changes nothing here, so pressing Y again (once the door is really open) always works.
 	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
-		if _seat_door_open(player._seat_node):
-			_leave_vehicle()
+		player.client_send_action_to_server({"action": "exit_vehicle", "target_uuid": player._seat_vehicle_uuid})
 		return
 
 	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
@@ -827,11 +836,10 @@ func _enter_seat(seat: Node) -> void:
 		veh.set_driver_hud(true)
 
 ## Leave the seat we occupy (driver or passenger): walk again, un-parent back into the world, and drop
-## the driver HUD. Triggered by Y (exit) — see _unhandled_input. `notify_server` is false when the server
-## itself told us to leave (a refused seat: occupied/blocked), so we must NOT echo an exit back.
-func _leave_vehicle(notify_server: bool = true) -> void:
-	if notify_server:
-		player.client_send_action_to_server({"action": "exit_vehicle", "target_uuid": player._seat_vehicle_uuid})
+## the driver HUD. NEVER called on our own initiative — only when the server says we are out ("unseat"),
+## whether that is our own Y request granted or a seat it refused us. One writer, so the two can never
+## disagree about who is sitting where; see the Y handler in _unhandled_input.
+func _leave_vehicle() -> void:
 	player.active = true  # walking again
 	player.set_seated(false)
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
@@ -1364,8 +1372,13 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_last_seat_action = action
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
-			elif is_instance_valid(player._seat_node):
-				_leave_vehicle(false)  # server refused our seat (occupied/blocked) -> revert optimistic entry
+			elif player._seat_vehicle_uuid != "":
+				# We are out: either the seat we optimistically took was refused (occupied/blocked), or
+				# the exit we asked for was granted. Both land here, and both mean the same thing.
+				# Keyed on the VEHICLE uuid, not on _seat_node: the seat node dies with the vehicle when
+				# it leaves our GORC radius, and a freed reference must not be what decides whether we
+				# are allowed to stand up again.
+				_leave_vehicle()
 		elif action.begins_with("stow:") and action != _last_stow_action:
 			# Boarding put our tools away. An EVENT rather than the `tools` state, because the state is
 			# delta-compressed and a stow that changes nothing on the wire never arrives.
