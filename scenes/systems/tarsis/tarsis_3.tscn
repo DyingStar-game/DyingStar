@@ -2,6 +2,7 @@
 
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="6_0lykg"]
 [ext_resource type="PackedScene" uid="uid://bn1lq4a5rqcgr" path="res://scenes/_universe/structures/industrial/wind_valley.tscn" id="7_5a8bp"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="32_tgjy6"]
 [ext_resource type="Resource" uid="uid://dv2jf80uor3c" path="res://scenes/planet/atmospheres/tarsis_3.tres" id="atmosphere_tarsis4"]
 [ext_resource type="Script" uid="uid://b0v8ajsviht7s" path="res://scenes/planet/planet_body.gd" id="script_body"]
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
@@ -772,3 +773,7 @@ font_size = 96
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D19" unique_id=800817383]
 transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.32667270000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
+
+[node name="Teleporter" parent="." unique_id=2036861069 instance=ExtResource("32_tgjy6")]
+transform = Transform3D(0.5150338815264536, 0.6996044131740389, 0.4952714063492902, -0.8571698203272179, 0.4203600825709341, 0.2975857861208471, 0, -0.5777984649065504, 0.8161794741058084, 4450626.122414094, 2674176.333197221, -3675741.45185407)
+

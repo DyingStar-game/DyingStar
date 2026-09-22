@@ -37,65 +37,6 @@ const _SURFACE_CATCH_MARGIN := 3.0
 # The dev spawn wheel's contents live in SpawnCatalog (scenes/props/spawn_catalog.gd): one table read
 # by the client (to build the wheel) AND by the server (to validate the key and place the prop).
 
-# Teleporter pads (Area3D in group "teleporter"): area name -> destination
-# planet + landing offset from the planet origin, expressed in the PLANET'S OWN
-# axes, so the spot stays put on the ground as the planet spins (see
-# PlayerServer._teleport_to_system). The destination is matched by
-# PlanetData.planet_name, NEVER by node name: server-side nodes are renamed
-# to Horizon's names (e.g. tarsis_3_2 -> "P3_M2"), so scene-root names like
-# "Tarsis3_2" only exist on the client.
-const TELEPORT_TARGETS := {
-	"tarsis_3_2": {
-		"planet": "tarsis_3_2",
-		"pos": Vector3(5887586.7, 2175943.7, -1037588.4),
-	},
-	"tarsis_3_orbital": {
-		"planet": "tarsis_3",
-		"pos": Vector3(4520717.7, 2714719.7, -3734460.4),
-	},
-	# Atmosphere test sites, from the terrain data (assets/qgis/export/tarsis_3_heightmap.tif) and the
-	# POI list. Sandbox's corundum veil is a slab from 500 m to 4 km, so what the sky looks like is
-	# decided by which side of it you stand on — and the one city sits 5637 m up, above all of it.
-	# Each landing is 100 m over the sampled terrain; the heightmap is ~10 km per pixel, so the local
-	# relief decides the last few metres of the drop.
-	## major_railway_city_08, lon -8.291 lat +0.127, terrain -145 m. UNDER the veil and on the
-	## equator: a ceiling overhead, clear air around, and the star climbing to the zenith.
-	"sandbox_valley": {
-		"planet": "tarsis_3",
-		"pos": Vector3(6289510.3, 14088.4, -916531.4),
-	},
-	## The lowest point on the planet, lon -53.438 lat +2.812, terrain -1700 m. 2.2 km of clear air
-	## below the veil's floor.
-	"sandbox_deepest": {
-		"planet": "tarsis_3",
-		"pos": Vector3(3780709.2, 311740.2, -5097789.3),
-	},
-	## lon -5.846 lat +18.862, terrain +1750 m: INSIDE the dust. The milky dome, 7 km of visibility,
-	## and the star's disc extinguished below about 8 degrees of elevation. On a plateau at least
-	## 29 km across, because the veil needs an OPEN horizon to be judged: every equatorial site at
-	## this altitude sits on the slope climbing from the -145 m valley to Palaka-Pital at +4202 m,
-	## and lands you in a ravine whose walls hide the sky. Longitude is what sets local time, and
-	## this one is within 3 degrees of sandbox_valley, so the three veil sites still share an hour
-	## of the day; only the star's elevation differs, by the 19 degrees of latitude.
-	"sandbox_in_dust": {
-		"planet": "tarsis_3",
-		"pos": Vector3(5985143.4, 2055428.6, -612803.9),
-	},
-	## Palaka-Pital, lon -18.348 lat +0.037, terrain +4202 m: just clear of the veil, on the equator.
-	## The altitude Bitogno wants for the capital, and a blue sky with the star overhead.
-	"sandbox_above_veil": {
-		"planet": "tarsis_3",
-		"pos": Vector3(6036956.1, 4107.3, -2002144.6),
-	},
-	## lon +9.844 lat +78.047, terrain -1420 m: under the veil AND at high latitude, where the axial
-	## tilt of 15 degrees keeps the star between -3 and +27 degrees over the year. Grazing light and
-	## maximum extinction at once — the hardest case in the model.
-	"sandbox_polar": {
-		"planet": "tarsis_8",
-		"pos": Vector3(1296735.8, 6216897.1, 225010.8),
-	},
-}
-
 @export_group("Controls map names")
 
 @export_group("Customizable player stats")
@@ -615,6 +556,21 @@ func set_seated(seated: bool) -> void:
 		collision_layer = _saved_collision_layer
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
+		# Standing up INSIDE a screen's zone gets the screen back. The zone was dropped by the branch
+		# above, but our AreaDetector never actually LEFT it — sitting down changes the BODY's layers,
+		# not the detector's — so no area_entered will ever fire to hand it back. Without this you have
+		# to walk out of the zone and back in before the console answers again: measured on the
+		# teleporter, where arriving by truck and stepping out is the normal way to use it.
+		_restore_screen_from_overlaps()
+
+
+## Re-resolve which 3D screen we are standing at from the zones the detector overlaps RIGHT NOW,
+## rather than waiting for an entry event that has already happened.
+func _restore_screen_from_overlaps() -> void:
+	for area: Area3D in $AreaDetector.get_overlapping_areas():
+		if area.is_in_group("screen_area"):
+			_set_screen(_screen_owner_of(area))
+			return
 
 
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
@@ -748,43 +704,6 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		# past a depot must not steal the mouse from the driver.
 		if not _seated_saved:
 			_set_screen(_screen_owner_of(area))
-	elif area.is_in_group("teleporter"):
-		# Server-authoritative: the server reparents + repositions, then the
-		# move (with parent uuid) reaches the client through Horizon and
-		# client.gd player_update applies the reparent locally.
-		if OS.has_feature("dedicated_server"):
-			var target: Dictionary = TELEPORT_TARGETS.get(area.name, {})
-			if target.is_empty():
-				push_warning("[Player] teleporter '%s' has no TELEPORT_TARGETS entry"
-						% area.name)
-				return
-			var destination := _find_planet_by_data_name(target["planet"])
-			if destination == null:
-				push_warning("[Player] teleporter '%s': planet '%s' not found in registry"
-						% [area.name, target["planet"]])
-				return
-			print("[Player] teleporter '%s' -> planet '%s' (node '%s')"
-					% [area.name, target["planet"], destination.name])
-			# Deferred: reparenting a CharacterBody3D inside an Area3D physics
-			# callback is illegal ("Removing a CollisionObject during a physics
-			# callback is not allowed") and corrupts the body.
-			_role.call_deferred("_teleport_to_system", destination, target["pos"])
-
-## Server-side: resolve a planet node by its PlanetData.planet_name through
-## the authoritative registry (props_list["planets"]). Node NAMES are assigned
-## from Horizon world data (e.g. "P3_M2", "SandBox") and do not match the
-## scene-root names, so find_child() by name is never reliable here.
-func _find_planet_by_data_name(pname: String) -> Node:
-	var agent = NetworkOrchestrator.network_agent
-	if agent == null or not "props_list" in agent \
-			or not agent.props_list.has("planets"):
-		return null
-	for puuid in agent.props_list["planets"]:
-		var p = agent.props_list["planets"][puuid]
-		if is_instance_valid(p) and p.get("planet_data") != null \
-				and p.planet_data.planet_name == pname:
-			return p
-	return null
 
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -1018,3 +937,14 @@ func server_adopt_carried(item: Node) -> void:
 func server_action_received(data: Dictionary) -> void:
 	# Server authority: delegate to the PlayerServer role (only the dedicated server receives this).
 	_role.server_action_received(data)
+
+
+## Move this body onto [param destination] at [param local_pos], expressed in that node's frame.
+## Server only — the client role has no such method, and applies the reparent it is TOLD about.
+##
+## ⚠️ Call it DEFERRED: it reparents a CharacterBody3D, which is illegal inside a physics or Area3D
+## callback. Callers use `player.call_deferred("server_teleport_to", body, pos)`.
+func server_teleport_to(destination: Node, local_pos: Vector3) -> void:
+	if _role == null or not _role.has_method("teleport_to"):
+		return
+	_role.teleport_to(destination, local_pos)
