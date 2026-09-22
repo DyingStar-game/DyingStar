@@ -106,6 +106,8 @@ func setup() -> void:
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
 	if player.remote_player:
 		player.camera.current = false
+		# No shadow until the owner's TorchShadowBudget hands one out (the nearest few only).
+		player.flashlight.shadow_enabled = false
 		_setup_name_tag(str(player.name))
 		_setup_conversation_text()
 		if animator != null:
@@ -125,6 +127,11 @@ func setup() -> void:
 		player._spawn_wheel.title = "Spawn"
 		player.get_node("UserInterface").add_child(player._spawn_wheel)
 		player._spawn_wheel.option_selected.connect(_on_spawn_selected)
+
+	# Shadow budget for the other players' torches: only the nearest few cast (see the class).
+	var torch_budget := TorchShadowBudget.new()
+	torch_budget.name = "TorchShadowBudget"
+	player.add_child(torch_budget)
 
 	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
 	player._emote_wheel = RadialMenu.new()

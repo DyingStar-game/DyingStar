@@ -3,7 +3,7 @@ extends Node3D
 ## (remote_player = true, PlayerClient presentation, CharacterAnimator, name tag, footsteps).
 ## Run WITH a display:
 ##   godot --path . res://test/perf/remote_players_bench.tscn -- count=30 [move=0] [noanim] [notag]
-##       [nopuppet] [noshadow] [nophys] [sun=0]
+##       [nopuppet] [noshadow] [nophys] [noskel] [noscript] [sharedtag] [torch] [budget] [behind] [sun=0]
 ## The avatars walk in small circles (move=1, default) fed at 30 Hz through net_set_target, like the
 ## network does, so the walk animation, interpolation and footsteps all run. Prints one line
 ## `PROBE count=… frame_ms=… proc_ms=… phys_ms=… rcpu_ms=… rgpu_ms=… draws=… prims=…` and appends it
@@ -146,6 +146,8 @@ func _ready() -> void:
 		if _flags.has("nophys"):
 			for cs in p.find_children("*", "CollisionShape3D", true, false):
 				(cs as CollisionShape3D).disabled = true
+	if _flags.has("budget"):
+		add_child(TorchShadowBudget.new())  # the owner's torch shadow budget, without an owner
 	_rid = get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(_rid, true)
 	_last_usec = Time.get_ticks_usec()
