@@ -82,7 +82,7 @@ public partial class MountainRidgeNative : RefCounted
                             double lon, double lat)
     {
         if (effSpacing >= _width) return 0.0;
-        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper))
+        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper, out _))
             return 0.0;
         double h = _height * prof * taper;
         if (_roughness > 0.0)
@@ -101,18 +101,28 @@ public partial class MountainRidgeNative : RefCounted
     internal double CoreD(double dx, double dy, double dz, double radius, double lon, double lat)
     {
         if (_impurity <= 0.0) return 0.0;
-        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper))
+        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper, out _))
             return 0.0;
         return prof * taper * _impurity;
+    }
+
+    /// <summary>MountainRelief.mask term: a fadeM ramp from the foot of the flank × end taper.</summary>
+    internal double MaskD(double dx, double dy, double dz, double radius, double lon, double lat, double fadeM)
+    {
+        if (!ProfileD(dx, dy, dz, radius, lon, lat, out double prof, out double taper, out double footM))
+            return 0.0;
+        if (prof <= 0.0) return 0.0;
+        return MountainNoiseCore.Smoothstep(0.0, fadeM, footM) * taper;
     }
 
     /// <summary>MountainRelief._ridge_profile: the flank profile and the end
     /// taper at dir, false past the reach. lon/lat NaN → computed here.</summary>
     private bool ProfileD(double dx, double dy, double dz, double radius, double lon, double lat,
-                          out double prof, out double taper)
+                          out double prof, out double taper, out double footM)
     {
         prof = 0.0;
         taper = 0.0;
+        footM = 0.0;
         int n = _cx.Length;
         if (n < 2) return false;
         if (double.IsNaN(lon))
@@ -142,6 +152,7 @@ public partial class MountainRidgeNative : RefCounted
         }
         double t = dM / wSide;
         if (t >= 1.0) return false;
+        footM = wSide - dM;
         double bell = 1.0 - MountainNoiseCore.Smoothstep(0.0, 1.0, t);
         double knife = 1.0 - t;
         prof = MountainNoiseCore.Lerp(bell, knife, _sharpness);

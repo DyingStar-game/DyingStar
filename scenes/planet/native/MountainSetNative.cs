@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 
@@ -61,5 +62,24 @@ public partial class MountainSetNative : RefCounted
         for (int i = 0; i < _ridges.Count; i++)
             total += _ridges[i].CoreD(dx, dy, dz, radius, lon, lat);
         return total;
+    }
+
+    /// <summary>MountainRelief.mask: how much dir belongs to a mountain feature —
+    /// a fadeM ramp inside the outlines / from the ridge feet, in [0, 1].</summary>
+    public double Mask(Vector3 dir, double radius, double fadeM)
+    {
+        double dx = dir.X, dy = dir.Y, dz = dir.Z;
+        double lon = double.NaN, lat = double.NaN;
+        if (_needLonLat)
+            MountainNoiseCore.ToLonLat(dx, dy, dz, out lon, out lat);
+        double m = 0.0;
+        for (int i = 0; i < _zones.Count; i++)
+        {
+            m = Math.Max(m, _zones[i].MaskD(dx, dy, dz, radius, lon, lat, fadeM));
+            if (m >= 1.0) return 1.0;
+        }
+        for (int i = 0; i < _ridges.Count; i++)
+            m = Math.Max(m, _ridges[i].MaskD(dx, dy, dz, radius, lon, lat, fadeM));
+        return MountainNoiseCore.Clamp(m, 0.0, 1.0);
     }
 }

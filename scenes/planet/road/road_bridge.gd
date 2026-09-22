@@ -73,16 +73,16 @@ static func lonlat_to_dir(lon: float, lat: float) -> Vector3:
 ## LOD-faded one — matching PlanetData.crack_aware_surface_dist(), which is the
 ## authoritative ground for the server's anti-tunnel clamp. A bridge must be
 ## placed on the physics reality, not on what a coarse mesh happens to draw.
-## Same zone rule as the ground itself (corundum_applies_at): inside another
-## biome's zone there is no crack, hence nothing to bridge.
+## Same zone rule as the ground itself (cracks_apply_at): inside another
+## rock's zone there is no crack, hence nothing to bridge.
 static func chasm_depth_at(planet_data: PlanetData, lon: float, lat: float) -> float:
 	var dir := lonlat_to_dir(lon, lat)
-	if not planet_data.corundum_applies_at(dir):
+	if not planet_data.cracks_apply_at(dir):
 		return 0.0
 	var off := ArideDesertCorundumPlateauTerrain.crack_offset(
 		dir, planet_data.radius,
 		planet_data.crack_spacing_m, planet_data.crack_width_m,
-		planet_data.crack_depth_m, 0.0)
+		planet_data.crack_depth_m, 0.0) * planet_data.crack_factor(dir)
 	return -off if off < 0.0 else 0.0
 
 

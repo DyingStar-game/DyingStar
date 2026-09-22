@@ -262,9 +262,45 @@ static func core(dir: Vector3, radius: float, zones: Array, ridges: Array) -> fl
 	return total
 
 
+## How much the ground at [param dir] belongs to a mountain feature, in
+## [0, 1]: the feather envelope of the ranges, the flank profile × end taper
+## of the ridges, the largest of them. Independent of the relief's height and
+## of the impurity — what the corundum crack network fades out under (a
+## massif is not cut by the plateau's canyons). Pure, no pitch; pinned equal
+## to MountainSetNative.Mask.
+## [param fade_m] is the ramp: 0 on a range's outline (or a ridge's foot),
+## 1 that many metres inside — its own width, NOT the relief's feather, which
+## can be kilometres and would carry a canyon up to the crest.
+static func mask(dir: Vector3, radius: float, zones: Array, ridges: Array, fade_m: float) -> float:
+	var m := 0.0
+	var m_per_deg := radius * PI / 180.0
+	var have_ll := false
+	var ll := Vector2.ZERO
+	for zv in zones:
+		var z: Zone = zv
+		if z.full:
+			return 1.0
+		if not have_ll:
+			ll = HEALPix.vec2lonlat(dir)
+			have_ll = true
+		m = maxf(m, envelope(ll, z, m_per_deg, fade_m))
+		if m >= 1.0:
+			return 1.0
+	for rv in ridges:
+		var rd: Ridge = rv
+		if not have_ll:
+			ll = HEALPix.vec2lonlat(dir)
+			have_ll = true
+		var prof := _ridge_profile(ll, dir, radius, rd)
+		if prof.x > 0.0:
+			m = maxf(m, smoothstep(0.0, fade_m, prof.z) * prof.y)
+	return clampf(m, 0.0, 1.0)
+
+
 ## Feather weight of [param zone] at [param ll]: 0 outside the polygon, 1
-## deeper than feather_m inside, smooth in between.
-static func envelope(ll: Vector2, zone: Zone, m_per_deg: float) -> float:
+## deeper than feather_m inside, smooth in between. [param feather_m] > 0
+## replaces the zone's own feather (the crack mask fades over its own width).
+static func envelope(ll: Vector2, zone: Zone, m_per_deg: float, feather_m: float = -1.0) -> float:
 	if zone.full:
 		return 1.0
 	if not zone.bbox.has_point(ll):
@@ -275,7 +311,7 @@ static func envelope(ll: Vector2, zone: Zone, m_per_deg: float) -> float:
 	var lat_scale := cos(deg_to_rad(clampf(ll.y, -89.5, 89.5)))
 	if lat_scale < 1e-6:
 		lat_scale = 1e-6
-	var feather := zone.prm.feather_m
+	var feather := feather_m if feather_m > 0.0 else zone.prm.feather_m
 	var feather_deg := feather / m_per_deg
 	var best_sq := INF
 	var n := poly.size()
@@ -299,12 +335,14 @@ static func ridge_height(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) ->
 	return MountainNoise.terrace(h, rd.terrace_step_m, rd.terrace_width)
 
 
-## The ridge's (flank profile, end taper) at [param ll] / [param dir], both in
-## [0, 1] — Vector2.ZERO past its reach. ridge_height multiplies them by the
-## height (in that order, which the C# twin keeps), core by the impurity.
-static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) -> Vector2:
+## The ridge's (flank profile, end taper, metres inside the foot of the
+## flank) at [param ll] / [param dir], the first two in [0, 1] —
+## Vector3.ZERO past its reach. ridge_height multiplies the first two by the
+## height (in that order, which the C# twin keeps), core by the impurity;
+## mask fades over the third.
+static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) -> Vector3:
 	if rd.centerline.size() < 2 or not rd.bbox.has_point(ll):
-		return Vector2.ZERO
+		return Vector3.ZERO
 	var m_per_deg := radius * PI / 180.0
 	var lat_scale := cos(deg_to_rad(clampf(ll.y, -89.5, 89.5)))
 	if lat_scale < 1e-6:
@@ -319,7 +357,7 @@ static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) 
 			best_i = i
 	var d_m := sqrt(best_sq) * m_per_deg
 	if d_m >= rd.reach_m():
-		return Vector2.ZERO
+		return Vector3.ZERO
 	# Which flank: sign of the cross product in the metric frame, left > 0.
 	var a := cl[best_i]
 	var b := cl[best_i + 1]
@@ -333,7 +371,7 @@ static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) 
 		d_m = maxf(d_m + rd.warp_m * MountainNoise.snoise(dir * (radius / (4.0 * rd.width_m)), rd.seed + 7), 0.0)
 	var t := d_m / w_side
 	if t >= 1.0:
-		return Vector2.ZERO
+		return Vector3.ZERO
 	var bell := 1.0 - smoothstep(0.0, 1.0, t)
 	var knife := 1.0 - t
 	var prof := lerpf(bell, knife, rd.sharpness)
@@ -345,7 +383,7 @@ static func _ridge_profile(ll: Vector2, dir: Vector3, radius: float, rd: Ridge) 
 	var s := rd.cum[best_i] + ts * (rd.cum[best_i + 1] - rd.cum[best_i])
 	var end_d := minf(s, rd.length_m - s)
 	var taper := smoothstep(0.0, minf(rd.width_m, rd.length_m * 0.5), end_d)
-	return Vector2(prof, taper)
+	return Vector3(prof, taper, w_side - d_m)
 
 
 static func _point_in_polygon(p: Vector2, poly: PackedVector2Array) -> bool:

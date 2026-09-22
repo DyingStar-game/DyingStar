@@ -312,10 +312,15 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		#      the visual crack floor matches the full-depth physics floor.
 		# corundum_default_rock is baked colour: a planet switched from the
 		# milky rock to a red one must not serve milky meshes.
-		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s" % [
+		# The POI spheres the crack network keeps whole: given to the sampler
+		# here, before the key (they are baked geometry), before the bridge
+		# spans walk the chasms and before any chunk carves.
+		data.set_crack_exclusions(crack_exclusion_pois())
+		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s_poi%s" % [
 			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
-			int(data.debug_color_skirts), data.corundum_default_rock] \
+			int(data.debug_color_skirts), data.corundum_default_rock,
+			data.crack_exclusion_fingerprint()] \
 			if data.corundum_default_biome else ""
 		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
 		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
@@ -433,6 +438,14 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# carve depth, strata, dust) and the corundum default ground is the
 		# catalogue rock corundum_default_rock — a v48 mesh holds the old
 		# iron_tint / flat rock mottling.
+		# v49 → v50: the crack network carves every corundum ground
+		# (PlanetData.cracks_apply_to_zone) — an outcrop of blue corundum was
+		# left whole in v49 meshes and collision shapes — and keeps the POI
+		# spheres and the mountains whole (PlanetData.crack_factor).
+		# v50 → v51: the vertices nearest a crack rim are slid onto it
+		# (crack_rim_snap — no more crenellated canyon tops, the rim stays a
+		# sharp edge) and the mountain mask fades over crack_mountain_fade_m
+		# from the outline, not over the feather.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -441,7 +454,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v49%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v51%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
@@ -2079,6 +2092,19 @@ func poi_spheres() -> Array:
 			"radius": (shape_node.shape as SphereShape3D).radius,
 		})
 	return _poi_cache
+
+
+## The POIs as the crack network wants them (PlanetData.set_crack_exclusions): planet-LOCAL unit
+## directions and radii, so the pure carve can test them without the scene tree. Body-fixed like
+## every direction the sampler reads — the POI nodes spin with the planet.
+func crack_exclusion_pois() -> Array:
+	var planet := get_parent() as Planet
+	var out: Array = []
+	for poi in poi_spheres():
+		var d: Vector3 = planet.local_dir_of(poi["position"] as Vector3) if planet != null \
+				else (poi["position"] as Vector3).normalized()
+		out.append({"dir": d, "radius": float(poi["radius"])})
+	return out
 
 
 ## The first POI in [param spheres] whose influence sphere, grown by [param margin], contains

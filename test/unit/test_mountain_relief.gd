@@ -465,3 +465,41 @@ func test_native_core_equals_the_gdscript_reference() -> void:
 	assert_almost_eq(_pd.mountain_core(d0), MountainRelief.core(d0, RADIUS, _pd._mtn_override_zones, []), 1e-9)
 	_pd.set_mountain_overrides([], [])
 	assert_eq(_pd.mountain_core(d0), 0.0, "no mountains, no core")
+
+
+func test_mask_is_the_envelope_and_the_ridge_profile_and_fades_the_cracks() -> void:
+	assert_true(MountainRelief.native_available(), "the C# assembly must be built")
+	var c := Vector2(12.0, 20.0)
+	var zones: Array = [MountainRelief.prepare_zone(_zone(c, 20.0, {"feather_m": 3000.0, "impurity_intensity": 0.0}))]
+	var ridges: Array = [MountainRelief.prepare_ridge(_ridge(_ll_offset(c, 0.0, 30000.0), 20.0, {"asymmetry": 0.3, "warp_m": 100.0}), _mpd)]
+	var mset: RefCounted = MountainRelief.build_set(zones, ridges)
+	const FADE := 600.0
+	var centre := HEALPix.lonlat2vec(c.x, c.y)
+	assert_eq(MountainRelief.mask(centre, RADIUS, zones, ridges, FADE), 1.0, "deep inside the massif")
+	var inside := _ll_offset(c, 0.0, 19000.0)   # 1 km inside: past the 600 m fade, though well inside the 3 km feather
+	assert_eq(MountainRelief.mask(HEALPix.lonlat2vec(inside.x, inside.y), RADIUS, zones, ridges, FADE), 1.0,
+			"the fade is the crack's own 600 m, not the relief's feather")
+	var edge := _ll_offset(c, 0.0, 19700.0)     # 300 m inside the outline
+	var m_edge := MountainRelief.mask(HEALPix.lonlat2vec(edge.x, edge.y), RADIUS, zones, ridges, FADE)
+	assert_between(m_edge, 0.05, 0.95, "300 m inside the outline: a ramp")
+	var far := _ll_offset(c, 0.0, 60000.0)
+	assert_eq(MountainRelief.mask(HEALPix.lonlat2vec(far.x, far.y), RADIUS, zones, ridges, FADE), 0.0)
+	var crest := _ll_offset(c, 0.0, 30000.0)
+	assert_almost_eq(MountainRelief.mask(HEALPix.lonlat2vec(crest.x, crest.y), RADIUS, zones, ridges, FADE), 1.0, 1e-6,
+			"on the crest line, whatever its impurity")
+	var foot := _ll_offset(c, 0.0, 30000.0 + 2000.0 * 1.3 - 200.0)   # 200 m inside the wide flank's foot
+	var m_foot := MountainRelief.mask(HEALPix.lonlat2vec(foot.x, foot.y), RADIUS, zones, ridges, FADE)
+	assert_between(m_foot, 0.02, 0.98, "200 m inside a ridge's foot: on the ramp")
+	var worst := 0.0
+	for i in 3000:
+		var ll := _ll_offset(c, fmod(i * 7919.0, 60000.0) - 30000.0, fmod(i * 104729.0, 70000.0) - 30000.0)
+		var d := HEALPix.lonlat2vec(ll.x, ll.y)
+		worst = maxf(worst, absf(MountainRelief.mask(d, RADIUS, zones, ridges, FADE) - float(mset.Mask(d, RADIUS, FADE))))
+	assert_lt(worst, 1e-9, "C# and GDScript masks disagree by %.12f" % worst)
+	# The planet folds it into the crack depth factor.
+	_pd.set_mountain_overrides([_zone(c, 20.0, {"feather_m": 3000.0})], [])
+	_pd.corundum_default_biome = true
+	assert_eq(_pd.crack_factor(centre), 0.0, "no canyon through a massif")
+	assert_eq(_pd.crack_factor(HEALPix.lonlat2vec(far.x, far.y)), 1.0, "full depth on the plain")
+	_pd.set_mountain_overrides([], [])
+	assert_eq(_pd.crack_factor(centre), 1.0)

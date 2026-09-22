@@ -88,6 +88,9 @@ static func crack_edge_distance_m(dir: Vector3, radius: float,
 
 
 ## Profondeur de carve pour une distance au bord déjà connue. Pure, sans Voronoï.
+## Flat floor, ~80° walls right under the rim (1 − t⁴) — the rim is a sharp
+## edge. On a vertex grid a sharp edge only reads straight when the vertices
+## SIT on it: see [method crack_rim_snap], which the chunk builders apply.
 static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -> float:
 	if depth_m <= 0.0 or width_m <= 0.0:
 		return 0.0
@@ -97,6 +100,50 @@ static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -
 	var t := d_m / half                        # 0 at crack centre, 1 at rim
 	var t2 := t * t
 	return -depth_m * (1.0 - t2 * t2)          # flat floor, steep walls (1 − t⁴)
+
+
+## A grid vertex within [param max_move_m] of the rim, moved ONTO the rim.
+##
+## Why: the rim is a sharp edge (the wall is ~80° right under it). A vertex
+## that lands anywhere between the rim and one pitch inside drops anywhere
+## between 0 and slope × pitch — 76 m on tarsis_8 — so the rim line went up
+## and down tooth by tooth along the grid (crenellated canyon tops). Sliding
+## the vertices nearest the rim horizontally onto it, by at most half a pitch,
+## makes the rim a clean polyline of vertices at zero drop, and the wall
+## starts from there, as steep as the profile says.
+##
+## Returns (dir.x, dir.y, dir.z, edge distance in m at that dir): the moved
+## direction with the distance set to the half-width when it moved, the grid
+## direction and its true distance when it did not (too far, or the edge
+## plane too flat to reach), INF for the distance when the crack is not drawn
+## at this pitch. Pure: the mesh and the fine collision grid, on the same
+## pitch, move the same vertices the same way — a border vertex included, as
+## the neighbour on the same grid moves it identically; pass max_move_m = 0
+## only where a coarser neighbour owns the edge (the LOD stitch).
+static func crack_rim_snap(dir: Vector3, radius: float, spacing_m: float, width_m: float,
+		vtx_spacing_m: float, max_move_m: float) -> Vector4:
+	if spacing_m <= 0.0 or width_m <= 0.0 \
+			or (vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5):
+		return Vector4(dir.x, dir.y, dir.z, INF)
+	var scale := radius / spacing_m
+	var p := dir * scale
+	var dn := _voronoi_edge_dn(p)
+	var d_m := dn.w * spacing_m
+	var half := width_m * 0.5
+	if max_move_m <= 0.0:
+		return Vector4(dir.x, dir.y, dir.z, d_m)
+	# Move along the edge plane's normal projected on the tangent plane: the
+	# distance to the plane changes at |n_t| per metre of tangent travel.
+	var n := Vector3(dn.x, dn.y, dn.z)
+	var n_t := n - dir * n.dot(dir)
+	var n_len := n_t.length()
+	if n_len < 1e-3:
+		return Vector4(dir.x, dir.y, dir.z, d_m)
+	var move_m := (d_m - half) / n_len          # + toward the edge (inward), − away
+	if absf(move_m) > max_move_m:
+		return Vector4(dir.x, dir.y, dir.z, d_m)
+	var moved := (p + n_t * (move_m / n_len / spacing_m)).normalized()
+	return Vector4(moved.x, moved.y, moved.z, half)
 
 
 ## Deterministic per-cell jitter in [0,1)³ — SurfaceNoise.hash3, kept under
@@ -110,6 +157,13 @@ static func _hash3(c: Vector3) -> Vector3:
 ## slices the 3D Voronoi diagram into polygonal blocks, producing the
 ## orthogonal monolithic-crack look on the surface.
 static func _voronoi_edge_distance(x: Vector3) -> float:
+	return _voronoi_edge_dn(x).w
+
+
+## [method _voronoi_edge_distance] with the unit normal of the nearest edge
+## plane (pointing across it, from the closest cell into its neighbour) in
+## xyz and the distance in w — what [method crack_rim_snap] slides along.
+static func _voronoi_edge_dn(x: Vector3) -> Vector4:
 	var n := x.floor()
 	var f := x - n
 	# Pass 1: locate the closest feature point.
@@ -129,6 +183,7 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 	# Pass 2: minimum distance to the edge between the closest point and
 	# each of its neighbours.
 	var edge := 1.0e9
+	var normal := Vector3.ZERO
 	for k in range(-1, 2):
 		for j in range(-1, 2):
 			for i in range(-1, 2):
@@ -136,5 +191,9 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 				var r := g + _hash3(n + g) - f
 				var diff := r - mr
 				if diff.dot(diff) > 1.0e-5:   # skip the closest cell itself
-					edge = minf(edge, (0.5 * (mr + r)).dot(diff.normalized()))
-	return edge
+					var nd := diff.normalized()
+					var e := (0.5 * (mr + r)).dot(nd)
+					if e < edge:
+						edge = e
+						normal = nd
+	return Vector4(normal.x, normal.y, normal.z, edge)
