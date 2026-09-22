@@ -1,5 +1,14 @@
 @tool
 class_name PlanetChunk
+
+## How far a vertex may be slid onto a crack rim, in vertex pitches
+## (ArideDesertCorundumPlateauTerrain.crack_rim_snap). Exactly half: along
+## any grid line the in-surface distance to the rim changes by at most one
+## pitch per vertex, so some vertex is always within half a pitch of it —
+## anything less leaves a gap the rim's phase drifts through, one notch per
+## period. And two neighbours moving toward each other from half a pitch each
+## can meet but never cross.
+const RIM_SNAP_PITCHES := 0.5
 ## Static helpers for generating terrain-chunk meshes & collision shapes.
 ##
 ## Each chunk covers a rectangular patch on one cube-sphere face.
@@ -450,6 +459,10 @@ static func generate_mesh(
 	# Distance outward from the nearest crack wall (INF = no crack network
 	# here): the vein halo of RockImpurity.
 	var _imp_wall := PackedFloat32Array()
+	# The direction of every vertex AFTER the rim snap (crack_rim_snap): the
+	# normal and impurity passes below must read this, not the grid.
+	var _vdirs := PackedVector3Array()
+	_vdirs.resize(vert_count)
 	_imp_slot.resize(vert_count)
 	_imp_core.resize(vert_count)
 	_imp_carve.resize(vert_count)
@@ -462,6 +475,15 @@ static func generate_mesh(
 	if hp_mode and res > 0:
 		_crack_vtx_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
 				* data.radius / float(res)
+	# What keeps the ground whole (PlanetData.crack_factor): the POI spheres
+	# this chunk can meet — depth 0 inside, a ramp over crack_poi_margin_m —
+	# and the mountains of the frame, under which the network fades out.
+	var _crack_pois: Array = []
+	var _crack_masked := false
+	if data.corundum_default_biome and hp_mode:
+		_crack_pois = data.crack_pois_near(HEALPix.pix2vec_nest(hp_nside, hp_ipix),
+				HEALPix.pixel_side_length(hp_nside, 1.0) * data.radius * 0.8)
+		_crack_masked = not _crack_pois.is_empty() or data.mountains_active()
 	if data.corundum_default_biome:
 		_corundum_bd = data.get_biome_by_type(
 				ArideDesertCorundumPlateauTerrain.BIOME_TYPE)
@@ -551,50 +573,23 @@ static func generate_mesh(
 			var idx := yi * (res + 1) + xi
 			var dir: Vector3
 			var height: float
+			var _is_border := xi == 0 or xi == res or yi == 0 or yi == res
+			# Cube-sphere (legacy) grid: snap boundary vertices to exact
+			# u_min/u_max/v_min/v_max so shared edges between adjacent chunks
+			# sample identical heights.
+			var u: float = 0.0
+			var v: float = 0.0
 			if hp_mode:
 				dir = grid_dirs[yi][xi]
-				# Boundary vertices may be shared with a chunk that has a different
-				# _export_ipix (at HEALPix face or export-tile seams).
-				# sample_height_boundary picks the same canonical export tile for
-				# any given direction, so both sides of the seam are consistent.
-				if _st_edge.has(idx):
-					height = _st_edge[idx]
-				elif xi == 0 or xi == res or yi == 0 or yi == res:
-					height = data.sample_height_boundary(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-				else:
-					height = data.sample_height_for_direction(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					if _st_blend.has(idx):
-						var _sb: Vector2 = _st_blend[idx]
-						height = lerpf(height, _sb.y, _sb.x)
 			else:
-				# Snap boundary vertices to exact u_min/u_max/v_min/v_max so
-				# shared edges between adjacent chunks sample identical heights.
-				var u: float
-				if xi == 0:
-					u = u_min
-				elif xi == res:
-					u = u_max
-				else:
-					u = u_min + xi * u_step
-				var v: float
-				if yi == 0:
-					v = v_min
-				elif yi == res:
-					v = v_max
-				else:
-					v = v_min + yi * v_step
+				u = u_min if xi == 0 else (u_max if xi == res else u_min + xi * u_step)
+				v = v_min if yi == 0 else (v_max if yi == res else v_min + yi * v_step)
 				dir = PlanetData.cube_to_sphere(face, u, v)
-				height = data.sample_height_for_chunk(
-						face, u, v, u_min, u_max, v_min, v_max)
-
-			# The surface as sampled (relief + mountains, before any carve):
-			# what the carve depth of the impurity provenance is measured from.
-			var _h_sampled := height
 
 			# ── Single biome query per vertex (from populate zones) ──────
-			# Reused for liquid detection, colour, AND detail texture.
+			# Reused for liquid detection, colour, AND detail texture. Done
+			# on the GRID direction, before the rim snap below moves the
+			# vertex by up to half a pitch — nothing a zone outline resolves.
 			var bd: BiomeDefinition = null
 			var zone_color_hex: String = ""
 			var first_zone: Dictionary = {}
@@ -610,6 +605,55 @@ static func generate_mesh(
 			# Geometry hangs on this flag alone, never on _corundum_bd: the
 			# collision shape carves by the same rule and has no colour to bake.
 			var _cor_here: bool = data.corundum_applies_to_zone(first_zone)
+			# The crack network carves a wider ground than the default paints:
+			# every zone whose rock is corundum (PlanetData.cracks_apply_to_zone
+			# — the collision shape applies the same).
+			var _crack_here: bool = data.cracks_apply_to_zone(first_zone)
+
+			# ── Rim snap ───────────────────────────────────────────
+			# A vertex within RIM_SNAP_PITCHES of a crack rim is slid onto it,
+			# so the rim is a straight edge and not a row of teeth (see
+			# crack_rim_snap). A border vertex too: the neighbour chunk at the
+			# same LOD runs the same pure function on the same grid direction
+			# and moves it the same way — except on an edge the LOD stitch
+			# owns (_st_edge), whose heights come from the coarser neighbour's
+			# grid and carry no crack anyway. The edge distance comes back
+			# with it — the one Voronoi of this vertex, reused by the carve
+			# below. The moved direction is what everything after this reads
+			# (_vdirs), the grid stays.
+			var _crack_d := INF
+			if hp_mode and _crack_here:
+				var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
+					dir, data.radius, data.crack_spacing_m, data.crack_width_m,
+					_crack_vtx_spacing,
+					0.0 if _st_edge.has(idx) else _crack_vtx_spacing * RIM_SNAP_PITCHES)
+				dir = Vector3(_snap.x, _snap.y, _snap.z)
+				_crack_d = _snap.w
+			_vdirs[idx] = dir
+
+			if hp_mode:
+				# Boundary vertices may be shared with a chunk that has a different
+				# _export_ipix (at HEALPix face or export-tile seams).
+				# sample_height_boundary picks the same canonical export tile for
+				# any given direction, so both sides of the seam are consistent.
+				if _st_edge.has(idx):
+					height = _st_edge[idx]
+				elif _is_border:
+					height = data.sample_height_boundary(dir, _export_ipix,
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+				else:
+					height = data.sample_height_for_direction(dir, _export_ipix,
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					if _st_blend.has(idx):
+						var _sb: Vector2 = _st_blend[idx]
+						height = lerpf(height, _sb.y, _sb.x)
+			else:
+				height = data.sample_height_for_chunk(
+						face, u, v, u_min, u_max, v_min, v_max)
+
+			# The surface as sampled (relief + mountains, before any carve):
+			# what the carve depth of the impurity provenance is measured from.
+			var _h_sampled := height
 
 			# River depression — V-shaped cross-section with progressive width.
 			# The recipe heightmap resolution (~122m/pixel at nside=64) is too
@@ -914,14 +958,23 @@ static func generate_mesh(
 			# INF edge distance of an uncarved vertex also tells the normal
 			# pass below that its probes have nothing to carve.
 			var _crack_off := 0.0
-			var _crack_d := INF
-			if _cor_here:
-				_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
-					dir, data.radius, data.crack_spacing_m,
-					data.crack_width_m, _crack_vtx_spacing)
-				_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
-					_crack_d, data.crack_width_m, data.crack_depth_m)
-				height += _crack_off
+			if _crack_here:
+				# A POI or a massif keeps its ground whole: depth factor 0
+				# there (the edge distance goes INF too, so the normal probes
+				# and the veins see no crack), a ramp over the margin.
+				var _crack_w := 1.0
+				if _crack_masked:
+					_crack_w = data.crack_factor(dir, _crack_pois, _frame)
+				if _crack_w > 0.0:
+					if not hp_mode:
+						_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
+							dir, data.radius, data.crack_spacing_m,
+							data.crack_width_m, _crack_vtx_spacing)
+					_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
+						_crack_d, data.crack_width_m, data.crack_depth_m) * _crack_w
+					height += _crack_off
+				else:
+					_crack_d = INF
 			_crack_edge[idx] = _crack_d
 
 			# ── Profiled-line cutting ──────────────────────────────
@@ -973,13 +1026,13 @@ static func generate_mesh(
 				_imp_core[idx] = data.mountain_core(dir, _frame)
 				_imp_carve[idx] = maxf(_h_sampled - height, 0.0)
 				# Veins follow the planet's fracture network: the carved cracks
-				# on the corundum default ground, and the SAME network, uncarved
-				# (hairline fractures the fluids used), under a zone that keeps
-				# its own rock — a pure function of dir, so the collision path,
-				# which has no colour, needs nothing. INF where the planet has
-				# no network or the pitch cannot carry it (LOD fade).
+				# of every corundum ground, and the SAME network, uncarved
+				# (hairline fractures the fluids used), under a zone of another
+				# rock — a pure function of dir, so the collision path, which
+				# has no colour, needs nothing. INF where the planet has no
+				# network or the pitch cannot carry it (LOD fade).
 				var _imp_d := _crack_d
-				if is_inf(_imp_d) and not _cor_here and data.corundum_default_biome:
+				if is_inf(_imp_d) and not _crack_here and data.corundum_default_biome:
 					_imp_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 						dir, data.radius, data.crack_spacing_m,
 						data.crack_width_m, _crack_vtx_spacing)
@@ -1084,7 +1137,7 @@ static func generate_mesh(
 		for yi in res + 1:
 			for xi in res + 1:
 				var idx := yi * (res + 1) + xi
-				var dir_c: Vector3 = grid_dirs[yi][xi]
+				var dir_c: Vector3 = _vdirs[idx]
 				# Build tangent frame on sphere at this vertex.
 				var up := dir_c
 				var arbitrary := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
@@ -1125,14 +1178,25 @@ static func generate_mesh(
 				# génération d'un chunk sur tarsis_3.
 				if data.corundum_default_biome \
 						and _crack_edge[idx] < _crack_skip_m:
+					# Same POI depth factor as the vertex, per probe (a ramp
+					# is a slope the shading must see).
+					var _wl := 1.0
+					var _wr := 1.0
+					var _wb := 1.0
+					var _wt := 1.0
+					if _crack_masked:
+						_wl = data.crack_factor(dir_l, _crack_pois, _frame)
+						_wr = data.crack_factor(dir_r, _crack_pois, _frame)
+						_wb = data.crack_factor(dir_b, _crack_pois, _frame)
+						_wt = data.crack_factor(dir_t, _crack_pois, _frame)
 					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wl
 					h_r += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_r, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+						dir_r, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wr
 					h_b += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wb
 					h_t += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing)
+						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wt
 				# Biome relief on the probes: the vertex's own road weight is
 				# reused (a quarter-cell away it is the same to the eye), the
 				# noise is evaluated at each probe's exact direction.
@@ -1230,13 +1294,8 @@ static func generate_mesh(
 				var slot := _imp_slot[idx]
 				if slot == 0:
 					continue
-				var slope := 0.0
-				if hp_mode:
-					slope = 1.0 - normals[idx].dot(grid_dirs[yi][xi])
-				# Cube-sphere path (legacy): the direction back from the local
-				# vertex, chunk centre added — float32-exact enough for a tint.
-				var vdir: Vector3 = grid_dirs[yi][xi] if hp_mode \
-						else (vertices[idx] + cc_f32).normalized()
+				var vdir: Vector3 = _vdirs[idx]
+				var slope := 1.0 - normals[idx].dot(vdir)
 				colors[idx] = RockImpurity.tint(_imp_slugs[slot - 1], vdir, data.radius,
 						_chunk_heights[idx], _imp_core[idx], _imp_carve[idx], slope, colors[idx],
 						_imp_wall[idx])
@@ -2709,6 +2768,10 @@ static func generate_collision_shape(
 	# keeps the server framerate up.  Cracks are carved only where the grid is
 	# fine enough to actually represent them.
 	var _col_crack_spacing := 0.0
+	# The POI spheres kept whole, same subset rule as the mesh; and whether
+	# any mask (POI or mountain) applies at all.
+	var _col_crack_pois: Array = []
+	var _col_crack_masked := false
 	# Height tile is separate from _export_ipix: _export_ipix stays at export_nside
 	# for recipe lookups (craters/zones/features), while heights read the pyramid
 	# level matching this chunk's own nside so collision matches the rendered mesh.
@@ -2719,6 +2782,10 @@ static func generate_collision_shape(
 		if res > 0:
 			_col_crack_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
 					* data.radius / float(res)
+		if data.corundum_default_biome:
+			_col_crack_pois = data.crack_pois_near(HEALPix.pix2vec_nest(hp_nside, hp_ipix),
+					HEALPix.pixel_side_length(hp_nside, 1.0) * data.radius * 0.8)
+			_col_crack_masked = not _col_crack_pois.is_empty() or data.mountains_active()
 		if hp_nside >= data.export_nside:
 			_export_ipix = hp_ipix
 			var _ns := hp_nside
@@ -2861,9 +2928,29 @@ static func generate_collision_shape(
 		for xi in res + 1:
 			var dir: Vector3
 			var height: float
+			# The crack zone rule and the rim snap, BEFORE the height is read:
+			# the same snap as the mesh (crack_rim_snap, every vertex, border
+			# included — the neighbouring collision chunk on the same grid
+			# moves it the same way — RIM_SNAP_PITCHES of this grid's pitch),
+			# so on the fine collision grid the physics rim is the rendered
+			# rim. The edge distance it returns feeds the carve below — one
+			# Voronoi per vertex.
+			var _cor_here := data.corundum_default_biome
+			var _col_crack_d := INF
 			if hp_mode:
 				dir = grid_dirs[yi][xi]
-				if xi == 0 or xi == res or yi == 0 or yi == res:
+				var _is_border := xi == 0 or xi == res or yi == 0 or yi == res
+				if _cor_here and not _col_pz_zones.is_empty():
+					var _cor_zones := _query_zones_at_direction(dir, _col_pz_zones)
+					_cor_here = data.cracks_apply_to_zone(
+							_cor_zones[0] if not _cor_zones.is_empty() else {})
+				if _cor_here:
+					var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
+						dir, data.radius, data.crack_spacing_m, data.crack_width_m,
+						_col_crack_spacing, _col_crack_spacing * RIM_SNAP_PITCHES)
+					dir = Vector3(_snap.x, _snap.y, _snap.z)
+					_col_crack_d = _snap.w
+				if _is_border:
 					height = data.sample_height_boundary(dir, _height_ipix,
 							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
 				else:
@@ -3086,16 +3173,23 @@ static func generate_collision_shape(
 			# grid is fine enough it matches the client, and where it's too coarse
 			# it fades to flat (and skips the Voronoi → server stays fast).
 			# Same zone rule too: the mesh carves only where the FIRST zone
-			# containing the vertex names no known biome (corundum by default).
-			var _cor_here := data.corundum_default_biome
-			if _cor_here and not _col_pz_zones.is_empty():
+			# containing the vertex leaves the ground corundum
+			# (PlanetData.cracks_apply_to_zone).
+			if _cor_here and not hp_mode and not _col_pz_zones.is_empty():
 				var _cor_zones := _query_zones_at_direction(dir, _col_pz_zones)
-				_cor_here = data.corundum_applies_to_zone(
+				_cor_here = data.cracks_apply_to_zone(
 						_cor_zones[0] if not _cor_zones.is_empty() else {})
 			if _cor_here:
-				height += ArideDesertCorundumPlateauTerrain.crack_offset(
-					dir, data.radius, data.crack_spacing_m,
-					data.crack_width_m, data.crack_depth_m, _col_crack_spacing)
+				var _col_w := 1.0
+				if _col_crack_masked:
+					_col_w = data.crack_factor(dir, _col_crack_pois, _frame)
+				if _col_w > 0.0:
+					if not hp_mode:
+						_col_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
+							dir, data.radius, data.crack_spacing_m,
+							data.crack_width_m, _col_crack_spacing)
+					height += ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
+						_col_crack_d, data.crack_width_m, data.crack_depth_m) * _col_w
 
 			# ── Profiled-line cutting (collision) ──────────────────
 			if not _col_rw_ctx.is_empty():

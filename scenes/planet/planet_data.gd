@@ -142,6 +142,17 @@ var chunk_data_version: String = ""
 @export var crack_width_m: float = 14.0
 ## Depth each crack is carved below the plateau surface, in metres.
 @export var crack_depth_m: float = 22.0
+## A POI's influence sphere is kept whole: no crack inside it, and over this
+## many metres outside it the crack depth ramps back to full (a ramp, not a
+## step, so the collision and the mesh stay walkable at the edge). The
+## spheres come from the planet's POI nodes (PlanetTerrain gives them to
+## [method set_crack_exclusions] before the first chunk).
+@export var crack_poi_margin_m: float = 300.0
+## The crack network stops under the mountains: full depth on a range's
+## outline (a ridge's foot), none this many metres inside — a ramp of its
+## own, not the relief's feather, which can be kilometres and would run a
+## canyon up to the crest.
+@export var crack_mountain_fade_m: float = 600.0
 ## DEBUG: paint chunk skirt curtains bright magenta to distinguish them from
 ## real terrain / crack interiors when diagnosing dark-band artifacts.
 @export var debug_color_skirts: bool = false
@@ -1568,6 +1579,11 @@ func inject_biome_feature(nside: int, ipix: int, biome_update: Dictionary) -> vo
 				"biome_type": biome_type,
 				"coverage": "point" if geom_type == "point" else "partial",
 			}
+			# The zone's ground props, when the update carries them — the
+			# rock rules (cracks_apply_to_zone, the rock tint) read them.
+			for prop in ["rock_type", "clarity", "color_hex"]:
+				if biome_update.has(prop):
+					zone[prop] = biome_update[prop]
 			if geom_type == "point" and verts.size() >= 1:
 				zone["lon"] = verts[0][0] if verts[0] is Array else verts[0].x
 				zone["lat"] = verts[0][1] if verts[0] is Array else verts[0].y
@@ -2477,6 +2493,14 @@ func has_mountains() -> bool:
 	return _has_mountains == 1
 
 
+## [method has_mountains] without the resolve: true only once warm_mountains
+## has run (main thread) and found features. What a chunk worker may ask —
+## resolving from a worker would warm the mountains under the profiles and
+## bridge plans already built without them.
+func mountains_active() -> bool:
+	return _has_mountains == 1
+
+
 ## Resolve has_mountains() and the finest pitch, and build the debug features.
 ## MAIN THREAD, before the first chunk task (PlanetTerrain.initialize does it
 ## before the bridge spans, whose profiles must already see the relief).
@@ -2647,6 +2671,32 @@ func mountain_core(dir: Vector3, frame: TileFrame = null) -> float:
 	if zones.is_empty() and ridges.is_empty():
 		return 0.0
 	return MountainRelief.core(dir, radius, zones, ridges)
+
+
+## How much the ground along [param dir] belongs to a mountain feature
+## (MountainRelief.mask over crack_mountain_fade_m, in [0, 1]) — 0 without
+## mountains. Same frame / tile resolution as [method mountain_core].
+func mountain_mask(dir: Vector3, frame: TileFrame = null) -> float:
+	if _has_mountains != 1:
+		return 0.0
+	var zones: Array
+	var ridges: Array
+	var mset: RefCounted
+	if frame != null and frame.mtn_ready:
+		zones = frame.mtn
+		ridges = frame.rdg
+		mset = frame.mtn_set
+	else:
+		var ip := HEALPix.vec2pix_nest(export_nside, dir)
+		mset = get_chunk_mountain_set(export_nside, ip)
+		if mset == null:
+			zones = get_chunk_mountain_zones(export_nside, ip)
+			ridges = get_chunk_ridges(export_nside, ip)
+	if mset != null:
+		return mset.Mask(dir, radius, crack_mountain_fade_m)
+	if zones.is_empty() and ridges.is_empty():
+		return 0.0
+	return MountainRelief.mask(dir, radius, zones, ridges, crack_mountain_fade_m)
 
 
 ## Does this planet carry any road at all (the pack's road part has features)?
@@ -3644,15 +3694,15 @@ func sample_height_at(dir: Vector3) -> float:
 ## The biome relief (BiomeRelief, ≤ a couple of metres) is deliberately NOT
 ## added: it stays under the 3 m anti-tunnel margin and far under the cache
 ## validator's tolerance. The crack, at up to crack_depth_m, is not in that
-## league, so it follows the same zone rule as the chunks (corundum_applies_at):
-## no crack is added where another biome's zone has left the ground uncarved.
+## league, so it follows the same zone rule as the chunks (cracks_apply_at):
+## no crack is added where another rock's zone has left the ground uncarved.
 ## The procedural mountains (hundreds of metres) come with the sampler itself;
 ## [param vtx_spacing_m] picks their LOD (0 = full detail, the finest chunk).
 func crack_aware_surface_dist(dir: Vector3, nside: int = -1, vtx_spacing_m: float = 0.0) -> float:
 	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside, null, vtx_spacing_m)
-	if corundum_applies_at(dir):
+	if cracks_apply_at(dir):
 		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
-			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0)
+			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0) * crack_factor(dir)
 	return radius + alt
 
 
@@ -3730,6 +3780,114 @@ func corundum_applies_to_zone(first_zone: Dictionary) -> bool:
 	if first_zone.is_empty():
 		return true
 	return get_biome_by_type(String(first_zone.get("biome_type", ""))) == null
+
+
+## The sand-covered corundum biome: the crystal is under the dunes, the
+## cracks do not show.
+const CORUNDUM_SAND_DESERT_BIOME := "aride_desert-corundum_sand_desert"
+
+
+## Does the crack network carve the ground under [param first_zone]? Where
+## the ground IS corundum: the corundum default ([method corundum_applies_to_zone])
+## — and any zone whose ground is a corundum rock (rock_type corundum_* or
+## emery, or the corundum plateau biome itself), because an outcrop of blue
+## corundum is one block of the same crystal and fractures like the rest of
+## the planet. A zone of another rock, or the sand desert, stays uncarved.
+## Needs the planet's network (corundum_default_biome, which owns the crack
+## parameters). The single rule of the mesh, the collision, the server's
+## surface catch and the bridges — see [method cracks_apply_at].
+func cracks_apply_to_zone(first_zone: Dictionary) -> bool:
+	if not corundum_default_biome:
+		return false
+	if corundum_applies_to_zone(first_zone):
+		return true
+	var biome_type := String(first_zone.get("biome_type", ""))
+	if biome_type == CORUNDUM_SAND_DESERT_BIOME:
+		return false
+	if biome_type == ArideDesertCorundumPlateauTerrain.BIOME_TYPE:
+		return true
+	var rock_type := String(first_zone.get("rock_type", ""))
+	return rock_type.begins_with("corundum") or rock_type == "emery"
+
+
+## The direction half of [method cracks_apply_to_zone]: is the ground along
+## [param dir] carved by the crack network?
+func cracks_apply_at(dir: Vector3) -> bool:
+	if not corundum_default_biome:
+		return false
+	return cracks_apply_to_zone(first_zone_at(dir))
+
+
+## The POI spheres the crack network keeps whole, planet-local:
+## [{dir: Vector3, radius: float}], see [method set_crack_exclusions].
+var _crack_pois: Array = []
+
+
+## Give the crack network the POIs to keep whole — MAIN THREAD, before the
+## first chunk task and before the bridge spans (which walk the chasms).
+## [param pois]: [{dir: Vector3 (planet-local unit), radius: float (m)}].
+func set_crack_exclusions(pois: Array) -> void:
+	_crack_pois = []
+	for p in pois:
+		var d: Vector3 = (p as Dictionary).get("dir", Vector3.ZERO)
+		var r := float((p as Dictionary).get("radius", 0.0))
+		if d.length_squared() < 0.5 or r <= 0.0:
+			continue
+		_crack_pois.append({"dir": d.normalized(), "radius": r})
+
+
+## The exclusions a chunk around [param center_dir] can meet: those whose
+## sphere plus the margin reaches within [param reach_m] of its centre. The
+## per-vertex test then loops over a handful instead of the planet's list.
+func crack_pois_near(center_dir: Vector3, reach_m: float) -> Array:
+	if _crack_pois.is_empty():
+		return []
+	var out: Array = []
+	for p in _crack_pois:
+		var d_m: float = (center_dir - (p["dir"] as Vector3)).length() * radius
+		if d_m < reach_m + float(p["radius"]) + crack_poi_margin_m:
+			out.append(p)
+	return out
+
+
+## Depth factor of the crack network at [param dir] in [0, 1]: 0 inside a
+## POI's sphere, 1 past the sphere plus crack_poi_margin_m, smooth between.
+## [param pois] defaults to the planet's list; a chunk passes its
+## [method crack_pois_near] subset. Pure — the mesh, the collision, the
+## server's surface catch and the bridges multiply the same carve by it.
+func crack_clearance(dir: Vector3, pois: Array = _crack_pois) -> float:
+	var w := 1.0
+	for p in pois:
+		var d_m: float = (dir - (p["dir"] as Vector3)).length() * radius
+		var r := float(p["radius"])
+		if d_m <= r:
+			return 0.0
+		w = minf(w, smoothstep(r, r + crack_poi_margin_m, d_m))
+	return w
+
+
+## Depth factor of the crack network at [param dir] in [0, 1] — everything
+## that keeps the ground whole, multiplied: the POI spheres
+## ([method crack_clearance]) and the mountains (1 − [method mountain_mask]:
+## a massif is not cut by the plateau's canyons, the network fades out over
+## its feather). [param pois] / [param frame] as in the two halves; the four
+## carve paths and the normal probes all multiply the same carve by it.
+func crack_factor(dir: Vector3, pois: Array = _crack_pois, frame: TileFrame = null) -> float:
+	var w := crack_clearance(dir, pois)
+	if w <= 0.0 or _has_mountains != 1:
+		return w
+	return w * (1.0 - mountain_mask(dir, frame))
+
+
+## Re-keys the chunk cache: the exclusions are baked geometry.
+func crack_exclusion_fingerprint() -> String:
+	if _crack_pois.is_empty():
+		return ""
+	var parts := PackedStringArray()
+	for p in _crack_pois:
+		var d: Vector3 = p["dir"]
+		parts.append("%.5f,%.5f,%.5f,%.0f" % [d.x, d.y, d.z, float(p["radius"])])
+	return ("%s|%.0f" % [",".join(parts), crack_poi_margin_m]).sha1_text().substr(0, 10)
 
 
 ## HEALPix nside for server COLLISION chunks pinned under active bodies.

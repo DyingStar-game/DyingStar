@@ -106,8 +106,9 @@ public partial class MountainZoneNative : RefCounted
         return MountainNoiseCore.PowFast(h, _exponent);
     }
 
-    /// <summary>MountainRelief.envelope at (lon, lat) degrees.</summary>
-    public double Envelope(double lon, double lat, double mPerDeg)
+    /// <summary>MountainRelief.envelope at (lon, lat) degrees; featherM > 0
+    /// replaces the zone's own feather.</summary>
+    public double Envelope(double lon, double lat, double mPerDeg, double featherM = -1.0)
     {
         if (_full) return 1.0;
         // Rect2.has_point: lower bound inclusive, upper exclusive.
@@ -115,7 +116,8 @@ public partial class MountainZoneNative : RefCounted
         if (!PointInPolygon(lon, lat)) return 0.0;
         double latScale = Math.Cos(MountainNoiseCore.DegToRad(MountainNoiseCore.Clamp(lat, -89.5, 89.5)));
         if (latScale < 1e-6) latScale = 1e-6;
-        double featherDeg = _feather / mPerDeg;
+        double feather = featherM > 0.0 ? featherM : _feather;
+        double featherDeg = feather / mPerDeg;
         double bestSq = double.PositiveInfinity;
         int n = _px.Length;
         int j = n - 1;
@@ -126,7 +128,7 @@ public partial class MountainZoneNative : RefCounted
             j = i;
         }
         if (bestSq >= featherDeg * featherDeg) return 1.0;
-        return MountainNoiseCore.Smoothstep(0.0, _feather, Math.Sqrt(bestSq) * mPerDeg);
+        return MountainNoiseCore.Smoothstep(0.0, feather, Math.Sqrt(bestSq) * mPerDeg);
     }
 
     private bool PointInPolygon(double x, double y)
@@ -186,6 +188,15 @@ public partial class MountainZoneNative : RefCounted
         double s = ShapeD(dx, dy, dz, radius, _wavelength / CorePitchDiv);
         if (s <= 0.0) return 0.0;
         return env * s * _impurity;
+    }
+
+    /// <summary>MountainRelief.mask term: the envelope over fadeM (1 for a full zone).</summary>
+    internal double MaskD(double dx, double dy, double dz, double radius, double lon, double lat, double fadeM)
+    {
+        if (_full) return 1.0;
+        if (double.IsNaN(lon))
+            MountainNoiseCore.ToLonLat(dx, dy, dz, out lon, out lat);
+        return Envelope(lon, lat, radius * Math.PI / 180.0, fadeM);
     }
 
     public bool IsFull() => _full;
