@@ -3,7 +3,7 @@ extends Node3D
 ## (remote_player = true, PlayerClient presentation, CharacterAnimator, name tag, footsteps).
 ## Run WITH a display:
 ##   godot --path . res://test/perf/remote_players_bench.tscn -- count=30 [move=0] [dist=14] [noanim] [notag]
-##       [nopuppet] [noshadow] [nophys] [noskel] [noscript] [sharedtag] [torch] [budget] [behind] [sun=0]
+##       [nopuppet] [noshadow] [nophys] [noskel] [noscript] [sharedtag] [torch] [budget] [behind] [sun=0] [trimesh] [origin=3.3e10] [area=0]
 ## The avatars walk in small circles (move=1, default) fed at 30 Hz through net_set_target, like the
 ## network does, so the walk animation, interpolation and footsteps all run. Prints one line
 ## `PROBE count=… frame_ms=… proc_ms=… phys_ms=… rcpu_ms=… rgpu_ms=… draws=… prims=…` and appends it
@@ -15,6 +15,7 @@ const PLAYER_SCENE := preload("res://scenes/player/player.tscn")
 var _count := 30
 var _move := true
 var _dist := 14.0
+var _origin := 0.0
 var _flags: Dictionary = {}
 var _players: Array[Node3D] = []
 var _origins: Array[Vector3] = []
@@ -43,6 +44,8 @@ func _ready() -> void:
 			_move = int(a.substr(5)) != 0
 		elif a.begins_with("dist="):
 			_dist = float(a.substr(5))  # camera distance (m) to the crowd's first row
+		elif a.begins_with("origin="):
+			_origin = float(a.substr(7))  # world offset (m) of the whole rig, e.g. 3.3e10 = a planet
 		else:
 			_flags[a] = true
 	get_window().size = Vector2i(1920, 1080)
@@ -60,12 +63,20 @@ func _ready() -> void:
 	add_child(ground)
 	var body := StaticBody3D.new()
 	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(400.0, 1.0, 400.0)
-	shape.shape = box
-	shape.position.y = -0.5
+	if _flags.has("trimesh"):
+		# A terrain-like ground: one concave trimesh (200x200 quads = 80 k triangles), like a chunk.
+		plane.subdivide_width = 199
+		plane.subdivide_depth = 199
+		shape.shape = plane.create_trimesh_shape()
+	else:
+		var box := BoxShape3D.new()
+		box.size = Vector3(400.0, 1.0, 400.0)
+		shape.shape = box
+		shape.position.y = -0.5
 	body.add_child(shape)
 	add_child(body)
+	# Astronomic offset: move the whole rig (ground, camera, crowd) there — the bench's own root.
+	position = Vector3(_origin, 0.0, _origin)
 
 	if not _flags.has("sun=0"):
 		var sun := DirectionalLight3D.new()
@@ -146,6 +157,8 @@ func _ready() -> void:
 			_shared_tags.append(tag)
 		if _flags.has("torch"):
 			p.flashlight.visible = true  # every avatar's head torch lit (night scene)
+		if _flags.has("area=0"):
+			p.get_node("AreaDetector").monitoring = false  # the candidate fix for remote avatars
 		if _flags.has("nophys"):
 			for cs in p.find_children("*", "CollisionShape3D", true, false):
 				(cs as CollisionShape3D).disabled = true
