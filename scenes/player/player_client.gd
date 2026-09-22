@@ -10,15 +10,19 @@ const NAME_TAG_CLEARANCE: float = 0.45
 ## Name of the shared CanvasLayer under the tree root that carries every remote name tag.
 const NAME_TAG_LAYER_NAME: StringName = &"PlayerNameTags"
 ## Remote presentation LOD, re-evaluated at this interval (s) from the avatar's distance to the camera.
-const REMOTE_LOD_INTERVAL: float = 1.0
+## Short, because the interval is itself a distance error: at a run this used to be 1 s = ~5 m of
+## lag before the shadow followed, on top of the threshold — and the lag points the opposite way
+## walking away and walking back, so it READS as a much wider gap than it is.
+const REMOTE_LOD_INTERVAL: float = 0.25
 ## Farther than this (m) the remote presentation (locomotion, footsteps, interpolation, tag, tool)
 ## ticks every other frame; back to every frame nearer than the EXIT value (hysteresis, no flicker).
 const REMOTE_HALF_RATE_ENTER: float = 15.0
 const REMOTE_HALF_RATE_EXIT: float = 12.0
 ## Farther than this (m) the remote puppet casts no sun shadow (unreadable at that distance in the far
-## cascades, yet a full extra pass per cascade); cast again nearer than the EXIT value.
-const REMOTE_SHADOW_OFF: float = 32.0
-const REMOTE_SHADOW_ON: float = 28.0
+## cascades, yet a full extra pass per cascade). ONE distance, deliberately: a shadow that goes out at
+## 32 m and only comes back at 28 is something a player walking back and forth sees, and calls a bug.
+## The half-rate switch below keeps its hysteresis because nobody can see that one flip.
+const REMOTE_SHADOW_DISTANCE: float = 32.0
 ## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
 ## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
 ## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
@@ -1192,10 +1196,11 @@ func _setup_conversation_text() -> void:
 	italic.variation_transform = Transform2D(Vector2(1.0, 0.415), Vector2(0.0, 1.0), Vector2.ZERO)
 	_conversation_text.add_theme_font_override("font", italic)
 
-## Distance LOD of a remote avatar, once a second: beyond REMOTE_HALF_RATE_* its presentation (this
-## role's _process and the MiningTool's) ticks every other frame — the network feeds it at 30 Hz
-## anyway — and beyond REMOTE_SHADOW_* its puppet stops casting the sun shadow. Both thresholds carry
-## a hysteresis so an avatar loitering at the boundary does not flip every second.
+## Distance LOD of a remote avatar, four times a second: beyond REMOTE_HALF_RATE_* its presentation
+## (this role's _process and the MiningTool's) ticks every other frame — the network feeds it at
+## 30 Hz anyway — and beyond REMOTE_SHADOW_DISTANCE its puppet stops casting the sun shadow. The
+## half-rate switch keeps a hysteresis (invisible); the shadow uses one distance both ways, so it
+## comes back exactly where it went out.
 func _refresh_remote_lod() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -1204,7 +1209,7 @@ func _refresh_remote_lod() -> void:
 	_remote_far = _beyond(_remote_far, d, REMOTE_HALF_RATE_ENTER, REMOTE_HALF_RATE_EXIT)
 	_half_rate.enabled = _remote_far
 	player.mining_tool.half_rate.enabled = _remote_far
-	var no_shadow: bool = _beyond(_remote_no_shadow, d, REMOTE_SHADOW_OFF, REMOTE_SHADOW_ON)
+	var no_shadow: bool = d > REMOTE_SHADOW_DISTANCE
 	if no_shadow != _remote_no_shadow:
 		_remote_no_shadow = no_shadow
 		var mode := GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if no_shadow \
