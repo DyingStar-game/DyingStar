@@ -119,6 +119,21 @@ func _input(event: InputEvent) -> void:
 # Screen contract (see ScreenZone)
 # ---------------------------------------------------------------------------------------------
 
+## 3D-screen contract: does this console hold the keyboard right now?
+##
+## PlayerClient asks the screen's OWNER — this node — never the interface buried in the SubViewport,
+## so the question has to be relayed. It was not, and the method existing on TeleporterUI alone looked
+## for all the world like it was wired: nothing errors when the optional half of a contract is missing,
+## _screen_typing() simply answers false forever.
+##
+## What that cost: polled reads are not shielded by GUI focus, so every gameplay key kept firing while
+## a field had focus. Typing a longitude started the engine on "i", lit the torch on "l", crouched on
+## "c"; a height of 1750 equipped the mining tool on the way past. Escape is the deliberate exception
+## and is handled separately, in _input above, which hands the keyboard back.
+func is_typing() -> bool:
+	return _ui != null and _ui.is_typing()
+
+
 ## Told who is standing at the console. On the CLIENT this is when the "Return" entry can be filled
 ## in — the departure point is simply where that player is right now, so nothing has to be stored on
 ## the server or replicated back.
