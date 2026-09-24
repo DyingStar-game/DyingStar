@@ -35,11 +35,16 @@ const AUDIO_BUSES : Dictionary = {
 	"general": "Master", "music": "Music", "sfx": "SFX", "voip": "VoIP",
 }
 var config : ConfigFile = ConfigFile.new()
+## The display language. Given our ConfigFile and our save call rather than a file of its own, so
+## the settings still have a single home and a single writer. Built in _ready(), before the
+## dedicated-server early return, so it is never null even where nothing displays text.
+var language : LanguageSettings
 ## The saved keybindings as action -> key text, empty when nothing was ever remapped. Kept so the
 ## controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
 
 func _ready() -> void:
+	language = LanguageSettings.new(config, save_settings)
 	if OS.has_feature("dedicated_server"):
 		return
 	# First run (no file yet): write the defaults so there is something to load.
@@ -111,6 +116,8 @@ func initialize_settings():
 	# Shown by default: it is the driver's only dashboard until the in-cab one exists (GDD).
 	config.set_value("general", "vehicle_hud", true)
 	config.set_value("general", "surface_debug", false)
+	# "auto" follows the OS on first launch, so a French player is not greeted in English.
+	config.set_value("general", "language", "auto")
 	for key in AUDIO_BUSES:
 		config.set_value("audio", key, 100.0)
 	# HUD mic toggle, remembered between sessions like every other audio setting.
@@ -140,6 +147,7 @@ func apply_settings():
 	# Cap the framerate (0 = unlimited). Default 144 so an uncapped GPU doesn't render 500+ fps.
 	Engine.max_fps = int(config.get_value("video", "max_fps", 144))
 	apply_audio_settings()
+	language.apply()
 	if config.get_value("video", "dev_mode", false):
 		return
 	if config.has_section_key("video", "monitor"):

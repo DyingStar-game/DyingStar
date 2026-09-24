@@ -332,10 +332,7 @@ perforate={
 
 [internationalization]
 
-locale/translation_remaps={
-"res://assets/textures/Localizations/uk_flag.jpg": PackedStringArray("res://assets/textures/Localizations/es_flag.jpg:es", "res://assets/textures/Localizations/fr_flag.jpg:fr")
-}
-locale/translations=PackedStringArray("res://tools/localization/localisation.en.translation", "res://tools/localization/localisation.es.translation", "res://tools/localization/localisation.fr.translation")
+locale/translations=PackedStringArray("res://tools/localization/localisation.en.translation", "res://tools/localization/localisation.fr.translation")
 
 [layer_names]
 

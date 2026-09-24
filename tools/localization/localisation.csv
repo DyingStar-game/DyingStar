@@ -1,10 +1,5 @@
 keys,en,fr,es
-GREET,"Hello, friend!",Bonjour mon pote !,"Hola, amigo!"
-NICKNAME,User name,Nom d’utilisateur,Nombre de utilisator
-CONNECT,Connect,Se connecter,
-OFFLINE,Offline,Hors ligne,
 %%PAUSEPAGE_TITLE,Game Paused,Jeu en pause,
-%%PAUSEPAGE_KEYMAPPING,Key mapping,Mappage des touches,
 %%PAUSEPAGE_SETTINGS,Settings,Paramètres,
 %%PAUSEPAGE_QUITGAME,Quit game,Quitter le jeu,
 %%PAUSEPAGE_RETURNMENU,Return to menu,Retour au menu,
@@ -17,6 +12,6 @@ OFFLINE,Offline,Hors ligne,
 %%ERR_BACKTOMENU,BACK TO MENU,RETOUR AU MENU,
 %%ERR_NUM_1337,ERROR 1337,ERREUR 1337,
 %%ERR_NUM_1337_MSG,SERVER CONNECTION FAILED,ÉCHEC DE CONNEXION AU SERVEUR,
-%%MAINPAGE_SPAWN_LOCATION,Spawn location : ,Emplacement d'apparition :,
 %%MAINPAGE_ENTER,Enter Universe,Entrer dans l'Univers,
-%%TROLLPAGE_BACKTOLOGIN,Return to login,Retour à la connexion,
+%%MENU_LANGUAGE,Language,Langue,
+%%MENU_LANGUAGE_AUTO,Automatic,Automatique,

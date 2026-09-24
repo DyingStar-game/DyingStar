@@ -1,71 +1,70 @@
 extends Control
 
-## Wires the general options to SettingsManager (apply + persist). For now: the cargo-debug toggle
-## (green envelope around items really locked into a vehicle bed), mirroring the graphics page style.
+## Wires the general options to SettingsManager (apply + persist): the display language first, then
+## the in-game debug toggles.
 
-@onready var _show_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/ShowDebug/Button
-@onready var _cargo_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/CargoDebug/Button
-@onready var _celestial_gizmos: Button = $ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos/Button
-@onready var _movement_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/MovementDebug/Button
-@onready var _surface_debug: Button = $ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug/Button
-@onready var _vehicle_hud: Button = $ScrollContainer/MarginContainer/VBoxContainer/VehicleHud/Button
+## One row per toggle: the node under the VBox, and the SettingsManager pair behind it. Declaring
+## them beats six copies of the same four lines — adding a toggle becomes one entry, and the On/Off
+## wording lives in a single place instead of twelve.
+const TOGGLES : Array[Dictionary] = [
+	{"node": "ShowDebug", "getter": "is_show_debug", "setter": "set_show_debug"},
+	{"node": "CargoDebug", "getter": "is_cargo_debug", "setter": "set_cargo_debug"},
+	{"node": "CelestialGizmos", "getter": "is_celestial_gizmos", "setter": "set_celestial_gizmos"},
+	{"node": "SurfaceDebug", "getter": "is_surface_debug", "setter": "set_surface_debug"},
+	{"node": "VehicleHud", "getter": "is_vehicle_hud", "setter": "set_vehicle_hud"},
+	{"node": "MovementDebug", "getter": "is_movement_debug", "setter": "set_movement_debug"},
+]
+
+@onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
+@onready var _language : OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/Language/OptionButton
 
 func _ready() -> void:
-	_show_debug.toggle_mode = true
-	_show_debug.button_pressed = SettingsManager.is_show_debug()
-	_show_debug.text = "On" if _show_debug.button_pressed else "Off"
-	_show_debug.toggled.connect(_on_show_debug_toggled)
+	_fill_language()
+	_language.item_selected.connect(_on_language_selected)
+	# The picker is filled from code, so it does NOT re-translate itself the way a Control whose
+	# text is set in the scene does. Rebuild it when the language changes under us.
+	SettingsManager.language.changed.connect(_on_language_changed)
+	for toggle in TOGGLES:
+		_wire_toggle(toggle)
 
-	_cargo_debug.toggle_mode = true
-	_cargo_debug.button_pressed = SettingsManager.is_cargo_debug()
-	_cargo_debug.text = "On" if _cargo_debug.button_pressed else "Off"
-	_cargo_debug.toggled.connect(_on_cargo_debug_toggled)
+## Fill the picker: "Automatic" first, then every shipped language in its own words. The language
+## CODE rides as item metadata instead of being read back from the visible text, which is a display
+## string and would tie the stored value to its own wording.
+func _fill_language() -> void:
+	_language.clear()
+	_language.add_item(tr("%%MENU_LANGUAGE_AUTO"))
+	_language.set_item_metadata(0, LanguageSettings.AUTO)
+	for code in LanguageSettings.LANGUAGES:
+		_language.add_item(str(LanguageSettings.LANGUAGES[code]))
+		_language.set_item_metadata(_language.item_count - 1, code)
+	var current : String = SettingsManager.language.choice()
+	for i in _language.item_count:
+		if _language.get_item_metadata(i) == current:
+			_language.select(i)
+			return
+	_language.select(0)
 
-	_celestial_gizmos.toggle_mode = true
-	_celestial_gizmos.button_pressed = SettingsManager.is_celestial_gizmos()
-	_celestial_gizmos.text = "On" if _celestial_gizmos.button_pressed else "Off"
-	_celestial_gizmos.toggled.connect(_on_celestial_gizmos_toggled)
+func _on_language_selected(index: int) -> void:
+	SettingsManager.language.select(str(_language.get_item_metadata(index)))
 
-	_movement_debug.toggle_mode = true
-	_movement_debug.button_pressed = SettingsManager.is_movement_debug()
-	_movement_debug.text = "On" if _movement_debug.button_pressed else "Off"
-	_movement_debug.toggled.connect(_on_movement_debug_toggled)
+## Rebuild so the "Automatic" entry follows the new language. select() emits nothing, so refilling
+## from inside the change we just caused cannot loop.
+func _on_language_changed(_language_code: String) -> void:
+	_fill_language()
 
-	_surface_debug.toggle_mode = true
-	_surface_debug.button_pressed = SettingsManager.is_surface_debug()
-	_surface_debug.text = "On" if _surface_debug.button_pressed else "Off"
-	_surface_debug.toggled.connect(_on_surface_debug_toggled)
+## Bind one toggle to its setting: current value in, new value out, label kept in step.
+func _wire_toggle(toggle: Dictionary) -> void:
+	var button : Button = _rows.get_node_or_null(str(toggle["node"]) + "/Button")
+	# A typo in the table would otherwise leave a dead button that silently reports "off" forever.
+	if button == null:
+		push_error("General settings: no toggle button named %s" % toggle["node"])
+		return
+	button.toggle_mode = true
+	button.button_pressed = bool(SettingsManager.call(toggle["getter"]))
+	button.text = _toggle_label(button.button_pressed)
+	button.toggled.connect(func(on: bool) -> void:
+		button.text = _toggle_label(on)
+		SettingsManager.call(toggle["setter"], on))
 
-	_vehicle_hud.toggle_mode = true
-	_vehicle_hud.button_pressed = SettingsManager.is_vehicle_hud()
-	_vehicle_hud.text = "On" if _vehicle_hud.button_pressed else "Off"
-	_vehicle_hud.toggled.connect(_on_vehicle_hud_toggled)
-
-## Show/hide the in-game debug panels. Kept in sync with the toggle_debug key via SettingsManager.
-func _on_show_debug_toggled(on: bool) -> void:
-	_show_debug.text = "On" if on else "Off"
-	SettingsManager.set_show_debug(on)
-
-func _on_cargo_debug_toggled(on: bool) -> void:
-	_cargo_debug.text = "On" if on else "Off"
-	SettingsManager.set_cargo_debug(on)
-
-## Show/hide the in-world star/planet/moon markers (orientation aid).
-func _on_celestial_gizmos_toggled(on: bool) -> void:
-	_celestial_gizmos.text = "On" if on else "Off"
-	SettingsManager.set_celestial_gizmos(on)
-
-## Show/hide the movement debug readout (speed / mouse-wheel walk tier / current animation clip).
-func _on_movement_debug_toggled(on: bool) -> void:
-	_movement_debug.text = "On" if on else "Off"
-	SettingsManager.set_movement_debug(on)
-
-## Show/hide the surface readout (which taxonomy family is under your feet, and how it was decided).
-func _on_surface_debug_toggled(on: bool) -> void:
-	_surface_debug.text = "On" if on else "Off"
-	SettingsManager.set_surface_debug(on)
-
-## Show/hide the vehicle dashboard overlay shown to the driver (speed, rpm, weight, bays, model).
-func _on_vehicle_hud_toggled(on: bool) -> void:
-	_vehicle_hud.text = "On" if on else "Off"
-	SettingsManager.set_vehicle_hud(on)
+func _toggle_label(on: bool) -> String:
+	return "On" if on else "Off"
