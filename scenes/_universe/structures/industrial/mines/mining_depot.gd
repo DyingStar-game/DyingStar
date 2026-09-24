@@ -368,13 +368,6 @@ func update_screen(data: Dictionary):
 		handle_extract()
 
 
-## Where a player's camera should look while using this screen: the screen SURFACE, not the depot's
-## origin (they are metres apart). Part of the informal "3D screen" contract — PlayerClient calls it
-## when present and falls back to the node itself, so a simpler screen needs nothing at all.
-func screen_look_target() -> Node3D:
-	return get_node_or_null("miningdepot/Gui3D") as Node3D
-
-
 ## 3D-screen contract: a player's proximity monitor gained (or lost) this console. The PLAYER owns
 ## `screen_interacting` and is the single active monitor of the game (Player.connect_area_detect), so
 ## all we do here is note who is using the machine.

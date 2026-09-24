@@ -2,7 +2,12 @@ class_name ScreenZone
 extends Area3D
 
 ## Proximity zone of a 3D screen: while the player stands in it, the mouse is freed to click the
-## screen's interface and the camera faces it.
+## screen's interface.
+##
+## ⚠️ It does NOT touch the camera. Turning the view towards the screen was tried and removed: the
+## nudge restarted on every step taken inside the zone, so the view stayed glued to the screen while
+## the player walked — it reads as the console sucking you in. The pointer is freed; the view is the
+## player's.
 ##
 ## PASSIVE BY DESIGN — it never looks for anybody. It only makes itself visible on the `zone` layer,
 ## and the player's own AreaDetector, the single active monitor of the game, reports the overlap
@@ -21,7 +26,6 @@ extends Area3D
 ##
 ## To turn any mesh into a usable screen: put this script on an Area3D covering the console, and give
 ## its owner an `update_screen(data)` method (the player walks up the tree looking for it). Optional:
-## `screen_look_target()` to aim the camera at the screen surface rather than the object's origin, and
 ## `screen_focus_changed(player, focused)` to be told who is using it.
 
 

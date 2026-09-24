@@ -15,7 +15,7 @@ extends Node3D
 ##            anybody. It re-validates everything: the payload names a place, never an outcome.
 ##
 ## The screen contract is [ScreenZone]'s: expose update_screen(data), plus the optional
-## screen_look_target() and screen_focus_changed(). Same wiring as the mining depot.
+## screen_focus_changed(). Same wiring as the mining depot.
 
 ## Key in [constant Globals.ENABLED_DEV_TOOLS]. It has no InputMap binding — the cabin is walked
 ## into, not pressed — so nothing in the controls menu looks for it; the entry is purely the switch.
@@ -44,7 +44,6 @@ const RIDER_DELAY_FRAMES: int = 3
 @export var system: String = "tarsis"
 
 @onready var _ui: TeleporterUI = %TeleporterUI
-@onready var _gui_3d: Node3D = $Gui3D
 @onready var _interior: Area3D = $Interior
 
 ## Server: who pressed the button, handed over by the action router (never read from the payload).
@@ -119,12 +118,6 @@ func _input(event: InputEvent) -> void:
 # ---------------------------------------------------------------------------------------------
 # Screen contract (see ScreenZone)
 # ---------------------------------------------------------------------------------------------
-
-## Where a player's camera should look while using this screen: the screen SURFACE, not the cabin's
-## origin, which is metres away.
-func screen_look_target() -> Node3D:
-	return _gui_3d
-
 
 ## Told who is standing at the console. On the CLIENT this is when the "Return" entry can be filled
 ## in — the departure point is simply where that player is right now, so nothing has to be stored on
