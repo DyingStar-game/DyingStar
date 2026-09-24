@@ -199,6 +199,10 @@ var _pframe_usec: int = 0
 ## into Jolt, whose float32 broadphase quantises to kilometres at 8e10 m. Read by
 ## [scenes/planet/planet_body.gd](scenes/planet/planet_body.gd).
 var ablate_planet_spin: bool = false
+## Ablation: no ground fringe at all. Read by TerrainBlend, which then attaches nothing -- so this
+## removes the DRAW CALLS, not merely the shader's cost, and `draw=` on the heartbeat names the
+## price of the feature directly.
+var ablate_ground_fringe: bool = false
 var _pf_max: float = 0.0
 var _tf_max: float = 0.0
 ## `tf=` cut in two by a deferred call planted from the `process_frame` handler: `mq=` is the message
@@ -386,6 +390,12 @@ func _ready() -> void:
 	if ablate_planet_spin:
 		print("[CPerf] !! debug_no_planet_spin=true — planets do not rotate. THE WORLD IS WRONG"
 				+ " (no day/night motion, carried bodies are not counter-rotated): measurement mode.")
+	# Read here rather than behind `enabled`, for the same reason as the spin above: TerrainBlend
+	# reads it when a prop settles, which happens long before anyone thinks to turn the heartbeat on.
+	ablate_ground_fringe = ClientConfig.get_bool("debug_no_terrain_blend", false)
+	if ablate_ground_fringe:
+		print("[CPerf] !! debug_no_terrain_blend=true — objects meet the ground on a hard cut line:"
+				+ " measurement mode, not a fix.")
 	# Cost dial of planet_surface.gdshader (the hex-tiled corundum ground), a shader global so no
 	# material has to be swapped: 2 = full, 1 = hex albedo only, 0 = plain triplanar texture(). A
 	# RX 5700 XT spent 30 ms of GPU per frame on the full version where a RTX 3080 spent 3, and
