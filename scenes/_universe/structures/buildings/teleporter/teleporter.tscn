@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="2_gui3d"]
 [ext_resource type="Script" uid="uid://d0di0eip2q2wk" path="res://scenes/_universe/structures/buildings/teleporter/teleporter_ui.gd" id="3_teleui"]
 [ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="4_screenzone"]
+[ext_resource type="Script" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(2.8, 1.44)
@@ -20,6 +21,9 @@ size = Vector3(7.2, 4.6, 11.2)
 [node name="Teleporter" type="Node3D" unique_id=928753654]
 script = ExtResource("1_tele")
 
+
+[node name="TerrainBlend" type="Node" parent="."]
+script = ExtResource("tblend_ds")
 [node name="Blockout" type="CSGBox3D" parent="." unique_id=134378902]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
 use_collision = true

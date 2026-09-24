@@ -1037,6 +1037,11 @@ func create_generic_object(event: Dictionary) -> void:
 					if str(object_data["scenename"]).contains("rock_mining") else "prop:spawn"
 
 			var prop_instance = prop_scene.instantiate()
+			# Every prop that comes to rest on the ground gets a contact fringe. HERE rather than a
+			# node in each scene: one line covers the whole registry and every prop added later.
+			# TerrainBlend decides who qualifies and does nothing on the server -- this file has no
+			# business knowing what a fringe is.
+			TerrainBlend.attach_to(prop_instance)
 			# Address networking via the PropSync component when present; fall back to the root
 			# (incremental migration). Physics/freeze stay on the root body.
 			var net = PropSync.of(prop_instance)
