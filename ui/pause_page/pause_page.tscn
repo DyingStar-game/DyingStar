@@ -63,7 +63,7 @@ text = "%%PAUSEPAGE_RESUMEGAME"
 [node name="SettingsButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "%%PAUSEPAGE_SETTINGS"
+text = "%%MENU_SETTINGS"
 
 [node name="ReturnMenuButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=8065788]
 layout_mode = 2

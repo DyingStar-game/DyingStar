@@ -44,7 +44,7 @@ func _ready() -> void:
 		func(i: int) -> void: SettingsManager.set_fullscreen(_display_mode.get_item_id(i) == 0))
 	_resolution.item_selected.connect(_on_resolution_selected)
 	_vsync.toggled.connect(func(on: bool) -> void:
-		_vsync.text = "On" if on else "Off"
+		_vsync.text = SettingsText.on_off(on)
 		SettingsManager.set_vsync(on))
 	_dev_mode.toggled.connect(_on_dev_mode_toggled)
 	# The OptionButton item id IS the fps cap (0 = Unlimited), so set_max_fps gets it directly.
@@ -56,6 +56,8 @@ func _ready() -> void:
 	_shadow_dist.value_changed.connect(func(v: float) -> void:
 		_shadow_dist_value.text = str(int(v))
 		SettingsManager.set_shadow_distance(v))
+	# Last: this reparents each row, so it must come after the node paths above are resolved.
+	SettingsRow.wrap_rows($ScrollContainer/MarginContainer/VBoxContainer)
 
 ## Apply the picked resolution, then ask to keep it with a visible 10 s auto-revert countdown. A too-big
 ## resolution on a small screen would otherwise leave the player stuck; the timer reverts on its own.
@@ -73,12 +75,12 @@ func _open_resolution_confirm() -> void:
 	_close_resolution_confirm()
 	_res_left = _RES_CONFIRM_SECS
 	_res_dialog = ConfirmationDialog.new()
-	_res_dialog.title = "Résolution"
+	_res_dialog.title = tr("%%MENU_RES_CONFIRM_TITLE")
 	_res_dialog.exclusive = false
-	_res_dialog.get_ok_button().text = "Garder"
-	_res_dialog.get_cancel_button().text = "Revenir"
+	_res_dialog.get_ok_button().text = tr("%%MENU_RES_KEEP")
+	_res_dialog.get_cancel_button().text = tr("%%MENU_RES_REVERT")
 	_res_dialog.confirmed.connect(_keep_resolution)
-	_res_dialog.canceled.connect(_revert_resolution)  # Revenir button, close (X) or Esc
+	_res_dialog.canceled.connect(_revert_resolution)  # Revert button, close (X) or Esc
 	add_child(_res_dialog)
 	_update_res_dialog_text()
 	_res_dialog.popup_centered()
@@ -90,7 +92,7 @@ func _open_resolution_confirm() -> void:
 
 func _update_res_dialog_text() -> void:
 	if _res_dialog != null:
-		_res_dialog.dialog_text = "Garder cette résolution ?\nRetour automatique dans %d s." % _res_left
+		_res_dialog.dialog_text = tr("%%MENU_RES_CONFIRM") % _res_left
 
 func _on_res_tick() -> void:
 	_res_left -= 1
@@ -133,7 +135,7 @@ func _select_resolution(size: Vector2i) -> void:
 func _init_monitor() -> void:
 	_monitor.clear()
 	for i in DisplayServer.get_screen_count():
-		_monitor.add_item("Monitor %d" % (i + 1), i)
+		_monitor.add_item(tr("%%MENU_MONITOR_N") % (i + 1), i)
 	_monitor.select(DisplayServer.window_get_current_screen())
 
 ## Pre-select Fullscreen / Windowed from the real window mode.
@@ -159,26 +161,26 @@ func _init_resolution() -> void:
 func _init_vsync() -> void:
 	_vsync.toggle_mode = true
 	_vsync.button_pressed = DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
-	_vsync.text = "On" if _vsync.button_pressed else "Off"
+	_vsync.text = SettingsText.on_off(_vsync.button_pressed)
 
 ## Reflect the saved dev-mode flag (it has no live DisplayServer state — it only gates startup).
 func _init_dev_mode() -> void:
 	_dev_mode.toggle_mode = true
 	_dev_mode.button_pressed = SettingsManager.is_dev_mode()
-	_dev_mode.text = "On" if _dev_mode.button_pressed else "Off"
+	_dev_mode.text = SettingsText.on_off(_dev_mode.button_pressed)
 
 func _on_dev_mode_toggled(on: bool) -> void:
-	_dev_mode.text = "On" if on else "Off"
+	_dev_mode.text = SettingsText.on_off(on)
 	SettingsManager.set_dev_mode(on)
 
 ## Reflect the saved shadows flag on the toggle.
 func _init_shadows() -> void:
 	_shadows.toggle_mode = true
 	_shadows.button_pressed = SettingsManager.is_shadows()
-	_shadows.text = "On" if _shadows.button_pressed else "Off"
+	_shadows.text = SettingsText.on_off(_shadows.button_pressed)
 
 func _on_shadows_toggled(on: bool) -> void:
-	_shadows.text = "On" if on else "Off"
+	_shadows.text = SettingsText.on_off(on)
 	SettingsManager.set_shadows(on)
 
 ## Reflect the saved sun shadow distance on the slider + its value label.

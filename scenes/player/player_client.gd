@@ -247,7 +247,7 @@ func setup() -> void:
 	if loading != null:
 		var label := loading.find_child("Label", true, false) as Label
 		if label != null:
-			label.text = "Spawning..."
+			label.text = "%%HUD_SPAWNING"
 
 	player.update_last_basis()
 	player.active = true  # take control now; _process starts orienting the body + updating the sun

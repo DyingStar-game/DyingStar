@@ -31,6 +31,8 @@ func _ready() -> void:
 		func(i: int) -> void: SettingsManager.set_audio_device("speaker", speaker_device.get_item_text(i)))
 	test_button.toggle_mode = true
 	test_button.toggled.connect(_on_test_toggled)
+	# Last: this reparents each row, so it must come after the node paths above are resolved.
+	SettingsRow.wrap_rows($MarginContainer/VBoxContainer)
 
 ## List the input devices and pre-select the active one.
 func load_microphone_devices() -> void:
