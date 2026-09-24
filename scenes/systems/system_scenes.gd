@@ -31,10 +31,17 @@ static func systems() -> PackedStringArray:
 	if dir == null:
 		push_warning("[SystemScenes] cannot open %s" % SYSTEMS_ROOT)
 		return out
-	for name: String in dir.get_directories():
+	var seen: PackedStringArray = dir.get_directories()
+	for name: String in seen:
 		if not body_files(name).is_empty():
 			out.append(name)
 	out.sort()
+	if out.is_empty():
+		# Never fail silently. A caller only sees an empty menu, and the reason — a directory holding no
+		# file we recognise as a scene — is invisible from there.
+		push_warning("[SystemScenes] no system under %s; directories seen: [%s]" % [
+			SYSTEMS_ROOT, ", ".join(seen),
+		])
 	return out
 
 
@@ -46,6 +53,22 @@ static func path_of(system: String, file_name: String) -> String:
 	return "%s/%s" % [system_dir(system), file_name]
 
 
+## The scene file name behind a directory entry, or "" when the entry is not a scene.
+##
+## ⚠️ An exported build does NOT keep a scene next to its folder: the binary scene moves under
+## res://.godot/exported/ and a `<name>.tscn.remap` stands in its place. Measured in the shipped PCK:
+## scenes/systems/tarsis holds nineteen `tarsis_*.tscn.remap` and not one .tscn or .scn — which is
+## why every menu built from this list was full in the editor and EMPTY in production.
+## load() follows the remap on its own, so the name to keep is the one WITHOUT that suffix: exactly
+## the path the editor uses. Normalising here rather than widening the filter is what keeps
+## get_basename() giving "tarsis_4" instead of "tarsis_4.tscn".
+static func scene_name_of(entry: String) -> String:
+	var file_name: String = entry.trim_suffix(".remap")
+	if file_name.ends_with(".tscn") or file_name.ends_with(".scn"):
+		return file_name
+	return ""
+
+
 ## Scene file names of a system's bodies, SORTED — which also orders every parent before its moons
 ## ("tarsis_3" before "tarsis_3_1"), the property [method parent_key_of] relies on.
 static func body_files(system: String) -> PackedStringArray:
@@ -53,10 +76,10 @@ static func body_files(system: String) -> PackedStringArray:
 	var dir: DirAccess = DirAccess.open(system_dir(system))
 	if dir == null:
 		return out
-	for f: String in dir.get_files():
-		# Exported builds rename .tscn to .scn/.remap; strip the suffix and keep the scene name.
-		if f.ends_with(".tscn") or f.ends_with(".scn"):
-			out.append(f)
+	for entry: String in dir.get_files():
+		var file_name: String = scene_name_of(entry)
+		if file_name != "":
+			out.append(file_name)
 	out.sort()
 	return out
 
@@ -86,8 +109,13 @@ static func root_properties(path: String) -> Dictionary:
 	return out
 
 
+## ⚠️ The extension is resolved, not assumed: body_files() accepts a binary .scn too, and rebuilding
+## "<key>.tscn" would then load nothing. ResourceLoader.exists() follows remaps; DirAccess does not.
 static func body_properties(system: String, key: String) -> Dictionary:
-	return root_properties(path_of(system, "%s.tscn" % key))
+	var path: String = path_of(system, "%s.tscn" % key)
+	if not ResourceLoader.exists(path):
+		path = path_of(system, "%s.scn" % key)
+	return root_properties(path)
 
 
 ## The body a moon orbits, by the naming convention — "tarsis_3_1" belongs to "tarsis_3" — which is
