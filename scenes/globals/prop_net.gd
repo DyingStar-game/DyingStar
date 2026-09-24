@@ -355,7 +355,7 @@ static func server_tick(body: Node, state = null) -> void:
 	if body is RigidBody3D and (body.freeze or body.sleeping) and not rides:
 		return
 	var pos: Vector3 = snapped(body.position, Vector3(0.005, 0.005, 0.005))  # 5 mm precision is enough
-	var rot: Vector3 = snapped(body.rotation, Vector3(0.01, 0.01, 0.01)) # precision at 0.57 degrees
+	var rot: Vector3 = snapped(body.rotation, Vector3(0.005, 0.005, 0.005)) # precision at 0.57 degrees
 	# verify the state object tracks the parent_id (component PropSync always does; a legacy root may not)
 	var tracks_parent: bool = "server_last_parent_id" in state
 	if parent is Player:

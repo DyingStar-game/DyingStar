@@ -3048,6 +3048,26 @@ func grade_chunk_provisional(nside: int, ipix: int) -> bool:
 	return false
 
 
+## May the chunk (nside, ipix) be read from, or written to, the geometry disk
+## cache?
+##
+## Two reasons it may not, and they are different:
+##   · a profiled line under it has no profile yet — the geometry WILL change
+##     (grade_chunk_provisional);
+##   · a terrain pad reaches it. The cache key (PlanetTerrain._cache_version)
+##     describes the planet's baked data, and a pad is not baked data: it is
+##     registered at runtime by a building the editor placed, the server
+##     spawned or the client received through GORC. Folding a live pad into a
+##     planet-wide key would throw the whole cache away on every spawn, so a
+##     chunk holding a pad simply stays out of the cache — they are a handful
+##     per planet, and the chunk is rebuilt from scratch anyway the moment the
+##     pad appears or goes.
+func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
+	if grade_chunk_provisional(nside, ipix):
+		return true
+	return _pads != null and not _pads.is_empty() and not _pads.gather(nside, ipix).is_empty()
+
+
 ## Collect the profiles whose computation has finished, and submit the
 ## starved lines whose tiles have all arrived. Returns the feature ids whose
 ## profile was just born — empty when nothing moved. Called periodically by
@@ -3718,13 +3738,33 @@ func crack_aware_surface_dist(dir: Vector3, nside: int = -1, vtx_spacing_m: floa
 ## body hopping in the air before the tarsis_3 highway tunnel (2026-09-16).
 ## Costs the finest chunk's pieces and a nearest-segment walk: call it only
 ## once the cheap raw test has said "below".
+## A terrain pad levels the ground under a building the same way, and for the
+## same reason: the platform is real ground the body stands on, and a player
+## walking onto a pad cut two metres into a slope is "under the relief" to
+## every test that only knows the raw heightmap.
 var _carve_pieces_cache: Dictionary = {}
 func carved_surface_dist(dir: Vector3) -> float:
 	var raw := crack_aware_surface_dist(dir)
-	if not has_profiled_lines():
+	var lines := has_profiled_lines()
+	var pads := has_pads()
+	if not lines and not pads:
 		return raw
 	var nside: int = 1 << max_quadtree_depth
 	var ipix := HEALPix.vec2pix_nest(nside, dir)
+	var lonlat := HEALPix.vec2lonlat(dir)
+	var h := raw - radius
+	# Same order as the chunk builders: the line first, then the pad on top of
+	# what it left — a building beside a road meets the road bed.
+	if lines:
+		h = _carved_line_height(h, nside, ipix, lonlat)
+	if pads:
+		h = PadBed.apply(h, lonlat, pads_for_chunk(nside, ipix), radius * PI / 180.0)
+	return radius + h
+
+
+## The cutting / tunnel floor of a profiled line at [param lonlat], or
+## [param h] unchanged when no line reaches it.
+func _carved_line_height(h: float, nside: int, ipix: int, lonlat: Vector2) -> float:
 	# The pieces of the finest chunk and its neighbours, kept per chunk: a
 	# body in a tunnel asks every physics tick, and gathering them is the
 	# bulk of the 0.5 ms this costs.
@@ -3737,27 +3777,25 @@ func carved_surface_dist(dir: Vector3) -> float:
 			_carve_pieces_cache.clear()
 		_carve_pieces_cache[ipix] = pieces
 	if pieces.is_empty():
-		return raw
-	var lonlat := HEALPix.vec2lonlat(dir)
+		return h
 	var q := GradeGeom.nearest_on_pieces(pieces, lonlat, radius * PI / 180.0)
 	if not q["hit"]:
-		return raw
+		return h
 	var prof := get_grade_profile(int(q["fid"]))
 	if prof.is_empty():
-		return raw
+		return h
 	var along := float(q["along"])
 	var lat_m := absf(float(q["lat_m"]))
 	var seg := GradeProfile.segment_at(prof, along)
 	if seg.is_empty():
-		return raw
-	var h := raw - radius
+		return h
 	match int(seg["kind"]):
 		GradeSettings.Kind.GROUND, GradeSettings.Kind.GORGE:
 			h = GradeBed.carved_height(h, prof, along, lat_m)
 		GradeSettings.Kind.TUNNEL:
 			if lat_m <= GradeTunnel.bore_half_width(float(prof["hw_m"])):
 				h = minf(h, GradeProfile.z_track_at(prof, along))
-	return radius + h
+	return h
 
 
 ## Whether the corundum default biome is what the ground is made of along
@@ -3906,13 +3944,17 @@ func crack_exclusion_fingerprint() -> String:
 ## collision is part of the
 ## chunk shape, so a coarse collision would leave a player standing inside a
 ## cutting's coarse faces.
+## A terrain pad is the last: the platform under a building is carved into the
+## same finest grid, and a coarse collision would leave the player walking on
+## the slope the pad replaced instead of on the levelled ground they see.
 ##
 ## Only applied in file (chunk-heightmap) mode, whose shape task re-resolves
 ## the export tiles per vertex.
 func collision_detail_nside() -> int:
 	if chunk_heightmaps_dir == "" \
 			or not (corundum_default_biome or has_profiled_lines()
-					or has_relief_biomes() or has_roads() or has_mountains()):
+					or has_relief_biomes() or has_roads() or has_mountains()
+					or has_pads()):
 		return export_nside
 	return 1 << max_quadtree_depth
 
@@ -4524,3 +4566,251 @@ func get_detail_texture_array() -> Texture2DArray:
 	if not _detail_array_built:
 		_build_detail_texture_array()
 	return _detail_texture_array
+
+
+# ---------------------------------------------------------------------------
+# Terrain pads — the levelled platforms under buildings
+# ---------------------------------------------------------------------------
+
+## The live pad registry. Unlike the roads and the profiled lines, pads are NOT
+## baked data: a building placed in the editor, one instanced by the server and
+## one created by the client on entering GORC range all register themselves
+## through TerrainPad, so this index is filled at runtime and can change while
+## chunks are resident. PlanetTerrain owns the consequence — it throws away and
+## rebuilds the chunks a pad reaches.
+var _pads: PadIndex = null
+## uuid → {z, span} of pads whose altitude is settled. A pad only enters the
+## index once it HAS an altitude: handing a worker a pad with a placeholder z
+## would carve the ground to sea level.
+var _pad_alt: Dictionary = {}
+## uuid → record of pads refused for an elevation tile that is not readable
+## yet, the same discipline as _grade_starved. Sampling the relief through a
+## missing tile falls back to the flat global map, so the client and the server
+## would level the ground at two different altitudes and the building would
+## stand on one of them.
+var _pads_starved: Dictionary = {}
+## feature_id → Array[Vector2] of along-intervals a pad's footprint covers.
+## Rebuilt whole on every pad change and replaced in one assignment, like the
+## index itself: the mesh workers read it while the main thread edits.
+var _pad_road_excl: Dictionary = {}
+var _pad_mutex: Mutex = Mutex.new()
+
+
+func _ensure_pads() -> PadIndex:
+	if _pads == null:
+		_pads = PadIndex.new(1 << maxi(max_quadtree_depth, 0))
+		_pads.set_radius(radius)
+	return _pads
+
+
+## Does this body carry any pad? O(1) — asked by the chunk builders on every
+## vertex loop and by collision_detail_nside() on every residency pass.
+func has_pads() -> bool:
+	return _pads != null and not _pads.is_empty()
+
+
+## The sampler a pad's altitude is read with: the same function, with the same
+## arguments, that PlanetTerrain.surface_point_for_direction uses for the
+## editor snap. Client and server feed it the same heights.pack and therefore
+## agree to the bit — the pattern grade_height_sampler() established.
+func pad_sampler() -> Callable:
+	return func(dir: Vector3) -> float:
+		return sample_height_for_direction(dir)
+
+
+## Register or move a pad. Returns the finest-level pixels whose chunks are now
+## stale ({} when nothing changed, or when the pad is waiting for a tile).
+func register_pad(rec_in: Dictionary) -> Dictionary:
+	var rec := PadBed.quantise(rec_in)
+	var uuid := str(rec.get("uuid", ""))
+	if uuid.is_empty():
+		return {}
+	_pad_mutex.lock()
+	var idx := _ensure_pads()
+	var old := idx.get_rec(uuid)
+	var dirty: Dictionary = idx.pixels_of(old) if not old.is_empty() else {}
+	var stats := _pad_stats_if_readable(rec)
+	# Copy-on-write: the workers read the published index, so it is the CLONE
+	# that is edited and the reference that is swapped, in one assignment.
+	var next := idx.clone()
+	if stats.is_empty():
+		# Not readable yet: drop whatever was registered under this uuid rather
+		# than leave a stale platform, and wait for the catch-up.
+		_pads_starved[uuid] = rec
+		if old.is_empty():
+			_pad_mutex.unlock()
+			return {}
+		next.unregister(uuid)
+		_pad_alt.erase(uuid)
+		_pads = next
+		_pad_road_excl = _build_pad_road_exclusions(next)
+		_pad_mutex.unlock()
+		return dirty
+	_pads_starved.erase(uuid)
+	rec["z"] = float(stats["z"])
+	rec["talus_m"] = float(stats["talus_m"])
+	if not next.register(rec):
+		_pad_mutex.unlock()
+		return {}
+	_pad_alt[uuid] = stats
+	dirty.merge(next.pixels_of(rec))
+	_pads = next
+	_pad_road_excl = _build_pad_road_exclusions(next)
+	_pad_mutex.unlock()
+	return dirty
+
+
+## Remove a pad. Returns the finest-level pixels whose chunks are now stale.
+func unregister_pad(uuid: String) -> Dictionary:
+	_pad_mutex.lock()
+	_pads_starved.erase(uuid)
+	_pad_alt.erase(uuid)
+	var dirty := {}
+	if _pads != null and not _pads.get_rec(uuid).is_empty():
+		var next := _pads.clone()
+		var rec := next.unregister(uuid)
+		dirty = next.pixels_of(rec)
+		_pads = next
+		_pad_road_excl = _build_pad_road_exclusions(next)
+	_pad_mutex.unlock()
+	return dirty
+
+
+## The pads a chunk at (nside, ipix) must apply — its own HEALPix pixel and its
+## eight neighbours, the same reach as GradeBed.gather_pieces. Read-only, and
+## every record in it carries a settled `z`.
+func pads_for_chunk(nside: int, ipix: int) -> Array:
+	if _pads == null or _pads.is_empty():
+		return []
+	return _pads.gather(nside, ipix)
+
+
+## The altitude [param rec] levels the ground to, or NAN while an elevation
+## tile under it is unreadable. Pure — does not register anything, so the
+## editor snap can ask before the pad exists.
+func pad_altitude(rec: Dictionary) -> float:
+	var uuid := str(rec.get("uuid", ""))
+	if _pad_alt.has(uuid) and _pads != null \
+			and PadBed.same_geometry(_pads.get_rec(uuid), rec):
+		return float((_pad_alt[uuid] as Dictionary)["z"])
+	var stats := _pad_stats_if_readable(rec)
+	return NAN if stats.is_empty() else float(stats["z"])
+
+
+## How much height the talus of [param rec] has to absorb, or NAN when the
+## altitude itself is unknown. TerrainPad warns on it in the inspector.
+func pad_height_span(rec: Dictionary) -> float:
+	var uuid := str(rec.get("uuid", ""))
+	if _pad_alt.has(uuid) and _pads != null \
+			and PadBed.same_geometry(_pads.get_rec(uuid), rec):
+		return float((_pad_alt[uuid] as Dictionary)["span"])
+	var stats := _pad_stats_if_readable(rec)
+	return NAN if stats.is_empty() else float(stats["span"])
+
+
+## The finest-level pixels a pad reaches — the chunks that draw and collide it.
+func pad_pixels(rec: Dictionary) -> Dictionary:
+	return _ensure_pads().pixels_of(rec)
+
+
+## Retry the pads set aside for a missing tile. Returns the pixels whose chunks
+## are now stale, so PlanetTerrain can rebuild them in one pass — the pad
+## counterpart of retry_starved_grade_profiles().
+func retry_starved_pads() -> Dictionary:
+	if _pads_starved.is_empty():
+		return {}
+	var dirty := {}
+	for uuid: String in _pads_starved.keys().duplicate():
+		var rec: Dictionary = _pads_starved[uuid]
+		dirty.merge(register_pad(rec))
+	return dirty
+
+
+## Are any pads still waiting for their elevation tiles?
+func pads_incomplete() -> bool:
+	return not _pads_starved.is_empty()
+
+
+## {z, span} of [param rec], or {} when a tile under its footprint cannot be
+## read. Every direction the median is taken over must resolve to a real tile:
+## one that falls through to the flat global map would move the platform on one
+## machine and not on the other.
+func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
+	var m_per_deg := radius * PI / 180.0
+	var dirs := PadBed.sample_dirs(rec, m_per_deg)
+	if dirs.is_empty():
+		return {}
+	if chunk_heightmaps_dir != "":
+		var seen := {}
+		for d in dirs:
+			var ipix := HEALPix.vec2pix_nest(export_nside, d)
+			if seen.has(ipix):
+				continue
+			seen[ipix] = true
+			if not _grade_tile_available(ipix):
+				return {}
+	return PadBed.pad_stats(rec, pad_sampler(), m_per_deg)
+
+
+## Where a road must stop: the viaduct decks (bridges) AND the building pads it
+## runs through, merged into one set of along-intervals for RoadCut.split.
+##
+## A pad cuts a road for the same reason a deck does. The ribbon is a slab laid
+## ON the terrain, so over a levelled platform it sits its own thickness above
+## it — and therefore above the building's floor, a strip of asphalt raised
+## through the inside of the building (measured on tarsis_3: 10.8 cm, 3
+## vertices of a path inside a cargo depot). A path does not run through a
+## warehouse; it stops at the wall and resumes on the other side, which is what
+## RoadCut.split already does for a bridge.
+func road_exclusions_for_feature(fid: int) -> Array:
+	var pads: Array = _pad_road_excl.get(fid, [])
+	var bridges := get_bridge_exclusions_for_feature(fid)
+	if pads.is_empty():
+		return bridges
+	if bridges.is_empty():
+		return pads
+	return RoadCut.merge_intervals(bridges + pads)
+
+
+## The along-intervals every registered pad covers, per road feature. Rebuilt
+## whole rather than patched: pads are a handful per body, the roads near one
+## are a handful too, and a whole rebuild cannot leave a stale interval behind.
+func _build_pad_road_exclusions(idx: PadIndex) -> Dictionary:
+	var out := {}
+	# has_roads() opens the pack if it is not open yet — the guard must not be
+	# on _modifier_pack, which is still null the first time a pad registers.
+	if idx == null or idx.is_empty() or not has_roads():
+		return out
+	var m_per_deg := radius * PI / 180.0
+	var nside: int = 1 << maxi(max_quadtree_depth, 0)
+	for rec: Dictionary in idx.all():
+		var ipix := HEALPix.vec2pix_nest(nside,
+				HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])))
+		var pix: Array = [ipix]
+		for nb in HEALPix.get_neighbors_nest(nside, ipix).values():
+			if int(nb) >= 0:
+				pix.append(int(nb))
+		var seen := {}
+		for ip: int in pix:
+			for r: Dictionary in get_roads_for_chunk(nside, int(ip)):
+				var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
+				var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
+				if cl.size() < 2 or cum.size() != cl.size():
+					continue
+				var fid := int(r.get("feature_id", -1))
+				# The pack clips a feature per tile, so the same stretch can be
+				# handed to us by several neighbours: key on the piece's start.
+				var key := "%d_%.3f" % [fid, cum[0]]
+				if seen.has(key):
+					continue
+				seen[key] = true
+				var cuts := PadBed.road_exclusion(rec, cl, cum, m_per_deg,
+						float(r.get("half_width_m", RoadTerrain.get_half_width_m(r))))
+				if cuts.is_empty():
+					continue
+				if not out.has(fid):
+					out[fid] = []
+				(out[fid] as Array).append_array(cuts)
+	for fid: int in out:
+		out[fid] = RoadCut.merge_intervals(out[fid])
+	return out
