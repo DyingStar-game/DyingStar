@@ -45,7 +45,6 @@ node_area = NodePath("ScreenMesh/TouchScreen")
 disable_3d = true
 handle_input_locally = false
 size = Vector2i(1400, 720)
-render_target_update_mode = 4
 
 [node name="TeleporterUI" type="Panel" parent="Gui3D/SubViewport" unique_id=1325706075]
 unique_name_in_owner = true

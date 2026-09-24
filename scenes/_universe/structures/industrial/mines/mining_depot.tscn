@@ -324,7 +324,6 @@ node_area = NodePath("ScreenMesh/TouchScreen")
 disable_3d = true
 handle_input_locally = false
 size = Vector2i(1400, 720)
-render_target_update_mode = 4
 
 [node name="RockDepotUI" parent="miningdepot/Gui3D/SubViewport" unique_id=1101572607 instance=ExtResource("3_75ksl")]
 unique_name_in_owner = true
