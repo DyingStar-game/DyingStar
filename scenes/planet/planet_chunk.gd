@@ -188,10 +188,10 @@ static func generate_mesh(
 	var _cr_arr: Array = _rbd[3]     # sub-pixel craters
 	var _road_arr: Array = _rbd[4]   # road pieces, already clipped to this chunk
 
-	# Cuttings of profiled lines (railways, graded roads): the per-vertex rule
-	# of GradeBed.apply, armed only on the finest grid (see
-	# GradeBed.carve_enabled) and only when such a line
-	# with a profile runs through this chunk or one of its eight neighbours.
+	# Cuttings of profiled lines (railways, graded roads) and the levelled pads
+	# under buildings: the per-vertex rule of GradeBed.apply, armed only on the
+	# finest grid (see GradeBed.carve_enabled) and only when such a line with a
+	# profile — or a pad — reaches this chunk or one of its eight neighbours.
 	# `_rw_band` remembers which vertices it moved, so the normal pass below
 	# carves its gradient probes the same way (sharp walls) and nowhere else.
 	var _rw_ctx: Dictionary = {}
@@ -203,7 +203,7 @@ static func generate_mesh(
 	# but the terrain is still shaved down to the bed top around the line so
 	# it never pierces the bed — `_rw_shave` (visual only, see GradeBed).
 	var _rw_shave: Dictionary = {}
-	if hp_mode and res > 0 and data.has_profiled_lines():
+	if hp_mode and res > 0 and (data.has_profiled_lines() or data.has_pads()):
 		var _rw_pitch := HEALPix.pixel_side_length(hp_nside, data.radius) / float(res)
 		_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _rw_pitch)
 		if not _rw_ctx.is_empty():
@@ -977,8 +977,9 @@ static func generate_mesh(
 					_crack_d = INF
 			_crack_edge[idx] = _crack_d
 
-			# ── Profiled-line cutting ──────────────────────────────
-			# Same rule, same pieces, same profile as the collision builder.
+			# ── Profiled-line cutting, then building pad ───────────
+			# Same rule, same pieces, same profile, same pads as the
+			# collision builder.
 			if not _rw_ctx.is_empty():
 				var _rw_carved := GradeBed.apply(height, HEALPix.vec2lonlat(dir), _rw_ctx)
 				if _rw_carved != height:
@@ -2063,9 +2064,9 @@ static func generate_mesh(
 			# would not open a hole: the strip builder joins consecutive pairs,
 			# so it would stretch one quad straight over the gorge.
 			var _rd_pieces: Array = [[_rd_cl_full, _rd_cum_full]]
-			if _rd_cum_full.size() == _rd_cl_full.size() \
-					and data.corundum_default_biome:
-				var _rd_excl: Array = data.get_bridge_exclusions_for_feature(
+			if _rd_cum_full.size() == _rd_cl_full.size():
+				# Decks AND building pads: a ribbon stops under both.
+				var _rd_excl: Array = data.road_exclusions_for_feature(
 					int(_rd_zone.get("feature_id", -1)))
 				if not _rd_excl.is_empty():
 					_rd_pieces = RoadCut.split(
@@ -2827,11 +2828,12 @@ static func generate_collision_shape(
 					_col_rw.append([_rd_r, _rw_p])
 					continue
 			_col_rd.append(_rd_r)
-	# Profiled-line cuttings, on the same finest-grid gate as the visual mesh.
+	# Profiled-line cuttings and building pads, on the same finest-grid gate as
+	# the visual mesh.
 	var _col_rw_ctx: Dictionary = {}
 	var _col_rw_band := PackedByteArray()
 	var _col_rw_h := PackedFloat64Array()
-	if hp_mode and data.has_profiled_lines():
+	if hp_mode and (data.has_profiled_lines() or data.has_pads()):
 		_col_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _col_crack_spacing)
 		if not _col_rw_ctx.is_empty():
 			_col_rw_band.resize((res + 1) * (res + 1))
@@ -3191,7 +3193,7 @@ static func generate_collision_shape(
 					height += ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
 						_col_crack_d, data.crack_width_m, data.crack_depth_m) * _col_w
 
-			# ── Profiled-line cutting (collision) ──────────────────
+			# ── Profiled-line cutting, then building pad (collision) ─
 			if not _col_rw_ctx.is_empty():
 				var _rw_carved := GradeBed.apply(height, HEALPix.vec2lonlat(dir), _col_rw_ctx)
 				if _rw_carved != height:
@@ -3287,8 +3289,8 @@ static func generate_collision_shape(
 				var _rd_hw_m: float = float(_rd_zone.get(
 					"half_width_m", RoadTerrain.get_half_width_m(_rd_zone)))
 				var _rd_pieces: Array = [[_rd_cl, _rd_cum]]
-				if _rd_cum.size() == _rd_cl.size() and data.corundum_default_biome:
-					var _rd_excl: Array = data.get_bridge_exclusions_for_feature(
+				if _rd_cum.size() == _rd_cl.size():
+					var _rd_excl: Array = data.road_exclusions_for_feature(
 						int(_rd_zone.get("feature_id", -1)))
 					if not _rd_excl.is_empty():
 						_rd_pieces = RoadCut.split(_rd_cl, _rd_cum, _rd_excl)

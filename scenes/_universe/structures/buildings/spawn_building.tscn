@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://2gv1i0qcoba4" path="res://scenes/_universe/structures/buildings/spawn_building.gd" id="1_5damd"]
 [ext_resource type="PackedScene" uid="uid://b60v5ypynfjeh" path="res://scenes/_universe/structures/buildings/apartment_ares_worker_001.tscn" id="2_w6uy3"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="5_qyjbv"]
 [ext_resource type="PackedScene" uid="uid://oa3cs3ba6on3" path="res://assets/_universe/props/furniture/iron_plate_0.5x0.3.glb" id="7_66b33"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
@@ -11,10 +12,9 @@
 collision_mask = 0
 script = ExtResource("1_5damd")
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=789817988]
 script = ExtResource("propsync_ds")
 type_name = "spawnbuilding"
-enable_carry = false
 
 [node name="MultiMeshInstance3D" type="MultiMeshInstance3D" parent="." unique_id=439571947]
 
@@ -31,10 +31,18 @@ spot_range = 4.011
 spot_angle = 70.03
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1669198076 groups=["spawn"]]
-monitoring = false
 collision_layer = 16
+monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1057822611]
 unique_name_in_owner = true
 shape = SubResource("BoxShape3D_htkwp")
 debug_fill = false
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=849244852]
+script = ExtResource("5_qyjbv")
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1799472417]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.8372984, 0, 26.171080589294434)
+size = Vector3(14.674596632818975, 0.2, 53.342162283550124)

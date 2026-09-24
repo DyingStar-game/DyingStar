@@ -2365,7 +2365,7 @@ func _net_parent_id() -> String:
 
 func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
-	var my_rot: Vector3 = snapped(rotation, Vector3(0.01, 0.01, 0.01))
+	var my_rot: Vector3 = snapped(rotation, Vector3(0.005, 0.005, 0.005))
 	var my_parent_id: String = _net_parent_id()
 	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
 	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)

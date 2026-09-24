@@ -14,6 +14,11 @@ class_name GradeBed
 ##
 ##   · [method apply] is the per-vertex terrain rule: where a cutting runs, a
 ##     grid vertex inside its band is lowered to the cutting's floor or wall.
+##     The same context also carries the TERRAIN PADS under the buildings
+##     (PadBed), applied after the cutting on what it left: they share the
+##     finest-grid gate, the chunk-plus-neighbours reach and the refinement
+##     patch, so a chunk holding both carves both or neither and the two
+##     never disagree on a shared vertex.
 ##     It runs in BOTH PlanetChunk vertex loops (mesh and collision) on the
 ##     pieces of the chunk AND its eight neighbours — road records are an exact
 ##     partition per HEALPix pixel, so a vertex near a pixel edge would
@@ -69,7 +74,8 @@ static func carve_enabled(data: PlanetData, hp_nside: int, vtx_spacing_m: float)
 ## carve (no profiled line nearby, or the grid is too coarse).
 static func make_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 		vtx_spacing_m: float) -> Dictionary:
-	if not data.has_profiled_lines() or not carve_enabled(data, hp_nside, vtx_spacing_m):
+	if not (data.has_profiled_lines() or data.has_pads()) \
+			or not carve_enabled(data, hp_nside, vtx_spacing_m):
 		return {}
 	var ctx := _gather_ctx(data, hp_nside, hp_ipix)
 	if not ctx.is_empty():
@@ -86,7 +92,7 @@ static func make_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 ## would be at that pitch. {} when nothing is nearby or the fine carve applies.
 static func make_coarse_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 		vtx_spacing_m: float) -> Dictionary:
-	if not data.has_profiled_lines() or vtx_spacing_m <= 0.0 \
+	if not (data.has_profiled_lines() or data.has_pads()) or vtx_spacing_m <= 0.0 \
 			or carve_enabled(data, hp_nside, vtx_spacing_m):
 		return {}
 	var ctx := _gather_ctx(data, hp_nside, hp_ipix)
@@ -98,16 +104,18 @@ static func make_coarse_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictionary:
 	var pieces: Array = []
 	var profiles := {}
-	for r in gather_pieces(data, hp_nside, hp_ipix):
-		var fid := int(r.get("feature_id", -1))
-		if not profiles.has(fid):
-			profiles[fid] = data.get_grade_profile(fid)
-		if (profiles[fid] as Dictionary).is_empty():
-			continue
-		pieces.append(r)
-	if pieces.is_empty():
+	if data.has_profiled_lines():
+		for r in gather_pieces(data, hp_nside, hp_ipix):
+			var fid := int(r.get("feature_id", -1))
+			if not profiles.has(fid):
+				profiles[fid] = data.get_grade_profile(fid)
+			if (profiles[fid] as Dictionary).is_empty():
+				continue
+			pieces.append(r)
+	var pads: Array = data.pads_for_chunk(hp_nside, hp_ipix) if data.has_pads() else []
+	if pieces.is_empty() and pads.is_empty():
 		return {}
-	return {"pieces": pieces, "profiles": profiles,
+	return {"pieces": pieces, "profiles": profiles, "pads": pads,
 			"m_per_deg": data.radius * PI / 180.0}
 
 
@@ -128,20 +136,36 @@ static func floor_margin_m(vtx_spacing_m: float) -> float:
 ## rising GORGE_WALL_SLOPE per metre. `min` — never raised: where the terrain
 ## is already below the track nothing happens (that is the skirts' or the
 ## viaduct's business). Tunnel and viaduct runs leave the terrain alone.
+##
+## Then the pads of [param ctx], if any, level the result (PadBed.apply) —
+## those DO raise the ground as well as cut it.
 static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 	if ctx.is_empty():
 		return h
-	var q := GradeGeom.nearest_on_pieces(ctx["pieces"], lonlat, float(ctx["m_per_deg"]))
-	if not q["hit"]:
-		return h
-	var prof: Dictionary = (ctx["profiles"] as Dictionary).get(int(q["fid"]), {})
-	if prof.is_empty():
-		return h
-	if ctx.has("coarse_band_m"):
-		return shaved_height(h, prof, float(q["along"]), float(q["lat_m"]),
-				float(ctx["coarse_band_m"]))
-	return carved_height(h, prof, float(q["along"]), float(q["lat_m"]),
-			float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)))
+	var mpd := float(ctx["m_per_deg"])
+	var coarse: bool = ctx.has("coarse_band_m")
+	var out := h
+	var pieces: Array = ctx.get("pieces", [])
+	if not pieces.is_empty():
+		var q := GradeGeom.nearest_on_pieces(pieces, lonlat, mpd)
+		if q["hit"]:
+			var prof: Dictionary = (ctx["profiles"] as Dictionary).get(int(q["fid"]), {})
+			if not prof.is_empty():
+				if coarse:
+					out = shaved_height(out, prof, float(q["along"]), float(q["lat_m"]),
+							float(ctx["coarse_band_m"]))
+				else:
+					out = carved_height(out, prof, float(q["along"]), float(q["lat_m"]),
+							float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)))
+	# The pad levels what the cutting left, never the other way round: a
+	# building's apron beside a graded road meets the road bed.
+	var pads: Array = ctx.get("pads", [])
+	if not pads.is_empty():
+		if coarse:
+			out = PadBed.shaved(out, lonlat, pads, mpd, float(ctx["coarse_band_m"]))
+		else:
+			out = PadBed.apply(out, lonlat, pads, mpd)
+	return out
 
 
 ## The coarse-LOD rule (see make_coarse_ctx): within hw + [param band_m] of

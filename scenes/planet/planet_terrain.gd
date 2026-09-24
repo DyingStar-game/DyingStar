@@ -168,12 +168,19 @@ const BRIDGE_RETRY_INTERVAL_MS := 2000
 ## Same catch-up for the profiled lines (railways, graded roads), whose tiles
 ## are far more numerous than a bridge's: see [method _poll_starved_grade_profiles].
 var _next_grade_retry_ms: int = 0
+## Same catch-up for the terrain pads waiting on an elevation tile.
+var _next_pad_retry_ms: int = 0
 ## Bumped every time a profile is born late. A mesh task stamped with an
 ## older generation was built without that profile: its result is dropped if
 ## the chunk stands on the line, so the chunk is queued again with the bed.
 var _grade_generation: int = 0
 ## Export tiles (and neighbours) of every line whose profile was born late.
 var _grade_reborn_tiles: Dictionary = {}
+## Finest-level pixels reached by a terrain pad that appeared, moved or went
+## since. Shares _grade_generation: a mesh task stamped with an older
+## generation was built without that pad, and its result is dropped rather
+## than drawn as the slope the pad replaced.
+var _pad_dirty_pixels: Dictionary = {}
 
 ## Grace period before an unreferenced bridge is actually freed.
 ##
@@ -570,6 +577,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# Same reason, same place: the railway profiles feed the bed builders on
 	# the mesh workers and the viaduct spawner on the main thread.
 	planet_data.warm_grade_profiles()
+	# Same reason again, one step further: a building placed in the editor
+	# carries a TerrainPad that levels the ground under it, and the pad has to
+	# be in the index BEFORE the first mesh task reads it — a chunk built
+	# without it would draw the untouched slope and be thrown away a frame
+	# later. Buildings that arrive afterwards (spawned by the server, received
+	# by the client on entering GORC range) register themselves.
+	warm_terrain_pads()
 
 	_initialized = true
 
@@ -831,7 +845,8 @@ func _server_drain_chunk_queue() -> void:
 func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 	# Try the disk-cached collision shape (cheap main-thread I/O).
 	var cached_shape: ConcavePolygonShape3D = null
-	if _chunk_cache and _chunk_cache.has_collision(key, 0):
+	if _chunk_cache and _chunk_cache.has_collision(key, 0) \
+			and not planet_data.chunk_cache_ineligible(_parse_nside_from_key(key), ipix):
 		cached_shape = _chunk_cache.load_collision(key, 0)
 
 	# File mode: skip recipe phase-0. The shape task lazily loads the .r32 tile
@@ -997,7 +1012,7 @@ func _server_poll_chunk_tasks() -> void:
 				PropNet.prof_col_usec += _cu
 			if shape:
 				if _chunk_cache and _persistable(shape) \
-						and not planet_data.grade_chunk_provisional(nside, ipix):
+						and not planet_data.chunk_cache_ineligible(nside, ipix):
 					_chunk_cache.save_collision(key, 0, shape)
 				_server_assemble_chunk(key, nside, ipix, shape)
 			else:
@@ -1280,7 +1295,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 			_server_collision_chunks[key] = body
 			# Update disk cache.
 			if _chunk_cache and _persistable(shape) \
-					and not planet_data.grade_chunk_provisional(nside, ipix):
+					and not planet_data.chunk_cache_ineligible(nside, ipix):
 				_chunk_cache.save_collision(key, 0, shape)
 
 		print("[PlanetTerrain] rebuild_chunks: rebuilt '%s'" % key)
@@ -1308,6 +1323,8 @@ func _physics_process(_delta: float) -> void:
 
 	# A line profile born late changes the chunks under it, on both sides.
 	_poll_starved_grade_profiles()
+	# So does a pad whose elevation tiles have only just arrived.
+	_poll_starved_pads()
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
@@ -1894,6 +1911,19 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 		return xform  # at the planet centre — no radial direction
 	var local_dir := local_pos.normalized()
 	var h := planet_data.sample_height_for_direction(local_dir)
+	# A building that levels the ground under it must be snapped to the LEVELLED
+	# altitude, not to the raw relief it replaces — otherwise the snap puts it
+	# on the slope and the terrain then flattens out from under it. The pad node
+	# can sit anywhere in the building, so its radial offset from the object's
+	# own origin is preserved.
+	var pad := _terrain_pad_of(n3)
+	if pad != null:
+		var z := pad.pad_altitude()
+		if not is_nan(z):
+			# Measured at the pad's ground reference (the box's underside), the
+			# same point the server re-seats a networked building on.
+			var pad_local := planet_xform.affine_inverse() * pad.ground_reference_global()
+			h = z + (local_pos.length() - pad_local.length())
 	var surface_pos: Vector3 = planet_xform \
 		* (local_dir * (planet_data.radius + h + editor_snap_height_offset))
 	# Radial "up" in world space, for the alignment below.
@@ -1920,6 +1950,18 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 	z_axis = x_axis.cross(y_axis).normalized()
 	var basis := Basis(x_axis, y_axis, z_axis).scaled(gscale)
 	return Transform3D(basis, surface_pos)
+
+
+## The TerrainPad [param n3] carries, if any: itself, or the first one below
+## it. A building declares exactly one; the first found is that one.
+func _terrain_pad_of(n3: Node) -> TerrainPad:
+	if n3 is TerrainPad:
+		return n3 as TerrainPad
+	for child: Node in n3.get_children():
+		var found := _terrain_pad_of(child)
+		if found != null:
+			return found
+	return null
 
 
 # ------------------------------------------------------------------
@@ -2584,7 +2626,8 @@ func _try_create_or_defer(info: Dictionary) -> void:
 			return
 		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
 		var _st: int = int(info.get("stitch", 0))
-		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st):
+		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st) \
+				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
 			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st)
 			if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 				info["_from_disk_cache"] = true
@@ -2609,7 +2652,8 @@ func _try_create_or_defer(info: Dictionary) -> void:
 
 	# ── Client: check disk cache first ──────────────────────────────
 	var _st_r: int = int(info.get("stitch", 0))
-	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st_r):
+	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st_r) \
+			and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
 		var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st_r)
 		if cached_mesh and _cached_mesh_valid(cached_mesh, info):
 			info["_from_disk_cache"] = true
@@ -3008,7 +3052,9 @@ func _process_assemble_queue() -> void:
 		# terrain-hugging ribbon where the bed now goes. Dropped, so that
 		# _update_terrain queues the chunk again on the new tables.
 		if int(info.get("grade_gen", _grade_generation)) != _grade_generation \
-				and _chunk_touches_tiles(info.nside, info.ipix, _grade_reborn_tiles):
+				and (_chunk_touches_tiles(info.nside, info.ipix, _grade_reborn_tiles)
+					or _chunk_touches_tiles(info.nside, info.ipix, _pad_dirty_pixels,
+						1 << planet_data.max_quadtree_depth)):
 			assembled += 1
 			continue
 		_assemble_visual_chunk(info, mesh)
@@ -3323,7 +3369,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		# it carries the terrain-hugging ribbon now and the bed later.
 		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
 				and _persistable(mesh) \
-				and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
+				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
 			_chunk_cache.save_mesh(key, lod, mesh, int(info.get("stitch", 0)))
 
 	# The road slabs and beds on their own node (after the cache write: the
@@ -3360,7 +3406,7 @@ func _create_chunk(info: Dictionary) -> void:
 		var shape: ConcavePolygonShape3D = null
 		var _col_from_cache := false
 		# Check disk cache first
-		if _chunk_cache:
+		if _chunk_cache and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
 			shape = _chunk_cache.load_collision(key, lod)
 			# Reject shapes baked from fallback heights (see _cached_geom_valid).
 			if shape != null and not _cached_shape_valid(shape, info.nside, info.ipix, key):
@@ -3391,7 +3437,7 @@ func _create_chunk(info: Dictionary) -> void:
 					_cns *= 2
 				if planet_data.is_chunk_cached("hp_n%d_p%d" % [_epd, _eip]) \
 						and _persistable(shape) \
-						and not planet_data.grade_chunk_provisional(info.nside, info.ipix):
+						and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
 					_chunk_cache.save_collision(key, lod, shape)
 
 		# Server also needs cave/fumarole collision so players don't fall through.
@@ -3507,11 +3553,16 @@ func _poll_starved_grade_profiles() -> void:
 	_rebuild_chunks_on_tiles(tiles)
 
 
-## Does chunk (nside, ipix) stand on one of [param tiles] (export ipix)?
-func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary) -> bool:
+## Does chunk (nside, ipix) stand on one of [param tiles]?
+##
+## [param tiles_nside] is the level the keys of [param tiles] are stated at —
+## the export level by default (a line's tiles), or the finest level for the
+## pixels a terrain pad reaches.
+func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary,
+		tiles_nside: int = -1) -> bool:
 	if tiles.is_empty() or nside <= 0 or ipix < 0:
 		return false
-	var export_nside: int = planet_data.export_nside
+	var export_nside: int = tiles_nside if tiles_nside > 0 else planet_data.export_nside
 	if nside >= export_nside:
 		var e := ipix
 		var ns := nside
@@ -3535,17 +3586,28 @@ func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary) -> bool:
 ## the server's collision chunks (unloaded; the residency reloads them) and
 ## the tasks in flight on either side (their result is dropped, then
 ## queued again). Idempotent for anything not on the tiles.
-func _rebuild_chunks_on_tiles(tiles: Dictionary) -> void:
+func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
+		why: String = "d'une ligne profilée née en rattrapage") -> void:
 	if tiles.is_empty():
 		return
 	var n := 0
+	# Which grids the rebuilt chunks were on. A pad is only CARVED on
+	# hp_nside == 1 << max_quadtree_depth (GradeBed.carve_enabled); anything
+	# coarser only gets the clamp, so this line is what tells a "the ground is
+	# still in my building" report apart: LOD and nside are independent here
+	# (lod comes from camera distance, nside from the quadtree depth), so
+	# being on LOD 0 does not mean being on the grid the pad is cut into.
+	var by_nside := {}
 	if is_server:
 		for key: String in _server_collision_chunks.keys().duplicate():
-			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key), tiles):
+			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key),
+					tiles, tiles_nside):
+				by_nside[_parse_nside_from_key(key)] = int(by_nside.get(_parse_nside_from_key(key), 0)) + 1
 				_unload_chunk(key)
 				n += 1
 		for key: String in _server_chunk_tasks.keys():
-			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key), tiles):
+			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key),
+					tiles, tiles_nside):
 				_server_chunk_tasks[key]["evicted"] = true
 				_server_chunk_tasks[key]["reload"] = true
 				n += 1
@@ -3553,13 +3615,123 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary) -> void:
 	else:
 		for key: String in _active_chunks.keys().duplicate():
 			var info: Dictionary = _active_chunks[key]
-			if _chunk_touches_tiles(int(info.get("nside", 0)), int(info.get("ipix", -1)), tiles):
+			if _chunk_touches_tiles(int(info.get("nside", 0)), int(info.get("ipix", -1)),
+					tiles, tiles_nside):
+				var k := "n%d/lod%d" % [int(info.get("nside", 0)), int(info.get("lod", -1))]
+				by_nside[k] = int(by_nside.get(k, 0)) + 1
 				_remove_chunk(key)
 				n += 1
 		# Tasks already running were stamped with the old generation and are
 		# dropped at assembly; the backlog is stamped when it is submitted.
-	print("[PlanetTerrain] %d chunk(s) de '%s' refait(s) sur les %d tuile(s) d'une ligne profilée née en rattrapage"
-			% [n, planet_data.planet_name, tiles.size()])
+	print("[PlanetTerrain] %d chunk(s) de '%s' refait(s) sur les %d tuile(s) %s %s — grille la plus fine : n%d"
+			% [n, planet_data.planet_name, tiles.size(), why, str(by_nside),
+			1 << planet_data.max_quadtree_depth])
+
+
+# ------------------------------------------------------------------
+# Terrain pads (levelled platforms under buildings)
+# ------------------------------------------------------------------
+
+## Register or move the pad [param rec] and rebuild the chunks it reaches.
+## Called by TerrainPad, which is the only thing that builds a record.
+func register_terrain_pad(rec: Dictionary) -> void:
+	if planet_data == null:
+		return
+	_pads_changed(planet_data.register_pad(rec))
+
+
+## Drop the pad [param uuid] and give its ground back its natural relief.
+func unregister_terrain_pad(uuid: String) -> void:
+	if planet_data == null:
+		return
+	_pads_changed(planet_data.unregister_pad(uuid))
+
+
+## The altitude a pad levels the ground to, NAN while its tiles are unreadable.
+func terrain_pad_altitude(rec: Dictionary) -> float:
+	return planet_data.pad_altitude(rec) if planet_data != null else NAN
+
+
+## How much height that pad's talus has to absorb.
+func terrain_pad_height_span(rec: Dictionary) -> float:
+	return planet_data.pad_height_span(rec) if planet_data != null else NAN
+
+
+## Register every TerrainPad already standing on this body. The buildings are
+## siblings of this node under the Planet root, so the walk starts there.
+func warm_terrain_pads() -> void:
+	if planet_data == null:
+		return
+	var root: Node = get_parent() if get_parent() != null else self
+	var n := _register_pads_under(root)
+	if n > 0:
+		print("[PlanetTerrain] %d pad(s) de bâtiment enregistré(s) sur '%s'"
+				% [n, planet_data.planet_name])
+
+
+func _register_pads_under(node: Node) -> int:
+	var n := 0
+	for child: Node in node.get_children():
+		if child is PlanetTerrain:
+			continue  # the chunk tree, never a building
+		if child is TerrainPad:
+			(child as TerrainPad).register_now()
+			n += 1
+		n += _register_pads_under(child)
+	return n
+
+
+## Rattrape les pads laissés de côté faute de tuile d'élévation lisible.
+##
+## Même raison que pour les lignes profilées : échantillonner le relief à
+## travers une tuile absente retombe sur la carte globale plate, et le client
+## et le serveur aplaniraient le sol à deux altitudes différentes — le bâtiment
+## se retrouverait posé sur l'une des deux. Le pad attend donc, et le terrain
+## sous lui reste naturel jusqu'à ce que ses tuiles soient là.
+func _poll_starved_pads() -> void:
+	if planet_data == null or not planet_data.pads_incomplete():
+		return
+	var now := Time.get_ticks_msec()
+	if now < _next_pad_retry_ms:
+		return
+	_next_pad_retry_ms = now + BRIDGE_RETRY_INTERVAL_MS
+	_pads_changed(planet_data.retry_starved_pads())
+
+
+## A pad appeared, moved or went: [param dirty] holds the finest-level pixels
+## whose chunks no longer describe the ground. Throw them away on whichever
+## side we are — the client's meshes, the server's collision — and tell the NPC
+## navigation its baked boxes over that ground are stale.
+func _pads_changed(dirty: Dictionary) -> void:
+	if dirty.is_empty() or planet_data == null:
+		return
+	_pad_dirty_pixels.merge(dirty)
+	# Tasks already in flight were started on the old ground; stamping a new
+	# generation is what drops their result instead of drawing it.
+	_grade_generation += 1
+	if not _initialized:
+		return  # warm-up: no chunk has been built yet
+	var nside: int = 1 << planet_data.max_quadtree_depth
+	_rebuild_chunks_on_tiles(dirty, nside, "d'un pad de bâtiment")
+	_invalidate_nav_over(dirty, nside)
+
+
+## The NPC navigation bakes its boxes from the terrain collision, so ground
+## that just moved leaves stale boxes behind — an NPC would walk the slope the
+## pad replaced. One invalidation over the whole dirty area, not one per pixel.
+func _invalidate_nav_over(dirty: Dictionary, nside: int) -> void:
+	if not is_server or dirty.is_empty():
+		return
+	var c := Vector3.ZERO
+	for ip: int in dirty:
+		c += HEALPix.pix2vec_nest(nside, ip)
+	if c.length_squared() < 1e-12:
+		return
+	var centre := global_transform * (c.normalized() * planet_data.radius)
+	var side := HEALPix.pixel_side_length(nside, planet_data.radius)
+	# Half the diagonal of the dirty block, plus a pixel of slack.
+	var reach := side * (0.5 * sqrt(float(dirty.size())) + 1.0)
+	NpcNavCache.invalidate_around_all(centre, reach)
 
 
 ## Spawn a bridge for every road/chasm crossing this chunk owns.
