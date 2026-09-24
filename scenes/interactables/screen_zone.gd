@@ -27,6 +27,24 @@ extends Area3D
 ## To turn any mesh into a usable screen: put this script on an Area3D covering the console, and give
 ## its owner an `update_screen(data)` method (the player walks up the tree looking for it). Optional:
 ## `screen_focus_changed(player, focused)` to be told who is using it.
+##
+## Place it UNDER the Gui3D, beside the ScreenMesh — the layout every screen in the game already uses.
+## That is not decoration: it is how [method screen_surface] finds the surface this zone guards.
+
+
+## The mesh the interface is painted on, or null. Its bounds are how far the view may pan while the
+## pointer leans on the edge of the window (see PlayerClient), so a screen wider than the field of
+## view can be read to its edges — and not one degree further.
+##
+## Read from the Gui3D this zone hangs under, which already holds that reference for its own picking.
+## Asking the parent rather than the screen's owner keeps the knowledge in one place: a console gains
+## the behaviour by being built like the others, with nothing of its own to implement.
+## A zone placed elsewhere answers null, and the caller then holds the view still rather than guess.
+func screen_surface() -> MeshInstance3D:
+	var gui: Node = get_parent()
+	if gui == null or not ("node_quad" in gui):
+		return null
+	return gui.node_quad as MeshInstance3D
 
 
 func _ready() -> void:

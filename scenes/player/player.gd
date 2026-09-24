@@ -316,6 +316,10 @@ var admin_cleanup_tool: AdminCleanupTool = null
 # where to look straight from it. A separate world position used to be snapshotted alongside, which
 # went stale the moment the planet spun on (it carries both the player and the screen).
 var screen_interacting: Node3D = null
+## The zone we walked into, kept beside its owner: it is the ZONE — not the owner — that knows which
+## screen surface this is, and the view needs those bounds to know how far it may pan. Written by the
+## same single writer, so the two can never name different consoles.
+var screen_zone: ScreenZone = null
 
 var _display_debug: bool = false
 
@@ -717,7 +721,7 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		# A seated player is skipped: their body is taken out of collision by set_seated, so driving
 		# past a depot must not steal the mouse from the driver.
 		if not _seated_saved:
-			_set_screen(_screen_owner_of(area))
+			_set_screen(_screen_owner_of(area), area as ScreenZone)
 
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -777,12 +781,13 @@ func _screen_owner_of(area: Area3D) -> Node3D:
 
 ## Single writer for `screen_interacting`, so the camera lock, the mouse mode and the screen's own
 ## bookkeeping can never disagree about which console we are using.
-func _set_screen(screen: Node3D) -> void:
+func _set_screen(screen: Node3D, zone: ScreenZone = null) -> void:
 	if screen == screen_interacting:
 		return
 	if is_instance_valid(screen_interacting) and screen_interacting.has_method("screen_focus_changed"):
 		screen_interacting.screen_focus_changed(self, false)
 	screen_interacting = screen
+	screen_zone = zone
 	if screen != null and screen.has_method("screen_focus_changed"):
 		screen.screen_focus_changed(self, true)
 
