@@ -59,10 +59,27 @@ static var _warned_missing_material: Dictionary = {}
 ## Returns the root node, or null when the span cannot be bridged.
 static func spawn(planet_data: PlanetData, span: Dictionary,
 		_height_ipix: int = -1, _height_nside: int = -1) -> Node3D:
+	var prep := prepare(planet_data, span)
+	if prep.is_empty():
+		return null
+	return instantiate(prep, build_geo(planet_data, prep))
+
+
+## The same build in three steps, so the client can run the costly middle one
+## on a worker (a deck is 35-80 ms of geometry, ClientPerf asm:bridge_spawn
+## 2026-09-24):
+##   · prepare()     MAIN thread — plan, road, profile, deck material. These
+##                   read PlanetData's lazy caches, which are not safe to
+##                   populate from a worker (see warm_bridge_plans);
+##   · build_geo()   ANY thread — BridgeDeck.build: pure geometry, sampling
+##                   heights the way the chunk mesh workers already do;
+##   · instantiate() MAIN thread — the nodes.
+## {} from prepare() means no bridge for this span.
+static func prepare(planet_data: PlanetData, span: Dictionary) -> Dictionary:
 	if span.get("truncated", false):
 		# Too oblique to bridge — re-route the road instead. Reported by
 		# PlanetData.get_bridge_spans() so it is not silently dropped.
-		return null
+		return {}
 	# A profile viaduct (railway, graded road) is planned by GradeProfile (deck
 	# pinned to the line's profile, no ramps) and built with that line's own
 	# deck settings; a crack-based road bridge by BridgePlan with the planet's
@@ -73,10 +90,10 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 	if plan.is_empty() or not bool(plan.get("ok", false)):
 		# No plan means no ribbon cut either, so the road stays whole and the
 		# player drives over a gorge on a ribbon instead of into a gap.
-		return null
+		return {}
 	var road := planet_data.get_whole_road(int(span.get("feature_id", -1)))
 	if road.is_empty():
-		return null
+		return {}
 
 	var profile := GradeSettings.viaduct_profile_for_span(span) if is_profile \
 			else planet_data.get_bridge_profile()
@@ -98,11 +115,26 @@ static func spawn(planet_data: PlanetData, span: Dictionary,
 			deck_mat = surf["mat_path"]
 			uv_mode = surf["uv_mode"]
 			tint = surf["tint"]
-	var geo := BridgeDeck.build(profile, plan, road, planet_data.radius,
-			planet_data.bridge_height_sampler(ipix), uv_mode, tint)
-	if geo.is_empty():
-		return null
+	return {"span": span, "plan": plan, "road": road, "profile": profile,
+			"ipix": ipix, "deck_mat": deck_mat, "uv_mode": uv_mode, "tint": tint}
 
+
+## The deck geometry of a prepare()d span; {} when it cannot be built.
+static func build_geo(planet_data: PlanetData, prep: Dictionary) -> Dictionary:
+	return BridgeDeck.build(prep["profile"], prep["plan"], prep["road"],
+			planet_data.radius, planet_data.bridge_height_sampler(int(prep["ipix"])),
+			int(prep["uv_mode"]), prep["tint"])
+
+
+## The bridge node for a prepare()d span and its build_geo(); null when the
+## geometry came back empty.
+static func instantiate(prep: Dictionary, geo: Dictionary) -> Node3D:
+	if prep.is_empty() or geo.is_empty():
+		return null
+	var span: Dictionary = prep["span"]
+	var plan: Dictionary = prep["plan"]
+	var profile = prep["profile"]
+	var deck_mat: String = prep["deck_mat"]
 	var body := StaticBody3D.new()
 	body.name = "Bridge_" + PlanetData.bridge_span_key(span)
 	# Same identity as a terrain chunk's collision body: the deck IS the ground
