@@ -346,6 +346,16 @@ func _process(delta: float) -> void:
 			# enough to lag a whole gait change, so the neck showed for the half second it took to catch up.
 			# The axes have no such conflict -- the lean is followed in full, and instantly.
 			var offset: Vector3 = head_now - _head_rest_body
+			# Reading a 3D screen: the view has to HOLD STILL. Idle breathing walks the head a centimetre or
+			# two, several times a second — unnoticeable while playing, maddening while putting a pointer on
+			# a list entry, because the whole panel drifts out from under it.
+			# The offset is DROPPED rather than frozen: the camera then eases to its rest pose through the
+			# same smoothing and settles there, instead of stopping wherever the bob happened to leave it.
+			# Trade-off taken knowingly: walking while a console holds the pointer animates the body under a
+			# still camera. It costs nothing visible — the owner's head and neck are hidden (HEAD_HIDE_SCALE)
+			# — and a steady view is the entire point of standing at a screen.
+			if is_instance_valid(_player.screen_interacting):
+				offset = Vector3.ZERO
 			# Forward in the BODY frame, not the camera's: offsetting along the look direction would drive the
 			# eye into the chest as soon as you looked down. Here it stays at the front of the skull whatever
 			# you are looking at, which is where an eye actually is.
