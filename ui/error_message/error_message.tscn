@@ -50,9 +50,9 @@ expand_margin_bottom = 5.0
 [node name="ErrorMessage" type="CanvasLayer" unique_id=1331133426]
 layer = 2
 script = ExtResource("1_5vj24")
-title = "ERROR 1337"
-message = "SERVER CONNECTION FAILED"
-exit_button_label = "BACK TO MENU"
+title = "%%ERR_NUM_1337"
+message = "%%ERR_NUM_1337_MSG"
+exit_button_label = "%%ERR_BACKTOMENU"
 
 [node name="ErrorMessage" type="Control" parent="." unique_id=1183648460]
 layout_mode = 3

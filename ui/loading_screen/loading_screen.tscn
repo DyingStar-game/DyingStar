@@ -29,16 +29,16 @@ stretch_mode = 6
 
 [node name="Label" type="Label" parent="LoadingScreen/TextureRect" unique_id=248266015]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
+anchors_preset = -1
+anchor_left = 0.0
 anchor_top = 0.5
-anchor_right = 0.5
+anchor_right = 1.0
 anchor_bottom = 0.5
-offset_left = -176.5
 offset_top = 217.5
-offset_right = 176.5
 offset_bottom = 262.5
 grow_horizontal = 2
 grow_vertical = 2
 text = "Loading the Universe..."
 label_settings = SubResource("LabelSettings_vxd2j")
+horizontal_alignment = 1
+vertical_alignment = 1
