@@ -52,7 +52,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor" unique_id=1729851320]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Monitor"
+text = "%%MENU_MONITOR"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor" unique_id=352335905]
@@ -62,11 +62,6 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 alignment = 1
 selected = 0
-item_count = 2
-popup/item_0/text = "Fullscreen"
-popup/item_0/id = 0
-popup/item_1/text = "Windowed"
-popup/item_1/id = 1
 
 [node name="DisplayMode" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=968190861]
 layout_mode = 2
@@ -74,7 +69,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode" unique_id=1631591219]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Display Mode"
+text = "%%MENU_DISPLAY_MODE"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode" unique_id=1121426514]
@@ -85,9 +80,9 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 alignment = 1
 selected = 0
 item_count = 2
-popup/item_0/text = "Fullscreen"
+popup/item_0/text = "%%MENU_FULLSCREEN"
 popup/item_0/id = 0
-popup/item_1/text = "Windowed"
+popup/item_1/text = "%%MENU_WINDOWED"
 popup/item_1/id = 1
 
 [node name="ScreenResolution" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=112671082]
@@ -96,7 +91,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution" unique_id=1973320043]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Screen Resolution"
+text = "%%MENU_RESOLUTION"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution" unique_id=115248095]
@@ -105,20 +100,6 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 alignment = 1
-selected = 2
-item_count = 6
-popup/item_0/text = "640 x 480"
-popup/item_0/id = 0
-popup/item_1/text = "1280x 720"
-popup/item_1/id = 1
-popup/item_2/text = "1920 x 1080"
-popup/item_2/id = 2
-popup/item_3/text = "2560 x 1440"
-popup/item_3/id = 3
-popup/item_4/text = "3840 x 2160"
-popup/item_4/id = 4
-popup/item_5/text = "7680 x 4320"
-popup/item_5/id = 5
 
 [node name="VSync" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1615866291]
 layout_mode = 2
@@ -126,7 +107,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync" unique_id=401197069]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "V-Sync"
+text = "%%MENU_VSYNC"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync" unique_id=2015412763]
@@ -134,7 +115,7 @@ custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
-text = "On"
+text = "%%MENU_ON"
 
 [node name="Shadows" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1500000001]
 layout_mode = 2
@@ -142,7 +123,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Shadows" unique_id=1500000002]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Shadows"
+text = "%%MENU_SHADOWS"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/Shadows" unique_id=1500000003]
@@ -151,7 +132,7 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
-text = "On"
+text = "%%MENU_ON"
 
 [node name="ShadowDistance" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1500000004]
 layout_mode = 2
@@ -159,7 +140,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance" unique_id=1500000005]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Shadow Distance"
+text = "%%MENU_SHADOW_DISTANCE"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance" unique_id=1500000006]
@@ -185,7 +166,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode" unique_id=1727925090]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Dev mode (ignore resolution/fullscreen)"
+text = "%%MENU_DEV_MODE"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode" unique_id=1344302373]
@@ -194,7 +175,7 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
-text = "Off"
+text = "%%MENU_OFF"
 
 [node name="MaxFps" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=670723310]
 layout_mode = 2
@@ -202,7 +183,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps" unique_id=1799468495]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "FPS Limit"
+text = "%%MENU_FPS_LIMIT"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps" unique_id=978430751]
@@ -212,7 +193,7 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 alignment = 1
 item_count = 6
-popup/item_0/text = "Unlimited"
+popup/item_0/text = "%%MENU_FPS_UNLIMITED"
 popup/item_0/id = 0
 popup/item_1/text = "30"
 popup/item_1/id = 30
@@ -231,7 +212,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=2036814975]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Field of View"
+text = "%%MENU_FOV"
 label_settings = SubResource("LabelSettings_aqojs")
 
 [node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=933020062]

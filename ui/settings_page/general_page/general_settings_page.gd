@@ -26,6 +26,8 @@ func _ready() -> void:
 	SettingsManager.language.changed.connect(_on_language_changed)
 	for toggle in TOGGLES:
 		_wire_toggle(toggle)
+	# Last: this reparents each row, so it must come after the node paths above are resolved.
+	SettingsRow.wrap_rows(_rows)
 
 ## Fill the picker: "Automatic" first, then every shipped language in its own words. The language
 ## CODE rides as item metadata instead of being read back from the visible text, which is a display
@@ -67,4 +69,4 @@ func _wire_toggle(toggle: Dictionary) -> void:
 		SettingsManager.call(toggle["setter"], on))
 
 func _toggle_label(on: bool) -> String:
-	return "On" if on else "Off"
+	return SettingsText.on_off(on)

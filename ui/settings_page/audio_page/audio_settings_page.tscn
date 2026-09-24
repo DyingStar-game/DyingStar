@@ -51,7 +51,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/General" unique_id=207347215]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "General"
+text = "%%MENU_AUDIO_GENERAL"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/General" unique_id=1987287576]
@@ -70,7 +70,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Music" unique_id=592891936]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Music"
+text = "%%MENU_AUDIO_MUSIC"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Music" unique_id=1962383320]
@@ -89,7 +89,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SFX" unique_id=1694964006]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "SFX"
+text = "%%MENU_AUDIO_SFX"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/SFX" unique_id=460997283]
@@ -108,7 +108,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VoIP" unique_id=1912414303]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "VoIP"
+text = "%%MENU_AUDIO_VOIP"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/VoIP" unique_id=383556696]
@@ -126,7 +126,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone" unique_id=667225259]
 layout_mode = 2
-text = "Microphone (device)"
+text = "%%MENU_AUDIO_MIC"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Microphone" unique_id=1342693969]
@@ -159,7 +159,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker" unique_id=107308438]
 layout_mode = 2
-text = "Speaker (device)"
+text = "%%MENU_AUDIO_SPEAKER"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Speaker" unique_id=1219883642]
@@ -196,7 +196,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=1472948065]
 layout_mode = 2
-text = "Testing microphone"
+text = "%%MENU_AUDIO_TEST_MIC"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="Button" type="Button" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=2050494609]
@@ -205,7 +205,7 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_aa43r")
 theme_override_font_sizes/font_size = 28
-text = "Test"
+text = "%%MENU_AUDIO_TEST"
 
 [node name="Speaker_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=155813879]
 visible = false
@@ -213,7 +213,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker_testing" unique_id=1006306348]
 layout_mode = 2
-text = "Testing speaker"
+text = "%%MENU_AUDIO_TEST_SPEAKER"
 label_settings = SubResource("LabelSettings_aa43r")
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1159019645]

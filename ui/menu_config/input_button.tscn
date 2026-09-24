@@ -35,6 +35,7 @@ layout_mode = 2
 mouse_filter = 1
 theme_override_font_sizes/font_size = 30
 text = "Action name a"
+uppercase = true
 horizontal_alignment = 1
 vertical_alignment = 1
 
