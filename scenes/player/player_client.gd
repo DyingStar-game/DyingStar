@@ -23,10 +23,6 @@ const REMOTE_HALF_RATE_EXIT: float = 12.0
 ## 32 m and only comes back at 28 is something a player walking back and forth sees, and calls a bug.
 ## The half-rate switch below keeps its hysteresis because nobody can see that one flip.
 const REMOTE_SHADOW_DISTANCE: float = 40.0
-## How closely the camera must already point at a 3D screen for _face_screen to consider it aimed and
-## stop nudging it (dot of the view axis with the direction of the screen; 1.0 = dead on, ~0.9997 is
-## a bit over 1°). Without a convergence test the camera re-aimed every single frame.
-const FACE_SCREEN_EPSILON: float = 0.9997
 ## How often the ground is re-probed (s). A step comes every metre or so; sampling at 60 Hz would cast
 ## sixty rays to answer a question that changes when you walk into another room.
 const SURFACE_SAMPLE_S: float = 0.2
@@ -326,13 +322,10 @@ func _process(_delta: float) -> void:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
 	_apply_cursor_mode(ui_focus)
-	if ui_focus:
-		# Turn the camera toward a 3D screen so it's centered in view.
-		if is_instance_valid(player.screen_interacting):
-			_face_screen(player.screen_interacting)
-	else:
-		# Return the camera to the pivot's control after a screen interaction.
-		player.camera.rotation = player.camera.rotation.lerp(Vector3.ZERO, 0.2)
+	# A 3D screen frees the pointer, and that is ALL it does: the view stays where the player left it.
+	# Aiming the camera at the screen was a pull nobody asked for — it restarted on every step taken
+	# inside the zone — and the elastic re-centring on the way out only ever existed to undo it.
+	if not ui_focus:
 		_handle_camera_motion()
 
 
@@ -541,41 +534,6 @@ func _send_horn_input(event: InputEvent) -> void:
 		"pressed": pressed,
 		"special": special,
 	})
-
-## Ease the camera round to face a 3D screen (mining depot…) while we are using it.
-##
-## Everything is done in the camera's LOCAL frame, on purpose. Writing camera.global_transform — what
-## this used to do — nails the camera to a point in WORLD space: Godot turns the global transform we
-## hand it back into a local one relative to a parent that MOVES (the planet, at ~3e10). Re-writing the
-## same global origin every frame therefore keeps the camera at a fixed point of the universe while the
-## planet — and the player with it — flies away: within seconds the view is billions of metres behind,
-## staring at the sun, while the body still walks around normally for everybody else.
-## Rotating the LOCAL transform never touches the camera's position: it stays in the player's eyes.
-##
-## The target is read LIVE from the screen node, never stored: the planet spins, so a world position
-## snapshotted on approach drifts away from the screen it was meant to point at (hundreds of metres
-## per spin step), and the camera then chases a ghost that keeps receding — it never settles, which
-## also kept the physics picking re-firing and made the pointer wander across the screen's UI.
-## Stops once the camera is aimed within FACE_SCREEN_EPSILON: without that it re-aimed every frame.
-func _face_screen(screen: Node) -> void:
-	var pivot: Node3D = player.camera.get_parent() as Node3D
-	if pivot == null:
-		return
-	# The screen tells us where to look (its surface sits metres away from the object's origin);
-	# anything that does not care is simply looked at directly.
-	var target: Node3D = screen.screen_look_target() if screen.has_method("screen_look_target") else screen as Node3D
-	if target == null:
-		return
-	var target_local: Vector3 = pivot.to_local(target.global_position)
-	var up_local: Vector3 = pivot.global_basis.inverse() * player.up_direction
-	if target_local.is_equal_approx(player.camera.position) or up_local.is_zero_approx():
-		return
-	# Converged? The camera looks down its own -Z; compare that to the direction of the screen.
-	var to_screen: Vector3 = (target_local - player.camera.position).normalized()
-	if -player.camera.transform.basis.z.normalized().dot(to_screen) >= FACE_SCREEN_EPSILON:
-		return
-	var look: Transform3D = player.camera.transform.looking_at(target_local, up_local)
-	player.camera.transform = player.camera.transform.interpolate_with(look, 0.15)
 
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
