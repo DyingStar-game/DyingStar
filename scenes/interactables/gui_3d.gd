@@ -49,8 +49,20 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	for mouse_event in [InputEventMouseButton, InputEventMouseMotion, InputEventScreenDrag, InputEventScreenTouch]:
 		if is_instance_of(input_event, mouse_event):
 			# If the event is a mouse/touch event, then we can ignore it here, because it will be
-			# handled via Physics Picking.
+			# handled via Physics Picking — by the ROOT viewport, which is where 3D picking happens
+			# (see ClientPerf's debug_no_picking ablation). This SubViewport's own
+			# physics_object_picking would concern 3D objects INSIDE it, and it holds none: disable_3d.
 			return
+	# EVERY Gui3D in the world runs this handler, so an ungated push sent every keystroke to every
+	# screen loaded at once. Focus is per-SubViewport, so that is not merely wasteful: a field left
+	# focused on a console in another room would still swallow what is typed here, while
+	# PlayerClient._screen_typing() only ever asks about the screen the player is STANDING at — so
+	# gameplay input would not even be locked for it.
+	# Nothing in a panel reacts to a key without holding focus, which makes "has a focus owner" the
+	# exact condition. A click never comes through here — it arrives by picking, above — so a field
+	# can still be focused in the first place.
+	if node_viewport.gui_get_focus_owner() == null:
+		return
 	node_viewport.push_input(input_event)
 
 
