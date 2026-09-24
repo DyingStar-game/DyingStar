@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://bdxjibeoa055g" path="res://assets/_universe/structures/industrial/wind_valley_bridge.glb" id="1_p27tt"]
 [ext_resource type="PackedScene" uid="uid://btgke3btm5ma7" path="res://assets/_universe/structures/industrial/wind_valley_fan.glb" id="2_svp04"]
 [ext_resource type="Material" uid="uid://cmreo7rjq0ava" path="res://assets/_universe/environment/terrain/regolith_grey.tres" id="2_urp1l"]
+[ext_resource type="Script" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_yy05e"]
 friction = 0.5
@@ -17,6 +18,9 @@ size = Vector3(49.65505270586982, 37.93089269361008, 10)
 [node name="WindValley" type="RigidBody3D" unique_id=444361552]
 freeze = true
 
+
+[node name="TerrainBlend" type="Node" parent="."]
+script = ExtResource("tblend_ds")
 [node name="wind_valley_bridge" parent="." unique_id=164632456 instance=ExtResource("1_p27tt")]
 physics_material_override = SubResource("PhysicsMaterial_yy05e")
 
