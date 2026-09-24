@@ -3948,6 +3948,80 @@ func sample_biome_at(dir: Vector3) -> Color:
 	return Color(0.45, 0.35, 0.25, 1.0)
 
 
+## The colour the terrain SHOWS in direction `dir` -- the same decision PlanetChunk bakes into its
+## vertex colours, so a fringe painted with it matches the ground it stands on.
+##
+## sample_biome_at is NOT that colour: it is only the LAST resort of the chain at
+## planet_chunk.gd:1004-1047, reached when there is no corundum default, no catalogue rock, no
+## biome and no zone colour. On a corundum world it never fires at all -- which is why a fringe fed
+## from it comes out the wrong hue entirely rather than merely approximate.
+##
+## The duplication of that chain is deliberate and bounded. The chunk's copy is threaded through a
+## vertex loop that also bakes impurity slots and crack distances, so lifting it out would touch the
+## build loop and therefore the versioned disk cache. If that chain moves, this must move with it.
+func ground_albedo_at(dir: Vector3) -> Color:
+	var zone: Dictionary = first_zone_at(dir)
+	# The ROCK first, not the biome. Where a catalogue rock applies, PlanetChunk bakes ITS shade
+	# over the base colour (RockImpurity.tint, planet_chunk.gd:1299) -- on a corundum world that is
+	# corundum_milky, a pale #E7E0D1, which is the near-white ground one actually sees. The plateau
+	# biome's own colour is a different, darker beige that never reaches the screen there, so
+	# reading the biome would paint a band in a colour the ground never shows.
+	var rock := ""
+	if corundum_default_biome and corundum_applies_to_zone(zone):
+		rock = corundum_default_rock
+	elif not zone.is_empty():
+		rock = String(zone.get("rock_type", ""))
+	if not rock.is_empty() and RockCatalogue.has(rock):
+		return RockCatalogue.tint(dir, radius, rock)
+	if not zone.is_empty():
+		var bd: BiomeDefinition = get_biome_by_type(String(zone.get("biome_type", "")))
+		if bd != null:
+			return bd.color
+		var hex: String = String(zone.get("color_hex", ""))
+		if not hex.is_empty():
+			return Color(hex)
+	if corundum_default_biome:
+		var cor: BiomeDefinition = get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE)
+		if cor != null:
+			return cor.color
+	return sample_biome_at(dir)
+
+
+## The detail layer and tiling scale the terrain uses in direction `dir`, as (layer, scale) -- the
+## same pair PlanetChunk writes into UV2 (planet_chunk.gd:1051-1053) and terrain_biome.gdshader
+## reads to texture the ground. It lets a surface that is NOT terrain borrow the ground's own grain
+## rather than approximate it with a flat colour, which is the difference between a fringe that
+## reads as ground and one that reads as paint.
+##
+## scale == 0.0 means "this biome has no detail texture", and the caller must fall back to the flat
+## colour -- exactly as the shader does with its `if (detail_scale > 0.0)`.
+func ground_detail_at(dir: Vector3) -> Vector2:
+	var bd: BiomeDefinition = null
+	if corundum_default_biome and corundum_applies_at(dir):
+		bd = get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE)
+	if bd == null:
+		bd = biome_at(dir)
+	var layer: int = get_detail_layer(bd)
+	return Vector2(float(layer), get_detail_scale_for_layer(layer))
+
+
+## The material the terrain is ACTUALLY drawn with in direction `dir`.
+##
+## Not always terrain_material: a BiomeDefinition may carry a terrain_material_override, and the
+## outcrop biomes do -- they run on planet_surface.gdshader with a real albedo texture, where
+## terrain_biome.gdshader tints a vertex colour with a greyscale detail layer. The two are so
+## different that borrowing the wrong one's texture produces a band that matches nothing: measured
+## on Tarsis 3, where the ground is outcrop-plateau and the fringe was reading terrain_biome.
+##
+## Callers that want to look like the ground must ask THIS, then read whatever that material
+## exposes -- there is no single parameter name common to both shaders.
+func ground_material_at(dir: Vector3) -> Material:
+	var bd: BiomeDefinition = biome_at(dir)
+	if bd != null and bd.terrain_material_override != null:
+		return bd.terrain_material_override
+	return terrain_material
+
+
 ## The BiomeDefinition covering a body-fixed direction, or null when we cannot tell.
 ##
 ## Deliberately the EXACT path only — the populate zones, which name their biome_type. The biome map
