@@ -1,13 +1,11 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene format=3 uid="uid://cprjdnct6kbub"]
 
-[ext_resource type="Script" path="res://scenes/_universe/props/vehicles/vehicle_component.gd" id="1_comp"]
+[ext_resource type="Script" uid="uid://4dn45fc0m70j" path="res://scenes/_universe/props/vehicles/vehicle_component.gd" id="1_comp"]
+[ext_resource type="Resource" uid="uid://cr7m3w86e4bsq" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="2_spec"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="6_0088b"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
-[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="2_spec"]
 [ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_engine"]
-size = Vector3(0.4, 0.3, 0.6)
 
 [sub_resource type="BoxMesh" id="BoxMesh_engine"]
 size = Vector3(0.4, 0.3, 0.6)
@@ -17,31 +15,49 @@ albedo_color = Color(0.22, 0.24, 0.27, 1)
 metallic = 0.8
 roughness = 0.45
 
-[node name="EngineT1" type="RigidBody3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_engine"]
+size = Vector3(0.4, 0.3, 0.6)
+
+[node name="EngineT1" type="RigidBody3D" unique_id=926427760]
 collision_layer = 8
 collision_mask = 15
 mass = 25.0
 script = ExtResource("1_comp")
 spec = ExtResource("2_spec")
+icon_faces = 25
+id_type = "ENG"
+id_short_display = true
 sfx_pick_up = ExtResource("sfx_pick")
 sfx_landing = ExtResource("sfx_landing")
-id_type = "MOTR"
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=199949467]
 script = ExtResource("propsync_1")
 type_name = "vehicle_component"
 enable_carry = true
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=310206362]
+material_override = ExtResource("6_0088b")
 mesh = SubResource("BoxMesh_engine")
 surface_material_override/0 = SubResource("StandardMaterial3D_engine")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=295325322]
 shape = SubResource("BoxShape3D_engine")
 
-[node name="Area3D" type="Area3D" parent="."]
-monitoring = false
+[node name="Area3D" type="Area3D" parent="." unique_id=219085626]
 collision_layer = 32
+monitoring = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=727989789]
 shape = SubResource("BoxShape3D_engine")
+
+[node name="IdFrameTop" type="Label3D" parent="." unique_id=1965806543 groups=["prop_id_label"]]
+transform = Transform3D(1.3669316428620764e-17, 0.3282112443506985, 1.110223e-16, 0, -4.163336342344336e-17, 1.0000000000000002, 0.22324425128049644, -2.009647876139071e-17, -6.797931e-33, 0.1349999999947613, 0.15099999999802094, 0)
+text = "ARES-ENG-XXXXXXXX"
+
+[node name="IdFrameLeft" type="Label3D" parent="." unique_id=341997329 groups=["prop_id_label"]]
+transform = Transform3D(1.3669316428620758e-17, 0, -1, 0, 0.3282112443506984, 0, 0.2232442512804964, 0, 6.123032e-17, -0.20014930447905763, 0.08706938597529035, 0)
+text = "ARES-ENG-XXXXXXXX"
+
+[node name="IdFrameRight" type="Label3D" parent="." unique_id=341997330 groups=["prop_id_label"]]
+transform = Transform3D(0, 0, 1, 0, 0.3282112443506984, 0, -0.2232442512804964, 0, 0, 0.20014930447905763, 0.08706938597529035, 0)
+text = "ARES-ENG-XXXXXXXX"
