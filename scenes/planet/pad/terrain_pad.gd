@@ -111,6 +111,14 @@ var _box_read := false
 ## for every motion of every ancestor and would otherwise repeat it forever.
 var _refusal := ""
 var _said := ""
+## True while every request since the last _apply was a transform notification.
+var _pose_only := true
+## This node's pose in the TERRAIN's frame at the last _apply. The client
+## re-places the planet 3x/s, and every pad on it is then notified with a pose
+## that has not moved relative to the ground; comparing it here skips the
+## whole record rebuild — which was ~25 pads × several ms per spin.
+var _applied_rel := Transform3D.IDENTITY
+var _applied_rel_ok := false
 
 
 ## Registration hangs off ENTER_TREE, not _ready, because a networked prop is
@@ -142,12 +150,17 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_TRANSFORM_CHANGED:
 		# Fires for every motion of every ancestor, the planet's own spin
 		# included. The record is stated in the body-fixed frame, so a spin
-		# produces an identical record and PadIndex.register answers "nothing
-		# changed" — but only after we have rebuilt it, hence the debounce.
-		_mark_dirty()
+		# produces an identical record: _apply sees the pose has not moved
+		# relative to the terrain and stops there.
+		_mark_dirty(true)
 
 
-func _mark_dirty() -> void:
+## [param pose_only]: the request comes from a transform notification, and may
+## be skipped if the pose relative to the terrain turns out unchanged. Anything
+## else (an export edited, entering the tree) always rebuilds.
+func _mark_dirty(pose_only: bool = false) -> void:
+	if not pose_only:
+		_pose_only = false
 	if _dirty or not is_inside_tree():
 		return
 	_dirty = true
@@ -159,16 +172,26 @@ func _mark_dirty() -> void:
 ## already in the scene are in the index before the first chunk is built.
 func register_now() -> void:
 	_dirty = false
+	_pose_only = false
 	_apply()
 
 
 func _apply() -> void:
 	_dirty = false
+	var pose_only := _pose_only
+	_pose_only = true
 	if not is_inside_tree():
 		return
 	var terrain := _resolve_terrain()
 	if terrain == null:
 		return
+	# Not in the editor: there the box is dragged while this node stays put.
+	var rel := (terrain as Node3D).global_transform.affine_inverse() * global_transform
+	if pose_only and _applied_rel_ok and terrain == _terrain \
+			and not Engine.is_editor_hint() and _same_pose(rel, _applied_rel):
+		return
+	_applied_rel = rel
+	_applied_rel_ok = true
 	if terrain != _terrain:
 		_unregister()
 		_terrain = terrain
@@ -332,6 +355,18 @@ func _say(msg: String) -> void:
 		return
 	_said = msg
 	print("[TerrainPad] %s (%s)" % [msg, get_path() if is_inside_tree() else name])
+
+
+## Same pose to well under the pad quantum (PadSettings.Q_M): a millimetre in
+## position, a micro-radian in orientation. Both transforms are body-relative,
+## so the planet's astronomic position does not enter the comparison.
+static func _same_pose(a: Transform3D, b: Transform3D) -> bool:
+	if a.origin.distance_squared_to(b.origin) > 1e-6:
+		return false
+	for i in 3:
+		if (a.basis[i] - b.basis[i]).length_squared() > 1e-12:
+			return false
+	return true
 
 
 func _unregister() -> void:

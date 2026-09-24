@@ -2212,6 +2212,23 @@ static func generate_mesh(
 			var _rd_list: PackedInt32Array = mesh.get_meta("road_surfaces", PackedInt32Array())
 			_rd_list.append(rd_si)
 			mesh.set_meta("road_surfaces", _rd_list)
+			# And the same surface, already on its own mesh (meta "roads_mesh"),
+			# built here on the worker: splitting it off on the main thread
+			# meant reading every road surface back from the RenderingServer
+			# and uploading it again, ~9 ms a chunk (ClientPerf asm:roads,
+			# 2026-09-24). The disk cache stores it along with the mesh, so a
+			# cache load skips the readback too.
+			# has_meta, not get_meta(key, null): a null default counts as NO
+			# default in Godot 4 and raises an error on the first surface.
+			var _rd_mesh: ArrayMesh
+			if mesh.has_meta("roads_mesh"):
+				_rd_mesh = mesh.get_meta("roads_mesh")
+			else:
+				_rd_mesh = ArrayMesh.new()
+				mesh.set_meta("roads_mesh", _rd_mesh)
+			var _rd_out := _rd_mesh.get_surface_count()
+			st.commit(_rd_mesh)
+			_rd_mesh.surface_set_material(_rd_out, rd_mat)
 
 	# --- lava_river: hot lava surface sitting ON TOP of the depression ------
 	# Like the river water overlay, the lava surface is built as a separate

@@ -19,6 +19,9 @@ signal initial_chunks_ready
 const BASE_PIXEL_COUNT := 12
 ## Seconds between full LOD-tree updates.
 const UPDATE_INTERVAL := 0.25
+## _prefetch_look_ahead re-traverses only once its prediction has moved this far.
+const PREFETCH_MIN_MOVE_M := 200.0
+var _last_prefetch_cam := Vector3.INF
 ## Factor: subdivide when camera distance < chunk_diagonal * SUBDIVIDE_FACTOR.
 const SUBDIVIDE_FACTOR := 1.5
 ## Back-face culling dot threshold (client only, skip chunks behind planet).
@@ -177,10 +180,14 @@ var _grade_generation: int = 0
 ## Export tiles (and neighbours) of every line whose profile was born late.
 var _grade_reborn_tiles: Dictionary = {}
 ## Finest-level pixels reached by a terrain pad that appeared, moved or went
-## since. Shares _grade_generation: a mesh task stamped with an older
-## generation was built without that pad, and its result is dropped rather
-## than drawn as the slope the pad replaced.
+## since. A mesh task stamped with an older _pad_generation was built without
+## that pad, and its result is dropped rather than drawn as the slope the pad
+## replaced.
 var _pad_dirty_pixels: Dictionary = {}
+## Its own counter, NOT _grade_generation: every building entering GORC range
+## registers a pad, and a shared counter made each of those registrations drop
+## every mesh in flight along the whole railway (hundreds of tiles) as well.
+var _pad_generation: int = 0
 
 ## Grace period before an unreferenced bridge is actually freed.
 ##
@@ -190,6 +197,19 @@ var _pad_dirty_pixels: Dictionary = {}
 ## as the rebuild takes — on the server, a hole in the bridge. Waiting a few
 ## seconds costs one idle mesh and makes that impossible.
 const BRIDGE_GRACE_MS := 5000
+## Client: a deck is 35-80 ms of geometry (ClientPerf asm:bridge_spawn,
+## 2026-09-24), and a chunk streaming wave asks for up to twenty at once —
+## 700 ms frames when built in line, still 6 fps when built one per frame.
+## Decks further than this from the camera go to _bridge_spawn_queue and their
+## geometry is built on a worker (BridgeSpawner.build_geo), nearest first, at
+## most BRIDGE_MAX_TASKS at a time; closer ones are built at once, so a
+## vehicle never reaches a gorge before its deck.
+const BRIDGE_SPAWN_NOW_M := 400.0
+const BRIDGE_MAX_TASKS := 2
+## span key → span, waiting for a worker (client only).
+var _bridge_spawn_queue: Dictionary = {}
+## span key → {task_id, prep, result: [geo]}, geometry being built.
+var _bridge_tasks: Dictionary = {}
 ## Last rendered frame the client pipeline ran in, and the wall-clock stamp of
 ## the last LOD update (see _physics_process).
 var _last_poll_frame: int = -1
@@ -1362,6 +1382,9 @@ func _physics_process(_delta: float) -> void:
 	_poll_mesh_tasks()
 	_process_assemble_queue()
 	_perf_end("terrain_assemble", _tk)
+	_tk = _perf_begin()
+	_drain_bridge_spawn_queue()
+	_perf_end("bridge_queue", _tk)
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
 	if not _initial_ready_emitted and not _active_chunks.is_empty() \
@@ -2957,6 +2980,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	# principal ne le lit qu'après is_task_completed(). Aucun verrou nécessaire.
 	var prof: Dictionary = {}
 	info["grade_gen"] = _grade_generation
+	info["pad_gen"] = _pad_generation
 	var task_entry := {
 		"task_id": -1,
 		"result_ref": result_ref,
@@ -3040,23 +3064,30 @@ func _process_assemble_queue() -> void:
 		_assemble_queue.remove_at(0)
 		var info: Dictionary = item.info
 		var mesh: ArrayMesh = item.mesh
+		# Built before a line profile was born under it (the mesh has the
+		# terrain-hugging ribbon where the bed now goes), or before a pad
+		# levelled its ground: dropped. Checked BEFORE the swap below, which
+		# would otherwise take the old mesh off screen for a result we throw
+		# away. A chunk still on screen is queued again right here, as a swap —
+		# nothing else would: _update_terrain only builds what is not active.
+		if (int(info.get("grade_gen", _grade_generation)) != _grade_generation
+					and _chunk_touches_tiles(info.nside, info.ipix, _grade_reborn_tiles)) \
+				or (int(info.get("pad_gen", _pad_generation)) != _pad_generation
+					and _chunk_touches_tiles(info.nside, info.ipix, _pad_dirty_pixels,
+						1 << planet_data.max_quadtree_depth)):
+			if _active_chunks.has(info.key):
+				_requeue_as_swap(_active_chunks[info.key])
+			assembled += 1
+			continue
 		# Guard against stale entries (chunk was removed while mesh was computing).
 		if _active_chunks.has(info.key):
 			if not info.get("_swap", false):
 				assembled += 1
 				continue
-			# Stitch-mask swap: the replacement is ready, the old mesh can go.
+			# Swap (stitch mask changed, or ground rebuilt under a new line or
+			# pad): the replacement is ready, the old mesh can go.
 			_remove_chunk(info.key)
 			info.erase("_swap")
-		# Built before a line profile was born under it: the mesh has the
-		# terrain-hugging ribbon where the bed now goes. Dropped, so that
-		# _update_terrain queues the chunk again on the new tables.
-		if int(info.get("grade_gen", _grade_generation)) != _grade_generation \
-				and (_chunk_touches_tiles(info.nside, info.ipix, _grade_reborn_tiles)
-					or _chunk_touches_tiles(info.nside, info.ipix, _pad_dirty_pixels,
-						1 << planet_data.max_quadtree_depth)):
-			assembled += 1
-			continue
 		_assemble_visual_chunk(info, mesh)
 		assembled += 1
 
@@ -3080,6 +3111,13 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 	if lead.length() < 50.0:
 		return
 	var predicted_cam := local_cam + lead
+	# Nor does a prediction that has barely moved since the last one: a
+	# finest chunk is ~800 m across on tarsis_3, and redoing the traversal
+	# for a point a few tens of metres on cost 7-12 ms every update in a
+	# moving vehicle (ClientPerf terrain_prefetch, 2026-09-24).
+	if predicted_cam.distance_to(_last_prefetch_cam) < PREFETCH_MIN_MOVE_M:
+		return
+	_last_prefetch_cam = predicted_cam
 
 	# Traverse from predicted position — only register chunks not already
 	# active or in pipeline (don't duplicate work already queued).
@@ -3347,9 +3385,13 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 						_chunks_node.add_child(volc_node)
 						info["volcanic"] = volc_node
 
-	_spawn_bridges(info)
-
 	_perf_end("asm:zones", _tk)
+	# Its own scope: road bridges AND railway viaducts are built here, on the
+	# main thread, and asm:zones alone could not tell them from the point-biome
+	# spawners above (2026-09-24: 100-130 ms per chunk while travelling).
+	_tk = _perf_begin()
+	_spawn_bridges(info)
+	_perf_end("asm:bridges", _tk)
 	_tk = _perf_begin()
 	# Save terrain mesh to disk cache for future restarts — but ONLY if the
 	# chunk's export elevation tile is actually available. If the .r32 tile was
@@ -3359,6 +3401,15 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# bake "valid" forever, while the editor (fresh regen) and server collision
 	# (already guarded in _create_chunk) stay correct. Skip the write so the
 	# chunk regenerates once the tile is resident. Mirrors the server guard.
+	# The ready-made road mesh (meta "roads_mesh", built by the worker) is
+	# written to the cache file WITH the chunk mesh, on purpose: a cache load
+	# then finds it too, and _split_road_surfaces skips the RenderingServer
+	# readback for those chunks as well (~15 ms a chunk when a wave of cached
+	# chunks came back at once, 2026-09-25). Cache files written before it
+	# existed have no meta and take the readback path.
+	var _roads_mesh: ArrayMesh = null
+	if mesh and mesh.has_meta("roads_mesh"):
+		_roads_mesh = mesh.get_meta("roads_mesh")
 	if _chunk_cache and mesh and not info.get("_from_disk_cache", false):
 		# Gate on the SAME pyramid tile the mesh sampled (coarse chunks read a
 		# coarse tile, not the finest), so a good coarse bake isn't rejected.
@@ -3379,7 +3430,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# one, and a coarse chunk lingers while its other children load.
 	_perf_end("asm:cache", _tk)
 	_tk = _perf_begin()
-	_split_road_surfaces(info, mi, mesh)
+	_split_road_surfaces(info, mi, mesh, _roads_mesh)
 	_active_chunks[key] = info
 	_count_active_descendant(info.nside, info.ipix, 1)
 	_refresh_road_visibility_around(info.nside, info.ipix)
@@ -3613,19 +3664,49 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 				n += 1
 		_apply_residency()
 	else:
+		# Rebuilt as a SWAP, not removed: removing took the mesh, the
+		# vegetation, the rails and the collision off screen at once, and the
+		# ground under the player stayed a hole until the rebuild came back —
+		# seconds on a rail chunk. The old chunk stays until its replacement
+		# is assembled.
 		for key: String in _active_chunks.keys().duplicate():
 			var info: Dictionary = _active_chunks[key]
 			if _chunk_touches_tiles(int(info.get("nside", 0)), int(info.get("ipix", -1)),
 					tiles, tiles_nside):
 				var k := "n%d/lod%d" % [int(info.get("nside", 0)), int(info.get("lod", -1))]
 				by_nside[k] = int(by_nside.get(k, 0)) + 1
-				_remove_chunk(key)
+				_requeue_as_swap(info)
 				n += 1
 		# Tasks already running were stamped with the old generation and are
 		# dropped at assembly; the backlog is stamped when it is submitted.
 	print("[PlanetTerrain] %d chunk(s) de '%s' refait(s) sur les %d tuile(s) %s %s — grille la plus fine : n%d"
 			% [n, planet_data.planet_name, tiles.size(), why, str(by_nside),
 			1 << planet_data.max_quadtree_depth])
+
+
+## Queue a rebuild of the visual chunk [param info] that keeps it on screen
+## until the new mesh is assembled (see the swap in the assembly loop).
+func _requeue_as_swap(info: Dictionary) -> void:
+	var key: String = info.key
+	# A build of this key already waiting was queued as a plain one: at
+	# assembly it would be skipped as a duplicate of the chunk on screen, and
+	# the chunk would keep its old ground for good.
+	for item: Dictionary in _mesh_task_backlog:
+		if item.key == key:
+			item["_swap"] = true
+	for ek in _recipe_waiters:
+		if _recipe_waiters[ek].has(key):
+			_recipe_waiters[ek][key]["_swap"] = true
+	_try_create_or_defer({
+		"key": key,
+		"nside": int(info.nside),
+		"ipix": int(info.ipix),
+		"depth": int(info.get("depth", 0)),
+		"center": info.center,
+		"lod": int(info.lod),
+		"stitch": int(info.get("stitch", 0)),
+		"_swap": true,
+	})
 
 
 # ------------------------------------------------------------------
@@ -3708,7 +3789,7 @@ func _pads_changed(dirty: Dictionary) -> void:
 	_pad_dirty_pixels.merge(dirty)
 	# Tasks already in flight were started on the old ground; stamping a new
 	# generation is what drops their result instead of drawing it.
-	_grade_generation += 1
+	_pad_generation += 1
 	if not _initialized:
 		return  # warm-up: no chunk has been built yet
 	var nside: int = 1 << planet_data.max_quadtree_depth
@@ -3757,13 +3838,10 @@ func _spawn_bridges(info: Dictionary) -> void:
 		return
 	# Road bridges over the crack field, plus railway viaducts over valleys:
 	# same span shape, same ownership rule, same spawner.
-	var spans := planet_data.get_bridge_spans() + planet_data.get_grade_spans()
-	if spans.is_empty():
-		return
 	var eipix := _get_export_ipix(info)
 	if eipix < 0:
 		return
-	var mine := RoadBridge.spans_owned_by(spans, planet_data.export_nside, eipix)
+	var mine := planet_data.spans_owned_by_export_pixel(eipix)
 	if mine.is_empty():
 		return
 	var chunk_key: String = info.get("key", "")
@@ -3775,13 +3853,76 @@ func _spawn_bridges(info: Dictionary) -> void:
 		_bridge_orphan_since.erase(sk)
 		if _bridge_nodes.has(sk):
 			continue
-		# No height tile is passed: the deck resolves its own at export_nside
-		# from the span midpoint, so its altitude cannot depend on which chunk
-		# happened to ask for it (see BridgeSpawner.spawn).
-		var b := BridgeSpawner.spawn(planet_data, s)
+		# The server builds at once: the deck is its collision. So does the
+		# client for a deck near the camera.
+		if not is_server and _bridge_far_from_camera(s):
+			if not _bridge_tasks.has(sk):
+				_bridge_spawn_queue[sk] = s
+			continue
+		_build_bridge(sk, s)
+
+
+## Build the deck of span [param s] under key [param sk].
+func _build_bridge(sk: String, s: Dictionary) -> void:
+	_bridge_spawn_queue.erase(sk)
+	# No height tile is passed: the deck resolves its own at export_nside
+	# from the span midpoint, so its altitude cannot depend on which chunk
+	# happened to ask for it (see BridgeSpawner.spawn).
+	var _tk := _perf_begin()
+	var b := BridgeSpawner.spawn(planet_data, s)
+	if b:
+		_chunks_node.add_child(b)
+		_bridge_nodes[sk] = b
+	_perf_end("asm:bridge_spawn", _tk)
+
+
+func _bridge_far_from_camera(s: Dictionary) -> bool:
+	var mid: Vector3 = (s["mid_dir"] as Vector3) * planet_data.radius
+	return mid.distance_to(_last_local_cam) > BRIDGE_SPAWN_NOW_M
+
+
+## Collect the decks whose geometry is ready, then hand the nearest queued
+## spans to the workers. A deck whose chunks all went away meanwhile, or that
+## was built in line in the meantime, is dropped.
+func _drain_bridge_spawn_queue() -> void:
+	for sk: String in _bridge_tasks.keys():
+		var t: Dictionary = _bridge_tasks[sk]
+		if not WorkerThreadPool.is_task_completed(int(t["task_id"])):
+			continue
+		WorkerThreadPool.wait_for_task_completion(int(t["task_id"]))
+		_bridge_tasks.erase(sk)
+		if (_bridge_owners.get(sk, {}) as Dictionary).is_empty() or _bridge_nodes.has(sk):
+			continue
+		var _tk := _perf_begin()
+		var b := BridgeSpawner.instantiate(t["prep"], t["result"][0])
 		if b:
 			_chunks_node.add_child(b)
 			_bridge_nodes[sk] = b
+		_perf_end("asm:bridge_instantiate", _tk)
+	if _bridge_spawn_queue.is_empty() or _bridge_tasks.size() >= BRIDGE_MAX_TASKS:
+		return
+	var cam_dir := _last_local_cam.normalized()
+	var keys := _bridge_spawn_queue.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool:
+		return (_bridge_spawn_queue[a]["mid_dir"] as Vector3).distance_squared_to(cam_dir) \
+				< (_bridge_spawn_queue[b]["mid_dir"] as Vector3).distance_squared_to(cam_dir))
+	for sk: String in keys:
+		if _bridge_tasks.size() >= BRIDGE_MAX_TASKS:
+			break
+		var s: Dictionary = _bridge_spawn_queue[sk]
+		_bridge_spawn_queue.erase(sk)
+		if (_bridge_owners.get(sk, {}) as Dictionary).is_empty() or _bridge_nodes.has(sk):
+			continue
+		var _tk := _perf_begin()
+		var prep := BridgeSpawner.prepare(planet_data, s)
+		_perf_end("asm:bridge_prepare", _tk)
+		if prep.is_empty():
+			continue
+		var result: Array = [{}]
+		var pd := planet_data
+		var tid := WorkerThreadPool.add_task(func() -> void:
+			result[0] = BridgeSpawner.build_geo(pd, prep))
+		_bridge_tasks[sk] = {"task_id": tid, "prep": prep, "result": result}
 
 
 ## Stable identity of a span, independent of the chunk that reported it.
@@ -3815,6 +3956,7 @@ func _sweep_orphan_bridges() -> void:
 			continue
 		_bridge_orphan_since.erase(sk)
 		_bridge_owners.erase(sk)
+		_bridge_spawn_queue.erase(sk)
 		var node: Node3D = _bridge_nodes.get(sk, null)
 		if node:
 			node.queue_free()
@@ -3824,21 +3966,27 @@ func _sweep_orphan_bridges() -> void:
 ## Move the road surfaces of [param mesh] (meta "road_surfaces", set by
 ## PlanetChunk.generate_mesh) to a MeshInstance3D of their own under
 ## [param mi], kept in info["roads_mi"]. The chunk mesh itself is left whole.
-func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh) -> void:
+func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh,
+		prebuilt: ArrayMesh = null) -> void:
 	assert(mi.mesh == mesh)
 	var road_surfaces: PackedInt32Array = mesh.get_meta("road_surfaces", PackedInt32Array())
 	if road_surfaces.is_empty():
 		return
-	var roads_mesh := ArrayMesh.new()
 	var sorted := Array(road_surfaces)
 	sorted.sort()
-	for si: int in sorted:
-		if si < 0 or si >= mesh.get_surface_count():
-			continue
-		var arrays := mesh.surface_get_arrays(si)
-		var out_si := roads_mesh.get_surface_count()
-		roads_mesh.add_surface_from_arrays(mesh.surface_get_primitive_type(si), arrays)
-		roads_mesh.surface_set_material(out_si, mesh.surface_get_material(si))
+	# [param prebuilt]: the same surfaces, already committed to their own mesh
+	# by the worker (PlanetChunk, meta "roads_mesh"). Only a mesh loaded from
+	# the disk cache still has to be read back and re-uploaded here.
+	var roads_mesh := prebuilt
+	if roads_mesh == null or roads_mesh.get_surface_count() != sorted.size():
+		roads_mesh = ArrayMesh.new()
+		for si: int in sorted:
+			if si < 0 or si >= mesh.get_surface_count():
+				continue
+			var arrays := mesh.surface_get_arrays(si)
+			var out_si := roads_mesh.get_surface_count()
+			roads_mesh.add_surface_from_arrays(mesh.surface_get_primitive_type(si), arrays)
+			roads_mesh.surface_set_material(out_si, mesh.surface_get_material(si))
 	# Then out of the chunk mesh, highest index first. This mesh is ours: the
 	# worker's fresh result, or a cache load with CACHE_MODE_IGNORE — and the
 	# cache file was written with every surface, just above.
@@ -3847,6 +3995,8 @@ func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh)
 		if si >= 0 and si < mesh.get_surface_count():
 			mesh.surface_remove(si)
 	mesh.remove_meta("road_surfaces")
+	if mesh.has_meta("roads_mesh"):
+		mesh.remove_meta("roads_mesh")
 	var roads_mi := MeshInstance3D.new()
 	roads_mi.name = String(info.key) + "_roads"
 	roads_mi.mesh = roads_mesh

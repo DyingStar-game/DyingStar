@@ -411,6 +411,11 @@ var _bridge_profile_cache: BridgeProfile = null
 ## the main thread must read the same numbers.
 var _grade_profiles: Dictionary = {}          # feature_id → profile
 var _grade_spans: Array = []                  # viaduct spans, kind railway / profiled_road
+## Export pixel → the spans (road bridges AND viaducts) whose midpoint falls
+## in it: what a chunk asks for on every assembly. Built on demand, dropped
+## whenever either span list changes (see spans_owned_by_export_pixel).
+var _span_owner_index: Dictionary = {}
+var _span_owner_index_ok := false
 var _grade_plans: Dictionary = {}             # span key → deck plan
 var _grade_excl: Dictionary = {}              # feature_id → Array[Vector2] merged
 var _grade_built: bool = false
@@ -2176,6 +2181,7 @@ func get_bridge_spans() -> Array:
 		var spans := RoadBridge.find_all_spans(self, get_whole_roads())
 		_bridge_spans = spans
 		_bridge_spans_built = true
+		_span_owner_index_ok = false
 		if not spans.is_empty():
 			var truncated := 0
 			for s in spans:
@@ -2192,6 +2198,7 @@ func clear_bridge_spans() -> void:
 	_bridge_spans_mutex.lock()
 	_bridge_spans.clear()
 	_bridge_spans_built = false
+	_span_owner_index_ok = false
 	_bridge_spans_mutex.unlock()
 	clear_bridge_plans()
 	clear_grade_profiles()
@@ -2755,6 +2762,7 @@ func clear_grade_profiles() -> void:
 	_grade_mutex.lock()
 	_grade_profiles.clear()
 	_grade_spans.clear()
+	_span_owner_index_ok = false
 	_grade_plans.clear()
 	_grade_excl.clear()
 	_grade_starved.clear()
@@ -2784,6 +2792,24 @@ func get_grade_spans() -> Array:
 		return []
 	_ensure_grade_profiles()
 	return _grade_spans
+
+
+## The spans a chunk on export pixel [param eipix] owns — same answer as
+## RoadBridge.spans_owned_by(get_bridge_spans() + get_grade_spans(),
+## export_nside, eipix), from an index instead of a walk over every span of
+## the body: that walk was 3-5 ms per chunk assembled on tarsis_3 (~830 spans,
+## ClientPerf asm:bridges, 2026-09-24). Main thread only, like its callers.
+func spans_owned_by_export_pixel(eipix: int) -> Array:
+	if not _span_owner_index_ok:
+		var idx := {}
+		for s in get_bridge_spans() + get_grade_spans():
+			var p := HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
+			if not idx.has(p):
+				idx[p] = []
+			(idx[p] as Array).append(s)
+		_span_owner_index = idx
+		_span_owner_index_ok = true
+	return _span_owner_index.get(eipix, [])
 
 
 ## The deck plan of a viaduct [param span], or {} when it has none.
@@ -2995,6 +3021,7 @@ func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
 		if not bool(plan.get("ok", false)):
 			continue
 		_grade_spans.append(span)
+		_span_owner_index_ok = false
 		_grade_plans[bridge_span_key(span)] = plan
 		plans.append(plan)
 	_grade_excl[fid] = GradeProfile.exclusions_of(plans)
@@ -4702,6 +4729,14 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 	_pad_mutex.lock()
 	var idx := _ensure_pads()
 	var old := idx.get_rec(uuid)
+	# Nothing moved: answer before the ~145 relief samples and the index clone.
+	# This is the common call — the client re-places the planet 3x/s, every
+	# pad on it gets a transform notification and re-registers an identical
+	# record, and pad_stats alone measures 3.3 ms a pad (test bench, 2026-09-24).
+	if not old.is_empty() and _pad_alt.has(uuid) and not _pads_starved.has(uuid) \
+			and PadBed.same_geometry(old, rec):
+		_pad_mutex.unlock()
+		return {}
 	var dirty: Dictionary = idx.pixels_of(old) if not old.is_empty() else {}
 	var stats := _pad_stats_if_readable(rec)
 	# Copy-on-write: the workers read the published index, so it is the CLONE
