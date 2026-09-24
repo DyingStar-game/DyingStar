@@ -3194,14 +3194,15 @@ func get_gear_label() -> String:
 
 ## HUD label of the powertrain (electric or thermal).
 func get_propulsion_name() -> String:
-	return "Electric" if _powertrain.type == VehiclePowertrain.Type.ELECTRIC else "Thermal"
+	return tr("%%HUD_POWERTRAIN_ELECTRIC" if _powertrain.type == VehiclePowertrain.Type.ELECTRIC
+			else "%%HUD_POWERTRAIN_THERMAL")
 
 ## Human-readable label of the current drive mode (for the debug HUD).
 func get_drive_mode_name() -> String:
 	match drive_mode:
 		DriveMode.FRONT:
-			return "FWD"
+			return tr("%%HUD_DRIVE_FWD")
 		DriveMode.REAR:
-			return "RWD"
+			return tr("%%HUD_DRIVE_RWD")
 		_:
-			return "4x4"
+			return tr("%%HUD_DRIVE_AWD")

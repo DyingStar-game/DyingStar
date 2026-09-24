@@ -41,33 +41,33 @@ const ENTRIES := {
 		"type": "crate_container", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_plate": {
-		"label": "Pallet", "scene": "res://scenes/_universe/props/containers/pallet_plate.tscn",
+		"label": "%%SPAWN_PALLET", "scene": "res://scenes/_universe/props/containers/pallet_plate.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.6,
 	},
 	"pallet_crate": {
-		"label": "Cube", "scene": "res://scenes/_universe/props/containers/pallet_crate.tscn",
+		"label": "%%SPAWN_CUBE", "scene": "res://scenes/_universe/props/containers/pallet_crate.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_benne": {
-		"label": "Benne", "scene": "res://scenes/_universe/props/containers/pallet_benne.tscn",
+		"label": "%%SPAWN_TIPPER", "scene": "res://scenes/_universe/props/containers/pallet_benne.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"pallet_liquid": {
-		"label": "Liquid", "scene": "res://scenes/_universe/props/containers/pallet_liquid.tscn",
+		"label": "%%SPAWN_LIQUID", "scene": "res://scenes/_universe/props/containers/pallet_liquid.tscn",
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"hauling_box": {
 		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
 		# "crate_container" type: that is the def whose channels carry `content` (the ore volume).
-		"label": "Hauling", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
+		"label": "%%SPAWN_HAULING", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
 		"type": "crate_container", "distance": 2.0, "origin_height": 0.3,
 	},
 	"engine_t1": {
-		"label": "Moteur T1", "scene": "res://scenes/_universe/props/vehicles/engine_t1.tscn",
+		"label": "%%SPAWN_ENGINE_T1", "scene": "res://scenes/_universe/props/vehicles/engine_t1.tscn",
 		"type": "vehicle_component", "distance": 2.0, "origin_height": 0.3,
 	},
 	"truck": {
-		"label": "Camion", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
+		"label": "%%SPAWN_TRUCK", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
 	},
 }
@@ -75,8 +75,8 @@ const ENTRIES := {
 ## The wheel layout: a top-level entry is either a catalogue key (a leaf) or a category holding keys.
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
-	{"text": "Rocher", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "Caisse", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
+	{"text": "%%SPAWN_ROCK", "keys": ["rock", "rock_medium", "rock_large"]},
+	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
 			"pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"key": "engine_t1"},
 	{"key": "truck"},

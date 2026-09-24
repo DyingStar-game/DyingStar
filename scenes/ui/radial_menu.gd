@@ -41,6 +41,8 @@ func _ready() -> void:
 	set_process(false)
 
 ## Open the wheel with a list of { "text", "data" } and/or { "text", "submenu": [...] } entries.
+## "text" may be a translation key: the wheel translates what it draws, so callers pass keys and
+## never have to think about the language.
 func open(options: Array) -> void:
 	_options = options
 	_selected = -1
@@ -132,7 +134,7 @@ func _draw() -> void:
 		var a := float(i) / n * TAU - PI / 2.0
 		var pos := center + Vector2(cos(a), sin(a)) * ((radius + inner_radius) / 2.0)
 		var is_category: bool = not _options[i].get("submenu", []).is_empty()
-		var text: String = str(_options[i].get("text", ""))
+		var text: String = tr(str(_options[i].get("text", "")))
 		if is_category:
 			text += " ▸"  # marks an entry that opens a submenu
 		var col := Color(1, 1, 1)
@@ -157,14 +159,14 @@ func _draw() -> void:
 				if j == _sub_selected:
 					col = Color(1.0, 0.85, 0.2)
 					draw_circle(pos, font_size * 1.6, Color(1, 1, 1, 0.2))
-				_draw_label(font, pos, str(sub[j].get("text", "")), col)
+				_draw_label(font, pos, tr(str(sub[j].get("text", ""))), col)
 	# Title / current selection in the center.
 	var cur: Dictionary = _current_option()
 	var center_text: String = title
 	if not cur.is_empty():
-		center_text = str(cur.get("text", title))
+		center_text = tr(str(cur.get("text", title)))
 	elif _selected >= 0:
-		center_text = str(_options[_selected].get("text", ""))
+		center_text = tr(str(_options[_selected].get("text", "")))
 	if center_text != "":
 		_draw_label(font, center, center_text, Color(1, 1, 1))
 

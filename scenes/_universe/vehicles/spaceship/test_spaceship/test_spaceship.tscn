@@ -47,7 +47,7 @@ shape = SubResource("BoxShape3D_hn282")
 [node name="ShipConsole" type="Area3D" parent="." unique_id=1598888004]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.921729, -3.45297)
 script = ExtResource("2_xjcjc")
-label = "Pilot ship [F]"
+label = "%%HUD_PILOT_SHIP"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ShipConsole" unique_id=1030894998]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.552779, -0.0702209)

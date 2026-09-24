@@ -13,6 +13,16 @@ enum ChannelE {
 	UNSPECIFIED
 }
 
+## Channel enum name -> its translation key.
+const CHANNEL_LABELS : Dictionary = {
+	"GENERAL": "%%CHAT_GENERAL",
+	"DIRECT_MESSAGE": "%%CHAT_DIRECT_MESSAGE",
+	"GROUP": "%%CHAT_GROUP",
+	"ALLIANCE": "%%CHAT_ALLIANCE",
+	"REGION": "%%CHAT_REGION",
+	"UNSPECIFIED": "%%CHAT_UNSPECIFIED",
+}
+
 @export var input_field: LineEdit
 @export var output_field: RichTextLabel
 #@export var channel_selector: OptionButton
@@ -114,10 +124,13 @@ func _refresh_channels() -> void:
 			continue
 		var index: int = channel_selector.item_count
 		# Use the enum value as the item id so get_selected_id() returns the channel.
-		channel_selector.add_item(ChannelE.keys()[channel], channel)
+		# The enum name is an identifier ("DIRECT_MESSAGE"), not something to show a player. Falls
+		# back to the raw name so a new channel is visible straight away rather than blank.
+		var name : String = str(ChannelE.keys()[channel])
+		channel_selector.add_item(str(CHANNEL_LABELS.get(name, name)), channel)
 		if not (channel in active):
 			channel_selector.set_item_disabled(index, true)
-			channel_selector.set_item_tooltip(index, "À venir")
+			channel_selector.set_item_tooltip(index, tr("%%CHAT_SOON"))
 	var general_index: int = channel_selector.get_item_index(ChannelE.GENERAL)
 	if general_index != -1:
 		channel_selector.select(general_index)

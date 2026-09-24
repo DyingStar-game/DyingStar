@@ -173,7 +173,7 @@ func _add_action_row(action: String, label_key: String) -> Button:
 	# which applies it AFTER translation — .to_upper() on a key would shout the key, not the words.
 	action_label.text = label_key
 	var events = InputMap.action_get_events(action)
-	input_label.text = format_input_label(events[0] as InputEvent) if not events.is_empty() else ""
+	input_label.text = InputLabel.for_event(events[0] as InputEvent) if not events.is_empty() else ""
 	action_list.add_child(action_bt)
 	action_bt.pressed.connect(_on_input_button_pressed.bind(action_bt, action))
 	return action_bt
@@ -263,31 +263,6 @@ static func _tab_box(color: Color) -> StyleBoxFlat:
 	return box
 
 
-func format_input_label(event: InputEvent) -> String:
-	if event is InputEventKey:
-		# Show the modifiers too, so an "Alt + ²" binding doesn't read as a bare key.
-		var mods := ""
-		if event.ctrl_pressed: mods += "Ctrl + "
-		if event.alt_pressed: mods += "Alt + "
-		if event.shift_pressed: mods += "Shift + "
-		if event.meta_pressed: mods += "Meta + "
-		return mods + _physical_key_name(event.physical_keycode)
-
-	return event.as_text()
-
-## Human key name for a physical keycode: prefer the label printed on the key in the active layout
-## (e.g. "²" on an AZERTY row), and fall back to the layout keycode name (e.g. "Apostrophe") when the
-## key has no printable label. Physical keycodes keep bindings layout-independent; this only affects
-## how they READ in the Controls list.
-func _physical_key_name(physical_keycode: int) -> String:
-	var label := DisplayServer.keyboard_get_label_from_physical(physical_keycode)
-	if label != 0:
-		var label_text := OS.get_keycode_string(label)
-		if label_text.strip_edges() != "":
-			return label_text
-	var keycode := DisplayServer.keyboard_get_keycode_from_physical(physical_keycode)
-	return OS.get_keycode_string(keycode)
-
 func _on_input_button_pressed(b, a):
 	if !is_remapping:
 		is_remapping = true
@@ -315,7 +290,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# the old Esc branch emitted "return", then this one bound Escape to whatever was selected.
 		var kept: Array[InputEvent] = InputMap.action_get_events(action_to_remap)
 		remapping_button.find_child("LabelInput").text = (
-			format_input_label(kept[0]) if not kept.is_empty() else ""
+			InputLabel.for_event(kept[0]) if not kept.is_empty() else ""
 		)
 		_end_remap()
 	elif event is InputEventKey or (event is InputEventMouseButton && event.pressed):
@@ -339,7 +314,7 @@ func _end_remap() -> void:
 	remapping_button = null
 
 func _update_action_list(button: Button, ev: InputEvent):
-	button.find_child("LabelInput").text = format_input_label(ev)
+	button.find_child("LabelInput").text = InputLabel.for_event(ev)
 
 func _on_reset_button_pressed() -> void:
 	InputMap.load_from_project_settings()
