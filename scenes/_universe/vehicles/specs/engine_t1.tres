@@ -1,15 +1,11 @@
-[gd_resource type="Resource" script_class="VehicleEngineSpec" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="VehicleEngineSpec" format=3 uid="uid://cr7m3w86e4bsq"]
 
-[ext_resource type="Script" path="res://scenes/_universe/vehicles/vehicle_engine_spec.gd" id="1_spec"]
+[ext_resource type="Script" uid="uid://cvvfvsjgceiw3" path="res://scenes/_universe/vehicles/vehicle_engine_spec.gd" id="1_spec"]
+[ext_resource type="Texture2D" uid="uid://y0iiw1ouqcp7" path="res://assets/_universe/props/vehicles/icons/motor_component_decal.png" id="2_icon"]
 
 [resource]
 script = ExtResource("1_spec")
 display_name = "T1 Electric Motor"
-kind = 0
-tier = 1
-mass_kg = 25.0
 scene_path = "res://scenes/_universe/props/vehicles/engine_t1.tscn"
-propulsion = 0
-power_w = 100000.0
-torque_nm = 600.0
-efficiency = 0.9
+mass_kg = 25.0
+icon = ExtResource("2_icon")

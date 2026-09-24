@@ -28,6 +28,11 @@ enum Kind {ENGINE, BATTERY, TANK}
 ## Dry mass (kg). Added to the VEHICLE's own mass when fitted, never to its payload: a bolted-in
 ## part is part of the truck, not cargo the truck carries. See Vehicle.get_component_mass().
 @export var mass_kg: float = 0.0
+## Pictogram stencilled on the part, so you can tell an engine from a battery at a glance — in a
+## dim bay, from across the yard, without reading the serial. Lives on the SPEC and not in the
+## scene on purpose: a new tier or a new kind of component ships a .tres and its own icon, and
+## no scene work at all. A transparent PNG, drawn unlit so it reads like paint rather than metal.
+@export var icon: Texture2D
 
 ## Short label for the HUD, e.g. "T1 Electric Motor".
 func label() -> String:
