@@ -105,8 +105,48 @@ func _measured_line(total_mass: float) -> String:
 		sprint = "%.2f s" % _sprint_result
 	elif _sprint_t0 >= 0.0:
 		sprint = "%.2f s…" % (_clock - _sprint_t0)
-	return "── Measured: a %.2f (peak %.2f) m/s² · implies %.0f N · 0-100: %s" % [
-		_acc_measured, _acc_peak, implied, sprint]
+	return "── Measured: a %.2f (peak %.2f) m/s² · implies %.0f N · 0-100: %s · slope %s" % [
+		_acc_measured, _acc_peak, implied, sprint, _slope_now()]
+
+
+## The slope the vehicle is ACTUALLY on, next to the slope the model says it can climb. Signed:
+## positive climbing, negative descending. The pair is the whole point — a number for what the truck
+## can do is only useful beside a number for what it is being asked to do.
+##
+## Measured along the vehicle's FORWARD axis, not from its overall tilt, because that is the
+## component that fights the drive: the load to beat is m·g·sin(pitch). Traversing a slope sideways
+## therefore reads near zero, which is correct — it costs no tractive force.
+##
+## Honest about its limits: this is the vehicle's attitude, so airborne or on its roof it still
+## reports an angle. Nothing else would be truthful without a ground query we do not need here.
+func _slope_now() -> String:
+	var up: Vector3 = _local_up()
+	if up == Vector3.ZERO:
+		return "—"
+	return "%+.1f°" % pitch_deg(-_vehicle.global_transform.basis.z, up)
+
+
+## Signed slope (degrees) of [param forward] against the local vertical [param up]: the angle the
+## drive has to fight. Static and node-free so the sign convention can be tested without a scene —
+## a flipped sign here would read perfectly plausibly and be wrong on every hill.
+static func pitch_deg(forward: Vector3, up: Vector3) -> float:
+	if forward.length_squared() < 0.000001 or up.length_squared() < 0.000001:
+		return 0.0
+	return rad_to_deg(asin(clampf(forward.normalized().dot(up.normalized()), -1.0, 1.0)))
+
+
+## The local vertical, derived from the PLANET the vehicle hangs under rather than from the physics
+## engine. The HUD runs on the driver's client, where a vehicle replica has its physics off, so
+## Vehicle._gravity_up is never refreshed there — and its Vector3.UP default is ~65° away from local
+## up at this project's astronomic coordinates, which would make every reading wrong and plausible.
+## Same idiom as the player's own up in player_client: centre of the body, towards us.
+func _local_up() -> Vector3:
+	var n: Node = _vehicle.get_parent()
+	while n != null and not (n is Planet):
+		n = n.get_parent()
+	if n == null:
+		return Vector3.ZERO
+	return (n as Node3D).global_position.direction_to(_vehicle.global_position)
 
 ## Sample the speed and derive acceleration over a sliding window, plus the 0-100 stopwatch.
 func _measure(delta: float, speed_kmh: float) -> void:
