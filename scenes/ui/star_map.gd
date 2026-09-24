@@ -257,13 +257,13 @@ func _build_ui() -> void:
 	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(buttons)
 	var me_button := Button.new()
-	me_button.text = "Me"
-	me_button.tooltip_text = "Follow your own position"
+	me_button.text = "%%HUD_MAP_ME"
+	me_button.tooltip_text = "%%HUD_MAP_ME_TIP"
 	me_button.pressed.connect(_on_me_pressed)
 	buttons.add_child(me_button)
 	var reset_button := Button.new()
-	reset_button.text = "Reset"
-	reset_button.tooltip_text = "Back to the whole system, default orientation"
+	reset_button.text = "%%HUD_MAP_RESET"
+	reset_button.tooltip_text = "%%HUD_MAP_RESET_TIP"
 	reset_button.pressed.connect(_on_reset_pressed)
 	buttons.add_child(reset_button)
 
@@ -377,7 +377,7 @@ func _rebuild() -> void:
 	# Its position comes from the live node, the same path the network-placed bodies use — and being a
 	# normal entry, it is clickable and followable like anything else.
 	if is_instance_valid(_player):
-		_add_body("You", PLAYER_COLOR, 0.0, null, _player, 0.0, 0.0, -1, true)
+		_add_body(tr("%%HUD_MAP_YOU"), PLAYER_COLOR, 0.0, null, _player, 0.0, 0.0, -1, true)
 		_player_index = _bodies.size() - 1
 		_player_ray = MeshInstance3D.new()
 		_player_ray.material_override = _flat_material(PLAYER_COLOR)
@@ -802,9 +802,8 @@ func _update_readout(t: float) -> void:
 	var focused: String = "system"
 	if _focus >= 0 and _focus < _bodies.size():
 		focused = str(_bodies[_focus]["name"])
-	_readout.text = "STAR MAP   %d bodies   following: %s   zoom %.2f million km   sim t %.0f" % [
-		_bodies.size(), focused, _zoom, t]
-	_readout.text += "\nleft-click: follow a body   middle-drag: orbit   wheel: zoom"
+	_readout.text = tr("%%HUD_MAP_READOUT") % [_bodies.size(), focused, _zoom, t]
+	_readout.text += "\n" + tr("%%HUD_MAP_HELP")
 
 
 ## Motion during a DRAG is handled here, ahead of the GUI, and nowhere else.

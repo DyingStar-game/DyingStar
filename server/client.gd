@@ -1161,11 +1161,11 @@ func _watch_own_player_spawn() -> void:
 		break
 	if waiting_on != "":
 		GameOrchestrator.connexion_error_message = (
-			"Spawn impossible : l'objet parent %s n'est jamais arrivé du serveur." % waiting_on
+			tr("%%ERR_NO_PARENT") % waiting_on
 		)
 	else:
 		GameOrchestrator.connexion_error_message = (
-			"Spawn impossible : le serveur n'a jamais envoyé la création de votre joueur (%s)."
+			tr("%%ERR_NO_PLAYER")
 			% my_player_uuid
 		)
 	push_error("Fatal error, my player never spawned on client side: 7002 (%s)"

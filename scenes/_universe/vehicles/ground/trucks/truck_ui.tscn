@@ -106,7 +106,7 @@ offset_left = 115.0
 offset_top = 196.0
 offset_right = 619.0
 offset_bottom = 767.0
-text = "Speed"
+text = "%%HUD_SPEED"
 label_settings = SubResource("LabelSettings_hf21d")
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -132,7 +132,7 @@ offset_left = 1283.0
 offset_top = 195.0
 offset_right = 1861.0
 offset_bottom = 766.0
-text = "RPM"
+text = "%%HUD_RPM_LABEL"
 label_settings = SubResource("LabelSettings_nm016")
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -179,7 +179,7 @@ offset_left = 1486.0
 offset_top = 874.0
 offset_right = 1885.0
 offset_bottom = 984.0
-text = "Motor"
+text = "%%HUD_MOTOR"
 label_settings = SubResource("LabelSettings_k5r17")
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -201,7 +201,7 @@ offset_left = 83.0
 offset_top = 874.0
 offset_right = 482.0
 offset_bottom = 984.0
-text = "Transmission"
+text = "%%HUD_TRANSMISSION"
 label_settings = SubResource("LabelSettings_ttjpe")
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -263,7 +263,7 @@ horizontal_alignment = 1
 
 [node name="RockCountLabel" type="Label" parent="VB/Battery/VB" unique_id=1637336048]
 layout_mode = 2
-text = "ROCK FRAGMENTS"
+text = "%%HUD_ROCK_FRAGMENTS"
 label_settings = SubResource("LabelSettings_75ksl")
 horizontal_alignment = 1
 
@@ -271,7 +271,7 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_fonts/font = SubResource("FontVariation_q7ufo")
 theme_override_font_sizes/font_size = 66
-text = "SEND"
+text = "%%HUD_SEND"
 
 [node name="TextureRect" type="TextureRect" parent="." unique_id=1171561382]
 modulate = Color(0.8697917, 0.8697917, 0.8697917, 1)

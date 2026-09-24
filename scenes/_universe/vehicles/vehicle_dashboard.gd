@@ -33,13 +33,13 @@ func _process(_delta: float) -> void:
 		return
 	modulate = Color(1, 1, 1, 1)
 	_speed.text = "%.0f km/h" % _vehicle.get_display_speed_kmh()
-	_rpm.text = "%.0f rpm" % _vehicle.get_engine_rpm()
+	_rpm.text = tr("%%HUD_RPM") % _vehicle.get_engine_rpm()
 	_load.text = "%.0f / %.0f kg" % [_vehicle.get_cargo_mass(), _vehicle.max_payload]
-	_overloaded.text = "OVERLOADED" if _vehicle.is_overloaded() else ""
+	_overloaded.text = "%%HUD_OVERLOADED" if _vehicle.is_overloaded() else ""
 	_powertrain.text = _vehicle.get_propulsion_name()
 	_transmission.text = _vehicle.get_drive_mode_name()
-	_handbrake.text = "HANDBRAKE" if _vehicle.is_handbraked() else ""
-	_light.text = "LIGHTS" if _vehicle.is_headlights_on() else ""
+	_handbrake.text = "%%HUD_HANDBRAKE" if _vehicle.is_handbraked() else ""
+	_light.text = "%%HUD_LIGHTS" if _vehicle.is_headlights_on() else ""
 
 ## Walk up the tree (through the SubViewport) to the owning Vehicle.
 func _find_vehicle() -> Vehicle:

@@ -222,7 +222,7 @@ func _process(_delta: float) -> void:
 			conv_purity = conveyor_ore_volume / conveyor_rock_volume * 100.0
 		rock_depot_ui.get_node("VB/RockCounter/VB/RockCount").text = "%d%%" % int(round(conv_purity))
 		rock_depot_ui.get_node("VB/RockCounter/VB/RockCountLabel").text = \
-			"ORE PURITY\n%.2f m3 rock  -  %.2f m3 ore" % [conveyor_rock_volume, conveyor_ore_volume]
+			tr("%%HUD_ORE_PURITY") % [conveyor_rock_volume, conveyor_ore_volume]
 		# CURRENT STOCK = ore available to be packed into crates.
 		rock_depot_ui.get_node("RockTotalLabel/RockTotal").text = "%.2f m3" % available
 
@@ -237,11 +237,11 @@ func _process(_delta: float) -> void:
 			rock_depot_ui.get_node("VB/Splashscreen/TriggerExtract").visible = extract_ready
 			var splash_label: Label = rock_depot_ui.get_node("VB/Splashscreen/Label3")
 			if available <= 0.0:
-				splash_label.text = "PLACE YOUR ROCK FRAGMENTS\nON THE RIGHT-HAND CONVEYOR."
+				splash_label.text = "%%HUD_DEPOT_PLACE"
 			elif extract_ready:
-				splash_label.text = "CRATE FULL - READY TO EXTRACT"
+				splash_label.text = "%%HUD_DEPOT_FULL"
 			else:
-				splash_label.text = "CRATE FILLING\n%d%%" % int(clampf(available / cv, 0.0, 1.0) * 100.0)
+				splash_label.text = tr("%%HUD_DEPOT_FILLING") % int(clampf(available / cv, 0.0, 1.0) * 100.0)
 
 			danger_light_collect.enabled = false
 			danger_light_box.enabled = false

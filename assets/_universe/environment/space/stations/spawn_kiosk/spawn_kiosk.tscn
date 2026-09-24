@@ -37,7 +37,7 @@ shape = SubResource("BoxShape3D_fv45p")
 
 [node name="KioskInteractionArea" type="Area3D" parent="." unique_id=2027818845]
 script = ExtResource("8_bompr")
-label = "[F] Request your ship"
+label = "%%HUD_REQUEST_SHIP"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="KioskInteractionArea" unique_id=1914130233]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)

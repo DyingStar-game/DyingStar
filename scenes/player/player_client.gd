@@ -344,7 +344,7 @@ func _process(_delta: float) -> void:
 		var collider = player.interact_ray.get_collider()
 		if collider:
 			if collider.has_method("interact"):
-				player.interact_label.text = collider.label
+				player.interact_label.text = _prompt(&"interact", tr(collider.label))
 				player.interact_label.show()
 				player.can_interact = true
 				# Polled, so it fires straight from the Input singleton: without this guard it
@@ -369,28 +369,32 @@ func _process(_delta: float) -> void:
 	# Standing in a seat box (on foot): board, or say it's taken / that the door must be opened first.
 	if not player.interact_label.visible and is_instance_valid(player._nearby_seat) and player._seat_vehicle_uuid == "":
 		if _seat_is_taken(player._nearby_seat):
-			player.interact_label.text = "Driver seat taken"
+			player.interact_label.text = tr("%%HUD_SEAT_TAKEN")
 		elif player._owner_carrying:
 			# Before the door check on purpose: telling someone to open a door and then refusing
 			# them the seat for a reason we already knew would be a wasted trip.
-			player.interact_label.text = "Hands full — [E] drops it, then board"
+			player.interact_label.text = (tr("%%HUD_HANDS_FULL")
+					% ("[%s]" % InputLabel.for_action(&"action")))
 		elif not _seat_door_open(player._nearby_seat):
-			player.interact_label.text = "Open the door first (aim at the handle)"
+			player.interact_label.text = tr("%%HUD_DOOR_FIRST")
 		else:
-			player.interact_label.text = "[E] Drive Seat" if player._nearby_seat.is_driver_seat() else "[E] Passenger Seat"
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_SEAT_DRIVER"
+					if player._nearby_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
 		player.interact_label.show()
 
 	# Carry/drop prompt (no other prompt showing). The SERVER decides it (it owns the collisions
 	# and re-checks reachability + line of sight) and replicates _carry_prompt; we only display.
 	if not player.interact_label.visible:
 		if player._carry_prompt == "drop":
-			player.interact_label.text = "[E] Drop"
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_DROP"))
 			player.interact_label.show()
 		elif player._carry_prompt == "install":
-			player.interact_label.text = "[E] Fit"  # dropping here bolts the part into a vehicle bay
+			# dropping here bolts the part into a vehicle bay
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_FIT"))
 			player.interact_label.show()
 		elif player._carry_prompt == "cargo":
-			player.interact_label.text = "[E] Cargo"  # dropping here loads it onto the truck (sticks)
+			# dropping here loads it onto the truck (sticks)
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_CARGO"))
 			player.interact_label.show()
 		elif player._carry_prompt == "carry":
 			# Name what you are about to pick up when the prop knows its own name. The server
@@ -399,8 +403,9 @@ func _process(_delta: float) -> void:
 			var aimed = player._aimed_carriable()
 			var what: String = ""
 			if aimed != null and aimed.has_method("part_name"):
-				what = " " + str(aimed.part_name())
-			player.interact_label.text = "[E] Carry" + what
+				what = str(aimed.part_name())
+			player.interact_label.text = _prompt(&"action",
+					tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
 			player.interact_label.show()
 
 	var dir_vect = Vector3.ZERO
@@ -936,10 +941,18 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 	})
 
 ## Prompt for a door handle under the crosshair: close it if open, else open it.
+## "[E] Carry" — with the key read from the InputMap, so a rebind is reflected instead of the HUD
+## insisting on a key that no longer does anything. The bracket layout is presentation, not
+## language, so it stays here rather than inside every translated string.
+func _prompt(action: StringName, text: String) -> String:
+	var key : String = InputLabel.for_action(action)
+	return "[%s] %s" % [key, text] if key != "" else text
+
+
 func _door_prompt(handle: VehicleDoorHandle) -> String:
 	var veh = handle.vehicle()
 	var is_open: bool = veh != null and veh.has_method("is_door_open") and veh.is_door_open(handle.door_id)
-	return "[E] Close door" if is_open else "[E] Open door"
+	return _prompt(&"action", tr("%%HUD_DOOR_CLOSE" if is_open else "%%HUD_DOOR_OPEN"))
 
 ## True if a seat may be boarded right now: it has no gating door, or its door_id is currently open.
 ## Lets a vehicle require "open the door first" before E enters (the door is opened via its handle).
