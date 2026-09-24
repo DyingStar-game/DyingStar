@@ -140,7 +140,14 @@ func is_typing() -> bool:
 func screen_focus_changed(player: Player, focused: bool) -> void:
 	if GameOrchestrator.is_server():
 		return
+	if _ui == null:
+		return
 	if not focused:
+		# Walking away hands the keyboard back, exactly like Escape does. Focus lives in THIS screen's
+		# own SubViewport: a field left focused here would go on swallowing what the player types at
+		# the next console, and _screen_typing() — which only ever asks about the screen they are
+		# standing at — would not report it, so nothing would lock gameplay input either.
+		_ui.release_fields()
 		return
 	_ui.set_return_point(_departure_of(player))
 
