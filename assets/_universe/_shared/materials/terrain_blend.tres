@@ -1,0 +1,36 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dqepd1wmb4v4e"]
+
+[ext_resource type="Shader" uid="uid://b5bqlsu1ho8kw" path="res://assets/_universe/_shared/shaders/terrain_blend.gdshader" id="shader"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_fringe"]
+frequency = 0.035
+fractal_octaves = 3
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_fringe"]
+width = 256
+height = 256
+noise = SubResource("FastNoiseLite_fringe")
+seamless = true
+
+[resource]
+resource_name = "terrain_blend"
+render_priority = 0
+shader = ExtResource("shader")
+shader_parameter/blend_noise = SubResource("NoiseTexture2D_fringe")
+shader_parameter/blend_noise_scale = 0.15
+shader_parameter/blend_noise_strength = 0.6
+shader_parameter/blend_curve = 2.0000000223518
+shader_parameter/blend_noise_detail = 4.7
+shader_parameter/blend_noise_swell = 0.22
+shader_parameter/blend_face_weight = 1.0
+shader_parameter/blend_inward_weight = 1.0
+shader_parameter/blend_normal_lift = 0.85
+shader_parameter/blend_opacity = 1.0
+shader_parameter/blend_roughness = 0.85
+shader_parameter/blend_detail_strength = 0.75
+shader_parameter/blend_detail_fine = 128.0
+shader_parameter/blend_use_albedo = false
+shader_parameter/blend_albedo_scale = 0.1
+shader_parameter/blend_fade_start = 100.0
+shader_parameter/blend_far = 150.0
+shader_parameter/blend_surface_offset = 0.002
