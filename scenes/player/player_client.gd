@@ -23,6 +23,13 @@ const REMOTE_HALF_RATE_EXIT: float = 12.0
 ## 32 m and only comes back at 28 is something a player walking back and forth sees, and calls a bug.
 ## The half-rate switch below keeps its hysteresis because nobody can see that one flip.
 const REMOTE_SHADOW_DISTANCE: float = 40.0
+## Band along the window's edge, as a fraction of its shorter side, where the pointer starts panning
+## the view across a 3D screen. Narrow enough that the pointer only lands in it on purpose.
+const SCREEN_PAN_MARGIN: float = 0.08
+## Fastest that pan goes, with the pointer pinned right against the edge (rad/s). Deliberately NOT
+## scaled by camera_sensitivity: a console is read at the same speed whatever the player's mouse
+## settings, and the rate is converted back into an equivalent mouse delta only when it is applied.
+const SCREEN_PAN_RATE: float = 1.1
 ## How often the ground is re-probed (s). A step comes every metre or so; sampling at 60 Hz would cast
 ## sixty rays to answer a question that changes when you walk into another room.
 const SURFACE_SAMPLE_S: float = 0.2
@@ -322,10 +329,12 @@ func _process(_delta: float) -> void:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
 	_apply_cursor_mode(ui_focus)
-	# A 3D screen frees the pointer, and that is ALL it does: the view stays where the player left it.
-	# Aiming the camera at the screen was a pull nobody asked for — it restarted on every step taken
-	# inside the zone — and the elastic re-centring on the way out only ever existed to undo it.
-	if not ui_focus:
+	if ui_focus:
+		# A 3D screen frees the pointer and never steers the view by itself — aiming the camera at it was
+		# a pull nobody asked for, restarted by every step taken inside the zone. The one thing it does
+		# is let the player REACH it, and only while they ask for it with the pointer.
+		_pan_along_screen(_delta)
+	else:
 		_handle_camera_motion()
 
 
@@ -534,6 +543,83 @@ func _send_horn_input(event: InputEvent) -> void:
 		"pressed": pressed,
 		"special": special,
 	})
+
+## Pan the view while the pointer leans on the edge of the window, so a screen too wide for the field
+## of view can still be read to its edges.
+##
+## The screen's own bounds are the limit: a direction stops the moment that side of the surface has
+## come inside the margin. A console that already fits in view therefore never moves the camera at
+## all, and a pointer forgotten against an edge does not send the view spinning off into the room.
+##
+## Applied through the ordinary look path instead of touching the camera here: that keeps the gravity
+## alignment, the ±80° pitch clamp and the head replication in ONE place.
+func _pan_along_screen(delta: float) -> void:
+	# ui_focus also covers the menus, and a menu must not sweep the view along behind itself.
+	if _modal_open() or not is_instance_valid(player.screen_zone):
+		return
+	var surface: MeshInstance3D = player.screen_zone.screen_surface()
+	if surface == null or surface.mesh == null:
+		return
+	var view: Viewport = player.get_viewport()
+	var rect: Vector2 = view.get_visible_rect().size
+	var margin: float = minf(rect.x, rect.y) * SCREEN_PAN_MARGIN
+	if margin <= 0.0:
+		return
+	var pointer: Vector2 = view.get_mouse_position()
+	var push: Vector2 = Vector2(
+		_edge_push(pointer.x, rect.x, margin),
+		_edge_push(pointer.y, rect.y, margin),
+	)
+	if push == Vector2.ZERO:
+		return
+	var span: Rect2 = _surface_span(surface)
+	if push.x > 0.0 and span.end.x <= rect.x - margin:
+		push.x = 0.0
+	if push.x < 0.0 and span.position.x >= margin:
+		push.x = 0.0
+	if push.y > 0.0 and span.end.y <= rect.y - margin:
+		push.y = 0.0
+	if push.y < 0.0 and span.position.y >= margin:
+		push.y = 0.0
+	if push == Vector2.ZERO:
+		return
+	# mouse_motion is -relative * 0.001, and _handle_camera_motion multiplies it by camera_sensitivity:
+	# leaning right (+x) therefore has to come out NEGATIVE to turn right, and dividing the sensitivity
+	# back out leaves SCREEN_PAN_RATE meaning what it says, radians per second.
+	var step: float = SCREEN_PAN_RATE * delta / maxf(player.camera_sensitivity, 0.001)
+	player.mouse_motion = -push * step
+	_handle_camera_motion()
+
+
+## How hard the pointer leans on one axis of the window: 0 anywhere in the free middle, then growing
+## to -1 against the low edge or +1 against the high one. Progressive on purpose — brushing the margin
+## nudges the view, pinning the border sweeps it.
+static func _edge_push(v: float, size: float, margin: float) -> float:
+	if v < margin:
+		return -clampf((margin - v) / margin, 0.0, 1.0)
+	if v > size - margin:
+		return clampf((v - (size - margin)) / margin, 0.0, 1.0)
+	return 0.0
+
+
+## The screen surface as it is SEEN: the box in window pixels that its corners project into.
+##
+## ⚠️ A corner behind the camera cannot be projected — unproject_position answers a mirrored point
+## that reads as "far off to the other side", which would unlock the wrong direction. Standing close
+## to a wide screen puts corners behind us routinely, so the moment one is, we answer a span larger
+## than the window: "there is still screen that way" everywhere, leaving the pan free to turn back.
+func _surface_span(surface: MeshInstance3D) -> Rect2:
+	var camera: Camera3D = player.camera
+	var aabb: AABB = surface.mesh.get_aabb()
+	var span: Rect2 = Rect2()
+	for i: int in range(8):
+		var corner: Vector3 = surface.global_transform * aabb.get_endpoint(i)
+		if camera.is_position_behind(corner):
+			return Rect2(Vector2(-1e6, -1e6), Vector2(2e6, 2e6))
+		var point: Vector2 = camera.unproject_position(corner)
+		span = Rect2(point, Vector2.ZERO) if i == 0 else span.expand(point)
+	return span
+
 
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
@@ -1050,8 +1136,14 @@ func _screen_typing() -> bool:
 ## must stay available while looking at one; it locks only while it actually holds the keyboard, and
 ## Escape gives that back (TeleporterUI._input).
 func _input_locked() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() \
-		or _screen_typing()
+	return _modal_open() or _screen_typing()
+
+
+## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart. A 3D
+## screen is deliberately NOT in this list — it takes the pointer, never the game — which is what
+## lets the view still pan across a console while its filter box has the keyboard.
+func _modal_open() -> bool:
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.
@@ -1059,8 +1151,8 @@ func _star_map_open() -> bool:
 	return _star_map != null and _star_map.is_open()
 
 
-## The mouse/camera is taken over: input is locked (menu/wheel) OR the camera is facing a 3D screen.
-## Frees the cursor and freezes the look (see _process). One source.
+## The mouse/camera is taken over: input is locked (menu/wheel) OR a 3D screen holds the pointer.
+## Frees the cursor and takes the look off the mouse (see _process). One source.
 func _ui_focus() -> bool:
 	# is_instance_valid, not "!= null": a freed node (the depot deleted by the admin tool while we
 	# stand in front of it) is NOT null in GDScript, and the mouse would stay locked to a screen that
