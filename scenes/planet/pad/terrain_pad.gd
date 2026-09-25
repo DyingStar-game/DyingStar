@@ -228,7 +228,8 @@ func _apply() -> void:
 	# be pointed at this exact spot (PAD_PROBE_LONLAT) and reproduce the chunk
 	# offline, which is the only way to tell a bad rule from a bad LOD.
 	var finest: int = 1 << int(terrain.planet_data.max_quadtree_depth)
-	_say("pad '%s' : %s, plateau à %.1f m, bâtiment à %.1f m (écart %+.2f m, inclinaison %.2f° → %+.2f m au bout) — lon %.5f lat %.5f, n%d p%d" % [
+	_say(("pad '%s' : %s, plateau à %.1f m, bâtiment à %.1f m (écart %+.2f m, "
+			+ "inclinaison %.2f° → %+.2f m au bout) — lon %.5f lat %.5f, n%d p%d") % [
 			uuid, what, z, own, own - z, tilt, _tilt_drop_m(tilt, rec),
 			float(rec["lon"]), float(rec["lat"]), finest,
 			HEALPix.vec2pix_nest(finest, HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])))])
