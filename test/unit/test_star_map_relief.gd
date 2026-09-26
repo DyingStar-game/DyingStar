@@ -41,19 +41,26 @@ func test_a_nonsensical_request_is_refused() -> void:
 	assert_null(StarMapRelief.build_tile(BODY, 1, 0, 0), "a grid of nothing builds nothing")
 
 
-## The exaggeration is bounded at BOTH ends, and the two bounds are different questions.
+## Heights are drawn as they are, and what makes that readable is how fine the ground is sampled.
 ##
-## Below, it is visibility: Tarsis III's summits stand 9 000 m over a radius of 6 356 km — 0.14 %, a
-## fraction of one pixel at any size the chart draws a planet. Above, it is REACH: the peaks rise by the
-## same factor and the camera is not allowed through them, so every extra multiple pushes the closest
-## approach further off the ground.
-func test_the_exaggeration_is_bounded_at_both_ends() -> void:
+## This asserted a FLOOR as well: that the exaggeration had to lift the summits to a percent of the
+## radius or they would be invisible. True of a chart that could only draw the whole globe at 25 km per
+## sample — Tarsis III's summits stand 9 000 m over a radius of 6 356 km, 0.14 %, a fraction of a pixel.
+## It now draws 198 m per sample, where a hillside of a few hundred metres stands on its own merits, and
+## overstating heights on top of that would be inventing terrain nobody is standing on.
+##
+## The ceiling stays, because what it guards has not changed: the camera guard is derived from this same
+## surface, so every extra multiple pushes the closest approach further off the ground.
+func test_heights_are_drawn_as_they_are() -> void:
 	var peak_share: float = 9000.0 / RADIUS
 	assert_lt(peak_share * 100.0, 0.2, "sanity: the true summits really are a fifth of a percent")
-	assert_gt(peak_share * StarMapRelief.EXAGGERATION, 0.01,
-			"exaggerated, they have to reach a percent of the radius or they stay invisible")
 	assert_lt(peak_share * StarMapRelief.EXAGGERATION, 0.02,
-			"but not so far that they push the closest approach out of reach of the ground")
+			"never so tall that they push the closest approach out of reach of the ground")
+	# One sample of ground at the finest level a body publishes, against the relief it has to describe.
+	# Far apart, and true heights read as nothing; close, and they read as themselves.
+	var finest_sample: float = PI * RADIUS / (sqrt(3.0 * PI) * 1024.0 * 32.0)
+	assert_lt(finest_sample * 20.0, 9000.0,
+			"the finest sample has to be small beside the relief, or true heights cannot show")
 
 
 # ---------------------------------------------------------------------------
@@ -88,19 +95,20 @@ func test_the_skirt_hangs_below_the_surface() -> void:
 		return
 	var points: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var stride: int = RES + 1
-	var surface_low: float = INF
-	for i: int in range(stride * stride):
-		surface_low = minf(surface_low, points[i].length())
-	var deepest: float = INF
-	var shallowest: float = 0.0
-	for i: int in range(stride * stride, points.size()):
-		deepest = minf(deepest, points[i].length())
-		shallowest = maxf(shallowest, points[i].length())
-	assert_lt(shallowest, surface_low + 1.0e-9, "every skirt vertex hangs below the ground")
-	assert_gt(surface_low - deepest, 0.0,
-			"and the skirt has a depth rather than sitting flush")
-	assert_lt(surface_low - deepest, StarMapRelief.MESH_RADIUS * 0.05,
-			"but never a wall standing off the limb")
+	# Each skirt vertex against the RIM vertex it hangs from, in the order _rim_ring walks. Against the
+	# tile's lowest point instead — which is what this asked at first — the claim is only true while the
+	# skirt is deeper than the tile's whole relief, and a skirt that deep is the defect, not the
+	# contract: measured around Mining village 01, walls of 127 to 1016 m under 100 to 900 m of ground,
+	# showing as dark diagonals along every tile edge.
+	var rim: PackedInt32Array = StarMapRelief._rim_ring(stride)
+	var first: int = stride * stride
+	assert_eq(points.size() - first, rim.size(), "one skirt vertex per rim vertex, in step")
+	var deepest: float = 0.0
+	for i: int in range(rim.size()):
+		var drop: float = points[rim[i]].length() - points[first + i].length()
+		assert_gt(drop, 0.0, "skirt vertex %d hangs below the rim it is attached to" % i)
+		deepest = maxf(deepest, drop)
+	assert_lt(deepest, StarMapRelief.MESH_RADIUS * 0.05, "but never a wall standing off the limb")
 
 
 ## Every triangle must be a FRONT face by Godot's rule, which is that front faces are wound clockwise
@@ -195,14 +203,48 @@ func test_building_one_tile_is_quick() -> void:
 ## Reading one level at every zoom was the original defect: the chart asked for nside 1 — 203 km of
 ## ground per sample — whether the planet filled a dozen pixels or the whole screen. Descending has to
 ## buy detail.
+##
+## Asserted over the RANGE rather than at each of six heights picked by hand. Two neighbouring heights
+## sharing a level is ordinary and correct — that is what a level is — and demanding a step at each of
+## them pins the boundaries rather than the behaviour, so it fails the day the chart gets better at
+## choosing. It did: the budget is now spent against the tiles actually collected instead of an
+## estimate of the cap's area, and the far end moved from n4 to n8, finer, for the same budget.
 func test_the_level_gets_finer_as_the_camera_descends() -> void:
 	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
 	var last: int = 0
+	var first: int = 0
 	for altitude: float in [2.0e7, 3.6e6, 3.18e5, 2.0e4, 2.0e3, 5.0e2]:
 		var nside: int = StarMapRelief.level_for(manifest, Vector3.UP, altitude, RADIUS)
-		assert_gt(nside, last, "each step down must buy a finer level, not the same one")
+		assert_gte(nside, last, "coming closer may never buy LESS detail")
 		assert_lte(nside, 1024, "and never ask for a level the body does not publish")
+		if first == 0:
+			first = nside
 		last = nside
+	assert_gt(last / first, 8, "across the whole descent, detail has to multiply")
+
+
+## And what it settles on is the FINEST level that fits: one step further would overrun the budget.
+##
+## The claim behind the question "could we not have one more level?". Before the walk counted for
+## itself, the answer came from an estimate of the cap's area, and near the ground that estimate runs
+## half again too high: measured at 4 km over Tarsis III it predicted 131 tiles where 85 were collected,
+## so a level that fitted with room to spare was refused and the ground was drawn twice as coarse as it
+## could have been.
+func test_the_level_chosen_is_the_finest_that_fits() -> void:
+	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
+	var tested: int = 0
+	for altitude: float in [3.6e6, 3.18e5, 2.0e4, 4.0e3, 5.0e2]:
+		var plan: Dictionary = StarMapRelief.patch_for(manifest, Vector3.UP, altitude, RADIUS)
+		var level: int = int(plan["level"])
+		assert_lte((plan["tiles"] as PackedInt32Array).size(), StarMapRelief.PATCH_TILES_MAX,
+				"at %.0f km, what is chosen fits" % (altitude / 1000.0))
+		if level >= 1024:
+			continue  # already at what the body publishes; there is no finer to refuse
+		tested += 1
+		assert_eq(StarMapRelief.patch_tiles(level * 2, Vector3.UP, altitude, RADIUS).size(), 0,
+				"at %.0f km, n%d is refused, which is why n%d was taken"
+				% [altitude / 1000.0, level * 2, level])
+	assert_gt(tested, 2, "sanity: several heights really did have a finer level to refuse")
 
 
 ## The level chosen must be one the patch can actually be BUILT at, at every altitude.
@@ -365,6 +407,69 @@ func test_no_near_view_falls_all_the_way_back() -> void:
 	var plan: Dictionary = StarMapRelief.patch_for(manifest, Vector3.UP, -1.0, RADIUS, 256)
 	assert_eq(int(plan["level"]), StarMapRelief.TILE_NSIDE)
 	assert_eq((plan["tiles"] as PackedInt32Array).size(), 12, "the twelve tiles of the whole sphere")
+
+
+# ---------------------------------------------------------------------------
+# How much ground the screen is showing
+# ---------------------------------------------------------------------------
+
+## Far out, the cone of the view swallows the body, and the honest bound is the horizon.
+func test_a_body_that_fits_on_screen_is_bounded_by_its_horizon() -> void:
+	var half_fov: float = deg_to_rad(50.0)
+	assert_lt(StarMapRelief.view_half_angle(RADIUS * 20.0, RADIUS, half_fov), 0.0,
+			"the whole body is in frame: nothing to bound")
+	assert_eq(StarMapRelief.cap_angle(RADIUS * 19.0, RADIUS, -1.0),
+			StarMapRelief.horizon_angle(RADIUS * 19.0, RADIUS),
+			"and with no measurement offered, the cap IS the horizon")
+
+
+## Close in, the two part company, and the view is much the smaller.
+##
+## The numbers are the ones measured in game: 224 km over Tarsis III, where the horizon stands at 15°
+## — 1 660 km of ground — while the screen was showing a few hundred km of it.
+func test_close_in_the_screen_shows_far_less_than_the_horizon() -> void:
+	var altitude: float = 224000.0
+	var half_fov: float = deg_to_rad(57.8)
+	var view: float = StarMapRelief.view_half_angle(RADIUS + altitude, RADIUS, half_fov)
+	var horizon: float = StarMapRelief.horizon_angle(altitude, RADIUS)
+	assert_gt(view, 0.0, "the cone's edge lands on the ground, so there is a figure to give")
+	assert_lt(view, horizon * 0.5, "and it is a fraction of the horizon")
+	assert_eq(StarMapRelief.cap_angle(altitude, RADIUS, view), view,
+			"the cap takes the smaller of the two")
+	assert_eq(StarMapRelief.cap_angle(altitude, RADIUS, horizon * 10.0), horizon,
+			"and never goes beyond the horizon, whatever it is handed")
+
+
+## Which is what buys the detail: the same tile budget, spent on the ground actually in front of you.
+##
+## Measured before this bound existed: a sample of ground 13 km wide while the scale bar read 20 km, so
+## one sample of terrain was as coarse as the whole measuring stick.
+func test_bounding_by_the_view_buys_a_finer_level() -> void:
+	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
+	var half_fov: float = deg_to_rad(57.8)
+	var finer: int = 0
+	for altitude: float in [4.0e5, 2.24e5, 1.0e5, 3.0e4, 1.0e4]:
+		var view: float = StarMapRelief.view_half_angle(RADIUS + altitude, RADIUS, half_fov)
+		var blind: int = int(StarMapRelief.patch_for(
+				manifest, Vector3.UP, altitude, RADIUS, 0, -1.0)["level"])
+		var seeing: int = int(StarMapRelief.patch_for(
+				manifest, Vector3.UP, altitude, RADIUS, 0, view)["level"])
+		assert_gte(seeing, blind, "at %.0f km, never coarser for knowing more" % (altitude / 1000.0))
+		if seeing > blind:
+			finer += 1
+	assert_gt(finer, 3, "and finer at most of those heights, which is the whole point")
+
+
+## And no regression out where the body fits on screen: there, the two answer the same.
+func test_far_out_the_bound_changes_nothing() -> void:
+	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
+	var half_fov: float = deg_to_rad(57.8)
+	for altitude: float in [3.0e6, 6.0e6, 2.0e7]:
+		var view: float = StarMapRelief.view_half_angle(RADIUS + altitude, RADIUS, half_fov)
+		assert_eq(int(StarMapRelief.patch_for(manifest, Vector3.UP, altitude, RADIUS, 0, view)["level"]),
+				int(StarMapRelief.patch_for(
+						manifest, Vector3.UP, altitude, RADIUS, 0, -1.0)["level"]),
+				"at %.0f km the whole body is in frame, so nothing is bounded" % (altitude / 1000.0))
 
 
 # ---------------------------------------------------------------------------

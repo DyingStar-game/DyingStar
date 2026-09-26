@@ -276,6 +276,48 @@ func test_pitch_stays_clear_of_the_poles() -> void:
 	assert_almost_eq(_cam.pitch, -StarMapCamera.PITCH_LIMIT, 0.0001)
 
 
+## One pixel of mouse moves the same FRACTION OF THE SCREEN at every height.
+##
+## The property that says the rate is right, rather than merely decreasing. Orbiting sweeps
+## radius·dθ of ground while the screen at that height shows about 1.53 times the height, and the rate
+## follows the height — so the two cancel and a pixel is worth the same gesture up close as out in
+## space. It also says the floor is not needed for usability, which is what it was justified by: at two
+## thousandths it bound below 12.7 km up and turned 3.2 times too fast at 4 km, 13 times at 1 km, right
+## where the chart now spends its time.
+func test_one_pixel_is_worth_the_same_gesture_at_every_height() -> void:
+	# Below one radius of height, where the rate follows the height. Above that it is deliberately
+	# capped — see the test that follows — because out in space you are turning around the body, not
+	# travelling over it.
+	var share: Array[float] = []
+	for altitude_units: float in [PLANET_RADIUS_UNITS * 0.5, PLANET_RADIUS_UNITS * 0.1,
+			PLANET_RADIUS_UNITS * 0.001, PLANET_RADIUS_UNITS * 0.0001,
+			PLANET_RADIUS_UNITS * 1.6e-5]:
+		var cam := StarMapCamera.new()
+		cam.set_zoom(PLANET_RADIUS_UNITS + altitude_units, PLANET_RADIUS_UNITS)
+		var before: float = cam.yaw
+		cam.orbit(Vector2(100.0, 0.0), PLANET_RADIUS_UNITS)
+		# Ground swept, against the ground the screen holds at that height.
+		var swept: float = absf(before - cam.yaw) * PLANET_RADIUS_UNITS
+		share.append(swept / (1.53 * altitude_units))
+	for i: int in range(1, share.size()):
+		assert_almost_eq(share[i], share[0], share[0] * 0.01,
+				"a pixel has to be worth the same fraction of the view at every height")
+
+
+## And out in space the rate stops growing, because there the gesture is turning AROUND the body rather
+## than travelling over it, and a rate that kept following the height would spin the view.
+func test_the_rate_stops_growing_out_in_space() -> void:
+	var turns: Array[float] = []
+	for altitude_units: float in [PLANET_RADIUS_UNITS * 2.0, PLANET_RADIUS_UNITS * 40.0]:
+		var cam := StarMapCamera.new()
+		cam.set_zoom(PLANET_RADIUS_UNITS + altitude_units, PLANET_RADIUS_UNITS)
+		var before: float = cam.yaw
+		cam.orbit(Vector2(100.0, 0.0), PLANET_RADIUS_UNITS)
+		turns.append(absf(before - cam.yaw))
+	assert_almost_eq(turns[1], turns[0], turns[0] * 1.0e-6,
+			"twenty times further out turns by exactly as much")
+
+
 ## Orbiting has to get FINER as you close in, or a small mouse move sweeps the ground out of view.
 ## The rate follows the gap to the surface rather than the distance, because it is the gap that decides
 ## how much ground a given turn sweeps.

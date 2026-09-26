@@ -130,14 +130,14 @@ func tiles_wanted() -> int:
 ## [param centre_dir] is where the camera is, as a direction in the BODY's own frame; [param altitude_m]
 ## how high above its ground. Negative altitude means the body is not being watched, and the ground
 ## falls back to the whole globe.
-func refresh(centre_dir: Vector3, altitude_m: float) -> void:
+func refresh(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -> void:
 	_harvest()
 	var now: int = Time.get_ticks_msec()
 	if now < _decide_at_ms:
 		_pump()
 		return
 	_decide_at_ms = now + DECIDE_EVERY_MS
-	_decide(centre_dir, altitude_m)
+	_decide(centre_dir, altitude_m, view_angle)
 	_pump()
 
 
@@ -163,11 +163,12 @@ func clear() -> void:
 ## The wanted set is rebuilt from nothing every time, which is cheap and, more importantly, stateless:
 ## there is no accumulated notion of what ought to be on screen that could drift out of step with what
 ## is. Everything expensive is in the diff, and the diff is empty when nothing moved.
-func _decide(centre_dir: Vector3, altitude_m: float) -> void:
+func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -> void:
 	# The level and its tiles come back together, from the one place that owns that arithmetic. Deciding
 	# the level here and fetching the tiles there is how the ground drawn and the ground measured came
 	# apart once, and nothing complains when they do.
-	var plan: Dictionary = StarMapRelief.plan_patch(body_key, centre_dir, altitude_m, _level)
+	var plan: Dictionary = StarMapRelief.plan_patch(
+			body_key, centre_dir, altitude_m, _level, view_angle)
 	var tiles: PackedInt32Array = plan["tiles"]
 	if tiles.is_empty():
 		return  # no data for this body at all; whatever is on screen stays there
