@@ -80,6 +80,7 @@ func display_new_weight(weight_on_platform: int) -> void:
 
 
 func display_mouse_coord(coord: Vector2) -> void:
+	print("APPELE")
 	if mouse_coord_value_display:
 		mouse_coord_value_display.set_text("%.0v" % coord)
 

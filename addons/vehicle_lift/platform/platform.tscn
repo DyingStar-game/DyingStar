@@ -20,6 +20,7 @@
 [ext_resource type="ArrayMesh" uid="uid://7r8rrysn0cxj" path="res://addons/vehicle_lift/railing/railing_type02_lod1.mesh" id="17_kt6v4"]
 [ext_resource type="Shape3D" uid="uid://b8fcl67yxcrp5" path="res://addons/vehicle_lift/platform/platform_area_detection.shape" id="19_ieb65"]
 [ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="20_ob54u"]
+[ext_resource type="Script" uid="uid://dkb1yb41vrq8q" path="res://addons/vehicle_lift/platform/platform_area_detection.gd" id="21_p57xc"]
 [ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="22_j51iy"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://addons/vehicle_lift/common/kiosk/kiosk.tscn" id="22_p57xc"]
 [ext_resource type="PackedScene" uid="uid://bl2utlkoofibq" path="res://addons/vehicle_lift/common/screen/interfaces/platform_buttons.tscn" id="23_mhf6m"]
@@ -31,7 +32,7 @@ rough = true
 [sub_resource type="BoxShape3D" id="BoxShape3D_mkcfn"]
 size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
 
-[node name="Platform" type="RigidBody3D" unique_id=1672728689]
+[node name="Platform" type="RigidBody3D" unique_id=1672728689 node_paths=PackedStringArray("_platform_interface")]
 collision_layer = 4
 collision_mask = 4
 input_ray_pickable = false
@@ -46,6 +47,7 @@ freeze = true
 linear_damp = 1.0
 angular_damp = 1.0
 script = ExtResource("5_cb5jd")
+_platform_interface = NodePath("Screen Display Interface/Platform Interface")
 
 [node name="Platform Visuals" type="Node3D" parent="." unique_id=1475105222]
 
@@ -300,7 +302,7 @@ screen_display_viewport = NodePath("../Screen Display Interface")
 screen_interaction_area = NodePath("../ScreenDetector")
 
 [node name="ScreenDetector" type="Area3D" parent="." unique_id=318372749 groups=["screen_area"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9999167247485659, 0.6820919403541708, 0.9136219744412384)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.999916724748566, 0.6820919403541708, 0.9136219744412384)
 input_ray_pickable = false
 script = ExtResource("20_ob54u")
 
@@ -309,10 +311,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.257971
 shape = SubResource("BoxShape3D_mkcfn")
 
 [node name="Area Detection" type="Area3D" parent="." unique_id=212631982]
-collision_layer = 16
-collision_mask = 0
+collision_layer = 0
+collision_mask = 14
 input_ray_pickable = false
 monitorable = false
+script = ExtResource("21_p57xc")
 
 [node name="Collider" type="CollisionShape3D" parent="Area Detection" unique_id=2055000887]
 shape = ExtResource("19_ieb65")

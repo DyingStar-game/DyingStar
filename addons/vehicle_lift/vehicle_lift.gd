@@ -93,6 +93,8 @@ var _current_direction: float = 1.0
 var _ui_update_timer: float = 0.0
 var _is_platform_system_spawned: bool = false
 
+var _travel_time: float = 0.0
+
 
 # Cached PropSync child. Resolved lazily (not @onready) because the uuid facade below is used
 # before _ready: spawn code assigns uuid right after instantiate(), before the node enters the tree.
@@ -167,6 +169,27 @@ static func _set_owner_recursive(node: Node, new_owner: Node) -> void:
 	node.owner = new_owner
 	for child in node.get_children():
 		_set_owner_recursive(child, new_owner)
+
+
+static func compute_travel_time(travel_distance: float, max_speed: float, p_acceleration: float) -> float:
+	var computed_travel_time: float = 0.0
+	
+	if travel_distance <= 0.0 or max_speed <= 0.0 or p_acceleration <= 0.0:
+		return computed_travel_time
+	
+	var threshold_distance: float = (max_speed * max_speed) / p_acceleration
+	if travel_distance >= threshold_distance:
+		var nonlinear_speed_time : float = (2.0 * max_speed) / p_acceleration
+		var linear_speed_distance : float = travel_distance - threshold_distance
+		var linear_speed_time : float = linear_speed_distance / max_speed
+		
+		computed_travel_time = nonlinear_speed_time + linear_speed_time
+	else:
+		var nonlinear_speed_time : float = sqrt(travel_distance / p_acceleration) * 2.0
+		
+		computed_travel_time = nonlinear_speed_time
+	
+	return computed_travel_time
 
 
 func _ready() -> void:
@@ -444,7 +467,7 @@ func _process(_delta: float) -> void:
 		return
 	
 	var base: Node3D = get_node_or_null("Base") as StaticBody3D
-	var platform: Node3D = get_node_or_null("Platform System") as AnimatableBody3D
+	var platform_system: Node3D = get_node_or_null("Platform System") as AnimatableBody3D
 	
 	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
 	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
@@ -452,35 +475,26 @@ func _process(_delta: float) -> void:
 	
 	var stopping_distance = (_current_speed * _current_speed) / (2.0 * acceleration)
 	
+	var display_direction: float = 1.0 if target_depth_in_meter >= current_depth_in_meter else -1.0
+	
 	_ui_update_timer += _delta
 	if _ui_update_timer >= 1.0:
 		_ui_update_timer = 0.0
+		_travel_time -= 1.0
 		
 		var eta: int = 0
 		if _is_moving:
-			var eta_float: float = 0.0
-			
-			if distance_to_target <= stopping_distance:
-				if acceleration > 0.0:
-					eta_float = _current_speed / acceleration
-			else:
-				var cruise_time: float = distance_to_target / max_speed
-				var braking_penalty = max_speed / (2.0 * acceleration)
-				var accel_penalty = pow(max_speed - _current_speed, 2) / (2.0 * max_speed * acceleration)
-				
-				eta_float = cruise_time + braking_penalty + accel_penalty
-			
-			eta = ceili(eta_float)
+			eta = ceili(_travel_time)
 			
 			var upper_landing: Node3D = get_node_or_null("Upper Landing")
 			var lower_landing: Node3D = get_node_or_null("Lower Landing")
 			
 			if upper_landing:
-				upper_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if _current_direction < 0.0 else "Going Down")
+				upper_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 			if lower_landing:
-				lower_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if _current_direction < 0.0 else "Going Down")
-			if platform:
-				platform.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if _current_direction < 0.0 else "Going Down")
+				lower_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
+			if platform_system:
+				platform_system.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 	
 	if base:
 		base.set_axis_length(guide_z_offset)
@@ -499,7 +513,8 @@ func move_down() -> void:
 			## INFO seulement serveur
 		if _sync != null:
 			_sync.server_prop_update({
-				"is_moving": _is_moving
+				"is_moving": _is_moving,
+				"target_ratio": _target_ratio
 			})
 
 
@@ -515,7 +530,8 @@ func move_up() -> void:
 			## INFO seulement serveur
 		if _sync != null:
 			_sync.server_prop_update({
-				"is_moving": _is_moving
+				"is_moving": _is_moving,
+				"target_ratio": _target_ratio
 			})
 
 
@@ -531,6 +547,12 @@ func stop_movement() -> void:
 
 
 func _on_lift_started() -> void:
+	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
+	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
+	var distance_to_target: float = abs(target_depth_in_meter - current_depth_in_meter)
+	
+	_travel_time = compute_travel_time(distance_to_target, max_speed, acceleration)
+	
 	var upper_landing: Node3D = get_node_or_null("Upper Landing")
 	var lower_landing: Node3D = get_node_or_null("Lower Landing")
 	
@@ -541,6 +563,8 @@ func _on_lift_started() -> void:
 
 
 func _on_lift_stopped() -> void:
+	_travel_time = 0.0
+	
 	var upper_landing: Node3D = get_node_or_null("Upper Landing")
 	var lower_landing: Node3D = get_node_or_null("Lower Landing")
 	var platform: Node3D = get_node_or_null("Platform System")
@@ -578,6 +602,8 @@ func apply_prop_data(_data: Dictionary) -> void:
 		acceleration = _data["acceleration"]
 	if "platform_progress_ratio" in _data:
 		platform_progress_ratio = _data["platform_progress_ratio"]
+	if "target_ratio" in _data:
+		_target_ratio = _data["target_ratio"]
 	if "is_platformsystem_spawned" in _data:
 		_is_platform_system_spawned = _data["is_platformsystem_spawned"]
 	if "is_moving" in _data:

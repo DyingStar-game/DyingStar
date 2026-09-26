@@ -1,9 +1,12 @@
 extends RigidBody3D
 
 
-var _platform_interface: Control
+@export var _platform_interface: Control
+#func set_interface(interface: Control) -> void:
+	#print_rich("[color=gold]Dans set_interface de plateform, interface = %s[/color]" % interface)
+	#_platform_interface = interface
 
-var weight_on_platform: float = 0.0
+var _weight_on_platform: float = 0.0
 var _player_custom_force: float = 0.0
 
 var _total_impulse_force: float = 0.0
@@ -68,22 +71,36 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	for body in _unique_bodies_on_platform:
 		if body is RigidBody3D:
 			total_static_force += body.mass * gravity_magnitude
-		if body is CharacterBody3D and "player_mass" in body:
-			total_static_force += body.player_mass * gravity_magnitude
+		if body is VehicleBody3D:
+			## WARNING Le Vehicle n'est pas détecté comme en contact avec la plateforme
+			total_static_force += body.mass * gravity_magnitude
+		if body is CharacterBody3D and "mass" in body:
+			total_static_force += body.mass * gravity_magnitude
 	
 	total_force_in_newtons = max(total_static_force, _total_impulse_force) + _player_custom_force
 	_player_custom_force = 0.0
 	
 	if gravity_magnitude > 0.001:
-		weight_on_platform = total_force_in_newtons / gravity_magnitude
+		_weight_on_platform = total_force_in_newtons / gravity_magnitude
 	else:
-		weight_on_platform = 0.0
+		_weight_on_platform = 0.0
 	
 	_unique_bodies_on_platform.clear()
 	_total_impulse_force = 0.0
 	
-	if _platform_interface:
-		_platform_interface.display_new_weight(weight_on_platform)
+	#print_rich("[color=green]weight on platform = %.1f[/color]" % _weight_on_platform)
+	
+			## INFO seulement serveur
+	if _sync != null:
+		_sync.server_prop_update({
+			"weight_on_platform": _weight_on_platform
+		})
+
+
+func _physics_process(delta: float) -> void:
+	#print("platform !!")
+	pass
+
 
 
 func add_kinematic_force(force: float) -> void:
@@ -157,7 +174,10 @@ func _on_call_button_triggered(datas: Dictionary) -> void:
 # PropSync applies the replicated transform, then calls this with the full payload so the depot can
 # apply its own machine state. Replaces the old client_channel_data_update override.
 func apply_prop_data(_data: Dictionary) -> void:
-	pass
+	if "weight_on_platform" in _data:
+		_weight_on_platform = _data["weight_on_platform"]
+		if not GameOrchestrator.is_server() and _platform_interface:
+			_platform_interface.display_new_weight(_weight_on_platform)
 
 func debug_reset_position() -> void:
 	position = Vector3(0.0,0.0,2.425)
