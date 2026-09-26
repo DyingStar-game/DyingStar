@@ -45,8 +45,12 @@ const PICK_TOLERANCE: float = 0.022
 ## inside thirty km of one another, which is a fifth of a degree of arc. Seen from anywhere but right
 ## overhead their names land on the same few pixels and become an unreadable stack — which is what the
 ## chart did. The badges still all draw; only the names give way, nearest first.
+##
+## The vertical clearance is TWO LINES, because a label is two lines: the name, and the altitude under
+## it. It stood at one and the names went back to overlapping the moment the second line was added — a
+## clearance sized on what a label used to be is no clearance at all.
 const LABEL_CLEAR_X: float = 96.0
-const LABEL_CLEAR_Y: float = 17.0
+const LABEL_CLEAR_Y: float = 34.0
 
 ## Records currently drawn, in the order the picker and the search index use.
 var entries: Array[Dictionary] = []

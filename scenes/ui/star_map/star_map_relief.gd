@@ -622,32 +622,37 @@ static func _add_skirt(points: PackedVector3Array, normals: PackedVector3Array,
 	var rim: PackedInt32Array = _rim_ring(stride)
 	if rim.size() < 4:
 		return
-	# The biggest height step across one cell, measured along the rim — the crack can never be deeper
-	# than the step that opens it.
-	var step: float = 0.0
+	# Each rim vertex gets its own depth, from its own two neighbours along the rim.
+	#
+	# One depth for the whole tile — the largest step anywhere on the rim — makes a single cliff in one
+	# corner hang a wall that deep all the way ROUND, over ground that is flat. Measured at Mining
+	# village 01: the worst step is 550 m at n256 and 1 750 m at n1024, while what a skirt actually has
+	# to cover, the disagreement between two neighbouring tiles along the edge they share, is 27.6 m and
+	# 1.1 m. Sizing on the steepness rather than on the disagreement, and then taking the maximum, is
+	# two mistakes compounding.
+	var steps := PackedFloat32Array()
+	steps.resize(rim.size())
 	for i: int in range(rim.size()):
 		var here: float = points[rim[i]].length()
-		var next: float = points[rim[(i + 1) % rim.size()]].length()
-		step = maxf(step, absf(here - next))
-	# Three times the step, with a floor of a hundredth of a cell so a flat tile still gets a skirt: a
+		var before: float = points[rim[(i + rim.size() - 1) % rim.size()]].length()
+		var after: float = points[rim[(i + 1) % rim.size()]].length()
+		steps[i] = maxf(absf(here - before), absf(here - after))
+	# Twice the local step, with a floor of a hundredth of a cell so a flat rim still gets a skirt: a
 	# crack of no height at all still shows a hairline where two meshes fail to touch exactly.
 	#
-	# BOTH numbers are vertical, and the floor used not to be — it was a quarter of the cell's WIDTH,
-	# which is a horizontal length standing in for a depth. Nothing said so while the relief was
-	# overstated twelvefold and towered over it. Drawn at true height it does not: measured around
-	# Mining village 01, tiles holding 100 to 900 m of relief were given skirts of 127 to 1016 m, walls
-	# taller than the ground they hang from, and they showed as dark diagonals along every tile edge.
-	#
-	# What a skirt actually has to cover is how far two neighbouring tiles disagree along the edge they
-	# share, and that was measured too: at most 9 m at n256, 4.5 m at n512, against a step that bounds
-	# it. Three times the step leaves a wide margin over that and still stays well under the relief.
-	var drop: float = maxf(step * 3.0, cell * 0.01)
+	# BOTH numbers are vertical. The floor used not to be — it was a quarter of the cell's WIDTH, a
+	# horizontal length standing in for a depth — and nothing said so while the relief was overstated
+	# twelvefold and towered over it. Drawn at true height it does not.
 	var first: int = points.size()
 	for i: int in range(rim.size()):
 		var top: Vector3 = points[rim[i]]
-		# Nudged very slightly outward before being dropped, so the wall does not z-fight the surface
-		# it hangs from.
-		points.append(top.normalized() * (top.length() - drop) + top.normalized() * cell * 0.01)
+		var drop: float = maxf(steps[i] * 2.0, cell * 0.01)
+		# Straight down the radial, and nothing else. There was a nudge here, said to keep the wall off
+		# the surface it hangs from — but it displaced along that same radial, so all it ever did was
+		# make the skirt shallower by its own amount. Harmless while the drop was hundreds of times
+		# larger; with the drop sized on the local step it cancelled the floor exactly and left flat
+		# stretches of rim with no skirt at all.
+		points.append(top.normalized() * (top.length() - drop))
 		normals.append(normals[rim[i]])
 	for i: int in range(rim.size()):
 		var j: int = (i + 1) % rim.size()
