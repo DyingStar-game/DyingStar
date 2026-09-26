@@ -60,34 +60,36 @@ const TILE_NSIDE: int = 1
 ## 384 is where the curve still pays: four times the ground detail for four times nothing, since the
 ## build runs on a worker with the previous mesh still on screen.
 const PATCH_TILES_MAX: int = 384
-## And how much of that budget a level is allowed to be CHOSEN on. The rest is headroom for the walk
-## overrunning its own estimate — an area says how many tile centres fall inside a cap, and the ring of
-## tiles straddling the edge is kept whole. Without it the finest level that "fits" regularly does not,
-## and a patch that runs out of budget stops in the middle of the screen.
-const PATCH_FIT: float = 0.7 * float(PATCH_TILES_MAX)
 
-## How much the relief is overstated.
-##
-## Not decoration — without it there is nothing to see. Tarsis III's full range is 12.4 km on a radius of
-## 6 356: **0.195 %**, which at any size this chart draws a planet is a small fraction of one pixel.
-##
-## It is also what decides how CLOSE the camera may get, and that is the real constraint. The peaks
-## stand proud of the reference sphere by the same factor, and the chart will not fly through them:
-##
-##     x30  peaks +2.66 % of the radius  closest approach 169 km
-##     x12  peaks +1.06 %                closest approach  68 km
-##     x6   peaks +0.53 %                closest approach  34 km
-##
-## Twelve keeps the silhouette plainly broken — some eight pixels of relief on a planet drawn eight
-## hundred across — while leaving the approach within a few tens of km of the ground. Thirty looked
-## splendid from a distance and put a mountain range between the camera and everything else.
 ## How much of the tile budget a FINER level has to fit inside before the chart will move up to it.
 ##
-## Asymmetric on purpose: going finer rebuilds the tiles that come into view and so has to earn it,
-## while falling back is free and immediate. Without it a camera resting on the boundary between two
-## levels flaps across it, and each flap is a patch rebuilt.
-const FINER_MARGIN: float = 0.75
-const EXAGGERATION: float = 12.0
+## Asymmetric on purpose: climbing a level rebuilds every tile in view and so has to earn it, while
+## falling back is free and immediate. Without it a camera resting on the boundary between two levels
+## flaps across it, and each flap is a patch rebuilt.
+##
+## A tenth, not a quarter. Levels are FOUR times apart in tile count, so a wide margin does not buy
+## proportionally more calm — it simply refuses a level that fits. Measured at 4 km over Tarsis III:
+## n512 wanted 340 tiles of the 384 available, well inside the budget, and a quarter-margin held the
+## chart at n256 and drew the ground twice as coarse for it. A tenth still leaves a band of some 5 % of
+## cap angle to settle in.
+const FINER_MARGIN: float = 0.9
+
+
+## How much the relief is overstated. One: it is not.
+##
+## It stood at twelve, and had to, back when the chart could only draw the whole globe: Tarsis III's
+## full range is 12.4 km on a radius of 6 356 km — two tenths of a percent, a fraction of one pixel of a
+## planet drawn on a screen. Twelve made it two percent, which reads.
+##
+## That reason is gone. The chart now draws the ground at 198 m per sample where it used to manage 25 km,
+## so a hillside of a few hundred metres fills a real part of the view on its own merits. Overstating it
+## on top of that would be inventing terrain nobody is standing on — and the camera guard is derived
+## from this same surface, so every multiple also pushed the closest approach further off the ground.
+##
+## The cost is honest and worth stating: seen from far enough out that the whole body is in frame, the
+## relief is once again a fraction of a pixel, and the planet reads as a smooth ball. That is what it
+## actually looks like.
+const EXAGGERATION: float = 1.0
 
 ## Vertex tint at the lowest and the highest ground, as a MULTIPLIER on the ground's own colour.
 ##
@@ -139,10 +141,10 @@ const MESH_RADIUS: float = 0.5
 ## [param current] is the level already on screen, or 0 when there is none. It is what makes the choice
 ## asymmetric: see [constant FINER_MARGIN].
 static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
-		current: int = 0) -> Dictionary:
+		current: int = 0, view_angle: float = -1.0) -> Dictionary:
 	var manifest: Dictionary = _manifest(body_key)
 	return patch_for(manifest, centre_dir, altitude_m,
-			float(manifest.get("radius", 0.0)), current)
+			float(manifest.get("radius", 0.0)), current, view_angle)
 
 
 ## The same decision, against a manifest handed in rather than read from disk.
@@ -151,62 +153,130 @@ static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 ## test that has to find a body with tiles cached on the machine running it can only pin it where those
 ## tiles happen to be.
 static func patch_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, current: int = 0) -> Dictionary:
-	var level: int = level_for(manifest, centre_dir, altitude_m, radius)
-	if current > 0 and level > current:
+		radius: float, current: int = 0, view_angle: float = -1.0) -> Dictionary:
+	var full: float = float(PATCH_TILES_MAX)
+	var plan: Dictionary = _descend(manifest, centre_dir, altitude_m, radius, full, view_angle)
+	if current > 0 and int(plan["level"]) > current:
 		# Moving up costs a rebuild of everything that comes into view, so it has to clear a margin
-		# rather than merely tie. Never mind if the margin would push us BELOW what is already drawn:
-		# that is the coarsening case, and it is decided by the height alone, not by this.
-		level = maxi(current, level_for(manifest, centre_dir, altitude_m, radius,
-				PATCH_FIT * FINER_MARGIN))
-	while level > TILE_NSIDE:
-		var tiles: PackedInt32Array = patch_tiles(level, centre_dir, altitude_m, radius)
-		if not tiles.is_empty():
-			return {"level": level, "tiles": tiles}
-		@warning_ignore("integer_division")
-		level /= 2
-	# The globe always fits: it IS the twelve tiles, whatever the camera is doing.
-	return {"level": TILE_NSIDE, "tiles": patch_tiles(TILE_NSIDE, centre_dir, altitude_m, radius)}
+		# rather than merely tie. Only the climb is held back: falling behind the view is decided by
+		# the height alone, and is immediate.
+		var held: Dictionary = _descend(manifest, centre_dir, altitude_m, radius,
+				full * FINER_MARGIN, view_angle)
+		if int(held["level"]) >= current:
+			plan = held
+	return plan
 
 
-## The finest level whose visible ground fits in [constant PATCH_TILES_MAX] tiles, bounded by what this
-## body actually publishes.
+## One walk down the pyramid, keeping the finest level whose tiles fit in [param fit].
 ##
-## [constant TILE_NSIDE] — the whole globe — whenever there is no near view to speak of: no direction
-## given, or a camera so high that the coarsest level already has fewer tiles in view than the budget.
-## [param fit] is the share of the budget the choice is allowed to spend. The caller lowers it to ask
-## for a level it is prepared to PAY a rebuild for, which is how the chart stops flapping between two
-## neighbouring levels while the camera rests on the boundary between them.
-static func level_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, fit: float = PATCH_FIT) -> int:
-	if centre_dir.length_squared() <= 0.0 or altitude_m < 0.0 or radius <= 0.0:
-		return TILE_NSIDE
+## The level and its tiles come out of the SAME descent, and the count that decides is the real one —
+## the tiles actually collected — rather than an estimate of the cap's area. That estimate is what used
+## to choose the level, and near the ground it is badly wrong: measured at 4 km over Tarsis III it
+## predicted 131 tiles where the walk found 85, so a level that would have fitted in the budget with
+## room to spare was refused, and the chart drew ground twice as coarse as it could have.
+static func _descend(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
+		radius: float, fit: float, view_angle: float) -> Dictionary:
 	var ceiling: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
-	var nside: int = TILE_NSIDE
-	# Doubling rather than solving for it: the levels ARE powers of two, and a closed form would only
-	# have to be rounded back onto them.
-	while nside * 2 <= ceiling and _cap_estimate(nside * 2, altitude_m, radius) <= fit:
-		nside *= 2
-	return nside
+	return _walk(centre_dir, cap_angle(altitude_m, radius, view_angle), ceiling, fit,
+			centre_dir.length_squared() > 0.0 and altitude_m >= 0.0 and radius > 0.0)
 
 
-## Roughly how many tiles [method patch_tiles] will collect at [param nside].
+## The one walk down the pyramid, and the only place a level or a patch is ever chosen.
 ##
-## Two corrections over the bare horizon cap, and the screenshot that forced both showed a planet drawn
-## as a pac-man: the patch had run out of budget in the middle of the visible disc, leaving space where
-## the rest of the world should have been.
+## Keeps the finest level at or below [param ceiling] whose tiles number no more than [param fit],
+## returning that level and its tiles together. [param near] is false when there is no near view at
+## all — no direction, or a body nobody is watching — and the answer is then the globe.
 ##
-## The cap is the one actually walked — the horizon WIDENED BY A PIXEL, which matters because a pixel is
-## not small at a coarse level: 29° at nside 2. Budgeting the un-widened cap and then walking the
-## widened one asks for more tiles than were paid for, and the overrun lands exactly where it is most
-## visible.
+## The count that decides is the REAL one, the tiles actually collected, never an estimate of the cap's
+## area. That estimate is what used to choose the level, and near the ground it is badly wrong:
+## measured at 4 km over Tarsis III it predicted 131 tiles where the walk found 85, so a level that
+## fitted the budget with room to spare was refused and the chart drew ground twice as coarse as it
+## could have.
+static func _walk(centre_dir: Vector3, cap: float, ceiling: int, fit: float,
+		near: bool) -> Dictionary:
+	var globe := PackedInt32Array()
+	for ipix: int in range(npix(TILE_NSIDE)):
+		globe.append(ipix)
+	var best: Dictionary = {"level": TILE_NSIDE, "tiles": globe}
+	if not near:
+		return best
+	var centre: Vector3 = centre_dir.normalized()
+	var keep: PackedInt32Array = globe
+	var level: int = TILE_NSIDE
+	while level < ceiling:
+		level *= 2
+		# Kept generously, to cover the whole pixel rather than its centre: a descendant can fall
+		# inside the cap while its parent's own centre lies outside it.
+		var reach: float = cos(minf(cap + HEALPix.pixel_angular_size(level), PI))
+		var wider := PackedInt32Array()
+		for parent: int in keep:
+			for child: int in HEALPix.child_pixels(parent):
+				if HEALPix.pix2vec_nest(level, child).dot(centre) >= reach:
+					wider.append(child)
+		# The pixel the camera is actually over, whatever the arithmetic says.
+		#
+		# A cap can be smaller than a pixel — four metres up, it is a thousandth of one — and a HEALPix
+		# pixel is a diamond whose corners lie further from its centre than its own side length. Pruned
+		# on that alone, the pixel holding the camera can be dropped, and then EVERYTHING is, because
+		# there is nothing left to subdivide. The patch comes back empty and the chart draws no ground.
+		var under: int = HEALPix.vec2pix_nest(level, centre)
+		if not under in wider:
+			wider.append(under)
+		if wider.size() > PATCH_TILES_MAX * 4:
+			break  # nothing finer can narrow down to something inside the budget
+		keep = wider
+		# And the exact question, at this level: what actually falls in the cap.
+		var limit: float = cos(cap)
+		var exact := PackedInt32Array()
+		for ipix: int in keep:
+			if HEALPix.pix2vec_nest(level, ipix).dot(centre) >= limit:
+				exact.append(ipix)
+		if exact.is_empty():
+			exact.append(under)
+		if float(exact.size()) > fit:
+			break
+		best = {"level": level, "tiles": exact}
+	return best
+
+
+## The finest level whose visible ground fits in [param fit] tiles, bounded by what this body
+## publishes. [constant TILE_NSIDE] — the whole globe — when there is no near view to speak of.
+static func level_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
+		radius: float, fit: float = float(PATCH_TILES_MAX), view_angle: float = -1.0) -> int:
+	return int(_descend(manifest, centre_dir, altitude_m, radius, fit, view_angle)["level"])
+
+
+## How much of a body's surface a camera can see, as a half-angle at its centre.
 ##
-## And it is an area, while the walk keeps every tile whose CENTRE falls inside — so the boundary ring
-## is counted in full, not in half. [constant PATCH_FIT] is the headroom for that.
-static func _cap_estimate(nside: int, altitude_m: float, radius: float) -> float:
-	var angle: float = minf(horizon_angle(altitude_m, radius)
-			+ HEALPix.pixel_angular_size(nside), PI)
-	return float(npix(nside)) * 0.5 * (1.0 - cos(angle))
+## The exact figure, not the horizon: a cone of half-angle [param half_fov] from a camera
+## [param distance] out, cut against a sphere of [param radius]. Negative when the cone's edge misses
+## the sphere entirely — the limb is then inside the view, and the horizon is the honest answer.
+##
+## Taken on the DIAGONAL of the screen by the caller, so nothing in a corner falls outside it.
+static func view_half_angle(distance: float, radius: float, half_fov: float) -> float:
+	if radius <= 0.0 or half_fov <= 0.0 or distance <= radius:
+		return -1.0
+	var reach: float = distance * sin(half_fov)
+	if reach >= radius:
+		return -1.0
+	# Sine rule on centre-camera-ground, taking the NEAR intersection.
+	return asin(clampf(reach / radius, -1.0, 1.0)) - half_fov
+
+
+## How much ground the chart has to hold, as a half-angle at the body's centre.
+##
+## The horizon is the limit of what CAN be seen from a height; [param view_angle] is how much of the
+## surface the screen is actually showing, and close in the two are nothing alike. Measured at 224 km
+## over Tarsis III: the horizon stood at 15°, some 1 660 km of ground, while the screen was showing
+## about 340 km of it. Sizing the patch on the horizon there spends the whole tile budget five times
+## wider than the view, and the level that budget can afford comes out two to three steps coarser than
+## it needs to be — on screen, a sample of ground as wide as the scale bar.
+##
+## Negative when the caller has no measurement to offer, and then this is the horizon alone: that is
+## also what it becomes far out, where the screen holds the whole body and the two agree.
+static func cap_angle(altitude_m: float, radius: float, view_angle: float = -1.0) -> float:
+	var horizon: float = horizon_angle(altitude_m, radius)
+	return horizon if view_angle <= 0.0 else minf(horizon, view_angle)
 
 
 ## Half-angle of the spherical cap a camera [param altitude_m] up can see — how much of the world is
@@ -238,51 +308,19 @@ static func horizon_angle(altitude_m: float, radius: float) -> float:
 ## Purely geometric: every tile in view is asked for, cached or not. What is not cached is lifted from
 ## its nearest cached ancestor — see [method _tile_or_ancestor] — so there is nothing to route around.
 static func patch_tiles(nside: int, centre_dir: Vector3, altitude_m: float,
-		radius: float) -> PackedInt32Array:
-	var out := PackedInt32Array()
+		radius: float, view_angle: float = -1.0) -> PackedInt32Array:
 	if nside <= TILE_NSIDE:
+		var globe := PackedInt32Array()
 		for ipix: int in range(npix(TILE_NSIDE)):
-			out.append(ipix)
-		return out
-	var centre: Vector3 = centre_dir.normalized()
-	# Half-angle of what is wanted: the horizon, widened by one pixel so the limb is covered rather than
-	# clipped.
-	var cap: float = minf(horizon_angle(altitude_m, radius)
-			+ HEALPix.pixel_angular_size(nside), PI)
-
-	# Whether to keep a pixel is asked at EVERY level, and at each one it must be asked generously
-	# enough to cover the whole pixel rather than its centre: a descendant of a coarse pixel can fall
-	# inside the cap while that pixel's own centre lies outside it. Pruning on the centre alone loses
-	# the whole branch, and the loss is invisible — it just draws less planet.
-	var keep := PackedInt32Array()
-	for ipix: int in range(npix(TILE_NSIDE)):
-		keep.append(ipix)
-	var level: int = TILE_NSIDE
-	while level < nside:
-		level *= 2
-		var reach: float = cos(minf(cap + HEALPix.pixel_angular_size(level), PI))
-		var next := PackedInt32Array()
-		for parent: int in keep:
-			for child: int in HEALPix.child_pixels(parent):
-				if HEALPix.pix2vec_nest(level, child).dot(centre) >= reach:
-					next.append(child)
-		# A level that already holds several times the budget cannot narrow down to something inside it,
-		# and refining it further is work spent to reach the same answer. build asks again one level
-		# coarser.
-		if next.size() > PATCH_TILES_MAX * 4:
-			return PackedInt32Array()
-		keep = next
-
-	# And the exact question, once, at the level actually wanted.
-	var limit: float = cos(cap)
-	for ipix: int in keep:
-		if HEALPix.pix2vec_nest(nside, ipix).dot(centre) >= limit:
-			out.append(ipix)
-	# Nothing rather than a truncated cap. A level that does not fit the budget is a level that cannot
-	# be DRAWN: half a planet with space behind the other half is not a coarser reading of it, and that
-	# is exactly what shipped once — a globe rendered as a pac-man. plan_patch drops a level and asks
-	# again.
-	return PackedInt32Array() if out.size() > PATCH_TILES_MAX else out
+			globe.append(ipix)
+		return globe
+	var plan: Dictionary = _walk(centre_dir, cap_angle(altitude_m, radius, view_angle), nside,
+			float(PATCH_TILES_MAX),
+			centre_dir.length_squared() > 0.0 and altitude_m >= 0.0 and radius > 0.0)
+	# Nothing rather than a truncated cap, and nothing rather than a COARSER one. A level that does not
+	# fit the budget is a level that cannot be DRAWN: half a planet with space behind the other half is
+	# not a coarser reading of it, and that is exactly what shipped once, a globe rendered as a pac-man.
+	return plan["tiles"] if int(plan["level"]) == nside else PackedInt32Array()
 
 
 ## The level the chart READS a body's ground at: the finest that body publishes.
@@ -290,13 +328,12 @@ static func patch_tiles(nside: int, centre_dir: Vector3, altitude_m: float,
 ## A property of the body, never of what happens to be on screen — and that is the whole point. Reading
 ## at the drawn level is what closed the loop this rewrite exists to remove: the level chose the reading,
 ## the reading set the camera guard, the guard set the altitude, and the altitude chose the level. Fixing
-## it per body cuts the chain at the first link, by construction, with no cache and no hysteresis to get
-## wrong.
+## it per body cuts the chain at the first link, by construction.
 ##
 ## The finest rather than something cheaper, because the reading must never be COARSER than what is
-## drawn: the guard would then sit below visible terrain and the camera would sink into a mountain it can
-## see. Measured, it is cheap enough to be uninteresting: 5 µs warm, and 0.2 ms the first time a pixel is
-## asked about — which on Tarsis III is once every 6 km travelled over the ground.
+## drawn: the guard would then sit below visible terrain and the camera would sink into a mountain it
+## can see. Measured, the cost is uninteresting: 5 µs warm, 0.2 ms the first time a pixel is asked
+## about — on Tarsis III, once every 6 km travelled over the ground.
 static func finest_nside(body_key: String) -> int:
 	return maxi(int(_manifest(body_key).get("nside_max", TILE_NSIDE)), TILE_NSIDE)
 
@@ -575,9 +612,19 @@ static func _add_skirt(points: PackedVector3Array, normals: PackedVector3Array,
 		var here: float = points[rim[i]].length()
 		var next: float = points[rim[(i + 1) % rim.size()]].length()
 		step = maxf(step, absf(here - next))
-	# Six times the step, as the game does, with a floor of a quarter cell so a flat tile still gets a
-	# skirt — a crack of zero height still shows a hairline where two meshes fail to touch exactly.
-	var drop: float = maxf(step * 6.0, cell * 0.25)
+	# Three times the step, with a floor of a hundredth of a cell so a flat tile still gets a skirt: a
+	# crack of no height at all still shows a hairline where two meshes fail to touch exactly.
+	#
+	# BOTH numbers are vertical, and the floor used not to be — it was a quarter of the cell's WIDTH,
+	# which is a horizontal length standing in for a depth. Nothing said so while the relief was
+	# overstated twelvefold and towered over it. Drawn at true height it does not: measured around
+	# Mining village 01, tiles holding 100 to 900 m of relief were given skirts of 127 to 1016 m, walls
+	# taller than the ground they hang from, and they showed as dark diagonals along every tile edge.
+	#
+	# What a skirt actually has to cover is how far two neighbouring tiles disagree along the edge they
+	# share, and that was measured too: at most 9 m at n256, 4.5 m at n512, against a step that bounds
+	# it. Three times the step leaves a wide margin over that and still stays well under the relief.
+	var drop: float = maxf(step * 3.0, cell * 0.01)
 	var first: int = points.size()
 	for i: int in range(rim.size()):
 		var top: Vector3 = points[rim[i]]
@@ -613,6 +660,11 @@ static func _rim_ring(stride: int) -> PackedInt32Array:
 	return ring
 
 
+## Smoothstep: the same 0..1, with the slope brought to zero at both ends.
+static func _smoothed(t: float) -> float:
+	return t * t * (3.0 - 2.0 * t)
+
+
 static func _sample(heights: PackedFloat32Array, side: int, u: float, v: float) -> float:
 	var fx: float = u * float(side) - 0.5
 	var fy: float = v * float(side) - 0.5
@@ -620,8 +672,20 @@ static func _sample(heights: PackedFloat32Array, side: int, u: float, v: float) 
 	var y0: int = clampi(int(floorf(fy)), 0, side - 1)
 	var x1: int = clampi(x0 + 1, 0, side - 1)
 	var y1: int = clampi(y0 + 1, 0, side - 1)
-	var tx: float = clampf(fx - floorf(fx), 0.0, 1.0)
-	var ty: float = clampf(fy - floorf(fy), 0.0, 1.0)
+	# Smoothed weights, not the raw fractions. Straight bilinear is continuous but its SLOPE is not: it
+	# breaks at every texel boundary, and a normal is a slope, so the break is lit. Unnoticeable while a
+	# texel is about the size of a triangle, and glaring when it is not — the chart draws at the finest
+	# level a body publishes while the tiles CACHED under a place may be six levels coarser, so one
+	# texel of data can be magnified sixty-four times. Measured around Mining village 01: real data
+	# stops at n16, 12.7 km a sample, under ground being drawn at 198 m a sample. Every texel then
+	# became a facet the size of a village, with a hard crease along its edge.
+	#
+	# The cubic weight is zero-sloped at 0 and 1, so neighbouring patches leave the boundary flat from
+	# both sides and the surface is smooth across it. It invents no detail — the same texels, read the
+	# same way — it only stops the reconstruction from drawing its own grid. [method surface_factor]
+	# comes through here too, so the ground measured still is the ground drawn.
+	var tx: float = _smoothed(clampf(fx - floorf(fx), 0.0, 1.0))
+	var ty: float = _smoothed(clampf(fy - floorf(fy), 0.0, 1.0))
 	var top: float = lerpf(heights[y0 * side + x0], heights[y0 * side + x1], tx)
 	var bottom: float = lerpf(heights[y1 * side + x0], heights[y1 * side + x1], tx)
 	return lerpf(top, bottom, ty)

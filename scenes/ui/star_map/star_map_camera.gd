@@ -33,13 +33,20 @@ const ZOOM_STEP: float = 1.15
 ## How fast the +/- keys zoom, as a factor per second held.
 const KEY_ZOOM_RATE: float = 6.0
 const ORBIT_SENSITIVITY: float = 0.005
-## Floor on how far the sensitivity may fall as you close in, so orbiting never becomes unusable.
+## Floor on how far the sensitivity may fall as you close in.
 ##
-## 0.03 was far too high and defeated the formula exactly where it was needed: hard against the surface
-## it still swept nine hundred metres of ground per pixel over a patch a kilometre and a half wide —
-## most of the screen for one pixel of mouse. Two thousandths gives sixty metres a pixel there, and the
-## floor only ever binds within a whisker of the ground.
-const ORBIT_MIN_SCALE: float = 0.002
+## Not there to keep the gesture usable — it cannot become unusable. The ground swept by one pixel is
+## [constant ORBIT_SENSITIVITY] times the height above the surface, while the screen at that height
+## shows about 1.53 times it, so one pixel moves a THIRD OF A PERCENT of the screen whatever the
+## altitude. The rate is already scale-free; a floor can only make it too fast.
+##
+## Which is what it did. At two thousandths the floor bound below 12.7 km up — 0.002 of a 6 356 km
+## radius — and the chart now goes far closer than that: at 4 km it turned 3.2 times too fast for the
+## view, at 1 km nearly thirteen times. This is a guard against the degenerate case only, where the
+## camera sits exactly on its clearance and the gesture would otherwise freeze. The closest approach
+## allowed is [constant SURFACE_CLEARANCE_M], a hundred metres, which is 1.6e-5 of that radius — so in
+## honest use this never binds at all.
+const ORBIT_MIN_SCALE: float = 1.0e-5
 ## Pitch is clamped short of the poles: straight down the axis, the rings collapse to lines.
 const PITCH_LIMIT: float = 1.45
 ## How far a selected body is framed from, in multiples of its own radius.

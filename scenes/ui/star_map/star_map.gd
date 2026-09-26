@@ -67,6 +67,10 @@ const PICK_TOLERANCE: float = 0.012
 ## of what you came to see. A twentieth of a radius out — three hundred km over a planet — fills the
 ## screen with ground and still keeps a horizon in it.
 const POI_FOCUS_ZOOM: float = 1.05
+## How much wider than the screen the ground is drawn, so that turning or framing a town does not
+## expose an edge. A quarter, which costs about half a level of detail and buys the whole margin of
+## error on a cone cut against the body's centre rather than against what the camera is aimed at.
+const VIEW_ANGLE_MARGIN: float = 1.25
 ## Samples along one side of a height tile, from the manifest's tile_res. Used only to say, in the
 ## readout, how much ground one sample covers — which is the number that means something, where a
 ## HEALPix level on its own means nothing to anybody.
@@ -90,9 +94,14 @@ const POI_BODY_KEEP: float = 0.75
 ##
 ## An absolute height, where a town gets a proportional one, and the difference is what each is for. A
 ## town is a place on a map and wants its surroundings in frame; YOU are a person standing somewhere,
-## and the useful view is the one that shows the ground you are actually on. Five hundred metres is
-## about the height at which a settlement still fits the screen and a vehicle is still a thing.
-const PLAYER_FOCUS_ALTITUDE_M: float = 500.0
+## and the useful view is the one that shows the ground you are actually on.
+##
+## Seven km, not the five hundred metres this began at. The screen holds about 1.53 times the height, so
+## five hundred metres framed 765 m of ground — NARROWER THAN THE VILLAGE it was meant to be showing,
+## whose own extent the chart reports as a kilometre. Seven km holds some eleven, which puts a
+## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
+## III publishes: 198 m per sample, so the extra height costs no detail at all.
+const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
 
 ## SphereMesh is 0.5 in radius, so everything drawn on a body is sized against THAT, not against 1.0.
 ## Getting this wrong is what turned the spin axes into the long stray lines of the first version.
@@ -1217,7 +1226,7 @@ func _local_under_camera(body: int) -> Vector3:
 
 
 ## How high the camera stands over that body's GROUND, in metres. Negative when it is not watching it,
-## which is what tells [method StarMapRelief.build] to hand back the whole globe instead of a patch.
+## which is what tells [method StarMapRelief.plan_patch] to hand back the whole globe instead of a patch.
 func _altitude_m(body: int) -> float:
 	if _cam.anchor_body != body:
 		return -1.0
@@ -1268,13 +1277,37 @@ func _refresh_ground() -> void:
 	# now, and only now: the reading the guard is built from no longer depends on the level being drawn
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
 	# chooses. That cycle is what this rewrite exists to remove.
-	_ground.refresh(_local_under_camera(index), _altitude_m(index))
+	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
 	# The smooth sphere steps aside only once the ground can replace it: swapping first would show a
 	# body-shaped hole for as long as the first tiles take to build.
 	var covered: bool = _ground.has_tiles()
 	var wanted: Mesh = null if covered else _bodies[index]["sphere_mesh"] as Mesh
 	if sphere.mesh != wanted:
 		sphere.mesh = wanted
+
+
+## How much of that body the SCREEN is showing, as a half-angle at its centre.
+##
+## The patch used to be sized on the HORIZON — all the ground that can be seen from a given height. Up
+## close the two part company completely: measured at 224 km over Tarsis III, the horizon stood at 15°,
+## some 1 660 km of ground, while the screen was showing about 340 km of it. The tile budget went five
+## times wider than the view, and the level it could afford came out two to three steps coarser than it
+## needed to be — on screen, a sample of ground as wide as the scale bar.
+##
+## Taken on the screen DIAGONAL so nothing in a corner falls outside, and widened a little because the
+## cone is cut against the body's CENTRE while the camera may be framing a town on its surface.
+func _view_half_angle(index: int) -> float:
+	if index < 0 or index >= _bodies.size() or not is_instance_valid(_camera):
+		return -1.0
+	var size: Vector2 = Vector2(_viewport.size)
+	if size.y <= 0.0:
+		return -1.0
+	var aspect: float = size.x / size.y
+	# Godot measures fov vertically; the corner of the screen is further out than that.
+	var half_fov: float = atan(tan(deg_to_rad(_camera.fov) * 0.5) * sqrt(1.0 + aspect * aspect))
+	var angle: float = StarMapRelief.view_half_angle(_cam.distance(),
+			float(_bodies[index]["radius_m"]) * UNITS_PER_METRE, half_fov)
+	return angle if angle <= 0.0 else angle * VIEW_ANGLE_MARGIN
 
 
 ## Take the ground away and give the body back its sphere.
