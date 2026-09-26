@@ -1,0 +1,113 @@
+[gd_resource type="Resource" script_class="PoiIconSet" load_steps=22 format=3]
+
+[ext_resource type="Script" path="res://scenes/ui/star_map/poi_icon_set.gd" id="script_set"]
+[ext_resource type="Script" path="res://scenes/ui/star_map/poi_icon_rule.gd" id="script_rule"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/capital.png" id="tex_capital"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/spaceport.png" id="tex_spaceport"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/railway_station.png" id="tex_railway_station"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/mining_village.png" id="tex_mining_village"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/industrial_village.png" id="tex_industrial_village"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/orbital_station.png" id="tex_orbital_station"]
+[ext_resource type="Texture2D" path="res://assets/textures/poi/city.png" id="tex_city"]
+
+[sub_resource type="Resource" id="capital_by_name"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_capital")
+poi_type = ""
+name_prefix = "palaka-pital"
+tint = Color(1.0, 0.85, 0.55, 1)
+label_key = "%%POI_KIND_CAPITAL"
+
+[sub_resource type="Resource" id="spaceport_by_name"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_spaceport")
+poi_type = ""
+name_prefix = "major_airport_city"
+tint = Color(0.65, 0.85, 1.0, 1)
+label_key = "%%POI_KIND_SPACEPORT"
+
+[sub_resource type="Resource" id="railway_by_name"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_railway_station")
+poi_type = ""
+name_prefix = "major_railway_city"
+tint = Color(0.8, 0.88, 0.96, 1)
+label_key = "%%POI_KIND_RAILWAY"
+
+[sub_resource type="Resource" id="mining_by_name"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_mining_village")
+poi_type = ""
+name_prefix = "mining_village"
+tint = Color(0.96, 0.76, 0.45, 1)
+label_key = "%%POI_KIND_MINING"
+
+[sub_resource type="Resource" id="industrial_by_name"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_industrial_village")
+poi_type = ""
+name_prefix = "factory_village"
+tint = Color(0.76, 0.81, 0.92, 1)
+label_key = "%%POI_KIND_INDUSTRIAL"
+
+[sub_resource type="Resource" id="orbital_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_orbital_station")
+poi_type = "orbital station"
+name_prefix = ""
+tint = Color(0.7, 0.95, 0.9, 1)
+label_key = "%%POI_KIND_ORBITAL"
+
+[sub_resource type="Resource" id="capital_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_capital")
+poi_type = "capital"
+name_prefix = ""
+tint = Color(1.0, 0.85, 0.55, 1)
+label_key = "%%POI_KIND_CAPITAL"
+
+[sub_resource type="Resource" id="spaceport_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_spaceport")
+poi_type = "spaceport"
+name_prefix = ""
+tint = Color(0.65, 0.85, 1.0, 1)
+label_key = "%%POI_KIND_SPACEPORT"
+
+[sub_resource type="Resource" id="railway_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_railway_station")
+poi_type = "railway station"
+name_prefix = ""
+tint = Color(0.8, 0.88, 0.96, 1)
+label_key = "%%POI_KIND_RAILWAY"
+
+[sub_resource type="Resource" id="mining_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_mining_village")
+poi_type = "mining village"
+name_prefix = ""
+tint = Color(0.96, 0.76, 0.45, 1)
+label_key = "%%POI_KIND_MINING"
+
+[sub_resource type="Resource" id="industrial_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_industrial_village")
+poi_type = "factory village"
+name_prefix = ""
+tint = Color(0.76, 0.81, 0.92, 1)
+label_key = "%%POI_KIND_INDUSTRIAL"
+
+[sub_resource type="Resource" id="city_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_city")
+poi_type = "city"
+name_prefix = ""
+tint = Color(0.9, 0.93, 0.98, 1)
+label_key = "%%POI_KIND_CITY"
+
+[resource]
+script = ExtResource("script_set")
+rules = Array[Resource]([SubResource("capital_by_name"), SubResource("spaceport_by_name"), SubResource("railway_by_name"), SubResource("mining_by_name"), SubResource("industrial_by_name"), SubResource("orbital_by_type"), SubResource("capital_by_type"), SubResource("spaceport_by_type"), SubResource("railway_by_type"), SubResource("mining_by_type"), SubResource("industrial_by_type"), SubResource("city_by_type")])
+fallback_icon = ExtResource("tex_city")
+fallback_tint = Color(0.82, 0.86, 0.92, 1)

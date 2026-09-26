@@ -113,7 +113,11 @@ func _scan_dir(path: String) -> void:
 		var full := path.path_join(entry)
 		if dir.current_is_dir():
 			_scan_dir(full)
-		elif entry.ends_with(".gd") or entry.ends_with(".tscn"):
+		# .tres as well as .gd and .tscn. A resource carries keys just as legitimately as a script
+		# does — the star chart pairs a kind of place with its picture AND its wording in a .tres —
+		# and a key the walk cannot see is reported as unused, which is a failure for the wrong
+		# reason and teaches people to delete a key that is in fact in service.
+		elif entry.ends_with(".gd") or entry.ends_with(".tscn") or entry.ends_with(".tres"):
 			_collect_keys(full)
 		entry = dir.get_next()
 	dir.list_dir_end()
