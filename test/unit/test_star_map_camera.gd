@@ -276,6 +276,55 @@ func test_pitch_stays_clear_of_the_poles() -> void:
 	assert_almost_eq(_cam.pitch, -StarMapCamera.PITCH_LIMIT, 0.0001)
 
 
+## Following a town pens the view into a cone about that town's own vertical.
+##
+## Orbiting turns around the SUBJECT, and a town is a point on a ball: carry on far enough and the
+## camera passes the local horizon and ends up inside the planet, with the town behind it. The distance
+## guard cannot catch that, an orbit never changing the distance to the body's centre.
+func test_following_a_town_keeps_the_view_over_it() -> void:
+	var up: Vector3 = Vector3(0.3, 0.8, -0.5).normalized()
+	var limit: float = deg_to_rad(60.0)
+
+	# Already inside the cone: left exactly where it was.
+	_cam.aim_from(up)
+	_cam.advance(1.0)  # aim_from starts a travel; TRANSITION_S is well under a second
+	var yaw_before: float = _cam.yaw
+	var pitch_before: float = _cam.pitch
+	_cam.hold_near(up, limit)
+	assert_almost_eq(_cam.yaw, yaw_before, 1.0e-6, "straight over the town, nothing to correct")
+	assert_almost_eq(_cam.pitch, pitch_before, 1.0e-6, "and the pitch is left alone too")
+
+	# Swung past the edge: brought back TO the edge, not to the middle, and in the same plane so the
+	# view slides rather than jumping sideways.
+	var far_off: Vector3 = up.rotated(up.cross(Vector3.UP).normalized(), deg_to_rad(120.0))
+	_cam.aim_from(far_off)
+	_cam.advance(1.0)
+	_cam.hold_near(up, limit)
+	assert_almost_eq(_cam.direction().angle_to(up), limit, 1.0e-4,
+			"pulled back exactly as far as the cone allows, and no further")
+	assert_lt(_cam.direction().angle_to(far_off), deg_to_rad(120.0) - limit + 1.0e-3,
+			"and along the way it came, not off to one side")
+
+	# Straight over the far side there is no plane to come back through, every direction being equally
+	# short. It still has to come back: refusing would leave the camera under the planet for good.
+	_cam.aim_from(-up)
+	_cam.advance(1.0)
+	_cam.hold_near(up, limit)
+	assert_almost_eq(_cam.direction().angle_to(up), limit, 1.0e-4,
+			"even from straight underneath, it is brought to the edge of the cone")
+
+
+## And it leaves the camera alone when there is no town to be over.
+func test_no_town_means_no_cone() -> void:
+	_cam.aim_from(Vector3(0.2, -0.9, 0.3).normalized())
+	_cam.advance(1.0)
+	var yaw_before: float = _cam.yaw
+	_cam.hold_near(Vector3.ZERO, deg_to_rad(60.0))
+	assert_eq(_cam.yaw, yaw_before, "no vertical to hold near")
+	_cam.hold_near(Vector3.UP, 0.0)
+	assert_eq(_cam.yaw, yaw_before, "and a cone of nothing is not a cone")
+
+
 ## One pixel of mouse moves the same FRACTION OF THE SCREEN at every height.
 ##
 ## The property that says the rate is right, rather than merely decreasing. Orbiting sweeps

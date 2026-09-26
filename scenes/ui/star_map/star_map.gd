@@ -90,6 +90,33 @@ const AMBIENT_CLOSE_RATIO: float = 0.35
 ## all of its towns, which only exist while it is elected. Measured by the user: it starts at a zoom of
 ## 0.07 and not before, and 0.085 is exactly where the threshold sits.
 const POI_BODY_KEEP: float = 0.75
+## How far off the local vertical the camera may get while a town is the subject, in radians.
+##
+## Sixty degrees: straight down, or anywhere down to thirty degrees above the town's own horizon. Wide
+## enough that the ground still reads in relief rather than as a flat plate, and far enough from the
+## horizon that no amount of orbiting takes the view under the surface.
+##
+## One number, and the one to turn if the view feels either penned in or too free.
+const POI_ORBIT_CONE: float = 1.047
+
+
+## The local vertical at the town being followed, in the chart's world, or zero when none is.
+##
+## The body's own spin is in it: a town turns with its planet, so the vertical over it is not a constant
+## direction in the chart but the local one carried by the sphere's basis.
+func _poi_world_up() -> Vector3:
+	if _poi_focus < 0 or _poi_focus >= _poi_layer.entries.size():
+		return Vector3.ZERO
+	var body: int = _blocker
+	if body < 0 or body >= _bodies.size():
+		return Vector3.ZERO
+	var sphere: MeshInstance3D = _bodies[body]["sphere"]
+	if not is_instance_valid(sphere):
+		return Vector3.ZERO
+	return (sphere.basis.orthonormalized()
+			* (_poi_layer.entries[_poi_focus]["dir"] as Vector3)).normalized()
+
+
 ## How high above your own feet the chart settles when you ask it to show you where you are, in metres.
 ##
 ## An absolute height, where a town gets a proportional one, and the difference is what each is for. A
@@ -858,6 +885,11 @@ func _process(delta: float) -> void:
 	# Before the distance is read, and every frame: the ground under the camera changes when you orbit,
 	# and nothing else re-tests the floor once a gesture that is not a zoom has moved you.
 	_cam.hold_above(_guard_radius())
+	# And, while a town is the subject, keep the view over it. Orbiting turns around the subject, so
+	# with a place on a surface it otherwise swings off that place, past the local horizon and into the
+	# ground behind it - which the distance guard cannot catch, an orbit never changing the distance to
+	# the body's centre.
+	_cam.hold_near(_poi_world_up(), POI_ORBIT_CONE)
 	_view = _cam.distance()
 	var t: float = Globals.sim_time()
 	# Placed, THEN aimed, THEN dressed. The order matters twice over: everything in _dress_bodies reads
