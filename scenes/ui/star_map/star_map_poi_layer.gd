@@ -77,6 +77,7 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		# lookups a frame for an answer that never changes.
 		for poi: Dictionary in entries:
 			poi["surface"] = StarMapRelief.surface_factor(body_key, poi["dir"])
+			poi["altitude_m"] = StarMapRelief.ground_altitude_m(body_key, poi["dir"])
 		_release_pool()
 	if entries.is_empty():
 		# The pick index has to go with them. Left behind, it still answers with the PREVIOUS body's
@@ -191,7 +192,12 @@ func _place_labels(drawn: Array[int], camera: Camera3D, selected: int, hovered: 
 		var is_selected: bool = index == selected
 		var is_hovered: bool = index == hovered
 		var label: Label3D = _labels[index]
-		label.text = str(entries[index]["label"])
+		# The name, and under it how high that ground stands. Two lines rather than one: a town's
+		# altitude is the thing the eye cannot read off a shaded relief, and putting it beside the name
+		# would widen every label on screen for a figure most of them are not being asked about.
+		var altitude: String = tr("%%HUD_MAP_METRES_VALUE") % Globals.format_thousands(
+				float(entries[index].get("altitude_m", 0.0)))
+		label.text = str(entries[index]["label"]) + "\n" + altitude
 		# Lifted well past the badge's own tint. A marker may be a dark ochre and still read, being a
 		# shape; text at that value over sunlit ground does not, and reading the name is the point.
 		label.modulate = _tint(entries[index], is_selected, is_hovered).lerp(Color.WHITE, 0.45)

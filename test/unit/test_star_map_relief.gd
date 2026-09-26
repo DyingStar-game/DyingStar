@@ -325,6 +325,37 @@ func test_the_ground_agrees_at_a_fine_level_too() -> void:
 	_assert_agrees(8, 100)
 
 
+## An altitude is TRUE metres, and stays put when the exaggeration is tuned.
+##
+## The two are different questions and were one number for a while. surface_factor answers as a
+## multiple of the radius and carries the exaggeration with it, which is right for building a mesh and
+## wrong for telling somebody how high a village stands: that figure must not move because a constant
+## controlling how the ground is drawn was changed.
+##
+## Bounded by the export's own declared range, which is the only outside check available: Tarsis III
+## states -1 700 m to +9 000 m in its manifest.
+func test_an_altitude_is_true_metres() -> void:
+	if not StarMapRelief.has_data(BODY):
+		pending("aucune tuile en cache pour %s sur cette machine" % BODY)
+		return
+	var seen: Dictionary = {}
+	for poi: Dictionary in StarMapPoi.load_for(BODY):
+		var metres: float = StarMapRelief.ground_altitude_m(BODY, poi["dir"])
+		assert_between(metres, -1700.0, 9000.0,
+				"%s stands inside the range the export declares" % str(poi["label"]))
+		# The same ground surface_factor reports, with the exaggeration taken back out.
+		var factor: float = StarMapRelief.surface_factor(BODY, poi["dir"])
+		assert_almost_eq(metres, (factor - 1.0) * RADIUS / StarMapRelief.EXAGGERATION, 1.0,
+				"and it is the same ground the mesh is built from")
+		seen[snappedf(metres, 0.1)] = true
+	assert_gt(seen.size(), 1, "the towns are not all at one height, so this is reading real ground")
+
+
+## A body with no relief has no altitude to report either, and says so rather than guessing.
+func test_a_body_without_relief_has_no_altitude() -> void:
+	assert_eq(StarMapRelief.ground_altitude_m("no_such_body", Vector3.UP), 0.0)
+
+
 ## A body with no tiles reports a plain sphere rather than guessing.
 func test_a_body_without_relief_reports_a_plain_sphere() -> void:
 	assert_eq(StarMapRelief.surface_factor("no_such_body", Vector3.UP), 1.0)

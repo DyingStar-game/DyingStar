@@ -1810,6 +1810,9 @@ func _show_poi_info(poi: Dictionary) -> void:
 	var extent: float = float(poi["radius_m"])
 	if extent > 0.0:
 		rows.append(_info_row("%%HUD_MAP_POI_EXTENT", Globals.format_distance(extent)))
+	rows.append(_info_row("%%HUD_MAP_POI_ALTITUDE",
+			tr("%%HUD_MAP_METRES_VALUE") % Globals.format_thousands(
+					float(poi.get("altitude_m", 0.0)))))
 	rows.append(_info_row("%%HUD_MAP_POI_COORDS",
 			"%.3f° / %.3f°" % [float(poi["lon"]), float(poi["lat"])]))
 	# Every record ships an empty description today; the field is in the export, so it is shown the day
