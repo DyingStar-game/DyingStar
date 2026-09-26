@@ -186,5 +186,3 @@ func _physics_process(_delta: float) -> void:
 		family = &"metal"
 	Sfx3D.play_pitched(self, sfx_landing.pick(family), sfx_landing_db, sfx_landing_falloff,
 		sfx_landing_distance, sfx_landing_attenuation, sfx_landing.random_pitch())
-
-

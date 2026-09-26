@@ -1,6 +1,46 @@
 [gd_scene format=3 uid="uid://bao10qqj47qp1"]
 
 [ext_resource type="Script" uid="uid://dsw35nohgq6b" path="res://addons/vehicle_lift/vehicle_lift.gd" id="1_uycjk"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_m5d5e"]
+[ext_resource type="PackedScene" uid="uid://cvtyt3n81dr60" path="res://addons/vehicle_lift/base/base.tscn" id="3_tl0lh"]
+[ext_resource type="PackedScene" uid="uid://bep27aycqjf0e" path="res://addons/vehicle_lift/landings/upper_landing/upper_landing.tscn" id="5_5twr7"]
+[ext_resource type="PackedScene" uid="uid://b3hlyftcu0jwf" path="res://addons/vehicle_lift/landings/lower_landing/lower_landing.tscn" id="7_axhhc"]
+[ext_resource type="PackedScene" uid="uid://bg4jnjpbvyb56" path="res://addons/vehicle_lift/rail/rail_head.tscn" id="9_urbxg"]
+[ext_resource type="PackedScene" uid="uid://cxblcc8fd5rha" path="res://addons/vehicle_lift/rail/rail_segment.tscn" id="10_siq7q"]
+[ext_resource type="PackedScene" uid="uid://dxd4y8meoyuug" path="res://addons/vehicle_lift/dynamic_bridge/dynamic_bridges.tscn" id="11_nk67g"]
 
-[node name="Vehicle Elevator" type="Node3D" unique_id=749990997]
+[sub_resource type="BoxShape3D" id="BoxShape3D_m5d5e"]
+size = Vector3(2.67, 6, 0.5)
+
+[node name="Vehicle Lift" type="Node3D" unique_id=749990997]
 script = ExtResource("1_uycjk")
+
+[node name="PropSync" type="Node" parent="." unique_id=2064241619]
+script = ExtResource("2_m5d5e")
+type_name = "vehicle_lift"
+
+[node name="Base" parent="." unique_id=1056703103 instance=ExtResource("3_tl0lh")]
+
+[node name="Upper Landing" parent="." unique_id=327375662 instance=ExtResource("5_5twr7")]
+
+[node name="Lower Landing" parent="." unique_id=814693587 instance=ExtResource("7_axhhc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, 0)
+
+[node name="Rail Head" parent="." unique_id=1437786343 instance=ExtResource("9_urbxg")]
+
+[node name="Rail Segments" type="StaticBody3D" parent="." unique_id=922962298]
+collision_mask = 0
+
+[node name="Visuals" type="Node3D" parent="Rail Segments" unique_id=201064095]
+
+[node name="Rail Segment 0" parent="Rail Segments/Visuals" unique_id=1692596584 instance=ExtResource("10_siq7q")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.5, 0)
+
+[node name="Rail Segment 1" parent="Rail Segments/Visuals" unique_id=432014008 instance=ExtResource("10_siq7q")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.5, 0)
+
+[node name="Collider" type="CollisionShape3D" parent="Rail Segments" unique_id=1692831759]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, 2.25)
+shape = SubResource("BoxShape3D_m5d5e")
+
+[node name="Dynamic Bridges" parent="." unique_id=1956084928 instance=ExtResource("11_nk67g")]

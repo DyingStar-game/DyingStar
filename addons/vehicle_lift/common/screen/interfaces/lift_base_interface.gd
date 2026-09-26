@@ -34,7 +34,7 @@ var vehicle_lift: VehicleLift
 
 
 func _ready() -> void:
-	if Engine.is_editor_hint():
+	if Engine.is_editor_hint() or GameOrchestrator.is_server():
 		return
 	
 	weight_value_display = get_node_or_null("Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer/Weight Value")
@@ -85,6 +85,9 @@ func display_mouse_coord(coord: Vector2) -> void:
 
 
 func display_progress(progress: float, eta: int = 0, status: String = "Stopped") -> void:
+	if not vehicle_lift:
+		return
+	
 	if distance_value and arrival_value:
 		var distance_to_show: float = 0.0
 		

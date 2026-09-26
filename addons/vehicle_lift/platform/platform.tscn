@@ -1,13 +1,10 @@
-[gd_scene format=3 uid="uid://dka1rqn80pvup"]
+[gd_scene format=3 uid="uid://dnatdphryl4kq"]
 
-[ext_resource type="Script" uid="uid://dac0gs8klexye" path="res://addons/vehicle_lift/platform/platform_system.gd" id="1_0oqjj"]
 [ext_resource type="ArrayMesh" uid="uid://bitummbiux81y" path="res://addons/vehicle_lift/platform/platform_lod0.mesh" id="1_lth8m"]
-[ext_resource type="ArrayMesh" uid="uid://kq4qc3idx18w" path="res://addons/vehicle_lift/platform/platform_cart_lod0.mesh" id="1_yqudl"]
 [ext_resource type="Material" uid="uid://dlktdpj4lvd5a" path="res://addons/vehicle_lift/common/materials/platform_shiny_metal.material" id="2_0oqjj"]
 [ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="3_6yhhl"]
 [ext_resource type="Shape3D" uid="uid://rotgs0ij0j6l" path="res://addons/vehicle_lift/platform/platform_collider_01.shape" id="3_136sw"]
 [ext_resource type="Shape3D" uid="uid://0b13pndg6hcc" path="res://addons/vehicle_lift/platform/platform_collider_02.shape" id="4_j82yp"]
-[ext_resource type="ArrayMesh" uid="uid://bjvuw43a1wg0g" path="res://addons/vehicle_lift/platform/platform_cart_lod1.mesh" id="5_arn6u"]
 [ext_resource type="Script" uid="uid://cfh0yil7uqamp" path="res://addons/vehicle_lift/platform/platform.gd" id="5_cb5jd"]
 [ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://addons/vehicle_lift/common/materials/platform_walk.material" id="5_jlfyc"]
 [ext_resource type="Shape3D" uid="uid://d0q5choorbs7x" path="res://addons/vehicle_lift/platform/platform_collider_03.shape" id="5_vd1ot"]
@@ -22,64 +19,22 @@
 [ext_resource type="ArrayMesh" uid="uid://bwpdani728esx" path="res://addons/vehicle_lift/railing/railing_type02_lod0.mesh" id="16_qwuxr"]
 [ext_resource type="ArrayMesh" uid="uid://7r8rrysn0cxj" path="res://addons/vehicle_lift/railing/railing_type02_lod1.mesh" id="17_kt6v4"]
 [ext_resource type="Shape3D" uid="uid://b8fcl67yxcrp5" path="res://addons/vehicle_lift/platform/platform_area_detection.shape" id="19_ieb65"]
+[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="20_ob54u"]
+[ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="22_j51iy"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://addons/vehicle_lift/common/kiosk/kiosk.tscn" id="22_p57xc"]
-[ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="24_sanbe"]
-[ext_resource type="PackedScene" uid="uid://bl2utlkoofibq" path="res://addons/vehicle_lift/common/screen/interfaces/platform_buttons.tscn" id="25_fjnuj"]
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
-size = Vector3(1.29, 3.42, 0.275)
+[ext_resource type="PackedScene" uid="uid://bl2utlkoofibq" path="res://addons/vehicle_lift/common/screen/interfaces/platform_buttons.tscn" id="23_mhf6m"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="26_j51iy"]
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_yqudl"]
 rough = true
 
-[node name="Platform System" type="AnimatableBody3D" unique_id=1202092757 node_paths=PackedStringArray("_platform_interface")]
+[sub_resource type="BoxShape3D" id="BoxShape3D_mkcfn"]
+size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
+
+[node name="Platform" type="RigidBody3D" unique_id=1672728689]
 collision_layer = 4
-collision_mask = 15
-axis_lock_linear_x = true
-axis_lock_linear_z = true
-axis_lock_angular_x = true
-axis_lock_angular_y = true
-axis_lock_angular_z = true
-script = ExtResource("1_0oqjj")
-_platform_interface = NodePath("Screen Display Interface/Platform Interface")
-
-[node name="Cart" type="StaticBody3D" parent="." unique_id=914109701]
-collision_mask = 0
-
-[node name="Cart Visuals" type="Node3D" parent="Cart" unique_id=1242159766]
-
-[node name="Cart Visual LOD0" type="MeshInstance3D" parent="Cart/Cart Visuals" unique_id=1601375675]
-visibility_parent = NodePath("../Cart Visual LOD1")
-visibility_range_end = 10.0
-visibility_range_end_margin = 1.0
-mesh = ExtResource("1_yqudl")
-surface_material_override/0 = ExtResource("2_0oqjj")
-surface_material_override/1 = ExtResource("3_6yhhl")
-
-[node name="Cart Visual LOD1" type="MeshInstance3D" parent="Cart/Cart Visuals" unique_id=1788918574]
-visibility_range_begin = 10.0
-visibility_range_begin_margin = 1.0
-mesh = ExtResource("5_arn6u")
-surface_material_override/0 = ExtResource("2_0oqjj")
-surface_material_override/1 = ExtResource("3_6yhhl")
-
-[node name="Cart Collider" type="CollisionShape3D" parent="Cart" unique_id=404293180]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.138)
-shape = SubResource("BoxShape3D_fti8b")
-
-[node name="Spring" type="Generic6DOFJoint3D" parent="." unique_id=373849442]
-node_a = NodePath("../Cart")
-node_b = NodePath("../Platform")
-linear_limit_y/upper_distance = 0.15
-linear_limit_y/lower_distance = -0.15
-linear_spring_y/enabled = true
-linear_spring_y/stiffness = 1500000.0
-linear_spring_y/damping = 15000.0
-
-[node name="Platform" type="RigidBody3D" parent="." unique_id=2078522820]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.425)
-collision_layer = 8
-collision_mask = 15
+collision_mask = 4
+input_ray_pickable = false
 axis_lock_linear_x = true
 axis_lock_linear_z = true
 axis_lock_angular_x = true
@@ -87,14 +42,14 @@ axis_lock_angular_y = true
 axis_lock_angular_z = true
 mass = 4000.0
 physics_material_override = SubResource("PhysicsMaterial_yqudl")
-freeze_mode = 1
+freeze = true
 linear_damp = 1.0
 angular_damp = 1.0
 script = ExtResource("5_cb5jd")
 
-[node name="Platform Visuals" type="Node3D" parent="Platform" unique_id=1702973152]
+[node name="Platform Visuals" type="Node3D" parent="." unique_id=1475105222]
 
-[node name="Platform Visual LOD0" type="MeshInstance3D" parent="Platform/Platform Visuals" unique_id=1935042348]
+[node name="Platform Visual LOD0" type="MeshInstance3D" parent="Platform Visuals" unique_id=67625031]
 visibility_parent = NodePath("../Platform Visual LOD1")
 visibility_range_end = 10.0
 visibility_range_end_margin = 1.0
@@ -103,7 +58,7 @@ surface_material_override/0 = ExtResource("5_jlfyc")
 surface_material_override/1 = ExtResource("3_6yhhl")
 surface_material_override/2 = ExtResource("2_0oqjj")
 
-[node name="Platform Visual LOD1" type="MeshInstance3D" parent="Platform/Platform Visuals" unique_id=1546663610]
+[node name="Platform Visual LOD1" type="MeshInstance3D" parent="Platform Visuals" unique_id=1212399111]
 visibility_range_begin = 10.0
 visibility_range_begin_margin = 1.0
 mesh = ExtResource("9_sanbe")
@@ -111,251 +66,268 @@ surface_material_override/0 = ExtResource("5_jlfyc")
 surface_material_override/1 = ExtResource("3_6yhhl")
 surface_material_override/2 = ExtResource("2_0oqjj")
 
-[node name="Platform Collider 01" type="CollisionShape3D" parent="Platform" unique_id=1169535117]
+[node name="Platform Collider 01" type="CollisionShape3D" parent="." unique_id=809591767]
 shape = ExtResource("3_136sw")
 
-[node name="Platform Collider 02" type="CollisionShape3D" parent="Platform" unique_id=181967096]
+[node name="Platform Collider 02" type="CollisionShape3D" parent="." unique_id=49847637]
 shape = ExtResource("4_j82yp")
 
-[node name="Platform Collider 03" type="CollisionShape3D" parent="Platform" unique_id=1129336859]
+[node name="Platform Collider 03" type="CollisionShape3D" parent="." unique_id=1633880757]
 shape = ExtResource("5_vd1ot")
 
-[node name="Platform Collider 04" type="CollisionShape3D" parent="Platform" unique_id=931926288]
+[node name="Platform Collider 04" type="CollisionShape3D" parent="." unique_id=1084539789]
 shape = ExtResource("6_712df")
 
-[node name="Railing" type="Node3D" parent="Platform" unique_id=1940492841]
+[node name="Railing" type="Node3D" parent="." unique_id=2024964330]
 
-[node name="Colliders" type="StaticBody3D" parent="Platform/Railing" unique_id=1603906160]
+[node name="Colliders" type="StaticBody3D" parent="Railing" unique_id=193854926]
 collision_mask = 0
+input_ray_pickable = false
 
-[node name="Platform Railing Collider 01" type="CollisionShape3D" parent="Platform/Railing/Colliders" unique_id=1071683026]
+[node name="Platform Railing Collider 01" type="CollisionShape3D" parent="Railing/Colliders" unique_id=460174158]
 shape = ExtResource("8_glx3j")
 
-[node name="Platform Railing Collider 02" type="CollisionShape3D" parent="Platform/Railing/Colliders" unique_id=2112218054]
+[node name="Platform Railing Collider 02" type="CollisionShape3D" parent="Railing/Colliders" unique_id=956594695]
 shape = ExtResource("9_0oqjj")
 
-[node name="Visuals" type="Node3D" parent="Platform/Railing" unique_id=1177441656]
+[node name="Visuals" type="Node3D" parent="Railing" unique_id=372239881]
 
-[node name="Railing Segment 0" type="Node3D" parent="Platform/Railing/Visuals" unique_id=71070598]
+[node name="Railing Segment 0" type="Node3D" parent="Railing/Visuals" unique_id=987957608]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.714002, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 0" unique_id=1490887115]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 0" unique_id=601423263]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 0" unique_id=1986242587]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 0" unique_id=232911745]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 1" type="Node3D" parent="Platform/Railing/Visuals" unique_id=1968271866]
+[node name="Railing Segment 1" type="Node3D" parent="Railing/Visuals" unique_id=2007217653]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0290022, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 1" unique_id=472676999]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 1" unique_id=487839261]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 1" unique_id=1181512211]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 1" unique_id=1072114778]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 2" type="Node3D" parent="Platform/Railing/Visuals" unique_id=1471784642]
+[node name="Railing Segment 2" type="Node3D" parent="Railing/Visuals" unique_id=287456573]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34400207, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 2" unique_id=2020460648]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 2" unique_id=922930807]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 2" unique_id=694575562]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 2" unique_id=756584659]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 3" type="Node3D" parent="Platform/Railing/Visuals" unique_id=628968890]
+[node name="Railing Segment 3" type="Node3D" parent="Railing/Visuals" unique_id=880812892]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.340998, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 3" unique_id=1619630424]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 3" unique_id=1809081717]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 3" unique_id=8098663]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 3" unique_id=1150514214]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 4" type="Node3D" parent="Platform/Railing/Visuals" unique_id=903231553]
+[node name="Railing Segment 4" type="Node3D" parent="Railing/Visuals" unique_id=311341110]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.025998, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 4" unique_id=1632887269]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 4" unique_id=1449171742]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 4" unique_id=906270408]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 4" unique_id=1359868622]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 5" type="Node3D" parent="Platform/Railing/Visuals" unique_id=1158806650]
+[node name="Railing Segment 5" type="Node3D" parent="Railing/Visuals" unique_id=652205395]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7109979, 0.17506534, 1.8046851)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 5" unique_id=1500789876]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 5" unique_id=392636428]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("16_qwuxr")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 5" unique_id=448546454]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 5" unique_id=1590730352]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("17_kt6v4")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 6" type="Node3D" parent="Platform/Railing/Visuals" unique_id=1822686651]
+[node name="Railing Segment 6" type="Node3D" parent="Railing/Visuals" unique_id=1555779997]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.714002, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 6" unique_id=2136277169]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 6" unique_id=580936017]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 6" unique_id=252765010]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 6" unique_id=1405481118]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 7" type="Node3D" parent="Platform/Railing/Visuals" unique_id=128735064]
+[node name="Railing Segment 7" type="Node3D" parent="Railing/Visuals" unique_id=1650223879]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0290023, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 7" unique_id=1815274894]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 7" unique_id=1791474716]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 7" unique_id=309317723]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 7" unique_id=808433547]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 8" type="Node3D" parent="Platform/Railing/Visuals" unique_id=103258]
+[node name="Railing Segment 8" type="Node3D" parent="Railing/Visuals" unique_id=1269000374]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3440022, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 8" unique_id=1822012321]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 8" unique_id=90383813]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 8" unique_id=344702395]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 8" unique_id=312486256]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 9" type="Node3D" parent="Platform/Railing/Visuals" unique_id=580964157]
+[node name="Railing Segment 9" type="Node3D" parent="Railing/Visuals" unique_id=424291449]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.340998, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 9" unique_id=1505048661]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 9" unique_id=611106065]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 9" unique_id=1630054090]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 9" unique_id=704660806]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 10" type="Node3D" parent="Platform/Railing/Visuals" unique_id=896700662]
+[node name="Railing Segment 10" type="Node3D" parent="Railing/Visuals" unique_id=781395897]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.025998, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 10" unique_id=1467159220]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 10" unique_id=1483337732]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("13_2te3k")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 10" unique_id=2085562027]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 10" unique_id=22564261]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("15_ieb65")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Railing Segment 11" type="Node3D" parent="Platform/Railing/Visuals" unique_id=626864889]
+[node name="Railing Segment 11" type="Node3D" parent="Railing/Visuals" unique_id=912077534]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7109979, 0.17506534, -1.8046846)
 
-[node name="Visual LOD0" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 11" unique_id=1746270118]
+[node name="Visual LOD0" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 11" unique_id=733258776]
 visibility_parent = NodePath("../Visual LOD1")
 visibility_range_end = 5.0
 visibility_range_end_margin = 0.5
 mesh = ExtResource("16_qwuxr")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Visual LOD1" type="MeshInstance3D" parent="Platform/Railing/Visuals/Railing Segment 11" unique_id=609965916]
+[node name="Visual LOD1" type="MeshInstance3D" parent="Railing/Visuals/Railing Segment 11" unique_id=1284951755]
 visibility_range_begin = 5.0
 visibility_range_begin_margin = 0.5
 mesh = ExtResource("17_kt6v4")
 surface_material_override/0 = ExtResource("11_ecrle")
 
-[node name="Signage" type="Decal" parent="Platform" unique_id=2029179704]
+[node name="Signage" type="Decal" parent="." unique_id=665861492]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.175, 0)
 size = Vector3(5.6, 0.1, 4)
 texture_albedo = ExtResource("14_6yhhl")
 
-[node name="Kiosk" parent="Platform" unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport") instance=ExtResource("22_p57xc")]
+[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport", "screen_interaction_area") instance=ExtResource("22_p57xc")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7131855, 1.0692251, 1.8047221)
 pivot_base_rotation = 192.5
 pivot_arm01_z_rotation = 20.0
 pivot_arm02_y_rotation = 155.0
 pivot_balljoint_y_rotation = 167.0
 ball_joint_rotation = Vector2(45, 0)
-screen_display_viewport = NodePath("../../Screen Display Interface")
+screen_display_viewport = NodePath("../Screen Display Interface")
+screen_interaction_area = NodePath("../ScreenDetector")
 
-[node name="Area Detection" type="Area3D" parent="Platform" unique_id=1505595413]
+[node name="ScreenDetector" type="Area3D" parent="." unique_id=318372749 groups=["screen_area"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9999167247485659, 0.6820919403541708, 0.9136219744412384)
+input_ray_pickable = false
+script = ExtResource("20_ob54u")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ScreenDetector" unique_id=1019366550]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
+shape = SubResource("BoxShape3D_mkcfn")
+
+[node name="Area Detection" type="Area3D" parent="." unique_id=212631982]
 collision_layer = 16
 collision_mask = 0
+input_ray_pickable = false
 monitorable = false
 
-[node name="Collider" type="CollisionShape3D" parent="Platform/Area Detection" unique_id=24101199]
+[node name="Collider" type="CollisionShape3D" parent="Area Detection" unique_id=2055000887]
 shape = ExtResource("19_ieb65")
 debug_color = Color(0.8862745, 0, 0.8039216, 0.41960785)
 
-[node name="Screen Display Interface" type="SubViewport" parent="." unique_id=1522350035]
+[node name="Screen Display Interface" type="SubViewport" parent="." unique_id=1645866753]
 disable_3d = true
 size = Vector2i(500, 300)
 
-[node name="Platform Interface" parent="Screen Display Interface" unique_id=78026496 instance=ExtResource("24_sanbe")]
+[node name="Platform Interface" parent="Screen Display Interface" unique_id=1238492079 instance=ExtResource("22_j51iy")]
 unique_name_in_owner = true
-button_group_scene = ExtResource("25_fjnuj")
+button_group_scene = ExtResource("23_mhf6m")
 landing = 3
+
+[node name="PropSync" type="Node" parent="." unique_id=1141307944]
+script = ExtResource("26_j51iy")
+type_name = "vehicle_lift_platform"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"

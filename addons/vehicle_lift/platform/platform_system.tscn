@@ -1,0 +1,62 @@
+[gd_scene format=3 uid="uid://dka1rqn80pvup"]
+
+[ext_resource type="Script" uid="uid://dac0gs8klexye" path="res://addons/vehicle_lift/platform/platform_system.gd" id="1_0oqjj"]
+[ext_resource type="ArrayMesh" uid="uid://kq4qc3idx18w" path="res://addons/vehicle_lift/platform/platform_cart_lod0.mesh" id="1_yqudl"]
+[ext_resource type="Material" uid="uid://dlktdpj4lvd5a" path="res://addons/vehicle_lift/common/materials/platform_shiny_metal.material" id="2_0oqjj"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="3_6yhhl"]
+[ext_resource type="ArrayMesh" uid="uid://bjvuw43a1wg0g" path="res://addons/vehicle_lift/platform/platform_cart_lod1.mesh" id="5_arn6u"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="26_j51iy"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
+size = Vector3(1.29, 3.42, 0.275)
+
+[node name="Platform System" type="AnimatableBody3D" unique_id=1202092757]
+collision_layer = 4
+collision_mask = 0
+input_ray_pickable = false
+axis_lock_linear_x = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+sync_to_physics = false
+script = ExtResource("1_0oqjj")
+
+[node name="Cart" type="StaticBody3D" parent="." unique_id=914109701]
+collision_layer = 0
+collision_mask = 0
+input_ray_pickable = false
+
+[node name="Cart Visuals" type="Node3D" parent="Cart" unique_id=1242159766]
+
+[node name="Cart Visual LOD0" type="MeshInstance3D" parent="Cart/Cart Visuals" unique_id=1601375675]
+visibility_parent = NodePath("../Cart Visual LOD1")
+visibility_range_end = 10.0
+visibility_range_end_margin = 1.0
+mesh = ExtResource("1_yqudl")
+surface_material_override/0 = ExtResource("2_0oqjj")
+surface_material_override/1 = ExtResource("3_6yhhl")
+
+[node name="Cart Visual LOD1" type="MeshInstance3D" parent="Cart/Cart Visuals" unique_id=1788918574]
+visibility_range_begin = 10.0
+visibility_range_begin_margin = 1.0
+mesh = ExtResource("5_arn6u")
+surface_material_override/0 = ExtResource("2_0oqjj")
+surface_material_override/1 = ExtResource("3_6yhhl")
+
+[node name="Cart Collider" type="CollisionShape3D" parent="Cart" unique_id=404293180]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.018, 0.138)
+shape = SubResource("BoxShape3D_fti8b")
+
+[node name="Spring" type="Generic6DOFJoint3D" parent="." unique_id=373849442]
+node_a = NodePath("../Cart")
+linear_limit_y/upper_distance = 0.15
+linear_limit_y/lower_distance = -0.15
+linear_spring_y/enabled = true
+linear_spring_y/stiffness = 1500000.0
+linear_spring_y/damping = 15000.0
+
+[node name="PropSync" type="Node" parent="." unique_id=1402991904]
+script = ExtResource("26_j51iy")
+type_name = "vehicle_lift_platformsystem"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
