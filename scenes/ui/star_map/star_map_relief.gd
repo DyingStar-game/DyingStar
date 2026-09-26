@@ -323,6 +323,23 @@ static func patch_tiles(nside: int, centre_dir: Vector3, altitude_m: float,
 	return plan["tiles"] if int(plan["level"]) == nside else PackedInt32Array()
 
 
+## How high the ground stands at [param local_dir], in TRUE metres above the reference sphere.
+##
+## The number a person wants, which is not the one the mesh is built from: [method surface_factor]
+## answers as a multiple of the radius and carries [constant EXAGGERATION] with it, so it moves when
+## that constant is tuned. An altitude must not. The export's own range is the check — Tarsis III runs
+## from -1 700 m to +9 000 m, and that is what this hands back.
+##
+## Read from the height field rather than from the level design's export, because the export ships the
+## field and leaves it EMPTY: all twenty-seven towns of Tarsis III carry a null elevation. Taking it
+## from the field also makes it the ground the chart is drawing, rather than a second opinion about it.
+static func ground_altitude_m(body_key: String, local_dir: Vector3) -> float:
+	var radius: float = float(_manifest(body_key).get("radius", 0.0))
+	if radius <= 0.0 or EXAGGERATION <= 0.0:
+		return 0.0
+	return (surface_factor(body_key, local_dir) - 1.0) * radius / EXAGGERATION
+
+
 ## The level the chart READS a body's ground at: the finest that body publishes.
 ##
 ## A property of the body, never of what happens to be on screen — and that is the whole point. Reading
