@@ -98,17 +98,33 @@ const POI_BODY_KEEP: float = 0.75
 ##
 ## One number, and the one to turn if the view feels either penned in or too free.
 const POI_ORBIT_CONE: float = 1.047
+## How close the camera has to be, in multiples of the body's radius, before that cone applies at all.
+##
+## Going to a town brings you to a twentieth of a radius; selecting one from across the system leaves
+## you where you were. A quarter tells those two apart with room on either side, and above it orbiting
+## is what it has always been: a turn around the whole body, where nothing can take the view under the
+## ground because the distance guard already refuses to.
+const POI_ORBIT_FROM: float = 0.25
 
 
 ## The local vertical at the town being followed, in the chart's world, or zero when none is.
 ##
 ## The body's own spin is in it: a town turns with its planet, so the vertical over it is not a constant
 ## direction in the chart but the local one carried by the sphere's basis.
+##
+## Zero unless the camera has actually COME DOWN to the town. A single click selects a town — the panel
+## describes it — while the double click is what travels to it, and the cone applied on selection alone
+## pinned a camera that was still out at planet scale: it was dragged to the edge of the cone and held
+## there, so every orbit was undone in the same frame it was made. Which reads, correctly, as the chart
+## ignoring the mouse entirely.
 func _poi_world_up() -> Vector3:
 	if _poi_focus < 0 or _poi_focus >= _poi_layer.entries.size():
 		return Vector3.ZERO
 	var body: int = _blocker
 	if body < 0 or body >= _bodies.size():
+		return Vector3.ZERO
+	var altitude: float = _altitude_m(body)
+	if altitude < 0.0 or altitude > float(_bodies[body]["radius_m"]) * POI_ORBIT_FROM:
 		return Vector3.ZERO
 	var sphere: MeshInstance3D = _bodies[body]["sphere"]
 	if not is_instance_valid(sphere):
@@ -304,6 +320,9 @@ var _poi_key: String = ""
 ## drift test and a staleness test, none of which owned the question "what should be on screen". The
 ## ground owns it now, and this file only tells it where the camera is.
 var _ground: StarMapGround = null
+## The ways drawn over that ground. Its own node, with its own file handle, so the ground knows nothing
+## about roads and the roads know nothing about how a tile is built.
+var _roads: StarMapRoads = null
 ## Which body the ground currently belongs to, so its sphere can be given its mesh back when it stops.
 var _ground_body: int = -1
 
@@ -889,7 +908,7 @@ func _process(delta: float) -> void:
 	# with a place on a surface it otherwise swings off that place, past the local horizon and into the
 	# ground behind it - which the distance guard cannot catch, an orbit never changing the distance to
 	# the body's centre.
-	_cam.hold_near(_poi_world_up(), POI_ORBIT_CONE)
+	_cam.hold_near(_poi_world_up(), _guard_radius(), POI_ORBIT_CONE)
 	_view = _cam.distance()
 	var t: float = Globals.sim_time()
 	# Placed, THEN aimed, THEN dressed. The order matters twice over: everything in _dress_bodies reads
@@ -1304,12 +1323,17 @@ func _refresh_ground() -> void:
 		# tiles are built in MESH_RADIUS units precisely so that this works.
 		sphere.add_child(_ground)
 		_ground.mesh_material(_bodies[index]["colour"])
+		_roads = StarMapRoads.new()
+		_roads.body_key = key
+		sphere.add_child(_roads)
 		_ground_body = index
 	# The real height above the ground, which is what makes the level follow the zoom. Safe to hand over
 	# now, and only now: the reading the guard is built from no longer depends on the level being drawn
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
 	# chooses. That cycle is what this rewrite exists to remove.
 	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
+	if _roads != null:
+		_roads.refresh(_ground.wanted())
 	# The smooth sphere steps aside only once the ground can replace it: swapping first would show a
 	# body-shaped hole for as long as the first tiles take to build.
 	var covered: bool = _ground.has_tiles()
@@ -1348,6 +1372,11 @@ func _drop_ground() -> void:
 		var previous: MeshInstance3D = _bodies[_ground_body]["sphere"]
 		if is_instance_valid(previous):
 			previous.mesh = _bodies[_ground_body]["sphere_mesh"]
+	if _roads != null:
+		_roads.clear()
+		if is_instance_valid(_roads):
+			_roads.queue_free()
+	_roads = null
 	if _ground != null:
 		_ground.clear()
 		if is_instance_valid(_ground):

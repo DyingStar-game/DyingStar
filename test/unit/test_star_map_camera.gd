@@ -290,7 +290,7 @@ func test_following_a_town_keeps_the_view_over_it() -> void:
 	_cam.advance(1.0)  # aim_from starts a travel; TRANSITION_S is well under a second
 	var yaw_before: float = _cam.yaw
 	var pitch_before: float = _cam.pitch
-	_cam.hold_near(up, limit)
+	_cam.hold_near(up, PLANET_RADIUS_UNITS, limit)
 	assert_almost_eq(_cam.yaw, yaw_before, 1.0e-6, "straight over the town, nothing to correct")
 	assert_almost_eq(_cam.pitch, pitch_before, 1.0e-6, "and the pitch is left alone too")
 
@@ -299,7 +299,7 @@ func test_following_a_town_keeps_the_view_over_it() -> void:
 	var far_off: Vector3 = up.rotated(up.cross(Vector3.UP).normalized(), deg_to_rad(120.0))
 	_cam.aim_from(far_off)
 	_cam.advance(1.0)
-	_cam.hold_near(up, limit)
+	_cam.hold_near(up, PLANET_RADIUS_UNITS, limit)
 	assert_almost_eq(_cam.direction().angle_to(up), limit, 1.0e-4,
 			"pulled back exactly as far as the cone allows, and no further")
 	assert_lt(_cam.direction().angle_to(far_off), deg_to_rad(120.0) - limit + 1.0e-3,
@@ -309,9 +309,36 @@ func test_following_a_town_keeps_the_view_over_it() -> void:
 	# short. It still has to come back: refusing would leave the camera under the planet for good.
 	_cam.aim_from(-up)
 	_cam.advance(1.0)
-	_cam.hold_near(up, limit)
+	_cam.hold_near(up, PLANET_RADIUS_UNITS, limit)
 	assert_almost_eq(_cam.direction().angle_to(up), limit, 1.0e-4,
 			"even from straight underneath, it is brought to the edge of the cone")
+
+
+## Close in, the cone has to bite after a few km of travel, not after a few thousand.
+##
+## The cone is stated as the angle seen FROM THE TOWN while the camera is steered by the angle from the
+## body's CENTRE, and close in those are nothing alike: at 7 km over a 6 356 km planet the camera stays
+## within a sixteenth of a degree of the town's own direction whether it is overhead or flat on its
+## horizon. Applied to the centre angle without converting, a sixty degree cone is six thousand km wide
+## and never bites at all — which is what it did, and it looked from the outside like the cone working
+## and the mouse being ignored.
+func test_the_cone_bites_close_in() -> void:
+	# Away from the pole on purpose: PITCH_LIMIT keeps the camera seven degrees clear of the axis, so a
+	# town at the pole could never be looked straight down at and this would measure that instead.
+	var up: Vector3 = Vector3(0.3, 0.8, -0.5).normalized()
+	var limit: float = deg_to_rad(60.0)
+	var altitude: float = PLANET_RADIUS_UNITS * 7.0 / 6356.0  # 7 km over Tarsis III
+	_cam.set_zoom(PLANET_RADIUS_UNITS + altitude, PLANET_RADIUS_UNITS)
+	# Aimed a tenth of a degree off the vertical: nothing at all from the centre, and well past the
+	# cone as the town sees it.
+	var off: Vector3 = up.rotated(up.cross(Vector3.UP).normalized(), deg_to_rad(0.1))
+	_cam.aim_from(off)
+	_cam.advance(1.0)
+	_cam.hold_near(up, PLANET_RADIUS_UNITS, limit)
+	var held: float = _cam.direction().angle_to(up)
+	assert_lt(held, deg_to_rad(0.1),
+			"a tenth of a degree from the centre is already past sixty from the town")
+	assert_gt(held, 0.0, "but it is not pinned to the vertical either")
 
 
 ## And it leaves the camera alone when there is no town to be over.
@@ -319,9 +346,9 @@ func test_no_town_means_no_cone() -> void:
 	_cam.aim_from(Vector3(0.2, -0.9, 0.3).normalized())
 	_cam.advance(1.0)
 	var yaw_before: float = _cam.yaw
-	_cam.hold_near(Vector3.ZERO, deg_to_rad(60.0))
+	_cam.hold_near(Vector3.ZERO, PLANET_RADIUS_UNITS, deg_to_rad(60.0))
 	assert_eq(_cam.yaw, yaw_before, "no vertical to hold near")
-	_cam.hold_near(Vector3.UP, 0.0)
+	_cam.hold_near(Vector3.UP, PLANET_RADIUS_UNITS, 0.0)
 	assert_eq(_cam.yaw, yaw_before, "and a cone of nothing is not a cone")
 
 

@@ -125,6 +125,13 @@ func tiles_wanted() -> int:
 	return _desired.size()
 
 
+## The tiles the ground is asking for, as a set of keys. What anything drawn OVER the ground needs, so
+## that it covers the same view and changes when the view does, without a second copy of the arithmetic
+## that decided it.
+func wanted() -> Dictionary:
+	return _desired
+
+
 ## Drive the ground: harvest what is finished, then — at most four times a second — decide again.
 ##
 ## [param centre_dir] is where the camera is, as a direction in the BODY's own frame; [param altitude_m]
