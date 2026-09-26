@@ -2058,7 +2058,7 @@ func create_generic_object(event: Dictionary) -> void:
 		if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
 			# store pending message
 			pending_messages_generic_objects_parenting.append(event)
-			#print("Pending message for object %s because parent_id %s not found yet" % [event["data"]["object_uuid"], object_data["parent_id"]])
+			print("Pending message for object %s because parent_id %s not found yet" % [event["data"]["object_uuid"], object_data["parent_id"]])
 			return
 
 	var prop_scene: PackedScene
@@ -2197,12 +2197,12 @@ func create_generic_object(event: Dictionary) -> void:
 	# generic object created, now process pending messages for generic objects waiting for this generic object as parent
 	for pending_message in pending_messages_generic_objects_parenting.duplicate():
 		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
-			#print(
-				#"Processing pending message for generic object %s now that parent_id %s is available" % [
-					#pending_message["data"]["object_uuid"],
-					#pending_message["data"]["object_data"]["parent_id"]
-				#]
-			#)
+			print(
+				"Processing pending message for generic object %s now that parent_id %s is available" % [
+					pending_message["data"]["object_uuid"],
+					pending_message["data"]["object_data"]["parent_id"]
+				]
+			)
 			pending_messages_generic_objects_parenting.erase(pending_message)
 			create_generic_object(pending_message)
 
