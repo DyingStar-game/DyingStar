@@ -47,6 +47,17 @@ var _in_flight: Dictionary = {}
 var _pending: Array[int] = []
 ## The wanted set of the moment, as a set of ids.
 var _desired: Dictionary = {}
+## For each tile on screen, the level its heights actually came from. Equal to the tile's own level when
+## the data was there, coarser when an ancestor had to stand in for it.
+##
+## Kept BESIDE _active and pruned with it, rather than as a set of "provisional" ids of its own. That set
+## was tried first and it leaked: nothing took an id out of it when the tile left the screen, so it grew
+## without bound — measured in game at 775 entries against 3 tiles actually drawn — and every pass spent
+## itself walking hundreds of dead ids to find the handful that were still on screen.
+var _built_from: Dictionary = {}
+## Tiles being built again over one that is already up. The difference matters in exactly one place:
+## the pump refuses a tile it has already drawn, and a rebuild is the one case where it must not.
+var _redo: Dictionary = {}
 ## The level everything is currently aiming at, and when the next decision is allowed.
 var _level: int = 0
 var _decide_at_ms: int = 0
@@ -125,11 +136,49 @@ func tiles_wanted() -> int:
 	return _desired.size()
 
 
+## How many tiles on screen are standing in for ground they did not have.
+func provisional_count() -> int:
+	var n: int = 0
+	for id: int in _desired:
+		if _active.has(id) and int(_built_from.get(id, 0)) < id_nside(id):
+			n += 1
+	return n
+
+
 ## The tiles the ground is asking for, as a set of keys. What anything drawn OVER the ground needs, so
 ## that it covers the same view and changes when the view does, without a second copy of the arithmetic
 ## that decided it.
 func wanted() -> Dictionary:
 	return _desired
+
+
+## Build again, up to [param budget] of them, the tiles that are standing in for ground they did not
+## have. Called when the service has delivered something, and only then.
+##
+## The chart draws what is on disk, and what arrives afterwards arrives behind its back: nothing asks a
+## tile already on screen whether it could now be better, so a tile downloaded a second after it was
+## drawn would never be seen. This is that question, asked of the tiles that have a reason to answer
+## yes — and a tile that comes back from its own data stops being asked, so this settles.
+func retry_provisional(budget: int) -> int:
+	var taken: int = 0
+	# Over what is WANTED, never over a list of everything that was ever provisional: the wanted set is
+	# the few hundred tiles on screen, and it prunes itself.
+	for id: int in _desired:
+		if taken >= budget:
+			break
+		if not _active.has(id) or _in_flight.has(id) or _redo.has(id):
+			continue
+		if int(_built_from.get(id, 0)) >= id_nside(id):
+			continue  # built from its own data already; there is nothing better to be had
+		# Only once its OWN data is there. Rebuilding on the strength of "something arrived somewhere"
+		# rebuilds from the same ancestor, comes back provisional, and is asked again — a loop that
+		# never ends for a tile the service does not have, and there are hundreds of those.
+		if not StarMapRelief.tile_is_cached(body_key, id_nside(id), id_ipix(id)):
+			continue
+		_redo[id] = true
+		_pending.push_front(id)
+		taken += 1
+	return taken
 
 
 ## Drive the ground: harvest what is finished, then — at most four times a second — decide again.
@@ -156,6 +205,8 @@ func clear() -> void:
 	_pending.clear()
 	_desired.clear()
 	_active.clear()
+	_built_from.clear()
+	_redo.clear()
 	_level = 0
 	for child: Node in get_children():
 		child.queue_free()
@@ -212,6 +263,7 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 			continue
 		var node: Node = _active[id]
 		_active.erase(id)
+		_built_from.erase(id)
 		if is_instance_valid(node):
 			node.queue_free()
 	# A tile that is neither wanted nor superseded stays; one that was queued and is no longer wanted
@@ -276,7 +328,7 @@ func _may_drop(id: int) -> bool:
 func _pump() -> void:
 	while _in_flight.size() < MAX_IN_FLIGHT and not _pending.is_empty():
 		var id: int = _pending.pop_front()
-		if _active.has(id) or _in_flight.has(id) or not _desired.has(id):
+		if (_active.has(id) and not _redo.has(id)) or _in_flight.has(id) or not _desired.has(id):
 			continue
 		# A one-element array the worker writes into, and nothing else is shared. The old design kept
 		# the result in a field of the owner, which meant every build raced against the next request.
@@ -307,12 +359,21 @@ func _harvest() -> void:
 		_in_flight.erase(id)
 		taken += 1
 		var mesh: ArrayMesh = (job["slot"] as Array)[0] as ArrayMesh
+		_redo.erase(id)
 		if mesh == null or not _desired.has(id):
 			continue  # no data for that tile, or the view moved on while it was building
+		# A tile made from a coarser ancestor is remembered as such, and one made from its own data is
+		# forgotten: that is how a rebuild settles rather than repeating for ever.
+		_built_from[id] = int(mesh.get_meta("source_nside", 0))
+		# Replacing one already up, which a rebuild does. Freeing it after the new one is parented would
+		# show nothing; freeing it before shows a hole for a frame.
+		var old: Node = _active.get(id)
 		var node := MeshInstance3D.new()
 		node.mesh = mesh
 		node.material_override = _material
 		add_child(node)
 		_active[id] = node
+		if is_instance_valid(old):
+			old.queue_free()
 		_say("n%d f%d bati (%d/%d, %d en vol)" % [
 				id_nside(id), id_ipix(id), _active.size(), _desired.size(), _in_flight.size()])

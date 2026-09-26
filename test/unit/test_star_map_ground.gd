@@ -21,6 +21,8 @@ const NOWHERE: String = "no_such_body"
 ## level be exercised on a machine with no tiles at all: the level and the patch are decided from the
 ## manifest and from HEALPix arithmetic, and nothing on the way there touches the disk.
 const MADE_UP: String = "test_only_body"
+## And a real one, for the single claim that needs tiles genuinely on disk.
+const REAL_BODY: String = "tarsis_3"
 const RADIUS: float = 6356000.0
 ## Pixels in the whole globe: 12·1².
 const GLOBE_TILES: int = 12
@@ -46,7 +48,29 @@ func _build_all(ground: StarMapGround) -> void:
 	for id: int in ground._desired:
 		if not ground._active.has(id):
 			_place(ground, StarMapGround.id_nside(id), StarMapGround.id_ipix(id))
+			# As if each had had to fall back on a coarser ancestor, which is what a real build records
+			# and what makes a tile worth doing again.
+			ground._built_from[id] = 1
 	ground._pending.clear()
+
+
+## A ground on the real body, brought down over a place whose tiles this machine actually holds — the
+## only way to a FINE level now that the chart refuses to draw finer than its data goes. Null, with the
+## test marked pending, where that data is not on this checkout.
+func _fine_ground() -> StarMapGround:
+	var here: Vector3 = Vector3.ZERO
+	for poi: Dictionary in StarMapPoi.load_for(REAL_BODY):
+		if str(poi["label"]) == "Mining village 01":
+			here = poi["dir"]
+	if here == Vector3.ZERO:
+		pending("pas de POI %s dans cet export" % REAL_BODY)
+		return null
+	var ground: StarMapGround = _ground(REAL_BODY)
+	ground._decide(here, 3.0e4)
+	if ground.level() <= 4:
+		pending("pas de tuiles fines pour %s sur cette machine" % REAL_BODY)
+		return null
+	return ground
 
 
 ## A stand-in for a built tile. The diff only ever asks whether a key is present and frees the node it
@@ -210,6 +234,91 @@ func test_the_diff_drops_only_what_is_covered() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Ground that arrives after it was drawn
+# ---------------------------------------------------------------------------
+
+## A tile whose own data is NOT there is never built again, however provisional it is.
+##
+## The rule that makes this settle. Rebuilding on the strength of "something arrived somewhere" rebuilds
+## from the same ancestor, comes back provisional, and is asked again — a loop with no end for a tile
+## the service does not have, and there are hundreds of those: measured in game, 584 failed fetches
+## against 1 150 that succeeded. The loop costs the build budget that the tiles which really did arrive
+## are waiting for, which is why the screen did not change while the counters climbed.
+func test_a_tile_whose_data_never_came_is_not_built_again() -> void:
+	var ground: StarMapGround = _ground(MADE_UP)
+	ground._decide(Vector3.UP, 4.0e4)
+	_build_all(ground)
+	ground._pending.clear()
+
+	ground.retry_provisional(6)
+	assert_gt(ground.provisional_count(), 0, "sanity: they really are standing in for finer ground")
+	assert_eq(ground._pending.size(), 0, "no data on disk for any of them, so nothing to redo")
+	assert_eq(ground._redo.size(), 0, "and nothing marked as replacing what is up")
+
+
+## While one whose data IS there goes back in the queue, over the top of the tile already drawn.
+func test_a_tile_whose_data_arrived_is_built_again() -> void:
+	var here: Vector3 = Vector3.ZERO
+	for poi: Dictionary in StarMapPoi.load_for(REAL_BODY):
+		if str(poi["label"]) == "Mining village 01":
+			here = poi["dir"]
+	if here == Vector3.ZERO:
+		pending("pas de POI %s dans cet export" % REAL_BODY)
+		return
+	var ground: StarMapGround = _ground(REAL_BODY)
+	ground._decide(here, 3.0e4)
+	if ground.level() <= 1:
+		pending("aucun manifeste pour %s sur cette machine" % REAL_BODY)
+		return
+	_build_all(ground)
+	# One the disk really does hold at its own level, which is what this turns on.
+	var id: int = 0
+	for candidate: int in ground._desired:
+		if StarMapRelief.tile_is_cached(REAL_BODY, StarMapGround.id_nside(candidate),
+				StarMapGround.id_ipix(candidate)):
+			id = candidate
+			break
+	if id == 0:
+		pending("aucune tuile de ce niveau en cache sur cette machine")
+		return
+	ground._built_from[id] = 1
+	ground._pending.clear()
+
+	ground.retry_provisional(6)
+	assert_true(ground._pending.has(id), "its data is there, so it is worth doing again")
+	assert_true(ground._redo.has(id), "marked as replacing one already up")
+	assert_true(ground._active.has(id), "which is not the same as taking it off screen")
+
+
+## And the pump lets a rebuild through, where it refuses a tile it has already drawn.
+func test_only_a_rebuild_may_pass_a_tile_already_drawn() -> void:
+	var ground: StarMapGround = _ground(MADE_UP)
+	ground._decide(Vector3.UP, 4.0e4)
+	_build_all(ground)
+	var id: int = ground._desired.keys()[0]
+
+	ground._pending.push_front(id)
+	ground._pump()
+	assert_false(ground._in_flight.has(id), "an ordinary request for a drawn tile is dropped")
+
+	ground._redo[id] = true
+	ground._pending.push_front(id)
+	ground._pump()
+	assert_true(ground._in_flight.has(id), "a rebuild is not")
+
+
+## What is no longer wanted is not built again, however provisional it was.
+func test_a_tile_out_of_view_is_not_built_again() -> void:
+	var ground: StarMapGround = _ground(MADE_UP)
+	ground._decide(Vector3.UP, 4.0e4)
+	_build_all(ground)
+	var gone: int = StarMapGround.tile_id(ground.level(), 999999)
+	ground._built_from[gone] = 1
+	ground.retry_provisional(6)
+	assert_false(ground._pending.has(gone), "nothing wants it, so nothing rebuilds it")
+
+
+# ---------------------------------------------------------------------------
 # What is on screen, in total
 # ---------------------------------------------------------------------------
 
@@ -222,13 +331,15 @@ func test_the_diff_drops_only_what_is_covered() -> void:
 ## the patch slides furthest for a given turn, it ran away fastest. So this asks the aggregate question:
 ## after a decision, is there anything on screen that nothing wants and nothing is replacing?
 func test_panning_does_not_let_the_ground_grow() -> void:
-	var ground: StarMapGround = _ground(MADE_UP)
-	# Low enough to land on a fine level, so the patch actually moves as the camera turns — at the globe
-	# the wanted set is the same twelve whatever the camera does, and this would test nothing.
-	var altitude: float = 4.0e4
-	var eye: Vector3 = Vector3.UP
-	ground._decide(eye, altitude)
-	assert_gt(ground.level(), 1, "sanity: a fine level, or there is no patch to slide")
+	# On the real body: a fine level needs data, the chart no longer drawing finer than it knows.
+	var ground: StarMapGround = _fine_ground()
+	if ground == null:
+		return
+	var altitude: float = 3.0e4
+	var eye: Vector3 = Vector3.ZERO
+	for poi: Dictionary in StarMapPoi.load_for(REAL_BODY):
+		if str(poi["label"]) == "Mining village 01":
+			eye = poi["dir"]
 	_build_all(ground)
 	var first: int = ground.tiles_up()
 	assert_gt(first, 20, "sanity: a patch of some size")
@@ -248,8 +359,9 @@ func test_panning_does_not_let_the_ground_grow() -> void:
 ##
 ## Measured in game at 332 tiles on screen for the twelve the globe wants.
 func test_pulling_back_to_the_globe_clears_the_fine_tiles() -> void:
-	var ground: StarMapGround = _ground(MADE_UP)
-	ground._decide(Vector3.UP, 4.0e4)
+	var ground: StarMapGround = _fine_ground()
+	if ground == null:
+		return
 	_build_all(ground)
 	assert_gt(ground.tiles_up(), 20, "sanity: a fine patch to clear")
 

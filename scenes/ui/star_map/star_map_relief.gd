@@ -143,8 +143,15 @@ const MESH_RADIUS: float = 0.5
 static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 		current: int = 0, view_angle: float = -1.0) -> Dictionary:
 	var manifest: Dictionary = _manifest(body_key)
+	# One level beyond what the ground is actually known to, and no further.
+	#
+	# Exactly at it would be honest and would also wedge shut: the chart would stop asking for anything
+	# finer, so nothing finer would ever be downloaded, so the depth would never grow. One level beyond
+	# leaves the view half a step ahead of its data — a doubling, against the sixty-fourfold stretch this
+	# replaces — and keeps the stream probing the level below.
+	var cap: int = data_depth(body_key, centre_dir) * 2
 	return patch_for(manifest, centre_dir, altitude_m,
-			float(manifest.get("radius", 0.0)), current, view_angle)
+			float(manifest.get("radius", 0.0)), current, view_angle, cap)
 
 
 ## The same decision, against a manifest handed in rather than read from disk.
@@ -153,15 +160,16 @@ static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 ## test that has to find a body with tiles cached on the machine running it can only pin it where those
 ## tiles happen to be.
 static func patch_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, current: int = 0, view_angle: float = -1.0) -> Dictionary:
+		radius: float, current: int = 0, view_angle: float = -1.0,
+		cap: int = 0) -> Dictionary:
 	var full: float = float(PATCH_TILES_MAX)
-	var plan: Dictionary = _descend(manifest, centre_dir, altitude_m, radius, full, view_angle)
+	var plan: Dictionary = _descend(manifest, centre_dir, altitude_m, radius, full, view_angle, cap)
 	if current > 0 and int(plan["level"]) > current:
 		# Moving up costs a rebuild of everything that comes into view, so it has to clear a margin
 		# rather than merely tie. Only the climb is held back: falling behind the view is decided by
 		# the height alone, and is immediate.
 		var held: Dictionary = _descend(manifest, centre_dir, altitude_m, radius,
-				full * FINER_MARGIN, view_angle)
+				full * FINER_MARGIN, view_angle, cap)
 		if int(held["level"]) >= current:
 			plan = held
 	return plan
@@ -175,8 +183,10 @@ static func patch_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: flo
 ## predicted 131 tiles where the walk found 85, so a level that would have fitted in the budget with
 ## room to spare was refused, and the chart drew ground twice as coarse as it could have.
 static func _descend(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, fit: float, view_angle: float) -> Dictionary:
+		radius: float, fit: float, view_angle: float, cap: int = 0) -> Dictionary:
 	var ceiling: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
+	if cap > 0:
+		ceiling = mini(ceiling, maxi(cap, TILE_NSIDE))
 	return _walk(centre_dir, cap_angle(altitude_m, radius, view_angle), ceiling, fit,
 			centre_dir.length_squared() > 0.0 and altitude_m >= 0.0 and radius > 0.0)
 
@@ -340,6 +350,52 @@ static func ground_altitude_m(body_key: String, local_dir: Vector3) -> float:
 	return (surface_factor(body_key, local_dir) - 1.0) * radius / EXAGGERATION
 
 
+## Sources kept only to ask where a tile WOULD be on disk. One per body; they never touch the network.
+static var _probes: Dictionary = {}
+
+
+## Is this tile's OWN data on disk, as opposed to an ancestor's standing in for it?
+##
+## The question a tile built from a coarser level has to be able to answer before it is worth building
+## again. Without it, a tile whose data the service does not have is rebuilt from the same ancestor for
+## ever — it comes back provisional, so it is asked again, and the loop spends the build budget that the
+## tiles which really did arrive are waiting for.
+##
+## A path test, no read: the answer is whether the file is there.
+static func tile_is_cached(body_key: String, nside: int, ipix: int) -> bool:
+	if not _probes.has(body_key):
+		var made := RemoteTileSource.new()
+		made.planet = body_key
+		made.version = _cached_version(body_key)
+		_probes[body_key] = made
+	var probe: RemoteTileSource = _probes[body_key]
+	if probe.version == "":
+		return false
+	return FileAccess.file_exists(probe.tile_cache_path(nside, ipix))
+
+
+## The finest level whose OWN data is on disk under [param dir] — how well this ground is really known.
+##
+## Not the same as what the body publishes, and the difference is the whole point. Measured on
+## Tarsis III: the mining villages have real tiles down to n1024, while every one of the fifteen railway
+## cities stops at n8 or n16. Drawn at n1024 regardless, the chart stretches a sol known to 12 km over a
+## view asking for 198 m — sixty-four times — and the readout reports the fineness of the MESH as though
+## it were the fineness of the ground.
+##
+## Every level is looked at rather than stopping at the first gap: the cache is filled by whatever has
+## been asked for, not top-down, so a hole at one level says nothing about the ones under it. Eleven
+## path tests, no reads, four times a second.
+static func data_depth(body_key: String, dir: Vector3) -> int:
+	var deepest: int = TILE_NSIDE
+	var nside: int = TILE_NSIDE
+	var ceiling: int = finest_nside(body_key)
+	while nside < ceiling:
+		nside *= 2
+		if tile_is_cached(body_key, nside, HEALPix.vec2pix_nest(nside, dir)):
+			deepest = nside
+	return deepest
+
+
 ## The level the chart READS a body's ground at: the finest that body publishes.
 ##
 ## A property of the body, never of what happens to be on screen — and that is the whole point. Reading
@@ -394,7 +450,13 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int) -
 	var source := RemoteTileSource.new()
 	source.planet = body_key
 	source.version = version
-	var heights: PackedFloat32Array = _tile_or_ancestor(source, nside, ipix)
+	# The level the heights really came from, which is not always the one asked for: what is not cached
+	# is lifted from the nearest ancestor. A tile built that way is PROVISIONAL — the ground it shows is
+	# a coarser ground stretched over it — and saying so is what lets it be built again when the real
+	# data arrives. Without it, a tile downloaded behind the chart's back is never drawn: nothing asks a
+	# tile already on screen whether it could now be better.
+	var from: Array = [0]
+	var heights: PackedFloat32Array = _tile_or_ancestor(source, nside, ipix, from)
 	if heights.is_empty():
 		return null
 	# Side deduced from the payload, never from the manifest: the two coincide for published tiles, and
@@ -430,6 +492,7 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int) -
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.set_meta("source_nside", int(from[0]))
 	return mesh
 
 
@@ -556,7 +619,11 @@ static func _cached_version(body_key: String) -> String:
 	return ""
 
 
-static func _tile_or_ancestor(source: RemoteTileSource, nside: int, ipix: int) -> PackedFloat32Array:
+## [param from] is an optional one-element slot the level the data actually came from is written into.
+## A caller that cares whether it read the tile itself or resampled an ancestor passes [code][0][/code];
+## everyone else passes nothing and the walk is unchanged.
+static func _tile_or_ancestor(source: RemoteTileSource, nside: int, ipix: int,
+		from: Array = []) -> PackedFloat32Array:
 	var level: int = nside
 	var at: int = ipix
 	while level >= TILE_NSIDE:
@@ -565,6 +632,8 @@ static func _tile_or_ancestor(source: RemoteTileSource, nside: int, ipix: int) -
 		# and planet_data learnt the hard way that assuming it reads out of bounds when they do not.
 		var side: int = int(round(sqrt(float(raw.size()) / 2.0)))
 		if side > 1 and side * side * 2 == raw.size():
+			if not from.is_empty():
+				from[0] = level
 			var heights: PackedFloat32Array = HeightPack.widen_u16(raw, side).to_float32_array()
 			@warning_ignore("integer_division")
 			var span: int = nside / level

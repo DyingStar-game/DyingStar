@@ -397,6 +397,37 @@ func test_a_body_without_relief_reports_a_plain_sphere() -> void:
 
 
 # ---------------------------------------------------------------------------
+# How well the ground is really known
+# ---------------------------------------------------------------------------
+
+## A body nobody has streamed reports no depth at all, rather than the depth it publishes.
+func test_a_body_with_nothing_on_disk_is_known_to_nothing() -> void:
+	assert_eq(StarMapRelief.data_depth("no_such_body", Vector3.UP), StarMapRelief.TILE_NSIDE)
+
+
+## And where it IS known, the chart draws at most one level beyond that.
+##
+## The cap, and the reason it is a level BEYOND rather than exactly at: exactly at wedges shut. The
+## chart would stop asking for anything finer, so nothing finer would ever arrive, so the depth would
+## never grow. One beyond leaves the view a doubling ahead of its data — against the sixty-fourfold
+## stretch it replaces, measured over a railway city drawn at n1024 from data stopping at n16.
+func test_the_chart_draws_at_most_one_level_beyond_its_data() -> void:
+	if not StarMapRelief.has_data(BODY):
+		pending("aucune tuile en cache pour %s sur cette machine" % BODY)
+		return
+	var checked: int = 0
+	for poi: Dictionary in StarMapPoi.load_for(BODY):
+		var dir: Vector3 = poi["dir"]
+		var known: int = StarMapRelief.data_depth(BODY, dir)
+		# Right down on the deck, where the geometry would otherwise ask for the finest level there is.
+		var level: int = int(StarMapRelief.plan_patch(BODY, dir, 1.0e3)["level"])
+		assert_lte(level, known * 2,
+				"%s: known to n%d, so drawn at n%d at the most" % [str(poi["label"]), known, known * 2])
+		checked += 1
+	assert_gt(checked, 10, "sanity: every town was looked at")
+
+
+# ---------------------------------------------------------------------------
 # The level and its tiles, decided together
 # ---------------------------------------------------------------------------
 

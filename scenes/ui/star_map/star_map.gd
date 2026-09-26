@@ -71,6 +71,12 @@ const POI_FOCUS_ZOOM: float = 1.05
 ## expose an edge. A quarter, which costs about half a level of detail and buys the whole margin of
 ## error on a cone cut against the body's centre rather than against what the camera is aimed at.
 const VIEW_ANGLE_MARGIN: float = 1.25
+## How many tiles standing in for finer ground are built again each time the service delivers.
+##
+## Small on purpose: a delivery is a handful of tiles, and rebuilding the whole patch for each of them
+## would spend the frame budget redoing ground that has not changed. The ones missed come round again
+## on the next delivery, and a tile built from its own data stops asking.
+const GROUND_RETRY_PER_DELIVERY: int = 6
 ## Samples along one side of a height tile, from the manifest's tile_res. Used only to say, in the
 ## readout, how much ground one sample covers — which is the number that means something, where a
 ## HEALPix level on its own means nothing to anybody.
@@ -280,6 +286,9 @@ var _ground: StarMapGround = null
 ## The ways drawn over that ground. Its own node, with its own file handle, so the ground knows nothing
 ## about roads and the roads know nothing about how a tile is built.
 var _roads: StarMapRoads = null
+## And what asks the service for the ground neither of them has yet. Not a node: it owns a worker
+## thread and a queue, nothing in the scene.
+var _stream: StarMapStream = StarMapStream.new()
 ## Which body the ground currently belongs to, so its sphere can be given its mesh back when it stops.
 var _ground_body: int = -1
 
@@ -1286,6 +1295,12 @@ func _refresh_ground() -> void:
 	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
 	if _roads != null:
 		_roads.refresh(_ground.wanted())
+	# And ask for what is wanted but has never been downloaded.
+	_stream.want(key, _ground.wanted())
+	# The answers land in the disk cache behind the ground's back, so it has to be told: a tile drawn
+	# from a coarser ancestor a second before its own data arrived would otherwise stand for ever.
+	if _stream.took_delivery():
+		_ground.retry_provisional(GROUND_RETRY_PER_DELIVERY)
 	# The smooth sphere steps aside only once the ground can replace it: swapping first would show a
 	# body-shaped hole for as long as the first tiles take to build.
 	var covered: bool = _ground.has_tiles()
@@ -1324,6 +1339,7 @@ func _drop_ground() -> void:
 		var previous: MeshInstance3D = _bodies[_ground_body]["sphere"]
 		if is_instance_valid(previous):
 			previous.mesh = _bodies[_ground_body]["sphere_mesh"]
+	_stream.close()
 	if _roads != null:
 		_roads.clear()
 		if is_instance_valid(_roads):
@@ -2216,8 +2232,13 @@ func _relief_readout() -> String:
 		return ""
 	if _ground == null or _ground_body != body or not _ground.has_tiles():
 		return tr("%%HUD_MAP_RELIEF_NONE")
-	var got: int = _ground.level()
-	# Ground per sample: the whole sphere shared out over the level's tiles, 32 samples a side.
+	# The level the GROUND IS KNOWN TO, not the level it is drawn at. They are not the same, and the
+	# difference is the whole of what this line is for: over a railway city the chart draws at n1024 from
+	# data that stops at n16, and reporting the mesh's fineness there says 198 m of a ground known to
+	# 12 km. A readout that flatters the chart is worse than none — it cost three rounds of hunting a
+	# defect in the mesh that was never there.
+	var got: int = StarMapRelief.data_depth(str(_bodies[body]["key"]), _local_under_camera(body))
+	# Ground per sample: the whole sphere shared out over THAT level's tiles, 32 samples a side.
 	var spacing: float = PI * float(_bodies[body]["radius_m"]) \
 			/ (sqrt(3.0 * PI) * float(maxi(got, 1)) * float(RELIEF_TILE_SAMPLES))
 	# Said as a LOD depth rather than as an nside, because that is the number people hold: 0 is the
