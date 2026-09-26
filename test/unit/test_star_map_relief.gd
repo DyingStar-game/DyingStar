@@ -111,6 +111,41 @@ func test_the_skirt_hangs_below_the_surface() -> void:
 	assert_lt(deepest, StarMapRelief.MESH_RADIUS * 0.05, "but never a wall standing off the limb")
 
 
+## The diagonal a quad is cut along follows the GROUND, not the grid.
+##
+## Four heights are not a surface until the quad is cut in two, and that cut is a fold the lighting
+## shows. Cut every quad the same way and every fold runs the same way, so a tile carries a corduroy of
+## parallel creases at forty-five degrees to its grid. That is what showed in game — on one diagonal
+## and never the other — and no amount of smoothing the height field could reach it, the fold being in
+## the mesh rather than in the data.
+func test_a_quad_is_cut_along_the_flatter_diagonal() -> void:
+	# One raised corner on each side in turn, so the flatter diagonal changes and the cut has to follow.
+	assert_eq(_shared_edge_of_quad(1.0, 1.2, 1.0, 1.0), Vector2i(0, 3),
+			"a bump on one corner of the 10-01 diagonal sends the cut to the other one")
+	assert_eq(_shared_edge_of_quad(1.2, 1.0, 1.0, 1.0), Vector2i(1, 2),
+			"and a bump on the 00-11 diagonal sends it back")
+
+
+## Which pair of corners ends up shared between the two triangles of one quad, given their heights in
+## the order 00, 10, 01, 11.
+func _shared_edge_of_quad(h00: float, h10: float, h01: float, h11: float) -> Vector2i:
+	var flat := PackedVector3Array([
+		Vector3(0.0, 0.0, 1.0) * h00, Vector3(0.1, 0.0, 1.0) * h10,
+		Vector3(0.0, 0.1, 1.0) * h01, Vector3(0.1, 0.1, 1.0) * h11])
+	var indices := PackedInt32Array()
+	StarMapRelief._add_patch_indices(indices, flat, 0, 2)
+	assert_eq(indices.size(), 6, "one quad is two triangles")
+	# The shared edge is the pair of corners that both triangles name.
+	var first: Array = [indices[0], indices[1], indices[2]]
+	var shared: Array = []
+	for i: int in range(3, 6):
+		if first.has(indices[i]):
+			shared.append(indices[i])
+	shared.sort()
+	assert_eq(shared.size(), 2, "two triangles of a quad share exactly one edge")
+	return Vector2i(int(shared[0]), int(shared[1]))
+
+
 ## Every triangle must be a FRONT face by Godot's rule, which is that front faces are wound clockwise
 ## seen from the front — the opposite of the right-hand rule.
 ##
