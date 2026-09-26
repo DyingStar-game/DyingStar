@@ -737,10 +737,26 @@ static func _add_patch_indices(indices: PackedInt32Array, points: PackedVector3A
 			var i10: int = i00 + 1
 			var i01: int = i00 + stride
 			var i11: int = i01 + 1
+			# Split along whichever diagonal the ground is FLATTER across.
+			#
+			# A quad of four heights is not a surface until it is cut in two, and the cut is a fold the
+			# lighting shows. Cut every quad the same way and every fold runs the same way, so the whole
+			# tile carries a corduroy of parallel creases at forty-five degrees to the grid — which is
+			# what showed on screen, on one diagonal and never the other, and no amount of smoothing the
+			# height field could touch it because the fold is in the MESH, not in the data.
+			#
+			# Choosing per quad costs two subtractions and makes the fold follow the terrain instead:
+			# along a ridge it lies on the ridge, along a slope it lies on the contour.
+			var flat_10_01: bool = absf(points[i10].length() - points[i01].length()) 					<= absf(points[i00].length() - points[i11].length())
 			if flip:
-				indices.append_array([i00, i01, i10, i10, i01, i11])
-			else:
+				if flat_10_01:
+					indices.append_array([i00, i01, i10, i10, i01, i11])
+				else:
+					indices.append_array([i00, i11, i10, i00, i01, i11])
+			elif flat_10_01:
 				indices.append_array([i00, i10, i01, i10, i11, i01])
+			else:
+				indices.append_array([i00, i10, i11, i00, i11, i01])
 
 
 ## Area-weighted vertex normals, accumulated over the faces. Without them the displacement is invisible:
