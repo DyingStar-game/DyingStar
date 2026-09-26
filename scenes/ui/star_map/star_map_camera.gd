@@ -154,6 +154,38 @@ func hold_above(guard_radius: float) -> void:
 	zoom = clamp_zoom(zoom, guard_radius)
 
 
+## Keep the camera within [param limit] radians of [param up], so that orbiting a place ON a surface
+## turns around that place instead of swinging off it.
+##
+## Orbiting turns around the SUBJECT, and when the subject is a town the subject is a point on a ball.
+## Carry on far enough and the camera passes the local horizon and then the ground itself: the town is
+## behind the planet, and you are inside it. The guard cannot catch that — it measures the distance to
+## the body's CENTRE, which an orbit does not change.
+##
+## A cone around the local vertical is the whole answer, and it is one number. Applied to the goal
+## rather than to the drawn angle, exactly as [method hold_above] is applied to the goal distance: a
+## travel still in flight then lands inside the cone instead of being snapped while it arrives.
+func hold_near(up: Vector3, limit: float) -> void:
+	if up.length_squared() <= 0.0 or limit <= 0.0 or limit >= PI:
+		return
+	var aim: Vector3 = up.normalized()
+	var here: Vector3 = _direction_of(yaw, pitch)
+	if here.angle_to(aim) <= limit:
+		return
+	# Straight over the far side, the two are antiparallel and there is no plane to come back through:
+	# every direction is equally the shortest way. Any perpendicular will do, and picking one is the
+	# right answer — refusing to act leaves the camera stuck under the planet, which is the one state
+	# this exists to prevent.
+	var axis: Vector3 = aim.cross(here)
+	if axis.length_squared() <= 1.0e-12:
+		axis = aim.cross(Vector3.UP)
+		if axis.length_squared() <= 1.0e-12:
+			axis = aim.cross(Vector3.RIGHT)
+	var pulled: Vector3 = aim.rotated(axis.normalized(), limit).normalized()
+	pitch = clampf(asin(clampf(pulled.y, -1.0, 1.0)), -PITCH_LIMIT, PITCH_LIMIT)
+	yaw = atan2(pulled.x, pulled.z)
+
+
 ## A deliberate zoom — wheel or key. It settles the travel immediately: an input the user is holding has
 ## to answer under their hand, not queue behind an animation.
 func set_zoom(z: float, guard_radius: float) -> void:
@@ -329,8 +361,12 @@ func distance() -> float:
 
 ## Unit vector from the subject to the camera, in the chart's world.
 func direction() -> Vector3:
-	var turn: float = facing_yaw()
-	var lift: float = facing_pitch()
+	return _direction_of(facing_yaw(), facing_pitch())
+
+
+## Where a yaw and a pitch point. The one place that arithmetic is written, so that a clamp applied to
+## the GOAL angles and the direction drawn from the FACING ones cannot drift apart.
+static func _direction_of(turn: float, lift: float) -> Vector3:
 	return Vector3(cos(lift) * sin(turn), sin(lift), cos(lift) * cos(turn))
 
 
