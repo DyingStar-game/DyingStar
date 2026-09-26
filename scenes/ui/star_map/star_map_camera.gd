@@ -33,20 +33,13 @@ const ZOOM_STEP: float = 1.15
 ## How fast the +/- keys zoom, as a factor per second held.
 const KEY_ZOOM_RATE: float = 6.0
 const ORBIT_SENSITIVITY: float = 0.005
-## Floor on how far the sensitivity may fall as you close in.
+## Floor on how far the sensitivity may fall as you close in, so orbiting never becomes unusable.
 ##
-## Not there to keep the gesture usable — it cannot become unusable. The ground swept by one pixel is
-## [constant ORBIT_SENSITIVITY] times the height above the surface, while the screen at that height
-## shows about 1.53 times it, so one pixel moves a THIRD OF A PERCENT of the screen whatever the
-## altitude. The rate is already scale-free; a floor can only make it too fast.
-##
-## Which is what it did. At two thousandths the floor bound below 12.7 km up — 0.002 of a 6 356 km
-## radius — and the chart now goes far closer than that: at 4 km it turned 3.2 times too fast for the
-## view, at 1 km nearly thirteen times. This is a guard against the degenerate case only, where the
-## camera sits exactly on its clearance and the gesture would otherwise freeze. The closest approach
-## allowed is [constant SURFACE_CLEARANCE_M], a hundred metres, which is 1.6e-5 of that radius — so in
-## honest use this never binds at all.
-const ORBIT_MIN_SCALE: float = 1.0e-5
+## 0.03 was far too high and defeated the formula exactly where it was needed: hard against the surface
+## it still swept nine hundred metres of ground per pixel over a patch a kilometre and a half wide —
+## most of the screen for one pixel of mouse. Two thousandths gives sixty metres a pixel there, and the
+## floor only ever binds within a whisker of the ground.
+const ORBIT_MIN_SCALE: float = 0.002
 ## Pitch is clamped short of the poles: straight down the axis, the rings collapse to lines.
 const PITCH_LIMIT: float = 1.45
 ## How far a selected body is framed from, in multiples of its own radius.
@@ -152,56 +145,6 @@ func clamp_zoom(z: float, guard_radius: float) -> float:
 ## smoothly onto the surface rather than be dragged back to it a frame later.
 func hold_above(guard_radius: float) -> void:
 	zoom = clamp_zoom(zoom, guard_radius)
-
-
-## Keep the camera within [param limit] radians of [param up], so that orbiting a place ON a surface
-## turns around that place instead of swinging off it.
-##
-## Orbiting turns around the SUBJECT, and when the subject is a town the subject is a point on a ball.
-## Carry on far enough and the camera passes the local horizon and then the ground itself: the town is
-## behind the planet, and you are inside it. The guard cannot catch that — it measures the distance to
-## the body's CENTRE, which an orbit does not change.
-##
-## A cone around the local vertical is the whole answer, and it is one number. Applied to the goal
-## rather than to the drawn angle, exactly as [method hold_above] is applied to the goal distance: a
-## travel still in flight then lands inside the cone instead of being snapped while it arrives.
-func hold_near(up: Vector3, ground_radius: float, limit: float) -> void:
-	if up.length_squared() <= 0.0 or limit <= 0.0 or limit >= PI * 0.5:
-		return
-	if ground_radius <= 0.0 or distance() <= ground_radius:
-		return
-	var aim: Vector3 = up.normalized()
-	var here: Vector3 = _direction_of(yaw, pitch)
-	# The angle the cone is stated in is the one seen FROM THE TOWN, and the one the camera is steered
-	# by is measured from the body's CENTRE. Close in they are nothing alike: at 7 km over a 6 356 km
-	# planet the camera is within a sixteenth of a degree of the town's own direction while standing
-	# anywhere from overhead to flat on its horizon. A cone applied to the centre angle is therefore
-	# thousands of km wide and never bites, which is exactly what it did.
-	#
-	# Converted once, here. Writing D for the distance to the centre and r for the ground under the
-	# town, the camera sits at D·d and the town at r·u, so the angle at the town satisfies
-	# tan(phi) = D·sin(theta) / (D·cos(theta) - r), and that solves for theta in closed form.
-	var reach: float = ground_radius * sin(limit) / distance()
-	# Past a reach of one there is no such angle: the cone has opened past the tangent line, and the
-	# horizon is then the honest limit.
-	var centre_limit: float = limit - asin(clampf(reach, -1.0, 1.0))
-	if absf(reach) > 1.0:
-		centre_limit = acos(clampf(ground_radius / distance(), -1.0, 1.0))
-	if here.angle_to(aim) <= centre_limit:
-		return
-	limit = centre_limit
-	# Straight over the far side, the two are antiparallel and there is no plane to come back through:
-	# every direction is equally the shortest way. Any perpendicular will do, and picking one is the
-	# right answer — refusing to act leaves the camera stuck under the planet, which is the one state
-	# this exists to prevent.
-	var axis: Vector3 = aim.cross(here)
-	if axis.length_squared() <= 1.0e-12:
-		axis = aim.cross(Vector3.UP)
-		if axis.length_squared() <= 1.0e-12:
-			axis = aim.cross(Vector3.RIGHT)
-	var pulled: Vector3 = aim.rotated(axis.normalized(), limit).normalized()
-	pitch = clampf(asin(clampf(pulled.y, -1.0, 1.0)), -PITCH_LIMIT, PITCH_LIMIT)
-	yaw = atan2(pulled.x, pulled.z)
 
 
 ## A deliberate zoom — wheel or key. It settles the travel immediately: an input the user is holding has
@@ -379,12 +322,8 @@ func distance() -> float:
 
 ## Unit vector from the subject to the camera, in the chart's world.
 func direction() -> Vector3:
-	return _direction_of(facing_yaw(), facing_pitch())
-
-
-## Where a yaw and a pitch point. The one place that arithmetic is written, so that a clamp applied to
-## the GOAL angles and the direction drawn from the FACING ones cannot drift apart.
-static func _direction_of(turn: float, lift: float) -> Vector3:
+	var turn: float = facing_yaw()
+	var lift: float = facing_pitch()
 	return Vector3(cos(lift) * sin(turn), sin(lift), cos(lift) * cos(turn))
 
 
