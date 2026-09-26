@@ -165,13 +165,31 @@ func hold_above(guard_radius: float) -> void:
 ## A cone around the local vertical is the whole answer, and it is one number. Applied to the goal
 ## rather than to the drawn angle, exactly as [method hold_above] is applied to the goal distance: a
 ## travel still in flight then lands inside the cone instead of being snapped while it arrives.
-func hold_near(up: Vector3, limit: float) -> void:
-	if up.length_squared() <= 0.0 or limit <= 0.0 or limit >= PI:
+func hold_near(up: Vector3, ground_radius: float, limit: float) -> void:
+	if up.length_squared() <= 0.0 or limit <= 0.0 or limit >= PI * 0.5:
+		return
+	if ground_radius <= 0.0 or distance() <= ground_radius:
 		return
 	var aim: Vector3 = up.normalized()
 	var here: Vector3 = _direction_of(yaw, pitch)
-	if here.angle_to(aim) <= limit:
+	# The angle the cone is stated in is the one seen FROM THE TOWN, and the one the camera is steered
+	# by is measured from the body's CENTRE. Close in they are nothing alike: at 7 km over a 6 356 km
+	# planet the camera is within a sixteenth of a degree of the town's own direction while standing
+	# anywhere from overhead to flat on its horizon. A cone applied to the centre angle is therefore
+	# thousands of km wide and never bites, which is exactly what it did.
+	#
+	# Converted once, here. Writing D for the distance to the centre and r for the ground under the
+	# town, the camera sits at D·d and the town at r·u, so the angle at the town satisfies
+	# tan(phi) = D·sin(theta) / (D·cos(theta) - r), and that solves for theta in closed form.
+	var reach: float = ground_radius * sin(limit) / distance()
+	# Past a reach of one there is no such angle: the cone has opened past the tangent line, and the
+	# horizon is then the honest limit.
+	var centre_limit: float = limit - asin(clampf(reach, -1.0, 1.0))
+	if absf(reach) > 1.0:
+		centre_limit = acos(clampf(ground_radius / distance(), -1.0, 1.0))
+	if here.angle_to(aim) <= centre_limit:
 		return
+	limit = centre_limit
 	# Straight over the far side, the two are antiparallel and there is no plane to come back through:
 	# every direction is equally the shortest way. Any perpendicular will do, and picking one is the
 	# right answer — refusing to act leaves the camera stuck under the planet, which is the one state
