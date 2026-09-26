@@ -50,23 +50,16 @@ func update_interface_lift_progress(progress: float, eta: int, status: String) -
 
 
 func update_screen(data: Dictionary):
-	if not GameOrchestrator.is_server():
-		print_rich("[color=red]OOPS on est pas le serveur[/color]")
-	
 	var action: Dictionary = data["elevator_screen_action"]
 	var vehicle_lift = get_parent()
 	
 	if vehicle_lift == null or not vehicle_lift is VehicleLift:
 		return
 	
-	print_rich("[color=gold]Actions : [/color]")
-	print(action)
 	if action.has("landing"):
 		match action["landing"]:
 			"lower":
 				vehicle_lift.move_down()
-			"upper":
-				pass
 			_:
 				pass
 
@@ -96,7 +89,7 @@ func screen_focus_changed(player: Player, focused: bool) -> void:
 func _on_call_button_triggered(datas: Dictionary) -> void:
 	if GameOrchestrator.is_server():
 		return
-	print_rich("[color=green]On a cliqué sur CALL et on est dans lower_landing.gd[/color]")
+	
 	var player: Player = NetworkOrchestrator.network_agent.player_entity
 	player.client_send_action_to_server({
 		"action": "screen_state",

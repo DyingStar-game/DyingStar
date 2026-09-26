@@ -5,10 +5,6 @@ extends Node3D
 
 @export_range(0.0, 100.0, 0.01, "suffix:%") var platform_progress_ratio: float = 0.0:
 	set(value):
-		#if not GameOrchestrator.is_server():
-			#print_rich("[color=crimson][client][/color][color=gold] set platform_progress_ratio :[/color]")
-		#else:
-			#print_rich("[color=dodger_blue][server][/color][color=gold] set platform_progress_ratio :[/color]")
 		platform_progress_ratio = value
 		_update_platform_movement()
 
@@ -59,7 +55,7 @@ extends Node3D
 	set(value):
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
-		print_rich("[color=dodger_blue][server][/color] debug_reset_platform")
+		
 		if value == true:
 			reset_platform()
 		debug_reset_platform = false
@@ -68,12 +64,11 @@ func reset_platform() -> void:
 	var platform_system = get_node_or_null("Platform System")
 	if not platform_system:
 		return
-	print("platform_system.position = %.1v" % platform_system.position)
+	
 	platform_system.position = PLATFORM_SYSTEM_INITIAL_POSITION
 	var platform = platform_system.get_node_or_null("Platform")
 	if platform and platform.has_method("debug_reset_position"):
 		platform.debug_reset_position()
-	print("platform_system.position = %.1v" % platform_system.position)
 
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
@@ -126,7 +121,6 @@ static func generate_railings(parent_node: Node3D, json_path: String) -> void:
 		node_owner = parent_node.get_tree().edited_scene_root
 		if node_owner == null:
 			node_owner = parent_node
-	print_rich("node_owner = [color=orange]%s[/color]" % node_owner.name)
 	
 	var json_file: FileAccess = FileAccess.open(json_path, FileAccess.READ)
 	var json: JSON = JSON.new()
@@ -160,10 +154,7 @@ static func generate_railings(parent_node: Node3D, json_path: String) -> void:
 			railing_visuals.add_child(railing_segment)
 			
 			if node_owner:
-				print_rich("\t[color=green]Il y a un node_owner, j'appel _set_owner_recursive pour %s[/color]" % railing_segment.name)
 				_set_owner_recursive(railing_segment, node_owner)
-			else:
-				print_rich("\t[color=red]Il n'y a pas de node_owner pour %s[/color]" % railing_segment.name)
 		else:
 			push_warning("Type de garde-corps introuvable dans la bibliothèque : " + railing_type)
 		
@@ -179,7 +170,6 @@ static func _set_owner_recursive(node: Node, new_owner: Node) -> void:
 
 
 func _ready() -> void:
-	print_rich("[color=green]Vehicule lift Ready ![/color]")
 	set_physics_process(false)
 	
 	var node_owner: Node = null
@@ -191,7 +181,6 @@ func _ready() -> void:
 		node_owner = self
 	
 	if not has_node("PropSync"):
-		print_rich("\t[color=green]Ajout du PropSync![/color]")
 		var prop_sync: PropSync = PropSync.new()
 		prop_sync.name = "PropSync"
 		prop_sync.type_name = "vehicle_lift"
@@ -199,9 +188,6 @@ func _ready() -> void:
 		
 		if node_owner:
 			prop_sync.owner = node_owner
-	else:
-		print_rich("\t[color=red]PropSync est déjà présent[/color]")
-		print("Y'a un PropSync : %s" % self.get_node_or_null("PropSync"))
 	
 	if not has_node("Base"):
 		var base: StaticBody3D = BASE_SCENE.instantiate()
@@ -264,7 +250,6 @@ func _ready() -> void:
 			dynamic_bridges.owner = node_owner
 	
 	if not Engine.is_editor_hint() and GameOrchestrator.is_server() and not _is_platform_system_spawned:
-		print_rich("[color=dodger_blue][server][/color][color=gold] ready : [/color][color=red]flag de platform_system non présent, je la spawn[/color]")
 		var data := {
 			"type": "vehicle_lift_platformsystem",
 			"uuid": UUID_UTIL.new().as_string(),
@@ -283,8 +268,6 @@ func _ready() -> void:
 			"name": "Platform System"
 		}
 		NetworkOrchestrator.spawn_prop_authoritative(data)
-	elif not Engine.is_editor_hint() and GameOrchestrator.is_server():
-		print_rich("[color=dodger_blue][server][/color][color=gold] ready : [/color][color=green]flag de platform_system déjà présent[/color]")
 	
 	_update_visuals()
 
@@ -334,14 +317,12 @@ func _physics_process(_delta: float) -> void:
 			_sync.server_prop_update({
 				"is_moving": _is_moving
 			})
-		#_on_lift_stopped()
 	else:
 		current_depth_in_meter += frame_movement * _current_direction
 		
 		if not _is_moving and _current_speed <= 0.0:
 			_current_speed = 0.0
 			set_physics_process(false)
-			#_on_lift_stopped()
 			
 		elif current_depth_in_meter <= 0.0 or current_depth_in_meter >= descent_depth:
 			current_depth_in_meter = clamp(current_depth_in_meter, 0.0, descent_depth)
@@ -353,19 +334,14 @@ func _physics_process(_delta: float) -> void:
 				_sync.server_prop_update({
 					"is_moving": _is_moving
 				})
-			#_on_lift_stopped()
 	
 	platform_progress_ratio = (current_depth_in_meter / descent_depth) * 100.0
 	
 	## INFO seulement serveur
 	if _sync != null:
-		#print_rich("[color=dodger_blue][server][/color] platform_progress_ratio = %.1f" % platform_progress_ratio)
 		_sync.server_prop_update({
 			"platform_progress_ratio": platform_progress_ratio
 		})
-	
-	## INFO serveur et client (fait automatiquement ?)
-	#apply_prop_data()
 
 
 func _update_visuals() -> void:
@@ -439,17 +415,11 @@ func _update_platform_movement() -> void:
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		return
 	
-	if not GameOrchestrator.is_server():
-		print_rich("[color=crimson][client][/color][color=gold] _update_platform_movement :[/color]")
-	#else:
-		#print_rich("[color=dodger_blue][server][/color][color=gold] _update_platform_movement :[/color]")
-	
 	var platform = get_node_or_null("Platform System") as AnimatableBody3D
 	
 	if platform:
 		var target_y: float = lerpf(0.0, -descent_depth, (platform_progress_ratio / 100.0))
 		var target_position: Vector3 = PLATFORM_SYSTEM_INITIAL_POSITION + Vector3(0, target_y, guide_z_offset)
-		#print_rich("\t[color=green]Il y a une plateforme[/color] target_position = [color=orange]%.1v[/color]" % target_position)
 		
 		### INFO Ne fonctionne pas en ligne: probablement à cause du mouvement combiné (planete, orbite)
 		#if Engine.is_editor_hint():
@@ -461,14 +431,12 @@ func _update_platform_movement() -> void:
 			##print_rich("\t[color=gold]platform_motion = [/color][color=green]%.1v[/color]" % platform_motion)
 			#
 			#platform.move_and_collide(platform_motion)
+		
 		platform.position = target_position
 		
 		#print_rich("\t[color=green]elevator.position[/color] = [color=orange]%.1v[/color] [color=green]elevator.global_position[/color] = [color=orange]%.1v[/color]" % [position, self.global_position])
 		#print_rich("\t[color=green]platform.position[/color] = [color=orange]%.1v[/color] [color=green]platform.global_position[/color] = [color=orange]%.1v[/color]" % [platform.position, platform.global_position])
 		#print_rich("\t[color=green]target_position[/color] = [color=orange]%.1v[/color] [color=green]target_y[/color] = [color=orange]%.1f[/color]" % [target_position, target_y])
-	else:
-		#print_rich("\t[color=red]Il n'y a pas de plateforme[/color]")
-		pass
 
 
 func _process(_delta: float) -> void:
@@ -588,7 +556,6 @@ func _on_lift_stopped() -> void:
 
 
 func platform_system_spawned() -> void:
-	print_rich("[color=green]La plateform_system de %s a spawn[/color]" % name)
 	_is_platform_system_spawned = true
 	if _sync != null:
 		_sync.server_prop_update({
@@ -599,11 +566,6 @@ func platform_system_spawned() -> void:
 # PropSync applies the replicated transform, then calls this with the full payload so the depot can
 # apply its own machine state. Replaces the old client_channel_data_update override.
 func apply_prop_data(_data: Dictionary) -> void:
-	#if not GameOrchestrator.is_server():
-		#print_rich("[color=crimson][client][/color][color=gold] apply_prop_data :[/color]")
-	#else:
-		#print_rich("[color=dodger_blue][server][/color][color=gold] apply_prop_data :[/color]")
-	
 	if "name" in _data and not name == _data["name"]:
 		name = _data["name"]
 	if "descent_depth" in _data:

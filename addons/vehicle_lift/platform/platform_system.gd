@@ -39,16 +39,12 @@ func _ready() -> void:
 		if railing:
 			VehicleLift.generate_railings(railing, railing_json_path)
 	else:
-		if not GameOrchestrator.is_server():
-			print_rich("[color=crimson][client][/color][color=gold] platform _ready, position = %.3v, global_position = %.3v[/color]" % [position, global_position])
-		else:
-			print_rich("[color=dodger_blue][server][/color][color=gold] platform _ready, position = %.3v, global_position = %.3v[/color]" % [position, global_position])
+		if GameOrchestrator.is_server():
 			var parent_lift: Node3D = get_parent()
 			if parent_lift is VehicleLift and parent_lift.has_method("platform_system_spawned"):
 				parent_lift.platform_system_spawned()
 			
 			if not _is_platform_spawned:
-				print_rich("[color=dodger_blue][server][/color][color=gold] platform_spawned ready : [/color][color=red]flag de platform non présent, je la spawn, parenté à [/color][color=gold]%s[/gold]" % uuid)
 				var data := {
 					"type": "vehicle_lift_platform",
 					"uuid": UUID_UTIL.new().as_string(),
@@ -67,8 +63,6 @@ func _ready() -> void:
 					"name": "Platform"
 				}
 				NetworkOrchestrator.spawn_prop_authoritative(data)
-			else:
-				print_rich("[color=dodger_blue][server][/color][color=gold] platform_spawned ready : [/color][color=green]flag de platform déjà présent[/color]")
 
 
 func _process(delta: float) -> void:
@@ -79,12 +73,9 @@ func update_interface_lift_progress(progress: float, eta: int, status: String) -
 	var platform = get_node_or_null("Platform") as RigidBody3D
 	if platform:
 		platform.update_display_progress(progress, eta, status)
-	#if _platform_interface:
-		#_platform_interface.display_progress(progress, eta, status)
 
 
 func platform_spawned() -> void:
-	print_rich("[color=green]La plateform de %s a spawn[/color]" % name)
 	var platform = get_node_or_null("Platform") as RigidBody3D
 	if platform:
 		$Spring.set_node_b(platform.get_path())

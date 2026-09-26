@@ -741,7 +741,6 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
 	elif area.is_in_group("screen_area"):
-		print_rich("[color=green]On entre dans une screen area[/color]")
 		# A 3D screen's console zone (see ScreenZone). Detected area-to-area and NEVER against our
 		# body: on a spinning planet the two are refreshed one physics step apart, which dropped and
 		# regained the overlap 3 times a second while the player stood still.
@@ -805,7 +804,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 				_in_vehicle_bed = null
 			veh.remove_bed_player(self)
 	elif area.is_in_group("screen_area"):
-		print_rich("[color=red]On sort d'une screen area[/color]")
 		# Only release OUR screen: with two consoles whose zones overlap, walking out of one must not
 		# cancel the interaction with the other.
 		# A null owner means the screen is being torn down (admin delete, despawn) and the walk up the
@@ -838,7 +836,6 @@ func _screen_owner_of(area: Area3D) -> Node3D:
 	var node: Node = area.get_parent()
 	while node != null:
 		if node is Node3D and node.has_method("update_screen"):
-			print_rich("[color=green]ON A TROUVE UN ECRAN :[/color] [color=orange]%s[/color]" % node)
 			return node as Node3D
 		node = node.get_parent()
 	push_warning("[Player] ScreenZone '%s' has no ancestor implementing update_screen" % area.name)
@@ -848,11 +845,9 @@ func _screen_owner_of(area: Area3D) -> Node3D:
 ## Single writer for `screen_interacting`, so the camera lock, the mouse mode and the screen's own
 ## bookkeeping can never disagree about which console we are using.
 func _set_screen(screen: Node3D) -> void:
-	print_rich("[color=green]Dans _set_screen[/color]")
 	if screen == screen_interacting:
 		return
 	if is_instance_valid(screen_interacting) and screen_interacting.has_method("screen_focus_changed"):
-		print_rich("\t[color=gold]appel de screen_focus_changed[/color]")
 		screen_interacting.screen_focus_changed(self, false)
 	screen_interacting = screen
 	if screen != null and screen.has_method("screen_focus_changed"):
