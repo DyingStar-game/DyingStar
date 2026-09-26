@@ -131,9 +131,9 @@ func display_progress(progress: float, eta: int = 0, status: String = "Stopped")
 					icon_display.set_instance_shader_parameter("amount", desaturate_amount)
 
 
-func move_mouse_cursor(coord: Vector2) -> void:
-	if mouse_cursor:
-		mouse_cursor.position = coord
+#func move_mouse_cursor(coord: Vector2) -> void:
+	#if mouse_cursor:
+		#mouse_cursor.position = coord
 
 
 func set_landing(passed_landing: int) -> void:
