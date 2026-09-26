@@ -439,7 +439,12 @@ static func has_data(body_key: String) -> bool:
 ##
 ## Radii are in MESH_RADIUS units, the same as the [SphereMesh] a body is otherwise drawn with, so a
 ## tile can be parented to the body and inherit its scale and its spin for nothing.
-static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int) -> ArrayMesh:
+## [param paint] says what the ground here is made of — a fallback rock and the outlined patches of
+## other rock laid over it, as [StarMapZones] reads them. Empty leaves the tile white, which lets the
+## body's own colour through: what the chart did everywhere before it could tell one stretch of a planet
+## from another.
+static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
+		paint: Dictionary = {}) -> ArrayMesh:
 	var manifest: Dictionary = _manifest(body_key)
 	var radius: float = float(manifest.get("radius", 0.0))
 	var version: String = _cached_version(body_key)
@@ -468,27 +473,52 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int) -
 
 	var grid: Array[PackedVector3Array] = HEALPix.get_pixel_grid(nside, ipix, grid_res)
 	var stride: int = grid_res + 1
+	var mountains: Array = paint.get("mountains", [])
+	var ridges: Array = paint.get("ridges", [])
+	# Ground covered by one step of the mesh. A feature narrower than this cannot be drawn honestly, and
+	# saying so is what keeps a knife-edge crest from coming out as a row of spikes.
+	var pitch: float = radius * HEALPix.pixel_angular_size(nside) / float(grid_res)
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
+	var colours := PackedColorArray()
 	var indices := PackedInt32Array()
 	for vy: int in range(stride):
 		for vx: int in range(stride):
 			var dir: Vector3 = grid[vy][vx]
+			# Per vertex, and by the OUTLINE of the patch it falls in: one rock for a whole tile drew
+			# the boundary between two biomes along the edges of the mesh instead of along the shape
+			# the level design drew, which reads as rectangles of colour laid over the ground.
+			if not paint.is_empty():
+				colours.append(RockCatalogue.tint(dir, radius, _rock_at(paint, dir), Color.WHITE))
 			# u follows the face's x, v its y — the same parametrisation get_pixel_grid walks, so a
 			# vertex and the texel under it are the same place by construction.
 			var metres: float = _sample(heights, side,
 					float(vx) / float(grid_res), float(vy) / float(grid_res)) * span + base
+			# The massifs and crests the level design laid on top of the height field. They are not in
+			# the tiles: the field is the exported terrain, and these are added to it by the game as it
+			# builds a chunk, so a chart reading only the tiles draws a planet with its mountains
+			# missing. Same call the terrain makes, with the tile's own spacing as the pitch — that is
+			# what tells a crest it is narrower than one step and must not be drawn as a spike.
+			metres += MountainRelief.offset(dir, radius, mountains, ridges, pitch)
 			points.append(dir * (MESH_RADIUS * (1.0 + EXAGGERATION * metres / radius)))
 			normals.append(dir)
 	_add_patch_indices(indices, points, 0, stride)
 	_smooth_normals(points, normals, indices)
 	_add_skirt(points, normals, indices, stride,
 			MESH_RADIUS * HEALPix.pixel_side_length(nside, 1.0) / float(grid_res))
+	# The skirt duplicates the rim, so the colours have to follow it or the array comes out shorter than
+	# the vertices and Godot drops the whole lot without a word - a tile that silently loses its colour
+	# looks exactly like a tile that was never given one.
+	if not colours.is_empty():
+		for i: int in _rim_ring(stride):
+			colours.append(colours[i])
 
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = points
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	if colours.size() == points.size():
+		arrays[Mesh.ARRAY_COLOR] = colours
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -749,6 +779,26 @@ static func _rim_ring(stride: int) -> PackedInt32Array:
 	for vy: int in range(stride - 2, 0, -1):
 		ring.append(vy * stride)
 	return ring
+
+
+## Which rock a direction stands on: the first patch whose outline holds it, else the tile's fallback.
+##
+## First rather than smallest or last. The patches of a tile do not overlap — they are one partition of
+## the ground drawn as separate polygons — so there is nothing to arbitrate, and looking for a better
+## answer than the first would only cost the remaining tests.
+##
+## ⚠️ Longitude is not wrapped. A patch straddling ±180° would be tested against a point on the far
+## side of the cut and lost, which would show as that one tile keeping its fallback rock. Left as is:
+## the cut is one meridian, and the fallback is the right colour for that ground anyway.
+static func _rock_at(paint: Dictionary, dir: Vector3) -> String:
+	var patches: Array = paint.get("patches", [])
+	if not patches.is_empty():
+		var lonlat: Vector2 = HEALPix.vec2lonlat(dir)
+		for entry: Variant in patches:
+			var patch: Dictionary = entry
+			if Geometry2D.is_point_in_polygon(lonlat, patch["polygon"]):
+				return str(patch["rock"])
+	return str(paint.get("fallback", ""))
 
 
 ## Smoothstep: the same 0..1, with the slope brought to zero at both ends.

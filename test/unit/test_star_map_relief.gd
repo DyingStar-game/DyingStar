@@ -83,6 +83,113 @@ func test_a_tile_has_the_expected_grid_and_skirt() -> void:
 			RES * RES * 6 + _rim_size() * 12, "two triangles per cell, four per rim segment")
 
 
+## A tile given a rock carries a colour for EVERY vertex, skirt included.
+##
+## The trap this is here for: the skirt duplicates the rim after the colours are built, so a colour
+## array that stops at the surface comes out shorter than the vertices — and Godot then drops the whole
+## array without a word. A tile that silently loses its colour looks exactly like a tile that was never
+## given one, which is a defect nobody would think to look for in the SKIRT code.
+func test_a_tile_with_a_rock_carries_a_colour_for_every_vertex() -> void:
+	if not StarMapRelief.has_data(BODY):
+		pending("aucune tuile en cache pour %s sur cette machine" % BODY)
+		return
+	var rock: String = "corundum_milky"
+	if not RockCatalogue.has(rock):
+		pending("la roche %s n'est pas au catalogue" % rock)
+		return
+	var mesh: ArrayMesh = StarMapRelief.build_tile(BODY, 1, 0, RES, {"fallback": rock})
+	assert_not_null(mesh, "tiles are cached, so this must build")
+	var arrays: Array = mesh.surface_get_arrays(0)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	assert_eq(colours.size(), points.size(), "one colour per vertex, skirt included")
+	var distinct: Dictionary = {}
+	for c: Color in colours:
+		distinct[c.to_html(false)] = true
+	assert_gt(distinct.size(), 1,
+			"and the rock is mottled across the tile rather than laid on flat")
+
+
+## The massifs and crests the level design laid down are part of the ground the chart draws.
+##
+## They are NOT in the height tiles: the field is the exported terrain, and these are added on top of
+## it by the game as it builds a chunk. A chart reading only the tiles therefore draws a planet with its
+## mountains missing, and nothing about the tiles would ever say so.
+func test_the_massifs_are_part_of_the_ground() -> void:
+	if not StarMapRelief.has_data(BODY):
+		pending("aucune tuile en cache pour %s sur cette machine" % BODY)
+		return
+	var zones := StarMapZones.new()
+	zones.body_key = BODY
+	zones.default_rock = ""
+	zones.m_per_deg = RADIUS * PI / 180.0
+	var found: bool = false
+	for poi: Dictionary in StarMapPoi.load_for(BODY):
+		var dir: Vector3 = poi["dir"]
+		var ipix: int = HEALPix.vec2pix_nest(256, dir)
+		var tile: Dictionary = zones.tile_of(256, ipix)
+		if (tile["mountains"] as Array).is_empty() and (tile["ridges"] as Array).is_empty():
+			continue
+		var bare: ArrayMesh = StarMapRelief.build_tile(BODY, 256, ipix, RES, {})
+		var built: ArrayMesh = StarMapRelief.build_tile(BODY, 256, ipix, RES, tile)
+		if bare == null or built == null:
+			continue
+		var a: PackedVector3Array = bare.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var b: PackedVector3Array = built.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var worst: float = 0.0
+		for i: int in range((RES + 1) * (RES + 1)):
+			worst = maxf(worst, absf(a[i].length() - b[i].length())
+					/ StarMapRelief.MESH_RADIUS * RADIUS)
+		# Somewhere under a town there is a massif that lifts the ground by more than a hillock.
+		if worst > 100.0:
+			found = true
+			assert_lt(worst, 20000.0,
+					"%s: lifted by %.0f m, which is a mountain and not an error" % [
+					str(poi["label"]), worst])
+			break
+	zones.close()
+	if not found:
+		pending("aucun massif sous les villes de cet export")
+
+
+## A patch of rock is painted to ITS OWN outline, not to the edges of the tile it falls in.
+##
+## One rock per tile was tried first, and the biomes came out as rectangles: the boundary between blue
+## corundum and white followed the mesh rather than the shape the level design drew, which reads as a
+## bug in the chart rather than as ground. Pinned on a polygon made here, so it holds on any checkout.
+func test_a_patch_is_painted_to_its_own_outline() -> void:
+	# A square degree of "emery" over a body of "corundum_milky".
+	var paint: Dictionary = {
+		"fallback": "corundum_milky",
+		"patches": [{"rock": "emery", "polygon": PackedVector2Array([
+			Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(-1.0, 1.0)])}],
+	}
+	var inside: Vector3 = HEALPix.lonlat2vec(0.2, 0.2)
+	var outside: Vector3 = HEALPix.lonlat2vec(40.0, 20.0)
+	assert_eq(StarMapRelief._rock_at(paint, inside), "emery", "inside the outline, the patch's rock")
+	assert_eq(StarMapRelief._rock_at(paint, outside), "corundum_milky",
+			"outside it, the ground the body is otherwise made of")
+
+
+## And with no patches at all, everything is the fallback.
+func test_no_patches_means_the_body_rock_everywhere() -> void:
+	var paint: Dictionary = {"fallback": "corundum_milky", "patches": []}
+	assert_eq(StarMapRelief._rock_at(paint, Vector3.UP), "corundum_milky")
+	assert_eq(StarMapRelief._rock_at({}, Vector3.UP), "", "and with nothing known, nothing is painted")
+
+
+## And a tile given no rock carries none, which is what lets the body's own colour through.
+func test_a_tile_without_a_rock_carries_no_colour() -> void:
+	if not StarMapRelief.has_data(BODY):
+		pending("aucune tuile en cache pour %s sur cette machine" % BODY)
+		return
+	var mesh: ArrayMesh = StarMapRelief.build_tile(BODY, 1, 0, RES)
+	assert_not_null(mesh)
+	# NULL, not an empty array: a surface array that was never filled is absent, and casting the slot
+	# is what fails rather than what answers.
+	assert_null(mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR], "no rock named, so nothing is painted")
+
+
 ## The skirt must hang BELOW the surface it is attached to, and not by a silly amount.
 ##
 ## It exists to fill the crack between two tiles, which is as deep as the height step across their

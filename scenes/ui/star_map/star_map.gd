@@ -77,6 +77,12 @@ const VIEW_ANGLE_MARGIN: float = 1.25
 ## would spend the frame budget redoing ground that has not changed. The ones missed come round again
 ## on the next delivery, and a tile built from its own data stops asking.
 const GROUND_RETRY_PER_DELIVERY: int = 6
+## What a body's ground is made of where its scene does not say and no zone names one.
+##
+## The same value PlanetData carries as its own export default. Written out rather than reached for,
+## because reaching for it would mean loading a planet's script to read a constant off it, and this
+## chart exists to answer questions about planets WITHOUT building any.
+const DEFAULT_GROUND_ROCK: String = "corundum_milky"
 ## Samples along one side of a height tile, from the manifest's tile_res. Used only to say, in the
 ## readout, how much ground one sample covers — which is the number that means something, where a
 ## HEALPix level on its own means nothing to anybody.
@@ -289,6 +295,8 @@ var _roads: StarMapRoads = null
 ## And what asks the service for the ground neither of them has yet. Not a node: it owns a worker
 ## thread and a queue, nothing in the scene.
 var _stream: StarMapStream = StarMapStream.new()
+## What the ground of that body is made of, tile by tile. Also not a node.
+var _zones: StarMapZones = null
 ## Which body the ground currently belongs to, so its sphere can be given its mesh back when it stops.
 var _ground_body: int = -1
 
@@ -1283,7 +1291,20 @@ func _refresh_ground() -> void:
 		# A CHILD of the sphere, so it inherits the body's spin and its drawn size for nothing. The
 		# tiles are built in MESH_RADIUS units precisely so that this works.
 		sphere.add_child(_ground)
-		_ground.mesh_material(_bodies[index]["colour"])
+		# The rock the level design lays down where it names one, and the body's own fallback elsewhere.
+		# Read from the planet's SCENE FILE, never by instantiating it: instantiating a planet builds its
+		# terrain, which is the whole reason this chart reads files.
+		_zones = StarMapZones.new()
+		_zones.body_key = key
+		var props: Dictionary = SystemScenes.body_properties(SYSTEM, key)
+		var rock: String = str(props.get("corundum_default_rock", DEFAULT_GROUND_ROCK))
+		_zones.default_rock = rock if RockCatalogue.has(rock) else ""
+		_zones.m_per_deg = float(_bodies[index]["radius_m"]) * PI / 180.0
+		_ground.zones = _zones
+		# White where the tiles carry their own colour, or the body's tint would be applied on top of the
+		# rock's and every ground would come out the colour of the chart's palette anyway.
+		_ground.mesh_material(Color.WHITE if _zones.default_rock != ""
+				else _bodies[index]["colour"])
 		_roads = StarMapRoads.new()
 		_roads.body_key = key
 		sphere.add_child(_roads)
@@ -1340,6 +1361,9 @@ func _drop_ground() -> void:
 		if is_instance_valid(previous):
 			previous.mesh = _bodies[_ground_body]["sphere_mesh"]
 	_stream.close()
+	if _zones != null:
+		_zones.close()
+	_zones = null
 	if _roads != null:
 		_roads.clear()
 		if is_instance_valid(_roads):

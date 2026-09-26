@@ -36,6 +36,8 @@ const GRID_RES: int = 24
 ## radius, how fine its tiles go — is read from its manifest by [StarMapRelief], so there is one
 ## description of a body and not two.
 var body_key: String = ""
+## What the ground here is made of, tile by tile. Set by the chart; nothing is coloured without it.
+var zones: StarMapZones = null
 
 ## Tiles on screen, by id. The id packs the level and the pixel into one int — see [method tile_id] —
 ## which is what makes the diff, the ancestor test and the dictionary lookups all trivial.
@@ -336,8 +338,11 @@ func _pump() -> void:
 		var key: String = body_key
 		var nside: int = id_nside(id)
 		var ipix: int = id_ipix(id)
+		# Resolved HERE, on the main thread: the answer comes from a pack, and a pack is opened and read
+		# from one thread at a time. The worker is handed a string.
+		var paint: Dictionary = zones.tile_of(nside, ipix) if zones != null else {}
 		var task: int = WorkerThreadPool.add_task(func() -> void:
-			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES))
+			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint))
 		_in_flight[id] = {"task": task, "slot": slot}
 
 
