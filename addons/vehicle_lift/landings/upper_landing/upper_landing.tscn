@@ -24,10 +24,15 @@
 [ext_resource type="PackedScene" uid="uid://ls2ntiaejh3w" path="res://addons/vehicle_lift/common/beacon/beacon.tscn" id="22_b3or6"]
 [ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="23_6nafj"]
 [ext_resource type="PackedScene" uid="uid://0dmhlbkhu2fo" path="res://addons/vehicle_lift/common/screen/interfaces/landings_buttons.tscn" id="24_cgqtm"]
+[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="24_g3qcw"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://addons/vehicle_lift/common/kiosk/kiosk.tscn" id="26_3e0rp"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_b3or6"]
+size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
 
 [node name="Upper Landing" type="StaticBody3D" unique_id=327375662]
 collision_mask = 0
+input_ray_pickable = false
 script = ExtResource("1_wb0hj")
 
 [node name="Visual" type="MeshInstance3D" parent="." unique_id=1519833212]
@@ -679,7 +684,7 @@ transform = Transform3D(0.58778524, 0.809017, 0, -0.809017, 0.58778524, 0, 0, 0,
 unique_name_in_owner = true
 transform = Transform3D(0.58778524, -0.809017, 0, 0.809017, 0.58778524, 0, 0, 0, 1, -1.273, 1.962, 2.35)
 
-[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport") instance=ExtResource("26_3e0rp")]
+[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport", "screen_interaction_area") instance=ExtResource("26_3e0rp")]
 transform = Transform3D(-0.70710677, 0, -0.70710677, 0, 1, 0, 0.70710677, 0, -0.70710677, 5.4878216, 0.8930722, 4.150156)
 pivot_base_rotation = 337.7
 pivot_arm01_z_rotation = 20.0
@@ -689,6 +694,16 @@ pivot_arm02_balljoint_z_rotation = -20.0
 pivot_balljoint_y_rotation = 20.0
 ball_joint_rotation = Vector2(45, 0)
 screen_display_viewport = NodePath("../Screen Display Interface")
+screen_interaction_area = NodePath("../ScreenDetector")
+
+[node name="ScreenDetector" type="Area3D" parent="." unique_id=1361022818 groups=["screen_area"]]
+transform = Transform3D(0.6819983600624985, 0, 0.7313537016191705, 0, 1, 0, -0.7313537016191705, 0, 0.6819983600624985, 4.780760814949389, 0.501388932205615, 3.305538031197554)
+input_ray_pickable = false
+script = ExtResource("24_g3qcw")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ScreenDetector" unique_id=2007121343]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
+shape = SubResource("BoxShape3D_b3or6")
 
 [node name="Screen Display Interface" type="SubViewport" parent="." unique_id=929632159]
 disable_3d = true

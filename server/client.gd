@@ -938,7 +938,7 @@ func create_generic_object(event: Dictionary) -> void:
 					# a duplicate per update would grow the queue without bound.
 					if not _is_pending_generic_object(object_id):
 						pending_messages_generic_objects_parenting.append(event)
-						print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
+						#print("Pending message for object %s because parent_id %s not found yet" % [object_id, object_data["parent_id"]])
 					return
 
 			var prop_scene: PackedScene

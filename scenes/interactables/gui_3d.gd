@@ -35,12 +35,14 @@ func _ready() -> void:
 func _mouse_entered_area() -> void:
 	is_mouse_inside = true
 	# Notify the viewport that the mouse is now hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
 
 
 func _mouse_exited_area() -> void:
 	# Notify the viewport that the mouse is no longer hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
 	is_mouse_inside = false
 
 
@@ -51,7 +53,8 @@ func _unhandled_input(input_event: InputEvent) -> void:
 			# If the event is a mouse/touch event, then we can ignore it here, because it will be
 			# handled via Physics Picking.
 			return
-	node_viewport.push_input(input_event)
+	if node_viewport != null:
+		node_viewport.push_input(input_event)
 
 
 ## Width/height (m) of the interactive surface, taken from the MESH — the surface whose 0..1 UVs the
@@ -92,7 +95,7 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 
 	var event_pos_2d := Vector2()
 
-	if is_mouse_inside:
+	if is_mouse_inside and node_viewport != null:
 		# Convert the relative event position from 3D to 2D.
 		event_pos_2d = Vector2(event_pos_3d.x, -event_pos_3d.y)
 
@@ -138,4 +141,5 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 	last_event_time = now
 
 	# Finally, send the processed input event to the viewport.
-	node_viewport.push_input(input_event)
+	if node_viewport != null:
+		node_viewport.push_input(input_event)

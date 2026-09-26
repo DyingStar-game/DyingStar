@@ -13,9 +13,12 @@ const AXIS_COLLIDER_MIN_LENGTH: float = 1.1
 const AXIS_COLLIDER_DEFAULT_Z: float = 1.7
 
 
-func _set_axis_length(length: float) -> void:
+func set_axis_length(length: float) -> void:
 	var new_length: float = ANIMATED_AXIS_MIN_LENGTH + length
 	var new_collider_length: float = AXIS_COLLIDER_MIN_LENGTH + length
+	
+	if not is_instance_valid(animated_axis_visual):
+		return
 	
 	if animated_axis_visual.mesh and animated_axis_visual.mesh is CylinderMesh:
 		if not animated_axis_visual.mesh.resource_local_to_scene:
@@ -33,8 +36,11 @@ func _set_axis_length(length: float) -> void:
 		wheel_visual.position.z = new_length
 
 
-func _update_animated_axis_rotation(platform_progress_ratio: float, descent_depth: float) -> void:
+func update_animated_axis_rotation(platform_progress_ratio: float, descent_depth: float) -> void:
 	var distance_traveled: float = (platform_progress_ratio / 100.0) * descent_depth
+	
+	if not is_instance_valid(animated_axis_visual):
+		return
 	
 	var axis_radius: float = 1.0
 	if animated_axis_visual.mesh and animated_axis_visual.mesh is CylinderMesh:

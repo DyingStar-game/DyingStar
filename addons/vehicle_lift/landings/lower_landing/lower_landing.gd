@@ -50,16 +50,25 @@ func update_interface_lift_progress(progress: float, eta: int, status: String) -
 
 
 func update_screen(data: Dictionary):
-	var target_state = data["state"]
-	# handle state change from client
-	#if state == "idle" and target_state == "collect":
-		#state = target_state
-#
-	#if state == "idle" and target_state == "extract":
-		#state = target_state
-		#handle_extract()
-	print_rich("[color=green]target_state : [/color]")
-	print(target_state)
+	if not GameOrchestrator.is_server():
+		print_rich("[color=red]OOPS on est pas le serveur[/color]")
+	
+	var action: Dictionary = data["elevator_screen_action"]
+	var vehicle_lift = get_parent()
+	
+	if vehicle_lift == null or not vehicle_lift is VehicleLift:
+		return
+	
+	print_rich("[color=gold]Actions : [/color]")
+	print(action)
+	if action.has("landing"):
+		match action["landing"]:
+			"lower":
+				vehicle_lift.move_down()
+			"upper":
+				pass
+			_:
+				pass
 
 
 ## Where a player's camera should look while using this screen: the screen SURFACE, not the depot's
@@ -82,3 +91,15 @@ func screen_focus_changed(player: Player, focused: bool) -> void:
 		return
 	if is_instance_valid(active_player) and active_player.client_uuid == player.client_uuid:
 		active_player = null
+
+
+func _on_call_button_triggered(datas: Dictionary) -> void:
+	if GameOrchestrator.is_server():
+		return
+	print_rich("[color=green]On a cliqué sur CALL et on est dans lower_landing.gd[/color]")
+	var player: Player = NetworkOrchestrator.network_agent.player_entity
+	player.client_send_action_to_server({
+		"action": "screen_state",
+		"elevator_screen_action": datas
+	})
+	pass

@@ -78,4 +78,3 @@ extends Resource
 ## Base trade value per cubic metre of ore (currency units).
 ## Multiplied by purity at the depot. Set to 0.0 for all inert minerals.
 @export var base_value: float = 1.0
-
