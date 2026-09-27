@@ -121,6 +121,21 @@ public partial class TileFrameNative : RefCounted
         return Sample(dir, canonical.Floats.Length > 0 ? vecIpix : chainIpix, nside, vtxSpacing);
     }
 
+    /// <summary>
+    /// The four gradient probes of a vertex in one call — what a chunk's normals ask for every vertex:
+    /// Sample (or SampleBoundary on the chunk's rim) for each. A NaN component means that probe has to
+    /// go through the GDScript; the caller then asks for all four the usual way.
+    /// </summary>
+    public Vector4 Sample4(Vector3 a, Vector3 b, Vector3 c, Vector3 d, long ipix, long nside,
+        double vtxSpacing, bool boundary)
+    {
+        if (boundary)
+            return new Vector4(SampleBoundary(a, ipix, nside, vtxSpacing), SampleBoundary(b, ipix, nside, vtxSpacing),
+                SampleBoundary(c, ipix, nside, vtxSpacing), SampleBoundary(d, ipix, nside, vtxSpacing));
+        return new Vector4(Sample(a, ipix, nside, vtxSpacing), Sample(b, ipix, nside, vtxSpacing),
+            Sample(c, ipix, nside, vtxSpacing), Sample(d, ipix, nside, vtxSpacing));
+    }
+
     private double Base(Vector3 dir, long ipix, long ns)
     {
         if (!_tiles.TryGetValue(Id(ipix, ns), out var tile))

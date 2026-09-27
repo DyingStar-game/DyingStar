@@ -146,6 +146,12 @@ static func crack_rim_snap(dir: Vector3, radius: float, spacing_m: float, width_
 	return Vector4(moved.x, moved.y, moved.z, half)
 
 
+## Tests flip this to exercise the GDScript Voronoi, which stays the reference.
+static var use_native_voronoi := true
+static var _voronoi_tried := false
+static var _voronoi_native: RefCounted = null
+
+
 ## Deterministic per-cell jitter in [0,1)³ — SurfaceNoise.hash3, kept under
 ## its old name so the crack network reads as before.
 static func _hash3(c: Vector3) -> Vector3:
@@ -163,7 +169,19 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 ## [method _voronoi_edge_distance] with the unit normal of the nearest edge
 ## plane (pointing across it, from the closest cell into its neighbour) in
 ## xyz and the distance in w — what [method crack_rim_snap] slides along.
+##
+## Answered by CrackVoronoiNative when the assembly is there — the same arithmetic in the same
+## order, ~100 ms of a fine chunk in GDScript. The GDScript below stays the reference and the
+## fallback; test_crack_voronoi_native.gd holds the two equal bit for bit.
 static func _voronoi_edge_dn(x: Vector3) -> Vector4:
+	if use_native_voronoi:
+		if not _voronoi_tried:
+			var script := load("res://scenes/planet/native/CrackVoronoiNative.cs") as Script
+			if script != null:
+				_voronoi_native = script.new()
+			_voronoi_tried = true
+		if _voronoi_native != null:
+			return _voronoi_native.EdgeDn(x)
 	var n := x.floor()
 	var f := x - n
 	# Pass 1: locate the closest feature point.
