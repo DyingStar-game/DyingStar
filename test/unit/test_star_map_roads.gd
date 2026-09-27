@@ -15,6 +15,13 @@ extends GutTest
 const BODY: String = "tarsis_3"
 
 
+## Prepare the body's PlanetData once, before any test: it prints as it opens its manifest and packs,
+## and on a machine whose C# build lacks its dependency assemblies every print throws inside the
+## OpenTelemetry bridge — which GUT would pin on whichever test happened to prepare it first.
+func before_all() -> void:
+	StarMapTiles.offline_data(BODY)
+
+
 func _roads(key: String = BODY) -> StarMapRoads:
 	var node := StarMapRoads.new()
 	node.body_key = key
@@ -60,6 +67,7 @@ func test_the_ways_around_a_village_are_drawn() -> void:
 		return
 	var roads: StarMapRoads = _roads()
 	roads.refresh(tiles)
+	roads.finish()
 	if roads.mesh == null:
 		pending("aucun pack de modificateurs pour %s sur cette machine" % BODY)
 		return
@@ -88,6 +96,7 @@ func test_an_unchanged_view_is_not_redrawn() -> void:
 		return
 	var roads: StarMapRoads = _roads()
 	roads.refresh(tiles)
+	roads.finish()
 	var first: Mesh = roads.mesh
 	if first == null:
 		pending("aucun pack de modificateurs pour %s sur cette machine" % BODY)

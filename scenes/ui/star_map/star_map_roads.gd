@@ -34,12 +34,28 @@ const COLOURS: Dictionary = {
 	"railway": Color(0.72, 0.86, 1.0),
 }
 const UNKNOWN_COLOUR: Color = Color(0.85, 0.85, 0.85)
+## How many tiles' worth of projected ways are kept. A little over two views of
+## [constant StarMapRelief.PATCH_TILES_MAX], so zooming out and back in finds both levels still there.
+const SEGMENTS_KEPT: int = 1024
 
 var body_key: String = ""
 
 var _pack: ModifierPack = null
 var _drawn: Dictionary = {}
+## The ways of each tile already read and laid on the ground, id -> [points, colours]. The expensive
+## half of a refresh is not concatenating lines, it is decoding the pack and asking the height field
+## where every vertex stands — and the wanted set changes by a handful of tiles, so almost all of it is
+## the same as last time.
+var _segments: Dictionary = {}
 var _material: StandardMaterial3D = null
+## The worker laying the ways of tiles not seen yet, or -1, and the slot it fills: id -> [points,
+## colours]. Laying a way means sampling the game's height field at every surveyed point — 80 to 150 µs
+## a point, over a thousand points for a view around the mining villages — so on the main thread a new
+## view cost 110 to 200 ms in one frame. While it runs, the pack is the worker's alone.
+var _task: int = -1
+var _job: Dictionary = {}
+## New segments arrived since the mesh was last put together.
+var _dirty: bool = false
 
 
 func _ready() -> void:
@@ -57,16 +73,84 @@ func _ready() -> void:
 ## Does nothing at all when the set has not changed, which is most frames: the tiles come from a
 ## decision taken four times a second at most, and reading a pack is disk work.
 func refresh(tiles: Dictionary) -> void:
-	if tiles == _drawn:
+	_harvest()
+	if tiles == _drawn and not _dirty:
 		return
 	_drawn = tiles.duplicate()
 	if not _open():
 		mesh = null
 		return
+	if _segments.size() > SEGMENTS_KEPT and _task < 0:
+		_segments.clear()  # crude, and rare: one refresh pays for its whole view again
+	_start_missing()
+	_assemble()
+
+
+## Wait for the ways still being laid and draw them. For a caller that needs the mesh NOW — a test;
+## the chart itself just refreshes again next frame.
+func finish() -> void:
+	if _task >= 0:
+		_take()
+	if _dirty:
+		_assemble()
+
+
+## Queue the tiles of the current view that have no ways laid yet — on a worker when the body's
+## PlanetData is there to sample, on this thread otherwise, where the chart's own reading is cheap.
+func _start_missing() -> void:
+	if _task >= 0:
+		return  # the pack is the worker's; what it does not cover is asked for on a later refresh
+	var missing: Array[int] = []
+	for id: int in _drawn:
+		if not _segments.has(id):
+			missing.append(id)
+	if missing.is_empty():
+		return
+	var data: PlanetData = StarMapTiles.for_body(body_key).data
+	if data == null or data.radius <= 0.0:
+		for id: int in missing:
+			var own_points := PackedVector3Array()
+			var own_colours := PackedColorArray()
+			_gather(StarMapGround.id_nside(id), StarMapGround.id_ipix(id), own_points, own_colours)
+			_segments[id] = [own_points, own_colours]
+		_dirty = true
+		return
+	var slot: Dictionary = {}
+	var pack: ModifierPack = _pack
+	_job = slot
+	_task = WorkerThreadPool.add_task(func() -> void:
+		for id: int in missing:
+			slot[id] = _lay_tile(pack, data, StarMapGround.id_nside(id), StarMapGround.id_ipix(id)))
+
+
+## Take in what the worker has finished, if it has.
+func _harvest() -> void:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
+		_take()
+
+
+## Wait for the worker — at once when it is done — and take its ways in. Its id is gone once waited on,
+## so nothing may ask about it again: is_task_completed on a spent id does not answer "done".
+func _take() -> void:
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_task = -1
+	for id: int in _job:
+		_segments[id] = _job[id]
+	_job = {}
+	_dirty = true
+
+
+## Put the mesh together from the ways laid so far for the current view.
+func _assemble() -> void:
+	_dirty = false
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
-	for id: int in tiles:
-		_gather(StarMapGround.id_nside(id), StarMapGround.id_ipix(id), points, colours)
+	for id: int in _drawn:
+		if not _segments.has(id):
+			continue
+		var cached: Array = _segments[id]
+		points.append_array(cached[0])
+		colours.append_array(cached[1])
 	if points.is_empty():
 		mesh = null
 		return
@@ -81,15 +165,29 @@ func refresh(tiles: Dictionary) -> void:
 
 ## Let go of the body, and of the file handle that goes with it.
 func clear() -> void:
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+	_job = {}
+	_dirty = false
 	_drawn.clear()
+	_segments.clear()
 	mesh = null
 	if _pack != null:
 		_pack.close()
 		_pack = null
 
 
-func _exit_tree() -> void:
-	clear()
+# On deletion, NOT on leaving the tree: the chart takes this off its sphere every time it is opened and
+# hangs it back on the new one, and clearing there would throw the ways away with each F2.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE:
+		return
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+	if _pack != null:
+		_pack.close()
+		_pack = null
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +226,47 @@ func _gather(nside: int, ipix: int, points: PackedVector3Array,
 			colours.append(tint)
 			colours.append(tint)
 			previous = next
+
+
+## Every way crossing one tile, laid on the ground THAT TILE draws: the game's sampler at the tile's own
+## level and pitch, through one TileFrame, exactly as [method StarMapRelief.build_tile] builds it. Static
+## and handed everything, because it runs on a worker.
+static func _lay_tile(pack: ModifierPack, data: PlanetData, nside: int, ipix: int) -> Array:
+	var points := PackedVector3Array()
+	var colours := PackedColorArray()
+	if not pack.has_tile(nside, ipix):
+		return [points, colours]
+	var tile: Dictionary = pack.decode_tile(pack.read_tile(nside, ipix), 0.0, ModifierPack.MASK_ROAD)
+	var roads: Array = tile["roads"]
+	if roads.is_empty():
+		return [points, colours]
+	var frame: PlanetData.TileFrame = data.make_tile_frame()
+	data.prepare_mountain_frame(frame, nside, ipix)
+	var pitch: float = data.radius * HEALPix.pixel_angular_size(nside) / float(StarMapGround.GRID_RES)
+	for entry: Variant in roads:
+		var road: Dictionary = entry
+		var line: PackedVector2Array = road["centerline"]
+		if line.size() < 2:
+			continue
+		var tint: Color = COLOURS.get(str(road.get("road_type", "")), UNKNOWN_COLOUR)
+		var previous: Vector3 = _on_sampled_ground(data, frame, nside, pitch, line[0])
+		for i: int in range(1, line.size()):
+			var next: Vector3 = _on_sampled_ground(data, frame, nside, pitch, line[i])
+			points.append(previous)
+			points.append(next)
+			colours.append(tint)
+			colours.append(tint)
+			previous = next
+	return [points, colours]
+
+
+static func _on_sampled_ground(data: PlanetData, frame: PlanetData.TileFrame, nside: int,
+		pitch: float, lonlat: Vector2) -> Vector3:
+	var dir: Vector3 = HEALPix.lonlat2vec(lonlat.x, lonlat.y)
+	var metres: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null,
+			nside, frame, pitch)
+	return dir * (StarMapRelief.MESH_RADIUS
+			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + LIFT))
 
 
 ## One surveyed point, put on the ground the chart is drawing.

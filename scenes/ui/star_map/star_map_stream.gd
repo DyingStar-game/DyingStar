@@ -33,6 +33,8 @@ const MAX_OUTSTANDING: int = 48
 const DEBUG_STREAM: bool = false
 
 var _source: RemoteTileSource = null
+## Did this open [member _source], or borrow it from the loaded planet? Only what it opened, it stops.
+var _owned: bool = false
 var _body: String = ""
 var _tried: bool = false
 var _asked: Dictionary = {}
@@ -112,9 +114,10 @@ func backlog() -> int:
 
 ## Let the body go, and the worker thread with it.
 func close() -> void:
-	if _source != null:
+	if _source != null and _owned:
 		_source.stop()
-		_source = null
+	_source = null
+	_owned = false
 	_asked.clear()
 	_delivered = 0
 	_tried = false
@@ -135,5 +138,18 @@ func _open() -> bool:
 	if _tried or _body == "":
 		return false
 	_tried = true
+	# The loaded planet's own service when there is one. Opening a second meant a second round trip for
+	# the version, a second worker thread, and a second LRU over the SAME directory, each evicting what
+	# the other had just admitted — and possibly a different version from the one the terrain reads.
+	var live: Planet = PlanetRegistry.find_by_name(_body)
+	if live != null and live.planet_data != null and live.planet_data.remote_source != null:
+		_source = live.planet_data.remote_source
+		_owned = false
+		# Its counters carry everything the terrain ever fetched: only what arrives from now on is news.
+		_delivered = _source.stat_fetched
+		return true
 	_source = RemoteTileSource.for_planet(_body)
+	_owned = _source != null
+	# Opening one may install a new version and purge the old: what is on disk is to be looked at again.
+	StarMapTiles.forget(_body)
 	return _source != null

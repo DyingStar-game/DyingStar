@@ -28,6 +28,13 @@ const RADIUS: float = 6356000.0
 const GLOBE_TILES: int = 12
 
 
+## Prepare the body's PlanetData once, before any test: it prints as it opens its manifest and packs,
+## and on a machine whose C# build lacks its dependency assemblies every print throws inside the
+## OpenTelemetry bridge — which GUT would pin on whichever test happened to prepare it first.
+func before_all() -> void:
+	StarMapTiles.offline_data(REAL_BODY)
+
+
 func before_each() -> void:
 	StarMapRelief._manifests[MADE_UP] = {"radius": RADIUS, "nside_max": 64}
 
@@ -197,22 +204,25 @@ func test_a_fine_tile_goes_once_its_ancestor_is_up() -> void:
 	var ancestor: int = 700 >> 6
 	assert_eq(HEALPix.vec2pix_nest(1, HEALPix.pix2vec_nest(8, 700)), ancestor,
 			"sanity: the shift really does name the tile that covers it")
-	assert_false(ground._may_drop(fine), "nothing else drawn yet, so it is all there is")
+	ground._desired[StarMapGround.tile_id(1, ancestor)] = true
+	assert_false(ground._may_drop(fine), "its ancestor is wanted but not drawn yet, so it is all there is")
 	_place(ground, 1, ancestor)
 	assert_true(ground._may_drop(fine), "its ground is drawn by the ancestor now")
 
 
-## More than one level apart the other way, the covering set is sixteen tiles or more, and the ground
-## deliberately does not walk it: it waits for the queue to drain instead. Leaving two surfaces stacked
-## for a moment is cheaper than the bookkeeping, and a two-level jump inward is rare.
-func test_a_two_level_jump_waits_for_the_queue() -> void:
+## Several levels apart the other way — a coarse tile the view has cut straight down to much finer
+## ones — it waits for every wanted tile inside it, however deep, and no longer for the whole queue.
+func test_a_deep_cut_waits_for_every_tile_inside() -> void:
 	var ground: StarMapGround = _ground()
-	ground._level = 8
 	var coarse: int = StarMapGround.tile_id(1, 2)
-	ground._pending.append(StarMapGround.tile_id(8, 0))
-	assert_false(ground._may_drop(coarse), "something is still queued")
-	ground._pending.clear()
-	assert_true(ground._may_drop(coarse), "queue empty, so what is up is all there will be")
+	# Two n8 tiles inside n1 f2 (its descendants are 2 << 6 onward), and one elsewhere that must not count.
+	ground._desired[StarMapGround.tile_id(8, 2 << 6)] = true
+	ground._desired[StarMapGround.tile_id(8, (2 << 6) + 5)] = true
+	ground._desired[StarMapGround.tile_id(8, 0)] = true
+	_place(ground, 8, 2 << 6)
+	assert_false(ground._may_drop(coarse), "one of the two inside is still missing")
+	_place(ground, 8, (2 << 6) + 5)
+	assert_true(ground._may_drop(coarse), "both inside are up; the one elsewhere is none of its business")
 
 
 ## And the diff actually removes what it may: a stale tile whose replacement is on screen goes away,
@@ -329,7 +339,11 @@ func test_a_tile_out_of_view_is_not_built_again() -> void:
 ## at 116 tiles for 88 wanted, then 146, 158, 162, 164, 187 — climbing for as long as the camera moved,
 ## because a tile that merely left the view was never let go. Near the ground, where the level is fine and
 ## the patch slides furthest for a given turn, it ran away fastest. So this asks the aggregate question:
-## after a decision, is there anything on screen that nothing wants and nothing is replacing?
+## once what is wanted is up, is there anything on screen that nothing wants?
+##
+## "Once what is wanted is up" is a second decision on the same view. The ground is cut at mixed levels,
+## ring by ring, so any move changes the level of some rings: a stale tile then waits, rightly, for its
+## covering tile to be drawn, and only the NEXT decision may let it go.
 func test_panning_does_not_let_the_ground_grow() -> void:
 	# On the real body: a fine level needs data, the chart no longer drawing finer than it knows.
 	var ground: StarMapGround = _fine_ground()
@@ -350,6 +364,7 @@ func test_panning_does_not_let_the_ground_grow() -> void:
 		ground._decide(eye, altitude)
 		_build_all(ground)
 		peak = maxi(peak, ground.tiles_up())
+		ground._decide(eye, altitude)
 		assert_lte(ground.tiles_up(), ground.tiles_wanted(),
 				"pas %d: nothing may stay on screen that nothing wants" % step)
 	assert_lt(peak, first * 2, "and the total never runs away as the view slides")
@@ -372,3 +387,35 @@ func test_pulling_back_to_the_globe_clears_the_fine_tiles() -> void:
 	ground._decide(Vector3.UP, -1.0)
 	assert_eq(ground.level(), 1, "back to the globe")
 	assert_eq(ground.tiles_up(), GLOBE_TILES, "and holding exactly its twelve tiles")
+
+
+# ---------------------------------------------------------------------------
+# Coming back to ground already seen
+# ---------------------------------------------------------------------------
+
+## A tile that leaves the view and comes back is put back as it was, not built again.
+##
+## Zooming out and back in, or panning away and back, used to queue every tile it returned to — a few
+## hundred builds to redraw what had been on screen a moment before.
+func test_a_tile_that_comes_back_is_reinstated_without_a_build() -> void:
+	var ground: StarMapGround = _ground(MADE_UP)
+	ground._decide(Vector3.UP, 4.0e4)
+	var seen: Array = ground._desired.keys()
+	assert_gt(seen.size(), 0, "sanity: something is wanted over the pole")
+	for id: int in seen:
+		var node := MeshInstance3D.new()
+		node.mesh = BoxMesh.new()
+		ground.add_child(node)
+		ground._active[id] = node
+		ground._built_from[id] = StarMapGround.id_nside(id)
+	ground._pending.clear()
+
+	ground._decide(Vector3.DOWN, 4.0e4)
+	for id: int in seen:
+		assert_false(ground._active.has(id), "the far side is out of view, so it went")
+	ground._pending.clear()
+
+	ground._decide(Vector3.UP, 4.0e4)
+	for id: int in seen:
+		assert_true(ground._active.has(id), "back on screen at once")
+		assert_false(ground._pending.has(id), "and not queued for a build")

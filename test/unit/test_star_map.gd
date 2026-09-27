@@ -18,6 +18,13 @@ const POI_BODY: String = "tarsis_3"
 const EMPTY_POI_BODY: String = "tarsis_8"
 
 
+## Prepare the body's PlanetData once, before any test: it prints as it opens its manifest and packs,
+## and on a machine whose C# build lacks its dependency assemblies every print throws inside the
+## OpenTelemetry bridge — which GUT would pin on whichever test happened to prepare it first.
+func before_all() -> void:
+	StarMapTiles.offline_data(POI_BODY)
+
+
 # ---------------------------------------------------------------------------
 # The contract with PlayerClient
 # ---------------------------------------------------------------------------
@@ -273,3 +280,34 @@ func test_pulling_back_keeps_the_ground_it_already_has() -> void:
 
 	chart._ground_body = -1
 	assert_eq(chart._relief_body(), -1, "and with no ground at all, there is nothing to keep")
+
+
+## Reopening the chart must not throw the ground away either.
+##
+## Every F2 used to drop the ground — every tile, both pack handles, the tile service and its queue — and
+## the rebuild that follows frees the spheres the ground hangs from. The ground is now PARKED: taken off
+## its sphere intact, remembered by the key of its body, and hung back on that body's new sphere.
+func test_a_rebuild_parks_the_ground_instead_of_dropping_it() -> void:
+	var chart: CanvasLayer = autofree(STAR_MAP.new()) as CanvasLayer
+	var old_sphere: MeshInstance3D = autofree(MeshInstance3D.new())
+	var ground := StarMapGround.new()
+	var tile := MeshInstance3D.new()
+	ground.add_child(tile)
+	ground._active[StarMapGround.tile_id(1, 0)] = tile
+	old_sphere.add_child(ground)
+	chart._ground = ground
+	chart._ground_key = "tarsis_3"
+	chart._ground_body = 2
+
+	chart._park_ground()
+	assert_null(ground.get_parent(), "off the sphere that is about to be freed")
+	assert_true(is_instance_valid(ground), "but not freed with it")
+	assert_true(ground.has_tiles(), "and still holding its tiles")
+	assert_eq(chart._ground_key, "tarsis_3", "remembered by body, since the index is about to change")
+	assert_eq(chart._ground_body, -1, "the index is not trusted across a rebuild")
+
+	var new_sphere: MeshInstance3D = autofree(MeshInstance3D.new())
+	chart._adopt(new_sphere, ground)
+	assert_eq(ground.get_parent(), new_sphere, "hung back on the body's new sphere")
+	assert_true(ground.has_tiles(), "with nothing to build again")
+	chart._drop_ground()

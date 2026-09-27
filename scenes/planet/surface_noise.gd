@@ -20,8 +20,13 @@ static func hash3(c: Vector3) -> Vector3:
 	return Vector3(x - floor(x), y - floor(y), z - floor(z))
 
 
+## hash3(c).x, without the two components it would throw away: one sin instead of three, eight times
+## per vnoise. Bit for bit the same value — the x term is the same expression, and it goes through a
+## Vector3 exactly as hash3's does, so it is rounded to real_t the same way in a single- or
+## double-precision build. test_surface_noise.gd holds the two equal: heights are built on this.
 static func hash1(c: Vector3) -> float:
-	return hash3(c).x
+	var x := sin(c.dot(Vector3(127.1, 311.7, 74.7))) * 43758.5453123
+	return Vector3(x - floor(x), 0.0, 0.0).x
 
 
 ## Value noise in [0, 1], C² continuous (quintic smoothstep between lattice
