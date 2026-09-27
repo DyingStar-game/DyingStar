@@ -230,3 +230,19 @@ layout_mode = 2
 text = "100"
 label_settings = SubResource("LabelSettings_aqojs")
 horizontal_alignment = 1
+
+[node name="Gallery" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1500000011]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/Gallery" unique_id=1500000012]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_GALLERY"
+label_settings = SubResource("LabelSettings_aqojs")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/Gallery" unique_id=1500000013]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+text = "%%MENU_GALLERY_OPEN"
