@@ -32,47 +32,16 @@ const FLOOR_MARKER: String = "floor.done"
 ## planet drawn two hundred pixels across already has more pixels than samples.
 const TILE_NSIDE: int = 1
 
-## How many tiles one near view may be built from. 96 × 25² is some 60 000 vertices — the same order as
-## the globe, built once per level change on a worker.
+## Most tiles one view may want. A GUARD, no longer the rule that picks the level.
 ##
-## It is also what CHOOSES the level, and that is the neat part: the visible ground shrinks as you
-## descend, so holding the tile count fixed and taking the finest level that fits is the same thing as
-## asking for constant detail on screen.
+## The level used to be chosen by this number: the finest single level whose tiles in view fitted in
+## it. The ground is now cut by the planet's own rule instead — see [method patch_for] — and this only
+## stops a camera grazing the ground from asking for more than a worker pool can build in a few seconds:
+## past it, the finest level allowed is halved until the view fits.
 ##
-## Raised from 64 with the grid dropped from 32 to 24 in exchange, for the same vertex count. 64 with
-## the headroom below left the choice one level coarse over a whole stretch of the range — n2 where the
-## data offered n4 — and a tile carries 32 samples, so 24 subdivisions of it costs a little smoothing
-## where 64 tiles cost a whole halving of the ground resolution.
-##
-## Then raised again, to 384, once the per-tile ancestor fallback existed. ⚠️ An earlier measurement said
-## the budget bought nothing — 96, 384 and 1024 all chose the same level — and it was true at the time
-## and is worth recording because it stopped being true: what capped the level then was the all-or-
-## nothing rule refusing a level for one absent tile, not the budget. With every tile now resolvable
-## from an ancestor, the budget is the cap again. Measured from the same point, per build on a worker:
-##
-##     budget   6 km up            2 km up            500 m up
-##     96       LOD 6, 3176 m      LOD 7, 1588 m      LOD 8,  794 m    ~0.3 s
-##     384      LOD 7, 1588 m      LOD 8,  794 m      LOD 9,  397 m    ~1.2 s
-##     1024     LOD 8,  794 m      LOD 9,  397 m      LOD 10, 198 m    ~4.0 s
-##
-## Each fourfold buys one level and costs some three times the build. 1024 reaches 198 m, which is the
-## pyramid's own finest — and four seconds, which is long enough to be felt even behind the old mesh.
-## 384 is where the curve still pays: four times the ground detail for four times nothing, since the
-## build runs on a worker with the previous mesh still on screen.
-const PATCH_TILES_MAX: int = 384
-
-## How much of the tile budget a FINER level has to fit inside before the chart will move up to it.
-##
-## Asymmetric on purpose: climbing a level rebuilds every tile in view and so has to earn it, while
-## falling back is free and immediate. Without it a camera resting on the boundary between two levels
-## flaps across it, and each flap is a patch rebuilt.
-##
-## A tenth, not a quarter. Levels are FOUR times apart in tile count, so a wide margin does not buy
-## proportionally more calm — it simply refuses a level that fits. Measured at 4 km over Tarsis III:
-## n512 wanted 340 tiles of the 384 available, well inside the budget, and a quarter-margin held the
-## chart at n256 and drew the ground twice as coarse for it. A tenth still leaves a band of some 5 % of
-## cap angle to settle in.
-const FINER_MARGIN: float = 0.9
+## Measured with the rule the game uses, over Tarsis III with the ground known to n1024, the quadtree
+## wants far fewer: see test_star_map_relief.gd for the counts it is held to.
+const PATCH_TILES_MAX: int = 600
 
 
 ## How much the relief is overstated. One: it is not.
@@ -129,19 +98,17 @@ const CLIFF_SLOPE: float = 0.15
 const MESH_RADIUS: float = 0.5
 
 
-## The level to draw at AND the tiles that level needs, decided together.
+## The tiles to draw for a camera [param altitude_m] above [param centre_dir], at mixed levels, and
+## the level of the one under the camera.
 ##
-## Together because they cannot be decided apart. [method level_for] answers from an ESTIMATE of how
-## many tiles the view holds, and an estimate can be wrong: when it is, [method patch_tiles] runs out of
-## budget half way across the visible disc and returns nothing rather than half a planet with space
-## behind the other half. Something then has to drop a level and ask again, and if that something lives
-## in the caller, the caller owns half of this arithmetic — which is how the level the ground drew and
-## the level the guard measured came apart before.
+## Cut by the PLANET's rule ([PlanetLod]), so the chart and the ground you land on are divided the same
+## way: fine under the eye, coarser ring by ring out to the horizon. Bounded by what is known — one level
+## beyond the data under the camera, see [method data_depth] — because drawing finer than the ground is
+## known stretches one sample over dozens of vertices and calls it detail.
 ##
-## [param current] is the level already on screen, or 0 when there is none. It is what makes the choice
-## asymmetric: see [constant FINER_MARGIN].
+## [param view_angle] is how much of the surface the screen shows, see [method cap_angle].
 static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
-		current: int = 0, view_angle: float = -1.0) -> Dictionary:
+		view_angle: float = -1.0) -> Dictionary:
 	var manifest: Dictionary = _manifest(body_key)
 	# One level beyond what the ground is actually known to, and no further.
 	#
@@ -151,109 +118,100 @@ static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 	# replaces — and keeps the stream probing the level below.
 	var cap: int = data_depth(body_key, centre_dir) * 2
 	return patch_for(manifest, centre_dir, altitude_m,
-			float(manifest.get("radius", 0.0)), current, view_angle, cap)
+			float(manifest.get("radius", 0.0)), view_angle, cap)
 
 
-## The same decision, against a manifest handed in rather than read from disk.
+## The same decision, against a manifest handed in rather than read from disk, so the arithmetic can be
+## pinned without tiles on the machine running the test.
 ##
-## Split out for the same reason [method level_for] is: the arithmetic is the part worth pinning, and a
-## test that has to find a body with tiles cached on the machine running it can only pin it where those
-## tiles happen to be.
+## Returns [code]{"tiles": PackedInt64Array of StarMapGround ids, "level": int, "ceiling": int}[/code].
+## [code]level[/code] is the level of the tile under the camera; [code]ceiling[/code] the finest level
+## the walk was allowed, after [constant PATCH_TILES_MAX] had its say.
 static func patch_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, current: int = 0, view_angle: float = -1.0,
-		cap: int = 0) -> Dictionary:
-	var full: float = float(PATCH_TILES_MAX)
-	var plan: Dictionary = _descend(manifest, centre_dir, altitude_m, radius, full, view_angle, cap)
-	if current > 0 and int(plan["level"]) > current:
-		# Moving up costs a rebuild of everything that comes into view, so it has to clear a margin
-		# rather than merely tie. Only the climb is held back: falling behind the view is decided by
-		# the height alone, and is immediate.
-		var held: Dictionary = _descend(manifest, centre_dir, altitude_m, radius,
-				full * FINER_MARGIN, view_angle, cap)
-		if int(held["level"]) >= current:
-			plan = held
-	return plan
-
-
-## One walk down the pyramid, keeping the finest level whose tiles fit in [param fit].
-##
-## The level and its tiles come out of the SAME descent, and the count that decides is the real one —
-## the tiles actually collected — rather than an estimate of the cap's area. That estimate is what used
-## to choose the level, and near the ground it is badly wrong: measured at 4 km over Tarsis III it
-## predicted 131 tiles where the walk found 85, so a level that would have fitted in the budget with
-## room to spare was refused, and the chart drew ground twice as coarse as it could have.
-static func _descend(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, fit: float, view_angle: float, cap: int = 0) -> Dictionary:
+		radius: float, view_angle: float = -1.0, cap: int = 0) -> Dictionary:
 	var ceiling: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
 	if cap > 0:
 		ceiling = mini(ceiling, maxi(cap, TILE_NSIDE))
-	return _walk(centre_dir, cap_angle(altitude_m, radius, view_angle), ceiling, fit,
-			centre_dir.length_squared() > 0.0 and altitude_m >= 0.0 and radius > 0.0)
-
-
-## The one walk down the pyramid, and the only place a level or a patch is ever chosen.
-##
-## Keeps the finest level at or below [param ceiling] whose tiles number no more than [param fit],
-## returning that level and its tiles together. [param near] is false when there is no near view at
-## all — no direction, or a body nobody is watching — and the answer is then the globe.
-##
-## The count that decides is the REAL one, the tiles actually collected, never an estimate of the cap's
-## area. That estimate is what used to choose the level, and near the ground it is badly wrong:
-## measured at 4 km over Tarsis III it predicted 131 tiles where the walk found 85, so a level that
-## fitted the budget with room to spare was refused and the chart drew ground twice as coarse as it
-## could have.
-static func _walk(centre_dir: Vector3, cap: float, ceiling: int, fit: float,
-		near: bool) -> Dictionary:
-	var globe := PackedInt32Array()
-	for ipix: int in range(npix(TILE_NSIDE)):
-		globe.append(ipix)
-	var best: Dictionary = {"level": TILE_NSIDE, "tiles": globe}
-	if not near:
-		return best
+	if centre_dir.length_squared() <= 0.0 or altitude_m < 0.0 or radius <= 0.0:
+		return _globe()  # no near view: a body nobody is watching keeps its twelve tiles
 	var centre: Vector3 = centre_dir.normalized()
-	var keep: PackedInt32Array = globe
-	var level: int = TILE_NSIDE
-	while level < ceiling:
-		level *= 2
-		# Kept generously, to cover the whole pixel rather than its centre: a descendant can fall
-		# inside the cap while its parent's own centre lies outside it.
-		var reach: float = cos(minf(cap + HEALPix.pixel_angular_size(level), PI))
-		var wider := PackedInt32Array()
-		for parent: int in keep:
-			for child: int in HEALPix.child_pixels(parent):
-				if HEALPix.pix2vec_nest(level, child).dot(centre) >= reach:
-					wider.append(child)
-		# The pixel the camera is actually over, whatever the arithmetic says.
-		#
-		# A cap can be smaller than a pixel — four metres up, it is a thousandth of one — and a HEALPix
-		# pixel is a diamond whose corners lie further from its centre than its own side length. Pruned
-		# on that alone, the pixel holding the camera can be dropped, and then EVERYTHING is, because
-		# there is nothing left to subdivide. The patch comes back empty and the chart draws no ground.
-		var under: int = HEALPix.vec2pix_nest(level, centre)
-		if not under in wider:
-			wider.append(under)
-		if wider.size() > PATCH_TILES_MAX * 4:
-			break  # nothing finer can narrow down to something inside the budget
-		keep = wider
-		# And the exact question, at this level: what actually falls in the cap.
-		var limit: float = cos(cap)
-		var exact := PackedInt32Array()
-		for ipix: int in keep:
-			if HEALPix.pix2vec_nest(level, ipix).dot(centre) >= limit:
-				exact.append(ipix)
-		if exact.is_empty():
-			exact.append(under)
-		if float(exact.size()) > fit:
-			break
-		best = {"level": level, "tiles": exact}
-	return best
+	var reach: float = cap_angle(altitude_m, radius, view_angle)
+	while true:
+		var tiles := PackedInt64Array()
+		for base: int in range(npix(TILE_NSIDE)):
+			_quadtree(TILE_NSIDE, base, centre, altitude_m, radius, reach, ceiling, tiles)
+		if tiles.size() <= PATCH_TILES_MAX or ceiling <= TILE_NSIDE:
+			return {"tiles": tiles, "level": _level_under(tiles, centre, ceiling), "ceiling": ceiling}
+		@warning_ignore("integer_division")
+		ceiling /= 2
+	return _globe()  # not reached: the loop returns once the ceiling is down to the globe
 
 
-## The finest level whose visible ground fits in [param fit] tiles, bounded by what this body
-## publishes. [constant TILE_NSIDE] — the whole globe — when there is no near view to speak of.
-static func level_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, fit: float = float(PATCH_TILES_MAX), view_angle: float = -1.0) -> int:
-	return int(_descend(manifest, centre_dir, altitude_m, radius, fit, view_angle)["level"])
+## The twelve tiles of the whole sphere.
+static func _globe() -> Dictionary:
+	var tiles := PackedInt64Array()
+	for ipix: int in range(npix(TILE_NSIDE)):
+		tiles.append(StarMapGround.tile_id(TILE_NSIDE, ipix))
+	return {"tiles": tiles, "level": TILE_NSIDE, "ceiling": TILE_NSIDE}
+
+
+## Each pixel's centre, its diagonal and its reach (see [method pixel_reach]) on the UNIT sphere, by id.
+## The walk visits the same few hundred nodes four times a second, and the corners behind those two are
+## the costly part of a visit.
+static var _node_geom: Dictionary = {}
+const NODE_GEOM_KEPT: int = 65536
+
+
+## One node of the walk: dropped when it lies wholly outside what the camera can see, cut by
+## [PlanetLod] when the camera is close enough and the ceiling allows, kept as a leaf otherwise.
+static func _quadtree(nside: int, ipix: int, cam_dir: Vector3, altitude_m: float, radius: float,
+		reach: float, ceiling: int, out: PackedInt64Array) -> void:
+	var id: int = StarMapGround.tile_id(nside, ipix)
+	var geom: Array = _node_geom.get(id, [])
+	if geom.is_empty():
+		if _node_geom.size() >= NODE_GEOM_KEPT:
+			_node_geom.clear()
+		geom = [HEALPix.pix2vec_nest(nside, ipix), PlanetLod.chunk_diagonal(nside, ipix, 1.0),
+				pixel_reach(nside, ipix)]
+		_node_geom[id] = geom
+	var centre: Vector3 = geom[0]
+	var diag: float = float(geom[1]) * radius
+	# Kept whenever any part of the pixel can be in view: its centre may lie outside while a corner
+	# does not, and the pixel under the camera is always kept, its distance being nothing.
+	if centre.angle_to(cam_dir) > reach + float(geom[2]):
+		return
+	if nside < ceiling and PlanetLod.wants_split(
+			PlanetLod.distance(cam_dir, centre, radius, altitude_m), diag):
+		for child: int in HEALPix.child_pixels(ipix):
+			_quadtree(nside * 2, child, cam_dir, altitude_m, radius, reach, ceiling, out)
+		return
+	out.append(id)
+
+
+## How far a pixel reaches from its centre, as an angle: the farthest of its four corners.
+##
+## NOT half its diagonal. A HEALPix pixel is a diamond, and near a pole its corners are nowhere near
+## equidistant: the base pixel holding the north pole has its centre 0.84 rad from the pole and a half
+## diagonal of 0.71. Culled on the half diagonal, the pixel under a camera parked over the pole was
+## thrown away at the root, and the chart drew no ground at all there below 3 000 km.
+static func pixel_reach(nside: int, ipix: int) -> float:
+	var centre: Vector3 = HEALPix.pix2vec_nest(nside, ipix)
+	var reach: float = 0.0
+	for corner: Vector3 in HEALPix.get_pixel_corners(nside, ipix):
+		reach = maxf(reach, centre.angle_to(corner))
+	return reach
+
+
+## The level of the tile that holds [param centre].
+static func _level_under(tiles: PackedInt64Array, centre: Vector3, ceiling: int) -> int:
+	var nside: int = ceiling
+	while nside > TILE_NSIDE:
+		if tiles.has(StarMapGround.tile_id(nside, HEALPix.vec2pix_nest(nside, centre))):
+			return nside
+		@warning_ignore("integer_division")
+		nside /= 2
+	return TILE_NSIDE
+
 
 
 ## How much of a body's surface a camera can see, as a half-angle at its centre.
@@ -298,41 +256,6 @@ static func horizon_angle(altitude_m: float, radius: float) -> float:
 	return acos(clampf(radius / (radius + maxf(altitude_m, 0.0)), -1.0, 1.0))
 
 
-## The tiles a camera [param altitude_m] above [param centre_dir] can see, at [param nside].
-##
-## Found by walking DOWN the pyramid: the twelve pixels of the whole sphere, keep the ones that reach the
-## cap, subdivide those, repeat. Work is proportional to the answer, which is what makes it usable at a
-## level holding twelve million pixels — testing them all is out of the question past n16.
-##
-## It used to grow sideways instead, from the pixel under the camera through
-## [method HEALPix.get_neighbors_nest]. That cannot be relied on: a flood fill only reaches what its
-## neighbour graph connects, and HEALPix neighbours thin out and break along the seams between faces.
-## Measured against a brute-force test over the whole level, the walk came back with 60 tiles where 80
-## lay in the cap, 197 where 265 did, 321 where 853 did — 619 of 1 126 caps incomplete, and only for
-## some directions. On screen that is a planet that simply stops, with space where the rest of it should
-## be. Going down the pyramid needs no neighbours at all, so there is nothing left to be wrong.
-##
-## The cap reaches PAST the horizon, deliberately. What is drawn has to include the limb, or the body
-## acquires a torn edge exactly where the eye reads its silhouette.
-##
-## Purely geometric: every tile in view is asked for, cached or not. What is not cached is lifted from
-## its nearest cached ancestor — see [method _tile_or_ancestor] — so there is nothing to route around.
-static func patch_tiles(nside: int, centre_dir: Vector3, altitude_m: float,
-		radius: float, view_angle: float = -1.0) -> PackedInt32Array:
-	if nside <= TILE_NSIDE:
-		var globe := PackedInt32Array()
-		for ipix: int in range(npix(TILE_NSIDE)):
-			globe.append(ipix)
-		return globe
-	var plan: Dictionary = _walk(centre_dir, cap_angle(altitude_m, radius, view_angle), nside,
-			float(PATCH_TILES_MAX),
-			centre_dir.length_squared() > 0.0 and altitude_m >= 0.0 and radius > 0.0)
-	# Nothing rather than a truncated cap, and nothing rather than a COARSER one. A level that does not
-	# fit the budget is a level that cannot be DRAWN: half a planet with space behind the other half is
-	# not a coarser reading of it, and that is exactly what shipped once, a globe rendered as a pac-man.
-	return plan["tiles"] if int(plan["level"]) == nside else PackedInt32Array()
-
-
 ## How high the ground stands at [param local_dir], in TRUE metres above the reference sphere.
 ##
 ## The number a person wants, which is not the one the mesh is built from: [method surface_factor]
@@ -350,10 +273,6 @@ static func ground_altitude_m(body_key: String, local_dir: Vector3) -> float:
 	return (surface_factor(body_key, local_dir) - 1.0) * radius / EXAGGERATION
 
 
-## Sources kept only to ask where a tile WOULD be on disk. One per body; they never touch the network.
-static var _probes: Dictionary = {}
-
-
 ## Is this tile's OWN data on disk, as opposed to an ancestor's standing in for it?
 ##
 ## The question a tile built from a coarser level has to be able to answer before it is worth building
@@ -361,17 +280,17 @@ static var _probes: Dictionary = {}
 ## ever — it comes back provisional, so it is asked again, and the loop spends the build budget that the
 ## tiles which really did arrive are waiting for.
 ##
-## A path test, no read: the answer is whether the file is there.
-static func tile_is_cached(body_key: String, nside: int, ipix: int) -> bool:
-	if not _probes.has(body_key):
-		var made := RemoteTileSource.new()
-		made.planet = body_key
-		made.version = _cached_version(body_key)
-		_probes[body_key] = made
-	var probe: RemoteTileSource = _probes[body_key]
-	if probe.version == "":
-		return false
-	return FileAccess.file_exists(probe.tile_cache_path(nside, ipix))
+## Asked of the body's [StarMapTiles]: a path test on disk, or the loaded planet's own cache when there
+## is one. Main thread only, like everything that resolves a reader.
+##
+## ⚠️ It used to keep one probe per body, with the version read ONCE. A probe made before the floor had
+## landed kept an empty version for the rest of the session, answered no for every tile, and so no
+## provisional tile was ever built again.
+static func tile_is_cached(body_key: String, nside: int, ipix: int,
+		reader: StarMapTiles = null) -> bool:
+	if reader == null:
+		reader = StarMapTiles.for_body(body_key)
+	return reader.has_own(nside, ipix)
 
 
 ## The finest level whose OWN data is on disk under [param dir] — how well this ground is really known.
@@ -389,9 +308,10 @@ static func data_depth(body_key: String, dir: Vector3) -> int:
 	var deepest: int = TILE_NSIDE
 	var nside: int = TILE_NSIDE
 	var ceiling: int = finest_nside(body_key)
+	var reader: StarMapTiles = StarMapTiles.for_body(body_key)
 	while nside < ceiling:
 		nside *= 2
-		if tile_is_cached(body_key, nside, HEALPix.vec2pix_nest(nside, dir)):
+		if reader.has_own(nside, HEALPix.vec2pix_nest(nside, dir)):
 			deepest = nside
 	return deepest
 
@@ -419,8 +339,11 @@ static func npix(nside: int) -> int:
 
 ## Is there anything to build for this body? Cheap enough to ask every frame, and it saves starting a
 ## build that would only return null.
+##
+## Through the body's reader, so a LOADED planet counts even with nothing streamed — its own pack is
+## data — and so the disk is not listed every frame to find a version that has not changed.
 static func has_data(body_key: String) -> bool:
-	return body_key != "" and _cached_version(body_key) != ""
+	return body_key != "" and StarMapTiles.for_body(body_key).usable()
 
 
 # ---------------------------------------------------------------------------
@@ -443,25 +366,32 @@ static func has_data(body_key: String) -> bool:
 ## other rock laid over it, as [StarMapZones] reads them. Empty leaves the tile white, which lets the
 ## body's own colour through: what the chart did everywhere before it could tell one stretch of a planet
 ## from another.
+##
+## [param reader] is where the heights come from, resolved on the main thread by the caller — see
+## [StarMapTiles]. Left out, the disk alone is read, which is what a test or a worker without one gets.
 static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
-		paint: Dictionary = {}) -> ArrayMesh:
+		paint: Dictionary = {}, reader: StarMapTiles = null) -> ArrayMesh:
 	var manifest: Dictionary = _manifest(body_key)
 	var radius: float = float(manifest.get("radius", 0.0))
-	var version: String = _cached_version(body_key)
-	if radius <= 0.0 or version == "" or grid_res <= 0:
+	if radius <= 0.0 or grid_res <= 0 or body_key == "":
 		return null
-	# cache_root and shard_tiles keep their defaults; no thread is started and no url is set, so this
-	# object can only ever read files.
-	var source := RemoteTileSource.new()
-	source.planet = body_key
-	source.version = version
+	if reader == null:
+		# The whole body — its PlanetData included — can only be resolved on the main thread; a worker
+		# handed nothing gets the disk alone and the chart's own sampler.
+		reader = StarMapTiles.for_body(body_key) \
+				if OS.get_thread_caller_id() == OS.get_main_thread_id() \
+				else StarMapTiles.on_disk(body_key)
+	if not reader.usable():
+		return null
 	# The level the heights really came from, which is not always the one asked for: what is not cached
 	# is lifted from the nearest ancestor. A tile built that way is PROVISIONAL — the ground it shows is
 	# a coarser ground stretched over it — and saying so is what lets it be built again when the real
 	# data arrives. Without it, a tile downloaded behind the chart's back is never drawn: nothing asks a
 	# tile already on screen whether it could now be better.
 	var from: Array = [0]
-	var heights: PackedFloat32Array = _tile_or_ancestor(source, nside, ipix, from)
+	var started: int = Time.get_ticks_usec() if StarMapGround.DEBUG_GROUND else 0
+	var heights: PackedFloat32Array = _tile_or_ancestor(reader, nside, ipix, from)
+	var read: int = Time.get_ticks_usec() if StarMapGround.DEBUG_GROUND else 0
 	if heights.is_empty():
 		return null
 	# Side deduced from the payload, never from the manifest: the two coincide for published tiles, and
@@ -475,9 +405,26 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	var stride: int = grid_res + 1
 	var mountains: Array = paint.get("mountains", [])
 	var ridges: Array = paint.get("ridges", [])
+	# Summed in C# when the assembly is there — the path the terrain takes, and what made a tile under
+	# mountains cost 29 ms in GDScript where the same tile without them cost 6. The GDScript sum stays as
+	# the fallback, and a tile with no feature at all asks neither.
+	var mountain_set: RefCounted = paint.get("mountain_set", null)
+	var has_relief: bool = not mountains.is_empty() or not ridges.is_empty()
 	# Ground covered by one step of the mesh. A feature narrower than this cannot be drawn honestly, and
 	# saying so is what keeps a knife-edge crest from coming out as a row of spikes.
 	var pitch: float = radius * HEALPix.pixel_angular_size(nside) / float(grid_res)
+	# The GAME's sampler when the body's PlanetData is to hand — which is every body with a scene — so
+	# the chart draws the ground a ship will land on rather than a second opinion about it. Measured
+	# against the game at the same level before this, over Tarsis III: within 4 m on average at n256
+	# and n1024 but out by up to 175 m there, and by 750 m at n16, the chart reading each tile alone
+	# with its own smoothed kernel where the game crosses tile edges. Called the way a chunk calls it:
+	# one TileFrame and one set of mountains per tile, the tile known, the rim through
+	# sample_height_boundary so two tiles agree along the edge they share.
+	var data: PlanetData = reader.data
+	var frame: PlanetData.TileFrame = null
+	if data != null:
+		frame = data.make_tile_frame()
+		data.prepare_mountain_frame(frame, nside, ipix)
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -490,16 +437,28 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 			# the level design drew, which reads as rectangles of colour laid over the ground.
 			if not paint.is_empty():
 				colours.append(RockCatalogue.tint(dir, radius, _rock_at(paint, dir), Color.WHITE))
-			# u follows the face's x, v its y — the same parametrisation get_pixel_grid walks, so a
-			# vertex and the texel under it are the same place by construction.
-			var metres: float = _sample(heights, side,
-					float(vx) / float(grid_res), float(vy) / float(grid_res)) * span + base
-			# The massifs and crests the level design laid on top of the height field. They are not in
-			# the tiles: the field is the exported terrain, and these are added to it by the game as it
-			# builds a chunk, so a chart reading only the tiles draws a planet with its mountains
-			# missing. Same call the terrain makes, with the tile's own spacing as the pitch — that is
-			# what tells a crest it is narrower than one step and must not be drawn as a spike.
-			metres += MountainRelief.offset(dir, radius, mountains, ridges, pitch)
+			var metres: float
+			if data != null:
+				# Mountains included: the sampler adds them, at this tile's pitch, as it does for a chunk.
+				if vx == 0 or vy == 0 or vx == grid_res or vy == grid_res:
+					metres = data.sample_height_boundary(dir, ipix, -1, Vector2i(-1, -1), null,
+							nside, frame, pitch)
+				else:
+					metres = data.sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null,
+							nside, frame, pitch)
+			else:
+				# u follows the face's x, v its y — the same parametrisation get_pixel_grid walks, so a
+				# vertex and the texel under it are the same place by construction.
+				metres = _sample(heights, side,
+						float(vx) / float(grid_res), float(vy) / float(grid_res)) * span + base
+				# The massifs and crests the level design laid on top of the height field. They are not
+				# in the tiles: the game adds them as it builds a chunk. Same call the terrain makes,
+				# with the tile's own spacing as the pitch — that is what tells a crest it is narrower
+				# than one step and must not be drawn as a spike.
+				if mountain_set != null:
+					metres += mountain_set.Offset(dir, radius, pitch)
+				elif has_relief:
+					metres += MountainRelief.offset(dir, radius, mountains, ridges, pitch)
 			points.append(dir * (MESH_RADIUS * (1.0 + EXAGGERATION * metres / radius)))
 			normals.append(dir)
 	_add_patch_indices(indices, points, 0, stride)
@@ -523,6 +482,11 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.set_meta("source_nside", int(from[0]))
+	if StarMapGround.DEBUG_GROUND:
+		StarMapTiles.stat_add("tiles", 1)
+		StarMapTiles.stat_add("provisional", 1 if int(from[0]) < nside else 0)
+		StarMapTiles.stat_add("read_us", read - started)
+		StarMapTiles.stat_add("build_us", Time.get_ticks_usec() - read)
 	return mesh
 
 
@@ -533,6 +497,9 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 ## thread, and one shared dictionary written from two is a race for no gain. Twelve tile reads is a
 ## couple of milliseconds, once per body.
 static var _fields: Dictionary = {}
+## How many resolved tiles a field keeps. It is a memo in front of [StarMapTiles], which holds the heights
+## themselves: bounded because the roads ask about thousands of directions across hundreds of tiles.
+const FIELD_TILES_KEPT: int = 512
 
 
 ## Where the ground stands at [param local_dir], as a multiple of the body's reference radius.
@@ -554,17 +521,34 @@ static func surface_factor(body_key: String, local_dir: Vector3, nside: int = 0)
 	if nside <= 0:
 		nside = finest_nside(body_key)
 	var dir: Vector3 = local_dir.normalized()
+	# Through the game's sampler whenever the mesh is, and at the pitch the mesh of that level is built
+	# at, so the ground measured is still the ground drawn.
+	var data: PlanetData = StarMapTiles.for_body(body_key).data
+	if data != null and data.radius > 0.0:
+		var pitch: float = data.radius * HEALPix.pixel_angular_size(nside) \
+				/ float(StarMapGround.GRID_RES)
+		var metres_here: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1),
+				null, nside, null, pitch)
+		return 1.0 + EXAGGERATION * metres_here / data.radius
 	var field: Dictionary = _field_for(body_key, nside)
 	if field.is_empty():
 		return 1.0
 	var face: int = HEALPix.vec2pix_nest(nside, dir)
 	var tiles: Dictionary = field["tiles"]
-	if not tiles.has(face):
+	var reader: StarMapTiles = StarMapTiles.for_body(body_key)
+	var memo: Dictionary = tiles.get(face, {})
+	# A tile resampled from an ancestor is asked again once its own data is there, or the camera would
+	# be guarded against the coarse ground for the rest of the session while the fine one is drawn.
+	if memo.is_empty() or (not bool(memo["own"]) and reader.has_own(nside, face)):
 		# Fetched the same way the MESH fetches it — the tile if it is cached, otherwise its nearest
 		# cached ancestor resampled. Any other route here and the camera would be guarded against a
 		# surface the screen is not showing, which is the one thing this must never be.
-		tiles[face] = _tile_or_ancestor(field["source"], nside, face)
-	if (tiles[face] as PackedFloat32Array).is_empty():
+		if tiles.size() >= FIELD_TILES_KEPT:
+			tiles.clear()  # the heights themselves live in the reader's cache; this is only a memo
+		var from: Array = [0]
+		memo = {"h": _tile_or_ancestor(reader, nside, face, from), "own": int(from[0]) == nside}
+		tiles[face] = memo
+	if (memo["h"] as PackedFloat32Array).is_empty():
 		return 1.0
 	# Back to the 0..1 WITHIN THE TILE, which is what _sample wants and what the mesh was built on.
 	#
@@ -577,7 +561,7 @@ static func surface_factor(body_key: String, local_dir: Vector3, nside: int = 0)
 	var located: Dictionary = HEALPix.pix2face_xy(nside, face)
 	var in_face: Vector2 = HEALPix._vec_to_face_xy(dir, int(located["face"]), nside)
 	var fc := Vector2(in_face.x - float(located["ix"]), in_face.y - float(located["iy"]))
-	var heights: PackedFloat32Array = tiles[face]
+	var heights: PackedFloat32Array = memo["h"]
 	var side: int = int(round(sqrt(float(heights.size()))))
 	var metres: float = _sample(heights, side, clampf(fc.x, 0.0, 1.0), clampf(fc.y, 0.0, 1.0)) \
 			* float(field["span"]) + float(field["base"])
@@ -591,21 +575,19 @@ static func _field_for(body_key: String, nside: int) -> Dictionary:
 	var field: Dictionary = {}
 	var manifest: Dictionary = _manifest(body_key)
 	var radius: float = float(manifest.get("radius", 0.0))
-	var version: String = _cached_version(body_key)
-	if radius > 0.0 and version != "":
+	if radius > 0.0 and has_data(body_key):
 		# Opened empty and filled ONE TILE AT A TIME, as directions come in. This answers about a single
 		# point — where the ground is under the camera, how wide the scale bar's stick is — and a view
 		# asks about a handful of tiles, never the level's millions. Reading the level up front meant
 		# listing a directory and loading several hundred tiles to answer a question about one.
-		var source := RemoteTileSource.new()
-		source.planet = body_key
-		source.version = version
 		field = {
-			"tiles": {}, "source": source, "radius": radius,
+			"tiles": {}, "radius": radius,
 			"span": float(manifest.get("max_height", 0.0)),
 			"base": float(manifest.get("height_offset", 0.0)),
 		}
-	_fields[cache_key] = field
+		# Only a field that can answer is remembered. An empty one was kept for good, so a body opened
+		# before its floor had landed stayed a smooth sphere to the guard for the rest of the session.
+		_fields[cache_key] = field
 	return field
 
 
@@ -652,19 +634,21 @@ static func _cached_version(body_key: String) -> String:
 ## [param from] is an optional one-element slot the level the data actually came from is written into.
 ## A caller that cares whether it read the tile itself or resampled an ancestor passes [code][0][/code];
 ## everyone else passes nothing and the walk is unchanged.
-static func _tile_or_ancestor(source: RemoteTileSource, nside: int, ipix: int,
+##
+## Every level goes through [param reader], which keeps what it decodes: an ancestor standing in for
+## hundreds of descendants is read once, not once for each of them.
+static func _tile_or_ancestor(reader: StarMapTiles, nside: int, ipix: int,
 		from: Array = []) -> PackedFloat32Array:
 	var level: int = nside
 	var at: int = ipix
 	while level >= TILE_NSIDE:
-		var raw: PackedByteArray = source.take(level, at)
+		var heights: PackedFloat32Array = reader.heights(level, at)
 		# Side deduced from the payload, never from the manifest: the two coincide for published tiles,
 		# and planet_data learnt the hard way that assuming it reads out of bounds when they do not.
-		var side: int = int(round(sqrt(float(raw.size()) / 2.0)))
-		if side > 1 and side * side * 2 == raw.size():
+		var side: int = int(round(sqrt(float(heights.size()))))
+		if side > 1 and side * side == heights.size():
 			if not from.is_empty():
 				from[0] = level
-			var heights: PackedFloat32Array = HeightPack.widen_u16(raw, side).to_float32_array()
 			@warning_ignore("integer_division")
 			var span: int = nside / level
 			return heights if level == nside else _sub_tile(heights, side, span, ipix)
@@ -796,6 +780,8 @@ static func _rock_at(paint: Dictionary, dir: Vector3) -> String:
 		var lonlat: Vector2 = HEALPix.vec2lonlat(dir)
 		for entry: Variant in patches:
 			var patch: Dictionary = entry
+			if patch.has("bounds") and not (patch["bounds"] as Rect2).has_point(lonlat):
+				continue
 			if Geometry2D.is_point_in_polygon(lonlat, patch["polygon"]):
 				return str(patch["rock"])
 	return str(paint.get("fallback", ""))

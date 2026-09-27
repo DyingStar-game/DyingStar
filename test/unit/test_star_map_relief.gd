@@ -23,6 +23,13 @@ const RADIUS: float = 6356000.0
 const RES: int = 24
 
 
+## Prepare the body's PlanetData once, before any test: it prints as it opens its manifest and packs,
+## and on a machine whose C# build lacks its dependency assemblies every print throws inside the
+## OpenTelemetry bridge — which GUT would pin on whichever test happened to prepare it first.
+func before_all() -> void:
+	StarMapTiles.offline_data(BODY)
+
+
 # ---------------------------------------------------------------------------
 # Always
 # ---------------------------------------------------------------------------
@@ -130,7 +137,10 @@ func test_the_massifs_are_part_of_the_ground() -> void:
 		var tile: Dictionary = zones.tile_of(256, ipix)
 		if (tile["mountains"] as Array).is_empty() and (tile["ridges"] as Array).is_empty():
 			continue
-		var bare: ArrayMesh = StarMapRelief.build_tile(BODY, 256, ipix, RES, {})
+		# The bare field off the disk against the ground as the chart draws it — through the game's
+		# sampler, which lays the massifs on itself as it does for a chunk.
+		var bare: ArrayMesh = StarMapRelief.build_tile(BODY, 256, ipix, RES, {},
+				StarMapTiles.on_disk(BODY))
 		var built: ArrayMesh = StarMapRelief.build_tile(BODY, 256, ipix, RES, tile)
 		if bare == null or built == null:
 			continue
@@ -339,115 +349,6 @@ func test_building_one_tile_is_quick() -> void:
 
 
 # ---------------------------------------------------------------------------
-# The level the ground is read at
-# ---------------------------------------------------------------------------
-
-## Reading one level at every zoom was the original defect: the chart asked for nside 1 — 203 km of
-## ground per sample — whether the planet filled a dozen pixels or the whole screen. Descending has to
-## buy detail.
-##
-## Asserted over the RANGE rather than at each of six heights picked by hand. Two neighbouring heights
-## sharing a level is ordinary and correct — that is what a level is — and demanding a step at each of
-## them pins the boundaries rather than the behaviour, so it fails the day the chart gets better at
-## choosing. It did: the budget is now spent against the tiles actually collected instead of an
-## estimate of the cap's area, and the far end moved from n4 to n8, finer, for the same budget.
-func test_the_level_gets_finer_as_the_camera_descends() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var last: int = 0
-	var first: int = 0
-	for altitude: float in [2.0e7, 3.6e6, 3.18e5, 2.0e4, 2.0e3, 5.0e2]:
-		var nside: int = StarMapRelief.level_for(manifest, Vector3.UP, altitude, RADIUS)
-		assert_gte(nside, last, "coming closer may never buy LESS detail")
-		assert_lte(nside, 1024, "and never ask for a level the body does not publish")
-		if first == 0:
-			first = nside
-		last = nside
-	assert_gt(last / first, 8, "across the whole descent, detail has to multiply")
-
-
-## And what it settles on is the FINEST level that fits: one step further would overrun the budget.
-##
-## The claim behind the question "could we not have one more level?". Before the walk counted for
-## itself, the answer came from an estimate of the cap's area, and near the ground that estimate runs
-## half again too high: measured at 4 km over Tarsis III it predicted 131 tiles where 85 were collected,
-## so a level that fitted with room to spare was refused and the ground was drawn twice as coarse as it
-## could have been.
-func test_the_level_chosen_is_the_finest_that_fits() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var tested: int = 0
-	for altitude: float in [3.6e6, 3.18e5, 2.0e4, 4.0e3, 5.0e2]:
-		var plan: Dictionary = StarMapRelief.patch_for(manifest, Vector3.UP, altitude, RADIUS)
-		var level: int = int(plan["level"])
-		assert_lte((plan["tiles"] as PackedInt32Array).size(), StarMapRelief.PATCH_TILES_MAX,
-				"at %.0f km, what is chosen fits" % (altitude / 1000.0))
-		if level >= 1024:
-			continue  # already at what the body publishes; there is no finer to refuse
-		tested += 1
-		assert_eq(StarMapRelief.patch_tiles(level * 2, Vector3.UP, altitude, RADIUS).size(), 0,
-				"at %.0f km, n%d is refused, which is why n%d was taken"
-				% [altitude / 1000.0, level * 2, level])
-	assert_gt(tested, 2, "sanity: several heights really did have a finer level to refuse")
-
-
-## The level chosen must be one the patch can actually be BUILT at, at every altitude.
-##
-## This asserted an ESTIMATE at first, and the estimate was optimistic twice over: it measured the bare
-## horizon while the walk covers the horizon widened by a pixel (29° at nside 2), and it measured an
-## area while the walk keeps every tile whose centre falls inside, boundary ring included. The planet
-## came out drawn as a pac-man — the patch ran out of budget in the middle of the visible disc — and
-## this test passed throughout. So it walks the patch now.
-func test_every_chosen_level_can_actually_be_built() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	for altitude: float in [2.0e7, 3.6e6, 3.18e5, 2.0e4, 2.0e3, 5.0e2, 1.0]:
-		var nside: int = StarMapRelief.level_for(manifest, Vector3.UP, altitude, RADIUS)
-		var tiles: PackedInt32Array = StarMapRelief.patch_tiles(
-				nside, Vector3.UP, altitude, RADIUS)
-		assert_gt(tiles.size(), 0,
-				"at %.0f m, level n%d must cover the view rather than stop inside it"
-				% [altitude, nside])
-		assert_lte(tiles.size(), StarMapRelief.PATCH_TILES_MAX,
-				"and never exceed the budget at %.0f m" % altitude)
-
-
-## No near view, no patch: the answer is the whole globe. A body seen from across the system has no
-## "ground under the camera" to centre anything on.
-func test_no_near_view_means_the_whole_globe() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	assert_eq(StarMapRelief.level_for(manifest, Vector3.ZERO, 500.0, RADIUS),
-			StarMapRelief.TILE_NSIDE, "with no direction there is nothing to centre a patch on")
-	assert_eq(StarMapRelief.level_for(manifest, Vector3.UP, -1.0, RADIUS),
-			StarMapRelief.TILE_NSIDE, "and a body that is not being watched keeps its globe")
-
-
-## A body that publishes only the coarsest level must never be asked for more, however close you get.
-## Measured on this machine: tarsis_8 has nothing but n1 — published, never walked on.
-func test_a_body_that_publishes_nothing_fine_is_never_asked_for_it() -> void:
-	var manifest: Dictionary = {"nside_max": 1, "radius": 3000000.0}
-	assert_eq(StarMapRelief.level_for(manifest, Vector3.UP, 100.0, 3000000.0), 1,
-			"nside_max is a ceiling, and a metre off the ground does not lift it")
-
-
-## The patch is grown from the pixel under the camera outward, and it must contain that pixel, stay
-## inside the visible cap, and stop at the budget. Enumerating 12n² pixels instead would be impossible:
-## at the finest level this pyramid goes to there are twelve million of them.
-func test_the_patch_is_a_bounded_cap_around_the_camera() -> void:
-	var altitude: float = 3.18e5
-	var nside: int = StarMapRelief.level_for(
-			{"nside_max": 1024, "radius": RADIUS}, Vector3.UP, altitude, RADIUS)
-	assert_gt(nside, StarMapRelief.TILE_NSIDE, "sanity: this altitude deserves a patch")
-	var tiles: PackedInt32Array = StarMapRelief.patch_tiles(nside, Vector3.UP, altitude, RADIUS)
-	assert_gt(tiles.size(), 0, "there is ground under the camera, so there are tiles")
-	assert_lte(tiles.size(), StarMapRelief.PATCH_TILES_MAX, "and never more than the budget")
-	assert_true(tiles.has(HEALPix.vec2pix_nest(nside, Vector3.UP)),
-			"the pixel directly under the camera must be in it")
-	var horizon: float = acos(RADIUS / (RADIUS + altitude))
-	var slack: float = HEALPix.pixel_angular_size(nside) * 2.0
-	for ipix: int in tiles:
-		assert_lt(HEALPix.pix2vec_nest(nside, ipix).angle_to(Vector3.UP), horizon + slack,
-				"no tile may be pulled in from beyond the horizon")
-
-
-# ---------------------------------------------------------------------------
 # The ground measured is the ground drawn
 # ---------------------------------------------------------------------------
 
@@ -535,85 +436,6 @@ func test_the_chart_draws_at_most_one_level_beyond_its_data() -> void:
 
 
 # ---------------------------------------------------------------------------
-# The level and its tiles, decided together
-# ---------------------------------------------------------------------------
-
-## A plan is always something that can actually be drawn.
-##
-## level_for answers from an ESTIMATE of how many tiles the view holds, and the estimate can be
-## optimistic — that is how a planet once shipped drawn as a pac-man, the patch having run out of budget
-## in the middle of the visible disc. Whatever the height and whatever is already on screen, the plan has
-## to come back with tiles, within the budget, and at the level it claims.
-func test_a_plan_is_always_buildable() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	for altitude: float in [2.0e7, 3.6e6, 3.18e5, 2.0e4, 2.0e3, 5.0e2, 1.0, 0.0]:
-		for current: int in [0, 1, 8, 64, 1024]:
-			var plan: Dictionary = StarMapRelief.patch_for(
-					manifest, Vector3.UP, altitude, RADIUS, current)
-			var level: int = int(plan["level"])
-			var tiles: PackedInt32Array = plan["tiles"]
-			var where: String = "a %.0f m, avec n%d deja a l'ecran" % [altitude, current]
-			assert_gt(tiles.size(), 0, "il faut des tuiles, %s" % where)
-			assert_lte(tiles.size(), StarMapRelief.PATCH_TILES_MAX, "sans depasser le budget, %s"
-					% where)
-			assert_gte(level, StarMapRelief.TILE_NSIDE, "et un niveau reel, %s" % where)
-			for ipix: int in tiles:
-				assert_lt(ipix, StarMapRelief.npix(level),
-						"chaque tuile appartient au niveau annonce, %s" % where)
-
-
-## Climbing to a finer level has to clear a margin; it may never overshoot what the height allows, nor
-## drop below what is already drawn.
-##
-## Scanned rather than asserted on a height picked by hand: where the boundary falls depends on the tile
-## budget and on the cap estimate, so a hand-picked height would quietly stop testing anything the day
-## either changes. The last assertion is the one that keeps FINER_MARGIN from being decoration — it has
-## to actually decide something, somewhere.
-func test_going_finer_has_to_clear_a_margin() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var bit: int = 0
-	var climbs: int = 0
-	for i: int in range(160):
-		var altitude: float = 2.0e7 * pow(0.9, float(i))
-		var eager: int = StarMapRelief.level_for(manifest, Vector3.UP, altitude, RADIUS)
-		for current: int in [1, 2, 8, 32, 128]:
-			if eager <= current:
-				continue
-			climbs += 1
-			var level: int = int(StarMapRelief.patch_for(
-					manifest, Vector3.UP, altitude, RADIUS, current)["level"])
-			assert_lte(level, eager,
-					"a %.0f m, jamais plus fin que ce que la hauteur permet" % altitude)
-			assert_gte(level, current,
-					"a %.0f m, et jamais plus grossier que ce qui est deja dessine" % altitude)
-			if level < eager:
-				bit += 1
-	assert_gt(climbs, 20, "sanity: des montees en niveau ont bien ete essayees")
-	assert_gt(bit, 0, "la marge doit retenir au moins une montee, sinon elle ne sert a rien")
-
-
-## And falling back is immediate: no margin, no hesitation.
-##
-## Asymmetric on purpose. Coarsening costs nothing — the tiles are already built, and the coarse ones
-## replace them — while refusing to coarsen keeps a fine patch alive for a view that has left it behind.
-func test_falling_back_is_immediate() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	for current: int in [8, 64, 1024]:
-		var plan: Dictionary = StarMapRelief.patch_for(
-				manifest, Vector3.UP, 2.0e7, RADIUS, current)
-		assert_eq(int(plan["level"]), StarMapRelief.level_for(manifest, Vector3.UP, 2.0e7, RADIUS),
-				"depuis n%d, la hauteur seule decide du retour en arriere" % current)
-
-
-## A body that is not being watched keeps its globe, whatever was on screen a moment ago.
-func test_no_near_view_falls_all_the_way_back() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var plan: Dictionary = StarMapRelief.patch_for(manifest, Vector3.UP, -1.0, RADIUS, 256)
-	assert_eq(int(plan["level"]), StarMapRelief.TILE_NSIDE)
-	assert_eq((plan["tiles"] as PackedInt32Array).size(), 12, "the twelve tiles of the whole sphere")
-
-
-# ---------------------------------------------------------------------------
 # How much ground the screen is showing
 # ---------------------------------------------------------------------------
 
@@ -642,38 +464,6 @@ func test_close_in_the_screen_shows_far_less_than_the_horizon() -> void:
 			"the cap takes the smaller of the two")
 	assert_eq(StarMapRelief.cap_angle(altitude, RADIUS, horizon * 10.0), horizon,
 			"and never goes beyond the horizon, whatever it is handed")
-
-
-## Which is what buys the detail: the same tile budget, spent on the ground actually in front of you.
-##
-## Measured before this bound existed: a sample of ground 13 km wide while the scale bar read 20 km, so
-## one sample of terrain was as coarse as the whole measuring stick.
-func test_bounding_by_the_view_buys_a_finer_level() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var half_fov: float = deg_to_rad(57.8)
-	var finer: int = 0
-	for altitude: float in [4.0e5, 2.24e5, 1.0e5, 3.0e4, 1.0e4]:
-		var view: float = StarMapRelief.view_half_angle(RADIUS + altitude, RADIUS, half_fov)
-		var blind: int = int(StarMapRelief.patch_for(
-				manifest, Vector3.UP, altitude, RADIUS, 0, -1.0)["level"])
-		var seeing: int = int(StarMapRelief.patch_for(
-				manifest, Vector3.UP, altitude, RADIUS, 0, view)["level"])
-		assert_gte(seeing, blind, "at %.0f km, never coarser for knowing more" % (altitude / 1000.0))
-		if seeing > blind:
-			finer += 1
-	assert_gt(finer, 3, "and finer at most of those heights, which is the whole point")
-
-
-## And no regression out where the body fits on screen: there, the two answer the same.
-func test_far_out_the_bound_changes_nothing() -> void:
-	var manifest: Dictionary = {"nside_max": 1024, "radius": RADIUS}
-	var half_fov: float = deg_to_rad(57.8)
-	for altitude: float in [3.0e6, 6.0e6, 2.0e7]:
-		var view: float = StarMapRelief.view_half_angle(RADIUS + altitude, RADIUS, half_fov)
-		assert_eq(int(StarMapRelief.patch_for(manifest, Vector3.UP, altitude, RADIUS, 0, view)["level"]),
-				int(StarMapRelief.patch_for(
-						manifest, Vector3.UP, altitude, RADIUS, 0, -1.0)["level"]),
-				"at %.0f km the whole body is in frame, so nothing is bounded" % (altitude / 1000.0))
 
 
 # ---------------------------------------------------------------------------
@@ -724,3 +514,4 @@ func _assert_agrees(nside: int, ipix: int) -> void:
 			"n%d: on average the measured ground must sit on the drawn ground" % nside)
 	assert_lt(float(strayed) / float(checked), 0.08,
 			"n%d: and only the tile edges may stray from it" % nside)
+

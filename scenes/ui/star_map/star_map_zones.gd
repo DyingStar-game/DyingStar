@@ -41,6 +41,7 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 	var patches: Array[Dictionary] = []
 	var mountains: Array = []
 	var ridges: Array = []
+	var mountain_set: RefCounted = null
 	if _open() and _pack.has_tile(nside, ipix):
 		# One read and one decode for both questions. The pack prepares the massifs and crests as
 		# MountainRelief's own Zone and Ridge objects, so there is nothing to convert here.
@@ -54,11 +55,20 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 			var poly: PackedVector2Array = zone.get("polygon", PackedVector2Array())
 			if poly.size() < 3:
 				continue
-			patches.append({"rock": rock, "polygon": poly})
+			# Its bounds, padded a hair so a point on the edge is not rejected by Rect2's open far side:
+			# a vertex outside them cannot be inside the outline, which spares the polygon test on
+			# nearly every vertex of the tile.
+			var bounds := Rect2(poly[0], Vector2.ZERO)
+			for corner: Vector2 in poly:
+				bounds = bounds.expand(corner)
+			patches.append({"rock": rock, "polygon": poly, "bounds": bounds.grow(1.0e-6)})
 		mountains = tile["mountain_zones"]
 		ridges = tile["ridge_lines"]
+		# The same features summed in C#, built by the pack as it decodes them — the object the terrain
+		# itself samples its mountains through. Null without the assembly.
+		mountain_set = tile["mountain_set"]
 	var made: Dictionary = {"fallback": default_rock, "patches": patches,
-			"mountains": mountains, "ridges": ridges}
+			"mountains": mountains, "ridges": ridges, "mountain_set": mountain_set}
 	_known[id] = made
 	return made
 

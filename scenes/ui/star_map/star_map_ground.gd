@@ -31,6 +31,12 @@ const ASSEMBLE_BUDGET_MS: float = 4.0
 ## Subdivisions per tile edge. A tile carries 32 samples a side, so 24 costs a little smoothing and a
 ## third of the vertices.
 const GRID_RES: int = 24
+## How many tiles taken off screen are kept, meshes and all, in case the view comes back to them.
+##
+## Zooming out and back in, or panning away and back, used to rebuild every tile it returned to. A tile
+## is some forty kilobytes of mesh, so two full views of [constant StarMapRelief.PATCH_TILES_MAX] cost
+## about thirty megabytes, and buy an instant return.
+const RETIRED_KEPT: int = 768
 
 ## Which body this ground belongs to. Set once by the chart; everything else about the body — its
 ## radius, how fine its tiles go — is read from its manifest by [StarMapRelief], so there is one
@@ -60,9 +66,17 @@ var _built_from: Dictionary = {}
 ## Tiles being built again over one that is already up. The difference matters in exactly one place:
 ## the pump refuses a tile it has already drawn, and a rebuild is the one case where it must not.
 var _redo: Dictionary = {}
-## The level everything is currently aiming at, and when the next decision is allowed.
+## The level of the wanted tile under the camera — the finest of a mixed set — and when the next
+## decision is allowed.
 var _level: int = 0
 var _decide_at_ms: int = 0
+## Tiles taken off screen but kept: id -> {"mesh": ArrayMesh, "from": int, "at": int}. See
+## [constant RETIRED_KEPT].
+var _retired: Dictionary = {}
+var _retire_seq: int = 0
+## When the read counters were last printed, and how many tiles they covered then.
+var _reported_at_ms: int = 0
+var _reported_tiles: int = 0
 var _material: StandardMaterial3D = null
 
 
@@ -82,6 +96,20 @@ func _say(what: String) -> void:
 ## The whole reason the rest of this file is short. Godot's ints are 64-bit, nside never exceeds 2^13
 ## and ipix never exceeds 12·nside², so the two fit side by side with room to spare — and then a parent
 ## is a shift, a child is an add, and "is this the same tile" is an integer compare.
+## Print what reading heights has cost against building tiles, every two seconds while tiles are being
+## built and not at all once they stop. Cumulative since the chart started, so the line settles.
+func _report_reads(now: int) -> void:
+	if now < _reported_at_ms + 2000:
+		return
+	var stats: Dictionary = StarMapTiles.stats()
+	var tiles: int = int(stats.get("tiles", 0))
+	if tiles == _reported_tiles:
+		return
+	_reported_at_ms = now
+	_reported_tiles = tiles
+	_say("lectures : %s" % StarMapTiles.stats_line(stats))
+
+
 static func tile_id(nside: int, ipix: int) -> int:
 	return (nside << 32) | ipix
 
@@ -117,8 +145,7 @@ func has_tiles() -> bool:
 	return not _active.is_empty()
 
 
-## The level everything is currently drawn at. The camera guard and the scale bar must measure the
-## ground at THIS level, or they answer about a surface the screen is not showing.
+## The level of the ground under the camera: the finest in view, the rest being coarser ring by ring.
 func level() -> int:
 	return _level
 
@@ -163,6 +190,7 @@ func wanted() -> Dictionary:
 ## yes — and a tile that comes back from its own data stops being asked, so this settles.
 func retry_provisional(budget: int) -> int:
 	var taken: int = 0
+	var reader: StarMapTiles = StarMapTiles.for_body(body_key)
 	# Over what is WANTED, never over a list of everything that was ever provisional: the wanted set is
 	# the few hundred tiles on screen, and it prunes itself.
 	for id: int in _desired:
@@ -175,7 +203,7 @@ func retry_provisional(budget: int) -> int:
 		# Only once its OWN data is there. Rebuilding on the strength of "something arrived somewhere"
 		# rebuilds from the same ancestor, comes back provisional, and is asked again — a loop that
 		# never ends for a tile the service does not have, and there are hundreds of those.
-		if not StarMapRelief.tile_is_cached(body_key, id_nside(id), id_ipix(id)):
+		if not reader.has_own(id_nside(id), id_ipix(id)):
 			continue
 		_redo[id] = true
 		_pending.push_front(id)
@@ -197,6 +225,8 @@ func refresh(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 	_decide_at_ms = now + DECIDE_EVERY_MS
 	_decide(centre_dir, altitude_m, view_angle)
 	_pump()
+	if DEBUG_GROUND:
+		_report_reads(now)
 
 
 ## Throw everything away — the body changed, or the chart closed.
@@ -209,6 +239,7 @@ func clear() -> void:
 	_active.clear()
 	_built_from.clear()
 	_redo.clear()
+	_retired.clear()
 	_level = 0
 	for child: Node in get_children():
 		child.queue_free()
@@ -227,9 +258,8 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 	# The level and its tiles come back together, from the one place that owns that arithmetic. Deciding
 	# the level here and fetching the tiles there is how the ground drawn and the ground measured came
 	# apart once, and nothing complains when they do.
-	var plan: Dictionary = StarMapRelief.plan_patch(
-			body_key, centre_dir, altitude_m, _level, view_angle)
-	var tiles: PackedInt32Array = plan["tiles"]
+	var plan: Dictionary = StarMapRelief.plan_patch(body_key, centre_dir, altitude_m, view_angle)
+	var tiles: PackedInt64Array = plan["tiles"]
 	if tiles.is_empty():
 		return  # no data for this body at all; whatever is on screen stays there
 	var level: int = int(plan["level"])
@@ -241,14 +271,16 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 				% [altitude_m / 1000.0, level, tiles.size(), _active.size(), get_child_count()])
 	_level = level
 	_desired.clear()
-	for ipix: int in tiles:
-		_desired[tile_id(level, ipix)] = true
+	for id: int in tiles:
+		_desired[id] = true
 
 	# Queue what is missing, nearest the camera first. Only the DIFFERENCE is sorted: sorting the whole
 	# wanted set every quarter second is work proportional to the view, not to what changed.
 	var fresh: Array[int] = []
 	for id: int in _desired:
 		if not _active.has(id) and not _in_flight.has(id) and not _pending.has(id):
+			if _reinstate(id):
+				continue
 			fresh.append(id)
 	if not fresh.is_empty():
 		var centre: Vector3 = centre_dir.normalized()
@@ -260,14 +292,18 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 	# And drop what is no longer wanted — but only once whatever replaces it is actually on screen.
 	# Removing eagerly opens a hole for as long as the replacement takes to build, which at a level
 	# change is every tile at once.
+	var coverage: Array = _coverage()
 	for id: int in _active.keys():
-		if _desired.has(id) or not _may_drop(id):
+		if _desired.has(id) or not _may_drop(id, coverage):
 			continue
 		var node: Node = _active[id]
 		_active.erase(id)
-		_built_from.erase(id)
 		if is_instance_valid(node):
+			var shown: MeshInstance3D = node as MeshInstance3D
+			if shown != null:
+				_retire(id, shown.mesh)
 			node.queue_free()
+		_built_from.erase(id)
 	# A tile that is neither wanted nor superseded stays; one that was queued and is no longer wanted
 	# never gets built.
 	var keep: Array[int] = []
@@ -279,47 +315,60 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 
 ## May this tile, which nothing wants any more, be taken off screen yet?
 ##
-## Only ever asked about tiles that have fallen out of the wanted set, and there are three cases. They
-## are not symmetric, and getting any of them wrong is visible: too eager opens a hole in the body, too
-## lazy leaves two surfaces stacked on the same ground, shimmering against each other.
+## The wanted set mixes levels — fine under the camera, coarser ring by ring, as the planet cuts its
+## own ground — so a tile that has fallen out of it is in one of three cases, told apart by what IS
+## wanted around it. Getting any of them wrong is visible: too eager opens a hole in the body, too lazy
+## leaves two surfaces stacked on the same ground, shimmering against each other.
 ##
-## - At the level being drawn, the tile has simply left the VIEW, and nothing is coming to replace it
-##   because nothing needs to. It goes at once.
-## - FINER than the level being drawn — the chart coarsened — one ancestor covers it, so wait for that
-##   one ancestor.
-## - COARSER — the chart refined — its four children cover it, so wait for all four. Dropping it with
-##   three of them up opens a hole for as long as the fourth takes to build.
+## - Something FINER is wanted inside it — the view came closer and it was cut. It waits until every
+##   wanted tile inside it is up. Parts of it with nothing wanted are out of view and need no cover.
+## - Something COARSER is wanted over it — the view drew back. It waits for that one ancestor.
+## - Neither: it has simply left the VIEW, nothing is coming to replace it, and it goes at once. (This
+##   case once answered "wait", and the ground piled up — 187 tiles on screen for 84 wanted while
+##   panning, 332 for 12 after pulling back to the globe.)
 ##
-## The first case used to answer "wait", because this was written to answer a question about REPLACEMENT
-## while the caller was asking one about REMOVAL. Nothing replaces a tile that has merely gone out of
-## view, so nothing ever let it go: measured in game at 187 tiles on screen for 84 wanted while panning
-## at one level, 332 for 12 after pulling back to the globe, and growing for as long as the camera moved.
-func _may_drop(id: int) -> bool:
-	if _level <= 0:
-		return false
-	var mine: int = id_nside(id)
-	if mine == _level:
-		return true
-	if mine > _level:
-		var ipix: int = id_ipix(id)
-		var level: int = mine
-		while level > _level:
-			@warning_ignore("integer_division")
-			level /= 2
-			ipix = ipix >> 2
-		return _active.has(tile_id(_level, ipix))
-	@warning_ignore("integer_division")
-	var ratio: int = _level / mine
-	if ratio > 2:
-		# More than one step apart, so the covering set is sixteen tiles or more. Rather than walk it,
-		# wait for the queue to drain: a jump of two levels at once is rare and a moment of an extra
-		# surface is cheaper than the bookkeeping.
-		return _pending.is_empty() and _in_flight.is_empty()
-	for k: int in range(4):
-		var child: int = tile_id(_level, id_ipix(id) * 4 + k)
-		if _desired.has(child) and not _active.has(child):
-			return false
+## [param coverage] is [method _coverage] of the current sets, computed once for a whole pass; left out,
+## it is computed here.
+func _may_drop(id: int, coverage: Array = []) -> bool:
+	if coverage.is_empty():
+		coverage = _coverage()
+	var below: Dictionary = coverage[0]
+	var waiting: Dictionary = coverage[1]
+	if below.has(id):
+		return not waiting.has(id)
+	var nside: int = id_nside(id)
+	var ipix: int = id_ipix(id)
+	while nside > StarMapRelief.TILE_NSIDE:
+		@warning_ignore("integer_division")
+		nside /= 2
+		ipix = ipix >> 2  # nested order: a pixel's parent is its index with the last two bits dropped
+		var ancestor: int = tile_id(nside, ipix)
+		if _desired.has(ancestor):
+			return _active.has(ancestor)
 	return true
+
+
+## Which tiles have something wanted inside them, and which of those are still waiting on some of it:
+## [code][below, waiting][/code], two sets of ids.
+##
+## Built by walking UP from each wanted tile — eleven steps at most — rather than asking each stale tile
+## what lies below it, which would scan the whole wanted set once per tile at every level change.
+func _coverage() -> Array:
+	var below: Dictionary = {}
+	var waiting: Dictionary = {}
+	for id: int in _desired:
+		var up: bool = _active.has(id)
+		var nside: int = id_nside(id)
+		var ipix: int = id_ipix(id)
+		while nside > StarMapRelief.TILE_NSIDE:
+			@warning_ignore("integer_division")
+			nside /= 2
+			ipix = ipix >> 2
+			var ancestor: int = tile_id(nside, ipix)
+			below[ancestor] = true
+			if not up:
+				waiting[ancestor] = true
+	return [below, waiting]
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +377,12 @@ func _may_drop(id: int) -> bool:
 
 ## Start as many queued tiles as the budget allows.
 func _pump() -> void:
+	# Resolved HERE, on the main thread, like the paint: whether the body is loaded is a question for the
+	# network registry, which a worker may not walk. A loaded planet lends its own tile cache.
+	var reader: StarMapTiles = null
 	while _in_flight.size() < MAX_IN_FLIGHT and not _pending.is_empty():
+		if reader == null:
+			reader = StarMapTiles.for_body(body_key)
 		var id: int = _pending.pop_front()
 		if (_active.has(id) and not _redo.has(id)) or _in_flight.has(id) or not _desired.has(id):
 			continue
@@ -342,7 +396,7 @@ func _pump() -> void:
 		# from one thread at a time. The worker is handed a string.
 		var paint: Dictionary = zones.tile_of(nside, ipix) if zones != null else {}
 		var task: int = WorkerThreadPool.add_task(func() -> void:
-			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint))
+			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader))
 		_in_flight[id] = {"task": task, "slot": slot}
 
 
@@ -382,3 +436,45 @@ func _harvest() -> void:
 			old.queue_free()
 		_say("n%d f%d bati (%d/%d, %d en vol)" % [
 				id_nside(id), id_ipix(id), _active.size(), _desired.size(), _in_flight.size()])
+
+
+# ---------------------------------------------------------------------------
+# Keeping what went off screen
+# ---------------------------------------------------------------------------
+
+## Keep a tile's mesh as it leaves the screen.
+func _retire(id: int, mesh: Mesh) -> void:
+	if mesh == null:
+		return
+	_retire_seq += 1
+	_retired[id] = {"mesh": mesh, "from": int(_built_from.get(id, 0)), "at": _retire_seq}
+	if _retired.size() > RETIRED_KEPT:
+		# The oldest quarter, in one sort: retiring is per tile, evicting is rare.
+		var ids: Array = _retired.keys()
+		ids.sort_custom(func(a: int, b: int) -> bool:
+			return int(_retired[a]["at"]) < int(_retired[b]["at"]))
+		@warning_ignore("integer_division")
+		for i: int in range(ids.size() / 4):
+			_retired.erase(ids[i])
+
+
+## Put a kept tile back on screen at once, rather than queueing a build. False when there is none.
+##
+## A tile that was provisional comes back as it was, and is then asked the same question every
+## provisional tile is: if its own data has arrived since, it is rebuilt behind the one on screen.
+func _reinstate(id: int) -> bool:
+	if not _retired.has(id):
+		return false
+	var kept: Dictionary = _retired[id]
+	_retired.erase(id)
+	var node := MeshInstance3D.new()
+	node.mesh = kept["mesh"]
+	node.material_override = _material
+	add_child(node)
+	_active[id] = node
+	var from: int = int(kept["from"])
+	_built_from[id] = from
+	if from < id_nside(id) and StarMapTiles.for_body(body_key).has_own(id_nside(id), id_ipix(id)):
+		_redo[id] = true
+		_pending.append(id)
+	return true

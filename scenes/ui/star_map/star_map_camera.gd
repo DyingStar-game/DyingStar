@@ -72,7 +72,12 @@ const METRE: float = 1.0e-9
 ## is only reachable because the near plane follows the GAP to the surface rather than the distance to
 ## the body's centre; at three hundred km, where this used to stop, the two are indistinguishable, and
 ## past that the old near plane would have clipped away the very surface you were descending towards.
-const SURFACE_CLEARANCE_M: float = 100.0
+##
+## A kilometre since the chart cuts its ground by the planet's own rule. The finest the ground is known to
+## is n1024, some 190 m per sample: from a hundred metres up a single sample filled the screen, which is
+## a view of the interpolation and not of the ground. A kilometre up still leaves several samples across
+## the view, and is what a ship arriving from orbit wants to see before it is flying rather than charting.
+const SURFACE_CLEARANCE_M: float = 1000.0
 
 ## The view the chart opens on, and the one Reset returns to. Constants rather than literals, so the
 ## button and the initial state cannot drift apart.

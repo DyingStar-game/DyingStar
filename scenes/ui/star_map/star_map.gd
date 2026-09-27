@@ -298,7 +298,11 @@ var _stream: StarMapStream = StarMapStream.new()
 ## What the ground of that body is made of, tile by tile. Also not a node.
 var _zones: StarMapZones = null
 ## Which body the ground currently belongs to, so its sphere can be given its mesh back when it stops.
+## An index into _bodies, and so only good until the next [method _rebuild]: _ground_key is what the
+## ground really belongs to, and this is resolved again from it after every rebuild.
 var _ground_body: int = -1
+## The body the ground was built for, by key. What survives closing the chart: the index does not.
+var _ground_key: String = ""
 
 ## Point of interest under the cursor, or -1 — the same relationship to _poi_focus that _hover has to
 ## the body focus.
@@ -362,11 +366,17 @@ func open() -> void:
 func close() -> void:
 	_dragging = false
 	_clear_search()
-	# Builds in flight write into objects owned by the ground. Closing the chart while one runs would
-	# leave a worker holding a reference to something on its way out, so the frame it costs is worth
-	# having.
-	_drop_ground()
+	# The ground is KEPT. Dropping it here threw away every tile, both pack handles and the tile service
+	# with its queue, so each F2 paid for the whole view again — a few hundred tiles rebuilt, a network
+	# round trip for a version that had not changed — to redraw exactly what was on screen a second ago.
+	# It is parked at the next rebuild and picked up again by key; see [method _park_ground]. Builds
+	# still in flight are harmless: a worker writes into its own slot and nothing else.
 	hide()
+
+
+func _exit_tree() -> void:
+	# The one place the ground's life really ends with the chart: its tile service owns a thread.
+	_drop_ground()
 
 
 func is_open() -> bool:
@@ -546,6 +556,8 @@ func _build_ui() -> void:
 
 
 func _rebuild() -> void:
+	# Taken off its sphere first, or freeing the spheres below would free the ground with them.
+	_park_ground()
 	# Everything EXCEPT the two fixtures built once with the world. Forgetting the light here is what
 	# made the day/night faces never appear: it was created, then freed by the very first open().
 	for child: Node in _world_root.get_children():
@@ -658,6 +670,12 @@ func _rebuild() -> void:
 			if str(_bodies[i]["key"]) == _cam.focus_key:
 				_cam.focus = i
 				break
+	# And the parked ground's body, so it stays the one elected while nothing looms larger: resolved from
+	# the key because the index it had pointed into the list just thrown away.
+	for i: int in range(_bodies.size()):
+		if str(_bodies[i]["key"]) == _ground_key:
+			_ground_body = i
+			break
 	_build_search_index()
 
 
@@ -1284,7 +1302,13 @@ func _refresh_ground() -> void:
 	var sphere: MeshInstance3D = _bodies[index]["sphere"]
 	if not is_instance_valid(sphere):
 		return
-	if _ground == null or _ground_body != index:
+	if _ground != null and _ground_key == key:
+		_ground_body = index
+		# Parked by a rebuild: same body, new sphere. Put back as it was, tiles and all.
+		if _ground.get_parent() != sphere:
+			_adopt(sphere, _ground)
+			_adopt(sphere, _roads)
+	else:
 		_drop_ground()
 		_ground = StarMapGround.new()
 		_ground.body_key = key
@@ -1309,6 +1333,7 @@ func _refresh_ground() -> void:
 		_roads.body_key = key
 		sphere.add_child(_roads)
 		_ground_body = index
+		_ground_key = key
 	# The real height above the ground, which is what makes the level follow the zoom. Safe to hand over
 	# now, and only now: the reading the guard is built from no longer depends on the level being drawn
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
@@ -1354,6 +1379,24 @@ func _view_half_angle(index: int) -> float:
 	return angle if angle <= 0.0 else angle * VIEW_ANGLE_MARGIN
 
 
+## Take the ground and its roads off their sphere WITHOUT ending them, so a rebuild can free the
+## spheres. The ground keeps its tiles, its queue and its builds in flight; [method _refresh_ground]
+## hangs it back on the new sphere of the same body.
+func _park_ground() -> void:
+	for node: Node in [_ground, _roads]:
+		if node != null and is_instance_valid(node) and node.get_parent() != null:
+			node.get_parent().remove_child(node)
+	_ground_body = -1
+
+
+func _adopt(sphere: Node, node: Node) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	if node.get_parent() != null:
+		node.get_parent().remove_child(node)
+	sphere.add_child(node)
+
+
 ## Take the ground away and give the body back its sphere.
 func _drop_ground() -> void:
 	if _ground_body >= 0 and _ground_body < _bodies.size():
@@ -1375,6 +1418,7 @@ func _drop_ground() -> void:
 			_ground.queue_free()
 	_ground = null
 	_ground_body = -1
+	_ground_key = ""
 
 
 ## Whose towns to draw: simply the body that looms largest on screen, selected or not.
@@ -2248,7 +2292,7 @@ func _update_readout(t: float) -> void:
 ## one of the three that means anything without knowing how HEALPix is numbered.
 ##
 ## It used to report an asked-for level beside an obtained one. There is no longer any difference to
-## report: [method StarMapRelief.level_for] is already bounded by what the body publishes, so the level
+## report: [method StarMapRelief.plan_patch] is already bounded by what the body publishes, so the level
 ## asked for is the level served.
 func _relief_readout() -> String:
 	var body: int = _relief_body()

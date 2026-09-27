@@ -23,7 +23,7 @@ const UPDATE_INTERVAL := 0.25
 const PREFETCH_MIN_MOVE_M := 200.0
 var _last_prefetch_cam := Vector3.INF
 ## Factor: subdivide when camera distance < chunk_diagonal * SUBDIVIDE_FACTOR.
-const SUBDIVIDE_FACTOR := 1.5
+const SUBDIVIDE_FACTOR := PlanetLod.SUBDIVIDE_FACTOR
 ## Back-face culling dot threshold (client only, skip chunks behind planet).
 const BACKFACE_DOT := -0.3
 ## Extra angular margin (radians) added to the geometric horizon angle so
@@ -2231,11 +2231,8 @@ func _traverse(nside: int, ipix: int, depth: int,
 	var geom: Array = _node_geom.get(node_id, [])
 	if geom.is_empty():
 		var cd := HEALPix.pix2vec_nest(nside, ipix)
-		# Approximate chunk diagonal using two diagonal corners
-		var corners: Array = HEALPix.get_pixel_corners(nside, ipix)
-		var corner_a: Vector3 = corners[0] * planet_data.radius  # SW
-		var corner_b: Vector3 = corners[2] * planet_data.radius  # NE
-		geom = [cd, corner_a.distance_to(corner_b)]
+		# Shared with the star chart, which cuts its ground by the same rule (PlanetLod).
+		geom = [cd, PlanetLod.chunk_diagonal(nside, ipix, planet_data.radius)]
 		_node_geom[node_id] = geom
 	var center_dir: Vector3 = geom[0]
 	var center_pos := center_dir * planet_data.radius
@@ -2252,8 +2249,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 	# terrain-relative altitude still coarsens the view from high up / space.
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
-	var _surface_dist := (_cam_dir_l - center_dir).length() * planet_data.radius
-	var dist := maxf(_surface_dist, _cam_alt_above_surface)
+	var dist := PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius, _cam_alt_above_surface)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
@@ -2277,7 +2273,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 	# Decide whether to subdivide
 	var should_subdivide := false
 	if depth < planet_data.max_quadtree_depth:
-		if dist < chunk_diag * SUBDIVIDE_FACTOR:
+		if PlanetLod.wants_split(dist, chunk_diag):
 			should_subdivide = true
 
 	if should_subdivide:
@@ -2310,8 +2306,7 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 	var center_dir := HEALPix.pix2vec_nest(nside, ipix)
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
-	var _surface_dist := (_cam_dir_l - center_dir).length() * planet_data.radius
-	var dist := maxf(_surface_dist, _cam_alt_above_surface)
+	var dist := PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius, _cam_alt_above_surface)
 	var key := _chunk_key_hp(nside, ipix)
 	return {
 		"key": key,

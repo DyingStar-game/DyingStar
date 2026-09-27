@@ -172,12 +172,14 @@ func test_repeated_zooming_in_stops_at_the_clearance() -> void:
 ## ground; a clearance of 1.0002 radii is 1 271 m over Tarsis III, so the request was silently rounded
 ## up to two and a half times what was asked — and to a different number over every other body, which
 ## is the part that makes it impossible to reason about.
+##
+## Asked at a few kilometres, the height the "where am I" framing uses, which clears the floor.
 func test_a_definite_altitude_is_honoured_over_any_body() -> void:
-	var wanted: float = 500.0 * StarMapCamera.METRE
+	var wanted: float = 3000.0 * StarMapCamera.METRE
 	for radius: float in [STAR_RADIUS_UNITS, PLANET_RADIUS_UNITS, MOON_RADIUS_UNITS]:
 		var asked: float = radius + wanted
 		assert_almost_eq(_cam.clamp_zoom(asked, radius), asked, CLEARANCE_UNITS * 0.01,
-				"five hundred metres above the ground must be five hundred metres, not a fraction "
+				"three km above the ground must be three km, not a fraction "
 				+ "of whatever happens to be underneath")
 
 
@@ -218,7 +220,10 @@ func test_holding_above_never_lowers_the_camera() -> void:
 ## With no body to clear — the chart still empty, say — the floor falls back to the absolute minimum
 ## rather than to zero, which would let the near plane collapse.
 func test_an_unknown_subject_falls_back_to_the_absolute_floor() -> void:
-	assert_eq(_cam.clamp_zoom(0.0, 0.0), StarMapCamera.ZOOM_MIN)
+	# With a kilometre of clearance the gap alone is as large as the absolute floor, so it is the larger
+	# of the two that holds.
+	assert_almost_eq(_cam.clamp_zoom(0.0, 0.0), maxf(StarMapCamera.ZOOM_MIN, CLEARANCE_UNITS),
+			StarMapCamera.ZOOM_MIN * 1.0e-6)
 
 
 # ---------------------------------------------------------------------------
