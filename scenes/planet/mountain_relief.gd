@@ -47,9 +47,13 @@ static var use_native := true
 static func native_available() -> bool:
 	if not _native_tried:
 		_native_tried = true
-		_zone_script = load("res://scenes/planet/native/MountainZoneNative.cs") as Script
-		_ridge_script = load("res://scenes/planet/native/MountainRidgeNative.cs") as Script
-		_set_script = load("res://scenes/planet/native/MountainSetNative.cs") as Script
+		# NativeScript, not load(): a stale assembly loads the .cs and then lacks the methods.
+		_zone_script = NativeScript.load_usable("res://scenes/planet/native/MountainZoneNative.cs",
+				["Configure", "Offset", "Core"])
+		_ridge_script = NativeScript.load_usable("res://scenes/planet/native/MountainRidgeNative.cs",
+				["Configure"])
+		_set_script = NativeScript.load_usable("res://scenes/planet/native/MountainSetNative.cs",
+				["AddZone", "AddRidge", "Offset", "Core", "Mask"])
 		if _zone_script == null or _ridge_script == null or _set_script == null:
 			_zone_script = null
 			_ridge_script = null

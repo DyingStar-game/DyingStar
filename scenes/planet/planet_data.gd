@@ -912,9 +912,8 @@ class TileFrame:
 	## MountainSetNative of the two lists (null → GDScript path).
 	var mtn_set: RefCounted = null
 	var mtn_ready := false
-	## TileFrameNative: the sampler's hot path in C#, fed the tiles this frame meets. Null without the
-	## assembly or with [member use_native] off (tests). native_ok is decided once per frame, not per
-	## sample — the check cost a third of what the C# saves (rule: PlanetData._native_frame_ok).
+	## TileFrameNative (the sampler's hot path in C#), null without a usable assembly or with use_native
+	## off. native_ok: decided once per frame, not per sample (rule: PlanetData._native_frame_ok).
 	var native: RefCounted = null
 	var native_ok := false
 	## Pruned tile -> [ancestor Vector2i(ipix, nside), guess], once per frame: a climb probes the disk at
@@ -938,7 +937,8 @@ class TileFrame:
 	static func native_available() -> bool:
 		if not _native_tried:
 			_native_tried = true
-			_native_script = load("res://scenes/planet/native/TileFrameNative.cs") as Script
+			_native_script = NativeScript.load_usable("res://scenes/planet/native/TileFrameNative.cs",
+					["Configure", "SetMountains", "AddTile", "Redirect", "Sample", "SampleBoundary", "Sample4"])
 		return _native_script != null
 
 	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.

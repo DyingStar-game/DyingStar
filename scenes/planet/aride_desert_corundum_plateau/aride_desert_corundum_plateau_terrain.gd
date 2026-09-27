@@ -176,7 +176,8 @@ static func _voronoi_edge_distance(x: Vector3) -> float:
 static func _voronoi_edge_dn(x: Vector3) -> Vector4:
 	if use_native_voronoi:
 		if not _voronoi_tried:
-			var script := load("res://scenes/planet/native/CrackVoronoiNative.cs") as Script
+			var script := NativeScript.load_usable(
+					"res://scenes/planet/native/CrackVoronoiNative.cs", ["EdgeDn"])
 			if script != null:
 				_voronoi_native = script.new()
 			_voronoi_tried = true
