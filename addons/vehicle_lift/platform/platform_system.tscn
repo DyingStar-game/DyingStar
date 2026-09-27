@@ -59,4 +59,5 @@ linear_spring_y/damping = 15000.0
 [node name="PropSync" type="Node" parent="." unique_id=1402991904]
 script = ExtResource("26_j51iy")
 type_name = "vehicle_lift_platformsystem"
+smooth_transform = true
 metadata/_custom_type_script = "uid://crq5yq1gfb42p"

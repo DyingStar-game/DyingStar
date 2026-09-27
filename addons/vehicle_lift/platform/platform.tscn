@@ -49,6 +49,12 @@ angular_damp = 1.0
 script = ExtResource("5_cb5jd")
 _platform_interface = NodePath("Screen Display Interface/Platform Interface")
 
+[node name="PropSync" type="Node" parent="." unique_id=1141307944]
+script = ExtResource("26_j51iy")
+type_name = "vehicle_lift_platform"
+smooth_transform = true
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
 [node name="Platform Visuals" type="Node3D" parent="." unique_id=1475105222]
 
 [node name="Platform Visual LOD0" type="MeshInstance3D" parent="Platform Visuals" unique_id=67625031]
@@ -329,8 +335,3 @@ size = Vector2i(500, 300)
 unique_name_in_owner = true
 button_group_scene = ExtResource("23_mhf6m")
 landing = 3
-
-[node name="PropSync" type="Node" parent="." unique_id=1141307944]
-script = ExtResource("26_j51iy")
-type_name = "vehicle_lift_platform"
-metadata/_custom_type_script = "uid://crq5yq1gfb42p"
