@@ -11,19 +11,125 @@ on:
   schedule:
     - cron:  '0 0 * * *'
   
+env:
+  GODOT_VERSION: 4.7
+  # The C# twins against their GDScript reference, bit for bit. Data-free: what needs tarsis_3's tile
+  # cache goes pending, and test_the_whole_sphere_samples_identically_without_data covers every face.
+  NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd
+
 jobs:
   execute-gut:
     name: Run GUT tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GODOT: ${{ github.workspace }}/../godot/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # disabled because server meshing in rewrite mode :D
-      #- name: Docker test
-      #  uses: ceceppa/godot-gut-ci@main
-      #  with:
-      #    godot_version: 4.4.1
+      - name: Set up .NET 9.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+
+      - name: Install Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../godot"
+          wget -q -O /tmp/godot.zip \
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+          unzip -q /tmp/godot.zip -d "$GITHUB_WORKSPACE/../godot"
+          rm /tmp/godot.zip
+          chmod +x "$GODOT"
+
+      # The tests call C# twins (TileFrameNative, CrackVoronoiNative, the mountain twins). Without a
+      # built assembly they would fall back to GDScript and the twins would never be tested at all.
+      - name: Build C#
+        run: |
+          # Double-precision GodotSharp from the editor zip, not nuget.org's single-precision one
+          # (see NuGet.Config and build-client.yaml).
+          export GODOT_SHARP_NUPKGS="$GITHUB_WORKSPACE/../godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
+          rm -rf ~/.nuget/packages/godotsharp/${GODOT_VERSION}* ~/.nuget/packages/godotsharpeditor/${GODOT_VERSION}* \
+                 ~/.nuget/packages/godot.net.sdk/${GODOT_VERSION}* ~/.nuget/packages/godot.sourcegenerators/${GODOT_VERSION}*
+          dotnet build DyingStar.csproj -c Debug
+
+      # Registers every class_name (the tests reference them) and imports the resources.
+      - name: Import project
+        run: timeout 40m "$GODOT" --headless --path . --import || true
+
+      - name: C# twins against GDScript (bit for bit)
+        run: |
+          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest="$NATIVE_TESTS" -gexit
+
+      # The whole suite still carries known failures (test_collision_shape, a few road tests): it
+      # reports, it does not block, until they are fixed. The C# twins above do block.
+      - name: Whole GUT suite
+        continue-on-error: true
+        run: |
+          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://test/unit -gexit
+
+  # The C# twins reproduce GDScript bit for bit only while .NET's Math.Sin / Math.Atan2 return the
+  # engine's own sin / atan2 bits. On Linux both are glibc; on Windows both should be the UCRT, and
+  # this job is what says so. A Windows client whose terrain moved by one ulp would stand on a surface
+  # the Linux server does not collide with.
+  gut-windows:
+    name: GUT C# twins (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GODOT: ${{ github.workspace }}\..\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\..\godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-win64
+
+      - name: Install Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          $dest = Join-Path $env:GITHUB_WORKSPACE "..\godot"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "godot.zip"
+          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_VERSION)-stable/Godot_v$($env:GODOT_VERSION)-stable_mono_win64.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath $dest
+          Remove-Item $zip
+
+      - name: Build C#
+        run: |
+          $env:GODOT_SHARP_NUPKGS = Join-Path $env:GITHUB_WORKSPACE "..\godot\Godot_v$($env:GODOT_VERSION)-stable_mono_win64\GodotSharp\Tools\nupkgs"
+          dotnet build DyingStar.csproj -c Debug
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Import project
+        run: |
+          & $env:GODOT --headless --path . --import
+          exit 0
+
+      - name: C# twins against GDScript (bit for bit)
+        run: |
+          & $env:GODOT --headless --path . -s addons/gut/gut_cmdln.gd "-gtest=$($env:NATIVE_TESTS)" -gexit
+          exit $LASTEXITCODE
 
   scene-lint:
     name: Check Area3D monitoring
