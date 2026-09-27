@@ -6,6 +6,10 @@ extends Node3D
 @export_range(0.0, 100.0, 0.01, "suffix:%") var platform_progress_ratio: float = 0.0:
 	set(value):
 		platform_progress_ratio = value
+		
+		if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
+			return
+		
 		_update_platform_movement()
 
 @export_range(0.0, 4.0, 0.01, "suffix:m") var guide_z_offset: float = 0.0:
@@ -13,12 +17,29 @@ extends Node3D
 		guide_z_offset = max(0.0, value)		# INFO Décalage du bord de la falaise
 		update_gizmos()
 		_update_visuals()
+		
+		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
+			return
+		
+		if _sync != null:
+			_sync.server_prop_update({
+				"guide_z_offset": guide_z_offset
+		})
 
 @export_range(3.0, 1000.0, 0.01, "suffix:m") var descent_depth: float = 3.0:
 	set(value):
 		descent_depth = max(0.0, value)			# INFO Profondeur de descente
+		
 		update_gizmos()
 		_update_visuals()
+		
+		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
+			return
+		
+		if _sync != null:
+			_sync.server_prop_update({
+				"descent_depth": descent_depth
+		})
 
 
 @export_group("Lift Dynamics")
@@ -430,6 +451,9 @@ func _update_visuals() -> void:
 	if dynamic_bridges:
 		dynamic_bridges.update_length(guide_z_offset)
 		dynamic_bridges.update_collider_position(guide_z_offset)
+	
+	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
+		return
 	
 	_update_platform_movement()
 
