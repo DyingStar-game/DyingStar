@@ -2,6 +2,10 @@ extends Label
 
 func _ready() -> void:
 	visible = false
+	# Connected once, for the panel's whole life: the value is known the moment the panel is shown
+	# (the F8 capture shows it for one frame), and hiding it no longer tries to disconnect a
+	# callable that was never connected (nor showing it to connect the same one twice).
+	NetworkOrchestrator.set_gameserver_zones.connect(_set_gameserver_zones)
 
 ## One line per zone of the Godot server simulating us: its world (space or a planet) and, when
 ## the zone is only part of that world, its bounds in that world's coordinates.
@@ -20,13 +24,5 @@ func _set_gameserver_zones(zones):
 		lines.append(label)
 	text = "\n".join(lines)
 
-func _disconnect():
-	pass
-
 func _on_normal_player_display_debug(show: bool) -> void:
-	if show:
-		visible = true
-		NetworkOrchestrator.set_gameserver_zones.connect(_set_gameserver_zones)
-	else:
-		visible = false
-		NetworkOrchestrator.set_gameserver_zones.disconnect(_disconnect)
+	visible = show

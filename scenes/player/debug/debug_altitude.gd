@@ -4,17 +4,16 @@ extends Label
 ## in space. Follows whichever body's gravity the player is in (like the local-time readout), so it
 ## updates on its own when moving between bodies and reads "space" in free fall between them.
 
+var _poll: Timer = null
+
 func _ready() -> void:
-	visible = false
+	_poll = DebugPoll.attach(self, 0.25, _refresh)
 
 func _on_normal_player_display_debug(show: bool) -> void:
-	if show:
-		visible = true
-		while visible:
-			await get_tree().create_timer(0.25).timeout
-			text = _altitude_text()
-	else:
-		visible = false
+	DebugPoll.set_shown(self, _poll, show, _refresh)
+
+func _refresh() -> void:
+	text = _altitude_text()
 
 func _altitude_text() -> String:
 	return _altitude_only() + _frame_suffix()

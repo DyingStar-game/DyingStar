@@ -4,17 +4,16 @@ extends Label
 ## moon, and shows nothing in space. Planet.get_local_solar_time does the work (a sundial: the angle
 ## between our meridian and the one facing the star), which is why no clock is synchronised for this.
 
+var _poll: Timer = null
+
 func _ready() -> void:
-	visible = false
+	_poll = DebugPoll.attach(self, 1.0, _refresh)
 
 func _on_normal_player_display_debug(show: bool) -> void:
-	if show:
-		visible = true
-		while visible:
-			await get_tree().create_timer(1.0).timeout
-			text = _planet_time_text()
-	else:
-		visible = false
+	DebugPoll.set_shown(self, _poll, show, _refresh)
+
+func _refresh() -> void:
+	text = _planet_time_text()
 
 func _planet_time_text() -> String:
 	var player: Node = owner
