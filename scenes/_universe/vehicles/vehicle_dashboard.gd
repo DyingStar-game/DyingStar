@@ -7,7 +7,7 @@ extends Panel
 ## about it (the screen is just another child). Put this script on the UI scene's root.
 ##
 ## Expects these child Labels (rename here if your scene differs):
-## speed, RPM, Load, Overloaded, Elec_THerm, Transmission, hanbreak, Light.
+## speed, RPM, Load, Overloaded, Elec_THerm, Transmission, hanbreak, Light, Odometer.
 
 var _vehicle: Vehicle = null
 
@@ -19,6 +19,7 @@ var _vehicle: Vehicle = null
 @onready var _transmission: Label = $Transmission
 @onready var _handbrake: Label = $hanbreak
 @onready var _light: Label = $Light
+@onready var _odometer: Label = $Odometer
 
 func _ready() -> void:
 	_vehicle = _find_vehicle()
@@ -40,6 +41,13 @@ func _process(_delta: float) -> void:
 	_transmission.text = _vehicle.get_drive_mode_name()
 	_handbrake.text = "%%HUD_HANDBRAKE" if _vehicle.is_handbraked() else ""
 	_light.text = "%%HUD_LIGHTS" if _vehicle.is_headlights_on() else ""
+	_odometer.text = "%s  %s km" % [tr("%%HUD_ODOMETER"), _km_text(_vehicle.odometer.km())]
+
+
+## "12 345.6": thousands grouped like every other figure in the game, one decimal (100 m).
+static func _km_text(km: float) -> String:
+	var tenths: int = int(round(km * 10.0))
+	return "%s.%d" % [Globals.format_thousands(floorf(tenths / 10.0)), tenths % 10]
 
 ## Walk up the tree (through the SubViewport) to the owning Vehicle.
 func _find_vehicle() -> Vehicle:

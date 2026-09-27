@@ -643,6 +643,14 @@ var bays: VehicleComponentBays:
 			_bays.changed.connect(_on_bays_changed)
 		return _bays
 var _bays: VehicleComponentBays = null
+## Distance driven over the vehicle's life. Replicated state of its own (see VehicleNetPart), exposed
+## as a property for the same reason as bays: no room for getters.
+var odometer: VehicleOdometer:
+	get:
+		if _odometer == null:
+			_odometer = VehicleOdometer.new()
+		return _odometer
+var _odometer: VehicleOdometer = null
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
@@ -2377,7 +2385,11 @@ func _replicate_transform() -> void:
 	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
 	var my_steering: float = snappedf(steering, 0.01)
 	var my_seats: Dictionary = _seat_occupancy_now()
-	if my_pos == _net_last_position and my_rot == _net_last_rotation \
+	odometer.track(position, my_parent_id)
+	var parts_data: Dictionary = {}
+	for part in _net_parts():
+		part.write_changes(parts_data)
+	if parts_data.is_empty() and my_pos == _net_last_position and my_rot == _net_last_rotation \
 			and my_parent_id == _net_last_parent_id \
 			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
 			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
@@ -2441,8 +2453,15 @@ func _replicate_transform() -> void:
 	if suspension != _net_last_suspension:
 		data["suspension"] = suspension
 		_net_last_suspension = suspension.duplicate()
+	data.merge(parts_data)
 
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
+
+
+## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
+## read back by client_channel_data_update and server_adopt_state.
+func _net_parts() -> Array[VehicleNetPart]:
+	return [odometer]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -2639,6 +2658,11 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# would also be skipped here — revisit ownership then.
 	if _is_networked() and GameOrchestrator.is_server():
 		return
+	# Below the return on purpose: a networked server must not take its own echo back (it would
+	# roll the odometer back to what it sent a moment ago), while the persistence restore at boot
+	# still arrives here — it runs before the uuid is set, so _is_networked() is still false.
+	for part in _net_parts():
+		part.read(data)
 	if data.has("position"):
 		var pos := Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
 		var rot := rotation
@@ -2818,6 +2842,8 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 ## need to take its players back — who sits where, who drives, which doors are open. The regular
 ## channel update is a no-op on the server on purpose (we simulate), hence this dedicated hook.
 func server_adopt_state(data: Dictionary) -> void:
+	for part in _net_parts():
+		part.read(data)
 	if data.has("seats"):
 		_net_seats = (data["seats"] as Dictionary).duplicate()
 	if data.has("pilot_uuid"):
