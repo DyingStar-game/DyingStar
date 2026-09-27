@@ -257,11 +257,13 @@ func test_the_whole_sphere_samples_identically_without_data() -> void:
 	assert_eq(served, dirs.size(), "and the C# answered every one")
 
 
-## The same heights against LINUX's, frozen in fixtures/tile_frame_linux.b64 — the server's platform.
-## Equal to the local GDScript is not enough across machines: a Windows client and the Linux server have
-## to stand on the same ground, and the engine's own maths are not the same on the two (the crack
-## Voronoi's sin was not; see test_crack_voronoi_native.gd). Regenerate on Linux only, on purpose.
-func test_the_whole_sphere_gives_the_linux_heights() -> void:
+## The same heights against a reference machine's, frozen in fixtures/tile_frame_linux.b64 (Fedora,
+## glibc 2.43). Equal to the local GDScript is not enough across machines: a Windows client and the
+## Linux server have to stand on the same ground, and libms differ in their last bits (the crack
+## Voronoi's sine does; see test_crack_voronoi_native.gd). The sampler uses no sine — atan2 and sqrt —
+## and measured it is bit-identical on GitHub's Ubuntu and on Windows; held to a micrometre so that a
+## libm's ulp somewhere else does not fail it. Regenerate on purpose only.
+func test_the_whole_sphere_gives_the_reference_heights() -> void:
 	var want: PackedFloat64Array = _linux_heights()
 	assert_gt(want.size(), 0, "the reference file is there")
 	var setup: Array = _whole_sphere()
@@ -270,15 +272,14 @@ func test_the_whole_sphere_gives_the_linux_heights() -> void:
 	var fast: PlanetData.TileFrame = _frames(pd, 64, -1)[0]
 	for d: Vector3 in dirs:
 		pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
-	var differ: int = 0
+	var worst: float = 0.0
 	var first: String = ""
 	for i: int in range(mini(dirs.size(), want.size())):
 		var c: float = pd.sample_height_for_direction(dirs[i], -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
-		if c != want[i]:
-			differ += 1
-			if first == "":
-				first = "%s: here %s, Linux %s" % [str(dirs[i]), String.num(c, 14), String.num(want[i], 14)]
-	assert_eq(differ, 0, "the C# sampler gives Linux's heights bit for bit: %s" % first)
+		if absf(c - want[i]) > worst:
+			worst = absf(c - want[i])
+			first = "%s: here %s, reference %s" % [str(dirs[i]), String.num(c, 14), String.num(want[i], 14)]
+	assert_lte(worst, 1.0e-6, "the C# sampler within a micrometre of the reference: %s" % first)
 
 
 const LINUX_HEIGHTS: String = "res://test/unit/fixtures/tile_frame_linux.b64"

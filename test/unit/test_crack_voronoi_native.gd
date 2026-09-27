@@ -1,23 +1,28 @@
 extends GutTest
 
-## The crack network's Voronoi in C# (CrackVoronoiNative), BIT FOR BIT against the LINUX values.
+## The crack network's Voronoi in C# (CrackVoronoiNative) against its GDScript twin and across machines.
 ##
-## Its distance carves the corundum ground of every chunk and every server collision shape, and moves
-## the rim vertices (crack_rim_snap). The hash under it, fract(sin(dot) × 43758.5453123), turns the last
-## bit of a sine into a different value, so what these tests really pin is the sine.
-##
-## The reference is Linux — glibc, the server's platform — frozen in fixtures/crack_voronoi_linux.b64,
-## NOT the local GDScript. The first Windows CI run is why: the C# twin gave the Linux values there, bit
-## for bit, while the GDScript on the Windows Godot build did not (0.07216454914327 against
-## 0.07216454902143 on the first point, ~30 nm) — that build's sin is not glibc's. So on Windows the C#
-## brings a client's cracks onto the server's, and comparing it to the local GDScript would fail it for
-## being right. The C#-against-GDScript comparison runs only where the engine's own sin is the reference.
-##
-## Regenerate the file only on Linux, with the GDScript path, and only when the crack arithmetic changes
-## on purpose (see TestCrackVoronoiPoints).
+## Its distance carves the corundum ground of every chunk and every server collision shape, and moves the
+## rim vertices (crack_rim_snap). The hash under it, fract(sin(dot) × 43758.5453123), turns the last bit
+## of a sine into a slightly different value — and the last bit of a sine is NOT the same everywhere.
+## Measured over the 4844 values of fixtures/crack_voronoi_linux.b64 (made on Fedora, glibc 2.43):
+##   GitHub's Ubuntu 24.04 (glibc 2.39), C# and GDScript alike    5 values off by an ulp
+##   Windows, C# (.NET's Math.Sin)                               402 values off
+##   Windows, GDScript (the Windows Godot build's sin)          3784 values off
+## all by ~1e-13. So what can be held, and is held here, is two things:
+## - on ONE machine where the engine and .NET share the system libm (Linux), the C# equals the GDScript
+##   bit for bit — the C# is the GDScript, faster;
+## - on any machine, every value stays within [constant ACROSS_MACHINES] of the reference: the drift is
+##   the libm's, far below a nanometre, never a different crack.
+## Bit-identical cracks across machines would need an integer hash (as MountainNoiseCore does), which
+## redraws the network: a decision of its own, not a test.
 ##
 ## Run:
 ##   godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_crack_voronoi_native.gd
+
+## How far a value may drift from the reference on another machine: cell units (1 cell = 220 m, so
+## 1e-9 cell is 0.2 µm), unit-normal components, and metres of carve. The drift measured is ~1e-13.
+const ACROSS_MACHINES: float = 1.0e-9
 
 const RADIUS: float = TestCrackVoronoiPoints.RADIUS
 const SPACING: float = TestCrackVoronoiPoints.SPACING
@@ -78,24 +83,33 @@ func test_the_linux_values_are_there() -> void:
 	assert_eq(want.size(), points * 4 + TestCrackVoronoiPoints.query_dirs().size() * 5)
 
 
-## THE claim: the C# gives the server's values, on whatever platform runs this.
-func test_the_csharp_gives_the_linux_values() -> void:
+## On every machine, the C# stays within [constant ACROSS_MACHINES] of the reference — the libm's ulps,
+## never a different cell or a different edge.
+func test_the_csharp_stays_within_a_hair_of_the_reference() -> void:
 	var want: PackedFloat64Array = TestCrackVoronoiPoints.linux_values()
-	var got: Array = _diff(_values(true), want)
-	assert_eq(got[0], 0, "the C# Voronoi, rim snap and carve equal Linux bit for bit: %s" % got[1])
+	var got: PackedFloat64Array = _values(true)
+	var worst: float = 0.0
+	var where: int = -1
+	for i: int in range(mini(got.size(), want.size())):
+		var d: float = absf(got[i] - want[i])
+		if d > worst:
+			worst = d
+			where = i
+	assert_lte(worst, ACROSS_MACHINES, "largest drift %s at value %d" % [String.num_scientific(worst), where])
 
 
-## And where the engine's own sin IS glibc's (Linux), the C# and the GDScript twin agree everywhere —
-## the GDScript being the readable reference the C# was written from. On a platform whose engine sin
-## differs (the Windows Godot build), the GDScript is not the reference, and this says so instead.
-func test_the_gdscript_agrees_where_the_engine_is_the_reference() -> void:
-	var want: PackedFloat64Array = TestCrackVoronoiPoints.linux_values()
+## And where the engine and .NET share the system libm, the C# IS the GDScript: bit for bit. On Windows
+## they do not share one — the engine's sin is its own build's, .NET's is the UCRT's — so there the two
+## are only held within [constant ACROSS_MACHINES], like two machines.
+func test_the_csharp_is_the_gdscript_on_this_machine() -> void:
+	var csharp: PackedFloat64Array = _values(true)
 	var gdscript: PackedFloat64Array = _values(false)
-	var off: Array = _diff(gdscript, want)
-	if int(off[0]) > 0:
-		pending("the engine's sin on %s is not glibc's (%d of %d values off, e.g. %s): the GDScript is "
-				% [OS.get_name(), off[0], want.size(), off[1]]
-				+ "not the reference here — the C# is, see test_the_csharp_gives_the_linux_values")
+	if OS.get_name() == "Windows":
+		var worst: float = 0.0
+		for i: int in range(mini(csharp.size(), gdscript.size())):
+			worst = maxf(worst, absf(csharp[i] - gdscript[i]))
+		assert_lte(worst, ACROSS_MACHINES, "two libms on one machine: largest gap %s"
+				% String.num_scientific(worst))
 		return
-	var got: Array = _diff(_values(true), gdscript)
-	assert_eq(got[0], 0, "C# and GDScript equal: %s" % got[1])
+	var got: Array = _diff(csharp, gdscript)
+	assert_eq(got[0], 0, "C# and GDScript equal bit for bit: %s" % got[1])
