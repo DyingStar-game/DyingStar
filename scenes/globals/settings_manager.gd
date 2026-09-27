@@ -77,24 +77,7 @@ func load_keybindings() -> void:
 		var ev_str: String = str(parsed[action_name])
 		keybindings[action_name] = ev_str
 		InputMap.action_erase_events(action_name)
-		InputMap.action_add_event(action_name, _event_from_text(ev_str))
-
-## Rebuild an InputEvent from the text the controls page saved.
-static func _event_from_text(ev_str: String) -> InputEvent:
-	if ev_str.begins_with("mouse_"):
-		var mouse := InputEventMouseButton.new()
-		mouse.button_index = int(ev_str.split("_")[1])
-		return mouse
-	var key := InputEventKey.new()
-	# find_keycode_from_string encodes modifiers in the high bits; split them back out so a saved
-	# "Alt + ²" reloads WITH its Alt (else remapped modifier bindings lose the modifier).
-	var kc: int = OS.find_keycode_from_string(ev_str)
-	key.physical_keycode = kc & KEY_CODE_MASK
-	key.alt_pressed = (kc & KEY_MASK_ALT) != 0
-	key.ctrl_pressed = (kc & KEY_MASK_CTRL) != 0
-	key.shift_pressed = (kc & KEY_MASK_SHIFT) != 0
-	key.meta_pressed = (kc & KEY_MASK_META) != 0
-	return key
+		InputMap.action_add_event(action_name, InputEventCodec.decode(ev_str))
 
 func initialize_settings():
 	config.set_value("video", "fullscreen", false)
