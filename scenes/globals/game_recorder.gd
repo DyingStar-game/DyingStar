@@ -2,7 +2,7 @@ extends Node
 
 ## In-game screen recorder for bug reports / clips. Press F6 (action "game_record") to
 ## start/stop. Captures the whole game viewport each frame and writes a Motion-JPEG AVI to
-## user://record_<timestamp>.avi. Global autoload, so it works in any scene.
+## <game folder>/screenshots/records/record_<timestamp>.avi. Global autoload, so it works in any scene.
 ## Motion-JPEG AVI container written by hand (RIFF headers + index). Ported from PR #95.
 
 var fps: int = 30
@@ -35,10 +35,8 @@ func is_recording() -> bool:
 	return _recording
 
 func start_recording() -> void:
-	# Save to an easy-to-find folder: Documents/DyingStar/records/.
-	var dir = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS).path_join("DyingStar/records")
-	DirAccess.make_dir_recursive_absolute(dir)
-	_filepath = dir.path_join("record_%s.avi" % Time.get_datetime_string_from_system().replace(":", "-"))
+	# Next to the F7 shots: <game folder>/screenshots/records/ (see CapturePaths).
+	_filepath = CapturePaths.screenshots_dir("records").path_join("record_%s.avi" % CapturePaths.stamp())
 	_file = FileAccess.open(_filepath, FileAccess.WRITE)
 	if _file == null:
 		push_warning("GameRecorder: cannot open %s" % _filepath)
