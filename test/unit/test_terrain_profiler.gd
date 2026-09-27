@@ -211,7 +211,7 @@ func test_normals_line_is_safe_without_data() -> void:
 
 func test_normals_line_splits_sampling_crack_and_the_rest() -> void:
 	# La phase "normals" pèse 74 % de la génération ; savoir si ce temps part dans
-	# l'échantillonnage de hauteur ou dans crack_offset décide du correctif, donc la
+	# l'échantillonnage de hauteur (crack comprise) ou dans le relief décide du correctif, donc la
 	# répartition doit être juste.
 	TerrainProfiler.commit_mesh({"total": 10000, "normals": 8000})
 	# Parts choisies pour tomber juste : un test ne doit pas dépendre du mode d'arrondi.
@@ -219,8 +219,8 @@ func test_normals_line_splits_sampling_crack_and_the_rest() -> void:
 	PropNet.prof_norm_crack_usec = 6400     # 80 %, le reliquat en vaut 10
 	var line := TerrainProfiler.normals_line()
 	assert_string_contains(line, "normals=8.0ms/mesh")
-	assert_string_contains(line, "échantillons 10%")
-	assert_string_contains(line, "crack 80%")
+	assert_string_contains(line, "échantillons+crack 10%")
+	assert_string_contains(line, "relief 80%")
 	assert_string_contains(line, "reste 10%")
 
 

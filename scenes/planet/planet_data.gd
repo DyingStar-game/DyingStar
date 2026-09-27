@@ -919,6 +919,13 @@ class TileFrame:
 	## Pruned tile -> [ancestor Vector2i(ipix, nside), guess], once per frame: a climb probes the disk at
 	## every level (misses are not cached) — 0.6 to 1 s of tile reads a chunk when done per sample.
 	var climbs: Dictionary = {}
+	## The crack carve of this chunk (CrackCarve.prepare_frame): POI subset, and the zone
+	## rule over export tile crack_zone_ipix — 1 carved, -1 looked up per direction.
+	var crack_pois: Array = []
+	var crack_zone := -1
+	var crack_zone_ipix := -1
+	var crack_zone_nside := 0
+	var crack_ready := false
 	static var use_native := true
 	static var _native_tried := false
 	static var _native_script: Script = null
@@ -931,6 +938,8 @@ class TileFrame:
 			native = _native_script.new()
 			native.Configure(data.max_height, data.height_offset, data.terrain_exaggeration,
 					data.radius)
+			native.SetCracks(data.corundum_default_biome, data.crack_spacing_m, data.crack_width_m,
+					data.crack_depth_m, data._has_mountains == 1, data.crack_mountain_fade_m)
 			native_ok = data._native_frame_ok(self)
 
 	## Loaded lazily: without the assembly, the GDScript path (as MountainRelief's twins do).
@@ -938,7 +947,8 @@ class TileFrame:
 		if not _native_tried:
 			_native_tried = true
 			_native_script = NativeScript.load_usable("res://scenes/planet/native/TileFrameNative.cs",
-					["Configure", "SetMountains", "AddTile", "Redirect", "Sample", "SampleBoundary", "Sample4"])
+					["Configure", "SetMountains", "SetCracks", "SetCrackFrame", "AddTile", "Redirect", "Sample",
+					"SampleBoundary", "Sample4"])
 		return _native_script != null
 
 	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.
@@ -2994,7 +3004,8 @@ func grade_height_sampler() -> Callable:
 	# face, neighbours) are then paid once per tile crossed, not per station.
 	var frame := make_tile_frame()
 	return func(dir: Vector3) -> float:
-		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, ns, frame)
+		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, ns, frame, 0.0,
+				CrackCarve.NONE)
 
 
 func _build_grade_profiles() -> void:
@@ -3237,7 +3248,8 @@ func terrain_vertex_spacing_m() -> float:
 func bridge_height_sampler(ipix: int) -> Callable:
 	var ns := export_nside
 	return func(dir: Vector3) -> float:
-		return sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null, ns)
+		return sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null, ns, null, 0.0,
+				CrackCarve.NONE)
 
 
 ## Road records for the HEALPix chunk (hp_nside, hp_ipix), resolving the pyramid
@@ -3289,40 +3301,37 @@ func _evict_lru() -> void:
 	_cache_mutex.unlock()
 
 
-## Sample height from the chunk heightmap tile for a given direction vector.
-## dir: unit direction on the sphere
-## The function finds which export-level HEALPix pixel contains this direction,
-## loads it, then samples bilinearly at the correct local UV position.
-## When [param known_export_ipix] >= 0 it is used directly instead of calling
-## vec2pix_nest, avoiding mis-classification at the polar/equatorial cap boundary.
-## [param frame] — cadre du chunk appelant ([method make_tile_frame]). Quand il est fourni,
-## il rend les trois paramètres précédents inutiles : c'est LUI qui donne face, position et
-## voisines, pour la tuile réellement lue — après remontée de niveau comprise, ce que des
-## précalculs passés à la main ne peuvent pas suivre.
-## [param vtx_spacing_m] — vertex pitch of the grid being built, the LOD gate
-## of the procedural mountains (MountainRelief): 0 = "full detail", what every
-## gameplay query wants, and what the finest chunk gets too (the gate is
-## floored at the finest pitch). Chunk builders, normal probes and the LOD
-## stitch pass their own pitch. Without mountains the value is never read.
+## The ground height (m) along unit [param dir]: the export tile holding it,
+## sampled bilinearly, plus the procedural mountains and the corundum cracks.
+## [param known_export_ipix] >= 0 skips vec2pix_nest (cap-boundary misclassification).
+## [param frame] — cadre du chunk appelant ([method make_tile_frame]) : il donne face,
+## position et voisines de la tuile réellement lue, remontée de niveau comprise, et rend
+## les trois paramètres précédents inutiles.
+## [param vtx_spacing_m] — pitch of the grid being built, the LOD gate of the
+## mountains and of the cracks: 0 = full detail, what gameplay queries want.
+## [param cracks] — CrackCarve.NONE / AUTO (default: the ground as it stands) / CARVE.
 func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null,
-		vtx_spacing_m: float = 0.0) -> float:
+		vtx_spacing_m: float = 0.0, cracks: int = CrackCarve.AUTO) -> float:
 	if frame != null and frame.native_ok and not PropNet.prof_on:
 		var fast: float = frame.native.Sample(dir, known_export_ipix,
-				nside if nside > 0 else export_nside, vtx_spacing_m)
+				nside if nside > 0 else export_nside, vtx_spacing_m, cracks)
 		if not is_nan(fast):
 			return fast
 	var h := _base_height_for_direction(dir, known_export_ipix,
 			_precomp_face, _precomp_xy, _cached_neighbors, nside, frame)
-	if _has_mountains != 1:
-		return h
-	# Hot path of every mountain chunk (5 samples a vertex): the frame's C#
-	# set is answered right here, one call; everything else goes through
-	# _mountain_offset.
-	if frame != null and frame.mtn_ready and frame.mtn_set != null:
-		return h + frame.mtn_set.Offset(dir, radius, maxf(vtx_spacing_m, _mtn_finest_spacing))
-	return h + _mountain_offset(dir, frame, vtx_spacing_m)
+	if _has_mountains == 1:
+		# Hot path of every mountain chunk (5 samples a vertex): the frame's C#
+		# set is answered right here, one call; everything else goes through
+		# _mountain_offset.
+		if frame != null and frame.mtn_ready and frame.mtn_set != null:
+			h = h + frame.mtn_set.Offset(dir, radius, maxf(vtx_spacing_m, _mtn_finest_spacing))
+		else:
+			h = h + _mountain_offset(dir, frame, vtx_spacing_m)
+	if cracks != CrackCarve.NONE and corundum_default_biome:
+		h = h + CrackCarve.offset(self, dir, frame, vtx_spacing_m, cracks)
+	return h
 
 
 ## The heightmap alone (pack tiles, pyramid climb, equirect fallback) — the
@@ -3423,33 +3432,27 @@ func _base_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 	return (h * max_height + height_offset) * terrain_exaggeration
 
 
-## Sample height at a tile boundary vertex.  Uses vec2pix_nest to detect
-## which export pixel the direction naturally belongs to.  If it differs
-## from [param chain_ipix] (the deterministic parent-chain pixel) AND is
-## a valid neighbour, uses vec_ipix directly — this is symmetric because
-## vec2pix_nest is deterministic: both adjacent chunks resolve to the same
-## tile for the same direction vector.
-## When vec_ipix's tile is not yet loaded (async recipe not ready, or face
-## boundary edge case), falls back to chain_ipix's tile — which is always
-## loaded since we are generating this chunk. This avoids the catastrophic
-## 0.0m fallback from a missing global heightmap.
+## Sample height at a tile boundary vertex: the tile vec2pix_nest gives the
+## direction (symmetric — both adjacent chunks resolve the same tile), or
+## [param chain_ipix]'s, always loaded, when that one is not (avoids the
+## catastrophic 0.0 m fallback of a missing global heightmap).
 ## [param frame] — voir [method sample_height_for_direction]. Il vaut surtout ici : un
 ## sommet de bord qui bascule sur la tuile voisine repartait sans aucun précalcul.
 func sample_height_boundary(dir: Vector3, chain_ipix: int,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null,
-		vtx_spacing_m: float = 0.0) -> float:
+		vtx_spacing_m: float = 0.0, cracks: int = CrackCarve.AUTO) -> float:
 	if PropNet.prof_on:
 		_prof_count_sampler("boundary")
 	var ns := nside if nside > 0 else export_nside
 	if frame != null and frame.native_ok and not PropNet.prof_on:
-		var fast: float = frame.native.SampleBoundary(dir, chain_ipix, ns, vtx_spacing_m)
+		var fast: float = frame.native.SampleBoundary(dir, chain_ipix, ns, vtx_spacing_m, cracks)
 		if not is_nan(fast):
 			return fast
 	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
 		return sample_height_for_direction(dir, chain_ipix,
-				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m)
+				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m, cracks)
 	# Prefer the canonical tile (vec_ipix) when loaded — it is symmetric:
 	# both sides of the boundary resolve to the same tile via vec2pix_nest.
 	# Through the frame: a missing tile misses the cache on every ask, hundreds per chunk rim.
@@ -3457,25 +3460,23 @@ func sample_height_boundary(dir: Vector3, chain_ipix: int,
 			else load_chunk_heightmap(vec_ipix, ns) != null
 	if canonical_loaded:
 		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame,
-				vtx_spacing_m)
+				vtx_spacing_m, cracks)
 	# Canonical tile not loaded — fall back to chain_ipix's tile (known-loaded).
 	# UV is clamped to [0,1] by _direction_to_pixel_uv, so the edge pixels are
 	# used rather than the catastrophic 0.0m from a missing global heightmap.
 	return sample_height_for_direction(dir, chain_ipix,
-			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m)
+			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m, cracks)
 
 
-## Sample height for a cube-sphere chunk vertex.
-## Converts cube-face (face, u, v) coords to a sphere direction, then
-## delegates to [method sample_height_for_direction].
-## The chunk bounds (u_min..u_max, v_min..v_max) are accepted for API
-## compatibility but not currently used for tile selection.
+## Sample height for a cube-sphere chunk vertex (bounds kept for API
+## compatibility, unused). No crack: the builder carves its vertices itself.
 func sample_height_for_chunk(
 		face: int, u: float, v: float,
 		_u_min: float, _u_max: float,
 		_v_min: float, _v_max: float) -> float:
 	var dir := cube_to_sphere(face, u, v)
-	return sample_height_for_direction(dir)
+	return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+			CrackCarve.NONE)
 
 
 ## Compute the local UV [0,1]² of a direction within a HEALPix pixel.
@@ -3807,24 +3808,21 @@ func sample_height_at(dir: Vector3) -> float:
 ## Radial distance from the planet centre to the crack-aware surface along
 ## [param dir] (a planet-LOCAL unit direction).  This is the authoritative
 ## "ground" for server anti-tunnel clamps (player and props): the thin trimesh
-## collision tunnels, so bodies below this are pushed back up to it. Uses the
-## full-depth crack (vtx_spacing 0 = no LOD fade), matching the player.
+## collision tunnels, so bodies below this are pushed back up to it. The crack
+## is carved at FULL depth whatever the pitch (the sampler would gate it on
+## vtx_spacing_m), under the chunks' zone rule (cracks_apply_at).
 ## [param nside] selects the pyramid level to sample: pass the chunk's own
 ## sample nside so a coarse chunk is validated against its own coarse tile
 ## rather than the finest level (which legitimately differs by kilometres on
 ## steep terrain and would false-trip the cache validator). nside <= 0 → finest.
 ## The biome relief (BiomeRelief, ≤ a couple of metres) is deliberately NOT
-## added: it stays under the 3 m anti-tunnel margin and far under the cache
-## validator's tolerance. The crack, at up to crack_depth_m, is not in that
-## league, so it follows the same zone rule as the chunks (cracks_apply_at):
-## no crack is added where another rock's zone has left the ground uncarved.
-## The procedural mountains (hundreds of metres) come with the sampler itself;
-## [param vtx_spacing_m] picks their LOD (0 = full detail, the finest chunk).
+## added: under the 3 m anti-tunnel margin and the cache validator's tolerance.
+## [param vtx_spacing_m] picks the mountains' LOD (0 = full detail).
 func crack_aware_surface_dist(dir: Vector3, nside: int = -1, vtx_spacing_m: float = 0.0) -> float:
-	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside, null, vtx_spacing_m)
-	if cracks_apply_at(dir):
-		alt += ArideDesertCorundumPlateauTerrain.crack_offset(
-			dir, radius, crack_spacing_m, crack_width_m, crack_depth_m, 0.0) * crack_factor(dir)
+	var alt := sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, nside, null, vtx_spacing_m,
+			CrackCarve.NONE)
+	if corundum_default_biome:
+		alt += CrackCarve.offset(self, dir, null, 0.0, CrackCarve.AUTO)
 	return radius + alt
 
 
@@ -4791,7 +4789,8 @@ func has_pads() -> bool:
 ## agree to the bit — the pattern grade_height_sampler() established.
 func pad_sampler() -> Callable:
 	return func(dir: Vector3) -> float:
-		return sample_height_for_direction(dir)
+		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+				CrackCarve.NONE)
 
 
 ## Register or move a pad. Returns the finest-level pixels whose chunks are now

@@ -263,8 +263,9 @@ static func _lay_tile(pack: ModifierPack, data: PlanetData, nside: int, ipix: in
 static func _on_sampled_ground(data: PlanetData, frame: PlanetData.TileFrame, nside: int,
 		pitch: float, lonlat: Vector2) -> Vector3:
 	var dir: Vector3 = HEALPix.lonlat2vec(lonlat.x, lonlat.y)
+	# No crack: a road crosses a chasm on its bridge, not down its floor.
 	var metres: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null,
-			nside, frame, pitch)
+			nside, frame, pitch, CrackCarve.NONE)
 	return dir * (StarMapRelief.MESH_RADIUS
 			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + LIFT))
 

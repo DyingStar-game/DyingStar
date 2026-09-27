@@ -168,8 +168,9 @@ static func cost_line() -> String:
 
 ## Décomposition de la phase "normals" — le poste dominant de la génération.
 ## Le correctif n'est pas le même selon que le temps part dans l'échantillonnage de
-## hauteur (4 lookups par sommet) ou dans crack_offset (4 Voronoï 3D par sommet, actifs
-## sur la seule tarsis_3). Le reliquat est le repère tangent et le produit vectoriel.
+## hauteur (4 lookups par sommet, crack comprise : CrackCarve.CARVE, un Voronoï 3D par
+## sonde sur le corindon) ou dans le relief de biome et la tranchée des lignes profilées
+## ("relief", ex-poste crack). Le reliquat est le repère tangent et le produit vectoriel.
 static func normals_line() -> String:
 	var norm := PropNet.prof_chunk_normals_usec
 	if norm <= 0:
@@ -177,7 +178,7 @@ static func normals_line() -> String:
 	var sm := PropNet.prof_norm_sample_usec
 	var ck := PropNet.prof_norm_crack_usec
 	var n := maxi(PropNet.prof_chunk_calls, 1)
-	return ("normals=%.1fms/mesh | échantillons %.0f%% (%.1fms) crack %.0f%% (%.1fms) "
+	return ("normals=%.1fms/mesh | échantillons+crack %.0f%% (%.1fms) relief %.0f%% (%.1fms) "
 			+ "reste %.0f%% (%.1fms)") % [
 		float(norm) / float(n) / 1000.0,
 		_pc(norm, sm), float(sm) / float(n) / 1000.0,

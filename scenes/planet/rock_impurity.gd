@@ -313,5 +313,6 @@ static func dust_weight(core: float, slope: float) -> float:
 ## height when the caller knows it (the strata need it); NAN samples it.
 static func ground_tint(data: PlanetData, dir: Vector3, slug: String, fallback: Color,
 		height_m: float = NAN) -> Color:
-	var h := height_m if not is_nan(height_m) else data.sample_height_for_direction(dir)
+	var h := height_m if not is_nan(height_m) else data.sample_height_for_direction(dir, -1, -1,
+			Vector2i(-1, -1), null, -1, null, 0.0, CrackCarve.NONE)
 	return tint(slug, dir, data.radius, h, data.mountain_core(dir), 0.0, 0.0, fallback)

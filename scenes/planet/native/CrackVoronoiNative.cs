@@ -22,7 +22,16 @@ public partial class CrackVoronoiNative : RefCounted
     /// <summary>_voronoi_edge_dn(x): nearest edge plane's unit normal in xyz, distance (cells) in w.</summary>
     public Vector4 EdgeDn(Vector3 x)
     {
-        double xx = x.X, xy = x.Y, xz = x.Z;
+        double edge = Edge(x.X, x.Y, x.Z, out double ex, out double ey, out double ez);
+        return new Vector4(ex, ey, ez, edge);
+    }
+
+    /// <summary>
+    /// The body of <see cref="EdgeDn"/>, for C# callers (TileFrameNative's crack carve): the distance
+    /// in cells, the edge normal out.
+    /// </summary>
+    public static double Edge(double xx, double xy, double xz, out double ex, out double ey, out double ez)
+    {
         double nx = Math.Floor(xx), ny = Math.Floor(xy), nz = Math.Floor(xz);
         double fx = xx - nx, fy = xy - ny, fz = xz - nz;
 
@@ -54,7 +63,7 @@ public partial class CrackVoronoiNative : RefCounted
 
         // Pass 2: the distance to the edge between it and each neighbour.
         double edge = 1.0e9;
-        double ex = 0.0, ey = 0.0, ez = 0.0;
+        ex = 0.0; ey = 0.0; ez = 0.0;
         for (int k = -1; k < 2; k++)
         {
             for (int j = -1; j < 2; j++)
@@ -81,7 +90,7 @@ public partial class CrackVoronoiNative : RefCounted
                 }
             }
         }
-        return new Vector4(ex, ey, ez, edge);
+        return edge;
     }
 
     /// <summary>SurfaceNoise.hash3: per-cell jitter in [0,1)³, fract(sin(dot) × 43758.5453123).</summary>
