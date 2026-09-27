@@ -11,8 +11,8 @@ using Godot;
 /// and its eight neighbours, registered by GDScript as the frame first meets
 /// them (AddTile), plus where a pruned tile was resolved to (Redirect). From those
 /// it does the whole sample — local UV, the cross-tile bilinear kernel, the
-/// metres, the procedural mountains — in one call, where GDScript spent some
-/// twenty microseconds a sample walking five functions.
+/// metres, the procedural mountains, the corundum cracks — in one call, where
+/// GDScript spent some twenty microseconds a sample walking five functions.
 ///
 /// It answers ONLY what it can answer exactly as GDScript would, and returns NaN
 /// for anything else: a tile not registered yet, a pruned tile whose ancestor has
@@ -50,12 +50,74 @@ public partial class TileFrameNative : RefCounted
     /// <summary>A mountain planet's tile with no feature: the GDScript adds 0.0, and so must this.</summary>
     private bool _addZero;
 
+    // The corundum crack network (PlanetData._crack_carve), cracks mode as PlanetData.CRACKS_*.
+    private const int CracksNone = 0;
+    private const int CracksAuto = 1;
+    private bool _cracksOn;
+    private double _crackSpacing;
+    private double _crackWidth;
+    private double _crackDepth;
+    private bool _mountainPlanet;
+    private double _mountainFade;
+    /// <summary>prepare_crack_frame has run: the POI subset below is the frame's.</summary>
+    private bool _crackPrepared;
+    private double[] _poiX = Array.Empty<double>();
+    private double[] _poiY = Array.Empty<double>();
+    private double[] _poiZ = Array.Empty<double>();
+    private double[] _poiR = Array.Empty<double>();
+    private double _poiMargin;
+    /// <summary>CRACKS_AUTO's zone rule over the export tile _zoneIpix: 1 carved, 0 not, -1 ask GDScript.</summary>
+    private int _crackZone = -1;
+    private long _zoneIpix = -1;
+    private long _zoneNside;
+
     public void Configure(double maxHeight, double heightOffset, double exaggeration, double radius)
     {
         _maxHeight = maxHeight;
         _heightOffset = heightOffset;
         _exaggeration = exaggeration;
         _radius = radius;
+    }
+
+    /// <summary>
+    /// The planet's crack network: on = corundum_default_biome; mountainPlanet = _has_mountains == 1,
+    /// under which crack_factor fades the carve over the massifs.
+    /// </summary>
+    public void SetCracks(bool on, double spacing, double width, double depth, bool mountainPlanet,
+        double mountainFade)
+    {
+        _cracksOn = on;
+        _crackSpacing = spacing;
+        _crackWidth = width;
+        _crackDepth = depth;
+        _mountainPlanet = mountainPlanet;
+        _mountainFade = mountainFade;
+    }
+
+    /// <summary>
+    /// What prepare_crack_frame resolved for the chunk: the POI spheres it can meet (planet-local unit
+    /// directions, radii in m) and, for CRACKS_AUTO, the zone rule over its export tile.
+    /// </summary>
+    public void SetCrackFrame(Vector3[] poiDirs, double[] poiRadii, double margin, int zone,
+        long zoneIpix, long zoneNside)
+    {
+        int n = Math.Min(poiDirs?.Length ?? 0, poiRadii?.Length ?? 0);
+        _poiX = new double[n];
+        _poiY = new double[n];
+        _poiZ = new double[n];
+        _poiR = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            _poiX[i] = poiDirs[i].X;
+            _poiY[i] = poiDirs[i].Y;
+            _poiZ[i] = poiDirs[i].Z;
+            _poiR[i] = poiRadii[i];
+        }
+        _poiMargin = margin;
+        _crackZone = zone;
+        _zoneIpix = zoneIpix;
+        _zoneNside = zoneNside;
+        _crackPrepared = true;
     }
 
     /// <summary>The frame's mountain set, and the floor of the mountains' LOD gate.</summary>
@@ -93,32 +155,124 @@ public partial class TileFrameNative : RefCounted
     public int TileCount() => _tiles.Count;
 
     /// <summary>
-    /// sample_height_for_direction(dir, knownIpix, …, nside, frame, vtxSpacing).
+    /// sample_height_for_direction(dir, knownIpix, …, nside, frame, vtxSpacing, cracks).
     /// NaN when this frame cannot answer exactly — see the class summary.
     /// </summary>
-    public double Sample(Vector3 dir, long knownIpix, long nside, double vtxSpacing)
+    public double Sample(Vector3 dir, long knownIpix, long nside, double vtxSpacing, int cracks)
     {
         long ipix = knownIpix >= 0 ? knownIpix : HealpixNative.Vec2PixNest(nside, dir.X, dir.Y, dir.Z);
         double h = Base(dir, ipix, nside);
         if (double.IsNaN(h))
             return h;
         if (_mountains == null)
-            return _addZero ? h + 0.0 : h;
-        return h + _mountains.Offset(dir, _radius, Math.Max(vtxSpacing, _finestSpacing));
+        {
+            if (_addZero)
+                h = h + 0.0;
+        }
+        else
+        {
+            h = h + _mountains.Offset(dir, _radius, Math.Max(vtxSpacing, _finestSpacing));
+        }
+        if (cracks == CracksNone || !_cracksOn)
+            return h;
+        double carve = Crack(dir, vtxSpacing, cracks);
+        if (double.IsNaN(carve))
+            return carve;
+        return h + carve;
     }
 
-    /// <summary>sample_height_boundary(dir, chainIpix, …, nside, frame, vtxSpacing).</summary>
-    public double SampleBoundary(Vector3 dir, long chainIpix, long nside, double vtxSpacing)
+    /// <summary>
+    /// PlanetData._crack_carve: the crack network's offset at dir (≤ 0), NaN where the frame cannot
+    /// decide it as GDScript would (no prepare_crack_frame, or CRACKS_AUTO outside a tile whose zone
+    /// rule it holds).
+    /// </summary>
+    private double Crack(Vector3 dir, double vtxSpacing, int cracks)
+    {
+        // ArideDesertCorundumPlateauTerrain.crack_edge_distance_m, then crack_offset_from_edge.
+        if (_crackSpacing <= 0.0 || _crackWidth <= 0.0)
+            return 0.0;
+        if (vtxSpacing > 0.0 && vtxSpacing >= _crackWidth * 0.5)
+            return 0.0;
+        if (_crackDepth <= 0.0)
+            return 0.0;
+        double scale = _radius / _crackSpacing;
+        double dM = CrackVoronoiNative.Edge(dir.X * scale, dir.Y * scale, dir.Z * scale,
+            out double _, out double _, out double _) * _crackSpacing;
+        if (dM >= _crackWidth * 0.5)
+            return 0.0;
+        double off = -_crackDepth;
+        if (!_crackPrepared)
+            return double.NaN;
+        if (cracks == CracksAuto)
+        {
+            if (_crackZone < 0 || HealpixNative.Vec2PixNest(_zoneNside, dir.X, dir.Y, dir.Z) != _zoneIpix)
+                return double.NaN;
+            if (_crackZone == 0)
+                return 0.0;
+        }
+        return off * Factor(dir);
+    }
+
+    /// <summary>PlanetData.crack_factor over the frame's POI subset and mountain set.</summary>
+    private double Factor(Vector3 dir)
+    {
+        // crack_clearance
+        double w = 1.0;
+        for (int i = 0; i < _poiR.Length; i++)
+        {
+            double dx = dir.X - _poiX[i];
+            double dy = dir.Y - _poiY[i];
+            double dz = dir.Z - _poiZ[i];
+            double dM = Math.Sqrt(dx * dx + dy * dy + dz * dz) * _radius;
+            double r = _poiR[i];
+            if (dM <= r)
+                return 0.0;
+            double s = SmoothStep(r, r + _poiMargin, dM);
+            w = w < s ? w : s;
+        }
+        if (w <= 0.0 || !_mountainPlanet)
+            return w;
+        double mask = _mountains != null ? _mountains.Mask(dir, _radius, _mountainFade) : 0.0;
+        return w * (1.0 - mask);
+    }
+
+    /// <summary>The engine's smoothstep (Math::smoothstep, Godot 4.3+).</summary>
+    private static double SmoothStep(double from, double to, double s)
+    {
+        if (IsEqualApprox(from, to))
+        {
+            if (from <= to)
+                return s <= from ? 0.0 : 1.0;
+            return s <= to ? 1.0 : 0.0;
+        }
+        double x = (s - from) / (to - from);
+        x = x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x);
+        return x * x * (3.0 - 2.0 * x);
+    }
+
+    /// <summary>The engine's is_equal_approx(double, double).</summary>
+    private static bool IsEqualApprox(double a, double b)
+    {
+        if (a == b)
+            return true;
+        double tolerance = 1e-5 * Math.Abs(a);
+        if (tolerance < 1e-5)
+            tolerance = 1e-5;
+        return Math.Abs(a - b) < tolerance;
+    }
+
+    /// <summary>sample_height_boundary(dir, chainIpix, …, nside, frame, vtxSpacing, cracks).</summary>
+    public double SampleBoundary(Vector3 dir, long chainIpix, long nside, double vtxSpacing, int cracks)
     {
         long vecIpix = HealpixNative.Vec2PixNest(nside, dir.X, dir.Y, dir.Z);
         if (vecIpix == chainIpix)
-            return Sample(dir, chainIpix, nside, vtxSpacing);
+            return Sample(dir, chainIpix, nside, vtxSpacing, cracks);
         // The canonical tile when it is loaded, the chain's otherwise: the GDScript asks the cache
         // whether vec_ipix has data. A tile registered here has been asked already; one that has not
         // cannot be told apart from a missing one, so it goes back to GDScript.
         if (!_tiles.TryGetValue(Id(vecIpix, nside), out var canonical))
             return double.NaN;
-        return Sample(dir, canonical.Floats.Length > 0 ? vecIpix : chainIpix, nside, vtxSpacing);
+        return Sample(dir, canonical.Floats.Length > 0 ? vecIpix : chainIpix, nside, vtxSpacing, cracks);
     }
 
     /// <summary>
@@ -127,13 +281,15 @@ public partial class TileFrameNative : RefCounted
     /// go through the GDScript; the caller then asks for all four the usual way.
     /// </summary>
     public Vector4 Sample4(Vector3 a, Vector3 b, Vector3 c, Vector3 d, long ipix, long nside,
-        double vtxSpacing, bool boundary)
+        double vtxSpacing, bool boundary, int cracks)
     {
         if (boundary)
-            return new Vector4(SampleBoundary(a, ipix, nside, vtxSpacing), SampleBoundary(b, ipix, nside, vtxSpacing),
-                SampleBoundary(c, ipix, nside, vtxSpacing), SampleBoundary(d, ipix, nside, vtxSpacing));
-        return new Vector4(Sample(a, ipix, nside, vtxSpacing), Sample(b, ipix, nside, vtxSpacing),
-            Sample(c, ipix, nside, vtxSpacing), Sample(d, ipix, nside, vtxSpacing));
+            return new Vector4(SampleBoundary(a, ipix, nside, vtxSpacing, cracks),
+                SampleBoundary(b, ipix, nside, vtxSpacing, cracks),
+                SampleBoundary(c, ipix, nside, vtxSpacing, cracks),
+                SampleBoundary(d, ipix, nside, vtxSpacing, cracks));
+        return new Vector4(Sample(a, ipix, nside, vtxSpacing, cracks), Sample(b, ipix, nside, vtxSpacing, cracks),
+            Sample(c, ipix, nside, vtxSpacing, cracks), Sample(d, ipix, nside, vtxSpacing, cracks));
     }
 
     private double Base(Vector3 dir, long ipix, long ns)

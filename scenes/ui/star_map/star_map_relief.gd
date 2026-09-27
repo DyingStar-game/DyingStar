@@ -425,6 +425,7 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	if data != null:
 		frame = data.make_tile_frame()
 		data.prepare_mountain_frame(frame, nside, ipix)
+		CrackCarve.prepare_frame(data, frame, nside, ipix)
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()

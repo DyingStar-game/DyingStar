@@ -81,9 +81,9 @@ func _sample_both(pd: PlanetData, dirs: PackedVector3Array, ipix: int, nside: in
 		for d: Vector3 in dirs:
 			var h: float
 			if boundary:
-				h = fast.native.SampleBoundary(d, ipix, nside, pitch)
+				h = fast.native.SampleBoundary(d, ipix, nside, pitch, CrackCarve.AUTO)
 			else:
-				h = fast.native.Sample(d, ipix, nside, pitch)
+				h = fast.native.Sample(d, ipix, nside, pitch, CrackCarve.AUTO)
 			if not is_nan(h):
 				served += 1
 	return [differ, served, first_diff]
@@ -217,7 +217,7 @@ func test_directions_everywhere_sample_identically() -> void:
 			var b: float = a
 			if fast.native != null:
 				pd._base_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, level, fast)
-				var c: float = fast.native.Sample(d, -1, level, 0.0)
+				var c: float = fast.native.Sample(d, -1, level, 0.0, CrackCarve.NONE)
 				if not is_nan(c):
 					b = c
 			if a != b:
@@ -246,7 +246,7 @@ func test_the_whole_sphere_samples_identically_without_data() -> void:
 	var first: String = ""
 	for d: Vector3 in dirs:
 		var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow, 0.0)
-		var c: float = fast.native.Sample(d, -1, 64, 0.0) if fast.native != null else NAN
+		var c: float = fast.native.Sample(d, -1, 64, 0.0, CrackCarve.AUTO) if fast.native != null else NAN
 		if not is_nan(c):
 			served += 1
 			if c != b:
@@ -255,6 +255,80 @@ func test_the_whole_sphere_samples_identically_without_data() -> void:
 					first = "%s: C# %s, GDScript %s" % [str(d), String.num(c, 14), String.num(b, 14)]
 	assert_eq(differ, 0, "every direction equal: %s" % first)
 	assert_eq(served, dirs.size(), "and the C# answered every one")
+
+
+## The corundum cracks carved by the sampler (CrackCarve), C# against GDScript: AUTO (the zone rule,
+## answered by the frame over a tile with no zone) and CARVE (a chunk's normal probes), at full detail and
+## at a chunk's pitch, on chunks a POI sphere half covers — its ramp is the crack factor. Both paths reach
+## the Voronoi through CrackVoronoiNative, so this holds on Windows too (see test_crack_voronoi_native.gd
+## for the Voronoi itself against the Linux reference). Non-vacuous: the carve is asserted to be there.
+func test_the_cracks_sample_identically() -> void:
+	var setup: Array = _whole_sphere()
+	var pd = setup[0]
+	var dirs: PackedVector3Array = setup[1]
+	pd.corundum_default_biome = true
+	pd.crack_spacing_m = 4000.0
+	pd.crack_width_m = 250.0
+	pd.crack_depth_m = 180.0
+	pd.crack_poi_margin_m = 300.0
+	var chunks: Array = []
+	var pois: Array = []
+	for i: int in range(24):
+		var ipix: int = HEALPix.vec2pix_nest(1024, dirs[i])
+		chunks.append(ipix)
+		if i % 2 == 0:  # a POI on every other chunk, 1.2 km off its centre
+			var c: Vector3 = HEALPix.pix2vec_nest(1024, ipix)
+			pois.append({"dir": (c + c.cross(Vector3.UP).normalized() * (1200.0 / pd.radius)).normalized(),
+					"radius": 1000.0})
+	pd.set_crack_exclusions(pois)
+	for mode: int in [CrackCarve.AUTO, CrackCarve.CARVE]:
+		for pitch: float in [0.0, 25.0]:
+			var differ: int = 0
+			var served: int = 0
+			var carved: int = 0
+			var ramped: int = 0
+			var first: String = ""
+			for ipix: int in chunks:
+				var frames: Array = _frames(pd, 1024, ipix)
+				var fast: PlanetData.TileFrame = frames[0]
+				var slow: PlanetData.TileFrame = frames[1]
+				CrackCarve.prepare_frame(pd, fast, 1024, ipix)
+				CrackCarve.prepare_frame(pd, slow, 1024, ipix)
+				var grid: PackedVector3Array = _grid_dirs(1024, ipix, 48)
+				for d: Vector3 in grid:  # the GDScript registers every tile the C# will need
+					pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, pitch, mode)
+				for d: Vector3 in grid:
+					var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow,
+							pitch, mode)
+					var bare: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64,
+							slow, pitch, CrackCarve.NONE)
+					if b != bare:
+						carved += 1
+						var w: float = pd.crack_factor(d, slow.crack_pois, slow)
+						if w > 0.0 and w < 1.0:
+							ramped += 1
+					var c: float = fast.native.Sample(d, -1, 64, pitch, mode) if fast.native != null else NAN
+					if not is_nan(c):
+						served += 1
+						if c != b:
+							differ += 1
+							if first == "":
+								first = "%s: C# %s, GDScript %s" % [str(d), String.num(c, 14), String.num(b, 14)]
+			var label: String = "mode %d, pitch %.0f" % [mode, pitch]
+			assert_eq(differ, 0, "%s: every sample equal: %s" % [label, first])
+			# A rim sample in a crack of the NEXT export tile is left to GDScript under AUTO (the frame
+			# holds the zone rule of its own tile only); everything else is the C#'s.
+			assert_gt(served, int(chunks.size() * 49 * 49 * 0.97), "%s: the C# answered (%d)" % [label, served])
+			assert_gt(carved, 500, "%s: the samples do fall in cracks (%d)" % [label, carved])
+			assert_gt(ramped, 10, "%s: and in a POI's ramp (%d)" % [label, ramped])
+	# At a pitch past half the crack width nothing is carved, in either path.
+	var ipix0: int = chunks[0]
+	var coarse: PlanetData.TileFrame = _frames(pd, 1024, ipix0)[0]
+	CrackCarve.prepare_frame(pd, coarse, 1024, ipix0)
+	for d: Vector3 in _grid_dirs(1024, ipix0, 16):
+		assert_eq(pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, coarse, 130.0),
+				pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, coarse, 130.0,
+						CrackCarve.NONE), "no crack at a 130 m pitch")
 
 
 ## The same heights against a reference machine's, frozen in fixtures/tile_frame_linux.b64 (Fedora,

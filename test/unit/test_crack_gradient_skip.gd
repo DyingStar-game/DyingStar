@@ -56,9 +56,10 @@ func _eps_rad() -> float:
 # 1. Le découpage ne change pas un bit
 # ===================================================================
 
-## Copie littérale du corps de crack_offset() AVANT le découpage. Comparer la fonction
-## à sa propre implémentation ne prouverait rien : c'est contre cette référence figée que
-## la neutralité arithmétique se vérifie.
+## Copie littérale du corps de crack_offset() AVANT le découpage, profil en caisson
+## (plancher plat, parois verticales). Comparer la fonction à sa propre implémentation ne
+## prouverait rien : c'est contre cette référence figée que la neutralité arithmétique se
+## vérifie.
 func _reference_offset(dir: Vector3, radius: float, spacing_m: float,
 		width_m: float, depth_m: float, vtx_spacing_m: float) -> float:
 	if spacing_m <= 0.0 or width_m <= 0.0 or depth_m <= 0.0:
@@ -68,12 +69,9 @@ func _reference_offset(dir: Vector3, radius: float, spacing_m: float,
 	var p := dir * (radius / spacing_m)
 	var edge_cells: float = CRACK._voronoi_edge_distance(p)
 	var d_m := edge_cells * spacing_m
-	var half := width_m * 0.5
-	if d_m >= half:
+	if d_m >= width_m * 0.5:
 		return 0.0
-	var t := d_m / half
-	var t2 := t * t
-	return -depth_m * (1.0 - t2 * t2)
+	return -depth_m
 
 
 func test_split_reproduces_the_original_arithmetic_exactly() -> void:
@@ -148,15 +146,18 @@ func test_the_margin_is_not_vacuous() -> void:
 
 
 # ===================================================================
-# 3. Le rebord : les sommets glissent dessus
+# 3. La paroi : les sommets glissent sur le rebord ou sur le pied
 # ===================================================================
 
-func test_rim_snap_puts_near_vertices_on_the_rim_and_leaves_the_others() -> void:
+func test_rim_snap_puts_near_vertices_on_the_wall_and_leaves_the_others() -> void:
 	var pitch := 13.5
 	var half := WIDTH * 0.5
 	var max_move := pitch * PlanetChunk.RIM_SNAP_PITCHES
 	var snapped := 0
 	var kept := 0
+	var foot := half - CRACK.CRACK_FOOT_INSET_M
+	var on_rim := 0
+	var on_foot := 0
 	var off_rim := 0   # moved onto a plane that stopped being the nearest edge (a cell corner)
 	for dir in _dirs(3000, 4242):
 		var d := CRACK.crack_edge_distance_m(dir, RADIUS, SPACING, WIDTH, 0.0)
@@ -172,21 +173,30 @@ func test_rim_snap_puts_near_vertices_on_the_rim_and_leaves_the_others() -> void
 				pass
 		else:
 			snapped += 1
-			assert_eq(r.w, half, "moved: declared on the rim")
+			# The plateau side onto the rim, the crack side onto the foot.
+			if d >= half:
+				on_rim += 1
+				assert_eq(r.w, half, "moved from the plateau: declared on the rim")
+			else:
+				on_foot += 1
+				assert_eq(r.w, foot, "moved from the crack: declared on the foot")
 			var true_d := CRACK.crack_edge_distance_m(nd, RADIUS, SPACING, WIDTH, 0.0)
-			if absf(true_d - half) > 0.05:
+			if absf(true_d - r.w) > 0.05:
 				off_rim += 1
-			assert_lt(absf(d - half), max_move + 1e-6, "was within reach")
+			assert_lt(absf(d - r.w), max_move + 1e-6, "was within reach")
 	assert_gt(snapped, 5, "some vertices sat near a rim")
+	assert_gt(on_rim, 0, "some onto the rim")
+	assert_gt(on_foot, 0, "some onto the foot")
 	assert_gt(kept, snapped, "most did not")
 	assert_lte(off_rim, int(ceil(snapped * 0.05)),
-			"%d of %d snapped vertices are not on the rim (cell corners only)" % [off_rim, snapped])
+			"%d of %d snapped vertices are not on the wall (cell corners only)" % [off_rim, snapped])
 
 
 func test_rim_snap_leaves_no_gap_along_a_grid_line() -> void:
 	# Walk straight lines of vertices at the pitch across many rims: wherever
-	# a line crosses a rim, at least one of the two vertices around the
-	# crossing must have been moved onto it — the notch-per-period bug.
+	# a line crosses a wall, BOTH vertices around the crossing must have been
+	# moved, one onto the rim and one onto the foot — otherwise the wall
+	# drawn between them leans by up to a pitch.
 	var pitch := 13.5
 	var max_move := pitch * PlanetChunk.RIM_SNAP_PITCHES
 	var half := WIDTH * 0.5
@@ -205,14 +215,14 @@ func test_rim_snap_leaves_no_gap_along_a_grid_line() -> void:
 			if not is_inf(prev_d) and (prev_d - half) * (d - half) < 0.0 \
 					and absf(d - prev_d) < pitch * 1.5:
 				crossings += 1
-				if not prev_snapped and not snapped_here:
+				if not prev_snapped or not snapped_here:
 					gaps += 1
 			prev_d = d
 			prev_snapped = snapped_here
 			dir = (dir + step).normalized()
 	assert_gt(crossings, 30, "the lines crossed rims")
 	assert_lte(gaps, int(ceil(crossings * 0.03)),
-			"%d of %d rim crossings have neither vertex on the rim" % [gaps, crossings])
+			"%d of %d wall crossings lean (a vertex left off the wall)" % [gaps, crossings])
 	# No move when the caller forbids it (a stitched edge), no crack at a coarse pitch.
 	var any := _dirs(1, 7)[0]
 	var b := CRACK.crack_rim_snap(any, RADIUS, SPACING, WIDTH, pitch, 0.0)

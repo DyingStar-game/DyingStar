@@ -69,12 +69,14 @@ func before_all() -> void:
 			RES, _nside, _ipix)
 	# Ground altitude under every slab vertex (the faces after the grid's),
 	# sampled here because a missing heights.pack makes the sampler print.
+	# Without the cracks, as the builder samples it: a slab spans a crack.
 	var faces := _shape.get_faces()
 	var origin := PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(_nside, _ipix) * _pd.radius)
 	for i in range(RES * RES * 6, faces.size()):
 		var d := (faces[i] + origin).normalized()
 		_slab_alts.append((faces[i] + origin).length() - _pd.radius
-				- _pd.sample_height_for_direction(d))
+				- _pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+						CrackCarve.NONE))
 
 
 func _skip() -> bool:

@@ -322,7 +322,8 @@ func _export_height_samples(info: Dictionary, key: String) -> void:
 			var sub_iy := iy * sample_res + py
 			var dir := HEALPix._face_xy_to_vec(
 				face, float(sub_ix) + 0.5, float(sub_iy) + 0.5, sub_nside)
-			var height := data.sample_height_for_direction(dir, export_ipix)
+			var height := data.sample_height_for_direction(dir, export_ipix, -1, Vector2i(-1, -1),
+					null, -1, null, 0.0, CrackCarve.NONE)
 			var lonlat := _dir_to_lonlat(dir)
 			var world := dir * (data.radius + height)
 			fa.store_line("%.6f,%.6f,%.4f,%.6f,%.6f,%.2f,%.2f,%.2f" % [

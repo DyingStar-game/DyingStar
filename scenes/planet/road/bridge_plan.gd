@@ -74,8 +74,8 @@ static func compute(profile: BridgeProfile, span: Dictionary, road: Dictionary,
 		end_dir = _dir_at(cl, cum, along_end)
 
 	# The rims are the last solid ground on either side, so the raw heightmap
-	# read there IS the plateau top: the crack profile has a near-vertical wall
-	# (~80° on tarsis_3), and the ribbon reads the same raw map, which is why
+	# read there IS the plateau top: the crack profile has a vertical wall
+	# (ArideDesertCorundumPlateauTerrain.crack_offset_from_edge), and the ribbon reads the same raw map, which is why
 	# the deck lines up with the road rather than with the carved gorge floor.
 	var start_alt: float = float(sampler.call(start_dir))
 	var end_alt: float = float(sampler.call(end_dir))

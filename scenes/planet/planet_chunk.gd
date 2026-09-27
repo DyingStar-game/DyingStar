@@ -1,14 +1,17 @@
 @tool
 class_name PlanetChunk
 
-## How far a vertex may be slid onto a crack rim, in vertex pitches
-## (ArideDesertCorundumPlateauTerrain.crack_rim_snap). Exactly half: along
-## any grid line the in-surface distance to the rim changes by at most one
-## pitch per vertex, so some vertex is always within half a pitch of it —
-## anything less leaves a gap the rim's phase drifts through, one notch per
-## period. And two neighbours moving toward each other from half a pitch each
-## can meet but never cross.
-const RIM_SNAP_PITCHES := 0.5
+## How far a vertex may be slid onto a crack wall, in vertex pitches
+## (ArideDesertCorundumPlateauTerrain.crack_rim_snap: onto the rim from the
+## plateau side, onto the foot from the crack side). The wall is vertical only
+## if BOTH vertices of every grid edge crossing it move, one onto the rim, one
+## onto the foot, so the reach must cover the longest grid edge: not one
+## nominal pitch (pixel_side_length / res) — HEALPix rhombi are distorted and
+## neighbours sit up to 1.47 pitches apart (measured over 800 chunks, n2048
+## and n8192); at 1.0 a plateau vertex 54 m off the rim stayed put and the
+## wall leaned down to the moved foot. They never cross: each stops on its
+## own side.
+const RIM_SNAP_PITCHES := 1.6
 ## Static helpers for generating terrain-chunk meshes & collision shapes.
 ##
 ## Each chunk covers a rectangular patch on one cube-sphere face.
@@ -158,9 +161,11 @@ static func generate_mesh(
 	# test/unit/test_chunk_sampling_precompute.gd).
 	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
 	# The procedural mountains of this chunk (MountainRelief), resolved once per
-	# frame so the sampler never looks them up per vertex.
+	# frame so the sampler never looks them up per vertex; and what the normal
+	# probes' crack carve reads (CrackCarve.CARVE).
 	if _frame != null:
 		data.prepare_mountain_frame(_frame, hp_nside, hp_ipix)
+		CrackCarve.prepare_frame(data, _frame, hp_nside, hp_ipix)
 
 	# ── Float32 precision fix ──────────────────────────────────────
 	# Vertex positions are stored as float32 in PackedVector3Array.
@@ -463,6 +468,13 @@ static func generate_mesh(
 	# normal and impurity passes below must read this, not the grid.
 	var _vdirs := PackedVector3Array()
 	_vdirs.resize(vert_count)
+	# Crack wall bookkeeping: carved by the network (the quad diagonal and the
+	# hard wall edges follow it, see _quad_takes_other_diagonal), and slid onto
+	# the rim or the foot by the snap (its normal is the ground's, not the wall's).
+	var _carved := PackedByteArray()
+	_carved.resize(vert_count)
+	var _snapped := PackedByteArray()
+	_snapped.resize(vert_count)
 	_imp_slot.resize(vert_count)
 	_imp_core.resize(vert_count)
 	_imp_carve.resize(vert_count)
@@ -481,8 +493,7 @@ static func generate_mesh(
 	var _crack_pois: Array = []
 	var _crack_masked := false
 	if data.corundum_default_biome and hp_mode:
-		_crack_pois = data.crack_pois_near(HEALPix.pix2vec_nest(hp_nside, hp_ipix),
-				HEALPix.pixel_side_length(hp_nside, 1.0) * data.radius * 0.8)
+		_crack_pois = _frame.crack_pois
 		_crack_masked = not _crack_pois.is_empty() or data.mountains_active()
 	if data.corundum_default_biome:
 		_corundum_bd = data.get_biome_by_type(
@@ -589,7 +600,7 @@ static func generate_mesh(
 			# ── Single biome query per vertex (from populate zones) ──────
 			# Reused for liquid detection, colour, AND detail texture. Done
 			# on the GRID direction, before the rim snap below moves the
-			# vertex by up to half a pitch — nothing a zone outline resolves.
+			# vertex by up to a pitch — nothing a zone outline resolves.
 			var bd: BiomeDefinition = null
 			var zone_color_hex: String = ""
 			var first_zone: Dictionary = {}
@@ -611,9 +622,9 @@ static func generate_mesh(
 			var _crack_here: bool = data.cracks_apply_to_zone(first_zone)
 
 			# ── Rim snap ───────────────────────────────────────────
-			# A vertex within RIM_SNAP_PITCHES of a crack rim is slid onto it,
-			# so the rim is a straight edge and not a row of teeth (see
-			# crack_rim_snap). A border vertex too: the neighbour chunk at the
+			# A vertex within RIM_SNAP_PITCHES of a crack wall is slid onto its
+			# rim or its foot, so the wall is vertical and the rim a straight
+			# edge, not a row of teeth (see crack_rim_snap). A border vertex too: the neighbour chunk at the
 			# same LOD runs the same pure function on the same grid direction
 			# and moves it the same way — except on an edge the LOD stitch
 			# owns (_st_edge), whose heights come from the coarser neighbour's
@@ -627,7 +638,10 @@ static func generate_mesh(
 					dir, data.radius, data.crack_spacing_m, data.crack_width_m,
 					_crack_vtx_spacing,
 					0.0 if _st_edge.has(idx) else _crack_vtx_spacing * RIM_SNAP_PITCHES)
-				dir = Vector3(_snap.x, _snap.y, _snap.z)
+				var _moved := Vector3(_snap.x, _snap.y, _snap.z)
+				if _moved != dir:
+					_snapped[idx] = 1
+				dir = _moved
 				_crack_d = _snap.w
 			_vdirs[idx] = dir
 
@@ -640,10 +654,10 @@ static func generate_mesh(
 					height = _st_edge[idx]
 				elif _is_border:
 					height = data.sample_height_boundary(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 				else:
 					height = data.sample_height_for_direction(dir, _export_ipix,
-							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+							-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 					if _st_blend.has(idx):
 						var _sb: Vector2 = _st_blend[idx]
 						height = lerpf(height, _sb.y, _sb.x)
@@ -978,6 +992,8 @@ static func generate_mesh(
 				else:
 					_crack_d = INF
 			_crack_edge[idx] = _crack_d
+			if _crack_off < 0.0:
+				_carved[idx] = 1
 
 			# ── Profiled-line cutting, then building pad ───────────
 			# Same rule, same pieces, same profile, same pads as the
@@ -1065,12 +1081,20 @@ static func generate_mesh(
 	for yi in res:
 		for xi in res:
 			var i := yi * (res + 1) + xi
-			indices[ii]     = i
-			indices[ii + 1] = i + res + 1
-			indices[ii + 2] = i + 1
-			indices[ii + 3] = i + 1
-			indices[ii + 4] = i + res + 1
-			indices[ii + 5] = i + res + 2
+			if _quad_takes_other_diagonal(_carved, i, res):
+				indices[ii]     = i + 1
+				indices[ii + 1] = i
+				indices[ii + 2] = i + res + 2
+				indices[ii + 3] = i + res + 2
+				indices[ii + 4] = i
+				indices[ii + 5] = i + res + 1
+			else:
+				indices[ii]     = i
+				indices[ii + 1] = i + res + 1
+				indices[ii + 2] = i + 1
+				indices[ii + 3] = i + 1
+				indices[ii + 4] = i + res + 1
+				indices[ii + 5] = i + res + 2
 			ii += 6
 
 	# --- triangle winding correction ----------------------------------------
@@ -1082,16 +1106,20 @@ static func generate_mesh(
 	# Detect the actual winding using the first triangle's geometric normal
 	# vs an outward reference direction; if reversed, swap the second and
 	# third index of every triangle.
+	# The first triangle that is not a crack wall: a vertical wall's normal is
+	# square to the reference, and its sign would decide the whole chunk.
 	if indices.size() >= 3 and vertices.size() > indices[2]:
-		var v0: Vector3 = vertices[indices[0]]
-		var v1: Vector3 = vertices[indices[1]]
-		var v2: Vector3 = vertices[indices[2]]
-		var tri_n := (v1 - v0).cross(v2 - v0)
 		var outward_ref: Vector3
 		if hp_mode:
 			outward_ref = grid_dirs[0][0]
 		else:
 			outward_ref = PlanetData.cube_to_sphere(face, u_min, v_min)
+		var tri_n := Vector3.ZERO
+		for _t0 in range(0, mini(indices.size(), res * res * 6), 3):
+			var v0: Vector3 = vertices[indices[_t0]]
+			tri_n = (vertices[indices[_t0 + 1]] - v0).cross(vertices[indices[_t0 + 2]] - v0)
+			if absf(tri_n.normalized().dot(outward_ref)) > 0.5:
+				break
 		if tri_n.dot(outward_ref) < 0.0:
 			var swapped := PackedInt32Array()
 			swapped.resize(indices.size())
@@ -1130,9 +1158,9 @@ static func generate_mesh(
 		# Sous-découpage de la phase "normals", qui pèse 74 % de la génération d'un chunk
 		# (mesuré à froid : 623 ms/chunk). Trois postes candidats, et le correctif n'est pas
 		# le même selon lequel domine :
-		#   _t_sm : les 4 échantillons de hauteur par sommet
-		#   _t_ck : les 4 crack_offset par sommet — chacun évalue un Voronoï 3D
-		#           (deux passes 3×3×3, ~160 sin()), et seule tarsis_3 les active
+		#   _t_sm : les 4 échantillons de hauteur par sommet, crack comprise (CrackCarve.CARVE :
+		#           un Voronoï 3D chacune, deux passes 3×3×3, ~160 sin())
+		#   _t_ck : le relief de biome et la tranchée des lignes profilées sur les 4 sondes
 		#   le reste : repère tangent, normalisations, produit vectoriel
 		var _t_sm := 0
 		var _t_ck := 0
@@ -1160,13 +1188,29 @@ static func generate_mesh(
 				if _pf:
 					_t_sub = Time.get_ticks_usec()
 				var _rim := xi == 0 or xi == res or yi == 0 or yi == res
-				# The four probes in ONE call to the frame's C# half (TileFrameNative.Sample4) — the
-				# same values the four calls below would return, each through its own GDScript
-				# wrapper and C# call. A probe it cannot serve (NaN) sends all four the usual way.
+				# Carve the crack network into the gradient samples too, so the
+				# near-vertical crack walls get correct (sharp) shading normals.
+				# Sauté quand le sommet est assez loin d'un bord pour que les quatre
+				# offsets soient nuls par construction : le résultat est identique, sans
+				# les quatre Voronoï. Mesuré à 39 % du temps des normales, soit 29 % de la
+				# génération d'un chunk sur tarsis_3.
+				# The sampler carves them (CrackCarve.CARVE: the vertex's zone rule, per probe
+				# its POI and mountain factor — a ramp is a slope the shading must see).
+				# A vertex snapped onto the rim or the foot takes the normal of the ground
+				# it stands on (the wall gets its own, _split_crack_walls): its probes see
+				# no crack, or the wall would tilt the plateau's edge by ~85°.
+				var _probe_mode := CrackCarve.CARVE \
+						if data.corundum_default_biome and _crack_edge[idx] < _crack_skip_m \
+								and _snapped[idx] == 0 \
+						else CrackCarve.NONE
+				# The four probes in ONE call to the frame's C# half (TileFrameNative.Sample4) —
+				# the same values the four calls below would return, each through its own
+				# GDScript wrapper and C# call. A probe it cannot serve (NaN) sends all four the
+				# usual way.
 				var _probed := false
 				if not _pf and _frame != null and _frame.native_ok:
 					var _h4: Vector4 = _frame.native.Sample4(dir_l, dir_r, dir_b, dir_t, _export_ipix,
-							_sample_nside, _crack_vtx_spacing, _rim)
+							_sample_nside, _crack_vtx_spacing, _rim, _probe_mode)
 					if not (is_nan(_h4.x) or is_nan(_h4.y) or is_nan(_h4.z) or is_nan(_h4.w)):
 						h_l = _h4.x
 						h_r = _h4.y
@@ -1176,46 +1220,27 @@ static func generate_mesh(
 				if _probed:
 					pass
 				elif _rim:
-					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_t = data.sample_height_boundary(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
 				else:
-					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
-					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					h_l = data.sample_height_for_direction(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_r = data.sample_height_for_direction(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_b = data.sample_height_for_direction(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
+					h_t = data.sample_height_for_direction(dir_t, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside,
+							_frame, _crack_vtx_spacing, _probe_mode)
 				if _pf:
 					var _now := Time.get_ticks_usec()
 					_t_sm += _now - _t_sub
 					_t_sub = _now
-				# Carve the crack network into the gradient samples too, so the
-				# near-vertical crack walls get correct (sharp) shading normals.
-				# Sauté quand le sommet est assez loin d'un bord pour que les quatre
-				# offsets soient nuls par construction : le résultat est identique, sans
-				# les quatre Voronoï. Mesuré à 39 % du temps des normales, soit 29 % de la
-				# génération d'un chunk sur tarsis_3.
-				if data.corundum_default_biome \
-						and _crack_edge[idx] < _crack_skip_m:
-					# Same POI depth factor as the vertex, per probe (a ramp
-					# is a slope the shading must see).
-					var _wl := 1.0
-					var _wr := 1.0
-					var _wb := 1.0
-					var _wt := 1.0
-					if _crack_masked:
-						_wl = data.crack_factor(dir_l, _crack_pois, _frame)
-						_wr = data.crack_factor(dir_r, _crack_pois, _frame)
-						_wb = data.crack_factor(dir_b, _crack_pois, _frame)
-						_wt = data.crack_factor(dir_t, _crack_pois, _frame)
-					h_l += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_l, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wl
-					h_r += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_r, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wr
-					h_b += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_b, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wb
-					h_t += ArideDesertCorundumPlateauTerrain.crack_offset(
-						dir_t, data.radius, data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, _crack_vtx_spacing) * _wt
 				# Biome relief on the probes: the vertex's own road weight is
 				# reused (a quarter-cell away it is the same to the eye), the
 				# noise is evaluated at each probe's exact direction.
@@ -1621,7 +1646,7 @@ static func generate_mesh(
 	if not _rw_ctx.is_empty():
 		var _rw_ref_sampler := func(d: Vector3) -> float:
 			return data.sample_height_for_direction(d, _export_ipix, -1,
-					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 		# Overlay quads stay coarse (lava, meadow… are drawn by their own
 		# surface on the coarse grid) — EXCEPT the surface-override quads: an
 		# outcrop's rock is a full replacement of the base surface, so its
@@ -1739,6 +1764,32 @@ static func generate_mesh(
 			var _merged: PackedInt32Array = surface_override_indices[_k]
 			_merged.append_array(_patch_over[_k])
 			surface_override_indices[_k] = _merged
+
+	# --- hard crack walls ---------------------------------------------------
+	# The wall triangles of the base and override surfaces get corners of their
+	# own with the wall's normal (_split_crack_walls), appended like the patch's.
+	if data.corundum_default_biome:
+		var _wall_lists: Array = [base_indices]
+		_wall_lists.append_array(surface_override_indices)
+		for _wl_i in _wall_lists.size():
+			var _split: Array = _split_crack_walls(_wall_lists[_wl_i], _carved, vertices,
+					vertices.size())
+			var _src: PackedInt32Array = _split[1]
+			var _wn: PackedVector3Array = _split[2]
+			for _j in _src.size():
+				var _v := _src[_j]
+				vertices.append(vertices[_v])
+				normals.append(_wn[_j])
+				uvs.append(uvs[_v])
+				uv2s.append(uv2s[_v])
+				colors.append(colors[_v])
+				skirt_offsets.append(skirt_offsets[_v * 3])
+				skirt_offsets.append(skirt_offsets[_v * 3 + 1])
+				skirt_offsets.append(skirt_offsets[_v * 3 + 2])
+			if _wl_i == 0:
+				base_indices = _split[0]
+			else:
+				surface_override_indices[_wl_i - 1] = _split[0]
 
 	# --- compute tangents ---------------------------------------------------
 	# Required for normal-mapped terrain materials. We compute tangents
@@ -2033,7 +2084,7 @@ static func generate_mesh(
 		var _rd_height_at := func(d: Vector3) -> float:
 			if hp_mode:
 				return data.sample_height_for_direction(d, _export_ipix,
-						-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+						-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 			var _fuv := PlanetData.sphere_to_cube(d)
 			return data.sample_height_for_chunk(
 				_fuv["face"], _fuv["u"], _fuv["v"], u_min, u_max, v_min, v_max)
@@ -2116,7 +2167,7 @@ static func generate_mesh(
 					/ float(res) * 0.5
 			var _rw_sampler := func(d: Vector3) -> float:
 				return data.sample_height_for_direction(d, _export_ipix, -1,
-						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
+						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 			var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
 			var _rw_stile := RoadTerrain.get_tile_size("railway")
 			for _rw_pair in _rw_zones:
@@ -2712,7 +2763,8 @@ static func generate_mesh(
 						var v_lat: float = s_lat + offset.y
 
 						var rdir := HEALPix.lonlat2vec(v_lon, v_lat)
-						var h: float = data.sample_height_for_direction(rdir)
+						var h: float = data.sample_height_for_direction(rdir, -1, -1, Vector2i(-1, -1),
+								null, -1, null, 0.0, CrackCarve.NONE)
 						rw_verts.append(_world_to_local(
 								rdir * (data.radius + h + MaritimeRiverRiverTerrain.WATER_OFFSET),
 								cc_f32, _wp_f32))
@@ -2818,10 +2870,6 @@ static func generate_collision_shape(
 		if res > 0:
 			_col_crack_spacing = HEALPix.pixel_side_length(hp_nside, 1.0) \
 					* data.radius / float(res)
-		if data.corundum_default_biome:
-			_col_crack_pois = data.crack_pois_near(HEALPix.pix2vec_nest(hp_nside, hp_ipix),
-					HEALPix.pixel_side_length(hp_nside, 1.0) * data.radius * 0.8)
-			_col_crack_masked = not _col_crack_pois.is_empty() or data.mountains_active()
 		if hp_nside >= data.export_nside:
 			_export_ipix = hp_ipix
 			var _ns := hp_nside
@@ -2951,6 +2999,9 @@ static func generate_collision_shape(
 	# Build vertex grid
 	var grid: Array[Vector3] = []
 	grid.resize((res + 1) * (res + 1))
+	# Vertices the crack network carved: the quad diagonal follows them, as in the mesh.
+	var _col_carved := PackedByteArray()
+	_col_carved.resize((res + 1) * (res + 1))
 
 	# Même cadre que le constructeur visuel (voir generate_mesh). Il remplace les trois
 	# précalculs passés à la main : ceux-ci décrivaient la tuile DEMANDÉE, et restaient en
@@ -2960,6 +3011,11 @@ static func generate_collision_shape(
 	var _frame: PlanetData.TileFrame = data.make_tile_frame() if hp_mode else null
 	if _frame != null:
 		data.prepare_mountain_frame(_frame, hp_nside, hp_ipix)
+		# The POI subset of the mesh builder (CrackCarve.prepare_frame, one formula).
+		CrackCarve.prepare_frame(data, _frame, hp_nside, hp_ipix)
+		if data.corundum_default_biome:
+			_col_crack_pois = _frame.crack_pois
+			_col_crack_masked = not _col_crack_pois.is_empty() or data.mountains_active()
 
 	for yi in res + 1:
 		for xi in res + 1:
@@ -2989,10 +3045,10 @@ static func generate_collision_shape(
 					_col_crack_d = _snap.w
 				if _is_border:
 					height = data.sample_height_boundary(dir, _height_ipix,
-							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
 				else:
 					height = data.sample_height_for_direction(dir, _height_ipix,
-							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
+							-1, Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
 			else:
 				var u: float
 				if xi == 0:
@@ -3225,8 +3281,11 @@ static func generate_collision_shape(
 						_col_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 							dir, data.radius, data.crack_spacing_m,
 							data.crack_width_m, _col_crack_spacing)
-					height += ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
+					var _col_off := ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
 						_col_crack_d, data.crack_width_m, data.crack_depth_m) * _col_w
+					height += _col_off
+					if _col_off < 0.0:
+						_col_carved[yi * (res + 1) + xi] = 1
 
 			# ── Profiled-line cutting, then building pad (collision) ─
 			if not _col_rw_ctx.is_empty():
@@ -3257,12 +3316,21 @@ static func generate_collision_shape(
 	for yi in res:
 		for xi in res:
 			var i := yi * (res + 1) + xi
-			faces[fi]     = grid[i]           - col_origin
-			faces[fi + 1] = grid[i + res + 1] - col_origin
-			faces[fi + 2] = grid[i + 1]       - col_origin
-			faces[fi + 3] = grid[i + 1]       - col_origin
-			faces[fi + 4] = grid[i + res + 1] - col_origin
-			faces[fi + 5] = grid[i + res + 2] - col_origin
+			# The mesh's diagonal, by the same rule on the same carve.
+			if _quad_takes_other_diagonal(_col_carved, i, res):
+				faces[fi]     = grid[i + 1]       - col_origin
+				faces[fi + 1] = grid[i]           - col_origin
+				faces[fi + 2] = grid[i + res + 2] - col_origin
+				faces[fi + 3] = grid[i + res + 2] - col_origin
+				faces[fi + 4] = grid[i]           - col_origin
+				faces[fi + 5] = grid[i + res + 1] - col_origin
+			else:
+				faces[fi]     = grid[i]           - col_origin
+				faces[fi + 1] = grid[i + res + 1] - col_origin
+				faces[fi + 2] = grid[i + 1]       - col_origin
+				faces[fi + 3] = grid[i + 1]       - col_origin
+				faces[fi + 4] = grid[i + res + 1] - col_origin
+				faces[fi + 5] = grid[i + res + 2] - col_origin
 			fi += 6
 
 	# ── Profiled lines: refinement patch, bed, tunnels (collision) ───
@@ -3279,7 +3347,7 @@ static func generate_collision_shape(
 		var _rw_mpd := data.radius * PI / 180.0
 		var _rw_sampler := func(d: Vector3) -> float:
 			return data.sample_height_for_direction(d, _height_ipix, -1,
-					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing)
+					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
@@ -3482,7 +3550,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 			@warning_ignore("integer_division")
 			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
 			hs[k] = data.sample_height_boundary(d, p_chain, -1, Vector2i(-1, -1),
-					null, p_sample, frame, p_spacing)
+					null, p_sample, frame, p_spacing, CrackCarve.NONE)
 		for k in range(1, stride, 2):
 			var ia := e[k - 1]
 			var ib := e[k + 1]
@@ -3498,7 +3566,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 			@warning_ignore("integer_division")
 			var d: Vector3 = grid_dirs[idx / stride][idx % stride]
 			var own := data.sample_height_boundary(d, -1, -1, Vector2i(-1, -1),
-					null, own_sample, frame, p_spacing)
+					null, own_sample, frame, p_spacing, CrackCarve.NONE)
 			worst = maxf(worst, absf(hs[k] - own))
 		if worst > max_step:
 			continue  # cliff under the seam: skirt, not stitch
@@ -3525,7 +3593,7 @@ static func _stitch_edge_heights(data: PlanetData, hp_nside: int, hp_ipix: int,
 				continue
 			var w := float(STITCH_BLEND_ROWS - d_min) / float(STITCH_BLEND_ROWS)
 			var hp := data.sample_height_for_direction(grid_dirs[yi][xi], p_chain,
-					-1, Vector2i(-1, -1), null, p_sample, frame, p_spacing)
+					-1, Vector2i(-1, -1), null, p_sample, frame, p_spacing, CrackCarve.NONE)
 			blend_out[yi * stride + xi] = Vector2(w, hp)
 
 
@@ -3940,6 +4008,71 @@ static func _radial_has_type(radial_features: Array, btype: String) -> bool:
 ## Uses the standard per-triangle accumulation method, then ortho-normalizes
 ## the tangent against the vertex normal (Gram-Schmidt) and computes the
 ## handedness sign so normal maps render correctly.
+## Does the grid quad whose (0,0) corner is vertex [param i] split along
+## i00–i11 instead of the default i10–i01? Where the crack wall crosses it with
+## ONE corner on its own side — the plateau corner of a quad the wall cuts
+## diagonally, or a floor corner — and that corner is i10 or i01: the default
+## diagonal would run from it to the opposite corner, across the wall, and
+## draw a facet leaning from the rim down to the floor (up to two pitches,
+## measured 50-190 m at n4096/n2048 on tarsis_3). The other diagonal joins
+## the two corners beside it — foot to foot, or rim to rim — and the wall
+## stays vertical. Pure in [param carved]: the mesh and the collision decide
+## alike. A flipped quad is written [i10, i00, i11, i11, i00, i01], so slots
+## 0, 1, 2 and 5 still hold its four corners (the overlay passes read them)
+## and both triangles keep the default's winding.
+static func _quad_takes_other_diagonal(carved: PackedByteArray, i: int, res: int) -> bool:
+	var c00 := carved[i]
+	var c10 := carved[i + 1]
+	var c01 := carved[i + res + 1]
+	var c11 := carved[i + res + 2]
+	var n := c00 + c10 + c01 + c11
+	if n != 1 and n != 3:
+		return false
+	# The lone corner is the one that differs from the other three.
+	var lone := 1 if n == 1 else 0
+	return c10 == lone or c01 == lone
+
+
+## Every triangle of [param tris] that stands between a carved and an uncarved
+## grid vertex is a crack wall: it gets vertices of its own, copies of its
+## corners with the wall's flat normal, so the wall is lit as the vertical face
+## it is and the rim and foot keep the ground's normal (a hard edge at both).
+## Returns [re-indexed tris, source vertex of each copy, normal of each copy]:
+## the caller appends the copies to every per-vertex array (as the refinement
+## patch does), numbered from [param first_new]. Skirt and patch vertices
+## (index past the carve flags) are never walls.
+static func _split_crack_walls(tris: PackedInt32Array, carved: PackedByteArray,
+		verts: PackedVector3Array, first_new: int) -> Array:
+	var n_grid := carved.size()
+	var out := tris.duplicate()
+	var src := PackedInt32Array()
+	var wall_n := PackedVector3Array()
+	for t in range(0, tris.size() - 2, 3):
+		var a := tris[t]
+		var b := tris[t + 1]
+		var c := tris[t + 2]
+		if a >= n_grid or b >= n_grid or c >= n_grid:
+			continue
+		var k := carved[a] + carved[b] + carved[c]
+		if k == 0 or k == 3:
+			continue
+		# Out of the rock, into the crack: the winding's own normal. The grid is an
+		# oriented surface with no fold (the snap moves a vertex across the wall's
+		# line only, keeping the order), and the winding correction made it face
+		# outward — as it does the ground. Not "toward the carved corners": those
+		# sit 5 cm across the wall but up to a pitch ALONG it, so that sign was
+		# a coin toss and every other wall came out lit from the rock.
+		var face := (verts[b] - verts[a]).cross(verts[c] - verts[a])
+		if face.length_squared() <= 0.0:
+			continue
+		var n := face.normalized()
+		for j in 3:
+			out[t + j] = first_new + src.size()
+			src.append(tris[t + j])
+			wall_n.append(n)
+	return [out, src, wall_n]
+
+
 static func _compute_tangents(verts: PackedVector3Array,
 		norms: PackedVector3Array,
 		uv_arr: PackedVector2Array,

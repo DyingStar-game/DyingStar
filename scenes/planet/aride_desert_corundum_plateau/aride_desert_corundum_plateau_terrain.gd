@@ -34,7 +34,7 @@ const CATEGORY := "terrestrial"
 
 ## Return the height offset (≤ 0, in metres) the crack network carves at
 ## [param dir].  Zero when the point is on solid block, negative inside a
-## crack with a flat floor and near-vertical walls (1 − t⁴ profile).
+## crack: a box section, flat floor and vertical walls.
 ## [param radius]      — planet radius in metres (nominal sphere).
 ## [param spacing_m]   — approx. block size between cracks.
 ## [param width_m]     — crack width at the surface.
@@ -87,39 +87,45 @@ static func crack_edge_distance_m(dir: Vector3, radius: float,
 	return _voronoi_edge_distance(p) * spacing_m
 
 
+## How far inside the rim the foot of the wall sits, in metres: the
+## horizontal run of the wall, so a 180 m wall stands at 89.98°. Not zero:
+## the foot has to read as inside the crack (d < half) and the rim as outside.
+const CRACK_FOOT_INSET_M := 0.05
+
+
 ## Profondeur de carve pour une distance au bord déjà connue. Pure, sans Voronoï.
-## Flat floor, ~80° walls right under the rim (1 − t⁴) — the rim is a sharp
-## edge. On a vertex grid a sharp edge only reads straight when the vertices
-## SIT on it: see [method crack_rim_snap], which the chunk builders apply.
+## A box section: flat floor, vertical walls, square corners at the rim and at
+## the foot. On a vertex grid a vertical wall only exists where the vertices
+## SIT on both of its edges: see [method crack_rim_snap], which the chunk
+## builders apply.
 static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -> float:
 	if depth_m <= 0.0 or width_m <= 0.0:
 		return 0.0
-	var half := width_m * 0.5
-	if d_m >= half:
+	if d_m >= width_m * 0.5:
 		return 0.0
-	var t := d_m / half                        # 0 at crack centre, 1 at rim
-	var t2 := t * t
-	return -depth_m * (1.0 - t2 * t2)          # flat floor, steep walls (1 − t⁴)
+	return -depth_m
 
 
-## A grid vertex within [param max_move_m] of the rim, moved ONTO the rim.
+## A grid vertex within [param max_move_m] of the wall, moved ONTO it: onto
+## the rim from the plateau side, onto the foot from the crack side.
 ##
-## Why: the rim is a sharp edge (the wall is ~80° right under it). A vertex
-## that lands anywhere between the rim and one pitch inside drops anywhere
-## between 0 and slope × pitch — 76 m on tarsis_8 — so the rim line went up
-## and down tooth by tooth along the grid (crenellated canyon tops). Sliding
-## the vertices nearest the rim horizontally onto it, by at most half a pitch,
-## makes the rim a clean polyline of vertices at zero drop, and the wall
-## starts from there, as steep as the profile says.
+## Why: the wall is vertical. A grid vertex lands anywhere around it, so the
+## wall drawn between two vertices would lean by up to a pitch and the rim
+## would go up and down tooth by tooth (crenellated canyon tops). Sliding the
+## plateau vertices nearest the wall horizontally onto the rim, and the floor
+## vertices nearest it onto the foot (CRACK_FOOT_INSET_M further in), leaves
+## a polyline of vertices at zero drop and one at full depth right under it:
+## the wall between them is vertical, the corners at both ends square.
 ##
 ## Returns (dir.x, dir.y, dir.z, edge distance in m at that dir): the moved
-## direction with the distance set to the half-width when it moved, the grid
-## direction and its true distance when it did not (too far, or the edge
-## plane too flat to reach), INF for the distance when the crack is not drawn
-## at this pitch. Pure: the mesh and the fine collision grid, on the same
-## pitch, move the same vertices the same way — a border vertex included, as
-## the neighbour on the same grid moves it identically; pass max_move_m = 0
-## only where a coarser neighbour owns the edge (the LOD stitch).
+## direction with the distance set to the half-width (rim) or the half-width
+## less the inset (foot) when it moved, the grid direction and its true
+## distance when it did not (too far, or the edge plane too flat to reach),
+## INF for the distance when the crack is not drawn at this pitch. Pure: the
+## mesh and the fine collision grid, on the same pitch, move the same vertices
+## the same way — a border vertex included, as the neighbour on the same grid
+## moves it identically; pass max_move_m = 0 only where a coarser neighbour
+## owns the edge (the LOD stitch).
 static func crack_rim_snap(dir: Vector3, radius: float, spacing_m: float, width_m: float,
 		vtx_spacing_m: float, max_move_m: float) -> Vector4:
 	if spacing_m <= 0.0 or width_m <= 0.0 \
@@ -139,11 +145,13 @@ static func crack_rim_snap(dir: Vector3, radius: float, spacing_m: float, width_
 	var n_len := n_t.length()
 	if n_len < 1e-3:
 		return Vector4(dir.x, dir.y, dir.z, d_m)
-	var move_m := (d_m - half) / n_len          # + toward the edge (inward), − away
+	# The plateau side goes to the rim, the crack side to the foot.
+	var target := half if d_m >= half else half - CRACK_FOOT_INSET_M
+	var move_m := (d_m - target) / n_len        # + toward the edge (inward), − away
 	if absf(move_m) > max_move_m:
 		return Vector4(dir.x, dir.y, dir.z, d_m)
 	var moved := (p + n_t * (move_m / n_len / spacing_m)).normalized()
-	return Vector4(moved.x, moved.y, moved.z, half)
+	return Vector4(moved.x, moved.y, moved.z, target)
 
 
 ## Tests flip this to exercise the GDScript Voronoi, which stays the reference.

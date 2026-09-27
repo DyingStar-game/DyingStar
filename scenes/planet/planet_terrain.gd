@@ -473,6 +473,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# (crack_rim_snap — no more crenellated canyon tops, the rim stays a
 		# sharp edge) and the mountain mask fades over crack_mountain_fade_m
 		# from the outline, not over the feather.
+		# v51 → v52: the crack is a box section (vertical walls) whose rim AND
+		# foot are snapped; a quad the wall cuts takes the diagonal that keeps
+		# it vertical, and the wall triangles get their own flat-normal vertices
+		# (PlanetChunk._quad_takes_other_diagonal / _split_crack_walls).
+		# v52 → v53: the wall normals follow the winding (half of the v52 walls
+		# faced the rock and were lit from behind).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -481,7 +487,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v51%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v53%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
@@ -1903,8 +1909,10 @@ func _auto_tune_editor_camera() -> void:
 func surface_point_for_direction(dir: Vector3) -> Vector3:
 	if planet_data == null:
 		return dir
+	# No crack: pad_sampler reads this very function, and a pad levels the ground whole.
 	return dir * (planet_data.radius
-		+ planet_data.sample_height_for_direction(dir))
+		+ planet_data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+				CrackCarve.NONE))
 
 
 ## Compute the global transform that places [param n3] on the planet surface
@@ -1933,7 +1941,8 @@ func compute_surface_transform(n3: Node3D) -> Transform3D:
 	if local_pos.length_squared() < 1.0:
 		return xform  # at the planet centre — no radial direction
 	var local_dir := local_pos.normalized()
-	var h := planet_data.sample_height_for_direction(local_dir)
+	var h := planet_data.sample_height_for_direction(local_dir, -1, -1, Vector2i(-1, -1), null, -1,
+			null, 0.0, CrackCarve.NONE)
 	# A building that levels the ground under it must be snapped to the LEVELLED
 	# altitude, not to the raw relief it replaces — otherwise the snap puts it
 	# on the slope and the terrain then flattens out from under it. The pad node
