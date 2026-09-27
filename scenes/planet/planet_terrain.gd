@@ -343,11 +343,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# here, before the key (they are baked geometry), before the bridge
 		# spans walk the chasms and before any chunk carves.
 		data.set_crack_exclusions(crack_exclusion_pois())
-		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s_poi%s" % [
+		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s_poi%s_cn%s" % [
 			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
 			int(data.debug_color_skirts), data.corundum_default_rock,
-			data.crack_exclusion_fingerprint()] \
+			data.crack_exclusion_fingerprint(), data.crack_noise().fingerprint()] \
 			if data.corundum_default_biome else ""
 		# tile_res belongs in the key: it sets the pyramid's sample spacing, so a
 		# mesh or shape cached at another tile_res describes a DIFFERENT surface.
@@ -479,6 +479,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# (PlanetChunk._quad_takes_other_diagonal / _split_crack_walls).
 		# v52 → v53: the wall normals follow the winding (half of the v52 walls
 		# faced the rock and were lit from behind).
+		# v53 → v54: the crack Voronoi is jittered by an integer hash (a new
+		# network, identical on every machine) and made organic by CrackNoise
+		# (meander + rim noise, keyed by "_cn" above).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -487,7 +490,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v53%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v54%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]

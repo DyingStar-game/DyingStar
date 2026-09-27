@@ -66,7 +66,7 @@ func _reference_offset(dir: Vector3, radius: float, spacing_m: float,
 		return 0.0
 	if vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5:
 		return 0.0
-	var p := dir * (radius / spacing_m)
+	var p := (dir * radius) / spacing_m
 	var edge_cells: float = CRACK._voronoi_edge_distance(p)
 	var d_m := edge_cells * spacing_m
 	if d_m >= width_m * 0.5:

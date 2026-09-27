@@ -44,9 +44,11 @@ const CATEGORY := "terrestrial"
 ##   (spacing approaching width_m) the carve FADES OUT instead of aliasing
 ##   into a spiky mess — this is what removed the flat-grey LOD1 band.
 ##   Pass 0 for the server collision grid so cracks always exist in physics.
+## [param noise] — the planet's CrackNoise (PlanetData.crack_noise()): seed,
+##   meander and rim noise. Null = the plain network (seed 0, straight edges).
 static func crack_offset(dir: Vector3, radius: float,
 		spacing_m: float, width_m: float, depth_m: float,
-		vtx_spacing_m: float = 0.0) -> float:
+		vtx_spacing_m: float = 0.0, noise: CrackNoise = null) -> float:
 	if spacing_m <= 0.0 or width_m <= 0.0 or depth_m <= 0.0:
 		return 0.0
 	# LOD: skip the crack entirely once the mesh is too coarse to represent it
@@ -57,7 +59,7 @@ static func crack_offset(dir: Vector3, radius: float,
 	# player ends up standing below the rendered surface.  Wherever the crack
 	# IS drawn, it is drawn at full depth — so visual and physics agree.
 	return crack_offset_from_edge(
-		crack_edge_distance_m(dir, radius, spacing_m, width_m, vtx_spacing_m),
+		crack_edge_distance_m(dir, radius, spacing_m, width_m, vtx_spacing_m, noise),
 		width_m, depth_m)
 
 
@@ -75,16 +77,34 @@ static func crack_offset(dir: Vector3, radius: float,
 ##
 ## Le découpage est arithmétiquement neutre : mêmes opérations, même ordre, même
 ## float64. crack_offset() ci-dessus produit exactement ce qu'il produisait avant.
+##
+## Organic since the CrackNoise: the Voronoi is read at a warped point (the
+## crack wanders) and the rim noise is taken off the distance (each rim is
+## eaten on its own) — see [method _edge_distance].
 static func crack_edge_distance_m(dir: Vector3, radius: float,
-		spacing_m: float, width_m: float, vtx_spacing_m: float = 0.0) -> float:
+		spacing_m: float, width_m: float, vtx_spacing_m: float = 0.0,
+		noise: CrackNoise = null) -> float:
 	if spacing_m <= 0.0 or width_m <= 0.0:
 		return INF
 	# LOD: skip the crack entirely once the mesh is too coarse to represent it.
 	if vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5:
 		return INF
-	# Surface point expressed in Voronoi-cell units (1 cell ≈ spacing_m).
-	var p := dir * (radius / spacing_m)
-	return _voronoi_edge_distance(p) * spacing_m
+	var nz := noise if noise != null else CrackNoise.plain()
+	if use_native_voronoi and nz.native != null:
+		return nz.native.EdgeDistance(dir, radius, spacing_m, vtx_spacing_m)
+	return _edge_distance(dir, radius, spacing_m, vtx_spacing_m, nz)
+
+
+## The distance to the nearest rim line (m, before the width): the Voronoi
+## edge distance at the meander-warped point, less the rim noise. The octaves
+## are gated on the pitch floored at the finest chunk's. Reference of
+## CrackVoronoiNative.EdgeDistance, same operations in the same order.
+static func _edge_distance(dir: Vector3, radius: float, spacing_m: float, vtx_spacing_m: float,
+		nz: CrackNoise) -> float:
+	var eff := maxf(vtx_spacing_m, nz.finest_m)
+	var q := nz.warp(dir * radius, dir, radius, eff)
+	var d := _voronoi_gd(q / spacing_m, nz).w * spacing_m
+	return d - nz.rim(dir, radius, eff)
 
 
 ## How far inside the rim the foot of the wall sits, in metres: the
@@ -127,72 +147,119 @@ static func crack_offset_from_edge(d_m: float, width_m: float, depth_m: float) -
 ## moves it identically; pass max_move_m = 0 only where a coarser neighbour
 ## owns the edge (the LOD stitch).
 static func crack_rim_snap(dir: Vector3, radius: float, spacing_m: float, width_m: float,
-		vtx_spacing_m: float, max_move_m: float) -> Vector4:
+		vtx_spacing_m: float, max_move_m: float, noise: CrackNoise = null) -> Vector4:
 	if spacing_m <= 0.0 or width_m <= 0.0 \
 			or (vtx_spacing_m > 0.0 and vtx_spacing_m >= width_m * 0.5):
 		return Vector4(dir.x, dir.y, dir.z, INF)
-	var scale := radius / spacing_m
-	var p := dir * scale
-	var dn := _voronoi_edge_dn(p)
-	var d_m := dn.w * spacing_m
-	var half := width_m * 0.5
+	var nz := noise if noise != null else CrackNoise.plain()
+	if use_native_voronoi and nz.native != null:
+		return nz.native.Snap(dir, radius, spacing_m, width_m, vtx_spacing_m, max_move_m,
+				CRACK_FOOT_INSET_M)
+	return _snap(dir, radius, spacing_m, width_m, vtx_spacing_m, max_move_m, nz)
+
+
+## Newton on the tangent plane toward the rim (plateau side) or the foot (crack
+## side): the rim is a curve now, so the vertex follows the gradient of the
+## distance, taken by forward differences SNAP_PROBE_M along two tangent axes
+## (the value at the vertex is already known), until it lands within
+## SNAP_TOLERANCE_M. A vertex farther than the reach, one whose gradient
+## vanishes (the crack's centre line) or whose step would exceed the reach
+## stays where it is. Reference of CrackVoronoiNative.Snap.
+static func _snap(dir: Vector3, radius: float, spacing_m: float, width_m: float,
+		vtx_spacing_m: float, max_move_m: float, nz: CrackNoise) -> Vector4:
+	var d := _edge_distance(dir, radius, spacing_m, vtx_spacing_m, nz)
 	if max_move_m <= 0.0:
-		return Vector4(dir.x, dir.y, dir.z, d_m)
-	# Move along the edge plane's normal projected on the tangent plane: the
-	# distance to the plane changes at |n_t| per metre of tangent travel.
-	var n := Vector3(dn.x, dn.y, dn.z)
-	var n_t := n - dir * n.dot(dir)
-	var n_len := n_t.length()
-	if n_len < 1e-3:
-		return Vector4(dir.x, dir.y, dir.z, d_m)
+		return Vector4(dir.x, dir.y, dir.z, d)
+	var half := width_m * 0.5
 	# The plateau side goes to the rim, the crack side to the foot.
-	var target := half if d_m >= half else half - CRACK_FOOT_INSET_M
-	var move_m := (d_m - target) / n_len        # + toward the edge (inward), − away
-	if absf(move_m) > max_move_m:
-		return Vector4(dir.x, dir.y, dir.z, d_m)
-	var moved := (p + n_t * (move_m / n_len / spacing_m)).normalized()
-	return Vector4(moved.x, moved.y, moved.z, target)
+	var target := half if d >= half else half - CRACK_FOOT_INSET_M
+	var f := d - target
+	if absf(f) > max_move_m * SNAP_REACH_SLOPE:
+		return Vector4(dir.x, dir.y, dir.z, d)
+	var x := dir
+	var hr := SNAP_PROBE_M / radius
+	for it in SNAP_ITERATIONS:
+		var up_ref := Vector3.UP if absf(x.y) < 0.99 else Vector3.RIGHT
+		var t1 := x.cross(up_ref).normalized()
+		var t2 := x.cross(t1)
+		var here := f + target
+		var g1 := (_edge_distance((x + t1 * hr).normalized(), radius, spacing_m, vtx_spacing_m, nz) - here) \
+				/ SNAP_PROBE_M
+		var g2 := (_edge_distance((x + t2 * hr).normalized(), radius, spacing_m, vtx_spacing_m, nz) - here) \
+				/ SNAP_PROBE_M
+		var gl2 := g1 * g1 + g2 * g2
+		if gl2 < SNAP_MIN_GRADIENT_SQ:
+			return Vector4(dir.x, dir.y, dir.z, d)
+		var step := -f / gl2
+		x = (x + (t1 * (step * g1) + t2 * (step * g2)) / radius).normalized()
+		f = _edge_distance(x, radius, spacing_m, vtx_spacing_m, nz) - target
+		if absf(f) <= SNAP_TOLERANCE_M:
+			break
+	# Where it landed must BE the wall: near a cell corner the gradient is weak
+	# and a step can shoot tens of metres into the crack — a plateau vertex
+	# declared on the rim, standing on the floor. Such a vertex stays put.
+	if absf(f) > SNAP_TOLERANCE_M or x.distance_to(dir) * radius > max_move_m:
+		return Vector4(dir.x, dir.y, dir.z, d)
+	return Vector4(x.x, x.y, x.z, target)
 
 
-## Tests flip this to exercise the GDScript Voronoi, which stays the reference.
+## Step of the snap's forward differences (m).
+const SNAP_PROBE_M := 0.5
+## Newton steps of the snap, at most: the rim is a plane (one step lands) bent
+## by noise of hundreds of metres of wavelength — one or two more take the bend;
+## it stops as soon as it is within SNAP_TOLERANCE_M.
+const SNAP_ITERATIONS := 5
+## How fast the noisy distance may change (m per m): up to ~1.8 with the
+## CrackNoise clamps (value noise slopes 3.75/λ per unit of amplitude). The
+## pre-check skips a vertex whose distance is beyond reach even at that slope.
+const SNAP_REACH_SLOPE := 2.0
+## How close to the rim or the foot a snapped vertex must have landed (m).
+const SNAP_TOLERANCE_M := 0.02
+## Below this squared gradient the vertex is on a ridge of the distance (the
+## crack's centre line, a cell corner): no direction to slide.
+const SNAP_MIN_GRADIENT_SQ := 1.0e-4
+
+
+## Tests flip this to exercise the GDScript twin, which stays the reference.
 static var use_native_voronoi := true
-static var _voronoi_tried := false
-static var _voronoi_native: RefCounted = null
-
-
-## Deterministic per-cell jitter in [0,1)³ — SurfaceNoise.hash3, kept under
-## its old name so the crack network reads as before.
-static func _hash3(c: Vector3) -> Vector3:
-	return SurfaceNoise.hash3(c)
 
 
 ## Distance (in cell units) from [param x] to the nearest Voronoi cell
 ## boundary — Inigo Quilez's 3D "Voronoi edges" algorithm.  The 2-sphere
 ## slices the 3D Voronoi diagram into polygonal blocks, producing the
 ## orthogonal monolithic-crack look on the surface.
-static func _voronoi_edge_distance(x: Vector3) -> float:
-	return _voronoi_edge_dn(x).w
+static func _voronoi_edge_distance(x: Vector3, nz: CrackNoise = null) -> float:
+	return _voronoi_edge_dn(x, nz).w
 
 
 ## [method _voronoi_edge_distance] with the unit normal of the nearest edge
 ## plane (pointing across it, from the closest cell into its neighbour) in
-## xyz and the distance in w — what [method crack_rim_snap] slides along.
+## xyz and the distance in w.
 ##
 ## Answered by CrackVoronoiNative when the assembly is there — the same arithmetic in the same
-## order, ~100 ms of a fine chunk in GDScript. The GDScript below stays the reference and the
-## fallback; test_crack_voronoi_native.gd holds the two equal bit for bit.
-static func _voronoi_edge_dn(x: Vector3) -> Vector4:
-	if use_native_voronoi:
-		if not _voronoi_tried:
-			var script := NativeScript.load_usable(
-					"res://scenes/planet/native/CrackVoronoiNative.cs", ["EdgeDn"])
-			if script != null:
-				_voronoi_native = script.new()
-			_voronoi_tried = true
-		if _voronoi_native != null:
-			return _voronoi_native.EdgeDn(x)
+## order. The GDScript below stays the reference and the fallback; test_crack_voronoi_native.gd
+## holds the two equal bit for bit.
+static func _voronoi_edge_dn(x: Vector3, nz: CrackNoise = null) -> Vector4:
+	var n := nz if nz != null else CrackNoise.plain()
+	if use_native_voronoi and n.native != null:
+		return n.native.EdgeDn(x)
+	return _voronoi_gd(x, n)
+
+
+## The cell's feature point jitter in [0,1)³: MountainNoise's integer hash, one
+## seed per axis — no sine, so every machine draws the same network.
+static func _jitter(ix: int, iy: int, iz: int, nz: CrackNoise) -> Vector3:
+	return Vector3(MountainNoise.cell(ix, iy, iz, nz.voronoi_seed(0)),
+			MountainNoise.cell(ix, iy, iz, nz.voronoi_seed(1)),
+			MountainNoise.cell(ix, iy, iz, nz.voronoi_seed(2)))
+
+
+static func _voronoi_gd(x: Vector3, nz: CrackNoise) -> Vector4:
 	var n := x.floor()
 	var f := x - n
+	var ix := int(n.x)
+	var iy := int(n.y)
+	var iz := int(n.z)
 	# Pass 1: locate the closest feature point.
 	var mr := Vector3.ZERO
 	var mg := Vector3.ZERO
@@ -201,7 +268,7 @@ static func _voronoi_edge_dn(x: Vector3) -> Vector4:
 		for j in range(-1, 2):
 			for i in range(-1, 2):
 				var g := Vector3(i, j, k)
-				var r := g + _hash3(n + g) - f
+				var r := g + _jitter(ix + i, iy + j, iz + k, nz) - f
 				var d := r.dot(r)
 				if d < md:
 					md = d
@@ -211,11 +278,14 @@ static func _voronoi_edge_dn(x: Vector3) -> Vector4:
 	# each of its neighbours.
 	var edge := 1.0e9
 	var normal := Vector3.ZERO
+	var mgx := int(mg.x)
+	var mgy := int(mg.y)
+	var mgz := int(mg.z)
 	for k in range(-1, 2):
 		for j in range(-1, 2):
 			for i in range(-1, 2):
 				var g := mg + Vector3(i, j, k)
-				var r := g + _hash3(n + g) - f
+				var r := g + _jitter(ix + mgx + i, iy + mgy + j, iz + mgz + k, nz) - f
 				var diff := r - mr
 				if diff.dot(diff) > 1.0e-5:   # skip the closest cell itself
 					var nd := diff.normalized()

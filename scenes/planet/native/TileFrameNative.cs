@@ -59,6 +59,8 @@ public partial class TileFrameNative : RefCounted
     private double _crackDepth;
     private bool _mountainPlanet;
     private double _mountainFade;
+    /// <summary>The planet's CrackNoise twin (seed, meander, rim): the distance to the rim.</summary>
+    private CrackVoronoiNative _crackNoise;
     /// <summary>prepare_crack_frame has run: the POI subset below is the frame's.</summary>
     private bool _crackPrepared;
     private double[] _poiX = Array.Empty<double>();
@@ -84,8 +86,9 @@ public partial class TileFrameNative : RefCounted
     /// under which crack_factor fades the carve over the massifs.
     /// </summary>
     public void SetCracks(bool on, double spacing, double width, double depth, bool mountainPlanet,
-        double mountainFade)
+        double mountainFade, GodotObject noise)
     {
+        _crackNoise = noise as CrackVoronoiNative;
         _cracksOn = on;
         _crackSpacing = spacing;
         _crackWidth = width;
@@ -195,9 +198,9 @@ public partial class TileFrameNative : RefCounted
             return 0.0;
         if (_crackDepth <= 0.0)
             return 0.0;
-        double scale = _radius / _crackSpacing;
-        double dM = CrackVoronoiNative.Edge(dir.X * scale, dir.Y * scale, dir.Z * scale,
-            out double _, out double _, out double _) * _crackSpacing;
+        if (_crackNoise == null)
+            return double.NaN;
+        double dM = _crackNoise.EdgeDistanceD(dir.X, dir.Y, dir.Z, _radius, _crackSpacing, vtxSpacing);
         if (dM >= _crackWidth * 0.5)
             return 0.0;
         double off = -_crackDepth;

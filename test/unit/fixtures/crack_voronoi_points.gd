@@ -1,8 +1,8 @@
 class_name TestCrackVoronoiPoints
 extends RefCounted
-## The points test_crack_voronoi_native.gd asks the crack Voronoi about, and the reference file holding
-## what one machine answered there (Fedora, glibc 2.43, GDScript path). A reference to stay CLOSE to, not
-## to equal: libms differ in the last bit of a sine — see test_crack_voronoi_native.gd.
+## The points test_crack_voronoi_native.gd asks the crack network about, and the reference file holding
+## what one machine answered there (Fedora, GDScript path). Every machine must EQUAL it: the network has
+## no sine left (integer hash, value noise) — see test_crack_voronoi_native.gd.
 ## The points are deterministic on every platform: an integer RNG, IEEE arithmetic and sqrt only — no
 ## sine — so every machine asks about exactly the same points.
 
@@ -43,8 +43,8 @@ static func query_dirs() -> PackedVector3Array:
 	return out
 
 
-## The reference values, in the order the three lists above give them: 4 doubles per Voronoi point,
-## then 5 (snap xyzw, offset) per query direction.
+## The reference values: 4 doubles per Voronoi point, then 5 (snap xyzw, offset) per query direction
+## on the plain network, then 5 (snap xyzw, edge distance) per query direction on the organic one.
 static func linux_values() -> PackedFloat64Array:
 	var f := FileAccess.open(REFERENCE, FileAccess.READ)
 	if f == null:
