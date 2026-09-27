@@ -30,6 +30,12 @@ static func screenshots_dir(sub: String = "") -> String:
 	return documents_dir(rel)
 
 
+## Open the screenshot folder in the OS file manager (Explorer, Finder, the Linux one) — the
+## "Gallery" button of Settings > Video. Created first, so the button works before the first shot.
+static func open_gallery() -> void:
+	OS.shell_show_in_file_manager(screenshots_dir(), true)
+
+
 static func game_dir() -> String:
 	if OS.has_feature("editor"):
 		return ProjectSettings.globalize_path("res://").trim_suffix("/")

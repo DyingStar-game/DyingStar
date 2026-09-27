@@ -27,6 +27,7 @@ var _res_left: int = 0
 @onready var _shadows: Button = $ScrollContainer/MarginContainer/VBoxContainer/Shadows/Button
 @onready var _shadow_dist: HSlider = $ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance/HSlider
 @onready var _shadow_dist_value: Label = $ScrollContainer/MarginContainer/VBoxContainer/ShadowDistance/Value
+@onready var _gallery: Button = $ScrollContainer/MarginContainer/VBoxContainer/Gallery/Button
 
 func _ready() -> void:
 	_init_monitor()
@@ -56,6 +57,8 @@ func _ready() -> void:
 	_shadow_dist.value_changed.connect(func(v: float) -> void:
 		_shadow_dist_value.text = str(int(v))
 		SettingsManager.set_shadow_distance(v))
+	# The F7 screenshots (and the F6 recordings, in records/) — opened in the OS file manager.
+	_gallery.pressed.connect(CapturePaths.open_gallery)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows($ScrollContainer/MarginContainer/VBoxContainer)
 
