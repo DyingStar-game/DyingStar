@@ -1,12 +1,14 @@
 class_name TestCrackVoronoiPoints
 extends RefCounted
 ## The points test_crack_voronoi_native.gd asks the crack Voronoi about, and the reference file holding
-## what Linux (glibc) answers there. Deterministic on every platform: an integer RNG, IEEE arithmetic and
-## sqrt only — no sine — so every machine asks about exactly the same points.
+## what one machine answered there (Fedora, glibc 2.43, GDScript path). A reference to stay CLOSE to, not
+## to equal: libms differ in the last bit of a sine — see test_crack_voronoi_native.gd.
+## The points are deterministic on every platform: an integer RNG, IEEE arithmetic and sqrt only — no
+## sine — so every machine asks about exactly the same points.
 
 const RADIUS: float = 6356000.0
 const SPACING: float = 220.0
-## Voronoi and crack queries, computed on Linux by the GDScript path: see test_crack_voronoi_native.gd.
+## Voronoi and crack queries, computed on the reference machine by the GDScript path.
 const REFERENCE: String = "res://test/unit/fixtures/crack_voronoi_linux.b64"
 
 
