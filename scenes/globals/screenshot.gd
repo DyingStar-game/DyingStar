@@ -1,36 +1,103 @@
 extends Node
-## F7 (action "screenshot", remappable in Settings > Controls): save what is on screen as a PNG in
-## <game folder>/screenshots and put the same image on the clipboard. Global autoload, so it works in
-## every scene, menus included. Client-only: a dedicated server has no screen.
+## Two capture keys, remappable in Settings > Controls. Global autoload, so they work in every scene,
+## menus included. Client-only: a dedicated server has no screen.
 ##
-## The image is what the player sees, HUD included. Encoding a PNG takes a noticeable fraction of a
-## second at 4K, so it runs on a worker thread: the game never hitches on the key press.
+## - "screenshot" (F7), PHOTO: the world alone. Every piece of interface drawn over it — HUD,
+##   crosshair, debug panels, chat, menus, toasts — is hidden for the one frame that is read back, and
+##   so is every debug visual drawn in the world (Globals.GROUP_DEBUG_OVERLAY: celestial markers, the
+##   cargo envelope…). Screens that live IN the world (a truck's dashboard, a terminal) are part of
+##   the picture and stay.
+##   Saved in <game folder>/screenshots.
+## - "screenshot_debug" (F8), BUG REPORT: the screen as it is, plus the debug panels, shown for that
+##   frame even if the player hid them. The chat is there when it is open. Saved in
+##   <game folder>/screenshots/debug.
+##
+## Either way the PNG is copied to the clipboard, with the colours of the screen (see ScreenReadback:
+## the window holds linear colour). Encoding it takes a noticeable fraction of a second at 4K, so it
+## runs on a worker thread: the game never hitches on the key press.
+
+enum Kind { PHOTO, DEBUG }
 
 var _toast: ScreenToast = null
+var _readback: ScreenReadback = null
 var _busy: bool = false
 
 
 func _ready() -> void:
 	_toast = ScreenToast.new()
 	add_child(_toast)
+	_readback = ScreenReadback.new()
+	add_child(_readback)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameOrchestrator.is_server():
+	if GameOrchestrator.is_server() or _busy:
 		return
-	if event.is_action_pressed("screenshot") and not _busy:
-		take()
+	if event.is_action_pressed("screenshot"):
+		take(Kind.PHOTO)
+	elif event.is_action_pressed("screenshot_debug"):
+		take(Kind.DEBUG)
 
 
-func take() -> void:
+func take(kind: Kind) -> void:
 	_busy = true
-	# The confirmation of the previous shot must not end up in this one: clear it, then read back
-	# the first frame drawn without it.
+	# The confirmation of the previous shot must not end up in this one.
 	_toast.clear()
-	await RenderingServer.frame_post_draw
-	var image: Image = get_viewport().get_texture().get_image()
-	var path: String = CapturePaths.screenshots_dir().path_join("screenshot_%s.png" % CapturePaths.stamp())
+	var hidden: Array[Node] = []
+	if kind == Kind.PHOTO:
+		hidden = _hide_interface()
+	else:
+		_force_debug_panels(true)
+	# Let the hide / show take effect, then read back the next frame drawn.
+	await get_tree().process_frame
+	var image: Image = await _readback.capture(get_tree().root)
+	if kind == Kind.PHOTO:
+		_restore(hidden)
+	else:
+		_force_debug_panels(false)
+	var dir: String = CapturePaths.screenshots_dir("" if kind == Kind.PHOTO else "debug")
+	var prefix: String = "screenshot" if kind == Kind.PHOTO else "debug"
+	var path: String = dir.path_join("%s_%s.png" % [prefix, CapturePaths.stamp()])
 	WorkerThreadPool.add_task(_save.bind(image, path), false, "screenshot")
+
+
+## Hide everything drawn on the game window's own canvas, and every debug visual in the world, and
+## return what was hidden, so exactly that comes back. Two kinds of roots cover the canvas: the
+## CanvasLayers (HUD, chat, menus, toasts) and the top-level CanvasItems drawn straight on the default
+## canvas (a Control under a Node3D, like the player's interface). Anything inside a SubViewport is
+## skipped — that is a screen in the world. The world's debug visuals cannot be told from scenery, so
+## they say so themselves, by joining Globals.GROUP_DEBUG_OVERLAY.
+func _hide_interface() -> Array[Node]:
+	var window: Viewport = get_tree().root
+	var hidden: Array[Node] = []
+	for node in get_tree().get_nodes_in_group(Globals.GROUP_DEBUG_OVERLAY):
+		if node.get("visible") == true:
+			node.set("visible", false)
+			hidden.append(node)
+	for node in window.find_children("*", "CanvasLayer", true, false):
+		var layer := node as CanvasLayer
+		if layer.visible and layer.get_viewport() == window:
+			layer.visible = false
+			hidden.append(layer)
+	for node in window.find_children("*", "CanvasItem", true, false):
+		var item := node as CanvasItem
+		if (item.visible and item.get_viewport() == window and item.get_canvas_layer_node() == null
+				and not (item.get_parent() is CanvasItem)):
+			item.visible = false
+			hidden.append(item)
+	return hidden
+
+
+func _restore(hidden: Array[Node]) -> void:
+	for node in hidden:
+		if is_instance_valid(node):
+			node.set("visible", true)
+
+
+## Show the debug panels for the capture, then give the player's own setting back. Goes through the
+## signal rather than SettingsManager.set_show_debug, which would SAVE the forced value.
+func _force_debug_panels(on: bool) -> void:
+	SettingsManager.show_debug_changed.emit(true if on else SettingsManager.is_show_debug())
 
 
 ## Worker thread: nothing here may touch the scene tree.

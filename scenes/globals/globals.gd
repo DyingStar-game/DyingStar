@@ -1,5 +1,10 @@
 extends Node
 
+## Debug visuals drawn IN the 3D world (celestial markers, the cargo envelope…). The F7 photo hides
+## every member for the frame it captures — the 2D debug panels it finds on its own, these it cannot
+## tell from scenery. A new debug visual in the world only has to join this group.
+const GROUP_DEBUG_OVERLAY := "debug_overlay"
+
 ## 3D physics collision layers (named in Project Settings → Layer Names → 3D Physics).
 ## `layer` = what I am; `mask` = what I scan. A pair is tested only if A.layer ∩ B.mask OR
 ## B.layer ∩ A.mask. Statics scan nothing (mask = 0); the movers scan `world`. Variants of one

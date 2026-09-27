@@ -57,7 +57,7 @@ func _ready() -> void:
 	_shadow_dist.value_changed.connect(func(v: float) -> void:
 		_shadow_dist_value.text = str(int(v))
 		SettingsManager.set_shadow_distance(v))
-	# The F7 screenshots (and the F6 recordings, in records/) — opened in the OS file manager.
+	# The F7 photos (F8 bug-report shots in debug/, F6 recordings in records/) — in the OS file manager.
 	_gallery.pressed.connect(CapturePaths.open_gallery)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows($ScrollContainer/MarginContainer/VBoxContainer)
