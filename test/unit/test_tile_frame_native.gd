@@ -233,6 +233,69 @@ func test_directions_everywhere_sample_identically() -> void:
 ## against the engine's atan2. The tarsis_3 tests above go pending without a tile cache; this one never
 ## does, so it is the one that proves a platform.
 func test_the_whole_sphere_samples_identically_without_data() -> void:
+	var setup: Array = _whole_sphere()
+	var pd = setup[0]
+	var dirs: PackedVector3Array = setup[1]
+	var frames: Array = _frames(pd, 64, -1)
+	var fast: PlanetData.TileFrame = frames[0]
+	var slow: PlanetData.TileFrame = frames[1]
+	for d: Vector3 in dirs:  # the GDScript registers every tile the C# will need
+		pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
+	var differ: int = 0
+	var served: int = 0
+	var first: String = ""
+	for d: Vector3 in dirs:
+		var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow, 0.0)
+		var c: float = fast.native.Sample(d, -1, 64, 0.0) if fast.native != null else NAN
+		if not is_nan(c):
+			served += 1
+			if c != b:
+				differ += 1
+				if first == "":
+					first = "%s: C# %s, GDScript %s" % [str(d), String.num(c, 14), String.num(b, 14)]
+	assert_eq(differ, 0, "every direction equal: %s" % first)
+	assert_eq(served, dirs.size(), "and the C# answered every one")
+
+
+## The same heights against LINUX's, frozen in fixtures/tile_frame_linux.b64 — the server's platform.
+## Equal to the local GDScript is not enough across machines: a Windows client and the Linux server have
+## to stand on the same ground, and the engine's own maths are not the same on the two (the crack
+## Voronoi's sin was not; see test_crack_voronoi_native.gd). Regenerate on Linux only, on purpose.
+func test_the_whole_sphere_gives_the_linux_heights() -> void:
+	var want: PackedFloat64Array = _linux_heights()
+	assert_gt(want.size(), 0, "the reference file is there")
+	var setup: Array = _whole_sphere()
+	var pd = setup[0]
+	var dirs: PackedVector3Array = setup[1]
+	var fast: PlanetData.TileFrame = _frames(pd, 64, -1)[0]
+	for d: Vector3 in dirs:
+		pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
+	var differ: int = 0
+	var first: String = ""
+	for i: int in range(mini(dirs.size(), want.size())):
+		var c: float = pd.sample_height_for_direction(dirs[i], -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
+		if c != want[i]:
+			differ += 1
+			if first == "":
+				first = "%s: here %s, Linux %s" % [str(dirs[i]), String.num(c, 14), String.num(want[i], 14)]
+	assert_eq(differ, 0, "the C# sampler gives Linux's heights bit for bit: %s" % first)
+
+
+const LINUX_HEIGHTS: String = "res://test/unit/fixtures/tile_frame_linux.b64"
+
+
+func _linux_heights() -> PackedFloat64Array:
+	var f := FileAccess.open(LINUX_HEIGHTS, FileAccess.READ)
+	if f == null:
+		return PackedFloat64Array()
+	var raw: PackedByteArray = Marshalls.base64_to_raw(f.get_as_text().strip_edges())
+	f.close()
+	return raw.to_float64_array()
+
+
+## A body with random tiles under 300 directions — every face, both poles, the face seams — and their
+## neighbours. Deterministic on every machine: an integer RNG and IEEE arithmetic only.
+func _whole_sphere() -> Array:
 	var pd = PlanetDataScript.new()
 	pd.planet_name = "native_sphere"
 	pd.radius = 6356000.0
@@ -261,25 +324,7 @@ func test_the_whole_sphere_samples_identically_without_data() -> void:
 			if int(tile) >= 0 and not stored.has(int(tile)):
 				stored[int(tile)] = true
 				pd.store_chunk_image("hp_n64_p%d" % int(tile), _fast_random_tile(rng), [])
-	var frames: Array = _frames(pd, 64, -1)
-	var fast: PlanetData.TileFrame = frames[0]
-	var slow: PlanetData.TileFrame = frames[1]
-	for d: Vector3 in dirs:  # the GDScript registers every tile the C# will need
-		pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
-	var differ: int = 0
-	var served: int = 0
-	var first: String = ""
-	for d: Vector3 in dirs:
-		var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow, 0.0)
-		var c: float = fast.native.Sample(d, -1, 64, 0.0) if fast.native != null else NAN
-		if not is_nan(c):
-			served += 1
-			if c != b:
-				differ += 1
-				if first == "":
-					first = "%s: C# %.17g, GDScript %.17g" % [str(d), c, b]
-	assert_eq(differ, 0, "every direction equal: %s" % first)
-	assert_eq(served, dirs.size(), "and the C# answered every one")
+	return [pd, dirs]
 
 
 func _fast_random_tile(rng: RandomNumberGenerator) -> Image:
