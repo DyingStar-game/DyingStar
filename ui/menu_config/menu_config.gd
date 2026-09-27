@@ -23,6 +23,7 @@ const ACTION_GROUPS : Dictionary = {
 		"toggle_chat": "%%ACT_TOGGLE_CHAT",
 		"write_in_chat": "%%ACT_WRITE_IN_CHAT",
 		"game_record": "%%ACT_GAME_RECORD",
+		"screenshot": "%%ACT_SCREENSHOT",
 	},
 	"%%KM_GROUP_ON_FOOT": {
 		"move_forward": "%%ACT_MOVE_FORWARD",
