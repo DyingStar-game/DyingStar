@@ -912,9 +912,36 @@ class TileFrame:
 	## MountainSetNative of the two lists (null → GDScript path).
 	var mtn_set: RefCounted = null
 	var mtn_ready := false
+	## TileFrameNative — the sampler's hot path in C#, fed the tiles this frame meets (null without
+	## the assembly, or when a test turns [member use_native] off). See sample_height_for_direction.
+	var native: RefCounted = null
+	## May [member native] answer for this frame? Decided once — here for a body without mountains,
+	## in prepare_mountain_frame for one with — rather than on every sample: the check cost as much as
+	## a third of what the C# half then saves. See PlanetData._native_frame_ok for the rule.
+	var native_ok := false
+
+	## Tests flip this to exercise the GDScript path, which stays the reference.
+	static var use_native := true
+	static var _native_tried := false
+	static var _native_script: Script = null
+	## The order TileFrameNative reads a tile's neighbours in.
+	const NEIGHBOUR_ORDER: Array[String] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
 	func _init(data: Resource) -> void:
 		_data = data
+		if use_native and native_available():
+			native = _native_script.new()
+			native.Configure(data.max_height, data.height_offset, data.terrain_exaggeration,
+					data.radius)
+			native_ok = data._native_frame_ok(self)
+
+	## Loaded lazily, so a build without the assembly degrades to the GDScript path instead of
+	## failing — the same arrangement as MountainRelief's twins.
+	static func native_available() -> bool:
+		if not _native_tried:
+			_native_tried = true
+			_native_script = load("res://scenes/planet/native/TileFrameNative.cs") as Script
+		return _native_script != null
 
 	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.
 	##
@@ -933,6 +960,13 @@ class TileFrame:
 		var made := [_data.load_chunk_floats(ipix, nside), ipix / npface,
 				HEALPix.nest2xy(ipix % npface), HEALPix.get_neighbors_nest(nside, ipix)]
 		_entries[id] = made
+		if native != null:
+			var neighbours := PackedInt64Array()
+			var by_side: Dictionary = made[3]
+			for side: String in NEIGHBOUR_ORDER:
+				neighbours.append(int(by_side.get(side, -1)))
+			var xy: Vector2i = made[2]
+			native.AddTile(id, made[0], made[1], xy.x, xy.y, neighbours)
 		return made
 
 	func floats(ipix: int, nside: int) -> PackedFloat32Array:
@@ -942,6 +976,18 @@ class TileFrame:
 ## Cadre d'échantillonnage neuf, à garder le temps d'un chunk et à jeter avec lui.
 func make_tile_frame() -> TileFrame:
 	return TileFrame.new(self)
+
+
+## May the frame's C# half answer for this body? Not while the mountains it would have to add are not
+## the ones it holds: resolved and summed in C#, or none at all. (Nor while the profiling rig counts
+## samplers, which it does in the GDScript path — checked by the callers, it changes at run time.)
+func _native_frame_ok(frame: TileFrame) -> bool:
+	if frame.native == null:
+		return false
+	if _has_mountains != 1:
+		return true
+	return frame.mtn_ready and (frame.mtn_set != null
+			or (frame.mtn.is_empty() and frame.rdg.is_empty()))
 
 
 ## Identifiant de tuile, pour les dictionnaires du cache.
@@ -2625,6 +2671,11 @@ func prepare_mountain_frame(frame: TileFrame, hp_nside: int, hp_ipix: int) -> vo
 	frame.rdg = get_chunk_ridges(level, ip)
 	frame.mtn_set = get_chunk_mountain_set(level, ip)
 	frame.mtn_ready = true
+	if frame.native != null:
+		# A null set with no feature is a mountain planet's plain tile: the sampler adds 0.0, and the
+		# C# half has to add it too.
+		frame.native.SetMountains(frame.mtn_set, _mtn_finest_spacing)
+		frame.native_ok = _native_frame_ok(frame)
 
 
 ## The mountain offset (m) at [param dir] — see sample_height_for_direction.
@@ -3260,6 +3311,11 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		_precomp_face: int = -1, _precomp_xy: Vector2i = Vector2i(-1, -1),
 		_cached_neighbors = null, nside: int = -1, frame: TileFrame = null,
 		vtx_spacing_m: float = 0.0) -> float:
+	if frame != null and frame.native_ok and not PropNet.prof_on:
+		var fast: float = frame.native.Sample(dir, known_export_ipix,
+				nside if nside > 0 else export_nside, vtx_spacing_m)
+		if not is_nan(fast):
+			return fast
 	var h := _base_height_for_direction(dir, known_export_ipix,
 			_precomp_face, _precomp_xy, _cached_neighbors, nside, frame)
 	if _has_mountains != 1:
@@ -3304,8 +3360,14 @@ func _base_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 			# tranche, et sans jamais bloquer. Dans le doute (carte du shard pas encore
 			# là), on compte la remontée comme provisoire : la géométrie reste utilisable
 			# tout de suite, elle n'est simplement pas persistée.
-			if _climb_is_guess(ns, ipix):
+			var guess := _climb_is_guess(ns, ipix)
+			if guess:
 				climb_mark()
+			elif frame != null and frame.native != null:
+				# A tile pruned for good reads its ancestor every time: the C# half may now go
+				# there directly. A GUESS stays here, so it is counted for every sample as it
+				# always was — that count decides whether the geometry may be persisted.
+				frame.native.Redirect(_tile_id(ipix, ns), _tile_id(up.x, up.y))
 			ipix = up.x
 			ns = up.y
 			floats = frame.floats(ipix, ns) if frame != null else load_chunk_floats(ipix, ns)
@@ -3374,6 +3436,10 @@ func sample_height_boundary(dir: Vector3, chain_ipix: int,
 	if PropNet.prof_on:
 		_prof_count_sampler("boundary")
 	var ns := nside if nside > 0 else export_nside
+	if frame != null and frame.native_ok and not PropNet.prof_on:
+		var fast: float = frame.native.SampleBoundary(dir, chain_ipix, ns, vtx_spacing_m)
+		if not is_nan(fast):
+			return fast
 	var vec_ipix := HEALPix.vec2pix_nest(ns, dir)
 	if vec_ipix == chain_ipix:
 		return sample_height_for_direction(dir, chain_ipix,
