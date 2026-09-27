@@ -34,6 +34,7 @@ func _ready() -> void:
 		return
 	# Run after the camera has been oriented this frame, so the marker positions use its final pose.
 	process_priority = 100
+	add_to_group(Globals.GROUP_DEBUG_OVERLAY)  # a photo (F7) must not show the markers
 	visible = SettingsManager.is_celestial_gizmos()
 	SettingsManager.celestial_gizmos_changed.connect(_on_toggled)
 

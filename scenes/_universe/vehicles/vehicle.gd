@@ -1194,6 +1194,7 @@ func _make_cargo_marker(body: Node3D) -> MeshInstance3D:
 	var bounds := _body_local_aabb(body)
 	var marker := MeshInstance3D.new()
 	marker.set_meta(GENERATED, true)
+	marker.add_to_group(Globals.GROUP_DEBUG_OVERLAY)  # a photo (F7) must not show the envelope
 	var box := BoxMesh.new()
 	box.size = bounds.size + Vector3.ONE * 0.05  # a hair bigger so it reads as a wrap, not z-fight
 	marker.mesh = box

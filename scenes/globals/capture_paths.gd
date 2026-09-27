@@ -21,7 +21,7 @@ static func documents_dir(sub: String) -> String:
 ## an installed build, and the PROJECT folder when running from the editor (the executable there is
 ## the editor's, somewhere under Godot/). Falls back to Documents/DyingStar/screenshots[/<sub>] when
 ## that folder cannot be written — an install under Program Files, a read-only share.
-## The F7 shots go at the top, the F6 recordings in the "records" sub-folder.
+## The F7 photos go at the top, the F8 bug-report shots in "debug", the F6 recordings in "records".
 static func screenshots_dir(sub: String = "") -> String:
 	var rel: String = "screenshots" if sub == "" else "screenshots".path_join(sub)
 	var dir: String = game_dir().path_join(rel)
