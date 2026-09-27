@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://bxlxen11p0m6s"]
+
+[ext_resource type="PackedScene" uid="uid://d14u2bcesufk6" path="res://scenes/_universe/structures/buildings/spawn_building.tscn" id="2_n6sqd"]
+[ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="3_limx2"]
+[ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="4_hnyaj"]
+
+[node name="AresVillageMining" type="Node3D" unique_id=1311035986]
+
+[node name="tarsis_4-1001" parent="." unique_id=1280922415 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(0.9999999999999997, 0, 0, 0, 0.9999999999999998, 0, 0, 0, 1, -6.959769766416777e-05, 5.6486314375638295e-05, 4.433376252814227e-05)
+
+[node name="tarsis_4-1002" parent="." unique_id=1541481568 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(0.9999999999999997, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, 0)
+
+[node name="tarsis_4-1003" parent="." unique_id=857607240 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(0.9999999999999997, 0, 0, 0, 1, 0, 0, 0, 1, -36, 0, 0)
+
+[node name="tarsis_4-1004" parent="." unique_id=561560078 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(0.9999999999999997, 0, 0, 0, 1, 0, 0, 0, 1, 46, 0, 0)
+
+[node name="tarsis_4-1005" parent="." unique_id=2098101609 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(0.9999999999999997, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0)
+
+[node name="tarsis_4-1008" parent="." unique_id=177915003 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736765e-17, 0, 0.9999999999999999, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, 36, 0, -18)
+
+[node name="tarsis_4-1009" parent="." unique_id=1524736258 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736765e-17, 0, 0.9999999999999999, 0, 0.9999999999999994, 0, -0.9999999999999998, 0, 6.123233995736765e-17, 9, 0, -18)
+
+[node name="tarsis_4-1010" parent="." unique_id=1437436497 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736765e-17, 0, 0.9999999999999999, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -27, 0, -18)
+
+[node name="tarsis_4-1011" parent="." unique_id=140903360 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 0.9999999999999999, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -43, 0, -18)
+
+[node name="tarsis_4-1006" parent="." unique_id=1679624872 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736765e-17, 0, 0.9999999999999999, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -10, 0, 48)
+
+[node name="tarsis_4-1007" parent="." unique_id=873673048 instance=ExtResource("2_n6sqd")]
+transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 0.9999999999999999, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -44, 0, 48)
+
+[node name="cargo_depot" parent="." unique_id=693024100 instance=ExtResource("3_limx2")]
+transform = Transform3D(-0.9999999999999998, 0, 1.2246467991473527e-16, 0, 0.9999999999999998, 0, -1.224646799147353e-16, 0, -0.9999999999999997, -34, 0, -49)
+
+[node name="MiningDepot" parent="." unique_id=1889403175 instance=ExtResource("4_hnyaj")]
+transform = Transform3D(-1.0000000000000002, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473535e-16, 0, -1, -12, 0.6000000000058208, -97)

@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://c454w64j7q1wc"]
+
+[ext_resource type="Script" uid="uid://cj8y3a3vg1d1e" path="res://scenes/_universe/structures/urban/poi_villages.gd" id="1_1lgou"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_c6x0m"]
+
+[node name="PoiVillages" type="Node3D" unique_id=1400175509]
+script = ExtResource("1_1lgou")
+
+[node name="PropSync" type="Node" parent="." unique_id=981730709]
+script = ExtResource("1_c6x0m")
+type_name = "poi_villages"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
