@@ -428,20 +428,30 @@ func server_action_received(data: Dictionary) -> void:
 						{"action": "seat:%s:%d" % [exit_role, _seat_count], "seat": exit_role}
 					)
 		"vehicle_input":
-			var veh_in = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_in != null and veh_in._pilot == player and veh_in.has_method("set_drive_input"):
+			var veh_in = _piloted_vehicle(data)
+			if veh_in != null and veh_in.has_method("set_drive_input"):
 				veh_in.set_drive_input(
 					float(data.get("throttle", 0.0)),
 					float(data.get("steer", 0.0)),
 					bool(data.get("brake", false)))
 		"reset_vehicle":
-			var veh_r = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_r != null and veh_r._pilot == player and veh_r.has_method("reset_upright"):
+			var veh_r = _piloted_vehicle(data)
+			if veh_r != null and veh_r.has_method("reset_upright"):
 				veh_r.reset_upright()
 		"vehicle_handbrake":
-			var veh_h = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_h != null and veh_h._pilot == player and veh_h.has_method("toggle_handbrake"):
+			var veh_h = _piloted_vehicle(data)
+			if veh_h != null and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
+		"vehicle_limiter":
+			# T: speed limiter on/off. The limit itself is kept, so the same one comes back.
+			var veh_sl = _piloted_vehicle(data)
+			if veh_sl != null and "limiter" in veh_sl:
+				veh_sl.limiter.toggle()
+		"vehicle_limiter_step":
+			# Alt + wheel: move the limit one step (5 km/h) up or down, on or off alike.
+			var veh_ss = _piloted_vehicle(data)
+			if veh_ss != null and "limiter" in veh_ss:
+				veh_ss.limiter.step(int(signf(float(data.get("dir", 0)))))
 		"carry_rotate":
 			# Spin the carried object around the vertical by one notch. The crate is pinned to its mount
 			# each tick, so the rotation goes into _carry_basis (body-local) rather than the body's own
@@ -458,16 +468,16 @@ func server_action_received(data: Dictionary) -> void:
 			var dyr: float = float(data.get("dy", 0.0)) * CARRY_FREE_ROTATE_GAIN
 			_rotate_held(Basis(Vector3.UP, dxr) * Basis(Vector3.RIGHT, dyr))
 		"vehicle_ignition":
-			var veh_i = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_i != null and veh_i._pilot == player and veh_i.has_method("toggle_engine"):
+			var veh_i = _piloted_vehicle(data)
+			if veh_i != null and veh_i.has_method("toggle_engine"):
 				veh_i.toggle_engine()  # refused by the vehicle itself if it is still rolling
 		"vehicle_horn":
-			var veh_n = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_n != null and veh_n._pilot == player and veh_n.has_method("set_horn"):
+			var veh_n = _piloted_vehicle(data)
+			if veh_n != null and veh_n.has_method("set_horn"):
 				veh_n.set_horn(bool(data.get("pressed", false)), bool(data.get("special", false)))
 		"vehicle_lights":
-			var veh_l = _find_vehicle(str(data.get("target_uuid", "")))
-			if veh_l != null and veh_l._pilot == player and veh_l.has_method("toggle_headlights"):
+			var veh_l = _piloted_vehicle(data)
+			if veh_l != null and veh_l.has_method("toggle_headlights"):
 				veh_l.toggle_headlights()
 		"vehicle_door":
 			# A door handle is operated on foot by anyone nearby - NOT gated on the driver. Server-
@@ -665,6 +675,14 @@ func server_adopt_carried(item: Node) -> void:
 
 ## Find a spawned mining rock by its uuid (server-side).
 ## Walk up from a raycast hit to the vehicle node it belongs to (group "vehicle"), else null.
+## The vehicle an action targets, but ONLY when this player is the one driving it: every driving
+## control (pedals, horn, lights, limiter…) is the pilot's alone. null otherwise.
+func _piloted_vehicle(data: Dictionary) -> Node:
+	var veh = _find_vehicle(str(data.get("target_uuid", "")))
+	if veh != null and veh._pilot == player:
+		return veh
+	return null
+
 func _find_vehicle(target_uuid: String) -> Node:
 	if target_uuid == "":
 		return null

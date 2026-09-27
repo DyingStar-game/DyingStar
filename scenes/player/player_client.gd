@@ -506,13 +506,7 @@ func _send_drive_input(locked: bool) -> void:
 	player._last_throttle = throttle
 	player._last_steer = steer
 	player._last_brake = braking
-	player.client_send_action_to_server({
-		"action": "vehicle_input",
-		"target_uuid": player._seat_vehicle_uuid,
-		"throttle": throttle,
-		"steer": steer,
-		"brake": braking,
-	})
+	_send_vehicle_action("vehicle_input", {"throttle": throttle, "steer": steer, "brake": braking})
 
 ## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
 func _update_handbrake_input(delta: float, locked: bool) -> void:
@@ -529,7 +523,7 @@ func _update_handbrake_input(delta: float, locked: bool) -> void:
 	if speed_kmh > player.HANDBRAKE_MAX_KMH:
 		return
 	player._handbrake_sent = true
-	player.client_send_action_to_server({"action": "vehicle_handbrake", "target_uuid": player._seat_vehicle_uuid})
+	_send_vehicle_action("vehicle_handbrake")
 
 ## Driver: the horn is HELD, so both edges are sent and the server replicates the state (everyone
 ## around hears it). Two horns share the key: "vehicle_horn" (H) and "vehicle_horn_special" (Alt+H).
@@ -542,12 +536,33 @@ func _send_horn_input(event: InputEvent) -> void:
 			or event.is_action_released("vehicle_horn_special")
 	if not pressed and not released:
 		return
-	player.client_send_action_to_server({
-		"action": "vehicle_horn",
-		"target_uuid": player._seat_vehicle_uuid,
-		"pressed": pressed,
-		"special": special,
-	})
+	_send_vehicle_action("vehicle_horn", {"pressed": pressed, "special": special})
+
+
+## Driver: the speed limiter. T turns it on/off, Alt + wheel moves the limit one step. All three are
+## matched EXACTLY: Godot ignores modifiers otherwise, so Alt+T (the spawn wheel) would toggle the
+## limiter and a bare wheel would step it. Returns true when the event was ours, so the caller stops
+## there — a wheel notch spent on the limiter must not also change the walk speed.
+func _handle_limiter_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("vehicle_speed_limiter", false, true):
+		_send_vehicle_action("vehicle_limiter")
+		return true
+	var up: bool = event.is_action_pressed("vehicle_limiter_up", false, true)
+	if up or event.is_action_pressed("vehicle_limiter_down", false, true):
+		_send_vehicle_action("vehicle_limiter_step", {"dir": 1 if up else -1})
+		return true
+	return false
+
+
+## Every driving control goes to the vehicle of our seat; one place builds the message.
+func _send_vehicle_action(action: String, extra: Dictionary = {}) -> void:
+	var message: Dictionary = {"action": action, "target_uuid": player._seat_vehicle_uuid}
+	message.merge(extra)
+	player.client_send_action_to_server(message)
+
+
+func _is_driving() -> bool:
+	return player._seat_is_driver and player._seat_vehicle_uuid != ""
 
 ## Pan the view while the pointer leans on the edge of the window, so a screen too wide for the field
 ## of view can still be read to its edges.
@@ -723,25 +738,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Asking unconditionally costs one round trip before standing up and makes the request IDEMPOTENT:
 	# a refusal changes nothing here, so pressing Y again (once the door is really open) always works.
 	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
-		player.client_send_action_to_server({"action": "exit_vehicle", "target_uuid": player._seat_vehicle_uuid})
+		_send_vehicle_action("exit_vehicle")
 		return
 
-	if player._seat_is_driver and player._seat_vehicle_uuid != "" and event.is_action_pressed("vehicle_reset"):
-		# Reset the vehicle upright (server-authoritative; driver only).
-		player.client_send_action_to_server({"action": "reset_vehicle", "target_uuid": player._seat_vehicle_uuid})
-
-	if player._seat_is_driver and player._seat_vehicle_uuid != "":
+	# Driving controls (server-authoritative; driver only).
+	if _is_driving():
+		if event.is_action_pressed("vehicle_reset"):
+			_send_vehicle_action("reset_vehicle")  # put the vehicle back upright
 		_send_horn_input(event)
-
-	if (player._seat_is_driver and player._seat_vehicle_uuid != ""
-			and event.is_action_pressed("vehicle_ignition") and not _alt_held(event)):
-		# Start / cut the engine (server-authoritative; driver only, and only standing still).
-		player.client_send_action_to_server({"action": "vehicle_ignition", "target_uuid": player._seat_vehicle_uuid})
-
-	if (player._seat_is_driver and player._seat_vehicle_uuid != ""
-			and event.is_action_pressed("vehicle_lights") and not _alt_held(event)):
-		# Toggle the vehicle head lights (server-authoritative; driver only).
-		player.client_send_action_to_server({"action": "vehicle_lights", "target_uuid": player._seat_vehicle_uuid})
+		if event.is_action_pressed("vehicle_ignition") and not _alt_held(event):
+			_send_vehicle_action("vehicle_ignition")  # refused by the vehicle while it rolls
+		if event.is_action_pressed("vehicle_lights") and not _alt_held(event):
+			_send_vehicle_action("vehicle_lights")
+		if _handle_limiter_input(event):
+			return
 
 	if event.is_action_pressed("toggle_flashlight") and not _alt_held(event):
 		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
@@ -763,9 +773,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": 1})
 		elif event.is_action_pressed("carry_rotate_ccw"):
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": -1})
-	elif event.is_action_pressed("walk_speed_up") or event.is_action_pressed("walk_speed_down"):
+	elif player._seat_vehicle_uuid == "" and (
+			event.is_action_pressed("walk_speed_up") or event.is_action_pressed("walk_speed_down")):
 		# GDD: the mouse wheel sets the walk speed (0.5-3 m/s, 0.5 steps). Server-authoritative — we send
 		# the new target; the server clamps and applies it. (Carrying uses the wheel to rotate, above.)
+		# On foot only: seated, the wheel used to change a walk speed nobody was using.
 		var step: float = player.walk_speed_step if event.is_action_pressed("walk_speed_up") else -player.walk_speed_step
 		_walk_speed_target = clampf(_walk_speed_target + step, player.walk_speed_min, player.walk_speed_max)
 		player.walk_speed_target = _walk_speed_target  # mirror for the debug HUD
