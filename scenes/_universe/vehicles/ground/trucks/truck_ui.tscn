@@ -297,6 +297,17 @@ vertical_alignment = 1
 
 [connection signal="pressed" from="VB/Battery/TriggerCollect" to="." method="_on_trigger_collect_pressed"]
 
+[node name="Limiter" type="Label" parent="." unique_id=1733004411]
+layout_mode = 0
+offset_left = 115.0
+offset_top = 700.0
+offset_right = 619.0
+offset_bottom = 790.0
+text = "%%HUD_LIMITER"
+label_settings = SubResource("LabelSettings_hf21d")
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Odometer" type="Label" parent="." unique_id=1733004412]
 layout_mode = 0
 offset_left = 1283.0

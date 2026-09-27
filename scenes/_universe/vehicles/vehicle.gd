@@ -174,6 +174,16 @@ const REBIND_EVERY_FRAMES: int = 30
 ## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
 @export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
 
+@export_group("Speed limiter")
+## One step of the limiter selector (Alt + wheel), in km/h.
+@export var limiter_step_kmh: int = 5
+## Highest limit the pilot can select, in km/h.
+@export var limiter_max_kmh: int = 130
+## Limit the selector starts on, in km/h.
+@export var limiter_default_kmh: int = 30
+## The engine eases off over this many km/h below the limit, so the truck settles on it.
+@export var limiter_taper_kmh: float = 3.0
+
 # --- Dimensions (meters) — changing one rebuilds the blockout -----------------
 @export_group("Body")
 ## Blockout body length (m), front to rear. NOT inert on a vehicle with a real 3D model: it also places
@@ -643,14 +653,25 @@ var bays: VehicleComponentBays:
 			_bays.changed.connect(_on_bays_changed)
 		return _bays
 var _bays: VehicleComponentBays = null
-## Distance driven over the vehicle's life. Replicated state of its own (see VehicleNetPart), exposed
-## as a property for the same reason as bays: no room for getters.
+## Distance driven over the vehicle's life, and the pilot's speed limiter. Replicated state of their
+## own (see VehicleNetPart), exposed as properties for the same reason as bays: no room for getters.
 var odometer: VehicleOdometer:
 	get:
 		if _odometer == null:
 			_odometer = VehicleOdometer.new()
 		return _odometer
 var _odometer: VehicleOdometer = null
+var limiter: VehicleSpeedLimiter:
+	get:
+		if _limiter == null:
+			_limiter = VehicleSpeedLimiter.new()
+			_limiter.step_kmh = limiter_step_kmh
+			_limiter.max_kmh = limiter_max_kmh
+			_limiter.min_kmh = mini(limiter_step_kmh, limiter_max_kmh)
+			_limiter.cap_kmh = clampi(limiter_default_kmh, _limiter.min_kmh, limiter_max_kmh)
+			_limiter.taper_kmh = limiter_taper_kmh
+		return _limiter
+var _limiter: VehicleSpeedLimiter = null
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
@@ -2461,7 +2482,7 @@ func _replicate_transform() -> void:
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
 ## read back by client_channel_data_update and server_adopt_state.
 func _net_parts() -> Array[VehicleNetPart]:
-	return [odometer]
+	return [odometer, limiter]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -2947,6 +2968,7 @@ func _apply_drive(delta: float) -> void:
 
 	_sync_powertrain()  # pick up any live inspector tweak (bench tuning)
 	var force: float = _powertrain.force(_throttle, forward_kmh)
+	force *= limiter.force_factor(_throttle, forward_kmh)  # past the pilot's limit, stop pushing
 
 	# Overloaded past the hard limit, hand-braked, or engine off: no drive force. Steering + braking
 	# further down are unaffected — a dead engine still rolls, steers and brakes.
@@ -2961,8 +2983,10 @@ func _apply_drive(delta: float) -> void:
 	_sync_steering()
 	steering = _steering_model.step(steering, turn, forward_kmh, delta)
 	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
-	# speed instead of rolling forever — VehicleWheel3D models neither on its own.
-	var coasting: bool = absf(throttle_in) < 0.05 and not braking
+	# speed instead of rolling forever — VehicleWheel3D models neither on its own. Running over the
+	# speed limiter counts as a closed throttle, exactly like lifting the foot.
+	var throttle_closed: bool = absf(throttle_in) < 0.05 or limiter.overspeed(_throttle, forward_kmh)
+	var coasting: bool = throttle_closed and not braking
 	if immobilized or braking or _handbrake:
 		brake = brake_force
 	elif coasting and absf(forward_kmh) > 0.1:
