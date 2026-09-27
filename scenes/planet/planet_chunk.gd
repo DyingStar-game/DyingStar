@@ -1159,7 +1159,23 @@ static func generate_mesh(
 				var h_t: float
 				if _pf:
 					_t_sub = Time.get_ticks_usec()
-				if xi == 0 or xi == res or yi == 0 or yi == res:
+				var _rim := xi == 0 or xi == res or yi == 0 or yi == res
+				# The four probes in ONE call to the frame's C# half (TileFrameNative.Sample4) — the
+				# same values the four calls below would return, each through its own GDScript
+				# wrapper and C# call. A probe it cannot serve (NaN) sends all four the usual way.
+				var _probed := false
+				if not _pf and _frame != null and _frame.native_ok:
+					var _h4: Vector4 = _frame.native.Sample4(dir_l, dir_r, dir_b, dir_t, _export_ipix,
+							_sample_nside, _crack_vtx_spacing, _rim)
+					if not (is_nan(_h4.x) or is_nan(_h4.y) or is_nan(_h4.z) or is_nan(_h4.w)):
+						h_l = _h4.x
+						h_r = _h4.y
+						h_b = _h4.z
+						h_t = _h4.w
+						_probed = true
+				if _probed:
+					pass
+				elif _rim:
 					h_l = data.sample_height_boundary(dir_l, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 					h_r = data.sample_height_boundary(dir_r, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
 					h_b = data.sample_height_boundary(dir_b, _export_ipix, -1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing)
