@@ -345,7 +345,6 @@ func _process(delta: float) -> void:
 		_debug_timer = 0.0
 		if _audio_bridges.is_empty():
 			print("[livekit][debug] No active audio bridges (no remote audio subscribed)")
-			pass
 		else:
 			for key in _audio_bridges.keys():
 				var bridge: Dictionary = _audio_bridges[key]
