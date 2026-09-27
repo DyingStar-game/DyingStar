@@ -1,6 +1,10 @@
 <Project Sdk="Godot.NET.Sdk/4.7.0">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <!-- Copy the NuGet dependencies next to DyingStar.dll on every build, not only on export: without
+         them the OpenTelemetry bridge throws FileNotFoundException on every print() in the editor, in
+         GUT and in headless probes. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
