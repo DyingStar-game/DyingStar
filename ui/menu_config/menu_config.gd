@@ -298,10 +298,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		InputMap.action_erase_events(action_to_remap)
 		InputMap.action_add_event(action_to_remap, event)
 		_update_action_list(remapping_button, event)
-		if event is InputEventKey:
-			keycode_dic.set(action_to_remap, event.as_text_physical_keycode())
-		elif event is InputEventMouseButton:
-			keycode_dic.set(action_to_remap, "mouse_" + str(event.button_index))
+		keycode_dic.set(action_to_remap, InputEventCodec.encode(event))
 		_end_remap()
 		save_config.visible = true
 

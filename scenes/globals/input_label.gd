@@ -19,19 +19,32 @@ static func for_action(action: StringName) -> String:
 
 static func for_event(event: InputEvent) -> String:
 	if event is InputEventKey:
-		# Show the modifiers too, so an "Alt + ²" binding doesn't read as a bare key. These stay
-		# untranslated: Ctrl/Alt/Shift are what is written on the keys themselves.
-		var mods := ""
-		if event.ctrl_pressed:
-			mods += "Ctrl + "
-		if event.alt_pressed:
-			mods += "Alt + "
-		if event.shift_pressed:
-			mods += "Shift + "
-		if event.meta_pressed:
-			mods += "Meta + "
-		return mods + _physical_key_name(event.physical_keycode)
+		return _modifiers(event) + _physical_key_name(event.physical_keycode)
+	if event is InputEventMouseButton:
+		return _modifiers(event) + _mouse_button_name(event.button_index)
 	return event.as_text()
+
+
+## The modifiers held with a key OR a mouse button, so "Alt + ²" and "Alt + wheel" don't read as a
+## bare key. They stay untranslated: Ctrl/Alt/Shift are what is written on the keys themselves.
+static func _modifiers(event: InputEventWithModifiers) -> String:
+	var mods := ""
+	if event.ctrl_pressed:
+		mods += "Ctrl + "
+	if event.alt_pressed:
+		mods += "Alt + "
+	if event.shift_pressed:
+		mods += "Shift + "
+	if event.meta_pressed:
+		mods += "Meta + "
+	return mods
+
+
+## A mouse button's name WITHOUT the modifiers Godot's as_text() would prepend in its own format.
+static func _mouse_button_name(index: int) -> String:
+	var bare := InputEventMouseButton.new()
+	bare.button_index = index as MouseButton
+	return bare.as_text()
 
 
 ## Human key name for a physical keycode: prefer the label printed on the key in the active layout
