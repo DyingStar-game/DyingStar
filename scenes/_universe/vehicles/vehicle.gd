@@ -150,12 +150,17 @@ const REBIND_EVERY_FRAMES: int = 30
 @export_group("Steering")
 ## Maximum steering angle of the front wheels, in degrees.
 @export var max_steer_deg: float = 30.0
-## How fast the wheels turn toward the held direction, in rad/s. Lower = more progressive
-## (the wheels + steering wheel build up their angle instead of snapping to full lock).
+## How fast a HELD key turns the wheels further, in rad/s. The keys are a rate, not a position:
+## a tap turns a little, releasing leaves the wheels where they are (see VehicleSteering).
 @export var steer_speed: float = 1.6
-## How fast the wheels return to centre when the pilot releases the key, in rad/s. A bit
-## snappier than steer_speed so the truck straightens up promptly, like a real self-centring wheel.
+## How fast a held key winds the wheels back when it points against the current angle, in rad/s.
+## A bit snappier than steer_speed so straightening up does not feel sluggish.
 @export var steer_return_speed: float = 3.0
+## Hands-off drift back to centre while rolling (caster), in rad/s, reached at
+## steer_self_center_ref_kmh. Parked, the wheels keep their angle. 0 = they never move on their own.
+@export var steer_self_center_speed: float = 0.3
+## Forward speed (km/h) at which the hands-off drift reaches steer_self_center_speed.
+@export var steer_self_center_ref_kmh: float = 50.0
 ## Above this forward speed (km/h) the steering lock shrinks (down to steer_min_ratio of max) so
 ## the truck can't snap-turn at speed — agile when slow, stable when fast. Set 0 to disable.
 @export var steer_speed_falloff_kmh: float = 80.0
@@ -541,7 +546,7 @@ var has_parent: bool = false
 ## Replicated: client_uuid of the player currently driving ("" = free). Set server-side.
 var pilot_uuid: String = ""
 
-var _steer_target: float = 0.0
+var _steering_model: VehicleSteering = VehicleSteering.new()  # tuned from the exports, see _sync_steering
 ## Tyre scrub bookkeeping: last steering angle (rad) to measure the turn RATE, the single held player
 ## (one, so two scrubs can never overlap), how much of its fade-out is left, the cached surface family
 ## (probing is a raycast -- far too costly every tick), its age, and the last sample played so a new
@@ -2925,17 +2930,10 @@ func _apply_drive(delta: float) -> void:
 
 	# VehicleBody3D drives toward +Z for a positive engine_force; our cab faces -Z, so negate.
 	engine_force = -force
-	# Speed-sensitive lock: shrink the max steer angle the faster we go (stable at speed, agile slow).
-	var lock_deg: float = max_steer_deg
-	if steer_speed_falloff_kmh > 0.0:
-		var speed_t: float = clampf(absf(forward_kmh) / steer_speed_falloff_kmh, 0.0, 1.0)
-		lock_deg = lerpf(max_steer_deg, max_steer_deg * steer_min_ratio, speed_t)
-	_steer_target = turn * deg_to_rad(lock_deg)
-	# Turning toward a held direction is progressive; releasing (or crossing centre) recentres a bit
-	# snappier so the wheels don't feel sluggish coming back straight.
-	var recentring: bool = absf(turn) < 0.01 or signf(turn) != signf(steering)
-	var steer_rate: float = steer_return_speed if recentring else steer_speed
-	steering = move_toward(steering, _steer_target, steer_rate * delta)
+	# The steer axis turns the wheels progressively and they STAY where the pilot leaves them (a
+	# gentle caster drift back while rolling), inside a lock that shrinks with speed.
+	_sync_steering()
+	steering = _steering_model.step(steering, turn, forward_kmh, delta)
 	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
 	# speed instead of rolling forever — VehicleWheel3D models neither on its own.
 	var coasting: bool = absf(throttle_in) < 0.05 and not braking
@@ -3182,6 +3180,17 @@ func _sync_powertrain() -> void:
 	_powertrain.reverse_ratio = engine.reverse_ratio
 	_powertrain.idle_rpm = engine.idle_rpm
 	_powertrain.redline_rpm = engine.redline_rpm
+
+## Copy the inspector steering settings into the model every tick, like _sync_powertrain, so
+## they can be tuned live.
+func _sync_steering() -> void:
+	_steering_model.max_deg = max_steer_deg
+	_steering_model.falloff_kmh = steer_speed_falloff_kmh
+	_steering_model.min_ratio = steer_min_ratio
+	_steering_model.turn_speed = steer_speed
+	_steering_model.return_speed = steer_return_speed
+	_steering_model.self_center_speed = steer_self_center_speed
+	_steering_model.self_center_ref_kmh = steer_self_center_ref_kmh
 
 func get_engine_rpm() -> float:
 	# Base it on the DISPLAY speed (replicated) so the gauge works on the client replica too —
