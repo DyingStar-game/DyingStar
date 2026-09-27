@@ -142,11 +142,16 @@ var chunk_data_version: String = ""
 @export var crack_width_m: float = 14.0
 ## Depth each crack is carved below the plateau surface, in metres.
 @export var crack_depth_m: float = 22.0
+## Organic cracks (CrackNoise): seed, meander and rim noise (amplitude, wavelength, m).
+@export var crack_noise_seed: int = 0
+@export var crack_meander_amp_m: float = 0.0
+@export var crack_meander_wavelength_m: float = 1500.0
+@export var crack_rim_amp_m: float = 0.0
+@export var crack_rim_wavelength_m: float = 400.0
 ## A POI's influence sphere is kept whole: no crack inside it, and over this
 ## many metres outside it the crack depth ramps back to full (a ramp, not a
-## step, so the collision and the mesh stay walkable at the edge). The
-## spheres come from the planet's POI nodes (PlanetTerrain gives them to
-## [method set_crack_exclusions] before the first chunk).
+## step: walkable). The spheres come from the planet's POI nodes (PlanetTerrain
+## gives them to [method set_crack_exclusions] before the first chunk).
 @export var crack_poi_margin_m: float = 300.0
 ## The crack network stops under the mountains: full depth on a range's
 ## outline (a ridge's foot), none this many metres inside — a ramp of its
@@ -939,7 +944,8 @@ class TileFrame:
 			native.Configure(data.max_height, data.height_offset, data.terrain_exaggeration,
 					data.radius)
 			native.SetCracks(data.corundum_default_biome, data.crack_spacing_m, data.crack_width_m,
-					data.crack_depth_m, data._has_mountains == 1, data.crack_mountain_fade_m)
+					data.crack_depth_m, data._has_mountains == 1, data.crack_mountain_fade_m,
+					data.crack_noise().native)
 			native_ok = data._native_frame_ok(self)
 
 	## Loaded lazily: without the assembly, the GDScript path (as MountainRelief's twins do).
@@ -2566,6 +2572,7 @@ func mountains_active() -> bool:
 ## before the bridge spans, whose profiles must already see the relief).
 func warm_mountains() -> void:
 	_mtn_finest_spacing = terrain_vertex_spacing_m()
+	crack_noise()  # built here, on the main thread, before any chunk worker asks
 	var found := false
 	var pack = _ensure_modifier_pack()
 	if pack != null:
@@ -4017,6 +4024,14 @@ func crack_factor(dir: Vector3, pois: Array = _crack_pois, frame: TileFrame = nu
 	return w * (1.0 - mountain_mask(dir, frame))
 
 
+var _crack_noise: CrackNoise = null
+## The planet's CrackNoise (the organic cracks), built once from the exports.
+func crack_noise() -> CrackNoise:
+	if _crack_noise == null:
+		_crack_noise = CrackNoise.for_planet(self)
+	return _crack_noise
+
+
 ## Re-keys the chunk cache: the exclusions are baked geometry.
 func crack_exclusion_fingerprint() -> String:
 	if _crack_pois.is_empty():
@@ -4028,28 +4043,14 @@ func crack_exclusion_fingerprint() -> String:
 	return ("%s|%.0f" % [",".join(parts), crack_poi_margin_m]).sha1_text().substr(0, 10)
 
 
-## HEALPix nside for server COLLISION chunks pinned under active bodies.
-## Normally the export nside, but for planets whose visual mesh carries fine
-## sub-features (the corundum crack network) it uses the client's FINEST LOD
-## nside (max_quadtree_nside).  Paired with [method collision_col_res_for]
-## returning chunk_resolution, the collision is then built on the EXACT same
-## HEALPix grid (same nside AND res) the client renders at its finest LOD — so
-## the collision surface is bit-identical to the visual mesh and the player
-## can't stand above/below the rendered cracks.
-##
-## A road is another: its 8 cm slab (RoadRibbon) is part of the collision
-## shape, and only makes sense on the grid the mesh uses.
-## A profiled line (railway, graded road) is the other case: its cuttings are
-## carved only into the finest grid (GradeBed.carve_enabled) and its bed's
-## collision is part of the
-## chunk shape, so a coarse collision would leave a player standing inside a
-## cutting's coarse faces.
-## A terrain pad is the last: the platform under a building is carved into the
-## same finest grid, and a coarse collision would leave the player walking on
-## the slope the pad replaced instead of on the levelled ground they see.
-##
-## Only applied in file (chunk-heightmap) mode, whose shape task re-resolves
-## the export tiles per vertex.
+## HEALPix nside for server COLLISION chunks pinned under active bodies: the
+## export nside, or the client's FINEST LOD nside when the mesh carries what
+## only the finest grid draws — with [method collision_col_res_for] the
+## collision is then the finest mesh's own grid, bit-identical to it. That is
+## the corundum cracks (no standing above or below a rendered crack), a road's
+## 8 cm slab (RoadRibbon), a profiled line's cuttings and bed (GradeBed), a
+## terrain pad's platform, the biome relief and the mountains. Only in file
+## (chunk-heightmap) mode, whose shape task re-resolves the export tiles per vertex.
 func collision_detail_nside() -> int:
 	if chunk_heightmaps_dir == "" \
 			or not (corundum_default_biome or has_profiled_lines()

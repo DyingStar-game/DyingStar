@@ -637,7 +637,7 @@ static func generate_mesh(
 				var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
 					dir, data.radius, data.crack_spacing_m, data.crack_width_m,
 					_crack_vtx_spacing,
-					0.0 if _st_edge.has(idx) else _crack_vtx_spacing * RIM_SNAP_PITCHES)
+					0.0 if _st_edge.has(idx) else _crack_vtx_spacing * RIM_SNAP_PITCHES, data.crack_noise())
 				var _moved := Vector3(_snap.x, _snap.y, _snap.z)
 				if _moved != dir:
 					_snapped[idx] = 1
@@ -985,7 +985,7 @@ static func generate_mesh(
 					if not hp_mode:
 						_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 							dir, data.radius, data.crack_spacing_m,
-							data.crack_width_m, _crack_vtx_spacing)
+							data.crack_width_m, _crack_vtx_spacing, data.crack_noise())
 					_crack_off = ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
 						_crack_d, data.crack_width_m, data.crack_depth_m) * _crack_w
 					height += _crack_off
@@ -1054,7 +1054,7 @@ static func generate_mesh(
 				if is_inf(_imp_d) and not _crack_here and data.corundum_default_biome:
 					_imp_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 						dir, data.radius, data.crack_spacing_m,
-						data.crack_width_m, _crack_vtx_spacing)
+						data.crack_width_m, _crack_vtx_spacing, data.crack_noise())
 				if not is_inf(_imp_d):
 					_imp_wall[idx] = _imp_d - data.crack_width_m * 0.5
 			elif bd:
@@ -1149,12 +1149,12 @@ static func generate_mesh(
 		# recalculé à chaque sommet.
 		var _eps_rad := HEALPix.pixel_side_length(hp_nside, 1.0) * _eps_frac
 		# Un sommet dont le bord de crack le plus proche est au-delà de cette distance a
-		# ses quatre points de gradient hors crack : la distance à un bord est
-		# 1-lipschitzienne et ils ne sont qu'à _eps_rad de lui. Leurs offsets valent donc
-		# zéro, et les quatre Voronoï sont inutiles. Marge de 2× sur le décalage plutôt
-		# que 1× : elle ne coûte presque rien en taux de saut et clôt toute discussion sur
-		# la lipschitziennité de l'approximation de Voronoï employée.
-		var _crack_skip_m: float = data.crack_width_m * 0.5 + 2.0 * _eps_rad * data.radius
+		# ses quatre points de gradient hors crack : ils ne sont qu'à _eps_rad de lui, et la
+		# distance au bord varie d'au plus ~1,8 m par mètre (Voronoï 1-lipschitzien, plus
+		# la pente du bruit de CrackNoise). Leurs offsets valent donc zéro, et les quatre
+		# Voronoï sont inutiles. Marge de 3× sur le décalage : elle couvre cette pente et
+		# ne coûte presque rien en taux de saut.
+		var _crack_skip_m: float = data.crack_width_m * 0.5 + 3.0 * _eps_rad * data.radius
 		# Sous-découpage de la phase "normals", qui pèse 74 % de la génération d'un chunk
 		# (mesuré à froid : 623 ms/chunk). Trois postes candidats, et le correctif n'est pas
 		# le même selon lequel domine :
@@ -1773,7 +1773,7 @@ static func generate_mesh(
 		_wall_lists.append_array(surface_override_indices)
 		for _wl_i in _wall_lists.size():
 			var _split: Array = _split_crack_walls(_wall_lists[_wl_i], _carved, vertices,
-					vertices.size())
+					vertices.size(), _vdirs, data, _crack_vtx_spacing)
 			var _src: PackedInt32Array = _split[1]
 			var _wn: PackedVector3Array = _split[2]
 			for _j in _src.size():
@@ -3040,7 +3040,7 @@ static func generate_collision_shape(
 				if _cor_here:
 					var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
 						dir, data.radius, data.crack_spacing_m, data.crack_width_m,
-						_col_crack_spacing, _col_crack_spacing * RIM_SNAP_PITCHES)
+						_col_crack_spacing, _col_crack_spacing * RIM_SNAP_PITCHES, data.crack_noise())
 					dir = Vector3(_snap.x, _snap.y, _snap.z)
 					_col_crack_d = _snap.w
 				if _is_border:
@@ -3280,7 +3280,7 @@ static func generate_collision_shape(
 					if not hp_mode:
 						_col_crack_d = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(
 							dir, data.radius, data.crack_spacing_m,
-							data.crack_width_m, _col_crack_spacing)
+							data.crack_width_m, _col_crack_spacing, data.crack_noise())
 					var _col_off := ArideDesertCorundumPlateauTerrain.crack_offset_from_edge(
 						_col_crack_d, data.crack_width_m, data.crack_depth_m) * _col_w
 					height += _col_off
@@ -4040,9 +4040,11 @@ static func _quad_takes_other_diagonal(carved: PackedByteArray, i: int, res: int
 ## Returns [re-indexed tris, source vertex of each copy, normal of each copy]:
 ## the caller appends the copies to every per-vertex array (as the refinement
 ## patch does), numbered from [param first_new]. Skirt and patch vertices
-## (index past the carve flags) are never walls.
+## (index past the carve flags) are never walls. [param vdirs] (the snapped
+## grid directions) and the crack parameters orient each normal.
 static func _split_crack_walls(tris: PackedInt32Array, carved: PackedByteArray,
-		verts: PackedVector3Array, first_new: int) -> Array:
+		verts: PackedVector3Array, first_new: int, vdirs: PackedVector3Array, data: PlanetData,
+		pitch_m: float) -> Array:
 	var n_grid := carved.size()
 	var out := tris.duplicate()
 	var src := PackedInt32Array()
@@ -4056,16 +4058,26 @@ static func _split_crack_walls(tris: PackedInt32Array, carved: PackedByteArray,
 		var k := carved[a] + carved[b] + carved[c]
 		if k == 0 or k == 3:
 			continue
-		# Out of the rock, into the crack: the winding's own normal. The grid is an
-		# oriented surface with no fold (the snap moves a vertex across the wall's
-		# line only, keeping the order), and the winding correction made it face
-		# outward — as it does the ground. Not "toward the carved corners": those
-		# sit 5 cm across the wall but up to a pitch ALONG it, so that sign was
-		# a coin toss and every other wall came out lit from the rock.
+		# The face's normal, turned out of the rock into the crack: toward where
+		# the rim distance DECREASES, read 2 m either side of the facet. Neither
+		# the winding nor the carved corners can tell: the foot sits 5 cm inside
+		# the rim, and on a curved (organic) wall the chord between two vertices
+		# a pitch apart bows farther than that, so the facet's plan orientation
+		# flips with the bend — whole chunks of walls came out lit from the rock.
 		var face := (verts[b] - verts[a]).cross(verts[c] - verts[a])
 		if face.length_squared() <= 0.0:
 			continue
 		var n := face.normalized()
+		var mid := (vdirs[a] + vdirs[b] + vdirs[c]).normalized()
+		var across := n - mid * n.dot(mid)
+		if across.length_squared() > 0.0:
+			var hs := across.normalized() * (2.0 / data.radius)
+			var ahead := ArideDesertCorundumPlateauTerrain.crack_edge_distance_m((mid + hs).normalized(),
+					data.radius, data.crack_spacing_m, data.crack_width_m, pitch_m, data.crack_noise())
+			var behind := ArideDesertCorundumPlateauTerrain.crack_edge_distance_m((mid - hs).normalized(),
+					data.radius, data.crack_spacing_m, data.crack_width_m, pitch_m, data.crack_noise())
+			if ahead > behind:
+				n = -n
 		for j in 3:
 			out[t + j] = first_new + src.size()
 			src.append(tris[t + j])

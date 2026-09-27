@@ -35,5 +35,4 @@ func test_a_script_of_another_shape_is_not_usable() -> void:
 func test_the_real_twins_are_usable() -> void:
 	assert_true(PlanetData.TileFrame.native_available(), "TileFrameNative")
 	assert_true(MountainRelief.native_available(), "the mountain twins")
-	ArideDesertCorundumPlateauTerrain._voronoi_edge_dn(Vector3.ONE)
-	assert_true(ArideDesertCorundumPlateauTerrain._voronoi_native != null, "CrackVoronoiNative")
+	assert_true(CrackNoise.plain().native != null, "CrackVoronoiNative")

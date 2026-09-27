@@ -34,7 +34,7 @@ const CARVE := 2
 static func offset(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame,
 		vtx_spacing_m: float, cracks: int) -> float:
 	var off := ArideDesertCorundumPlateauTerrain.crack_offset(dir, data.radius,
-			data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, vtx_spacing_m)
+			data.crack_spacing_m, data.crack_width_m, data.crack_depth_m, vtx_spacing_m, data.crack_noise())
 	# Most of the ground is solid block: decided by the Voronoi alone, before
 	# any zone or POI lookup.
 	if off == 0.0:
