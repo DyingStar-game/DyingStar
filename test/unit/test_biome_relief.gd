@@ -119,3 +119,21 @@ func test_road_weight_uses_the_railway_track_width() -> void:
 	rail["tracks"] = 2   # bed half-width 3.44 m, whatever width says
 	assert_eq(BiomeRelief.road_weight(_at(3.44 + 1.5), [rail], mpd), 0.0)
 	assert_lt(BiomeRelief.road_weight(_at(3.44 + 4.0), [rail], mpd), 1.0)
+
+
+## visible_at is the gate the chunk builders ask BEFORE the road weight, so that weight — a walk over
+## every road segment of nine chunks, per vertex — is skipped where the relief cannot show. It must say
+## "invisible" only where offset() really is zero, or a skipped vertex would lose relief it should have.
+func test_visible_at_is_the_offset_gate() -> void:
+	var bd := _bd(-1.0, 2.0, 40.0)
+	for spacing: float in [0.0, 5.0, 19.9, 20.0, 20.1, 25.0, 100.0, 800.0]:
+		var visible := BiomeRelief.visible_at(bd, spacing)
+		var any_nonzero := false
+		for d: Vector3 in _dirs(64):
+			if BiomeRelief.offset(d, RADIUS, bd, spacing) != 0.0:
+				any_nonzero = true
+		if not visible:
+			assert_false(any_nonzero, "at %.1f m the gate says invisible, so offset must be 0" % spacing)
+		else:
+			assert_true(any_nonzero, "at %.1f m the gate says visible, and offset shows it" % spacing)
+	assert_false(BiomeRelief.visible_at(null, 0.0), "no biome, no relief")

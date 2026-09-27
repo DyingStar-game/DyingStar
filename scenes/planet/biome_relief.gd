@@ -37,6 +37,17 @@ const BLEND_PITCHES := 3.0
 
 ## Relief in metres at [param dir] for [param bd], 0 when the biome has none
 ## or the grid ([param vtx_spacing_m], 0 = no gate) is too coarse for it.
+## Can [param bd]'s relief show at all on a grid of [param vtx_spacing_m]? Exactly the gate
+## [method offset] applies, asked BEFORE the road weight: that weight walks every segment of every road
+## of the chunk and its neighbours for each vertex, and multiplies a relief that is zero at any pitch
+## past half its wavelength. Measured near tarsis_3's mining villages, where the wavelengths are 40-60 m:
+## 812-925 ms of a 1.2 s chunk at n256 (800 m pitch) and 100-330 ms at n2048 went on that product.
+static func visible_at(bd: BiomeDefinition, vtx_spacing_m: float) -> bool:
+	if bd == null or not bd.has_relief():
+		return false
+	return vtx_spacing_m <= 0.0 or vtx_spacing_m < bd.relief_wavelength_m * 0.5
+
+
 static func offset(dir: Vector3, radius: float, bd: BiomeDefinition,
 		vtx_spacing_m: float = 0.0) -> float:
 	if bd == null or not bd.has_relief():

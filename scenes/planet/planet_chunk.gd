@@ -941,7 +941,9 @@ static func generate_mesh(
 			# ── Biome relief ───────────────────────────────────────
 			# Pure function of dir + the biome's constants, flattened near
 			# roads; the collision builder applies the very same call.
-			if has_relief_overlap and bd and bd.has_relief():
+			# Gated on what the grid can show first (BiomeRelief.visible_at): past half the wavelength
+			# the offset is 0 and the road weight it would scale is a walk over every road for nothing.
+			if has_relief_overlap and BiomeRelief.visible_at(bd, _crack_vtx_spacing):
 				var _rl_w := BiomeRelief.road_weight(HEALPix.vec2lonlat(dir),
 						_relief_roads, _relief_mpd, _crack_vtx_spacing)
 				if _rl_w > 0.0:
@@ -3180,7 +3182,7 @@ static func generate_collision_shape(
 				var _rl_zones := _query_zones_at_direction(dir, _col_pz_zones)
 				if not _rl_zones.is_empty():
 					var _rl_bd := data.get_biome_by_type(_rl_zones[0].get("biome_type", ""))
-					if _rl_bd and _rl_bd.has_relief():
+					if BiomeRelief.visible_at(_rl_bd, _col_crack_spacing):
 						var _rl_w := BiomeRelief.road_weight(HEALPix.vec2lonlat(dir),
 								_col_relief_roads, _col_relief_mpd, _col_crack_spacing)
 						if _rl_w > 0.0:

@@ -912,15 +912,14 @@ class TileFrame:
 	## MountainSetNative of the two lists (null → GDScript path).
 	var mtn_set: RefCounted = null
 	var mtn_ready := false
-	## TileFrameNative — the sampler's hot path in C#, fed the tiles this frame meets (null without
-	## the assembly, or when a test turns [member use_native] off). See sample_height_for_direction.
+	## TileFrameNative: the sampler's hot path in C#, fed the tiles this frame meets. Null without the
+	## assembly or with [member use_native] off (tests). native_ok is decided once per frame, not per
+	## sample — the check cost a third of what the C# saves (rule: PlanetData._native_frame_ok).
 	var native: RefCounted = null
-	## May [member native] answer for this frame? Decided once — here for a body without mountains,
-	## in prepare_mountain_frame for one with — rather than on every sample: the check cost as much as
-	## a third of what the C# half then saves. See PlanetData._native_frame_ok for the rule.
 	var native_ok := false
-
-	## Tests flip this to exercise the GDScript path, which stays the reference.
+	## Pruned tile -> [ancestor Vector2i(ipix, nside), guess], once per frame: a climb probes the disk at
+	## every level (misses are not cached) — 0.6 to 1 s of tile reads a chunk when done per sample.
+	var climbs: Dictionary = {}
 	static var use_native := true
 	static var _native_tried := false
 	static var _native_script: Script = null
@@ -935,8 +934,7 @@ class TileFrame:
 					data.radius)
 			native_ok = data._native_frame_ok(self)
 
-	## Loaded lazily, so a build without the assembly degrades to the GDScript path instead of
-	## failing — the same arrangement as MountainRelief's twins.
+	## Loaded lazily: without the assembly, the GDScript path (as MountainRelief's twins do).
 	static func native_available() -> bool:
 		if not _native_tried:
 			_native_tried = true
@@ -978,9 +976,8 @@ func make_tile_frame() -> TileFrame:
 	return TileFrame.new(self)
 
 
-## May the frame's C# half answer for this body? Not while the mountains it would have to add are not
-## the ones it holds: resolved and summed in C#, or none at all. (Nor while the profiling rig counts
-## samplers, which it does in the GDScript path — checked by the callers, it changes at run time.)
+## May the frame's C# half answer? Only with the mountains it holds — summed in C#, or none. (Nor under
+## the profiling rig, which counts in the GDScript path: the callers check that, it changes at run time.)
 func _native_frame_ok(frame: TileFrame) -> bool:
 	if frame.native == null:
 		return false
@@ -3354,19 +3351,28 @@ func _base_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 		# la reproduit à epsilon près. On remonte donc au plus fin ancêtre présent — et
 		# l'UV doit être recalculé pour LUI, ce qui est la raison pour laquelle la
 		# remontée vit ici et non dans le chargement de tuile.
-		var up := _finest_present_ancestor(ipix, ns)
-		if up.y > 0:
+		# Once per tile and frame (TileFrame.climbs). A guess is still COUNTED per sample below.
+		var memo: Variant = frame.climbs.get(_tile_id(ipix, ns)) if frame != null else null
+		var up: Vector2i
+		var guess := false
+		if memo != null:
+			up = memo[0]
+			guess = memo[1]
+		else:
+			up = _finest_present_ancestor(ipix, ns)
 			# Élaguée pour de bon, ou simplement pas encore arrivée ? La carte de présence
 			# tranche, et sans jamais bloquer. Dans le doute (carte du shard pas encore
 			# là), on compte la remontée comme provisoire : la géométrie reste utilisable
 			# tout de suite, elle n'est simplement pas persistée.
-			var guess := _climb_is_guess(ns, ipix)
+			if up.y > 0:
+				guess = _climb_is_guess(ns, ipix)
+			if frame != null:
+				frame.climbs[_tile_id(ipix, ns)] = [up, guess]
+		if up.y > 0:
 			if guess:
 				climb_mark()
 			elif frame != null and frame.native != null:
-				# A tile pruned for good reads its ancestor every time: the C# half may now go
-				# there directly. A GUESS stays here, so it is counted for every sample as it
-				# always was — that count decides whether the geometry may be persisted.
+				# Pruned for good: the C# may go straight to the ancestor. A guess stays here.
 				frame.native.Redirect(_tile_id(ipix, ns), _tile_id(up.x, up.y))
 			ipix = up.x
 			ns = up.y
@@ -3446,7 +3452,10 @@ func sample_height_boundary(dir: Vector3, chain_ipix: int,
 				_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m)
 	# Prefer the canonical tile (vec_ipix) when loaded — it is symmetric:
 	# both sides of the boundary resolve to the same tile via vec2pix_nest.
-	if load_chunk_heightmap(vec_ipix, ns) != null:
+	# Through the frame: a missing tile misses the cache on every ask, hundreds per chunk rim.
+	var canonical_loaded: bool = not frame.floats(vec_ipix, ns).is_empty() if frame != null \
+			else load_chunk_heightmap(vec_ipix, ns) != null
+	if canonical_loaded:
 		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame,
 				vtx_spacing_m)
 	# Canonical tile not loaded — fall back to chain_ipix's tile (known-loaded).
