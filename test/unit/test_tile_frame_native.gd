@@ -227,6 +227,69 @@ func test_directions_everywhere_sample_identically() -> void:
 		assert_eq(differ, 0, "n%d, over the whole sphere: %s" % [level, first_diff])
 
 
+## The whole sphere with NO data on disk — what a CI machine has. Random tiles are made under 300
+## directions (every face, both poles, the face seams) and their neighbours, and the C# half has to find
+## the tile itself (known_export_ipix = -1): its vec2pix and its face coordinates, i.e. Math.Atan2,
+## against the engine's atan2. The tarsis_3 tests above go pending without a tile cache; this one never
+## does, so it is the one that proves a platform.
+func test_the_whole_sphere_samples_identically_without_data() -> void:
+	var pd = PlanetDataScript.new()
+	pd.planet_name = "native_sphere"
+	pd.radius = 6356000.0
+	pd.max_height = 10700.0
+	pd.height_offset = -1700.0
+	pd.terrain_exaggeration = 1.0
+	pd.chunk_heightmap_res = TILE_RES
+	pd.chunk_heightmaps_dir = ""
+	pd.export_nside = 64
+	pd.export_nside_min = 1
+	pd.chunk_is_pyramid = true
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 314159
+	var dirs := PackedVector3Array([Vector3.UP, Vector3.DOWN, Vector3(1, 0, 0), Vector3(-1, 0, 0),
+			Vector3(0, 0, 1), Vector3(0, 0, -1), Vector3(1, 1, 0).normalized(), Vector3(0, 1, 1).normalized(),
+			Vector3(0.0, 2.0 / 3.0, sqrt(1.0 - 4.0 / 9.0))])
+	while dirs.size() < 300:
+		dirs.append(Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1))
+				.normalized())
+	var stored: Dictionary = {}
+	for d: Vector3 in dirs:
+		var ipix: int = HEALPix.vec2pix_nest(64, d)
+		var around: Array = [ipix]
+		around.append_array(HEALPix.get_neighbors_nest(64, ipix).values())
+		for tile: Variant in around:
+			if int(tile) >= 0 and not stored.has(int(tile)):
+				stored[int(tile)] = true
+				pd.store_chunk_image("hp_n64_p%d" % int(tile), _fast_random_tile(rng), [])
+	var frames: Array = _frames(pd, 64, -1)
+	var fast: PlanetData.TileFrame = frames[0]
+	var slow: PlanetData.TileFrame = frames[1]
+	for d: Vector3 in dirs:  # the GDScript registers every tile the C# will need
+		pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 0.0)
+	var differ: int = 0
+	var served: int = 0
+	var first: String = ""
+	for d: Vector3 in dirs:
+		var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow, 0.0)
+		var c: float = fast.native.Sample(d, -1, 64, 0.0) if fast.native != null else NAN
+		if not is_nan(c):
+			served += 1
+			if c != b:
+				differ += 1
+				if first == "":
+					first = "%s: C# %.17g, GDScript %.17g" % [str(d), c, b]
+	assert_eq(differ, 0, "every direction equal: %s" % first)
+	assert_eq(served, dirs.size(), "and the C# answered every one")
+
+
+func _fast_random_tile(rng: RandomNumberGenerator) -> Image:
+	var texels := PackedFloat32Array()
+	texels.resize(TILE_RES * TILE_RES)
+	for i: int in range(texels.size()):
+		texels[i] = rng.randf()
+	return Image.create_from_data(TILE_RES, TILE_RES, false, Image.FORMAT_RF, texels.to_byte_array())
+
+
 func _random_tile(seed_value: int) -> Image:
 	var img := Image.create_empty(TILE_RES, TILE_RES, false, Image.FORMAT_RF)
 	var rng := RandomNumberGenerator.new()
