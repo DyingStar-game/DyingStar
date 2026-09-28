@@ -27,7 +27,6 @@ enum Kind {
 	POI,  ## a point of interest exported from QGIS
 	DERIVED,  ## computed for any body (poles, equator, low orbit)
 	MANUAL,  ## longitude/latitude typed in by hand
-	RETURN,  ## where this trip started
 	STATION,  ## an orbital station (see StationSite)
 }
 
@@ -58,12 +57,10 @@ func _init(p_label: String = "", p_planet: String = "", p_lon: float = 0.0, p_la
 	detail = p_detail
 
 
-## Somewhere aboard the station [param site] orbiting [param planet], as a [param p_kind] entry
-## (STATION in a list, RETURN when it is where a trip started).
-static func to_station(site: StationSite, planet: String, p_kind: Kind = Kind.STATION,
-		p_detail: String = "") -> TeleportDestination:
+## Somewhere aboard the station [param site] orbiting [param planet].
+static func to_station(site: StationSite, planet: String, p_detail: String = "") -> TeleportDestination:
 	var dest := TeleportDestination.new(site.display_name(), planet, 0.0, 0.0, 0.0, Height.GROUND,
-			p_kind, p_detail)
+			Kind.STATION, p_detail)
 	dest.station_uuid = site.uuid()
 	return dest
 

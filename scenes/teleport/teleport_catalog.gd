@@ -75,7 +75,7 @@ static func station_destinations(planet_name: String) -> Array[TeleportDestinati
 static func station_destination(site: StationSite, planet_name: String,
 		body_props: Dictionary) -> TeleportDestination:
 	var detail: String = "orbit %.0f km, %.1f°" % [site.altitude_above(body_props) / 1000.0, site.inclination_deg]
-	return TeleportDestination.to_station(site, planet_name, TeleportDestination.Kind.STATION, detail)
+	return TeleportDestination.to_station(site, planet_name, detail)
 
 
 ## POI exported from QGIS. Empty — and that is normal, not a failure — for eighteen of the nineteen

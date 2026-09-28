@@ -8,9 +8,11 @@ extends Node3D
 ## destination's real terrain instead of a cartesian offset copied by hand.
 ##
 ## SPLIT OF DUTIES — this script is the only place the two sides meet, and it keeps them apart:
-##   CLIENT — builds nothing and decides nothing. It feeds [TeleporterUI] the catalogue, remembers
-##            where the trip started (so "Return" needs no server state at all), and forwards the
-##            chosen destination as a plain action.
+##   CLIENT — builds nothing and decides nothing. It feeds [TeleporterUI] the catalogue and forwards
+##            the chosen destination as a plain action.
+##
+## There is no "Return": you only ever leave from a cabin, and a trip lands you where there is none —
+## the way back is another cabin (one stands aboard the station).
 ##   SERVER — the only one that resolves a body, a height and a position, and the only one that moves
 ##            anybody. It re-validates everything: the payload names a place, never an outcome.
 ##
@@ -20,8 +22,6 @@ extends Node3D
 ## Key in [constant Globals.ENABLED_DEV_TOOLS]. It has no InputMap binding — the cabin is walked
 ## into, not pressed — so nothing in the controls menu looks for it; the entry is purely the switch.
 const DEV_TOOL: StringName = &"teleporter"
-## Metres above the ground the "Return" entry aims for. Same clearance the catalogue uses.
-const RETURN_CLEARANCE_M: float = 2.0
 ## Metres of air left under a vehicle that travels with you: enough to settle onto its wheels.
 const VEHICLE_CLEARANCE_M: float = 0.5
 ## Most things one trip carries. A cabin holds a truck and a few people comfortably; the cap is only
@@ -134,10 +134,8 @@ func is_typing() -> bool:
 	return _ui != null and _ui.is_typing()
 
 
-## Told who is standing at the console. On the CLIENT this is when the "Return" entry can be filled
-## in — the departure point is simply where that player is right now, so nothing has to be stored on
-## the server or replicated back.
-func screen_focus_changed(player: Player, focused: bool) -> void:
+## Told who is standing at the console.
+func screen_focus_changed(_player: Player, focused: bool) -> void:
 	if GameOrchestrator.is_server():
 		return
 	if _ui == null:
@@ -148,8 +146,6 @@ func screen_focus_changed(player: Player, focused: bool) -> void:
 		# the next console, and _screen_typing() — which only ever asks about the screen they are
 		# standing at — would not report it, so nothing would lock gameplay input either.
 		_ui.release_fields()
-		return
-	_ui.set_return_point(_departure_of(player))
 
 
 ## The action router hands over the player whose action this is, immediately before update_screen.
@@ -403,32 +399,10 @@ func _on_ui_teleport_requested(payload: Dictionary) -> void:
 	var player: Player = _local_player()
 	if player == null:
 		return
-	# Capture the departure BEFORE leaving, so "Return" is available the moment we arrive. Purely
-	# client-side: a return trip is just another destination, so nothing needs to be kept server-side.
-	_ui.set_return_point(_departure_of(player))
 	var action: Dictionary = payload.duplicate()
 	action["action"] = "screen_state"
 	action["state"] = "teleport"
 	player.client_send_action_to_server(action)
-
-
-## Where [param player] is standing, as a destination that would bring them back here. Aboard a
-## station that is the station itself: its lon/lat would drop them on the ground 400 km below.
-func _departure_of(player: Player) -> TeleportDestination:
-	var station: OrbitalStation = OrbitalStation.of(player)
-	if station != null and station.site() != null:
-		var planet: Planet = Planet.of(station)
-		var key: String = planet.planet_data.planet_name if planet != null and planet.planet_data != null else ""
-		return TeleportDestination.to_station(station.site(), key, TeleportDestination.Kind.RETURN)
-	var body: Planet = Planet.of(player)
-	if body == null or body.planet_data == null:
-		return null  # in transit or in deep space: there is no lon/lat to come back to
-	var lonlat: Vector2 = body.lonlat_of(player.global_position)
-	var where: String = body.display_name if body.display_name != "" else body.planet_data.planet_name
-	return TeleportDestination.new(
-			"Departure point", body.planet_data.planet_name, lonlat.x, lonlat.y,
-			RETURN_CLEARANCE_M, TeleportDestination.Height.GROUND,
-			TeleportDestination.Kind.RETURN, where)
 
 
 static func _local_player() -> Player:

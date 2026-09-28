@@ -354,6 +354,11 @@ func server_action_received(data: Dictionary) -> void:
 				if player.screen_interacting.has_method("set_screen_actor"):
 					player.screen_interacting.set_screen_actor(player)
 				player.screen_interacting.update_screen(data)
+			else:
+				# Not silent: the client showed a screen and sent its button, so a server that sees the
+				# player at no screen is a disagreement between the two, and it used to vanish without a word.
+				push_warning("[Screen] %s pressed '%s' but the server has them at no screen"
+						% [player.client_uuid, str(data.get("state", ""))])
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative side-effects we
 			# know about, then replicate every property to nearby clients.

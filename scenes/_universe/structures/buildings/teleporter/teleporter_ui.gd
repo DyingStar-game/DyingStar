@@ -27,7 +27,6 @@ var _system: String = ""
 var _body_key: String = ""
 var _all_dests: Array[TeleportDestination] = []
 var _shown_dests: Array[TeleportDestination] = []
-var _return_dest: TeleportDestination = null
 ## The station picked in the list. It has no coordinates to type, so the fields are emptied, and it is
 ## what TELEPORT sends for as long as they stay empty — typing coordinates goes back to a manual trip.
 var _picked_station: TeleportDestination = null
@@ -43,7 +42,6 @@ var _height: LineEdit
 var _mode: OptionButton
 var _status: Label
 var _go_button: Button
-var _return_button: Button
 
 
 func _ready() -> void:
@@ -89,13 +87,6 @@ func load_systems(systems: PackedStringArray, preferred: String) -> void:
 		return
 	_system_list.select(pick)
 	_on_system_picked(pick)
-
-
-## Offer a way back to where the trip started. Null clears it — in deep space there is no lon/lat to
-## come back to, and a button that cannot work must not look as though it could.
-func set_return_point(dest: TeleportDestination) -> void:
-	_return_dest = dest
-	_refresh_buttons()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -173,14 +164,6 @@ func _on_go_pressed() -> void:
 	_say("Sent: %s" % dest.describe(), ACCENT)
 
 
-func _on_return_pressed() -> void:
-	if not _enabled or _return_dest == null:
-		return
-	release_fields()
-	teleport_requested.emit(_return_dest.to_payload())
-	_say("Returning to %s" % _return_dest.describe(), ACCENT)
-
-
 ## What the fields currently describe, or null with the reason shown on screen.
 func _typed_destination() -> TeleportDestination:
 	if _body_key == "":
@@ -213,8 +196,6 @@ func release_fields() -> void:
 func _refresh_buttons() -> void:
 	if _go_button != null:
 		_go_button.disabled = not _enabled
-	if _return_button != null:
-		_return_button.disabled = not _enabled or _return_dest == null
 
 
 func _say(message: String, colour: Color) -> void:
@@ -291,11 +272,6 @@ func _build() -> void:
 	_go_button.custom_minimum_size = Vector2(260, 64)
 	_go_button.pressed.connect(_on_go_pressed)
 	buttons.add_child(_go_button)
-	_return_button = Button.new()
-	_return_button.text = "RETURN"
-	_return_button.custom_minimum_size = Vector2(200, 64)
-	_return_button.pressed.connect(_on_return_pressed)
-	buttons.add_child(_return_button)
 	_refresh_buttons()
 
 
