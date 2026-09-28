@@ -3,29 +3,25 @@ extends NetStaticBody
 ## An orbital station: a networked structure (type "station") that players live in — the city of
 ## space — and that ORBITS its body for real.
 ##
-## It moves the way a moon does. On the SERVER nothing celestial moves: the station keeps the pose it
-## was seeded with, and the players inside hold positions local to it, the same whether it moves or
+## It moves the way a moon does. On the SERVER nothing celestial moves: the station's body keeps the pose
+## it was created with, and the players inside hold positions local to it, the same whether it moves or
 ## not. On each CLIENT it is placed every frame from the time, on the orbit its StationSite describes
 ## (StationOrbit), and its children — the players inside — are carried by the scene graph. Every
-## client computes the same point from the same clock, with nothing on the wire.
+## client computes the same point from the same clock.
 ##
 ## Placed every FRAME, not at the planets' 3 Hz: at 7 km/s a third of a second is 2.3 km, a jump the
 ## people inside would see the whole planet make.
 ##
-## The replicated position and rotation are therefore ignored on a client (what arrives is the
-## server's fixed pose); they are overwritten on the next frame.
+## Horizon keeps the station where it was seeded. Telling it where the station really is was tried, and
+## measured: each update moved the station 7.7 km, and Horizon moves what hangs under it one object at a
+## time, checking zones at every step — so every second a player aboard left their own zone and came
+## back (38 times in 35 s), and would have seen every other passenger vanish and reappear. What is aboard
+## is placed relative to the station, which is all a client needs; the price is that a body drifting out
+## of the station's frame (its site's eva_radius_m) is compared with the seed pose, and its client loses
+## the station.
 
 ## Where travellers arrive (the teleporter): a Marker3D child, local to the station.
 const ARRIVAL_NODE := "Arrival"
-
-## How far from the station a weightless body still rides in its frame, in metres (see holds()).
-##
-## A body let go beside a station is on an orbit of its own, next to the station's: the station's frame
-## is the right one to describe it in — it is the co-moving frame of orbital mechanics (LVLH) — PROVIDED
-## the body drifts the way that frame says it does (relative_acceleration: Clohessy-Wiltshire). Those
-## equations are linearised, good to ~1 % out to ~70 km here; past this radius the body falls back to its
-## planet's frame.
-@export var eva_radius_m: float = 50000.0
 
 var _site: StationSite = null
 ## A uuid no StationSite answers to: looked up once, not re-read from disk every frame (see site()).
@@ -40,10 +36,22 @@ func _ready() -> void:
 	# On its orbit from the very first frame, not the next one. What arrives off the network is the
 	# server's fixed pose, and a traveller can be put aboard in the same frame the station is created
 	# (the teleporter): measured, 4 321 km from the true station for that one frame.
-	_process(0.0)
+	_place_on_orbit()
 
 
 func _process(_delta: float) -> void:
+	_place_on_orbit()
+
+
+## CLIENT: a replicated pose was just applied (PropSync) — the server's fixed one. Back on the orbit in
+## the same call, so it is never drawn there.
+func apply_prop_data(_data: Dictionary) -> void:
+	if is_inside_tree():
+		_place_on_orbit()
+
+
+## CLIENT: on its orbit, now.
+func _place_on_orbit() -> void:
 	var pose: Transform3D = orbit_pose_at(Globals.sim_time())
 	if pose == Transform3D.IDENTITY:
 		return  # site or body not known yet
@@ -71,10 +79,13 @@ static func of(node: Node) -> OrbitalStation:
 	return walk as OrbitalStation
 
 
-## True while [param world_pos] is close enough to ride with the station (eva_radius_m). A plain distance,
-## exact on the server too: the station stands still there, but what is aboard is placed relative to it.
+## True while [param world_pos] is close enough to ride with the station (its site's eva_radius_m). A
+## plain distance, exact on the server too: the station stands still there, but what is aboard is placed
+## relative to it.
 func holds(world_pos: Vector3) -> bool:
-	return global_position.distance_squared_to(world_pos) <= eva_radius_m * eva_radius_m
+	var s: StationSite = site()
+	var radius: float = s.eva_radius_m if s != null else StationSite.DEFAULT_EVA_RADIUS_M
+	return global_position.distance_squared_to(world_pos) <= radius * radius
 
 
 ## Acceleration of a free body beside the station, relative to it: the pull of the orbit that a body let

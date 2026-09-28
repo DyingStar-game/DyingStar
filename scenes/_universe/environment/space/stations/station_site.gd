@@ -7,6 +7,10 @@ extends Resource
 ##
 ## Stored as scenes/systems/<system>/stations/<name>.tres; list them with StationSites.
 
+## The networked scene every station is built from unless its site names another.
+const DEFAULT_SCENE := "res://scenes/_universe/environment/space/stations/orbital_station.tscn"
+const DEFAULT_EVA_RADIUS_M := 50000.0
+
 enum AltitudeMode {
 	## altitude_m above the body's reference radius.
 	FIXED,
@@ -31,12 +35,31 @@ enum AltitudeMode {
 @export var ascending_node_deg: float = 0.0
 ## Where on its orbit the station is at t = 0 (mean anomaly), degrees.
 @export var phase_deg: float = 0.0
+## The networked scene the station is built from: orbital_station.tscn, or a scene INHERITED from it with
+## another model under `Model` (and its own `Arrival` marker). It becomes the seed's `scenename`
+## (tools/stations/station_seed.gd). A path, not a PackedScene: the star map and the teleporter read the
+## sites, and must not load a station's whole model to do it.
+@export_file("*.tscn") var scene: String = DEFAULT_SCENE
+## How far from the station a weightless body still rides in its frame, in metres (OrbitalStation.holds).
+##
+## A body let go beside a station is on an orbit of its own, next to the station's: the station's frame
+## is the right one to describe it in — it is the co-moving frame of orbital mechanics (LVLH) — PROVIDED
+## the body drifts the way that frame says it does (OrbitalStation.relative_acceleration:
+## Clohessy-Wiltshire). Those equations are linearised: ~1 % off at 70 km from a 400 km orbit, and the
+## error grows with the distance over the orbit's radius. Past this radius the body falls back to its
+## planet's frame.
+@export var eva_radius_m: float = DEFAULT_EVA_RADIUS_M
 
 
 ## The uuid the station is seeded under. Derived, never stored: the seed, the server and every client
 ## compute the same one from the id.
 func uuid() -> String:
 	return PropSpawn.stable_uuid("station:" + id)
+
+
+## The scene as the network names it (the seed's `scenename`): its path without "res://".
+func scenename() -> String:
+	return scene.trim_prefix("res://")
 
 
 ## "Palaka-Pital Orbital Station" / "Station orbitale Palaka-Pital".
