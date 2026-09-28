@@ -1230,6 +1230,21 @@ class TestVolcanoParts(unittest.TestCase):
         self.assertAlmostEqual(dist_m(starts[0][:2]), volcanoes_mod.lake_shore_radius(ft, 1.0),
                                delta=0.05)
 
+    def test_a_flow_wandering_in_the_crater_never_runs_back_through_the_lake(self):
+        mpd = mg.m_per_deg(self.R)
+        volcano = {"lon": 0.0, "lat": 0.0, "props": {"type": "stratovolcano", "has_lava_lake": 1}}
+        # Drawn like tarsis_3's: near the rim, back toward the summit, then out.
+        cl = [(200.0 / mpd, 0.0), (50.0 / mpd, 0.0), (330.0 / mpd, 0.0), (3000.0 / mpd, 0.0)]
+        f = volcanoes_mod.resolve_volcano(volcano["props"])
+        f.update(volcanoes_mod.lake_breach(volcano, [{"centerline": cl}], self.R))
+        out, lake = volcanoes_mod.snap_to_lakes(cl, [(volcanoes_mod.unit_centre(0.0, 0.0), f, "V")],
+                                                self.R)
+        self.assertEqual(lake, "V")
+        self.assertEqual(len(out), 3, "the two in-lake points dropped, the shore prepended")
+        self.assertEqual(out[1:], cl[2:])
+        xs = [p[0] * mpd for p in out]
+        self.assertEqual(xs, sorted(xs), "the flow only moves away from the summit")
+
     def test_a_flow_leaving_a_lake_tilts_the_rim_toward_it(self):
         mpd = mg.m_per_deg(self.R)
         volcano = {"lon": 0.0, "lat": 0.0, "props": {"type": "stratovolcano", "has_lava_lake": 1}}

@@ -317,16 +317,10 @@ def _chord_m(a, b, radius_m):
     return math.sqrt(sum((a[k] - b[k]) ** 2 for k in range(3))) * radius_m
 
 
-def _outward_tangent(c, centerline, radius_m):
-    """Unit tangent at the summit c pointing along the flow's start: toward its
-    first point, or the next one when it starts on the summit. None if none."""
-    ref = None
-    for q in centerline:
-        v = unit_centre(*q)
-        if _chord_m(v, c, radius_m) > 1e-3:
-            ref = v
-            break
-    if ref is None:
+def _tangent_to(c, q, radius_m):
+    """Unit tangent at the summit c toward point q (lon, lat); None on the summit."""
+    ref = unit_centre(*q)
+    if _chord_m(ref, c, radius_m) <= 1e-3:
         return None
     d = sum(ref[k] * c[k] for k in range(3))
     t = tuple(ref[k] - c[k] * d for k in range(3))
@@ -350,7 +344,10 @@ def lake_breach(volcano, flows, radius_m, snap_m=LAKE_SNAP_M):
             continue
         if _chord_m(unit_centre(*cl[0]), c, radius_m) - r_shore > snap_m:
             continue
-        t = _outward_tangent(c, cl, radius_m)
+        # Toward the first point out of the (level) lake: a line drawn from
+        # the summit or wandering in the crater still gives the flow's way out.
+        out = [q for q in cl if _chord_m(unit_centre(*q), c, radius_m) > r_shore]
+        t = _tangent_to(c, out[0], radius_m) if out else None
         if t is None:
             continue
         dc = float(fields["crater_depth_m"])
@@ -362,10 +359,11 @@ def lake_breach(volcano, flows, radius_m, snap_m=LAKE_SNAP_M):
 def snap_to_lakes(centerline, lakes, radius_m, snap_m=LAKE_SNAP_M):
     """The flow's centerline with its SOURCE moved onto the shore of the lava
     lake it starts in or next to. lakes: [(unit centre, resolved fields, name)]
-    — the fields carry the rim tilt when a flow breaches it. A first point
-    inside the lake is replaced by the shore point on the ray from the summit;
-    one outside within snap_m of the shore gets the shore point prepended.
-    Returns (centerline, lake name or None)."""
+    — the fields carry the rim tilt when a flow breaches it. The leading
+    points still inside the lake (each against the shore in its own azimuth)
+    are dropped, then the shore point toward the first remaining one starts
+    the flow: a line drawn from the summit, or wandering in the crater, never
+    runs back through the lake. Returns (centerline, lake name or None)."""
     if len(centerline) < 2 or not lakes:
         return list(centerline), None
     p0 = unit_centre(*centerline[0])
@@ -380,20 +378,27 @@ def snap_to_lakes(centerline, lakes, radius_m, snap_m=LAKE_SNAP_M):
     if best is None:
         return list(centerline), None
     gap, c, fields, name = best
-    t = _outward_tangent(c, centerline, radius_m)
-    if t is None:
+    tilted = float(fields.get("tilt_m") or 0.0) > 0.0
+
+    def shore_r(t):
+        u_dot_f = None
+        if tilted:
+            u_dot_f = t[0] * float(fields["fx"]) + t[1] * float(fields["fy"]) + t[2] * float(fields["fz"])
+        return lake_shore_radius(fields, u_dot_f)
+
+    k = 0
+    while k < len(centerline):
+        tq = _tangent_to(c, centerline[k], radius_m)
+        if tq is not None and _chord_m(unit_centre(*centerline[k]), c, radius_m) >= shore_r(tq):
+            break
+        k += 1
+    if k >= len(centerline):
         return list(centerline), None
-    u_dot_f = None
-    if float(fields.get("tilt_m") or 0.0) > 0.0:
-        u_dot_f = t[0] * float(fields["fx"]) + t[1] * float(fields["fy"]) + t[2] * float(fields["fz"])
-    a = lake_shore_radius(fields, u_dot_f) / radius_m
-    shore = _lonlat_of(tuple(c[k] * math.cos(a) + t[k] * math.sin(a) for k in range(3)))
-    out = list(centerline)
-    if gap < 0.0:
-        out[0] = shore
-    else:
-        out.insert(0, shore)
-    return out, name
+    rest = list(centerline[k:])
+    t = _tangent_to(c, rest[0], radius_m)
+    a = shore_r(t) / radius_m
+    shore = _lonlat_of(tuple(c[i] * math.cos(a) + t[i] * math.sin(a) for i in range(3)))
+    return [shore] + rest, name
 
 
 # ── Lava flows ─────────────────────────────────────────────────────────
