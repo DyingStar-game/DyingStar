@@ -108,3 +108,12 @@ func test_the_palaka_pital_station_is_listed() -> void:
 	# errors, which GUT counts against whichever test happens to run.
 	assert_almost_eq(sites[0].altitude_above(SANDBOX), 400000.0, 0.01, "400 km")
 	assert_almost_eq(sites[0].inclination_deg, 51.6, 1e-6, "like the ISS")
+
+
+func test_a_station_wears_the_orbital_icon_not_the_capitals() -> void:
+	# The chart asks the icon table with the station's id; a proper name starting "Palaka-Pital" would
+	# match the capital's rule, which comes first.
+	var icons: PoiIconSet = load("res://assets/textures/poi/poi_icons.tres")
+	var poi := {"kind": StarMap.STATION_POI_KIND, "name": "tarsis_3/palaka_pital"}
+	assert_eq(icons.icon_for(poi).resource_path, "res://assets/textures/poi/orbital_station.png")
+	assert_eq(icons.kind_label(poi), tr("%%POI_KIND_ORBITAL"), "and reads as an orbital station")

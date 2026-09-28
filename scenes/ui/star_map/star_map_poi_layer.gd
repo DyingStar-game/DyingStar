@@ -160,7 +160,7 @@ func _place_icon(index: int, world: Vector3, eye: Vector3, selected: bool, hover
 	var span: float = distance * ICON_SIZE * (ICON_HOVER_SCALE if hovered or selected else 1.0)
 	icon.pixel_size = span / maxf(height, 1.0)
 	icon.position = world
-	icon.modulate = _tint(poi, selected, hovered)
+	icon.modulate = highlight_tint(poi, selected, hovered)
 	icon.show()
 
 
@@ -204,7 +204,7 @@ func _place_labels(drawn: Array[int], camera: Camera3D, selected: int, hovered: 
 		label.text = str(entries[index]["label"]) + "\n" + altitude
 		# Lifted well past the badge's own tint. A marker may be a dark ochre and still read, being a
 		# shape; text at that value over sunlit ground does not, and reading the name is the point.
-		label.modulate = _tint(entries[index], is_selected, is_hovered).lerp(Color.WHITE, 0.45)
+		label.modulate = highlight_tint(entries[index], is_selected, is_hovered).lerp(Color.WHITE, 0.45)
 		# Along the CAMERA's up, like every other label on this chart: an offset along the surface normal
 		# reads well from the equator and collapses onto the badge as soon as the town nears a limb.
 		label.position = world + camera.global_basis.y * (eye.distance_to(world) * LABEL_GAP)
@@ -227,9 +227,15 @@ static func _more_important(a: Dictionary, b: Dictionary) -> bool:
 
 
 ## Selected is brightest, hovered next, the rest at their own tint. Three steps rather than two, so
-## moving the cursor over a town you have not selected still answers immediately.
-func _tint(poi: Dictionary, selected: bool, hovered: bool) -> Color:
-	var base: Color = ICONS.tint_for(poi)
+## moving the cursor over a town you have not selected still answers immediately. Shared with the
+## stations (StarMap._refresh_stations), which answer the pointer the same way.
+static func highlight_tint(poi: Dictionary, selected: bool, hovered: bool) -> Color:
+	return lift(ICONS.tint_for(poi), selected, hovered)
+
+
+## The chart's highlight, on any colour: brighter when pointed at, brighter still when selected. Shared by
+## the towns, the stations and your own marker, so all three answer the cursor the same way.
+static func lift(base: Color, selected: bool, hovered: bool) -> Color:
 	if selected:
 		return base.lerp(Color.WHITE, 0.65)
 	if hovered:

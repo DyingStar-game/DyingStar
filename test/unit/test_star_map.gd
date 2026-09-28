@@ -311,3 +311,14 @@ func test_a_rebuild_parks_the_ground_instead_of_dropping_it() -> void:
 	assert_eq(ground.get_parent(), new_sphere, "hung back on the body's new sphere")
 	assert_true(ground.has_tiles(), "with nothing to build again")
 	chart._drop_ground()
+
+## Your marker and the towns answer the cursor the SAME way: one rule, brighter when pointed at, brighter
+## still when selected (StarMapPoiLayer.lift).
+func test_you_and_the_towns_answer_the_cursor_alike() -> void:
+	var base := Color(1.0, 0.35, 0.35)
+	assert_eq(StarMapPoiLayer.lift(base, false, false), base)
+	assert_eq(StarMapPoiLayer.lift(base, false, true), base.lerp(Color.WHITE, 0.35))
+	assert_eq(StarMapPoiLayer.lift(base, true, false), base.lerp(Color.WHITE, 0.65))
+	var town: Dictionary = {"name": "major_railway_city_08", "kind": ""}
+	assert_eq(StarMapPoiLayer.highlight_tint(town, false, true),
+			StarMapPoiLayer.lift(StarMapPoiLayer.ICONS.tint_for(town), false, true))
