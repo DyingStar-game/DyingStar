@@ -61,5 +61,9 @@
  "type",
  "stratovolcano",
  "active",
- "lava_river"
+ "lava_river",
+ "fx",
+ "fy",
+ "fz",
+ "tilt_m"
 ]
