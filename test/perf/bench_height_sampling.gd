@@ -288,15 +288,20 @@ func _measure_mountains(pd, export_ipix: int, hp_ipix: int) -> void:
 	var ridge := {"coverage": "partial", "polygon": crest, "height_m": 200.0, "width_m": 500.0,
 			"roughness": 0.3, "warp_m": 40.0, "asymmetry": 0.4}
 
+	# (f) stratovolcan de 12 km centré à 2 km du chunk : flancs, ravines, détail.
+	var volcano := VolcanoRelief.debug_record("stratovolcano",
+			c_ll + Vector2(2000.0 / mpd / clat, 0.0), {"seed": 3})
+
 	var cases := [
-		["(a) sans montagnes", [], []],
-		["(b) zone pleine, 8 octaves", [full], []],
-		["(c) zone partielle, anneau 16", [partial], []],
-		["(d) crête 12 segments", [], [ridge]],
+		["(a) sans montagnes", [], [], []],
+		["(b) zone pleine, 8 octaves", [full], [], []],
+		["(c) zone partielle, anneau 16", [partial], [], []],
+		["(d) crête 12 segments", [], [ridge], []],
+		["(f) stratovolcan 12 km", [], [], [volcano]],
 	]
 	var acc := 0.0
 	for cs in cases:
-		pd.set_mountain_overrides(cs[1], cs[2])
+		pd.set_mountain_overrides(cs[1], cs[2], cs[3])
 		var t := Time.get_ticks_usec()
 		for r in REPS:
 			var frame: PlanetData.TileFrame = pd.make_tile_frame()

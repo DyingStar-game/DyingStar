@@ -129,15 +129,56 @@ static var _viaduct_profiles: Dictionary = {}
 # Every question the generic builders have about "what kind of line is this"
 # is answered here and only here.
 
-## Does this decoded road record ride a grade-limited profile?
+## Does this decoded road record ride a grade-limited profile? (A lava flow
+## rides one too — GradeProfile's DESCENT rule, see LavaSettings.)
 static func is_profiled(zone: Dictionary) -> bool:
-	return RailwaySettings.is_railway(zone) or RoadTerrain.is_graded_road(zone)
+	return RailwaySettings.is_railway(zone) or RoadTerrain.is_graded_road(zone) \
+			or LavaSettings.is_lava(zone)
+
+
+## Profile rule of a line: the grade windows (railways, graded roads) or the
+## running minimum of the terrain (lava — it never flows uphill).
+enum Rule { GRADE = 0, DESCENT = 1 }
+
+
+static func profile_rule_of(zone: Dictionary) -> int:
+	return Rule.DESCENT if LavaSettings.is_lava(zone) else Rule.GRADE
+
+
+## May the line go through a tunnel / over a viaduct? A lava flow is a
+## channel or it lies on the ground.
+static func allows_tunnels_of(zone: Dictionary) -> bool:
+	return not LavaSettings.is_lava(zone)
+
+
+static func allows_bridges_of(zone: Dictionary) -> bool:
+	return not LavaSettings.is_lava(zone)
+
+
+## Rise per metre of the line's cutting walls.
+static func wall_slope_of(zone: Dictionary) -> float:
+	return LavaSettings.WALL_SLOPE if LavaSettings.is_lava(zone) else GORGE_WALL_SLOPE
+
+
+## Share of the cutting's flat-floor margin (floor_margin_m) the line keeps
+## past its bed: the lava crust meets its banks directly.
+static func floor_margin_k_of(zone: Dictionary) -> float:
+	return 0.0 if LavaSettings.is_lava(zone) else 1.0
+
+
+## Texture repeat of a line type's bed (m).
+static func tile_size_of(road_type: String) -> float:
+	if road_type == LavaSettings.LAVA_TYPE:
+		return LavaSettings.TILE_M
+	return RoadTerrain.get_tile_size(road_type)
 
 
 ## Steepest grade (rise / run) the line follows.
 static func max_grade_of(zone: Dictionary) -> float:
 	if RailwaySettings.is_railway(zone):
 		return RailwaySettings.MAX_GRADE
+	if LavaSettings.is_lava(zone):
+		return 0.0
 	return RoadTerrain.max_grade(zone)
 
 
@@ -155,6 +196,9 @@ static func climbs_at_max_grade_of(zone: Dictionary) -> bool:
 static func half_width_of(zone: Dictionary) -> float:
 	if RailwaySettings.is_railway(zone):
 		return RailwaySettings.railway_half_width_m(int(zone.get("tracks", 0)))
+	if LavaSettings.is_lava(zone):
+		var hws := LavaSettings.half_widths_of(zone)
+		return maxf(hws.x, hws.y)
 	return RoadTerrain.get_half_width_m(zone)
 
 
@@ -162,6 +206,8 @@ static func half_width_of(zone: Dictionary) -> float:
 static func bed_material_of(zone: Dictionary) -> String:
 	if RailwaySettings.is_railway(zone):
 		return RailwaySettings.BALLAST_MATERIAL_PATH
+	if LavaSettings.is_lava(zone):
+		return LavaSettings.material_path_of(zone)
 	return RoadTerrain.ASPHALT_MATERIAL_PATH
 
 

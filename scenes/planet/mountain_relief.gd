@@ -53,7 +53,7 @@ static func native_available() -> bool:
 		_ridge_script = NativeScript.load_usable("res://scenes/planet/native/MountainRidgeNative.cs",
 				["Configure"])
 		_set_script = NativeScript.load_usable("res://scenes/planet/native/MountainSetNative.cs",
-				["AddZone", "AddRidge", "Offset", "Core", "Mask"])
+				["AddZone", "AddRidge", "AddVolcano", "Offset", "Core", "Mask"])
 		if _zone_script == null or _ridge_script == null or _set_script == null:
 			_zone_script = null
 			_ridge_script = null
@@ -173,11 +173,13 @@ static func prepare_ridge(z: Dictionary, m_per_deg: float) -> Ridge:
 	return out
 
 
-## A MountainSetNative summing [param zones] and [param ridges] in one call per
-## sample (see PlanetData._mountain_offset); null without the assembly, when
-## use_native is off, or when there is nothing to sum.
-static func build_set(zones: Array, ridges: Array) -> RefCounted:
-	if not use_native or not native_available() or (zones.is_empty() and ridges.is_empty()):
+## A MountainSetNative summing [param zones], [param ridges] and
+## [param volcanoes] (VolcanoRelief.Volcano) in one call per sample (see
+## PlanetData._mountain_offset); null without the assembly, when use_native is
+## off, or when there is nothing to sum.
+static func build_set(zones: Array, ridges: Array, volcanoes: Array = []) -> RefCounted:
+	if not use_native or not native_available() \
+			or (zones.is_empty() and ridges.is_empty() and volcanoes.is_empty()):
 		return null
 	var s: RefCounted = _set_script.new()
 	for z in zones:
@@ -188,13 +190,18 @@ static func build_set(zones: Array, ridges: Array) -> RefCounted:
 		if (r as Ridge).native == null:
 			return null
 		s.AddRidge((r as Ridge).native)
+	for v in volcanoes:
+		if (v as VolcanoRelief.Volcano).native == null:
+			return null
+		s.AddVolcano((v as VolcanoRelief.Volcano).native)
 	return s
 
 
 ## Total mountain offset (m) at [param dir]. [param eff_spacing_m] is the
 ## grid's vertex pitch (> 0 — PlanetData floors it at the finest pitch).
+## Volcanoes are summed last, the order the C# set keeps.
 static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
-		eff_spacing_m: float) -> float:
+		eff_spacing_m: float, volcanoes: Array = []) -> float:
 	var total := 0.0
 	var m_per_deg := radius * PI / 180.0
 	var have_ll := false
@@ -223,6 +230,8 @@ static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
 			ll = HEALPix.vec2lonlat(dir)
 			have_ll = true
 		total += ridge_height(ll, dir, radius, rd)
+	for vv in volcanoes:
+		total += VolcanoRelief.offset(dir, radius, vv, eff_spacing_m)
 	return total
 
 
@@ -233,7 +242,8 @@ static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
 ## where features overlap or the intensity is above 1 (the consumer clamps).
 ## Pure, LOD-independent (a fixed pitch per zone, no pitch gate on ridges)
 ## and pinned equal to MountainSetNative.Core by test_mountain_relief.gd.
-static func core(dir: Vector3, radius: float, zones: Array, ridges: Array) -> float:
+static func core(dir: Vector3, radius: float, zones: Array, ridges: Array,
+		volcanoes: Array = []) -> float:
 	var total := 0.0
 	var m_per_deg := radius * PI / 180.0
 	var have_ll := false
@@ -263,6 +273,8 @@ static func core(dir: Vector3, radius: float, zones: Array, ridges: Array) -> fl
 		var prof := _ridge_profile(ll, dir, radius, rd)
 		if prof.x > 0.0:
 			total += prof.x * prof.y * rd.impurity
+	for vv in volcanoes:
+		total += VolcanoRelief.core(dir, radius, vv)
 	return total
 
 
@@ -275,7 +287,8 @@ static func core(dir: Vector3, radius: float, zones: Array, ridges: Array) -> fl
 ## [param fade_m] is the ramp: 0 on a range's outline (or a ridge's foot),
 ## 1 that many metres inside — its own width, NOT the relief's feather, which
 ## can be kilometres and would carry a canyon up to the crest.
-static func mask(dir: Vector3, radius: float, zones: Array, ridges: Array, fade_m: float) -> float:
+static func mask(dir: Vector3, radius: float, zones: Array, ridges: Array, fade_m: float,
+		volcanoes: Array = []) -> float:
 	var m := 0.0
 	var m_per_deg := radius * PI / 180.0
 	var have_ll := false
@@ -298,6 +311,8 @@ static func mask(dir: Vector3, radius: float, zones: Array, ridges: Array, fade_
 		var prof := _ridge_profile(ll, dir, radius, rd)
 		if prof.x > 0.0:
 			m = maxf(m, smoothstep(0.0, fade_m, prof.z) * prof.y)
+	for vv in volcanoes:
+		m = maxf(m, VolcanoRelief.mask(dir, radius, vv, fade_m))
 	return clampf(m, 0.0, 1.0)
 
 

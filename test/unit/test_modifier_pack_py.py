@@ -28,6 +28,7 @@ from export.planet import modifier_geom as mg                     # noqa: E402
 from export.planet import roads as roads_mod                      # noqa: E402
 from export.planet import biomes as biomes_mod                    # noqa: E402
 from export.planet import mountains as mountains_mod              # noqa: E402
+from export.planet import volcanoes as volcanoes_mod              # noqa: E402
 from export.planet.dsmp_strings import StringTable                # noqa: E402
 import link_modifiers                                             # noqa: E402
 
@@ -935,6 +936,49 @@ class TestLinker(unittest.TestCase):
         self.assertEqual(os.path.basename(parts["mountain"]["file"]), "mountains.dsmpart")
         self.assertEqual(os.path.basename(parts["ridge"]["file"]), "ridges.dsmpart")
 
+    def test_link_carries_volcano_lava_and_fumarole_kinds(self):
+        self._write_roads()
+        v = dsmp.pack_populate(self.table.intern("volcano"), 0, dsmp.COVERAGE_POINT,
+                               [(self.table.intern("height_m"), dsmp.VTYPE_F32, 900.0)],
+                               lon=1.0, lat=2.0)
+        dsmp.write_part(link_modifiers.part_path(self.planet, "volcano", self.export_dir),
+                        dsmp.KIND_VOLCANO, [(64, [(5, dsmp.part_tile(1, v))])],
+                        self._base_manifest("volcano"))
+        lava = dsmp.pack_lava(self.table.intern("lava_river"), self.table.intern("active"),
+                              dsmp.SID_NONE, 10.0, 20.0, 3.0, 500.0, (1 << 30),
+                              [(1.0, 2.0, 0.0), (1.01, 2.0, 100.0)])
+        m = self._base_manifest("lava")
+        m["record_layout"] = dsmp.LAVA_RECORD_LAYOUT
+        dsmp.write_part(link_modifiers.part_path(self.planet, "lava", self.export_dir),
+                        dsmp.KIND_LAVA, [(64, [(5, dsmp.part_tile(1, lava))])], m)
+        f = dsmp.pack_populate(self.table.intern("fumarole_field"), 0, dsmp.COVERAGE_FULL,
+                               [(self.table.intern("density"), dsmp.VTYPE_F32, 20.0)])
+        dsmp.write_part(link_modifiers.part_path(self.planet, "fumarole", self.export_dir),
+                        dsmp.KIND_FUMAROLE, [(64, [(5, dsmp.part_tile(1, f))])],
+                        self._base_manifest("fumarole"))
+        self.table.save(self.parts)
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        pack = self._read_pack()
+        self.assertEqual(sorted(self._blocks_at(pack, 64, 5)),
+                         [dsmp.KIND_ROAD, dsmp.KIND_VOLCANO, dsmp.KIND_LAVA, dsmp.KIND_FUMAROLE])
+        parts = pack["manifest"]["parts"]
+        self.assertEqual(parts["volcano"]["file"], "volcanoes.dsmpart")
+        self.assertEqual(parts["lava"]["file"], "lava_flows.dsmpart")
+        self.assertEqual(parts["fumarole"]["file"], "fumaroles.dsmpart")
+        self.assertEqual(parts["lava"]["record_layout"], dsmp.LAVA_RECORD_LAYOUT)
+
+    def test_link_rejects_shallow_lava_level(self):
+        lava = dsmp.pack_lava(0, 0, dsmp.SID_NONE, 10.0, 20.0, 3.0, 500.0, (1 << 30),
+                              [(1.0, 2.0, 0.0), (1.01, 2.0, 100.0)])
+        m = self._base_manifest("lava", max_nside=64)
+        m["max_quadtree_nside"] = 8192
+        dsmp.write_part(link_modifiers.part_path(self.planet, "lava", self.export_dir),
+                        dsmp.KIND_LAVA, [(64, [(5, dsmp.part_tile(1, lava))])], m)
+        self.table.save(self.parts)
+        with self.assertRaises(dsmp.DsmpError) as ctx:
+            link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        self.assertIn("lava flow twice", str(ctx.exception))
+
     def test_link_is_idempotent(self):
         self._write_roads()
         self._write_craters()
@@ -993,6 +1037,218 @@ class TestLinker(unittest.TestCase):
         self.assertEqual(sorted(m["parts"]), ["crater", "road"])
         self.assertEqual(m["kind_max_nside"]["road"], 64)
         self.assertEqual(m["strings"], self.table.as_list())
+
+def _lava_records_of(payload):
+    """[(type_sid, state_sid, w0, w1, depth, total, fid, [(lon, lat, along)…]), …]."""
+    _count, blob = dsmp.split_part_tile(payload)
+    out = []
+    p = 0
+    while p < len(blob):
+        tsid, ssid, _nsid, _rsv, w0, w1, depth, total, fid, n = \
+            struct.unpack_from("<HHHHffffII", blob, p)
+        p += dsmp.LAVA_HEADER_SIZE
+        pts = []
+        for _ in range(n):
+            lon, lat, along = struct.unpack_from("<iif", blob, p)
+            pts.append((lon * 1e-7, lat * 1e-7, along))
+            p += 12
+        out.append((tsid, ssid, w0, w1, depth, total, fid, pts))
+    return out
+
+
+class TestVolcanoParts(unittest.TestCase):
+    """volcano points, lava_flow lines, fumarole fields / vents."""
+    R = 3467000.0
+
+    def _named(self, table, props):
+        strings = table.as_list()
+        return {strings[k]: v for k, v in props.items()}
+
+    def test_presets_fill_nulls_keep_overrides_and_snap_the_exponent(self):
+        f = volcanoes_mod.resolve_volcano({"type": "shield", "height_m": 800.0,
+                                           "flank_exponent": "1.8", "has_lava_lake": 1})
+        self.assertEqual(f["type"], "shield")
+        self.assertEqual(f["height_m"], 800.0, "an explicit value wins")
+        self.assertEqual(f["base_diameter_m"], volcanoes_mod.PRESETS["shield"]["base_diameter_m"])
+        self.assertEqual(f["flank_exponent"], 2.0, "snapped to pow_fast's exact set")
+        self.assertEqual(f["has_lava_lake"], 1)
+        self.assertEqual(f["activity"], "dormant")
+        g = volcanoes_mod.resolve_volcano({"type": "nonsense"})
+        self.assertEqual(g["type"], volcanoes_mod.DEFAULT_TYPE)
+        for preset in volcanoes_mod.PRESETS.values():
+            self.assertIn(preset["flank_exponent"], volcanoes_mod.EXPONENTS)
+
+    def test_volcano_part_tiles_the_point_within_its_reach(self):
+        table = StringTable()
+        pts = [{"lon": 10.0, "lat": 20.0, "props": {"type": "cinder_cone", "name": "Puy"}},
+               {"lon": -40.0, "lat": 5.0, "props": {"type": "shield", "impurity_intensity": 0.0}}]
+        levels, manifest, warnings = volcanoes_mod.build_volcano_part(
+            pts, self.R, export_nside=64, max_quadtree_nside=8192, table=table,
+            verbose=False, planet_name="p")
+        self.assertEqual(manifest["kind"], "volcano")
+        self.assertEqual(manifest["max_nside"], 64, "stops at export_nside")
+        self.assertEqual(manifest["counts"]["features"], 2)
+        self.assertEqual(warnings, [])
+        nside, tiles = levels[-1]
+        self.assertEqual(nside, 64)
+        home = mg.pix_of(64, 10.0, 20.0)
+        seen_home = False
+        for ipix, payload in tiles:
+            for cov, _bidx, props, _nv in _records_of(payload):
+                self.assertEqual(cov, dsmp.COVERAGE_POINT)
+                named = self._named(table, props)
+                c = (named["cx"][1], named["cy"][1], named["cz"][1])
+                self.assertAlmostEqual(math.sqrt(sum(x * x for x in c)), 1.0, places=6)
+                if ipix == home and table.as_list()[named["type"][1]] == "cinder_cone":
+                    seen_home = True
+                    self.assertAlmostEqual(named["base_diameter_m"][1], 800.0, places=1)
+                    self.assertGreaterEqual(named["impurity_intensity"][1], 0.6)
+                if table.as_list()[named["type"][1]] == "shield":
+                    self.assertEqual(named["impurity_intensity"][1], 0.0, "0 typed stays sterile")
+        self.assertTrue(seen_home)
+        # The shield's 40 km foot spans several n64 tiles (54 km pixels on this radius).
+        shield_tiles = mg.tiles_for_point(64, -40.0, 5.0, 20000.0 * 1.25, self.R)
+        self.assertGreaterEqual(len(shield_tiles), 1)
+
+    def test_volcano_fingerprint_follows_the_features(self):
+        def fp(h):
+            t = StringTable()
+            return volcanoes_mod.build_volcano_part(
+                [{"lon": 1.0, "lat": 2.0, "props": {"height_m": h}}], self.R, 64, 8192, t,
+                verbose=False)[1]["fingerprint"]
+        self.assertEqual(fp(100.0), fp(100.0))
+        self.assertNotEqual(fp(100.0), fp(200.0))
+
+    def test_volcano_warnings(self):
+        t = StringTable()
+        pts = [{"lon": 0.0, "lat": 0.0, "props": {"type": "caldera", "crater_diameter_m": 19000.0}},
+               {"lon": 0.05, "lat": 0.0, "props": {"type": "cinder_cone"}}]
+        _l, _m, warnings = volcanoes_mod.build_volcano_part(pts, self.R, 64, 8192, t, verbose=False)
+        self.assertTrue(any("crater" in w for w in warnings))
+        self.assertTrue(any("overlap" in w for w in warnings))
+
+    def test_noise_free_profile(self):
+        f = volcanoes_mod.resolve_volcano({"type": "stratovolcano"})
+        c = volcanoes_mod.unit_centre(0.0, 0.0)
+        top = volcanoes_mod.volcano_height_offset(f, c, 0.0, 0.0, self.R)
+        self.assertAlmostEqual(top, f["height_m"] - f["crater_depth_m"], places=6, msg="crater floor")
+        far = volcanoes_mod.volcano_height_offset(f, c, 1.0, 0.0, self.R)
+        self.assertEqual(far, 0.0)
+
+    def test_lava_part_is_partitioned_deep_with_the_true_along(self):
+        table = StringTable()
+        flow = {"centerline": [(1.0, 2.0), (1.2, 2.05), (1.4, 2.1)],
+                "props": {"state": "solid", "width_start_m": 12.0}}
+        levels, manifest, warnings = volcanoes_mod.build_lava_part(
+            [flow], self.R, export_nside=64, max_quadtree_nside=1024, table=table,
+            verbose=False, height_at=lambda lon, lat: -100.0 * lon)
+        self.assertEqual(manifest["kind"], "lava")
+        self.assertEqual(manifest["max_nside"], 1024, "baked down to the quadtree")
+        self.assertEqual(manifest["record_layout"], dsmp.LAVA_RECORD_LAYOUT)
+        self.assertEqual(manifest["uphill"], [], "the ground falls along the flow")
+        self.assertEqual(warnings, [])
+        nside, tiles = levels[-1]
+        self.assertEqual(nside, 1024)
+        alongs = []
+        for _ipix, payload in tiles:
+            for tsid, ssid, w0, w1, depth, total, fid, pts in _lava_records_of(payload):
+                self.assertEqual(table.as_list()[tsid], "lava_river")
+                self.assertEqual(table.as_list()[ssid], "solid")
+                self.assertEqual(w0, 12.0, "explicit width kept")
+                self.assertEqual(w1, volcanoes_mod.LAVA_PRESETS["solid"]["width_end_m"])
+                self.assertEqual(depth, volcanoes_mod.LAVA_PRESETS["solid"]["depth_m"])
+                self.assertGreaterEqual(fid, volcanoes_mod.LAVA_FID_BASE)
+                alongs += [p[2] for p in pts]
+                self.assertGreater(total, 0.0)
+        self.assertGreater(len(tiles), 1, "partitioned, not one tile")
+        self.assertAlmostEqual(min(alongs), 0.0, places=3)
+        self.assertGreater(max(alongs), 20000.0, "along-metres from the true start")
+
+    def test_lava_uphill_is_reported(self):
+        t = StringTable()
+        flow = {"centerline": [(1.0, 2.0), (1.2, 2.0)], "props": {"name": "Wrong way"}}
+        _l, manifest, warnings = volcanoes_mod.build_lava_part(
+            [flow], self.R, 64, 256, t, verbose=False,
+            height_at=lambda lon, lat: 1000.0 * lon)
+        self.assertEqual(len(manifest["uphill"]), 1)
+        self.assertAlmostEqual(manifest["uphill"][0]["rise_m"], 200.0, places=3)
+        self.assertTrue(warnings and "ABOVE" in warnings[0])
+
+    def test_lake_shore_radius_solves_the_crater_profile(self):
+        f = volcanoes_mod.resolve_volcano({"type": "stratovolcano", "has_lava_lake": 1})
+        r = volcanoes_mod.lake_shore_radius(f)
+        c = volcanoes_mod.unit_centre(0.0, 0.0)
+        mpd = mg.m_per_deg(self.R)
+        level = f["height_m"] - f["crater_depth_m"] + f["lake_fill_m"]
+        h = volcanoes_mod.volcano_height_offset(f, c, r / mpd, 0.0, self.R)
+        self.assertAlmostEqual(h, level, places=3, msg="the wall meets the lake at the shore")
+        # Golden value shared with test_volcano_relief.gd.
+        self.assertAlmostEqual(r, 131.1180221884, places=6)
+        self.assertIsNone(volcanoes_mod.lake_shore_radius(
+            volcanoes_mod.resolve_volcano({"type": "stratovolcano"})), "no lake, no shore")
+
+    def test_a_flow_starting_by_a_lake_starts_on_its_shore(self):
+        mpd = mg.m_per_deg(self.R)
+        f = volcanoes_mod.resolve_volcano({"type": "stratovolcano", "has_lava_lake": 1})
+        r = volcanoes_mod.lake_shore_radius(f)
+        lakes = [(volcanoes_mod.unit_centre(0.0, 0.0), r, "V")]
+
+        def dist_m(p):
+            return math.sqrt(sum((a - b) ** 2 for a, b in zip(
+                volcanoes_mod.unit_centre(*p), volcanoes_mod.unit_centre(0.0, 0.0)))) * self.R
+        # Inside the lake: the source is replaced.
+        cl = [(30.0 / mpd, 0.0), (2000.0 / mpd, 0.0)]
+        out, lake = volcanoes_mod.snap_to_lakes(cl, lakes, self.R)
+        self.assertEqual(lake, "V")
+        self.assertEqual(len(out), 2)
+        self.assertAlmostEqual(dist_m(out[0]), r, places=2)
+        self.assertGreater(out[0][0], 0.0, "on the ray toward the flow")
+        # 150 m past the shore: the shore point is prepended.
+        cl = [((r + 150.0) / mpd, 0.0), (2000.0 / mpd, 0.0)]
+        out, _lake = volcanoes_mod.snap_to_lakes(cl, lakes, self.R)
+        self.assertEqual(len(out), 3)
+        self.assertAlmostEqual(dist_m(out[0]), r, places=2)
+        # 250 m past the shore: untouched.
+        cl = [((r + 250.0) / mpd, 0.0), (2000.0 / mpd, 0.0)]
+        out, lake = volcanoes_mod.snap_to_lakes(cl, lakes, self.R)
+        self.assertIsNone(lake)
+        self.assertEqual(out, cl)
+        # Through build_lava_part: the record starts on the shore.
+        t = StringTable()
+        levels, _m, _w = volcanoes_mod.build_lava_part(
+            [{"centerline": [(30.0 / mpd, 0.0), (2000.0 / mpd, 0.0)], "props": {}}],
+            self.R, 64, 64, t, verbose=False,
+            volcanoes=[{"lon": 0.0, "lat": 0.0, "props": {"has_lava_lake": 1}}])
+        starts = [pts[0] for _i, payload in levels[-1][1]
+                  for *_x, pts in _lava_records_of(payload) if pts[0][2] == 0.0]
+        self.assertEqual(len(starts), 1)
+        self.assertAlmostEqual(dist_m(starts[0][:2]), r, delta=0.05)
+
+    def test_fumarole_part_holds_fields_and_vents(self):
+        table = StringTable()
+        square = [(10.0, 10.0), (10.3, 10.0), (10.3, 10.3), (10.0, 10.3)]
+        levels, manifest = volcanoes_mod.build_fumarole_part(
+            [{"ring": square, "props": {"gas": "steam"}}],
+            [{"lon": 20.0, "lat": 20.0, "props": {}}],
+            self.R, export_nside=64, max_quadtree_nside=8192, table=table, verbose=False)
+        self.assertEqual(manifest["kind"], "fumarole")
+        self.assertEqual(manifest["counts"]["fields"], 1)
+        self.assertEqual(manifest["counts"]["vents"], 1)
+        kinds = set()
+        for _ipix, payload in levels[-1][1]:
+            for cov, _bidx, props, _nv in _records_of(payload):
+                named = self._named(table, props)
+                gas = table.as_list()[named["gas"][1]]
+                kinds.add(cov)
+                if cov == dsmp.COVERAGE_POINT:
+                    self.assertEqual(gas, volcanoes_mod.DEFAULT_GAS)
+                    self.assertNotIn("density", named, "a vent has no density")
+                else:
+                    self.assertEqual(gas, "steam")
+                    self.assertAlmostEqual(named["density"][1],
+                                           volcanoes_mod.GAS_PRESETS["steam"]["density"], places=3)
+        self.assertIn(dsmp.COVERAGE_POINT, kinds)
+        self.assertTrue(kinds & {dsmp.COVERAGE_FULL, dsmp.COVERAGE_PARTIAL})
 
 
 if __name__ == "__main__":

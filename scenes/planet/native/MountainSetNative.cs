@@ -11,6 +11,9 @@ public partial class MountainSetNative : RefCounted
 {
     private readonly List<MountainZoneNative> _zones = new();
     private readonly List<MountainRidgeNative> _ridges = new();
+    /// <summary>Volcanoes (VolcanoRelief), summed AFTER the zones and the ridges —
+    /// the order MountainRelief keeps too. They need no lon/lat.</summary>
+    private readonly List<MountainVolcanoNative> _volcanoes = new();
     private bool _needLonLat;
 
     public void AddZone(GodotObject zone)
@@ -29,9 +32,17 @@ public partial class MountainSetNative : RefCounted
         _needLonLat = true;
     }
 
-    public bool IsEmpty() => _zones.Count == 0 && _ridges.Count == 0;
+    public void AddVolcano(GodotObject volcano)
+    {
+        var v = volcano as MountainVolcanoNative;
+        if (v == null) return;
+        _volcanoes.Add(v);
+    }
+
+    public bool IsEmpty() => _zones.Count == 0 && _ridges.Count == 0 && _volcanoes.Count == 0;
     public int ZoneCount() => _zones.Count;
     public int RidgeCount() => _ridges.Count;
+    public int VolcanoCount() => _volcanoes.Count;
 
     /// <summary>Total offset (m) at dir for a grid of pitch effSpacing (> 0).</summary>
     public double Offset(Vector3 dir, double radius, double effSpacing)
@@ -45,6 +56,8 @@ public partial class MountainSetNative : RefCounted
             total += _zones[i].OffsetD(dx, dy, dz, radius, effSpacing, lon, lat);
         for (int i = 0; i < _ridges.Count; i++)
             total += _ridges[i].HeightD(dx, dy, dz, radius, effSpacing, lon, lat);
+        for (int i = 0; i < _volcanoes.Count; i++)
+            total += _volcanoes[i].OffsetD(dx, dy, dz, radius, effSpacing);
         return total;
     }
 
@@ -61,6 +74,8 @@ public partial class MountainSetNative : RefCounted
             total += _zones[i].CoreD(dx, dy, dz, radius, lon, lat);
         for (int i = 0; i < _ridges.Count; i++)
             total += _ridges[i].CoreD(dx, dy, dz, radius, lon, lat);
+        for (int i = 0; i < _volcanoes.Count; i++)
+            total += _volcanoes[i].CoreD(dx, dy, dz, radius);
         return total;
     }
 
@@ -80,6 +95,8 @@ public partial class MountainSetNative : RefCounted
         }
         for (int i = 0; i < _ridges.Count; i++)
             m = Math.Max(m, _ridges[i].MaskD(dx, dy, dz, radius, lon, lat, fadeM));
+        for (int i = 0; i < _volcanoes.Count; i++)
+            m = Math.Max(m, _volcanoes[i].MaskD(dx, dy, dz, radius, fadeM));
         return MountainNoiseCore.Clamp(m, 0.0, 1.0);
     }
 }

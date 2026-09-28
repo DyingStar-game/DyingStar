@@ -37,7 +37,8 @@ static func profiled_pieces(roads: Array) -> Array:
 
 
 ## Profiled pieces of the chunk (hp_nside, hp_ipix) plus its eight neighbours,
-## deduplicated — the candidate set of every vertex the chunk owns.
+## deduplicated — the candidate set of every vertex the chunk owns. Lava
+## flows (their own pack kind) are profiled lines too and come along.
 static func gather_pieces(data: PlanetData, hp_nside: int, hp_ipix: int) -> Array:
 	var out: Array = []
 	var seen := {}
@@ -45,8 +46,12 @@ static func gather_pieces(data: PlanetData, hp_nside: int, hp_ipix: int) -> Arra
 	for nb in HEALPix.get_neighbors_nest(hp_nside, hp_ipix).values():
 		if int(nb) >= 0:
 			pix.append(int(nb))
+	var has_lava := data.has_lava()
 	for ip in pix:
-		for r in data.get_roads_for_chunk(hp_nside, int(ip)):
+		var lines: Array = data.get_roads_for_chunk(hp_nside, int(ip))
+		if has_lava:
+			lines = lines + data.get_lava_for_chunk(hp_nside, int(ip))
+		for r in lines:
 			if not GradeSettings.is_profiled(r):
 				continue
 			var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
@@ -178,7 +183,8 @@ static func shaved_height(h: float, prof: Dictionary, along: float, lat_m: float
 	var kind := int(seg["kind"])
 	if kind != GradeSettings.Kind.GROUND and kind != GradeSettings.Kind.GORGE:
 		return h
-	if absf(lat_m) > float(prof["hw_m"]) + band_m:
+	if absf(lat_m) > GradeProfile.hw_at(prof, along) + float(prof.get("crust_overlap_m", 0.0)) \
+			+ band_m:
 		return h
 	return minf(h, GradeProfile.z_track_at(prof, along))
 
@@ -194,15 +200,20 @@ static func carved_height(h: float, prof: Dictionary, along: float, lat_m: float
 	var kind := int(seg["kind"])
 	if kind != GradeSettings.Kind.GROUND and kind != GradeSettings.Kind.GORGE:
 		return h
-	var hw_floor: float = float(prof["hw_m"]) + floor_margin
-	var depth: float = maxf(GradeSettings.TUNNEL_MIN_COVER_M, float(seg["max_depth"]))
-	var band: float = hw_floor + depth / GradeSettings.GORGE_WALL_SLOPE \
-			+ GradeSettings.GORGE_BAND_MARGIN_M
+	# A road / railway profile carries no wall_slope / floor_margin_k (the
+	# defaults below, bit-identical to the constants); a lava flow does.
+	var wall_slope: float = prof.get("wall_slope", GradeSettings.GORGE_WALL_SLOPE)
+	var hw_floor: float = GradeProfile.hw_at(prof, along) \
+			+ floor_margin * float(prof.get("floor_margin_k", 1.0))
+	# A lava channel's floor sits bed_sink_m under its surface (0 on a road).
+	var sink: float = prof.get("bed_sink_m", 0.0)
+	var depth: float = maxf(GradeSettings.TUNNEL_MIN_COVER_M, float(seg["max_depth"])) + sink
+	var band: float = hw_floor + depth / wall_slope + GradeSettings.GORGE_BAND_MARGIN_M
 	var d := absf(lat_m)
 	if d > band:
 		return h
-	var zt := GradeProfile.z_track_at(prof, along)
-	var wall := zt + maxf(0.0, d - hw_floor) * GradeSettings.GORGE_WALL_SLOPE
+	var zt := GradeProfile.z_track_at(prof, along) - sink
+	var wall := zt + maxf(0.0, d - hw_floor) * wall_slope
 	return minf(h, wall)
 
 
@@ -253,9 +264,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	if cl.size() < 2 or cum.size() != cl.size() or profile.is_empty():
 		return out
 	var hw_m: float = float(profile["hw_m"])
-	var hw_deg := hw_m / m_per_deg
 	var road_type := str(profile.get("road_type", "railway"))
-	var tile_m := RoadTerrain.get_tile_size(road_type)
+	var tile_m := GradeSettings.tile_size_of(road_type)
 	var layout := RoadTerrain.lane_layout(road_type, int(profile.get("lanes", 0)), hw_m)
 	var strips: Array = layout["strips"]
 	var md_strip: Vector2 = layout["median"]
@@ -286,6 +296,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 		var st_pt := PackedVector2Array()
 		var st_perp := PackedVector2Array()
 		var st_top := PackedFloat64Array()
+		# Half-width per station (constant hw_m on a road; a lava flow widens).
+		var st_hw := PackedFloat64Array()
 		for i in pcl.size() - 1:
 			var p0 := pcl[i]
 			var p1 := pcl[i + 1]
@@ -299,6 +311,10 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 				var frac: float = (along - a0) / (a1 - a0)
 				var pt := p0 + (p1 - p0) * frac
 				var zt := GradeProfile.z_track_at(profile, along)
+				# A lava crust is wider than its floor (buried in the banks).
+				var hw_st := GradeProfile.hw_at(profile, along) \
+						+ float(profile.get("crust_overlap_m", 0.0))
+				var hw_deg := hw_st / m_per_deg
 				var pl := pt + perp * hw_deg
 				var pr := pt - perp * hw_deg
 				var dl := RoadBridge.lonlat_to_dir(pl.x, pl.y)
@@ -317,6 +333,7 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 				st_pt.append(pt)
 				st_perp.append(perp)
 				st_top.append(top)
+				st_hw.append(hw_st)
 		var n := st_tl.size()
 		if n < 2:
 			continue
@@ -342,6 +359,10 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 			var u: float = along / tile_m
 			var skirt_l: float = st_tl[k].distance_to(st_bl[k]) / tile_m
 			var skirt_r: float = st_tr[k].distance_to(st_br[k]) / tile_m
+			var hw_st: float = st_hw[k]
+			var hw_deg := hw_st / m_per_deg
+			# A lava flow's strip scales with its width; a road's ratio is 1.0.
+			var w_scale := hw_st / hw_m
 			var col_l: Color = Color.WHITE
 			var col_r: Color = Color.WHITE
 			if tinted:
@@ -354,8 +375,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 				for off in [s.y, s.x]:
 					var o: float = off
 					var t := (o + hw_m) / (2.0 * hw_m)   # 0 at the -hw edge, 1 at +hw
-					verts.append(_top_at(st_pt[k], st_perp[k], o, m_per_deg, st_top[k],
-							origin, st_tl[k], st_tr[k], hw_m))
+					verts.append(_top_at(st_pt[k], st_perp[k], o * w_scale, m_per_deg, st_top[k],
+							origin, st_tl[k], st_tr[k], hw_st))
 					norms.append(up)
 					uvs.append(RoadRibbon.surface_uv(uv_mode, along, o, s, tile_m))
 					colors.append(col_r.lerp(col_l, t))
@@ -370,8 +391,8 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 			if has_median:
 				for off in [md_strip.y, md_strip.x]:
 					var o: float = off
-					md_verts.append(_top_at(st_pt[k], st_perp[k], o, m_per_deg, st_top[k],
-							origin, st_tl[k], st_tr[k], hw_m))
+					md_verts.append(_top_at(st_pt[k], st_perp[k], o * w_scale, m_per_deg, st_top[k],
+							origin, st_tl[k], st_tr[k], hw_st))
 					md_norms.append(up)
 					md_uvs.append(Vector2(u, o / tile_m))
 		for k in n - 1:

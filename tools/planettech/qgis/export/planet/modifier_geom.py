@@ -53,7 +53,7 @@ except ImportError:  # pragma: no cover - depends on how the caller set sys.path
 #: MOUNTAIN / RIDGE are pure functions evaluated per vertex (MountainRelief):
 #: a chunk finer than export_nside reads its export-level ancestor's records,
 #: so export_nside is enough for them too.
-_DEEP_KINDS = ("road", "linear")
+_DEEP_KINDS = ("road", "linear", "lava")
 
 #: One unit of the packed i32 coordinate encoding (dsmp.COORD_SCALE), ~1.1 cm.
 #: Clipping finer than this is meaningless — the value would not survive the
@@ -64,7 +64,8 @@ COORD_QUANTUM_DEG = 1.0e-7
 def level_policy(export_nside, max_quadtree_nside, min_nside=1):
     """{kind: {"min": nside, "max": nside}} for this planet."""
     out = {}
-    for kind in ("crater", "linear", "radial", "populate", "road", "mountain", "ridge"):
+    for kind in ("crater", "linear", "radial", "populate", "road", "mountain", "ridge",
+                 "volcano", "lava", "fumarole"):
         deep = kind in _DEEP_KINDS
         out[kind] = {
             "min": min_nside,

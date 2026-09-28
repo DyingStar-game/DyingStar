@@ -57,8 +57,7 @@ func test_outcrop_biomes_carry_the_shared_rock_material() -> void:
 
 func test_new_biomes_are_registered() -> void:
 	for bt in ["regolith-dust", "regolith-sand", "regolith-gravel", "regolith-cobble",
-			"regolith-crystal", "outcrop-plateau", "outcrop-volcanic",
-			"volcanic_geothermal-fumarole_field"]:
+			"regolith-crystal", "outcrop-plateau", "outcrop-volcanic"]:
 		assert_true(PlanetData._BIOME_FILES.has(bt + ".tres"), bt + " listed for packed builds")
 		var bd := load("res://scenes/planet/biomes/%s.tres" % bt) as BiomeDefinition
 		assert_not_null(bd, bt)

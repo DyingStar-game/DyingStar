@@ -66,7 +66,10 @@ static func compute(road: Dictionary, sampler: Callable, climb_override: Variant
 
 	var climb: bool = GradeSettings.climbs_at_max_grade_of(road) \
 			if climb_override == null else bool(climb_override)
-	var knots := _knots(a0, a1, terrain, max_grade, climb)
+	var descent := GradeSettings.profile_rule_of(road) == GradeSettings.Rule.DESCENT
+	var depth := LavaSettings.depth_of(road) if descent else 0.0
+	var knots := _knots_descent(a0, a1, terrain, depth) if descent \
+			else _knots(a0, a1, terrain, max_grade, climb)
 	var knots_along: PackedFloat64Array = knots[0]
 	var knots_z: PackedFloat64Array = knots[1]
 
@@ -97,6 +100,27 @@ static func compute(road: Dictionary, sampler: Callable, climb_override: Variant
 		"stations_along": stations_along,
 		"stations_terrain": stations_terrain,
 	}
+	# A line with its own cross-section and rules (a lava flow). A road or a
+	# railway carries none of these keys: every reader defaults to the
+	# constants it always used, so their geometry stays bit-identical.
+	if not GradeSettings.allows_tunnels_of(road):
+		profile["allow_tunnel"] = false
+	if not GradeSettings.allows_bridges_of(road):
+		profile["allow_bridge"] = false
+	if descent:
+		var hws := LavaSettings.half_widths_of(road)
+		profile["hw0_m"] = hws.x
+		profile["hw1_m"] = hws.y
+		profile["wall_slope"] = GradeSettings.wall_slope_of(road)
+		profile["floor_margin_k"] = GradeSettings.floor_margin_k_of(road)
+		profile["depth_m"] = depth
+		profile["bed_sink_m"] = LavaSettings.CHANNEL_SINK_M
+		profile["crust_overlap_m"] = LavaSettings.crust_overlap_m()
+		profile["state"] = LavaSettings.state_of(road)
+		# How much higher the flow ENDS than it starts: > 0 means it was drawn
+		# uphill (lava never climbs — the channel is cut through the rise).
+		profile["uphill_m"] = float(stations_terrain[stations_terrain.size() - 1]) \
+				- float(stations_terrain[0])
 	var segments := _segments(profile)
 	profile["segments"] = segments
 	var seg_lo := PackedFloat64Array()
@@ -131,6 +155,38 @@ static func _knots(a0: float, a1: float, terrain: Callable, max_grade: float,
 		cur = z2
 		s = s2
 	return [knots_along, knots_z]
+
+
+## The DESCENT walk (lava): one knot per station, the running minimum of the
+## terrain met so far, [param depth] below it — never rising, so the flow
+## only goes downhill; where the ground climbs, the channel is cut into it.
+static func _knots_descent(a0: float, a1: float, terrain: Callable, depth: float) -> Array:
+	var knots_along := PackedFloat64Array()
+	var knots_z := PackedFloat64Array()
+	var low := INF
+	var s := a0
+	while true:
+		var t: float = terrain.call(s)
+		low = minf(low, t)
+		knots_along.append(s)
+		knots_z.append(low - depth)
+		if s >= a1 - 1e-6:
+			break
+		s = minf(s + GradeSettings.STATION_STEP_M, a1)
+	return [knots_along, knots_z]
+
+
+## Half-width of the line's bed at [param along]: constant for a road or a
+## railway (hw_m), from width_start to width_end along a lava flow.
+static func hw_at(profile: Dictionary, along: float) -> float:
+	if not profile.has("hw0_m"):
+		return float(profile["hw_m"])
+	var a0: float = profile["along0"]
+	var a1: float = profile["along1"]
+	var t := 0.0
+	if a1 - a0 > 1e-9:
+		t = clampf((along - a0) / (a1 - a0), 0.0, 1.0)
+	return lerpf(float(profile["hw0_m"]), float(profile["hw1_m"]), t)
 
 
 ## Track altitude (metres above the planet radius) at [param along].
@@ -183,6 +239,8 @@ static func _segments(profile: Dictionary) -> Array:
 	var sa: PackedFloat64Array = profile["stations_along"]
 	var st: PackedFloat64Array = profile["stations_terrain"]
 	var n := sa.size()
+	var allow_tunnel: bool = profile.get("allow_tunnel", true)
+	var allow_bridge: bool = profile.get("allow_bridge", true)
 	var kinds := PackedInt32Array()
 	var diffs := PackedFloat64Array()
 	kinds.resize(n)
@@ -190,11 +248,11 @@ static func _segments(profile: Dictionary) -> Array:
 	for i in n:
 		var d: float = st[i] - z_track_at(profile, sa[i])
 		diffs[i] = d
-		if d >= GradeSettings.TUNNEL_MIN_COVER_M:
+		if d >= GradeSettings.TUNNEL_MIN_COVER_M and allow_tunnel:
 			kinds[i] = GradeSettings.Kind.TUNNEL
 		elif d > GradeSettings.GORGE_MIN_M:
 			kinds[i] = GradeSettings.Kind.GORGE
-		elif d < -GradeSettings.BED_THICKNESS_M:
+		elif d < -GradeSettings.BED_THICKNESS_M and allow_bridge:
 			kinds[i] = GradeSettings.Kind.BRIDGE
 		else:
 			kinds[i] = GradeSettings.Kind.GROUND

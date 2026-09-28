@@ -110,6 +110,13 @@ def _read_export_nside():
     return int(m.get("nside_max") or m.get("nside") or EXPORT_NSIDE_FALLBACK)
 
 
+#: Biome types that became procedural kinds of their own (export_volcanoes.py):
+#: a project set up before the move still carries the stale biome_type on the
+#: layer, which must not export the polygons twice (and a biome zone would
+#: replace the rock colour under the fumaroles).
+RETIRED_BIOME_TYPES = ("volcanic_geothermal-fumarole_field",)
+
+
 def find_region_layers():
     """Polygon layers carrying a `biome_type` custom property, with their identity."""
     out = []
@@ -120,6 +127,8 @@ def find_region_layers():
             continue
         btype = str(layer.customProperty("biome_type", "") or "")
         if not btype:
+            continue
+        if str(layer.customProperty("ds_kind", "") or "") or btype in RETIRED_BIOME_TYPES:
             continue
         out.append({
             "layer": layer,

@@ -169,7 +169,7 @@ static func generate() -> Dictionary:
 ## Create the vent surface material using the fumarole_vent shader.
 ## Falls back to a StandardMaterial3D if the shader file isn't found.
 static func create_vent_material() -> Material:
-	var shader := load("res://assets/materials/planet/fumarole_vent.gdshader") as Shader
+	var shader := load("res://assets/_universe/environment/terrain/fumarole_vent.gdshader") as Shader
 	if shader:
 		var mat := ShaderMaterial.new()
 		mat.shader = shader

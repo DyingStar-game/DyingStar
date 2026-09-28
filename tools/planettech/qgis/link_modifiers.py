@@ -14,6 +14,9 @@ Reassemble <planet>_chunks/terrainmodifier.pack from the per-kind parts.
             biomes.dsmpart          written by export_biomes.py
             mountains.dsmpart       written by export_mountains.py
             ridges.dsmpart          written by export_mountains.py
+            volcanoes.dsmpart       written by export_volcanoes.py
+            lava_flows.dsmpart      written by export_volcanoes.py
+            fumaroles.dsmpart       written by export_volcanoes.py
 
 Each exporter rewrites only its own part and then calls link(), so exporting
 roads cannot disturb craters. That is the whole reason the pack is a derived
@@ -213,14 +216,17 @@ def link(planet_name, export_dir=None, verbose=True):
     # The invariant the whole design rests on: a chunk finer than the deepest
     # baked ROAD level would fall back to a shared ancestor tile, and a shared
     # tile means two chunks extruding the same road at different heights.
+    # Lava flows are emitted geometry too (a crust ribbon), same invariant.
     mqn = int(meta.get("max_quadtree_nside", 0) or 0)
-    road_max = kind_max.get("road", 0)
-    if road_max and mqn and road_max < mqn:
-        raise dsmp.DsmpError(
-            "roads are baked only to n%d but the quadtree reaches n%d — chunks "
-            "below n%d would share an ancestor tile and render the road twice. "
-            "Re-export roads with max_nside >= %d."
-            % (road_max, mqn, road_max, mqn))
+    for deep_kind, what, one in (("road", "roads", "the road"),
+                                 ("lava", "lava flows", "the lava flow")):
+        deep_max = kind_max.get(deep_kind, 0)
+        if deep_max and mqn and deep_max < mqn:
+            raise dsmp.DsmpError(
+                "%s are baked only to n%d but the quadtree reaches n%d — chunks "
+                "below n%d would share an ancestor tile and render %s twice. "
+                "Re-export %s with max_nside >= %d."
+                % (what, deep_max, mqn, deep_max, one, what, mqn))
 
     levels = []
     tile_counts = {}
@@ -348,6 +354,9 @@ _PART_BASENAMES = {
     "populate": "biomes",
     "mountain": "mountains",
     "ridge": "ridges",
+    "volcano": "volcanoes",
+    "lava": "lava_flows",
+    "fumarole": "fumaroles",
 }
 
 
