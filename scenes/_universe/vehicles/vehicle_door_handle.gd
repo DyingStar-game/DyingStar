@@ -6,7 +6,7 @@ extends Area3D
 ## Drop one next to each door, size its CollisionShape3D (the "look here + press E" box on the handle),
 ## and set door_id to the door's animation prefix in the GLB.
 ##
-## Server-authoritative: the player's interact ray detects the handle by LOOKING at it; pressing E
+## Server-authoritative: the player's interact ray detects the handle by LOOKING at it; pressing `action`
 ## sends a server action, the server toggles the door and replicates the open/close to everyone. No
 ## per-vehicle wiring — future vehicles just add VehicleDoorHandle nodes and set door_id.
 

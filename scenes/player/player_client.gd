@@ -348,18 +348,13 @@ func _process(_delta: float) -> void:
 
 	player.interact_label.hide()
 	player.can_interact = false
-	if player.interact_ray.is_colliding():
-		var collider = player.interact_ray.get_collider()
-		if collider:
-			if collider.has_method("interact"):
-				player.interact_label.text = _prompt(&"interact", tr(collider.label))
-				player.interact_label.show()
-				player.can_interact = true
-				# Polled, so it fires straight from the Input singleton: without this guard it
-				# triggered behind the pause menu and while typing in the chat.
-				if not ui_focus and Input.is_action_just_pressed("interact"):
-					collider.interact(player)
-					player.interact_label.hide()
+	# An Interactable under the crosshair (a console) says what `action` will do to it. The press itself is
+	# handled with every other use of `action` (_unhandled_input), where it takes priority.
+	var console: Interactable = _aimed_interactable()
+	if console != null:
+		player.interact_label.text = _prompt(&"action", tr(console.label))
+		player.interact_label.show()
+		player.can_interact = true
 
 	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: `action` opens/closes it.
 	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
@@ -848,6 +843,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed("action"):
 		player.interact_ray.force_raycast_update()
+		# A console under the crosshair takes the press, and ONLY it. It used to answer a separate `interact`
+		# action bound to the same key, so one press did two things: carrying a load while using a console
+		# put the load down as well.
+		var console: Interactable = _aimed_interactable()
+		if console != null:
+			console.interact(player)
+			return
 		# On foot, looking at a door handle: open/close that door (server-authoritative).
 		#
 		# NOT gated on standing in a boarding zone. That test was written when every door was a cab
@@ -980,6 +982,14 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 		"door_id": handle.door_id,
 		"side": handle.aimed_side(player.interact_ray.get_collision_point()),
 	})
+
+## The Interactable (a console) under the crosshair, or null. Crates answer `interact()` too — whether they
+## can be carried — but only an Interactable is something `action` USES.
+func _aimed_interactable() -> Interactable:
+	if not player.interact_ray.is_colliding():
+		return null
+	return player.interact_ray.get_collider() as Interactable
+
 
 ## Prompt for a door handle under the crosshair: close it if open, else open it.
 ## "[E] Carry" — with the key read from the InputMap, so a rebind is reflected instead of the HUD
