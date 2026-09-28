@@ -60,11 +60,15 @@ const ACTION_GROUPS : Dictionary = {
 		"vehicle_reset": "%%ACT_VEHICLE_RESET",
 		"exit": "%%ACT_EXIT",
 	},
-	"%%KM_GROUP_FLIGHT": {
+	# Weightless: out of a station's gravity, or the dev flight. These four were filed under "In flight"
+	# while only a long-gone test ship read them; they are how an astronaut moves now. A ship of its own
+	# would bring its own tab back, with its own keys — an action can only live in one family.
+	"%%KM_GROUP_EVA": {
 		"strafe_up": "%%ACT_STRAFE_UP",
 		"strafe_down": "%%ACT_STRAFE_DOWN",
 		"roll_left": "%%ACT_ROLL_LEFT",
 		"roll_right": "%%ACT_ROLL_RIGHT",
+		"eva_stabilize": "%%ACT_EVA_STABILIZE",
 	},
 	"%%KM_GROUP_DEBUG": {
 		"toggle_debug": "%%ACT_TOGGLE_DEBUG",

@@ -84,6 +84,17 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export var climb2_offset: Vector3 = Vector3.ZERO
 @export var climb2_offset_per_m: Vector3 = Vector3.ZERO
 
+@export_group("EVA pose")
+## Weightless, the puppet is tipped forward so the head points the way you are heading (the way the
+## camera looks, where a forward thrust takes you) rather than standing up in the void. Degrees about
+## the body's right axis; negative tips the head forward. The clip has a lean of its own: tune to taste.
+@export_range(-180.0, 180.0, 1.0) var float_pitch_deg: float = -60.0
+## Height of the pivot above the feet, in metres: the hips, so the body stays where it floats instead of
+## swinging its head 1.7 m forward.
+@export var float_pivot_height: float = 0.9
+## How fast the tip blends in and out when gravity lets go / takes hold again, 1/s.
+@export var float_blend: float = 6.0
+
 @export_group("Head look")
 ## How much the Head bone tilts to follow the look PITCH (up/down), added on top of the animation so
 ## others see where a player aims. 1.0 = full, 0 = off, -1 = invert if it nods the wrong way.
@@ -124,6 +135,8 @@ var _anim: AnimationPlayer = null
 var _skeleton: Skeleton3D = null
 var _puppet: Node3D = null  # the puppet root (our parent); shifted down while seated (see _process)
 var _puppet_base_position: Vector3 = Vector3.ZERO
+var _puppet_base_basis: Basis = Basis.IDENTITY  # the puppet is instanced rotated (player.tscn)
+var _float_tilt: float = 0.0  # radians, blended toward float_pitch_deg while floating (see _process)
 var _camera_base_pos: Vector3 = Vector3.ZERO  # first-person camera rest position (head-cam follow, local)
 var _head_rest_body: Vector3 = Vector3.ZERO   # head bone position (body frame) at rest, the follow origin
 var _head_rest_captured: bool = false         # captured lazily on the first idle frame (see _process)
@@ -194,6 +207,7 @@ func setup(player_body, is_local: bool) -> void:
 	_puppet = get_parent() as Node3D
 	if _puppet != null:
 		_puppet_base_position = _puppet.position
+		_puppet_base_basis = _puppet.basis
 	_anim = _find_in_puppet("AnimationPlayer") as AnimationPlayer
 	_skeleton = _find_posed_skeleton()
 	if _skeleton != null:
@@ -321,12 +335,22 @@ func _process(delta: float) -> void:
 			offset = _vault_pose_offset()
 		elif not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false)):
 			offset = seated_puppet_offset
-		_puppet.position = _puppet_base_position + offset
+		# Weightless: tip the puppet about the hips so the head leads (see float_pitch_deg), blended in
+		# and out. Rotated in the BODY's frame (left of the base basis), around a pivot at hip height.
+		var tilt_target: float = deg_to_rad(float_pitch_deg) if _player.floating else 0.0
+		_float_tilt = lerp_angle(_float_tilt, tilt_target, 1.0 - exp(-float_blend * delta))
+		var tip := Basis(Vector3.RIGHT, _float_tilt)
+		var pivot := Vector3(0.0, float_pivot_height, 0.0)
+		_puppet.basis = tip * _puppet_base_basis
+		_puppet.position = _puppet_base_position + offset + pivot - tip * pivot
 	# First-person camera follows the head bone's bob (position only; the mouse still owns orientation), so
 	# the animated body never clips through a fixed camera. Owner on foot only — the seat ride owns the
 	# camera position when seated, so restore the base there. Smoothed to avoid motion sickness.
 	if _is_local and _head_bone != -1 and _player.camera_pivot != null:
-		var seated_cam: bool = not _player.locomotion_sample.is_empty() and bool(_player.locomotion_sample.get("seated", false))
+		# Seated, or floating: the head bone swings with a tipped puppet, and a camera taking its delta would
+		# pitch the view with it. Restore the base there, like the seat does.
+		var seated_cam: bool = _player.floating or (not _player.locomotion_sample.is_empty()
+				and bool(_player.locomotion_sample.get("seated", false)))
 		if head_cam_follow and not seated_cam:
 			var head_now: Vector3 = _player.to_local(_skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone).origin))
 			if not _head_rest_captured:  # first idle frame: this head position is the neutral reference
@@ -413,6 +437,13 @@ func _select_clip(delta: float) -> StringName:
 		if bool(s.get("driver", false)):
 			return _clip_or(anim_set.sit_driving, _clip_or(anim_set.sit_idle, _idle))
 		return _clip_or(anim_set.sit_passenger, _clip_or(anim_set.sit_idle, _idle))
+	# Weightless: one floating loop, above walking and jumping — there is no ground to walk or jump from.
+	# Replicated server state (Player.floating), so every avatar floats the same way for every viewer.
+	if _player.floating:
+		_cancel_emote()
+		_reset_idle()
+		_jump_phase = JumpPhase.GROUND
+		return _clip_or(anim_set.float_idle, _idle)
 	# Vault / climb-onto: a fresh server event ("vault:<key>:<n>") plays the matching climb clip as a
 	# one-shot, ABOVE jump and locomotion; _on_anim_finished releases it. Same one-shot idiom as the emote.
 	if _player.vault_key != _vault_seen:

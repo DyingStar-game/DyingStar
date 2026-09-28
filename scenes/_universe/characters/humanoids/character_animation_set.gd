@@ -43,6 +43,13 @@ extends Resource
 @export var sprint_loop: StringName = &"Sprint"
 @export var sprint_exit: StringName = &"Sprint_Exit"
 
+@export_group("EVA")
+## Weightless (Player.floating): the loop played while floating — an EVA, the dev flight.
+## ⚠️ The name the ANIMATION PLAYER knows, not the one in the .glb: the importer strips a "_Loop" suffix
+## (it marks the clip looping instead), so "LiftAir_Idle_Loop" in the file is "LiftAir_Idle" here. The
+## file's name found nothing and the animator fell back to the idle, in silence.
+@export var float_idle: StringName = &"LiftAir_Idle"
+
 # Crouch MOVEMENT is deferred; the clips already exist so the slots are wired ahead of time.
 @export_group("Crouch")
 @export var crouch_idle: StringName = &"Crouch_Idle"

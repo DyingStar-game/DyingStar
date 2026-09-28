@@ -174,6 +174,9 @@ func update_screen(data: Dictionary) -> void:
 	if not dest.is_valid():
 		push_warning("[Teleporter] refused: '%s' is not a usable destination" % dest.describe())
 		return
+	if dest.is_station():
+		_request_station(dest)
+		return
 	var body: Planet = PlanetRegistry.find_by_name(dest.planet_name)
 	if body == null:
 		# Not a silent no-op: a body the network never created is exactly the case that used to end
@@ -197,11 +200,29 @@ func update_screen(data: Dictionary) -> void:
 	set_physics_process(true)
 
 
-## SERVER, deferred: send the actor. Deferred because it reparents a body.
-func _move_actor(body: Planet, local_pos: Vector3) -> void:
-	if not is_instance_valid(_actor) or not is_instance_valid(body):
+## SERVER: a trip to a station. The uuid comes from a client, so it must name a station this server
+## really holds — a player cannot be sent under an arbitrary node.
+func _request_station(dest: TeleportDestination) -> void:
+	var agent = NetworkOrchestrator.network_agent
+	var station: OrbitalStation = null
+	if agent != null and agent.has_method("_search_parent_node"):
+		station = agent._search_parent_node(dest.station_uuid) as OrbitalStation
+	if station == null:
+		push_warning("[Teleporter] refused: station %s is not on this server" % dest.station_uuid)
 		return
-	_actor.server_teleport_to(body, local_pos)
+	var local_pos: Vector3 = station.arrival_position()
+	print("[Teleporter] %s -> %s local (%.1f, %.1f, %.1f)"
+			% [_actor.client_uuid, dest.describe(), local_pos.x, local_pos.y, local_pos.z])
+	_pending = {"body": station, "pos": local_pos, "mode": dest.height_mode}
+	set_physics_process(true)
+
+
+## SERVER, deferred: send the actor. Deferred because it reparents a body. [param frame] is a Planet
+## or an OrbitalStation; the Player API takes either.
+func _move_actor(frame: Node3D, local_pos: Vector3) -> void:
+	if not is_instance_valid(_actor) or not is_instance_valid(frame):
+		return
+	_actor.server_teleport_to(frame, local_pos)
 
 
 ## SERVER, deferred: send what was parked in the garage, a few frames behind the actor.
@@ -213,6 +234,10 @@ func _move_riders() -> void:
 	var riders: Array[Node3D] = _riders
 	_rider_trip = {}
 	_riders = []
+	var station: OrbitalStation = trip.get("body") as OrbitalStation
+	if station != null:
+		_move_riders_aboard(station, trip["pos"], riders)
+		return
 	var body: Planet = trip.get("body") as Planet
 	if not is_instance_valid(body):
 		return
@@ -242,6 +267,31 @@ func _move_riders() -> void:
 		_place_vehicle(vehicle, body, spot, offset.y, int(trip["mode"]),
 				landing * Vector3(nose.x, 0.0, nose.z))
 	print("[Teleporter] %d traveller(s) followed" % moved)
+
+
+## SERVER: the garage, bound for a station. Stations take PLAYERS only, for now: the other passengers
+## land around the arrival point with the layout they had in the cabin; vehicles stay in the cabin
+## (the screen says so as soon as a station is picked).
+##
+## No ground to find up there: the station's own frame IS the landing frame (+Y is its up), so the
+## cabin offset is replayed as it is, in station-local axes.
+func _move_riders_aboard(station: OrbitalStation, local_pos: Vector3, riders: Array[Node3D]) -> void:
+	if not is_instance_valid(station):
+		return
+	var cabin_inv: Basis = global_transform.basis.orthonormalized().inverse()
+	var moved: int = 0
+	var left: int = 0
+	for rider: Node3D in riders:
+		if not is_instance_valid(rider) or not rider.is_inside_tree():
+			continue
+		var passenger := rider as Player
+		if passenger == null:
+			left += 1
+			continue
+		var offset: Vector3 = cabin_inv * (rider.global_position - global_position)
+		passenger.server_teleport_to(station, local_pos + Vector3(offset.x, 0.0, offset.z))
+		moved += 1
+	print("[Teleporter] %d traveller(s) followed aboard, %d vehicle(s) left in the cabin" % [moved, left])
 
 
 ## Send a PASSENGER — somebody else who was standing in the cabin — to [param spot] (planet-local).
@@ -362,9 +412,15 @@ func _on_ui_teleport_requested(payload: Dictionary) -> void:
 	player.client_send_action_to_server(action)
 
 
-## Where [param player] is standing, as a destination that would bring them back here.
+## Where [param player] is standing, as a destination that would bring them back here. Aboard a
+## station that is the station itself: its lon/lat would drop them on the ground 400 km below.
 func _departure_of(player: Player) -> TeleportDestination:
-	var body: Planet = _planet_above(player)
+	var station: OrbitalStation = OrbitalStation.of(player)
+	if station != null and station.site() != null:
+		var planet: Planet = Planet.of(station)
+		var key: String = planet.planet_data.planet_name if planet != null and planet.planet_data != null else ""
+		return TeleportDestination.to_station(station.site(), key, TeleportDestination.Kind.RETURN)
+	var body: Planet = Planet.of(player)
 	if body == null or body.planet_data == null:
 		return null  # in transit or in deep space: there is no lon/lat to come back to
 	var lonlat: Vector2 = body.lonlat_of(player.global_position)
@@ -373,15 +429,6 @@ func _departure_of(player: Player) -> TeleportDestination:
 			"Departure point", body.planet_data.planet_name, lonlat.x, lonlat.y,
 			RETURN_CLEARANCE_M, TeleportDestination.Height.GROUND,
 			TeleportDestination.Kind.RETURN, where)
-
-
-static func _planet_above(node: Node) -> Planet:
-	var walk: Node = node
-	while walk != null:
-		if walk is Planet:
-			return walk as Planet
-		walk = walk.get_parent()
-	return null
 
 
 static func _local_player() -> Player:

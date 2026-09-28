@@ -21,6 +21,8 @@ const SYSTEMS_ROOT: String = "res://scenes/systems"
 ## Radius used for a body whose scene names none. A plausible terrestrial value, so a body nobody has
 ## filled in is merely wrong rather than invisible.
 const FALLBACK_RADIUS_M: float = 6.0e6
+## What counts as a body scene in a system folder (see [method scene_name_of]).
+const SCENE_EXTENSIONS: PackedStringArray = [".tscn", ".scn"]
 
 
 ## Every system in the project, sorted. A directory counts as a system as soon as it holds one body
@@ -63,9 +65,17 @@ static func path_of(system: String, file_name: String) -> String:
 ## the path the editor uses. Normalising here rather than widening the filter is what keeps
 ## get_basename() giving "tarsis_4" instead of "tarsis_4.tscn".
 static func scene_name_of(entry: String) -> String:
+	return file_name_of(entry, SCENE_EXTENSIONS)
+
+
+## Same normalisation for any file kind: [param entry] without its ".remap", or "" when it is not one of
+## [param extensions]. Text resources are remapped by an export exactly like scenes (a .tres becomes a
+## binary .res behind a "<name>.tres.remap"), so anything listed from a folder needs it.
+static func file_name_of(entry: String, extensions: PackedStringArray) -> String:
 	var file_name: String = entry.trim_suffix(".remap")
-	if file_name.ends_with(".tscn") or file_name.ends_with(".scn"):
-		return file_name
+	for extension: String in extensions:
+		if file_name.ends_with(extension):
+			return file_name
 	return ""
 
 
@@ -92,6 +102,14 @@ static func body_keys(system: String) -> PackedStringArray:
 	for f: String in body_files(system):
 		out.append(f.get_basename())
 	return out
+
+
+## The system a body belongs to ("tarsis" for "tarsis_3"), or "" when no system holds that key.
+static func system_of(body_key: String) -> String:
+	for system: String in systems():
+		if body_keys(system).has(body_key):
+			return system
+	return ""
 
 
 ## The root node's saved property overrides, WITHOUT instantiating the scene — instantiating a planet

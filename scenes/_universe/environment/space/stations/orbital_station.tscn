@@ -1,0 +1,18 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/environment/space/stations/orbital_station.gd" id="1_station"]
+[ext_resource type="Script" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/environment/space/stations/test_station/test_station.tscn" id="3_model"]
+
+[node name="OrbitalStation" type="StaticBody3D"]
+script = ExtResource("1_station")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "station"
+
+[node name="Model" parent="." instance=ExtResource("3_model")]
+
+[node name="Arrival" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.5, -1.2, -50.34)
+gizmo_extents = 2.0

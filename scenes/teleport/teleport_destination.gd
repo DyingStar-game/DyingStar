@@ -9,6 +9,9 @@ extends RefCounted
 ## nine-times-larger radius. lon/lat cannot carry that mistake: the height is resolved against the
 ## destination's OWN terrain, at the moment of use.
 ##
+## ...except a STATION, which has no ground and does not stay above one: it is named by its uuid
+## ([member station_uuid]), and the server lands you on its arrival point (OrbitalStation.Arrival).
+##
 ## [method to_payload] / [method from_payload] are the wire contract. Keeping both halves in this one
 ## file is the point — the UI, the cabin and the server all speak through them, so a renamed field
 ## cannot break a reader that nobody remembered to update.
@@ -25,6 +28,7 @@ enum Kind {
 	DERIVED,  ## computed for any body (poles, equator, low orbit)
 	MANUAL,  ## longitude/latitude typed in by hand
 	RETURN,  ## where this trip started
+	STATION,  ## an orbital station (see StationSite)
 }
 
 var label: String = ""
@@ -37,6 +41,8 @@ var height_mode: Height = Height.GROUND
 var kind: Kind = Kind.MANUAL
 ## Second line in the list: a POI's type and population, or what a derived point is.
 var detail: String = ""
+## Set for a station: the uuid of the OrbitalStation to land in. lon/lat/height are then unused.
+var station_uuid: String = ""
 
 
 func _init(p_label: String = "", p_planet: String = "", p_lon: float = 0.0, p_lat: float = 0.0,
@@ -52,8 +58,24 @@ func _init(p_label: String = "", p_planet: String = "", p_lon: float = 0.0, p_la
 	detail = p_detail
 
 
+## Somewhere aboard the station [param site] orbiting [param planet], as a [param p_kind] entry
+## (STATION in a list, RETURN when it is where a trip started).
+static func to_station(site: StationSite, planet: String, p_kind: Kind = Kind.STATION,
+		p_detail: String = "") -> TeleportDestination:
+	var dest := TeleportDestination.new(site.display_name(), planet, 0.0, 0.0, 0.0, Height.GROUND,
+			p_kind, p_detail)
+	dest.station_uuid = site.uuid()
+	return dest
+
+
+func is_station() -> bool:
+	return station_uuid != ""
+
+
 ## Human form for a log line or a confirmation: "SandBox — lon -8.291 lat 0.127, 2 m above ground".
 func describe() -> String:
+	if is_station():
+		return "%s (station %s)" % [label, station_uuid.substr(0, 8)]
 	var frame: String = "above ground" if height_mode == Height.GROUND else "above sea level"
 	return "%s @ %s lon %.4f lat %.4f, %.1f m %s" % [label, planet_name, lon, lat, height, frame]
 
@@ -67,6 +89,7 @@ func to_payload() -> Dictionary:
 		"height": height,
 		"height_mode": "ground" if height_mode == Height.GROUND else "sea",
 		"label": label,
+		"station": station_uuid,
 	}
 
 
@@ -74,18 +97,24 @@ func to_payload() -> Dictionary:
 ## an unknown mode means GROUND, which resolves against real terrain instead of trusting a number.
 static func from_payload(payload: Dictionary) -> TeleportDestination:
 	var mode: Height = Height.SEA if str(payload.get("height_mode", "")) == "sea" else Height.GROUND
-	return TeleportDestination.new(
+	var dest := TeleportDestination.new(
 			str(payload.get("label", "")),
 			str(payload.get("planet", "")),
 			float(payload.get("lon", 0.0)),
 			float(payload.get("lat", 0.0)),
 			float(payload.get("height", 0.0)),
 			mode)
+	dest.station_uuid = str(payload.get("station", ""))
+	if dest.is_station():
+		dest.kind = Kind.STATION
+	return dest
 
 
 ## True when this describes a real place. lon/lat are checked because a typed field can hold anything,
 ## and a latitude of 400 would silently normalise to somewhere nobody asked for.
 func is_valid() -> bool:
+	if is_station():
+		return true  # the server looks the station up by uuid and refuses one it does not know
 	return planet_name != "" \
 		and lon >= -180.0 and lon <= 180.0 \
 		and lat >= -90.0 and lat <= 90.0 \

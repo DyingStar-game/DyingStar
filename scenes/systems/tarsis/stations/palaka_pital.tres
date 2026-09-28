@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="StationSite" format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/environment/space/stations/station_site.gd" id="1_site"]
+
+[resource]
+script = ExtResource("1_site")
+id = "tarsis_3/palaka_pital"
+body_key = "tarsis_3"
+proper_name = "Palaka-Pital"
+altitude_m = 400000.0
+inclination_deg = 51.6

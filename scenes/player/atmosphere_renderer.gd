@@ -246,17 +246,15 @@ func _exit_tree() -> void:
 	_show_star_mesh(true)
 
 
-## The body the player is currently standing on, or null in open space. Resolved through the gravity
-## area, and resolved HERE ONLY: PlayerSunLight used to walk the same chain for its own purposes, and
-## two resolvers can disagree about which planet you are on. Everything atmospheric asks this node.
+## The body whose sky the player sees, or null in open space: the body they BELONG to (Planet.of),
+## resolved HERE ONLY — PlayerSunLight used to walk the same chain for its own purposes, and two
+## resolvers can disagree about which planet you are on. Everything atmospheric asks this node.
+##
+## Not through the gravity area any more. Its grandparent was the planet only because PlanetGravity
+## happens to sit two levels under it; aboard a station the gravity is the station's own, and in an EVA
+## there is none at all, and the atmosphere vanished from the view of a planet 400 km below.
 func current_body() -> Planet:
-	var area: Node = player.get_current_gravity_parent()
-	if area == null or area.get_parent() == null:
-		return null
-	var body: Node = area.get_parent().get_parent()
-	if not (body is Planet):
-		return null
-	return body as Planet
+	return Planet.of(player)
 
 
 ## The atmosphere of that body, or null when it is open space or an airless body.

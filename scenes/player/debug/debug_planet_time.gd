@@ -19,14 +19,10 @@ func _planet_time_text() -> String:
 	var player: Node = owner
 	if not is_instance_valid(player) or not player is Node3D:
 		return "-- : --"
-	# gravity_parents holds the PlanetGravity Area3D; the planet is its grandparent (the area is
-	# created under PlanetTerrain).
-	var area = player.get_current_gravity_parent()
-	if area == null:
+	# The body we belong to (a station's crew still has its planet's day below them).
+	var planet: Planet = Planet.of(player)
+	if planet == null:
 		return "space"  # free fall between bodies: no ground, no local time
-	var planet: Node = area.get_parent().get_parent() if area.get_parent() != null else null
-	if not (planet is Planet):
-		return "-- : --"
 	var hours: float = (planet as Planet).get_local_solar_time((player as Node3D).global_position)
 	if hours < 0.0:
 		return "-- : --"  # not spinning, no star, or standing on a pole

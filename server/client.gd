@@ -136,6 +136,10 @@ var props_scene: Dictionary = {
 var pending_messages_player_parenting: Array[Dictionary] = []
 # same for generic objects
 var pending_messages_generic_objects_parenting: Array[Dictionary] = []
+# ...and for OUR OWN player MOVED under a frame we do not know yet: {parent_id, position}. The server
+# declares a parent only when it changes, so a declaration we cannot resolve must be KEPT, not
+# dropped: it is replayed the moment that object is created (see _resolve_my_pending_frame).
+var my_pending_frame: Dictionary = {}
 
 
 var network_events_received: int = 0
@@ -315,6 +319,7 @@ func _process(_delta: float) -> void:
 				)
 				create_generic_object(pending_message)
 				pending_messages_generic_objects_parenting.erase(pending_message)
+		_resolve_my_pending_frame()
 		check_pending_objects_timer = 0
 	else:
 		check_pending_objects_timer += 1
@@ -511,6 +516,50 @@ func _collect_parents_uuids(node: Node) -> Array:
 ## they were local to it.
 func _frame_node(parent_id: String) -> Node:
 	return universe_scene if parent_id == "" else _search_parent_node(parent_id)
+
+
+## Put OUR player under [param parent], the frame the server declared, at [param local_pos] in it. One
+## place for the two ways that happens: the declaration arrives and the frame is known, or the frame
+## arrives after the declaration (_resolve_my_pending_frame).
+func _apply_my_frame(player: Node, parent: Node, local_pos: Vector3) -> void:
+	if player.get_parent() != parent:
+		player.reparent(parent)
+		player.reset_physics_interpolation()
+		player.net_reset_interp()
+		# TAKE THE VIEW BACK. reparent() is remove-then-add, so OUR camera leaves the viewport and comes
+		# back — and a viewport whose current camera leaves has none, which any Camera3D entering
+		# meanwhile claims for itself (Godot makes an entering camera current when there is no other).
+		# Arriving somewhere new is exactly when that crowd shows up: every avatar and every NPC
+		# spawning in the new zone carries one. Ours re-enters, finds the seat taken, and never gets it
+		# back — a player left watching through an NPC's eyes. Costs nothing when nobody took it.
+		if player.camera != null:
+			player.camera.make_current()
+		# Rare event (teleporter / cross-zone) — worth a trace.
+		print("[client] server reparent -> %s at local (%.0f, %.0f, %.0f)"
+				% [parent.name, local_pos.x, local_pos.y, local_pos.z])
+		# We just left our previous parent. If a former ancestor had a deferred zone-exit, flush it next
+		# frame (deferred so the reparent settles first).
+		if pending_parent_delete_event != null:
+			call_deferred("_flush_pending_parent_delete")
+	# Reinit the list with the uuid of each of my new ancestors.
+	my_parents_uuids = _collect_parents_uuids(player)
+
+
+## The frame our player was declared under has arrived: go there, at the last position the server
+## gave in it. Called whenever an object is created, and on the periodic pending rescan.
+func _resolve_my_pending_frame() -> void:
+	if my_pending_frame.is_empty():
+		return
+	var parent: Node = _frame_node(str(my_pending_frame["parent_id"]))
+	if parent == null:
+		return
+	var player = players_list.get(my_player_uuid)
+	if not is_instance_valid(player):
+		return
+	var local_pos: Vector3 = my_pending_frame["position"]
+	my_pending_frame = {}
+	_apply_my_frame(player, parent, local_pos)
+	player.net_set_local_target(local_pos)
 
 
 func _search_parent_node(parent_id: String) -> Node:
@@ -831,17 +880,27 @@ func create_player(event: Dictionary) -> void:
 			players_list.erase(event["object_id"])
 			return
 		var current_parent = player.get_parent()
-		var new_parent = _search_parent_node(player_data["parent_id"])
+		# "" is the WORLD frame (the star's space), not "no frame". The plain uuid lookup gave null for
+		# it and reparent(null) failed; the world root has no uuid to compare either, hence nodes.
+		var new_parent: Node = _frame_node(str(player_data["parent_id"]))
+		var at := Vector3(player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"])
 		if current_parent == null and player_data["parent_id"] != null:
 			print("case not coded")
-		elif current_parent.uuid != player_data["parent_id"]:
+		elif event["object_id"] == my_player_uuid:
+			# OUR player: the same rule as a player update (see player_update), so a frame change of ours
+			# always takes the view back and refreshes our ancestors, and a frame not here yet is waited for.
+			if new_parent == null:
+				my_pending_frame = {"parent_id": str(player_data["parent_id"]), "position": at}
+			elif current_parent != new_parent:
+				my_pending_frame = {}
+				_apply_my_frame(player, new_parent, at)
+				player.position = at
+		elif new_parent != null and current_parent != new_parent:
 			print("Reparenting player %s to new parent %s" % [event["object_id"], player_data["parent_id"]])
 			player.reparent(new_parent)
 			player.reset_physics_interpolation()
 			player.net_reset_interp()
-			player.position = Vector3(
-				player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
-				)
+			player.position = at
 		return
 
 	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
@@ -1068,6 +1127,8 @@ func create_generic_object(event: Dictionary) -> void:
 
 			props_list[object_type][object_id] = prop_instance
 
+			# generic object created: if OUR player was moved under it before it arrived, go there now
+			_resolve_my_pending_frame()
 			# generic object created, now process pending messages for players waiting for this generic object as parent
 			for pending_message in pending_messages_player_parenting.duplicate():
 				var pending_player_data = {}
@@ -1343,40 +1404,23 @@ func player_update(message: Dictionary) -> void:
 				)
 				if uuid == my_player_uuid:
 					if message["data"].has("parent_id"):
+						my_pending_frame = {}
 						var parent = _frame_node(message["data"]["parent_id"])
 						if parent == null:
-							# The server declared a frame we cannot resolve (its object has not entered
-							# our GORC zones yet). We keep our current parent but apply a position
-							# measured in the DECLARED one: from here on our frame silently disagrees
-							# with the server's. The server only re-declares on change, so this does not
-							# self-heal — see the known-gap note in this lot.
-							var held_by: String = player.get_parent().name if player.get_parent() != null else "<none>"
-							push_warning("[client] my player: unresolved parent_id %s, staying under '%s' — frame now diverges from the server"
-									% [message["data"]["parent_id"], held_by])
-						elif player.get_parent() != parent:
-							player.reparent(parent)
-							player.reset_physics_interpolation()
-							player.net_reset_interp()
-							# TAKE THE VIEW BACK. reparent() is remove-then-add, so OUR camera leaves the
-							# viewport and comes back — and a viewport whose current camera leaves has
-							# none, which any Camera3D entering meanwhile claims for itself (Godot makes
-							# an entering camera current when there is no other). Arriving somewhere new
-							# is exactly when that crowd shows up: every avatar and every NPC spawning in
-							# the new zone carries one. Ours re-enters, finds the seat taken, and never
-							# gets it back — a player left watching through an NPC's eyes.
-							# Costs nothing when nobody took it: it is already ours.
-							if player.camera != null:
-								player.camera.make_current()
-							# Rare event (teleporter / cross-zone) — worth a trace.
-							print("[client] server reparent -> %s at local (%.0f, %.0f, %.0f)"
-									% [parent.name, ppos.x, ppos.y, ppos.z])
-							# We just left our previous parent. If a former ancestor had a deferred
-							# zone-exit, flush it next frame (deferred so the reparent settles first).
-							if pending_parent_delete_event != null:
-								call_deferred("_flush_pending_parent_delete")
-						# Reinit the list with the uuid of each of my new ancestors.
-						my_parents_uuids = _collect_parents_uuids(player)
-					player.net_set_local_target(ppos)
+							# The server declared a frame we cannot resolve YET: its object has not entered
+							# our GORC zones (arriving by teleporter in a station is exactly that). The
+							# server only re-declares on change, so the declaration is kept and replayed
+							# the moment that object is created — see _resolve_my_pending_frame. Until
+							# then we stay put: this position is measured in a frame we do not have.
+							my_pending_frame = {"parent_id": str(message["data"]["parent_id"]), "position": ppos}
+							push_warning("[client] my player: parent_id %s not here yet, waiting for it"
+									% message["data"]["parent_id"])
+						else:
+							_apply_my_frame(player, parent, ppos)
+					elif not my_pending_frame.is_empty():
+						my_pending_frame["position"] = ppos  # still measured in the frame we are waiting for
+					if my_pending_frame.is_empty():
+						player.net_set_local_target(ppos)
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
 					var prot := Vector3(

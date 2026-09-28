@@ -28,6 +28,9 @@ var _body_key: String = ""
 var _all_dests: Array[TeleportDestination] = []
 var _shown_dests: Array[TeleportDestination] = []
 var _return_dest: TeleportDestination = null
+## The station picked in the list. It has no coordinates to type, so the fields are emptied, and it is
+## what TELEPORT sends for as long as they stay empty — typing coordinates goes back to a manual trip.
+var _picked_station: TeleportDestination = null
 var _enabled: bool = true
 
 var _system_list: ItemList
@@ -116,6 +119,7 @@ func _on_system_picked(index: int) -> void:
 
 func _on_body_picked(index: int) -> void:
 	_body_key = str(_body_list.get_item_metadata(index))
+	_picked_station = null  # a station of the body just left must not be what TELEPORT sends next
 	_all_dests = TeleportCatalog.destinations(_body_key)
 	_apply_filter()
 
@@ -144,6 +148,13 @@ func _on_dest_picked(index: int) -> void:
 	if index < 0 or index >= _shown_dests.size():
 		return
 	var dest: TeleportDestination = _shown_dests[index]
+	if dest.is_station():
+		_picked_station = dest
+		for field: LineEdit in [_lon, _lat, _height]:
+			field.text = ""
+		_say("%s. Players only: vehicles in the cabin stay behind." % dest.label, DIM)
+		return
+	_picked_station = null
 	_lon.text = "%.5f" % dest.lon
 	_lat.text = "%.5f" % dest.lat
 	_height.text = "%.1f" % dest.height
@@ -175,6 +186,8 @@ func _typed_destination() -> TeleportDestination:
 	if _body_key == "":
 		_say("Pick a body first.", WARN)
 		return null
+	if _picked_station != null and _lon.text == "" and _lat.text == "" and _height.text == "":
+		return _picked_station
 	var dest: TeleportDestination = TeleportDestination.new(
 			"Manual" if _dest_list.get_selected_items().is_empty() else _dest_list.get_item_text(
 					_dest_list.get_selected_items()[0]),
