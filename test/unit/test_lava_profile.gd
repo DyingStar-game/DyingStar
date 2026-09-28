@@ -169,3 +169,24 @@ func test_bed_follows_the_width_and_the_collision_is_the_visual() -> void:
 	assert_almost_eq(w_first, 2.0 * (GradeProfile.hw_at(prof, 0.0) + ov), 0.05)
 	assert_almost_eq(w_last, 2.0 * (GradeProfile.hw_at(prof, 600.0) + ov), 0.05)
 	assert_gt(w_last, w_first)
+
+
+func test_the_channel_stops_at_the_source_no_slot_behind_it() -> void:
+	# A point on the axis of the first segment, BEHIND the source: its
+	# projection clamps on the source, and the lateral offset must be the true
+	# distance — the perpendicular to the axis (0) cut a slot straight through
+	# whatever stood beyond (a crater rim on tarsis_3).
+	var z := _lava(2000.0)
+	var prof := GradeProfile.compute(z, _sampler(_bumpy))
+	var mpd := RADIUS * PI / 180.0
+	var behind := Vector2(LON0 - 300.0 / (mpd * cos(deg_to_rad(LAT))), LAT)
+	var q := GradeGeom.nearest_on_pieces([z], behind, mpd)
+	assert_almost_eq(absf(float(q["lat_m"])), 300.0, 0.5, "the true distance, not 0")
+	for native in [false, true]:
+		GradeBed.use_native = native
+		var ctx := {"pieces": [z], "profiles": {int(z["feature_id"]): prof}, "pads": [],
+				"m_per_deg": mpd, "floor_margin": 3.0}
+		if native:
+			ctx["native"] = GradeBed.make_native([z], ctx["profiles"])
+		assert_eq(GradeBed.apply(900.0, behind, ctx), 900.0, "nothing carved 300 m behind the source")
+	GradeBed.use_native = true

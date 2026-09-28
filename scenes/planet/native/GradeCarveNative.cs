@@ -106,8 +106,10 @@ public partial class GradeCarveNative : RefCounted
                 {
                     bestSq = dSq;
                     bestAlong = r.Cum[i] + t * (r.Cum[i + 1] - r.Cum[i]);
-                    if (segSq > 1e-24)
+                    if (segSq > 1e-24 && t > 0.0 && t < 1.0)
                         bestLat = (dx * cy - dy * cx) / Math.Sqrt(segSq) * mPerDeg;
+                    else if (segSq > 1e-24 && dx * cy - dy * cx < 0.0)
+                        bestLat = -Math.Sqrt(dSq) * mPerDeg;
                     else
                         bestLat = Math.Sqrt(dSq) * mPerDeg;
                     bestFid = r.Fid;

@@ -253,6 +253,9 @@ static func viaduct_profile_for_span(span: Dictionary) -> BridgeProfile:
 ## Cache-key fragment covering every constant that changes baked geometry —
 ## the railway's own (module size, track pitch, grade policy) included, since
 ## its bed is baked by the same builders.
+## "_lat2": the lateral offset past a segment end is the true distance
+## (GradeGeom.nearest_on_pieces) — a cutting ends cleanly instead of running
+## on as a slot along its axis.
 static func signature() -> String:
 	return "%.2f_%.2f_%.2f_%.2f_%.1f_%.0f_%.3f_%.0f_%.0f_%.0f_%.1f_%.0f_%.1f_%.1f_%.1f_%.1f_%.0f_%.1f_%.1f_%.1f_%.1f_%.1f_%.1f_%d_%.0f" % [
 		RailwaySettings.MODULE_LEN_M, RailwaySettings.MODULE_HALF_W_M,
@@ -264,4 +267,4 @@ static func signature() -> String:
 		SKIRT_BURY_M, BORE_EXTRA_HW_M, BORE_H_M, TUNNEL_WALL_M,
 		PORTAL_HOOD_M, PORTAL_COLLAR_M, REFINE_K, PORTAL_REFINE_M] \
 		+ "_%.1f_%.1f_%.0f_c%d_%.0f_g2" % [VIADUCT_PARAPET_H_M, VIADUCT_PARAPET_W_M, VIADUCT_SEGMENT_M,
-			int(RailwaySettings.CLIMB_AT_MAX_GRADE), VIADUCT_MAX_SPAN_M]
+			int(RailwaySettings.CLIMB_AT_MAX_GRADE), VIADUCT_MAX_SPAN_M] + "_lat2"

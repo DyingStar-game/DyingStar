@@ -311,8 +311,9 @@ static func lake_shore_radius(v: Volcano, u_dot_f: float = NAN) -> float:
 
 ## [param points] (lon, lat, the flow's drawing order) with the source moved
 ## onto the shore of the lava lake of [param volcanoes] it starts in or within
-## LAKE_SNAP_M of: replaced when inside the lake, the shore point prepended
-## otherwise — the same rule as the exporter (volcanoes.py snap_to_lakes).
+## LAKE_SNAP_M of: the leading points inside the lake dropped, the shore point
+## toward the first one left prepended — the exporter's rule
+## (volcanoes.py snap_to_lakes).
 static func snap_flow_to_lakes(points: PackedVector2Array, volcanoes: Array,
 		radius: float) -> PackedVector2Array:
 	if points.size() < 2:
@@ -320,7 +321,6 @@ static func snap_flow_to_lakes(points: PackedVector2Array, volcanoes: Array,
 	var p0 := HEALPix.lonlat2vec(points[0].x, points[0].y)
 	var best: Volcano = null
 	var best_gap := INF
-	var best_r := 0.0
 	for vv in volcanoes:
 		var v: Volcano = vv
 		var r_shore := lake_shore_radius(v)
@@ -330,30 +330,43 @@ static func snap_flow_to_lakes(points: PackedVector2Array, volcanoes: Array,
 		if gap <= LAKE_SNAP_M and gap < best_gap:
 			best = v
 			best_gap = gap
-			best_r = r_shore
 	if best == null:
 		return points
-	var ref := p0
-	for q in points:
-		var d := HEALPix.lonlat2vec(q.x, q.y)
-		if (d - best.c).length() * radius > 1e-3:
-			ref = d
+	# Drop the leading points still inside the lake (each against the shore in
+	# its own azimuth), then start on the shore toward the first one left: a
+	# line drawn from the summit never runs back through the lake.
+	var k := 0
+	while k < points.size():
+		var tq := _tangent_to(best, points[k], radius)
+		var dq := HEALPix.lonlat2vec(points[k].x, points[k].y)
+		if tq != Vector3.ZERO and (dq - best.c).length() * radius >= _shore_along(best, tq):
 			break
-	var c := best.c.normalized()
-	var t := ref - c * ref.dot(c)
-	if t.length() < 1e-15:
+		k += 1
+	if k >= points.size():
 		return points
-	t = t.normalized()
-	if best.tilt > 0.0:
-		best_r = lake_shore_radius(best, t.dot(best.f))
-	var a := best_r / radius
-	var shore := HEALPix.vec2lonlat(c * cos(a) + t * sin(a))
-	var out := PackedVector2Array(points)
-	if best_gap < 0.0:
-		out[0] = shore
-	else:
-		out.insert(0, shore)
+	var t := _tangent_to(best, points[k], radius)
+	var a := _shore_along(best, t) / radius
+	var c := best.c.normalized()
+	var out := PackedVector2Array([HEALPix.vec2lonlat(c * cos(a) + t * sin(a))])
+	out.append_array(points.slice(k))
 	return out
+
+
+## Unit tangent at [param v]'s summit toward (lon, lat) [param q]; ZERO on the summit.
+static func _tangent_to(v: Volcano, q: Vector2, radius: float) -> Vector3:
+	var d := HEALPix.lonlat2vec(q.x, q.y)
+	if (d - v.c).length() * radius <= 1e-3:
+		return Vector3.ZERO
+	var c := v.c.normalized()
+	var t := d - c * d.dot(c)
+	if t.length() < 1e-15:
+		return Vector3.ZERO
+	return t.normalized()
+
+
+## The lake's shore radius in the azimuth of tangent [param t] (tilted rim).
+static func _shore_along(v: Volcano, t: Vector3) -> float:
+	return lake_shore_radius(v, t.dot(v.f)) if v.tilt > 0.0 else lake_shore_radius(v)
 
 
 ## The rim tilt of a lake a flow leaves (twin of volcanoes.py lake_breach):
@@ -373,19 +386,15 @@ static func lake_breach(rec: Dictionary, flows: Array, radius: float) -> Diction
 		var p0 := HEALPix.lonlat2vec(pts[0].x, pts[0].y)
 		if (p0 - v.c).length() * radius - r_shore > LAKE_SNAP_M:
 			continue
-		var ref := Vector3.ZERO
+		# Toward the first point out of the (level) lake.
+		var t := Vector3.ZERO
 		for q in pts:
 			var d := HEALPix.lonlat2vec(q.x, q.y)
-			if (d - v.c).length() * radius > 1e-3:
-				ref = d
+			if (d - v.c).length() * radius > r_shore:
+				t = _tangent_to(v, q, radius)
 				break
-		if ref == Vector3.ZERO:
+		if t == Vector3.ZERO:
 			continue
-		var c := v.c.normalized()
-		var t := ref - c * ref.dot(c)
-		if t.length() < 1e-15:
-			continue
-		t = t.normalized()
 		var fill := minf(v.fill, v.dc * VolcanoFeatures.MAX_FILL_FRAC)
 		return {"fx": t.x, "fy": t.y, "fz": t.z,
 				"tilt_m": maxf(v.dc - fill - RIM_FREEBOARD_M, 0.0)}

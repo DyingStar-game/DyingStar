@@ -61,8 +61,15 @@ static func nearest_on_pieces(pieces: Array, lonlat: Vector2,
 			if d_sq < best_sq:
 				best_sq = d_sq
 				best_along = cum[i] + t * (cum[i + 1] - cum[i])
-				if seg_sq > 1e-24:
+				if seg_sq > 1e-24 and t > 0.0 and t < 1.0:
 					best_lat = (dx * cy - dy * cx) / sqrt(seg_sq) * m_per_deg
+				elif seg_sq > 1e-24 and dx * cy - dy * cx < 0.0:
+					# Projection clamped on an end of the segment (a line end,
+					# the outside of a bend): the true distance, signed. The
+					# perpendicular to the segment's axis would call every
+					# point on the axis' extension "on the line" — a slot cut
+					# straight through whatever lay beyond a lava flow's source.
+					best_lat = -sqrt(d_sq) * m_per_deg
 				else:
 					best_lat = sqrt(d_sq) * m_per_deg
 				best_fid = int(r.get("feature_id", -1))
