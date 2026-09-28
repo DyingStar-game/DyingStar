@@ -40,7 +40,12 @@ var _parent_uuid_cache: String = ""
 
 var has_parent: bool = false
 var carried: bool = false             # carried by a player (issue #124)
-var server_reparenting: bool = false  # briefly leaving the tree to reparent (carry/drop)
+## Set by the server just before it frees a prop it hands over rather than destroys (server meshing, a
+## bulk unload): that free must not delete the object from Horizon. See _notification.
+var server_reparenting: bool = false
+## Latched once the prop has been in the tree on the SERVER: only then does freeing it mean anything
+## to Horizon. Cached here because the autoload may already be gone when the prop is freed.
+var _server_live: bool = false
 
 # Last replicated LOCAL pose, re-asserted every render frame while riding a vehicle bed (see _process).
 var _ride_local_pos: Vector3 = Vector3.ZERO
@@ -67,6 +72,7 @@ func _enter_tree() -> void:
 		return
 	_body_cache = null  # a reparent (carry / drop / bed-settle) took us out and back in
 	if GameOrchestrator.is_server():
+		_server_live = true
 		server_reparenting = false
 		# Re-arm the tick: the body just changed parent, so it may now be carried or bed-loaded and
 		# must replicate every frame again even if the sleep gate below had silenced it.
@@ -177,13 +183,15 @@ func _watch_landing(delta: float) -> void:
 	if body.has_method("on_prop_landed"):
 		body.on_prop_landed()
 
-func _exit_tree() -> void:
-	if Engine.is_editor_hint():
+## Tell Horizon the prop is gone when it is DESTROYED — freed by itself, or with what it hangs from — and
+## only then. Leaving the tree is not it: reparenting ANY ancestor takes the whole subtree out and back
+## in. A crate in the hands of a player being teleported was deleted from Horizon, and from the base,
+## while the server still held it — measured: the delete landed the millisecond the player changed
+## frame, and putting the crate down then hit "Unknown props uuid", so no client ever saw it land.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE or not _server_live or server_reparenting or uuid == "":
 		return
-	# Don't delete on clients, nor on the server when only reparenting (carry/drop): the body (and this
-	# child) briefly leave the tree during a reparent, guarded by server_reparenting.
-	if GameOrchestrator.is_server() and not server_reparenting:
-		emit_signal("hs_server_prop_delete", uuid, type_name)
+	emit_signal("hs_server_prop_delete", uuid, type_name)
 
 func server_prop_update(data: Dictionary) -> void:
 	if uuid == "":
@@ -202,10 +210,8 @@ func send_properties_to_client(parent_uuid: String) -> void:
 		"weight": (body as RigidBody3D).mass if body is RigidBody3D else 200,
 	})
 
-## Server: reparent the host, setting server_reparenting FIRST so the resulting _exit_tree isn't seen
-## as a despawn (a reparent moves the body — and this child — out of and back into the tree).
+## Server: reparent the host. A reparent is never reported as a deletion (see _notification).
 func server_parent_change(parent: Node) -> void:
-	server_reparenting = true
 	_body().reparent(parent)
 
 ## Client: apply a new parent to the host and refresh ride / carry state.
