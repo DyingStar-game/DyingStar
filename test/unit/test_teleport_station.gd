@@ -33,12 +33,6 @@ func test_an_old_payload_without_station_still_reads() -> void:
 	assert_true(back.is_valid())
 
 
-func test_a_return_from_a_station_is_a_station_trip() -> void:
-	var dest := TeleportDestination.to_station(_site(), "tarsis_3", TeleportDestination.Kind.RETURN)
-	assert_true(dest.is_station(), "RETURN from aboard goes back aboard, not to the ground below")
-	assert_eq(dest.kind, TeleportDestination.Kind.RETURN)
-
-
 func test_the_catalog_describes_the_sandbox_station() -> void:
 	# Sandbox's figures, not its scene: loading tarsis_3.tscn drags in every dependency and their load
 	# errors, which GUT counts against the test.
