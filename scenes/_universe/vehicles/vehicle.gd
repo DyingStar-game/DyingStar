@@ -604,6 +604,9 @@ var _idle_still_ticks: int = 0
 ## SERVER: true while this vehicle is registered as a PARKED obstacle with the NPC navmesh cache (asleep
 ## with nobody at the wheel). A VehicleBody3D is a RigidBody: no navmesh bake ever sees it on its own.
 var _nav_parked: bool = false
+## Latched once the vehicle has entered the game on the SERVER: only then does freeing it mean anything
+## to Horizon (see _notification). Cached because the autoload may already be gone at that point.
+var _server_live: bool = false
 ## Tick phase for the reduced-rate scans of a parked vehicle (see _physics_process_impl).
 var _parked_scan_phase: int = randi() % 10
 ## Local AABB of the body's own compound collision, computed once per _rebuild (see nav_footprint_aabb).
@@ -725,6 +728,7 @@ func _ready() -> void:
 	_rebuild()
 	if Engine.is_editor_hint():
 		return
+	_server_live = GameOrchestrator.is_server()
 	add_to_group("vehicle")  # so a pilot can find and enter us
 	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
 	if not OS.has_feature("dedicated_server"):
@@ -1103,9 +1107,9 @@ func _lock_cargo(body: RigidBody3D) -> void:
 	# Keep the crate's collision LAYER (so the carry ray can still target it for retrieval); just
 	# stop the truck body and the crate from fighting each other where they overlap in the bed.
 	add_collision_exception_with(body)
-	# Reparent into the bed WITHOUT the prop's _exit_tree firing a delete (server_parent_change
-	# sets server_reparenting). A raw reparent() made the prop vanish in-game (its _exit_tree
-	# deleted it from Horizon).
+	# Into the bed through the prop's own reparent path. (A raw reparent() used to make the prop vanish
+	# in-game: any exit from the tree counted as a despawn. Only a real free does now — see
+	# PropSync._notification.)
 	if body.has_method("server_parent_change"):
 		body.server_parent_change(self)
 	else:
@@ -2591,14 +2595,21 @@ func _seat_occupancy_now() -> Dictionary:
 		occ[str(seat.name)] = seat.occupant_uuid
 	return occ
 
-## Server: tell the clients to despawn this vehicle when it leaves the world.
+## Server: a truck leaving the tree stops blocking NPCs where it stood — whether it is gone or only
+## moving (the teleporter reparents it to another body).
 func _exit_tree() -> void:
 	if Engine.is_editor_hint():
 		return
-	if _is_networked() and GameOrchestrator.is_server():
-		if _nav_parked:
-			_nav_parked = false
-			_nav_obstacle_set_parked(false)  # a despawned truck must stop blocking NPCs
+	if _is_networked() and GameOrchestrator.is_server() and _nav_parked:
+		_nav_parked = false
+		_nav_obstacle_set_parked(false)
+
+
+## Server: tell the clients to despawn this vehicle when it is DESTROYED, not when it merely changes
+## parent — a reparent takes it out of the tree and back, and used to delete it, load included, from
+## Horizon and the base. Same rule as PropSync._notification.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and _server_live and _is_networked():
 		emit_signal("hs_server_prop_delete", uuid, type_name)
 
 # ------------------------------------------------------------------------------
