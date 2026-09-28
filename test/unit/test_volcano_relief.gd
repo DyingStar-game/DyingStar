@@ -376,3 +376,34 @@ func test_a_flow_starting_by_a_lake_starts_on_its_shore() -> void:
 	assert_eq(away.size(), 2, "250 m away: untouched")
 	# The shore is at the lake's level: the crater wall meets the lava there.
 	assert_almost_eq(VolcanoRelief.offset(d0, RADIUS, v, 1.0), v.h - v.dc + v.fill, 0.05)
+
+
+func test_a_flow_leaving_the_lake_tilts_the_rim() -> void:
+	var c := Vector2(12.0, 20.0)
+	var rec := VolcanoRelief.debug_record("stratovolcano", c,
+			{"has_lava_lake": 1, "roughness": 0.0, "gullies": 0.0, "irregularity": 0.0})
+	var flow := PackedVector2Array([_ll_offset(c, 20.0, 0.0), _ll_offset(c, 3000.0, 0.0)])
+	var br := VolcanoRelief.lake_breach(rec, [flow], RADIUS)
+	assert_false(br.is_empty())
+	rec.merge(br, true)
+	var v := VolcanoRelief.prepare(rec)
+	var lake := v.h - v.dc + v.fill
+	# The rim just outside the crater, on the flow's side (east) and opposite.
+	var east := VolcanoRelief.offset(_dir_at(c, v.rc + 0.01), RADIUS, v, 1.0)
+	var west := VolcanoRelief.offset(_dir_at(c, -(v.rc + 0.01)), RADIUS, v, 1.0)
+	assert_almost_eq(east, lake + VolcanoRelief.RIM_FREEBOARD_M, 1.0, "rim 2 m above the lake")
+	assert_almost_eq(west, v.h, v.h * 0.01, "opposite rim untouched")
+	assert_almost_eq(VolcanoRelief.offset(v.c, RADIUS, v, 1.0), v.h - v.dc, 1e-6, "same floor")
+	# The flow now starts near the lowered rim, and the C# twin agrees bit for bit.
+	var snapped := VolcanoRelief.snap_flow_to_lakes(flow, [v], RADIUS)
+	var d0 := HEALPix.lonlat2vec(snapped[0].x, snapped[0].y)
+	assert_gt((d0 - v.c).length() * RADIUS, VolcanoRelief.lake_shore_radius(v) + 20.0)
+	var mset: RefCounted = MountainRelief.build_set([], [], [v])
+	var mismatches := 0
+	for i in 2000:
+		var ll := _ll_offset(c, fmod(i * 7919.0, 1600.0) - 800.0, fmod(i * 104729.0, 1600.0) - 800.0)
+		var d := HEALPix.lonlat2vec(ll.x, ll.y)
+		for pitch in [1.0, 30.0, 700.0]:
+			if MountainRelief.offset(d, RADIUS, [], [], pitch, [v]) != float(mset.Offset(d, RADIUS, pitch)):
+				mismatches += 1
+	assert_eq(mismatches, 0)

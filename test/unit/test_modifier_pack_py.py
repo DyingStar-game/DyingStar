@@ -1191,7 +1191,7 @@ class TestVolcanoParts(unittest.TestCase):
         mpd = mg.m_per_deg(self.R)
         f = volcanoes_mod.resolve_volcano({"type": "stratovolcano", "has_lava_lake": 1})
         r = volcanoes_mod.lake_shore_radius(f)
-        lakes = [(volcanoes_mod.unit_centre(0.0, 0.0), r, "V")]
+        lakes = [(volcanoes_mod.unit_centre(0.0, 0.0), f, "V")]
 
         def dist_m(p):
             return math.sqrt(sum((a - b) ** 2 for a, b in zip(
@@ -1222,7 +1222,40 @@ class TestVolcanoParts(unittest.TestCase):
         starts = [pts[0] for _i, payload in levels[-1][1]
                   for *_x, pts in _lava_records_of(payload) if pts[0][2] == 0.0]
         self.assertEqual(len(starts), 1)
-        self.assertAlmostEqual(dist_m(starts[0][:2]), r, delta=0.05)
+        # The flow tilts the rim toward it: the shore on its side is the tilted one.
+        ft = dict(f)
+        ft.update(volcanoes_mod.lake_breach(
+            {"lon": 0.0, "lat": 0.0, "props": {"has_lava_lake": 1}},
+            [{"centerline": [(30.0 / mpd, 0.0), (2000.0 / mpd, 0.0)]}], self.R))
+        self.assertAlmostEqual(dist_m(starts[0][:2]), volcanoes_mod.lake_shore_radius(ft, 1.0),
+                               delta=0.05)
+
+    def test_a_flow_leaving_a_lake_tilts_the_rim_toward_it(self):
+        mpd = mg.m_per_deg(self.R)
+        volcano = {"lon": 0.0, "lat": 0.0, "props": {"type": "stratovolcano", "has_lava_lake": 1}}
+        flow = {"centerline": [(30.0 / mpd, 0.0), (3000.0 / mpd, 0.0)], "props": {}}
+        br = volcanoes_mod.lake_breach(volcano, [flow], self.R)
+        f = volcanoes_mod.resolve_volcano(volcano["props"])
+        self.assertAlmostEqual(br["tilt_m"], f["crater_depth_m"] - f["lake_fill_m"]
+                               - volcanoes_mod.RIM_FREEBOARD_M, places=6)
+        self.assertAlmostEqual(br["fz"], 1.0, places=6, msg="east at lon 0 = +z")
+        f.update(br)
+        lake = f["height_m"] - f["crater_depth_m"] + f["lake_fill_m"]
+        self.assertAlmostEqual(volcanoes_mod.rim_height(f, 1.0), lake + volcanoes_mod.RIM_FREEBOARD_M,
+                               places=6, msg="the flow's side: 2 m above the lake")
+        self.assertEqual(volcanoes_mod.rim_height(f, -1.0), f["height_m"], "opposite: untouched")
+        # The shore on the flow's side is near the lowered rim, far from the summit.
+        self.assertGreater(volcanoes_mod.lake_shore_radius(f, 1.0), volcanoes_mod.lake_shore_radius(f))
+        self.assertEqual(volcanoes_mod.lake_breach(volcano, [], self.R), {}, "no flow, level rim")
+        far = {"centerline": [(5000.0 / mpd, 0.0), (6000.0 / mpd, 0.0)], "props": {}}
+        self.assertEqual(volcanoes_mod.lake_breach(volcano, [far], self.R), {})
+        # Written into the record.
+        t = StringTable()
+        levels, _m, _w = volcanoes_mod.build_volcano_part([volcano], self.R, 64, 64, t,
+                                                          verbose=False, flows=[flow])
+        props = self._named(t, _records_of(levels[-1][1][0][1])[0][2])
+        self.assertIn("tilt_m", props)
+        self.assertIn("fx", props)
 
     def test_fumarole_part_holds_fields_and_vents(self):
         table = StringTable()

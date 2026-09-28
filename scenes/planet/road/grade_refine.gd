@@ -86,6 +86,14 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	# interior sub-vertices are carved by the rule, so they lay the floor.
 	var near_track := PackedByteArray()
 	near_track.resize(n_coarse)
+	# Corners carved only by a LAVA channel's wall, away from its crust: a
+	# channel cut through a rise has walls hundreds of metres wide (a 200 m
+	# breach reached 170 m out on each side) and refining every cell of them
+	# cost 1.8 s a chunk. A wall that far from the crust is plain rock, drawn
+	# well enough by the coarse grid; only the crust's meeting line with its
+	# banks needs the sub-grid (near_track). Roads and railways are unchanged.
+	var far_wall := PackedByteArray()
+	far_wall.resize(n_coarse)
 	var floor_margin: float = float(rw_ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M))
 	var has_portal := false
 	var reach := GradeSettings.PORTAL_REFINE_M + GradeSettings.PORTAL_HOOD_M
@@ -110,6 +118,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			var lat_abs := absf(float(q["lat_m"]))
 			if _near_track(q, prof, floor_margin, pitch):
 				near_track[idx] = 1
+			elif prof.has("bed_sink_m") and near_track[idx] == 0:
+				far_wall[idx] = 1
 			var lat_reach: float = GradeTunnel.bore_half_width(float(prof["hw_m"])) \
 					+ GradeSettings.TUNNEL_WALL_M + GradeSettings.PORTAL_COLLAR_M \
 					+ pitch
@@ -137,7 +147,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			var c10 := c00 + 1
 			var c01 := c00 + res + 1
 			var c11 := c01 + 1
-			if band[c00] == 1 or band[c10] == 1 or band[c01] == 1 or band[c11] == 1 \
+			if (band[c00] == 1 and far_wall[c00] == 0) or (band[c10] == 1 and far_wall[c10] == 0) \
+					or (band[c01] == 1 and far_wall[c01] == 0) or (band[c11] == 1 and far_wall[c11] == 0) \
 					or near_track[c00] == 1 or near_track[c10] == 1 \
 					or near_track[c01] == 1 or near_track[c11] == 1 \
 					or near_portal[c00] == 1 or near_portal[c10] == 1 \
@@ -301,7 +312,9 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 ## sampled-and-carved sub-vertices.
 static func _near_track(q: Dictionary, prof: Dictionary, floor_margin: float,
 		pitch: float) -> bool:
-	if absf(float(q["lat_m"])) > float(prof["hw_m"]) + floor_margin + 0.5 * pitch + 0.5:
+	# A lava crust reaches crust_overlap_m past its carved floor (0 on a road).
+	if absf(float(q["lat_m"])) > float(prof["hw_m"]) + float(prof.get("crust_overlap_m", 0.0)) \
+			+ floor_margin + 0.5 * pitch + 0.5:
 		return false
 	var seg := GradeProfile.segment_at(prof, float(q["along"]))
 	if seg.is_empty():

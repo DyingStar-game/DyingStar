@@ -29,7 +29,11 @@ class_name VolcanoRelief
 
 ## Bump when the relief below changes: re-keys the chunk cache of every
 ## planet with a volcano (PlanetTerrain's "_vr" suffix).
-const ALGO_VERSION := 1
+const ALGO_VERSION := 2
+## The crater rim on the side a lava flow leaves the lake sinks to this much
+## above the lake: the rim is TILTED toward the flow (tilt_m, f), so the lava
+## spills over it instead of cutting a canyon through it.
+const RIM_FREEBOARD_M := 2.0
 ## Frequency of the radial gullies on the unit azimuth circle (≈ this many
 ## ravines around the cone, times ~0.5).
 const GULLY_FREQ := 14.0
@@ -107,6 +111,10 @@ class Volcano:
 	var type := "stratovolcano"
 	var seed := 0
 	var impurity := 1.0
+	## Rim tilt: the rim sinks by tilt·((1 + u·f)/2)² in azimuth u — tilt_m at
+	## the flow's side f, nothing opposite. 0 = a level rim.
+	var tilt := 0.0
+	var f := Vector3.ZERO
 	var name := ""
 	## Detail fBm on the flanks.
 	var prm: MountainNoise.Params
@@ -147,6 +155,9 @@ static func prepare(z: Dictionary) -> Volcano:
 	v.activity = str(z.get("activity", v.activity))
 	v.seed = int(z.get("seed", 0))
 	v.impurity = clampf(float(z.get("impurity_intensity", 1.0)), 0.0, IMPURITY_MAX)
+	if z.has("tilt_m") and z.has("fx"):
+		v.tilt = clampf(float(z["tilt_m"]), 0.0, v.dc)
+		v.f = Vector3(float(z["fx"]), float(z["fy"]), float(z["fz"]))
 	var p := MountainNoise.Params.new()
 	p.wavelength_m = maxf(v.rb / DETAIL_WAVELENGTH_DIV, 1.0)
 	p.octaves = 6
@@ -159,7 +170,8 @@ static func prepare(z: Dictionary) -> Volcano:
 	if native_available():
 		var n: RefCounted = _script.new()
 		n.Configure(v.c, v.rb, v.h, v.rc, v.dc, v.floor_frac, v.e, v.rough, v.gullies, v.irr,
-				v.seed, v.impurity, p.wavelength_m, p.octaves, p.persistence, p.ridge, p.seed)
+				v.seed, v.impurity, p.wavelength_m, p.octaves, p.persistence, p.ridge, p.seed,
+				v.f, v.tilt)
 		v.native = n
 	return v
 
@@ -185,13 +197,20 @@ static func offset(dir: Vector3, radius: float, v: Volcano, eff_spacing_m: float
 	var r := dl * radius
 	if r >= v.rb * (1.0 + v.irr):
 		return 0.0
-	if r < v.rc:
-		if eff_spacing_m >= v.rc:
-			return v.h
-		return v.h - v.dc * (1.0 - smoothstep(v.rc * v.floor_frac, v.rc, r))
 	var u := Vector3.ZERO
 	if dl > 1e-12:
 		u = d / dl
+	# The rim height in this azimuth (v.h when level).
+	var ht := v.h
+	var drop := v.dc
+	if v.tilt > 0.0:
+		var q := (1.0 + u.dot(v.f)) * 0.5
+		ht = v.h - v.tilt * (q * q)
+		drop = ht - (v.h - v.dc)
+	if r < v.rc:
+		if eff_spacing_m >= v.rc:
+			return ht
+		return ht - drop * (1.0 - smoothstep(v.rc * v.floor_frac, v.rc, r))
 	var rb_eff := v.rb
 	if v.irr > 0.0:
 		rb_eff = v.rb * (1.0 + v.irr * MountainNoise.snoise(u * LOBE_FREQ, v.seed + 5))
@@ -199,7 +218,7 @@ static func offset(dir: Vector3, radius: float, v: Volcano, eff_spacing_m: float
 	var s := (r - v.rc) / (rb_eff - v.rc)
 	if s >= 1.0:
 		return 0.0
-	var hh := v.h * MountainNoise.pow_fast(1.0 - s, v.e)
+	var hh := ht * MountainNoise.pow_fast(1.0 - s, v.e)
 	var mid := 4.0 * s * (1.0 - s)
 	if v.gullies > 0.0 and r > 0.0:
 		# Radial ravines: noise of the azimuth only, sharpened into narrow valleys;
@@ -267,11 +286,17 @@ const LAKE_SNAP_M := 200.0
 ## lake's surface — the crater profile of [method offset] solved for the lake
 ## level (floor + lake_fill_m, at most VolcanoFeatures.MAX_FILL_FRAC of the
 ## depth). -1 without a lake. Twin of volcanoes.py lake_shore_radius.
-static func lake_shore_radius(v: Volcano) -> float:
+## [param u_dot_f] — the azimuth (u·f of its unit tangent) on a tilted rim;
+## NAN = the level crater.
+static func lake_shore_radius(v: Volcano, u_dot_f: float = NAN) -> float:
 	if not v.lake or v.rc <= 0.0 or v.dc <= 0.0:
 		return -1.0
 	var fill := minf(v.fill, v.dc * VolcanoFeatures.MAX_FILL_FRAC)
-	var y := clampf(fill / v.dc, 0.0, 1.0)
+	var drop := v.dc
+	if v.tilt > 0.0 and not is_nan(u_dot_f):
+		var q := (1.0 + u_dot_f) * 0.5
+		drop = (v.h - v.tilt * (q * q)) - (v.h - v.dc)
+	var y := clampf(fill / drop, 0.0, 1.0)
 	var lo := 0.0
 	var hi := 1.0
 	for _i in 60:
@@ -319,6 +344,8 @@ static func snap_flow_to_lakes(points: PackedVector2Array, volcanoes: Array,
 	if t.length() < 1e-15:
 		return points
 	t = t.normalized()
+	if best.tilt > 0.0:
+		best_r = lake_shore_radius(best, t.dot(best.f))
 	var a := best_r / radius
 	var shore := HEALPix.vec2lonlat(c * cos(a) + t * sin(a))
 	var out := PackedVector2Array(points)
@@ -327,6 +354,42 @@ static func snap_flow_to_lakes(points: PackedVector2Array, volcanoes: Array,
 	else:
 		out.insert(0, shore)
 	return out
+
+
+## The rim tilt of a lake a flow leaves (twin of volcanoes.py lake_breach):
+## [param rec] is a volcano record Dictionary (lon, lat, cx/cy/cz and the
+## resolved style), [param flows] PackedVector2Arrays of (lon, lat) in
+## drawing order. Returns {fx, fy, fz, tilt_m} for the first flow starting in
+## or within LAKE_SNAP_M of the shore, {} otherwise.
+static func lake_breach(rec: Dictionary, flows: Array, radius: float) -> Dictionary:
+	var v := prepare(rec)
+	var r_shore := lake_shore_radius(v)
+	if r_shore < 0.0:
+		return {}
+	for fl in flows:
+		var pts: PackedVector2Array = fl
+		if pts.size() < 2:
+			continue
+		var p0 := HEALPix.lonlat2vec(pts[0].x, pts[0].y)
+		if (p0 - v.c).length() * radius - r_shore > LAKE_SNAP_M:
+			continue
+		var ref := Vector3.ZERO
+		for q in pts:
+			var d := HEALPix.lonlat2vec(q.x, q.y)
+			if (d - v.c).length() * radius > 1e-3:
+				ref = d
+				break
+		if ref == Vector3.ZERO:
+			continue
+		var c := v.c.normalized()
+		var t := ref - c * ref.dot(c)
+		if t.length() < 1e-15:
+			continue
+		t = t.normalized()
+		var fill := minf(v.fill, v.dc * VolcanoFeatures.MAX_FILL_FRAC)
+		return {"fx": t.x, "fy": t.y, "fz": t.z,
+				"tilt_m": maxf(v.dc - fill - RIM_FREEBOARD_M, 0.0)}
+	return {}
 
 
 ## A debug / override record Dictionary for a volcano of [param type] at

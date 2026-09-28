@@ -21,6 +21,8 @@ public partial class MountainVolcanoNative : RefCounted
     private double _rb = 6000.0, _h = 2500.0, _rc = 300.0, _dc = 200.0, _floor = 0.3, _e = 2.0;
     private double _rough, _gullies, _irr, _impurity = 1.0;
     private long _seed;
+    /// <summary>Rim tilt toward the flow leaving the lake (VolcanoRelief.Volcano.tilt / f).</summary>
+    private double _tilt, _fx, _fy, _fz;
     /// <summary>The flank detail fBm — a full-coverage zone of lift 0, amplitude 1:
     /// only its Shape is read.</summary>
     private readonly MountainZoneNative _detail = new();
@@ -28,8 +30,10 @@ public partial class MountainVolcanoNative : RefCounted
     public void Configure(Vector3 centre, double rb, double h, double rc, double dc, double floorFrac,
                           double e, double roughness, double gullies, double irregularity, long seed,
                           double impurity, double detailWavelength, int detailOctaves,
-                          double detailPersistence, double detailRidge, long detailSeed)
+                          double detailPersistence, double detailRidge, long detailSeed,
+                          Vector3 flowDir, double tilt)
     {
+        _fx = flowDir.X; _fy = flowDir.Y; _fz = flowDir.Z; _tilt = tilt;
         _cx = centre.X; _cy = centre.Y; _cz = centre.Z;
         _rb = rb; _h = h; _rc = rc; _dc = dc; _floor = floorFrac; _e = e;
         _rough = roughness; _gullies = gullies; _irr = irregularity;
@@ -52,20 +56,27 @@ public partial class MountainVolcanoNative : RefCounted
         double dl = Math.Sqrt(dx * dx + dy * dy + dz * dz);
         double r = dl * radius;
         if (r >= _rb * (1.0 + _irr)) return 0.0;
-        if (r < _rc)
-        {
-            if (effSpacing >= _rc) return _h;
-            return _h - _dc * (1.0 - MountainNoiseCore.Smoothstep(_rc * _floor, _rc, r));
-        }
         double ux = 0.0, uy = 0.0, uz = 0.0;
         if (dl > 1e-12) { ux = dx / dl; uy = dy / dl; uz = dz / dl; }
+        double ht = _h, drop = _dc;
+        if (_tilt > 0.0)
+        {
+            double q = (1.0 + (ux * _fx + uy * _fy + uz * _fz)) * 0.5;
+            ht = _h - _tilt * (q * q);
+            drop = ht - (_h - _dc);
+        }
+        if (r < _rc)
+        {
+            if (effSpacing >= _rc) return ht;
+            return ht - drop * (1.0 - MountainNoiseCore.Smoothstep(_rc * _floor, _rc, r));
+        }
         double rbEff = _rb;
         if (_irr > 0.0)
             rbEff = _rb * (1.0 + _irr * MountainNoiseCore.Snoise(ux * LobeFreq, uy * LobeFreq, uz * LobeFreq, _seed + 5));
         rbEff = Math.Max(rbEff, _rc + 1.0);
         double s = (r - _rc) / (rbEff - _rc);
         if (s >= 1.0) return 0.0;
-        double hh = _h * MountainNoiseCore.PowFast(1.0 - s, _e);
+        double hh = ht * MountainNoiseCore.PowFast(1.0 - s, _e);
         double mid = 4.0 * s * (1.0 - s);
         if (_gullies > 0.0 && r > 0.0)
         {
