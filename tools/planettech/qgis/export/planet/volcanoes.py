@@ -142,10 +142,12 @@ def volcano_warnings(volcanoes, radius_m):
 
 
 def build_volcano_part(points, radius_m, export_nside, max_quadtree_nside, table,
-                       verbose=True, planet_name=""):
+                       verbose=True, planet_name="", flows=()):
     """Build the VOLCANO part's levels and manifest.
 
     points: [{"lon", "lat", "props": {field: value, …}}, …] — NULLs dropped.
+    flows: the lava flows (build_lava_part's input): a lake a flow leaves gets
+           its rim tilted toward it (lake_breach: props fx/fy/fz, tilt_m).
     Returns (levels, manifest, warnings) for dsmp.write_part(path, dsmp.KIND_VOLCANO, …).
     """
     policy = mg.level_policy(export_nside, max_quadtree_nside)["volcano"]
@@ -160,6 +162,7 @@ def build_volcano_part(points, radius_m, export_nside, max_quadtree_nside, table
             fields.get("impurity_intensity"), [(lon, lat)], planet_name)
         c = unit_centre(lon, lat)
         fields["cx"], fields["cy"], fields["cz"] = float(c[0]), float(c[1]), float(c[2])
+        fields.update(lake_breach(p, flows, radius_m))
         reach = 0.5 * fields["base_diameter_m"] * (1.0 + fields["irregularity"])
         prepared.append({
             "lon": lon, "lat": lat, "index": vi, "fields": fields, "centre": c,
@@ -258,10 +261,33 @@ def _smoothstep_inv(y):
     return 0.5 * (lo + hi)
 
 
-def lake_shore_radius(fields):
+#: The crater rim on the side a flow leaves the lake is lowered to this much
+#: above the lake (VolcanoRelief.RIM_FREEBOARD_M) — the rim is TILTED toward
+#: the flow, so the lava spills over it instead of cutting a canyon.
+RIM_FREEBOARD_M = 2.0
+
+
+def _lake_fill(fields):
+    dc = float(fields["crater_depth_m"])
+    return min(max(float(fields.get("lake_fill_m") or 0.0), 0.0), dc * LAKE_MAX_FILL_FRAC)
+
+
+def rim_height(fields, u_dot_f=None):
+    """Height of the crater rim above the base in the azimuth whose unit
+    tangent u has u·f = u_dot_f (VolcanoRelief's tilt, ((1 + u·f)/2)²)."""
+    h = float(fields["height_m"])
+    tilt = float(fields.get("tilt_m") or 0.0)
+    if tilt <= 0.0 or u_dot_f is None:
+        return h
+    q = (1.0 + u_dot_f) * 0.5
+    return h - tilt * (q * q)
+
+
+def lake_shore_radius(fields, u_dot_f=None):
     """Distance (m) from the summit at which the crater wall reaches the lava
-    lake's surface (the crater profile of VolcanoRelief.offset), or None when
-    the volcano holds no lake. Same numbers as VolcanoRelief.lake_shore_radius."""
+    lake's surface (the crater profile of VolcanoRelief.offset) in the azimuth
+    u·f = u_dot_f (the untilted crater when None), or None when the volcano
+    holds no lake. Same numbers as VolcanoRelief.lake_shore_radius."""
     if not int(fields.get("has_lava_lake") or 0):
         return None
     rb = 0.5 * float(fields["base_diameter_m"])
@@ -269,9 +295,12 @@ def lake_shore_radius(fields):
     dc = float(fields["crater_depth_m"])
     if rc <= 0.0 or dc <= 0.0:
         return None
-    fill = min(max(float(fields.get("lake_fill_m") or 0.0), 0.0), dc * LAKE_MAX_FILL_FRAC)
+    fill = _lake_fill(fields)
+    drop = dc
+    if float(fields.get("tilt_m") or 0.0) > 0.0 and u_dot_f is not None:
+        drop = rim_height(fields, u_dot_f) - (float(fields["height_m"]) - dc)
     ff = min(max(float(fields["floor_frac"]), 0.0), 0.95) * rc
-    return ff + (rc - ff) * _smoothstep_inv(fill / dc)
+    return ff + (rc - ff) * _smoothstep_inv(fill / drop)
 
 
 def _unit(v):
@@ -284,38 +313,80 @@ def _lonlat_of(v):
     return (math.degrees(math.atan2(z, x)), math.degrees(math.asin(max(-1.0, min(1.0, y)))))
 
 
+def _chord_m(a, b, radius_m):
+    return math.sqrt(sum((a[k] - b[k]) ** 2 for k in range(3))) * radius_m
+
+
+def _outward_tangent(c, centerline, radius_m):
+    """Unit tangent at the summit c pointing along the flow's start: toward its
+    first point, or the next one when it starts on the summit. None if none."""
+    ref = None
+    for q in centerline:
+        v = unit_centre(*q)
+        if _chord_m(v, c, radius_m) > 1e-3:
+            ref = v
+            break
+    if ref is None:
+        return None
+    d = sum(ref[k] * c[k] for k in range(3))
+    t = tuple(ref[k] - c[k] * d for k in range(3))
+    if math.sqrt(sum(x * x for x in t)) < 1e-15:
+        return None
+    return _unit(t)
+
+
+def lake_breach(volcano, flows, radius_m, snap_m=LAKE_SNAP_M):
+    """{"fx", "fy", "fz", "tilt_m"} for a volcano whose lava lake a flow leaves
+    (the first flow, in layer order, starting in or within snap_m of its shore):
+    the rim is lowered toward it to RIM_FREEBOARD_M above the lake. {} else."""
+    fields = resolve_volcano(volcano.get("props", {}))
+    r_shore = lake_shore_radius(fields)
+    if r_shore is None:
+        return {}
+    c = unit_centre(float(volcano["lon"]), float(volcano["lat"]))
+    for f in flows:
+        cl = [(float(p[0]), float(p[1])) for p in f.get("centerline", [])]
+        if len(cl) < 2:
+            continue
+        if _chord_m(unit_centre(*cl[0]), c, radius_m) - r_shore > snap_m:
+            continue
+        t = _outward_tangent(c, cl, radius_m)
+        if t is None:
+            continue
+        dc = float(fields["crater_depth_m"])
+        tilt = max(dc - _lake_fill(fields) - RIM_FREEBOARD_M, 0.0)
+        return {"fx": float(t[0]), "fy": float(t[1]), "fz": float(t[2]), "tilt_m": tilt}
+    return {}
+
+
 def snap_to_lakes(centerline, lakes, radius_m, snap_m=LAKE_SNAP_M):
     """The flow's centerline with its SOURCE moved onto the shore of the lava
-    lake it starts in or next to. lakes: [(unit centre, shore radius m, name)].
-    A first point inside the lake is replaced by the shore point on the ray
-    from the summit; one outside within snap_m of the shore gets the shore
-    point prepended. Returns (centerline, lake name or None)."""
+    lake it starts in or next to. lakes: [(unit centre, resolved fields, name)]
+    — the fields carry the rim tilt when a flow breaches it. A first point
+    inside the lake is replaced by the shore point on the ray from the summit;
+    one outside within snap_m of the shore gets the shore point prepended.
+    Returns (centerline, lake name or None)."""
     if len(centerline) < 2 or not lakes:
         return list(centerline), None
     p0 = unit_centre(*centerline[0])
     best = None
-    for c, r_shore, name in lakes:
-        r0 = math.sqrt(sum((p0[k] - c[k]) ** 2 for k in range(3))) * radius_m
-        gap = r0 - r_shore
+    for c, fields, name in lakes:
+        r_shore = lake_shore_radius(fields)
+        if r_shore is None:
+            continue
+        gap = _chord_m(p0, c, radius_m) - r_shore
         if gap <= snap_m and (best is None or gap < best[0]):
-            best = (gap, c, r_shore, name)
+            best = (gap, c, fields, name)
     if best is None:
         return list(centerline), None
-    gap, c, r_shore, name = best
-    # Direction away from the summit: toward the first point, or toward the
-    # next one when the flow starts on the summit itself.
-    ref = p0
-    for q in centerline:
-        v = unit_centre(*q)
-        if math.sqrt(sum((v[k] - c[k]) ** 2 for k in range(3))) * radius_m > 1e-3:
-            ref = v
-            break
-    d = sum(ref[k] * c[k] for k in range(3))
-    t = tuple(ref[k] - c[k] * d for k in range(3))
-    if math.sqrt(sum(x * x for x in t)) < 1e-15:
+    gap, c, fields, name = best
+    t = _outward_tangent(c, centerline, radius_m)
+    if t is None:
         return list(centerline), None
-    t = _unit(t)
-    a = r_shore / radius_m
+    u_dot_f = None
+    if float(fields.get("tilt_m") or 0.0) > 0.0:
+        u_dot_f = t[0] * float(fields["fx"]) + t[1] * float(fields["fy"]) + t[2] * float(fields["fz"])
+    a = lake_shore_radius(fields, u_dot_f) / radius_m
     shore = _lonlat_of(tuple(c[k] * math.cos(a) + t[k] * math.sin(a) for k in range(3)))
     out = list(centerline)
     if gap < 0.0:
@@ -371,9 +442,9 @@ def build_lava_part(flows, radius_m, export_nside, max_quadtree_nside, table,
     lakes = []
     for v in volcanoes:
         vf = resolve_volcano(v.get("props", {}))
-        r_shore = lake_shore_radius(vf)
-        if r_shore is not None:
-            lakes.append((unit_centre(float(v["lon"]), float(v["lat"])), r_shore,
+        if lake_shore_radius(vf) is not None:
+            vf.update(lake_breach(v, flows, radius_m))
+            lakes.append((unit_centre(float(v["lon"]), float(v["lat"])), vf,
                           str(vf.get("name") or "")))
 
     prepared = []

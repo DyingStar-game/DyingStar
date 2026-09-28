@@ -27,6 +27,50 @@ class_name GradeBed
 
 
 
+## The C# twin of the line part of [method apply] (GradeCarveNative.cs):
+## the nearest-piece search and the cutting rule, bit-identical, ~5× faster —
+## a refined cell re-carves 64 sub-vertices. Loaded lazily; without the
+## assembly (or with use_native off, tests) the GDScript below runs.
+static var use_native := true
+static var _native_tried := false
+static var _native_script: Script = null
+
+
+static func native_available() -> bool:
+	if not _native_tried:
+		_native_tried = true
+		_native_script = NativeScript.load_usable("res://scenes/planet/native/GradeCarveNative.cs",
+				["AddPiece", "AddProfile", "Apply"])
+	return _native_script != null
+
+
+## A GradeCarveNative holding [param pieces] and their [param profiles]
+## (fid → profile), or null without the assembly.
+static func make_native(pieces: Array, profiles: Dictionary) -> RefCounted:
+	if not use_native or not native_available() or pieces.is_empty():
+		return null
+	var n: RefCounted = _native_script.new()
+	for r in pieces:
+		n.AddPiece(r.get("centerline", PackedVector2Array()),
+				r.get("_cum_lengths", PackedFloat64Array()), int(r.get("feature_id", -1)))
+	for fid: int in profiles:
+		var prof: Dictionary = profiles[fid]
+		if prof.is_empty():
+			continue
+		var kinds := PackedInt32Array()
+		var depths := PackedFloat64Array()
+		for seg in prof["segments"]:
+			kinds.append(int(seg["kind"]))
+			depths.append(float(seg["max_depth"]))
+		n.AddProfile(fid, prof["knots_along"], prof["knots_z"], prof["seg_lo"], kinds, depths,
+				float(prof["hw_m"]), prof.has("hw0_m"), float(prof.get("hw0_m", 0.0)),
+				float(prof.get("hw1_m", 0.0)), float(prof["along0"]), float(prof["along1"]),
+				float(prof.get("wall_slope", GradeSettings.GORGE_WALL_SLOPE)),
+				float(prof.get("floor_margin_k", 1.0)), float(prof.get("bed_sink_m", 0.0)),
+				float(prof.get("crust_overlap_m", 0.0)))
+	return n
+
+
 ## The grade-limited records among [param roads] (railways, graded roads).
 static func profiled_pieces(roads: Array) -> Array:
 	var out: Array = []
@@ -121,7 +165,7 @@ static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictio
 	if pieces.is_empty() and pads.is_empty():
 		return {}
 	return {"pieces": pieces, "profiles": profiles, "pads": pads,
-			"m_per_deg": data.radius * PI / 180.0}
+			"m_per_deg": data.radius * PI / 180.0, "native": make_native(pieces, profiles)}
 
 
 ## How far the cutting's flat floor reaches past the bed, for a grid whose
@@ -151,7 +195,14 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 	var coarse: bool = ctx.has("coarse_band_m")
 	var out := h
 	var pieces: Array = ctx.get("pieces", [])
-	if not pieces.is_empty():
+	var native: RefCounted = ctx.get("native", null)
+	if native != null:
+		if coarse:
+			out = native.Apply(out, lonlat, mpd, 1, float(ctx["coarse_band_m"]))
+		else:
+			out = native.Apply(out, lonlat, mpd, 0,
+					float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)))
+	elif not pieces.is_empty():
 		var q := GradeGeom.nearest_on_pieces(pieces, lonlat, mpd)
 		if q["hit"]:
 			var prof: Dictionary = (ctx["profiles"] as Dictionary).get(int(q["fid"]), {})

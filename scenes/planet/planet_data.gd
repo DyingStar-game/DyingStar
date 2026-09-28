@@ -2894,8 +2894,12 @@ func _build_debug_mountains() -> void:
 	var ridges: Array = []
 	var volcanoes: Array = []
 	if debug_volcano_enabled:
-		volcanoes.append(VolcanoRelief.debug_record(debug_volcano_type, debug_volcano_lonlat,
-				debug_volcano_style))
+		var rec := VolcanoRelief.debug_record(debug_volcano_type, debug_volcano_lonlat,
+				debug_volcano_style)
+		# A debug flow leaving its lava lake tilts the rim toward it (the exporter's rule).
+		if debug_lava_enabled:
+			rec.merge(VolcanoRelief.lake_breach(rec, [debug_lava_points], radius), true)
+		volcanoes.append(rec)
 	if not debug_mountain_enabled:
 		set_mountain_overrides(zones, ridges, volcanoes)
 		return

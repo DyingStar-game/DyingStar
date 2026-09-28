@@ -258,7 +258,7 @@ def export_parts(volcanoes, flows, fields, vents):
     print(f"  Building volcano part (export_nside={export_nside})")
     levels, manifest, warnings = volcano_lib.build_volcano_part(
         volcanoes, PLANET_RADIUS, export_nside, max_quadtree_nside, table,
-        planet_name=PLANET_NAME)
+        planet_name=PLANET_NAME, flows=flows)
     manifest.update(stamp, source_layer="volcano")
     p = link_modifiers.part_path(PLANET_NAME, "volcano", EXPORT_DIR)
     dsmp.write_part(p, dsmp.KIND_VOLCANO, levels, manifest)
