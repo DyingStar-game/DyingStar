@@ -51,6 +51,23 @@ func _init(planet_name: String, version_hash: String,
 
 	DirAccess.make_dir_recursive_absolute(_planet_dir)
 	_validate_version(version_hash)
+	_drop_stale_pending()
+
+
+## Temporary files of mesh writes a previous session never published (the
+## chunk was dropped, or the game quit before its assembly): see
+## [method write_mesh_pending].
+func _drop_stale_pending() -> void:
+	var dir := DirAccess.open(_planet_dir)
+	if dir == null:
+		return
+	var n := 0
+	for fname in dir.get_files():
+		if ".tmp." in fname:
+			dir.remove(fname)
+			n += 1
+	if n > 0:
+		print("[ChunkDiskCache] %d unpublished mesh write(s) dropped in '%s'" % [n, _planet_dir])
 
 
 func _validate_version(version_hash: String) -> void:
@@ -135,6 +152,42 @@ func load_mesh(chunk_key: String, lod: int, stitch: int = 0) -> ArrayMesh:
 		return res as ArrayMesh
 	push_warning("[ChunkDiskCache] Failed to load mesh from '%s'" % path)
 	return null
+
+
+## Where the visual mesh of (chunk_key, lod, stitch) lives.
+func mesh_path(chunk_key: String, lod: int, stitch: int = 0) -> String:
+	return _res_path(chunk_key, lod, "mesh", stitch)
+
+
+## WORKER-SAFE half of an asynchronous save: write [param mesh] to a unique
+## temporary file next to its cache path and return that path ("" on failure
+## or without a cache). Nothing reads it until [method commit_pending] renames
+## it — the main thread decides THEN whether the chunk may be cached. Saving
+## on the main thread cost 10-50 ms a chunk (GPU readback + compression +
+## write), ~190 ms a second while the terrain rebuilt near a lava flow; from a
+## worker the main thread never waits (measured on the RTX 2060).
+func write_mesh_pending(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) -> String:
+	if not _enabled or mesh == null:
+		return ""
+	var tmp := AtomicFile.temp_path(mesh_path(chunk_key, lod, stitch))
+	if ResourceSaver.save(mesh, tmp, ResourceSaver.FLAG_COMPRESS) != OK:
+		DirAccess.remove_absolute(tmp)
+		return ""
+	return tmp
+
+
+## Main thread: publish a [method write_mesh_pending] file as the cache entry.
+func commit_pending(tmp: String, chunk_key: String, lod: int, stitch: int = 0) -> void:
+	if tmp.is_empty() or not _enabled:
+		return
+	if AtomicFile.commit(tmp, mesh_path(chunk_key, lod, stitch)):
+		cache_saves += 1
+
+
+## Main thread: drop a [method write_mesh_pending] file (the chunk may not be cached).
+static func discard_pending(tmp: String) -> void:
+	if not tmp.is_empty():
+		DirAccess.remove_absolute(tmp)
 
 
 func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) -> void:

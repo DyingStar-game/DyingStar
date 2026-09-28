@@ -2,7 +2,7 @@ extends GutTest
 ## PlanetTerrain._pipeline_tree_index must answer exactly what the per-key
 ## _has_pending_replacement / _has_pending_coarser answered (the stale-chunk
 ## pass used them; walking the whole pipeline per key cost 200-440 ms a pass),
-## on a random pipeline spread over the four queues.
+## on a random pipeline spread over the five queues (disk-cache reads too).
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd \
@@ -17,7 +17,7 @@ func test_index_answers_like_the_pipeline_walks() -> void:
 	var t := PlanetTerrain.new()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42
-	# A pipeline around one base pixel, all four queues, levels 4..1024.
+	# A pipeline around one base pixel, all five queues, levels 4..1024.
 	var base := 5
 	var pick := func() -> Array:
 		var lvl := rng.randi_range(2, 10)
@@ -26,13 +26,14 @@ func test_index_answers_like_the_pipeline_walks() -> void:
 		for _k in lvl:
 			ip = (ip << 2) | rng.randi_range(0, 3)
 		return [ns, ip]
-	for i in 60:
+	for i in 75:
 		var c: Array = pick.call()
-		match i % 4:
+		match i % 5:
 			0: t._mesh_tasks["m%d" % i] = {"info": _info(c[0], c[1])}
 			1: t._mesh_task_backlog.append(_info(c[0], c[1]))
 			2: t._assemble_queue.append({"info": _info(c[0], c[1])})
 			3: t._recipe_waiters["e%d" % (i % 3)] = {"c%d" % i: _info(c[0], c[1])}
+			4: t._cache_loads["l%d" % i] = {"info": _info(c[0], c[1]), "path": ""}
 	var idx := t._pipeline_tree_index()
 	var mismatches := 0
 	var hits_rep := 0

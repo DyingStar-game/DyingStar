@@ -258,6 +258,10 @@ var _mesh_tasks: Dictionary = {}
 var _assemble_queue: Array[Dictionary] = []
 ## Overflow queue when max_mesh_tasks is reached.
 var _mesh_task_backlog: Array[Dictionary] = []
+## Disk-cache meshes being read by ResourceLoader's threads.
+## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
+## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
+var _cache_loads: Dictionary = {}
 
 ## ── Initial-load tracking ─────────────────────────────────────────
 var _initial_ready_emitted: bool = false
@@ -1426,6 +1430,7 @@ func _physics_process(_delta: float) -> void:
 	# (main-thread node creation + cache write) or in the LOD update below.
 	var _tk := _perf_begin()
 	_poll_pending_recipes()
+	_poll_cache_loads()
 	_poll_mesh_tasks()
 	_process_assemble_queue()
 	_perf_end("terrain_assemble", _tk)
@@ -1435,7 +1440,7 @@ func _physics_process(_delta: float) -> void:
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
 	if not _initial_ready_emitted and not _active_chunks.is_empty() \
-			and _recipe_waiters.is_empty() and _mesh_tasks.is_empty() \
+			and _recipe_waiters.is_empty() and _mesh_tasks.is_empty() and _cache_loads.is_empty() \
 			and _assemble_queue.is_empty() and _mesh_task_backlog.is_empty() \
 			and _pending_recipes.is_empty():
 		_initial_ready_emitted = true
@@ -2552,6 +2557,8 @@ func _pipeline_keys() -> Dictionary:
 	var out := {}
 	for mk: String in _mesh_tasks:
 		out[mk] = true
+	for lk: String in _cache_loads:
+		out[lk] = true
 	for item in _assemble_queue:
 		out[String(item.info.key)] = true
 	for item in _mesh_task_backlog:
@@ -2575,6 +2582,9 @@ func _pipeline_tree_index() -> Array:
 		var ci: Dictionary = _mesh_tasks[mk].info
 		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
 	for ci: Dictionary in _mesh_task_backlog:
+		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	for lk: String in _cache_loads:
+		var ci: Dictionary = _cache_loads[lk].info
 		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
 	for item: Dictionary in _assemble_queue:
 		var ci: Dictionary = item.info
@@ -2657,6 +2667,10 @@ func _has_pending_replacement(key: String) -> bool:
 	for ci: Dictionary in _mesh_task_backlog:
 		if _hp_is_descendant(a_nside, a_ipix, ci.nside, ci.ipix):
 			return true
+	for lk: String in _cache_loads:
+		var ci: Dictionary = _cache_loads[lk].info
+		if _hp_is_descendant(a_nside, a_ipix, ci.nside, ci.ipix):
+			return true
 	# Check assemble_queue
 	for item: Dictionary in _assemble_queue:
 		var ci: Dictionary = item.info
@@ -2689,6 +2703,10 @@ func _has_pending_coarser(key: String) -> bool:
 		if _hp_is_descendant(ci.nside, ci.ipix, a_nside, a_ipix):
 			return true
 	for ci: Dictionary in _mesh_task_backlog:
+		if _hp_is_descendant(ci.nside, ci.ipix, a_nside, a_ipix):
+			return true
+	for lk: String in _cache_loads:
+		var ci: Dictionary = _cache_loads[lk].info
 		if _hp_is_descendant(ci.nside, ci.ipix, a_nside, a_ipix):
 			return true
 	for item: Dictionary in _assemble_queue:
@@ -2766,18 +2784,8 @@ func _try_create_or_defer(info: Dictionary) -> void:
 			_create_chunk(info)
 			return
 		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
-		var _st: int = int(info.get("stitch", 0))
-		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st) \
-				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
-			# Synchronous disk read on the main thread (inside terrain_steps).
-			var _tkc := _perf_begin()
-			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st)
-			var _valid := cached_mesh != null and _cached_mesh_valid(cached_mesh, info)
-			_perf_end("steps:cache_load", _tkc)
-			if _valid:
-				info["_from_disk_cache"] = true
-				_assemble_queue.append({"info": info, "mesh": cached_mesh})
-				return
+		if _request_cache_load(info):
+			return
 		_queue_mesh_task(info)
 		return
 
@@ -2796,17 +2804,12 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		return
 
 	# ── Client: check disk cache first ──────────────────────────────
-	var _st_r: int = int(info.get("stitch", 0))
-	if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st_r) \
-			and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
-		var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st_r)
-		if cached_mesh and _cached_mesh_valid(cached_mesh, info):
-			info["_from_disk_cache"] = true
-			# Still trigger recipe generation for vegetation height sampling
-			if not planet_data.is_chunk_cached(export_key):
-				_submit_recipe_if_needed(export_key, export_ipix, cam_dist_sq)
-			_assemble_queue.append({"info": info, "mesh": cached_mesh})
-			return
+	if _request_cache_load(info):
+		# Still trigger recipe generation for vegetation height sampling
+		# (a failed read comes back through here without the cache).
+		if not planet_data.is_chunk_cached(export_key):
+			_submit_recipe_if_needed(export_key, export_ipix, cam_dist_sq)
+		return
 
 	# ── Client: fully async ─────────────────────────────────────────
 	if planet_data.is_chunk_cached(export_key):
@@ -3048,6 +3051,56 @@ func _poll_pending_recipes() -> void:
 # Async mesh generation (client only)
 # ------------------------------------------------------------------
 
+## Start reading the cached mesh of [param info] on ResourceLoader's threads;
+## false when there is none to read (build it). [method _poll_cache_loads]
+## takes the result to the assembly queue, or back to [method
+## _try_create_or_defer] without the cache when the file is unusable.
+func _request_cache_load(info: Dictionary) -> bool:
+	if _chunk_cache == null or info.get("_skip_disk_cache", false):
+		return false
+	if _cache_loads.has(info.key):
+		return true
+	var st: int = int(info.get("stitch", 0))
+	if not _chunk_cache.has_mesh(info.key, info.lod, st) \
+			or planet_data.chunk_cache_ineligible(info.nside, info.ipix):
+		return false
+	var _tkc := _perf_begin()
+	var path := _chunk_cache.mesh_path(info.key, info.lod, st)
+	var err := ResourceLoader.load_threaded_request(path, "", false,
+			ResourceLoader.CACHE_MODE_IGNORE)
+	_perf_end("steps:cache_load", _tkc)
+	if err != OK:
+		return false
+	_cache_loads[info.key] = {"info": info, "path": path}
+	return true
+
+
+## Hand the finished disk-cache reads over: a valid mesh to the assembly
+## queue, anything else back to the builder.
+func _poll_cache_loads() -> void:
+	if _cache_loads.is_empty():
+		return
+	var done: Array[String] = []
+	for key: String in _cache_loads:
+		var st := ResourceLoader.load_threaded_get_status(_cache_loads[key].path)
+		if st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			done.append(key)
+	for key in done:
+		var entry: Dictionary = _cache_loads[key]
+		_cache_loads.erase(key)
+		var info: Dictionary = entry.info
+		var mesh: ArrayMesh = null
+		if ResourceLoader.load_threaded_get_status(entry.path) == ResourceLoader.THREAD_LOAD_LOADED:
+			mesh = ResourceLoader.load_threaded_get(entry.path) as ArrayMesh
+		if mesh != null and _cached_mesh_valid(mesh, info):
+			_chunk_cache.cache_hits += 1
+			info["_from_disk_cache"] = true
+			_assemble_queue.append({"info": info, "mesh": mesh})
+		else:
+			info["_skip_disk_cache"] = true
+			_try_create_or_defer(info)
+
+
 ## Submit a mesh generation task to WorkerThreadPool for [param info].
 ## When the task completes, the resulting ArrayMesh is placed in
 ## _assemble_queue for assembly on the main thread.
@@ -3095,8 +3148,10 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		if _rq and _rq.is_loaded():
 			_rq.preload_region(_tile_bb[0], _tile_bb[1])
 
-	# result_ref[0] will be set to the ArrayMesh (or null on failure).
-	var result_ref: Array = [null]
+	# result_ref[0] will be set to the ArrayMesh (or null on failure),
+	# result_ref[1] to the unpublished disk-cache copy (see _publish_cache_write).
+	var result_ref: Array = [null, ""]
+	var cache := _chunk_cache
 	# Découpage par phase du coût de génération (phase 0 de PLANET_CHUNK_STREAMING).
 	# Un Dictionary PAR TÂCHE : seul le thread de cette tâche y écrit, et le thread
 	# principal ne le lit qu'après is_task_completed(). Aucun verrou nécessaire.
@@ -3116,6 +3171,10 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
 				pd, nside, ipix, res, chunk_center, prof, stitch)
+			# The cache write here, while the mesh is still this thread's
+			# alone: once assembled, _split_road_surfaces edits it.
+			if cache != null and _persistable(mesh):
+				result_ref[1] = cache.write_mesh_pending(key, lod, mesh, stitch)
 			result_ref[0] = mesh
 	)
 	task_entry["task_id"] = task_id
@@ -3156,6 +3215,8 @@ func _poll_mesh_tasks() -> void:
 			TerrainProfiler.commit_mesh(entry.get("prof", {}))
 		var mesh: ArrayMesh = entry.result_ref[0] as ArrayMesh
 		if mesh != null:
+			if not String(entry.result_ref[1]).is_empty():
+				entry.info["_cache_pending"] = entry.result_ref[1]
 			_assemble_queue.append({"info": entry.info, "mesh": mesh})
 		else:
 			push_warning("[PlanetTerrain] mesh task for '%s' returned null" % key)
@@ -3199,11 +3260,13 @@ func _process_assemble_queue() -> void:
 						1 << planet_data.max_quadtree_depth)):
 			if _active_chunks.has(info.key):
 				_requeue_as_swap(_active_chunks[info.key])
+			_drop_cache_write(info)
 			assembled += 1
 			continue
 		# Guard against stale entries (chunk was removed while mesh was computing).
 		if _active_chunks.has(info.key):
 			if not info.get("_swap", false):
+				_drop_cache_write(info)
 				assembled += 1
 				continue
 			# Swap (stitch mask changed, or ground rebuilt under a new line or
@@ -3211,7 +3274,16 @@ func _process_assemble_queue() -> void:
 			_remove_chunk(info.key)
 			info.erase("_swap")
 		_assemble_visual_chunk(info, mesh)
+		# An assembly that returned before its cache section.
+		_drop_cache_write(info)
 		assembled += 1
+
+
+## Forget the worker's unpublished cache copy of a mesh that will not be shown.
+func _drop_cache_write(info: Dictionary) -> void:
+	if info.has("_cache_pending"):
+		ChunkDiskCache.discard_pending(String(info["_cache_pending"]))
+		info.erase("_cache_pending")
 
 
 ## Look-ahead prefetch: estimate camera velocity from history and submit
@@ -3536,9 +3608,18 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		# d'y cacher le mesh empêcherait le cache de se remplir.
 		# Nor a chunk on a line whose profile is still waiting for its tiles:
 		# it carries the terrain-hugging ribbon now and the bed later.
-		if _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
+		var _ok := _ht.x >= 0 and planet_data.has_usable_tile(_ht.x, _ht.y) \
 				and _persistable(mesh) \
-				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
+				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix)
+		var _pending := String(info.get("_cache_pending", ""))
+		info.erase("_cache_pending")
+		if not _pending.is_empty():
+			# Written by the mesh worker: publishing it is a rename.
+			if _ok:
+				_chunk_cache.commit_pending(_pending, key, lod, int(info.get("stitch", 0)))
+			else:
+				ChunkDiskCache.discard_pending(_pending)
+		elif _ok:
 			_chunk_cache.save_mesh(key, lod, mesh, int(info.get("stitch", 0)))
 
 	# The road slabs and beds on their own node (after the cache write: the
