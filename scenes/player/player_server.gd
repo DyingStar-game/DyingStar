@@ -58,6 +58,14 @@ var _place: Dictionary = {}
 ## Gait, set by the owner's replicated intent (see server_action_received): sprint held, and the
 ## mouse-wheel-chosen walk speed (0 until first set -> fall back to the default walk_speed).
 var _sprint_held: bool = false
+## strafe_down / strafe_up, -1..1, from the owner (sent on change, like the sprint). Only weightless
+## movement reads it: on the ground Space is the jump and Ctrl nothing.
+var _vertical_thrust: float = 0.0
+## eva_stabilize held (X by default): the weightless brake. Only weightless movement reads it.
+var _stabilizing: bool = false
+## How long the body has had no gravity area, to publish `floating` only once it is real (a reparent
+## drops and re-enters every area for a frame or two).
+var _weightless_time: float = 0.0
 var _stance: int = 0  # 0 = standing, 1 = crouched, 2 = prone (server-authoritative, replicated as "stance")
 var _stance_request: int = 0  # last stance the owner asked for; validated + applied in the physics step
 var _collider: CollisionShape3D = null  # physics capsule (OWN copy — resized per stance, see setup)
@@ -76,9 +84,13 @@ var _seat_count: int = 0
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
 var _vault_count: int = 0
-## True once this body has actually been inside a gravity well. Gates the release to the world
-## frame: before it, an empty gravity stack only means the AreaDetector has not reported yet.
-var _had_gravity: bool = false
+## Seconds between two checks of which frame a weightless body belongs to (see _server_update_frame).
+## A question of hundreds of kilometres: four times a second is plenty, and it spares a Kepler solve per
+## body per tick.
+const FRAME_CHECK_PERIOD := 0.25
+var _frame_check_timer: float = 0.0
+## A frame change is queued (deferred): do not queue a second one on top of it.
+var _frame_move_pending: bool = false
 ## True once the terrain under this body has been seen at least once. See _hold_until_ground.
 var _ground_seen: bool = false
 var _ground_wait: float = 0.0
@@ -289,10 +301,16 @@ func server_action_received(data: Dictionary) -> void:
 	match data["action"]:
 		JUMP:
 			player.is_jumping = true
-			if player.hands_item != null:
-				_server_drop_carried_item()  # jumping drops what you carry
+			# Jumping drops what you carry — a jump that HAPPENS, from the ground. Weightless, Space is also
+			# strafe_up (the same key), and floating with a load is allowed: going up must not drop it.
+			if player.hands_item != null and player.is_on_floor():
+				_server_drop_carried_item()
 		"sprint":
 			_sprint_held = bool(data.get("held", false))  # Shift held: run at sprint_speed
+		"thrust_vertical":
+			_vertical_thrust = clampf(float(data.get("value", 0.0)), -1.0, 1.0)  # weightless up / down
+		"eva_stabilize":
+			_stabilizing = bool(data.get("held", false))  # weightless brake
 		"stance":
 			# Movement stance toggle (0 standing / 1 crouched / 2 prone). Server-authoritative: we set it,
 			# cap the speed + resize the collider from it, and replicate so remotes show the pose. We run in
@@ -849,7 +867,7 @@ func _physics_process_impl(delta: float) -> void:
 		_server_update_carry_prompt(delta)
 	if PropNet.prof_on:
 		PropNet.prof_p_pre_usec += Time.get_ticks_usec() - _tp
-	_server_update_gravity_frame(delta)  # before every early-return below: EVA is exactly who leaves
+	_server_update_frame(delta)  # before every early-return below: EVA is exactly who leaves
 	if _hold_until_ground(delta):
 		return  # nothing under us yet: hold still rather than fall through
 	if _vault_cooldown > 0.0:
@@ -897,6 +915,7 @@ func _physics_process_impl(delta: float) -> void:
 	if player.eva_mode:
 		# EVA free-flight (dev): fly the body where the camera looks, gravity off, collision off.
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
+		_replicate_floating(true)
 		_server_eva_move(delta)
 		player.new_input_from_server = false
 		player.emit_move()
@@ -913,6 +932,8 @@ func _physics_process_impl(delta: float) -> void:
 		_idle_settled_ticks = 0
 
 	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+	_weightless_time = 0.0 if parent_gravity_area != null else _weightless_time + delta
+	_replicate_floating(_weightless_time >= player.ZERO_G_GRACE)
 
 	if parent_gravity_area:
 		if parent_gravity_area.gravity_point:
@@ -929,7 +950,20 @@ func _physics_process_impl(delta: float) -> void:
 		var dir = Vector3(player.input_direction.x, 0, player.input_direction.y)
 		player.player_thruster_force = 10
 		player.velocity += player.global_basis * dir * player.player_thruster_force * delta
-		player.velocity *= 0.98
+		# strafe_up / strafe_down: along the body's OWN up, which is whatever way it floats.
+		player.velocity += player.global_basis.y * _vertical_thrust * player.float_vertical_thrust * delta
+		# Beside a station, the orbit we share with it keeps acting: higher drifts behind, lower ahead
+		# (Clohessy-Wiltshire, OrbitalStation.relative_acceleration). Nothing to add elsewhere: no station,
+		# no orbit modelled.
+		var station: OrbitalStation = OrbitalStation.of(player)
+		if station != null:
+			player.velocity += station.relative_acceleration(player.global_position, player.velocity) * delta
+		# No drag: there is no air up here, and a hidden brake (it used to be x0.98 a tick, 70 % of the speed
+		# gone every second) erased that orbital drift. You keep your speed until you push against it —
+		# which is what the brake does: the thrusters fire against the motion, with their usual authority,
+		# until you are still RELATIVE TO YOUR FRAME (the station, when beside one: station-keeping).
+		if _stabilizing:
+			player.velocity = player.velocity.move_toward(Vector3.ZERO, player.player_thruster_force * delta)
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
@@ -1043,21 +1077,6 @@ func _physics_process_impl(delta: float) -> void:
 	if PropNet.prof_on:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
 
-## Release the body from a planet's frame once its gravity has REALLY been gone (Player.ZERO_G_GRACE),
-## and hand it to the world frame — the planet's own parent, the universe root, where the star sits
-## too, so this is already the star's frame. The mirror of Player's gravity-ENTERED branch, which
-## adopts a body only when it arrives from the world: together they are reference-frame switching at
-## the sphere of influence, the shape space flight will need.
-##
-## Without it, a body that flies away stays a child of the planet and is dragged by its SPIN — about
-## 500 m/s of sideways pull at 1000 km up, which is not what a free body does. (The orbit drags it
-## too, but that part is roughly right: a body near a planet does share its orbital motion.)
-##
-## Checked as STATE every tick, never on the area_exited event. A reparent drops and re-enters every
-## area for a frame or two, and acting on that blip would publish a world position (~3e10) announced
-## as local to the planet: one dropped message and the body is flung across the system.
-## The parent test is the other half of the guard — a seated driver hangs from the vehicle and a
-## player indoors from the building, and neither of them is leaving anything.
 ## Hold a freshly created body still until the terrain under it actually exists. Returns true while
 ## it is being held, and the caller must then do nothing else this tick.
 ##
@@ -1079,14 +1098,13 @@ func _hold_until_ground(delta: float) -> bool:
 	if _ground_seen:
 		return false
 	var terrain: PlanetTerrain = null
-	var walk: Node = player.get_parent()
-	while walk != null:
-		if walk is Planet:
-			terrain = (walk as Planet).planet_terrain
-			break
-		walk = walk.get_parent()
+	var body: Planet = Planet.of(player.get_parent())
+	# In orbit (a station) the nearest body is hundreds of kilometres down: its terrain will never be
+	# "under" us, and waiting for it froze an arriving player for the full timeout.
+	if body != null and body.within_ground_reach(player.global_position):
+		terrain = body.planet_terrain
 	if terrain == null:
-		# Not on a celestial body at all (EVA, a body in transit): nothing to wait for.
+		# Not on a celestial body at all (EVA, a body in transit, a station): nothing to wait for.
 		_ground_seen = true
 		return false
 	if terrain.has_collision_under(player.global_position):
@@ -1103,42 +1121,98 @@ func _hold_until_ground(delta: float) -> bool:
 	return true
 
 
-func _server_update_gravity_frame(delta: float) -> void:
-	if not player.gravity_parents.is_empty():
-		player._no_gravity_time = 0.0
-		_had_gravity = true
+## Which frame a weightless body belongs to — the body whose SPHERE OF INFLUENCE holds it — and the
+## move into it when that changes. The physics decides, not the top of an atmosphere: 400 km up gravity
+## is still 89 % of the ground's, and SandBox rules out to 516 000 km (Planet.sphere_of_influence_m).
+##
+## Staying in the planet's frame is what keeps a body with its planet: that frame carries it along the
+## planet's orbit, 33 km/s. Released at the top of the air, as it used to be, a body lost that motion on
+## the spot — the planet ran away under it, its atmosphere left the sky, and the client purged everything
+## around it. One rule covers every crossing: planet to moon, moon to planet, out to the star's space
+## and back in (which the old gravity-area adoption never could on the server, each planet having a
+## physics world of its own).
+##
+## Only a WEIGHTLESS body is asked: one in a gravity well — standing, walking, falling — belongs to what
+## the tree says (a building, a city, a station's deck), and one riding belongs to its ride. Checked as
+## STATE a few times a second, never on an area event: a reparent drops and re-enters every area.
+func _server_update_frame(delta: float) -> void:
+	if not player.gravity_parents.is_empty() or player.piloting or is_instance_valid(player._seat_node) \
+			or player._in_vehicle_bed != null:
+		_frame_check_timer = 0.0
 		return
-	# ⚠️ You cannot LEAVE a gravity well you were never in. At spawn the AreaDetector needs a few
-	# physics frames to report its overlaps, so gravity_parents is empty to begin with — and without
-	# this guard a body was released into the world frame seconds after spawning, INDOORS, having gone
-	# nowhere. It then sat outside the planet's subtree while the planet carried on at 33 km/s, which
-	# reads in game as being flung into the air and left bobbing in the void.
-	if not _had_gravity:
+	_frame_check_timer += delta
+	if _frame_check_timer < FRAME_CHECK_PERIOD or _frame_move_pending:
 		return
-	player._no_gravity_time += delta
-	if player._no_gravity_time < player.ZERO_G_GRACE:
-		return
-	# Riding something means the ride owns our frame: it is the VEHICLE that would be leaving, not us.
-	if player.piloting or player._in_vehicle_bed != null:
-		return
-	var world: Node = _world_frame_above(player.get_parent())
-	if world != null:
-		print("[Frame] %s released to the world: %.2f s without gravity, was under '%s'" % [
-				player.client_uuid, player._no_gravity_time, player.get_parent().name])
-		player.call_deferred("_safe_reparent_and_sync", world)
+	_frame_check_timer = 0.0
+	var target: Node = _frame_for_here()
+	if target != null:
+		_frame_move_pending = true
+		call_deferred("_move_to_frame", target)
 
 
-## What to hand a body to when it leaves the sphere of influence it is standing in: the parent of the
-## nearest celestial ancestor of [param frame]. Null when there is no such ancestor — we are already
+## The frame this body should move into now, or null when the one it is in is right.
+##
+## Beside a station, the station's frame holds out to its EVA radius (OrbitalStation.holds): both are on
+## the same orbit. Past it, the station's planet. Anywhere else, the innermost sphere of influence holding
+## the body (Server.soi_body_at), or the star's space — the world frame — when none does.
+func _frame_for_here() -> Node:
+	var server = NetworkOrchestrator.network_agent
+	if server == null or not server.has_method("soi_body_at"):
+		return null
+	var station: OrbitalStation = OrbitalStation.of(player)
+	if station != null:
+		return null if station.holds(player.global_position) else Planet.of(station.get_parent())
+	var t: float = Globals.sim_time()
+	var ruler: Planet = server.soi_body_at(server.system_transform_of(player, t).origin, t)
+	if ruler == Planet.of(player):
+		return null
+	return ruler if ruler != null else _world_frame_above(player.get_parent())
+
+
+## Hand the body over to [param frame] (a planet, a moon, or the world) WHERE IT IS.
+##
+## A plain reparent keeps the global transform — and on the server that is a lie: the planet sits at
+## the origin of its own physics world, so "global" there means planet-local. Carried into the world as
+## is, 6 400 km from a planet became 6 400 km from the star: leaving a planet dropped the body in the
+## middle of the system. The real place is the planet's pose NOW (from the clock, as the clients have
+## it) times where the body stood on it, re-expressed in the new frame. Set BEFORE the move is sent, so
+## the one declaration of the new parent already carries the right position.
+func _move_to_frame(frame: Node) -> void:
+	_frame_move_pending = false
+	if not is_instance_valid(frame) or not frame.is_inside_tree() or not player.is_inside_tree() \
+			or player.get_parent() == frame:
+		return
+	var server = NetworkOrchestrator.network_agent
+	if server == null or not server.has_method("system_transform_of"):
+		player._safe_reparent_and_sync(frame)  # nothing to convert with: the old behaviour
+		return
+	var t: float = Globals.sim_time()
+	var in_system: Transform3D = server.system_transform_of(player, t)
+	var frame_pose: Transform3D = Transform3D.IDENTITY
+	if frame is Planet:
+		frame_pose = server.planet_system_pose(frame as Planet, t)
+	var turned_from: Basis = player.global_basis.orthonormalized()
+	player.npc_goal_keep_world(frame)
+	player.reparent(frame)
+	var frame_global: Transform3D = (frame as Node3D).global_transform if frame is Node3D else Transform3D.IDENTITY
+	player.global_transform = frame_global * (frame_pose.affine_inverse() * in_system)
+	# The velocity turns WITH the body. It is relative to the frame just left, and with no drag up here it
+	# lasts: kept in the old axes, a drift away from a station came out pointing anywhere. The frame's own
+	# motion (an orbit, a spin) is not added — this model gives frames no velocity (see _frame_for_here).
+	player.velocity = (player.global_basis.orthonormalized() * turned_from.inverse()) * player.velocity
+	player.emit_move()
+
+
+## The world frame — the star's space — above the nearest celestial ancestor of [param frame]: where a
+## body goes once no sphere of influence holds it. Null when there is no such ancestor — we are already
 ## in the world frame, or under something that is not a celestial body.
 ##
 ## Walks UP because a body is rarely a direct child of its planet: leaving the spawn building parents
 ## it to the CITY, itself a prop on the planet. Testing the direct parent found nothing and the body
 ## stayed glued to the planet all the way into space.
 ##
-## Nesting falls out for free and is correct: from a body on a MOON the walk stops at the moon and
-## returns the moon's parent, its planet — leaving a moon's SOI puts you in the planet's, not in deep
-## space.
+## A moon's planet is NOT what this returns (every body has a world of its own, all under the root):
+## leaving a moon for its planet is Server.soi_body_at's answer, not this walk's.
 static func _world_frame_above(frame: Node) -> Node:
 	var node: Node = frame
 	while node != null:
@@ -1353,6 +1427,14 @@ func _emit_move() -> void:
 	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
 	player.emit_move()
 
+## Publish `floating` when it changes — a replicated STATE (see Player.floating), never every tick.
+func _replicate_floating(now: bool) -> void:
+	if now == player.floating:
+		return
+	player.floating = now
+	player.server_send_properties_to_client({"floating": now})
+
+
 ## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
 ## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
 ## can't tunnel the thin terrain trimesh or trip the below-surface catch, and no gravity is applied
@@ -1361,7 +1443,7 @@ func _emit_move() -> void:
 ## Stops crisply with no input, to line up a steady view of a body's day/night face.
 func _server_eva_move(delta: float) -> void:
 	var look: Basis = player.camera_pivot.global_transform.basis
-	var wish: Vector3 = look * Vector3(player.input_direction.x, 0.0, player.input_direction.y)
+	var wish: Vector3 = look * Vector3(player.input_direction.x, _vertical_thrust, player.input_direction.y)
 	if wish.length_squared() > 0.0001:
 		player.velocity = wish.normalized() * player.eva_speed
 	else:
@@ -2275,12 +2357,11 @@ func _notification(what: int) -> void:
 ## under every bake setting, leaving the NPC able to walk only as far as its own wall. The planet is the
 ## node that actually holds the terrain chunks AND the city (the city spawns with the planet as parent).
 func _npc_nav_world_root() -> Node3D:
-	# <planet>/<body>/PlanetGravity — the same hop Player itself uses to identify its planet.
-	var _grav: Node3D = player.get_current_gravity_parent()
-	if _grav != null and _grav.get_parent() != null:
-		var _planet: Node = _grav.get_parent().get_parent()
-		if _planet is Node3D and "planet_terrain" in _planet:
-			return _planet as Node3D
+	# The body the NPC belongs to (not the grandparent of its gravity area, which is only the planet
+	# while that area is PlanetGravity).
+	var _planet: Planet = Planet.of(player)
+	if _planet != null:
+		return _planet
 	# In space, or no gravity area registered yet: fall back to the whole scene. Broader parse than we
 	# want, but correct — better than silently baking one room.
 	return get_tree().get_current_scene() as Node3D

@@ -42,12 +42,12 @@ func _altitude_only() -> String:
 	var player: Node = owner
 	if not is_instance_valid(player) or not player is Node3D:
 		return "alt --"
-	# The gravity area (PlanetGravity) sits under PlanetTerrain, itself under the Planet.
-	var area = player.get_current_gravity_parent()
-	if area == null or area.get_parent() == null:
+	# The body we belong to, not the one whose gravity holds us: aboard a station the gravity is the
+	# station's own, and reading the planet through it showed "alt --" 400 km up.
+	var planet: Planet = Planet.of(player)
+	if planet == null:
 		return "alt --  (deep space)"
-	var planet: Node = area.get_parent().get_parent()
-	if not (planet is Planet) or (planet as Planet).planet_data == null:
+	if planet.planet_data == null:
 		return "alt --"
 	var data := (planet as Planet).planet_data
 	# TWO numbers, because either one alone lies. `elevation` is the height above the reference

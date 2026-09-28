@@ -139,6 +139,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/props/containers/box_4m.tscn'),
 	'scenes/_universe/structures/urban/cities/sandbox_capital.tscn':
 		preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
+	'scenes/_universe/environment/space/stations/orbital_station.tscn':
+		preload('res://scenes/_universe/environment/space/stations/orbital_station.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
 	'scenes/_universe/structures/industrial/cargo_depot.tscn':
@@ -1185,6 +1187,10 @@ func _pin_pos_to_planet_chunk(best_planet: Planet, body_pos: Vector3, pins_by_pl
 	if not pins_by_planet.has(best_uuid):
 		return
 	if best_planet.planet_data == null:
+		return
+	# A body in orbit (a station's crew) has no ground under it: pinning the chunk 400 km below would
+	# keep terrain collision loaded for nobody.
+	if not best_planet.within_ground_reach(body_pos):
 		return
 	# Planet-LOCAL (body-frame) direction, through the planet's own conversion — the SAME one
 	# PlanetTerrain.collision_chunk_key uses to answer "is the ground here loaded?". They must agree on
@@ -2233,6 +2239,10 @@ var _orbital_abs_cache: Dictionary = {}
 ##
 ## Lazy + cached: message order is not guaranteed, so an unresolved parent returns the best-effort
 ## sum WITHOUT caching it, and the next call retries once the parent has spawned.
+##
+## ⚠️ SPAWN-TIME positions (orbital_position, as Horizon's data has them), fixed: the frame Horizon's zones
+## live in. Where a body REALLY is at an instant — what clients draw, from the clock — is
+## planet_system_pose / system_transform_of; do not mix the two in one computation.
 func _planet_orbital_abs(p: Planet) -> Vector3:
 	if _orbital_abs_cache.has(p.uuid):
 		return _orbital_abs_cache[p.uuid]
@@ -2253,23 +2263,67 @@ func _planet_orbital_abs(p: Planet) -> Vector3:
 ## The Planet whose world [param node] lives in (nearest Planet ancestor), or null for a root-world
 ## node (ship or player in open space).
 func _planet_ancestor_of(node: Node) -> Planet:
-	var n: Node = node
-	while n != null:
-		if n is Planet:
-			return n as Planet
-		n = n.get_parent()
-	return null
+	return Planet.of(node)
 
-## Radius out to which a planet OWNS space: the reference sphere, the tallest terrain rising above
-## it, and the atmosphere shell on top. This is the planet/space FRONTIER — inside it a body belongs
-## in the planet's physics world, outside it in the root world (open space). Terrain height matters:
-## with no atmosphere at all (a bare moon) the bare radius would leave anyone standing on a mountain
-## outside their own planet.
-func _planet_domain_radius(p: Planet) -> float:
-	if p.planet_data == null:
-		return 0.0
-	return p.planet_data.radius + p.planet_data.max_height + p.planet_data.get_atmosphere_top()
 
+## Where [param p] is and how it faces in the SYSTEM frame (star at the origin) at time [param t] — as
+## the clients place it, from the clock. The server never moves a planet (each one sits at the origin of
+## its own physics world), so this is the only way it can tell where one really is NOW; `orbital_position`
+## is the spawn-time value and falls behind at 33 km/s. A moon's orbit is relative to its planet, found
+## through orbital_parent_uuid (on the server they live in separate worlds, not in one tree).
+func planet_system_pose(p: Planet, t: float) -> Transform3D:
+	var origin: Vector3 = p.orbit_offset_at(t)
+	var guard: int = 0
+	var cur: Planet = p
+	while cur.orbital_parent_uuid != "" and guard < 8:  # never loop on a cyclic record
+		guard += 1
+		var parent = props_list["planets"].get(cur.orbital_parent_uuid)
+		if not (parent is Planet) or not is_instance_valid(parent):
+			break
+		cur = parent as Planet
+		origin += cur.orbit_offset_at(t)
+	return Transform3D(p.spin_basis_at(t), origin)
+
+
+## Where [param node] really is in the SYSTEM frame at time [param t]: its planet's pose at that instant
+## times its transform on the planet (the planet sits at its world's origin on the server, so its global
+## transform there IS its planet-local one). A node on no planet is already in the system frame.
+func system_transform_of(node: Node3D, t: float) -> Transform3D:
+	var planet: Planet = Planet.of(node)
+	if planet == null:
+		return node.global_transform
+	# Aboard an orbital station, the station here sits where it was SEEDED — the server moves nothing —
+	# while every client has it on its orbit, anywhere up to a whole orbit away. What stands on it keeps
+	# its place ON the station, and the station goes where it is now: same altitude, so a check of the
+	# distance to the planet passes either way, which is how this hid behind a "correct" probe.
+	var station: OrbitalStation = OrbitalStation.of(node)
+	if station != null:
+		var on_station: Transform3D = station.global_transform.affine_inverse() * node.global_transform
+		var station_pose: Transform3D = station.orbit_pose_at(t)
+		if station_pose != Transform3D.IDENTITY:
+			var centre: Vector3 = planet_system_pose(planet, t).origin
+			return Transform3D(Basis.IDENTITY, centre) * station_pose * on_station
+	return planet_system_pose(planet, t) * (planet.global_transform.affine_inverse() * node.global_transform)
+
+
+
+## The body whose sphere of influence holds SYSTEM-frame point [param sys_pos] at time [param t] — the
+## innermost when they nest, a moon inside its planet's — or null out in the star's own space. This is
+## the frame a free body belongs to (see PlayerServer._server_update_frame): the physics decides, not
+## the top of an atmosphere.
+func soi_body_at(sys_pos: Vector3, t: float) -> Planet:
+	var bodies: Array[Planet] = []
+	var centres := PackedVector3Array()
+	var radii := PackedFloat64Array()
+	for pn in props_list["planets"].values():
+		if not (pn is Planet) or not is_instance_valid(pn):
+			continue
+		var p: Planet = pn as Planet
+		bodies.append(p)
+		centres.append(planet_system_pose(p, t).origin)
+		radii.append(p.sphere_of_influence_m())
+	var i: int = Planet.innermost_holding(sys_pos, centres, radii)
+	return bodies[i] if i >= 0 else null
 
 ## The planet owning TRUE-universe position [param abs_pos], or null for open space. Ties break on
 ## the closest centre, so a moon sitting inside its planet's domain still wins at its own surface.
@@ -2284,7 +2338,9 @@ func _owning_planet(abs_pos: Vector3) -> Planet:
 		if p.planet_data == null:
 			continue
 		var d: float = abs_pos.distance_squared_to(_planet_orbital_abs(p))
-		var max_r: float = _planet_domain_radius(p)
+		# Ground and air (Planet.domain_radius_m): terrain height matters, or with no atmosphere at all
+		# (a bare moon) anyone standing on a mountain would fall outside their own planet.
+		var max_r: float = p.domain_radius_m()
 		if d <= max_r * max_r and d < best_d:
 			best_d = d
 			best = p
@@ -2293,6 +2349,7 @@ func _owning_planet(abs_pos: Vector3) -> Planet:
 ## [param node]'s position in TRUE universe coordinates: orbital + world-local for planet-world
 ## residents (the planet sits at its world's origin with identity basis — the server never spins),
 ## plain global for root-world nodes. Comparable across worlds and against Horizon data.
+## Spawn-time planets, no spin (see _planet_orbital_abs); for "where now", system_transform_of.
 func _true_position(node: Node3D) -> Vector3:
 	var planet := _planet_ancestor_of(node)
 	if planet == null:

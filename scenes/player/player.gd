@@ -118,6 +118,14 @@ var stand_body_height: float = 1.8
 ## remappable in Settings > Controls). A test aid to fly around a body and inspect its day/night faces:
 ## the server detaches the player from gravity and flies it where the camera looks, ignoring collision.
 @export var eva_speed: float = 2000.0
+## Weightless (no gravity area, or the dev EVA flight): the top roll rate of roll_left / roll_right about
+## the view axis, in rad/s...
+@export var float_roll_speed: float = 1.2
+## ...reached at this angular acceleration, in rad/s². Released, the roll dies out on its own: momentum,
+## not a switch. (The strafes no longer do — nothing brakes a drift in space but the eva_stabilize key.)
+@export var float_roll_accel: float = 1.5
+## Weightless: thrust of strafe_up / strafe_down along the body's own up, in m/s².
+@export var float_vertical_thrust: float = 10.0
 @export var player_thruster_force = 10
 
 @export_subgroup("Carry & interaction")
@@ -244,6 +252,11 @@ var seated_role: String = ""
 ## Movement stance, replicated so remotes show it: 0 = standing, 1 = crouched, 2 = prone. Server-owned —
 ## it caps the speed, resizes the collider, and drives the crouch/crawl animation.
 var stance: int = 0
+## Replicated STATE, owned by the server: true while nothing holds the body — no gravity area, or the dev
+## EVA flight. Every client reads it for every avatar (its own and the others'): a body that floats
+## takes no steps. The server is the only one that knows: a client neither tracks another avatar's
+## gravity areas nor is ever told about eva_mode.
+var floating: bool = false
 ## Shared belt attachment point (a BoneAttachment3D on the puppet's hip bone, created by CharacterAnimator):
 ## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
 ## dedicated server (no puppet).
@@ -332,11 +345,9 @@ var _last_head_yaw_sent: float = INF
 # Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
 # gravity areas for a frame or two while the body re-enters PlanetGravity; we only act on a real loss
 # of gravity after it has been gone this long, so that blip changes nothing.
-# Two readers, each in its own role, so they never run on the same instance: the owner client switches
-# to the 0g control scheme (which zeroes the camera pitch, and the blip would snap the look back to
-# the horizon), and the SERVER releases the body from the planet's frame
-# (PlayerServer._server_update_gravity_frame) — where acting on the blip would be far worse than a
-# camera jolt: it would publish a world position as if it were local to the planet.
+# Read by the owner client, which switches to the 0g control scheme (that zeroes the camera pitch, and
+# the blip would snap the look back to the horizon). Which FRAME a body belongs to is no longer tied to
+# gravity at all: see PlayerServer._server_update_frame.
 var _no_gravity_time: float = 0.0
 var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
@@ -679,30 +690,10 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		# re-fired after every reparent (a reparent drops and re-enters every area), so it kept
 		# overwriting the correct declaration. Gravity is a physics concern; the frame is the tree's.
 		gravity_parents.push_back(area)
-		# ...with ONE exception: arriving from SPACE. A body in the world frame that enters a planet's
-		# gravity well has just crossed into its sphere of influence, and from now on it belongs to
-		# that planet's frame — so it is carried when the frame moves, and its position is published
-		# where it is actually measured. This is one half of frame switching at the SOI boundary; the
-		# exited branch below is the other.
-		# "Already in its SUBTREE", not "is its direct child", is what makes the test right. A body on
-		# the ground is rarely a direct child of the planet: leaving the spawn building parents it to
-		# the CITY, itself a prop on the planet. Adopting it here would republish a city-local position
-		# in the planet's frame — the planet-radius offset described above. Only a body arriving from
-		# OUTSIDE the subtree, i.e. from space, is adopted.
-		# It also ends the loop a reparent starts by dropping and re-entering every area: once adopted,
-		# the planet is our ancestor and the test is false.
-		# Deferred because reparenting inside an Area3D callback is illegal.
-		# ...and with a SECOND exception: while seated, the VEHICLE owns our frame
-		# (Vehicle.server_enter parents us to it). A reparent drops and re-enters every area, so
-		# boarding fires this very branch — adopting the planet here would tear us straight back
-		# out of the cab, silently, one frame after taking the seat. The planet is normally
-		# already an ancestor through the vehicle and the test below is false anyway; this makes
-		# it false BY INTENT rather than by where the truck happens to be parked.
-		if OS.has_feature("dedicated_server") and area.name == "PlanetGravity" \
-				and not is_instance_valid(_seat_node):
-			var planet: Node = area.get_parent().get_parent()
-			if not planet.is_ancestor_of(self):
-				call_deferred("_safe_reparent_and_sync", planet)
+		# Not even arriving from space: which body a free body belongs to is decided by its sphere of
+		# influence, hundreds of thousands of km out, not by this area — see
+		# PlayerServer._server_update_frame. (On the server each planet has its own physics world, so a
+		# body out in the world frame could never have overlapped this area anyway.)
 	elif area.is_in_group("vehicle_seat"):
 		# Our own monitor walked into a seat box: remember it so E takes that seat (client prompt).
 		_nearby_seat = area
@@ -728,9 +719,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
-		# NOTE: leaving a planet's frame is NOT decided here. Losing the last gravity area is a state,
-		# not an event — a reparent drops and re-enters every area for a frame or two — so the release
-		# is checked every tick, under Player.ZERO_G_GRACE, by PlayerServer._server_update_gravity_frame.
 	elif area.is_in_group("vehicle_seat"):
 		if _nearby_seat == area:
 			_nearby_seat = null

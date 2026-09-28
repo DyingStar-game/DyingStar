@@ -48,12 +48,34 @@ static func bodies(system: String) -> Array[Dictionary]:
 	return out
 
 
-## Everywhere you can go on [param planet_name]: its POI first, then the derived points.
+## Everywhere you can go on [param planet_name]: the stations orbiting it, its POI, then the derived
+## points.
 static func destinations(planet_name: String) -> Array[TeleportDestination]:
 	var out: Array[TeleportDestination] = []
+	out.append_array(station_destinations(planet_name))
 	out.append_array(poi_destinations(planet_name))
 	out.append_array(derived_destinations(planet_name))
 	return out
+
+
+## The stations orbiting [param planet_name], read from their StationSite files — never from the
+## network, which only hands a client the stations within 200 km of it.
+static func station_destinations(planet_name: String) -> Array[TeleportDestination]:
+	var out: Array[TeleportDestination] = []
+	var system: String = SystemScenes.system_of(planet_name)
+	if system == "":
+		return out
+	var props: Dictionary = SystemScenes.body_properties(system, planet_name)
+	for site: StationSite in StationSites.for_body(system, planet_name):
+		out.append(station_destination(site, planet_name, props))
+	return out
+
+
+## The list entry of [param site], given its body's properties: named, and its orbit described.
+static func station_destination(site: StationSite, planet_name: String,
+		body_props: Dictionary) -> TeleportDestination:
+	var detail: String = "orbit %.0f km, %.1f°" % [site.altitude_above(body_props) / 1000.0, site.inclination_deg]
+	return TeleportDestination.to_station(site, planet_name, TeleportDestination.Kind.STATION, detail)
 
 
 ## POI exported from QGIS. Empty — and that is normal, not a failure — for eighteen of the nineteen

@@ -272,18 +272,16 @@ func _physics_process(delta: float) -> void:
 ## so the transform is settled before the physics step — this node carries the terrain colliders and
 ## every body on it (see _carry_dynamic_bodies, called right after).
 ##
-## NOTE: the SPIN writes the LOCAL basis, so a moon parented to a planet would inherit its planet's
-## spin — correct only for bodies parented directly to the universe root. Only planets orbit for now;
-## revisit the frame when moons spin/orbit on their own.
+## The spin, like the orbit, is given in the PARENT's non-rotating frame and converted into it
+## (Planet.basis_in_frame_of / in_frame_of): a moon is a child of its spinning planet, and writing its
+## spin as a plain local basis made it inherit the planet's day on top of its own — the server, which
+## spins nothing, then disagreed with every client about which way a moon faces (Server.planet_system_pose).
 ## [param apply_spin] false drives the ORBIT ALONE, leaving the basis untouched. No caller needs it
 ## now that the server places nothing, but it stays: it is the knob that made the spin and the orbit
 ## separable, and that distinction is the part worth keeping.
 func _place_at_time(t: float, apply_spin: bool = true) -> void:
 	if apply_spin and rotation_period_hours > 0.0:
-		# fmod BEFORE scaling to TAU: sim time over a ~25 h period is many revolutions, and folding it
-		# back into a single turn first keeps the angle small and precise.
-		var turns: float = fmod(t / (rotation_period_hours * 3600.0), 1.0)
-		basis = Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+		basis = Planet.basis_in_frame_of(get_parent(), spin_basis_at(t))
 	if _orbit != null:
 		# A MOON orbits its planet, and it is a CHILD of that planet, whose basis SPINS on the client.
 		# Writing the Kepler position straight into `position` would therefore let the planet's day
@@ -291,11 +289,112 @@ func _place_at_time(t: float, apply_spin: bool = true) -> void:
 		# parent's basis makes the moon's WORLD offset the Kepler one whatever the parent is doing.
 		# Costs nothing for a planet: its parent is the universe root, whose basis is the identity —
 		# and nothing on the server either, which never spins anything.
-		var frame: Node3D = get_parent() as Node3D
-		if frame != null and frame is Planet:
-			position = frame.basis.inverse() * _orbit.position_at(t)
-		else:
-			position = _orbit.position_at(t)
+		position = Planet.in_frame_of(get_parent(), _orbit.position_at(t))
+
+
+## The body's orientation at time [param t] in its parent frame: tipped by its axial tilt, then turned by
+## its day. What every client applies (_place_at_time) — and what the server, which never turns anything,
+## asks for when it needs to know where the ground was facing at that instant.
+func spin_basis_at(t: float) -> Basis:
+	var turns: float = 0.0
+	if rotation_period_hours > 0.0:
+		# fmod BEFORE scaling to TAU: sim time over a ~25 h period is many revolutions, and folding it
+		# back into a single turn first keeps the angle small and precise.
+		turns = fmod(t / (rotation_period_hours * 3600.0), 1.0)
+	return Basis(Vector3.BACK, deg_to_rad(axial_tilt_deg)) * Basis(Vector3.UP, turns * TAU)
+
+
+## Where the body is at time [param t] relative to what it orbits (the star, or its planet for a moon),
+## in that primary's non-rotating frame: its Kepler orbit when it has elements, else the position the
+## network gave it. Pure — it places nothing, so the server may ask it too.
+func orbit_offset_at(t: float) -> Vector3:
+	if _orbit == null and has_orbit():
+		_build_orbit()
+	return _orbit.position_at(t) if _orbit != null else orbital_position
+
+
+## The LOCAL position, under [param frame], of a point known in [param frame]'s PARENT frame — what a
+## Kepler orbit gives. A Planet's basis tips and SPINS on the client, and an orbiting child (a moon, a
+## station) must not be swept around by that day on top of its real orbit, so the basis is cancelled.
+## Anything else is not a rotating frame and the point goes through as is.
+static func in_frame_of(frame: Node, parent_pos: Vector3) -> Vector3:
+	if frame is Planet:
+		return (frame as Planet).basis.inverse() * parent_pos
+	return parent_pos
+
+
+## Same, for an orientation (a station's attitude).
+static func basis_in_frame_of(frame: Node, parent_basis: Basis) -> Basis:
+	if frame is Planet:
+		return (frame as Planet).basis.inverse() * parent_basis
+	return parent_basis
+
+
+## The celestial body [param node] belongs to: [param node] itself or its nearest Planet ancestor, or
+## null in deep space. A body standing on a planet is rarely its direct child — it hangs from a city,
+## a building, a vehicle, a station — so the walk goes all the way up.
+static func of(node: Node) -> Planet:
+	var walk: Node = node
+	while walk != null and not (walk is Planet):
+		walk = walk.get_parent()
+	return walk as Planet
+
+
+## Metres of clearance above the highest terrain within which a body still counts as near the ground.
+const GROUND_REACH_MARGIN_M := 1000.0
+
+
+## True when [param world_pos] is close enough to the surface for terrain to matter: no farther from
+## the centre than the highest ground plus a margin. Above that — a station in orbit, a body in
+## space — there is no ground to wait for and no terrain chunk to keep loaded under it.
+func within_ground_reach(world_pos: Vector3) -> bool:
+	if planet_data == null:
+		return false
+	var reach: float = planet_data.radius + planet_data.max_height + GROUND_REACH_MARGIN_M
+	return world_pos.distance_squared_to(global_position) <= reach * reach
+
+
+## Radius out to which the body is matter or air: the reference sphere, the tallest terrain above it,
+## and the atmosphere on top. 0 before the PlanetData is known.
+func domain_radius_m() -> float:
+	if planet_data == null:
+		return 0.0
+	return planet_data.radius + planet_data.max_height + planet_data.get_atmosphere_top()
+
+
+## How far this body's gravity rules, in metres: its Laplace sphere of influence, beyond which the pull
+## of what it orbits (the star, or the planet of a moon) takes over. That is where a free body stops
+## belonging to it — not the top of its atmosphere: 400 km up, gravity is still 89 % of the ground's.
+##
+## Worked from the body's own orbit elements, so it needs nothing from the network. Measured against
+## the service: 516 290 km for SandBox, where Horizon announces 516 295 km. Never less than
+## domain_radius_m(), so a body without elements still owns what stands on it and flies through its air.
+func sphere_of_influence_m() -> float:
+	var domain: float = domain_radius_m()
+	if not has_orbit() or orbit_mass_earths <= 0.0:
+		return domain
+	var a: float = (orbit_periapsis_au + orbit_apoapsis_au) * 0.5 / DISTANCE_FACTOR * KeplerOrbit.AU_M
+	var primary: float = orbit_primary_mass_kg if orbit_primary_mass_kg > 0.0 else KeplerOrbit.SOLAR_MASS_KG
+	return maxf(domain, laplace_soi(a, orbit_mass_earths * MASS_EARTH, primary))
+
+
+## Laplace's sphere of influence of a body of mass [param mass_kg] orbiting one of [param primary_kg]
+## at semi-major axis [param semi_major_m]: a · (m / M)^(2/5). Metres in, metres out.
+static func laplace_soi(semi_major_m: float, mass_kg: float, primary_kg: float) -> float:
+	if semi_major_m <= 0.0 or mass_kg <= 0.0 or primary_kg <= 0.0:
+		return 0.0
+	return semi_major_m * pow(mass_kg / primary_kg, 0.4)
+
+
+## Which of the spheres of influence (centres [param centres], radii [param radii], same order) holds
+## [param point]: the SMALLEST that does — a moon's sphere sits inside its planet's, and the moon rules
+## there. -1 when none does: open space, the star's own.
+static func innermost_holding(point: Vector3, centres: PackedVector3Array, radii: PackedFloat64Array) -> int:
+	var best: int = -1
+	for i: int in range(mini(centres.size(), radii.size())):
+		if point.distance_to(centres[i]) <= radii[i] and (best < 0 or radii[i] < radii[best]):
+			best = i
+	return best
 
 
 ## True when the orbit_* elements describe a real orbit (a periapsis or apoapsis was set).
@@ -729,4 +828,3 @@ func _notification(what: int) -> void:
 		transform = _editor_authored
 	elif what == NOTIFICATION_EDITOR_POST_SAVE:
 		transform = _editor_flight if _editor_flight != Transform3D.IDENTITY else _editor_authored
-

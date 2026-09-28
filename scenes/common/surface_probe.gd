@@ -104,6 +104,10 @@ static func explain_under(body: Node3D, down: Vector3, reach: float, mask: int) 
 		return {"family": &"", "source": "aucun", "detail": "rien touche, et aucune planete au-dessus"}
 	if planet.planet_data == null:
 		return {"family": &"", "source": "aucun", "detail": "planete " + planet.name + " sans planet_data"}
+	# Only within reach of the ground: from a station in orbit, "the ground the ray cannot see" is 400 km
+	# down, and answering with it made a floating astronaut walk on Sandbox's corundum.
+	if not planet.within_ground_reach(body.global_position):
+		return {"family": &"", "source": "aucun", "detail": "loin du sol de " + planet.name}
 	# to_local, never a global normalize: the planet sits at ~1e11 m on a client.
 	var radial: Vector3 = planet.to_local(body.global_position)
 	if radial.is_zero_approx():

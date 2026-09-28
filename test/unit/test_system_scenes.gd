@@ -69,3 +69,12 @@ func test_body_properties_reach_the_scene() -> void:
 	var props: Dictionary = SystemScenes.body_properties(KNOWN_SYSTEM, KNOWN_BODY)
 	assert_false(props.is_empty(), "no saved property read for %s" % KNOWN_BODY)
 	assert_true(props.has("display_name"), "display_name missing from %s" % KNOWN_BODY)
+
+
+## Station sites (.tres) go through the same export remap as scenes: without the strip, an exported build
+## would list no station at all — the teleporter's empty list all over again (see StationSites.of_system).
+func test_a_remapped_resource_keeps_its_editor_name() -> void:
+	var tres := PackedStringArray([".tres"])
+	assert_eq(SystemScenes.file_name_of("palaka_pital.tres.remap", tres), "palaka_pital.tres")
+	assert_eq(SystemScenes.file_name_of("palaka_pital.tres", tres), "palaka_pital.tres")
+	assert_eq(SystemScenes.file_name_of("station_site.gd.remap", tres), "")

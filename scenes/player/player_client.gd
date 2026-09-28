@@ -86,6 +86,9 @@ var _smooth_right: float = 0.0    # low-passed right component (m/s, body frame)
 var _loco_last_forward: Vector3 = Vector3.ZERO  # previous body forward, to derive the yaw rate (in-place turn)
 var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + = one way, - = the other
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
+var _vertical_sent: float = 0.0  # last strafe_up/strafe_down axis sent (weightless thrust)
+var _stabilize_sent: bool = false  # last eva_stabilize state sent (weightless brake)
+var _roll_rate: float = 0.0  # weightless roll, rad/s, with momentum (see _update_roll)
 ## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
 var _camera_thief: String = ""
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
@@ -152,6 +155,11 @@ func setup() -> void:
 		player._spawn_wheel.title = "Spawn"
 		player.get_node("UserInterface").add_child(player._spawn_wheel)
 		player._spawn_wheel.option_selected.connect(_on_spawn_selected)
+
+	# The dev clock (+ / -) is this client's alone: while it is shifted, say so in red, or stations and
+	# frame changes stop lining up with the server without a word (see DevClockWarning).
+	if Globals.is_dev_tool_enabled(&"debug_time"):
+		player.get_node("UserInterface/HUD").add_child(DevClockWarning.new())
 
 	# Shadow budget for the other players' torches: only the nearest few cast (see the class).
 	var torch_budget := TorchShadowBudget.new()
@@ -353,7 +361,7 @@ func _process(_delta: float) -> void:
 					collider.interact(player)
 					player.interact_label.hide()
 
-	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: E opens/closes it.
+	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: `action` opens/closes it.
 	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
 	# A handle is offered wherever it can be SEEN, not only where a seat happens to be. The seat
 	# test that used to gate this was written for cab doors, which always sit beside one — and it
@@ -486,6 +494,17 @@ func _physics_process(delta: float) -> void:
 	if sprint_held != _sprint_sent:
 		_sprint_sent = sprint_held
 		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
+	# strafe_up / strafe_down (Space / Ctrl by default), sent on change like the sprint. The server only
+	# reads it while weightless; on the ground Space is still the jump.
+	var vertical: float = 0.0 if input_locked else Input.get_axis("strafe_down", "strafe_up")
+	if vertical != _vertical_sent:
+		_vertical_sent = vertical
+		player.client_send_action_to_server({"action": "thrust_vertical", "value": vertical})
+	# eva_stabilize (X by default): the weightless brake, held. Same wire, same rule.
+	var stabilize: bool = Input.is_action_pressed("eva_stabilize") and not input_locked
+	if stabilize != _stabilize_sent:
+		_stabilize_sent = stabilize
+		player.client_send_action_to_server({"action": "eva_stabilize", "held": stabilize})
 
 	# Crouch / prone are TOGGLES, server-authoritative: each press cycles standing <-> that stance. The
 	# server owns `stance`; we only request the change (from the last echoed value) and apply the reply.
@@ -663,6 +682,7 @@ func _handle_camera_motion() -> void:
 
 	if parent_gravity_area:
 		player._no_gravity_time = 0.0
+		_roll_rate = 0.0  # gravity holds the body upright again: a roll must not resume at the next EVA
 		if parent_gravity_area.gravity_point:
 			player.up_direction = parent_gravity_area.global_position.direction_to(player.global_position)
 		else:
@@ -680,9 +700,18 @@ func _handle_camera_motion() -> void:
 		if player._no_gravity_time >= player.ZERO_G_GRACE:
 			# 0g movement
 			player.gravity = 0.0
-			player.camera_pivot.rotation.x = 0
+			# Weightless, the whole BODY turns (yaw, pitch, roll) and the camera no longer tilts on its own.
+			# Hand the camera's pitch over to the body instead of dropping it: zeroed alone, the view
+			# snapped back to the horizon the instant gravity let go, when leaving a platform should carry
+			# on where you were looking. The same angle about the same axis: the view does not move.
+			# A no-op every frame after the first, the pitch being zero from then on.
+			var pitch: float = player.camera_pivot.rotation.x
+			if pitch != 0.0:
+				player.rotate_object_local(Vector3.RIGHT, pitch)
+				player.camera_pivot.rotation.x = 0
 			player.rotate_object_local(Vector3.UP, look.x * player.camera_sensitivity)
 			player.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
+			_update_roll(player.get_process_delta_time())
 
 	_replicate_look()  # send pitch (+ seated yaw) so others aim the tool + tilt the head where we look
 
@@ -795,7 +824,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var seated_handle = _aimed_door_handle()
 		if seated_handle != null:
 			_toggle_door(seated_handle)
-		return  # seated: E only operates doors, never carry
+		return  # seated: `action` only operates doors, never carry
 
 	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk
 	# guard. A seated player has player.active = false, which used to swallow every one of them at the
@@ -826,7 +855,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# offered it — the prompt and the action were gated in two separate places, and only one of
 		# them had been lifted. Priority over boarding is kept by ORDER: this branch runs first.
 		#
-		# Hands free only. Carrying, E puts the load down (or fits it into a bay) instead of working
+		# Hands free only. Carrying, `action` puts the load down (or fits it into a bay) instead of working
 		# a door — the same choice the boarding branch below already makes. It is also what lets you
 		# aim INTO an open hatch to fit a part: the handle's box covers the whole door, so without
 		# this you would shut the hatch instead of filling it.
@@ -1467,6 +1496,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	if data.has("stance"):
 		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
+	if data.has("floating"):
+		player.floating = bool(data["floating"])  # weightless: no footsteps (see _update_footsteps)
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	# The OWNER obeys the authoritative tool state as well. It used to be applied on remote avatars
@@ -1570,6 +1601,21 @@ func _sample_locomotion(delta: float) -> void:
 		"teleport": teleport,
 	}
 
+## Roll (roll_left / roll_right) about the view axis, weightless only: with a gravity area the body is
+## held upright by orient_player. With momentum: the key accelerates the roll, and a released roll dies out
+## on its own at 0.98 a tick (the strafes no longer do: nothing brakes a drift but eva_stabilize).
+## The body's rotation already goes to the server with each move, so nothing new crosses the wire.
+func _update_roll(delta: float) -> void:
+	var roll: float = 0.0 if _input_locked() else Input.get_axis("roll_left", "roll_right")
+	_roll_rate += roll * player.float_roll_accel * delta
+	_roll_rate = clampf(_roll_rate, -player.float_roll_speed, player.float_roll_speed)
+	_roll_rate *= pow(0.98, delta * Engine.physics_ticks_per_second)
+	if absf(_roll_rate) > 0.0001:
+		player.rotate_object_local(Vector3.BACK, -_roll_rate * delta)
+	else:
+		_roll_rate = 0.0
+
+
 ## Footsteps, measured in DISTANCE WALKED rather than time: one step per `sfx_footstep_stride` metres.
 ## The cadence then follows the speed for free (running covers ground faster => faster steps), it works
 ## the same on our own body and on a remote avatar (whose position is interpolated, with no velocity or
@@ -1580,8 +1626,9 @@ func _update_footsteps(delta: float) -> void:
 	var s: Dictionary = player.locomotion_sample
 	if s.is_empty():
 		return
-	# Seated in a vehicle, or a teleport / spawn snap (the whole offset in one frame): no steps.
-	if bool(s["seated"]) or bool(s["teleport"]):
+	# Seated in a vehicle, a teleport / spawn snap (the whole offset in one frame), or floating — an EVA,
+	# the dev flight: nothing under the feet to step on.
+	if bool(s["seated"]) or bool(s["teleport"]) or player.floating:
 		_step_distance = 0.0
 		return
 	var climb_speed: float = float(s["climb_speed"])  # vertical part: jumping / falling / a lift
