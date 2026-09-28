@@ -1,4 +1,4 @@
-extends StaticBody3D
+extends NetStaticBody  # the uuid facade (see NetStaticBody)
 
 ## Networked mining depot. Networking (uuid, replication, reparent, delete) lives in the PropSync child
 ## node (type_name "mining_depot", non-carriable); machine state is applied via apply_prop_data(), and
@@ -19,22 +19,6 @@ const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
 var type_name = "mining_depot"  # kept for the placeholder self-spawn; PropSync carries the networked copy
 var state := "idle"
 
-var _sync: PropSync
-
-## Cached PropSync child, resolved lazily so a facade access before _ready still works.
-func _prop_sync() -> PropSync:
-	if _sync == null:
-		_sync = PropSync.of(self)
-	return _sync
-
-var uuid: String:
-	get:
-		var s := _prop_sync()
-		return s.uuid if s != null else ""
-	set(value):
-		var s := _prop_sync()
-		if s != null:
-			s.uuid = value
 var rocks_on_conveyor := 0
 # Refining stats (volumes in m3). rock_volume = total rock processed; ore_volume = total
 # ore obtained from it; extracted_volume = ore already packed into crates. Available ore
