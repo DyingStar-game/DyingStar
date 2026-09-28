@@ -328,13 +328,6 @@ func test_following_carries_the_view_without_undoing_your_orbit() -> void:
 			"the angle you chose survives: the view moved exactly as much as the ground did")
 
 
-## A turn in flight owns the wheel. Steering it a degree at a time from the tracking would fight it.
-func test_following_does_not_fight_a_travel_in_flight() -> void:
-	_cam.aim_from(Vector3(0.0, 0.0, 1.0))
-	var mid_yaw: float = _cam.yaw
-	_cam.turn_by(Quaternion(Vector3.UP, 0.5))
-	assert_eq(_cam.yaw, mid_yaw, "the tracking stands aside while the travel runs")
-
 
 # ---------------------------------------------------------------------------
 # Zooming
@@ -374,3 +367,33 @@ func test_repeated_notches_settle_onto_the_floor() -> void:
 	for _i: int in range(200):
 		_cam.scale_zoom(1.0 / StarMapCamera.ZOOM_STEP, radius)
 	assert_almost_eq(_cam.distance(), radius + CLEARANCE_UNITS, CLEARANCE_UNITS * 0.01)
+
+
+## A place that moves while the camera flies to it — a station covers 3.5 km in the 0.45 s — must still be
+## centred on arrival. The follow turns BOTH ends of the travel; refused mid-flight, the turn was lost and a
+## station framed from 7 km arrived 26° off, for good.
+func test_a_place_moving_during_the_travel_is_centred_on_arrival() -> void:
+	var target: Vector3 = Vector3(0.3, 0.2, -0.9).normalized()
+	_cam.aim_from(target)
+	_cam.advance(StarMapCamera.TRANSITION_S * 0.5)
+	assert_true(_cam.is_travelling(), "still on the way")
+	var moved: Quaternion = Quaternion(Vector3.UP, 0.05)
+	_cam.turn_by(moved)
+	_cam.advance(StarMapCamera.TRANSITION_S)
+	var expected: Vector3 = (moved * target).normalized()
+	var facing: Vector3 = _cam.direction()
+	assert_almost_eq(facing.x, expected.x, 0.001)
+	assert_almost_eq(facing.y, expected.y, 0.001)
+	assert_almost_eq(facing.z, expected.z, 0.001)
+
+
+## Settled, a turn is simply applied, as it always was.
+func test_a_settled_view_turns_with_the_place() -> void:
+	var before: Vector3 = _cam.direction()
+	var moved: Quaternion = Quaternion(Vector3.RIGHT, 0.1)
+	_cam.turn_by(moved)
+	var expected: Vector3 = (moved * before).normalized()
+	var facing: Vector3 = _cam.direction()
+	assert_almost_eq(facing.x, expected.x, 0.001)
+	assert_almost_eq(facing.y, expected.y, 0.001)
+	assert_almost_eq(facing.z, expected.z, 0.001)

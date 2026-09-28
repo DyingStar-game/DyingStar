@@ -132,6 +132,12 @@ const ORBIT_ALPHA: float = 0.65
 const ORBIT_MIN_VALUE: float = 0.85
 const AXIS_COLOR: Color = Color(1.0, 1.0, 1.0, 0.55)
 const PLAYER_COLOR: Color = Color(1.0, 0.35, 0.35)  # you, deliberately unlike any body
+## The POI kind a station is drawn as: its icon and tint come from the same table as the towns'
+## (poi_icons.tres, rule orbital_by_type), so a station reads alike on the ground list and in orbit.
+const STATION_POI_KIND: String = "orbital station"
+## A station, its orbit and its name only appear once the camera is within this many radii of the body
+## it orbits: from further out, a 400 km orbit is a halo hugging the planet and the icon sits on it.
+const STATION_VISIBLE_RADII: float = 16.0
 ## Radius of the marker on the ground, as a fraction of the view — about eight tenths of a percent of
 ## the screen height, ten pixels or so.
 ##
@@ -139,9 +145,19 @@ const PLAYER_COLOR: Color = Color(1.0, 0.35, 0.35)  # you, deliberately unlike a
 ## to stop a DISTANT body vanishing, drew it a single pixel across as soon as you came close. The stem
 ## was visible and the marker at its foot was not.
 const PLAYER_MARKER: float = 0.0045
-## Length of the "you" stem, as a fraction of the view — so it stays the same size on screen whatever
-## the zoom, exactly like the labels.
+## Length of the "you" stem, as a fraction of the distance from the camera to the MARKER — so it stays the
+## same size on screen whatever the zoom, exactly like the labels. Once a fraction of the view (the
+## distance to the body's CENTRE): 376 km of stem over a station 87 km from the camera, which put its tip,
+## and your name on it, behind the camera.
 const PLAYER_STEM: float = 0.055
+## How close to your marker's centre a click or the cursor counts as on it, in pixels. The dot itself is a
+## few pixels wide; its name is the other, bigger target (see _player_under).
+const PLAYER_PICK_PX: float = 12.0
+## How far you must have gone since the chart was closed, as a share of the ground its view spanned, for it
+## to reopen on you rather than where it was (see _moved_since_closed).
+const MOVED_FRACTION: float = 0.25
+## Your marker is drawn after everything else on the chart (see _rebuild): the highest priority there is.
+const PLAYER_RENDER_PRIORITY: int = Material.RENDER_PRIORITY_MAX
 ## Where orbit rings fade out, in view units.
 ##
 ## Only ONCE YOU ARE ON A PLANET do the unrelated rings stop being information and start being noise:
@@ -338,6 +354,19 @@ var _player: Node3D = null
 ## body you are standing on. -1 / null when there is no player.
 var _player_index: int = -1
 var _player_ray: MeshInstance3D = null
+## Which way you look in the game, drawn from your marker (see StarMapViewCone).
+var _view_cone: StarMapViewCone = null
+## False until the chart is first opened: that first opening lands on you (see _open_on_player).
+var _opened_before: bool = false
+## Where you were when the chart was last closed: the body you belonged to (null in open space) and your
+## place in its own frame, in metres. Reopening after you have travelled comes back to you (see open).
+var _left_body: Planet = null
+var _left_at: Vector3 = Vector3.ZERO
+## ...and how much ground the view then spanned: the camera's height above it, in units (see
+## _moved_since_closed). The distance to the body's CENTRE would have made a 1 600 km walk look like nothing.
+var _left_span: float = 0.0
+## Live planets by key, for this frame only (see _live_planet). Cleared at the top of _process.
+var _live_cache: Dictionary = {}
 ## How far the outermost orbit reaches, in units. The far plane must clear it whatever the zoom, or
 ## approaching one body hides every other — the chart is 2400 units wide and the camera may sit one
 ## unit from its target.
@@ -361,11 +390,57 @@ func setup(player: Node3D) -> void:
 func open() -> void:
 	_rebuild()
 	show()
+	if not _opened_before or _moved_since_closed():
+		_opened_before = true
+		_open_on_player()
+
+
+## Have you travelled since the chart was closed — to another body, or further than a quarter of the ground
+## the view then spanned (_left_span, the camera's height above it)? Measured in your body's OWN frame: in
+## the system's, standing still still covers 33 km a second with the planet. A walk leaves the view alone; a
+## teleport, a flight, a station's orbit bring it back to you.
+func _moved_since_closed() -> bool:
+	if not is_instance_valid(_player):
+		return false
+	var body: Planet = Planet.of(_player)
+	var same_body: bool = (body == null and _left_body == null) \
+			or (body != null and is_instance_valid(_left_body) and body == _left_body)
+	if not same_body:
+		return true
+	var moved_units: float = _place_in(body).distance_to(_left_at) * UNITS_PER_METRE
+	return moved_units > _left_span * MOVED_FRACTION
+
+
+## Your place in [param body]'s own frame, in metres; in the world when there is no body (open space).
+func _place_in(body: Planet) -> Vector3:
+	if body == null:
+		return _player.global_position
+	return body.to_local(_player.global_position)
+
+
+## The FIRST opening lands on you, as if Moi had been pressed, and so does any opening after you have
+## TRAVELLED (_moved_since_closed); otherwise the chart is found where it was left, which is worth keeping.
+## A first look at the whole system says nothing about where you are in it, and Moi was not an obvious
+## thing to click (DDurieux); a view of where you USED to be is no better.
+##
+## Flown to from wherever the chart stood — the whole system, the first time — with its usual short travel:
+## the move itself shows where you are. One refresh first, because framing reads where the bodies ARE and how they are
+## turned, and right after a rebuild nothing has been tracked yet — framing then aims at the origin, inside
+## the star.
+func _open_on_player() -> void:
+	if _player_index < 0:
+		return
+	_process(0.0)
+	_on_me_pressed()
 
 
 func close() -> void:
 	_dragging = false
 	_clear_search()
+	if is_instance_valid(_player):
+		_left_body = Planet.of(_player)
+		_left_at = _place_in(_left_body)
+		_left_span = maxf(_view - _guard_radius(), _view * 1.0e-5)
 	# The ground is KEPT. Dropping it here threw away every tile, both pack handles and the tile service
 	# with its queue, so each F2 paid for the whole view again — a few hundred tiles rebuilt, a network
 	# round trip for a version that had not changed — to redraw exactly what was on screen a second ago.
@@ -473,6 +548,9 @@ func _build_ui() -> void:
 	_halo.material_override = halo_material
 	_world_root.add_child(_halo)
 
+	# Over the 3D chart, under every panel: added here, after the viewport and before the rest.
+	_view_cone = StarMapViewCone.new()
+	add_child(_view_cone)
 	_readout = Label.new()
 	_readout.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_readout.position = Vector2(16, 16)
@@ -566,6 +644,10 @@ func _rebuild() -> void:
 			child.queue_free()
 	_bodies.clear()
 	_cam.focus = -1  # re-resolved from the key at the end, once the bodies exist again
+	# Hover is not re-resolved: it points into the list being thrown away, and would enlarge whatever now
+	# sits at that index until the cursor moves.
+	_hover = -1
+	_poi_hover = -1
 	_player_index = -1
 	_player_ray = null
 
@@ -577,6 +659,7 @@ func _rebuild() -> void:
 	var files: PackedStringArray = SystemScenes.body_files(SYSTEM)
 	var known: Dictionary = {}
 	var index_of: Dictionary = {}  # scene key -> index in _bodies
+	var props_of: Dictionary = {}  # scene key -> its saved properties, for the stations below
 	for file_name: String in files:
 		var key: String = file_name.get_basename()
 		var props: Dictionary = SystemScenes.root_properties(SystemScenes.path_of(SYSTEM, file_name))
@@ -584,6 +667,7 @@ func _rebuild() -> void:
 			and float(props.get("orbit_apoapsis_au", 0.0)) <= 0.0:
 			continue  # no elements: it can only be placed from a live node (see below)
 		known[key] = true
+		props_of[key] = props
 		# A moon's elements are measured from its PLANET, not the star, so its drawn position is its
 		# planet's plus its own. SystemScenes owns the naming convention that pairs the two.
 		var primary: int = -1
@@ -607,6 +691,8 @@ func _rebuild() -> void:
 		# The panel wants the semi-major axis, and the elements are right here.
 		_bodies[-1]["orbit_au"] = 0.5 * (float(props.get("orbit_periapsis_au", 0.0))
 				+ float(props.get("orbit_apoapsis_au", 0.0)))
+
+	_add_stations(index_of, props_of)
 
 	# Bodies with no elements of their own — the moons. They keep a network offset, so they can only
 	# be drawn when they are actually loaded, and their position is read live.
@@ -653,14 +739,27 @@ func _rebuild() -> void:
 		_add_body(PLAYER_KEY, tr("%%HUD_MAP_YOU"), PLAYER_COLOR, 0.0, null, _player, 0.0, 0.0, -1, true)
 		_player_index = _bodies.size() - 1
 		_player_ray = MeshInstance3D.new()
-		_player_ray.material_override = _flat_material(PLAYER_COLOR)
+		# White: the colour is in the line's vertices (the highlight tint). A coloured material multiplied it
+		# a second time, and the stem never matched the dot it stands on.
+		_player_ray.material_override = _flat_material(Color.WHITE)
 		_world_root.add_child(_player_ray)
 		# Drawn over everything rather than depth-tested: the marker sits on the MEAN surface while the
 		# relief around it rises by up to a couple of percent, so a hill between you and the camera would
 		# otherwise bury the one thing on the chart you are looking for. The far side is handled by
 		# _hidden_behind, which is a geometric question rather than a depth-buffer one.
+		#
+		# And drawn LAST, over everything else — towns, stations, names. Skipping the depth test is not
+		# enough: Godot draws the opaque things first and the transparent ones after, and every badge is
+		# transparent, so an opaque marker came out UNDER the towns around it. Moved to the transparent
+		# pass, with the highest priority, nothing is drawn after it; the name above its own outline.
 		for node: MeshInstance3D in [_bodies[_player_index]["sphere"], _player_ray]:
-			(node.material_override as StandardMaterial3D).no_depth_test = true
+			var mat := node.material_override as StandardMaterial3D
+			mat.no_depth_test = true
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.render_priority = PLAYER_RENDER_PRIORITY - 1
+		var name_tag: Label3D = _bodies[_player_index]["label"]
+		name_tag.outline_render_priority = PLAYER_RENDER_PRIORITY - 1
+		name_tag.render_priority = PLAYER_RENDER_PRIORITY
 
 
 	# Zoom, yaw and pitch simply survive as member state; the focus has to be looked up again, because
@@ -691,7 +790,7 @@ func _build_search_index() -> void:
 			"body": i, "poi": -1,
 		})
 		var key: String = str(_bodies[i]["key"])
-		if key == STAR_KEY or key == PLAYER_KEY:
+		if not _has_towns(_bodies[i]):
 			continue
 		var pois: Array[Dictionary] = StarMapPoi.load_for(key)
 		for p: int in range(pois.size()):
@@ -773,6 +872,102 @@ func _add_body(key: String, label_text: String, colour: Color, radius_m: float, 
 		# orbit_au is — a scene knows things _add_body has no business taking as arguments.
 		"colour": colour, "ground_rock": "",
 	})
+
+
+## The system's stations, each drawn as a body orbiting its planet. Read from their StationSite files,
+## never from the network, which only hands a client the stations within 200 km of it.
+##
+## A StationOrbit IS a KeplerOrbit, expressed in the same parent frame as a moon's, so the ring, the
+## position that follows the clock, hover, focus and the ring fading all come with _add_body. What a
+## station does not get is a globe: at 255 m it would be sub-pixel from anywhere a planet is visible.
+## It gets its icon instead, at the constant on-screen size a zero radius gives (like your marker).
+func _add_stations(index_of: Dictionary, props_of: Dictionary) -> void:
+	for site: StationSite in StationSites.of_system(SYSTEM):
+		if not index_of.has(site.body_key):
+			continue  # its body has no elements, so there is nowhere to draw it from
+		var body_props: Dictionary = props_of[site.body_key]
+		# Named by its id, NOT its proper name: the icon rules are tried in order and the first one is
+		# the capital's, which matches any name starting "palaka-pital" — the Palaka-Pital station came
+		# out wearing the capital's icon. Only the kind has to match, and an id matches no town.
+		var poi: Dictionary = {"kind": STATION_POI_KIND, "name": site.id}
+		var tint: Color = StarMapPoiLayer.ICONS.tint_for(poi)
+		_add_body(site.id, site.display_name(), tint, 0.0, site.orbit(body_props), null, 0.0, 0.0,
+				int(index_of[site.body_key]), true)
+		var entry: Dictionary = _bodies[-1]
+		entry["station"] = site
+		entry["altitude_m"] = site.altitude_above(body_props)
+		entry["poi"] = poi
+		_iconify(entry, StarMapPoiLayer.ICONS.icon_for(poi), tint)
+
+
+## Draw [param entry] as [param icon] rather than a sphere. The sphere node stays — it is what the chart
+## moves and picks — but loses its mesh. The icon is NOT its child: a zero-radius body is shrunk to a
+## dot, and a child would shrink with it. It is placed and sized each frame instead
+## (_place_station_icons), exactly like a town's.
+func _iconify(entry: Dictionary, icon: Texture2D, tint: Color) -> void:
+	var sphere: MeshInstance3D = entry["sphere"]
+	sphere.mesh = null
+	entry["sphere_mesh"] = null  # nothing to give back when the ground steps aside
+	if icon == null:
+		return
+	var sprite := Sprite3D.new()
+	sprite.texture = icon
+	sprite.modulate = tint
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.no_depth_test = true
+	sprite.shaded = false
+	sprite.pixel_size = 1.0 / float(maxi(icon.get_height(), 1))  # one unit TALL, as a town's (_place_icon)
+	_world_root.add_child(sprite)
+	entry["icon"] = sprite
+
+
+## Show the stations whose body is near enough (STATION_VISIBLE_RADII), and only where their body does
+## not hide them — like a town on the far side. Each icon is put on its station and sized on ITS distance
+## to the camera, the towns' rule (StarMapPoiLayer.ICON_SIZE), so it reads like a place and not a speck.
+##
+## The sphere's visibility is set too: it carries no mesh, but it is what a click finds (see _pick_pass),
+## and a station that is not shown must not be clickable.
+func _refresh_stations() -> void:
+	var eye: Vector3 = _camera.global_position
+	for i: int in range(_bodies.size()):
+		var entry: Dictionary = _bodies[i]
+		if not entry.has("station"):
+			continue
+		var sphere: MeshInstance3D = entry["sphere"]
+		var near: bool = _station_near(i)
+		var shown: bool = _station_shown(i)
+		sphere.visible = shown
+		var ring: MeshInstance3D = entry["ring"]
+		if ring != null:
+			ring.visible = ring.visible and near  # the far half of the ring is the ring: not occluded
+		var label: Label3D = entry["label"]
+		label.visible = label.visible and shown
+		var sprite: Sprite3D = entry.get("icon") as Sprite3D
+		if sprite != null and is_instance_valid(sprite):
+			# Pointed at or selected: bigger and brighter, the towns' own rule (StarMapPoiLayer).
+			var selected: bool = i == _cam.focus
+			var hovered: bool = i == _hover
+			var grow: float = StarMapPoiLayer.ICON_HOVER_SCALE if selected or hovered else 1.0
+			sprite.visible = shown
+			sprite.position = sphere.position
+			sprite.scale = Vector3.ONE * eye.distance_to(sprite.position) * StarMapPoiLayer.ICON_SIZE * grow
+			sprite.modulate = StarMapPoiLayer.highlight_tint(entry["poi"], selected, hovered)
+
+
+## Is station [param index] near enough to its body to be drawn (STATION_VISIBLE_RADII)? Its ring follows this.
+func _station_near(index: int) -> bool:
+	var body: MeshInstance3D = _bodies[int(_bodies[index]["primary"])]["sphere"]
+	return is_instance_valid(body) and _camera.global_position.distance_to(body.position) \
+			<= body.scale.x * MESH_RADIUS * STATION_VISIBLE_RADII
+
+
+## ...and not hidden behind it, like a town on the far side. Its icon, its name, its pick and its halo all
+## follow this: ONE answer, asked by each in the same frame — the names used to be ranked before it was known,
+## so a hidden station could take the slot and hide its own planet's name.
+func _station_shown(index: int) -> bool:
+	var body: MeshInstance3D = _bodies[int(_bodies[index]["primary"])]["sphere"]
+	var sphere: MeshInstance3D = _bodies[index]["sphere"]
+	return _station_near(index) and not _behind_sphere(sphere.position, body)
 
 
 ## The catalogue rock a body's ground is made of, or "" when the chart cannot tell.
@@ -882,6 +1077,7 @@ func _flat_material(colour: Color) -> StandardMaterial3D:
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	_live_cache.clear()
 	# Held rather than tapped: zooming across four orders of magnitude one notch at a time is tedious.
 	# POLLED, not consumed — and that is why the search box has to be asked first. A LineEdit eats the
 	# key events it receives, but it cannot eat a poll: typing "-" in the box would have zoomed the chart
@@ -915,6 +1111,7 @@ func _process(delta: float) -> void:
 	_refresh_lighting()
 	_refresh_points_of_interest()
 	_refresh_rings()
+	_refresh_stations()  # after the rings: it has the last word on a station's ring
 	_refresh_plane()
 	_refresh_halo()
 	_refresh_info()
@@ -980,6 +1177,8 @@ func _followed_id() -> String:
 		return "poi:%s:%d" % [_poi_key, _poi_focus]
 	if _cam.focus == _player_index and _player_index >= 0:
 		return "me"
+	if _cam.focus >= 0 and _cam.focus < _bodies.size() and _bodies[_cam.focus].has("station"):
+		return "station:%s" % _bodies[_cam.focus]["key"]
 	return ""
 
 
@@ -996,10 +1195,16 @@ func _followed_normal(t: float) -> Vector3:
 	# Each branch checks that the place belongs to the body being WATCHED. A direction is body-fixed:
 	# applied to the wrong body's spin it names somewhere else entirely, and the view would creep away
 	# from the thing it is supposed to be holding still.
-	if _poi_focus >= 0 and _poi_focus < _poi_layer.entries.size() 			and str(_bodies[body]["key"]) == _poi_key:
+	if _poi_focus >= 0 and _poi_focus < _poi_layer.entries.size() \
+			and str(_bodies[body]["key"]) == _poi_key:
 		local = _poi_layer.entries[_poi_focus]["dir"]
 	elif _cam.focus == _player_index and _player_index >= 0 and body == _nearest_body_to_player():
 		local = _player_local_dir(body)
+	elif _cam.focus >= 0 and _cam.focus < _bodies.size() and _bodies[_cam.focus].has("station") \
+			and int(_bodies[_cam.focus]["primary"]) == body:
+		# A station is not body-fixed: it orbits. Its direction comes straight from where its ORBIT has it,
+		# already in the drawn frame — at 7.7 km/s it would leave a 7 km view within a second otherwise.
+		return (_bodies[_cam.focus]["true_pos"] - _bodies[body]["true_pos"]).normalized()
 	if local.length_squared() <= 0.0:
 		return Vector3.ZERO
 	return (_spin_basis(_bodies[body], t) * local).normalized()
@@ -1047,6 +1252,7 @@ func _dress_bodies(t: float) -> void:
 			continue
 		var radius_units: float = float(entry["radius_m"]) * UNITS_PER_METRE
 		var size: float = 0.0
+		var gap_from: float = _view  # what the name's clearance is a share of (a station: its own distance)
 		if str(entry["key"]) == STAR_KEY:
 			# The star, brought inside the frustum rather than allowed to fall out of it. Everything else
 			# is left where it is: a planet out of range at this distance is a sub-pixel dot, and faking
@@ -1069,6 +1275,12 @@ func _dress_bodies(t: float) -> void:
 			# the position recorded here, and a size worked out from the tracked position is a size for a
 			# distance forty times too long. That is what made it fill the screen at two hundred metres.
 			size = _view * BODY_MIN_SIZE
+		elif entry.has("station"):
+			# A POINT, like your marker: sized on the distance to IT. On the view — the distance to the planet's
+			# centre — a station framed from 7 km had a 3.4 km pick radius, a 26° cone that took every hover,
+			# and its name 170 km up, off the screen.
+			gap_from = _camera.global_position.distance_to(sphere.position)
+			size = gap_from * BODY_MIN_SIZE
 		else:
 			# One boost shared by every body, so the ratios between them are exact whatever the zoom.
 			var boost: float = maxf(1.0, _view * SIZE_BOOST)
@@ -1087,7 +1299,7 @@ func _dress_bodies(t: float) -> void:
 			# so the name sat on the limb among the towns printed along it. Pushing it out by a fraction
 			# of the drawn radius keeps the same clearance at every scale.
 			label.position = sphere.position + _camera.global_basis.y \
-					* (size * NAME_LIFT + _view * LABEL_GAP)
+					* (size * NAME_LIFT + gap_from * LABEL_GAP)
 		sphere.basis = _spin_basis(entry, t) * Basis().scaled(Vector3.ONE * size / MESH_RADIUS)
 
 
@@ -1105,7 +1317,10 @@ func _nearest_body_to_player() -> int:
 	var host: int = -1
 	var nearest: float = INF
 	for i: int in range(_bodies.size()):
-		if i == _player_index:
+		# Never a station: 400 km up, it is nearer than the centre of the planet you walk on, and
+		# electing it lost the marker the planet's own frame (it jittered, and "Me" framed nothing).
+		# Aboard, your body of reference is still the planet: the marker then stands at your altitude.
+		if i == _player_index or _bodies[i].has("station"):
 			continue
 		var d: float = truth.distance_to(_bodies[i]["true_pos"])
 		if d < nearest:
@@ -1114,14 +1329,16 @@ func _nearest_body_to_player() -> int:
 	return host
 
 
-## Put the "you" marker ON the drawn surface of the body you are standing on, and draw the line from
-## it down to that body's centre.
+## Put the "you" marker ON the drawn surface of the body you are standing on, with a stem rising from it
+## to your name. Off the ground (weightless, flying) it is a bare dot at your true place, name above it.
 ##
 ## Needed because bodies are drawn BOOSTED while your position is real: standing on SandBox you sit
 ## deep inside the sphere that represents it, invisible and misleading. Projecting onto the drawn
 ## surface keeps the DIRECTION exact — which is the part that means something, your longitude and
 ## latitude — and the line makes it plain which body the marker belongs to.
 func _place_player_marker() -> void:
+	if _view_cone != null:
+		_view_cone.hide_cone()  # aimed again below when there is a marker to aim from; never left up stale
 	if _player_index < 0 or _player_index >= _bodies.size():
 		return
 	var marker: MeshInstance3D = _bodies[_player_index]["sphere"]
@@ -1157,7 +1374,14 @@ func _place_player_marker() -> void:
 	# Sized HERE, on where it actually ended up. Nothing else knows that: the lift onto the relief
 	# happens on this line, and a fraction of a distance is only a constant share of the screen if it is
 	# a fraction of the RIGHT distance.
-	var span: float = _camera.global_position.distance_to(marker.position) * PLAYER_MARKER
+	# Pointed at or selected: bigger and brighter, the towns' own rule (StarMapPoiLayer).
+	var selected: bool = _cam.focus == _player_index
+	var hovered: bool = _hover == _player_index
+	var grow: float = StarMapPoiLayer.ICON_HOVER_SCALE if selected or hovered else 1.0
+	var tint: Color = StarMapPoiLayer.lift(PLAYER_COLOR, selected, hovered)
+	(marker.material_override as StandardMaterial3D).albedo_color = tint
+	var to_marker: float = _camera.global_position.distance_to(marker.position)
+	var span: float = to_marker * PLAYER_MARKER * grow
 	marker.basis = Basis().scaled(Vector3.ONE * span / MESH_RADIUS)
 	# The arrow points along that LOCAL up, never along the world's +Y.
 	#
@@ -1165,7 +1389,13 @@ func _place_player_marker() -> void:
 	# arrow drawn along it leaned further over the further you were from the equator, crossed straight
 	# through the planet once you stood on the far hemisphere, and flattened to nothing whenever the
 	# camera looked down the system axis — which is close to the default view.
-	var tip: Vector3 = marker.position + up * (_view * PLAYER_STEM)
+	#
+	# Off the ground — an EVA, deep space, the dev flight — you are no longer a place ON the body but a
+	# point in the sky above it, and a stem standing on nothing says the opposite. There the marker is a
+	# bare dot with its name straight over it, like any body's. A station's deck is under gravity, so
+	# standing there keeps the stem.
+	var grounded: bool = _player_grounded()
+	var tip: Vector3 = marker.position + up * (to_marker * PLAYER_STEM) if grounded else marker.position
 	var label: Label3D = _bodies[_player_index]["label"]
 	if is_instance_valid(label):
 		# The label rides at the arrow's tip, nudged clear along screen-up so it stays readable even when
@@ -1180,19 +1410,58 @@ func _place_player_marker() -> void:
 		# This is the seventh time this exact mistake has been made in this file — badges, marker, scale
 		# bar, orbit sensitivity, stalk feet, selection ring, and now this. The rule, once more: size a
 		# thing on the distance to THAT THING.
-		label.position = tip + _camera.global_basis.y 				* (_camera.global_position.distance_to(tip) * LABEL_GAP * 0.5)
+		#
+		# Without a stem there is no tip to sit on: the name clears the dot itself instead, by its drawn
+		# radius (span) the way a body's name clears its disc (NAME_LIFT), plus the usual gap.
+		var reach: float = _camera.global_position.distance_to(tip)
+		var lift: float = reach * LABEL_GAP * 0.5 if grounded else span * NAME_LIFT + reach * LABEL_GAP
+		label.position = tip + _camera.global_basis.y * lift
+		label.modulate = tint
 	# Both hidden together when the planet has come between: the marker is drawn without depth testing
 	# so that terrain cannot bury it, which without this would also let it shine through the globe from
 	# the far side.
 	var swallowed: bool = _hidden_behind(marker.position)
 	marker.visible = not swallowed
+	_aim_view_cone(marker.position, up, host, host_sphere, swallowed)
 	if is_instance_valid(_player_ray):
-		_player_ray.visible = not swallowed
-	if is_instance_valid(_player_ray):
-		# A bare stem, no head. The direction is already told by where it starts — on the surface, under
-		# your feet — and by the label at the other end; barbs only added clutter over a planet that is
-		# already carrying its towns.
-		_player_ray.mesh = _line_mesh(PackedVector3Array([marker.position, tip]), PLAYER_COLOR)
+		_player_ray.visible = grounded and not swallowed
+		if grounded:
+			# A bare stem, no head. The direction is already told by where it starts — on the surface,
+			# under your feet — and by the label at the other end; barbs only added clutter over a planet
+			# that is already carrying its towns.
+			_player_ray.mesh = _line_mesh(PackedVector3Array([marker.position, tip]), tint)
+
+
+## Point the view cone the way your game camera faces, from your marker at [param at] (drawn frame).
+##
+## The same path as your UP (_player_up): the camera's forward read in the host planet's OWN frame, then
+## turned by the drawn sphere — never the world's axes, which the planet's spin and the chart's shift
+## both leave behind. Levelled on YOUR up rather than the radial, so aboard a station, whose floor is
+## its own, the cone still says which way you face on that floor.
+func _aim_view_cone(at: Vector3, up: Vector3, host: int, host_sphere: MeshInstance3D,
+		swallowed: bool) -> void:
+	if _view_cone == null:
+		return
+	var game_camera: Camera3D = _player.get_viewport().get_camera_3d() if is_instance_valid(_player) else null
+	var planet: Planet = _live_planet(str(_bodies[host]["key"])) if host >= 0 else null
+	# Close in AND over the body you are on: framed on a moon, the view is short too, and the cone used to
+	# sprout from a speck of you across the system.
+	var near: bool = _view / UNITS_PER_METRE <= StarMapViewCone.MAX_ZOOM_M and _cam.anchor_body == host
+	if not near or swallowed or game_camera == null or planet == null or _camera.is_position_behind(at):
+		_view_cone.hide_cone()
+		return
+	var to_drawn: Basis = host_sphere.basis.orthonormalized() * planet.global_basis.orthonormalized().inverse()
+	var player_up: Vector3 = (_player as Player).up_direction if _player is Player else Vector3.ZERO
+	var level_up: Vector3 = to_drawn * player_up if player_up != Vector3.ZERO else up
+	var ahead: Vector3 = StarMapViewCone.level_forward(to_drawn * -game_camera.global_basis.z, level_up)
+	if ahead == Vector3.ZERO:
+		_view_cone.hide_cone()  # looking straight up or down: no heading to show
+		return
+	# A step ahead that is small next to the distance, so perspective barely bends it.
+	var step: float = _camera.global_position.distance_to(at) * 0.02
+	var origin: Vector2 = _camera.unproject_position(at)
+	var toward: Vector2 = _camera.unproject_position(at + ahead * step) - origin
+	_view_cone.aim(origin, toward)
 
 
 ## Show the towns of the followed body once it is close enough for them to mean anything, and put them
@@ -1421,6 +1690,13 @@ func _drop_ground() -> void:
 	_ground_key = ""
 
 
+## Can [param entry] have towns on it? Not the star, not your marker, not a station: those are
+## drawn at a fixed size on screen, and one of them would otherwise be elected the body to read.
+func _has_towns(entry: Dictionary) -> bool:
+	var key: String = str(entry["key"])
+	return key != STAR_KEY and key != PLAYER_KEY and not entry.has("station")
+
+
 ## Whose towns to draw: simply the body that looms largest on screen, selected or not.
 ##
 ## Tied to the SELECTION at first, and that was wrong in the plainest way — you zoom in on a planet in
@@ -1430,8 +1706,7 @@ func _poi_body() -> int:
 	var best_ratio: float = 0.0
 	var eye: Vector3 = _camera.global_position
 	for i: int in range(_bodies.size()):
-		var key: String = str(_bodies[i]["key"])
-		if key == STAR_KEY or key == PLAYER_KEY:
+		if not _has_towns(_bodies[i]):
 			continue
 		var sphere: MeshInstance3D = _bodies[i]["sphere"]
 		if not is_instance_valid(sphere):
@@ -1471,7 +1746,8 @@ func _hide_occluded_labels() -> void:
 		var sphere: MeshInstance3D = _bodies[i]["sphere"]
 		if not is_instance_valid(label) or not is_instance_valid(sphere):
 			continue
-		if _camera.is_position_behind(sphere.position) or _hidden_behind(sphere.position):
+		if _camera.is_position_behind(sphere.position) or _hidden_behind(sphere.position) \
+				or (_bodies[i].has("station") and not _station_shown(i)):
 			label.hide()
 			continue
 		var rank: int = 3
@@ -1558,6 +1834,10 @@ func _player_true_position(t: float) -> Vector3:
 	var planet: Planet = _live_planet(str(_bodies[host]["key"]))
 	if planet == null:
 		return raw
+	# Aboard a station the smooth side is the station's own orbit, at the chart's time (see below).
+	var aboard: Vector3 = _aboard_station_offset(planet, t)
+	if aboard != Vector3.ZERO:
+		return _bodies[host]["true_pos"] + aboard * UNITS_PER_METRE
 	var local: Vector3 = planet.local_dir_of(_player.global_position)
 	if local.length_squared() <= 0.0:
 		return raw
@@ -1588,6 +1868,41 @@ func _player_up(host: int, host_sphere: MeshInstance3D) -> Vector3:
 	return offset.normalized() if offset.length_squared() > 0.0 else Vector3.ZERO
 
 
+## Frame YOU: the Moi button, a double click on your marker, a search for yourself.
+##
+## Seen from PLAYER_FOCUS_ALTITUDE_M above YOUR point, not above the ground under it. On the ground the
+## two are the same; on a station's deck, floating, flying, they are hundreds of kilometres apart, and
+## framing the ground left you a dot far above the view while the camera studied the rock below.
+func _frame_on_player() -> void:
+	var host: int = _nearest_body_to_player()
+	_frame_on_surface(host, _player_local_dir(host), _player_height_m(host) + PLAYER_FOCUS_ALTITUDE_M)
+
+
+## How high you are above the chart's ground under you, in metres; 0 on the ground. From the chart's
+## own positions, the ones your marker is drawn from, so the camera comes to where the marker is.
+func _player_height_m(host: int) -> float:
+	if host < 0 or host >= _bodies.size() or _player_index < 0 or _player_index >= _bodies.size():
+		return 0.0
+	var up: Vector3 = _player_up(host, _bodies[host]["sphere"])
+	if up == Vector3.ZERO:
+		return 0.0
+	return _height_above_ground_m(host, _bodies[_player_index]["true_pos"], up)
+
+
+## How high [param true_pos] (chart units, as every true_pos) stands above [param body]'s drawn ground in the
+## direction [param up], in metres; 0 on or under it. One rule for you and for a station.
+func _height_above_ground_m(body: int, true_pos: Vector3, up: Vector3) -> float:
+	var from_centre_m: float = true_pos.distance_to(_bodies[body]["true_pos"]) / UNITS_PER_METRE
+	return maxf(0.0, from_centre_m - float(_bodies[body]["radius_m"]) * _surface_at(body, up))
+
+
+## True while you stand on something — a body, a station's deck — rather than float: the server's own
+## weightless state (Player.floating), replicated and published only after Player.ZERO_G_GRACE, so a jump
+## never flickers it. Off the ground your marker is a bare point (see _place_player_marker).
+func _player_grounded() -> bool:
+	return not (_player is Player and (_player as Player).floating)
+
+
 ## Where you stand, as a direction in the HOST BODY's own frame — the same thing a town's record
 ## carries, which is what lets the two be framed by one function.
 func _player_local_dir(host: int) -> Vector3:
@@ -1596,16 +1911,46 @@ func _player_local_dir(host: int) -> Vector3:
 	var planet: Planet = _live_planet(str(_bodies[host]["key"]))
 	if planet == null:
 		return Vector3.ZERO
+	var t: float = Globals.sim_time()
+	var aboard: Vector3 = _aboard_station_offset(planet, t)
+	if aboard != Vector3.ZERO:
+		return (_spin_basis(_bodies[host], t).inverse() * aboard).normalized()
 	return planet.local_dir_of(_player.global_position)
+
+
+## Aboard a station orbiting [param planet]: where you are from the planet's centre at time [param t], in its
+## non-rotating frame, from the station's own orbit — ZERO when not aboard one, or while its orbit is unknown.
+##
+## Why not simply through the planet, as for everyone on the ground: a station MOVES against the ground, and
+## on a client the planet's turn is refreshed only a few times a second. Read through that stale turn, a
+## passenger hopped by up to ~150 m three times a second — at Moi's 7 km, a marker that would not sit still.
+## The station's orbit and your place on it are both exact at any instant, and read from one clock.
+func _aboard_station_offset(planet: Planet, t: float) -> Vector3:
+	var station: OrbitalStation = OrbitalStation.of(_player)
+	if station == null or Planet.of(station.get_parent()) != planet:
+		return Vector3.ZERO
+	var pose: Transform3D = station.orbit_pose_at(t)
+	if pose == Transform3D.IDENTITY:
+		return Vector3.ZERO
+	return pose * (station.global_transform.affine_inverse() * _player.global_position)
 
 
 ## The real body behind a chart entry, or null when it is out of range. The chart reads scene FILES and
 ## does not need the tree; this is the one place where the live node knows something the file cannot.
 func _live_planet(key: String) -> Planet:
+	# Once per key and FRAME: PlanetRegistry walks the whole universe tree (thousands of rocks), and this is
+	# asked several times a frame — your position, your up, the follow, the view cone.
+	if _live_cache.has(key):
+		var cached = _live_cache[key]
+		if cached == null or is_instance_valid(cached):
+			return cached
+	var found: Planet = null
 	for body: Planet in PlanetRegistry.live_planets():
 		if body.planet_data != null and str(body.planet_data.planet_name) == key:
-			return body
-	return null
+			found = body
+			break
+	_live_cache[key] = found
+	return found
 
 
 ## Follow your own marker, framed on the body you are standing on rather than on yourself — you have
@@ -1615,9 +1960,10 @@ func _on_me_pressed() -> void:
 		return
 	# Selected is YOU — the panel describes you — while what is WATCHED is the world under your feet,
 	# exactly as for a town. That separation is the whole reason this needs no special case.
-	_cam.select(_player_index, PLAYER_KEY)
-	var host: int = _nearest_body_to_player()
-	_frame_on_surface(host, _player_local_dir(host), PLAYER_FOCUS_ALTITUDE_M)
+	# _select, not _cam.select: a town selected before must be let go too, or the panel keeps describing it
+	# and the view keeps following it — reopening after a trip does this press for you (_open_on_player).
+	_select(_player_index)
+	_frame_on_player()
 
 
 ## Live results as you type. Rebuilt wholesale rather than diffed: there are at most eight of them,
@@ -1652,22 +1998,19 @@ func _go_to_result(index: int) -> void:
 	if body < 0 or body >= _bodies.size():
 		return
 	var poi: int = int(entry["poi"])
-	var radius_units: float = float(_bodies[body]["radius_m"]) * UNITS_PER_METRE
-	var framing: float = POI_FOCUS_ZOOM if poi >= 0 else StarMapCamera.FOCUS_ZOOM
 	# A search result is an explicit request to GO there, so it both selects and travels — unlike a
 	# click, which only ever answers a question about what is already on screen.
 	_cam.select(body, str(_bodies[body]["key"]))
-	if body == _player_index:
-		# You have no radius, so framing ON you asks the camera to clear nothing at all: it goes to the
-		# absolute floor, and every zoom after that is guarded against a body whose radius is zero — so
-		# the wheel walks straight into the planet you are standing on. Everywhere else in this file
-		# "go to me" means "go to the world under my feet"; this one path had been left behind.
-		var host: int = _nearest_body_to_player()
-		_frame_on_surface(host, _player_local_dir(host), PLAYER_FOCUS_ALTITUDE_M)
+	if poi < 0:
+		# A body, a station or you: the double click's own framing, which already tells the three apart.
+		# Framed here as a plain body, you and a station — both without a radius — sent the camera to the
+		# absolute floor, a kilometre from a point, anchored on something that has no ground.
+		_frame_body(body)
 		_poi_focus = -1
 		_clear_search()
 		return
-	_cam.watch(body, radius_units, radius_units, _watch_position(), framing)
+	var radius_units: float = float(_bodies[body]["radius_m"]) * UNITS_PER_METRE
+	_cam.watch(body, radius_units, radius_units, _watch_position(), POI_FOCUS_ZOOM)
 	_poi_focus = poi
 	_clear_search()
 
@@ -1706,8 +2049,11 @@ func _refresh_rings() -> void:
 		# The selected body's own ring, and the rings of its moons, never fade: at the distance where
 		# everything else turns to noise, those two are precisely what you came to look at — the moons'
 		# rings are small, centred on the planet, and show the system you are standing in.
-		var related: bool = _cam.focus >= 0 \
-				and (i == _cam.focus or int(_bodies[i]["primary"]) == _cam.focus)
+		# A station's ring never fades either, selected or not: a few hundred km across, it only means
+		# something up close — exactly where the fade has emptied the chart — and _refresh_stations
+		# already limits it to there (STATION_VISIBLE_RADII), like its icon.
+		var related: bool = _bodies[i].has("station") or (_cam.focus >= 0
+				and (i == _cam.focus or int(_bodies[i]["primary"]) == _cam.focus))
 		var base: Color = _bodies[i]["ring_colour"]
 		var mat: StandardMaterial3D = ring.material_override as StandardMaterial3D
 		if mat == null:
@@ -1760,8 +2106,9 @@ func _refresh_plane() -> void:
 	var eye: Vector3 = _camera.global_position
 	for entry: Dictionary in _bodies:
 		var key: String = str(entry["key"])
-		# The star defines the plane and you are not a body: neither has a height to report.
-		if key == STAR_KEY or key == PLAYER_KEY:
+		# The star defines the plane and you are not a body: neither has a height to report. Nor has a
+		# station: it is drawn only near its planet, where the stalks have faded, and otherwise hidden.
+		if key == STAR_KEY or key == PLAYER_KEY or entry.has("station"):
 			continue
 		var sphere: MeshInstance3D = entry["sphere"]
 		if not is_instance_valid(sphere):
@@ -1820,6 +2167,8 @@ func _add_halo(mesh: ImmediateMesh, index: int, colour: Color) -> bool:
 	var sphere: MeshInstance3D = _bodies[index]["sphere"]
 	if not is_instance_valid(sphere):
 		return false
+	if _bodies[index].has("station") and not _station_shown(index):
+		return false  # a station not drawn gets no ring either
 	# Floored so a distant body, drawn at the size floor, still gets a ring rather than a dot — and
 	# floored against ITS OWN distance, not against the view. The view is the distance to whatever is
 	# being watched, which near a planet is its centre thousands of km away; used here it drew rings
@@ -1858,6 +2207,11 @@ func _refresh_info() -> void:
 	var rows: Array[String] = []
 	rows.append("[b][color=#%s]%s[/color][/b]" % [colour.to_html(false), str(e["name"])])
 	rows.append("")
+	if e.has("station"):
+		_station_rows(e, rows)
+		_info_text.text = "\n".join(rows)
+		_info_panel.show()
+		return
 	var radius_m: float = float(e["radius_m"])
 	if radius_m > 0.0:
 		rows.append(_info_row("%%HUD_MAP_RADIUS", Globals.format_distance(radius_m)))
@@ -1887,6 +2241,22 @@ func _refresh_info() -> void:
 		rows.append("[i]%s[/i]" % tr("%%HUD_MAP_NO_ORBIT"))
 	_info_text.text = "\n".join(rows)
 	_info_panel.show()
+
+
+## What the chart knows about a station: its kind, how high it flies, how its orbit is tilted and how
+## long a lap takes — a period in DAYS, as the bodies get, would read "0.1 days" for one lap and a half
+## an afternoon.
+func _station_rows(e: Dictionary, rows: Array[String]) -> void:
+	var site: StationSite = e["station"]
+	rows.append(_info_row("%%HUD_MAP_POI_KIND", StarMapPoiLayer.ICONS.kind_label(e["poi"])))
+	rows.append(_info_row("%%HUD_MAP_POI_ALTITUDE", Globals.format_distance(float(e["altitude_m"]))))
+	rows.append(_info_row("%%HUD_MAP_INCLINATION", "%.1f\u00b0" % site.inclination_deg))
+	var seconds: int = int(round((e["orbit"] as KeplerOrbit).period_seconds()))
+	rows.append(_info_row("%%HUD_MAP_ORBIT_PERIOD",
+			tr("%%HUD_MAP_HOURS_MINUTES_VALUE") % [floori(seconds / 3600.0), floori((seconds % 3600) / 60.0)]))
+	var primary: int = int(e["primary"])
+	if primary >= 0:
+		rows.append(_info_row("%%HUD_MAP_ORBITS", str(_bodies[primary]["name"])))
 
 
 ## What the level design knows about one town. Same shape as the body panel, deliberately: the two are
@@ -1959,9 +2329,31 @@ func _place_camera() -> void:
 	# kilometre would have clipped away the ground being descended towards. The two agree to within a
 	# hair anywhere but the last few km, which is precisely where it matters.
 	var gap: float = maxf(_view - _guard_radius(), _view * 1.0e-5)
+	var near: float = gap * 0.05
+	# ...and never in front of YOUR marker, which is drawn over everything. Off the ground the two part
+	# company: over a station the surface is 400 km down, the plane stood 20 km out, and Moi — which
+	# brings the camera 7 km above you — cut your marker away.
+	var to_you: float = _protected_distance()
+	if to_you > 0.0:
+		near = minf(near, to_you * 0.5)
 	# Kept off the floor of the depth buffer: a near/far ratio past ~1e7 starts costing precision, and
 	# orbit lines crossing at a shallow angle are exactly what would flicker.
-	_camera.near = maxf(gap * 0.05, _camera.far * 1.0e-7)
+	_camera.near = maxf(near, _camera.far * 1.0e-7)
+
+
+## How far the nearest thing the near plane must never cut is from the camera, in units, or 0 for none: your
+## marker, and a selected station — points above the ground the plane otherwise follows. From where they are
+## TRACKED: this is asked before anything is placed for the frame. Off the ground that is the very point; on
+## it, your marker stands on the drawn relief, a hair away.
+func _protected_distance() -> float:
+	var nearest: float = 0.0
+	for i: int in [_player_index, _cam.focus]:
+		if i < 0 or i >= _bodies.size() or (i != _player_index and not _bodies[i].has("station")):
+			continue
+		var d: float = _camera.position.distance_to(_bodies[i]["true_pos"] - _shift)
+		if d > 0.0 and (nearest == 0.0 or d < nearest):
+			nearest = d
+	return nearest
 
 
 ## What the camera is aimed at — which is NOT what is selected. Reading "no selection" as "the origin"
@@ -2002,6 +2394,10 @@ func _anchor_on_selection() -> void:
 		# You have no radius of your own. What the camera can watch is the world under your feet, which
 		# is the same answer every other path here gives.
 		body = _nearest_body_to_player()
+	elif body >= 0 and body < _bodies.size() and _bodies[body].has("station"):
+		# Nor has a station: the camera watches the planet it orbits (see _frame_body). Anchored on the
+		# station itself, the first wheel notch kept the distance to the PLANET's centre and flew 6 800 km out.
+		body = int(_bodies[body]["primary"])
 	if body < 0 or body >= _bodies.size() or _cam.anchor_body == body:
 		return
 	# Framing of one against the distance already in use: a re-centring, never an approach. Guarded on
@@ -2070,7 +2466,11 @@ func _surface_at(index: int, world_up: Vector3) -> float:
 func _hidden_behind(point: Vector3) -> bool:
 	if _blocker < 0 or _blocker >= _bodies.size():
 		return false
-	var sphere: MeshInstance3D = _bodies[_blocker]["sphere"]
+	return _behind_sphere(point, _bodies[_blocker]["sphere"])
+
+
+## Is [param point] hidden by the drawn body [param sphere], seen from the camera? A ray-sphere test.
+func _behind_sphere(point: Vector3, sphere: MeshInstance3D) -> bool:
 	if not is_instance_valid(sphere):
 		return false
 	var eye: Vector3 = _camera.global_position
@@ -2114,8 +2514,22 @@ func _frame_body(index: int) -> void:
 	# ends up inside the planet the marker is standing on — the very defect the two other paths were
 	# unified to remove. This was the third door into it.
 	if index == _player_index:
-		var host: int = _nearest_body_to_player()
-		_frame_on_surface(host, _player_local_dir(host), PLAYER_FOCUS_ALTITUDE_M)
+		_frame_on_player()
+		return
+	# A station is a PLACE above a world, like a town is one on it: go to its planet and turn it until
+	# the station faces you. Framed as a body it has no radius, and the camera ended up next to a dot
+	# with the planet filling the screen behind it.
+	#
+	# From PLAYER_FOCUS_ALTITUDE_M above the STATION, not the towns' standard framing: that one stops 1.05
+	# radii out — 318 km over the ground — and a station 400 km up was behind the camera. The same rule as
+	# yours (_frame_on_player), from the same height helper. Followed afterwards: see _followed_normal.
+	if _bodies[index].has("station"):
+		var body: int = int(_bodies[index]["primary"])
+		var sphere: MeshInstance3D = _bodies[body]["sphere"]
+		var outward: Vector3 = (_bodies[index]["true_pos"] - _bodies[body]["true_pos"]).normalized()
+		var height_m: float = _height_above_ground_m(body, _bodies[index]["true_pos"], outward)
+		_frame_on_surface(body, sphere.basis.orthonormalized().inverse() * outward,
+				height_m + PLAYER_FOCUS_ALTITUDE_M)
 		return
 	var radius_units: float = float(_bodies[index]["radius_m"]) * UNITS_PER_METRE
 	_cam.watch(index, radius_units, radius_units, _watch_position())
@@ -2178,6 +2592,33 @@ func _deselect() -> void:
 	_cam.deselect()
 
 
+## Is the cursor on YOUR marker, the dot or its name? Asked before the towns and the bodies: the marker is
+## drawn over everything, so whatever lies beneath it, the cursor is on you. The dot is a few pixels wide;
+## the name is what people actually aim at, and a name a click falls straight through reads as broken.
+func _player_under(screen_pos: Vector2) -> bool:
+	if _player_index < 0 or _player_index >= _bodies.size():
+		return false
+	var marker: MeshInstance3D = _bodies[_player_index]["sphere"]
+	if not is_instance_valid(marker) or not marker.visible or _camera.is_position_behind(marker.global_position):
+		return false
+	if _camera.unproject_position(marker.global_position).distance_to(screen_pos) <= PLAYER_PICK_PX:
+		return true
+	var name_tag: Label3D = _bodies[_player_index]["label"]
+	return is_instance_valid(name_tag) and name_tag.visible and _label_screen_rect(name_tag).has_point(screen_pos)
+
+
+## Where a fixed-size, billboarded name is on screen, in pixels. fixed_size draws it as if it stood one unit
+## from the camera, so its size in pixels is its size in units there (font pixels x pixel_size) times the
+## camera's focal length in pixels; it is centred on its position, both ways.
+func _label_screen_rect(label: Label3D) -> Rect2:
+	var font: Font = label.font if label.font != null else ThemeDB.fallback_font
+	var text_px: Vector2 = font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.font_size)
+	text_px += Vector2.ONE * float(label.outline_size) * 2.0
+	var focal: float = float(_viewport.size.y) * 0.5 / tan(deg_to_rad(_camera.fov) * 0.5)
+	var extent: Vector2 = text_px * label.pixel_size * focal
+	return Rect2(_camera.unproject_position(label.global_position) - extent * 0.5, extent)
+
+
 ## The body under [param screen_pos], or -1 for none. A plain ray-sphere test against what is drawn:
 ## this world has no physics at all, and giving a chart collision bodies just to be clickable would
 ## be a lot of machinery for one ray.
@@ -2199,8 +2640,8 @@ func _pick_pass(origin: Vector3, dir: Vector3, tolerant: bool) -> int:
 	var best_offset: float = INF
 	for i: int in range(_bodies.size()):
 		var sphere: MeshInstance3D = _bodies[i]["sphere"]
-		if not is_instance_valid(sphere):
-			continue
+		if not is_instance_valid(sphere) or not sphere.visible:
+			continue  # what is not shown cannot be clicked (a far station, your marker behind a planet)
 		var to_centre: Vector3 = sphere.position - origin
 		var along: float = to_centre.dot(dir)
 		if along <= 0.0:
@@ -2279,7 +2720,10 @@ func _update_readout(t: float) -> void:
 	var focused: String = tr("%%HUD_MAP_SYSTEM")
 	if _cam.focus >= 0 and _cam.focus < _bodies.size():
 		focused = str(_bodies[_cam.focus]["name"])
-	_readout.text = tr("%%HUD_MAP_READOUT") % [_bodies.size(), focused, _view, t]
+	# The zoom through the shared distance rule — metres, then km, then millions of km. Printed as
+	# "%.2f million km" it read "0.00" for everything under 5 000 km, the whole range a planet is read in.
+	_readout.text = tr("%%HUD_MAP_READOUT") % [
+			_bodies.size(), focused, Globals.format_distance(_view / UNITS_PER_METRE), t]
 	_readout.text += "  " + _relief_readout()
 	_readout.text += "\n" + tr("%%HUD_MAP_HELP")
 
@@ -2357,14 +2801,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Towns first. They are only ever drawn ON the body you are already looking at, so a marker
 			# under the cursor is unambiguously what you meant — and testing the body first would make
 			# every town unclickable, the planet being directly behind each of them.
-			var poi: int = _poi_layer.pick(_camera.project_ray_origin(button.position),
+			#
+			# ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it,
+			# what the cursor is on is you — the dot or its name (see _player_under).
+			var on_you: bool = _player_under(button.position)
+			var poi: int = -1 if on_you else _poi_layer.pick(_camera.project_ray_origin(button.position),
 					_camera.project_ray_normal(button.position))
 			if poi >= 0:
 				_poi_focus = poi
 				if button.double_click:
 					_frame_poi(poi)
 			else:
-				var hit: int = _pick(button.position)
+				var hit: int = _player_index if on_you else _pick(button.position)
 				_select(hit)
 				# A double click is also a click: the selection above has already happened, and this only
 				# adds the journey. Godot sends the plain press first, so both always agree.
@@ -2391,5 +2839,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var at: Vector2 = (event as InputEventMouseMotion).position
 		# Same order as the click, or the highlight would point at something else than what a click
 		# would take.
-		_poi_hover = _poi_layer.pick(_camera.project_ray_origin(at), _camera.project_ray_normal(at))
-		_hover = -1 if _poi_hover >= 0 else _pick(at)
+		var on_you: bool = _player_under(at)
+		_poi_hover = -1 if on_you else _poi_layer.pick(_camera.project_ray_origin(at), _camera.project_ray_normal(at))
+		if on_you:
+			_hover = _player_index
+		else:
+			_hover = -1 if _poi_hover >= 0 else _pick(at)

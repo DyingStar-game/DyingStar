@@ -266,16 +266,25 @@ func facing_pitch() -> float:
 ## rotation the place itself has just undergone moves the camera exactly as much as the ground did, and
 ## leaves the offset you orbited to untouched.
 ##
-## Refused while a travel is in flight: an animated turn is already going somewhere, and steering it a
-## degree at a time would fight it for the wheel.
+## Mid-travel, BOTH ends of the travel turn — where it started and where it is going — so the animation
+## carries on undisturbed, only in a frame that moves with the place. Steering the live angle alone would
+## fight it; refused outright, as it once was, the place's motion was lost for the whole flight: a station
+## covers 3.5 km in those 0.45 s, and framed from 7 km it arrived 26° off centre, for good.
 func turn_by(rotation: Quaternion) -> void:
+	var goal: Vector2 = _turned(yaw, pitch, rotation)
+	yaw = goal.x
+	pitch = goal.y
 	if _angle_blend < 1.0:
-		return
-	var dir: Vector3 = (rotation * direction()).normalized()
-	if dir.length_squared() <= 0.0:
-		return
-	pitch = clampf(asin(clampf(dir.y, -1.0, 1.0)), -PITCH_LIMIT, PITCH_LIMIT)
-	yaw = atan2(dir.x, dir.z)
+		var start: Vector2 = _turned(_from_yaw, _from_pitch, rotation)
+		_from_yaw = start.x
+		_from_pitch = start.y
+
+
+## A (yaw, pitch) facing turned by [param rotation], as (yaw, pitch) again — the axes direction() uses.
+static func _turned(from_yaw: float, from_pitch: float, rotation: Quaternion) -> Vector2:
+	var dir := Vector3(cos(from_pitch) * sin(from_yaw), sin(from_pitch), cos(from_pitch) * cos(from_yaw))
+	dir = (rotation * dir).normalized()
+	return Vector2(atan2(dir.x, dir.z), clampf(asin(clampf(dir.y, -1.0, 1.0)), -PITCH_LIMIT, PITCH_LIMIT))
 
 
 ## Back to the view the chart opens on: the whole system, nothing followed, default orientation. This

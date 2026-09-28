@@ -1,8 +1,8 @@
 class_name CelestialGizmos
 extends Node3D
 
-## Client-only orientation aid: a labelled marker floating in the direction of the system star and of
-## every planet/moon currently loaded. The bodies sit at astronomic distances (~3e10), so a marker at
+## Client-only orientation aid: a labelled marker floating in the direction of the system star, of
+## every planet/moon currently loaded, and of the stations orbiting them. The bodies sit at astronomic distances (~3e10), so a marker at
 ## the real position would be an invisible speck; instead each marker is pinned a fixed distance in
 ## FRONT of the camera along the true direction to its body, and drawn on top of everything, so it
 ## reads like an editor gizmo. Toggled from Settings > General; created by PlayerClient for the owner.
@@ -25,7 +25,14 @@ const RESCAN_PERIOD: float = 1.0
 
 ## Kept for symmetry with the other player-owned client nodes; the camera is read via get_parent().
 var player: Node3D = null
-var _markers: Dictionary = {}  # body instance id -> marker Node3D (a sphere with a Label3D child)
+## body instance id (int) or station uuid (String) -> marker Node3D (a sphere with a Label3D child)
+var _markers: Dictionary = {}
+## Station uuid -> {"body": Planet, "orbit": StationOrbit}. A station is NOT read from the tree: a
+## client only receives one within 200 km of it, so from the ground it would never have a marker. Its
+## place comes from its StationSite and the clock, like the station itself (OrbitalStation).
+var _stations: Dictionary = {}
+## Body key -> its StationSites, read from the files once.
+var _sites_by_body: Dictionary = {}
 var _rescan_accum: float = RESCAN_PERIOD
 
 func _ready() -> void:
@@ -55,21 +62,33 @@ func _process(delta: float) -> void:
 		return
 	var eye: Vector3 = cam.global_position
 	var cam_up: Vector3 = cam.global_transform.basis.y
-	for id: int in _markers:
-		var body: Node3D = instance_from_id(id) as Node3D
-		var marker: Node3D = _markers[id]
-		if not is_instance_valid(body):
-			continue
+	var t: float = Globals.sim_time()
+	for key: Variant in _markers:
+		var marker: Node3D = _markers[key]
+		var body: Node3D = null
+		var target: Vector3
+		if key is int:
+			body = instance_from_id(key) as Node3D
+			if not is_instance_valid(body):
+				continue
+			target = body.global_position
+		else:
+			var station: Dictionary = _stations.get(key, {})
+			if station.is_empty() or not is_instance_valid(station["body"]):
+				continue
+			target = (station["orbit"] as StationOrbit).world_position_around(station["body"], t)
 		# Subtract the two float64 world positions FIRST (exact at ~3e10), then pin the marker that
 		# direction from the eye. The marker is top_level, so this world position is used as-is and no
 		# parent rotation can move it: on a pure camera turn the eye is fixed, so the marker is too.
-		var to_body: Vector3 = body.global_position - eye
+		var to_body: Vector3 = target - eye
 		if to_body.length_squared() < 1.0:
 			continue
 		var dist_label: Node = marker.get_node_or_null("dist")
 		if dist_label is Label3D:
-			(dist_label as Label3D).text = Globals.format_distance(
-					_surface_distance(body, eye, to_body.length()))
+			var metres: float = to_body.length()
+			if body != null:
+				metres = _surface_distance(body, eye, metres)
+			(dist_label as Label3D).text = Globals.format_distance(metres)
 		var dir: Vector3 = to_body.normalized()
 		# Face the marker (and its label child) at the camera HERE, in double precision, instead of
 		# leaving it to the Label3D billboard: the shader billboard subtracts two ~3e10 positions in
@@ -88,10 +107,17 @@ func _process(delta: float) -> void:
 func _sync_markers() -> void:
 	var bodies: Dictionary = {}  # instance id -> body node
 	_collect_bodies(NetworkOrchestrator.universe_scene, bodies)
-	for id: int in _markers.keys():
-		if not bodies.has(id):
-			_markers[id].queue_free()
-			_markers.erase(id)
+	_stations = _collect_stations(bodies)
+	for key: Variant in _markers.keys():
+		if not bodies.has(key) and not _stations.has(key):
+			_markers[key].queue_free()
+			_markers.erase(key)
+	for station_uuid: String in _stations:
+		if not _markers.has(station_uuid):
+			var site: StationSite = _stations[station_uuid]["site"]
+			var station_marker: Node3D = _make_marker(site.display_name(), _station_color(site))
+			add_child(station_marker)
+			_markers[station_uuid] = station_marker
 	for id: int in bodies:
 		if not _markers.has(id):
 			var body: Node3D = bodies[id]
@@ -107,6 +133,28 @@ func _sync_markers() -> void:
 			var marker: Node3D = _make_marker(label_text, colour)
 			add_child(marker)
 			_markers[id] = marker
+
+## The stations orbiting the planets in [param bodies], by uuid: {site, body, orbit}.
+func _collect_stations(bodies: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for id: int in bodies:
+		var planet: Planet = bodies[id] as Planet
+		if planet == null or planet.planet_data == null:
+			continue
+		for site: StationSite in _sites_of(planet.planet_data.planet_name):
+			out[site.uuid()] = {
+				"site": site,
+				"body": planet,
+				"orbit": site.orbit(StationSite.body_props_of(planet)),
+			}
+	return out
+
+
+func _sites_of(body_key: String) -> Array:
+	if not _sites_by_body.has(body_key):
+		_sites_by_body[body_key] = StationSites.for_body(SystemScenes.system_of(body_key), body_key)
+	return _sites_by_body[body_key]
+
 
 ## Colour a body by kind: amber star, blue planet, green moon. A moon is a Planet nested under another
 ## Planet (its position is planet-relative), so having a Planet ancestor is what tells the two apart.
@@ -200,6 +248,13 @@ func _camera() -> Node3D:
 	return get_parent() as Node3D
 
 func _clear() -> void:
-	for id: int in _markers:
-		_markers[id].queue_free()
+	for key: Variant in _markers:
+		_markers[key].queue_free()
 	_markers.clear()
+	_stations.clear()
+
+
+## A station's tint: the one its star-map badge has (poi_icons.tres, the same rule and the same name), so a
+## station reads alike on both — read from the table, not copied out of it.
+static func _station_color(site: StationSite) -> Color:
+	return StarMapPoiLayer.ICONS.tint_for({"kind": StarMap.STATION_POI_KIND, "name": site.id})
