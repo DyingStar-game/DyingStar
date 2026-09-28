@@ -288,6 +288,24 @@ var _server_feature_nodes: Dictionary = {}
 var _volcano_nodes: Dictionary = {}
 ## A volcano's lake and plume show on chunks of this LOD or finer.
 const VOLCANO_FEATURE_MAX_LOD := 4
+## GPU bisection switches (client.ini, measurement only — they CHANGE WHAT YOU
+## SEE): debug_no_volcano_fx hides the volcanoes' lava lakes, plumes and lights;
+## debug_no_road_surfaces hides every road / lava crust surface. Read once.
+static var _dbg_flags_read := false
+static var _dbg_no_volcano_fx := false
+static var _dbg_no_road_surfaces := false
+
+
+static func _read_dbg_flags() -> void:
+	if _dbg_flags_read or Engine.is_editor_hint():
+		return
+	_dbg_flags_read = true
+	_dbg_no_volcano_fx = ClientConfig.get_bool("debug_no_volcano_fx", false)
+	_dbg_no_road_surfaces = ClientConfig.get_bool("debug_no_road_surfaces", false)
+	if _dbg_no_volcano_fx:
+		print("[PlanetTerrain] !! debug_no_volcano_fx=true — lava lakes, plumes and lights hidden")
+	if _dbg_no_road_surfaces:
+		print("[PlanetTerrain] !! debug_no_road_surfaces=true — road and lava crust surfaces hidden")
 
 ## POIs resolved from the "POIs" child, built on first use (see poi_spheres). Only a re-import
 ## changes them, and that needs an editor restart, so it is never invalidated at runtime.
@@ -1594,14 +1612,25 @@ func _update_terrain() -> void:
 	if _new_keys.size() > 1:
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
 			return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
+	var _tks := _perf_begin()
 	for key in _new_keys:
 		_try_create_or_defer(desired[key])
 		pipeline[key] = true
+	_perf_end("steps:new", _tks)
+	_tks = _perf_begin()
 
 	# Step 2 — Remove chunks no longer desired, but only after their
 	# replacements (finer children or coarser parent) are queued above.
 	# This guarantees the old chunk stays visible until the new one arrives.
 	var to_remove: Array = []
+	# The chunks in flight, indexed once for the whole pass: the per-key
+	# _has_pending_replacement / _has_pending_coarser walked every task, the
+	# backlog, the assembly queue and the recipe waiters for EACH stale chunk
+	# — 200-440 ms a pass for a minute and more after a catch-up rebuild near
+	# a lava flow (hundreds in flight × hundreds stale), in the physics step.
+	var _flight := _pipeline_tree_index()
+	var _flight_anc: Dictionary = _flight[0]
+	var _flight_self: Dictionary = _flight[1]
 	for key in _active_chunks:
 		if not desired.has(key):
 			# A stale chunk whose area is already fully covered by ACTIVE finer
@@ -1615,10 +1644,18 @@ func _update_terrain() -> void:
 			if st_nside > 0 and st_ipix >= 0 \
 					and _covered_by_active_descendants(st_nside, st_ipix):
 				to_remove.append(key)
+			elif st_nside > 0 and st_ipix >= 0:
+				if not _flight_anc.has(_flight_id(st_nside, st_ipix)) \
+						and not _flight_has_ancestor(_flight_self, st_nside, st_ipix):
+					to_remove.append(key)
 			elif not _has_pending_replacement(key) and not _has_pending_coarser(key):
 				to_remove.append(key)
+	_perf_end("steps:scan_remove", _tks)
+	_tks = _perf_begin()
 	for key in to_remove:
 		_remove_chunk(key)
+	_perf_end("steps:remove", _tks)
+	_tks = _perf_begin()
 
 	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
 	for key in desired:
@@ -1636,6 +1673,7 @@ func _update_terrain() -> void:
 			_want["_swap"] = true
 			_try_create_or_defer(_want)
 			pipeline[key] = true
+	_perf_end("steps:requeue", _tks)
 
 	_perf_end("terrain_steps", _tk)
 
@@ -2524,6 +2562,59 @@ func _pipeline_keys() -> Dictionary:
 	return out
 
 
+## [ancestors, selves] of every chunk in flight (mesh tasks, backlog, assembly
+## queue, recipe waiters), as ids of [method _flight_id]: `ancestors` holds
+## every STRICT ancestor of a chunk in flight — a key there has a pending
+## finer replacement (_has_pending_replacement); `selves` the chunks
+## themselves — a key with an ancestor there has a pending coarser one
+## (_has_pending_coarser). Same answers, one walk of the pipeline per pass.
+func _pipeline_tree_index() -> Array:
+	var anc := {}
+	var selves := {}
+	for mk: String in _mesh_tasks:
+		var ci: Dictionary = _mesh_tasks[mk].info
+		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	for ci: Dictionary in _mesh_task_backlog:
+		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	for item: Dictionary in _assemble_queue:
+		var ci: Dictionary = item.info
+		_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	for ek: String in _recipe_waiters:
+		for ck: String in _recipe_waiters[ek]:
+			var ci: Dictionary = _recipe_waiters[ek][ck]
+			_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	return [anc, selves]
+
+
+static func _flight_id(nside: int, ipix: int) -> int:
+	return (nside << 32) | ipix
+
+
+static func _flight_add(anc: Dictionary, selves: Dictionary, nside: int, ipix: int) -> void:
+	selves[_flight_id(nside, ipix)] = true
+	var ns := nside
+	var ip := ipix
+	while ns > 1:
+		ns >>= 1
+		ip >>= 2
+		var id := _flight_id(ns, ip)
+		if anc.has(id):
+			break  # its own ancestors are already in
+		anc[id] = true
+
+
+## Is a STRICT ancestor of (nside, ipix) in [param selves]?
+static func _flight_has_ancestor(selves: Dictionary, nside: int, ipix: int) -> bool:
+	var ns := nside
+	var ip := ipix
+	while ns > 1:
+		ns >>= 1
+		ip >>= 2
+		if selves.has(_flight_id(ns, ip)):
+			return true
+	return false
+
+
 ## Returns true when the area of chunk (nside, ipix) is FULLY covered by
 ## active finer chunks: every direct child is either active itself or
 ## (recursively) covered by its own children. Used by the desired-set diff to
@@ -2678,8 +2769,12 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		var _st: int = int(info.get("stitch", 0))
 		if _chunk_cache and _chunk_cache.has_mesh(info.key, info.lod, _st) \
 				and not planet_data.chunk_cache_ineligible(info.nside, info.ipix):
+			# Synchronous disk read on the main thread (inside terrain_steps).
+			var _tkc := _perf_begin()
 			var cached_mesh := _chunk_cache.load_mesh(info.key, info.lod, _st)
-			if cached_mesh and _cached_mesh_valid(cached_mesh, info):
+			var _valid := cached_mesh != null and _cached_mesh_valid(cached_mesh, info)
+			_perf_end("steps:cache_load", _tkc)
+			if _valid:
 				info["_from_disk_cache"] = true
 				_assemble_queue.append({"info": info, "mesh": cached_mesh})
 				return
@@ -4011,6 +4106,9 @@ func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh,
 	roads_mi.mesh = roads_mesh
 	roads_mi.layers = mi.layers
 	roads_mi.cast_shadow = mi.cast_shadow
+	_read_dbg_flags()
+	if _dbg_no_road_surfaces:
+		roads_mi.layers = 0
 	# Not drawn past RoadTerrain.FAR_VISIBILITY_M from the chunk's centre,
 	# like the rail modules. A flat cap, not a chunk-diagonal multiple: a
 	# LOD-0 chunk lives up to 5 km away and its road must not vanish before
@@ -4107,7 +4205,8 @@ func _remove_chunk(key: String) -> void:
 ## Give chunk [param info] the lake / plume nodes of the volcanoes whose summit
 ## it owns (creating a node for the first chunk that asks).
 func _acquire_volcano_nodes(info: Dictionary) -> void:
-	if is_server or int(info.get("lod", 99)) > VOLCANO_FEATURE_MAX_LOD \
+	_read_dbg_flags()
+	if _dbg_no_volcano_fx or is_server or int(info.get("lod", 99)) > VOLCANO_FEATURE_MAX_LOD \
 			or not planet_data.mountains_active():
 		return
 	var keys: Array = []
