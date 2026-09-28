@@ -67,6 +67,11 @@ extends RefCounted
 ##                 prop_count × { u16 key_sid | u8 vtype | u8 pad | u32 value }
 ##                 coverage == point   : i32 lon | i32 lat
 ##                 coverage == partial : vertex_count × { i32 lon | i32 lat }
+##   LAVA          u16 type_sid | u16 state_sid | u16 name_sid | u16 rsv
+##                 f32 width_start_m | f32 width_end_m | f32 depth_m
+##                 f32 total_length_m | u32 feature_id | u32 point_count
+##                 point_count × { i32 lon | i32 lat | f32 along_m }
+##   MOUNTAIN, RIDGE, VOLCANO, FUMAROLE use the POPULATE layout.
 ##
 ## Lookup is a binary search performed IN PLACE on the index bytes
 ## (PackedByteArray.decode_u32) — a level may hold millions of entries and
@@ -112,6 +117,12 @@ const KIND_ROAD := 5
 ## polygons, RIDGE = crest polylines (the vertex list is an open line).
 const KIND_MOUNTAIN := 6
 const KIND_RIDGE := 7
+## Volcanoes (VolcanoRelief): POPULATE point records, summed with the mountains.
+const KIND_VOLCANO := 8
+## Lava flows (LavaSettings): polylines baked deep like the roads, own record.
+const KIND_LAVA := 9
+## Fumarole fields / vents (FumaroleField): POPULATE polygon or point records.
+const KIND_FUMAROLE := 10
 
 ## Bit masks for decode_tile()'s kind_mask (1 << kind).
 const MASK_CRATER := 1 << KIND_CRATER
@@ -121,8 +132,14 @@ const MASK_POPULATE := 1 << KIND_POPULATE
 const MASK_ROAD := 1 << KIND_ROAD
 const MASK_MOUNTAIN := 1 << KIND_MOUNTAIN
 const MASK_RIDGE := 1 << KIND_RIDGE
+const MASK_VOLCANO := 1 << KIND_VOLCANO
+const MASK_LAVA := 1 << KIND_LAVA
+const MASK_FUMAROLE := 1 << KIND_FUMAROLE
 const MASK_ALL := MASK_CRATER | MASK_LINEAR | MASK_RADIAL | MASK_POPULATE | MASK_ROAD \
-		| MASK_MOUNTAIN | MASK_RIDGE
+		| MASK_MOUNTAIN | MASK_RIDGE | MASK_VOLCANO | MASK_LAVA | MASK_FUMAROLE
+
+## LAVA record header size (layout 1).
+const LAVA_HEADER_SIZE := 32
 
 ## Coordinates are stored as int32 in units of 1e-7 degree (~1.1 cm).
 const COORD_SCALE := 1.0e-7
@@ -308,6 +325,9 @@ static func kind_name(kind: int) -> String:
 		KIND_ROAD: return "road"
 		KIND_MOUNTAIN: return "mountain"
 		KIND_RIDGE: return "ridge"
+		KIND_VOLCANO: return "volcano"
+		KIND_LAVA: return "lava"
+		KIND_FUMAROLE: return "fumarole"
 	return ""
 
 
@@ -413,7 +433,8 @@ func _sid(i: int) -> String:
 ## for biome polygons, and the server collision path never pays for roads.
 ##
 ## Returns {"craters", "linear_features", "radial_features", "populate_zones",
-## "roads", "mountain_zones", "ridge_lines", "_raw_bytes"}. Every element
+## "roads", "mountain_zones", "ridge_lines", "volcanoes", "mountain_set",
+## "lava_flows", "fumaroles", "_raw_bytes"}. Every element
 ## matches the schema the runtime already consumes, so callers need no field
 ## renaming; the two mountain lists come prepared (MountainRelief.Zone /
 ## Ridge), which needs [param m_per_deg] for the ridge lengths.
@@ -427,7 +448,10 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 		"roads": [],
 		"mountain_zones": [],
 		"ridge_lines": [],
+		"volcanoes": [],
 		"mountain_set": null,
+		"lava_flows": [],
+		"fumaroles": [],
 		"_raw_bytes": bytes.size(),
 	}
 	if bytes.size() < 4:
@@ -475,8 +499,22 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 				for z in _decode_populate(bytes, start, record_count):
 					rl.append(MountainRelief.prepare_ridge(z, m_per_deg))
 				out["ridge_lines"] = rl
-	if not out["mountain_zones"].is_empty() or not out["ridge_lines"].is_empty():
-		out["mountain_set"] = MountainRelief.build_set(out["mountain_zones"], out["ridge_lines"])
+			KIND_VOLCANO:
+				var vl: Array = []
+				for z in _decode_populate(bytes, start, record_count):
+					vl.append(VolcanoRelief.prepare(z))
+				out["volcanoes"] = vl
+			KIND_LAVA:
+				out["lava_flows"] = _decode_lava(bytes, start, record_count, m_per_deg)
+			KIND_FUMAROLE:
+				var fl: Array = []
+				for z in _decode_populate(bytes, start, record_count):
+					fl.append(FumaroleField.prepare(z))
+				out["fumaroles"] = fl
+	if not out["mountain_zones"].is_empty() or not out["ridge_lines"].is_empty() \
+			or not out["volcanoes"].is_empty():
+		out["mountain_set"] = MountainRelief.build_set(out["mountain_zones"], out["ridge_lines"],
+				out["volcanoes"])
 	return out
 
 
@@ -647,6 +685,53 @@ func _decode_roads(b: PackedByteArray, off: int, count: int,
 			road["half_width_deg"] = half_width_m / m_per_deg
 			road["_road_hw_converted"] = true
 		out.append(road)
+	return out
+
+
+## LAVA records: the same keys as a road (centerline, _cum_lengths,
+## feature_id, half_width_m…) so the generic grade machinery (GradeProfile,
+## GradeBed, GradeGeom) reads a lava flow like any profiled line, plus its
+## own: state, width_start_m / width_end_m, depth_m. road_type is
+## "lava_river" — the key GradeSettings routes on (LavaSettings.is_lava).
+func _decode_lava(b: PackedByteArray, off: int, count: int, m_per_deg: float) -> Array:
+	var out: Array = []
+	var p := off
+	for _i in count:
+		if p + LAVA_HEADER_SIZE > b.size():
+			break
+		var lava_type := _sid(b.decode_u16(p))
+		var state := _sid(b.decode_u16(p + 2))
+		var lava_name := _sid(b.decode_u16(p + 4))
+		var w0 := b.decode_float(p + 8)
+		var w1 := b.decode_float(p + 12)
+		var depth := b.decode_float(p + 16)
+		var total_length_m := b.decode_float(p + 20)
+		var feature_id := b.decode_u32(p + 24)
+		var point_count := b.decode_u32(p + 28)
+		p += LAVA_HEADER_SIZE
+		var poly := _decode_polyline(b, p, point_count)
+		p += point_count * POINT_SIZE
+		var hw := 0.5 * maxf(w0, w1)
+		var lava := {
+			"road_type": LavaSettings.LAVA_TYPE,
+			"lava_type": lava_type,
+			"state": state if state != "" else "active",
+			"name": lava_name,
+			"feature_id": feature_id,
+			"width_start_m": w0,
+			"width_end_m": w1,
+			"width": 2.0 * hw,
+			"width_m": 2.0 * hw,
+			"half_width_m": hw,
+			"depth_m": depth,
+			"centerline": poly[0],
+			"_cum_lengths": poly[1],
+			"_total_length": total_length_m,
+		}
+		if m_per_deg > 0.0:
+			lava["half_width_deg"] = hw / m_per_deg
+			lava["_road_hw_converted"] = true
+		out.append(lava)
 	return out
 
 

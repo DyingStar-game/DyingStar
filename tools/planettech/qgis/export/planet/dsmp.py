@@ -88,6 +88,12 @@ Padding keeps every f32/i32 field 4-byte aligned.
                    prop_count x { u16 key_sid | u8 vtype | u8 pad | u32 value }
                    coverage == point   : i32 lon | i32 lat
                    coverage == partial : vertex_count x { i32 lon | i32 lat }
+    LAVA           u16 type_sid | u16 state_sid | u16 name_sid | u16 rsv
+                   f32 width_start_m | f32 width_end_m | f32 depth_m
+                   f32 total_length_m | u32 feature_id | u32 point_count
+                   point_count x { i32 lon | i32 lat | f32 along_m }
+                   (32-byte header, record layout 1 of the lava part)
+    MOUNTAIN, RIDGE, VOLCANO and FUMAROLE records use the POPULATE layout.
 
 Why cum_length_m / along_m are stored PER POINT
 ----------------------------------------------
@@ -123,6 +129,14 @@ KIND_ROAD = 5
 #: vertex list is an OPEN line, never clipped).
 KIND_MOUNTAIN = 6
 KIND_RIDGE = 7
+#: Procedural volcanoes (scenes/planet/volcano_relief.gd): POPULATE point
+#: records whose props are the resolved style + the unit centre cx/cy/cz.
+KIND_VOLCANO = 8
+#: Lava flows (scenes/planet/lava/lava_settings.gd): polylines partitioned per
+#: pixel and baked down to max_quadtree_nside like the roads, own record.
+KIND_LAVA = 9
+#: Fumarole fields (polygons) and vents (points): POPULATE records.
+KIND_FUMAROLE = 10
 
 KIND_NAMES = {
     KIND_CRATER: "crater",
@@ -132,6 +146,9 @@ KIND_NAMES = {
     KIND_ROAD: "road",
     KIND_MOUNTAIN: "mountain",
     KIND_RIDGE: "ridge",
+    KIND_VOLCANO: "volcano",
+    KIND_LAVA: "lava",
+    KIND_FUMAROLE: "fumarole",
 }
 KIND_BY_NAME = {v: k for k, v in KIND_NAMES.items()}
 
@@ -155,6 +172,10 @@ ROAD_FLAG_MAX_SLOPE = 1
 #: Coordinates are i32 in units of 1e-7 degree.
 COORD_SCALE = 1.0e-7
 _E7 = 10_000_000
+
+#: LAVA record header size (layout 1).
+LAVA_HEADER_SIZE = 32
+LAVA_RECORD_LAYOUT = 1
 
 CRATER_SIZE = 16
 RADIAL_SIZE = 20
@@ -261,6 +282,23 @@ def pack_road(road_type_sid, surface_sid, name_sid, lanes, width_m,
         "<HHHHffIIBBH", _sid(road_type_sid), _sid(surface_sid), _sid(name_sid),
         lanes_v, float(width_m), float(total_length_m),
         int(feature_id) & 0xFFFFFFFF, len(pts), flags, slope_v, 0)
+    for lon, lat, along in pts:
+        _pt(out, lon, lat, along)
+    return bytes(out)
+
+
+def pack_lava(type_sid, state_sid, name_sid, width_start_m, width_end_m, depth_m,
+              total_length_m, feature_id, points):
+    """points: iterable of (lon, lat, along_m) from the flow's true start (its
+    source — the drawing direction is the flow direction)."""
+    pts = list(points)
+    if len(pts) < 2:
+        raise DsmpError("a lava flow needs at least 2 points")
+    out = bytearray()
+    out += struct.pack(
+        "<HHHHffffII", _sid(type_sid), _sid(state_sid), _sid(name_sid), 0,
+        float(width_start_m), float(width_end_m), float(depth_m),
+        float(total_length_m), int(feature_id) & 0xFFFFFFFF, len(pts))
     for lon, lat, along in pts:
         _pt(out, lon, lat, along)
     return bytes(out)

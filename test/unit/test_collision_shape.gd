@@ -334,27 +334,6 @@ func test_pressure_canyon_depression() -> void:
 			RockyLandformPressureCanyonTerrain.DEFAULT_DEPTH_M, "Pressure canyon")
 
 
-func test_lava_river_depression() -> void:
-	# Lava river uses a separate code path from the other linear features.
-	var cl := _make_wide_centerline(NSIDE, IPIX)
-	var data := _make_planet_data(NSIDE, RADIUS, false, [], IPIX,
-			[],
-			[{
-				"type": "volcanic_geothermal-lava_river",
-				"centerline": cl,
-				"width_start_m": 500.0,
-				"width_end_m": 500.0,
-			}])
-	var shape := PlanetChunk.generate_collision_shape(
-			data, 0, 0.0, 0.0, 0.0, 0.0, RES, NSIDE, IPIX)
-	var expected := VolcanicGeothermalLavaRiverTerrain.DEFAULT_DEPTH_M
-	assert_true(_has_depressed_vertex(shape, RADIUS, 1.0),
-			"Lava river should depress vertices")
-	var depression := _max_depression(shape, RADIUS)
-	assert_true(depression > expected * 0.3,
-			"Lava river depression %.1f should be > %.1f" % [depression, expected * 0.3])
-
-
 func test_linear_depth_override() -> void:
 	var cl := _make_wide_centerline(NSIDE, IPIX)
 	var override_depth := 200.0
@@ -416,13 +395,6 @@ func test_cave_depression() -> void:
 			CaveTerrain.ENTRANCE_RADIUS_M,
 			CaveTerrain.ENTRANCE_DEPTH_M,
 			"Cave")
-
-
-func test_fumarole_depression() -> void:
-	_test_point_biome("volcanic_geothermal-fumarole",
-			VolcanicGeothermalFumaroleTerrain.DEPRESSION_RADIUS_M,
-			VolcanicGeothermalFumaroleTerrain.DEPRESSION_DEPTH_M,
-			"Fumarole")
 
 
 func test_ice_geyser_depression() -> void:
@@ -572,24 +544,3 @@ func test_centerline_too_short() -> void:
 	var vr := _vertex_range(shape)
 	assert_almost_eq(vr.min, RADIUS, TOLERANCE,
 			"No depression expected with centerline too short")
-
-
-func test_lava_river_depth_override() -> void:
-	# Lava river with depth_override — separate code path from other linears.
-	var cl := _make_wide_centerline(NSIDE, IPIX)
-	var override_depth := 100.0
-	var data := _make_planet_data(NSIDE, RADIUS, false, [], IPIX,
-			[],
-			[{
-				"type": "volcanic_geothermal-lava_river",
-				"centerline": cl,
-				"width_start_m": 500.0,
-				"width_end_m": 500.0,
-				"depth_override": override_depth,
-			}])
-	var shape := PlanetChunk.generate_collision_shape(
-			data, 0, 0.0, 0.0, 0.0, 0.0, RES, NSIDE, IPIX)
-	var depression := _max_depression(shape, RADIUS)
-	assert_true(depression > VolcanicGeothermalLavaRiverTerrain.DEFAULT_DEPTH_M + 5.0,
-			"Lava river override (%d) should produce deeper depression than default (%d), got %.1f"
-			% [override_depth, VolcanicGeothermalLavaRiverTerrain.DEFAULT_DEPTH_M, depression])

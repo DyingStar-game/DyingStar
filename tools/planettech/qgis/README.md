@@ -17,9 +17,12 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
 | `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
+| `export_volcanoes.py` | QGIS Python Console | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
+| `migrate_volcanic_layers.py` | QGIS Python Console | One-shot, per planet: creates the new volcanic tables and copies the old biome ones (`active_volcano`, `lava_dome`, `lava_river`, `fumarole`) into them. Drops nothing. |
 | `export_rocks.py` | QGIS console or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
 | `export/planet/biomes.py` | library | The POPULATE part builder: tiling, full / partial coverage, overlap order. |
 | `export/planet/mountains.py` | library | The MOUNTAIN / RIDGE part builders and the style presets (`PRESETS`, `RIDGE_PRESETS`). |
+| `export/planet/volcanoes.py` | library | The VOLCANO / LAVA / FUMAROLE part builders and their presets (`PRESETS`, `LAVA_PRESETS`, `GAS_PRESETS`). |
 | `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test, future preview raster. |
 | `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
@@ -258,6 +261,65 @@ features re-bake; `heights.pack` and `data_version` are untouched.
 To iterate before the layers exist, `PlanetData` has a **Debug mountain**
 group (a synthetic 32-gon range + one ridge, `debug_mountain_*` /
 `debug_ridge_*`), ignored as soon as the pack carries a mountain part.
+
+## Volcanoes, lava flows and fumaroles (`export_volcanoes.py`)
+
+Like the mountains, these are **generated in Godot** and only described in
+QGIS, in the `volcanoes` category (`layers/volcanoes.py`). None of them is a
+biome: the ground keeps its own rock under them, so a volcano on a blue
+corundum plateau is blue — several blues, deeper up the flanks and deepest in
+the crater — and its lava a darker crust of the same rock.
+
+| Layer | Geometry | What it says |
+|---|---|---|
+| `volcano` | Point | The summit. A `type` preset — `stratovolcano`, `shield`, `caldera`, `cinder_cone`, `lava_dome` — fills every NULL field: `base_diameter_m`, `height_m`, `crater_diameter_m`, `crater_depth_m`, `floor_frac`, `flank_exponent` (0.5 convex … 2 concave, snapped to 0.5 / 1 / 1.5 / 2 / 3), `roughness`, `gullies`, `irregularity`. `has_lava_lake` + `lake_fill_m` fill the crater; `activity` (dormant / fuming / active) adds the plume and the glow. |
+| `lava_flow` | LineString | Drawn **from the source downhill**: the drawing direction is the flow direction. `state` active / cooling / solid, `width_start_m` → `width_end_m`, `depth_m` (how far the crust sits below its banks). |
+| `fumarole_field` | Polygon | Godot scatters vents over it at `density` vents/km², with a `gas` (steam / sulfur / co2 / chlorine) that colours the plumes and stains the rock (`stain`). Keeps its old table. |
+| `fumarole_vent` | Point | One vent placed by hand. |
+
+Lava never flows uphill. At runtime a flow is a grade-profiled line with its
+own rule (`GradeProfile`, DESCENT): its surface is the running minimum of the
+ground along the line, `depth_m` below it, so where the ground rises the
+channel is cut through the rise — no tunnel, no viaduct. The exporter warns
+when a line ends higher than it starts (from `<planet>_heightmap.tif` + the
+volcano cones), and Godot warns again from the real relief. A flow whose first point is inside a
+volcano's lava lake, or within 200 m of its shore, is made to start ON the
+shore (on the ray from the summit): the lava leaves at the lake's level and
+its channel breaches the crater rim.
+
+```python
+exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_volcanoes.py').read())
+```
+
+Pack kinds: `KIND_VOLCANO = 8` (POPULATE point records, the resolved style plus
+the unit centre `cx/cy/cz` computed at export, baked n1…export_nside),
+`KIND_LAVA = 9` (its own record, partitioned per pixel and baked down to
+`max_quadtree_nside` like the roads), `KIND_FUMAROLE = 10` (POPULATE records,
+polygons clipped to a box expanded by the stain feather, vents as points).
+
+At runtime:
+- **Volcanoes** ride the mountain machinery (`scenes/planet/volcano_relief.gd`,
+  C# twin `MountainVolcanoNative.cs`): the same offset inside
+  `sample_height_for_direction`, the same LOD gate (the crater is dropped when
+  the pitch reaches its radius, the cone at half its foot — never faded), the
+  same `mountain_core` for the rock colour and `mountain_mask` to fade the
+  corundum cracks at the foot. The lava lake and the plume are client nodes
+  (`scenes/planet/volcano/volcano_features.gd`), one per volcano.
+- **Lava flows** reuse the grade machinery (`scenes/planet/lava/lava_settings.gd`,
+  `GradeProfile` / `GradeBed`): a carved channel and a crust slab with
+  collision, drawn with the roads (`lava_flow.gdshader`: the ground's rock ×
+  a per-state darkening, glowing cracks scrolling downstream while hot).
+- **Fumaroles** (`scenes/planet/fumarole/`): the vents are scattered
+  deterministically per chunk (a parent chunk holds exactly its children's
+  vents), drawn on the finest LOD only, decorative (no collision on either
+  side); the deposit stain is baked into the ground's vertex colours.
+
+Old planets: run `migrate_volcanic_layers.py` once (it creates the new tables
+and copies `active_volcano`, `lava_dome`, `lava_river`, `fumarole` into them),
+then `setup_planet_project.py`. Biome indices 26, 30, 86, 94 and 107 are
+reserved. To iterate without QGIS, `PlanetData` has **Debug volcano**, **Debug
+lava** and **Debug fumaroles** groups (tarsis_8 uses them), ignored once the
+pack carries the matching part.
 
 ## Terrain-modifier pack (`terrainmodifier.pack`)
 

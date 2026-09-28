@@ -50,6 +50,13 @@ const STRINGS := [
 	"ridge",                  # 15 RIDGE record type
 	"height_m",               # 16 ridge prop key (f32)
 	"seed",                   # 17 prop key (i32)
+	"volcano",                # 18 VOLCANO record type
+	"base_diameter_m",        # 19 volcano prop key (f32)
+	"lava_river",             # 20 LAVA record type
+	"solid",                  # 21 lava state
+	"fumarole_field",         # 22 FUMAROLE record type
+	"gas",                    # 23 fumarole prop key (string)
+	"sulfur",                 # 24 its value
 ]
 
 const SID_LINEAR_TYPE := 0
@@ -70,6 +77,13 @@ const SID_AMPLITUDE := 14
 const SID_RIDGE := 15
 const SID_HEIGHT := 16
 const SID_SEED := 17
+const SID_VOLCANO := 18
+const SID_BASE_DIAMETER := 19
+const SID_LAVA_RIVER := 20
+const SID_SOLID := 21
+const SID_FUMAROLE_FIELD := 22
+const SID_GAS := 23
+const SID_SULFUR := 24
 
 var _levels: Array[int] = []
 ## ROAD record layout the fixture pack announces (2 = flags/max_slope tail).
@@ -810,6 +824,106 @@ func test_decode_mountain_and_ridge_kinds() -> void:
 	var none := pack.decode_tile(out, _m_per_deg, ModifierPackScript.MASK_ROAD)
 	assert_eq((none["mountain_zones"] as Array).size(), 0)
 	assert_true(none["mountain_set"] == null)
+	pack.close()
+
+
+## VOLCANO (kind 8, POPULATE point record), LAVA (kind 9, its own record)
+## and FUMAROLE (kind 10, POPULATE) blocks, one record each.
+func _block_volcano(lon: float, lat: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_VOLCANO)
+	_put_u8(b, ModifierPackScript.COVERAGE_POINT)
+	_put_u8(b, 1)
+	_put_s32(b, 0)
+	_put_u16(b, 0)
+	_put_u16(b, 0)
+	_put_u16(b, SID_BASE_DIAMETER)
+	_put_u8(b, 0)
+	_put_u8(b, 0)
+	_put_f32(b, 4000.0)
+	_put_s32(b, _e7(lon))
+	_put_s32(b, _e7(lat))
+	return b
+
+
+func _block_lava(lon: float, lat: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_LAVA_RIVER)
+	_put_u16(b, SID_SOLID)
+	_put_u16(b, 0xFFFF)                # no name
+	_put_u16(b, 0)
+	_put_f32(b, 12.0)                  # width_start_m
+	_put_f32(b, 30.0)                  # width_end_m
+	_put_f32(b, 2.5)                   # depth_m
+	_put_f32(b, 900.0)                 # total_length_m
+	_put_u32(b, (1 << 30) + 4)         # feature_id
+	_put_u32(b, 2)
+	_put_point(b, lon, lat, 100.0)
+	_put_point(b, lon + 0.001, lat, 200.0)
+	return b
+
+
+func _block_fumarole() -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_FUMAROLE_FIELD)
+	_put_u8(b, ModifierPackScript.COVERAGE_FULL)
+	_put_u8(b, 2)
+	_put_s32(b, 0)
+	_put_u16(b, 0)
+	_put_u16(b, 0)
+	_put_u16(b, SID_DENSITY)
+	_put_u8(b, 0)
+	_put_u8(b, 0)
+	_put_f32(b, 42.0)
+	_put_u16(b, SID_GAS)
+	_put_u8(b, 1)
+	_put_u8(b, 0)
+	_put_u32(b, SID_SULFUR)
+	return b
+
+
+func test_decode_volcano_lava_and_fumarole_kinds() -> void:
+	var pack = _open()
+	var blocks := [[ModifierPackScript.KIND_VOLCANO, _block_volcano(10.0, 20.0)],
+			[ModifierPackScript.KIND_LAVA, _block_lava(10.0, 20.0)],
+			[ModifierPackScript.KIND_FUMAROLE, _block_fumarole()]]
+	var out := PackedByteArray()
+	_put_u16(out, 1)
+	_put_u16(out, blocks.size())
+	for kb in blocks:
+		_put_u8(out, int(kb[0]))
+		_put_u8(out, 0)
+		_put_u16(out, 1)
+		_put_u32(out, (kb[1] as PackedByteArray).size())
+	for kb in blocks:
+		out.append_array(kb[1] as PackedByteArray)
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_VOLCANO), "volcano")
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_LAVA), "lava")
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_FUMAROLE), "fumarole")
+	var t := pack.decode_tile(out, _m_per_deg)
+	assert_eq((t["volcanoes"] as Array).size(), 1)
+	var v: VolcanoRelief.Volcano = t["volcanoes"][0]
+	assert_eq(v.rb, 2000.0, "base diameter → radius")
+	assert_almost_eq(v.lon, 10.0, 1e-6)
+	assert_true(t["mountain_set"] != null, "a volcano alone builds the C# set")
+	assert_eq((t["lava_flows"] as Array).size(), 1)
+	var lv: Dictionary = t["lava_flows"][0]
+	assert_true(LavaSettings.is_lava(lv), "routed as a lava flow")
+	assert_true(GradeSettings.is_profiled(lv))
+	assert_eq(lv["state"], "solid")
+	assert_eq(lv["width_start_m"], 12.0)
+	assert_eq(lv["half_width_m"], 15.0, "the widest end")
+	assert_eq(lv["depth_m"], 2.5)
+	assert_eq(int(lv["feature_id"]), (1 << 30) + 4)
+	assert_eq((lv["_cum_lengths"] as PackedFloat64Array)[0], 100.0, "along from the true start")
+	assert_eq((t["fumaroles"] as Array).size(), 1)
+	var f: FumaroleField.Field = t["fumaroles"][0]
+	assert_true(f.full)
+	assert_eq(f.density, 42.0)
+	assert_eq(f.gas, "sulfur")
+	var none := pack.decode_tile(out, _m_per_deg, ModifierPackScript.MASK_ROAD)
+	assert_eq((none["volcanoes"] as Array).size(), 0)
+	assert_eq((none["lava_flows"] as Array).size(), 0)
 	pack.close()
 
 

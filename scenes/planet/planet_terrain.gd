@@ -279,9 +279,15 @@ var _cam_history: PackedVector3Array = PackedVector3Array()
 ## Last known camera position in planet-local space (for distance priority).
 var _last_local_cam: Vector3 = Vector3.ZERO
 
-## Cache of feature nodes (caves, fumaroles, volcanoes) attached per chunk
+## Cache of feature nodes (caves) attached per chunk
 ## so we can free them when the chunk is unloaded.  key → Array[Node3D].
 var _server_feature_nodes: Dictionary = {}
+## Client / editor: one lava-lake + plume node per volcano (VolcanoFeatures),
+## key -> {"node": Node3D, "chunks": {chunk key: true}} — refcounted by the
+## chunks that own the summit, so overlapping LODs never draw two lakes.
+var _volcano_nodes: Dictionary = {}
+## A volcano's lake and plume show on chunks of this LOD or finer.
+const VOLCANO_FEATURE_MAX_LOD := 4
 
 ## POIs resolved from the "POIs" child, built on first use (see poi_spheres). Only a re-import
 ## changes them, and that needs an editor restart, so it is never invalidated at runtime.
@@ -393,10 +399,27 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _mt_fp := data.mountain_fingerprint()
 		if _mt_fp != "":
 			_mt = "_mt%s" % _mt_fp
-		elif data.debug_mountain_enabled:
-			_mt = "_mtdbg%08x" % (hash(str([data.debug_mountain_lonlat,
+		elif data.debug_mountain_enabled or data.debug_volcano_enabled:
+			var _dbg: Array = [data.debug_mountain_lonlat,
 					data.debug_mountain_radius_km, data.debug_mountain_style,
-					data.debug_ridge_points, data.debug_ridge_style])) & 0xFFFFFFFF)
+					data.debug_ridge_points, data.debug_ridge_style]
+			if not data.debug_mountain_enabled:
+				_dbg = ["no-mountain"]
+			if data.debug_volcano_enabled:
+				_dbg.append_array([data.debug_volcano_lonlat, data.debug_volcano_type,
+						data.debug_volcano_style])
+			_mt = "_mtdbg%08x" % (hash(str(_dbg)) & 0xFFFFFFFF)
+		# Volcanoes: their fingerprint is in _mt; the relief ALGORITHM is keyed
+		# here, only when the planet has one (byte-identical key otherwise).
+		if data.volcano_fingerprint() != "" or data.debug_volcano_enabled:
+			_mt += "_vr%d" % VolcanoRelief.ALGO_VERSION
+		# Lava flows: their records and the constants of their crust and
+		# channel (LavaSettings), only when the planet has one.
+		if data.has_lava():
+			_mt += "_lv%s_%s" % [data.lava_fingerprint().substr(0, 12), LavaSettings.signature()]
+		# Fumarole fields: their deposit stain is in the vertex colours.
+		if data.has_fumaroles():
+			_mt += "_fm%s_%s" % [data.fumarole_fingerprint().substr(0, 12), FumaroleField.signature()]
 		# v26 → v27: the road ribbon's perpendicular is now taken in metric
 		# space. That widens every road that is not east-west, on EVERY planet
 		# with roads, so it is a runtime change no data field captures.
@@ -482,6 +505,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v53 → v54: the crack Voronoi is jittered by an integer hash (a new
 		# network, identical on every machine) and made organic by CrackNoise
 		# (meander + rim noise, keyed by "_cn" above).
+		# v54 → v55: the legacy volcanic overlays are gone — the radial
+		# active-volcano lava patch, the biome lava river carve and overlay,
+		# the fumarole bowls (volcanoes, lava flows and fumaroles are
+		# procedural kinds of their own: "_vr" / "_lv" / "_fm" above).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -490,7 +517,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v54%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v55%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
@@ -592,6 +619,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# THIS thread, before the bridge spans and grade profiles below read the
 	# sampler — they must stand on the mountains too.
 	planet_data.warm_mountains()
+	# Fumarole fields and lava flows: same reason (the workers only read the
+	# gates and the debug records built here).
+	planet_data.warm_fumaroles()
+	planet_data.has_lava()
 
 	# Find the road/chasm crossings now rather than on the first chunk that
 	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
@@ -1239,17 +1270,6 @@ func _spawn_chunk_features(key: String, nside: int, ipix: int) -> void:
 			if cave_node:
 				_chunks_node.add_child(cave_node)
 				spawned.append(cave_node)
-		elif VolcanicGeothermalFumaroleTerrain.is_fumarole_biome(bd):
-			var fum_node := VolcanicGeothermalFumaroleSpawner.spawn(
-				planet_data, info, zone_dup)
-			if fum_node:
-				_chunks_node.add_child(fum_node)
-				spawned.append(fum_node)
-		elif VolcanicGeothermalActiveVolcanoTerrain.is_active_volcano_biome(bd):
-			var volc_node := VolcanicSpawner.spawn(planet_data, info, zone_dup)
-			if volc_node:
-				_chunks_node.add_child(volc_node)
-				spawned.append(volc_node)
 	if not spawned.is_empty():
 		_server_feature_nodes[key] = spawned
 
@@ -3363,10 +3383,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				var zbd := planet_data.get_biome_by_type(bt)
 				if zbd == null:
 					continue
-				var is_cave := CaveTerrain.is_cave_biome(zbd)
-				var is_fum  := VolcanicGeothermalFumaroleTerrain.is_fumarole_biome(zbd)
-				var is_volc := VolcanicGeothermalActiveVolcanoTerrain.is_active_volcano_biome(zbd)
-				if not is_cave and not is_fum and not is_volc:
+				# Volcanoes and fumaroles are procedural kinds of their own now
+				# (VolcanoFeatures, FumaroleSpawner): only the caves are left here.
+				if not CaveTerrain.is_cave_biome(zbd):
 					continue
 				# Build a compatible zone dict for spawners.
 				var zone: Dictionary = pz.duplicate()
@@ -3376,22 +3395,19 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				if pz.get("coverage", "") == "point":
 					if not zone.has("polygon") and zone.has("lon") and zone.has("lat"):
 						zone["polygon"] = PackedVector2Array([Vector2(zone["lon"], zone["lat"])])
-				if is_cave:
-					var cave_node := CaveSpawner.spawn(planet_data, info, zone)
-					if cave_node:
-						_chunks_node.add_child(cave_node)
-						info["cave"] = cave_node
-				elif is_fum:
-					var fum_node := VolcanicGeothermalFumaroleSpawner.spawn(planet_data, info, zone)
-					if fum_node:
-						_chunks_node.add_child(fum_node)
-						info["fumarole"] = fum_node
-				elif is_volc:
-					var volc_node := VolcanicSpawner.spawn(planet_data, info, zone)
-					if volc_node:
-						_chunks_node.add_child(volc_node)
-						info["volcanic"] = volc_node
+				var cave_node := CaveSpawner.spawn(planet_data, info, zone)
+				if cave_node:
+					_chunks_node.add_child(cave_node)
+					info["cave"] = cave_node
 
+	_acquire_volcano_nodes(info)
+	# Fumarole vents: decoration of the finest LOD (FumaroleSpawner).
+	if lod == 0 and not is_server and planet_data.has_fumaroles():
+		var fum := FumaroleSpawner.build(planet_data, int(info.nside), int(info.ipix),
+				chunk_center, true)
+		if fum:
+			_chunks_node.add_child(fum)
+			info["fumaroles"] = fum
 	_perf_end("asm:zones", _tk)
 	# Its own scope: road bridges AND railway viaducts are built here, on the
 	# main thread, and asm:zones alone could not tell them from the point-biome
@@ -3508,10 +3524,7 @@ func _create_chunk(info: Dictionary) -> void:
 				var zbd_s := planet_data.get_biome_by_type(bt_s)
 				if zbd_s == null:
 					continue
-				var is_cave_s := CaveTerrain.is_cave_biome(zbd_s)
-				var is_fum_s  := VolcanicGeothermalFumaroleTerrain.is_fumarole_biome(zbd_s)
-				var is_volc_s := VolcanicGeothermalActiveVolcanoTerrain.is_active_volcano_biome(zbd_s)
-				if not is_cave_s and not is_fum_s and not is_volc_s:
+				if not CaveTerrain.is_cave_biome(zbd_s):
 					continue
 				var zone_s: Dictionary = pz_s.duplicate()
 				if not zone_s.has("biome_index") and zbd_s:
@@ -3519,21 +3532,10 @@ func _create_chunk(info: Dictionary) -> void:
 				if pz_s.get("coverage", "") == "point":
 					if not zone_s.has("polygon") and zone_s.has("lon") and zone_s.has("lat"):
 						zone_s["polygon"] = PackedVector2Array([Vector2(zone_s["lon"], zone_s["lat"])])
-				if is_cave_s:
-					var cave_node := CaveSpawner.spawn(planet_data, info, zone_s)
-					if cave_node:
-						_chunks_node.add_child(cave_node)
-						info["cave"] = cave_node
-				elif is_fum_s:
-					var fum_node := VolcanicGeothermalFumaroleSpawner.spawn(planet_data, info, zone_s)
-					if fum_node:
-						_chunks_node.add_child(fum_node)
-						info["fumarole"] = fum_node
-				elif is_volc_s:
-					var volc_node := VolcanicSpawner.spawn(planet_data, info, zone_s)
-					if volc_node:
-						_chunks_node.add_child(volc_node)
-						info["volcanic"] = volc_node
+				var cave_node := CaveSpawner.spawn(planet_data, info, zone_s)
+				if cave_node:
+					_chunks_node.add_child(cave_node)
+					info["cave"] = cave_node
 
 	# The server needs bridges too: the deck carries the ONLY collision over a
 	# chasm. Without it a vehicle drives along the road ribbon — which flies over
@@ -4074,16 +4076,15 @@ func _remove_chunk(key: String) -> void:
 		return
 	var info: Dictionary = _active_chunks[key]
 	_release_bridges(key)
+	_release_volcano_nodes(key, info)
 	if info.has("mesh_instance") and info.mesh_instance:
 		info.mesh_instance.queue_free()
 	if info.has("vegetation") and info.vegetation:
 		info.vegetation.queue_free()
 	if info.has("cave") and info.cave:
 		info.cave.queue_free()
-	if info.has("fumarole") and info.fumarole:
-		info.fumarole.queue_free()
-	if info.has("volcanic") and info.volcanic:
-		info.volcanic.queue_free()
+	if info.has("fumaroles") and is_instance_valid(info.fumaroles):
+		info.fumaroles.queue_free()
 	if info.has("meadow") and info.meadow:
 		info.meadow.queue_free()
 	if info.has("forest") and info.forest:
@@ -4101,6 +4102,45 @@ func _remove_chunk(key: String) -> void:
 	if not is_server and int(info.get("nside", 0)) > 0 and info.has("mesh_instance"):
 		_count_active_descendant(int(info.nside), int(info.ipix), -1)
 		_refresh_road_visibility_around(int(info.nside), int(info.ipix))
+
+
+## Give chunk [param info] the lake / plume nodes of the volcanoes whose summit
+## it owns (creating a node for the first chunk that asks).
+func _acquire_volcano_nodes(info: Dictionary) -> void:
+	if is_server or int(info.get("lod", 99)) > VOLCANO_FEATURE_MAX_LOD \
+			or not planet_data.mountains_active():
+		return
+	var keys: Array = []
+	for v in planet_data.volcanoes_owned_by(int(info.get("nside", 0)), int(info.get("ipix", -1))):
+		var vol: VolcanoRelief.Volcano = v
+		if not VolcanoFeatures.wants_node(vol):
+			continue
+		var vkey := VolcanoFeatures.key_of(vol)
+		var entry: Dictionary = _volcano_nodes.get(vkey, {})
+		if entry.is_empty():
+			var node := VolcanoFeatures.build(planet_data, vol)
+			if node == null:
+				continue
+			_chunks_node.add_child(node)
+			entry = {"node": node, "chunks": {}}
+			_volcano_nodes[vkey] = entry
+		(entry["chunks"] as Dictionary)[info.key] = true
+		keys.append(vkey)
+	if not keys.is_empty():
+		info["volcano_keys"] = keys
+
+
+func _release_volcano_nodes(key: String, info: Dictionary) -> void:
+	for vkey in info.get("volcano_keys", []):
+		var entry: Dictionary = _volcano_nodes.get(vkey, {})
+		if entry.is_empty():
+			continue
+		(entry["chunks"] as Dictionary).erase(key)
+		if (entry["chunks"] as Dictionary).is_empty():
+			var node: Node = entry["node"]
+			if is_instance_valid(node):
+				node.queue_free()
+			_volcano_nodes.erase(vkey)
 
 
 func _clear_all_chunks() -> void:

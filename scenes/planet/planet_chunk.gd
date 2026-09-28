@@ -21,8 +21,8 @@ const RIM_SNAP_PITCHES := 1.6
 
 ## Biome terrain constants are now in self-contained modules:
 ##   Linear: MaritimeRiverRiverTerrain, RockyLandformCanyonTerrain, IcyIceCrevasseTerrain,
-##           ArideDesertDryRiverBedTerrain, RockyLandformPressureCanyonTerrain, VolcanicGeothermalLavaRiverTerrain
-##   Point:  CaveTerrain, SpatialCraterTerrain, VolcanicGeothermalFumaroleTerrain, VolcanicGeothermalIceGeyserTerrain,
+##           ArideDesertDryRiverBedTerrain, RockyLandformPressureCanyonTerrain
+##   Point:  CaveTerrain, SpatialCraterTerrain, VolcanicGeothermalIceGeyserTerrain,
 ##           VolcanicGeothermalMineralThermalSourceTerrain
 ##   Overlay: RoadTerrain (biome-adaptive road textures)
 
@@ -189,9 +189,14 @@ static func generate_mesh(
 	var _rbd := _get_recipe_biome_data(data, hp_nside, hp_ipix)
 	var _pz_zones: Array = _rbd[0]   # populate_zones
 	var _lf_arr: Array = _rbd[1]     # linear_features
-	var _rf_arr: Array = _rbd[2]     # radial_features
+	# _rbd[2] = radial features: nothing reads them since the volcanoes and
+	# fumaroles became procedural kinds of their own.
 	var _cr_arr: Array = _rbd[3]     # sub-pixel craters
 	var _road_arr: Array = _rbd[4]   # road pieces, already clipped to this chunk
+	# Lava flows (LavaSettings): their own pack kind, partitioned per pixel
+	# like the roads and drawn with them (the road_groups below).
+	var _lava_arr: Array = data.get_lava_for_chunk(hp_nside, hp_ipix) \
+			if hp_mode and data.has_lava() else []
 
 	# Cuttings of profiled lines (railways, graded roads) and the levelled pads
 	# under buildings: the per-vertex rule of GradeBed.apply, armed only on the
@@ -228,9 +233,7 @@ static func generate_mesh(
 	var has_linear_overlap := false
 	var has_point_overlap := false
 	var has_crater_overlap := not _cr_arr.is_empty()
-	var has_volcanic_active_overlap := false
 	var has_lunar_ground_overlap := false
-	var has_lava_river_overlap := false
 	var has_meadow_overlap := false
 	var has_forest_ground_overlap := false
 	var has_cliff_overlap := false
@@ -251,7 +254,7 @@ static func generate_mesh(
 	# this chunk's own disjoint stretch, so the test is just "is it empty".
 	# The BiomeQuery/roads_geojson path below is the transition fallback for
 	# planets that have not been re-exported yet (and for use_modifier_pack=off).
-	var has_road_overlap := not _road_arr.is_empty()
+	var has_road_overlap := not _road_arr.is_empty() or not _lava_arr.is_empty()
 	# Far LODs carry no road overlay at all (RoadTerrain.OVERLAY_MIN_RES);
 	# the carve and the relief flattening below stay, they are the ground.
 	var _road_overlay_wanted := res >= RoadTerrain.OVERLAY_MIN_RES
@@ -287,13 +290,9 @@ static func generate_mesh(
 		if _bd.get("has_shallow_water"):
 			has_shallow_water_overlap = true
 		if CaveTerrain.is_cave_biome(_bd) \
-				or VolcanicGeothermalFumaroleTerrain.is_fumarole_biome(_bd) \
 				or VolcanicGeothermalIceGeyserTerrain.matches_zone(_bd) \
-				or VolcanicGeothermalMineralThermalSourceTerrain.matches_zone(_bd) \
-				or VolcanicGeothermalActiveVolcanoTerrain.is_active_volcano_biome(_bd):
+				or VolcanicGeothermalMineralThermalSourceTerrain.matches_zone(_bd):
 			has_point_overlap = true
-		if VolcanicGeothermalActiveVolcanoTerrain.is_active_volcano_biome(_bd):
-			has_volcanic_active_overlap = true
 		if SpatialLunarGroundTerrain.matches_zone(_bd):
 			has_lunar_ground_overlap = true
 		if MeadowSteppeMeadowTerrain.matches_zone(_bd):
@@ -325,8 +324,6 @@ static func generate_mesh(
 		if _lt == "maritime_river-river":
 			has_river_overlap = true
 			_river_zones.append(_lf)
-		elif _lt == "volcanic_geothermal-lava_river":
-			has_lava_river_overlap = true
 		elif _lt == "aride_desert-dry_river_bed":
 			has_linear_overlap = true
 			has_dry_river_bed_overlap = true
@@ -334,13 +331,6 @@ static func generate_mesh(
 		elif _lt == "rocky_landform-canyon" or _lt == "icy-ice_crevasse" \
 				or _lt == "rocky_landform-pressure_canyon":
 			has_linear_overlap = true
-
-	# Radial features.
-	for _rf in _rf_arr:
-		var _rt: String = _rf.get("type", "")
-		if _rt == "volcanic_geothermal-active_volcano":
-			has_volcanic_active_overlap = true
-			has_point_overlap = true
 
 	# Pre-prepare river zones (linear features have same keys as prepare_zone expects).
 	if has_river_overlap:
@@ -365,11 +355,6 @@ static func generate_mesh(
 	var is_shallow_water_vertex: PackedByteArray = PackedByteArray()
 	if has_shallow_water_overlap:
 		is_shallow_water_vertex.resize(vert_count)
-
-	# Per-vertex: volcanic_active flag for lava overlay.
-	var is_volcanic_active_vertex: PackedByteArray = PackedByteArray()
-	if has_volcanic_active_overlap:
-		is_volcanic_active_vertex.resize(vert_count)
 
 	# Per-vertex: lunar_ground flag for lunar ground material overlay.
 	var is_lunar_ground_vertex: PackedByteArray = PackedByteArray()
@@ -403,18 +388,6 @@ static func generate_mesh(
 	var is_cliff_vertex: PackedByteArray = PackedByteArray()
 	if has_cliff_overlap:
 		is_cliff_vertex.resize(vert_count)
-
-	# Per-vertex: lava_river flag + original height before depression.
-	# The lava surface sits at the original terrain height (like water),
-	# so we need to remember the pre-depression height per vertex.
-	# Flow-aligned UVs are pre-computed so the texture follows the river.
-	var is_lava_river_vertex: PackedByteArray = PackedByteArray()
-	var lava_river_original_height: PackedFloat32Array = PackedFloat32Array()
-	var lava_river_flow_uv: PackedVector2Array = PackedVector2Array()
-	if has_lava_river_overlap:
-		is_lava_river_vertex.resize(vert_count)
-		lava_river_original_height.resize(vert_count)
-		lava_river_flow_uv.resize(vert_count)
 
 	# Per-vertex: dry_river_bed flag + flow-aligned UVs for pebble texture overlay.
 	# The pebble material sits on the carved riverbed floor (post-depression).
@@ -730,21 +703,6 @@ static func generate_mesh(
 			if has_shallow_water_overlap and bd and bd.has_shallow_water:
 				is_shallow_water_vertex[idx] = 1
 
-			# Volcanic active — flag for lava overlay surface.
-			# Active volcanos are radial features, not populate zones.
-			if has_volcanic_active_overlap:
-				var _va_lonlat := BiomeQuery._dir_to_lonlat(dir)
-				var _va_m_per_deg := data.radius * PI / 180.0
-				for _va_rf in _rf_arr:
-					if _va_rf.get("type", "") != "volcanic_geothermal-active_volcano":
-						continue
-					var _va_dx: float = (_va_lonlat.x - _va_rf.get("lon", 0.0)) * cos(deg_to_rad(_va_lonlat.y)) * _va_m_per_deg
-					var _va_dy: float = (_va_lonlat.y - _va_rf.get("lat", 0.0)) * _va_m_per_deg
-					var _va_dist: float = sqrt(_va_dx * _va_dx + _va_dy * _va_dy)
-					if _va_dist < _va_rf.get("radius_m", 0.0):
-						is_volcanic_active_vertex[idx] = 1
-						break
-
 			# Lunar ground — flag for lunar ground material overlay surface.
 			if has_lunar_ground_overlap and bd \
 					and SpatialLunarGroundTerrain.matches_zone(bd):
@@ -800,45 +758,14 @@ static func generate_mesh(
 			# query_at_direction() + get_cross_section_t() per vertex whose
 			# result nothing ever read.
 
-			# Lava river — iterate recipe linear features for lava_river type.
-			# The cross-section test (t < 1.0) determines which vertices
-			# are actually inside the channel; only those get the lava
-			# overlay flag AND the depression.
-			if has_lava_river_overlap:
-				for _lr_z in _lf_arr:
-					if _lr_z.get("type", "") != "volcanic_geothermal-lava_river":
-						continue
-					var _lr_cl: PackedVector2Array = _lr_z.get("centerline", PackedVector2Array())
-					if _lr_cl.size() < 2:
-						continue
-					VolcanicGeothermalLavaRiverTerrain.prepare_zone(_lr_z, data.radius)
-					var _lr_lonlat := BiomeQuery._dir_to_lonlat(dir)
-					var _lr_cs := BiomeQuery.get_cross_section_t(_lr_z, _lr_lonlat)
-					var _lr_t: float = _lr_cs.t
-					if _lr_t < 1.0:
-						# Inside the actual channel — flag for overlay.
-						is_lava_river_vertex[idx] = 1
-						lava_river_original_height[idx] = height
-						# Flow-aligned UV: U = along flow, V = across.
-						var _lr_m_per_deg := data.radius * PI / 180.0
-						var _lr_flow := BiomeQuery.get_flow_aligned_coords(
-							_lr_z, _lr_lonlat, _lr_m_per_deg)
-						lava_river_flow_uv[idx] = _lr_flow
-						# Apply linear depression (U-profile).
-						var _lr_depth: float = _lr_z.get("depth_override", 0.0)
-						if _lr_depth <= 0.0:
-							_lr_depth = VolcanicGeothermalLavaRiverTerrain.DEFAULT_DEPTH_M
-						var _lr_t2 := _lr_t * _lr_t
-						height -= _lr_depth * (1.0 - _lr_t2 * _lr_t2)
-					break
-
 			# Linear depression — steep-walled U-profile (1 − t⁴).
 			# Iterates recipe linear features directly for canyon/crevasse types.
 			if has_linear_overlap:
 				var _lin_lonlat := BiomeQuery._dir_to_lonlat(dir)
 				for _lin_z in _lf_arr:
 					var _lin_type: String = _lin_z.get("type", "")
-					# Lava river and water river handled by their own sections.
+					# The water river is handled by its own section; the old
+					# biome lava river is gone (lava flows: LavaSettings).
 					if _lin_type == "volcanic_geothermal-lava_river" \
 							or _lin_type == "maritime_river-river":
 						continue
@@ -873,7 +800,6 @@ static func generate_mesh(
 
 			# Point depression — radial funnel around polygon centroid.
 			# Cave uses vertex-collapse hole; others use smooth bowl.
-			# Active volcano depression is baked in recipe heightmap (radial feature).
 			if has_point_overlap and bd:
 				var _pt_radius: float = 0.0
 				var _pt_depth: float = 0.0
@@ -884,9 +810,6 @@ static func generate_mesh(
 					_pt_depth = CaveTerrain.ENTRANCE_DEPTH_M
 					_pt_hole_radius = CaveTerrain.HOLE_RADIUS_M
 					_pt_has_hole = true
-				elif VolcanicGeothermalFumaroleTerrain.matches_zone(bd):
-					_pt_radius = VolcanicGeothermalFumaroleTerrain.DEPRESSION_RADIUS_M
-					_pt_depth = VolcanicGeothermalFumaroleTerrain.DEPRESSION_DEPTH_M
 				elif VolcanicGeothermalIceGeyserTerrain.matches_zone(bd):
 					_pt_radius = VolcanicGeothermalIceGeyserTerrain.DEPRESSION_RADIUS_M
 					_pt_depth = VolcanicGeothermalIceGeyserTerrain.DEPRESSION_DEPTH_M
@@ -1343,6 +1266,14 @@ static func generate_mesh(
 				colors[idx] = RockImpurity.tint(_imp_slugs[slot - 1], vdir, data.radius,
 						_chunk_heights[idx], _imp_core[idx], _imp_carve[idx], slope, colors[idx],
 						_imp_wall[idx])
+	# --- fumarole deposits ----------------------------------------------------
+	# The gas deposits of a fumarole field over whatever rock is there (the
+	# field is not a biome: the rock keeps its own colour underneath).
+	if hp_mode and data.has_fumaroles():
+		var _fm_fields := data.fumaroles_for_chunk(hp_nside, hp_ipix)
+		if not _fm_fields.is_empty():
+			for idx in (res + 1) * (res + 1):
+				colors[idx] = FumaroleField.tint(_vdirs[idx], colors[idx], _fm_fields, data.radius)
 	if _pf:
 		var _now := Time.get_ticks_usec()
 		prof["impurity"] = _now - _t_phase
@@ -1477,24 +1408,6 @@ static func generate_mesh(
 		var _now := Time.get_ticks_usec()
 		prof["skirt"] = _now - _t_phase
 		_t_phase = _now
-	# --- collect volcanic_active quad indices for lava surface ---------------
-	# Volcanic quads are excluded from the base terrain surface and drawn on a
-	# separate surface with their own ORMMaterial3D.  No z-fighting because
-	# the quads don't overlap.
-	var lava_indices := PackedInt32Array()
-	if has_volcanic_active_overlap:
-		for qi in range(0, res * res * 6, 6):
-			var i00 := indices[qi]
-			var i01 := indices[qi + 1]
-			var i10 := indices[qi + 2]
-			var i11 := indices[qi + 5]
-			if is_volcanic_active_vertex[i00] == 1 \
-					or is_volcanic_active_vertex[i10] == 1 \
-					or is_volcanic_active_vertex[i01] == 1 \
-					or is_volcanic_active_vertex[i11] == 1:
-				for oi in range(qi, qi + 6):
-					lava_indices.append(indices[oi])
-
 	# --- collect lunar_ground quad indices for material overlay ---
 	var lunar_ground_indices := PackedInt32Array()
 	if has_lunar_ground_overlap:
@@ -1589,9 +1502,6 @@ static func generate_mesh(
 					for k in 3:
 						cliff_indices.append(indices[oi + k])
 
-	# (lava_river quad collection removed — the lava surface is now built
-	#  as a separate vertex mesh like the river water overlay, see below.)
-
 	# --- exclude overlay quads from base terrain surface --------------------
 	# When an overlay (lava, lunar, meadow, forest, cliff) covers a quad, the
 	# two different shader programs (ShaderMaterial base vs ORMMaterial3D
@@ -1608,12 +1518,7 @@ static func generate_mesh(
 		var i10 := indices[qi + 2]
 		var i01 := indices[qi + 1]
 		var i11 := indices[qi + 5]
-		if (has_volcanic_active_overlap \
-					and (is_volcanic_active_vertex[i00] == 1 \
-					or is_volcanic_active_vertex[i10] == 1 \
-					or is_volcanic_active_vertex[i01] == 1 \
-					or is_volcanic_active_vertex[i11] == 1)) \
-				or (has_lunar_ground_overlap \
+		if (has_lunar_ground_overlap \
 					and (is_lunar_ground_vertex[i00] == 1 \
 					or is_lunar_ground_vertex[i10] == 1 \
 					or is_lunar_ground_vertex[i01] == 1 \
@@ -1832,30 +1737,6 @@ static func generate_mesh(
 			mat.vertex_color_use_as_albedo = true
 			mat.cull_mode = BaseMaterial3D.CULL_BACK
 			mesh.surface_set_material(0, mat)
-
-	# --- volcanic_active: lava material on top of the terrain ---------------
-	# Overlay quads are excluded from the base terrain surface (see above),
-	# so these surfaces REPLACE the base terrain for their quads rather than
-	# overdrawing.  No z-fighting is possible because there is no overlapping
-	# geometry.  cull_disabled matches the base terrain shader.
-
-	if lava_indices.size() > 0:
-		var lava_mat: Material = data.get_lava_material()
-		if lava_mat:
-			lava_mat = lava_mat.duplicate() as Material
-			if lava_mat is BaseMaterial3D:
-				(lava_mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
-			var lv_arrays: Array = []
-			lv_arrays.resize(Mesh.ARRAY_MAX)
-			lv_arrays[Mesh.ARRAY_VERTEX]  = vertices
-			lv_arrays[Mesh.ARRAY_NORMAL]  = normals
-			lv_arrays[Mesh.ARRAY_TEX_UV]  = uvs
-			lv_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
-			lv_arrays[Mesh.ARRAY_COLOR]   = colors
-			lv_arrays[Mesh.ARRAY_INDEX]   = lava_indices
-			var lv_surface_idx := mesh.get_surface_count()
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, lv_arrays)
-			mesh.surface_set_material(lv_surface_idx, lava_mat)
 
 	# --- surface override: the biome's own material, tinted by COLOR ---------
 	# One surface per material; same vertex arrays as the base (the shader
@@ -2205,6 +2086,48 @@ static func generate_mesh(
 							GradeTunnel.build_piece(_rw_cl, _rw_cum, _rw_prof,
 									data.radius, cc_f32, true, true))
 
+		# --- lava flows: the crust on the flow's DESCENT profile -------------
+		# A flow with a profile is a bed like a graded road's (its channel is
+		# carved by GradeBed.apply in the vertex loop, the crust sits at the
+		# profile, which never rises); without one yet, a terrain-hugging slab.
+		# Its colour is the GROUND's rock under each vertex, darkened by state
+		# — blue crust on blue corundum. Same stations and sampler as the
+		# collision builder, so the crust drawn is the crust walked on.
+		if not _lava_arr.is_empty() and hp_mode:
+			var _lv_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
+					/ float(res) * 0.5
+			var _lv_sampler := func(d: Vector3) -> float:
+				return data.sample_height_for_direction(d, _export_ipix, -1,
+						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
+			for _lv_zone in _lava_arr:
+				var _lv_cl: PackedVector2Array = _lv_zone.get("centerline", PackedVector2Array())
+				var _lv_cum: PackedFloat64Array = _lv_zone.get("_cum_lengths", PackedFloat64Array())
+				if _lv_cl.size() < 2 or _lv_cum.size() != _lv_cl.size():
+					continue
+				var _lv_mat := LavaSettings.material_path_of(_lv_zone)
+				var _lv_k := LavaSettings.darken_of(_lv_zone)
+				var _lv_tint := func(d: Vector3, h: float = NAN) -> Color:
+					var here := _query_zones_at_direction(d, _pz_zones)
+					var c := road_ground_tint(data, d, here[0] if not here.is_empty() else {},
+							_corundum_bd, h)
+					return Color(c.r * _lv_k, c.g * _lv_k, c.b * _lv_k, 1.0)
+				var _lv_surf := {"mat_path": _lv_mat, "uv_mode": RoadRibbon.UvMode.FLOW,
+						"tint": _lv_tint, "tinted": true}
+				var _lv_grp := _road_group(road_groups, _lv_mat, LavaSettings.TILE_M,
+						RoadRibbon.UvMode.FLOW, true)
+				var _lv_prof := data.get_grade_profile(int(_lv_zone.get("feature_id", -1)))
+				if not _lv_prof.is_empty():
+					_road_group_append_slab(road_groups, _lv_grp, _lv_surf, LavaSettings.TILE_M,
+							GradeBed.build_piece(_lv_cl, _lv_cum, _lv_prof, [], _rd_m_per_deg,
+									data.radius, _lv_sampler, _lv_step_m, cc_f32, true, true,
+									RoadRibbon.UvMode.FLOW, _lv_tint))
+				else:
+					var _lv_hw := float(_lv_zone.get("half_width_m", 10.0))
+					_road_group_append_slab(road_groups, _lv_grp, _lv_surf, LavaSettings.TILE_M,
+							RoadRibbon.emit_strip(_lv_cl, _lv_cum, Vector2(-_lv_hw, _lv_hw),
+									_rd_m_per_deg, data.radius, _max_seg_deg, _rd_height_at, cc_f32,
+									true, true, RoadRibbon.UvMode.FLOW, LavaSettings.TILE_M, _lv_tint))
+
 		# Offset flow-aligned UVs per group so values stay near zero
 		# (prevents GPU float32 precision artifacts on large planets). Both
 		# UV modes survive a whole-tile shift.
@@ -2299,93 +2222,8 @@ static func generate_mesh(
 			st.commit(_rd_mesh)
 			_rd_mesh.surface_set_material(_rd_out, rd_mat)
 
-	# --- lava_river: hot lava surface sitting ON TOP of the depression ------
-	# Like the river water overlay, the lava surface is built as a separate
-	# mesh with its own vertices placed at the original (pre-depression)
-	# terrain height.  This makes the lava fill the channel like a liquid,
-	# sitting at the landscape level instead of following the carved floor.
-	#
-	# UVs are FLOW-ALIGNED: U runs along the centerline direction and
-	# V runs perpendicular to it.  The texture's horizontal axis (U) is
-	# more continuous, matching the natural flow of the lava texture.
-	if has_lava_river_overlap:
-		var lr_mat: Material = data.get_lava_river_material()
-		if lr_mat:
-			lr_mat = lr_mat.duplicate() as Material
-			lr_mat.render_priority = 1
-			if lr_mat is BaseMaterial3D:
-				(lr_mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
-
-			var lr_verts := PackedVector3Array()
-			var lr_norms := PackedVector3Array()
-			var lr_uvs := PackedVector2Array()
-			var lr_indices := PackedInt32Array()
-			var lr_remap: Dictionary = {}
-
-			# Tile size for flow-aligned UVs — from the terrain module.
-			var _lr_tile_m: float = VolcanicGeothermalLavaRiverTerrain.TILE_M
-
-			for yi in res:
-				for xi in res:
-					var i00 := yi * (res + 1) + xi
-					var i10 := i00 + 1
-					var i01 := i00 + (res + 1)
-					var i11 := i01 + 1
-					# Include quad if ANY corner is a lava_river vertex.
-					if is_lava_river_vertex[i00] == 0 \
-							and is_lava_river_vertex[i10] == 0 \
-							and is_lava_river_vertex[i01] == 0 \
-							and is_lava_river_vertex[i11] == 0:
-						continue
-					for orig_idx in [i00, i10, i01, i11]:
-						if not lr_remap.has(orig_idx):
-							var new_idx: int = lr_verts.size()
-							lr_remap[orig_idx] = new_idx
-							var planet_pos := vertices[orig_idx] + chunk_center
-							var ldir := planet_pos.normalized()
-							# Use the original (pre-depression) height for lava
-							# vertices, terrain height for boundary vertices.
-							var h: float
-							if is_lava_river_vertex[orig_idx] == 1:
-								h = lava_river_original_height[orig_idx]
-							else:
-								h = planet_pos.length() - data.radius
-							lr_verts.append(_world_to_local(ldir * (data.radius + h - VolcanicGeothermalLavaRiverTerrain.SURFACE_OFFSET), cc_f32, _wp_f32))
-							lr_norms.append(ldir)
-							# Flow-aligned UVs: U = along flow, V = across.
-							# Pre-computed during vertex flagging in metres;
-							# boundary verts (flag==0) get lon/lat fallback.
-							var fuv: Vector2
-							if is_lava_river_vertex[orig_idx] == 1:
-								fuv = lava_river_flow_uv[orig_idx]
-							else:
-								# Boundary vertex: approximate with lon/lat.
-								var lon := atan2(ldir.z, ldir.x)
-								var lat := asin(clampf(ldir.y, -1.0, 1.0))
-								fuv = Vector2(lon * data.radius, lat * data.radius)
-							lr_uvs.append(fuv / _lr_tile_m)
-					# Two triangles for this quad.
-					lr_indices.append(lr_remap[i00])
-					lr_indices.append(lr_remap[i01])
-					lr_indices.append(lr_remap[i10])
-					lr_indices.append(lr_remap[i10])
-					lr_indices.append(lr_remap[i01])
-					lr_indices.append(lr_remap[i11])
-
-			if lr_verts.size() > 0:
-				var lr_arrays: Array = []
-				lr_arrays.resize(Mesh.ARRAY_MAX)
-				lr_arrays[Mesh.ARRAY_VERTEX]  = lr_verts
-				lr_arrays[Mesh.ARRAY_NORMAL]  = lr_norms
-				lr_arrays[Mesh.ARRAY_TEX_UV]  = lr_uvs
-				lr_arrays[Mesh.ARRAY_INDEX]   = lr_indices
-				var lr_surface_idx := mesh.get_surface_count()
-				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, lr_arrays)
-				mesh.surface_set_material(lr_surface_idx, lr_mat)
-
 	# --- dry_river_bed: pebble texture overlay on the carved riverbed floor ---
 	# The pebble material sits directly ON the depressed terrain surface
-	# (unlike lava river which sits at the pre-depression height).
 	# UVs are FLOW-ALIGNED — U along the centerline, V across — so the
 	# riverbed pebble texture follows the natural channel direction.
 	if has_dry_river_bed_overlap:
@@ -2886,7 +2724,6 @@ static func generate_collision_shape(
 	# ── Fetch recipe data for collision overlap detection ─────────
 	var _col_pz_zones: Array = []
 	var _col_lf_arr: Array = []
-	var _col_rf_arr: Array = []
 	var _col_cr_arr: Array = []
 	# Profiled beds ride their own profile, not the terrain, so unlike the road
 	# ribbon they DO get collision — built into this very shape (same origin,
@@ -2900,7 +2737,6 @@ static func generate_collision_shape(
 		var _col_eipix := _export_ipix
 		_col_pz_zones = data.get_chunk_populate_zones(_col_eipix)
 		_col_lf_arr = data.get_chunk_linear_features(_col_eipix)
-		_col_rf_arr = data.get_chunk_radial_features(_col_eipix)
 		_col_cr_arr = data.get_chunk_craters(_col_eipix)
 		for _rd_r in data.get_roads_for_chunk(hp_nside, hp_ipix):
 			if not RoadTerrain.is_road_zone(_rd_r):
@@ -2911,6 +2747,15 @@ static func generate_collision_shape(
 					_col_rw.append([_rd_r, _rw_p])
 					continue
 			_col_rd.append(_rd_r)
+		# Lava flows: a crust with collision like a profiled bed (the channel
+		# is carved in the vertex loop below), or a terrain-hugging slab.
+		if data.has_lava():
+			for _lv_r in data.get_lava_for_chunk(hp_nside, hp_ipix):
+				var _lv_p: Dictionary = data.get_grade_profile(int(_lv_r.get("feature_id", -1)))
+				if not _lv_p.is_empty():
+					_col_rw.append([_lv_r, _lv_p])
+				else:
+					_col_rd.append(_lv_r)
 	# Profiled-line cuttings and building pads, on the same finest-grid gate as
 	# the visual mesh.
 	var _col_rw_ctx: Dictionary = {}
@@ -2926,7 +2771,6 @@ static func generate_collision_shape(
 	var has_linear_overlap := false
 	var has_point_overlap := false
 	var has_crater_overlap := false
-	var has_lava_river_overlap := false
 	var has_cliff_overlap := false
 	var has_river_overlap := false
 	var _col_river_zones: Array[Dictionary] = []
@@ -2944,7 +2788,6 @@ static func generate_collision_shape(
 		if _bd.is_liquid and data.has_ocean:
 			has_liquid_overlap = true
 		if CaveTerrain.is_cave_biome(_bd) \
-				or VolcanicGeothermalFumaroleTerrain.is_fumarole_biome(_bd) \
 				or VolcanicGeothermalIceGeyserTerrain.matches_zone(_bd) \
 				or VolcanicGeothermalMineralThermalSourceTerrain.matches_zone(_bd):
 			has_point_overlap = true
@@ -2966,18 +2809,10 @@ static func generate_collision_shape(
 		if _lt == "maritime_river-river":
 			has_river_overlap = true
 			_col_river_zones.append(_lf)
-		elif _lt == "volcanic_geothermal-lava_river":
-			has_lava_river_overlap = true
 		elif _lt == "rocky_landform-canyon" or _lt == "icy-ice_crevasse" \
 				or _lt == "aride_desert-dry_river_bed" \
 				or _lt == "rocky_landform-pressure_canyon":
 			has_linear_overlap = true
-
-	# Radial features.
-	for _rf in _col_rf_arr:
-		var _rt: String = _rf.get("type", "")
-		if _rt == "volcanic_geothermal-active_volcano":
-			has_point_overlap = true
 
 	# Craters.
 	if not _col_cr_arr.is_empty():
@@ -3148,25 +2983,6 @@ static func generate_collision_shape(
 						var ct2 := ct * ct
 						height -= cdepth * (1.0 - ct2 * ct2)
 						break
-			# Lava river depression — iterate recipe linear features.
-			if has_lava_river_overlap:
-				for _lr_z in _col_lf_arr:
-					if _lr_z.get("type", "") != "volcanic_geothermal-lava_river":
-						continue
-					var _lr_cl: PackedVector2Array = _lr_z.get("centerline", PackedVector2Array())
-					if _lr_cl.size() < 2:
-						continue
-					VolcanicGeothermalLavaRiverTerrain.prepare_zone(_lr_z, data.radius)
-					var lr_ll := BiomeQuery._dir_to_lonlat(dir)
-					var _lr_cs2 := BiomeQuery.get_cross_section_t(_lr_z, lr_ll)
-					var lr_ct: float = _lr_cs2.t
-					if lr_ct < 1.0:
-						var lr_dp: float = _lr_z.get("depth_override", 0.0)
-						if lr_dp <= 0.0:
-							lr_dp = VolcanicGeothermalLavaRiverTerrain.DEFAULT_DEPTH_M
-						var lr_t2 := lr_ct * lr_ct
-						height -= lr_dp * (1.0 - lr_t2 * lr_t2)
-					break
 			# Point depression — query populate zones for point biomes.
 			var _is_hole_vertex := false
 			if has_point_overlap:
@@ -3184,9 +3000,6 @@ static func generate_collision_shape(
 						_pt_depth = CaveTerrain.ENTRANCE_DEPTH_M
 						_pt_hole_radius = CaveTerrain.HOLE_RADIUS_M
 						_pt_has_hole = true
-					elif VolcanicGeothermalFumaroleTerrain.matches_zone(pbd):
-						_pt_radius = VolcanicGeothermalFumaroleTerrain.DEPRESSION_RADIUS_M
-						_pt_depth = VolcanicGeothermalFumaroleTerrain.DEPRESSION_DEPTH_M
 					elif VolcanicGeothermalIceGeyserTerrain.matches_zone(pbd):
 						_pt_radius = VolcanicGeothermalIceGeyserTerrain.DEPRESSION_RADIUS_M
 						_pt_depth = VolcanicGeothermalIceGeyserTerrain.DEPRESSION_DEPTH_M

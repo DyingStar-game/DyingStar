@@ -1,39 +1,16 @@
 """
-Volcanic geothermal — 16 biomes.
+Volcanic geothermal — 12 biomes (volcanoes, lava flows and fumaroles: layers/volcanoes.py).
 """
 
-from ..model import BiomeCategory, Field, Range, ValueMap
+from ..model import BiomeCategory, Field, Range
 from ..rocks import rock_fields
 
 CATEGORY = BiomeCategory('volcanic_geothermal')
 
-VOLCANO_SHAPES = [
-    ("Cone — steep stratovolcano", "cone"),
-    ("Shield — broad, gently sloping", "shield"),
-    ("Caldera — collapsed summit basin", "caldera"),
-]
-
-CATEGORY.biome(
-    26, 'active_volcano', '#4a2c2a',
-    ('A volcano in eruption or with significant internal magmatic activity.  Placed as a '
-     'point: Godot builds the edifice from the parameters below.'),
-    geom='Point',
-    planet_type='volcanic',
-    terrain_modifier=True,
-    fields=[
-        Field('base_diameter', 'double', 'Diameter at the base (metres)',
-              widget=Range(100, 200000, 100)),
-        Field('height', 'double', 'Height above the surrounding terrain (metres)',
-              widget=Range(10, 15000, 10)),
-        Field('shape', 'string', 'Edifice shape', widget=ValueMap(VOLCANO_SHAPES),
-              default="'cone'"),
-        Field('crater_diameter', 'double', 'Summit crater / caldera diameter (metres)',
-              widget=Range(0, 50000, 10)),
-        Field('has_lava_lake', 'integer', '1 = the crater holds a lava lake',
-              widget=Range(0, 1, 1), default='0'),
-        *rock_fields(),
-    ],
-)
+# Biome indices 26 (active_volcano), 30 (fumarole), 86 (lava_river),
+# 94 (lava_dome) and 107 (fumarole_field) are RESERVED: those layers moved to
+# layers/volcanoes.py (procedural, not biomes — the rock under them stays the
+# ground's).  Never reuse the indices.
 
 CATEGORY.biome(
     27, 'volcanic_basalt', '#2a2a2a',
@@ -55,33 +32,6 @@ CATEGORY.biome(
     planet_type='volcanic',
     fields=[
         Field('depth', 'double', 'Lake depth (metres)', widget=Range(1, 2000, 1)),
-        *rock_fields(),
-    ],
-)
-
-CATEGORY.biome(
-    30, 'fumarole', '#8a7a5a',
-    ('A single volcanic gas vent, placed by hand.  For an area Godot fills on its own, '
-     'draw a fumarole field instead.'),
-    geom='Point',
-    planet_type='volcanic',
-    fields=[
-        Field('radius', 'double', 'Vent radius (metres)', widget=Range(0.5, 200, 0.5)),
-        Field('intensity', 'double', 'Emission intensity 0.0-1.0', widget=Range(0.0, 1.0, 0.05),
-              default='0.5'),
-        *rock_fields(),
-    ],
-)
-
-CATEGORY.biome(
-    107, 'fumarole_field', '#a08a60',
-    'An area Godot scatters fumaroles over at the given density.',
-    planet_type='volcanic',
-    fields=[
-        Field('density', 'double', 'Vents per km²', widget=Range(0.1, 500, 0.1)),
-        Field('radius', 'double', 'Typical vent radius (metres)', widget=Range(0.5, 200, 0.5)),
-        Field('intensity', 'double', 'Emission intensity 0.0-1.0', widget=Range(0.0, 1.0, 0.05),
-              default='0.5'),
         *rock_fields(),
     ],
 )
@@ -148,41 +98,11 @@ CATEGORY.biome(
 )
 
 CATEGORY.biome(
-    86, 'lava_river', '#cc5000',
-    ('An active flow channel transporting molten rock (extrusive magma). Unlike a '
-     'stationary lava field, a river is characterized by a defined flow velocity'),
-    geom='LineString',
-    direction_marker=True,
-    planet_type='volcanic',
-    terrain_modifier=True,
-    fields=[
-        Field('width_start', 'double', 'Channel width at start (m)',
-              widget=Range(0.2, 2000, 0.2)),
-        Field('width_end', 'double', 'Channel width at end (m)',
-              widget=Range(0.2, 2000, 0.2)),
-        Field('flow_rate', 'double', '(Optional) Water flow rate'),
-        *rock_fields(),
-    ],
-)
-
-CATEGORY.biome(
     88, 'columnar_basalt_vertical', '#3d3d4a',
     ('Composed of prisms of cooled lava and basaltic volcanic columns, these structures '
      'exhibit strict geometric regularity'),
     planet_type='volcanic',
     table_name='columnar_basalt_(vertical)',  # legacy table name, kept for existing planets
-)
-
-CATEGORY.biome(
-    94, 'lava_dome', '#8a3020',
-    'A mass of lava whose high viscosity prevents it from flowing',
-    geom='Point',
-    planet_type='volcanic',
-    terrain_modifier=True,
-    fields=[
-        Field('radius', 'integer', 'Radius in metres',
-              widget=Range(10, 10000, 10)),
-    ],
 )
 
 CATEGORY.biome(

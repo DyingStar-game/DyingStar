@@ -41,12 +41,14 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 	var patches: Array[Dictionary] = []
 	var mountains: Array = []
 	var ridges: Array = []
+	var volcanoes: Array = []
 	var mountain_set: RefCounted = null
 	if _open() and _pack.has_tile(nside, ipix):
 		# One read and one decode for both questions. The pack prepares the massifs and crests as
 		# MountainRelief's own Zone and Ridge objects, so there is nothing to convert here.
 		var tile: Dictionary = _pack.decode_tile(_pack.read_tile(nside, ipix), m_per_deg,
-				ModifierPack.MASK_POPULATE | ModifierPack.MASK_MOUNTAIN | ModifierPack.MASK_RIDGE)
+				ModifierPack.MASK_POPULATE | ModifierPack.MASK_MOUNTAIN | ModifierPack.MASK_RIDGE
+				| ModifierPack.MASK_VOLCANO)
 		for entry: Variant in (tile["populate_zones"] as Array):
 			var zone: Dictionary = entry
 			var rock: String = str(zone.get("rock_type", ""))
@@ -64,11 +66,13 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 			patches.append({"rock": rock, "polygon": poly, "bounds": bounds.grow(1.0e-6)})
 		mountains = tile["mountain_zones"]
 		ridges = tile["ridge_lines"]
+		volcanoes = tile["volcanoes"]
 		# The same features summed in C#, built by the pack as it decodes them — the object the terrain
 		# itself samples its mountains through. Null without the assembly.
 		mountain_set = tile["mountain_set"]
 	var made: Dictionary = {"fallback": default_rock, "patches": patches,
-			"mountains": mountains, "ridges": ridges, "mountain_set": mountain_set}
+			"mountains": mountains, "ridges": ridges, "volcanoes": volcanoes,
+			"mountain_set": mountain_set}
 	_known[id] = made
 	return made
 

@@ -181,6 +181,41 @@ var chunk_data_version: String = ""
 @export var debug_ridge_points: PackedVector2Array = PackedVector2Array()
 @export var debug_ridge_style: Dictionary = {"height_m": 400.0, "width_m": 1200.0, "sharpness": 0.7, "asymmetry": 0.5}
 
+@export_group("Debug volcano")
+## DEV: a synthetic volcano (VolcanoRelief), injected with the debug mountain
+## as if the pack carried it — to iterate before the QGIS layer is exported.
+## Ignored once the pack has a mountain / ridge / volcano part. Baked into the
+## chunk cache key like the debug mountain.
+@export var debug_volcano_enabled: bool = false
+## Summit (lon, lat in degrees).
+@export var debug_volcano_lonlat: Vector2 = Vector2.ZERO
+@export_enum("stratovolcano", "shield", "caldera", "cinder_cone", "lava_dome") var debug_volcano_type: String = "stratovolcano"
+## Keys overriding the type preset (VolcanoRelief.PRESETS): base_diameter_m,
+## height_m, crater_diameter_m, crater_depth_m, floor_frac, flank_exponent,
+## roughness, gullies, irregularity, has_lava_lake, lake_fill_m, activity,
+## seed, impurity_intensity.
+@export var debug_volcano_style: Dictionary = {"has_lava_lake": 1, "activity": "active"}
+
+@export_group("Debug lava")
+## DEV: a synthetic lava flow (LavaSettings), as if the pack's lava part
+## carried it. Points (lon, lat) FROM THE SOURCE DOWNHILL. Ignored once the
+## pack has a lava part.
+@export var debug_lava_enabled: bool = false
+@export var debug_lava_points: PackedVector2Array = PackedVector2Array()
+## Keys: state (active / cooling / solid), width_start_m, width_end_m, depth_m.
+@export var debug_lava_style: Dictionary = {"state": "active", "width_start_m": 20.0, "width_end_m": 40.0, "depth_m": 3.0}
+
+@export_group("Debug fumaroles")
+## DEV: a synthetic fumarole field (FumaroleField), a circle around the
+## lon/lat, as if the pack's fumarole part carried it. Ignored once the pack
+## has a fumarole part.
+@export var debug_fumarole_enabled: bool = false
+@export var debug_fumarole_lonlat: Vector2 = Vector2.ZERO
+@export var debug_fumarole_radius_km: float = 1.5
+## Keys: density (vents/km²), radius, intensity, gas (steam / sulfur / co2 /
+## chlorine), plume_height_m, stain, seed.
+@export var debug_fumarole_style: Dictionary = {"gas": "sulfur", "density": 25.0}
+
 ## Directory of per-chunk elevation data exported by tools/planettech/qgis/export_elevation.py.
 ## When non-empty, load_chunk_heightmap() reads raw float32 tiles from the dense
 ## heights.pack archive inside this dir instead of generating heightmaps from
@@ -454,6 +489,19 @@ var _has_railways: int = -1
 var _has_profiled_lines: int = -1
 var _has_relief_biomes: int = -1
 var _has_roads: int = -1
+var _has_lava: int = -1
+var _has_fumaroles: int = -1
+## The prepared debug fumarole field (main thread, warm_fumaroles).
+var _dbg_fumaroles: Array = []
+## Debug lava flow: the whole record, and its per-pixel pieces memoised per
+## (nside, ipix) — built lazily from the mesh workers, hence the mutex.
+var _dbg_lava_whole: Dictionary = {}
+var _dbg_lava_pieces: Dictionary = {}
+var _dbg_lava_mutex := Mutex.new()
+## feature_id of the debug lava flow (the exporter numbers from 1 << 30).
+const DEBUG_LAVA_FID := (1 << 30) + 999999
+## The debug flow is cut per pixel from a copy densified to this step (m).
+const DEBUG_LAVA_STEP_M := 10.0
 ## -1 unknown, 0 no, 1 yes — the planet has procedural mountains (pack
 ## mountain / ridge parts, or the debug injection). Warmed on the main thread
 ## by warm_mountains(); the sampler only compares it.
@@ -467,6 +515,8 @@ var _mtn_finest_spacing: float = 0.0
 ## (debug injection, tests). Built on the main thread, read-only afterwards.
 var _mtn_override_zones: Array = []
 var _mtn_override_ridges: Array = []
+## Prepared VolcanoRelief.Volcano list, same rule.
+var _mtn_override_volcanoes: Array = []
 var _mtn_override_set: RefCounted = null
 ## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
 const GRADE_PREFETCH_BUDGET_MS := 5000
@@ -914,7 +964,9 @@ class TileFrame:
 	## looks them up per direction instead.
 	var mtn: Array = []
 	var rdg: Array = []
-	## MountainSetNative of the two lists (null → GDScript path).
+	## VolcanoRelief.Volcano list, summed after the zones and ridges.
+	var vol: Array = []
+	## MountainSetNative of the three lists (null → GDScript path).
 	var mtn_set: RefCounted = null
 	var mtn_ready := false
 	## TileFrameNative (the sampler's hot path in C#), null without a usable assembly or with use_native
@@ -1000,7 +1052,7 @@ func _native_frame_ok(frame: TileFrame) -> bool:
 	if _has_mountains != 1:
 		return true
 	return frame.mtn_ready and (frame.mtn_set != null
-			or (frame.mtn.is_empty() and frame.rdg.is_empty()))
+			or (frame.mtn.is_empty() and frame.rdg.is_empty() and frame.vol.is_empty()))
 
 
 ## Identifiant de tuile, pour les dictionnaires du cache.
@@ -2185,6 +2237,226 @@ func get_chunk_roads(nside: int, ipix: int) -> Array:
 ## Pieces sharing a feature_id are concatenated in along-road order, which the
 ## absolute `_cum_lengths` make unambiguous.
 func get_whole_roads() -> Array:
+	return _whole_lines(get_chunk_roads)
+
+
+## Every lava flow, stitched back into WHOLE features like the roads (or the
+## debug flow).
+func get_whole_lava() -> Array:
+	if _debug_lava_active():
+		return [_debug_lava_whole()]
+	return _whole_lines(get_chunk_lava)
+
+
+## Lava flow records of the pack tile (nside, ipix).
+func get_chunk_lava(nside: int, ipix: int) -> Array:
+	return get_chunk_modifiers(nside, ipix).get("lava_flows", [])
+
+
+## Lava records for the HEALPix chunk (hp_nside, hp_ipix) — the lava twin of
+## get_roads_for_chunk (baked down to the quadtree depth, partitioned per pixel).
+func get_lava_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
+	if hp_nside <= 0 or not has_lava():
+		return []
+	if _debug_lava_active():
+		return _debug_lava_for(hp_nside, hp_ipix)
+	if _ensure_modifier_pack() == null:
+		return []
+	var cap := modifier_max_nside_for(ModifierPackScript.KIND_LAVA)
+	var nside: int = clampi(hp_nside, 1, cap)
+	var ipix := hp_ipix
+	var cur := hp_nside
+	while cur > nside:
+		ipix = HEALPix.parent_pixel(ipix)
+		cur /= 2
+	return get_chunk_lava(nside, ipix)
+
+
+## Does this planet carry a lava flow (the pack's lava part, or the debug one)?
+func has_lava() -> bool:
+	if _has_lava >= 0:
+		return _has_lava == 1
+	var found := _debug_lava_active()
+	var pack = _ensure_modifier_pack()
+	if not found and pack != null:
+		var parts: Dictionary = pack.get_manifest().get("parts", {})
+		var counts: Dictionary = (parts.get("lava", {}) as Dictionary).get("counts", {})
+		found = int(counts.get("features", 0)) > 0
+	_has_lava = 1 if found else 0
+	return found
+
+
+## Does this planet carry fumarole fields or vents (pack part, or debug)?
+## Resolved on the main thread by warm_fumaroles(); a worker only compares.
+func has_fumaroles() -> bool:
+	if _has_fumaroles < 0:
+		warm_fumaroles()
+	return _has_fumaroles == 1
+
+
+## Resolve has_fumaroles() and build the debug field. MAIN THREAD, before the
+## first chunk (PlanetTerrain calls it next to warm_mountains).
+func warm_fumaroles() -> void:
+	_dbg_fumaroles.clear()
+	var found := false
+	var pack = _ensure_modifier_pack()
+	if pack != null:
+		var parts: Dictionary = pack.get_manifest().get("parts", {})
+		var counts: Dictionary = (parts.get("fumarole", {}) as Dictionary).get("counts", {})
+		found = int(counts.get("features", 0)) > 0
+	if not found and debug_fumarole_enabled and debug_fumarole_radius_km > 0.0:
+		_dbg_fumaroles.append(FumaroleField.prepare(FumaroleField.debug_record(
+				debug_fumarole_lonlat, debug_fumarole_radius_km, debug_fumarole_style,
+				radius * PI / 180.0)))
+		found = true
+	_has_fumaroles = 1 if found else 0
+
+
+## The fumarole fields / vents reaching chunk (hp_nside, hp_ipix): the
+## records of its export-level ancestor tile (its own level when coarser),
+## like prepare_mountain_frame. Worker-thread safe once warmed.
+func fumaroles_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
+	if _has_fumaroles != 1 or hp_nside <= 0 or hp_ipix < 0:
+		return []
+	if not _dbg_fumaroles.is_empty():
+		return _dbg_fumaroles
+	var level := hp_nside
+	var ip := hp_ipix
+	while level > export_nside:
+		ip >>= 2
+		level >>= 1
+	return get_chunk_modifiers(level, ip).get("fumaroles", [])
+
+
+## Fingerprint of the fumaroles ("" without any) — the chunk cache key (the
+## deposit stain is baked into the vertex colours).
+func fumarole_fingerprint() -> String:
+	if not _dbg_fumaroles.is_empty():
+		return "dbg%08x" % (hash(str([debug_fumarole_lonlat, debug_fumarole_radius_km,
+				debug_fumarole_style])) & 0xFFFFFFFF)
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	return str((parts.get("fumarole", {}) as Dictionary).get("fingerprint", ""))
+
+
+## Fingerprint of the lava flows ("" without any) — the chunk cache key.
+func lava_fingerprint() -> String:
+	if _debug_lava_active():
+		return "dbg%08x" % (hash(str([debug_lava_points, debug_lava_style])) & 0xFFFFFFFF)
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	return str((parts.get("lava", {}) as Dictionary).get("fingerprint", ""))
+
+
+func _debug_lava_active() -> bool:
+	if not debug_lava_enabled or debug_lava_points.size() < 2:
+		return false
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return true
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	var counts: Dictionary = (parts.get("lava", {}) as Dictionary).get("counts", {})
+	return int(counts.get("features", 0)) == 0
+
+
+## The debug flow as a decoded LAVA record (ModifierPack._decode_lava's shape).
+func _debug_lava_whole() -> Dictionary:
+	_dbg_lava_mutex.lock()
+	if _dbg_lava_whole.is_empty():
+		var mpd := radius * PI / 180.0
+		# A source in or next to a lava lake starts on its shore (the exporter's rule).
+		var pts := VolcanoRelief.snap_flow_to_lakes(debug_lava_points, _mtn_override_volcanoes, radius)
+		var cl := PackedVector2Array()
+		var cum := PackedFloat64Array()
+		var acc := 0.0
+		for i in pts.size():
+			if i > 0:
+				var a := pts[i - 1]
+				var b := pts[i]
+				var seg := MountainRelief._seg_len_m(a, b, mpd)
+				var n := maxi(1, ceili(seg / DEBUG_LAVA_STEP_M))
+				for k in range(1, n + 1):
+					cl.append(a.lerp(b, float(k) / float(n)))
+					cum.append(acc + seg * float(k) / float(n))
+				acc += seg
+			else:
+				cl.append(pts[0])
+				cum.append(0.0)
+		var w0 := float(debug_lava_style.get("width_start_m", 20.0))
+		var w1 := float(debug_lava_style.get("width_end_m", 40.0))
+		var hw := 0.5 * maxf(w0, w1)
+		_dbg_lava_whole = {
+			"road_type": LavaSettings.LAVA_TYPE, "lava_type": LavaSettings.LAVA_TYPE,
+			"state": str(debug_lava_style.get("state", "active")), "name": "debug",
+			"feature_id": DEBUG_LAVA_FID, "width_start_m": w0, "width_end_m": w1,
+			"width": 2.0 * hw, "width_m": 2.0 * hw, "half_width_m": hw,
+			"half_width_deg": hw / mpd, "_road_hw_converted": true,
+			"depth_m": float(debug_lava_style.get("depth_m", 3.0)),
+			"centerline": cl, "_cum_lengths": cum, "_total_length": acc,
+		}
+	var out := _dbg_lava_whole
+	_dbg_lava_mutex.unlock()
+	return out
+
+
+## The debug flow's pieces in pixel (nside, ipix): the dense line's runs of
+## points inside it, cut at the midpoints toward the neighbouring pixels so
+## two adjacent pieces meet exactly — the exporter's partition, approximated.
+func _debug_lava_for(nside: int, ipix: int) -> Array:
+	var whole := _debug_lava_whole()
+	var key := (nside << 32) | ipix
+	_dbg_lava_mutex.lock()
+	var hit: Variant = _dbg_lava_pieces.get(key)
+	_dbg_lava_mutex.unlock()
+	if hit != null:
+		return hit
+	var cl: PackedVector2Array = whole["centerline"]
+	var cum: PackedFloat64Array = whole["_cum_lengths"]
+	var inside := PackedByteArray()
+	inside.resize(cl.size())
+	for i in cl.size():
+		inside[i] = 1 if HEALPix.vec2pix_nest(nside, HEALPix.lonlat2vec(cl[i].x, cl[i].y)) == ipix else 0
+	var out: Array = []
+	var i := 0
+	while i < cl.size():
+		if inside[i] == 0:
+			i += 1
+			continue
+		var j := i
+		while j + 1 < cl.size() and inside[j + 1] == 1:
+			j += 1
+		var pcl := PackedVector2Array()
+		var pcum := PackedFloat64Array()
+		if i > 0:
+			pcl.append(cl[i - 1].lerp(cl[i], 0.5))
+			pcum.append(0.5 * (cum[i - 1] + cum[i]))
+		for k in range(i, j + 1):
+			pcl.append(cl[k])
+			pcum.append(cum[k])
+		if j + 1 < cl.size():
+			pcl.append(cl[j].lerp(cl[j + 1], 0.5))
+			pcum.append(0.5 * (cum[j] + cum[j + 1]))
+		if pcl.size() >= 2:
+			var piece: Dictionary = whole.duplicate()
+			piece["centerline"] = pcl
+			piece["_cum_lengths"] = pcum
+			out.append(piece)
+		i = j + 1
+	_dbg_lava_mutex.lock()
+	if _dbg_lava_pieces.size() > 4096:
+		_dbg_lava_pieces.clear()
+	_dbg_lava_pieces[key] = out
+	_dbg_lava_mutex.unlock()
+	return out
+
+
+## Pieces sharing a feature_id, from the pack's coarsest level, concatenated
+## in along order — [param getter] is get_chunk_roads or get_chunk_lava.
+func _whole_lines(getter: Callable) -> Array:
 	var pack = _ensure_modifier_pack()
 	if pack == null:
 		return []
@@ -2194,7 +2466,7 @@ func get_whole_roads() -> Array:
 	var nside := int(levels[0])
 	var by_feature: Dictionary = {}
 	for ipix in pack.get_tile_ipix(nside):
-		for r in get_chunk_roads(nside, int(ipix)):
+		for r in getter.call(nside, int(ipix)):
 			var fid: int = int(r.get("feature_id", -1))
 			if not by_feature.has(fid):
 				by_feature[fid] = []
@@ -2548,8 +2820,9 @@ func populate_fingerprint() -> String:
 	return str((parts.get("populate", {}) as Dictionary).get("fingerprint", ""))
 
 
-## Does this planet carry procedural mountains — a mountain or ridge part in
-## the pack, or the debug / test injection? Gates the fine server collision
+## Does this planet carry procedural relief — a mountain, ridge or volcano
+## part in the pack, or the debug / test injection? (Volcanoes ride the
+## mountain machinery: "mountains" below means all three.) Gates the fine server collision
 ## like the relief biomes: the mountains exist in the mesh only where the
 ## grid carries their octaves, and the collision must be on that same grid.
 func has_mountains() -> bool:
@@ -2577,38 +2850,55 @@ func warm_mountains() -> void:
 	var pack = _ensure_modifier_pack()
 	if pack != null:
 		var parts: Dictionary = pack.get_manifest().get("parts", {})
-		for kind in ["mountain", "ridge"]:
+		for kind in ["mountain", "ridge", "volcano"]:
 			var counts: Dictionary = (parts.get(kind, {}) as Dictionary).get("counts", {})
 			if int(counts.get("features", 0)) > 0:
 				found = true
-	if not found and debug_mountain_enabled and _mtn_override_zones.is_empty() \
-			and _mtn_override_ridges.is_empty():
+	if not found and (debug_mountain_enabled or debug_volcano_enabled) \
+			and not _has_mtn_overrides():
 		_build_debug_mountains()
-	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+	if _has_mtn_overrides():
 		found = true
 	_has_mountains = 1 if found else 0
 
 
 ## Tests / tools: stand-in features for the whole planet (every tile returns
-## them). [param zones] / [param ridges] are record Dictionaries in the pack's
-## decoded shape (see ModifierPack._decode_populate + MountainRelief.prepare_*).
+## them). [param zones] / [param ridges] / [param volcanoes] are record
+## Dictionaries in the pack's decoded shape (see ModifierPack._decode_populate
+## + MountainRelief.prepare_* / VolcanoRelief.prepare).
 ## Main thread only; call before any chunk is built.
-func set_mountain_overrides(zones: Array, ridges: Array) -> void:
+func set_mountain_overrides(zones: Array, ridges: Array, volcanoes: Array = []) -> void:
 	_mtn_override_zones.clear()
 	_mtn_override_ridges.clear()
+	_mtn_override_volcanoes.clear()
 	var mpd := radius * PI / 180.0
 	for z in zones:
 		_mtn_override_zones.append(MountainRelief.prepare_zone(z))
 	for r in ridges:
 		_mtn_override_ridges.append(MountainRelief.prepare_ridge(r, mpd))
-	_mtn_override_set = MountainRelief.build_set(_mtn_override_zones, _mtn_override_ridges)
+	for v in volcanoes:
+		_mtn_override_volcanoes.append(VolcanoRelief.prepare(v))
+	_mtn_override_set = MountainRelief.build_set(_mtn_override_zones, _mtn_override_ridges,
+			_mtn_override_volcanoes)
 	_has_mountains = -1
 	warm_mountains()
+
+
+func _has_mtn_overrides() -> bool:
+	return not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty() \
+			or not _mtn_override_volcanoes.is_empty()
 
 
 func _build_debug_mountains() -> void:
 	var zones: Array = []
 	var ridges: Array = []
+	var volcanoes: Array = []
+	if debug_volcano_enabled:
+		volcanoes.append(VolcanoRelief.debug_record(debug_volcano_type, debug_volcano_lonlat,
+				debug_volcano_style))
+	if not debug_mountain_enabled:
+		set_mountain_overrides(zones, ridges, volcanoes)
+		return
 	if debug_mountain_radius_km > 0.0:
 		var mpd := radius * PI / 180.0
 		var r_deg := debug_mountain_radius_km * 1000.0 / mpd
@@ -2627,7 +2917,7 @@ func _build_debug_mountains() -> void:
 		rd["polygon"] = debug_ridge_points
 		rd["name"] = "debug"
 		ridges.append(rd)
-	set_mountain_overrides(zones, ridges)
+	set_mountain_overrides(zones, ridges, volcanoes)
 
 
 ## Fingerprint of the mountain and ridge parts as echoed into the pack
@@ -2639,29 +2929,51 @@ func mountain_fingerprint() -> String:
 	var parts: Dictionary = pack.get_manifest().get("parts", {})
 	var a := str((parts.get("mountain", {}) as Dictionary).get("fingerprint", ""))
 	var b := str((parts.get("ridge", {}) as Dictionary).get("fingerprint", ""))
-	if a == "" and b == "":
+	var c := str((parts.get("volcano", {}) as Dictionary).get("fingerprint", ""))
+	if a == "" and b == "" and c == "":
 		return ""
-	return (a + "-" + b).sha1_text().substr(0, 12)
+	# Without a volcano part the key is the one planets had before volcanoes
+	# existed — their chunk caches stay valid.
+	if c == "":
+		return (a + "-" + b).sha1_text().substr(0, 12)
+	return (a + "-" + b + "-" + c).sha1_text().substr(0, 12)
+
+
+## Fingerprint of the pack's volcano part ("" without one).
+func volcano_fingerprint() -> String:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	return str((parts.get("volcano", {}) as Dictionary).get("fingerprint", ""))
 
 
 ## Prepared mountain_range zones for the pack tile ([param level], [param ipix])
 ## — `level` ≤ export_nside, the kind is baked n1..export_nside. Overrides
 ## replace the pack wholesale (debug / tests).
 func get_chunk_mountain_zones(level: int, ipix: int) -> Array:
-	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+	if _has_mtn_overrides():
 		return _mtn_override_zones
 	return get_chunk_modifiers(level, ipix).get("mountain_zones", [])
 
 
 func get_chunk_ridges(level: int, ipix: int) -> Array:
-	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+	if _has_mtn_overrides():
 		return _mtn_override_ridges
 	return get_chunk_modifiers(level, ipix).get("ridge_lines", [])
 
 
+## Prepared volcanoes (VolcanoRelief.Volcano) of the pack tile — same levels
+## and override rule as the zones.
+func get_chunk_volcanoes(level: int, ipix: int) -> Array:
+	if _has_mtn_overrides():
+		return _mtn_override_volcanoes
+	return get_chunk_modifiers(level, ipix).get("volcanoes", [])
+
+
 ## The MountainSetNative of that tile (null → GDScript path over the lists).
 func get_chunk_mountain_set(level: int, ipix: int) -> RefCounted:
-	if not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty():
+	if _has_mtn_overrides():
 		return _mtn_override_set
 	return get_chunk_modifiers(level, ipix).get("mountain_set", null)
 
@@ -2683,6 +2995,7 @@ func prepare_mountain_frame(frame: TileFrame, hp_nside: int, hp_ipix: int) -> vo
 		level >>= 1
 	frame.mtn = get_chunk_mountain_zones(level, ip)
 	frame.rdg = get_chunk_ridges(level, ip)
+	frame.vol = get_chunk_volcanoes(level, ip)
 	frame.mtn_set = get_chunk_mountain_set(level, ip)
 	frame.mtn_ready = true
 	if frame.native != null:
@@ -2698,10 +3011,12 @@ func prepare_mountain_frame(frame: TileFrame, hp_nside: int, hp_ipix: int) -> vo
 func _mountain_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float) -> float:
 	var zones: Array
 	var ridges: Array
+	var volcanoes: Array
 	var mset: RefCounted
 	if frame != null and frame.mtn_ready:
 		zones = frame.mtn
 		ridges = frame.rdg
+		volcanoes = frame.vol
 		mset = frame.mtn_set
 	else:
 		var ip := HEALPix.vec2pix_nest(export_nside, dir)
@@ -2709,12 +3024,13 @@ func _mountain_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float) -> f
 		if mset == null:
 			zones = get_chunk_mountain_zones(export_nside, ip)
 			ridges = get_chunk_ridges(export_nside, ip)
+			volcanoes = get_chunk_volcanoes(export_nside, ip)
 	var eff := maxf(vtx_spacing_m, _mtn_finest_spacing)
 	if mset != null:
 		return mset.Offset(dir, radius, eff)
-	if zones.is_empty() and ridges.is_empty():
+	if zones.is_empty() and ridges.is_empty() and volcanoes.is_empty():
 		return 0.0
-	return MountainRelief.offset(dir, radius, zones, ridges, eff)
+	return MountainRelief.offset(dir, radius, zones, ridges, eff, volcanoes)
 
 
 ## How deep inside a massif [param dir] is — MountainRelief.core over the
@@ -2727,10 +3043,12 @@ func mountain_core(dir: Vector3, frame: TileFrame = null) -> float:
 		return 0.0
 	var zones: Array
 	var ridges: Array
+	var volcanoes: Array
 	var mset: RefCounted
 	if frame != null and frame.mtn_ready:
 		zones = frame.mtn
 		ridges = frame.rdg
+		volcanoes = frame.vol
 		mset = frame.mtn_set
 	else:
 		var ip := HEALPix.vec2pix_nest(export_nside, dir)
@@ -2738,11 +3056,12 @@ func mountain_core(dir: Vector3, frame: TileFrame = null) -> float:
 		if mset == null:
 			zones = get_chunk_mountain_zones(export_nside, ip)
 			ridges = get_chunk_ridges(export_nside, ip)
+			volcanoes = get_chunk_volcanoes(export_nside, ip)
 	if mset != null:
 		return mset.Core(dir, radius)
-	if zones.is_empty() and ridges.is_empty():
+	if zones.is_empty() and ridges.is_empty() and volcanoes.is_empty():
 		return 0.0
-	return MountainRelief.core(dir, radius, zones, ridges)
+	return MountainRelief.core(dir, radius, zones, ridges, volcanoes)
 
 
 ## How much the ground along [param dir] belongs to a mountain feature
@@ -2753,10 +3072,12 @@ func mountain_mask(dir: Vector3, frame: TileFrame = null) -> float:
 		return 0.0
 	var zones: Array
 	var ridges: Array
+	var volcanoes: Array
 	var mset: RefCounted
 	if frame != null and frame.mtn_ready:
 		zones = frame.mtn
 		ridges = frame.rdg
+		volcanoes = frame.vol
 		mset = frame.mtn_set
 	else:
 		var ip := HEALPix.vec2pix_nest(export_nside, dir)
@@ -2764,11 +3085,39 @@ func mountain_mask(dir: Vector3, frame: TileFrame = null) -> float:
 		if mset == null:
 			zones = get_chunk_mountain_zones(export_nside, ip)
 			ridges = get_chunk_ridges(export_nside, ip)
+			volcanoes = get_chunk_volcanoes(export_nside, ip)
 	if mset != null:
 		return mset.Mask(dir, radius, crack_mountain_fade_m)
-	if zones.is_empty() and ridges.is_empty():
+	if zones.is_empty() and ridges.is_empty() and volcanoes.is_empty():
 		return 0.0
-	return MountainRelief.mask(dir, radius, zones, ridges, crack_mountain_fade_m)
+	return MountainRelief.mask(dir, radius, zones, ridges, crack_mountain_fade_m, volcanoes)
+
+
+## The volcanoes whose SUMMIT lies in chunk (hp_nside, hp_ipix) — each one
+## owned by exactly one chunk per level, for the per-volcano nodes (lava lake,
+## plume). Reads the chunk's export-level ancestor tile (its own level when
+## coarser), like prepare_mountain_frame.
+func volcanoes_owned_by(hp_nside: int, hp_ipix: int) -> Array:
+	if _has_mountains != 1 or hp_nside <= 0 or hp_ipix < 0:
+		return []
+	var level := hp_nside
+	var ip := hp_ipix
+	while level > export_nside:
+		ip >>= 2
+		level >>= 1
+	var out: Array = []
+	for v in get_chunk_volcanoes(level, ip):
+		if HEALPix.vec2pix_nest(hp_nside, (v as VolcanoRelief.Volcano).c) == hp_ipix:
+			out.append(v)
+	return out
+
+
+## Surface of [param v]'s lava lake (m, same unit as sample_height_for_direction):
+## the ground at the crater's centre — the crater floor — plus lake_fill_m.
+## Relief only (no crack), full detail: the same number on every machine.
+func volcano_lake_level(v: VolcanoRelief.Volcano) -> float:
+	return sample_height_for_direction(v.c, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+			CrackCarve.NONE) + v.fill
 
 
 ## Does this planet carry any road at all (the pack's road part has features)?
@@ -2798,7 +3147,7 @@ func has_profiled_lines() -> bool:
 	var pack = _ensure_modifier_pack()
 	if pack == null:
 		return false
-	var found := has_railways()
+	var found := has_railways() or has_lava()
 	if not found:
 		var parts: Dictionary = pack.get_manifest().get("parts", {})
 		var road_part: Dictionary = parts.get("road", {})
@@ -2838,6 +3187,11 @@ func clear_grade_profiles() -> void:
 	_has_railways = -1
 	_has_profiled_lines = -1
 	_has_relief_biomes = -1
+	_has_lava = -1
+	_dbg_lava_mutex.lock()
+	_dbg_lava_whole.clear()
+	_dbg_lava_pieces.clear()
+	_dbg_lava_mutex.unlock()
 	_grade_mutex.unlock()
 
 
@@ -2904,12 +3258,15 @@ func _ensure_grade_profiles() -> void:
 	_grade_mutex.unlock()
 
 
-## The whole profiled-line records, from the pack's coarsest level.
+## The whole profiled-line records, from the pack's coarsest level — roads,
+## railways and lava flows.
 func _whole_profiled_lines() -> Array:
 	var out: Array = []
 	for r in get_whole_roads():
 		if GradeSettings.is_profiled(r):
 			out.append(r)
+	if has_lava():
+		out.append_array(get_whole_lava())
 	return out
 
 
@@ -3081,6 +3438,13 @@ func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
 		return false
 	var fid := int(road.get("feature_id", -1))
 	_grade_profiles[fid] = profile
+	# The authoritative "lava never climbs" report, from the real relief (the
+	# exporter only guessed it): the flow is built anyway, its channel cut.
+	if float(profile.get("uphill_m", 0.0)) > 0.0:
+		push_warning("[PlanetData] '%s': lava flow '%s' (fid %d) ends %.0f m ABOVE its source — "
+				% [planet_name, str(road.get("name", "")), fid, float(profile["uphill_m"])]
+				+ "lava never flows uphill: its channel is cut through the rise. "
+				+ "Draw it from the source downhill in QGIS.")
 	var plans: Array = []
 	for span in GradeProfile.spans_of(profile, road):
 		var plan := GradeProfile.plan_of(profile, span, road, radius)
@@ -4250,13 +4614,13 @@ const _BIOME_FILES: PackedStringArray = [
 	"aride_desert-salt_desert.tres", "aride_desert-sandy_desert.tres", "aride_desert-dry_river_bed.tres",
 	"aride_desert-dusty_plain.tres",
 	"forest-boreal_forest.tres", "forest-dead_forest.tres", "forest-temperate_forest.tres",
-	"forest-tropical_forest.tres", "icy-frozen_ocean.tres", "volcanic_geothermal-fumarole.tres",
+	"forest-tropical_forest.tres", "icy-frozen_ocean.tres",
 	"rocky_landform-cave.tres", "volcanic_geothermal-geothermal.tres", "icy-glacier.tres",
 	"meadow_steppe-meadow.tres", "spatial-lunar_ground.tres", "icy-ice_crevasse.tres",
 	"volcanic_geothermal-ice_geyser.tres", "icy-ice_plain.tres", "icy-ice_pick.tres",
 	"aride_desert-iron_desert.tres", "maritime_river-lake.tres",
 	"urban-landing_pad.tres", "volcanic_geothermal-lava_field.tres",
-	"volcanic_geothermal-lava_lake.tres", "volcanic_geothermal-lava_river.tres",
+	"volcanic_geothermal-lava_lake.tres",
 	"volcanic_geothermal-magmatic_crust.tres", "wetland-mangrove.tres", "spatial-lunar_pool.tres",
 	"aride_desert-metal_plain.tres", "icy-hydrocarbon_dune.tres", "icy-methane_lake.tres",
 	"volcanic_geothermal-mineral_thermal_source.tres", "urban-mining_excavation.tres",
@@ -4269,7 +4633,7 @@ const _BIOME_FILES: PackedStringArray = [
 	"icy-sublimation_pit.tres", "meadow_steppe-sulfur_plain.tres", "volcanic_geothermal-sulfur_volcano.tres",
 	"liquid_hydrocarbon_areas.tres", "wetland-swamp.tres", "tar_basin.tres",
 	"forest-terraformed_forest.tres", "meadow_steppe-terraformed_grass.tres", "icy-tundra.tres",
-	"urban-urban.tres", "volcanic_geothermal-active_volcano.tres",
+	"urban-urban.tres",
 	"volcanic_geothermal-volcanic_basalt.tres", "meadow_steppe-wasteland_irradiated.tres",
 	"rocky_landform-mining_cave.tres",
 	"volcanic_geothermal-columnar_basalt_vertical.tres",
@@ -4278,14 +4642,12 @@ const _BIOME_FILES: PackedStringArray = [
 	"aride_desert-corundum_plateau.tres",
 	"aride_desert-corundum_sand_desert.tres",
 	"rocky_landform-arachnoide.tres",
-	"volcanic_geothermal-lava_dome.tres",
 	"rocky_landform-perforated_limestone.tres",
 	"volcanic_geothermal-pele_haire.tres",
 	"icy-frozen_methane.tres",
 	"regolith-dust.tres", "regolith-sand.tres", "regolith-gravel.tres",
 	"regolith-cobble.tres", "regolith-crystal.tres",
 	"outcrop-plateau.tres", "outcrop-volcanic.tres",
-	"volcanic_geothermal-fumarole_field.tres",
 ]
 
 
@@ -4443,34 +4805,12 @@ func get_road_material_cached(mat_path: String) -> Material:
 	return loaded
 
 
-## Return the terrain_material_override from the volcanic_geothermal-active_volcano
-## BiomeDefinition, or null.  Used by PlanetChunk for lava overlays.
-func get_lava_material() -> Material:
-	if not _biome_cache_built:
-		_build_biome_cache()
-	var bd := get_biome_by_type("volcanic_geothermal-active_volcano")
-	if bd and bd.terrain_material_override:
-		return bd.terrain_material_override
-	return null
-
-
 ## Return the terrain_material_override from the lunar ground
 ## BiomeDefinition, or null.  Used by PlanetChunk for lunar ground overlays.
 func get_lunar_ground_material() -> Material:
 	if not _biome_cache_built:
 		_build_biome_cache()
 	var bd := get_biome_by_type("spatial-lunar_ground")
-	if bd and bd.terrain_material_override:
-		return bd.terrain_material_override
-	return null
-
-
-## Return the terrain_material_override from the volcanic_geothermal-lava_river
-## BiomeDefinition, or null.  Used by PlanetChunk for lava river overlays.
-func get_lava_river_material() -> Material:
-	if not _biome_cache_built:
-		_build_biome_cache()
-	var bd := get_biome_by_type("volcanic_geothermal-lava_river")
 	if bd and bd.terrain_material_override:
 		return bd.terrain_material_override
 	return null
@@ -4574,7 +4914,6 @@ const DETAIL_TEXTURES_DIR := "res://assets/textures/planet/detail/"
 const DETAIL_BY_BIOME: Dictionary = {
 	# terrestrial — most varied category, needs per-biome mapping
 	"maritime_river-ocean": 0, "maritime_river-lake": 0, "maritime_river-river": 0,  # liquid → no detail
-	"volcanic_geothermal-lava_river": 0,          # lava material overlay
 	"volcanic_geothermal-columnar_basalt_vertical": 2,  # rock
 	"maritime_river-delta": 7,                     # mud
 	"maritime_river-beach": 1, "aride_desert-sandy_desert": 1, "aride_desert-dusty_plain": 1,  # sand
@@ -4592,9 +4931,7 @@ const DETAIL_BY_BIOME: Dictionary = {
 	"regolith-gravel": 8,                                            # lunar ground (grainy)
 	"regolith-cobble": 2, "regolith-crystal": 2,                     # rock
 	"outcrop-plateau": 2, "outcrop-volcanic": 2,                     # rock
-	"volcanic_geothermal-fumarole_field": 2,                         # rock
 	"rocky_landform-perforated_limestone": 2,                     # rock
-	"volcanic_geothermal-lava_dome": 2,                            # rock
 	"volcanic_geothermal-pele_haire": 2,                          # rock
 	"meadow_steppe-meadow": 3, "meadow_steppe-savanna": 3, "meadow_steppe-steppe": 3,    # grass
 	"forest-temperate_forest": 4, "forest-boreal_forest": 4, "forest-tropical_forest": 4,

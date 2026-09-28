@@ -405,11 +405,12 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	var stride: int = grid_res + 1
 	var mountains: Array = paint.get("mountains", [])
 	var ridges: Array = paint.get("ridges", [])
+	var volcanoes: Array = paint.get("volcanoes", [])
 	# Summed in C# when the assembly is there — the path the terrain takes, and what made a tile under
 	# mountains cost 29 ms in GDScript where the same tile without them cost 6. The GDScript sum stays as
 	# the fallback, and a tile with no feature at all asks neither.
 	var mountain_set: RefCounted = paint.get("mountain_set", null)
-	var has_relief: bool = not mountains.is_empty() or not ridges.is_empty()
+	var has_relief: bool = not mountains.is_empty() or not ridges.is_empty() or not volcanoes.is_empty()
 	# Ground covered by one step of the mesh. A feature narrower than this cannot be drawn honestly, and
 	# saying so is what keeps a knife-edge crest from coming out as a row of spikes.
 	var pitch: float = radius * HEALPix.pixel_angular_size(nside) / float(grid_res)
@@ -459,7 +460,7 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 				if mountain_set != null:
 					metres += mountain_set.Offset(dir, radius, pitch)
 				elif has_relief:
-					metres += MountainRelief.offset(dir, radius, mountains, ridges, pitch)
+					metres += MountainRelief.offset(dir, radius, mountains, ridges, pitch, volcanoes)
 			points.append(dir * (MESH_RADIUS * (1.0 + EXAGGERATION * metres / radius)))
 			normals.append(dir)
 	_add_patch_indices(indices, points, 0, stride)
