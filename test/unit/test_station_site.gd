@@ -110,6 +110,33 @@ func test_the_palaka_pital_station_is_listed() -> void:
 	assert_almost_eq(sites[0].inclination_deg, 51.6, 1e-6, "like the ISS")
 
 
+func test_a_site_names_its_scene_and_its_eva_radius() -> void:
+	var site := StationSite.new()
+	assert_eq(site.scene, StationSite.DEFAULT_SCENE, "the orbital station unless told otherwise")
+	assert_eq(site.eva_radius_m, 50000.0)
+	site.scene = "res://scenes/some/other_station.tscn"
+	assert_eq(site.scenename(), "scenes/some/other_station.tscn", "the network names scenes without res://")
+
+
+func test_the_seed_carries_the_sites_scene() -> void:
+	var seed_tool: GDScript = load("res://tools/stations/station_seed.gd")
+	var site := StationSite.new()
+	site.id = "tarsis_3/other"
+	site.scene = "res://scenes/some/other_station.tscn"
+	var entry: Dictionary = seed_tool.seed_entry(site, SANDBOX)
+	assert_eq(entry["object_data"]["scenename"], "scenes/some/other_station.tscn")
+	assert_eq(entry["object_uuid"], site.uuid())
+
+
+func test_every_site_is_built_from_an_orbital_station() -> void:
+	for site: StationSite in StationSites.of_system("tarsis"):
+		assert_true(ResourceLoader.exists(site.scene), "%s: %s exists" % [site.id, site.scene])
+		var built: Node = (load(site.scene) as PackedScene).instantiate()
+		assert_true(built is OrbitalStation, "%s: its root is an OrbitalStation" % site.id)
+		assert_not_null(built.get_node_or_null(OrbitalStation.ARRIVAL_NODE), "%s: travellers land somewhere" % site.id)
+		built.free()
+
+
 func test_a_station_wears_the_orbital_icon_not_the_capitals() -> void:
 	# The chart asks the icon table with the station's id; a proper name starting "Palaka-Pital" would
 	# match the capital's rule, which comes first.

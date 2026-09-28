@@ -4,17 +4,15 @@ extends SceneTree
 ##
 ##   godot --headless --path . -s res://tools/stations/station_seed.gd -- [system=tarsis]
 ##
-## The pose written is the station's ORBITAL pose at t = 0, in the body's non-rotating frame. The SERVER keeps
-## it as a fixed pose — nothing celestial moves there — and it only has to be on the orbit: what is aboard
-## holds positions relative to the station, and anything that needs where the station REALLY is asks its
-## orbit for the time (Server.system_transform_of). On the server the planet's frame is body-fixed, so this
-## is not the station's body-fixed place at t = 0 (off by the planet's turn then), which is harmless for that
-## reason — but Horizon's zones see the station there. Clients place it themselves (OrbitalStation).
+## The pose written is the station's ORBITAL pose at t = 0, in the body's non-rotating frame. It only has to
+## be ON the orbit: the server's station body never moves, and what is aboard holds positions relative to
+## it; anything that needs where the station REALLY is asks its orbit for the time
+## (Server.system_transform_of). Horizon keeps it there (see OrbitalStation for why). Clients place it
+## themselves.
 ##
-## The parent is the body's service name ("_planet_SandBox"), taken from its display name
-## ("SandBox - Tarsis III"); Horizon resolves it to the planet's uuid when it seeds.
-
-const SCENE_PATH := "scenes/_universe/environment/space/stations/orbital_station.tscn"
+## The scene is the site's (StationSite.scene). The parent is the body's service name ("_planet_SandBox"),
+## taken from its display name ("SandBox - Tarsis III"); Horizon resolves it to the planet's uuid when it
+## seeds.
 
 
 func _init() -> void:
@@ -42,7 +40,7 @@ static func seed_entry(site: StationSite, body_props: Dictionary) -> Dictionary:
 		"object_data": {
 			"name": site.proper_name,
 			"parent_id": "_planet_" + service_name,
-			"scenename": SCENE_PATH,
+			"scenename": site.scenename(),
 			"position": {"x": at.x, "y": at.y, "z": at.z},
 			"rotation": {"x": euler.x, "y": euler.y, "z": euler.z},
 		},

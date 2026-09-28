@@ -74,8 +74,10 @@ func test_the_innermost_sphere_rules_whatever_the_order() -> void:
 
 func test_a_station_holds_what_floats_within_its_eva_radius() -> void:
 	var station: OrbitalStation = add_child_autofree(OrbitalStation.new())
-	station.set_process(false)  # no site here: nothing to place
-	station.eva_radius_m = 1000.0
+	station.set_process(false)  # no orbit here: nothing to place
+	var site := StationSite.new()
+	site.eva_radius_m = 1000.0
+	station._site = site  # the radius is the site's
 	assert_true(station.holds(station.global_position + Vector3(0.0, 999.0, 0.0)))
 	assert_false(station.holds(station.global_position + Vector3(0.0, 1001.0, 0.0)))
 
