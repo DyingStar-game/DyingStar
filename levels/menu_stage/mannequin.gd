@@ -25,6 +25,9 @@ var _angle : float = 0.0
 
 
 func _ready() -> void:
+	# Off until the clip is known to play: Godot turns _process on for any script that has one, and
+	# a figure left standing (unknown clip, no walk) would divide by its zero walk radius there.
+	set_process(false)
 	_anim = _puppet.get_node("AnimationPlayer")
 	_playing = &"Walk" if walk_radius > 0.0 else clip
 	if not _anim.has_animation(_playing):
@@ -33,7 +36,8 @@ func _ready() -> void:
 	_anim.play(_playing)
 	# Out of step with its neighbours: a crowd breathing in unison reads as a machine.
 	_anim.seek(randf() * _anim.current_animation_length, true)
-	_anim.speed_scale = randf_range(0.9, 1.1)
+	# Not the walker: its body moves at WALK_SPEED, the clip must too or the feet slide.
+	_anim.speed_scale = 1.0 if walk_radius > 0.0 else randf_range(0.9, 1.1)
 	# One-shot clips (a celebration, a nod) loop too — without touching the SHARED library's loop mode.
 	_anim.animation_finished.connect(func(_done: StringName) -> void: _anim.play(_playing))
 	_angle = randf() * TAU

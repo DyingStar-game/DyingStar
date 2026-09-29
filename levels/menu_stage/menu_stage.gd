@@ -38,6 +38,8 @@ var _rig : StageRig = null
 var _outpost : StageOutpost = null
 var _anchor : Vector3 = Vector3.ZERO
 var _hour : float = 12.0
+## The sunrise hour, solved once (a hundred placements of the planet): given back after tuning.
+var _sunrise_hour : float = -1.0
 var _live : bool = false
 var _tuning : OverlayPanel = null
 ## The station to glide back to when the tuning scene closes: where it was opened from.
@@ -156,8 +158,10 @@ func exit_tuning() -> void:
 
 func _build() -> void:
 	# Let the splash paint before the planet's set-up holds the main thread for a few seconds.
-	await get_tree().process_frame
-	await get_tree().process_frame
+	for i in 2:
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return  # left while the splash painted (the game was entered, or closed)
 	var world : Node3D = load(WORLD_SCENE).instantiate()
 	# Before the world enters the tree: the planet places itself for the (frozen) clock in its _ready.
 	_session.begin(world)
@@ -183,6 +187,8 @@ func _build() -> void:
 	# a camera rig aiming at a point never does.
 	while waited < READY_TIMEOUT_S and not ground_ready[0]:
 		await get_tree().process_frame
+		if not is_inside_tree():
+			return  # left while waiting for the ground: the session is already handed back
 		waited += get_process_delta_time()
 		# The ground: chunks built out of those asked for, or the time left, whichever is further.
 		var terrain : PlanetTerrain = _planet.planet_terrain
@@ -198,10 +204,13 @@ func _build() -> void:
 		"ready" if ground_ready[0] else "late"])
 
 
-## The menu's light: the sun just risen (MENU_SUN_ELEVATION_DEG), whatever the season.
+## The menu's light: the sun just risen (MENU_SUN_ELEVATION_DEG), whatever the season. Solved on
+## the first call; later calls set the hour found, one placement instead of a hundred.
 func _sunrise() -> void:
-	var hour_set : float = StageClock.set_sun_elevation(_planet, _anchor, MENU_SUN_ELEVATION_DEG)
-	_hour = hour_set if hour_set >= 0.0 else 12.0
+	if _sunrise_hour < 0.0:
+		var found : float = StageClock.set_sun_elevation(_planet, _anchor, MENU_SUN_ELEVATION_DEG)
+		_sunrise_hour = found if found >= 0.0 else 12.0
+	set_hour(_sunrise_hour)
 
 
 ## The loading splash, saying just "Loading…" while the menu builds; its own "Loading the
