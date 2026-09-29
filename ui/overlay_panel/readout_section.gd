@@ -7,6 +7,9 @@ extends OverlaySection
 enum Tone { BODY, ALERT }
 
 var tone : Tone
+## Tallest the text may stand, in pixels; beyond it the text scrolls on its own (AutoScroll).
+## 0 = no cap, the section grows with its text. Set before the panel builds the section.
+var max_height_px : float = 0.0
 var _lines : Callable
 ## Called every frame while shown, for a provider that must measure continuously (the vehicle's
 ## acceleration window) even though its text refreshes less often.
@@ -50,4 +53,16 @@ func _build_content(content: VBoxContainer, factory: SettingsRowFactory) -> void
 	_text.add_theme_font_size_override("normal_font_size", factory.control_size if factory.control_size > 0 else 14)
 	if tone == Tone.ALERT:
 		_text.add_theme_color_override("default_color", SettingsStyle.ALERT_COLOR)
-	content.add_child(_text)
+	if max_height_px <= 0.0:
+		content.add_child(_text)
+		return
+	var view := ScrollContainer.new()
+	view.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	view.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	view.add_child(_text)
+	view.add_child(AutoScroll.new(_text))
+	# As tall as the text up to the cap: a short list takes no more room than before.
+	_text.minimum_size_changed.connect(func() -> void:
+		view.custom_minimum_size.y = minf(_text.get_combined_minimum_size().y, max_height_px))
+	content.add_child(view)
