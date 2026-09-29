@@ -15,7 +15,9 @@ static func keep(control: Control) -> void:
 	if viewport == null:
 		return
 	fit(control)
-	var refit : Callable = fit.bind(control)
+	# A lambda per control, not fit.bind(control): bound static Callables compare equal whatever
+	# they bind, so a second control's connect was refused and its disconnect cut the first one's.
+	var refit : Callable = func() -> void: fit(control)
 	viewport.size_changed.connect(refit)
 	control.tree_exiting.connect(func() -> void:
 		if viewport.size_changed.is_connected(refit):
