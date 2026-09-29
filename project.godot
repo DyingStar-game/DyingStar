@@ -88,6 +88,10 @@ spawn="spawn area (apartments)"
 teleporter=""
 navigation_mesh=""
 
+[gui]
+
+theme/custom="res://ui/theme/game_theme.tres"
+
 [importer_defaults]
 
 scene={

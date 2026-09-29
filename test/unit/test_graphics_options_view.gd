@@ -90,5 +90,6 @@ func test_the_whole_line_explains_the_option() -> void:
 func test_a_greyed_line_says_why_before_what() -> void:
 	_render.set_value("shadows", false)
 	var line : HBoxContainer = _control("shadow_distance").get_parent()
-	assert_true(line.tooltip_text.begins_with(tr("%%MENU_GFX_WHY_SHADOWS_OFF")), "the reason first")
-	assert_true(line.tooltip_text.ends_with(tr("%%MENU_GFX_HELP_SHADOW_DISTANCE")), "then the explanation")
+	assert_true(line.tooltip_text.begins_with(SettingsText.tooltip(tr("%%MENU_GFX_WHY_SHADOWS_OFF"))), "the reason first")
+	assert_true(line.tooltip_text.ends_with(SettingsText.tooltip(tr("%%MENU_GFX_HELP_SHADOW_DISTANCE"))),
+		"then the explanation (each paragraph cut into lines on its own)")

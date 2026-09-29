@@ -95,7 +95,7 @@ func _add_tuning_scene_line(rows: VBoxContainer, factory: SettingsRowFactory) ->
 	if MenuStage.active == null or not MenuStage.active.is_live():
 		return
 	var line : HBoxContainer = factory.row("%%MENU_GFX_SHOWCASE")
-	line.tooltip_text = tr("%%MENU_GFX_HELP_SHOWCASE")
+	line.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_SHOWCASE"))
 	# Green: an invitation, not a setting.
 	line.get_child(0).modulate = SettingsStyle.GOOD_COLOR
 	var enter : Button = factory.button("%%MENU_GFX_SHOWCASE_OPEN")
