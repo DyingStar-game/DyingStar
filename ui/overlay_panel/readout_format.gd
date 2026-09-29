@@ -2,6 +2,9 @@ class_name ReadoutFormat
 extends RefCounted
 ## Number formats shared by the readouts, so the same kind of value reads the same way everywhere.
 
+## Between groups of thousands (grouped): a no-break space.
+const THOUSANDS : String = "\u00a0"
+
 
 ## "[color=…]60[/color] FPS": green at or above `good_min`, red below.
 static func rated(value: float, good_min: float, unit: String) -> String:
@@ -32,6 +35,18 @@ static func metres(v: float) -> String:
 ## reads like a missing value.
 static func signed(v: float) -> String:
 	return ("+" if v >= 0.0 else "") + metres(v)
+
+
+## A whole number with its thousands apart — "-1 234 567" — for coordinates that run to millions.
+## The separator does not break, so a narrow table cell never splits a number over two lines.
+static func grouped(v: float) -> String:
+	var digits : String = str(int(roundf(absf(v))))
+	var out : String = ""
+	for i in digits.length():
+		if i > 0 and (digits.length() - i) % 3 == 0:
+			out += THOUSANDS
+		out += digits[i]
+	return ("-" if v < 0.0 and digits != "0" else "") + out
 
 
 ## Text shown as-is inside a bbcode readout: a "[" from a name or a tag like "[son: oui]" would

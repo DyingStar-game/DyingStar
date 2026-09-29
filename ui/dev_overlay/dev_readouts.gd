@@ -3,9 +3,10 @@ extends RefCounted
 ## What the debug panel's sections say, as pure functions: data in, lines out. The panel (DevOverlay)
 ## decides when and where; these only format — so each is tested without a panel or a server.
 
-## Zones listed in the Server box before "+N more": a list that grew past the panel's height is what
-## made the old panels overlap.
-const MAX_ZONES : int = 6
+## The Server box's zone names, and its axis captions (the table of bounds, from TheMoye's #330).
+const ZONE_NAME_COLOR : String = "#ffd75e"
+const AXIS_COLOR : String = "#888888"
+const _COLUMN_GAP_PX : int = 18
 
 
 # ── Alert ───────────────────────────────────────────────────────────────────────────────────────
@@ -108,27 +109,36 @@ static func server_lines(cache: ServerInfoCache) -> PackedStringArray:
 	]
 
 
-## The Godot server simulating us, and its zones — one line each, capped.
-static func box_lines(cache: ServerInfoCache, max_zones: int = MAX_ZONES) -> PackedStringArray:
+## The Godot server simulating us, and its zones — all of them: the section caps its height and
+## scrolls on its own (DevOverlay), so a long list no longer runs over the next section.
+static func box_lines(cache: ServerInfoCache) -> PackedStringArray:
 	var out : PackedStringArray = ["server name: %s" % ReadoutFormat.escape(str(cache.value("server_name", "-")))]
-	var zones : Array = cache.value("zones", [])
-	for i in mini(zones.size(), max_zones):
-		out.append(zone_line(zones[i]))
-	if zones.size() > max_zones:
-		out.append(String(TranslationServer.translate("%%HUD_DEV_MORE")) % (zones.size() - max_zones))
+	for zone in cache.value("zones", []):
+		out.append(zone_block(zone))
 	return out
 
 
-## Its world (space or a planet) and, when the zone is only part of it, its bounds on the same line.
-static func zone_line(zone: Dictionary) -> String:
-	var text : String = str(zone.get("world", "?"))
-	if text == "planet":
-		text += " " + str(zone.get("planet_name", zone.get("planet_uuid", "?")))
+## Its world (space or a planet), then "(whole)" or its bounds in that world's coordinates as a
+## table — one row per axis, min and max right-aligned, thousands apart.
+static func zone_block(zone: Dictionary) -> String:
+	var name : String = str(zone.get("world", "?"))
+	if name == "planet":
+		name += " " + str(zone.get("planet_name", zone.get("planet_uuid", "?")))
+	var head : String = "[color=%s]%s[/color]" % [ZONE_NAME_COLOR, ReadoutFormat.escape(name)]
 	var b : Variant = zone.get("bounds")
 	if b == null:
-		return ReadoutFormat.escape(text) + " (whole)"
-	return ReadoutFormat.escape(text) + "  X %.0f..%.0f  Y %.0f..%.0f  Z %.0f..%.0f" % [
-		b["min_x"], b["max_x"], b["min_y"], b["max_y"], b["min_z"], b["max_z"]]
+		return head + " (whole)"
+	return head + "\n[table=3]%s%s%s[/table]" % [
+		_axis_row("X", b.get("min_x", 0.0), b.get("max_x", 0.0)),
+		_axis_row("Y", b.get("min_y", 0.0), b.get("max_y", 0.0)),
+		_axis_row("Z", b.get("min_z", 0.0), b.get("max_z", 0.0))]
+
+
+## Min and max right-aligned, each with room on its left so the two never touch.
+static func _axis_row(axis: String, lo: float, hi: float) -> String:
+	return ("[cell][color=%s]%s[/color][/cell][cell padding=%d,0,0,0][right]%s[/right][/cell]"
+		+ "[cell padding=%d,0,0,0][right]%s[/right][/cell]") % [AXIS_COLOR, axis,
+		_COLUMN_GAP_PX, ReadoutFormat.grouped(lo), _COLUMN_GAP_PX, ReadoutFormat.grouped(hi)]
 
 
 # ── Ground ──────────────────────────────────────────────────────────────────────────────────────

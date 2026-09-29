@@ -7,7 +7,7 @@ extends RefCounted
 ##   alert        red, pinned — the dev clock is shifted (shown even with the debug panels off)
 ##   Universe     servers, players, local time, altitude / position / moving frame   (show debug)
 ##   Server       TPS, players, objects, scenes of the Godot server                   (show debug)
-##   Server box   its name and zones                                                   (show debug)
+##   Server box   its name and zones, as a table that scrolls on its own              (show debug)
 ##   Client       FPS, objects, scenes, x/y/z, VRAM, events/s, chunks on screen       (show debug)
 ##   Ground       what we stand on and how it was decided                  (Settings: Surface debug)
 ##   Movement     speed, walk target, clip, vault / step                  (Settings: Movement debug)
@@ -17,6 +17,8 @@ extends RefCounted
 ## values live as children of the panel, so they go with it.
 
 const WIDTH_PX : float = 400.0
+## About three zones with their bounds; a longer list scrolls on its own.
+const SERVER_BOX_MAX_HEIGHT_PX : float = 240.0
 
 
 ## `surface_info`: () -> the last SurfaceProbe.explain_under dictionary. `driven_vehicle`: () -> the
@@ -38,8 +40,10 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 		func() -> PackedStringArray: return DevReadouts.universe_lines(body, cache), 0.25, shown))
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_SERVER",
 		func() -> PackedStringArray: return DevReadouts.server_lines(cache), 0.5, shown))
-	panel.add_section(ReadoutSection.new("%%HUD_DEV_SERVER_BOX",
-		func() -> PackedStringArray: return DevReadouts.box_lines(cache), 1.0, shown))
+	var box := ReadoutSection.new("%%HUD_DEV_SERVER_BOX",
+		func() -> PackedStringArray: return DevReadouts.box_lines(cache), 1.0, shown)
+	box.max_height_px = SERVER_BOX_MAX_HEIGHT_PX
+	panel.add_section(box)
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_CLIENT",
 		func() -> PackedStringArray: return client.lines(body), 0.5, shown))
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_SURFACE",
