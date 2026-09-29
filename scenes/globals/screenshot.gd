@@ -55,7 +55,7 @@ func take(kind: Kind) -> void:
 		_restore(hidden)
 	else:
 		_force_debug_panels(false)
-	var dir: String = CapturePaths.screenshots_dir("" if kind == Kind.PHOTO else "debug")
+	var dir: String = CapturePaths.screenshots_dir("" if kind == Kind.PHOTO else CapturePaths.DEBUG_SUB)
 	var prefix: String = "screenshot" if kind == Kind.PHOTO else "debug"
 	var path: String = dir.path_join("%s_%s.png" % [prefix, CapturePaths.stamp()])
 	WorkerThreadPool.add_task(_save.bind(image, path), false, "screenshot")
