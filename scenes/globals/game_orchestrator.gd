@@ -242,6 +242,10 @@ func _on_scene_changed(changed_scene: Node) -> void:
 				var server_instance =  NetworkOrchestrator.start_server(changed_scene)
 				server_instance.connect("populated_universe", _on_populated_universe)
 			NetworkRole.PLAYER:
+				# Every session starts on the server's clock. The +/- dev offset lives in an autoload, so
+				# it outlived the session it was set in — and the menu stage hands back what it found.
+				# Here the menu stage is already gone (it restores on leaving the tree).
+				Globals.debug_time_offset = 0.0
 				NetworkOrchestrator.start_client(changed_scene)
 	elif scene_path == GAME_STATES_SCENES_PATHS[GameStates.SERVER_UNIVERS_CREATION]:
 		changed_scene.connect("universe_data_retrieved", _on_universe_data_retrieved)
