@@ -18,8 +18,12 @@ const _PAGE_THEME : Theme = preload("res://ui/settings_page/settings_theme.tres"
 ## Under the host's TopBar, which stays over this page (its arrow is the way back).
 const _GAP_UNDER_BAR_PX : float = 16.0
 const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
+## The see-through veil's darkness across the screen, left (0) to right (1): the settings stand in
+## the dark part, the scene shows in the clear one.
+const VEIL_STOPS : Dictionary = {0.0: 0.88, 0.42: 0.8, 0.72: 0.25, 1.0: 0.05}
 
-## Set before adding the page: no opaque background, only a veil, so the menu stage shows through.
+## Set before adding the page: no opaque background, only a veil, so the scene shows through (the
+## menu stage, or the game behind the pause menu).
 ## The pause menu keeps the default.
 var see_through : bool = false
 var tabs : TabStrip
@@ -31,8 +35,12 @@ func _ready() -> void:
 	if see_through:
 		var background : TextureRect = $Control/Background
 		background.visible = false
-		var veil := ColorRect.new()
-		veil.color = Color(0.0, 0.0, 0.0, 0.35)
+		# Dark behind the settings, fading out to the right: the page stays readable over bright ground
+		# (a lit plain, snow), the scene beside it stays in view. A flat veil was one or the other.
+		var veil := TextureRect.new()
+		veil.texture = _veil_texture()
+		veil.stretch_mode = TextureRect.STRETCH_SCALE
+		veil.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		veil.set_anchors_preset(Control.PRESET_FULL_RECT)
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		$Control.add_child(veil)
@@ -70,3 +78,18 @@ func open(category_key: String) -> void:
 	settings_container.add_child(page)
 	tabs.set_active(StringName(category_key))
 	category_changed.emit(category_key)
+
+
+## Left to right: near-opaque under the settings, clear by the far edge (VEIL_STOPS).
+static func _veil_texture() -> GradientTexture2D:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array(VEIL_STOPS.keys())
+	gradient.colors = PackedColorArray(VEIL_STOPS.values().map(
+		func(alpha: float) -> Color: return Color(0.0, 0.0, 0.0, alpha)))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill_from = Vector2(0.0, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	texture.width = 256
+	texture.height = 1
+	return texture
