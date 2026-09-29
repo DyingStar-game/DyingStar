@@ -116,14 +116,12 @@ func _set_held(on: bool) -> void:
 	_panel.modulate.a = 1.0 if on else 0.85
 
 
-## Right edge, full height: the scene being tuned stays in view on the left.
+## Left edge, full height: the scene being tuned stays in view on the right.
 func _build() -> void:
 	_panel = PanelContainer.new()
-	_panel.anchor_left = 1.0
-	_panel.anchor_right = 1.0
 	_panel.anchor_bottom = 1.0
-	_panel.offset_left = -_WIDTH_PX - _MARGIN_PX
-	_panel.offset_right = -_MARGIN_PX
+	_panel.offset_left = _MARGIN_PX
+	_panel.offset_right = _MARGIN_PX + _WIDTH_PX
 	_panel.offset_top = _MARGIN_PX
 	_panel.offset_bottom = -_MARGIN_PX
 	var style := StyleBoxFlat.new()
