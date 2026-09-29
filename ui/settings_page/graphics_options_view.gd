@@ -20,7 +20,7 @@ var _preset : OptionButton = null
 ## The preset's whole line, which carries its explanation on hover.
 var _preset_line : HBoxContainer = null
 var _recommended : Label = null
-## A slider being dragged commits on release (commit_on_release); a click or a wheel step commits now.
+## Sliders being dragged: they commit on release (see _wire_slider).
 var _dragging : Dictionary = {}
 
 
@@ -96,17 +96,19 @@ func _build_row(container: Container, option: Dictionary) -> void:
 	_rows[key] = entry
 
 
+## A drag shows its value as it moves and commits once, when released: every commit saves the
+## settings file and re-applies the option (buffers reallocated, every grass and tree rescaled…),
+## which thirty steps of a drag made stutter. A click or a keyboard step commits at once.
 func _wire_slider(bar: HSlider, number: Label, option: Dictionary) -> void:
 	var key : String = option["key"]
-	var on_release : bool = option.get("commit_on_release", false)
 	bar.drag_started.connect(func() -> void: _dragging[key] = true)
 	bar.drag_ended.connect(func(moved: bool) -> void:
 		_dragging.erase(key)
-		if moved and on_release:
+		if moved:
 			SettingsManager.render.set_value(key, bar.value))
 	bar.value_changed.connect(func(v: float) -> void:
 		number.text = _format(option, v)
-		if not (on_release and _dragging.has(key)):
+		if not _dragging.has(key):
 			SettingsManager.render.set_value(key, v))
 
 
