@@ -108,6 +108,8 @@ var _air_time: float = 0.0         # seconds spent in the air since that jump
 ## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
 ## it is a client-side view, and no remote avatar has any use for one.
 var _star_map: StarMap = null
+## In-game graphics panel (Settings > General). Local player only; hold AltGr to use its mouse.
+var _graphics_overlay: GraphicsOverlay = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -191,6 +193,11 @@ func setup() -> void:
 	_star_map.setup(player)  # so the chart can mark where you are
 	# Surface readout (Settings > General): what the ground under our feet is, and how we decided.
 	SurfaceDebugHud.attach(player, player.get_node("UserInterface"))
+	# Graphics options over the running game (Settings > General). AltGr may take the pointer unless
+	# something already holds the input (typing in the chat, a menu); the pause menu hides it.
+	_graphics_overlay = GraphicsOverlay.new()
+	_graphics_overlay.setup(func() -> bool: return not _input_locked(), _menu_open)
+	player.get_node("UserInterface").add_child(_graphics_overlay)
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -1223,13 +1230,15 @@ func _star_map_open() -> bool:
 	return _star_map != null and _star_map.is_open()
 
 
-## The mouse/camera is taken over: input is locked (menu/wheel) OR a 3D screen holds the pointer.
+## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR
+## AltGr is held over the graphics overlay.
 ## Frees the cursor and takes the look off the mouse (see _process). One source.
 func _ui_focus() -> bool:
 	# is_instance_valid, not "!= null": a freed node (the depot deleted by the admin tool while we
 	# stand in front of it) is NOT null in GDScript, and the mouse would stay locked to a screen that
 	# no longer exists, with no way out.
-	return is_instance_valid(player.screen_interacting) or _input_locked()
+	return is_instance_valid(player.screen_interacting) or _input_locked() \
+		or (_graphics_overlay != null and _graphics_overlay.wants_pointer())
 
 # LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
 func _spawn_depot() -> void:

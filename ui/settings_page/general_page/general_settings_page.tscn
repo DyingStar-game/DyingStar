@@ -163,3 +163,20 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_OFF"
+
+[node name="GraphicsOverlay" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000001]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/GraphicsOverlay" unique_id=1700000002]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_GFX_OVERLAY_TOGGLE"
+label_settings = SubResource("LabelSettings_gen")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/GraphicsOverlay" unique_id=1700000003]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"

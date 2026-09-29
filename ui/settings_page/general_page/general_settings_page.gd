@@ -5,7 +5,8 @@ extends Control
 
 ## One row per toggle: the node under the VBox, and the SettingsManager pair behind it. Declaring
 ## them beats six copies of the same four lines — adding a toggle becomes one entry, and the On/Off
-## wording lives in a single place instead of twelve.
+## wording lives in a single place instead of twelve. An optional "owner" names the SettingsManager
+## member that holds the pair instead (e.g. "render" for SettingsManager.render).
 const TOGGLES : Array[Dictionary] = [
 	{"node": "ShowDebug", "getter": "is_show_debug", "setter": "set_show_debug"},
 	{"node": "CargoDebug", "getter": "is_cargo_debug", "setter": "set_cargo_debug"},
@@ -13,6 +14,7 @@ const TOGGLES : Array[Dictionary] = [
 	{"node": "SurfaceDebug", "getter": "is_surface_debug", "setter": "set_surface_debug"},
 	{"node": "VehicleHud", "getter": "is_vehicle_hud", "setter": "set_vehicle_hud"},
 	{"node": "MovementDebug", "getter": "is_movement_debug", "setter": "set_movement_debug"},
+	{"node": "GraphicsOverlay", "owner": "render", "getter": "is_overlay_enabled", "setter": "set_overlay_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
@@ -61,12 +63,13 @@ func _wire_toggle(toggle: Dictionary) -> void:
 	if button == null:
 		push_error("General settings: no toggle button named %s" % toggle["node"])
 		return
+	var target : Object = SettingsManager.get(toggle["owner"]) if toggle.has("owner") else SettingsManager
 	button.toggle_mode = true
-	button.button_pressed = bool(SettingsManager.call(toggle["getter"]))
+	button.button_pressed = bool(target.call(toggle["getter"]))
 	button.text = _toggle_label(button.button_pressed)
 	button.toggled.connect(func(on: bool) -> void:
 		button.text = _toggle_label(on)
-		SettingsManager.call(toggle["setter"], on))
+		target.call(toggle["setter"], on))
 
 func _toggle_label(on: bool) -> String:
 	return SettingsText.on_off(on)
