@@ -48,6 +48,12 @@ func _init(label_font_size: int = SettingsStyle.FONT_SIZE, control_font_size: in
 func header(text_key: String) -> Label:
 	var label := Label.new()
 	label.text = text_key
+	style_header(label)
+	return label
+
+
+## Make an existing Label a section heading (a page's title written in its scene, say).
+func style_header(label: Label) -> void:
 	label.uppercase = true
 	label.modulate = SettingsStyle.ACTIVE_COLOR
 	label.label_settings = _header_settings
@@ -59,7 +65,6 @@ func header(text_key: String) -> Label:
 	rule.content_margin_bottom = 4.0
 	label.add_theme_stylebox_override("normal", rule)
 	_wrap(label)
-	return label
 
 
 ## An empty line with its caption; the caller adds the control(s). Its label is reachable as

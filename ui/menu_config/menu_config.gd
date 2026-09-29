@@ -85,8 +85,8 @@ const ACTION_GROUPS : Dictionary = {
 ## new action is therefore always rebindable, and shows the opened-out form of its name until
 ## someone files it.
 const GROUP_OTHER : String = "%%KM_GROUP_OTHER"
-## Tabs carry the navigation, so they read at a size between the page title and a row.
-const TAB_FONT_SIZE : int = 16
+## Tabs carry the navigation: the settings tabs' own look (TabStrip), a step smaller.
+const TAB_FONT_SIZE : int = 15
 
 var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 
@@ -96,14 +96,10 @@ var remapping_button = null
 
 ## One entry per displayed family: {"header": Label, "rows": {translated label -> Button}}.
 var _groups: Array[Dictionary] = []
-var _tab_buttons: Array[Button] = []
-var _tab_bar: HBoxContainer = null
+var _tab_bar: TabStrip = null
+## The settings pages' heading look, for the page title and the family headings.
+var _factory := SettingsRowFactory.new()
 var _tab: int = 0
-## Built once, then swapped between tabs: rebuilding a StyleBox on every keystroke of the search
-## box would allocate for nothing.
-var _tab_idle: StyleBoxFlat = null
-var _tab_active: StyleBoxFlat = null
-var _tab_hover: StyleBoxFlat = null
 var keycode_dic: Dictionary = {}
 var last_press = ""
 
@@ -121,6 +117,7 @@ func _ready() -> void:
 	InputMap.load_from_project_settings()
 	SettingsManager.load_keybindings()
 	keycode_dic = SettingsManager.keybindings.duplicate()
+	_factory.style_header($PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/Title)
 	create_action_list()
 
 func create_action_list() -> void:
@@ -160,8 +157,7 @@ func _add_group(group_key: String, actions: Array[String], labels: Dictionary) -
 		return
 	var header := Label.new()
 	header.text = group_key
-	header.uppercase = true
-	header.modulate = SettingsStyle.ACTIVE_COLOR
+	_factory.style_header(header)
 	action_list.add_child(header)
 	var rows : Dictionary = {}
 	for action in actions:
@@ -178,8 +174,7 @@ func _add_action_row(action: String, label_key: String) -> Button:
 	var action_label = action_bt.find_child("LabelAction")
 	var input_label = action_bt.find_child("LabelInput")
 	# The KEY goes in, not translated text: a Label re-translates its own text, so the list follows
-	# a language change on its own. Casing is presentation and lives on the Label (uppercase = true),
-	# which applies it AFTER translation — .to_upper() on a key would shout the key, not the words.
+	# a language change on its own.
 	action_label.text = label_key
 	var events = InputMap.action_get_events(action)
 	input_label.text = InputLabel.for_event(events[0] as InputEvent) if not events.is_empty() else ""
@@ -193,25 +188,15 @@ func _add_action_row(action: String, label_key: String) -> Button:
 func _build_tabs() -> void:
 	if _tab_bar != null:
 		_tab_bar.queue_free()
-	_tab_buttons.clear()
-	_tab_idle = _tab_box(Color(0.0, 0.0, 0.0, 0.0))
-	_tab_active = _tab_box(SettingsStyle.ACTIVE_BG)
-	_tab_hover = _tab_box(SettingsStyle.HOVER_COLOR)
-	_tab_bar = HBoxContainer.new()
-	_tab_bar.add_theme_constant_override("separation", 4)
+	_tab_bar = TabStrip.new(TAB_FONT_SIZE, 28)
+	_tab_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 	var holder : Node = search_bar.get_parent()
 	holder.add_child(_tab_bar)
 	holder.move_child(_tab_bar, search_bar.get_index() + 1)
 	for i in _groups.size():
-		var tab := Button.new()
-		tab.text = str(_groups[i]["header"].text)
-		tab.add_theme_font_size_override("font_size", TAB_FONT_SIZE)
-		# The default Button styleboxes would draw a raised widget; a tab is a surface.
-		tab.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		tab.add_theme_stylebox_override("pressed", _tab_active)
-		tab.pressed.connect(_on_tab_pressed.bind(i))
-		_tab_bar.add_child(tab)
-		_tab_buttons.append(tab)
+		# The heading's text is already translated: tr() on it gives it back unchanged.
+		_tab_bar.add_entry(StringName(str(i)), str(_groups[i]["header"].text))
+	_tab_bar.selected.connect(func(key: StringName) -> void: _on_tab_pressed(int(String(key))))
 	_tab = clampi(_tab, 0, maxi(_groups.size() - 1, 0))
 
 
@@ -243,33 +228,8 @@ func _refresh_visibility() -> void:
 		# Without a search the open tab already says it, and an empty one would read as a dead
 		# category.
 		group["header"].visible = searching and any_shown
-	for i in _tab_buttons.size():
-		_paint_tab(_tab_buttons[i], i == _tab and not searching)
-
-
-## A selected tab gets both the amber wording and the surface behind it: colour alone was too quiet
-## to find on a wide screen, which is the whole reason the tabs exist.
-func _paint_tab(tab: Button, active: bool) -> void:
-	var ink : Color = SettingsStyle.ACTIVE_COLOR if active else SettingsStyle.INACTIVE_COLOR
-	tab.add_theme_color_override("font_color", ink)
-	tab.add_theme_color_override("font_hover_color", ink)
-	tab.add_theme_color_override("font_pressed_color", SettingsStyle.ACTIVE_COLOR)
-	tab.add_theme_stylebox_override("normal", _tab_active if active else _tab_idle)
-	tab.add_theme_stylebox_override("hover", _tab_active if active else _tab_hover)
-
-
-## Tab-shaped: padded so the row has real height, and rounded at the top only so it reads as a tab
-## sitting on the list rather than as a floating pill.
-static func _tab_box(color: Color) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.content_margin_left = 20.0
-	box.content_margin_right = 20.0
-	box.content_margin_top = 10.0
-	box.content_margin_bottom = 10.0
-	box.corner_radius_top_left = 6
-	box.corner_radius_top_right = 6
-	return box
+	# While searching no tab is open: the hits come from every family.
+	_tab_bar.set_active(&"" if searching else StringName(str(_tab)))
 
 
 func _on_input_button_pressed(b, a):
