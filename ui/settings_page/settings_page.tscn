@@ -61,4 +61,5 @@ render_target_update_mode = 4
 [node name="Scenery" type="Control" parent="Control/MarginContainer/VBoxContainer/Body" unique_id=1945802312]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.5
 mouse_filter = 2
