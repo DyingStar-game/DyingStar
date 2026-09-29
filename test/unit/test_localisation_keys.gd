@@ -12,7 +12,7 @@ extends GutTest
 const CSV_PATH := "res://tools/localization/localisation.csv"
 ## Where player-facing text lives. "res://" whole would also walk .godot/ and addons/, whose vendored
 ## code is none of our business.
-const SCAN_ROOTS : PackedStringArray = ["res://ui", "res://scenes", "res://server", "res://assets"]
+const SCAN_ROOTS : PackedStringArray = ["res://ui", "res://scenes", "res://server", "res://assets", "res://levels"]
 ## A key is %% followed by SHOUTING_SNAKE_CASE. Matches both `text = "%%FOO"` in a scene and
 ## `tr("%%FOO")` in a script, which is the whole point: one rule for both halves.
 const KEY_PATTERN := "%%[A-Z][A-Z0-9_]*"

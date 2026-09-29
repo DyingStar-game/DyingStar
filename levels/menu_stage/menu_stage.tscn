@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://levels/menu_stage/menu_stage.gd" id="1_stage"]
+[ext_resource type="PackedScene" path="res://ui/main_page/main_page.tscn" id="2_menu"]
+
+[node name="MenuStage" type="Node3D"]
+script = ExtResource("1_stage")
+
+[node name="MainPage" parent="." instance=ExtResource("2_menu")]

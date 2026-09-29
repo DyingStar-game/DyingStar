@@ -32,7 +32,8 @@ func is_done() -> bool:
 	return _task < 0 or WorkerThreadPool.is_task_completed(_task)
 
 
-## Block until the answer is in (on exit: a task must be waited for before its owner goes).
+## Block until the answer is in. Always call it once, even after is_done(): the pool requires every
+## task to be waited for, and one left unwaited crashed the engine on exit.
 func wait() -> void:
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)

@@ -12,7 +12,8 @@ const MIN_USERNAME_LENGTH: int = 4
 const SCENE_TREE_EXTENDED_SCRIPT_PATH = preload("res://scenes/globals/scene_tree_extended.gd")
 
 const GAME_STATES_SCENES_PATHS: Dictionary = {
-	GameStates.UNIVERSE_MENU : "res://ui/main_page/main_page.tscn",
+	# The menu stands on a live 3D stage (Tarsis 3) with its UI on top; see MenuStage.
+	GameStates.UNIVERSE_MENU : "res://levels/menu_stage/menu_stage.tscn",
 	GameStates.GAME_MENU : "",
 	GameStates.PAUSE_MENU : "",
 	GameStates.PLAYING : "res://levels/system-sandbox/system_sandbox.tscn",
