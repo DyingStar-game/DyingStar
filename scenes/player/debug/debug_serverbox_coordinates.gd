@@ -20,29 +20,11 @@ func _ready() -> void:
 	# callable that was never connected (nor showing it to connect the same one twice).
 	NetworkOrchestrator.set_gameserver_zones.connect(_set_gameserver_zones)
 
-## INFO Original Version
-## One line per zone of the Godot server simulating us: its world (space or a planet) and, when
-## the zone is only part of that world, its bounds in that world's coordinates.
-#func _set_gameserver_zones(zones):
-	#var lines: PackedStringArray = []
-	#for zone in zones:
-		#var label: String = str(zone.get("world", "?"))
-		#if label == "planet":
-			#label += " " + str(zone.get("planet_name", zone.get("planet_uuid", "?")))
-		#var b = zone.get("bounds")
-		#if b == null:
-			#label += " (whole)"
-		#else:
-			#label += "\n  X: %.0f .. %.0f\n  Y: %.0f .. %.0f\n  Z: %.0f .. %.0f" % [
-				#b["min_x"], b["max_x"], b["min_y"], b["max_y"], b["min_z"], b["max_z"]]
-		#lines.append(label)
-	#text = "\n".join(lines)
-
 
 func _process(_delta: float) -> void:
 	var max_scroll := maxi(0, get_content_height() - int(_scroll.size.y))
 	if max_scroll == _max_scroll:
-		return  # rien n'a changé : le défilement en cours continue
+		return
 	_max_scroll = max_scroll
 	_rebuild_tween()
 
@@ -52,7 +34,7 @@ func _rebuild_tween() -> void:
 		_tween.kill()
 	_scroll.scroll_vertical = 0
 	if _max_scroll <= 0:
-		return  # tout tient, pas besoin de défiler
+		return
 	var duration := _max_scroll / scroll_speed
 	_tween = create_tween().set_loops()
 	_tween.tween_interval(pause)
@@ -75,6 +57,8 @@ func _axis_row(axis: String, lo: float, hi: float) -> String:
 	return "[cell][color=#888]%s[/color][/cell][cell][right]%s[/right][/cell][cell][right]%s[/right][/cell]" % [axis, _full(lo), _full(hi)]
 
 
+## One line per zone of the Godot server simulating us: its world (space or a planet) and, when
+## the zone is only part of that world, its bounds in that world's coordinates.
 func _set_gameserver_zones(zones):
 	var blocks := PackedStringArray()
 	for zone in zones:
