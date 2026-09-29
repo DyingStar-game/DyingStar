@@ -90,12 +90,13 @@ func _ready() -> void:
 		say("FIN")
 		get_tree().quit()
 		return
-	_summary(prof)
 	# The cost of ONE profile, alone: what warm_grade_profiles pays per line.
+	# Its stations feed the summary: the registered profile drops them.
 	var tc := Time.get_ticks_msec()
 	var again := GradeProfile.compute(road, data.grade_height_sampler())
 	say("PROBE compute alone: %d ms for %d stations (%s)" % [Time.get_ticks_msec() - tc,
 			(again["stations_along"] as PackedFloat64Array).size(), str(again.get("ok"))])
+	_summary(prof, again)
 
 	# Chunks: the line's start, a cutting, a tunnel mouth, a viaduct — whatever
 	# the profile has — each with its along-neighbour so shared edges get tested.
@@ -129,7 +130,7 @@ func _kind_name(k: int) -> String:
 	return ["GROUND", "GORGE", "TUNNEL", "BRIDGE"][k]
 
 
-func _summary(prof: Dictionary) -> void:
+func _summary(prof: Dictionary, full: Dictionary) -> void:
 	var counts := [0, 0, 0, 0]
 	var lengths := [0.0, 0.0, 0.0, 0.0]
 	var deepest := 0.0
@@ -144,7 +145,7 @@ func _summary(prof: Dictionary) -> void:
 		int(prof["feature_id"]), int(prof["tracks"]), float(prof["hw_m"]),
 		float(prof["along1"]) - float(prof["along0"]),
 		(prof["knots_along"] as PackedFloat64Array).size(),
-		(prof["stations_along"] as PackedFloat64Array).size()])
+		(full["stations_along"] as PackedFloat64Array).size()])
 	for k in 4:
 		say("PROBE   %-6s %4d run(s) %9.0f m" % [_kind_name(k), counts[k], lengths[k]])
 	say("PROBE   deepest cutting %.1f m, widest gap under the track %.1f m" % [deepest, widest_gap])
@@ -157,8 +158,8 @@ func _summary(prof: Dictionary) -> void:
 	say("PROBE   track altitude %.1f .. %.1f m" % [zmin, zmax])
 	# The terrain along the line, coarse, next to the track: what the grade
 	# rule was up against.
-	var sa: PackedFloat64Array = prof["stations_along"]
-	var st: PackedFloat64Array = prof["stations_terrain"]
+	var sa: PackedFloat64Array = full["stations_along"]
+	var st: PackedFloat64Array = full["stations_terrain"]
 	var line := "PROBE   terrain/track every 2 km:"
 	var i := 0
 	while i < sa.size():

@@ -125,7 +125,10 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 					+ pitch
 			if lat_abs > lat_reach:
 				continue
-			for seg in prof["segments"]:
+			var segs: Array = prof["segments"]
+			var sr := GradeProfile.segment_range(prof, along - reach, along + reach)
+			for si in range(sr.x, sr.y):
+				var seg: Dictionary = segs[si]
 				if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 					continue
 				if absf(along - float(seg["lo"])) <= reach or absf(along - float(seg["hi"])) <= reach:

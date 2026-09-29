@@ -389,7 +389,13 @@ var _modifier_pack_mutex: Mutex = Mutex.new()
 ## Decoded modifier tiles, keyed "mp_nN_pP". Kept separate from _chunk_images so
 ## road/feature reads never contend with heightmap reads on the same mutex.
 var _modifier_tiles: Dictionary = {}
-var _modifier_order: Array[String] = []
+## LRU rank per key: a counter bumped on every read. The touch is O(1); only
+## an eviction scans. It was an ordered Array touched with find() + remove_at()
+## on every HIT, under _modifier_mutex — the mountain relief reads this on
+## every height sample, so the cost grew with the tiles decoded and every
+## worker queued on the lock (a 42 000 km line profile slowed 5× as it ran).
+var _modifier_tick: Dictionary = {}
+var _modifier_seq: int = 0
 var _modifier_bytes: int = 0
 var _modifier_mutex: Mutex = Mutex.new()
 const MAX_MODIFIER_CACHE_BYTES: int = 64 * 1024 * 1024
@@ -483,6 +489,19 @@ var _grade_tiles_by_fid: Dictionary = {}
 ## handled exactly like a starved one: its chunks are provisional, and they
 ## are rebuilt by PlanetTerrain when the profile is born.
 var _grade_pending: Dictionary = {}
+## The baked profiles (grade_profiles.pack next to the modifier pack, written
+## by tools/bake_grade_profiles.tscn): feature_id → {hash, profile}, only when
+## the file's key matches this planet — see grade_bake_key(). Loaded once.
+var _grade_baked: Dictionary = {}
+var _grade_bake_tried: bool = false
+## The whole bake file as read (lines + bridges), {} when absent/unreadable.
+var _grade_bake_doc: Dictionary = {}
+var _grade_bake_doc_read: bool = false
+var _grade_bake_doc_mutex := Mutex.new()
+## The baked chasm crossings {spans, plans} when their key matches this
+## planet (see bridge_bake_key), else {}. Decided once.
+var _bridge_baked: Dictionary = {}
+var _bridge_bake_checked: bool = false
 ## -1 unknown, 0 no, 1 yes — memoised because collision_detail_nside() asks
 ## on every residency pass.
 var _has_railways: int = -1
@@ -520,6 +539,12 @@ var _mtn_override_volcanoes: Array = []
 var _mtn_override_set: RefCounted = null
 ## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
 const GRADE_PREFETCH_BUDGET_MS := 5000
+## The baked profiles, next to terrainmodifier.pack (".pack": the export
+## presets already ship that extension).
+const GRADE_BAKE_FILE := "grade_profiles.pack"
+## Bump when GradeProfile.compute or the height sampler changes in a way no
+## fingerprint of grade_bake_key() captures: every bake is then refused.
+const GRADE_BAKE_VERSION := 1
 
 ## Cached safety-net collision faces (triangle vertex array). Built once on
 ## first call to load_safety_mesh_faces(). See _server_load_prebaked_collision
@@ -1444,10 +1469,8 @@ func get_chunk_modifiers(nside: int, ipix: int) -> Dictionary:
 	var hit: Variant = _modifier_tiles.get(key)
 	if hit != null:
 		if not _server_no_evict:
-			var idx := _modifier_order.find(key)
-			if idx >= 0:
-				_modifier_order.remove_at(idx)
-			_modifier_order.append(key)
+			_modifier_seq += 1
+			_modifier_tick[key] = _modifier_seq
 		_modifier_mutex.unlock()
 		return hit
 	_modifier_mutex.unlock()
@@ -1463,7 +1486,8 @@ func get_chunk_modifiers(nside: int, ipix: int) -> Dictionary:
 		_modifier_mutex.unlock()
 		return again
 	_modifier_tiles[key] = decoded
-	_modifier_order.append(key)
+	_modifier_seq += 1
+	_modifier_tick[key] = _modifier_seq
 	_modifier_bytes += int(decoded.get("_raw_bytes", 0)) * MODIFIER_DECODE_BLOAT
 	_modifier_mutex.unlock()
 	if not _server_no_evict:
@@ -1475,9 +1499,17 @@ func _evict_modifier_lru() -> void:
 	if _server_no_evict:
 		return
 	_modifier_mutex.lock()
-	while _modifier_bytes > MAX_MODIFIER_CACHE_BYTES and not _modifier_order.is_empty():
-		var oldest: String = _modifier_order[0]
-		_modifier_order.remove_at(0)
+	while _modifier_bytes > MAX_MODIFIER_CACHE_BYTES and not _modifier_tick.is_empty():
+		# The lowest rank is the least recently read tile. A linear scan, but
+		# only here — never on the read path.
+		var oldest := ""
+		var oldest_tick := 0
+		for k: String in _modifier_tick:
+			var t: int = _modifier_tick[k]
+			if oldest == "" or t < oldest_tick:
+				oldest = k
+				oldest_tick = t
+		_modifier_tick.erase(oldest)
 		var gone: Variant = _modifier_tiles.get(oldest)
 		if gone != null:
 			_modifier_bytes -= int((gone as Dictionary).get("_raw_bytes", 0)) \
@@ -1491,7 +1523,7 @@ func _evict_modifier_lru() -> void:
 func clear_modifier_cache() -> void:
 	_modifier_mutex.lock()
 	_modifier_tiles.clear()
-	_modifier_order.clear()
+	_modifier_tick.clear()
 	_modifier_bytes = 0
 	_modifier_mutex.unlock()
 
@@ -2509,7 +2541,11 @@ func get_bridge_spans() -> Array:
 		return _bridge_spans
 	_bridge_spans_mutex.lock()
 	if not _bridge_spans_built:
-		var spans := RoadBridge.find_all_spans(self, get_whole_roads())
+		# Baked: the walk of every road against the crack field (38 s on
+		# tarsis_3's ring railway, 14 000 crossings) read from disk instead.
+		var baked := _baked_bridges()
+		var spans: Array = baked["spans"] if not baked.is_empty() \
+				else RoadBridge.find_all_spans(self, get_whole_roads())
 		_bridge_spans = spans
 		_bridge_spans_built = true
 		_span_owner_index_ok = false
@@ -2530,6 +2566,8 @@ func clear_bridge_spans() -> void:
 	_bridge_spans.clear()
 	_bridge_spans_built = false
 	_span_owner_index_ok = false
+	_bridge_baked = {}
+	_bridge_bake_checked = false
 	_bridge_spans_mutex.unlock()
 	clear_bridge_plans()
 	clear_grade_profiles()
@@ -2595,7 +2633,9 @@ func warm_bridge_plans() -> void:
 	#
 	# AVANT _ensure_bridge_plans, donc hors du verrou : fetch_now bloque, et le tenir sous
 	# _bridge_plans_mutex ferait attendre là tout worker demandant un plan.
-	_prefetch_bridge_span_tiles(get_bridge_spans())
+	# Baked plans need no tile: nothing to fetch.
+	if _baked_bridges().is_empty():
+		_prefetch_bridge_span_tiles(get_bridge_spans())
 	_ensure_bridge_plans()
 
 
@@ -2666,19 +2706,27 @@ func _plan_one_span(s: Dictionary, profile: BridgeProfile) -> bool:
 	# plan cannot depend on which chunk asked for it — that dependency is
 	# what let the client and the server disagree about a deck's altitude.
 	var ipix: int = HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
-	if load_chunk_heightmap(ipix, export_nside) == null:
+	# The terrain's own rule (TileResidency.tile_available): the tile, or — the
+	# service pruned it, ~70 % of tarsis_3's n1024 tiles — its finest PUBLISHED
+	# ancestor, which the sampler climbs to by itself. Demanding the export
+	# tile itself refused every crossing on a pruned tile FOR GOOD (PRESENCE_NO):
+	# ~8 700 of tarsis_3's 12 300 crossings left without a deck, the ribbon
+	# running straight over the chasm.
+	if not TileResidency.tile_available(self, ipix, export_nside):
 		# No tile means sample_height_for_direction would silently fall back
 		# to the global equirect map — a flatter, different surface, the one
 		# that once put props kilometres above the terrain. Refusing here
 		# keeps deck and ribbon consistent: no plan, no deck, and no cut.
 		# Mais refuser DÉFINITIVEMENT laisserait le gouffre sans tablier, donc sans
-		# collision : on met la travée de côté au lieu de l'abandonner — sauf si la tuile
-		# n'existe pas non plus en amont, auquel cas attendre serait attendre pour rien et
-		# la file de rattrapage ne se viderait jamais.
-		if remote_source != null:
-			if remote_source.presence_of(export_nside, ipix) == RemoteTileSource.PRESENCE_NO:
-				return false
-			remote_source.queue(export_nside, ipix)
+		# collision : on met la travée de côté (et on demande la tuile qui manque,
+		# elle ou son ancêtre publié) au lieu de l'abandonner — sauf si rien n'est
+		# publié jusqu'en haut de la pyramide, auquel cas attendre serait attendre
+		# pour rien et la file de rattrapage ne se viderait jamais.
+		if remote_source == null:
+			return false
+		if TileResidency.finest_published_ancestor_state(self, ipix, export_nside, true) \
+				== TileResidency.PUBLISHED_NONE:
+			return false
 		_bridge_spans_starved.append(s)
 		return false
 	var plan := BridgePlan.compute(profile, s, road, radius,
@@ -2741,9 +2789,27 @@ func _build_bridge_plans() -> void:
 		return
 	var profile := get_bridge_profile()
 	var skipped := 0
-	for s in spans:
-		if not _plan_one_span(s, profile):
-			skipped += 1
+	var baked := _baked_bridges()
+	if not baked.is_empty():
+		# Baked with every tile at hand: no span waits for one here.
+		var plans: Dictionary = baked.get("plans", {})
+		for s in spans:
+			if s.get("truncated", false):
+				continue
+			var plan: Dictionary = plans.get(bridge_span_key(s), {})
+			if plan.is_empty():
+				skipped += 1
+				continue
+			_bridge_plans[bridge_span_key(s)] = plan
+			var fid: int = int(s.get("feature_id", -1))
+			if not _bridge_excl_raw.has(fid):
+				_bridge_excl_raw[fid] = []
+			(_bridge_excl_raw[fid] as Array).append(
+					Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
+	else:
+		for s in spans:
+			if not _plan_one_span(s, profile):
+				skipped += 1
 	_remerge_bridge_exclusions()
 	var stranded: PackedStringArray = []
 	var steepened := 0
@@ -3187,6 +3253,8 @@ func clear_grade_profiles() -> void:
 	_grade_starved_tiles.clear()
 	_grade_tiles_by_fid.clear()
 	_carve_pieces_cache.clear()
+	_grade_baked.clear()
+	_grade_bake_tried = false
 	_grade_built = false
 	_has_railways = -1
 	_has_profiled_lines = -1
@@ -3349,6 +3417,9 @@ func _prefetch_grade_tiles() -> void:
 		return
 	var wanted := {}
 	for r in _whole_profiled_lines():
+		# A baked line reads no terrain: no 5 m walk, no tile to fetch.
+		if not _grade_baked_profile(r).is_empty():
+			continue
 		wanted.merge(_grade_tiles(r))
 	if wanted.is_empty():
 		return
@@ -3381,8 +3452,15 @@ func _build_grade_profiles() -> void:
 	if lines.is_empty():
 		return
 	var skipped := 0
+	var baked := 0
 	var t0 := Time.get_ticks_msec()
 	for road in lines:
+		# Baked: the profile the game would compute, read from disk — no
+		# tile under the line to wait for, no chunk left provisional.
+		var bp := _grade_baked_profile(road)
+		if not bp.is_empty() and _grade_register(road, bp):
+			baked += 1
+			continue
 		# Every tile under the line must be readable: one missing tile would
 		# make sample_height_for_direction fall back to the flat global map
 		# for that stretch, and the client and the server would then lay the
@@ -3401,6 +3479,7 @@ func _build_grade_profiles() -> void:
 			continue
 		_grade_submit(road, tiles)
 	print("[PlanetData] %s — %d ms" % [_grade_summary(), Time.get_ticks_msec() - t0]
+			+ (" — %d baked" % baked if baked else "")
 			+ (" — %d skipped (terrain tiles not available)" % skipped if skipped else "")
 			+ (" — %d awaiting tiles" % _grade_starved.size() if not _grade_starved.is_empty() else "")
 			+ (" — %d profiling in the background" % _grade_pending.size() if not _grade_pending.is_empty() else ""))
@@ -3424,14 +3503,183 @@ func _grade_submit(road: Dictionary, tiles: Dictionary) -> void:
 	var fid := int(road.get("feature_id", -1))
 	if _grade_pending.has(fid):
 		return
-	var result_ref: Array = [null]
+	# [profile, compute time in ms], printed once when the profile is born.
+	var result_ref: Array = [null, 0]
 	var task_id := WorkerThreadPool.add_task(
 		func():
-			result_ref[0] = GradeProfile.compute(road, grade_height_sampler()),
+			var t0 := Time.get_ticks_msec()
+			result_ref[0] = GradeProfile.compute(road, grade_height_sampler())
+			result_ref[1] = Time.get_ticks_msec() - t0,
 		false, "grade profile %s fid %d" % [planet_name, fid])
 	_grade_pending[fid] = {"task_id": task_id, "result_ref": result_ref,
 			"road": road, "tiles": tiles}
 	_grade_starve_tiles_only(tiles)
+
+
+## What a baked profile was computed from. Everything the profile sampler
+## (grade_height_sampler) reads, plus the rules of GradeProfile: the elevation
+## (its version — the streamed one when there is a service — and the manifest
+## that scales it), the procedural relief laid on it (mountains, ridges,
+## volcanoes, relief biomes) and GradeSettings. The lines themselves are keyed
+## one by one (grade_line_hash). A bake made under another key is ignored:
+## the lines are then profiled at run time, as before the bake existed.
+func grade_bake_key() -> String:
+	var elev := chunk_data_version
+	if remote_source != null and str(remote_source.version) != "":
+		elev = str(remote_source.version)
+	return "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%d|pz%s|dbg%d|gs%s" % [
+		GRADE_BAKE_VERSION, planet_name, export_nside, radius, max_height, height_offset,
+		terrain_exaggeration, chunk_heightmap_res, elev, mountain_fingerprint(),
+		VolcanoRelief.ALGO_VERSION, populate_fingerprint(),
+		int(debug_mountain_enabled or debug_volcano_enabled), GradeSettings.signature()]
+
+
+## Identity of one whole profiled line: its geometry and every exported
+## property, in key order — not the "_" caches other code may add at run time
+## (but _cum_lengths, which is data).
+static func grade_line_hash(road: Dictionary) -> String:
+	var keys: Array = road.keys()
+	keys.sort()
+	var parts: Array = []
+	for k in keys:
+		var ks := str(k)
+		if ks.begins_with("_") and ks != "_cum_lengths":
+			continue
+		parts.append([ks, road[k]])
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA1)
+	ctx.update(var_to_bytes(parts))
+	return ctx.finish().hex_encode()
+
+
+func grade_bake_path() -> String:
+	return _chunk_base_path() + "/" + GRADE_BAKE_FILE
+
+
+## Load grade_profiles.pack once. Keeps nothing when its key is not this
+## planet's, and says so: a re-export without a re-bake is slow, not broken.
+func _ensure_grade_bake() -> void:
+	if _grade_bake_tried:
+		return
+	_grade_bake_tried = true
+	var doc := _load_grade_bake_doc()
+	if doc.is_empty():
+		return
+	var key := grade_bake_key()
+	if str(doc.get("key", "")) != key:
+		push_warning("[PlanetData] '%s': the baked line profiles (%s) were made for other data — "
+				% [planet_name, GRADE_BAKE_FILE]
+				+ "every railway and graded road is profiled at run time (minutes on a long line). "
+				+ "Re-bake: godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=%s\n"
+				% planet_name
+				+ "  bake:    %s\n  planet:  %s" % [str(doc.get("key", "")), key])
+		return
+	_grade_baked = doc.get("lines", {})
+	print("[PlanetData] %d profil(s) de ligne précalculé(s) chargé(s) pour '%s'"
+			% [_grade_baked.size(), planet_name])
+
+
+## grade_profiles.pack as read, once — {} when absent or unreadable.
+func _load_grade_bake_doc() -> Dictionary:
+	_grade_bake_doc_mutex.lock()
+	if not _grade_bake_doc_read:
+		_grade_bake_doc_read = true
+		var path := grade_bake_path() if chunk_heightmaps_dir != "" else ""
+		if path != "" and FileAccess.file_exists(path):
+			var t0 := Time.get_ticks_msec()
+			var f := FileAccess.open_compressed(path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+			if f == null:
+				push_warning("[PlanetData] '%s': %s unreadable (%s)"
+						% [planet_name, path, error_string(FileAccess.get_open_error())])
+			else:
+				var doc: Variant = f.get_var(false)
+				f.close()
+				if doc is Dictionary and (doc as Dictionary).has("key"):
+					_grade_bake_doc = doc
+					print("[PlanetData] %s lu pour '%s' en %d ms"
+							% [GRADE_BAKE_FILE, planet_name, Time.get_ticks_msec() - t0])
+				else:
+					push_warning("[PlanetData] '%s': %s is not a line bake" % [planet_name, path])
+	_grade_bake_doc_mutex.unlock()
+	return _grade_bake_doc
+
+
+## What the baked chasm crossings were computed from: everything the grade
+## key holds (the relief under the ramps), the crack network (its parameters,
+## its noise, the POI spheres it spares — set by PlanetTerrain BEFORE this is
+## first asked), the bridge settings, the finest vertex pitch the abutments
+## are sized on, and every road of the pack (a span can sit on any road).
+func bridge_bake_key() -> String:
+	var hs := PackedStringArray()
+	for r in get_whole_roads():
+		hs.append("%d:%s" % [int(r.get("feature_id", -1)), grade_line_hash(r)])
+	hs.sort()
+	return "%s|cor%d_%.2f_%.2f_%.2f_%s_%s|bp%s|vs%.4f|rd%s" % [grade_bake_key(),
+		int(corundum_default_biome), crack_spacing_m, crack_width_m, crack_depth_m,
+		crack_noise().fingerprint(), crack_exclusion_fingerprint(),
+		get_bridge_profile().signature(), terrain_vertex_spacing_m(),
+		"|".join(hs).sha1_text()]
+
+
+## The baked crossings {spans, plans}, or {} when there are none for this
+## planet as it is now — the crossings are then found and planned at run time.
+func _baked_bridges() -> Dictionary:
+	if _bridge_bake_checked:
+		return _bridge_baked
+	_bridge_bake_checked = true
+	var doc := _load_grade_bake_doc()
+	var b: Dictionary = doc.get("bridges", {})
+	if b.is_empty():
+		return _bridge_baked
+	var key := bridge_bake_key()
+	if str(b.get("key", "")) != key:
+		push_warning("[PlanetData] '%s': the baked chasm crossings (%s) were made for other data — "
+				% [planet_name, GRADE_BAKE_FILE]
+				+ "they are found and planned at run time (a minute on a line round the planet). "
+				+ "Re-bake: godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=%s\n"
+				% planet_name
+				+ "  bake:    %s\n  planet:  %s" % [str(b.get("key", "")), key])
+		return _bridge_baked
+	_bridge_baked = b
+	return _bridge_baked
+
+
+## The baked profile of [param road], or {} when the bake has none for this
+## very line (absent, or the line changed since). A fresh copy: registration
+## drops keys from it.
+func _grade_baked_profile(road: Dictionary) -> Dictionary:
+	_ensure_grade_bake()
+	var entry: Dictionary = _grade_baked.get(int(road.get("feature_id", -1)), {})
+	if entry.is_empty() or str(entry.get("hash", "")) != grade_line_hash(road):
+		return {}
+	return (entry["profile"] as Dictionary).duplicate(false)
+
+
+## Write [param profiles] (feature_id → profile of the whole line in
+## [param roads]) as this planet's bake. The bake tool's last step; returns
+## the error code.
+func write_grade_bake(roads: Array, profiles: Dictionary, bridges: Dictionary = {}) -> Error:
+	var lines := {}
+	for road in roads:
+		var fid := int(road.get("feature_id", -1))
+		var prof: Dictionary = profiles.get(fid, {})
+		if not bool(prof.get("ok", false)):
+			continue
+		var kept := prof.duplicate(false)
+		kept.erase("stations_along")
+		kept.erase("stations_terrain")
+		lines[fid] = {"hash": grade_line_hash(road), "profile": kept}
+	var path := grade_bake_path()
+	var f := FileAccess.open_compressed(path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if f == null:
+		return FileAccess.get_open_error()
+	var doc := {"key": grade_bake_key(), "lines": lines}
+	if not bridges.is_empty():
+		doc["bridges"] = {"key": bridge_bake_key(), "spans": bridges.get("spans", []),
+				"plans": bridges.get("plans", {})}
+	f.store_var(doc, false)
+	f.close()
+	return OK
 
 
 ## Register a computed profile: the profile itself, its viaduct spans and
@@ -3441,6 +3689,10 @@ func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
 	if not bool(profile.get("ok", false)):
 		return false
 	var fid := int(road.get("feature_id", -1))
+	# The terrain read every 5 m only served to classify the segments: 8.5 M
+	# stations × 2 doubles on a line round the planet (~140 MB) nobody reads.
+	profile.erase("stations_along")
+	profile.erase("stations_terrain")
 	_grade_profiles[fid] = profile
 	# The authoritative "lava never climbs" report, from the real relief (the
 	# exporter only guessed it): the flow is built anyway, its channel cut.
@@ -3549,8 +3801,15 @@ func retry_starved_grade_profiles(block: bool = false) -> PackedInt32Array:
 		WorkerThreadPool.wait_for_task_completion(int(entry["task_id"]))
 		_grade_pending.erase(fid)
 		var profile: Dictionary = entry["result_ref"][0] if entry["result_ref"][0] != null else {}
+		var tr := Time.get_ticks_msec()
 		if _grade_register(entry["road"], profile):
 			born.append(fid)
+			print("[PlanetData] profil fid %d de '%s' : %.0f km, %d nœud(s), %d segment(s) — calcul %d ms, enregistrement %d ms"
+					% [fid, planet_name,
+					(float(profile["along1"]) - float(profile["along0"])) / 1000.0,
+					(profile["knots_along"] as PackedFloat64Array).size(),
+					(profile["segments"] as Array).size(),
+					int(entry["result_ref"][1]), Time.get_ticks_msec() - tr])
 	var pending := _grade_starved.duplicate()
 	_grade_starved.clear()
 	for entry: Dictionary in pending:

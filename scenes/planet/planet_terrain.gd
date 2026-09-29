@@ -527,6 +527,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v53 → v54: the crack Voronoi is jittered by an integer hash (a new
 		# network, identical on every machine) and made organic by CrackNoise
 		# (meander + rim noise, keyed by "_cn" above).
+		# v55 → v56: a chasm crossing on a PRUNED export tile is planned on its
+		# finest published ancestor instead of being refused — thousands more
+		# decks on tarsis_3, each cutting the road ribbon under it.
 		# v54 → v55: the legacy volcanic overlays are gone — the radial
 		# active-volcano lava patch, the biome lava river carve and overlay,
 		# the fumarole bowls (volcanoes, lava flows and fumaroles are
@@ -539,7 +542,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v55%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v56%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]

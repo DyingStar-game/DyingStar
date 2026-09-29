@@ -164,8 +164,35 @@ static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictio
 	var pads: Array = data.pads_for_chunk(hp_nside, hp_ipix) if data.has_pads() else []
 	if pieces.is_empty() and pads.is_empty():
 		return {}
+	profiles = slice_profiles(pieces, profiles)
 	return {"pieces": pieces, "profiles": profiles, "pads": pads,
 			"m_per_deg": data.radius * PI / 180.0, "native": make_native(pieces, profiles)}
+
+
+## [param profiles] (fid → profile) cut down to the along-range [param pieces]
+## cover, plus GradeProfile.SLICE_MARGIN_M: every reader of a chunk context
+## (the carve rule, its C# twin, the refinement, the bore tests) asks about an
+## along found ON those pieces, so the answers are unchanged — but a context
+## no longer drags a whole line round the planet (200 k knots, copied into
+## the C# twin once per chunk). A profile none of the pieces carries is dropped.
+static func slice_profiles(pieces: Array, profiles: Dictionary) -> Dictionary:
+	var ranges := {}
+	for r in pieces:
+		var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
+		if cum.is_empty():
+			continue
+		var fid := int(r.get("feature_id", -1))
+		var cur: Vector2 = ranges.get(fid, Vector2(INF, -INF))
+		ranges[fid] = Vector2(minf(cur.x, cum[0]), maxf(cur.y, cum[cum.size() - 1]))
+	var out := {}
+	for fid: int in ranges:
+		var prof: Dictionary = profiles.get(fid, {})
+		if prof.is_empty():
+			continue
+		var rg: Vector2 = ranges[fid]
+		out[fid] = GradeProfile.slice(prof, rg.x - GradeProfile.SLICE_MARGIN_M,
+				rg.y + GradeProfile.SLICE_MARGIN_M)
+	return out
 
 
 ## How far the cutting's flat floor reaches past the bed, for a grid whose
@@ -497,12 +524,12 @@ static func _stations(a0: float, a1: float, step: float, knots: PackedFloat64Arr
 	var out := PackedFloat64Array()
 	for j in n_sub:
 		out.append(a0 + (a1 - a0) * float(j) / float(n_sub))
-	for k in knots:
-		if k > a0 + 1e-6 and k < a1 - 1e-6:
-			out.append(k)
-	for s in seg_lo:
-		if s > a0 + 1e-6 and s < a1 - 1e-6:
-			out.append(s)
+	# Binary searches, not a walk: a line round a planet has 200 k knots and
+	# this runs for every centreline segment of every chunk.
+	var kr := GradeProfile.open_range(knots, a0 + 1e-6, a1 - 1e-6)
+	out.append_array(knots.slice(kr.x, kr.y))
+	var sr := GradeProfile.open_range(seg_lo, a0 + 1e-6, a1 - 1e-6)
+	out.append_array(seg_lo.slice(sr.x, sr.y))
 	if last:
 		out.append(a1)
 	out.sort()
