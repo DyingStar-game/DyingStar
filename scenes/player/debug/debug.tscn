@@ -1,0 +1,456 @@
+[gd_scene format=3 uid="uid://cc10f03r7nwpw"]
+
+[ext_resource type="Script" uid="uid://csou6tk8ue6nt" path="res://scenes/player/debug/debug.gd" id="1_08u1a"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_iwvh5"]
+[ext_resource type="FontFile" uid="uid://g85u4kqolh7x" path="res://ui/Poppins-Bold.ttf" id="4_l7dvp"]
+[ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="5_4le3t"]
+[ext_resource type="FontFile" uid="uid://4155uhsdv8sy" path="res://ui/Poppins-Italic.ttf" id="6_qhcr8"]
+[ext_resource type="LabelSettings" uid="uid://bvxjqgvujwjv6" path="res://scenes/player/debug/debug_label_settings.tres" id="7_rw8vw"]
+[ext_resource type="Script" uid="uid://3snlx7cgv5wk" path="res://scenes/player/debug/debug_universe_servers.gd" id="8_st2df"]
+[ext_resource type="Script" uid="uid://67v8l5556qsa" path="res://scenes/player/debug/debug_universe_players.gd" id="9_yxs24"]
+[ext_resource type="Script" uid="uid://dlan2ws7xee5x" path="res://scenes/player/debug/debug_planet_time.gd" id="10_iw8ug"]
+[ext_resource type="Script" uid="uid://cl7pwq5jalp1i" path="res://scenes/player/debug/debug_altitude.gd" id="11_nwn3i"]
+[ext_resource type="Script" uid="uid://bchy6h43r0cep" path="res://scenes/player/debug/debug_server_fps.gd" id="12_ap7ox"]
+[ext_resource type="Script" uid="uid://du8smr1o81j1c" path="res://scenes/player/debug/debug_server_nbplayers.gd" id="13_1i1l5"]
+[ext_resource type="Script" uid="uid://ndt5dgkjnqij" path="res://scenes/player/debug/debug_server_nbobjects.gd" id="14_jikyb"]
+[ext_resource type="Script" uid="uid://boggy8s888bc5" path="res://scenes/player/debug/debug_server_nbscenes.gd" id="15_sawvu"]
+[ext_resource type="Script" uid="uid://bfpote331tkhp" path="res://scenes/player/debug/debug_server_name.gd" id="17_c63pa"]
+[ext_resource type="Script" uid="uid://dsikncjeuwf73" path="res://scenes/player/debug/debug_serverbox_coordinates.gd" id="18_0286t"]
+[ext_resource type="Script" uid="uid://b5ogcbtijgcr6" path="res://scenes/player/debug/debug_client_fps.gd" id="19_tnedk"]
+[ext_resource type="Script" uid="uid://k2ten78ptps2" path="res://scenes/player/debug/debug_client_nbplayers.gd" id="20_7edqt"]
+[ext_resource type="Script" uid="uid://du4vikoo7kath" path="res://scenes/player/debug/debug_client_nbobjects.gd" id="21_5uv7a"]
+[ext_resource type="Script" uid="uid://cg10agjb1pncn" path="res://scenes/player/debug/debug_client_nbscenes.gd" id="22_r14ec"]
+[ext_resource type="Script" uid="uid://bn70g6ek7ggox" path="res://scenes/player/debug/debug_client_videomem.gd" id="23_552wj"]
+[ext_resource type="Script" uid="uid://ju3yguhgtybn" path="res://scenes/player/debug/debug_client_messages_received.gd" id="24_43mx2"]
+[ext_resource type="Script" uid="uid://bb431neb3d2jd" path="res://scenes/player/debug/debug_client_messages_sent.gd" id="25_xyokf"]
+[ext_resource type="PackedScene" uid="uid://6lh1qmwc3ydd" path="res://scenes/player/debug/debug_texture_rect.tscn" id="26_36exf"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_gf8ab"]
+
+[node name="Debug" type="Control" unique_id=31021683]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_08u1a")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1974424884]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Sections" type="VBoxContainer" parent="MarginContainer" unique_id=1337665448]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+
+[node name="Universe" type="VBoxContainer" parent="MarginContainer/Sections" unique_id=2078252555]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/Sections/Universe" unique_id=875506848]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Universe/PanelContainer" unique_id=1398420596 instance=ExtResource("26_36exf")]
+instance_shader_parameters/corner_cuts = Vector4(0, 12, 0, 0)
+instance_shader_parameters/instance_seed = 831.115186214447
+instance_shader_parameters/rect_size = Vector2(300, 31)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Universe/PanelContainer" unique_id=1288058459]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="universe_title" type="RichTextLabel" parent="MarginContainer/Sections/Universe/PanelContainer/MarginContainer" unique_id=37921163]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+bbcode_enabled = true
+text = "[b].: Universe :.[/b]"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+horizontal_alignment = 1
+justification_flags = 0
+
+[node name="Universe Values" type="PanelContainer" parent="MarginContainer/Sections/Universe" unique_id=200588462]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="TextureRect" parent="MarginContainer/Sections/Universe/Universe Values" unique_id=1788463336 instance=ExtResource("26_36exf")]
+instance_shader_parameters/instance_seed = 237.5054508447647
+instance_shader_parameters/rect_size = Vector2(300, 108)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Universe/Universe Values" unique_id=1519154977]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/Sections/Universe/Universe Values/MarginContainer" unique_id=1496780132]
+layout_mode = 2
+
+[node name="universe_servers" type="Label" parent="MarginContainer/Sections/Universe/Universe Values/MarginContainer/VBoxContainer" unique_id=1060367146]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("8_st2df")
+
+[node name="universe_players" type="Label" parent="MarginContainer/Sections/Universe/Universe Values/MarginContainer/VBoxContainer" unique_id=1772624965]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("9_yxs24")
+
+[node name="planet_time" type="Label" parent="MarginContainer/Sections/Universe/Universe Values/MarginContainer/VBoxContainer" unique_id=718988183]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("10_iw8ug")
+
+[node name="altitude" type="Label" parent="MarginContainer/Sections/Universe/Universe Values/MarginContainer/VBoxContainer" unique_id=1948954213]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("11_nwn3i")
+
+[node name="Server" type="VBoxContainer" parent="MarginContainer/Sections" unique_id=961925675]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/Sections/Server" unique_id=1528415652]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Server/PanelContainer" unique_id=741979438 instance=ExtResource("26_36exf")]
+instance_shader_parameters/corner_cuts = Vector4(0, 12, 0, 0)
+instance_shader_parameters/instance_seed = 347.2365140914917
+instance_shader_parameters/rect_size = Vector2(300, 31)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Server/PanelContainer" unique_id=1086842256]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="server_title" type="RichTextLabel" parent="MarginContainer/Sections/Server/PanelContainer/MarginContainer" unique_id=263957586]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+bbcode_enabled = true
+text = "[b].: Server (godot) :.[/b]"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+horizontal_alignment = 1
+justification_flags = 0
+
+[node name="Server Values" type="PanelContainer" parent="MarginContainer/Sections/Server" unique_id=542723850]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Server/Server Values" unique_id=1728893531 instance=ExtResource("26_36exf")]
+instance_shader_parameters/instance_seed = 615.0747537612915
+instance_shader_parameters/rect_size = Vector2(300, 108)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Server/Server Values" unique_id=1347513724]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/Sections/Server/Server Values/MarginContainer" unique_id=1837056870]
+layout_mode = 2
+
+[node name="server_fps" type="RichTextLabel" parent="MarginContainer/Sections/Server/Server Values/MarginContainer/VBoxContainer" unique_id=1057813433]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+text = "Soon™"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+justification_flags = 0
+script = ExtResource("12_ap7ox")
+
+[node name="server_nbplayers" type="Label" parent="MarginContainer/Sections/Server/Server Values/MarginContainer/VBoxContainer" unique_id=180685637]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("13_1i1l5")
+
+[node name="server_nbobjects" type="Label" parent="MarginContainer/Sections/Server/Server Values/MarginContainer/VBoxContainer" unique_id=168058899]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("14_jikyb")
+
+[node name="server_nbscenes" type="Label" parent="MarginContainer/Sections/Server/Server Values/MarginContainer/VBoxContainer" unique_id=990860892]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("15_sawvu")
+
+[node name="Server Box" type="VBoxContainer" parent="MarginContainer/Sections" unique_id=1776983043]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/Sections/Server Box" unique_id=2124331043]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Server Box/PanelContainer" unique_id=1291625159 instance=ExtResource("26_36exf")]
+instance_shader_parameters/corner_cuts = Vector4(0, 12, 0, 0)
+instance_shader_parameters/instance_seed = 590.810239315033
+instance_shader_parameters/rect_size = Vector2(300, 31)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Server Box/PanelContainer" unique_id=725024932]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="serverbox_title" type="RichTextLabel" parent="MarginContainer/Sections/Server Box/PanelContainer/MarginContainer" unique_id=2096405525]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+bbcode_enabled = true
+text = "[b].: Server box (godot) :.[/b]"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+horizontal_alignment = 1
+justification_flags = 0
+
+[node name="Server Box Values" type="PanelContainer" parent="MarginContainer/Sections/Server Box" unique_id=722039829]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Server Box/Server Box Values" unique_id=407397977 instance=ExtResource("26_36exf")]
+instance_shader_parameters/instance_seed = 571.0116624832153
+instance_shader_parameters/rect_size = Vector2(300, 240)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Server Box/Server Box Values" unique_id=1951640622]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/Sections/Server Box/Server Box Values/MarginContainer" unique_id=1290472621]
+layout_mode = 2
+
+[node name="server_name" type="Label" parent="MarginContainer/Sections/Server Box/Server Box Values/MarginContainer/VBoxContainer" unique_id=1600344568]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("17_c63pa")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/Sections/Server Box/Server Box Values/MarginContainer/VBoxContainer" unique_id=228796259]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+mouse_filter = 2
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 3
+
+[node name="serverbox_coordinates" type="RichTextLabel" parent="MarginContainer/Sections/Server Box/Server Box Values/MarginContainer/VBoxContainer/ScrollContainer" unique_id=44446132]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+text = "Soon™"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+shortcut_keys_enabled = false
+script = ExtResource("18_0286t")
+
+[node name="Client" type="VBoxContainer" parent="MarginContainer/Sections" unique_id=686879513]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/Sections/Client" unique_id=688161551]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Client/PanelContainer" unique_id=435843082 instance=ExtResource("26_36exf")]
+instance_shader_parameters/corner_cuts = Vector4(0, 12, 0, 0)
+instance_shader_parameters/instance_seed = 883.0588459968567
+instance_shader_parameters/rect_size = Vector2(300, 31)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Client/PanelContainer" unique_id=1887746699]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="client_title" type="RichTextLabel" parent="MarginContainer/Sections/Client/PanelContainer/MarginContainer" unique_id=918373289]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+bbcode_enabled = true
+text = "[b].: Client DyingStar :.[/b]"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+horizontal_alignment = 1
+justification_flags = 0
+
+[node name="Client Values" type="PanelContainer" parent="MarginContainer/Sections/Client" unique_id=1540525085]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_gf8ab")
+
+[node name="Debug Section Background" parent="MarginContainer/Sections/Client/Client Values" unique_id=1412218772 instance=ExtResource("26_36exf")]
+instance_shader_parameters/instance_seed = 451.425164937973
+instance_shader_parameters/rect_size = Vector2(300, 252)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/Sections/Client/Client Values" unique_id=1847273050]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/Sections/Client/Client Values/MarginContainer" unique_id=1940488256]
+layout_mode = 2
+
+[node name="client_fps" type="RichTextLabel" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=1429530064]
+layout_mode = 2
+theme_override_fonts/normal_font = ExtResource("3_iwvh5")
+theme_override_fonts/bold_font = ExtResource("4_l7dvp")
+theme_override_fonts/bold_italics_font = ExtResource("5_4le3t")
+theme_override_fonts/italics_font = ExtResource("6_qhcr8")
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+text = "Soon™"
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+autowrap_trim_flags = 0
+shortcut_keys_enabled = false
+justification_flags = 0
+script = ExtResource("19_tnedk")
+
+[node name="client_nbplayers" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=1133896488]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("20_7edqt")
+
+[node name="client_nbobjects" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=1960533208]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("21_5uv7a")
+
+[node name="client_nbscenes" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=267168477]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("22_r14ec")
+
+[node name="LabelX Container" type="HBoxContainer" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=1357523212]
+layout_mode = 2
+
+[node name="Labelx" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelX Container" unique_id=170504654]
+layout_mode = 2
+text = "x: "
+label_settings = ExtResource("7_rw8vw")
+
+[node name="LabelXValue" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelX Container" unique_id=452462603]
+layout_mode = 2
+label_settings = ExtResource("7_rw8vw")
+
+[node name="LabelY Container" type="HBoxContainer" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=2006947060]
+layout_mode = 2
+
+[node name="Labely" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelY Container" unique_id=681240809]
+layout_mode = 2
+text = "y: "
+label_settings = ExtResource("7_rw8vw")
+
+[node name="LabelYValue" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelY Container" unique_id=1904622289]
+layout_mode = 2
+label_settings = ExtResource("7_rw8vw")
+
+[node name="LabelZ Container" type="HBoxContainer" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=764894630]
+layout_mode = 2
+
+[node name="Labelz" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelZ Container" unique_id=1781354866]
+layout_mode = 2
+text = "z: "
+label_settings = ExtResource("7_rw8vw")
+
+[node name="LabelZValue" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelZ Container" unique_id=1545133878]
+layout_mode = 2
+label_settings = ExtResource("7_rw8vw")
+
+[node name="client_videomem" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=648946336]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("23_552wj")
+
+[node name="client_messages_received" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=1827618500]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("24_43mx2")
+
+[node name="client_messages_sent" type="Label" parent="MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer" unique_id=75714698]
+layout_mode = 2
+text = "Soon™"
+label_settings = ExtResource("7_rw8vw")
+script = ExtResource("25_xyokf")

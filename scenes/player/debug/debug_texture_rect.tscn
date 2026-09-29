@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://6lh1qmwc3ydd"]
+
+[ext_resource type="Shader" uid="uid://bpsyn4ln7xwq4" path="res://ui/ingame/debug/background.v3.gdshader" id="1_f8woq"]
+[ext_resource type="Script" uid="uid://vvm7x1ap4i1e" path="res://scenes/player/debug/debug_texture_rect.gd" id="3_j1tna"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ws83t"]
+shader = ExtResource("1_f8woq")
+shader_parameter/background_color = Color(0.16862746, 0.15686275, 0.15294118, 0.7058824)
+shader_parameter/yellow_base = Color(1, 0.7294118, 0.03137255, 1)
+shader_parameter/yellow_darker = Color(0.58431375, 0.44313726, 0.09411765, 1)
+shader_parameter/piece_gap = 3.0
+shader_parameter/cut_round = 2.0
+
+[node name="Debug Section Background" type="ColorRect" unique_id=1398420596]
+modulate = Color(0, 0, 0, 1)
+material = SubResource("ShaderMaterial_ws83t")
+instance_shader_parameters/instance_seed = 440.560519695282
+instance_shader_parameters/rect_size = Vector2(450, 600)
+offset_right = 450.0
+offset_bottom = 600.0
+script = ExtResource("3_j1tna")

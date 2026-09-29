@@ -4,6 +4,10 @@ extends Label
 ## in space. Follows whichever body's gravity the player is in (like the local-time readout), so it
 ## updates on its own when moving between bodies and reads "space" in free fall between them.
 
+var _player: Node3D
+func set_player(p_player: Node3D) -> void:
+	_player = p_player
+
 var _poll: Timer = null
 
 func _ready() -> void:
@@ -23,10 +27,9 @@ func _altitude_text() -> String:
 ## released to deep space by the server frame-boundary. Tells at a glance whether a body's spin/orbit
 ## still carries you: "deep space · frame: Tarsis3" is bound (dragged), "· frame: <root>" is free.
 func _frame_suffix() -> String:
-	var player: Node = owner
-	if not is_instance_valid(player):
+	if not is_instance_valid(_player):
 		return ""
-	var parent_node: Node = (player as Node).get_parent()
+	var parent_node: Node = (_player as Node).get_parent()
 	if not is_instance_valid(parent_node):
 		return "\nframe: (none)"
 	# The uuid alongside the name, because that is what actually travels as parent_id and what
@@ -39,11 +42,10 @@ func _frame_suffix() -> String:
 	return "\nframe: %s [%s]" % [parent_node.name, tag]
 
 func _altitude_only() -> String:
-	var player: Node = owner
-	if not is_instance_valid(player) or not player is Node3D:
+	if not is_instance_valid(_player) or not _player is Node3D:
 		return "alt --"
 	# The gravity area (PlanetGravity) sits under PlanetTerrain, itself under the Planet.
-	var area = player.get_current_gravity_parent()
+	var area = _player.get_current_gravity_parent()
 	if area == null or area.get_parent() == null:
 		return "alt --  (deep space)"
 	var planet: Node = area.get_parent().get_parent()
@@ -54,7 +56,7 @@ func _altitude_only() -> String:
 	# sphere -- what an altimeter reads, and what the atmosphere profiles are written against.
 	# `clearance` is the gap to the terrain UNDER your feet, which is ~0 wherever you stand.
 	# Showing only the clearance made a 4 km plateau read "alt 0 m", i.e. sea level.
-	var here: Vector3 = (player as Node3D).global_position
+	var here: Vector3 = (_player as Node3D).global_position
 	var elevation: float = (planet as Planet).elevation_of(here)
 	var clearance: float = (planet as Planet).surface_altitude_of(here)
 	# In the air while below the atmosphere top, in space above it. Airless bodies (no profile, or a
@@ -64,7 +66,7 @@ func _altitude_only() -> String:
 	var where: String = "atmosphere" if in_air else "space"
 	# Longitude/latitude on the same "where am I" readout, in compass form (N/S, E/O), matching the
 	# terrain geography. On its own line under the altitude, above the moving-frame suffix.
-	var lonlat: Vector2 = (planet as Planet).lonlat_of((player as Node3D).global_position)
+	var lonlat: Vector2 = (planet as Planet).lonlat_of((_player as Node3D).global_position)
 	var lat_str: String = "%.4f° %s" % [absf(lonlat.y), "N" if lonlat.y >= 0.0 else "S"]
 	var lon_str: String = "%.4f° %s" % [absf(lonlat.x), "E" if lonlat.x >= 0.0 else "O"]
 	return "alt %s  ·  sol %s  (%s)\n%s  %s" % [

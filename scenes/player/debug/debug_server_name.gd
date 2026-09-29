@@ -12,3 +12,7 @@ func _set_gameserver_name(name):
 
 func _on_normal_player_display_debug(show: bool) -> void:
 	visible = show
+
+
+func _on_player_display_debug(show: bool) -> void:
+	pass # Replace with function body.

@@ -4,6 +4,10 @@ extends Label
 ## moon, and shows nothing in space. Planet.get_local_solar_time does the work (a sundial: the angle
 ## between our meridian and the one facing the star), which is why no clock is synchronised for this.
 
+var _player: Node3D
+func set_player(p_player: Node3D) -> void:
+	_player = p_player
+
 var _poll: Timer = null
 
 func _ready() -> void:
@@ -16,18 +20,17 @@ func _refresh() -> void:
 	text = _planet_time_text()
 
 func _planet_time_text() -> String:
-	var player: Node = owner
-	if not is_instance_valid(player) or not player is Node3D:
+	if not is_instance_valid(_player) or not _player is Node3D:
 		return "-- : --"
 	# gravity_parents holds the PlanetGravity Area3D; the planet is its grandparent (the area is
 	# created under PlanetTerrain).
-	var area = player.get_current_gravity_parent()
+	var area = _player.get_current_gravity_parent()
 	if area == null:
 		return "space"  # free fall between bodies: no ground, no local time
 	var planet: Node = area.get_parent().get_parent() if area.get_parent() != null else null
 	if not (planet is Planet):
 		return "-- : --"
-	var hours: float = (planet as Planet).get_local_solar_time((player as Node3D).global_position)
+	var hours: float = (planet as Planet).get_local_solar_time((_player as Node3D).global_position)
 	if hours < 0.0:
 		return "-- : --"  # not spinning, no star, or standing on a pole
 	var whole: int = int(hours)

@@ -390,9 +390,9 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 
 @onready var camera = $CameraPivot/Camera3D
 
-@onready var labelx: Label = $UserInterface/Debug/LabelXValue
-@onready var labely: Label = $UserInterface/Debug/LabelYValue
-@onready var labelz: Label = $UserInterface/Debug/LabelZValue
+@onready var labelx: Label = $"UserInterface/Debug/MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelX Container/LabelXValue"
+@onready var labely: Label = $"UserInterface/Debug/MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelY Container/LabelYValue"
+@onready var labelz: Label = $"UserInterface/Debug/MarginContainer/Sections/Client/Client Values/MarginContainer/VBoxContainer/LabelZ Container/LabelZValue"
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
