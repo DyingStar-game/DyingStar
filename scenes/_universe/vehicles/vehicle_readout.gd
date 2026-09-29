@@ -56,7 +56,7 @@ func lines() -> PackedStringArray:
 		warn = "   [color=#%s]OVERLOADED[/color]" % SettingsStyle.ALERT_COLOR.to_html(false)
 	var handbrake := "   (P) HANDBRAKE" if _vehicle.is_handbraked() else ""
 	# The engine must be started (I) before the truck drives at all — say so loudly when it is off.
-	var ignition := "" if _vehicle.is_engine_on() else "   ENGINE OFF — press I to start"
+	var ignition := "" if _vehicle.is_engine_on() else "   ENGINE OFF"
 	return [
 		"Speed: %3.0f km/h%s%s" % [speed, handbrake, ignition],
 		"Engine: %5.0f rpm" % _vehicle.get_engine_rpm(),
@@ -65,10 +65,6 @@ func lines() -> PackedStringArray:
 		"Total weight: %.0f kg" % total,
 		"Load: %.0f / %.0f kg%s" % [cargo, _vehicle.max_payload, warn],
 		_bays_line(), _model_line(total), _measured_line(total),
-		# One control path: everything a driver can do travels player -> server, one list of keys.
-		# Plain words, not [X]: the panel reads bbcode, where brackets are tags.
-		"I engine on/off (stopped) · Y exit · Space brake · hold Space <3 km/h handbrake",
-		"H horn · Alt+H special horn · L lights · R flip",
 	]
 
 
