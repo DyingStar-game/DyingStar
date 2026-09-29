@@ -8,14 +8,18 @@ extends RefCounted
 const ASPECT : float = 16.0 / 9.0
 
 
-## `control` must be anchored to the full rect (its offsets are what this sets). Follows resizes.
+## `control` must be anchored to the full rect (its offsets are what this sets). Follows resizes
+## for as long as the control lives: the connection goes with it (settings pages come and go).
 static func keep(control: Control) -> void:
 	var viewport : Viewport = control.get_viewport()
 	if viewport == null:
 		return
 	fit(control)
-	if not viewport.size_changed.is_connected(fit.bind(control)):
-		viewport.size_changed.connect(fit.bind(control))
+	var refit : Callable = fit.bind(control)
+	viewport.size_changed.connect(refit)
+	control.tree_exiting.connect(func() -> void:
+		if viewport.size_changed.is_connected(refit):
+			viewport.size_changed.disconnect(refit), CONNECT_ONE_SHOT)
 
 
 static func fit(control: Control) -> void:
