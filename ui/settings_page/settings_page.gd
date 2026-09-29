@@ -24,7 +24,7 @@ const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
 var see_through : bool = false
 var tabs : TabStrip
 
-@onready var settings_container : SubViewport = $Control/MarginContainer/VBoxContainer/SubViewportContainer/SubViewport
+@onready var settings_container : SubViewport = $Control/MarginContainer/VBoxContainer/Body/SubViewportContainer/SubViewport
 
 
 func _ready() -> void:
