@@ -16,10 +16,13 @@ static func in_game() -> OverlayPanel:
 
 
 ## Always shown and always interactive, with `extra` sections pinned above the options (the tuning
-## scene's viewpoints and hour). Never touches the Settings > General switch.
-static func always_on(extra: Array[OverlaySection]) -> OverlayPanel:
+## scene's viewpoints and hour) and `lead` ones above everything (its way back). Never touches the
+## Settings > General switch.
+static func always_on(extra: Array[OverlaySection], lead: Array[OverlaySection] = []) -> OverlayPanel:
 	var panel := OverlayPanel.new(OverlayPanel.Edge.LEFT, WIDTH_PX)
 	panel.pointer_mode = OverlayPanel.PointerMode.ALWAYS
+	for section in lead:
+		panel.add_section(section, true)
 	return _compose(panel, extra)
 
 

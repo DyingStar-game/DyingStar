@@ -136,7 +136,7 @@ func enter_tuning(from: StringName = &"settings_graphics") -> void:
 	if not _live or _tuning != null:
 		return
 	_tuning_from = from
-	_tuning = GraphicsOverlay.always_on([StageTuning.section(self)])
+	_tuning = GraphicsOverlay.always_on([StageTuning.section(self)], [StageTuning.back(self)])
 	add_child(_tuning)
 	_rig.yaw_offset_deg = TUNING_YAW_DEG
 	_menu.set_interface_hidden(true)
