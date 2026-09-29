@@ -78,3 +78,17 @@ func test_a_slider_shows_its_unit() -> void:
 	var bar : HSlider = _control("render_scale")
 	assert_almost_eq(bar.value, 0.75, 0.001, "slider follows the model")
 	assert_eq((bar.get_parent().get_child(2) as Label).text, "75 %", "as a percentage")
+
+
+func test_the_whole_line_explains_the_option() -> void:
+	var line : HBoxContainer = _control("ssao").get_parent()
+	assert_ne(line.tooltip_text, "", "hovering anywhere on the line shows what SSAO is")
+	assert_eq(line.mouse_filter, Control.MOUSE_FILTER_PASS, "the line itself takes the hover")
+	assert_eq((line.get_child(0) as Label).tooltip_text, "", "the caption defers to its line")
+
+
+func test_a_greyed_line_says_why_before_what() -> void:
+	_render.set_value("shadows", false)
+	var line : HBoxContainer = _control("shadow_distance").get_parent()
+	assert_true(line.tooltip_text.begins_with(tr("%%MENU_GFX_WHY_SHADOWS_OFF")), "the reason first")
+	assert_true(line.tooltip_text.ends_with(tr("%%MENU_GFX_HELP_SHADOW_DISTANCE")), "then the explanation")

@@ -24,6 +24,7 @@ func test_the_table_is_consistent() -> void:
 		var key : String = option["key"]
 		assert_eq(option["presets"].size(), GraphicsOptions.PRESETS.size(), "%s has one value per preset" % key)
 		assert_has(GraphicsOptions.SECTIONS, option["section"], "%s is under a known heading" % key)
+		assert_true(str(option.get("help", "")).begins_with("%%MENU_GFX_HELP_"), "%s explains itself on hover" % key)
 		var values : Array = [option["default"]] + option["presets"]
 		for value in values:
 			match option["kind"]:
