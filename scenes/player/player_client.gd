@@ -229,10 +229,8 @@ func setup() -> void:
 	# after spawn — the body orientation + day/night follow it. The splash (a CanvasLayer at layer 100)
 	# covers that settle, so there's no visible day->night + camera-tilt snap once it lifts.
 	var loading := get_tree().root.get_node_or_null("Loading")
-	if loading != null:
-		var label := loading.find_child("Label", true, false) as Label
-		if label != null:
-			label.text = "%%HUD_SPAWNING"
+	LoadingSplash.say(get_tree(), "%%HUD_SPAWNING")
+	LoadingSplash.progress(get_tree(), 0.6)
 
 	player.update_last_basis()
 	player.active = true  # take control now; _process starts orienting the body + updating the sun
@@ -244,6 +242,12 @@ func setup() -> void:
 	while (waited < 2.5 or player.get_current_gravity_parent() == null or not sun.settled) and waited < 10.0:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
+		# The ground under us: chunks built out of those asked for, or the time left, whichever is further.
+		var planet : Planet = Planet.of(player)
+		var built : float = 0.0
+		if planet != null and planet.planet_terrain != null and planet.planet_terrain.desired_chunk_count() > 0:
+			built = float(planet.planet_terrain.active_chunk_count()) / planet.planet_terrain.desired_chunk_count()
+		LoadingSplash.progress(get_tree(), 0.6 + 0.4 * maxf(built, waited / 10.0))
 
 	if loading != null:
 		loading.queue_free()

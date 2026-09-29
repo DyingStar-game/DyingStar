@@ -150,6 +150,8 @@ const VIEW_DISTANCE_NEAR_M := 200.0
 ## Graphics > Terrain distance, re-read once per LOD update (client only; the server keeps 1.0 and
 ## so its traversal, cache keys and all, is exactly what it always was).
 var _terrain_mult: float = 1.0
+## Chunks the last LOD update wanted on screen (see desired_chunk_count).
+var _desired_count: int = 0
 
 var _chunks_node: Node3D
 var _collision_body: StaticBody3D
@@ -1613,6 +1615,7 @@ func _update_terrain() -> void:
 	_perf_end("terrain_balance", _tk)
 	_tk = _perf_begin()
 
+	_desired_count = desired.size()
 	# One-shot: log chunk count breakdown by LOD
 	if _active_chunks.is_empty() and not desired.is_empty():
 		var lod_counts := [0, 0, 0, 0, 0]
@@ -2418,6 +2421,11 @@ static func _view_scaled(dist: float, mult: float) -> float:
 ## quadtree cut, not a per-planet setting — see PlanetLod.wants_split and Graphics > Terrain distance.
 func active_chunk_count() -> int:
 	return _active_chunks.size()
+
+
+## How many chunks the last LOD update asked for (the menu's loading bar: active / desired).
+func desired_chunk_count() -> int:
+	return _desired_count
 
 
 ## Re-read Graphics > Terrain distance. The traversal that follows uses it; nothing else to do —

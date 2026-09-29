@@ -197,9 +197,9 @@ func change_game_state(new_state) -> int:
 						if loading_node == null:
 							loading_node = LOADING_SCENE.instantiate()
 							get_tree().root.add_child.call_deferred(loading_node)
-						var loading_screen: Node = loading_node.get_node_or_null("LoadingScreen")
-						if loading_screen:
-							loading_screen.visible = true
+						# Deferred like the splash's own add_child above: a rebuilt one is not in the tree yet.
+						LoadingSplash.show.call_deferred(get_tree(), "%%MENU_LOADING")
+						LoadingSplash.progress.call_deferred(get_tree(), 0.05)
 						# create_client() blocks the main thread for a few seconds, so run it (and the
 						# scene change) only after the splash has actually painted one frame.
 						_start_playing_deferred()
@@ -230,6 +230,7 @@ func _start_playing_deferred() -> void:
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	NetworkOrchestrator.create_client()
+	LoadingSplash.progress(get_tree(), 0.3)
 	get_tree().call_deferred("change_scene_to_file", GAME_STATES_SCENES_PATHS[GameStates.PLAYING])
 
 func _on_scene_changed(changed_scene: Node) -> void:
