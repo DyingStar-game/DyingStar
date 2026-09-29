@@ -16,10 +16,6 @@ const SCREEN_OF_CATEGORY : Dictionary = {
 const LOGO : Texture2D = preload("res://ui/main_page/dyingstar-logo.png")
 const _LOGO_WIDTH_PX : float = 620.0
 
-## Brightness applied to a button's background sprite while hovered (the FlatButton itself is
-## transparent, so the look comes from its button.png sprite — mimics the default button hover).
-const HOVER_TINT := Color(1.4, 1.4, 1.4)
-
 var is_ready: bool = false
 var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 ## The settings overlay while it is open, else null — so Esc closes it (back to the main menu) the same
@@ -34,10 +30,10 @@ var _logo : TextureRect = null
 ## tuning scene, showing the preset in use (the one detected for this GPU on a first launch).
 var _quality : Button = null
 
-@onready var settings_button : Button = $Control/Button
-@onready var quit_button : Button = $Control/QuitButton
-@onready var settings_bg : TextureRect = $Control/Button2
-@onready var quit_bg : TextureRect = $Control/Button3
+## Enter, Settings and Quit: one row, one look (the scene's Theme_menu), at the bottom centre.
+@onready var buttons : HBoxContainer = $Control/Buttons
+@onready var settings_button : Button = $Control/Buttons/SettingsButton
+@onready var quit_button : Button = $Control/Buttons/QuitButton
 
 func _ready() -> void:
 	# The background fills the screen; the menu itself (logo, buttons) keeps to a centred 16:9 area.
@@ -47,14 +43,7 @@ func _ready() -> void:
 	SafeArea.keep($Control)
 	settings_button.pressed.connect(_on_settings_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
-	_add_hover_highlight(settings_button, settings_bg)
-	_add_hover_highlight(quit_button, quit_bg)
 	is_ready = true
-
-## Lighten a button's background sprite while the mouse is over it (hover feedback).
-func _add_hover_highlight(button: Button, bg: TextureRect) -> void:
-	button.mouse_entered.connect(func() -> void: bg.modulate = HOVER_TINT)
-	button.mouse_exited.connect(func() -> void: bg.modulate = Color.WHITE)
 
 ## Esc closes the settings overlay (back to the main menu). No-op when it is already closed. The
 ## host menu owns its overlay's lifecycle, mirroring the pause menu — see PauseMenu._unhandled_input.
@@ -114,8 +103,10 @@ func set_stage_mode(on: bool) -> void:
 		_quality.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 		_quality.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		_quality.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		# On the buttons' row: same bottom edge, same height.
 		_quality.offset_right = -40.0
-		_quality.offset_bottom = -40.0
+		_quality.offset_bottom = buttons.offset_bottom
+		_quality.custom_minimum_size.y = quit_button.custom_minimum_size.y
 		_quality.tooltip_text = tr("%%MENU_GFX_HELP_SHOWCASE")
 		_quality.pressed.connect(tuning_requested.emit)
 		$Control.add_child(_quality)
