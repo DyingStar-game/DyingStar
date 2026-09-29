@@ -263,6 +263,12 @@ func _physics_process(delta: float) -> void:
 	ClientPerf.scope_end("planet_spin", _perf_token)
 	ClientPerf.gauge("carry_visits:" + name, _carry_visits)
 
+## Place the body for the current simulation time NOW, rather than at the next few-Hz refresh: for a
+## caller that just moved the clock (the menu stage's hour slider).
+func place_now() -> void:
+	_place_at_time(Globals.sim_time())
+
+
 ## Place this body's basis (axial spin) and position (orbit) for absolute simulation time `t`.
 ##
 ## Both are PURE FUNCTIONS OF TIME, evaluated independently by the server and by every client, so

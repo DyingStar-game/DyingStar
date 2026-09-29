@@ -208,31 +208,8 @@ func setup() -> void:
 	player.camera.current = true
 
 	player.camera.make_current()
-	# Client-only sun: a DirectionalLight aimed from the real system star toward this player, for crisp
-	# shadows + day/night. The star's OmniLight lights the system but casts no shadows (unusable at scale).
-	var sun := PlayerSunLight.new()
-	sun.name = "PlayerSunLight"
-	sun.player = player
-	player.add_child(sun)
-	# Client-only atmosphere: owns the Environment, the sky dome and the aerial perspective pass, all
-	# driven by the current body's AtmosphereProfile. Created AFTER the sun, whose star direction it
-	# reads rather than recomputing (that geometry is delicate at astronomic coordinates).
-	var atmosphere := AtmosphereRenderer.new()
-	atmosphere.name = "AtmosphereRenderer"
-	atmosphere.player = player
-	atmosphere.sun = sun
-	player.add_child(atmosphere)
-	# ... and the sun asks it back how much of the star survives the air. The two point at each other
-	# on purpose: one owns the geometry, the other owns the air, and neither duplicates the other.
-	sun.atmosphere = atmosphere
-	# Client-only moonlight: one directional light per moon of the body you are on, each one's
-	# brightness derived from that moon's own size, distance, albedo and phase. Sandbox has two.
-	var moons := MoonLights.new()
-	moons.name = "MoonLights"
-	moons.player = player
-	moons.sun = sun
-	moons.atmosphere = atmosphere
-	player.add_child(moons)
+	# Client-only sun, atmosphere and moons around the player (see ClientSky).
+	var sun := ClientSky.attach(player)
 	# Client-only orientation gizmos: labelled markers pointing at the star and each planet/moon,
 	# toggled from Settings > General (off by default). Parented UNDER the camera so the markers live
 	# in camera-local coordinates and don't swim at astronomic distances.
