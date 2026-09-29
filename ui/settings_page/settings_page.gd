@@ -18,9 +18,14 @@ const _PAGE_THEME : Theme = preload("res://ui/settings_page/settings_theme.tres"
 ## Under the host's TopBar, which stays over this page (its arrow is the way back).
 const _GAP_UNDER_BAR_PX : float = 16.0
 const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
-## The see-through veil's darkness across the screen, left (0) to right (1): the settings stand in
-## the dark part, the scene shows in the clear one.
-const VEIL_STOPS : Dictionary = {0.0: 0.88, 0.42: 0.8, 0.72: 0.25, 1.0: 0.05}
+## The see-through veil: this dark from the screen's left edge...
+const VEIL_ALPHA : float = 0.82
+## ...until this far short of the settings' right edge (their controls have their own dark box)...
+const VEIL_FADE_IN_PX : float = 140.0
+## ...then easing out to nothing this far past it: beyond, the scene keeps its true colours.
+const VEIL_FADE_OUT_PX : float = 240.0
+## Stops drawing the ease (smoothstep) between those two points.
+const _VEIL_STEPS : int = 8
 
 ## Set before adding the page: no opaque background, only a veil, so the scene shows through (the
 ## menu stage, or the game behind the pause menu).
@@ -35,16 +40,19 @@ func _ready() -> void:
 	if see_through:
 		var background : TextureRect = $Control/Background
 		background.visible = false
-		# Dark behind the settings, fading out to the right: the page stays readable over bright ground
-		# (a lit plain, snow), the scene beside it stays in view. A flat veil was one or the other.
+		# Dark behind the settings only, fading out just past them: the page stays readable over bright
+		# ground (a lit plain, snow), the scene beside it keeps its true colours. A flat veil over the
+		# whole screen was one or the other.
 		var veil := TextureRect.new()
-		veil.texture = _veil_texture()
+		veil.name = "Veil"
 		veil.stretch_mode = TextureRect.STRETCH_SCALE
 		veil.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+		veil.anchor_bottom = 1.0
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		$Control.add_child(veil)
 		$Control.move_child(veil, background.get_index())
+		var page_area : Control = $Control/MarginContainer/VBoxContainer/Body/SubViewportContainer
+		page_area.resized.connect(_fit_veil.bind(veil, page_area))
 	var margin : MarginContainer = $Control/MarginContainer
 	margin.add_theme_constant_override("margin_top", int(TopBar.HEIGHT_PX + _GAP_UNDER_BAR_PX))
 	# The content in a centred 16:9 area on a wide screen; the background keeps the whole screen.
@@ -75,17 +83,35 @@ func open(category_key: String) -> void:
 		child.queue_free()
 	var page : Control = (CATEGORIES[category_key] as PackedScene).instantiate()
 	page.theme = _PAGE_THEME
+	# Over a scene the veil is the page's background: its own box would draw a hard edge over it.
+	var box : CanvasItem = page.get_node_or_null("ColorRect")
+	if box != null:
+		box.visible = not see_through
 	settings_container.add_child(page)
 	tabs.set_active(StringName(category_key))
 	category_changed.emit(category_key)
 
 
-## Left to right: near-opaque under the settings, clear by the far edge (VEIL_STOPS).
-static func _veil_texture() -> GradientTexture2D:
+## The veil from the screen's left edge to just past the settings' right one.
+func _fit_veil(veil: TextureRect, page_area: Control) -> void:
+	var edge : float = page_area.get_global_rect().end.x
+	var width : float = edge + VEIL_FADE_OUT_PX
+	veil.offset_right = width
+	veil.texture = veil_texture(maxf(edge - VEIL_FADE_IN_PX, 0.0) / width)
+
+
+## Left to right: VEIL_ALPHA up to `solid_to` (a share of its width), then easing out to nothing.
+static func veil_texture(solid_to: float) -> GradientTexture2D:
+	var start : float = clampf(solid_to, 0.0, 1.0)
+	var offsets := PackedFloat32Array([0.0])
+	var colors := PackedColorArray([Color(0, 0, 0, VEIL_ALPHA)])
+	for i in _VEIL_STEPS + 1:
+		var t : float = float(i) / _VEIL_STEPS
+		offsets.append(lerpf(start, 1.0, t))
+		colors.append(Color(0, 0, 0, VEIL_ALPHA * (1.0 - smoothstep(0.0, 1.0, t))))
 	var gradient := Gradient.new()
-	gradient.offsets = PackedFloat32Array(VEIL_STOPS.keys())
-	gradient.colors = PackedColorArray(VEIL_STOPS.values().map(
-		func(alpha: float) -> Color: return Color(0.0, 0.0, 0.0, alpha)))
+	gradient.offsets = offsets
+	gradient.colors = colors
 	var texture := GradientTexture2D.new()
 	texture.gradient = gradient
 	texture.fill_from = Vector2(0.0, 0.5)
