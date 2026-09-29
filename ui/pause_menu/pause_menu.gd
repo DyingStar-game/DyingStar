@@ -7,21 +7,11 @@ var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.
 ## can close it (go BACK to the pause menu) instead of un-pausing the game.
 var _settings_overlay: Node = null
 
-@onready var main_pause_menu: Control = $PausePage
+@onready var main_pause_menu: PausePage = $PausePage
 
 func _ready() -> void:
-	main_pause_menu.settings_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("settings_button")
-	)
-	main_pause_menu.quit_game_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("quit_game_button")
-	)
-	main_pause_menu.return_menu_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("return_menu_button")
-	)
-	main_pause_menu.resume_game_button.pressed.connect(
-		_on_pause_menu_button_pressed.bind("resume_game_button")
-	)
+	main_pause_menu.bar.entry_pressed.connect(_on_entry_pressed)
+	main_pause_menu.bar.back_pressed.connect(_close_settings)
 
 ## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
 ## disables its whole UserInterface subtree (Player._enter_tree), which is the single place that
@@ -51,8 +41,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Settings open on top: Esc goes BACK (closes settings), it does NOT un-pause. Only Esc from
 			# the pause menu itself resumes the game.
 			if is_instance_valid(_settings_overlay):
-				_settings_overlay.queue_free()
-				_settings_overlay = null
+				_close_settings()
 			else:
 				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
 				_close()
@@ -61,31 +50,42 @@ func _unhandled_input(event: InputEvent) -> void:
 		# resume the game (it used to un-pause on ANY mouse button).
 		get_viewport().set_input_as_handled()
 
-func _on_pause_menu_button_pressed(button_pressed: String) -> void:
-
-	match  button_pressed:
-		"settings_button":
-			# Open the full settings menu (general/graphics/audio/controls) as an overlay; its own
-			# Return button frees it and brings the pause menu back. DRY: same page as the main menu.
-			# Track it so Esc closes it (back) rather than un-pausing, and drop the ref if its own
-			# Return button frees it first.
+func _on_entry_pressed(key: StringName) -> void:
+	match key:
+		PausePage.SETTINGS:
+			if is_instance_valid(_settings_overlay):
+				return
+			# The full settings menu (general/graphics/audio/controls) as an overlay, under the bar:
+			# its arrow or Esc closes it and brings the pause menu back. DRY: same page as the main menu.
 			_settings_overlay = settings_scene.instantiate()
-			_settings_overlay.tree_exited.connect(func(): _settings_overlay = null)
+			_settings_overlay.tree_exited.connect(_on_settings_closed)
 			add_child(_settings_overlay)
-		"quit_game_button":
+			main_pause_menu.bar.set_active(PausePage.SETTINGS)
+			main_pause_menu.bar.set_back_visible(true)
+		PausePage.QUIT:
 			get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
-		"return_menu_button":
+		PausePage.RETURN_MENU:
 			# Release the whole session, not just the socket: the client node lives under an
 			# autoload, so changing scene would otherwise leave it (and its LiveKit room) alive,
 			# still publishing our microphone from the menu.
 			NetworkOrchestrator.release_network_agent()
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
 			_close()
-		"resume_game_button":
+		PausePage.RESUME:
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
 			_close()
-		_:
-			pass
+
+
+## Back from the settings: Esc or the bar's arrow.
+func _close_settings() -> void:
+	if is_instance_valid(_settings_overlay):
+		_settings_overlay.queue_free()
+
+
+func _on_settings_closed() -> void:
+	_settings_overlay = null
+	main_pause_menu.bar.set_active(&"")
+	main_pause_menu.bar.set_back_visible(false)
 
 
 ## Show the menu. Paired with _close() so the two halves cannot drift apart.

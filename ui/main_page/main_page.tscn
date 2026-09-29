@@ -2,8 +2,6 @@
 
 [ext_resource type="Script" uid="uid://1l14ge8hbbo1" path="res://ui/main_page/main_page.gd" id="1_o7ao7"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
-[ext_resource type="Theme" path="res://ui/menu_button_theme.tres" id="3_n4a6o"]
-[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="5_75xce"]
 
 [node name="MainPage" type="CanvasLayer" unique_id=1075883328]
 script = ExtResource("1_o7ao7")
@@ -38,40 +36,3 @@ theme_override_constants/margin_left = 20
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
-
-[node name="Buttons" type="HBoxContainer" parent="Control" unique_id=622489778]
-layout_mode = 1
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -468.0
-offset_top = -170.0
-offset_right = 468.0
-offset_bottom = -120.0
-grow_horizontal = 2
-grow_vertical = 0
-theme = ExtResource("3_n4a6o")
-theme_override_constants/separation = 18
-alignment = 1
-
-[node name="EnterButton" type="Button" parent="Control/Buttons" unique_id=1980714587]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%MAINPAGE_ENTER"
-
-[node name="SettingsButton" type="Button" parent="Control/Buttons" unique_id=1722532473]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%MENU_SETTINGS"
-
-[node name="QuitButton" type="Button" parent="Control/Buttons" unique_id=1722532474]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%MENU_QUIT"
-
-[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("5_75xce")]
-root_path = NodePath("../Control/Buttons")
-
-[connection signal="pressed" from="Control/Buttons/EnterButton" to="." method="_on_button_pressed"]
