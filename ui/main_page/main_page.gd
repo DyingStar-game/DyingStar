@@ -4,6 +4,8 @@ extends CanvasLayer
 ## Which screen is showing: &"home", &"settings", or &"settings_graphics". The menu stage (when the
 ## menu stands on one) glides its camera to match; the menu itself knows nothing of any stage.
 signal screen_changed(screen: StringName)
+## The home screen's graphics-quality button was pressed: the stage opens its tuning scene.
+signal tuning_requested
 
 const LOGO : Texture2D = preload("res://ui/main_page/dyingstar-logo.png")
 const _LOGO_WIDTH_PX : float = 620.0
@@ -22,6 +24,9 @@ var _stage_mode : bool = false
 ## The tuning scene has the screen: the menu steps aside (and leaves Esc to it).
 var _interface_hidden : bool = false
 var _logo : TextureRect = null
+## Bottom right of the home screen, over a stage: "Graphics quality: High" — a way straight into the
+## tuning scene, showing the preset in use (the one detected for this GPU on a first launch).
+var _quality : Button = null
 
 @onready var settings_button : Button = $Control/Button
 @onready var quit_button : Button = $Control/QuitButton
@@ -90,6 +95,29 @@ func set_stage_mode(on: bool) -> void:
 		$Control.add_child(_logo)
 	if _logo != null:
 		_logo.visible = on
+	if on and _quality == null:
+		_quality = Button.new()
+		_quality.add_theme_font_override("font", SettingsRowFactory.FONT)
+		_quality.add_theme_font_size_override("font_size", 22)
+		_quality.add_theme_color_override("font_color", SettingsStyle.GOOD_COLOR)
+		_quality.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		_quality.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_quality.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_quality.offset_right = -40.0
+		_quality.offset_bottom = -40.0
+		_quality.tooltip_text = tr("%%MENU_GFX_HELP_SHOWCASE")
+		_quality.pressed.connect(tuning_requested.emit)
+		$Control.add_child(_quality)
+		SettingsManager.render.changed.connect(func(_keys: PackedStringArray) -> void: _label_quality())
+		SettingsManager.language.changed.connect(func(_lang: String) -> void: _label_quality())
+		_label_quality()
+	if _quality != null:
+		_quality.visible = on
+
+
+func _label_quality() -> void:
+	var render : RenderSettings = SettingsManager.render
+	_quality.text = "%s : %s  ›" % [tr("%%MENU_GFX_PRESET"), tr(GraphicsOptions.PRESET_LABELS[render.preset()])]
 
 
 ## Step aside for the tuning scene, and come back.

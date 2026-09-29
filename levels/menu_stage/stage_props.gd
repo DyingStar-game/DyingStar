@@ -33,6 +33,8 @@ func populate(frame: SurfaceFrame, line_deg: float) -> void:
 		_add(node, entry)
 	for entry in StageLayout.MANNEQUINS:
 		_add(Mannequin.new(entry["clip"], float(entry.get("walk_radius", 0.0))), entry)
+	for entry in StageLayout.DRIVERS:
+		_add_driver(entry)
 
 
 ## Put everything back on the ground; returns the largest move, so the caller knows when it settled.
@@ -46,6 +48,21 @@ func resnap() -> float:
 		_place(node, pair[1])
 		largest = maxf(largest, before.distance_to(node.position))
 	return largest
+
+
+## A truck on its loop. The loop's own frame is anchored at its centre, on the real ground.
+func _add_driver(entry: Dictionary) -> void:
+	var vehicle : Node3D = (load(entry["scene"]) as PackedScene).instantiate()
+	if vehicle.has_method("set_headlights"):
+		vehicle.set_headlights(true)
+	ReplicaDress.prepare(vehicle, true)
+	var centre : Vector3 = _frame.point(float(entry["centre"][0]), _line_deg + float(entry["centre"][1]))
+	var loop := SurfaceFrame.new(centre, _frame.radius, _frame.ground)
+	var driver := StageDriver.new(vehicle, loop, float(entry["radius"]), float(entry["speed_kmh"]),
+		_line_deg + float(entry["start"]), bool(entry["clockwise"]))
+	driver.place()
+	add_child(vehicle)
+	add_child(driver)
 
 
 func _add(node: Node3D, entry: Dictionary) -> void:
