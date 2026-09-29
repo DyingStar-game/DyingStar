@@ -1,13 +1,14 @@
 [gd_scene format=3 uid="uid://c8lapfbcseu04"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ndumg"]
-bg_color = Color(0, 0, 0, 1)
+[ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxFlat_ndumg"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_64ek7"]
-bg_color = Color(0.3125, 0.3125, 0.3125, 0.592157)
+bg_color = Color(1, 1, 1, 0.07)
 
 [node name="InputButton" type="Button" unique_id=208518596]
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 32)
 anchors_preset = 10
 anchor_right = 1.0
 grow_horizontal = 2
@@ -24,8 +25,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 30
-theme_override_constants/margin_right = 30
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_right = 0
 
 [node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer" unique_id=653189770]
 layout_mode = 2
@@ -33,10 +34,8 @@ layout_mode = 2
 [node name="LabelAction" type="Label" parent="MarginContainer/HBoxContainer" unique_id=1088336316]
 layout_mode = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 18
 text = "Action name a"
-uppercase = true
-horizontal_alignment = 1
+label_settings = ExtResource("settings_label")
 vertical_alignment = 1
 
 [node name="Spacer" type="Control" parent="MarginContainer/HBoxContainer" unique_id=1013797467]
@@ -47,7 +46,7 @@ mouse_filter = 1
 [node name="LabelInput" type="Label" parent="MarginContainer/HBoxContainer" unique_id=515336809]
 layout_mode = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 14
 text = "Input key"
 horizontal_alignment = 1
 vertical_alignment = 1
