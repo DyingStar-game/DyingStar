@@ -280,6 +280,13 @@ def link(planet_name, export_dir=None, verbose=True):
         print("    size     : %.2f MB" % (size / 1e6))
         for name in sorted(kind_max):
             print("    %-9s: baked to n%d" % (name, kind_max[name]))
+        # The railway / graded-road / lava profiles are baked from this pack
+        # and the relief: a new pack leaves grade_profiles.pack stale, and the
+        # game then profiles every line at run time (minutes on a long line).
+        if any(k in part_info for k in ("road", "lava", "mountain", "ridge", "volcano", "populate")):
+            print("  ! re-bake the line profiles (tile service required):")
+            print("      godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=%s"
+                  % planet_name)
     return out_path
 
 

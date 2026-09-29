@@ -60,7 +60,10 @@ static func inside_bore(profile: Dictionary, along: float, lat_m: float, z: floa
 	if z < zt + 0.3 or z > zt + GradeSettings.BORE_H_M + GradeSettings.TUNNEL_WALL_M:
 		return false
 	var hood := GradeSettings.PORTAL_HOOD_M
-	for seg in profile.get("segments", []):
+	var segs: Array = profile.get("segments", [])
+	var sr := GradeProfile.segment_range(profile, along - hood, along + hood)
+	for si in range(sr.x, sr.y):
+		var seg: Dictionary = segs[si]
 		if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 			continue
 		if along >= float(seg["lo"]) - hood and along <= float(seg["hi"]) + hood:
@@ -112,7 +115,11 @@ static func tri_hits_bore_local(prof: Dictionary, l0: Vector3, l1: Vector3, l2: 
 	var hood := GradeSettings.PORTAL_HOOD_M
 	var z_lo := 0.3
 	var z_hi := GradeSettings.BORE_H_M + GradeSettings.TUNNEL_WALL_M
-	for seg in profile_tunnels(prof):
+	# Only the tunnels whose box can reach the triangle's along-range: a
+	# separating axis anyway, and a line round a planet has thousands.
+	var a_min := minf(l0.x, minf(l1.x, l2.x))
+	var a_max := maxf(l0.x, maxf(l1.x, l2.x))
+	for seg in profile_tunnels(prof, a_min - hood, a_max + hood):
 		var a_lo: float = float(seg["lo"]) - hood
 		var a_hi: float = float(seg["hi"]) + hood
 		var centre := Vector3(0.5 * (a_lo + a_hi), 0.0, 0.5 * (z_lo + z_hi))
@@ -122,10 +129,17 @@ static func tri_hits_bore_local(prof: Dictionary, l0: Vector3, l1: Vector3, l2: 
 	return false
 
 
-## The TUNNEL segments of a profile.
-static func profile_tunnels(profile: Dictionary) -> Array:
+## The TUNNEL segments of a profile — all of them, or only those that may
+## overlap the along-range [param lo, hi] (a superset, see
+## GradeProfile.segment_range).
+static func profile_tunnels(profile: Dictionary, lo: float = -INF, hi: float = INF) -> Array:
 	var out: Array = []
-	for seg in profile.get("segments", []):
+	var segs: Array = profile.get("segments", [])
+	var sr := Vector2i(0, segs.size())
+	if is_finite(lo) and is_finite(hi):
+		sr = GradeProfile.segment_range(profile, lo, hi)
+	for si in range(sr.x, sr.y):
+		var seg: Dictionary = segs[si]
 		if int(seg["kind"]) == GradeSettings.Kind.TUNNEL:
 			out.append(seg)
 	return out
@@ -238,7 +252,13 @@ static func build_piece(cl: PackedVector2Array, cum: PackedFloat64Array,
 	var collar := _collar_section(bw)
 	var floor_sec := PackedVector2Array([Vector2(bw, -FLOOR_M), Vector2(-bw, -FLOOR_M)])
 	var hood := GradeSettings.PORTAL_HOOD_M
-	for seg in profile["segments"]:
+	# Only the segments that can touch this piece: a tube within hood of it,
+	# a mouth within a headwall offset of it.
+	var segs: Array = profile["segments"]
+	var margin := hood + absf(HEADWALL_OFFSET_M)
+	var sr := GradeProfile.segment_range(profile, c0 - margin, c1 + margin)
+	for si in range(sr.x, sr.y):
+		var seg: Dictionary = segs[si]
 		if int(seg["kind"]) != GradeSettings.Kind.TUNNEL:
 			continue
 		var t_lo: float = float(seg["lo"]) - hood

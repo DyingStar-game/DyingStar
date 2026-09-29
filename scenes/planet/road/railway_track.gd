@@ -281,10 +281,11 @@ static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float
 		if a1 - a0 <= 1e-6:
 			continue
 		# Split the segment at the knots inside it.
+		# Binary search, not a walk over the 200 k knots of a line round
+		# the planet — this runs on the main thread for every chunk.
 		var cuts := PackedFloat64Array([a0])
-		for k in knots:
-			if k > a0 + 1e-6 and k < a1 - 1e-6:
-				cuts.append(k)
+		var kr := GradeProfile.open_range(knots, a0 + 1e-6, a1 - 1e-6)
+		cuts.append_array(knots.slice(kr.x, kr.y))
 		cuts.append(a1)
 		for j in cuts.size() - 1:
 			var lo: float = cuts[j]

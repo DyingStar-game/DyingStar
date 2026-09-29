@@ -50,7 +50,10 @@ class_name GradeProfile
 ## [param climb_override] — tests only: force the over-the-cap policy (see
 ## GradeSettings.climbs_at_max_grade_of) instead of the line's own, so the
 ## suites for the level rule keep meaning whatever RailwaySettings chooses.
-static func compute(road: Dictionary, sampler: Callable, climb_override: Variant = null) -> Dictionary:
+## [param stations_terrain] — the bake tool only: the terrain already read at
+## [method station_alongs] (in parallel, see sample_stations); empty = read here.
+static func compute(road: Dictionary, sampler: Callable, climb_override: Variant = null,
+		stations_terrain: PackedFloat64Array = PackedFloat64Array()) -> Dictionary:
 	var cl: PackedVector2Array = road.get("centerline", PackedVector2Array())
 	var cum: PackedFloat64Array = road.get("_cum_lengths", PackedFloat64Array())
 	if cl.size() < 2 or cum.size() != cl.size() or not sampler.is_valid():
@@ -74,15 +77,9 @@ static func compute(road: Dictionary, sampler: Callable, climb_override: Variant
 	var knots_z: PackedFloat64Array = knots[1]
 
 	# Stations: the terrain read every STATION_STEP_M, the last one at a1.
-	var stations_along := PackedFloat64Array()
-	var stations_terrain := PackedFloat64Array()
-	var s := a0
-	while s < a1 - 1e-6:
-		stations_along.append(s)
-		stations_terrain.append(terrain.call(s))
-		s += GradeSettings.STATION_STEP_M
-	stations_along.append(a1)
-	stations_terrain.append(terrain.call(a1))
+	var stations_along := station_alongs(a0, a1)
+	if stations_terrain.size() != stations_along.size():
+		stations_terrain = sample_stations(road, sampler, stations_along, 0, stations_along.size())
 
 	var profile := {
 		"ok": true,
@@ -128,6 +125,33 @@ static func compute(road: Dictionary, sampler: Callable, climb_override: Variant
 		seg_lo.append(float(seg["lo"]))
 	profile["seg_lo"] = seg_lo
 	return profile
+
+
+## The along-distances of the stations of a line from [param a0] to [param a1]:
+## every STATION_STEP_M, accumulated (not multiplied — the exact floats the
+## profile has always used), and a1 itself last.
+static func station_alongs(a0: float, a1: float) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var s := a0
+	while s < a1 - 1e-6:
+		out.append(s)
+		s += GradeSettings.STATION_STEP_M
+	out.append(a1)
+	return out
+
+
+## The terrain at the stations [param alongs][i0 .. i1) of [param road].
+## Stations are independent of one another, so the bake reads slices of them
+## on several threads, one sampler each.
+static func sample_stations(road: Dictionary, sampler: Callable, alongs: PackedFloat64Array,
+		i0: int, i1: int) -> PackedFloat64Array:
+	var cl: PackedVector2Array = road.get("centerline", PackedVector2Array())
+	var cum: PackedFloat64Array = road.get("_cum_lengths", PackedFloat64Array())
+	var out := PackedFloat64Array()
+	out.resize(maxi(i1 - i0, 0))
+	for i in range(i0, i1):
+		out[i - i0] = float(sampler.call(GradeGeom.dir_at(cl, cum, alongs[i])))
+	return out
 
 
 ## The window walk. Returns [knots_along, knots_z].
@@ -213,6 +237,60 @@ static func z_track_at(profile: Dictionary, along: float) -> float:
 	if seg <= 1e-9:
 		return kz[lo]
 	return lerpf(kz[lo], kz[hi], (along - ka[lo]) / seg)
+
+
+## How far past a chunk's own stretch of line a sliced profile still answers
+## exactly: more than every along-reach its readers test around a point —
+## the portal refinement (PORTAL_REFINE_M + PORTAL_HOOD_M), the bore hood,
+## a headwall's offset.
+const SLICE_MARGIN_M := 64.0
+
+
+## Indices [i0, i1) of the values of the sorted [param arr] strictly between
+## [param lo] and [param hi] — the same set as testing `v > lo and v < hi` on
+## every element, found by two binary searches. A line round a planet has
+## 200 k knots: the per-chunk builders must never walk them all.
+static func open_range(arr: PackedFloat64Array, lo: float, hi: float) -> Vector2i:
+	var i0 := arr.bsearch(lo, false)
+	var i1 := arr.bsearch(hi, true)
+	return Vector2i(i0, maxi(i0, i1))
+
+
+## Indices [i0, i1) of the segments of [param profile] that may overlap
+## [param lo, hi] — a SUPERSET padded by a metre, so a caller keeps its own
+## test on each segment and gets exactly the answer of a walk over all of them.
+static func segment_range(profile: Dictionary, lo: float, hi: float) -> Vector2i:
+	var seg_lo: PackedFloat64Array = profile.get("seg_lo", PackedFloat64Array())
+	var n := seg_lo.size()
+	if n == 0:
+		return Vector2i.ZERO
+	var i0 := maxi(seg_lo.bsearch(lo - 1.0, false) - 1, 0)
+	var i1 := mini(seg_lo.bsearch(hi + 1.0, false), n)
+	return Vector2i(i0, maxi(i0, i1))
+
+
+## [param profile] cut down to the along-range [param lo, hi]: the knots
+## bracketing it, the segments overlapping it (with their seg_lo); every
+## scalar kept. z_track_at, segment_at and hw_at answer bit-identically for
+## any along in [lo, hi] — what a chunk's builders read, since their along
+## comes from the chunk's own pieces. Shared arrays are copied, never aliased.
+static func slice(profile: Dictionary, lo: float, hi: float) -> Dictionary:
+	if profile.is_empty() or not profile.has("knots_along"):
+		return profile
+	var ka: PackedFloat64Array = profile["knots_along"]
+	var kz: PackedFloat64Array = profile["knots_z"]
+	var n := ka.size()
+	var k0 := maxi(ka.bsearch(lo - 1.0, true) - 1, 0)
+	var k1 := mini(ka.bsearch(hi + 1.0, false) + 1, n)
+	var sr := segment_range(profile, lo, hi)
+	var out := profile.duplicate(false)
+	out.erase("stations_along")
+	out.erase("stations_terrain")
+	out["knots_along"] = ka.slice(k0, k1)
+	out["knots_z"] = kz.slice(k0, k1)
+	out["segments"] = (profile["segments"] as Array).slice(sr.x, sr.y)
+	out["seg_lo"] = (profile["seg_lo"] as PackedFloat64Array).slice(sr.x, sr.y)
+	return out
 
 
 ## The segment containing [param along] (the last one at and past along1).
@@ -382,11 +460,9 @@ static func plan_of(profile: Dictionary, span: Dictionary, road: Dictionary,
 	var base := radius + RoadTerrain.SURFACE_THICKNESS_M
 	var top_r_at := func(along: float) -> float:
 		return base + z_track_at(profile, along)
-	var extra := PackedFloat64Array()
 	var ka: PackedFloat64Array = profile["knots_along"]
-	for k in ka:
-		if k > deck_lo + BridgePlan.EPS_M and k < deck_hi - BridgePlan.EPS_M:
-			extra.append(k)
+	var kr := open_range(ka, deck_lo + BridgePlan.EPS_M, deck_hi - BridgePlan.EPS_M)
+	var extra := ka.slice(kr.x, kr.y)
 	var lo_r: float = top_r_at.call(deck_lo)
 	var hi_r: float = top_r_at.call(deck_hi)
 	return {
