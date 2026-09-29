@@ -1,25 +1,17 @@
 extends Control
 
-## Wires the general options to SettingsManager (apply + persist): the display language first, then
-## the in-game debug toggles.
+## Wires the general options to SettingsManager (apply + persist): the display language, the size
+## of the interface, and the two display switches. The debug toggles have their own page (Debug).
 
-## One row per toggle: the node under the VBox, and the SettingsManager pair behind it. Declaring
-## them beats six copies of the same four lines — adding a toggle becomes one entry, and the On/Off
-## wording lives in a single place instead of twelve. An optional "owner" names the SettingsManager
-## member that holds the pair instead (e.g. "render" for SettingsManager.render).
 const TOGGLES : Array[Dictionary] = [
-	{"node": "ShowDebug", "getter": "is_show_debug", "setter": "set_show_debug"},
-	{"node": "CargoDebug", "getter": "is_cargo_debug", "setter": "set_cargo_debug"},
-	{"node": "CelestialGizmos", "getter": "is_celestial_gizmos", "setter": "set_celestial_gizmos"},
-	{"node": "SurfaceDebug", "getter": "is_surface_debug", "setter": "set_surface_debug"},
-	{"node": "VehicleHud", "getter": "is_vehicle_hud", "setter": "set_vehicle_hud"},
-	{"node": "MovementDebug", "getter": "is_movement_debug", "setter": "set_movement_debug"},
 	{"node": "GraphicsOverlay", "owner": "render", "getter": "is_overlay_enabled", "setter": "set_overlay_enabled"},
 	{"node": "MenuStage", "owner": "render", "getter": "is_menu_stage_enabled", "setter": "set_menu_stage_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
 @onready var _language : OptionButton = $ScrollContainer/MarginContainer/VBoxContainer/Language/OptionButton
+@onready var _ui_scale : HSlider = $ScrollContainer/MarginContainer/VBoxContainer/UiScale/HSlider
+@onready var _ui_scale_value : Label = $ScrollContainer/MarginContainer/VBoxContainer/UiScale/Value
 
 func _ready() -> void:
 	_fill_language()
@@ -27,8 +19,8 @@ func _ready() -> void:
 	# The picker is filled from code, so it does NOT re-translate itself the way a Control whose
 	# text is set in the scene does. Rebuild it when the language changes under us.
 	SettingsManager.language.changed.connect(_on_language_changed)
-	for toggle in TOGGLES:
-		_wire_toggle(toggle)
+	_wire_ui_scale()
+	SettingsToggles.wire(_rows, TOGGLES)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows(_rows)
 
@@ -57,20 +49,26 @@ func _on_language_selected(index: int) -> void:
 func _on_language_changed(_language_code: String) -> void:
 	_fill_language()
 
-## Bind one toggle to its setting: current value in, new value out, label kept in step.
-func _wire_toggle(toggle: Dictionary) -> void:
-	var button : Button = _rows.get_node_or_null(str(toggle["node"]) + "/Button")
-	# A typo in the table would otherwise leave a dead button that silently reports "off" forever.
-	if button == null:
-		push_error("General settings: no toggle button named %s" % toggle["node"])
-		return
-	var target : Object = SettingsManager.get(toggle["owner"]) if toggle.has("owner") else SettingsManager
-	button.toggle_mode = true
-	button.button_pressed = bool(target.call(toggle["getter"]))
-	button.text = _toggle_label(button.button_pressed)
-	button.toggled.connect(func(on: bool) -> void:
-		button.text = _toggle_label(on)
-		target.call(toggle["setter"], on))
 
-func _toggle_label(on: bool) -> String:
-	return SettingsText.on_off(on)
+## Interface size: shown as it moves, applied when the drag ends — the page would otherwise rescale
+## under the pointer dragging the slider.
+func _wire_ui_scale() -> void:
+	var settings : UiScaleSettings = SettingsManager.ui_scale
+	_ui_scale.min_value = UiScaleSettings.MIN
+	_ui_scale.max_value = UiScaleSettings.MAX
+	_ui_scale.step = UiScaleSettings.STEP
+	_ui_scale.set_value_no_signal(settings.value())
+	_ui_scale_value.text = _percent(settings.value())
+	var dragging : Array = [false]
+	_ui_scale.drag_started.connect(func() -> void: dragging[0] = true)
+	_ui_scale.drag_ended.connect(func(_moved: bool) -> void:
+		dragging[0] = false
+		settings.set_value(_ui_scale.value))
+	_ui_scale.value_changed.connect(func(v: float) -> void:
+		_ui_scale_value.text = _percent(v)
+		if not dragging[0]:
+			settings.set_value(v))
+
+
+static func _percent(scale: float) -> String:
+	return "%d %%" % roundi(scale * 100.0)
