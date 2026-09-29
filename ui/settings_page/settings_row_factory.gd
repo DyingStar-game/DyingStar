@@ -16,13 +16,19 @@ var label_size : int
 ## 0 keeps the theme's size, which is what the hand-written page controls use.
 var control_size : int
 var control_width : float
+## Captions and headings wrap onto several lines instead of widening their line. For a narrow
+## container (the in-game overlay): an unwrapped caption such as "Anticrénelage multi-échantillons
+## (MSAA)" made the line wider than the panel, which cut every control off on the right.
+var wrap_captions : bool
 var _label_settings : LabelSettings
 
 
-func _init(label_font_size: int = 28, control_font_size: int = 0, width: float = 200.0) -> void:
+func _init(label_font_size: int = 28, control_font_size: int = 0, width: float = 200.0,
+		wrap: bool = false) -> void:
 	label_size = label_font_size
 	control_size = control_font_size
 	control_width = width
+	wrap_captions = wrap
 	_label_settings = LabelSettings.new()
 	_label_settings.font = FONT
 	_label_settings.font_size = label_size
@@ -36,6 +42,7 @@ func header(text_key: String) -> Label:
 	label.uppercase = true
 	label.modulate = SettingsStyle.ACTIVE_COLOR
 	label.label_settings = _label_settings
+	_wrap(label)
 	return label
 
 
@@ -50,8 +57,21 @@ func row(label_key: String) -> HBoxContainer:
 	label.label_settings = _label_settings
 	label.size_flags_horizontal = Control.SIZE_FILL
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_wrap(label)
 	line.add_child(label)
 	return line
+
+
+## In wrap mode, a caption takes whatever width the controls leave and breaks between words.
+func _wrap(label: Label) -> void:
+	if not wrap_captions:
+		return
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# The control beside it expands too (to hug the right edge): without a heavier ratio the two
+	# would split the spare width evenly and the caption would wrap long before it had to.
+	label.size_flags_stretch_ratio = 3.0
 
 
 func option_button() -> OptionButton:
