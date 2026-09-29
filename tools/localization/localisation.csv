@@ -45,6 +45,9 @@ keys,en,fr,es
 %%MENU_RES_CONFIRM,"Keep this resolution?
 Reverting automatically in %d s.","Garder cette résolution ?
 Retour automatique dans %d s.",
+%%MENU_AUDIO_SECTION_VOLUME,Volume,Volume,
+%%MENU_AUDIO_SECTION_DEVICES,Devices,Périphériques,
+%%MENU_AUDIO_SECTION_TEST,Test,Test,
 %%MENU_AUDIO_GENERAL,General,Général,
 %%MENU_AUDIO_MUSIC,Music,Musique,
 %%MENU_AUDIO_SFX,SFX,Effets,
