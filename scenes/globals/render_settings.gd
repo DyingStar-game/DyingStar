@@ -21,6 +21,7 @@ signal overlay_changed(on: bool)
 
 const OVERLAY_SECTION : String = "general"
 const OVERLAY_KEY : String = "graphics_overlay"
+const MENU_STAGE_KEY : String = "menu_stage"
 
 ## What the machine can do, measured once by current_caps() — or handed in by a test:
 ##   method      the rendering method ("forward_plus", "mobile", "gl_compatibility")
@@ -150,6 +151,17 @@ func preset() -> String:
 ## GpuTier's guess for this machine (MEDIUM when it was never measured).
 func detected() -> String:
 	return str(caps.get("tier", GpuTier.MEDIUM))
+
+
+## The main menu's live 3D stage (Settings > General). Off: the menu keeps its still image and
+## loads no planet — faster to start, for development, or by taste. Read when the menu opens.
+func is_menu_stage_enabled() -> bool:
+	return bool(_config.get_value(OVERLAY_SECTION, MENU_STAGE_KEY, true))
+
+
+func set_menu_stage_enabled(on: bool) -> void:
+	_config.set_value(OVERLAY_SECTION, MENU_STAGE_KEY, on)
+	_save.call()
 
 
 func is_overlay_enabled() -> bool:

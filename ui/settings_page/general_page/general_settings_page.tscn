@@ -180,3 +180,20 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_OFF"
+
+[node name="MenuStage" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000004]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MenuStage" unique_id=1700000005]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_STAGE_TOGGLE"
+label_settings = SubResource("LabelSettings_gen")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/MenuStage" unique_id=1700000006]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"

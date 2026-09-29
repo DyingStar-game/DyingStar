@@ -15,6 +15,7 @@ const TOGGLES : Array[Dictionary] = [
 	{"node": "VehicleHud", "getter": "is_vehicle_hud", "setter": "set_vehicle_hud"},
 	{"node": "MovementDebug", "getter": "is_movement_debug", "setter": "set_movement_debug"},
 	{"node": "GraphicsOverlay", "owner": "render", "getter": "is_overlay_enabled", "setter": "set_overlay_enabled"},
+	{"node": "MenuStage", "owner": "render", "getter": "is_menu_stage_enabled", "setter": "set_menu_stage_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer

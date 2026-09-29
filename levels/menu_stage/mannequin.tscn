@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://bhaosjppre1bn" path="res://levels/menu_stage/mannequin.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="2_puppet"]
+
+[node name="Mannequin" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Puppet" parent="." instance=ExtResource("2_puppet")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)

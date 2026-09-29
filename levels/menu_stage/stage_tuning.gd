@@ -10,13 +10,13 @@ static func section(stage: MenuStage) -> WidgetSection:
 
 
 static func _build(stage: MenuStage, box: VBoxContainer, factory: SettingsRowFactory) -> void:
-	# Viewpoint: the fixed stations of StageLayout, glided to.
+	# Viewpoint: the set's tuning viewpoints (StageStation), glided to.
 	var view_line : HBoxContainer = factory.row("%%SHOWCASE_VIEWPOINT")
 	var picker : OptionButton = factory.option_button()
-	var stations : Array[Dictionary] = StageLayout.tuning_stations()
+	var stations : Array[StageStation] = stage.tuning_stations()
 	for i in stations.size():
-		picker.add_item(stations[i]["label"], i)
-		picker.set_item_metadata(i, stations[i]["key"])
+		picker.add_item(stations[i].label, i)
+		picker.set_item_metadata(i, stations[i].key)
 	picker.item_selected.connect(func(i: int) -> void: stage.go_to(picker.get_item_metadata(i)))
 	view_line.add_child(picker)
 	box.add_child(view_line)

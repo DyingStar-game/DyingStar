@@ -4,35 +4,31 @@ extends Node3D
 ## playing one animation forever — idle, talking, mining, dancing, or walking a small circle. Not an
 ## NPC, not a player: no network, no physics, no controller; its CharacterAnimator is never set up,
 ## so it costs nothing, and the animation pauses while off screen.
+##
+## An instance of mannequin.tscn, placed in menu_stage_world.tscn: move it, turn it (it faces its
+## -Z, the arrow of the editor gizmo), pick its clip in the inspector.
 
-const PUPPET : PackedScene = preload("res://scenes/_universe/characters/humanoids/human_puppet.tscn")
 ## The walk clip is tuned for 1 m/s (CharacterAnimator.WALK_REF_SPEED): feet do not slide at it.
 const WALK_SPEED : float = 1.0
 
-var clip : StringName
+## A clip of the humanoid library: Idle, Idle_Talking, Idle_FoldArms, Idle_TalkingPhone,
+## Idle_LookAround, Mining, GroundSit_Idle, Sitting_Idle, Dance, Celebration, Yes, Push…
+@export var clip : StringName = &"Idle"
 ## > 0: walks a circle of this radius around its own origin instead of playing `clip` on the spot.
-var walk_radius : float
+@export var walk_radius : float = 0.0
 
-var _puppet : Node3D
 var _anim : AnimationPlayer
 var _playing : StringName
 var _angle : float = 0.0
 
-
-func _init(p_clip: StringName, p_walk_radius: float = 0.0) -> void:
-	clip = p_clip
-	walk_radius = p_walk_radius
+@onready var _puppet : Node3D = $Puppet
 
 
 func _ready() -> void:
-	_puppet = PUPPET.instantiate()
-	# The model faces +Z; turned like the player's, it faces this node's -Z (its "forward").
-	_puppet.rotation.y = PI
-	add_child(_puppet)
 	_anim = _puppet.get_node("AnimationPlayer")
 	_playing = &"Walk" if walk_radius > 0.0 else clip
 	if not _anim.has_animation(_playing):
-		push_warning("Mannequin: no clip '%s'" % _playing)
+		push_warning("Mannequin %s: no clip '%s'" % [name, _playing])
 		return
 	_anim.play(_playing)
 	# Out of step with its neighbours: a crowd breathing in unison reads as a machine.

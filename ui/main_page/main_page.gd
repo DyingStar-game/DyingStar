@@ -34,6 +34,11 @@ var _quality : Button = null
 @onready var quit_bg : TextureRect = $Control/Button3
 
 func _ready() -> void:
+	# The background fills the screen; the menu itself (logo, buttons) keeps to a centred 16:9 area.
+	var background : TextureRect = $Control/Background
+	background.reparent(self)
+	move_child(background, 0)
+	SafeArea.keep($Control)
 	settings_button.pressed.connect(_on_settings_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
 	_add_hover_highlight(settings_button, settings_bg)
@@ -80,7 +85,7 @@ func _on_category_changed(key: String) -> void:
 ## A live 3D stage now stands behind the menu (MenuStage): drop the still image, show the logo alone.
 func set_stage_mode(on: bool) -> void:
 	_stage_mode = on
-	$Control/Background.visible = not on
+	$Background.visible = not on
 	if on and _logo == null:
 		_logo = TextureRect.new()
 		_logo.texture = LOGO

@@ -33,6 +33,8 @@ func _ready() -> void:
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		$Control.add_child(veil)
 		$Control.move_child(veil, background.get_index())
+	# The content in a centred 16:9 area on a wide screen; the background keeps the whole screen.
+	SafeArea.keep($Control/MarginContainer)
 	_category_buttons = [general_button, graphic_button, audio_button, control_button]
 	return_button.pressed.connect(queue_free)
 	general_button.pressed.connect(

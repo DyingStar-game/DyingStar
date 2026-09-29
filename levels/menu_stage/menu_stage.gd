@@ -5,17 +5,21 @@ extends Node3D
 ## are compared on real ground, near and far, at any hour.
 ##
 ## The composition root of the stage: it asks whether the terrain tile service answers
-## (TileServiceProbe — without it the ground is flat and the buildings float), and only then builds
-## the planet, the sky (ClientSky, the player's own), the camera rig and the props. Unreachable, it
-## builds nothing and the menu keeps its still image. The menu UI (MainPage) knows nothing of the
-## stage: it only says which screen is showing.
+## (TileServiceProbe — without it the ground is flat and the buildings float), and only then loads
+## the world — menu_stage_world.tscn, the star, Tarsis 3 and its Outpost, all placed in the editor —
+## and adds the sky (ClientSky, the player's own) around its camera rig. Unreachable, or switched off
+## in Settings > General, it loads nothing and the menu keeps its still image. The menu UI (MainPage)
+## knows nothing of the stage: it only says which screen is showing.
 ##
 ## The global state it borrows (universe root, frozen clock, mouse) goes back in _exit_tree
 ## (StageSession); entering the game frees the whole stage with the scene change.
 
-const PLANET_SCENE : String = "res://scenes/systems/tarsis/tarsis_3.tscn"
-const STAR_SCENE : String = "res://scenes/_universe/environment/space/star.tscn"
+## The set: edit it in Godot (move, add, remove props, figures, trucks and viewpoints).
+const WORLD_SCENE : String = "res://levels/menu_stage/menu_stage_world.tscn"
 const PLANET_NAME : String = "tarsis_3"
+## Sunrise: the sun just clear of the horizon in the morning — long shadows, a warm sky, the lamps
+## still on. Set by the sun's height rather than an hour, which could fall in the dark in winter.
+const MENU_SUN_ELEVATION_DEG : float = 5.0
 ## Longest wait for the first ground and a settled sun before the menu shows anyway.
 const READY_TIMEOUT_S : float = 10.0
 ## The graphics panel covers the left quarter of the screen while tuning: the view turns this much to
@@ -31,10 +35,8 @@ var _session := StageSession.new()
 var _probe : TileServiceProbe = null
 var _planet : Planet = null
 var _rig : StageRig = null
-var _props : StageProps = null
-var _frame : SurfaceFrame = null
+var _outpost : StageOutpost = null
 var _anchor : Vector3 = Vector3.ZERO
-var _line_deg : float = 0.0
 var _hour : float = 12.0
 var _live : bool = false
 var _tuning : OverlayPanel = null
@@ -50,6 +52,9 @@ func _ready() -> void:
 	active = self
 	_menu.screen_changed.connect(go_to)
 	_menu.tuning_requested.connect(enter_tuning.bind(&"home"))
+	if not SettingsManager.render.is_menu_stage_enabled():
+		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
+		return
 	_probe = TileServiceProbe.new()
 	_probe.start(PLANET_NAME)
 
@@ -81,7 +86,7 @@ func _process(delta: float) -> void:
 		if _resnap_tick >= 1.0:
 			_resnap_left -= _resnap_tick
 			_resnap_tick = 0.0
-			_props.resnap()
+			_outpost.resnap()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -90,12 +95,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Glide to a station of StageLayout (a menu screen, or a tuning viewpoint).
+## Glide to a viewpoint of the set (a menu screen's, or a tuning one).
 func go_to(key: StringName) -> void:
-	var station : Dictionary = StageLayout.station(key)
-	if not _live or station.is_empty() or not is_instance_valid(_rig):
+	if not _live or not is_instance_valid(_rig):
 		return
-	_rig.glide_to(_at(station["eye"]), _at(station["look"]))
+	var station : StageStation = _outpost.station(key)
+	if station != null:
+		_rig.glide_to_view(station.transform)
+
+
+## The tuning scene's viewpoints, in the set's order.
+func tuning_stations() -> Array[StageStation]:
+	if _outpost == null:
+		return []
+	return _outpost.stations().filter(func(s: StageStation) -> bool: return s.is_tuning())
 
 
 func hour() -> float:
@@ -118,7 +131,9 @@ func enter_tuning(from: StringName = &"settings_graphics") -> void:
 	add_child(_tuning)
 	_rig.yaw_offset_deg = TUNING_YAW_DEG
 	_menu.set_interface_hidden(true)
-	go_to(StageLayout.tuning_stations()[0]["key"])
+	var first : Array[StageStation] = tuning_stations()
+	if not first.is_empty():
+		go_to(first[0].key)
 
 
 func exit_tuning() -> void:
@@ -137,24 +152,23 @@ func _build() -> void:
 	# Let the splash paint before the planet's set-up holds the main thread for a few seconds.
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_session.begin(self)
-	var star : Node3D = load(STAR_SCENE).instantiate()
-	star.name = "Star"
-	add_child(star)
-	_planet = load(PLANET_SCENE).instantiate()
-	add_child(_planet)
+	var world : Node3D = load(WORLD_SCENE).instantiate()
+	# Before the world enters the tree: the planet places itself for the (frozen) clock in its _ready.
+	_session.begin(world)
+	add_child(world)
+	_planet = world.get_node("Tarsis3")
+	_outpost = _planet.get_node("Outpost")
 	var ground_ready : Array = [false]
 	if _planet.planet_terrain != null:
 		_planet.planet_terrain.initial_chunks_ready.connect(func() -> void: ground_ready[0] = true,
 			CONNECT_ONE_SHOT)
-	_anchor = (_planet.get_node(StageLayout.ANCHOR) as Node3D).position
-	_frame = SurfaceFrame.new(_anchor, _planet.planet_data.radius, _planet.planet_data.crack_aware_surface_dist)
-	_line_deg = _frame.bearing_to((_planet.get_node(StageLayout.LINE_TOWARD) as Node3D).position)
+	_anchor = _outpost.anchor_local()
 	_rig = StageRig.new()
 	_planet.add_child(_rig)
 	_live = true  # from here go_to() and set_hour() act
-	var home : Dictionary = StageLayout.station(&"home")
-	_rig.frame(_at(home["eye"]), _at(home["look"]))
+	var home : StageStation = _outpost.station(&"home")
+	if home != null:
+		_rig.frame_view(home.transform)
 	ClientSky.attach(_rig)
 	_sunrise()
 	var waited : float = 0.0
@@ -163,9 +177,7 @@ func _build() -> void:
 	while waited < READY_TIMEOUT_S and not ground_ready[0]:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
-	_props = StageProps.new()
-	_planet.add_child(_props)
-	_props.populate(_frame, _line_deg)
+	_outpost.start(_planet.planet_data.radius, _planet.planet_data.crack_aware_surface_dist)
 	_resnap_left = RESNAP_FOR_S
 	_menu.set_stage_mode(true)
 	_splash(false)
@@ -173,15 +185,10 @@ func _build() -> void:
 		"ready" if ground_ready[0] else "late"])
 
 
-## The menu's light: the sun just risen (StageLayout.MENU_SUN_ELEVATION_DEG), whatever the season.
+## The menu's light: the sun just risen (MENU_SUN_ELEVATION_DEG), whatever the season.
 func _sunrise() -> void:
-	var hour_set : float = StageClock.set_sun_elevation(_planet, _anchor, StageLayout.MENU_SUN_ELEVATION_DEG)
+	var hour_set : float = StageClock.set_sun_elevation(_planet, _anchor, MENU_SUN_ELEVATION_DEG)
 	_hour = hour_set if hour_set >= 0.0 else 12.0
-
-
-## A planet-local point from a layout triple [distance, bearing from the line, height above ground].
-func _at(spot: Array) -> Vector3:
-	return _frame.point(float(spot[0]), _line_deg + float(spot[1]), float(spot[2]))
 
 
 ## The game's loading splash (GameOrchestrator puts it on the root, hidden, at boot).
