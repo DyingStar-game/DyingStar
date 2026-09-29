@@ -1,6 +1,6 @@
 extends GutTest
-## The menu stage's pure parts: placing on a sphere by distance and bearing, borrowing and returning
-## the global state, and the layout table itself.
+## The menu stage: placing on a sphere by distance and bearing, borrowing and returning the global
+## state, and the set as authored in menu_stage_world.tscn.
 
 const R : float = 6_361_000.0
 
@@ -50,22 +50,52 @@ func test_the_session_gives_back_what_it_borrowed() -> void:
 		"no frozen sun nor shifted clock leaks into the game")
 
 
-func test_the_layout_covers_every_distance_band() -> void:
+var _world_scene : PackedScene
+
+
+## Loaded once, outside the tests: opening Tarsis 3's resources prints engine warnings (stale UIDs, a
+## material) that GUT would count as errors of whichever test happened to load them first.
+func before_all() -> void:
+	_world_scene = load(MenuStage.WORLD_SCENE)
+	autofree(_world_scene.instantiate())
+
+
+## The set, as authored in menu_stage_world.tscn (instantiated, not added: nothing runs).
+func _world() -> Node3D:
+	var world : Node3D = _world_scene.instantiate()
+	autofree(world)
+	return world
+
+
+func test_the_set_covers_every_distance_band() -> void:
+	var world := _world()
+	var outpost : StageOutpost = world.get_node("Tarsis3/Outpost")
+	var anchor : Vector3 = outpost.anchor_local()
+	assert_ne(anchor, Vector3.ZERO, "the anchor (Teleporter) is found")
 	var bands : Array = [false, false, false, false, false, false]  # <50, 200, 1k, 3k, 8k, >=15k
-	for entry in StageLayout.PROPS:
-		assert_true(ResourceLoader.exists(entry["scene"]), "%s exists" % entry["scene"])
-		var d : float = entry["distance"]
+	for piece in outpost.get_children():
+		if not piece is Node3D or piece.name == &"Stations":
+			continue
+		var d : float = anchor.normalized().angle_to((piece as Node3D).position.normalized()) * anchor.length()
 		var i : int = 0 if d < 50.0 else 1 if d < 500.0 else 2 if d < 2000.0 else 3 if d < 5000.0 else 4 if d < 12000.0 else 5
 		bands[i] = true
 	assert_eq(bands, [true, true, true, true, true, true], "LOD and distances can be judged at every range")
 
 
-func test_every_menu_screen_has_a_station() -> void:
+func test_the_set_has_figures_and_moving_trucks() -> void:
+	var outpost : StageOutpost = _world().get_node("Tarsis3/Outpost")
+	assert_gt(outpost.find_children("*", "Mannequin", false, false).size(), 3, "workers")
+	assert_gt(outpost.find_children("*", "StageDriver", false, false).size(), 0, "a truck on the road")
+
+
+func test_every_menu_screen_has_a_viewpoint() -> void:
+	var outpost : StageOutpost = _world().get_node("Tarsis3/Outpost")
 	for key in [&"home", &"settings", &"settings_graphics"]:
-		assert_false(StageLayout.station(key).is_empty(), "%s" % key)
-	assert_gt(StageLayout.tuning_stations().size(), 2, "several tuning viewpoints")
-	for station in StageLayout.tuning_stations():
-		assert_true(String(station["label"]).begins_with("%%SHOWCASE_VIEW_"), "labelled for translation")
+		assert_not_null(outpost.station(key), "%s" % key)
+	var tuning : Array = outpost.stations().filter(func(s: StageStation) -> bool: return s.is_tuning())
+	assert_gt(tuning.size(), 2, "several tuning viewpoints")
+	for station in tuning:
+		assert_true(station.label.begins_with("%%SHOWCASE_VIEW_"), "labelled for translation")
 
 
 func test_the_hour_reads_as_a_clock() -> void:

@@ -56,6 +56,16 @@ func glide_to(eye: Vector3, look: Vector3, seconds: float = GLIDE_S) -> void:
 	_tween.tween_method(func(t: float) -> void: transform = from.interpolate_with(to, t), 0.0, 1.0, seconds)
 
 
+## Glide to a viewpoint given as a transform (a StageStation's), turned by yaw_offset_deg.
+func glide_to_view(view_xform: Transform3D, seconds: float = GLIDE_S) -> void:
+	glide_to(view_xform.origin, view_xform.origin - view_xform.basis.z, seconds)
+
+
+## Stand at a viewpoint given as a transform, at once.
+func frame_view(view_xform: Transform3D) -> void:
+	frame(view_xform.origin, view_xform.origin - view_xform.basis.z)
+
+
 ## Standing at `eye`, looking at `look` (turned `yaw_deg` to its left), the head up along the radius.
 static func view(eye: Vector3, look: Vector3, yaw_deg: float = 0.0) -> Transform3D:
 	var up : Vector3 = eye.normalized()
