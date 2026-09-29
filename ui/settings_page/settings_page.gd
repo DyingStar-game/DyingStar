@@ -53,6 +53,8 @@ func _ready() -> void:
 		$Control.move_child(veil, background.get_index())
 		var page_area : Control = $Control/MarginContainer/VBoxContainer/Body/SubViewportContainer
 		page_area.resized.connect(_fit_veil.bind(veil, page_area))
+		# Once the layout is done too: an area already at its size never says it resized.
+		_fit_veil.call_deferred(veil, page_area)
 	var margin : MarginContainer = $Control/MarginContainer
 	margin.add_theme_constant_override("margin_top", int(TopBar.HEIGHT_PX + _GAP_UNDER_BAR_PX))
 	# The content in a centred 16:9 area on a wide screen; the background keeps the whole screen.

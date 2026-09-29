@@ -1,11 +1,7 @@
 [gd_scene format=3 uid="uid://0fqkqlaa0osv"]
 
 [ext_resource type="Script" uid="uid://drnvfkk8x2qh5" path="res://ui/settings_page/audio_page/audio_settings_page.gd" id="1_aa43r"]
-[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_aa43r"]
 [ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aa43r"]
-bg_color = Color(0.9843137, 0.72156864, 0.105882354, 1)
 
 [sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_aa43r"]
 
@@ -52,12 +48,10 @@ text = "%%MENU_AUDIO_GENERAL"
 label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/General" unique_id=1987287576]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
-theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -71,12 +65,10 @@ text = "%%MENU_AUDIO_MUSIC"
 label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Music" unique_id=1962383320]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
-theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -90,12 +82,10 @@ text = "%%MENU_AUDIO_SFX"
 label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/SFX" unique_id=460997283]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
-theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -109,12 +99,10 @@ text = "%%MENU_AUDIO_VOIP"
 label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/VoIP" unique_id=383556696]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 1
-theme_override_styles/grabber_area = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/grabber_area_highlight = SubResource("StyleBoxFlat_aa43r")
 step = 0.1
 value = 50.0
 
@@ -127,27 +115,9 @@ text = "%%MENU_AUDIO_MIC"
 label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Microphone" unique_id=1342693969]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-theme_override_colors/font_focus_color = Color(0, 0, 0, 1)
-theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
-theme_override_colors/font_hover_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_normal_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_focus_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_hover_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_hover_pressed_color = Color(0, 0, 0, 1)
-theme_override_fonts/font = ExtResource("2_aa43r")
-theme_override_styles/normal = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/pressed_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/hover = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/hover_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/focus = SubResource("StyleBoxFlat_aa43r")
 alignment = 1
 fit_to_longest_item = false
 
@@ -160,33 +130,11 @@ text = "%%MENU_AUDIO_SPEAKER"
 label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Speaker" unique_id=1219883642]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-theme_override_colors/font_focus_color = Color(0, 0, 0, 1)
-theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
-theme_override_colors/font_hover_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_normal_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_focus_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_pressed_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_hover_color = Color(0, 0, 0, 1)
-theme_override_colors/icon_hover_pressed_color = Color(0, 0, 0, 1)
-theme_override_fonts/font = ExtResource("2_aa43r")
-theme_override_font_sizes/font_size = 16
-theme_override_styles/normal = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/normal_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/pressed_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/hover = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/hover_mirrored = SubResource("StyleBoxFlat_aa43r")
-theme_override_styles/focus = SubResource("StyleBoxFlat_aa43r")
 alignment = 1
 fit_to_longest_item = false
-
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=798906512]
-layout_mode = 2
 
 [node name="Microphone_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1651509629]
 layout_mode = 2
@@ -197,11 +145,9 @@ text = "%%MENU_AUDIO_TEST_MIC"
 label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=2050494609]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
-theme_override_fonts/font = ExtResource("2_aa43r")
-theme_override_font_sizes/font_size = 18
 text = "%%MENU_AUDIO_TEST"
 
 [node name="Speaker_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=155813879]
