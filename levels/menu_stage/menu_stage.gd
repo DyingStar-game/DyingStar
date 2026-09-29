@@ -1,8 +1,8 @@
 class_name MenuStage
 extends Node3D
 ## The main menu, set on Tarsis 3: the menu UI over a live 3D outpost, the camera gliding to a new
-## station for each screen (home, settings, graphics…), and a tuning scene where the graphics options
-## are compared on real ground, near and far, at any hour.
+## station for each screen (home, settings, graphics…). The settings keep to the left half of the
+## screen, so a graphics option is judged on the live scene beside it.
 ##
 ## The composition root of the stage: it asks whether the terrain tile service answers
 ## (TileServiceProbe — without it the ground is flat and the buildings float), and only then loads
@@ -22,14 +22,8 @@ const PLANET_NAME : String = "tarsis_3"
 const MENU_SUN_ELEVATION_DEG : float = 5.0
 ## Longest wait for the first ground and a settled sun before the menu shows anyway.
 const READY_TIMEOUT_S : float = 10.0
-## The graphics panel covers the left quarter of the screen while tuning: the view turns this much to
-## the left of each viewpoint's target, so what it frames stands in the visible part.
-const TUNING_YAW_DEG : float = 16.0
 ## Far tiles keep arriving after the first ground: the props are put back on it for this long.
 const RESNAP_FOR_S : float = 60.0
-
-## The stage on show, for the Graphics page's "Tuning scene" button. Null outside the main menu.
-static var active : MenuStage = null
 
 var _session := StageSession.new()
 var _probe : TileServiceProbe = null
@@ -37,13 +31,9 @@ var _planet : Planet = null
 var _rig : StageRig = null
 var _outpost : StageOutpost = null
 var _anchor : Vector3 = Vector3.ZERO
-var _hour : float = 12.0
-## The sunrise hour, solved once (a hundred placements of the planet): given back after tuning.
+## The sunrise hour, solved once (a hundred placements of the planet).
 var _sunrise_hour : float = -1.0
 var _live : bool = false
-var _tuning : OverlayPanel = null
-## The station to glide back to when the tuning scene closes: where it was opened from.
-var _tuning_from : StringName = &"home"
 var _resnap_left : float = 0.0
 var _resnap_tick : float = 0.0
 
@@ -51,9 +41,7 @@ var _resnap_tick : float = 0.0
 
 
 func _ready() -> void:
-	active = self
 	_menu.screen_changed.connect(go_to)
-	_menu.tuning_requested.connect(enter_tuning.bind(&"home"))
 	if not SettingsManager.render.is_menu_stage_enabled():
 		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
 		return
@@ -67,8 +55,6 @@ func _exit_tree() -> void:
 	if _probe != null:
 		_probe.wait()
 	_session.end()
-	if active == self:
-		active = null
 
 
 ## The 3D stage is up (not the still-image fallback).
@@ -95,13 +81,7 @@ func _process(delta: float) -> void:
 			_outpost.resnap()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if _tuning != null and event.is_action_pressed("pause"):
-		exit_tuning()
-		get_viewport().set_input_as_handled()
-
-
-## Glide to a viewpoint of the set (a menu screen's, or a tuning one).
+## Glide to a menu screen's viewpoint of the set.
 func go_to(key: StringName) -> void:
 	if not _live or not is_instance_valid(_rig):
 		return
@@ -113,47 +93,9 @@ func go_to(key: StringName) -> void:
 		_rig.glide_to_view(station.transform)
 
 
-## The tuning scene's viewpoints, in the set's order.
-func tuning_stations() -> Array[StageStation]:
-	if _outpost == null:
-		return []
-	return _outpost.stations().filter(func(s: StageStation) -> bool: return s.is_tuning())
-
-
-func hour() -> float:
-	return _hour
-
-
 func set_hour(value: float) -> void:
-	_hour = value
 	if _live:
 		StageClock.set_hour(_planet, _anchor, value)
-
-
-## The tuning scene: the menu UI steps aside for the graphics panel and its viewpoints. `from`: the
-## station to come back to (the home screen's button, or Settings > Graphics).
-func enter_tuning(from: StringName = &"settings_graphics") -> void:
-	if not _live or _tuning != null:
-		return
-	_tuning_from = from
-	_tuning = GraphicsOverlay.always_on([StageTuning.section(self)], [StageTuning.back(self)])
-	add_child(_tuning)
-	_rig.yaw_offset_deg = TUNING_YAW_DEG
-	_menu.set_interface_hidden(true)
-	var first : Array[StageStation] = tuning_stations()
-	if not first.is_empty():
-		go_to(first[0].key)
-
-
-func exit_tuning() -> void:
-	if _tuning == null:
-		return
-	_tuning.queue_free()
-	_tuning = null
-	_rig.yaw_offset_deg = 0.0
-	_sunrise()
-	_menu.set_interface_hidden(false)
-	go_to(_tuning_from)
 
 
 func _build() -> void:

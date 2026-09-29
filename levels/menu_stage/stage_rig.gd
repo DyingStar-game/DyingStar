@@ -9,9 +9,6 @@ extends CharacterBody3D
 const GLIDE_S : float = 1.4
 
 var camera : Camera3D
-## Turn the view this much to the left of its target, so the subject stands right of a panel covering
-## the left of the screen (the tuning scene's). 0 in the menu.
-var yaw_offset_deg : float = 0.0
 var _tween : Tween = null
 
 
@@ -43,7 +40,7 @@ func _process(_delta: float) -> void:
 func frame(eye: Vector3, look: Vector3) -> void:
 	if _tween != null:
 		_tween.kill()
-	transform = view(eye, look, yaw_offset_deg)
+	transform = view(eye, look)
 
 
 ## Glide there, easing in and out.
@@ -51,12 +48,12 @@ func glide_to(eye: Vector3, look: Vector3, seconds: float = GLIDE_S) -> void:
 	if _tween != null:
 		_tween.kill()
 	var from : Transform3D = transform
-	var to : Transform3D = view(eye, look, yaw_offset_deg)
+	var to : Transform3D = view(eye, look)
 	_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_tween.tween_method(func(t: float) -> void: transform = from.interpolate_with(to, t), 0.0, 1.0, seconds)
 
 
-## Glide to a viewpoint given as a transform (a StageStation's), turned by yaw_offset_deg.
+## Glide to a viewpoint given as a transform (a StageStation's).
 func glide_to_view(view_xform: Transform3D, seconds: float = GLIDE_S) -> void:
 	glide_to(view_xform.origin, view_xform.origin - view_xform.basis.z, seconds)
 
@@ -66,10 +63,10 @@ func frame_view(view_xform: Transform3D) -> void:
 	frame(view_xform.origin, view_xform.origin - view_xform.basis.z)
 
 
-## Standing at `eye`, looking at `look` (turned `yaw_deg` to its left), the head up along the radius.
-static func view(eye: Vector3, look: Vector3, yaw_deg: float = 0.0) -> Transform3D:
+## Standing at `eye`, looking at `look`, the head up along the radius.
+static func view(eye: Vector3, look: Vector3) -> Transform3D:
 	var up : Vector3 = eye.normalized()
-	return Transform3D(Basis(up, deg_to_rad(yaw_deg)) * Basis.looking_at(look - eye, up), eye)
+	return Transform3D(Basis.looking_at(look - eye, up), eye)
 
 
 func _on_fov_changed(fov: float) -> void:

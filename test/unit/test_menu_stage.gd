@@ -92,13 +92,3 @@ func test_every_menu_screen_has_a_viewpoint() -> void:
 	var outpost : StageOutpost = _world().get_node("Tarsis3/Outpost")
 	for key in [&"home", &"settings", &"settings_graphics"]:
 		assert_not_null(outpost.station(key), "%s" % key)
-	var tuning : Array = outpost.stations().filter(func(s: StageStation) -> bool: return s.is_tuning())
-	assert_gt(tuning.size(), 2, "several tuning viewpoints")
-	for station in tuning:
-		assert_true(station.label.begins_with("%%SHOWCASE_VIEW_"), "labelled for translation")
-
-
-func test_the_hour_reads_as_a_clock() -> void:
-	assert_eq(StageTuning.clock(17.25), "17:15", "a quarter past five")
-	assert_eq(StageTuning.clock(0.0), "00:00", "midnight")
-	assert_eq(StageTuning.clock(23.99), "23:59", "almost midnight")

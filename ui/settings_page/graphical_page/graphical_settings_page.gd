@@ -83,26 +83,10 @@ func _build_rendering(factory: SettingsRowFactory) -> VBoxContainer:
 	_rows.move_child(display, 1)
 	var rendering := VBoxContainer.new()
 	_rows.add_child(rendering)
-	_add_tuning_scene_line(rendering, factory)
 	var view := GraphicsOptionsView.new(factory)
 	add_child(view)
 	view.build(rendering)
 	return rendering
-
-## In the main menu, over its live stage: a way into the tuning scene, where the options are compared on
-## real ground at any hour (MenuStage). Absent in game, and over the still-image menu.
-func _add_tuning_scene_line(rows: VBoxContainer, factory: SettingsRowFactory) -> void:
-	if MenuStage.active == null or not MenuStage.active.is_live():
-		return
-	var line : HBoxContainer = factory.row("%%MENU_GFX_SHOWCASE")
-	line.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_SHOWCASE"))
-	# Green: an invitation, not a setting.
-	line.get_child(0).modulate = SettingsStyle.GOOD_COLOR
-	var enter : Button = factory.button("%%MENU_GFX_SHOWCASE_OPEN")
-	enter.add_theme_color_override("font_color", SettingsStyle.GOOD_COLOR)
-	enter.pressed.connect(func() -> void: MenuStage.active.enter_tuning(&"settings_graphics"))
-	line.add_child(enter)
-	rows.add_child(line)
 
 ## Apply the picked resolution, then ask to keep it with a visible 10 s auto-revert countdown. A too-big
 ## resolution on a small screen would otherwise leave the player stuck; the timer reverts on its own.

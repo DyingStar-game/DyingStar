@@ -120,14 +120,6 @@ func test_altgr_gives_the_pointer_to_every_shown_panel() -> void:
 	assert_false(OverlayPanel.any_wants_pointer(get_tree()), "released: back to the camera")
 
 
-func test_always_mode_keeps_the_pointer() -> void:
-	var panel := _panel()
-	panel.pointer_mode = OverlayPanel.PointerMode.ALWAYS
-	panel.add_section(ReadoutSection.new("A", _lines, 1.0))
-	panel._process(0.0)
-	assert_true(panel.wants_pointer(), "no AltGr needed where there is no camera to steer")
-
-
 func test_a_widget_section_builds_once() -> void:
 	var panel := _panel()
 	var built : Array = []
