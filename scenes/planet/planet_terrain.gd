@@ -1384,10 +1384,25 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 
 
 func _exit_tree() -> void:
+	_join_worker_tasks()
 	# Joindre le fil de téléchargement avant que la planète disparaisse.
 	if planet_data != null and planet_data.remote_source != null:
 		planet_data.remote_source.stop()
 		planet_data.remote_source = null
+
+
+## Wait for every task still running on the WorkerThreadPool before the planet goes. They read
+## planet_data and log as they work: left running while the scene is freed (quitting the game,
+## entering it from the menu stage, back to the menu), they touched freed objects and the engine
+## crashed on exit — seen as "Nonexistent function 'logs_info' in base 'previously freed'" from a
+## mesh task, then signal 11. An entry is dropped once waited for, so each is joined exactly once.
+func _join_worker_tasks() -> void:
+	for tasks: Dictionary in [_mesh_tasks, _pending_recipes, _server_chunk_tasks, _bridge_tasks]:
+		for entry: Dictionary in tasks.values():
+			var task_id : int = int(entry.get("task_id", -1))
+			if task_id >= 0:
+				WorkerThreadPool.wait_for_task_completion(task_id)
+		tasks.clear()
 
 
 # ------------------------------------------------------------------

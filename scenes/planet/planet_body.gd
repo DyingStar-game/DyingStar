@@ -728,6 +728,11 @@ func _on_planet_data_changed() -> void:
 		_setup_planet()
 
 
+## The system star this body is lit by, or null (see _find_sun).
+func star() -> Node3D:
+	return _find_sun()
+
+
 func _find_sun() -> Node3D:
 	## Walk siblings of the planet in the universe scene looking for the star.
 	var parent := get_parent()

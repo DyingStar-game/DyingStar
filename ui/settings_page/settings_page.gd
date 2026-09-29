@@ -1,5 +1,12 @@
 extends CanvasLayer
 
+## The category on show changed (its translation key, e.g. the graphics one) — the main menu stage
+## glides to match it.
+signal category_changed(key: String)
+
+## Set before adding the page: no opaque background, only a veil, so the menu stage shows through.
+## The pause menu keeps the default.
+var see_through : bool = false
 var general_settings : PackedScene = preload("res://ui/settings_page/general_page/general_settings_page.tscn")
 var graphic_settings : PackedScene = preload("res://ui/settings_page/graphical_page/graphical_settings_page.tscn")
 var audio_settings : PackedScene = preload("res://ui/settings_page/audio_page/audio_settings_page.tscn")
@@ -17,6 +24,15 @@ var _category_key : String = ""
 @onready var settings_container : SubViewport = $Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer/SubViewport
 
 func _ready() -> void:
+	if see_through:
+		var background : TextureRect = $Control/Background
+		background.visible = false
+		var veil := ColorRect.new()
+		veil.color = Color(0.0, 0.0, 0.0, 0.35)
+		veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		$Control.add_child(veil)
+		$Control.move_child(veil, background.get_index())
 	_category_buttons = [general_button, graphic_button, audio_button, control_button]
 	return_button.pressed.connect(queue_free)
 	general_button.pressed.connect(
@@ -37,6 +53,7 @@ func open_settings(settings : PackedScene, active_button : Button, category_key 
 	settings_container.add_child(settings.instantiate())
 	_category_key = category_key
 	_apply_title()
+	category_changed.emit(category_key)
 	# Mark the active category (persists after the click) and reset the others.
 	for button in _category_buttons:
 		var label : Label = button.get_node("Label")
