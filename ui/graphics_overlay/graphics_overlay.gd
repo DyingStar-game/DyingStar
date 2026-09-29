@@ -11,10 +11,14 @@ extends CanvasLayer
 ## and puts the mining tool down, exactly as for an in-world screen. While the pointer is NOT held,
 ## the panel neither takes clicks nor keyboard focus, so a captured-mouse click can never land on it.
 ##
-## AltGr is the RIGHT Alt key. On Windows it also sends a fake left Ctrl, so every key pressed while
+## AltGr is the RIGHT Alt key, tracked by AltGr (see there for its fake Ctrl). Every key pressed while
 ## it is held arrives as Ctrl+Alt+key — which would trigger the Alt shortcuts (Alt+T opens the spawn
-## wheel, for one). Keys are swallowed while it is held for that reason. And it is left alone while
-## the player types (chat, a screen's text field): on an AZERTY keyboard AltGr is how @ # { } are typed.
+## wheel, for one), so keys are swallowed while the panel holds the pointer. And AltGr is left alone
+## while the player types (chat, a screen's text field): on AZERTY it is how @ # { } are typed.
+##
+## Visibility is decided when the WANTED state changes, and applied to the inner panel, never to this
+## CanvasLayer: the F7 photo hides every CanvasLayer for the frame it captures, and a panel that
+## re-asserted "shown" every frame put itself back into the photo.
 
 ## Below the settings page (5) and the star map (10): the pause menu covers the overlay, not the reverse.
 const LAYER : int = 4
@@ -27,6 +31,8 @@ var _can_take_pointer : Callable = func() -> bool: return true
 ## Whether the overlay must hide (the pause menu is open). Given by PlayerClient.
 var _must_hide : Callable = func() -> bool: return false
 var _held : bool = false
+## What the overlay last decided: shown or not. The inner panel follows it; the layer is left to F7.
+var _shown : bool = false
 var _panel : PanelContainer
 var _stats : Label
 var _stats_left : float = 0.0
@@ -38,9 +44,13 @@ func setup(can_take_pointer: Callable, must_hide: Callable) -> void:
 	_must_hide = must_hide
 
 
-## True while AltGr is held over a visible overlay: the cursor belongs to the panel.
+## True while AltGr is held over a shown overlay: the cursor belongs to the panel.
 func wants_pointer() -> bool:
-	return visible and _held
+	return _shown and _held
+
+
+func is_shown() -> bool:
+	return _shown
 
 
 func _ready() -> void:
@@ -56,7 +66,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_visibility()
-	if not visible:
+	if _pointer_wanted() != _held:
+		_set_held(not _held)
+	if not _shown:
 		return
 	_stats_left -= delta
 	if _stats_left <= 0.0:
@@ -66,17 +78,8 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not visible:
-		return
-	if event is InputEventKey and event.keycode == KEY_ALT and event.location == KEY_LOCATION_RIGHT:
-		if event.pressed and not event.echo and _can_take_pointer.call():
-			_set_held(true)
-			get_viewport().set_input_as_handled()
-		elif not event.pressed and _held:
-			_set_held(false)
-			get_viewport().set_input_as_handled()
-		return
-	if not _held:
+	# Read AltGr itself rather than _held: a key pressed in the same frame as AltGr must be caught too.
+	if not _pointer_wanted():
 		return
 	# See the class comment: every key now carries the fake Ctrl+Alt of AltGr.
 	if event is InputEventKey:
@@ -87,22 +90,22 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func _notification(what: int) -> void:
-	# The release of a key pressed before alt-tabbing never arrives: do not keep the pointer forever.
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		_set_held(false)
-
-
 func _on_overlay_changed(_on: bool) -> void:
 	_update_visibility()
 
 
 func _update_visibility() -> void:
 	var wanted : bool = SettingsManager.render.is_overlay_enabled() and not _must_hide.call()
-	if wanted != visible:
-		visible = wanted
-		if not wanted:
-			_set_held(false)
+	if wanted == _shown:
+		return
+	_shown = wanted
+	_panel.visible = wanted
+	if not wanted:
+		_set_held(false)
+
+
+func _pointer_wanted() -> bool:
+	return _shown and AltGr.is_held() and _can_take_pointer.call()
 
 
 func _set_held(on: bool) -> void:
@@ -119,6 +122,7 @@ func _set_held(on: bool) -> void:
 ## Left edge, full height: the scene being tuned stays in view on the right.
 func _build() -> void:
 	_panel = PanelContainer.new()
+	_panel.visible = _shown  # hidden until _update_visibility() decides otherwise
 	_panel.anchor_bottom = 1.0
 	_panel.offset_left = _MARGIN_PX
 	_panel.offset_right = _MARGIN_PX + _WIDTH_PX

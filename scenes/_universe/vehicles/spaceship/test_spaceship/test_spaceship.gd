@@ -78,7 +78,7 @@ func _physics_process(delta: float) -> void:
 
 		dir = Vector3(
 			Input.get_axis("move_left", "move_right"),
-			Input.get_axis("strafe_down", "strafe_up"),
+			AltGr.axis("strafe_down", "strafe_up"),
 			Input.get_axis("move_forward", "move_back"),
 		)
 
