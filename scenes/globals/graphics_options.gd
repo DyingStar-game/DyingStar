@@ -187,12 +187,16 @@ const OPTIONS : Array[Dictionary] = [
 		"choices": [[4.0, "%%MENU_GFX_LOW"], [2.0, "%%MENU_GFX_MEDIUM"], [1.0, "%%MENU_GFX_HIGH"],
 			[0.5, "%%MENU_GFX_ULTRA"]],
 		"default": 1.0, "viewport": "mesh_lod_threshold", "presets": [4.0, 2.0, 1.0, 0.5]},
-	# Client-side multipliers read by PlanetTerrain. They never touch what the server streams or
-	# collides with: only how far the client DRAWS what it already has.
-	{"key": "view_distance", "section": SEC_WORLD, "label": "%%MENU_GFX_VIEW_DISTANCE",
-		"help": "%%MENU_GFX_HELP_VIEW_DISTANCE", "kind": SLIDER,
+	# Client-side multipliers. They never touch what the server streams or collides with: only how far
+	# the client DRAWS what it already has. Terrain: PlanetTerrain's LOD. The other two: DrawRange.
+	{"key": "terrain_distance", "section": SEC_WORLD, "label": "%%MENU_GFX_TERRAIN_DISTANCE",
+		"help": "%%MENU_GFX_HELP_TERRAIN_DISTANCE", "kind": SLIDER,
 		"min": 0.5, "max": 2.0, "step": 0.05, "format": FORMAT_MULTIPLIER,
 		"default": 1.0, "presets": [0.6, 0.8, 1.0, 1.5]},
+	{"key": "structures_distance", "section": SEC_WORLD, "label": "%%MENU_GFX_STRUCTURES_DISTANCE",
+		"help": "%%MENU_GFX_HELP_STRUCTURES_DISTANCE", "kind": SLIDER,
+		"min": 0.5, "max": 2.0, "step": 0.05, "format": FORMAT_MULTIPLIER,
+		"default": 1.0, "presets": [0.5, 0.75, 1.0, 1.5]},
 	{"key": "foliage_distance", "section": SEC_WORLD, "label": "%%MENU_GFX_FOLIAGE_DISTANCE",
 		"help": "%%MENU_GFX_HELP_FOLIAGE_DISTANCE", "kind": SLIDER,
 		"min": 0.5, "max": 2.0, "step": 0.05, "format": FORMAT_MULTIPLIER,

@@ -1101,6 +1101,9 @@ func create_generic_object(event: Dictionary) -> void:
 			# TerrainBlend decides who qualifies and does nothing on the server -- this file has no
 			# business knowing what a fringe is.
 			TerrainBlend.attach_to(prop_instance)
+			# Same idea for draw distance: buildings (and a planet's own buildings) are drawn as far
+			# as Graphics > Roads, rails and buildings says. StructureDrawRange decides what counts.
+			StructureDrawRange.attach_to(prop_instance)
 			# Address networking via the PropSync component when present; fall back to the root
 			# (incremental migration). Physics/freeze stay on the root body.
 			var net = PropSync.of(prop_instance)

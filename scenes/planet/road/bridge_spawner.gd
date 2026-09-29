@@ -162,6 +162,8 @@ static func instantiate(prep: Dictionary, geo: Dictionary) -> Node3D:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_apply_materials(mi, deck_mat, profile.structure_material_path)
 	body.add_child(mi)
+	# A bridge is a building for Graphics > Roads, rails and buildings: drawn as far as its road.
+	DrawRange.track(mi, StructureDrawRange.OPTION, 0.0, RoadTerrain.FAR_VISIBILITY_M)
 
 	var col := CollisionShape3D.new()
 	col.name = "DeckCollision"
