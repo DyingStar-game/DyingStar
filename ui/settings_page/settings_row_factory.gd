@@ -11,6 +11,11 @@ const FONT : FontFile = preload("res://ui/Poppins-Regular.ttf")
 ## size_flags_horizontal = 10 in the scenes: expand, then shrink to the end — the control hugs the
 ## right edge whatever the label's length.
 const _PUSH_RIGHT : int = Control.SIZE_EXPAND | Control.SIZE_SHRINK_END
+## A slider's number, as a share of the control width: slider and number together are exactly as
+## wide as any other control of the line, so every right-hand column lines up.
+const _VALUE_SHARE : float = 0.3
+## HBoxContainer's gap between the slider and its number.
+const _GAP_PX : float = 4.0
 
 var label_size : int
 ## 0 keeps the theme's size, which is what the hand-written page controls use.
@@ -21,6 +26,7 @@ var control_width : float
 ## (MSAA)" made the line wider than the panel, which cut every control off on the right.
 var wrap_captions : bool
 var _label_settings : LabelSettings
+var _header_settings : LabelSettings
 
 
 func _init(label_font_size: int = SettingsStyle.FONT_SIZE, control_font_size: int = 0, width: float = 200.0,
@@ -32,16 +38,26 @@ func _init(label_font_size: int = SettingsStyle.FONT_SIZE, control_font_size: in
 	_label_settings = LabelSettings.new()
 	_label_settings.font = FONT
 	_label_settings.font_size = label_size
+	_header_settings = LabelSettings.new()
+	_header_settings.font = FONT
+	_header_settings.font_size = label_size + 1
 
 
-## A heading between groups of lines: the amber "you are here" colour, capitals — the controls
-## page's family headings, so both pages speak the same visual language.
+## A heading between groups of lines: the amber "you are here" colour, capitals, a step above the
+## lines, and a rule under it across the width that separates it from the group above.
 func header(text_key: String) -> Label:
 	var label := Label.new()
 	label.text = text_key
 	label.uppercase = true
 	label.modulate = SettingsStyle.ACTIVE_COLOR
-	label.label_settings = _label_settings
+	label.label_settings = _header_settings
+	var rule := StyleBoxFlat.new()
+	rule.bg_color = Color.TRANSPARENT
+	rule.border_width_bottom = 1
+	rule.border_color = SettingsStyle.HEADER_RULE
+	rule.content_margin_top = 12.0
+	rule.content_margin_bottom = 4.0
+	label.add_theme_stylebox_override("normal", rule)
 	_wrap(label)
 	return label
 
@@ -100,7 +116,7 @@ func slider(min_value: float, max_value: float, step: float) -> HSlider:
 	bar.min_value = min_value
 	bar.max_value = max_value
 	bar.step = step
-	bar.custom_minimum_size = Vector2(control_width * 0.8, 0)
+	bar.custom_minimum_size = Vector2(control_width * (1.0 - _VALUE_SHARE) - _GAP_PX, 0)
 	bar.size_flags_horizontal = _PUSH_RIGHT
 	bar.size_flags_vertical = Control.SIZE_FILL
 	return bar
@@ -109,9 +125,9 @@ func slider(min_value: float, max_value: float, step: float) -> HSlider:
 ## The number shown beside a slider.
 func value_label() -> Label:
 	var label := Label.new()
-	label.custom_minimum_size = Vector2(control_width * 0.45, 0)
+	label.custom_minimum_size = Vector2(control_width * _VALUE_SHARE, 0)
 	label.label_settings = _label_settings
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	return label
 
 

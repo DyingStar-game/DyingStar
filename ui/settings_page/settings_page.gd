@@ -13,6 +13,8 @@ const CATEGORIES : Dictionary = {
 	"%%MENU_CAT_CONTROLS": preload("res://ui/settings_page/control_page/control_settings_page.tscn"),
 }
 const _TAB_FONT_SIZE : int = 18
+## Every page's controls one step under the captions (which keep their LabelSettings).
+const _PAGE_THEME : Theme = preload("res://ui/settings_page/settings_theme.tres")
 ## Under the host's TopBar, which stays over this page (its arrow is the way back).
 const _GAP_UNDER_BAR_PX : float = 16.0
 const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
@@ -63,6 +65,8 @@ func open(category_key: String) -> void:
 		return
 	for child in settings_container.get_children():
 		child.queue_free()
-	settings_container.add_child((CATEGORIES[category_key] as PackedScene).instantiate())
+	var page : Control = (CATEGORIES[category_key] as PackedScene).instantiate()
+	page.theme = _PAGE_THEME
+	settings_container.add_child(page)
 	tabs.set_active(StringName(category_key))
 	category_changed.emit(category_key)
