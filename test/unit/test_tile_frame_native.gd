@@ -260,8 +260,11 @@ func test_the_whole_sphere_samples_identically_without_data() -> void:
 ## The corundum cracks carved by the sampler (CrackCarve), C# against GDScript: AUTO (the zone rule,
 ## answered by the frame over a tile with no zone) and CARVE (a chunk's normal probes), at full detail and
 ## at a chunk's pitch, on chunks a POI sphere half covers — its ramp is the crack factor. Both paths reach
-## the Voronoi through CrackVoronoiNative, so this holds on Windows too (see test_crack_voronoi_native.gd
+## the Voronoi through CrackVoronoiNative, the same on every machine (see test_crack_voronoi_native.gd
 ## for the Voronoi itself against the Linux reference). Non-vacuous: the carve is asserted to be there.
+## Bit for bit where the engine and .NET share the libm (Linux); elsewhere within a micrometre, as the
+## reference heights below: over these 57 624 samples Windows' Math.Atan2 sits an ulp off the engine's
+## atan2 in the BASE sampler at two uncarved ones (7.7e-9 m, CI run 36599103278).
 func test_the_cracks_sample_identically() -> void:
 	var setup: Array = _whole_sphere()
 	var pd = setup[0]
@@ -287,6 +290,7 @@ func test_the_cracks_sample_identically() -> void:
 			var served: int = 0
 			var carved: int = 0
 			var ramped: int = 0
+			var worst: float = 0.0
 			var first: String = ""
 			for ipix: int in chunks:
 				var frames: Array = _frames(pd, 1024, ipix)
@@ -312,10 +316,14 @@ func test_the_cracks_sample_identically() -> void:
 						served += 1
 						if c != b:
 							differ += 1
-							if first == "":
+							if absf(c - b) > worst:
+								worst = absf(c - b)
 								first = "%s: C# %s, GDScript %s" % [str(d), String.num(c, 14), String.num(b, 14)]
 			var label: String = "mode %d, pitch %.0f" % [mode, pitch]
-			assert_eq(differ, 0, "%s: every sample equal: %s" % [label, first])
+			if OS.get_name() == "Linux":
+				assert_eq(differ, 0, "%s: every sample equal: %s" % [label, first])
+			else:
+				assert_lte(worst, 1.0e-6, "%s: %d samples off, within a micrometre: %s" % [label, differ, first])
 			# A rim sample in a crack of the NEXT export tile is left to GDScript under AUTO (the frame
 			# holds the zone rule of its own tile only); everything else is the C#'s.
 			assert_gt(served, int(chunks.size() * 49 * 49 * 0.97), "%s: the C# answered (%d)" % [label, served])
