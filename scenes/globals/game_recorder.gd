@@ -36,7 +36,7 @@ func is_recording() -> bool:
 
 func start_recording() -> void:
 	# Next to the F7 shots: <game folder>/screenshots/records/ (see CapturePaths).
-	_filepath = CapturePaths.screenshots_dir("records").path_join("record_%s.avi" % CapturePaths.stamp())
+	_filepath = CapturePaths.videos_dir().path_join("record_%s.avi" % CapturePaths.stamp())
 	_file = FileAccess.open(_filepath, FileAccess.WRITE)
 	if _file == null:
 		push_warning("GameRecorder: cannot open %s" % _filepath)

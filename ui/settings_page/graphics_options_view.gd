@@ -58,9 +58,7 @@ func _build_preset(container: Container) -> void:
 	_preset_line = line
 	var hint : HBoxContainer = _factory.row("")
 	_recommended = hint.get_child(0)
-	var apply := _factory.toggle()
-	apply.toggle_mode = false
-	apply.text = "%%MENU_GFX_APPLY_RECOMMENDED"
+	var apply : Button = _factory.button("%%MENU_GFX_APPLY_RECOMMENDED")
 	apply.pressed.connect(func() -> void:
 		SettingsManager.render.apply_preset(SettingsManager.render.detected()))
 	hint.add_child(apply)

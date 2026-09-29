@@ -3,6 +3,10 @@ extends RefCounted
 ## Where the client's captures land, and what they are called. Shared by the F6 recorder and the F7
 ## screenshot, so the two can never disagree on a file name or on what "the game folder" means.
 
+## Sub-folders of screenshots_dir(): the F8 bug-report shots, the F6 recordings.
+const DEBUG_SUB : String = "debug"
+const RECORDS_SUB : String = "records"
+
 
 ## A file-name-safe timestamp: "2026-09-27T14-05-33" (Windows refuses ":" in a file name).
 static func stamp() -> String:
@@ -30,10 +34,25 @@ static func screenshots_dir(sub: String = "") -> String:
 	return documents_dir(rel)
 
 
-## Open the screenshot folder in the OS file manager (Explorer, Finder, the Linux one) — the
-## "Gallery" button of Settings > Video. Created first, so the button works before the first shot.
-static func open_gallery() -> void:
-	OS.shell_show_in_file_manager(screenshots_dir(), true)
+## Where the F6 recordings land.
+static func videos_dir() -> String:
+	return screenshots_dir(RECORDS_SUB)
+
+
+## The two "Open" buttons of Settings > Graphics > Gallery: the F7 photos (the F8 shots are in a
+## sub-folder of it), and the F6 recordings.
+static func open_screenshots() -> void:
+	_open(screenshots_dir())
+
+
+static func open_videos() -> void:
+	_open(videos_dir())
+
+
+## In the OS file manager (Explorer, Finder, the Linux one). The folder is created first by the
+## *_dir() call, so the button works before the first capture.
+static func _open(dir: String) -> void:
+	OS.shell_show_in_file_manager(dir, true)
 
 
 static func game_dir() -> String:

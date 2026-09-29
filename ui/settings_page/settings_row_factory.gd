@@ -82,10 +82,17 @@ func option_button() -> OptionButton:
 
 ## The settings pages' toggle: a Button showing On / Off, never a CheckBox.
 func toggle() -> Button:
-	var button := Button.new()
-	button.toggle_mode = true
-	_style_control(button)
-	return button
+	var switch : Button = button("")
+	switch.toggle_mode = true
+	return switch
+
+
+## A plain push button showing `text_key` ("Open", "Apply").
+func button(text_key: String) -> Button:
+	var push := Button.new()
+	push.text = text_key
+	_style_control(push)
+	return push
 
 
 func slider(min_value: float, max_value: float, step: float) -> HSlider:
