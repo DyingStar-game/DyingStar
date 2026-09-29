@@ -128,7 +128,7 @@ func _refresh() -> void:
 		var current : String = render.preset()
 		_preset.select(GraphicsOptions.PRESETS.find(current) if current in GraphicsOptions.PRESETS
 			else GraphicsOptions.PRESETS.size())
-		_preset_line.tooltip_text = tr("%%MENU_GFX_HELP_PRESET")
+		_preset_line.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_PRESET"))
 		_preset.tooltip_text = _preset_line.tooltip_text
 		_recommended.text = tr("%%MENU_GFX_RECOMMENDED") % [render.caps.get("adapter", "?"),
 			tr(GraphicsOptions.PRESET_LABELS[render.detected()])]
@@ -153,7 +153,7 @@ func _refresh_row(render: RenderSettings, entry: Dictionary) -> void:
 			for i in picker.item_count:
 				var usable : bool = render.choice_available(key, picker.get_item_metadata(i))
 				picker.set_item_disabled(i, not usable)
-				picker.set_item_tooltip(i, "" if usable else tr(GraphicsOptions.WHY_RENDERER))
+				picker.set_item_tooltip(i, "" if usable else SettingsText.tooltip(tr(GraphicsOptions.WHY_RENDERER)))
 				if GraphicsOptions.same(picker.get_item_metadata(i), value):
 					picker.select(i)
 			picker.disabled = why != ""
@@ -166,7 +166,7 @@ func _refresh_row(render: RenderSettings, entry: Dictionary) -> void:
 	# every language switch anyway.
 	# What the option does, always; why it is greyed, first, when it is.
 	var help : String = tr(option.get("help", ""))
-	var tip : String = help if why == "" else tr(why) + "\n\n" + help
+	var tip : String = SettingsText.tooltip(help if why == "" else tr(why) + "\n\n" + help)
 	# On the whole LINE, not only its caption: hovering the gap between the caption and the control
 	# explains the option too. The control carries it as well, since it stops the mouse itself.
 	entry["line"].tooltip_text = tip
