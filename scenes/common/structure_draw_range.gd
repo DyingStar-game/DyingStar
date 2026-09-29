@@ -22,7 +22,8 @@ const FAR_M : float = RoadTerrain.FAR_VISIBILITY_M
 static func attach_to(root: Node) -> void:
 	if root == null or Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
 		return
-	if _moves(root) or root is PlanetTerrain:
+	# The station is not a building, and nothing in it is: it must stay visible from the ground.
+	if _moves(root) or root is PlanetTerrain or root is OrbitalStation:
 		return
 	if is_building(root):
 		_cover(root)

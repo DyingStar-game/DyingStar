@@ -29,7 +29,6 @@ extends RefCounted
 ##   client_ini  client.ini debug keys that override this option (they win, the row is greyed)
 ##   viewport  the root Viewport property it sets as-is (otherwise RenderApplier maps it)
 ##   environment  true when it lives on the world Environment (applied when one is attached)
-##   commit_on_release  SLIDER only: apply when the drag ends, not on every step (buffer realloc)
 
 const SECTION : String = "video"
 ## Preset names, cheapest first. Index i of an option's "presets" is the value for PRESETS[i].
@@ -85,7 +84,7 @@ const OPTIONS : Array[Dictionary] = [
 	# Capped at 100 %: above it FSR falls back to bilinear, and supersampling is not what it is for.
 	{"key": "render_scale", "section": SEC_AA, "label": "%%MENU_GFX_RENDER_SCALE",
 		"help": "%%MENU_GFX_HELP_RENDER_SCALE", "kind": SLIDER,
-		"min": 0.5, "max": 1.0, "step": 0.05, "format": FORMAT_PERCENT, "commit_on_release": true,
+		"min": 0.5, "max": 1.0, "step": 0.05, "format": FORMAT_PERCENT,
 		"default": 1.0, "viewport": "scaling_3d_scale", "presets": [0.75, 1.0, 1.0, 1.0]},
 	# Stored as sharpness (1 = sharpest) because that is what the slider says; the engine's
 	# fsr_sharpness runs the other way, 0 = sharpest .. 2. 0.9 is the engine default 0.2.
