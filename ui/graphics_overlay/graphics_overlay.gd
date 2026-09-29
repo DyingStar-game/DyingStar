@@ -134,13 +134,14 @@ func _build() -> void:
 	add_child(_panel)
 	var column := VBoxContainer.new()
 	_panel.add_child(column)
-	var factory := SettingsRowFactory.new(15, 14, 150.0)
+	var factory := SettingsRowFactory.new(15, 14, 150.0, true)
 	_stats = factory.header("")
 	_stats.uppercase = false
 	column.add_child(_stats)
 	var hint := Label.new()
 	hint.text = "%%MENU_GFX_OVERLAY_HINT"
 	hint.add_theme_font_size_override("font_size", 13)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.modulate = SettingsStyle.INACTIVE_COLOR * Color(1, 1, 1, 0.7)
 	column.add_child(hint)
 	var scroll := ScrollContainer.new()

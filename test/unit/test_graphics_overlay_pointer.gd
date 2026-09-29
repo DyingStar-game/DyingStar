@@ -73,3 +73,18 @@ func test_losing_the_window_drops_the_pointer() -> void:
 	_overlay._input(_alt(true))
 	_overlay._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	assert_false(_overlay.wants_pointer(), "the release never arrives after an alt-tab")
+
+
+
+func test_every_caption_wraps_instead_of_widening_the_panel() -> void:
+	# An unwrapped caption ("Anticrénelage multi-échantillons (MSAA)") made its line wider than the
+	# panel and cut the controls off on the right. Checked structurally: headless runs measure no
+	# text, so a width test would pass whether the captions wrap or not.
+	var captions : Array[Node] = _overlay._panel.find_children("*", "Label", true, false)
+	assert_gt(captions.size(), GraphicsOptions.OPTIONS.size(), "the lines were built")
+	for caption in captions:
+		if (caption as Label).label_settings == null:
+			continue  # a slider's number: short by construction
+		if caption.get_parent() is HBoxContainer and caption.get_index() > 0:
+			continue  # same: the value beside a slider
+		assert_ne((caption as Label).autowrap_mode, TextServer.AUTOWRAP_OFF, "'%s' wraps" % caption.text)
