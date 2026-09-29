@@ -11,6 +11,7 @@ const CATEGORIES : Dictionary = {
 	"%%MENU_CAT_GRAPHICS": preload("res://ui/settings_page/graphical_page/graphical_settings_page.tscn"),
 	"%%MENU_CAT_AUDIO": preload("res://ui/settings_page/audio_page/audio_settings_page.tscn"),
 	"%%MENU_CAT_CONTROLS": preload("res://ui/settings_page/control_page/control_settings_page.tscn"),
+	"%%MENU_CAT_DEBUG": preload("res://ui/settings_page/debug_page/debug_settings_page.tscn"),
 }
 const _TAB_FONT_SIZE : int = 18
 ## Every page's controls one step under the captions (which keep their LabelSettings).

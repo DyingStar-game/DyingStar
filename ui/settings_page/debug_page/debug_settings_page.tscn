@@ -1,0 +1,147 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://ui/settings_page/debug_page/debug_settings_page.gd" id="1_gen"]
+[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_pcucv"]
+[ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
+
+[node name="DebugSettingsPage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_gen")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0.055, 0.07, 0.6)
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="ShowDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShowDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_SHOW_DEBUG"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/ShowDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"
+
+[node name="CargoDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_CARGO_DEBUG"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"
+
+[node name="CelestialGizmos" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_CELESTIAL_MARKERS"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"
+
+[node name="SurfaceDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_SURFACE_DEBUG"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"
+
+[node name="VehicleHud" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/VehicleHud"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_VEHICLE_HUD"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VehicleHud"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"
+
+[node name="MovementDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/MovementDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_MOVEMENT_DEBUG"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/MovementDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"
+

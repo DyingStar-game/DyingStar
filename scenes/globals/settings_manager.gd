@@ -45,6 +45,8 @@ var language : LanguageSettings
 var render : RenderSettings
 ## Hands `render` to the game view. Client only: null on a dedicated server, which draws nothing.
 var render_applier : RenderApplier = null
+## Settings > General > Interface size. Same arrangement as `language`; applied to the root window.
+var ui_scale : UiScaleSettings
 ## The saved keybindings as action -> key text, empty when nothing was ever remapped. Kept so the
 ## controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
@@ -52,6 +54,7 @@ var keybindings : Dictionary = {}
 func _ready() -> void:
 	language = LanguageSettings.new(config, save_settings)
 	render = RenderSettings.new(config, save_settings)
+	ui_scale = UiScaleSettings.new(config, save_settings, get_tree().root)
 	if OS.has_feature("dedicated_server"):
 		return
 	render.caps = RenderSettings.current_caps()
@@ -69,6 +72,7 @@ func _ready() -> void:
 	# Re-apply the saved settings to the window on startup (this is what was missing: they were
 	# loaded but never applied, so they appeared not to persist).
 	apply_settings()
+	ui_scale.apply()
 	load_keybindings()
 
 ## Apply the saved keybindings over the project defaults. Safe to call again: it rebuilds each action
