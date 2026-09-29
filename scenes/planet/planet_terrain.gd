@@ -143,14 +143,13 @@ var _editor_biome_focus: Node3D = null
 ## finest depth (so the render could never match the always-finest collision).
 var _cam_alt_above_surface: float = 0.0
 
-## Graphics > View distance: stretches (> 1) or compresses (< 1) the LOD distance of every chunk
+## Graphics > Terrain distance: stretches (> 1) or compresses (< 1) the LOD distance of every chunk
 ## BEYOND this radius around the camera. Inside it the ground is always cut at full detail, so the
 ## render keeps matching the always-finest server collision under the player (see above).
 const VIEW_DISTANCE_NEAR_M := 200.0
-## Graphics > View distance / Vegetation distance, re-read once per LOD update (client only; the
-## server keeps 1.0 and so its traversal, cache keys and all, is exactly what it always was).
-var _view_mult: float = 1.0
-var _foliage_mult: float = 1.0
+## Graphics > Terrain distance, re-read once per LOD update (client only; the server keeps 1.0 and
+## so its traversal, cache keys and all, is exactly what it always was).
+var _terrain_mult: float = 1.0
 
 var _chunks_node: Node3D
 var _collision_body: StaticBody3D
@@ -2339,7 +2338,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
 	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_cam_alt_above_surface), _view_mult)
+		_cam_alt_above_surface), _terrain_mult)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
@@ -2390,7 +2389,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 		}
 
 
-## A chunk's LOD distance as Graphics > View distance sees it: unchanged within
+## A chunk's LOD distance as Graphics > Terrain distance sees it: unchanged within
 ## VIEW_DISTANCE_NEAR_M of the camera, stretched (mult > 1: detail reaches
 ## further) or compressed (mult < 1) beyond — continuous at the boundary, so
 ## no chunk jumps a level for crossing it.
@@ -2400,46 +2399,12 @@ static func _view_scaled(dist: float, mult: float) -> float:
 	return VIEW_DISTANCE_NEAR_M + (dist - VIEW_DISTANCE_NEAR_M) / mult
 
 
-## Re-read the two distance options; when one moved, rescale the decorations
-## already on screen (new chunks are built with the new value). The LOD itself
-## needs nothing: the traversal that follows uses _view_mult.
+## Re-read Graphics > Terrain distance. The traversal that follows uses it; nothing else to do —
+## the decorations' distances (grass, trees, roads, rails) follow their own options through DrawRange.
 func _sync_distance_options() -> void:
 	if Engine.is_editor_hint():
 		return  # no SettingsManager in the editor: the preview keeps 1.0
-	var view : float = SettingsManager.render.effective("view_distance")
-	var foliage : float = SettingsManager.render.effective("foliage_distance")
-	var view_moved : bool = not is_equal_approx(view, _view_mult)
-	var foliage_moved : bool = not is_equal_approx(foliage, _foliage_mult)
-	_view_mult = view
-	_foliage_mult = foliage
-	if not (view_moved or foliage_moved):
-		return
-	for info in _active_chunks.values():
-		if foliage_moved:
-			for part in ["meadow", "forest"]:
-				_scale_draw_range(info.get(part), _foliage_mult)
-		if view_moved:
-			_scale_draw_range(info.get("roads_mi"), _view_mult)
-			var rails: Node = info.get("railway_rails")
-			if is_instance_valid(rails):
-				for rail in rails.get_children():
-					_scale_draw_range(rail, _view_mult)
-
-
-## Give a chunk decoration its draw distance: [begin, end] scaled by `mult`.
-## The unscaled band is kept on the node, so a later change of the option
-## rescales from it instead of compounding.
-static func _set_draw_range(node: GeometryInstance3D, begin: float, end: float, mult: float) -> void:
-	node.set_meta(&"draw_range", Vector2(begin, end))
-	_scale_draw_range(node, mult)
-
-
-static func _scale_draw_range(node: Variant, mult: float) -> void:
-	if not (is_instance_valid(node) and node is GeometryInstance3D and node.has_meta(&"draw_range")):
-		return
-	var band: Vector2 = node.get_meta(&"draw_range")
-	node.visibility_range_begin = band.x * mult
-	node.visibility_range_end = band.y * mult
+	_terrain_mult = DrawRange.multiplier("terrain_distance")
 
 
 ## The leaf record _traverse would have written for (nside, ipix) — for the
@@ -2449,7 +2414,7 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
 	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_cam_alt_above_surface), _view_mult)
+		_cam_alt_above_surface), _terrain_mult)
 	var key := _chunk_key_hp(nside, ipix)
 	return {
 		"key": key,
@@ -3534,7 +3499,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 					grass_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				var corners_grass: Array = HEALPix.get_pixel_corners(info.nside, info.ipix)
 				var chunk_diag: float = (corners_grass[0] * planet_data.radius).distance_to(corners_grass[2] * planet_data.radius)
-				_set_draw_range(grass_mmi, 0.0, chunk_diag * 2.0, _foliage_mult)
+				DrawRange.track(grass_mmi, "foliage_distance", 0.0, chunk_diag * 2.0)
 				grass_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				_chunks_node.add_child(grass_mmi)
 				info["meadow"] = grass_mmi
@@ -3557,7 +3522,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				tree_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 				var corners_tree: Array = HEALPix.get_pixel_corners(info.nside, info.ipix)
 				var chunk_diag: float = (corners_tree[0] * planet_data.radius).distance_to(corners_tree[2] * planet_data.radius)
-				_set_draw_range(tree_mmi, 0.0, chunk_diag * 3.0, _foliage_mult)
+				DrawRange.track(tree_mmi, "foliage_distance", 0.0, chunk_diag * 3.0)
 				tree_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 				_chunks_node.add_child(tree_mmi)
 				info["forest"] = tree_mmi
@@ -3591,8 +3556,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				# picks the tier per group, the coarsest one up to the chunk's
 				# own limit.
 				var r_end: float = float(grp["range_end"])
-				_set_draw_range(rail_mmi, float(grp["range_begin"]),
-					rail_far if r_end <= 0.0 else minf(r_end, rail_far), _view_mult)
+				DrawRange.track(rail_mmi, "structures_distance", float(grp["range_begin"]),
+					rail_far if r_end <= 0.0 else minf(r_end, rail_far))
 				rail_mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				rail_mmi.layers = mi.layers
 				rails.add_child(rail_mmi)
@@ -4262,7 +4227,7 @@ func _split_road_surfaces(info: Dictionary, mi: MeshInstance3D, mesh: ArrayMesh,
 	# like the rail modules. A flat cap, not a chunk-diagonal multiple: a
 	# LOD-0 chunk lives up to 5 km away and its road must not vanish before
 	# the chunk itself changes LOD.
-	_set_draw_range(roads_mi, 0.0, RoadTerrain.FAR_VISIBILITY_M, _view_mult)
+	DrawRange.track(roads_mi, "structures_distance", 0.0, RoadTerrain.FAR_VISIBILITY_M)
 	roads_mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	mi.add_child(roads_mi)
 	info["roads_mi"] = roads_mi
