@@ -1,11 +1,17 @@
 class_name MainPage
 extends CanvasLayer
 
-## Which screen is showing: &"home", &"settings", or &"settings_graphics". The menu stage (when the
-## menu stands on one) glides its camera to match; the menu itself knows nothing of any stage.
+## Which screen is showing: &"home", or one per settings category (SCREEN_OF_CATEGORY). The menu
+## stage (when the menu stands on one) glides its camera to match; the menu knows nothing of any stage.
 signal screen_changed(screen: StringName)
 ## The home screen's graphics-quality button was pressed: the stage opens its tuning scene.
 signal tuning_requested
+
+## The screen each settings category is: a viewpoint of the stage has the same key.
+const SCREEN_OF_CATEGORY : Dictionary = {
+	"%%MENU_CAT_GENERAL": &"settings", "%%MENU_CAT_GRAPHICS": &"settings_graphics",
+	"%%MENU_CAT_AUDIO": &"settings_audio", "%%MENU_CAT_CONTROLS": &"settings_controls",
+}
 
 const LOGO : Texture2D = preload("res://ui/main_page/dyingstar-logo.png")
 const _LOGO_WIDTH_PX : float = 620.0
@@ -79,7 +85,7 @@ func _on_settings_closed() -> void:
 
 
 func _on_category_changed(key: String) -> void:
-	screen_changed.emit(&"settings_graphics" if key == "%%MENU_CAT_GRAPHICS" else &"settings")
+	screen_changed.emit(SCREEN_OF_CATEGORY.get(key, &"settings"))
 
 
 ## A live 3D stage now stands behind the menu (MenuStage): drop the still image, show the logo alone.
