@@ -42,13 +42,23 @@ theme_override_constants/margin_bottom = 24
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer" unique_id=583741141]
+[node name="Body" type="HBoxContainer" parent="Control/MarginContainer/VBoxContainer" unique_id=1945802311]
 layout_mode = 2
 size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer/Body" unique_id=583741141]
+layout_mode = 2
+size_flags_horizontal = 3
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/SubViewportContainer" unique_id=345904400]
+[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/Body/SubViewportContainer" unique_id=345904400]
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1824, 932)
+size = Vector2i(912, 932)
 render_target_update_mode = 4
+
+[node name="Scenery" type="Control" parent="Control/MarginContainer/VBoxContainer/Body" unique_id=1945802312]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
