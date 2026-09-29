@@ -39,18 +39,33 @@ var config : ConfigFile = ConfigFile.new()
 ## the settings still have a single home and a single writer. Built in _ready(), before the
 ## dedicated-server early return, so it is never null even where nothing displays text.
 var language : LanguageSettings
+## The rendering options (anti-aliasing, upscaling, shadows, effects, distances). Same arrangement
+## as `language`: our ConfigFile and our save call, built before the dedicated-server return so it
+## is never null. It knows nothing of the engine; `render_applier` does.
+var render : RenderSettings
+## Hands `render` to the game view. Client only: null on a dedicated server, which draws nothing.
+var render_applier : RenderApplier = null
 ## The saved keybindings as action -> key text, empty when nothing was ever remapped. Kept so the
 ## controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
 
 func _ready() -> void:
 	language = LanguageSettings.new(config, save_settings)
+	render = RenderSettings.new(config, save_settings)
 	if OS.has_feature("dedicated_server"):
 		return
-	# First run (no file yet): write the defaults so there is something to load.
-	if config.load(CONFIG_FILEPATH) != OK:
+	render.caps = RenderSettings.current_caps()
+	# First run (no file yet): write the defaults so there is something to load — and start the
+	# rendering options on the preset guessed for this GPU. An existing file gets nothing new.
+	var first_run : bool = config.load(CONFIG_FILEPATH) != OK
+	if first_run:
 		initialize_settings()
+	render.ensure_initialized(first_run)
+	if first_run:
 		save_settings()
+	# The root window, not a page's viewport: the settings pages live in a SubViewport.
+	render_applier = RenderApplier.new(render, get_tree().root)
+	render.changed.connect(_on_render_changed)
 	# Re-apply the saved settings to the window on startup (this is what was missing: they were
 	# loaded but never applied, so they appeared not to persist).
 	apply_settings()
@@ -86,10 +101,8 @@ func initialize_settings():
 	config.set_value("video", "fov", 100.0)
 	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
-	# Real-time shadows on by default; players on weak GPUs can turn them off in Graphics settings.
-	config.set_value("video", "shadows", true)
-	# Directional (sun) shadow draw distance in metres. Bigger = shadows further out but softer/costlier.
-	config.set_value("video", "shadow_distance", 300.0)
+	# The rendering options (shadows included) are not listed here: GraphicsOptions owns their
+	# defaults, and RenderSettings.ensure_initialized() writes the preset guessed for this GPU.
 	config.set_value("general", "cargo_debug", false)
 	# Off by default: labelled markers pointing at the star and every planet/moon (dev/orientation aid).
 	config.set_value("general", "celestial_gizmos", false)
@@ -131,6 +144,9 @@ func apply_settings():
 	Engine.max_fps = int(config.get_value("video", "max_fps", 144))
 	apply_audio_settings()
 	language.apply()
+	# Before the dev-mode return below: dev mode is about the WINDOW, not about how the game looks.
+	if render_applier != null:
+		render_applier.apply_all()
 	if config.get_value("video", "dev_mode", false):
 		return
 	if config.has_section_key("video", "monitor"):
@@ -185,24 +201,22 @@ func set_max_fps(fps: int) -> void:
 	save_video_settings("max_fps", fps)
 	save_settings()
 
-## Real-time shadows on/off (drives the day/night sun's shadow_enabled). Persisted under [video];
-## emits so the sun toggles its shadow live without a restart. Default true.
-func set_shadows(on: bool) -> void:
-	save_video_settings("shadows", on)
-	save_settings()
-	shadows_changed.emit(on)
-
+## Real-time shadows on/off (drives the day/night sun's shadow_enabled). Now one of the rendering
+## options — written through `render` by the Graphics page and the overlay; kept here, with its
+## signal, because the sun and the moons read it from here.
 func is_shadows() -> bool:
-	return config.get_value("video", "shadows", true)
+	return render.effective("shadows")
 
-## Sun shadow draw distance (metres). Persisted under [video]; emits so the sun updates live. Default 300.
-func set_shadow_distance(distance: float) -> void:
-	save_video_settings("shadow_distance", distance)
-	save_settings()
-	shadow_distance_changed.emit(distance)
-
+## Sun shadow draw distance (metres), a rendering option too. See is_shadows().
 func get_shadow_distance() -> float:
-	return config.get_value("video", "shadow_distance", 300.0)
+	return render.effective("shadow_distance")
+
+## The two shadow options predate RenderSettings and have listeners of their own: keep telling them.
+func _on_render_changed(keys: PackedStringArray) -> void:
+	if "shadows" in keys:
+		shadows_changed.emit(is_shadows())
+	if "shadow_distance" in keys:
+		shadow_distance_changed.emit(get_shadow_distance())
 
 # ── Audio (single source of truth for the audio settings page) ──
 

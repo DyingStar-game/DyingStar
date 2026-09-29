@@ -17,8 +17,8 @@ var player: Node3D = null
 ## The sun whose star direction we reuse (set by PlayerClient; never recomputed here).
 var sun: PlayerSunLight = null
 
-## Trades quality for cost on the main view. Wired to the graphics settings later; until then
-## `debug_atmo_view_steps` / `debug_atmo_light_steps` in client.ini override them (see _ready).
+## Trades quality for cost on the main view. Set from Graphics > Atmosphere quality (see
+## _apply_quality); `debug_atmo_view_steps` / `debug_atmo_light_steps` in client.ini still win.
 @export var view_steps: int = 32
 @export var light_steps: int = 8
 ## Multiplies the physical-to-engine exposure derived below. 1.0 = the derived value; this is the
@@ -98,8 +98,8 @@ func _ready() -> void:
 	# 3 ms, and turning shadows off changed nothing; the two full-screen raymarches owned here
 	# (view_steps x light_steps samples per pixel, dynamic loop bounds) are the next suspect, and the
 	# player's rgpu line answers in one session once they can be thinned or removed.
-	view_steps = maxi(1, ClientConfig.get_int("debug_atmo_view_steps", view_steps))
-	light_steps = maxi(1, ClientConfig.get_int("debug_atmo_light_steps", light_steps))
+	_apply_quality()
+	SettingsManager.render.changed.connect(_on_render_changed)
 	if ClientConfig.has_key("debug_atmo_view_steps") or ClientConfig.has_key("debug_atmo_light_steps"):
 		print("[Atmosphere] !! debug_atmo_*_steps — atmosphere sampled at %d x %d instead of 32 x 8."
 			% [view_steps, light_steps])
@@ -128,8 +128,7 @@ func _build_plain_environment() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.glow_enabled = true
 	env.volumetric_fog_enabled = false
-	player.get_world_3d().environment = env
-	player.get_world_3d().camera_attributes = _build_camera_attributes()
+	_attach(env)
 
 
 ## The Environment lives on the WORLD, not on the player camera, so EVERY camera in this world gets
@@ -151,8 +150,30 @@ func _build_environment() -> void:
 	# coefficients as the sky. Keeping the old 0.002 fog on top would count the air twice, and it is
 	# what the "visibility at ground level" figure of the model would be measured against.
 	env.volumetric_fog_enabled = false
+	_attach(env)
+
+
+## Hand the new Environment to the world, with the player's effect options (SSAO, SSR, SSIL, glow)
+## applied BEFORE it is shown — and kept applied live by RenderApplier from then on.
+func _attach(env: Environment) -> void:
+	if SettingsManager.render_applier != null:
+		SettingsManager.render_applier.attach_environment(env)
 	player.get_world_3d().environment = env
 	player.get_world_3d().camera_attributes = _build_camera_attributes()
+
+
+## Graphics > Atmosphere quality -> the two raymarch step counts. The client.ini debug keys, when
+## present, keep the last word: they are measurement switches, and a menu must not undo them.
+## _push_profile() sends both every frame, so a live change needs nothing more.
+func _apply_quality() -> void:
+	var steps : Vector2i = GraphicsOptions.ATMOSPHERE_STEPS[SettingsManager.render.effective("atmosphere_quality")]
+	view_steps = maxi(1, ClientConfig.get_int("debug_atmo_view_steps", steps.x))
+	light_steps = maxi(1, ClientConfig.get_int("debug_atmo_light_steps", steps.y))
+
+
+func _on_render_changed(keys: PackedStringArray) -> void:
+	if "atmosphere_quality" in keys:
+		_apply_quality()
 
 
 ## The eye. Set on the WORLD alongside the Environment, so every camera in it adapts together —
