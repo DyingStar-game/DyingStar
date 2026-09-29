@@ -1098,14 +1098,9 @@ func create_generic_object(event: Dictionary) -> void:
 					if str(object_data["scenename"]).contains("rock_mining") else "prop:spawn"
 
 			var prop_instance = prop_scene.instantiate()
-			# Every prop that comes to rest on the ground gets a contact fringe. HERE rather than a
-			# node in each scene: one line covers the whole registry and every prop added later.
-			# TerrainBlend decides who qualifies and does nothing on the server -- this file has no
-			# business knowing what a fringe is.
-			TerrainBlend.attach_to(prop_instance)
-			# Same idea for draw distance: buildings (and a planet's own buildings) are drawn as far
-			# as Graphics > Roads, rails and buildings says. StructureDrawRange decides what counts.
-			StructureDrawRange.attach_to(prop_instance)
+			# Fringe on the ground, draw distance for buildings, no physics of its own: the dressing
+			# every client-side replica gets (see ReplicaDress; the menu stage dresses its props alike).
+			ReplicaDress.prepare(prop_instance)
 			# Address networking via the PropSync component when present; fall back to the root
 			# (incremental migration). Physics/freeze stay on the root body.
 			var net = PropSync.of(prop_instance)
@@ -1115,9 +1110,6 @@ func create_generic_object(event: Dictionary) -> void:
 				prop_instance.owner = get_tree().current_scene
 			)
 
-			prop_instance.set_physics_process(false)
-			if prop_instance is RigidBody3D:
-				prop_instance.freeze = true
 			net.uuid = object_id
 
 			# client_channel_data_update must be called before parent for the position
