@@ -1,7 +1,0 @@
-[gd_resource type="LabelSettings" format=3 uid="uid://bvxjqgvujwjv6"]
-
-[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="1_cryeh"]
-
-[resource]
-font = ExtResource("1_cryeh")
-font_size = 14

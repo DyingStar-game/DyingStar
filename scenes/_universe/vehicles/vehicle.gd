@@ -638,10 +638,6 @@ var _headlights_on: bool = false  # server: head lights on/off
 var _net_last_headlights: bool = false  # server: last replicated head lights, change detection
 var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer angle (rad)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
-var _hud: VehicleDebugHud = null  # driver HUD (pilot client only)
-## True while a driver is seated: the HUD is WANTED. Whether it is SHOWN also depends on the
-## player's setting — keeping the two apart is what lets the toggle work mid-drive.
-var _hud_wanted: bool = false
 var _powertrain := VehiclePowertrain.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
 ## purpose — see VehicleComponentBays.
@@ -2359,31 +2355,6 @@ func get_display_speed_kmh() -> float:
 	if _is_networked() and not GameOrchestrator.is_server():
 		return _net_speed
 	return linear_velocity.length() * 3.6
-
-## Show/hide the driver HUD. Called by the local pilot client on enter/exit (reliable,
-## no dependency on pilot_uuid replication).
-func set_driver_hud(show: bool) -> void:
-	_hud_wanted = show
-	if show and not SettingsManager.vehicle_hud_changed.is_connected(_on_vehicle_hud_setting):
-		# Connected only while someone drives, so a parked truck carries no listener.
-		SettingsManager.vehicle_hud_changed.connect(_on_vehicle_hud_setting)
-	elif not show and SettingsManager.vehicle_hud_changed.is_connected(_on_vehicle_hud_setting):
-		SettingsManager.vehicle_hud_changed.disconnect(_on_vehicle_hud_setting)
-	_refresh_driver_hud()
-
-## The setting changed while we are at the wheel: appear or vanish without leaving the seat.
-func _on_vehicle_hud_setting(_on: bool) -> void:
-	_refresh_driver_hud()
-
-## The overlay exists only when BOTH are true: someone is driving, and the player wants to see it.
-func _refresh_driver_hud() -> void:
-	var want: bool = _hud_wanted and SettingsManager.is_vehicle_hud()
-	if want and _hud == null:
-		_hud = VehicleDebugHud.new()
-		add_child(_hud)
-	elif not want and _hud != null:
-		_hud.queue_free()
-		_hud = null
 
 ## SERVER: uuid of the node this vehicle's replicated (PARENT-LOCAL) position is expressed in.
 ##

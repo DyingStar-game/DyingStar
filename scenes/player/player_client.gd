@@ -95,6 +95,8 @@ var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from playe
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
+## The same sample with its reasoning ({family, source, detail}), for the debug panel's Ground section.
+var _surface_info: Dictionary = {}
 var _surface_age: float = 0.0              # seconds since that sample
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
@@ -156,11 +158,6 @@ func setup() -> void:
 		player.get_node("UserInterface").add_child(player._spawn_wheel)
 		player._spawn_wheel.option_selected.connect(_on_spawn_selected)
 
-	# The dev clock (+ / -) is this client's alone: while it is shifted, say so in red, or stations and
-	# frame changes stop lining up with the server without a word (see DevClockWarning).
-	if Globals.is_dev_tool_enabled(&"debug_time"):
-		player.get_node("UserInterface/HUD").add_child(DevClockWarning.new())
-
 	# Shadow budget for the other players' torches: only the nearest few cast (see the class).
 	var torch_budget := TorchShadowBudget.new()
 	torch_budget.name = "TorchShadowBudget"
@@ -189,12 +186,14 @@ func setup() -> void:
 	_star_map = StarMap.new()
 	player.get_node("UserInterface").add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
-	# Surface readout (Settings > General): what the ground under our feet is, and how we decided.
-	SurfaceDebugHud.attach(player, player.get_node("UserInterface"))
-	# Graphics options over the running game (Settings > General). AltGr may take the pointer unless
-	# something already holds the input (typing in the chat, a menu); the pause menu hides it.
-	player.get_node("UserInterface").add_child(
-		GraphicsOverlay.in_game().setup(func() -> bool: return not _input_locked(), _menu_open))
+	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
+	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
+	# pause menu hides them.
+	var can_take_pointer := func() -> bool: return not _input_locked()
+	for panel: OverlayPanel in [GraphicsOverlay.in_game(), DevOverlay.create(player,
+			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
+			_driven_vehicle)]:
+		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -244,9 +243,6 @@ func setup() -> void:
 	# Apply the saved field of view, and follow live changes from the settings menu.
 	player.camera.fov = SettingsManager.get_fov()
 	SettingsManager.fov_changed.connect(_on_fov_changed)
-	# Debug panels: follow live the settings-menu "Show debug panels" toggle.
-	if not SettingsManager.show_debug_changed.is_connected(_on_show_debug_changed):
-		SettingsManager.show_debug_changed.connect(_on_show_debug_changed)
 	# our own name tag is never created (only remote players get one)
 	player.astronaut.visible = false
 	player.interact_label.hide()
@@ -272,10 +268,6 @@ func setup() -> void:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
 
-	# Initial visibility from the saved setting (default true — early alpha).
-	player._display_debug = SettingsManager.is_show_debug()
-	player.display_debug.emit(player._display_debug)
-
 	if loading != null:
 		loading.queue_free()
 
@@ -300,7 +292,6 @@ func _process(_delta: float) -> void:
 		return
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
-	_update_debug_coordinates()  # before the seated return below, so a driver's readout keeps moving
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
@@ -432,16 +423,6 @@ func _process(_delta: float) -> void:
 	# 	client_last_global_rotation = global_rotation
 	# 	emit_signal("hs_client_action_move", input_direction, global_rotation)
 	player.update_last_basis()
-
-## The owner's X/Y/Z debug readout. ONE call site, placed BEFORE the seated early return.
-##
-## It used to be three lines duplicated at the end of _process AND of _physics_process -- and BOTH
-## copies sat after the "seated in a vehicle" return, so climbing into a truck froze the coordinates
-## while everything else kept updating. Two copies of a thing is also two places to forget it.
-func _update_debug_coordinates() -> void:
-	player.labelx.text = "%0.2f" % player.global_position.x
-	player.labely.text = "%0.2f" % player.global_position.y
-	player.labelz.text = "%0.2f" % player.global_position.z
 
 ## Fixed-step OWNER input sampling: relay drive input while seated, else sample walking input and
 ## emit the move only on change. Runs on this role's own child node → only on a client (never the
@@ -929,22 +910,18 @@ func _enter_seat(seat: Node) -> void:
 	# truck-local is tens of thousands of kilometres off: the body left, the camera landed in
 	# nothing (a grey screen) and the seat pose came out sideways.
 	# See dyingstar-parenting-server-authority: the client applies the frame, never picks it.
-	if player._seat_is_driver and veh.has_method("set_driver_hud"):
-		veh.set_driver_hud(true)
+	# The driver's readout needs no call here: the debug panel asks driven_vehicle() (DevOverlay).
 
-## Leave the seat we occupy (driver or passenger): walk again, un-parent back into the world, and drop
-## the driver HUD. NEVER called on our own initiative — only when the server says we are out ("unseat"),
-## whether that is our own Y request granted or a seat it refused us. One writer, so the two can never
-## disagree about who is sitting where; see the Y handler in _unhandled_input.
+## Leave the seat we occupy (driver or passenger): walk again, un-parent back into the world. NEVER
+## called on our own initiative — only when the server says we are out ("unseat"), whether that is our
+## own Y request granted or a seat it refused us. One writer, so the two can never disagree about who is
+## sitting where; see the Y handler in _unhandled_input.
 func _leave_vehicle() -> void:
 	player.active = true  # walking again
 	player.set_seated(false)
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
 	# No un-parenting here either: server_exit puts us back in the vehicle's own frame and
 	# says so. Doing it locally would re-open the same race, in the other direction.
-	if player._seat_is_driver and is_instance_valid(player._seat_vehicle_node) \
-			and player._seat_vehicle_node.has_method("set_driver_hud"):
-		player._seat_vehicle_node.set_driver_hud(false)
 	player._seat_vehicle_uuid = ""
 	player._seat_vehicle_node = null
 	player._seat_node = null
@@ -1024,10 +1001,11 @@ func _seat_door_open(seat) -> bool:
 func _on_fov_changed(fov: float) -> void:
 	player.camera.fov = fov
 
-## Live update from the settings menu "Show debug panels" toggle (kept in sync with the toggle_debug key).
-func _on_show_debug_changed(on: bool) -> void:
-	player._display_debug = on
-	player.display_debug.emit(on)
+## The vehicle we drive, or null: the debug panel's Vehicle section shows its readout.
+func _driven_vehicle() -> Vehicle:
+	if player._seat_is_driver and is_instance_valid(player._seat_vehicle_node):
+		return player._seat_vehicle_node as Vehicle
+	return null
 
 # Dev spawn wheel selection -> spawn the chosen prop in front of the player.
 ## A wheel entry was picked: just NAME it to the server. Everything else — which scene, which object
@@ -1116,11 +1094,10 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			]
 			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
 
-	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key.
+	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
+	# follows the setting's signal (DevOverlay).
 	if event.is_action_pressed("toggle_debug") and _alt_held(event):
-		player._display_debug = not player._display_debug
-		player.display_debug.emit(player._display_debug)
-		SettingsManager.set_show_debug(player._display_debug)
+		SettingsManager.set_show_debug(not SettingsManager.is_show_debug())
 
 
 ## Open/confirm the radial wheels: emote on T, spawn on Alt+T. Called before the wheel lock in
@@ -1692,8 +1669,10 @@ func _sample_surface(delta: float) -> void:
 	if _surface_age < SURFACE_SAMPLE_S:
 		return
 	_surface_age = 0.0
-	_surface_family = SurfaceProbe.family_under(
+	# The probe WITH its reasoning, once: the footsteps use the family, the debug panel the rest.
+	_surface_info = SurfaceProbe.explain_under(
 		player, SurfaceProbe.down_of(player), SurfaceProbe.FOOT_REACH_M, Globals.MASK_OBSTACLE)
+	_surface_family = StringName(_surface_info.get("family", &""))
 
 ## The torch was just flipped (replicated state): click it. Silent on the spawn snapshot (see _sfx_live).
 func _play_torch_sfx(on: bool) -> void:
