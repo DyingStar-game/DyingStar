@@ -1403,8 +1403,22 @@ func _join_worker_tasks() -> void:
 		for entry: Dictionary in tasks.values():
 			var task_id : int = int(entry.get("task_id", -1))
 			if task_id >= 0:
-				WorkerThreadPool.wait_for_task_completion(task_id)
+				join_task(task_id)
 		tasks.clear()
+
+
+## Wait for a task that may still be running, from the main thread. A plain
+## wait_for_task_completion can deadlock: a mesh task writing the disk cache
+## (ChunkDiskCache.write_mesh_pending) reads its mesh back through the
+## RenderingServer, which answers other threads only when the main thread
+## flushes its queue — so the main thread waited for a task waiting for it, and
+## the client froze entering the universe from the menu. Keeping that queue
+## moving while waiting lets the read-back through.
+static func join_task(task_id: int) -> void:
+	while not WorkerThreadPool.is_task_completed(task_id):
+		RenderingServer.force_sync()
+		OS.delay_usec(500)
+	WorkerThreadPool.wait_for_task_completion(task_id)
 
 
 # ------------------------------------------------------------------
