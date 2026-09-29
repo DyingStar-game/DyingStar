@@ -6,9 +6,48 @@
 [ext_resource type="Texture2D" uid="uid://dyarfnpyedkh" path="res://ui/button.png" id="3_n4a6o"]
 [ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="5_75xce"]
 
-[sub_resource type="LabelSettings" id="LabelSettings_75xce"]
-font = ExtResource("3_n3f7d")
-font_size = 24
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_normal"]
+content_margin_left = 24.0
+content_margin_right = 24.0
+texture = ExtResource("3_n4a6o")
+texture_margin_left = 8.0
+texture_margin_top = 8.0
+texture_margin_right = 8.0
+texture_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hover"]
+content_margin_left = 24.0
+content_margin_right = 24.0
+texture = ExtResource("3_n4a6o")
+texture_margin_left = 8.0
+texture_margin_top = 8.0
+texture_margin_right = 8.0
+texture_margin_bottom = 8.0
+modulate_color = Color(1.4, 1.4, 1.4, 1)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_pressed"]
+content_margin_left = 24.0
+content_margin_right = 24.0
+texture = ExtResource("3_n4a6o")
+texture_margin_left = 8.0
+texture_margin_top = 8.0
+texture_margin_right = 8.0
+texture_margin_bottom = 8.0
+modulate_color = Color(0.8, 0.8, 0.8, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_focus"]
+
+[sub_resource type="Theme" id="Theme_menu"]
+Button/colors/font_color = Color(1, 1, 1, 1)
+Button/colors/font_hover_color = Color(1, 1, 1, 1)
+Button/colors/font_pressed_color = Color(1, 1, 1, 1)
+Button/colors/font_focus_color = Color(1, 1, 1, 1)
+Button/font_sizes/font_size = 24
+Button/fonts/font = ExtResource("3_n3f7d")
+Button/styles/focus = SubResource("StyleBoxEmpty_focus")
+Button/styles/hover = SubResource("StyleBoxTexture_hover")
+Button/styles/normal = SubResource("StyleBoxTexture_normal")
+Button/styles/pressed = SubResource("StyleBoxTexture_pressed")
 
 [node name="MainPage" type="CanvasLayer" unique_id=1075883328]
 script = ExtResource("1_o7ao7")
@@ -44,112 +83,39 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="Button2" type="TextureRect" parent="Control" unique_id=1577520521]
+[node name="Buttons" type="HBoxContainer" parent="Control" unique_id=622489778]
 layout_mode = 1
-anchors_preset = -1
+anchors_preset = 7
 anchor_left = 0.5
-anchor_top = 0.696
+anchor_top = 1.0
 anchor_right = 0.5
-anchor_bottom = 0.696
-offset_left = -98.0
-offset_top = 114.32000000000004
-offset_right = 98.0
-offset_bottom = 163.32000000000005
-texture = ExtResource("3_n4a6o")
-expand_mode = 1
-
-[node name="Button3" type="TextureRect" parent="Control" unique_id=1577520522]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.5
-anchor_top = 0.696
-anchor_right = 0.5
-anchor_bottom = 0.696
-offset_left = -98.0
-offset_top = 170.32000000000005
-offset_right = 98.0
-offset_bottom = 219.32000000000005
-texture = ExtResource("3_n4a6o")
-expand_mode = 1
-
-[node name="Button" type="Button" parent="Control" unique_id=1722532473]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.5
-anchor_top = 0.696
-anchor_right = 0.5
-anchor_bottom = 0.696
-offset_left = -98.0
-offset_top = 114.32000000000004
-offset_right = 98.0
-offset_bottom = 163.32000000000005
-theme_type_variation = &"FlatButton"
-
-[node name="Label" type="Label" parent="Control/Button" unique_id=2114345280]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = -468.0
+offset_top = -170.0
+offset_right = 468.0
+offset_bottom = -120.0
 grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_SETTINGS"
-label_settings = SubResource("LabelSettings_75xce")
-horizontal_alignment = 1
-vertical_alignment = 1
+grow_vertical = 0
+theme = SubResource("Theme_menu")
+theme_override_constants/separation = 18
+alignment = 1
 
-[node name="QuitButton" type="Button" parent="Control" unique_id=1722532474]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.5
-anchor_top = 0.696
-anchor_right = 0.5
-anchor_bottom = 0.696
-offset_left = -98.0
-offset_top = 170.32000000000005
-offset_right = 98.0
-offset_bottom = 219.32000000000005
-theme_type_variation = &"FlatButton"
-
-[node name="Label" type="Label" parent="Control/QuitButton" unique_id=2114345281]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_QUIT"
-label_settings = SubResource("LabelSettings_75xce")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="VBoxContainer" type="VBoxContainer" parent="Control" unique_id=622489778]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -364.0
-offset_top = 109.0
-offset_right = 364.0
-offset_bottom = 217.5
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 10
-
-[node name="EnterButton" type="Button" parent="Control/VBoxContainer" unique_id=1980714587]
-clip_contents = true
+[node name="EnterButton" type="Button" parent="Control/Buttons" unique_id=1980714587]
+custom_minimum_size = Vector2(300, 50)
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-theme_override_fonts/font = ExtResource("3_n3f7d")
-theme_override_font_sizes/font_size = 32
 text = "%%MAINPAGE_ENTER"
 
+[node name="SettingsButton" type="Button" parent="Control/Buttons" unique_id=1722532473]
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+text = "%%MENU_SETTINGS"
+
+[node name="QuitButton" type="Button" parent="Control/Buttons" unique_id=1722532474]
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+text = "%%MENU_QUIT"
+
 [node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("5_75xce")]
-root_path = NodePath("../Control/VBoxContainer")
+root_path = NodePath("../Control/Buttons")
 
-[node name="InstallSounds2" parent="." unique_id=1024203266 instance=ExtResource("5_75xce")]
-root_path = NodePath("../Control")
-
-[connection signal="pressed" from="Control/VBoxContainer/EnterButton" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="Control/Buttons/EnterButton" to="." method="_on_button_pressed"]
