@@ -40,9 +40,11 @@ func header(text_key: String) -> Label:
 
 
 ## An empty line with its caption; the caller adds the control(s). Its label is reachable as
-## row.get_child(0). PASS on the label so a greyed option can still explain itself in a tooltip.
+## row.get_child(0). A tooltip set on the LINE shows anywhere over it: the line and its caption
+## both PASS the mouse, so hovering the caption or the gap beside it finds the line's tooltip.
 func row(label_key: String) -> HBoxContainer:
 	var line := HBoxContainer.new()
+	line.mouse_filter = Control.MOUSE_FILTER_PASS
 	var label := Label.new()
 	label.text = label_key
 	label.label_settings = _label_settings

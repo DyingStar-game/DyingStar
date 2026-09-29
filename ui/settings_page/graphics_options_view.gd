@@ -14,9 +14,11 @@ extends Node
 const _DISABLED_ALPHA : float = 0.45
 
 var _factory : SettingsRowFactory
-## key -> {"option", "label", "control", "value"}. "value" is the slider's number label, or null.
+## key -> {"option", "line", "label", "control", "value"}. "value" is the slider's number label, or null.
 var _rows : Dictionary = {}
 var _preset : OptionButton = null
+## The preset's whole line, which carries its explanation on hover.
+var _preset_line : HBoxContainer = null
 var _recommended : Label = null
 ## A slider being dragged commits on release (commit_on_release); a click or a wheel step commits now.
 var _dragging : Dictionary = {}
@@ -53,6 +55,7 @@ func _build_preset(container: Container) -> void:
 			SettingsManager.render.apply_preset(GraphicsOptions.PRESETS[i]))
 	line.add_child(_preset)
 	container.add_child(line)
+	_preset_line = line
 	var hint : HBoxContainer = _factory.row("")
 	_recommended = hint.get_child(0)
 	var apply := _factory.toggle()
@@ -67,7 +70,8 @@ func _build_preset(container: Container) -> void:
 func _build_row(container: Container, option: Dictionary) -> void:
 	var key : String = option["key"]
 	var line : HBoxContainer = _factory.row(option["label"])
-	var entry : Dictionary = {"option": option, "label": line.get_child(0), "control": null, "value": null}
+	var entry : Dictionary = {"option": option, "line": line, "label": line.get_child(0), "control": null,
+		"value": null}
 	match option["kind"]:
 		GraphicsOptions.TOGGLE:
 			var button : Button = _factory.toggle()
@@ -124,6 +128,8 @@ func _refresh() -> void:
 		var current : String = render.preset()
 		_preset.select(GraphicsOptions.PRESETS.find(current) if current in GraphicsOptions.PRESETS
 			else GraphicsOptions.PRESETS.size())
+		_preset_line.tooltip_text = tr("%%MENU_GFX_HELP_PRESET")
+		_preset.tooltip_text = _preset_line.tooltip_text
 		_recommended.text = tr("%%MENU_GFX_RECOMMENDED") % [render.caps.get("adapter", "?"),
 			tr(GraphicsOptions.PRESET_LABELS[render.detected()])]
 	for key in _rows:
@@ -158,9 +164,13 @@ func _refresh_row(render: RenderSettings, entry: Dictionary) -> void:
 			entry["value"].text = _format(option, value)
 	# tr() here rather than the raw key: the tooltip is built when shown, and this is redrawn on
 	# every language switch anyway.
-	var tip : String = tr(why) if why != "" else ""
+	# What the option does, always; why it is greyed, first, when it is.
+	var help : String = tr(option.get("help", ""))
+	var tip : String = help if why == "" else tr(why) + "\n\n" + help
+	# On the whole LINE, not only its caption: hovering the gap between the caption and the control
+	# explains the option too. The control carries it as well, since it stops the mouse itself.
+	entry["line"].tooltip_text = tip
 	control.tooltip_text = tip
-	entry["label"].tooltip_text = tip
 	entry["label"].modulate.a = _DISABLED_ALPHA if why != "" else 1.0
 
 
