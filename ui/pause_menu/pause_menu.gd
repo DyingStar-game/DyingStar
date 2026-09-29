@@ -3,15 +3,17 @@ extends Control
 ## The full settings menu (general / graphics / audio / controls) — reused from the main menu.
 var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
-## The settings overlay (general/graphics/audio/controls) while it is open, else null. Tracked so Esc
-## can close it (go BACK to the pause menu) instead of un-pausing the game.
+## The settings (general/graphics/audio/controls), open for as long as the pause menu is: Esc lands
+## on them straight away, see-through, the game running behind. Null while the game plays.
 var _settings_overlay: Node = null
 
 @onready var main_pause_menu: PausePage = $PausePage
 
 func _ready() -> void:
 	main_pause_menu.bar.entry_pressed.connect(_on_entry_pressed)
-	main_pause_menu.bar.back_pressed.connect(_close_settings)
+	# The settings are the pause menu's content: their entry is always the active one, and "Resume"
+	# is the way back (no "‹ Back" beside it saying the same).
+	main_pause_menu.bar.set_active(PausePage.SETTINGS)
 
 ## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
 ## disables its whole UserInterface subtree (Player._enter_tree), which is the single place that
@@ -38,13 +40,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open()
 	else:
 		if event.is_action_pressed("pause"):
-			# Settings open on top: Esc goes BACK (closes settings), it does NOT un-pause. Only Esc from
-			# the pause menu itself resumes the game.
-			if is_instance_valid(_settings_overlay):
-				_close_settings()
-			else:
-				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
-				_close()
+			# The settings ARE the pause menu now: Esc goes back to the game, like Resume.
+			_resume()
 
 		# Only "pause" (Esc) or the Resume button leaves the pause menu — a click in the void must not
 		# resume the game (it used to un-pause on ANY mouse button).
@@ -53,15 +50,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_entry_pressed(key: StringName) -> void:
 	match key:
 		PausePage.SETTINGS:
-			if is_instance_valid(_settings_overlay):
-				return
-			# The full settings menu (general/graphics/audio/controls) as an overlay, under the bar:
-			# its arrow or Esc closes it and brings the pause menu back. DRY: same page as the main menu.
-			_settings_overlay = settings_scene.instantiate()
-			_settings_overlay.tree_exited.connect(_on_settings_closed)
-			add_child(_settings_overlay)
-			main_pause_menu.bar.set_active(PausePage.SETTINGS)
-			main_pause_menu.bar.set_back_visible(true)
+			_open_settings()
 		PausePage.QUIT:
 			get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
 		PausePage.RETURN_MENU:
@@ -72,26 +61,31 @@ func _on_entry_pressed(key: StringName) -> void:
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.UNIVERSE_MENU)
 			_close()
 		PausePage.RESUME:
-			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
-			_close()
+			_resume()
 
 
-## Back from the settings: Esc or the bar's arrow.
-func _close_settings() -> void:
+## Back to the game: Resume or Esc.
+func _resume() -> void:
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
+	_close()
+
+
+## The full settings (general/graphics/audio/controls) under the bar, on General, see-through so the
+## game shows beside them. DRY: the same page as the main menu's.
+func _open_settings() -> void:
 	if is_instance_valid(_settings_overlay):
-		_settings_overlay.queue_free()
+		return
+	_settings_overlay = settings_scene.instantiate()
+	_settings_overlay.see_through = true
+	_settings_overlay.tree_exited.connect(func() -> void: _settings_overlay = null)
+	add_child(_settings_overlay)
 
 
-func _on_settings_closed() -> void:
-	_settings_overlay = null
-	main_pause_menu.bar.set_active(&"")
-	main_pause_menu.bar.set_back_visible(false)
-
-
-## Show the menu. Paired with _close() so the two halves cannot drift apart.
+## Show the menu, on the settings. Paired with _close() so the two halves cannot drift apart.
 func _open() -> void:
 	visible = true
 	main_pause_menu.visible = true
+	_open_settings()
 
 
 ## Hide the menu. THREE paths close it — Esc, Resume, Return to menu — and each used to repeat the
@@ -101,3 +95,5 @@ func _open() -> void:
 func _close() -> void:
 	visible = false
 	main_pause_menu.visible = false
+	if is_instance_valid(_settings_overlay):
+		_settings_overlay.queue_free()

@@ -1,7 +1,7 @@
 class_name PausePage
 extends Control
-## The pause menu's screen: the game dimmed, "Game paused", and the same top bar as the home screen
-## (TopBar) with the in-game entries. PauseMenu decides what each does.
+## The pause menu's screen: the same top bar as the home screen (TopBar) with the in-game entries,
+## over the running game — PauseMenu opens the settings under it at once. It decides what each does.
 
 const RESUME : StringName = &"resume"
 const SETTINGS : StringName = &"settings"

@@ -1,6 +1,5 @@
 [gd_scene format=3 uid="uid://c77xahaiy4r4r"]
 
-[ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_ewhk2"]
 [ext_resource type="Script" uid="uid://chsmswh73v0bl" path="res://ui/pause_page/pause_page.gd" id="1_ilyln"]
 
 [node name="PausePage" type="Control" unique_id=372426929]
@@ -10,28 +9,5 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 1
+mouse_filter = 2
 script = ExtResource("1_ilyln")
-
-[node name="TextureRect" type="TextureRect" parent="." unique_id=1979214361]
-modulate = Color(1, 1, 1, 0.498039)
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-texture = ExtResource("1_ewhk2")
-
-[node name="CenterContainer" type="CenterContainer" parent="." unique_id=299873530]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Label" type="Label" parent="CenterContainer" unique_id=274228834]
-layout_mode = 2
-theme_override_font_sizes/font_size = 30
-text = "%%PAUSEPAGE_TITLE"
