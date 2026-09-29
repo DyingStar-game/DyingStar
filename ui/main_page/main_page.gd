@@ -4,8 +4,6 @@ extends CanvasLayer
 ## Which screen is showing: &"home", or one per settings category (SCREEN_OF_CATEGORY). The menu
 ## stage (when the menu stands on one) glides its camera to match; the menu knows nothing of any stage.
 signal screen_changed(screen: StringName)
-## The home screen's graphics-quality button was pressed: the stage opens its tuning scene.
-signal tuning_requested
 
 ## The screen each settings category is: a viewpoint of the stage has the same key.
 const SCREEN_OF_CATEGORY : Dictionary = {
@@ -27,12 +25,10 @@ var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page
 var _settings_overlay: Node = null
 ## A live 3D stage stands behind the menu: no still background, see-through settings.
 var _stage_mode : bool = false
-## The tuning scene has the screen: the menu steps aside (and leaves Esc to it).
-var _interface_hidden : bool = false
 ## Logo, Enter / Settings / Quit, and the way back from the settings (TopBar).
 var bar : TopBar = null
-## Bottom right of the home screen, over a stage: "Graphics quality: High" — a way straight into the
-## tuning scene, showing the preset in use (the one detected for this GPU on a first launch).
+## Bottom right of the home screen, over a stage: "Graphics quality: High" — the preset in use (the
+## one detected for this GPU on a first launch), and a way straight to Settings > Graphics.
 var _quality : Button = null
 
 func _ready() -> void:
@@ -64,8 +60,6 @@ func _on_entry_pressed(key: StringName) -> void:
 ## Esc closes the settings overlay (back to the main menu). No-op when it is already closed. The
 ## host menu owns its overlay's lifecycle, mirroring the pause menu — see PauseMenu._unhandled_input.
 func _unhandled_input(event: InputEvent) -> void:
-	if _interface_hidden:
-		return
 	if event.is_action_pressed("pause") and is_instance_valid(_settings_overlay):
 		_close_settings()
 		get_viewport().set_input_as_handled()
@@ -92,7 +86,7 @@ func _on_settings_pressed() -> void:
 
 func _on_settings_closed() -> void:
 	_settings_overlay = null
-	$Control.visible = not _interface_hidden
+	$Control.visible = true
 	bar.set_active(&"")
 	bar.set_back_visible(false)
 	screen_changed.emit(&"home")
@@ -116,8 +110,8 @@ func set_stage_mode(on: bool) -> void:
 		_quality.grow_vertical = Control.GROW_DIRECTION_BEGIN
 		_quality.offset_right = -_QUALITY_MARGIN_PX
 		_quality.offset_bottom = -_QUALITY_MARGIN_PX
-		_quality.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_SHOWCASE"))
-		_quality.pressed.connect(tuning_requested.emit)
+		_quality.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_PRESET"))
+		_quality.pressed.connect(_open_graphics)
 		$Control.add_child(_quality)
 		SettingsManager.render.changed.connect(func(_keys: PackedStringArray) -> void: _label_quality())
 		SettingsManager.language.changed.connect(func(_lang: String) -> void: _label_quality())
@@ -130,11 +124,8 @@ func _label_quality() -> void:
 	var render : RenderSettings = SettingsManager.render
 	_quality.text = "%s : %s  ›" % [tr("%%MENU_GFX_PRESET"), tr(GraphicsOptions.PRESET_LABELS[render.preset()])]
 
-
-## Step aside for the tuning scene, and come back.
-func set_interface_hidden(on: bool) -> void:
-	_interface_hidden = on
-	$Control.visible = not on and _settings_overlay == null
-	bar.visible = not on
-	if is_instance_valid(_settings_overlay):
-		_settings_overlay.visible = not on
+## The graphics-quality button: Settings, straight on its Graphics tab.
+func _open_graphics() -> void:
+	if not is_instance_valid(_settings_overlay):
+		_on_settings_pressed()
+	_settings_overlay.open("%%MENU_CAT_GRAPHICS")

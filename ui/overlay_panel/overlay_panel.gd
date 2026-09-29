@@ -13,13 +13,11 @@ extends CanvasLayer
 ##   - the mouse stays with the camera. Holding AltGr hands it to the panels (all of them: one key,
 ##     whichever panel is under the pointer), releasing it gives it back. PlayerClient._ui_focus()
 ##     asks any_wants_pointer() every frame. While the pointer is not held, the panel takes neither
-##     clicks nor keyboard focus, so a captured-mouse click can never land on it. A panel in ALWAYS
-##     mode (the tuning scene, where there is no camera to steer) keeps the pointer all the time.
+##     clicks nor keyboard focus, so a captured-mouse click can never land on it.
 ##   - while it holds the pointer it swallows keys (AltGr turns every key into Ctrl+Alt+key, and the
 ##     Alt shortcuts would fire) and the wheel outside every panel (it would change the walk speed).
 
 enum Edge { LEFT, RIGHT }
-enum PointerMode { ALTGR_HOLD, ALWAYS }
 
 ## Below the settings page (5) and the star map (10): the pause menu covers the panels, not the reverse.
 const LAYER : int = 4
@@ -28,7 +26,6 @@ const _MARGIN_PX : float = 12.0
 const _PADDING_PX : float = 10.0
 const _IDLE_ALPHA : float = 0.85
 
-var pointer_mode : PointerMode = PointerMode.ALTGR_HOLD
 ## Beyond its sections, whether the panel may show at all (the Settings > General switch…).
 var enabled_rule : Callable = func() -> bool: return true
 ## Builds the sections' rows, at the panels' compact size.
@@ -140,7 +137,7 @@ func _process(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	# AltGr itself rather than _held: a key pressed in the same frame as AltGr must be caught too.
-	if pointer_mode == PointerMode.ALWAYS or not _pointer_wanted():
+	if not _pointer_wanted():
 		return
 	if event is InputEventKey:
 		get_viewport().set_input_as_handled()
@@ -153,7 +150,7 @@ func _input(event: InputEvent) -> void:
 func _pointer_wanted() -> bool:
 	if not _shown:
 		return false
-	return pointer_mode == PointerMode.ALWAYS or (AltGr.is_held() and bool(_can_take_pointer.call()))
+	return AltGr.is_held() and bool(_can_take_pointer.call())
 
 
 func _set_held(on: bool) -> void:

@@ -5,13 +5,6 @@ extends Camera3D
 ## current in the game — the rig's camera is.
 ##
 ## `key` names it: a menu screen (&"home", &"settings", &"settings_graphics", &"settings_audio",
-## &"settings_controls" — MainPage.SCREEN_OF_CATEGORY), or
-## any key for a tuning-scene viewpoint, which then carries a `label` (a translation key) to be listed.
+## &"settings_controls" — MainPage.SCREEN_OF_CATEGORY).
 
 @export var key : StringName = &""
-## Translation key shown in the tuning scene's viewpoint list; empty for a menu screen's station.
-@export var label : String = ""
-
-
-func is_tuning() -> bool:
-	return label != ""
