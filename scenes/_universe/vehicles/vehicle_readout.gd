@@ -57,15 +57,22 @@ func lines() -> PackedStringArray:
 	var handbrake := "   (P) HANDBRAKE" if _vehicle.is_handbraked() else ""
 	# The engine must be started (I) before the truck drives at all — say so loudly when it is off.
 	var ignition := "" if _vehicle.is_engine_on() else "   ENGINE OFF"
-	return [
+	var out : PackedStringArray = [
 		"Speed: %3.0f km/h%s%s" % [speed, handbrake, ignition],
 		"Engine: %5.0f rpm" % _vehicle.get_engine_rpm(),
-		"Transmission: %s%s" % [_vehicle.get_gear_label(), _vehicle.get_drive_mode_name()],
+	]
+	# A thermal truck's gear on its own line ("Gear: 2"); an electric one has none.
+	var gear : String = _vehicle.get_gear_label().strip_edges()
+	if gear != "":
+		out.append(gear)
+	out.append_array([
+		"Transmission: %s" % _vehicle.get_drive_mode_name(),
 		"Powertrain: %s" % _vehicle.get_propulsion_name(),
 		"Total weight: %.0f kg" % total,
 		"Load: %.0f / %.0f kg%s" % [cargo, _vehicle.max_payload, warn],
 		_bays_line(), _model_line(total), _measured_line(total),
-	]
+	])
+	return out
 
 
 ## Sample the speed and derive acceleration over a sliding window, plus the 0-100 stopwatch.

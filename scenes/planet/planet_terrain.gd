@@ -2399,6 +2399,12 @@ static func _view_scaled(dist: float, mult: float) -> float:
 	return VIEW_DISTANCE_NEAR_M + (dist - VIEW_DISTANCE_NEAR_M) / mult
 
 
+## How many chunks this planet currently has on screen (the debug panel's Client section): the
+## quadtree cut, not a per-planet setting — see PlanetLod.wants_split and Graphics > Terrain distance.
+func active_chunk_count() -> int:
+	return _active_chunks.size()
+
+
 ## Re-read Graphics > Terrain distance. The traversal that follows uses it; nothing else to do —
 ## the decorations' distances (grass, trees, roads, rails) follow their own options through DrawRange.
 func _sync_distance_options() -> void:
@@ -4354,12 +4360,6 @@ func _release_volcano_nodes(key: String, info: Dictionary) -> void:
 			if is_instance_valid(node):
 				node.queue_free()
 			_volcano_nodes.erase(vkey)
-
-
-## How many chunks this planet currently has on screen (the debug panel's Client section): the
-## quadtree cut, not a per-planet setting — see PlanetLod.wants_split and Graphics > Terrain distance.
-func active_chunk_count() -> int:
-	return _active_chunks.size()
 
 
 func _clear_all_chunks() -> void:
