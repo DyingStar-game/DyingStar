@@ -498,7 +498,8 @@ func _physics_process(delta: float) -> void:
 		player.client_send_action_to_server({"action": "sprint", "held": sprint_held})
 	# strafe_up / strafe_down (Space / Ctrl by default), sent on change like the sprint. The server only
 	# reads it while weightless; on the ground Space is still the jump.
-	var vertical: float = 0.0 if input_locked else Input.get_axis("strafe_down", "strafe_up")
+	# Through AltGr: Windows sends AltGr with a fake Ctrl, which read as strafe_down and sank the EVA body.
+	var vertical: float = 0.0 if input_locked else AltGr.axis("strafe_down", "strafe_up")
 	if vertical != _vertical_sent:
 		_vertical_sent = vertical
 		player.client_send_action_to_server({"action": "thrust_vertical", "value": vertical})

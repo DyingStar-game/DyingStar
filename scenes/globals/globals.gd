@@ -84,6 +84,18 @@ var is_gut_running: bool = false
 ## Seconds to add to the local clock to land on the reference one. See sync_clock().
 var _clock_offset: float = 0.0
 
+
+func _ready() -> void:
+	# AltGr and its fake Ctrl, tracked from EVERY window event before any node can swallow it.
+	if not OS.has_feature("dedicated_server"):
+		get_tree().root.window_input.connect(AltGr.feed)
+
+
+func _notification(what: int) -> void:
+	# Releases made in another window never arrive: forget what was held.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		AltGr.reset()
+
 ## True only when a dev tool is listed in ENABLED_DEV_TOOLS AND switched on. An unknown tool is OFF.
 static func is_dev_tool_enabled(action: StringName) -> bool:
 	return ENABLED_DEV_TOOLS.get(String(action), false) == true
