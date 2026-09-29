@@ -28,7 +28,7 @@ func text() -> String:
 
 func refresh() -> void:
 	if _text != null:
-		_text.text = "\n".join(_lines.call())
+		_text.text = "\n".join(PackedStringArray(_lines.call()))
 
 
 func tick(delta: float) -> void:

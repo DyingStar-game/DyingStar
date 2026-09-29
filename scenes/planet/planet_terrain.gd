@@ -4356,6 +4356,12 @@ func _release_volcano_nodes(key: String, info: Dictionary) -> void:
 			_volcano_nodes.erase(vkey)
 
 
+## How many chunks this planet currently has on screen (the debug panel's Client section): the
+## quadtree cut, not a per-planet setting — see PlanetLod.wants_split and Graphics > Terrain distance.
+func active_chunk_count() -> int:
+	return _active_chunks.size()
+
+
 func _clear_all_chunks() -> void:
 	for key in _active_chunks.keys():
 		_remove_chunk(key)

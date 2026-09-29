@@ -204,10 +204,12 @@ func _ready() -> void:
 		print("[Net] diagnostics: net_verbose=%s net_echo=%s" % [_net_verbose, _net_echo])
 	# Custom monitors are GLOBAL: a second client (back to menu -> new game) would re-register the
 	# same names and leave the first one's Callable pointing at a freed node. shutdown() removes them.
+	# They report running TOTALS: each reader (ClientPerf, the debug panel, the editor profiler) derives
+	# its own rate. A counter reset on read made every reader steal counts from the others.
 	if not Performance.has_custom_monitor("network/events_received"):
-		Performance.add_custom_monitor("network/events_received", metric_get_network_events_received)
+		Performance.add_custom_monitor("network/events_received", func() -> int: return network_events_received)
 	if not Performance.has_custom_monitor("network/events_sent"):
-		Performance.add_custom_monitor("network/events_sent", metric_get_network_events_sent)
+		Performance.add_custom_monitor("network/events_sent", func() -> int: return network_events_sent)
 
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	_load_client_ini_file()
@@ -1458,16 +1460,6 @@ func player_update(message: Dictionary) -> void:
 				push_error("Fatal error, my player deleted on client side: 7001")
 				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 
-
-func metric_get_network_events_received():
-	var result = network_events_received
-	network_events_received = 0
-	return result
-
-func metric_get_network_events_sent():
-	var result = network_events_sent
-	network_events_sent = 0
-	return result
 
 func vocal_manage(event: Dictionary) -> void:
 	if get_node_or_null("LiveKitAudio") != null:

@@ -18,3 +18,9 @@ static func metres(v: float) -> String:
 ## reads like a missing value.
 static func signed(v: float) -> String:
 	return ("+" if v >= 0.0 else "") + metres(v)
+
+
+## Text shown as-is inside a bbcode readout: a "[" from a name or a tag like "[son: oui]" would
+## otherwise be read as markup.
+static func escape(text: String) -> String:
+	return text.replace("[", "[lb]")

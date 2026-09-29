@@ -8,7 +8,6 @@ signal hs_client_action_move
 ## receiver derives it from the tree (see Server._on_player_move). Emit it through emit_move().
 signal hs_server_move(uuid: String, local_position: Vector3, local_rotation: Vector3)
 signal hs_client_action_pressed
-signal display_debug(show: bool)
 signal hs_server_player_update
 
 @warning_ignore("unused_signal")
@@ -334,8 +333,6 @@ var screen_interacting: Node3D = null
 ## same single writer, so the two can never name different consoles.
 var screen_zone: ScreenZone = null
 
-var _display_debug: bool = false
-
 ## Consecutive server ticks this player has been settled (no input, on floor,
 
 # Last camera pitch ("head" player property) sent to the server, throttled.
@@ -401,9 +398,6 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 
 @onready var camera = $CameraPivot/Camera3D
 
-@onready var labelx: Label = $UserInterface/Debug/LabelXValue
-@onready var labely: Label = $UserInterface/Debug/LabelYValue
-@onready var labelz: Label = $UserInterface/Debug/LabelZValue
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay

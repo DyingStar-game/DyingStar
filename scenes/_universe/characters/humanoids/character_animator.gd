@@ -145,7 +145,6 @@ var _neck_bone: int = -1
 var _current: StringName = &""
 var _idle: StringName = &""  # resolved idle clip (the set's idle, or the first clip if names don't match)
 var _jump_phase: JumpPhase = JumpPhase.GROUND
-var _debug_label: Label = null  # optional on-screen movement readout (local player, Settings "Show debug")
 var _target_speed_scale: float = 1.0  # AnimationPlayer speed_scale for the current clip (walk speed-warp)
 var _current_tier: Tier = Tier.WALK  # locomotion tier, kept stable by hysteresis (see _tier_for_speed)
 var _tier_held: float = 0.0  # seconds spent in _current_tier, gates changes (see TIER_MIN_HOLD)
@@ -219,8 +218,6 @@ func setup(player_body, is_local: bool) -> void:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
 		_play(_idle)  # start on idle at once — never a bare T-pose, even before the state logic runs
-	if _is_local:
-		_create_debug_label()  # on-screen speed / wheel / clip readout, toggled by Settings "Show debug"
 	set_process(_anim != null and anim_set != null)
 	# Local only: sample the vault probe in the physics frame (its space state is null in _process) so the
 	# debug HUD can show whether a ledge is climbable right now.
@@ -405,11 +402,9 @@ func _process(delta: float) -> void:
 			if not bool(_player.locomotion_sample.get("driver", false)):
 				eye += _player.passenger_eye_offset
 			_player.camera_pivot.position = _camera_base_pos + Vector3(0.0, eye, 0.0)
-	if _debug_label != null:
-		_update_debug_label()
 
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
-## debug HUD (in _process) reads this snapshot instead. Cheap, and only while the movement debug is on.
+## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.
 func _physics_process(_delta: float) -> void:
 	if _is_local and SettingsManager.is_movement_debug():
 		_vault_debug = VaultProbe.probe(_player)
@@ -821,23 +816,13 @@ func _find_in_puppet(type_name: String) -> Node:
 	var found: Array = get_parent().find_children("*", type_name, true, false)
 	return found[0] if not found.is_empty() else null
 
-## On-screen readout (local player) of the current speed, mouse-wheel walk target and animation clip —
-## a calibration aid, shown only when Settings > "Show debug" is on. Created once in setup().
-func _create_debug_label() -> void:
-	var ui: Node = _player.get_node_or_null("UserInterface")
-	if ui == null:
-		return
-	_debug_label = Label.new()
-	_debug_label.position = Vector2(20.0, 140.0)
-	_debug_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.0))
-	_debug_label.visible = false
-	ui.add_child(_debug_label)
-
-func _update_debug_label() -> void:
-	if not SettingsManager.is_movement_debug():
-		_debug_label.visible = false
-		return
-	_debug_label.visible = true
+## The movement readout of the debug panel (Settings > General > Movement debug): speed, mouse-wheel
+## walk target, current clip, and whether the ledge / step ahead can be climbed. Text only — the
+## panel shows it (DevOverlay). The probes it quotes are cached by _physics_process while the
+## option is on.
+func movement_debug_text() -> String:
+	if not is_instance_valid(_player):
+		return "--"
 	var s: Dictionary = _player.locomotion_sample
 	var spd: float = float(s.get("planar_speed", 0.0)) if not s.is_empty() else 0.0
 	# Vault: read the SAME probe the server acts on (DRY, cached from _physics_process) + whether a climb
@@ -867,5 +852,5 @@ func _update_debug_label() -> void:
 		can_step = "%.2fm REFUSE (%s)" % [float(st["height"]), st["reason"]]
 	else:
 		can_step = "— (%s)" % st["reason"]
-	_debug_label.text = "spd %.2f m/s   wheel %.1f   anim: %s\ncan vault: %s   mid-vault: %s\ncan step: %s" % [
+	return "spd %.2f m/s   wheel %.1f   anim: %s\ncan vault: %s   mid-vault: %s\ncan step: %s" % [
 		spd, _player.walk_speed_target, _current, can_vault, mid_vault, can_step]
