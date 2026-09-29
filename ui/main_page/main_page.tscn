@@ -2,52 +2,8 @@
 
 [ext_resource type="Script" uid="uid://1l14ge8hbbo1" path="res://ui/main_page/main_page.gd" id="1_o7ao7"]
 [ext_resource type="Texture2D" uid="uid://ck5w0cxx7uj4" path="res://ui/SplashScreen.png" id="2_n3f7d"]
-[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_n3f7d"]
-[ext_resource type="Texture2D" uid="uid://dyarfnpyedkh" path="res://ui/button.png" id="3_n4a6o"]
+[ext_resource type="Theme" path="res://ui/menu_button_theme.tres" id="3_n4a6o"]
 [ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="5_75xce"]
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_normal"]
-content_margin_left = 24.0
-content_margin_right = 24.0
-texture = ExtResource("3_n4a6o")
-texture_margin_left = 8.0
-texture_margin_top = 8.0
-texture_margin_right = 8.0
-texture_margin_bottom = 8.0
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_hover"]
-content_margin_left = 24.0
-content_margin_right = 24.0
-texture = ExtResource("3_n4a6o")
-texture_margin_left = 8.0
-texture_margin_top = 8.0
-texture_margin_right = 8.0
-texture_margin_bottom = 8.0
-modulate_color = Color(1.4, 1.4, 1.4, 1)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_pressed"]
-content_margin_left = 24.0
-content_margin_right = 24.0
-texture = ExtResource("3_n4a6o")
-texture_margin_left = 8.0
-texture_margin_top = 8.0
-texture_margin_right = 8.0
-texture_margin_bottom = 8.0
-modulate_color = Color(0.8, 0.8, 0.8, 1)
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_focus"]
-
-[sub_resource type="Theme" id="Theme_menu"]
-Button/colors/font_color = Color(1, 1, 1, 1)
-Button/colors/font_hover_color = Color(1, 1, 1, 1)
-Button/colors/font_pressed_color = Color(1, 1, 1, 1)
-Button/colors/font_focus_color = Color(1, 1, 1, 1)
-Button/font_sizes/font_size = 24
-Button/fonts/font = ExtResource("3_n3f7d")
-Button/styles/focus = SubResource("StyleBoxEmpty_focus")
-Button/styles/hover = SubResource("StyleBoxTexture_hover")
-Button/styles/normal = SubResource("StyleBoxTexture_normal")
-Button/styles/pressed = SubResource("StyleBoxTexture_pressed")
 
 [node name="MainPage" type="CanvasLayer" unique_id=1075883328]
 script = ExtResource("1_o7ao7")
@@ -96,7 +52,7 @@ offset_right = 468.0
 offset_bottom = -120.0
 grow_horizontal = 2
 grow_vertical = 0
-theme = SubResource("Theme_menu")
+theme = ExtResource("3_n4a6o")
 theme_override_constants/separation = 18
 alignment = 1
 

@@ -30,7 +30,7 @@ var _logo : TextureRect = null
 ## tuning scene, showing the preset in use (the one detected for this GPU on a first launch).
 var _quality : Button = null
 
-## Enter, Settings and Quit: one row, one look (the scene's Theme_menu), at the bottom centre.
+## Enter, Settings and Quit: one row, one look (ui/menu_button_theme.tres, shared with the pause menu), at the bottom centre.
 @onready var buttons : HBoxContainer = $Control/Buttons
 @onready var settings_button : Button = $Control/Buttons/SettingsButton
 @onready var quit_button : Button = $Control/Buttons/QuitButton
