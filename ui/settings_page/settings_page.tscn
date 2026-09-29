@@ -2,12 +2,6 @@
 
 [ext_resource type="Script" uid="uid://c2wb57c2srlse" path="res://ui/settings_page/settings_page.gd" id="1_tirmb"]
 [ext_resource type="Texture2D" uid="uid://f3jn1wljcogi" path="res://ui/background_little_title.png" id="2_84msf"]
-[ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="3_84msf"]
-[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="4_tirmb"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_ug86k"]
-font = ExtResource("3_84msf")
-font_size = 48
 
 [node name="SettingsPage" type="CanvasLayer" unique_id=834952402]
 layer = 5
@@ -39,126 +33,22 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_left = 48
+theme_override_constants/margin_top = 112
+theme_override_constants/margin_right = 48
+theme_override_constants/margin_bottom = 24
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer" unique_id=2028541173]
 layout_mode = 2
+theme_override_constants/separation = 12
 
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer" unique_id=1939448204]
-layout_mode = 2
-text = "%%MENU_SETTINGS"
-label_settings = SubResource("LabelSettings_ug86k")
-
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/MarginContainer/VBoxContainer" unique_id=1345639008]
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer" unique_id=583741141]
 layout_mode = 2
 size_flags_vertical = 3
-
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer" unique_id=265301067]
-layout_mode = 2
-
-[node name="Generals" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=166482080]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Generals" unique_id=36272843]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_CAT_GENERAL"
-label_settings = SubResource("LabelSettings_ug86k")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Graphics" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1476626543]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Graphics" unique_id=1474280769]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_CAT_GRAPHICS"
-label_settings = SubResource("LabelSettings_ug86k")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Audio" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1098832190]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Audio" unique_id=1772612594]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_CAT_AUDIO"
-label_settings = SubResource("LabelSettings_ug86k")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Controls" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=439922285]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Controls" unique_id=2118793103]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%MENU_CAT_CONTROLS"
-label_settings = SubResource("LabelSettings_ug86k")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Return" type="Button" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=2077859452]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/Return" unique_id=1773331745]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "%%RETURN"
-label_settings = SubResource("LabelSettings_ug86k")
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/MarginContainer/VBoxContainer/HBoxContainer" unique_id=583741141]
-layout_mode = 2
-size_flags_horizontal = 3
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/HBoxContainer/SubViewportContainer" unique_id=345904400]
+[node name="SubViewport" type="SubViewport" parent="Control/MarginContainer/VBoxContainer/SubViewportContainer" unique_id=345904400]
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1476, 968)
+size = Vector2i(1824, 932)
 render_target_update_mode = 4
-
-[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("4_tirmb")]
-root_path = NodePath("../Control/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer")

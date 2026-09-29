@@ -13,27 +13,27 @@ const SCREEN_OF_CATEGORY : Dictionary = {
 	"%%MENU_CAT_AUDIO": &"settings_audio", "%%MENU_CAT_CONTROLS": &"settings_controls",
 }
 
-const LOGO : Texture2D = preload("res://ui/main_page/dyingstar-logo.png")
-const _LOGO_WIDTH_PX : float = 620.0
+## The top bar's entries.
+const ENTER : StringName = &"enter"
+const SETTINGS : StringName = &"settings"
+const QUIT : StringName = &"quit"
+## "Graphics quality" button, from the bottom-right corner.
+const _QUALITY_MARGIN_PX : float = 40.0
 
 var is_ready: bool = false
 var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 ## The settings overlay while it is open, else null — so Esc closes it (back to the main menu) the same
 ## way it does in the pause menu, instead of doing nothing.
 var _settings_overlay: Node = null
-## A live 3D stage stands behind the menu: no still background, the logo on its own, see-through settings.
+## A live 3D stage stands behind the menu: no still background, see-through settings.
 var _stage_mode : bool = false
 ## The tuning scene has the screen: the menu steps aside (and leaves Esc to it).
 var _interface_hidden : bool = false
-var _logo : TextureRect = null
+## Logo, Enter / Settings / Quit, and the way back from the settings (TopBar).
+var bar : TopBar = null
 ## Bottom right of the home screen, over a stage: "Graphics quality: High" — a way straight into the
 ## tuning scene, showing the preset in use (the one detected for this GPU on a first launch).
 var _quality : Button = null
-
-## Enter, Settings and Quit: one row, one look (ui/menu_button_theme.tres, shared with the pause menu), at the bottom centre.
-@onready var buttons : HBoxContainer = $Control/Buttons
-@onready var settings_button : Button = $Control/Buttons/SettingsButton
-@onready var quit_button : Button = $Control/Buttons/QuitButton
 
 func _ready() -> void:
 	# The background fills the screen; the menu itself (logo, buttons) keeps to a centred 16:9 area.
@@ -41,9 +41,25 @@ func _ready() -> void:
 	background.reparent(self)
 	move_child(background, 0)
 	SafeArea.keep($Control)
-	settings_button.pressed.connect(_on_settings_pressed)
-	quit_button.pressed.connect(_on_quit_pressed)
+	bar = TopBar.new()
+	bar.add_entry(ENTER, "%%MAINPAGE_ENTER")
+	bar.add_entry(SETTINGS, "%%MENU_SETTINGS")
+	bar.add_entry(QUIT, "%%MENU_QUIT")
+	bar.entry_pressed.connect(_on_entry_pressed)
+	bar.back_pressed.connect(_close_settings)
+	add_child(bar)
 	is_ready = true
+
+
+func _on_entry_pressed(key: StringName) -> void:
+	match key:
+		ENTER:
+			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
+		SETTINGS:
+			if not is_instance_valid(_settings_overlay):
+				_on_settings_pressed()
+		QUIT:
+			get_tree().quit()
 
 ## Esc closes the settings overlay (back to the main menu). No-op when it is already closed. The
 ## host menu owns its overlay's lifecycle, mirroring the pause menu — see PauseMenu._unhandled_input.
@@ -51,12 +67,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _interface_hidden:
 		return
 	if event.is_action_pressed("pause") and is_instance_valid(_settings_overlay):
-		_settings_overlay.queue_free()
-		_settings_overlay = null
+		_close_settings()
 		get_viewport().set_input_as_handled()
 
+
+## Back from the settings: Esc or the bar's arrow.
+func _close_settings() -> void:
+	if is_instance_valid(_settings_overlay):
+		_settings_overlay.queue_free()
+
 func _on_settings_pressed() -> void:
-	# Track the overlay so Esc closes it (back), and drop the ref if its own Return button frees it.
+	# Track the overlay so Esc or the bar's arrow closes it (back).
 	_settings_overlay = settings_scene.instantiate()
 	_settings_overlay.see_through = _stage_mode
 	# Connected before it enters the tree: its _ready opens the first category, which must be heard.
@@ -65,11 +86,15 @@ func _on_settings_pressed() -> void:
 	add_child(_settings_overlay)
 	# Over a stage the settings are see-through: the menu's own buttons would show under them.
 	$Control.visible = not _stage_mode
+	bar.set_active(SETTINGS)
+	bar.set_back_visible(true)
 
 
 func _on_settings_closed() -> void:
 	_settings_overlay = null
 	$Control.visible = not _interface_hidden
+	bar.set_active(&"")
+	bar.set_back_visible(false)
 	screen_changed.emit(&"home")
 
 
@@ -77,24 +102,10 @@ func _on_category_changed(key: String) -> void:
 	screen_changed.emit(SCREEN_OF_CATEGORY.get(key, &"settings"))
 
 
-## A live 3D stage now stands behind the menu (MenuStage): drop the still image, show the logo alone.
+## A live 3D stage now stands behind the menu (MenuStage): drop the still image.
 func set_stage_mode(on: bool) -> void:
 	_stage_mode = on
 	$Background.visible = not on
-	if on and _logo == null:
-		_logo = TextureRect.new()
-		_logo.texture = LOGO
-		_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
-		_logo.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		_logo.offset_left = -_LOGO_WIDTH_PX / 2.0
-		_logo.offset_right = _LOGO_WIDTH_PX / 2.0
-		_logo.offset_top = 48.0
-		_logo.offset_bottom = 48.0 + _LOGO_WIDTH_PX * LOGO.get_height() / LOGO.get_width()
-		_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		$Control.add_child(_logo)
-	if _logo != null:
-		_logo.visible = on
 	if on and _quality == null:
 		_quality = Button.new()
 		_quality.add_theme_font_override("font", SettingsRowFactory.FONT)
@@ -103,11 +114,9 @@ func set_stage_mode(on: bool) -> void:
 		_quality.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 		_quality.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		_quality.grow_vertical = Control.GROW_DIRECTION_BEGIN
-		# On the buttons' row: same bottom edge, same height.
-		_quality.offset_right = -40.0
-		_quality.offset_bottom = buttons.offset_bottom
-		_quality.custom_minimum_size.y = quit_button.custom_minimum_size.y
-		_quality.tooltip_text = tr("%%MENU_GFX_HELP_SHOWCASE")
+		_quality.offset_right = -_QUALITY_MARGIN_PX
+		_quality.offset_bottom = -_QUALITY_MARGIN_PX
+		_quality.tooltip_text = SettingsText.tooltip(tr("%%MENU_GFX_HELP_SHOWCASE"))
 		_quality.pressed.connect(tuning_requested.emit)
 		$Control.add_child(_quality)
 		SettingsManager.render.changed.connect(func(_keys: PackedStringArray) -> void: _label_quality())
@@ -126,11 +135,6 @@ func _label_quality() -> void:
 func set_interface_hidden(on: bool) -> void:
 	_interface_hidden = on
 	$Control.visible = not on and _settings_overlay == null
+	bar.visible = not on
 	if is_instance_valid(_settings_overlay):
 		_settings_overlay.visible = not on
-
-func _on_quit_pressed() -> void:
-	get_tree().quit()
-
-func _on_button_pressed() -> void:
-	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)

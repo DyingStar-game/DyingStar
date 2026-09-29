@@ -1,9 +1,30 @@
+class_name PausePage
 extends Control
+## The pause menu's screen: the game dimmed, "Game paused", and the same top bar as the home screen
+## (TopBar) with the in-game entries. PauseMenu decides what each does.
 
-@onready var settings_button: Button = $MarginContainer/VBoxContainer/SettingsButton
-@onready var quit_game_button: Button = $MarginContainer/VBoxContainer/QuitGameButton
-@onready var return_menu_button: Button = $MarginContainer/VBoxContainer/ReturnMenuButton
-@onready var resume_game_button: Button = $MarginContainer/VBoxContainer/ResumeGameButton
+const RESUME : StringName = &"resume"
+const SETTINGS : StringName = &"settings"
+const RETURN_MENU : StringName = &"return_menu"
+const QUIT : StringName = &"quit"
+
+var bar : TopBar
+
+
+func _init() -> void:
+	bar = TopBar.new()
+	bar.add_entry(RESUME, "%%PAUSEPAGE_RESUMEGAME")
+	bar.add_entry(SETTINGS, "%%MENU_SETTINGS")
+	bar.add_entry(RETURN_MENU, "%%PAUSEPAGE_RETURNMENU")
+	bar.add_entry(QUIT, "%%PAUSEPAGE_QUITGAME")
+
+
+func _ready() -> void:
+	add_child(bar)
+	# A CanvasLayer does not follow its parent Control's visibility: the bar is shown with the page.
+	bar.visible = is_visible_in_tree()
+	visibility_changed.connect(func() -> void: bar.visible = is_visible_in_tree())
+
 
 func _unhandled_input(_event: InputEvent) -> void:
 	if not is_multiplayer_authority(): return

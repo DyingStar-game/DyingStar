@@ -2,8 +2,6 @@
 
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_ewhk2"]
 [ext_resource type="Script" uid="uid://chsmswh73v0bl" path="res://ui/pause_page/pause_page.gd" id="1_ilyln"]
-[ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="3_l7wor"]
-[ext_resource type="Theme" path="res://ui/menu_button_theme.tres" id="4_theme"]
 
 [node name="PausePage" type="Control" unique_id=372426929]
 layout_mode = 3
@@ -37,45 +35,3 @@ grow_vertical = 2
 layout_mode = 2
 theme_override_font_sizes/font_size = 30
 text = "%%PAUSEPAGE_TITLE"
-
-[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1073037169]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/margin_left = 25
-theme_override_constants/margin_top = 25
-theme_override_constants/margin_right = 25
-theme_override_constants/margin_bottom = 25
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1951447394]
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 4
-theme = ExtResource("4_theme")
-theme_override_constants/separation = 12
-
-[node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%PAUSEPAGE_RESUMEGAME"
-
-[node name="SettingsButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%MENU_SETTINGS"
-
-[node name="ReturnMenuButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=8065788]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%PAUSEPAGE_RETURNMENU"
-
-[node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1161452463]
-custom_minimum_size = Vector2(300, 50)
-layout_mode = 2
-text = "%%PAUSEPAGE_QUITGAME"
-
-[node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("3_l7wor")]
-root_path = NodePath("../MarginContainer/VBoxContainer")
