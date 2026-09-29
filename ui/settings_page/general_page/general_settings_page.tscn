@@ -2,10 +2,7 @@
 
 [ext_resource type="Script" uid="uid://bf143sn8as1lk" path="res://ui/settings_page/general_page/general_settings_page.gd" id="1_gen"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_pcucv"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_gen"]
-font = ExtResource("2_pcucv")
-font_size = 28
+[ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
 
 [node name="GeneralSettingsPage" type="Control" unique_id=2034301496]
 layout_mode = 3
@@ -53,7 +50,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_LANGUAGE"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/Language"]
 custom_minimum_size = Vector2(200, 0)
@@ -69,7 +66,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_SHOW_DEBUG"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/ShowDebug" unique_id=771001103]
 custom_minimum_size = Vector2(200, 0)
@@ -86,7 +83,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_CARGO_DEBUG"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CargoDebug" unique_id=1547335572]
 custom_minimum_size = Vector2(200, 0)
@@ -103,7 +100,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_CELESTIAL_MARKERS"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/CelestialGizmos" unique_id=1547335573]
 custom_minimum_size = Vector2(200, 0)
@@ -120,7 +117,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_SURFACE_DEBUG"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/SurfaceDebug"]
 custom_minimum_size = Vector2(200, 0)
@@ -137,7 +134,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_VEHICLE_HUD"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VehicleHud"]
 custom_minimum_size = Vector2(200, 0)
@@ -154,7 +151,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_MOVEMENT_DEBUG"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/MovementDebug" unique_id=1547335574]
 custom_minimum_size = Vector2(200, 0)
@@ -171,7 +168,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_GFX_OVERLAY_TOGGLE"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/GraphicsOverlay" unique_id=1700000003]
 custom_minimum_size = Vector2(200, 0)
@@ -188,7 +185,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_STAGE_TOGGLE"
-label_settings = SubResource("LabelSettings_gen")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/MenuStage" unique_id=1700000006]
 custom_minimum_size = Vector2(200, 0)

@@ -86,7 +86,7 @@ const ACTION_GROUPS : Dictionary = {
 ## someone files it.
 const GROUP_OTHER : String = "%%KM_GROUP_OTHER"
 ## Tabs carry the navigation, so they read at a size between the page title and a row.
-const TAB_FONT_SIZE : int = 22
+const TAB_FONT_SIZE : int = 16
 
 var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 
