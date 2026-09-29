@@ -5,7 +5,7 @@ extends RefCounted
 ## Three destinations:
 ##   - the root Viewport (the game view). Never the settings page's own viewport: that page lives in
 ##     a SubViewport, and an option applied there would change nothing the player looks at;
-##   - RenderingServer globals (shadow atlas and filter, SSAO/SSIL/SSR quality, glow upscale, the
+##   - RenderingServer globals (shadow atlas and filter, SSAO/SSIL quality, SSR size, glow upscale, the
 ##     planet_hex_quality shader global) — process-wide despite some of their names;
 ##   - the world Environment, which AtmosphereRenderer rebuilds on every spawn and attaches here.
 ##
@@ -21,10 +21,8 @@ const _SSIL_QUALITY : Array[int] = [
 	RenderingServer.ENV_SSIL_QUALITY_VERY_LOW, RenderingServer.ENV_SSIL_QUALITY_LOW,
 	RenderingServer.ENV_SSIL_QUALITY_MEDIUM, RenderingServer.ENV_SSIL_QUALITY_HIGH,
 	RenderingServer.ENV_SSIL_QUALITY_ULTRA]
-## Index = the ssr option value (0 = off).
-const _SSR_ROUGHNESS : Array[int] = [
-	RenderingServer.ENV_SSR_ROUGHNESS_QUALITY_DISABLED, RenderingServer.ENV_SSR_ROUGHNESS_QUALITY_LOW,
-	RenderingServer.ENV_SSR_ROUGHNESS_QUALITY_MEDIUM, RenderingServer.ENV_SSR_ROUGHNESS_QUALITY_HIGH]
+## Index = the ssr option value (0 = off). The engine's roughness-quality knob is deprecated in 4.7 and
+## does nothing any more: steps and half/full resolution are what SSR quality is now.
 const _SSR_STEPS : Array[int] = [0, 32, 64, 96]
 ## The engine's own defaults for the knobs we do not expose (adaptive target, fade-out range): kept,
 ## so turning an effect on gives the stock look rather than a tuning of ours.
@@ -114,7 +112,6 @@ func _apply_ssil(level: int) -> void:
 
 
 func _apply_ssr(level: int) -> void:
-	RenderingServer.environment_set_ssr_roughness_quality(_SSR_ROUGHNESS[level])
 	RenderingServer.environment_set_ssr_half_size(level < 3)
 	var env : Environment = _env()
 	if env != null:
