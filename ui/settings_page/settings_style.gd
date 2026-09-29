@@ -15,3 +15,6 @@ const ACTIVE_BG : Color = Color(1.0, 0.84, 0.35, 0.16)
 ## "The pointer is on this line." Deliberately neutral — amber already means active, and green/red
 ## mean states, so a hover borrowing either would read as something it is not.
 const HOVER_COLOR : Color = Color(1.0, 1.0, 1.0, 0.07)
+## A value in its healthy range (FPS, TPS), and one that is not — or a warning to be seen at once.
+const GOOD_COLOR : Color = Color(0.45, 0.9, 0.45)
+const ALERT_COLOR : Color = Color(1.0, 0.3, 0.3)
