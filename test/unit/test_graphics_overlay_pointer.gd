@@ -5,7 +5,7 @@ extends GutTest
 
 var _real_render : RenderSettings
 var _render : RenderSettings
-var _overlay : GraphicsOverlay
+var _overlay : OverlayPanel
 var _typing : bool = false
 var _menu : bool = false
 
@@ -18,8 +18,7 @@ func before_each() -> void:
 	SettingsManager.render = _render
 	_typing = false
 	_menu = false
-	_overlay = GraphicsOverlay.new()
-	_overlay.setup(func() -> bool: return not _typing, func() -> bool: return _menu)
+	_overlay = GraphicsOverlay.in_game().setup(func() -> bool: return not _typing, func() -> bool: return _menu)
 	add_child_autofree(_overlay)
 
 
