@@ -19,6 +19,9 @@ const HOVER_COLOR : Color = Color(1.0, 1.0, 1.0, 0.07)
 const GOOD_COLOR : Color = Color(0.45, 0.9, 0.45)
 const ALERT_COLOR : Color = Color(1.0, 0.3, 0.3)
 
-## The settings pages' text size (settings_label.tres says the same for the lines written in scenes):
-## small, as in SQUAD, so a page shows its options at a glance.
-const FONT_SIZE : int = 18
+## The settings lines' caption size, small as in SQUAD so a page shows its options at a glance
+## (settings_label.tres says the same for the lines written in scenes). Section headings stand one
+## step above it (SettingsRowFactory.header); the controls one below (settings_theme.tres, 14).
+const FONT_SIZE : int = 15
+## The rule under a section heading, which the heading's amber modulate tints.
+const HEADER_RULE : Color = Color(1.0, 1.0, 1.0, 0.45)
