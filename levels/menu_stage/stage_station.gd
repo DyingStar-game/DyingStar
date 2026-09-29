@@ -4,7 +4,8 @@ extends Camera3D
 ## so it can be previewed in the editor (its Preview toggle) while it is placed; it is never made
 ## current in the game — the rig's camera is.
 ##
-## `key` names it: a menu screen (&"home", &"settings", &"settings_graphics", as MainPage says), or
+## `key` names it: a menu screen (&"home", &"settings", &"settings_graphics", &"settings_audio",
+## &"settings_controls" — MainPage.SCREEN_OF_CATEGORY), or
 ## any key for a tuning-scene viewpoint, which then carries a `label` (a translation key) to be listed.
 
 @export var key : StringName = &""

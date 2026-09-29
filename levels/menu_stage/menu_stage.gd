@@ -103,6 +103,9 @@ func go_to(key: StringName) -> void:
 	if not _live or not is_instance_valid(_rig):
 		return
 	var station : StageStation = _outpost.station(key)
+	# A settings tab without its own viewpoint shares the Settings one.
+	if station == null and String(key).begins_with("settings_"):
+		station = _outpost.station(&"settings")
 	if station != null:
 		_rig.glide_to_view(station.transform)
 
