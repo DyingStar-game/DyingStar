@@ -65,5 +65,7 @@
  "fx",
  "fy",
  "fz",
- "tilt_m"
+ "tilt_m",
+ "cinder_cone",
+ "lava_dome"
 ]
