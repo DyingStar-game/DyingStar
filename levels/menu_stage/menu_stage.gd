@@ -79,6 +79,7 @@ func _process(delta: float) -> void:
 		_probe.wait()  # a finished pool task must still be waited for, or it leaks (and exit crashes)
 		var reachable : bool = _probe.ok
 		_probe = null
+		_progress(0.1)
 		if reachable:
 			_build()
 		else:
@@ -161,6 +162,7 @@ func _build() -> void:
 	# Before the world enters the tree: the planet places itself for the (frozen) clock in its _ready.
 	_session.begin(world)
 	add_child(world)
+	_progress(0.5)  # the planet's set-up held the main thread: the bar jumps rather than crawls
 	_planet = world.get_node("Tarsis3")
 	_outpost = _planet.get_node("Outpost")
 	var ground_ready : Array = [false]
@@ -182,6 +184,12 @@ func _build() -> void:
 	while waited < READY_TIMEOUT_S and not ground_ready[0]:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
+		# The ground: chunks built out of those asked for, or the time left, whichever is further.
+		var terrain : PlanetTerrain = _planet.planet_terrain
+		var built : float = 0.0
+		if terrain != null and terrain.desired_chunk_count() > 0:
+			built = float(terrain.active_chunk_count()) / terrain.desired_chunk_count()
+		_progress(0.5 + 0.5 * maxf(built, waited / READY_TIMEOUT_S))
 	_outpost.start(_planet.planet_data.radius, _planet.planet_data.crack_aware_surface_dist)
 	_resnap_left = RESNAP_FOR_S
 	_menu.set_stage_mode(true)
@@ -196,14 +204,15 @@ func _sunrise() -> void:
 	_hour = hour_set if hour_set >= 0.0 else 12.0
 
 
-## The game's loading splash (GameOrchestrator puts it on the root, hidden, at boot), saying just
-## "Loading…" while the menu builds; its own "Loading the Universe…" is given back for the game.
+## The loading splash, saying just "Loading…" while the menu builds; its own "Loading the
+## Universe…" is given back for the game.
 func _splash(on: bool) -> void:
-	var loading : Node = get_tree().root.get_node_or_null("Loading")
-	var screen : Node = loading.get_node_or_null("LoadingScreen") if loading != null else null
-	if screen == null:
-		return
-	screen.visible = on
-	var label : Label = screen.find_child("Label", true, false) as Label
-	if label != null:
-		label.text = "%%MENU_STAGE_LOADING" if on else "%%MENU_LOADING"
+	if on:
+		LoadingSplash.show(get_tree(), "%%MENU_STAGE_LOADING")
+	else:
+		LoadingSplash.hide(get_tree())
+		LoadingSplash.say(get_tree(), "%%MENU_LOADING")
+
+
+func _progress(value: float) -> void:
+	LoadingSplash.progress(get_tree(), value)
