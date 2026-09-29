@@ -56,7 +56,7 @@ func _ready() -> void:
 	_shadows.toggled.connect(_on_shadows_toggled)
 	_shadow_dist.value_changed.connect(func(v: float) -> void:
 		_shadow_dist_value.text = str(int(v))
-		SettingsManager.set_shadow_distance(v))
+		SettingsManager.render.set_value("shadow_distance", v))
 	# The F7 photos (F8 bug-report shots in debug/, F6 recordings in records/) — in the OS file manager.
 	_gallery.pressed.connect(CapturePaths.open_gallery)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
@@ -184,7 +184,7 @@ func _init_shadows() -> void:
 
 func _on_shadows_toggled(on: bool) -> void:
 	_shadows.text = SettingsText.on_off(on)
-	SettingsManager.set_shadows(on)
+	SettingsManager.render.set_value("shadows", on)
 
 ## Reflect the saved sun shadow distance on the slider + its value label.
 func _init_shadow_distance() -> void:

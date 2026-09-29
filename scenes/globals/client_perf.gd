@@ -563,16 +563,19 @@ func _print_boot_detail() -> void:
 			+ " debanding=%s vrs=%d | shadow_atlas=%d dir_shadow=%s occlusion=%s aniso=%s"
 			+ " picking=%s"
 		) % [
-			str(ProjectSettings.get_setting("rendering/renderer/rendering_method", "?")),
+			RenderingServer.get_current_rendering_method(),
 			str(vp.get_visible_rect().size),
 			int(vp.scaling_3d_mode), vp.scaling_3d_scale, int(vp.msaa_3d), int(vp.screen_space_aa),
 			vp.use_taa, vp.use_debanding, int(vp.vrs_mode),
 			vp.positional_shadow_atlas_size,
-			str(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/size", "?")),
+			# The sun's atlas has no getter: the setting is what RenderApplier gave the engine.
+			str(SettingsManager.render.effective("shadow_sun_res")),
 			str(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", "?")),
-			str(ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level", "?")),
+			str(int(vp.anisotropic_filtering_level)),
 			str(vp.physics_object_picking),
 		])
+	# Which preset that is, what this GPU was guessed to be, and every option as it applies.
+	print("[CPerf] graphics %s" % SettingsManager.render.describe())
 
 	print("[CPerf] physics engine=%s ticks=%d separate_thread=%s | worker_threads=%s | time_scale=%.2f | mem_boot avail=%s phys=%s" % [
 		str(ProjectSettings.get_setting("physics/3d/physics_engine", "?")),
