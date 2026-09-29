@@ -3,6 +3,7 @@
 [ext_resource type="Texture2D" uid="uid://trpcoqhuryo0" path="res://assets/textures/Menu/Background_1920x1080.png" id="1_ewhk2"]
 [ext_resource type="Script" uid="uid://chsmswh73v0bl" path="res://ui/pause_page/pause_page.gd" id="1_ilyln"]
 [ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="3_l7wor"]
+[ext_resource type="Theme" path="res://ui/menu_button_theme.tres" id="4_theme"]
 
 [node name="PausePage" type="Control" unique_id=372426929]
 layout_mode = 3
@@ -53,26 +54,27 @@ theme_override_constants/margin_bottom = 25
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 4
-theme_override_constants/separation = 10
+theme = ExtResource("4_theme")
+theme_override_constants/separation = 12
 
 [node name="ResumeGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=207063182]
+custom_minimum_size = Vector2(300, 50)
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_RESUMEGAME"
 
 [node name="SettingsButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=674547301]
+custom_minimum_size = Vector2(300, 50)
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
 text = "%%MENU_SETTINGS"
 
 [node name="ReturnMenuButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=8065788]
+custom_minimum_size = Vector2(300, 50)
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_RETURNMENU"
 
 [node name="QuitGameButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1161452463]
+custom_minimum_size = Vector2(300, 50)
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
 text = "%%PAUSEPAGE_QUITGAME"
 
 [node name="InstallSounds" parent="." unique_id=121904692 instance=ExtResource("3_l7wor")]
