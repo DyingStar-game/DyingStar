@@ -55,6 +55,8 @@ func _ready() -> void:
 	if not SettingsManager.render.is_menu_stage_enabled():
 		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
 		return
+	# The splash first, over the menu: its buttons appear with the stage, not before it.
+	_splash(true)
 	_probe = TileServiceProbe.new()
 	_probe.start(PLANET_NAME)
 
@@ -80,6 +82,7 @@ func _process(delta: float) -> void:
 		if reachable:
 			_build()
 		else:
+			_splash(false)
 			print("[MenuStage] terrain tile service unreachable: the menu keeps its still image.")
 	if _live and _resnap_left > 0.0:
 		_resnap_tick += delta
@@ -148,7 +151,6 @@ func exit_tuning() -> void:
 
 
 func _build() -> void:
-	_splash(true)
 	# Let the splash paint before the planet's set-up holds the main thread for a few seconds.
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -191,9 +193,14 @@ func _sunrise() -> void:
 	_hour = hour_set if hour_set >= 0.0 else 12.0
 
 
-## The game's loading splash (GameOrchestrator puts it on the root, hidden, at boot).
+## The game's loading splash (GameOrchestrator puts it on the root, hidden, at boot), saying just
+## "Loading…" while the menu builds; its own "Loading the Universe…" is given back for the game.
 func _splash(on: bool) -> void:
 	var loading : Node = get_tree().root.get_node_or_null("Loading")
 	var screen : Node = loading.get_node_or_null("LoadingScreen") if loading != null else null
-	if screen != null:
-		screen.visible = on
+	if screen == null:
+		return
+	screen.visible = on
+	var label : Label = screen.find_child("Label", true, false) as Label
+	if label != null:
+		label.text = "%%MENU_STAGE_LOADING" if on else "%%MENU_LOADING"
