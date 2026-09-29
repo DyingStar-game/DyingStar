@@ -1,7 +1,26 @@
 class_name StageTuning
 extends RefCounted
-## The tuning scene's own controls, as one section of the graphics panel: which viewpoint, what hour,
-## and the way back. Built by composition into GraphicsOverlay.always_on(), above the options.
+## The tuning scene's own controls, built by composition into GraphicsOverlay.always_on(): the way
+## back, at the very top of the panel, then which viewpoint and what hour, above the options.
+
+const _BACK_FONT_SIZE : int = 18
+
+
+## "‹ Back to the menu", across the top of the panel, where it is looked for first.
+static func back(stage: MenuStage) -> WidgetSection:
+	return WidgetSection.new("",
+		func(_owner: Node, box: VBoxContainer, _factory: SettingsRowFactory) -> void:
+			var button := Button.new()
+			button.text = "%%SHOWCASE_BACK"
+			button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.focus_mode = Control.FOCUS_NONE
+			button.add_theme_font_override("font", SettingsRowFactory.FONT)
+			button.add_theme_font_size_override("font_size", _BACK_FONT_SIZE)
+			button.add_theme_color_override("font_color", SettingsStyle.ACTIVE_COLOR)
+			button.pressed.connect(stage.exit_tuning)
+			box.add_child(button))
 
 
 static func section(stage: MenuStage) -> WidgetSection:
@@ -38,11 +57,6 @@ static func _build(stage: MenuStage, box: VBoxContainer, factory: SettingsRowFac
 	hour_line.add_child(bar)
 	hour_line.add_child(value)
 	box.add_child(hour_line)
-	var back_line : HBoxContainer = factory.row("")
-	var back : Button = factory.button("%%SHOWCASE_BACK")
-	back.pressed.connect(stage.exit_tuning)
-	back_line.add_child(back)
-	box.add_child(back_line)
 
 
 ## 17.25 -> "17:15".
