@@ -14,6 +14,7 @@ extends RefCounted
 ## stand at every distance the graphics options have to be judged at — 200 m, 1, 3, 8, 15 and 20 km.
 ##
 ## Prop entry:      {scene, distance, bearing, facing, lift?, headlights?}
+## Driver entry:    see DRIVERS
 ## Mannequin entry: {clip, distance, bearing, facing, walk_radius?}
 ## Station entry:   {key, label?, eye: [distance, bearing, height], look: [distance, bearing, height]}
 
@@ -30,6 +31,7 @@ const _LAMP : String = "res://scenes/_universe/props/furniture/furn_lamppost_out
 const _APARTMENT : String = "res://scenes/_universe/structures/buildings/apartment_ares_worker_001.tscn"
 const _WAREHOUSE : String = "res://scenes/_universe/props/containers/storagewarehouse.tscn"
 const _TRUCK : String = "res://scenes/_universe/vehicles/ground/trucks/truck.tscn"
+const _ROCK : String = "res://scenes/_universe/environment/terrain/rocks/rock_sm.tscn"
 
 const PROPS : Array[Dictionary] = [
 	# ── The lamp-lit path, teleporter -> yard ──
@@ -53,13 +55,13 @@ const PROPS : Array[Dictionary] = [
 		"distance": 29.0, "bearing": 118.0, "facing": 40.0},
 	{"scene": "res://scenes/_universe/props/containers/crate_canister.tscn",
 		"distance": 27.5, "bearing": 121.0, "facing": 10.0},
-	# ── The boulder being mined, and loose rocks ──
-	{"scene": "res://scenes/_universe/environment/terrain/rocks/rock_lg.tscn",
-		"distance": 18.0, "bearing": -48.0, "facing": 0.0},
-	{"scene": "res://scenes/_universe/environment/terrain/rocks/rock_md.tscn",
-		"distance": 15.0, "bearing": -30.0, "facing": 90.0},
-	{"scene": "res://scenes/_universe/environment/terrain/rocks/rock_sm.tscn",
-		"distance": 12.0, "bearing": -60.0, "facing": 45.0},
+	# ── The rocks being mined (rock_sm: the only one at a real scale — the large ones are
+	# mountains at this distance) ──
+	{"scene": _ROCK, "distance": 18.0, "bearing": -48.0, "facing": 0.0},
+	{"scene": _ROCK, "distance": 18.8, "bearing": -44.5, "facing": 130.0},
+	{"scene": _ROCK, "distance": 17.2, "bearing": -51.0, "facing": 250.0},
+	{"scene": _ROCK, "distance": 13.0, "bearing": -62.0, "facing": 45.0},
+	{"scene": _ROCK, "distance": 21.0, "bearing": -36.0, "facing": 300.0},
 	# ── The line of distances: one landmark per band the options are judged at ──
 	{"scene": _APARTMENT, "distance": 200.0, "bearing": 14.0, "facing": 180.0},
 	{"scene": _WAREHOUSE, "distance": 1000.0, "bearing": -6.0, "facing": 170.0},
@@ -85,6 +87,15 @@ const MANNEQUINS : Array[Dictionary] = [
 	{"clip": &"Dance", "distance": 10.0, "bearing": 35.0, "facing": 200.0},
 	# Looking out over the valley, at the far end of the line.
 	{"clip": &"Idle_LookAround", "distance": 6.0, "bearing": -8.0, "facing": 0.0},
+]
+
+## Trucks driving big loops around the outpost, headlights on: something moves in every shot.
+## {scene, centre: [distance, bearing] of the loop's centre, radius, speed_kmh, start (deg), clockwise}
+const DRIVERS : Array[Dictionary] = [
+	{"scene": _TRUCK, "centre": [30.0, 90.0], "radius": 140.0, "speed_kmh": 32.0, "start": 0.0,
+		"clockwise": true},
+	{"scene": _TRUCK, "centre": [60.0, 40.0], "radius": 260.0, "speed_kmh": 45.0, "start": 200.0,
+		"clockwise": false},
 ]
 
 ## Menu screens first (MainPage.screen_changed keys), then the tuning scene's fixed viewpoints.

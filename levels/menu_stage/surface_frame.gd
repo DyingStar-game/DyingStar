@@ -11,13 +11,14 @@ extends RefCounted
 
 var anchor_dir : Vector3
 var radius : float
-var _ground : Callable
+## (direction from the centre) -> surface distance from the centre: shared with frames built from this one.
+var ground : Callable
 
 
-func _init(anchor_local: Vector3, p_radius: float, ground: Callable) -> void:
+func _init(anchor_local: Vector3, p_radius: float, p_ground: Callable) -> void:
 	anchor_dir = anchor_local.normalized()
 	radius = p_radius
-	_ground = ground
+	ground = p_ground
 
 
 ## Unit direction from the centre of the point `distance` metres away along `bearing_deg`.
@@ -30,7 +31,7 @@ func dir_at(distance: float, bearing_deg: float) -> Vector3:
 ## The planet-local point there, `lift` metres above the ground.
 func point(distance: float, bearing_deg: float, lift: float = 0.0) -> Vector3:
 	var dir : Vector3 = dir_at(distance, bearing_deg)
-	return dir * (float(_ground.call(dir)) + lift)
+	return dir * (float(ground.call(dir)) + lift)
 
 
 ## A basis standing on the ground at `dir` (up = away from the centre), facing `facing_deg`.

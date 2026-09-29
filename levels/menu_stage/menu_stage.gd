@@ -38,6 +38,8 @@ var _line_deg : float = 0.0
 var _hour : float = 12.0
 var _live : bool = false
 var _tuning : OverlayPanel = null
+## The station to glide back to when the tuning scene closes: where it was opened from.
+var _tuning_from : StringName = &"home"
 var _resnap_left : float = 0.0
 var _resnap_tick : float = 0.0
 
@@ -47,6 +49,7 @@ var _resnap_tick : float = 0.0
 func _ready() -> void:
 	active = self
 	_menu.screen_changed.connect(go_to)
+	_menu.tuning_requested.connect(enter_tuning.bind(&"home"))
 	_probe = TileServiceProbe.new()
 	_probe.start(PLANET_NAME)
 
@@ -105,10 +108,12 @@ func set_hour(value: float) -> void:
 		StageClock.set_hour(_planet, _anchor, value)
 
 
-## The tuning scene: the menu UI steps aside for the graphics panel and its viewpoints.
-func enter_tuning() -> void:
+## The tuning scene: the menu UI steps aside for the graphics panel and its viewpoints. `from`: the
+## station to come back to (the home screen's button, or Settings > Graphics).
+func enter_tuning(from: StringName = &"settings_graphics") -> void:
 	if not _live or _tuning != null:
 		return
+	_tuning_from = from
 	_tuning = GraphicsOverlay.always_on([StageTuning.section(self)])
 	add_child(_tuning)
 	_rig.yaw_offset_deg = TUNING_YAW_DEG
@@ -124,7 +129,7 @@ func exit_tuning() -> void:
 	_rig.yaw_offset_deg = 0.0
 	_sunrise()
 	_menu.set_interface_hidden(false)
-	go_to(&"settings_graphics")
+	go_to(_tuning_from)
 
 
 func _build() -> void:

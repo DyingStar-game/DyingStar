@@ -96,8 +96,11 @@ func _add_tuning_scene_line(rows: VBoxContainer, factory: SettingsRowFactory) ->
 		return
 	var line : HBoxContainer = factory.row("%%MENU_GFX_SHOWCASE")
 	line.tooltip_text = tr("%%MENU_GFX_HELP_SHOWCASE")
+	# Green: an invitation, not a setting.
+	line.get_child(0).modulate = SettingsStyle.GOOD_COLOR
 	var enter : Button = factory.button("%%MENU_GFX_SHOWCASE_OPEN")
-	enter.pressed.connect(func() -> void: MenuStage.active.enter_tuning())
+	enter.add_theme_color_override("font_color", SettingsStyle.GOOD_COLOR)
+	enter.pressed.connect(func() -> void: MenuStage.active.enter_tuning(&"settings_graphics"))
 	line.add_child(enter)
 	rows.add_child(line)
 
