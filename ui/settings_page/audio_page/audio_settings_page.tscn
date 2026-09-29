@@ -2,10 +2,7 @@
 
 [ext_resource type="Script" uid="uid://drnvfkk8x2qh5" path="res://ui/settings_page/audio_page/audio_settings_page.gd" id="1_aa43r"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_aa43r"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_aa43r"]
-font = ExtResource("2_aa43r")
-font_size = 28
+[ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aa43r"]
 bg_color = Color(0.9843137, 0.72156864, 0.105882354, 1)
@@ -52,7 +49,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_AUDIO_GENERAL"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/General" unique_id=1987287576]
 custom_minimum_size = Vector2(600, 0)
@@ -71,7 +68,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_AUDIO_MUSIC"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/Music" unique_id=1962383320]
 custom_minimum_size = Vector2(600, 0)
@@ -90,7 +87,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_AUDIO_SFX"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/SFX" unique_id=460997283]
 custom_minimum_size = Vector2(600, 0)
@@ -109,7 +106,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_AUDIO_VOIP"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/VoIP" unique_id=383556696]
 custom_minimum_size = Vector2(600, 0)
@@ -127,7 +124,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone" unique_id=667225259]
 layout_mode = 2
 text = "%%MENU_AUDIO_MIC"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Microphone" unique_id=1342693969]
 custom_minimum_size = Vector2(600, 0)
@@ -160,7 +157,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker" unique_id=107308438]
 layout_mode = 2
 text = "%%MENU_AUDIO_SPEAKER"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Speaker" unique_id=1219883642]
 custom_minimum_size = Vector2(600, 0)
@@ -197,14 +194,14 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=1472948065]
 layout_mode = 2
 text = "%%MENU_AUDIO_TEST_MIC"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="MarginContainer/VBoxContainer/Microphone_testing" unique_id=2050494609]
 custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_aa43r")
-theme_override_font_sizes/font_size = 28
+theme_override_font_sizes/font_size = 18
 text = "%%MENU_AUDIO_TEST"
 
 [node name="Speaker_testing" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=155813879]
@@ -214,7 +211,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Speaker_testing" unique_id=1006306348]
 layout_mode = 2
 text = "%%MENU_AUDIO_TEST_SPEAKER"
-label_settings = SubResource("LabelSettings_aa43r")
+label_settings = ExtResource("settings_label")
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1159019645]
 stream = SubResource("AudioStreamMicrophone_aa43r")

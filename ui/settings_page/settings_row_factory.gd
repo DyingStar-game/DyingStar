@@ -4,7 +4,7 @@ extends RefCounted
 ## scenes: Label on the left, control pushed to the right.
 ##
 ## An instance rather than static functions because the SAME rows are built at two sizes: the
-## Graphics page (Poppins 28, 200 px controls, like every other line of it) and the in-game overlay,
+## Graphics page (Poppins SettingsStyle.FONT_SIZE, 200 px controls, like every other line of it) and the in-game overlay,
 ## which has to stay small enough to leave the scene it is tuning visible.
 
 const FONT : FontFile = preload("res://ui/Poppins-Regular.ttf")
@@ -23,7 +23,7 @@ var wrap_captions : bool
 var _label_settings : LabelSettings
 
 
-func _init(label_font_size: int = 28, control_font_size: int = 0, width: float = 200.0,
+func _init(label_font_size: int = SettingsStyle.FONT_SIZE, control_font_size: int = 0, width: float = 200.0,
 		wrap: bool = false) -> void:
 	label_size = label_font_size
 	control_size = control_font_size

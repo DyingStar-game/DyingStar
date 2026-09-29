@@ -2,10 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dxp1gnukx0qma" path="res://ui/settings_page/graphical_page/graphical_settings_page.gd" id="1_6drnw"]
 [ext_resource type="FontFile" uid="uid://c4j53obrj81gg" path="res://ui/Poppins-Regular.ttf" id="2_pcucv"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_aqojs"]
-font = ExtResource("2_pcucv")
-font_size = 28
+[ext_resource type="LabelSettings" path="res://ui/settings_page/settings_label.tres" id="settings_label"]
 
 [node name="GraphicalSettingsPage" type="Control" unique_id=8020892]
 layout_mode = 3
@@ -53,7 +50,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_MONITOR"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/Monitor" unique_id=352335905]
 custom_minimum_size = Vector2(200, 0)
@@ -70,7 +67,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_DISPLAY_MODE"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/DisplayMode" unique_id=1121426514]
 custom_minimum_size = Vector2(200, 0)
@@ -92,7 +89,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_RESOLUTION"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/ScreenResolution" unique_id=115248095]
 custom_minimum_size = Vector2(200, 0)
@@ -108,7 +105,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_VSYNC"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/VSync" unique_id=2015412763]
 custom_minimum_size = Vector2(200, 0)
@@ -124,7 +121,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_DEV_MODE"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/DevMode" unique_id=1344302373]
 custom_minimum_size = Vector2(200, 0)
@@ -141,7 +138,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_FPS_LIMIT"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="OptionButton" type="OptionButton" parent="ScrollContainer/MarginContainer/VBoxContainer/MaxFps" unique_id=978430751]
 custom_minimum_size = Vector2(200, 0)
@@ -170,7 +167,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 text = "%%MENU_FOV"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 
 [node name="HSlider" type="HSlider" parent="ScrollContainer/MarginContainer/VBoxContainer/Fov" unique_id=933020062]
 custom_minimum_size = Vector2(160, 0)
@@ -185,5 +182,5 @@ value = 100.0
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 text = "100"
-label_settings = SubResource("LabelSettings_aqojs")
+label_settings = ExtResource("settings_label")
 horizontal_alignment = 1

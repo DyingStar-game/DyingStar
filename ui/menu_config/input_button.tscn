@@ -7,7 +7,7 @@ bg_color = Color(0, 0, 0, 1)
 bg_color = Color(0.3125, 0.3125, 0.3125, 0.592157)
 
 [node name="InputButton" type="Button" unique_id=208518596]
-custom_minimum_size = Vector2(0, 70)
+custom_minimum_size = Vector2(0, 44)
 anchors_preset = 10
 anchor_right = 1.0
 grow_horizontal = 2
@@ -33,7 +33,7 @@ layout_mode = 2
 [node name="LabelAction" type="Label" parent="MarginContainer/HBoxContainer" unique_id=1088336316]
 layout_mode = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 18
 text = "Action name a"
 uppercase = true
 horizontal_alignment = 1
@@ -47,7 +47,7 @@ mouse_filter = 1
 [node name="LabelInput" type="Label" parent="MarginContainer/HBoxContainer" unique_id=515336809]
 layout_mode = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 18
 text = "Input key"
 horizontal_alignment = 1
 vertical_alignment = 1
