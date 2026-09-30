@@ -56,8 +56,11 @@ const SPAN_JOIN: float = 6.0
 const SPAN_MIN: float = 1.5
 ## Under the ground: dark, on a darker bed between its two lines. Over the void: light, and nothing
 ## under it — the void is what is there.
-const TUNNEL_COLOUR: Color = Color(0.04, 0.04, 0.04)
-const TUNNEL_BED: Color = Color(0.13, 0.12, 0.12)
+##
+## Written as LINEAR light, which is how this material reads a vertex colour: 0.04 there is not a
+## near-black but a mid grey on screen (22 %), and the tunnel's lines came out grey on a grey bed.
+const TUNNEL_COLOUR: Color = Color(0.0, 0.0, 0.0)
+const TUNNEL_BED: Color = Color(0.015, 0.014, 0.014)
 const BRIDGE_COLOUR: Color = Color(0.95, 0.95, 0.92)
 ## How far under the lines the bed lies, as a fraction of the body's radius: half their own height
 ## over the ground. At the same height the way drawn down its middle fights it for the same pixels;
