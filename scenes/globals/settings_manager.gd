@@ -9,6 +9,7 @@ signal show_debug_changed(on: bool)
 signal vehicle_hud_changed(on: bool)
 signal movement_debug_changed(on: bool)
 signal surface_debug_changed(on: bool)
+signal music_debug_changed(on: bool)
 ## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
 signal shadows_changed(on: bool)
 ## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
@@ -116,6 +117,7 @@ func initialize_settings():
 	# Shown by default: it is the driver's only dashboard until the in-cab one exists (GDD).
 	config.set_value("general", "vehicle_hud", true)
 	config.set_value("general", "surface_debug", false)
+	config.set_value("general", "music_debug", false)
 	# "auto" follows the OS on first launch, so a French player is not greeted in English.
 	config.set_value("general", "language", "auto")
 	for key in AUDIO_BUSES:
@@ -394,6 +396,16 @@ func set_surface_debug(on: bool) -> void:
 
 func is_surface_debug() -> bool:
 	return config.get_value("general", "surface_debug", false)
+
+## Music debug: which track plays, from which playlist, and which line of the MusicTable decided it.
+## For whoever fills that table in: a rule that never wins looks exactly like a rule that is missing.
+func set_music_debug(on: bool) -> void:
+	config.set_value("general", "music_debug", on)
+	save_settings()
+	music_debug_changed.emit(on)
+
+func is_music_debug() -> bool:
+	return config.get_value("general", "music_debug", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)

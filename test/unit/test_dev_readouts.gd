@@ -108,3 +108,25 @@ func test_the_client_readout_without_a_session() -> void:
 	var lines : PackedStringArray = ClientReadout.new().lines(body)
 	assert_has(lines, "x: 0.00", "coordinates")
 	assert_has(lines, "- chunks", "no planet, no chunks")
+
+
+func test_the_music_readout_names_the_track_and_the_rule_that_chose_it() -> void:
+	var lines : PackedStringArray = DevReadouts.music_lines({
+		"track": "tin_can.ogg", "position_s": 75.0, "length_s": 154.0, "playlist": "space.tres",
+		"gap_left_s": -1.0, "why": "rule 2: EVA", "where": "weightless", "pending": "capital.tres"})
+	assert_eq(lines[0], "track: tin_can.ogg  1:15 / 2:34", "what plays, and how far in")
+	assert_eq(lines[1], "playlist: space.tres", "where it comes from")
+	assert_eq(lines[2], "case: rule 2: EVA", "the line of the table that won")
+	assert_eq(lines[3], "where: weightless", "what the rules had to match")
+	assert_eq(lines[4], "next: capital.tres", "and what is about to take over")
+
+
+func test_the_music_readout_tells_a_pause_from_a_chosen_silence() -> void:
+	var pause : Dictionary = {"track": "", "playlist": "wild.tres", "gap_left_s": 41.2, "why": "rule 4: WILD", "where": "wild"}
+	assert_eq(DevReadouts.music_lines(pause)[0], "track: (silence, next track in 42 s)", "between two tracks")
+	var silence : Dictionary = {"track": "", "playlist": "", "gap_left_s": -1.0, "why": "rule 4: WILD", "where": "wild"}
+	var lines : PackedStringArray = DevReadouts.music_lines(silence)
+	assert_eq(lines[0], "track: (silence)", "nothing due")
+	assert_eq(lines[1], "playlist: (none)", "the rule has no playlist")
+	assert_eq(lines.size(), 4, "nothing pending, no fifth line")
+	assert_eq(DevReadouts.music_lines({})[0], "music --", "before the director started")

@@ -7,6 +7,7 @@ const TOGGLES : Array[Dictionary] = [
 	{"node": "CargoDebug", "getter": "is_cargo_debug", "setter": "set_cargo_debug"},
 	{"node": "CelestialGizmos", "getter": "is_celestial_gizmos", "setter": "set_celestial_gizmos"},
 	{"node": "SurfaceDebug", "getter": "is_surface_debug", "setter": "set_surface_debug"},
+	{"node": "MusicDebug", "getter": "is_music_debug", "setter": "set_music_debug"},
 	{"node": "VehicleHud", "getter": "is_vehicle_hud", "setter": "set_vehicle_hud"},
 	{"node": "MovementDebug", "getter": "is_movement_debug", "setter": "set_movement_debug"},
 ]

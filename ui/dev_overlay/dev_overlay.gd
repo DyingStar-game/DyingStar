@@ -10,6 +10,7 @@ extends RefCounted
 ##   Server box   its name and zones, as a table that scrolls on its own              (show debug)
 ##   Client       FPS, objects, scenes, x/y/z, VRAM, events/s, chunks on screen       (show debug)
 ##   Ground       what we stand on and how it was decided                  (Settings: Surface debug)
+##   Music        the track, its playlist, the rule that chose it         (Settings: Music debug)
 ##   Movement     speed, walk target, clip, vault / step                  (Settings: Movement debug)
 ##   Vehicle      the driver's readout while driving                    (Settings: Vehicle dashboard)
 ##
@@ -49,6 +50,9 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_SURFACE",
 		func() -> PackedStringArray: return DevReadouts.surface_lines(surface_info.call(), body), 0.25,
 		func() -> bool: return toggles.surface))
+	panel.add_section(ReadoutSection.new("%%HUD_DEV_MUSIC",
+		func() -> PackedStringArray: return DevReadouts.music_lines(MusicDirector.debug_state()), 0.5,
+		func() -> bool: return toggles.music))
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_MOVEMENT",
 		func() -> PackedStringArray: return [ReadoutFormat.escape(animator.movement_debug_text())], 0.1,
 		func() -> bool: return toggles.movement and is_instance_valid(animator)))
