@@ -121,6 +121,17 @@ var focus_key: String = ""
 var anchor_body: int = 0
 var anchor: Vector3 = Vector3.ZERO
 
+## How far the camera leans off the vertical of a place above the subject, and which way round: see
+## [method lean]. The turn at rest is the one that leaves north up on screen as the lean begins.
+const LEAN_REST_TURN: float = -PI / 2.0
+## Short of level with the place: beyond it the camera would go under the place, and from far enough
+## under the ground.
+const LEAN_LIMIT: float = deg_to_rad(85.0)
+## The lean by which the camera has finished turning from the subject's centre to the place itself.
+const LEAN_AIMS_BY: float = deg_to_rad(3.0)
+var lean_turn: float = LEAN_REST_TURN
+var lean_angle: float = 0.0
+
 var _from_point: Vector3 = Vector3.ZERO
 var _from_zoom: float = DEFAULT_ZOOM
 var _from_yaw: float = DEFAULT_YAW
@@ -199,6 +210,57 @@ func _orbit_scale(guard_radius: float) -> float:
 	if guard_radius <= 0.0:
 		return 1.0
 	return clampf((distance() - guard_radius) / guard_radius, ORBIT_MIN_SCALE, 1.0)
+
+
+## Turn around a PLACE ABOVE the subject — a station — instead of around the subject itself.
+##
+## The camera watches the world a station orbits, never the station: a point has no radius to frame or
+## to stay clear of, and every attempt to watch one ended with the camera inside the planet under it.
+## That stands. But it left the orbit gesture turning about the planet's centre, six thousand km below
+## the thing on screen: the station slid out of view and could only ever be seen from straight above.
+##
+## So the gesture gets a second pair of angles, used only over such a place: how far the camera LEANS
+## off the vertical of the place, and which way round it has TURNED. They move the camera on a sphere
+## about the place and nothing else — the distance, the subject, the ground asked for and the floor
+## under the camera are all still decided from where it would stand upright. See [method leaning].
+func lean(relative: Vector2) -> void:
+	lean_turn = wrapf(lean_turn - relative.x * ORBIT_SENSITIVITY, -PI, PI)
+	lean_angle = clampf(lean_angle + relative.y * ORBIT_SENSITIVITY, 0.0, LEAN_LIMIT)
+
+
+## Upright again: what every travel starts from, and what leaving the place comes back to.
+func stand_upright() -> void:
+	lean_turn = LEAN_REST_TURN
+	lean_angle = 0.0
+
+
+func is_leaning() -> bool:
+	return lean_angle > 0.0
+
+
+## The camera leaned about [param place]: [code][position, point to look at, up][/code].
+##
+## [param upright] is where the camera stands without the lean, the subject being at the origin. It
+## stays as far from the place as it was, and swings away from the place's vertical by
+## [member lean_angle], towards the side [member lean_turn] names. It looks at the place — coming off
+## the subject's centre over the first degrees of lean, so that beginning to lean does not jolt the
+## view — with the ground's own up on screen: the horizon rises level as the camera comes down.
+##
+## At no lean this is the upright camera exactly, north up, and the limit keeps it above the place's
+## own height, so it cannot be brought down through the ground.
+func leaning(upright: Vector3, place: Vector3) -> Array[Vector3]:
+	var arm: Vector3 = upright - place
+	var reach: float = arm.length()
+	if reach <= 0.0:
+		return [upright, Vector3.ZERO, Vector3.UP]
+	var up: Vector3 = arm / reach
+	var east: Vector3 = Vector3.UP.cross(up)
+	east = east.normalized() if east.length_squared() > 1.0e-12 else Vector3.RIGHT
+	var north: Vector3 = up.cross(east)
+	var side: Vector3 = east * cos(lean_turn) + north * sin(lean_turn)
+	var position: Vector3 = place + (up * cos(lean_angle) + side * sin(lean_angle)) * reach
+	var look_at: Vector3 = place * smoothstep(0.0, LEAN_AIMS_BY, lean_angle)
+	return [position, look_at, up * sin(lean_angle) - side * cos(lean_angle)]
 
 
 ## Select without moving a thing. A click answers "what is that?", and answering a question is no
@@ -342,6 +404,7 @@ func direction() -> Vector3:
 
 
 func _begin_travel(from_point: Vector3) -> void:
+	stand_upright()
 	_from_point = from_point
 	# From where the camera ACTUALLY is, so interrupting one travel with another continues from the
 	# visible position instead of teleporting to the abandoned goal first.

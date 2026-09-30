@@ -397,3 +397,57 @@ func test_a_settled_view_turns_with_the_place() -> void:
 	assert_almost_eq(facing.x, expected.x, 0.001)
 	assert_almost_eq(facing.y, expected.y, 0.001)
 	assert_almost_eq(facing.z, expected.z, 0.001)
+
+
+# ---------------------------------------------------------------------------
+# Turning about a station
+# ---------------------------------------------------------------------------
+
+## A station 400 km over the planet, and the camera 7 km above it: where going to a station leaves you.
+const STATION_AT: Vector3 = Vector3(0.0, 0.0, PLANET_RADIUS_UNITS + 0.0004)
+const OVER_STATION: Vector3 = Vector3(0.0, 0.0, PLANET_RADIUS_UNITS + 0.000407)
+
+
+## The orbit gesture turned about the planet's centre, six thousand km under the station on screen: the
+## station slid out of view and could only be seen from straight above. Leaning is the same gesture
+## about the station.
+func test_upright_the_leaning_camera_is_the_camera_as_it_was() -> void:
+	assert_false(_cam.is_leaning())
+	var view: Array[Vector3] = _cam.leaning(OVER_STATION, STATION_AT)
+	assert_eq(view[0], OVER_STATION, "where it stood")
+	assert_eq(view[1], Vector3.ZERO, "looking at the world's centre")
+	assert_almost_eq(view[2].dot(Vector3.UP), 1.0, 1.0e-6, "north up")
+
+
+func test_leaning_swings_the_camera_round_the_station() -> void:
+	_cam.lean(Vector2(0.0, 200.0))
+	assert_true(_cam.is_leaning())
+	var view: Array[Vector3] = _cam.leaning(OVER_STATION, STATION_AT)
+	assert_almost_eq(view[0].distance_to(STATION_AT), OVER_STATION.distance_to(STATION_AT), 1.0e-9,
+		"as far from the station as before")
+	assert_gt(view[0].distance_to(OVER_STATION), 0.0, "and no longer straight above it")
+	assert_lt(view[0].y, 0.0, "to the south of it, which keeps north up on screen")
+	assert_eq(view[1], STATION_AT, "looking at the station now, not at the planet's centre")
+
+
+func test_turning_goes_round_the_station_at_the_same_lean() -> void:
+	_cam.lean(Vector2(0.0, 200.0))
+	var south: Vector3 = _cam.leaning(OVER_STATION, STATION_AT)[0]
+	_cam.lean(Vector2(300.0, 0.0))
+	var turned: Vector3 = _cam.leaning(OVER_STATION, STATION_AT)[0]
+	assert_almost_eq(turned.z, south.z, 1.0e-9, "at the same height")
+	assert_gt(turned.distance_to(south), 0.0, "somewhere else round the circle")
+
+
+func test_the_lean_stops_short_of_going_under_the_station() -> void:
+	_cam.lean(Vector2(0.0, 1.0e6))
+	var at: Vector3 = _cam.leaning(OVER_STATION, STATION_AT)[0]
+	assert_gt(at.length(), STATION_AT.length(), "still further from the planet's centre than the station is")
+	_cam.lean(Vector2(0.0, -1.0e7))
+	assert_false(_cam.is_leaning(), "and leaning back stops at upright")
+
+
+func test_a_travel_starts_upright() -> void:
+	_cam.lean(Vector2(120.0, 200.0))
+	_cam.watch(1, PLANET_RADIUS_UNITS, PLANET_RADIUS_UNITS, Vector3.ZERO)
+	assert_false(_cam.is_leaning(), "a lean belongs to the place it was made over")

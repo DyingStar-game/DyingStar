@@ -114,6 +114,10 @@ const POI_BODY_KEEP: float = 0.75
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
 const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
+## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
+## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
+## following keeps it there; this only tells that apart from a station selected from elsewhere.
+const STATION_ON_AXIS: float = 0.99939
 ## How much of the screen's height a group of towns is spread over once opened (_open_poi_cluster).
 ## Two thirds: wide enough to come apart, with their surroundings still around them.
 const CLUSTER_OPEN_FILL: float = 0.66
@@ -1659,6 +1663,10 @@ func _refresh_ground() -> void:
 func _view_half_angle(index: int) -> float:
 	if index < 0 or index >= _bodies.size() or not is_instance_valid(_camera):
 		return -1.0
+	# Leaning about a station, the camera looks towards the horizon and the cone below is no longer
+	# what the screen shows: no measurement to offer, the ground goes out to the horizon.
+	if _cam.is_leaning():
+		return -1.0
 	var size: Vector2 = Vector2(_viewport.size)
 	if size.y <= 0.0:
 		return -1.0
@@ -2331,7 +2339,17 @@ func _info_row(label_key: String, value: String) -> String:
 func _place_camera() -> void:
 	# The subject is AT the origin by construction — _shift was just set to it — so the camera hangs off
 	# zero and never carries a large coordinate of its own.
-	_camera.look_at_from_position(_cam.direction() * _view, Vector3.ZERO, Vector3.UP)
+	var upright: Vector3 = _cam.direction() * _view
+	# ...unless it is leaning about a station: then it has swung off that spot, around the station, and
+	# looks at it. Stood upright again the moment there is no station under it to lean about.
+	var station: int = _station_under_camera()
+	if station < 0:
+		_cam.stand_upright()
+	if _cam.is_leaning():
+		var leaned: Array[Vector3] = _cam.leaning(upright, _bodies[station]["true_pos"] - _shift)
+		_camera.look_at_from_position(leaned[0], leaned[1], leaned[2])
+	else:
+		_camera.look_at_from_position(upright, Vector3.ZERO, Vector3.UP)
 	# Both planes move with the view: no fixed pair can serve a chart spanning five orders of
 	# magnitude. `near` follows the ZOOM — at a fixed 0.05 units, following a moon from 0.01 put it
 	# behind the near plane and the screen went black. `far` follows the SYSTEM, not the zoom: tied to
@@ -2364,6 +2382,26 @@ func _place_camera() -> void:
 	# Kept off the floor of the depth buffer: a near/far ratio past ~1e7 starts costing precision, and
 	# orbit lines crossing at a shallow angle are exactly what would flicker.
 	_camera.near = maxf(near, _camera.far * 1.0e-7)
+
+
+## The selected station the camera is standing over, or -1: the one case where the orbit gesture turns
+## about a place rather than about the world under it (StarMapCamera.lean).
+##
+## "Over" is what going to a station leaves you: on its vertical, and further out than it is. A station
+## merely selected from across the planet is not that — the gesture there still turns the planet, as it
+## does for everything else, and leaning about a point at the edge of the view would throw the camera
+## sideways by the width of the screen.
+func _station_under_camera() -> int:
+	var index: int = _cam.focus
+	if index < 0 or index >= _bodies.size() or not _bodies[index].has("station"):
+		return -1
+	var body: int = int(_bodies[index]["primary"])
+	if body != _cam.anchor_body or _cam.is_travelling():
+		return -1
+	var out: Vector3 = _bodies[index]["true_pos"] - _bodies[body]["true_pos"]
+	if out.length() >= _cam.distance() or out.normalized().dot(_cam.direction()) < STATION_ON_AXIS:
+		return -1
+	return index
 
 
 ## How far the nearest thing the near plane must never cut is from the camera, in units, or 0 for none: your
@@ -2828,7 +2866,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
-		_cam.orbit(motion.relative, _guard_radius())
+		# Over a station the gesture turns about the station; anywhere else, about the world.
+		if _station_under_camera() >= 0:
+			_cam.lean(motion.relative)
+		else:
+			_cam.orbit(motion.relative, _guard_radius())
 		get_viewport().set_input_as_handled()
 
 
