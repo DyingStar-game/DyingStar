@@ -709,7 +709,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
 	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
 	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
-	if event.is_action_pressed("star_map") and _star_map != null:
+	if InputCombo.pressed(event, "star_map") and _star_map != null:
 		if _star_map.is_open():
 			_star_map.close()
 		else:
@@ -728,30 +728,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	#
 	# Asking unconditionally costs one round trip before standing up and makes the request IDEMPOTENT:
 	# a refusal changes nothing here, so pressing Y again (once the door is really open) always works.
-	if player._seat_vehicle_uuid != "" and event.is_action_pressed("exit"):
+	if player._seat_vehicle_uuid != "" and InputCombo.pressed(event, "exit"):
 		_send_vehicle_action("exit_vehicle")
 		return
 
 	# Driving controls (server-authoritative; driver only).
 	if _is_driving():
-		if event.is_action_pressed("vehicle_reset"):
+		if InputCombo.pressed(event, "vehicle_reset"):
 			_send_vehicle_action("reset_vehicle")  # put the vehicle back upright
 		_send_horn_input(event)
-		if event.is_action_pressed("vehicle_ignition") and not _alt_held(event):
+		if InputCombo.pressed(event, "vehicle_ignition"):
 			_send_vehicle_action("vehicle_ignition")  # refused by the vehicle while it rolls
-		if event.is_action_pressed("vehicle_lights") and not _alt_held(event):
+		if InputCombo.pressed(event, "vehicle_lights"):
 			_send_vehicle_action("vehicle_lights")
 		if _handle_limiter_input(event):
 			return
 
-	if event.is_action_pressed("toggle_flashlight") and not _alt_held(event):
+	if InputCombo.pressed(event, "toggle_flashlight"):
 		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
 		# sit before the walk guard. By default it shares the L key with vehicle_lights, so one
 		# press toggles both the torch and the head lights; rebind it to a separate key in
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
-	if event.is_action_pressed("toggle_eva") and Globals.is_dev_tool_enabled("toggle_eva"):
+	if InputCombo.pressed(event, "toggle_eva") and Globals.is_dev_tool_enabled("toggle_eva"):
 		# EVA (dev free-flight): just request the toggle; the server owns the state and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
 		player.client_send_action_to_server({"action": "toggle_eva"})
@@ -760,12 +760,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	# dropping it. Server-authoritative (it owns the held body): we only send the step. Gated on
 	# actually carrying so the wheel is free for other uses otherwise.
 	if player._owner_carrying:
-		if event.is_action_pressed("carry_rotate_cw"):
+		if InputCombo.pressed(event, "carry_rotate_cw"):
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": 1})
-		elif event.is_action_pressed("carry_rotate_ccw"):
+		elif InputCombo.pressed(event, "carry_rotate_ccw"):
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": -1})
 	elif player._seat_vehicle_uuid == "" and (
-			event.is_action_pressed("walk_speed_up") or event.is_action_pressed("walk_speed_down")):
+			InputCombo.pressed(event, "walk_speed_up") or InputCombo.pressed(event, "walk_speed_down")):
 		# GDD: the mouse wheel sets the walk speed (0.5-3 m/s, 0.5 steps). Server-authoritative — we send
 		# the new target; the server clamps and applies it. (Carrying uses the wheel to rotate, above.)
 		# On foot only: seated, the wheel used to change a walk speed nobody was using.
@@ -781,7 +781,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Seated (driver/passenger): E open/closes a door by LOOKING at its handle. Must run BEFORE the
 	# walk guard — seated players have player.active = false, so the on-foot action block below never runs.
-	if player._seat_vehicle_uuid != "" and event.is_action_pressed("action"):
+	if player._seat_vehicle_uuid != "" and InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
 		var seated_handle = _aimed_door_handle()
 		if seated_handle != null:
@@ -800,15 +800,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	_handle_radial_wheels(event)
 	if _any_wheel_open(): return
 
-	if event.is_action_pressed(JUMP):
+	if InputCombo.pressed(event, JUMP):
 		player.client_send_action_to_server({"action": JUMP})
 
-	if event.is_action_pressed("toggle_tool"):
+	if InputCombo.pressed(event, "toggle_tool"):
 		if player.admin_cleanup_tool != null:
 			player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
 		player.mining_tool.toggle_equip()
 
-	if event.is_action_pressed("action"):
+	if InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
 		# A console under the crosshair takes the press, and ONLY it. It used to answer a separate `interact`
 		# action bound to the same key, so one press did two things: carrying a load while using a console
@@ -1000,18 +1000,6 @@ func _on_spawn_selected(key) -> void:
 func _on_emote_selected(key) -> void:
 	player.client_send_action_to_server({"action": "emote", "key": str(key)})
 
-## Is Alt held on THIS event?
-##
-## Godot matches an action by key alone: the modifiers recorded in the InputMap are not compared,
-## so a bare L fires debug_toggle_moon_lights (bound to Alt+L) and Alt+L fires vehicle_lights
-## (bound to plain L). Three actions sit on L -- torch, head lights, moon debug -- and two on I
-## -- ignition and light isolation. Whoever shares a key must therefore test the modifier itself,
-## and SYMMETRICALLY: the plain binding requires Alt to be up, the Alt binding requires it down.
-## Same trap, same remedy as the emote/spawn wheels that share T.
-func _alt_held(event: InputEvent) -> bool:
-	return event is InputEventKey and event.alt_pressed
-
-
 ## True while a radial menu (spawn OR emote) is open: the camera freezes and the cursor shows so you can
 ## move the mouse to reach its items (see _process). One check for both wheels (DRY).
 func _any_wheel_open() -> bool:
@@ -1046,15 +1034,15 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 	# practical way to judge a sunset.
 	if Globals.is_dev_tool_enabled("debug_time"):
 		var step: float = 0.0
-		if event.is_action_pressed("debug_time_forward", true):
+		if InputCombo.pressed(event, "debug_time_forward", true):
 			step = Globals.DEBUG_TIME_STEP
-		elif event.is_action_pressed("debug_time_back", true):
+		elif InputCombo.pressed(event, "debug_time_back", true):
 			step = -Globals.DEBUG_TIME_STEP
 		if step != 0.0:
 			Globals.debug_time_offset += step
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
-	if (event.is_action_pressed("debug_toggle_moon_lights") and _alt_held(event)
+	if (InputCombo.pressed(event, "debug_toggle_moon_lights")
 			and Globals.is_dev_tool_enabled("debug_toggle_moon_lights")):
 		# NOT `:=` -- `player` is untyped, so inference fails and the whole script stops parsing.
 		var moons = player.get_node_or_null("MoonLights")
@@ -1063,7 +1051,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			moons.report_now()
 
 	# Removes one light contributor at a time, to attribute what is lighting a surface.
-	if (event.is_action_pressed("debug_isolate_light") and _alt_held(event)
+	if (InputCombo.pressed(event, "debug_isolate_light")
 			and Globals.is_dev_tool_enabled("debug_isolate_light")):
 		var renderer = player.get_node_or_null("AtmosphereRenderer")
 		if renderer != null:
@@ -1077,34 +1065,33 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
-	if event.is_action_pressed("toggle_debug") and _alt_held(event):
+	if InputCombo.pressed(event, "toggle_debug"):
 		SettingsManager.set_show_debug(not SettingsManager.is_show_debug())
 
 
 ## Open/confirm the radial wheels: emote on T, spawn on Alt+T. Called before the wheel lock in
 ## _unhandled_input so a wheel that is up still confirms on release. One place for both wheels (DRY).
-## Both actions sit on the same T key and differ ONLY by Alt, but an action match ignores modifiers:
-## a bare T matches Alt+T too. So Alt decides which wheel may open — SYMMETRICALLY. Only the emote
-## side used to be guarded, which is why a bare T also opened the spawn wheel (hidden underneath) and
-## releasing T spawned whatever sat under the cursor.
+## By default both actions sit on the same T key and differ ONLY by Alt, and Alt+T matches the plain
+## T binding as well: the more precise binding owns the press (InputCombo), so one key opens one
+## wheel. Without it a press opened both, the second hidden under the first, and releasing T spawned
+## whatever sat under the cursor.
 func _handle_radial_wheels(event: InputEvent) -> void:
-	var alt_held: bool = _alt_held(event)
-	_service_wheel(event, "emote_wheel", player._emote_wheel, EmoteCatalog.build_wheel, not alt_held)
-	_service_wheel(event, "spawn_wheel", player._spawn_wheel, SpawnCatalog.build_wheel, alt_held)
+	_service_wheel(event, "emote_wheel", player._emote_wheel, EmoteCatalog.build_wheel)
+	_service_wheel(event, "spawn_wheel", player._spawn_wheel, SpawnCatalog.build_wheel)
 
 ## Hold-to-open / release-to-confirm lifecycle of ONE wheel. `build` supplies the entries (labels +
 ## keys come from the catalogue) and is only called when the wheel actually opens, so the catalogue
-## is not rebuilt on every input event. `may_open` carries the Alt discrimination above.
+## is not rebuilt on every input event.
 ## The release is matched loosely (no exact_match) on purpose: letting go of Alt before T yields a
 ## release event with no Alt, which an exact match would drop and leave the spawn wheel stuck open.
 ## The `visible` check is what keeps a release from confirming a wheel that never opened — its press
 ## swallowed by a menu, a seat or an inactive player — and re-emitting a stale selection.
 func _service_wheel(
-	event: InputEvent, action: StringName, wheel: RadialMenu, build: Callable, may_open: bool
+	event: InputEvent, action: StringName, wheel: RadialMenu, build: Callable
 ) -> void:
 	if wheel == null:
 		return
-	if may_open and event.is_action_pressed(action):
+	if InputCombo.pressed(event, action):
 		wheel.open(build.call())
 	elif event.is_action_released(action) and wheel.visible:
 		wheel.confirm()
