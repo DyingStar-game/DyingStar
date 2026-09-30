@@ -52,6 +52,17 @@ const PICK_TOLERANCE: float = 0.022
 const LABEL_CLEAR_X: float = 96.0
 const LABEL_CLEAR_Y: float = 34.0
 
+## How close two badges must come, in badge heights, to be drawn as one: a little more than touching,
+## so what is left on screen is badges with air between them. See [StarMapPoiCluster].
+const CLUSTER_REACH: float = 1.2
+## The group marker against a single badge. A shade larger: it stands for several.
+const CLUSTER_SCALE: float = 1.15
+## Where the number sits from the marker's centre, in marker heights along the camera's right and up:
+## the top right corner, as an exponent is written.
+const CLUSTER_COUNT_OFFSET: Vector2 = Vector2(0.55, 0.5)
+## The group marker's colour. The towns' own neutral: a group is of no one kind.
+const CLUSTER_TINT: Color = Color(0.82, 0.86, 0.92, 1.0)
+
 ## Records currently drawn, in the order the picker and the search index use.
 var entries: Array[Dictionary] = []
 
@@ -59,8 +70,16 @@ var _icons: Array[Sprite3D] = []
 var _labels: Array[Label3D] = []
 ## Cache key, so turning a planet does not re-read the file every frame.
 var _loaded_key: String = ""
-## World position of each drawn marker, parallel to [member entries]; NAN for one facing away.
+## World position of each marker drawn ON ITS OWN, parallel to [member entries]; NAN for one facing
+## away, and for one drawn as part of a group.
 var _world: PackedVector3Array = PackedVector3Array()
+## The groups drawn this frame, each {"members": PackedInt32Array, "world": Vector3}. A group is
+## named by its first member from one frame to the next; its place in this array means nothing.
+var _clusters: Array[Dictionary] = []
+var _cluster_icons: Array[Sprite3D] = []
+var _cluster_counts: Array[Label3D] = []
+## Last frame's grouping, index → seed: what keeps a group from flickering (StarMapPoiCluster.KEEP).
+var _grouped_before: Dictionary = {}
 
 
 ## Is [param radius] big enough on screen, at [param view] units away, to be worth marking up?
@@ -71,8 +90,10 @@ static func worth_showing(radius: float, view: float) -> bool:
 ## Draw the points of [param body_key] on a sphere of [param radius] centred at [param centre] and
 ## oriented by [param rotation] — the body's own tilt-and-spin basis, so a badge stays on its town as
 ## the planet turns, with nothing to update.
+##
+## [param hovered_cluster] is the group under the cursor, by its first member, or -1.
 func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
-		camera: Camera3D, selected: int, hovered: int) -> void:
+		camera: Camera3D, selected: int, hovered: int, hovered_cluster: int = -1) -> void:
 	if body_key != _loaded_key:
 		_loaded_key = body_key
 		entries = StarMapPoi.load_for(body_key)
@@ -82,16 +103,19 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		for poi: Dictionary in entries:
 			poi["surface"] = StarMapRelief.surface_factor(body_key, poi["dir"])
 			poi["altitude_m"] = StarMapRelief.ground_altitude_m(body_key, poi["dir"])
+		_grouped_before = {}
 		_release_pool()
 	if entries.is_empty():
 		# The pick index has to go with them. Left behind, it still answers with the PREVIOUS body's
 		# towns: clicking empty sky near a bare moon would select a village on the planet you just left.
 		_world.resize(0)
+		_place_clusters([], camera, -1)
 		return
 
 	var eye: Vector3 = camera.global_position
 	_world.resize(entries.size())
-	var drawn: Array[int] = []
+	var facing := PackedInt32Array()
+	var on_screen := PackedVector2Array()
 	for i: int in range(entries.size()):
 		var normal: Vector3 = (rotation * (entries[i]["dir"] as Vector3)).normalized()
 		# ON the ground, not on the reference sphere. The relief is exaggerated, so the two part company
@@ -104,9 +128,31 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 			_hide(i)
 			continue
 		_world[i] = world
-		_place_icon(i, world, eye, i == selected, i == hovered)
-		drawn.append(i)
+		facing.append(i)
+		on_screen.append(camera.unproject_position(world))
+
+	# Towns whose badges would overlap are drawn as one marker with their number; the rest, and the
+	# selected one whatever its neighbours, on their own.
+	var groups: Array[PackedInt32Array] = StarMapPoiCluster.group(facing, on_screen,
+			_badge_pixels(camera) * CLUSTER_REACH, PackedInt32Array([selected]), _grouped_before)
+	_grouped_before = StarMapPoiCluster.memory(groups)
+	var drawn: Array[int] = []
+	var clusters: Array[Dictionary] = []
+	for members: PackedInt32Array in groups:
+		if members.size() == 1:
+			var i: int = members[0]
+			_place_icon(i, _world[i], eye, i == selected, i == hovered)
+			drawn.append(i)
+			continue
+		var middle: Vector3 = Vector3.ZERO
+		for i: int in members:
+			middle += _world[i]
+			# Out of the pick index with its badge: what is under the cursor there is the group.
+			_world[i] = Vector3(NAN, NAN, NAN)
+			_hide(i)
+		clusters.append({"members": members, "world": middle / float(members.size())})
 	_place_labels(drawn, camera, selected, hovered)
+	_place_clusters(clusters, camera, hovered_cluster)
 
 
 ## Put everything away — the body is no longer close enough, or nothing is selected at all.
@@ -114,16 +160,52 @@ func clear() -> void:
 	_loaded_key = ""
 	entries = []
 	_world.resize(0)
+	_clusters = []
+	_grouped_before = {}
 	_release_pool()
 
 
 ## Index of the point under the ray, or -1. Only points actually drawn this frame can be hit: one on the
 ## far side of the planet is not on screen, and picking it would mean clicking through the globe.
 func pick(origin: Vector3, dir: Vector3) -> int:
+	return _nearest_on_ray(_world, origin, dir)
+
+
+## The group under the ray, as its first member's index, or -1. Asked after [method pick]: a town drawn
+## on its own beside a group is the more precise answer.
+func pick_cluster(origin: Vector3, dir: Vector3) -> int:
+	var places := PackedVector3Array()
+	for cluster: Dictionary in _clusters:
+		places.append(cluster["world"])
+	var hit: int = _nearest_on_ray(places, origin, dir)
+	return int((_clusters[hit]["members"] as PackedInt32Array)[0]) if hit >= 0 else -1
+
+
+## Where the group named by [param first] (its first member) is, and how wide: {"dir": the middle of
+## its towns on the body, "spread": the angle from there to the farthest of them}. Empty when no such
+## group is drawn. What the chart needs to go and open it.
+func cluster_extent(first: int) -> Dictionary:
+	for cluster: Dictionary in _clusters:
+		var members: PackedInt32Array = cluster["members"]
+		if members[0] != first:
+			continue
+		var middle: Vector3 = Vector3.ZERO
+		for i: int in members:
+			middle += entries[i]["dir"] as Vector3
+		middle = middle.normalized()
+		var spread: float = 0.0
+		for i: int in members:
+			spread = maxf(spread, middle.angle_to(entries[i]["dir"] as Vector3))
+		return {"dir": middle, "spread": spread}
+	return {}
+
+
+## Index of the nearest of [param places] to the ray, within the pick tolerance, or -1. NAN is skipped.
+static func _nearest_on_ray(places: PackedVector3Array, origin: Vector3, dir: Vector3) -> int:
 	var best: int = -1
 	var best_offset: float = INF
-	for i: int in range(_world.size()):
-		var world: Vector3 = _world[i]
+	for i: int in range(places.size()):
+		var world: Vector3 = places[i]
 		if is_nan(world.x):
 			continue
 		var to_point: Vector3 = world - origin
@@ -139,6 +221,42 @@ func pick(origin: Vector3, dir: Vector3) -> int:
 			best_offset = offset
 			best = i
 	return best
+
+
+## A badge's height in pixels on this camera's screen: [constant ICON_SIZE] is a fraction of the
+## distance, and the screen's height covers 2·tan(fov/2) of it.
+static func _badge_pixels(camera: Camera3D) -> float:
+	var screen: float = camera.get_viewport().get_visible_rect().size.y
+	return screen * ICON_SIZE / (2.0 * tan(deg_to_rad(camera.fov) * 0.5))
+
+
+## Draw the groups: the waypoint picture where their towns are, and how many they are at its corner.
+func _place_clusters(clusters: Array[Dictionary], camera: Camera3D, hovered_seed: int) -> void:
+	_clusters = clusters
+	var eye: Vector3 = camera.global_position
+	var texture: Texture2D = ICONS.cluster_picture()
+	var height: float = float(texture.get_height()) if texture != null else 1.0
+	for n: int in range(clusters.size()):
+		_grow_cluster_pool(n)
+		var members: PackedInt32Array = clusters[n]["members"]
+		var world: Vector3 = clusters[n]["world"]
+		var hovered: bool = members[0] == hovered_seed
+		var span: float = eye.distance_to(world) * ICON_SIZE * CLUSTER_SCALE \
+				* (ICON_HOVER_SCALE if hovered else 1.0)
+		var icon: Sprite3D = _cluster_icons[n]
+		icon.texture = texture
+		icon.pixel_size = span / maxf(height, 1.0)
+		icon.position = world
+		icon.modulate = lift(CLUSTER_TINT, false, hovered)
+		icon.show()
+		var count: Label3D = _cluster_counts[n]
+		count.text = str(members.size())
+		count.position = world + camera.global_basis.x * (span * CLUSTER_COUNT_OFFSET.x) \
+				+ camera.global_basis.y * (span * CLUSTER_COUNT_OFFSET.y)
+		count.show()
+	for n: int in range(clusters.size(), _cluster_icons.size()):
+		_cluster_icons[n].hide()
+		_cluster_counts[n].hide()
 
 
 ## Sized from the distance to THIS POINT, never from the distance to the planet's centre.
@@ -245,23 +363,37 @@ static func lift(base: Color, selected: bool, hovered: bool) -> Color:
 
 func _grow_pool(index: int) -> void:
 	while _icons.size() <= index:
-		var sprite := Sprite3D.new()
-		sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		# The chart has no depth buffer worth the name at these distances — near and far sit seven orders
-		# of magnitude apart — and a badge lying ON a sphere would z-fight with it at every zoom.
-		sprite.no_depth_test = true
-		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		add_child(sprite)
-		_icons.append(sprite)
-		var label := Label3D.new()
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.no_depth_test = true
-		label.fixed_size = true
-		label.pixel_size = 0.00026
-		label.outline_size = 12
-		label.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
-		add_child(label)
-		_labels.append(label)
+		_icons.append(_new_badge())
+		_labels.append(_new_text(0.00026))
+
+
+func _grow_cluster_pool(index: int) -> void:
+	while _cluster_icons.size() <= index:
+		_cluster_icons.append(_new_badge())
+		_cluster_counts.append(_new_text(0.00034))
+
+
+func _new_badge() -> Sprite3D:
+	var sprite := Sprite3D.new()
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	# The chart has no depth buffer worth the name at these distances — near and far sit seven orders
+	# of magnitude apart — and a badge lying ON a sphere would z-fight with it at every zoom.
+	sprite.no_depth_test = true
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	add_child(sprite)
+	return sprite
+
+
+func _new_text(pixel_size: float) -> Label3D:
+	var label := Label3D.new()
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.fixed_size = true
+	label.pixel_size = pixel_size
+	label.outline_size = 12
+	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
+	add_child(label)
+	return label
 
 
 func _hide(index: int) -> void:
@@ -271,9 +403,7 @@ func _hide(index: int) -> void:
 
 
 func _release_pool() -> void:
-	for sprite: Sprite3D in _icons:
-		sprite.queue_free()
-	for label: Label3D in _labels:
-		label.queue_free()
-	_icons.clear()
-	_labels.clear()
+	for pool: Array in [_icons, _labels, _cluster_icons, _cluster_counts]:
+		for node: Node in pool:
+			node.queue_free()
+		pool.clear()

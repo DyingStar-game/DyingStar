@@ -15,6 +15,10 @@ extends Resource
 @export var fallback_icon: Texture2D = null
 @export var fallback_tint: Color = Color(0.82, 0.86, 0.92, 1.0)
 
+## Drawn for several places too close on screen to tell apart, with their number beside it. Of no kind
+## in particular, so no rule can supply it.
+@export var cluster_icon: Texture2D = null
+
 
 ## The rule covering [param poi], or null when none does.
 func rule_for(poi: Dictionary) -> PoiIconRule:
@@ -29,6 +33,11 @@ func icon_for(poi: Dictionary) -> Texture2D:
 	if rule != null and rule.icon != null:
 		return rule.icon
 	return fallback_icon
+
+
+## The group picture, or the fallback one while none is set: a group still has to be drawn.
+func cluster_picture() -> Texture2D:
+	return cluster_icon if cluster_icon != null else fallback_icon
 
 
 func tint_for(poi: Dictionary) -> Color:
