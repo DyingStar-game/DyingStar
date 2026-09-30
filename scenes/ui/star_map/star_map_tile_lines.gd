@@ -28,7 +28,9 @@ var _drawn: Dictionary = {}
 ## refresh is not concatenating lines, it is working out where they go — and the wanted set changes by
 ## a handful of tiles, so almost all of it is the same as last time.
 var _segments: Dictionary = {}
+## What the lines are drawn with, and what the strips laid beside them are: see [method _ready].
 var _material: StandardMaterial3D = null
+var _strip_material: StandardMaterial3D = null
 ## The worker laying the tiles not seen yet, or -1, and the slot it fills: id -> [points, colours].
 ## While it runs, whatever [method _laying] captured is the worker's alone.
 var _task: int = -1
@@ -47,7 +49,19 @@ func _ready() -> void:
 	# lines that fade out exactly where the ground does, which is the one place a map still has to read.
 	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_material.vertex_color_use_as_albedo = true
-	material_override = _material
+	# Blended, though nothing here is see-through: what is blended is drawn after the ground, without
+	# writing to the depth buffer, in the order its priority says. That order is the only thing that
+	# can put one of these over another. They lie on the same ground a few tens of metres apart at
+	# most, which the depth buffer cannot tell apart at these distances: left to it, a line over a strip
+	# came out in dashes and a strip over a strip in blocks. Against the GROUND the depth still decides,
+	# so the far side of the planet hides what is on it.
+	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_material.render_priority = _priority()
+	# The strips are seen from above whichever way their corners were wound.
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# The strips under the lines: the same, drawn just before.
+	_strip_material = _material.duplicate()
+	_strip_material.render_priority = _priority() - 1
 
 
 ## Draw the lines crossing [param tiles], which are the ground's own tiles, keyed as [StarMapGround]
@@ -121,6 +135,13 @@ func _available() -> bool:
 ## run on a worker: it may when it holds everything it reads and touches nothing of the node.
 func _laying() -> Array:
 	return [Callable(), false]
+
+
+## Where this kind of line is drawn among the others, higher over lower: its lines at this priority,
+## its strips just under. Two apart from one kind to the next, so the strips of one never share a
+## priority with the lines of another.
+func _priority() -> int:
+	return 0
 
 
 ## Let go of whatever [method _available] opened.
@@ -202,19 +223,20 @@ func _assemble() -> void:
 		mesh = null
 		return
 	var built := ArrayMesh.new()
-	_add_surface(built, Mesh.PRIMITIVE_LINES, points, colours)
+	_add_surface(built, Mesh.PRIMITIVE_LINES, points, colours, _material)
 	if not faces.is_empty():
-		_add_surface(built, Mesh.PRIMITIVE_TRIANGLES, faces, face_colours)
+		_add_surface(built, Mesh.PRIMITIVE_TRIANGLES, faces, face_colours, _strip_material)
 	mesh = built
 
 
 static func _add_surface(to: ArrayMesh, primitive: Mesh.PrimitiveType, points: PackedVector3Array,
-		colours: PackedColorArray) -> void:
+		colours: PackedColorArray, material: Material) -> void:
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = points
 	arrays[Mesh.ARRAY_COLOR] = colours
 	to.add_surface_from_arrays(primitive, arrays)
+	to.surface_set_material(to.get_surface_count() - 1, material)
 
 
 # On deletion, NOT on leaving the tree: the chart takes this off its sphere every time it is opened and

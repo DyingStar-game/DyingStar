@@ -62,10 +62,7 @@ const SPAN_MIN: float = 1.5
 const TUNNEL_COLOUR: Color = Color(0.0, 0.0, 0.0)
 const TUNNEL_BED: Color = Color(0.015, 0.014, 0.014)
 const BRIDGE_COLOUR: Color = Color(0.95, 0.95, 0.92)
-## How far under the lines the bed lies, as a fraction of the body's radius: half their own height
-## over the ground. At the same height the way drawn down its middle fights it for the same pixels;
-## a sixth of that height under was tried and they still fought, the way coming out in dashes.
-const BED_SINK: float = LIFT / 2.0
+
 
 var _pack: ModifierPack = null
 ## The step the map's signs — sleepers, tunnels, bridges — are sized on, for the whole view: see
@@ -81,11 +78,6 @@ var _spans_from: Vector2i = Vector2i(-1, -1)
 var _drawn_spans: Dictionary = {}
 var _drawn_spans_for: float = -1.0
 
-
-func _ready() -> void:
-	super()
-	# The signs' strips are seen from above whichever way their corners were wound.
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 
 ## The pack for this body, opened once. A body with no pack is an ordinary answer — most of them have
@@ -352,10 +344,10 @@ static func add_sleepers(points: PackedVector3Array, colours: PackedColorArray,
 ## has no end here; one shorter than [param shortest_m] is not drawn at all.
 ## [param step] sizes the sign; no stretch of it is drawn longer than [param max_piece].
 ##
-## [param beds], when given, receives a strip along each one, under the way and between its two side
-## lines: the darker ground of a tunnel. BETWEEN them, up to their inner edge and no further: run
-## under them, the bed and the strips of the lines lay one over the other a few metres apart, and what
-## showed was whichever the depth buffer let through, in blocks — a crenellated edge.
+## [param beds], when given, receives a strip along each one, between its two side lines and at the
+## height of the way: the darker ground of a tunnel. It shows UNDER the way because strips are drawn
+## before lines (StarMapTileLines), not because it lies lower: sunk under the way it went into the
+## hillside on whichever side the ground rose, and half of it was missing.
 static func add_span_signs(points: PackedVector3Array, colours: PackedColorArray,
 		way: PackedVector3Array, along: PackedFloat64Array, spans: Array, step: float,
 		max_piece: float, place: Callable, colour: Color, shortest_m: float = 0.0,
@@ -377,8 +369,8 @@ static func add_span_signs(points: PackedVector3Array, colours: PackedColorArray
 			heights.append((place.call(at) as Vector3).length())
 		if beds != null:
 			for i: int in range(1, inside.size()):
-				add_ribbon(beds, inside[i - 1] * (heights[i - 1] * (1.0 - BED_SINK)),
-						inside[i] * (heights[i] * (1.0 - BED_SINK)), step * (SPAN_SIDE - SPAN_THICK * 0.5))
+				add_ribbon(beds, inside[i - 1] * heights[i - 1], inside[i] * heights[i],
+						step * (SPAN_SIDE - SPAN_THICK * 0.5))
 		for side: float in [-1.0, 1.0]:
 			var rail := PackedVector3Array()
 			for i: int in range(inside.size()):

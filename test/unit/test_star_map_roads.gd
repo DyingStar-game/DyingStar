@@ -315,4 +315,10 @@ func test_a_short_span_is_not_marked_and_a_tunnel_has_a_bed() -> void:
 			[Vector2(250.0, 500.0)], 0.002, 1.0, _flat, StarMapRoads.TUNNEL_COLOUR, 200.0, beds)
 	assert_eq(points.size(), 12, "marked once it is long enough")
 	assert_eq(beds.size(), 6, "with its bed: one strip, two triangles")
-	assert_lt(beds[0].length(), points[0].length(), "lying just under the lines, not among them")
+	assert_almost_eq(beds[0].length(), points[0].length(), 1.0e-9,
+		"at the height of the way: sunk under it, it went into the hillside wherever the ground rose")
+	var widest: float = 0.0
+	for corner: Vector3 in beds:
+		widest = maxf(widest, absf(corner.normalized().y))
+	assert_lt(widest, absf(points[0].normalized().y),
+		"and between the two side lines, short of them: nothing lies over it but the way")

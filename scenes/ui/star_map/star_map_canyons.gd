@@ -21,8 +21,9 @@ const COLOUR: Color = Color(0.10, 0.08, 0.07)
 ## canyon is drawn OVER it, as the bridge it crosses on is. At the same height the two fought for the
 ## same pixels and the canyon, drawn last, won.
 const UNDER_THE_ROADS: float = LIFT * 2.0 / 3.0
-## Drawn before anything else that blends, for the same reason.
-const RENDER_PRIORITY: int = -1
+## Drawn before the roads, which is what settles it where the height cannot: see
+## [method StarMapTileLines._priority].
+const RENDER_PRIORITY: int = -2
 ## How many points across one block of the network the tracing looks at. Four finds every canyon
 ## between two blocks; fewer steps over the narrow end of a block and leaves gaps.
 const SAMPLES_PER_BLOCK: float = 4.0
@@ -41,12 +42,8 @@ var _data: PlanetData = null
 var _looked: bool = false
 
 
-func _ready() -> void:
-	super()
-	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# The strips are seen from above whichever way their corners were wound.
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_material.render_priority = RENDER_PRIORITY
+func _priority() -> int:
+	return RENDER_PRIORITY
 
 
 ## Draw the network over [param tiles] — the ground's own tiles, and only those the ground draws FLAT:
@@ -61,7 +58,8 @@ func show_over(tiles: Dictionary, metres_per_pixel: float) -> void:
 	visible = alpha > 0.0
 	if not visible:
 		return  # nothing laid while nothing shows: coming back down pays for the view it arrives at
-	_material.albedo_color = Color(1.0, 1.0, 1.0, alpha)
+	for material: StandardMaterial3D in [_material, _strip_material]:
+		material.albedo_color = Color(1.0, 1.0, 1.0, alpha)
 	var traced: Dictionary = {}
 	for id: int in tiles:
 		if traces(_data, StarMapGround.id_nside(id)):
