@@ -54,15 +54,25 @@ func set_aiming(aiming: bool) -> void:
 		crosshair_manager.set_style("aim" if aiming else "")
 
 
-## Mute/unmute the WHOLE game (Master bus) — voices included.
-func _on_button_speaker_pressed() -> void:
+## Mute/unmute the WHOLE game (Master bus) — voices included. From the button on the HUD, or from
+## its key (the toggle_speaker action, see PlayerClient).
+func toggle_speaker() -> void:
 	speaker_status = not speaker_status
 	AudioServer.set_bus_mute(bus_master_index, not speaker_status)
 	_refresh_speaker_button(not speaker_status)
 
 
-func _on_button_microphone_pressed() -> void:
+## Mute/unmute your microphone. From the button on the HUD, or from its key (toggle_microphone).
+func toggle_microphone() -> void:
 	SettingsManager.set_microphone_muted(not SettingsManager.is_microphone_muted())
+
+
+func _on_button_speaker_pressed() -> void:
+	toggle_speaker()
+
+
+func _on_button_microphone_pressed() -> void:
+	toggle_microphone()
 
 
 ## One place decides what a muted toggle looks like (icon + tint), so a click, the settings page and

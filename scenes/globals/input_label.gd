@@ -19,6 +19,11 @@ static func for_action(action: StringName) -> String:
 
 static func for_event(event: InputEvent) -> String:
 	if event is InputEventKey:
+		# Bound by the letter printed on the key rather than by where the key is (the speaker on N, the
+		# microphone on M, wherever a layout puts them): it has no place to look the label up from, and
+		# read as a place it came out with no name at all.
+		if event.physical_keycode == KEY_NONE:
+			return _modifiers(event) + OS.get_keycode_string(event.keycode)
 		return _modifiers(event) + _physical_key_name(event.physical_keycode)
 	if event is InputEventMouseButton:
 		return _modifiers(event) + _mouse_button_name(event.button_index)

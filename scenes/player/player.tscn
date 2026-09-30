@@ -30,18 +30,6 @@ font_size = 24
 outline_size = 2
 outline_color = Color(0, 0, 0, 1)
 
-[sub_resource type="InputEventKey" id="InputEventKey_akued"]
-keycode = 78
-
-[sub_resource type="Shortcut" id="Shortcut_2sxo3"]
-events = [SubResource("InputEventKey_akued")]
-
-[sub_resource type="InputEventKey" id="InputEventKey_2sxo3"]
-keycode = 77
-
-[sub_resource type="Shortcut" id="Shortcut_k55v7"]
-events = [SubResource("InputEventKey_2sxo3")]
-
 [node name="Player" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
 collision_layer = 2
 collision_mask = 15
@@ -176,13 +164,11 @@ columns = 2
 [node name="ButtonSpeaker" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1207755428]
 layout_mode = 2
 focus_mode = 0
-shortcut = SubResource("Shortcut_2sxo3")
 icon = ExtResource("27_akued")
 
 [node name="ButtonMicrophone" type="Button" parent="UserInterface/HUD/Control/AudioContainer" unique_id=1572359195]
 layout_mode = 2
 focus_mode = 0
-shortcut = SubResource("Shortcut_k55v7")
 icon = ExtResource("28_2sxo3")
 
 [node name="DirectChat" parent="UserInterface" unique_id=1650237508 instance=ExtResource("8_ikqc6")]

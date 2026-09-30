@@ -709,6 +709,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
 	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
 	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
+	# The speaker and the microphone, from their keys. They were shortcuts set on the two HUD buttons,
+	# N and M written into the scene: a shortcut is served before the control that has the keyboard, so
+	# neither letter could be typed in a search box, and neither key could be changed. As actions they
+	# are read here, after whatever is being typed in has had the key, and they are in the controls page.
+	if InputCombo.pressed(event, "toggle_speaker"):
+		player.get_node("UserInterface").toggle_speaker()
+	if InputCombo.pressed(event, "toggle_microphone"):
+		player.get_node("UserInterface").toggle_microphone()
 	if InputCombo.pressed(event, "star_map") and _star_map != null:
 		if _star_map.is_open():
 			_star_map.close()
