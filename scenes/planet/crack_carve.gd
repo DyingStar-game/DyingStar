@@ -45,6 +45,19 @@ static func offset(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame,
 	return off * data.crack_factor(dir, pois, frame)
 
 
+## How much of the network's depth the ground keeps at [param dir], in [0, 1],
+## whatever the network does there: 0 where the ground is not corundum, inside a
+## POI's sphere and on a massif, 1 on the open plateau. The "where" of
+## [method offset] without its Voronoi, for whoever already knows a crack runs
+## through [param dir] and asks only whether the game carves it (the star chart's
+## lines).
+static func depth_factor(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame) -> float:
+	if not _applies(data, dir, frame):
+		return 0.0
+	var pois: Array = frame.crack_pois if frame != null and frame.crack_ready else data._crack_pois
+	return data.crack_factor(dir, pois, frame)
+
+
 ## PlanetData.cracks_apply_at, answered from the frame when its export tile
 ## holds no populate zone (the whole tile is the corundum default).
 static func _applies(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame) -> bool:

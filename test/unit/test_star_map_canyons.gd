@@ -172,6 +172,25 @@ func test_lines_are_for_the_tiles_the_ground_draws_flat() -> void:
 	assert_false(StarMapCanyons.traces(_data, 16), "a tile four hundred km across is not traced at all")
 
 
+## Three canyons meeting inside one square of the grid are drawn from the place they meet. Drawn from
+## the middle of the square, they reached it from the wrong angles and the network did not join.
+func test_a_fork_is_drawn_where_its_three_blocks_meet() -> void:
+	# A flat square at z = 1, read where it stands, and three feature points round it.
+	var grid: Array[PackedVector3Array] = [
+		PackedVector3Array([Vector3(0, 0, 1), Vector3(1, 0, 1)]),
+		PackedVector3Array([Vector3(0, 1, 1), Vector3(1, 1, 1)])]
+	var read_at := PackedVector3Array([Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(1, 1, 0)])
+	var a := Vector3(-0.2, -0.1, 0)
+	var b := Vector3(1.3, 0.0, 0)
+	var c := Vector3(0.4, 1.5, 0)
+	var fork: Vector3 = StarMapCanyons._fork(grid, read_at, PackedVector3Array([a, b, c, c]), 0, 0, 2)
+	var at := Vector3(fork.x / fork.z, fork.y / fork.z, 0)
+	assert_almost_eq(at.distance_to(a), at.distance_to(b), 1.0e-6, "as far from the first block as the second")
+	assert_almost_eq(at.distance_to(a), at.distance_to(c), 1.0e-6, "and as the third")
+	assert_eq(StarMapCanyons._fork(grid, read_at, PackedVector3Array([a, b, a, b]), 0, 0, 2), Vector3.ZERO,
+		"two blocks make a canyon, not a fork")
+
+
 func test_the_lines_run_where_the_canyons_are() -> void:
 	if _no_planet():
 		return
@@ -192,14 +211,20 @@ func test_the_lines_run_where_the_canyons_are() -> void:
 			if ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(p.normalized(), _data.radius,
 					_data.crack_spacing_m, _data.crack_width_m, 0.0, noise) < half:
 				on_a_canyon += 1
-		# Not all of them: a fork is drawn from the middle of its square of the grid, which is near
-		# the place the canyons meet and not on it.
-		assert_gt(float(on_a_canyon) / float(points.size()), 0.8,
-			"four ends in five stand inside a canyon, the rest being the middles of forks")
+		# Forks included: the three stretches of one meet where the canyons do, not at the middle of
+		# their square of the grid, which left the network in pieces that did not join.
+		assert_gt(float(on_a_canyon) / float(points.size()), 0.9,
+			"nine ends in ten stand inside a canyon")
 		# And none where the game leaves the ground whole: a town's sphere is not cut.
 		for n: int in range(0, points.size(), 2):
 			var along: Vector3 = (points[n] + points[n + 1]).normalized()
-			assert_lt(CrackCarve.offset(_data, along, null, 0.0, CrackCarve.AUTO), 0.0,
-				"every stretch drawn is one the game carves")
+			assert_gte(CrackCarve.depth_factor(_data, along, null), 0.5,
+				"every stretch drawn is on ground the game carves")
+		# Each stretch is also a strip as wide as the canyon it stands for.
+		var corners: PackedVector3Array = laid[2]
+		assert_eq(corners.size(), points.size() * 3, "two triangles a stretch")
+		assert_eq((laid[3] as PackedColorArray).size(), corners.size(), "a colour for each corner")
+		var wide: float = corners[0].normalized().angle_to(corners[1].normalized()) * _data.radius
+		assert_almost_eq(wide, _data.crack_width_m, 1.0, "as wide as the canyon")
 		return
 	pending("aucun canyon sous les tuiles essayees de %s" % BODY)

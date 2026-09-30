@@ -95,7 +95,9 @@ func _available() -> bool:
 
 
 ## How one tile is laid: a Callable taking a tile id and returning [code][points, colours][/code], the
-## two ends of each segment in the body's frame and a colour for each.
+## two ends of each segment in the body's frame and a colour for each. Two more entries,
+## [code][..., corners, colours][/code], are triangles drawn with them: what gives a line a width on
+## the ground, where it has one worth showing.
 ##
 ## Asked once per batch, on the main thread, and that is where it must resolve whatever needs one — a
 ## planet's data, a noise built on first use. The second element says whether the Callable may then
@@ -171,13 +173,28 @@ func _assemble() -> void:
 	if points.is_empty():
 		mesh = null
 		return
+	var built := ArrayMesh.new()
+	_add_surface(built, Mesh.PRIMITIVE_LINES, points, colours)
+	# And what a kind of line laid beside them to give them a width, if it did.
+	var faces := PackedVector3Array()
+	var face_colours := PackedColorArray()
+	for id: int in _drawn:
+		var cached: Array = _segments.get(id, [])
+		if cached.size() >= 4:
+			faces.append_array(cached[2])
+			face_colours.append_array(cached[3])
+	if not faces.is_empty():
+		_add_surface(built, Mesh.PRIMITIVE_TRIANGLES, faces, face_colours)
+	mesh = built
+
+
+static func _add_surface(to: ArrayMesh, primitive: Mesh.PrimitiveType, points: PackedVector3Array,
+		colours: PackedColorArray) -> void:
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = points
 	arrays[Mesh.ARRAY_COLOR] = colours
-	var built := ArrayMesh.new()
-	built.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
-	mesh = built
+	to.add_surface_from_arrays(primitive, arrays)
 
 
 # On deletion, NOT on leaving the tree: the chart takes this off its sphere every time it is opened and

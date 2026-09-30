@@ -38,6 +38,8 @@ var _looked: bool = false
 func _ready() -> void:
 	super()
 	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# The strips are seen from above whichever way their corners were wound.
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 
 ## Draw the network over [param tiles] — the ground's own tiles, and only those the ground draws FLAT:
@@ -146,6 +148,9 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 			if vy < grid_res:
 				down[here] = _crossing(grid[vy][vx], grid[vy + 1][vx], read_at, blocks, here, here + stride)
 
+	var corners := PackedVector3Array()
+	var corner_colours := PackedColorArray()
+	var half_width: float = data.crack_width_m * 0.5 / data.radius
 	var frame: PlanetData.TileFrame = null
 	var pitch: float = StarMapRelief.tile_pitch(data.radius, nside)
 	for vy: int in range(grid_res):
@@ -163,23 +168,92 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				CrackCarve.prepare_frame(data, frame, nside, ipix)
 			var ends: Array[Vector3] = met
 			if met.size() > 2:
-				var middle: Vector3 = Vector3.ZERO
-				for at: Vector3 in met:
-					middle += at
-				middle = middle.normalized()
+				var fork: Vector3 = _fork(grid, read_at, blocks, vx, vy, stride)
+				if fork == Vector3.ZERO:
+					for at: Vector3 in met:
+						fork += at
+					fork = fork.normalized()
 				ends = []
 				for at: Vector3 in met:
 					ends.append(at)
-					ends.append(middle)
+					ends.append(fork)
 			for n: int in range(0, ends.size(), 2):
-				var along: Vector3 = (ends[n] + ends[n + 1]).normalized()
-				if CrackCarve.offset(data, along, frame, 0.0, CrackCarve.AUTO) >= 0.0:
+				# Where the ground keeps the canyon, asked of the game's own rule — and of that rule
+				# only. Whether a canyon runs here is already known; testing the carve itself at the
+				# middle of a stretch dropped the ones that cut a corner near a fork, and the network
+				# came out in pieces that did not meet.
+				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), frame) < 0.5:
 					continue
-				points.append(on_drawn_ground(data, frame, nside, pitch, ends[n]))
-				points.append(on_drawn_ground(data, frame, nside, pitch, ends[n + 1]))
+				var from: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n])
+				var to: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n + 1])
+				points.append(from)
+				points.append(to)
 				colours.append(COLOUR)
 				colours.append(COLOUR)
-	return [points, colours]
+				_add_ribbon(corners, from, to, half_width)
+	corner_colours.resize(corners.size())
+	corner_colours.fill(COLOUR)
+	return [points, colours, corners, corner_colours]
+
+
+## Where three canyons meet inside one square of the grid, as a direction, or ZERO when the square
+## does not hold exactly that.
+##
+## The place the three blocks' feature points are equally far from: two planes, each halfway between
+## two of them, cut across the square. The square is small against a block, so the point the network is
+## read at is taken to run evenly across it, which leaves two equations in two unknowns. Drawing the
+## fork from the middle of the square instead put it up to half a step from where the canyons meet, and
+## the three stretches reached it from the wrong angles.
+static func _fork(grid: Array[PackedVector3Array], read_at: PackedVector3Array,
+		blocks: PackedVector3Array, vx: int, vy: int, stride: int) -> Vector3:
+	var here: int = vy * stride + vx
+	var sites: Array[Vector3] = []
+	for corner: int in [here, here + 1, here + stride, here + stride + 1]:
+		if not sites.has(blocks[corner]):
+			sites.append(blocks[corner])
+	if sites.size() != 3:
+		return Vector3.ZERO
+	var origin: Vector3 = read_at[here]
+	var along_x: Vector3 = read_at[here + 1] - origin
+	var along_y: Vector3 = read_at[here + stride] - origin
+	var first: Vector3 = sites[1] - sites[0]
+	var second: Vector3 = sites[2] - sites[0]
+	var a: float = along_x.dot(first)
+	var b: float = along_y.dot(first)
+	var c: float = along_x.dot(second)
+	var d: float = along_y.dot(second)
+	var det: float = a * d - b * c
+	if absf(det) < 1.0e-12:
+		return Vector3.ZERO
+	var p: float = ((sites[0] + sites[1]) * 0.5 - origin).dot(first)
+	var q: float = ((sites[0] + sites[2]) * 0.5 - origin).dot(second)
+	var u: float = clampf((p * d - b * q) / det, 0.0, 1.0)
+	var v: float = clampf((a * q - p * c) / det, 0.0, 1.0)
+	return grid[vy][vx].lerp(grid[vy][vx + 1], u).lerp(
+			grid[vy + 1][vx].lerp(grid[vy + 1][vx + 1], u), v).normalized()
+
+
+## One stretch of canyon as a strip as wide as the canyon, two triangles. [param from] and [param to]
+## are its ends ON the drawn ground; [param half_width] half its width as an angle at the body's
+## centre. Each end runs half a width past its point, so two stretches meeting at an angle overlap
+## instead of leaving a notch.
+static func _add_ribbon(corners: PackedVector3Array, from: Vector3, to: Vector3,
+		half_width: float) -> void:
+	var up: Vector3 = (from + to).normalized()
+	var along: Vector3 = (to - from)
+	along = (along - up * along.dot(up)).normalized()
+	if along == Vector3.ZERO:
+		return
+	var across: Vector3 = up.cross(along)
+	var from_r: float = from.length()
+	var to_r: float = to.length()
+	var from_dir: Vector3 = from / from_r - along * half_width
+	var to_dir: Vector3 = to / to_r + along * half_width
+	var a: Vector3 = (from_dir - across * half_width).normalized() * from_r
+	var b: Vector3 = (from_dir + across * half_width).normalized() * from_r
+	var c: Vector3 = (to_dir + across * half_width).normalized() * to_r
+	var d: Vector3 = (to_dir - across * half_width).normalized() * to_r
+	corners.append_array(PackedVector3Array([a, b, c, a, c, d]))
 
 
 ## Where the canyon between two points of the grid crosses the line from one to the other, as a
