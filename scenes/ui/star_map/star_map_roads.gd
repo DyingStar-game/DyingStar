@@ -32,21 +32,41 @@ const RAILWAY: String = "railway"
 ## A sleeper every so many steps of the view's mesh, and half its length in the same steps.
 const SLEEPER_EVERY: float = 3.0
 const SLEEPER_HALF: float = 0.75
-## A tunnel: a line either side of the way for as long as it runs under the ground, this many steps
-## out from it, splayed at each mouth by a stroke this many steps long — the way a map draws one.
+## A tunnel or a bridge: a line either side of the way for as long as it lasts, this many steps out
+## from it, splayed at each end by a stroke this many steps long — the way a map draws both. Each
+## stroke is [constant SPAN_THICK] steps thick: a step is about five pixels, so that is a stroke some
+## three pixels thick, standing five clear of the way.
+const SPAN_SIDE: float = 1.0
+const SPAN_WING: float = 1.2
+const SPAN_THICK: float = 0.6
+## One shorter than this many steps is not marked: its sign would be wider than it is long, and a
+## railway crossing a canyon every four km would be signs from end to end. They come in as the view
+## comes down.
+const SPAN_MIN: float = 1.5
+## Under the ground: dark, on a darker bed between its two lines. Over the void: light, and nothing
+## under it — the void is what is there.
 const TUNNEL_COLOUR: Color = Color(0.04, 0.04, 0.04)
-const TUNNEL_SIDE: float = 0.6
-const TUNNEL_WING: float = 0.9
+const TUNNEL_BED: Color = Color(0.13, 0.12, 0.12)
+const BRIDGE_COLOUR: Color = Color(0.95, 0.95, 0.92)
+## How far under the lines the bed lies, as a fraction of the body's radius: at the same height the
+## way drawn down its middle would fight it for the same pixels.
+const BED_SINK: float = LIFT / 6.0
 
 var _pack: ModifierPack = null
-## The step the map's signs — sleepers, tunnel sides — are sized on, for the whole view: see
+## The step the map's signs — sleepers, tunnels, bridges — are sized on, for the whole view: see
 ## [method show_over]. Zero until a view says, and each tile then uses its own.
 var _sign_step: float = 0.0
-## Where each profiled line runs in a tunnel, feature id → Array of Vector2(from, to) in metres along
-## the line, and how many profiles that was read from: a loaded planet goes on profiling its lines in
-## the background, and the tunnels of one born since are wanted too.
-var _tunnels: Dictionary = {}
-var _tunnels_from: int = -1
+## Where each line runs in a tunnel and where over a bridge, {"tunnels", "bridges"}, each feature id →
+## Array of Vector2(from, to) in metres along the line; and what that was read from, as counts: a
+## loaded planet goes on profiling its lines in the background, and those born since are wanted too.
+var _spans: Dictionary = {}
+var _spans_from: Vector2i = Vector2i(-1, -1)
+
+
+func _ready() -> void:
+	super()
+	# The signs' strips are seen from above whichever way their corners were wound.
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 
 ## The pack for this body, opened once. A body with no pack is an ordinary answer — most of them have
@@ -70,7 +90,8 @@ func _available() -> bool:
 func _laying() -> Array:
 	var data: PlanetData = StarMapTiles.for_body(body_key).data
 	var pack: ModifierPack = _pack
-	var signs: Dictionary = {"step": _sign_step, "tunnels": _known_tunnels(data)}
+	var signs: Dictionary = {"step": _sign_step, "spans": _known_spans(data),
+			"radius": data.radius if data != null else 0.0}
 	if data == null or data.radius <= 0.0:
 		var key: String = body_key
 		return [func(id: int) -> Array:
@@ -89,12 +110,12 @@ func _release() -> void:
 	if _pack != null:
 		_pack.close()
 		_pack = null
-	_tunnels = {}
-	_tunnels_from = -1
+	_spans = {}
+	_spans_from = Vector2i(-1, -1)
 
 
-## Draw the ways crossing [param tiles], with the map's signs — a railway's sleepers, a tunnel's
-## sides — sized for a view whose finest ground is at [param level].
+## Draw the ways crossing [param tiles], with the map's signs — a railway's sleepers, the sides of a
+## tunnel or a bridge — sized for a view whose finest ground is at [param level].
 ##
 ## ONE size for the whole view, which is why it is not each tile's own: a view mixes levels, fine under
 ## the camera and coarser ring by ring, and sleepers sized tile by tile doubled in length and spacing at
@@ -112,23 +133,42 @@ static func mesh_step(nside: int) -> float:
 	return HEALPix.pixel_angular_size(nside) / float(StarMapGround.GRID_RES) if nside > 0 else 0.0
 
 
-## Where the body's lines run in tunnels, from the profiles it KNOWS — built by a loaded planet, baked
-## for one that is not. Read again only when there are more of them than last time. Main thread.
-func _known_tunnels(data: PlanetData) -> Dictionary:
+## Where the body's lines run in tunnels and over bridges, from what it KNOWS — built by a loaded
+## planet, baked for one that is not: the TUNNEL and BRIDGE stretches of each line's profile (a bridge
+## there is a viaduct), and the crossings of the canyons. Read again only when there is more of either
+## than last time. Main thread.
+func _known_spans(data: PlanetData) -> Dictionary:
 	if data == null:
 		return {}
 	var profiles: Dictionary = data.known_grade_profiles()
-	if profiles.size() == _tunnels_from:
-		return _tunnels
-	_tunnels_from = profiles.size()
-	_tunnels = {}
+	var crossings: Array = data.known_bridge_spans()
+	var from := Vector2i(profiles.size(), crossings.size())
+	if from == _spans_from:
+		return _spans
+	_spans_from = from
+	var tunnels: Dictionary = {}
+	var bridges: Dictionary = {}
 	for fid: int in profiles:
-		var spans: Array[Vector2] = []
-		for seg: Dictionary in GradeTunnel.profile_tunnels(profiles[fid]):
-			spans.append(Vector2(float(seg["lo"]), float(seg["hi"])))
-		if not spans.is_empty():
-			_tunnels[fid] = spans
-	return _tunnels
+		for seg: Dictionary in (profiles[fid] as Dictionary).get("segments", []):
+			var span := Vector2(float(seg["lo"]), float(seg["hi"]))
+			match int(seg["kind"]):
+				GradeSettings.Kind.TUNNEL:
+					_note_span(tunnels, fid, span)
+				GradeSettings.Kind.BRIDGE:
+					_note_span(bridges, fid, span)
+	for crossing: Dictionary in crossings:
+		# One too oblique for a bridge has none: the way goes down into the canyon there.
+		if not bool(crossing.get("truncated", false)):
+			_note_span(bridges, int(crossing.get("feature_id", -1)),
+					Vector2(float(crossing["along_start"]), float(crossing["along_end"])))
+	_spans = {"tunnels": tunnels, "bridges": bridges}
+	return _spans
+
+
+static func _note_span(into: Dictionary, fid: int, span: Vector2) -> void:
+	if not into.has(fid):
+		into[fid] = []
+	(into[fid] as Array).append(span)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +177,7 @@ func _known_tunnels(data: PlanetData) -> Dictionary:
 ## [param place]. Static and handed everything, because it may run on a worker.
 ##
 ## [param signs] is what the map's signs need: "step", the length they are sized on (zero leaves it to
-## the tile's own), and "tunnels", see [method _known_tunnels].
+## the tile's own), "spans", see [method _known_spans], and "radius", the body's, in metres.
 ##
 ## The pack stores lon/lat in DEGREES, which is what [method HEALPix.lonlat2vec] takes — the two agree,
 ## and it is worth saying so here because the neighbouring call in this file's own tests once did not.
@@ -145,6 +185,10 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 		signs: Dictionary = {}) -> Array:
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
+	# The signs' strokes again, as strips: a line is a pixel wide whatever is done to it, and a dark
+	# pixel beside a bright way on dark ground is not seen.
+	var strips := PackedVector3Array()
+	var strip_colours := PackedColorArray()
 	if not pack.has_tile(nside, ipix):
 		return [points, colours]
 	var tile: Dictionary = pack.decode_tile(pack.read_tile(nside, ipix), 0.0, ModifierPack.MASK_ROAD)
@@ -153,7 +197,8 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 	var sign_step: float = float(signs.get("step", 0.0))
 	if sign_step <= 0.0:
 		sign_step = step
-	var tunnels: Dictionary = signs.get("tunnels", {})
+	var spans: Dictionary = signs.get("spans", {})
+	var shortest_m: float = sign_step * SPAN_MIN * float(signs.get("radius", 0.0))
 	for entry: Variant in (tile["roads"] as Array):
 		var road: Dictionary = entry
 		var line: PackedVector2Array = road["centerline"]
@@ -168,11 +213,24 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 			add_line(points, colours, way[i - 1], way[i], step, place, tint)
 		if kind == RAILWAY:
 			add_sleepers(points, colours, way, sign_step, place, tint)
-		var under: Array = tunnels.get(int(road.get("feature_id", -1)), [])
-		if not under.is_empty():
-			add_tunnels(points, colours, way, road.get("_cum_lengths", PackedFloat64Array()), under,
-					sign_step, step, place)
-	return [points, colours]
+		var fid: int = int(road.get("feature_id", -1))
+		var along: PackedFloat64Array = road.get("_cum_lengths", PackedFloat64Array())
+		for sort: Array in [["tunnels", TUNNEL_COLOUR, true], ["bridges", BRIDGE_COLOUR, false]]:
+			var here: Array = (spans.get(sort[0], {}) as Dictionary).get(fid, [])
+			if here.is_empty():
+				continue
+			var before: int = points.size()
+			var beds: int = strips.size()
+			add_span_signs(points, colours, way, along, here, sign_step, step, place, sort[1],
+					shortest_m, strips if sort[2] else null)
+			for n: int in range(beds, strips.size()):
+				strip_colours.append(TUNNEL_BED)
+			beds = strips.size()
+			for n: int in range(before, points.size(), 2):
+				add_ribbon(strips, points[n], points[n + 1], sign_step * SPAN_THICK * 0.5)
+			for n: int in range(beds, strips.size()):
+				strip_colours.append(sort[1])
+	return [points, colours, strips, strip_colours]
 
 
 ## The sleepers of a railway: short strokes across the line, which is how a map has always said
@@ -213,16 +271,21 @@ static func add_sleepers(points: PackedVector3Array, colours: PackedColorArray,
 		walked += stretch
 
 
-## The tunnels of one piece of a way: a dark line either side of it for as long as it is under the
-## ground, splayed outward at each mouth — the sign a map has for it.
+## The sign of a tunnel or of a bridge on one piece of a way: a line either side of it for as long as
+## it lasts, splayed outward at each end — what a map has for both, told apart by [param colour].
 ##
 ## [param way] is the piece one tile holds and [param along] how far along the WHOLE line each of its
-## points is, in metres; [param spans] where that line is in a tunnel, as Vector2(from, to) in the
-## same metres. A tunnel running on into the next tile is drawn up to the edge and has no mouth here.
+## points is, in metres; [param spans] where that line is in a tunnel (or on a bridge), as
+## Vector2(from, to) in the same metres. One running on into the next tile is drawn up to the edge and
+## has no end here; one shorter than [param shortest_m] is not drawn at all.
 ## [param step] sizes the sign; no stretch of it is drawn longer than [param max_piece].
-static func add_tunnels(points: PackedVector3Array, colours: PackedColorArray,
+##
+## [param beds], when given, receives a strip the width of the sign along each one, just under it: the
+## darker ground of a tunnel.
+static func add_span_signs(points: PackedVector3Array, colours: PackedColorArray,
 		way: PackedVector3Array, along: PackedFloat64Array, spans: Array, step: float,
-		max_piece: float, place: Callable) -> void:
+		max_piece: float, place: Callable, colour: Color, shortest_m: float = 0.0,
+		beds: Variant = null) -> void:
 	if along.size() != way.size() or way.size() < 2:
 		return
 	var first: float = along[0]
@@ -230,27 +293,33 @@ static func add_tunnels(points: PackedVector3Array, colours: PackedColorArray,
 	for span: Vector2 in spans:
 		var from: float = maxf(span.x, first)
 		var to: float = minf(span.y, last)
-		if to <= from:
+		if to <= from or span.y - span.x < shortest_m:
 			continue
 		var inside: PackedVector3Array = stretch_of(way, along, from, to, max_piece)
 		if inside.size() < 2:
 			continue
+		var heights := PackedFloat64Array()
+		for at: Vector3 in inside:
+			heights.append((place.call(at) as Vector3).length())
+		if beds != null:
+			for i: int in range(1, inside.size()):
+				add_ribbon(beds, inside[i - 1] * (heights[i - 1] * (1.0 - BED_SINK)),
+						inside[i] * (heights[i] * (1.0 - BED_SINK)), step * SPAN_SIDE)
 		for side: float in [-1.0, 1.0]:
 			var rail := PackedVector3Array()
 			for i: int in range(inside.size()):
 				var ahead: Vector3 = inside[mini(i + 1, inside.size() - 1)] - inside[maxi(i - 1, 0)]
 				var across: Vector3 = inside[i].cross(ahead).normalized() * side
-				var height: float = (place.call(inside[i]) as Vector3).length()
-				rail.append((inside[i] + across * (step * TUNNEL_SIDE)).normalized() * height)
+				rail.append((inside[i] + across * (step * SPAN_SIDE)).normalized() * heights[i])
 			for i: int in range(1, rail.size()):
-				_add_stroke(points, colours, rail[i - 1], rail[i])
-			# A mouth only where the tunnel really ends in this piece: the splay leans away from the
-			# tunnel and out from the way, half and half.
+				_add_stroke(points, colours, rail[i - 1], rail[i], colour)
+			# An end only where it really ends in this piece: the splay leans away from the span and
+			# out from the way, half and half.
 			if span.x >= first:
-				_add_wing(points, colours, rail[0], rail[0] - rail[1], inside[0], step)
+				_add_wing(points, colours, rail[0], rail[0] - rail[1], inside[0], step, colour)
 			if span.y <= last:
 				var end: int = rail.size() - 1
-				_add_wing(points, colours, rail[end], rail[end] - rail[end - 1], inside[end], step)
+				_add_wing(points, colours, rail[end], rail[end] - rail[end - 1], inside[end], step, colour)
 
 
 ## The part of [param way] between [param from] and [param to] metres along its line, with both ends
@@ -276,20 +345,20 @@ static func stretch_of(way: PackedVector3Array, along: PackedFloat64Array, from:
 
 
 static func _add_stroke(points: PackedVector3Array, colours: PackedColorArray, from: Vector3,
-		to: Vector3) -> void:
+		to: Vector3, colour: Color) -> void:
 	points.append(from)
 	points.append(to)
-	colours.append(TUNNEL_COLOUR)
-	colours.append(TUNNEL_COLOUR)
+	colours.append(colour)
+	colours.append(colour)
 
 
-## The splay at a tunnel's mouth: from [param at], the end of one side line, leaning [param outward]
-## (along the way, away from the tunnel) and away from [param centre], the way itself.
+## The splay at the end of a sign: from [param at], the end of one side line, leaning [param outward]
+## (along the way, away from the span) and away from [param centre], the way itself.
 static func _add_wing(points: PackedVector3Array, colours: PackedColorArray, at: Vector3,
-		outward: Vector3, centre: Vector3, step: float) -> void:
+		outward: Vector3, centre: Vector3, step: float, colour: Color) -> void:
 	var up: Vector3 = at.normalized()
 	var away: Vector3 = up - centre
 	away = (away - up * away.dot(up)).normalized()
 	var on: Vector3 = (outward - up * outward.dot(up)).normalized()
 	var lean: Vector3 = (away + on).normalized()
-	_add_stroke(points, colours, at, (up + lean * (step * TUNNEL_WING)).normalized() * at.length())
+	_add_stroke(points, colours, at, (up + lean * (step * SPAN_WING)).normalized() * at.length(), colour)
