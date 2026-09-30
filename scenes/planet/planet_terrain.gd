@@ -15,6 +15,11 @@ extends Node3D
 
 ## Emitted once when the first full set of visible chunks has been assembled.
 signal initial_chunks_ready
+## SERVER: the set of chunks this terrain WANTS (zone ∪ pins) changed. [param added] / [param removed]
+## are chunk keys. Wanted, not assembled: the server streams the items standing on these chunks in and
+## out (PropRegistry), and creates them while the collision is still being built — the ground-missing
+## freeze holds their bodies until it lands. See residency_keys().
+signal residency_changed(added: PackedStringArray, removed: PackedStringArray)
 
 const BASE_PIXEL_COUNT := 12
 ## Seconds between full LOD-tree updates.
@@ -246,6 +251,9 @@ var _pinned_chunks: Dictionary = {}
 ## set_pinned_chunks() can recompute the effective resident set without
 ## requiring server.gd to re-push the zone keys every tick.
 var _last_desired_keys: PackedStringArray = PackedStringArray()
+## zone ∪ pins as of the last _apply_residency, BEFORE the coarse chunks under fine pins are dropped:
+## the items on a coarse tile are still wanted when finer collision replaces its ground.
+var _residency_keys: Dictionary = {}
 
 ## ── Async recipe generation ──────────────────────────────────────
 ## Tracks WorkerThreadPool tasks for recipe heightmap generation.
@@ -795,6 +803,11 @@ func _apply_residency() -> void:
 	for k in _pinned_chunks.keys():
 		effective[k as String] = true
 
+	var diff: Array = residency_diff(_residency_keys, effective)
+	_residency_keys = effective.duplicate()
+	if not (diff[0] as PackedStringArray).is_empty() or not (diff[1] as PackedStringArray).is_empty():
+		residency_changed.emit(diff[0], diff[1])
+
 	# Fine collision chunks (deeper nside, pinned under active bodies) carve
 	# the cracks the coarse export chunks flatten.  Drop the coarse export
 	# chunk beneath each fine pin so its flat plateau doesn't overlay — and
@@ -850,6 +863,24 @@ func _apply_residency() -> void:
 	# Bridges outlive the chunks that reference them; collect the ones nothing
 	# has claimed back, after the load pass has had its chance to.
 	_sweep_orphan_bridges()
+
+
+## SERVER: the chunk keys currently wanted (zone ∪ pins), as a set. Do not modify it.
+func residency_keys() -> Dictionary:
+	return _residency_keys
+
+
+## [added, removed] between two key sets, both as PackedStringArray.
+static func residency_diff(before: Dictionary, after: Dictionary) -> Array:
+	var added := PackedStringArray()
+	var removed := PackedStringArray()
+	for k in after:
+		if not before.has(k):
+			added.append(k)
+	for k in before:
+		if not after.has(k):
+			removed.append(k)
+	return [added, removed]
 
 
 ## Enqueue a HEALPix chunk for async collision loading.  Returns immediately;
@@ -938,6 +969,12 @@ func _server_drain_chunk_queue() -> void:
 ## generate_collision_shape_healpix (phase 1).
 ## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
 func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
+	# A pad waiting for its elevation tiles is waiting for the SAME tiles this chunk needs: if it only
+	# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
+	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
+	# and a truck parked there left sunk 3 m under the platform when the pad came back.
+	_catch_up_starved_pads_now()
+
 	# Try the disk-cached collision shape (cheap main-thread I/O).
 	var cached_shape: ConcavePolygonShape3D = null
 	if _chunk_cache and _chunk_cache.has_collision(key, 0) \
@@ -1024,6 +1061,8 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 ## Submit a phase-1 WorkerThreadPool task that generates the collision shape.
 ## The heightmap image MUST already be stored in planet_data before calling.
 func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
+	if _late_pads_pending:
+		_late_pads_fresh[key] = true  # started after the late pads entered the index: already right
 	var pd := planet_data
 	var nside := _parse_nside_from_key(key)
 	if nside <= 0:
@@ -3934,7 +3973,7 @@ func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary,
 ## the tasks in flight on either side (their result is dropped, then
 ## queued again). Idempotent for anything not on the tiles.
 func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
-		why: String = "d'une ligne profilée née en rattrapage") -> void:
+		why: String = "d'une ligne profilée née en rattrapage", skip: Dictionary = {}) -> void:
 	if tiles.is_empty():
 		return
 	var n := 0
@@ -3947,12 +3986,16 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 	var by_nside := {}
 	if is_server:
 		for key: String in _server_collision_chunks.keys().duplicate():
+			if skip.has(key):
+				continue
 			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key),
 					tiles, tiles_nside):
 				by_nside[_parse_nside_from_key(key)] = int(by_nside.get(_parse_nside_from_key(key), 0)) + 1
 				_unload_chunk(key)
 				n += 1
 		for key: String in _server_chunk_tasks.keys():
+			if skip.has(key):
+				continue
 			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key),
 					tiles, tiles_nside):
 				_server_chunk_tasks[key]["evicted"] = true
@@ -4079,7 +4122,37 @@ func _poll_starved_pads() -> void:
 ## whose chunks no longer describe the ground. Throw them away on whichever
 ## side we are — the client's meshes, the server's collision — and tell the NPC
 ## navigation its baked boxes over that ground are stale.
-func _pads_changed(dirty: Dictionary) -> void:
+## Pads caught up from inside the chunk-load path (see _server_start_chunk_load): their dirty pixels
+## and the chunks started since, which already carry them. Flushed on the next idle frame, outside
+## the queue drain — _pads_changed re-enters the residency, which drains that very queue.
+var _late_pads_dirty: Dictionary = {}
+var _late_pads_fresh: Dictionary = {}
+var _late_pads_pending := false
+
+
+func _catch_up_starved_pads_now() -> void:
+	if planet_data == null or not planet_data.pads_incomplete():
+		return
+	var dirty: Dictionary = planet_data.retry_starved_pads()
+	if dirty.is_empty():
+		return
+	_late_pads_dirty.merge(dirty)
+	if not _late_pads_pending:
+		_late_pads_pending = true
+		_flush_late_pads.call_deferred()
+
+
+func _flush_late_pads() -> void:
+	_late_pads_pending = false
+	var dirty := _late_pads_dirty
+	var fresh := _late_pads_fresh
+	_late_pads_dirty = {}
+	_late_pads_fresh = {}
+	_pads_changed(dirty, fresh)
+
+
+## [param skip]: server chunk tasks already built with these pads — nothing to redo for them.
+func _pads_changed(dirty: Dictionary, skip: Dictionary = {}) -> void:
 	if dirty.is_empty() or planet_data == null:
 		return
 	_pad_dirty_pixels.merge(dirty)
@@ -4089,7 +4162,7 @@ func _pads_changed(dirty: Dictionary) -> void:
 	if not _initialized:
 		return  # warm-up: no chunk has been built yet
 	var nside: int = 1 << planet_data.max_quadtree_depth
-	_rebuild_chunks_on_tiles(dirty, nside, "d'un pad de bâtiment")
+	_rebuild_chunks_on_tiles(dirty, nside, "d'un pad de bâtiment", skip)
 	_invalidate_nav_over(dirty, nside)
 
 

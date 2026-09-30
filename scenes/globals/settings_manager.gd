@@ -352,6 +352,23 @@ func is_movement_debug() -> bool:
 var _server_movement_debug: int = -1
 
 
+## A numeric key of the server's ini, or [param default] when the file or the key is missing. A
+## hand-edited value may come back as a String; it is parsed as a float.
+static func _server_ini_number(section: String, key: String, default: float) -> float:
+	var ini := "server.ini"
+	for a: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if a.contains("srvini="):
+			ini = a.split("=")[1]
+	var cfg := ConfigFile.new()
+	if cfg.load(ini) != OK:
+		return default
+	var v: Variant = cfg.get_value(section, key, default)
+	if v is float or v is int:
+		return float(v)
+	if v is String and String(v).strip_edges().is_valid_float():
+		return String(v).strip_edges().to_float()
+	return default
+
 ## A boolean key of the server's ini, accepting the bare `true` / `1` / `yes`
 ## a hand-edited file carries (ConfigFile hands those back as String).
 static func _server_ini_flag(section: String, key: String) -> bool:

@@ -12,6 +12,7 @@ func _ready() -> void:
 	NetworkOrchestrator.set_gameserver_number_players.connect(_store.bind("server_players"))
 	NetworkOrchestrator.set_gameserver_number_objects.connect(_store.bind("server_objects"))
 	NetworkOrchestrator.set_gameserver_number_scenes.connect(_store.bind("server_scenes"))
+	NetworkOrchestrator.set_gameserver_number_active_scenes.connect(_store.bind("server_active_scenes"))
 	NetworkOrchestrator.set_gameserver_zones.connect(_store.bind("zones"))
 	NetworkOrchestrator.set_gameserver_name.connect(_store.bind("server_name"))
 	NetworkOrchestrator.set_universe_servers.connect(_store.bind("universe_servers"))

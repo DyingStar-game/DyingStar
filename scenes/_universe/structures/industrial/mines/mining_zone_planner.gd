@@ -76,6 +76,15 @@ func bind_props_list(props_list: Dictionary) -> void:
 	_props_list = props_list
 
 
+## "Does the server know this uuid, asleep or not?" (GameServer.prop_registry). A zone whose chunk
+## is not resident has no node in props_list, and taking that for "no zone" would re-spawn it with
+## generated = false over the persisted one — a second field of rocks. Unbound = props_list only.
+var _known: Callable = Callable()
+
+func bind_registry(known: Callable) -> void:
+	_known = known
+
+
 ## Open a sweep. Players are then rediscovered from scratch, so a uuid that stops being offered —
 ## disconnected, teleported off-planet, handed to another shard — drops out on its own at
 ## end_sweep(). Deriving liveness from the sweep beats hooking every place the server erases a
@@ -135,7 +144,7 @@ func _ensure_zone(planet: Planet, zone_key: String, zone_uuid: String) -> String
 	# the same deterministic uuid. Either way the chunk is done — this is the "don't do it twice"
 	# check, and it needs no extra persisted state of its own.
 	var zones: Dictionary = _props_list.get(ZONE_TYPE, {})
-	if zones.has(zone_uuid):
+	if zones.has(zone_uuid) or (_known.is_valid() and bool(_known.call(zone_uuid))):
 		_mark_evaluated(planet.uuid, zone_key)
 		return zone_uuid
 

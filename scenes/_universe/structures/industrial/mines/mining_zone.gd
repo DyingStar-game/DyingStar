@@ -332,9 +332,14 @@ func _ground_is_loaded() -> bool:
 	return terrain == null or terrain.has_collision_under(global_position)
 
 
-## True if any mining rock currently sits inside this zone's square field.
+## True if any mining rock sits inside this zone's square field — in the tree, or asleep in the
+## server's registry (a rock on a chunk nobody stands on has no node, but it still exists).
 func _has_rocks_in_field() -> bool:
 	var half: float = zone_size * 0.5
+	var agent = NetworkOrchestrator.network_agent
+	if agent != null and agent.has_method("registry_has_type_in_field") \
+			and agent.registry_has_type_in_field(self, "miningrock", half):
+		return true
 	for r in get_tree().get_nodes_in_group("miningrock"):
 		if r is Node3D:
 			var local: Vector3 = to_local((r as Node3D).global_position)

@@ -6,6 +6,7 @@ signal set_gameserver_server_tps(tps)
 signal set_gameserver_number_players(number_players_server)
 signal set_gameserver_number_objects(number_objects_server)
 signal set_gameserver_number_scenes(number_scenes_server)
+signal set_gameserver_number_active_scenes(number_active_scenes_server)
 signal set_universe_servers(number_servers)
 signal set_universe_players(number_players)
 signal set_gameserver_zones(zones)
@@ -163,8 +164,10 @@ func spawn_prop_authoritative(data: Dictionary) -> void:
 		"amessagenb": 1,
 		"data": [data],
 	}, "devmodecreate_object")
-	# 2) Create it locally on this game server (Horizon won't echo it back).
+	# 2) Create it locally on this game server (Horizon won't echo it back). Right away, not through
+	# the streaming queue: the caller stands next to it and may look the node up on its next line.
 	network_agent.create_generic_object({
+		"_immediate": true,
 		"data": {
 			"object_uuid": data["uuid"],
 			"object_type": data["type"],

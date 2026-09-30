@@ -607,6 +607,10 @@ var _nav_parked: bool = false
 ## Latched once the vehicle has entered the game on the SERVER: only then does freeing it mean anything
 ## to Horizon (see _notification). Cached because the autoload may already be gone at that point.
 var _server_live: bool = false
+## Set by the server just before it frees a vehicle it unloads or hands over rather than destroys
+## (server meshing, dormancy, a bulk unload): that free must not delete it from Horizon. Same contract
+## as PropSync.server_reparenting; re-armed by _enter_tree so it never outlives one free.
+var server_reparenting: bool = false
 ## Tick phase for the reduced-rate scans of a parked vehicle (see _physics_process_impl).
 var _parked_scan_phase: int = randi() % 10
 ## Local AABB of the body's own compound collision, computed once per _rebuild (see nav_footprint_aabb).
@@ -2566,6 +2570,10 @@ func _seat_occupancy_now() -> Dictionary:
 		occ[str(seat.name)] = seat.occupant_uuid
 	return occ
 
+func _enter_tree() -> void:
+	server_reparenting = false
+
+
 ## Server: a truck leaving the tree stops blocking NPCs where it stood — whether it is gone or only
 ## moving (the teleporter reparents it to another body).
 func _exit_tree() -> void:
@@ -2580,7 +2588,7 @@ func _exit_tree() -> void:
 ## parent — a reparent takes it out of the tree and back, and used to delete it, load included, from
 ## Horizon and the base. Same rule as PropSync._notification.
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE and _server_live and _is_networked():
+	if what == NOTIFICATION_PREDELETE and _server_live and not server_reparenting and _is_networked():
 		emit_signal("hs_server_prop_delete", uuid, type_name)
 
 # ------------------------------------------------------------------------------

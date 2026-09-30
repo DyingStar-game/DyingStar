@@ -103,10 +103,17 @@ static func server_lines(cache: ServerInfoCache) -> PackedStringArray:
 	var tps : Variant = cache.value("tps")
 	return [
 		ReadoutFormat.rated(float(tps), 30.0, "TPS") if tps != null else "- TPS",
-		"%s players" % str(cache.value("server_players", "-")),
-		"%s objects" % str(cache.value("server_objects", "-")),
-		"%s scenes" % str(cache.value("server_scenes", "-")),
+		"%s players" % _count(cache.value("server_players")),
+		"%s objects" % _count(cache.value("server_objects")),
+		"%s scenes" % _count(cache.value("server_scenes")),
+		"%s active scenes" % _count(cache.value("server_active_scenes")),
 	]
+
+
+## A server count as an integer — JSON hands every number over as a float ("1234.0") — or "-" until
+## the server has sent it.
+static func _count(v: Variant) -> String:
+	return "-" if v == null else str(int(v))
 
 
 ## The Godot server simulating us, and its zones — all of them: the section caps its height and
