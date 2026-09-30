@@ -555,6 +555,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v56 → v57: no rim snap where the crack is not carved (a POI's or a
 		# massif's ground): a flat rim crossing a village tore open the cells
 		# a building pad refines (PlanetChunk._snap_lands_on_wall).
+		# v57 → v58: a chunk border reads the tile across it even when that tile
+		# is pruned (it climbs to its ancestor): both sides used to fall back to
+		# their own tile and met with a step (PlanetData._pruned_tile_climbs).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -563,7 +566,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v57%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]

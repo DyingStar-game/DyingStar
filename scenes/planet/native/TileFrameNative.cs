@@ -275,7 +275,12 @@ public partial class TileFrameNative : RefCounted
         // cannot be told apart from a missing one, so it goes back to GDScript.
         if (!_tiles.TryGetValue(Id(vecIpix, nside), out var canonical))
             return double.NaN;
-        return Sample(dir, canonical.Floats.Length > 0 ? vecIpix : chainIpix, nside, vtxSpacing, cracks);
+        // A pruned canonical tile reads from its ancestor (Base follows the redirect): it is there
+        // for both sides, not missing. Not redirected yet (or a guessed climb): the GDScript decides,
+        // as it does for the chain tile's own climb.
+        if (canonical.Floats.Length > 0 || canonical.Redirect >= 0)
+            return Sample(dir, vecIpix, nside, vtxSpacing, cracks);
+        return double.NaN;
     }
 
     /// <summary>

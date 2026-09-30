@@ -4119,6 +4119,12 @@ func sample_height_boundary(dir: Vector3, chain_ipix: int,
 	# Through the frame: a missing tile misses the cache on every ask, hundreds per chunk rim.
 	var canonical_loaded: bool = not frame.floats(vec_ipix, ns).is_empty() if frame != null \
 			else load_chunk_heightmap(vec_ipix, ns) != null
+	# A PRUNED canonical tile has no floats of its own but reads from its published ancestor
+	# (_base_height_for_direction climbs): it is there for both sides. Counted as missing, each
+	# side fell back to its own tile and the two chunks met with a step at every border where the
+	# tile across was pruned (24.5 cm on tarsis_3 at 39.519 W 24.736 N, mesh and collision alike).
+	if not canonical_loaded and frame != null:
+		canonical_loaded = _pruned_tile_climbs(vec_ipix, ns, frame)
 	if canonical_loaded:
 		return sample_height_for_direction(dir, vec_ipix, -1, Vector2i(-1, -1), null, ns, frame,
 				vtx_spacing_m, cracks)
@@ -4127,6 +4133,19 @@ func sample_height_boundary(dir: Vector3, chain_ipix: int,
 	# used rather than the catastrophic 0.0m from a missing global heightmap.
 	return sample_height_for_direction(dir, chain_ipix,
 			_precomp_face, _precomp_xy, _cached_neighbors, ns, frame, vtx_spacing_m, cracks)
+
+
+## Is tile (ipix, ns) one a sparse pack pruned, with a published ancestor to climb to? The same
+## climb as _base_height_for_direction, memoised in the same frame.climbs entry.
+func _pruned_tile_climbs(ipix: int, ns: int, frame: TileFrame) -> bool:
+	if not pack_is_sparse():
+		return false
+	var memo: Variant = frame.climbs.get(_tile_id(ipix, ns))
+	if memo != null:
+		return (memo[0] as Vector2i).y > 0
+	var up := _finest_present_ancestor(ipix, ns)
+	frame.climbs[_tile_id(ipix, ns)] = [up, up.y > 0 and _climb_is_guess(ns, ipix)]
+	return up.y > 0
 
 
 ## Sample height for a cube-sphere chunk vertex (bounds kept for API
