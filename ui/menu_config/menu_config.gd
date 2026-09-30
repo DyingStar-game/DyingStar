@@ -93,6 +93,8 @@ var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
 var is_remapping = false
 var action_to_remap = null
 var remapping_button = null
+## Decides what the keys pressed during a capture add up to. Alive only while one is running.
+var _capture: BindingCapture = null
 
 ## One entry per displayed family: {"header": Label, "rows": {translated label -> Button}}.
 var _groups: Array[Dictionary] = []
@@ -237,10 +239,14 @@ func _on_input_button_pressed(b, a):
 		is_remapping = true
 		action_to_remap = a
 		remapping_button = b
+		_capture = BindingCapture.new()
 		b.find_child("LabelInput").text = "%%KM_PRESS_KEY"
 	get_tree().root.get_viewport().set_input_as_handled()
 
-func _unhandled_input(event: InputEvent) -> void:
+## In _input, not _unhandled_input: the page is covered with controls, and a control under the pointer
+## takes a mouse press before anything unhandled is ever offered. That is why the wheel click could
+## not be bound, nor any other button; and the search box, once typed in, kept the keys as well.
+func _input(event: InputEvent) -> void:
 
 	if not visible:
 		return
@@ -254,6 +260,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_remapping:
 		return
 
+	# The pointer stays free to move while we listen; only keys and buttons are ours.
+	if not (event is InputEventKey or event is InputEventMouseButton):
+		return
+
 	if event.is_action_pressed("pause"):
 		# Esc ABORTS the capture instead of being bound to the action. Both used to happen at once:
 		# the old Esc branch emitted "return", then this one bound Escape to whatever was selected.
@@ -262,22 +272,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			InputLabel.for_event(kept[0]) if not kept.is_empty() else ""
 		)
 		_end_remap()
-	elif event is InputEventKey or (event is InputEventMouseButton && event.pressed):
+	elif _capture.feed(event) == BindingCapture.Verdict.BIND:
+		# Which key, and with which modifiers, is BindingCapture's call: a modifier going down waits
+		# for the key it is held for, so Alt+X is bound as Alt+X and not as Alt.
+		var bound: InputEvent = _capture.bound
 		InputMap.action_erase_events(action_to_remap)
-		InputMap.action_add_event(action_to_remap, event)
-		_update_action_list(remapping_button, event)
-		keycode_dic.set(action_to_remap, InputEventCodec.encode(event))
+		InputMap.action_add_event(action_to_remap, bound)
+		_update_action_list(remapping_button, bound)
+		keycode_dic.set(action_to_remap, InputEventCodec.encode(bound))
 		_end_remap()
 		save_config.visible = true
 
-	# The key being bound must not also fire the action it is being bound to.
+	# The key being bound must not also fire the action it is being bound to, nor the click press the
+	# row under the pointer or scroll the list.
 	get_viewport().set_input_as_handled()
 
-## Leave capture mode. One place, so a new way of ending a capture cannot forget one of the three.
+## Leave capture mode. One place, so a new way of ending a capture cannot forget one of the four.
 func _end_remap() -> void:
 	is_remapping = false
 	action_to_remap = null
 	remapping_button = null
+	_capture = null
 
 func _update_action_list(button: Button, ev: InputEvent):
 	button.find_child("LabelInput").text = InputLabel.for_event(ev)
