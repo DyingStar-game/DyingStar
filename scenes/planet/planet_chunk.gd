@@ -604,13 +604,16 @@ static func generate_mesh(
 			# grid and carry no crack anyway. The edge distance comes back
 			# with it — the one Voronoi of this vertex, reused by the carve
 			# below. The moved direction is what everything after this reads
-			# (_vdirs), the grid stays.
+			# (_vdirs), the grid stays. No wall where the crack is not carved
+			# (see _snap_lands_on_wall): the vertex stays on the grid.
 			var _crack_d := INF
 			if hp_mode and _crack_here:
 				var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
 					dir, data.radius, data.crack_spacing_m, data.crack_width_m,
 					_crack_vtx_spacing,
 					0.0 if _st_edge.has(idx) else _crack_vtx_spacing * RIM_SNAP_PITCHES, data.crack_noise())
+				if not _snap_lands_on_wall(data, dir, _snap, _crack_masked, _crack_pois, _frame):
+					_snap = Vector4(dir.x, dir.y, dir.z, INF)
 				var _moved := Vector3(_snap.x, _snap.y, _snap.z)
 				if _moved != dir:
 					_snapped[idx] = 1
@@ -2876,6 +2879,9 @@ static func generate_collision_shape(
 					var _snap := ArideDesertCorundumPlateauTerrain.crack_rim_snap(
 						dir, data.radius, data.crack_spacing_m, data.crack_width_m,
 						_col_crack_spacing, _col_crack_spacing * RIM_SNAP_PITCHES, data.crack_noise())
+					if not _snap_lands_on_wall(data, dir, _snap, _col_crack_masked,
+							_col_crack_pois, _frame):
+						_snap = Vector4(dir.x, dir.y, dir.z, INF)
 					dir = Vector3(_snap.x, _snap.y, _snap.z)
 					_col_crack_d = _snap.w
 				if _is_border:
@@ -3821,6 +3827,24 @@ static func _radial_has_type(radial_features: Array, btype: String) -> bool:
 ## Uses the standard per-triangle accumulation method, then ortho-normalizes
 ## the tangent against the vertex normal (Gram-Schmidt) and computes the
 ## handedness sign so normal maps render correctly.
+## Does the rim snap [param snap] of grid direction [param grid_dir] land where
+## the crack is actually carved? Where a POI or a massif keeps the ground whole
+## (PlanetData.crack_factor 0) there is no wall to make vertical, and a vertex
+## slid up to RIM_SNAP_PITCHES off the grid only breaks what assumes the grid:
+## GradeRefine re-meshes a building pad's cells from the grid, so where a
+## (flat, uncarved) rim crossed a village the refined cells and their snapped
+## neighbours stopped meeting — two open cells a pad's width from the
+## teleporter on tarsis_3, in the mesh and the collision alike, and players
+## fell through. Decided on the LANDED direction, from the same POI subset and
+## frame in both builders: pure, so the mesh, the collision and the neighbour
+## chunk sharing a border vertex keep or undo the same snaps.
+static func _snap_lands_on_wall(data: PlanetData, grid_dir: Vector3, snap: Vector4,
+		masked: bool, pois: Array, frame: PlanetData.TileFrame) -> bool:
+	if not masked or (snap.x == grid_dir.x and snap.y == grid_dir.y and snap.z == grid_dir.z):
+		return true
+	return data.crack_factor(Vector3(snap.x, snap.y, snap.z), pois, frame) > 0.0
+
+
 ## Does the grid quad whose (0,0) corner is vertex [param i] split along
 ## i00–i11 instead of the default i10–i01? Where the crack wall crosses it with
 ## ONE corner on its own side — the plateau corner of a quad the wall cuts
