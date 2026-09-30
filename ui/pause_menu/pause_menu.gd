@@ -64,6 +64,31 @@ func _on_entry_pressed(key: StringName) -> void:
 			_resume()
 
 
+## The rest of the player's interface — the HUD, the chat, whatever else hangs beside this menu —
+## put away while the menu is up, and exactly that brought back after.
+##
+## The settings are see-through, over the running game, and the chat and the HUD are drawn on the
+## player's own layer: the chat's lines ran straight through the settings' text, and the mute icons
+## sat in a corner of the page. Nothing of them is wanted while paused. Only what WAS showing is
+## remembered, so a chat the player had hidden stays hidden.
+var _put_away: Array[CanvasItem] = []
+
+
+func _hide_game_interface() -> void:
+	_put_away.clear()
+	for sibling: Node in get_parent().get_children():
+		if sibling != self and sibling is CanvasItem and (sibling as CanvasItem).visible:
+			(sibling as CanvasItem).visible = false
+			_put_away.append(sibling)
+
+
+func _restore_game_interface() -> void:
+	for item: CanvasItem in _put_away:
+		if is_instance_valid(item):
+			item.visible = true
+	_put_away.clear()
+
+
 ## Back to the game: Resume or Esc.
 func _resume() -> void:
 	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
@@ -85,6 +110,7 @@ func _open_settings() -> void:
 func _open() -> void:
 	visible = true
 	main_pause_menu.visible = true
+	_hide_game_interface()
 	_open_settings()
 
 
@@ -95,5 +121,6 @@ func _open() -> void:
 func _close() -> void:
 	visible = false
 	main_pause_menu.visible = false
+	_restore_game_interface()
 	if is_instance_valid(_settings_overlay):
 		_settings_overlay.queue_free()
