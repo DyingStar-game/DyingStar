@@ -97,6 +97,10 @@ const SNAP_EPSILON_DEG := 0.05
 		enabled = v
 		_mark_dirty()
 
+## Set by the server just before it frees this building WITHOUT destroying it (dormancy, zone
+## hand-over): the pad stays registered, see _exit_tree.
+var keep_on_exit := false
+
 ## The terrain this pad is registered with, and under which uuid.
 var _terrain: Node = null
 var _uuid: String = ""
@@ -143,6 +147,13 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if keep_on_exit:
+		# The server put its building to sleep, or another server simulates it now: the building is
+		# gone from this tree, not from the world, and neither is the level ground under it.
+		# Unregistering would rebuild every chunk it touches — twice, the building coming back —
+		# pulling the collision from under whoever stands there.
+		_uuid = ""
+		return
 	_unregister()
 
 
@@ -386,19 +397,31 @@ func build_record() -> Dictionary:
 	if not _read_box():
 		_refusal = "aucun CSGBox3D enfant, ou boîte plate en X ou en Z"
 		return {}
-	# Everything is taken from the BOX, not from this node: the box is what the
-	# designer drags, and this node may sit anywhere convenient in the building.
-	var box_world := global_transform * _box_local
 	# The record is body-fixed: the heightmap is indexed by local direction, and
 	# the body is rotated by its spin, by a system scene's tilt and by the
 	# editor's "fly in planet frame". Stating the pad in world space would read
 	# the altitude of some other point of the planet — the same trap
 	# PlanetTerrain.compute_surface_transform documents.
-	var inv := (terrain as Node3D).global_transform.affine_inverse()
-	var local_pos := inv * box_world.origin
+	var rel := (terrain as Node3D).global_transform.affine_inverse() * global_transform
+	var rec := record_from(terrain.get("planet_data"), rel, _box_size, _box_local,
+			apron_m, height_offset, _resolve_uuid(terrain))
+	_refusal = str(rec.get("_refusal", ""))
+	return {} if rec.has("_refusal") else rec
+
+
+## The record of a pad whose node sits at [param rel] in the TERRAIN's frame, its marker box being
+## [param box_size] at [param box_local] under it. Static so the server can state the pad of a
+## building that is not in the tree (PropRegistry: asleep, or not built yet) and register it before
+## the chunks under it are — the same numbers the live node computes, so its own registration later
+## finds an identical record and rebuilds nothing. {"_refusal": why} when it cannot be stated.
+static func record_from(data, rel: Transform3D, box_size: Vector3, box_local: Transform3D,
+		apron: float, h_offset: float, uuid: String) -> Dictionary:
+	# Everything is taken from the BOX, not from this node: the box is what the
+	# designer drags, and this node may sit anywhere convenient in the building.
+	var box_rel := rel * box_local
+	var local_pos := box_rel.origin
 	if local_pos.length_squared() < 1.0:
-		_refusal = "le nœud est au centre de la planète"
-		return {}
+		return {"_refusal": "le nœud est au centre de la planète"}
 	# A building must stand ON the body. The server spawns a prop whose
 	# parent_id is empty in TRUE universe coordinates and only rebases it into
 	# the owning planet afterwards ("ORIGIN REBASE" in server/server.gd), and
@@ -407,27 +430,43 @@ func build_record() -> Dictionary:
 	# and latitude off a position 1e10 m away and level a patch of ground
 	# somewhere else entirely. Refusing here costs nothing: the reparent fires
 	# ENTER_TREE again and we are called back with the real pose.
-	var data = terrain.get("planet_data")
 	if data == null:
-		_refusal = "le PlanetTerrain n'a pas encore de PlanetData"
-		return {}
+		return {"_refusal": "le PlanetTerrain n'a pas encore de PlanetData"}
 	var radius: float = float(data.radius)
 	var off := local_pos.length() - radius
 	if absf(off) > maxf(50000.0, radius * 0.01):
-		_refusal = ("le bâtiment est à %.0f m de la surface de '%s' — il n'est pas "
-				+ "encore reparenté sous la planète") % [off, data.planet_name]
-		return {}
-	_refusal = ""
+		return {"_refusal": ("le bâtiment est à %.0f m de la surface de '%s' — il n'est pas "
+				+ "encore reparenté sous la planète") % [off, data.planet_name]}
 	var lonlat := HEALPix.vec2lonlat(local_pos.normalized())
 	var lon_r := deg_to_rad(lonlat.x)
 	var lat_r := deg_to_rad(lonlat.y)
 	var east := Vector3(-sin(lon_r), 0.0, cos(lon_r))
 	var north := Vector3(-sin(lat_r) * cos(lon_r), cos(lat_r), -sin(lat_r) * sin(lon_r))
-	var x_axis := (inv.basis * box_world.basis.x).normalized()
+	var x_axis := box_rel.basis.x.normalized()
 	var yaw := atan2(x_axis.dot(north), x_axis.dot(east))
-	var half := footprint_half_extents()
-	return PadBed.record(_resolve_uuid(terrain), lonlat.x, lonlat.y, yaw,
-			half.x, half.y, apron_m, height_offset)
+	# Half the footprint across the box's X and Z, the scale it stands under included.
+	var sb := box_local.basis.get_scale()
+	var sr := rel.basis.get_scale()
+	var half := Vector2(0.5 * box_size.x * absf(sb.x * sr.x), 0.5 * box_size.z * absf(sb.z * sr.z))
+	return PadBed.record(uuid, lonlat.x, lonlat.y, yaw, half.x, half.y, apron, h_offset)
+
+
+## What the server needs to state this pad without the node: the pad's transform relative to the
+## scene root [param root], its marker box, its settings. {} when the pad cannot level anything.
+## Call on a freshly instantiated scene, outside the tree (the marker box is still there).
+func template_relative_to(root: Node) -> Dictionary:
+	if not enabled or not _read_box():
+		return {}
+	var rel := Transform3D.IDENTITY
+	var n: Node = self
+	while n != null and n != root:
+		if n is Node3D:
+			rel = (n as Node3D).transform * rel
+		n = n.get_parent()
+	if n != root:
+		return {}
+	return {"rel": rel, "box_size": _box_size, "box_local": _box_local,
+			"apron": apron_m, "h_offset": height_offset}
 
 
 ## Half the levelled footprint in metres, as the box currently measures it:

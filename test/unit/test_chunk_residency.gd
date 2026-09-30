@@ -213,3 +213,20 @@ func test_coverage_stops_at_max_quadtree_depth() -> void:
 	t.planet_data.max_quadtree_depth = 3  # finest allowed nside = 8
 	assert_false(t._covered_by_active_descendants(8, 40),
 		"no chunks can exist finer than max depth — never covered")
+
+
+# ===================================================================
+# 4. PlanetTerrain.residency_diff — what the item streaming reacts to
+# ===================================================================
+
+
+func test_residency_diff_reports_added_and_removed() -> void:
+	var diff: Array = PlanetTerrain.residency_diff({"a": true, "b": true}, {"b": true, "c": true})
+	assert_eq(Array(diff[0]), ["c"])
+	assert_eq(Array(diff[1]), ["a"])
+
+
+func test_residency_diff_is_empty_when_nothing_changes() -> void:
+	var diff: Array = PlanetTerrain.residency_diff({"a": true}, {"a": true})
+	assert_true((diff[0] as PackedStringArray).is_empty())
+	assert_true((diff[1] as PackedStringArray).is_empty())

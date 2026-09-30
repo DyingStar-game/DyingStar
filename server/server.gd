@@ -209,6 +209,7 @@ func _ready() -> void:
 	# props_list itself lives for the server's lifetime; only its per-type sub-dictionaries are
 	# created lazily, which is why the planner re-reads it through .get() instead of caching one.
 	_mining_planner.bind_props_list(props_list)
+	_mining_planner.bind_registry(func(uuid: String) -> bool: return prop_registry.has(uuid))
 	_send_metrics()
 	# Say it out loud at boot, both ways. A rig that is silently off looks exactly like a server with
 	# nothing to report, and that ambiguity is what a low-TPS log must never contain.
@@ -716,11 +717,14 @@ func _process_impl() -> void:
 	# time, not frames: counted in frames it ran 10x/s at 60 fps and each sweep costs ~25 ms with
 	# 48 players — a quarter of the CPU, and a 25 ms stall every 6th frame that pushed the physics
 	# clock into catch-up.  Chunks load asynchronously over seconds anyway; 4 sweeps/s is plenty.
+	_stream_drain()
+
 	var _now_pins: int = Time.get_ticks_msec()
 	if _now_pins - _pin_last_ms >= PIN_INTERVAL_MS:
 		_pin_last_ms = _now_pins
 		var _tq: int = Time.get_ticks_usec() if _perf_report else 0
 		_refresh_active_body_pins()
+		_stream_sweep()
 		if _perf_report:
 			var _tq2: int = Time.get_ticks_usec()
 			_perf_pins_usec += _tq2 - _tq
@@ -1396,7 +1400,11 @@ func _send_metrics():
 						"chunks_loading": _chunks_loading(),
 						"objects_number": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 						"players_number": players_list.size(),
-						"scenes_number": nb_scenes,
+						# Every scene this server holds — the props of the PropRegistry, asleep or not,
+						# plus the planets (always in the tree, never in the registry) — vs the scenes
+						# actually in the tree (props_list, planets included).
+						"scenes_number": prop_registry.size() + props_list["planets"].size(),
+						"scenes_number_actives": nb_scenes,
 					}
 				]
 			}
@@ -1567,6 +1575,15 @@ func _on_prop_update(
 	_on_prop_update_impl(uuid, properties, type)
 
 func _on_prop_update_impl(uuid: String, properties: Dictionary, type: String) -> void:
+	if prop_registry.has(uuid):
+		# The registry keeps the last published state, so a prop that goes to sleep comes back with
+		# its cuts, its load, its flags — without asking Horizon.
+		prop_registry.merge_data(uuid, properties)
+		if properties.has("parent_id"):
+			_stream_place(uuid)  # picked up, dropped, loaded in a bed: indexed elsewhere now
+			_stream_moved[uuid] = true
+		elif properties.has("position"):
+			_stream_moved[uuid] = true
 	if not props_update.has(uuid):
 		props_update[uuid] = {
 			"uuid": uuid,
@@ -1685,6 +1702,18 @@ func _on_prop_delete(
 		]
 	}
 	ServerNetwork.send_message(message, "prop_delete")
+	# Gone for good: drop the data too (the nodes are already being freed, children included), and
+	# the pad of a building deleted while asleep (a live one unregisters its own on the way out).
+	var gone: Dictionary = prop_registry.get_entry(uuid)
+	if not gone.is_empty() and int(gone["kind"]) == PropRegistry.KIND_GROUND:
+		var gp = props_list["planets"].get(gone["world"])
+		if gp is Planet and (gp as Planet).planet_terrain != null:
+			(gp as Planet).planet_terrain.unregister_terrain_pad("prop:" + uuid)
+	for de in prop_registry.forget(uuid):
+		_stream_queued.erase(de["uuid"])
+		_stream_far.erase(de["uuid"])
+		_stream_live_radius.erase(de["uuid"])
+		_stream_moved.erase(de["uuid"])
 	props_update.erase(uuid)
 	if props_list.has(type):
 		if props_list[type].has(uuid):
@@ -1742,6 +1771,7 @@ func create_planet(event: Dictionary) -> void:
 	props_list_last_movement[planet_uuid] = Vector3.ZERO
 	props_list_last_rotation[planet_uuid] = Vector3.ZERO
 	props_list["planets"][planet_uuid] = spawnable_planet_instance
+	_stream_adopt_waiting(planet_uuid)  # props that arrived before their planet
 
 	# Once the planet's terrain reports its safety-net + collision root is
 	# ready, push the current zone's chunk residency.  If the zone hasn't
@@ -1878,6 +1908,11 @@ func create_player(event: Dictionary) -> void:
 	prints("Creating player on server side: %s" % event)
 	var player_data = event["data"]["object_data"]
 
+	# Seated in a vehicle that is asleep in the registry: nobody would ever wake it (the player pins
+	# nothing until they exist), so build it — and whatever it hangs from — now.
+	if str(player_data.get("parent_id", "")) != "":
+		_stream_force_live(str(player_data["parent_id"]))
+
 	if player_data["parent_id"] != "" and _search_parent_node(player_data["parent_id"]) == null:
 		# store pending message
 		pending_messages_player_parenting.append(event)
@@ -1971,6 +2006,7 @@ func create_player(event: Dictionary) -> void:
 			seat_parent.server_enter(spawned_entity_instance, seat_name, true)
 			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
+	_stream_adopt_waiting(player_uuid)  # what they carry, if it arrived first
 
 func set_serverinfo(uuid: String) -> void:
 	serverinfo_uuid = uuid
@@ -1996,6 +2032,9 @@ func _release_carried_for_transfer(player: Node) -> void:
 		if "server_reparenting" in net:
 			net.server_reparenting = true
 		var uuid: String = str(child.uuid)
+		prop_registry.forget(uuid)  # leaves with the player; its node is freed with them
+		_stream_queued.erase(uuid)
+		_stream_moved.erase(uuid)
 		for proptype in props_list.keys():
 			if proptype != "planets" and props_list[proptype].has(uuid):
 				props_list[proptype].erase(uuid)
@@ -2040,7 +2079,10 @@ func _adopt_transferred_prop(prop: Node3D, object_data: Dictionary) -> void:
 	print("[zone] adopted %s at %s from another server" % [uuid, prop.position])
 
 
-func create_generic_object(event: Dictionary) -> void:
+## Instantiate one prop from its Horizon event and put it in the tree — the historical creation path,
+## now reached through the PropRegistry (create_generic_object / _stream_materialize). Returns the new
+## node, or null when nothing was created (duplicate, parent not in the tree, missing scene).
+func _materialize_event(event: Dictionary) -> Node:
 	# spawn genericprops
 	var object_data = event["data"]["object_data"]
 
@@ -2058,29 +2100,33 @@ func create_generic_object(event: Dictionary) -> void:
 			# Another server was simulating this prop and just handed it to us: it drove into
 			# our zone. We already hold a frozen copy — adopt it where the sender says it is.
 			_adopt_transferred_prop(existing, object_data)
-			return
+			return null
 		push_warning("[Server] create_generic_object: skipping duplicate uuid=%s type=%s (already created)" % [_existing_uuid, _existing_type])
-		return
+		return null
 
 	if object_data.has("parent_id"):
 		if object_data["parent_id"] != "" and _search_parent_node(object_data["parent_id"]) == null:
 			# store pending message
 			pending_messages_generic_objects_parenting.append(event)
 			print("Pending message for object %s because parent_id %s not found yet" % [event["data"]["object_uuid"], object_data["parent_id"]])
-			return
+			return null
 
 	var prop_scene: PackedScene
 	if props_scene.has(object_data["scenename"]):
 		prop_scene = props_scene[object_data["scenename"]]
 	else:
 		prop_scene = load("res://" + object_data["scenename"])
+		# Keep it: once its last instance goes to sleep (PropRegistry) nothing references the
+		# PackedScene any more, the resource cache drops it, and the next wake-up reads it from disk.
+		if prop_scene != null:
+			props_scene[object_data["scenename"]] = prop_scene
 
 	# A persisted prop can reference a scene that no longer exists at that path (e.g. moved or
 	# renamed by the asset-taxonomy migration). Skip it instead of crashing the whole loader.
 	if prop_scene == null:
 		push_warning("create_generic_object: scene not found for scenename '%s' (uuid %s), skipping" \
 			% [object_data["scenename"], event["data"]["object_uuid"]])
-		return
+		return null
 
 	var spawnable_prop_instance = prop_scene.instantiate()
 	# Address the networking through the PropSync component when the prop has one; fall back to the root
@@ -2199,27 +2245,811 @@ func create_generic_object(event: Dictionary) -> void:
 			)
 			pending_messages_player_parenting.erase(pending_message)
 			create_player(pending_message)
-
-	# generic object created, now process pending messages for generic objects waiting for this generic object as parent
-	for pending_message in pending_messages_generic_objects_parenting.duplicate():
-		if pending_message["data"]["object_data"]["parent_id"] == event["data"]["object_uuid"]:
-			print(
-				"Processing pending message for generic object %s now that parent_id %s is available" % [
-					pending_message["data"]["object_uuid"],
-					pending_message["data"]["object_data"]["parent_id"]
-				]
-			)
-			pending_messages_generic_objects_parenting.erase(pending_message)
-			create_generic_object(pending_message)
+	# Props waiting for this one as their parent are the PropRegistry's business (children_of): they
+	# are created by _stream_materialize right after it, and sleep with it.
+	return spawnable_prop_instance
 
 func update_generic_object(event: Dictionary) -> void:
-	var type = event["data"]["object_type"]
-	if props_list[type].has(event["data"]["object_uuid"]):
-		var object = props_list[type][event["data"]["object_uuid"]]
+	var type: String = str(event["data"]["object_type"])
+	var uuid: String = str(event["data"]["object_uuid"])
+	var object_data: Dictionary = event["data"].get("object_data", {})
+	if prop_registry.has(uuid):
+		prop_registry.merge_data(uuid, object_data)
+		if object_data.has("parent_id") or object_data.has("position"):
+			_stream_replace_if_asleep(uuid)
+	if props_list.has(type) and props_list[type].has(uuid):
+		var object = props_list[type][uuid]
+		if not is_instance_valid(object):
+			return
 		var net = PropSync.of(object)
 		if net == null:
 			net = object
-		net.client_channel_data_update(event["data"]["object_data"])
+		net.client_channel_data_update(object_data)
+
+
+# ── Prop streaming: the registry and what is in the tree ─────────────────────────────────────────
+# Every prop of our zones is recorded in prop_registry; only those where someone is get a node:
+#   * on a planet's ground: the items on the chunks PlanetTerrain wants (zone ∪ pins) — the SAME
+#     residency decision as the collision, so the ground and what stands on it arrive together;
+#   * in space, or aloft over a planet: the items within ItemDefs.load_radius of a viewer.
+# An item no longer wanted for STREAM_DORMANT_MS goes back to data (never a delete for Horizon).
+
+## Types that never sleep (tuning hook; empty = everything streams).
+const STREAM_ALWAYS_TYPES: Array[String] = []
+
+var prop_registry := PropRegistry.new()
+var _stream_load_factor: float = SettingsManager._server_ini_number("streaming", "load_factor", 1.2)
+var _stream_unload_factor: float = SettingsManager._server_ini_number("streaming", "unload_factor", 1.5)
+var _stream_dormant_ms: int = int(SettingsManager._server_ini_number("streaming", "dormant_delay_ms", 10000.0))
+var _stream_budget_usec: int = int(SettingsManager._server_ini_number("streaming", "materialize_budget_ms", 4.0) * 1000.0)
+## uuids waiting for a node, in creation order; _stream_queued is the same set for lookups.
+var _stream_queue: Array = []
+var _stream_queued: Dictionary = {}
+var _stream_sort_dirty: bool = false
+var _stream_sort_last_ms: int = 0
+const STREAM_SORT_MS: int = 500
+## Live roots that are no longer wanted: uuid -> true (their entry holds far_since_ms).
+var _stream_far: Dictionary = {}
+## Live roots whose position changed since the last sweep (re-indexed there).
+var _stream_moved: Dictionary = {}
+## Live KIND_RADIUS roots, checked against the viewers at every sweep.
+var _stream_live_radius: Dictionary = {}
+## planet uuid -> Vector2i(collision_detail_nside, export_nside), resolved once per planet.
+var _stream_nside: Dictionary = {}
+## planet uuid -> the PlanetTerrain whose residency_changed we listen to.
+var _stream_connected: Dictionary = {}
+var _stream_stat_made: int = 0
+var _stream_stat_slept: int = 0
+var _stream_stat_usec: int = 0
+var _stream_stat_last_ms: int = 0
+const STREAM_STATS_MS: int = 5000
+## A frame longer than this (s) throttles the streaming to one item per frame (see _stream_drain).
+const STREAM_SLOW_FRAME_S: float = 1.0 / 30.0
+## type -> [count, total usec, max usec] of the materializations of the current stats window.
+var _stream_cost: Dictionary = {}
+## type -> running mean of its materialization cost (usec), over the whole session.
+var _stream_type_cost: Dictionary = {}
+## A type that costs more than this to build (usec) is kept STREAM_COSTLY_DORMANT_MS once unwanted,
+## instead of _stream_dormant_ms. Measured 2026-09-30: cargo_depot ~500 ms, spawnbuilding ~22 ms,
+## vehicle ~10 ms, miningrock ~1 ms — and the village on the edge of the ring was torn down and
+## rebuilt every minute, 1.2 s of main thread each time, for buildings that cost nothing to keep
+## (static bodies). Rocks, the numerous ones, stay on the short delay.
+const STREAM_COSTLY_USEC: int = 5000
+const STREAM_COSTLY_DORMANT_MS: int = 300000
+
+
+func _stream_note_cost(type: String, usec: int) -> void:
+	var c: Array = _stream_cost.get(type, [0, 0, 0])
+	c[0] += 1
+	c[1] += usec
+	c[2] = maxi(c[2], usec)
+	_stream_cost[type] = c
+	var mean: float = float(_stream_type_cost.get(type, usec))
+	_stream_type_cost[type] = mean * 0.8 + float(usec) * 0.2
+
+
+## How long an unwanted live item of [param type] waits before it sleeps.
+func _stream_dormant_delay(type: String) -> int:
+	if float(_stream_type_cost.get(type, 0.0)) > STREAM_COSTLY_USEC:
+		return STREAM_COSTLY_DORMANT_MS
+	return _stream_dormant_ms
+
+
+## A prop arrives (Horizon's initial_object / add_prop, or a server-side spawn): record it, and create
+## its node only if someone is there. `_immediate` (spawn_prop_authoritative) creates it right away:
+## the caller stands next to it and may read the node back on the next line.
+func create_generic_object(event: Dictionary) -> void:
+	var data: Dictionary = event["data"]
+	var uuid: String = str(data.get("object_uuid", ""))
+	var type: String = str(data.get("object_type", ""))
+	if uuid == "":
+		_materialize_event(event.duplicate(true))
+		return
+	# Already in the tree: the historical duplicate / hand-over handling.
+	if props_list.has(type) and props_list[type].has(uuid) and is_instance_valid(props_list[type][uuid]):
+		_materialize_event(event)
+		if prop_registry.has(uuid):
+			prop_registry.merge_data(uuid, data.get("object_data", {}))
+			_stream_moved[uuid] = true  # an adopted hand-over may have moved it
+		return
+	prop_registry.upsert(event)
+	_stream_place(uuid)
+	var entry: Dictionary = prop_registry.get_entry(uuid)
+	if not _stream_in_zones(entry):
+		prop_registry.forget(uuid)  # another server simulates it; Horizon hands it over if it comes
+		return
+	_stream_adopt_waiting(uuid)
+	_stream_register_pads(uuid)
+	if bool(event.get("_immediate", false)):
+		var ti: int = Time.get_ticks_usec()
+		_stream_materialize(uuid)
+		_stream_note_cost(type, Time.get_ticks_usec() - ti)
+		_stream_mark_if_unwanted(uuid)
+	elif _stream_should_live(entry):
+		_stream_enqueue(uuid)
+
+
+## Decide where [param uuid] is indexed, from its stored object_data (see PropRegistry kinds).
+func _stream_place(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty():
+		return
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	if STREAM_ALWAYS_TYPES.has(str(e["type"])):
+		prop_registry.place_always(uuid)
+		return
+	var pid: String = str(od.get("parent_id", ""))
+	var planet: Planet = null
+	var pos := Vector3.ZERO
+	if pid != "":
+		if props_list["planets"].has(pid) and props_list["planets"][pid] is Planet:
+			planet = props_list["planets"][pid] as Planet
+			if not od.has("position"):
+				prop_registry.place_always(uuid)
+				return
+			pos = _stream_vec(od["position"])
+		elif pid != uuid and prop_registry.has(pid):
+			prop_registry.place_child(uuid, pid)
+			return
+		elif players_list.has(pid):
+			prop_registry.place_always(uuid)  # in a player's hands: lives and leaves with them
+			return
+		else:
+			prop_registry.place_waiting(uuid, pid)
+			return
+	else:
+		if not od.has("position"):
+			prop_registry.place_always(uuid)
+			return
+		var abs_pos: Vector3 = _stream_vec(od["position"])
+		planet = _owning_planet(abs_pos)
+		if planet == null:
+			_stream_place_radius(uuid, "space", abs_pos)
+			return
+		pos = abs_pos - _planet_orbital_abs(planet)
+	if planet.planet_data == null or planet.planet_terrain == null:
+		prop_registry.place_always(uuid)
+	elif not planet.within_ground_reach(pos):
+		_stream_place_radius(uuid, planet.uuid, pos)  # aloft: no chunk under it, distance decides
+	else:
+		prop_registry.place_ground(uuid, planet.uuid, pos, _stream_chunk_keys(planet, pos))
+
+
+func _stream_place_radius(uuid: String, world: String, pos: Vector3) -> void:
+	var r: float = ItemDefs.load_radius(str(prop_registry.get_entry(uuid)["type"]), _stream_load_factor)
+	if r <= 0.0:
+		prop_registry.place_always(uuid)  # no definition: we cannot tell when it is needed
+	else:
+		prop_registry.place_radius(uuid, world, pos, r)
+
+
+## The chunk keys an item at planet-local [param pos] stands on: the fine collision key (what the pins
+## speak) and, when coarser, the export key (what the zone residency speaks).
+func _stream_chunk_keys(planet: Planet, pos: Vector3) -> PackedStringArray:
+	var ns: Vector2i = _stream_nside.get(planet.uuid, Vector2i.ZERO)
+	if ns == Vector2i.ZERO:
+		ns = Vector2i(planet.planet_data.collision_detail_nside(), planet.planet_data.export_nside)
+		_stream_nside[planet.uuid] = ns
+	var dir: Vector3 = planet.local_dir_of(pos)
+	var keys := PackedStringArray()
+	if dir.is_zero_approx():
+		return keys
+	keys.append("hp_n%d_p%d" % [ns.x, HEALPix.vec2pix_nest(ns.x, dir)])
+	if ns.y != ns.x and ns.y > 0:
+		keys.append("hp_n%d_p%d" % [ns.y, HEALPix.vec2pix_nest(ns.y, dir)])
+	return keys
+
+
+static func _stream_vec(v: Variant) -> Vector3:
+	if v is Vector3:
+		return v
+	if v is Dictionary:
+		return Vector3(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
+	if v is Array and (v as Array).size() >= 3:
+		return Vector3(float(v[0]), float(v[1]), float(v[2]))
+	return Vector3.ZERO
+
+
+## Items that were waiting for [param uuid] (as their parent) are placed now that it exists.
+func _stream_adopt_waiting(uuid: String) -> void:
+	for child in prop_registry.take_waiting(uuid):
+		_stream_place(child)
+		var ce: Dictionary = prop_registry.get_entry(child)
+		if not ce.is_empty() and _stream_should_live(ce):
+			_stream_enqueue(child)
+		_stream_adopt_waiting(child)
+
+
+## Is [param entry] inside one of our zones? Children, carried and waiting items follow their parent.
+func _stream_in_zones(entry: Dictionary) -> bool:
+	if not _zones_initialized or entry.is_empty():
+		return true
+	var kind: int = int(entry["kind"])
+	if kind != PropRegistry.KIND_GROUND and kind != PropRegistry.KIND_RADIUS:
+		return true
+	var world: String = str(entry["world"])
+	var planet: Planet = null
+	if world != "space":
+		planet = props_list["planets"].get(world) as Planet
+	for zone in server_zones:
+		if _zone_contains_node(zone, planet, entry["pos"]):
+			return true
+	return false
+
+
+## Should [param entry] have a node right now?
+func _stream_should_live(entry: Dictionary) -> bool:
+	match int(entry["kind"]):
+		PropRegistry.KIND_ALWAYS:
+			return true
+		PropRegistry.KIND_CHILD:
+			return prop_registry.live.has(entry["parent"])
+		PropRegistry.KIND_GROUND:
+			var planet = props_list["planets"].get(entry["world"])
+			if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+				return true
+			return PropRegistry.on_resident_chunk(entry, (planet as Planet).planet_terrain.residency_keys())
+		PropRegistry.KIND_RADIUS:
+			var reach: float = float(entry["radius"])
+			var r2: float = reach * reach
+			for v in _stream_viewers(str(entry["world"])):
+				if (v as Vector3).distance_squared_to(entry["pos"]) <= r2:
+					return true
+			return false
+	return false
+
+
+## Positions of the viewers of [param world] ("space" or a planet uuid), in that world's coordinates.
+func _stream_viewers(world: String) -> Array:
+	var out: Array = []
+	for puuid in players_list:
+		var p = players_list[puuid]
+		if not is_instance_valid(p) or not (p is Node3D):
+			continue
+		var planet := _planet_ancestor_of(p as Node3D)
+		var pw: String = "space" if planet == null else planet.uuid
+		if pw == world:
+			out.append((p as Node3D).global_position)
+	return out
+
+
+func _stream_enqueue(uuid: String) -> void:
+	if _stream_queued.has(uuid) or prop_registry.live.has(uuid):
+		return
+	_stream_queued[uuid] = true
+	_stream_queue.append(uuid)
+	_stream_sort_dirty = true
+
+
+## Create the node of [param uuid] (and of its registry children). Returns it, or null.
+func _stream_materialize(uuid: String) -> Node:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty():
+		return null
+	var node = e["node"]
+	if node != null and is_instance_valid(node):
+		prop_registry.live[uuid] = true
+		return node
+	if int(e["kind"]) == PropRegistry.KIND_CHILD and not prop_registry.live.has(e["parent"]):
+		return null  # comes with its parent
+	# A COPY: _materialize_event rebases the position of an unparented prop in place.
+	var made: Node = _materialize_event((e["event"] as Dictionary).duplicate(true))
+	if made == null:
+		var type: String = str(e["type"])
+		if props_list.has(type) and props_list[type].has(uuid) and is_instance_valid(props_list[type][uuid]):
+			made = props_list[type][uuid]
+		else:
+			return null
+	e["node"] = made
+	e["far_since_ms"] = 0
+	prop_registry.live[uuid] = true
+	_stream_stat_made += 1
+	_cull_indexed_total = -1  # the culler must adopt it even if another prop left in the same sweep
+	if int(e["kind"]) == PropRegistry.KIND_RADIUS:
+		_stream_live_radius[uuid] = true
+	_stream_seed_replication(made, e["event"]["data"].get("object_data", {}))
+	for child in prop_registry.children_of.get(uuid, {}).keys():
+		_stream_materialize(child)
+	return made
+
+
+## A reloaded prop is where Horizon already has it: seed PropNet's "last sent" state with that pose so
+## its first tick does not re-send every woken item. Not for a rebased root (parent "" in the data):
+## its first tick MUST announce the planet as its new parent.
+func _stream_seed_replication(node: Node, od: Dictionary) -> void:
+	if str(od.get("parent_id", "")) == "" or not (node is Node3D):
+		return
+	var state: Object = PropSync.of(node)
+	if state == null:
+		state = node
+	if not ("server_last_position" in state):
+		return
+	var body := node as Node3D
+	state.server_last_position = snapped(body.position, Vector3(0.005, 0.005, 0.005))
+	state.server_last_rotation = snapped(body.rotation, Vector3(0.005, 0.005, 0.005))
+	if "server_last_parent_id" in state:
+		state.server_last_parent_id = str(od["parent_id"])
+
+
+## Build [param uuid] now, with the registry ancestors it hangs from, whether or not its chunk is
+## wanted (a player is about to be parented under it). No-op for an unknown uuid.
+func _stream_force_live(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or prop_registry.live.has(uuid):
+		return
+	if int(e["kind"]) == PropRegistry.KIND_CHILD:
+		_stream_force_live(str(e["parent"]))
+	_stream_queued.erase(uuid)
+	_stream_materialize(uuid)
+	_stream_mark_if_unwanted(uuid)
+
+
+## If the item is live but no longer wanted, start its dormancy clock.
+func _stream_mark_if_unwanted(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or not prop_registry.live.has(uuid):
+		return
+	var kind: int = int(e["kind"])
+	if kind != PropRegistry.KIND_GROUND and kind != PropRegistry.KIND_RADIUS:
+		return
+	if _stream_should_live(e):
+		e["far_since_ms"] = 0
+		_stream_far.erase(uuid)
+	elif int(e["far_since_ms"]) == 0:
+		e["far_since_ms"] = Time.get_ticks_msec()
+		_stream_far[uuid] = true
+
+
+## Data of a sleeping item changed (Horizon update, or a hand-over): index it where it now is.
+func _stream_replace_if_asleep(uuid: String) -> void:
+	if prop_registry.live.has(uuid):
+		return
+	_stream_place(uuid)
+	_stream_register_pads(uuid)
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if _stream_should_live(e):
+		_stream_enqueue(uuid)
+
+
+## PlanetTerrain.residency_changed for [param planet_uuid].
+func _stream_on_residency(added: PackedStringArray, removed: PackedStringArray, planet_uuid: String) -> void:
+	var now: int = Time.get_ticks_msec()
+	for k in added:
+		for u in prop_registry.uuids_on_chunk(planet_uuid, k):
+			if prop_registry.live.has(u):
+				prop_registry.entries[u]["far_since_ms"] = 0
+				_stream_far.erase(u)
+			else:
+				_stream_enqueue(u)
+	if removed.is_empty():
+		return
+	var planet = props_list["planets"].get(planet_uuid)
+	if not (planet is Planet):
+		return
+	var resident: Dictionary = (planet as Planet).planet_terrain.residency_keys()
+	for k in removed:
+		for u in prop_registry.uuids_on_chunk(planet_uuid, k):
+			var e: Dictionary = prop_registry.entries[u]
+			if PropRegistry.on_resident_chunk(e, resident):
+				continue  # still wanted through its other key
+			if prop_registry.live.has(u):
+				if int(e["far_since_ms"]) == 0:
+					e["far_since_ms"] = now
+				_stream_far[u] = true
+			elif _stream_queued.has(u):
+				_stream_queued.erase(u)  # left before it was built; the queue skips it
+
+
+## Hook every planet's residency signal once.
+func _stream_connect_planet(planet: Planet) -> void:
+	if planet.planet_terrain == null or _stream_connected.get(planet.uuid) == planet.planet_terrain:
+		return
+	_stream_connected[planet.uuid] = planet.planet_terrain
+	planet.planet_terrain.residency_changed.connect(_stream_on_residency.bind(planet.uuid))
+	# Chunks already wanted before we listened.
+	var keys := PackedStringArray()
+	for k in planet.planet_terrain.residency_keys():
+		keys.append(k)
+	if not keys.is_empty():
+		_stream_on_residency(keys, PackedStringArray(), planet.uuid)
+
+
+## Per frame: build queued nodes within the budget.
+func _stream_drain() -> void:
+	if _stream_queue.is_empty():
+		return
+	var t0: int = Time.get_ticks_usec()
+	if _stream_sort_dirty and _stream_queue.size() > 1 \
+			and Time.get_ticks_msec() - _stream_sort_last_ms >= STREAM_SORT_MS:
+		_stream_sort_queue()
+	# A slow frame means the engine is already paying for what we built — the deferred work of new
+	# nodes (pads, CSG bakes, broadphase inserts) lands AFTER this budget, in the idle tail. Keep
+	# feeding it at full rate and the physics clock falls behind, runs 7-8 catch-up steps a frame, and
+	# the frame gets slower still (measured 2026-09-30: 8 fps for 20 s after walking back into the
+	# village). One item per frame until the frame time is back.
+	var max_items: int = 1 if get_process_delta_time() > STREAM_SLOW_FRAME_S else 1 << 30
+	var i: int = 0
+	var made: int = 0
+	while i < _stream_queue.size() and made < max_items \
+			and Time.get_ticks_usec() - t0 < _stream_budget_usec:
+		var u: String = _stream_queue[i]
+		i += 1
+		if not _stream_queued.has(u):
+			continue
+		_stream_queued.erase(u)
+		var e: Dictionary = prop_registry.get_entry(u)
+		if e.is_empty() or not _stream_should_live(e):
+			continue
+		var ti: int = Time.get_ticks_usec()
+		_stream_materialize(u)
+		_stream_note_cost(str(e["type"]), Time.get_ticks_usec() - ti)
+		made += 1
+	_stream_queue = _stream_queue.slice(i)
+	_stream_stat_usec += Time.get_ticks_usec() - t0
+
+
+## Nearest-first: the items next to a player come before the far edge of the ring. Sorted natively
+## on Vector2(distance², index) — a sort_custom lambda over ten thousand items costs tens of ms — and
+## at most every STREAM_SORT_MS, since the ring grows at the pin cadence anyway.
+func _stream_sort_queue() -> void:
+	_stream_sort_dirty = false
+	_stream_sort_last_ms = Time.get_ticks_msec()
+	var viewers: Dictionary = {}  # world -> Array[Vector3]
+	var order: Array = []
+	order.resize(_stream_queue.size())
+	for i in _stream_queue.size():
+		var e: Dictionary = prop_registry.get_entry(_stream_queue[i])
+		var d: float = 1.0e30
+		if not e.is_empty():
+			var world: String = str(e["world"])
+			if int(e["kind"]) == PropRegistry.KIND_CHILD or int(e["kind"]) == PropRegistry.KIND_ALWAYS:
+				d = 0.0
+			elif world != "":
+				if not viewers.has(world):
+					viewers[world] = _stream_viewers(world)
+				for v in viewers[world]:
+					d = minf(d, (v as Vector3).distance_squared_to(e["pos"]))
+		order[i] = Vector2(d, i)
+	order.sort()
+	var sorted: Array = []
+	sorted.resize(order.size())
+	for i in order.size():
+		sorted[i] = _stream_queue[int((order[i] as Vector2).y)]
+	_stream_queue = sorted
+
+
+## Pin-cadence sweep: re-index what moved, wake space/aloft items near viewers, put to sleep what has
+## been unwanted for STREAM_DORMANT_MS.
+func _stream_sweep() -> void:
+	var t0: int = Time.get_ticks_usec()
+	for puuid in props_list["planets"]:
+		var planet = props_list["planets"][puuid]
+		if planet is Planet and is_instance_valid(planet):
+			_stream_connect_planet(planet as Planet)
+	_stream_check_nside()
+	# 1) moved roots: new chunk / cell.
+	for u in _stream_moved.keys():
+		var e: Dictionary = prop_registry.get_entry(u)
+		if e.is_empty() or not prop_registry.live.has(u):
+			continue
+		var kind: int = int(e["kind"])
+		if kind == PropRegistry.KIND_GROUND or kind == PropRegistry.KIND_RADIUS:
+			_stream_capture(u)
+			_stream_place(u)
+			if int(prop_registry.get_entry(u)["kind"]) == PropRegistry.KIND_RADIUS:
+				_stream_live_radius[u] = true
+			else:
+				_stream_live_radius.erase(u)
+			_stream_mark_if_unwanted(u)
+	_stream_moved.clear()
+	# 2) space and aloft: distance to the viewers of the same world.
+	if not prop_registry.grid.is_empty():
+		var keep: Dictionary = {}
+		var keep_factor: float = _stream_unload_factor / maxf(_stream_load_factor, 0.001)
+		for world in prop_registry.grid:
+			for v in _stream_viewers(str(world)):
+				for u in prop_registry.uuids_near(str(world), v, 1.0):
+					_stream_enqueue(u)
+				for u in prop_registry.uuids_near(str(world), v, keep_factor):
+					keep[u] = true
+		var now: int = Time.get_ticks_msec()
+		for u in _stream_live_radius.keys():
+			var e: Dictionary = prop_registry.get_entry(u)
+			if e.is_empty() or not prop_registry.live.has(u):
+				_stream_live_radius.erase(u)
+				continue
+			if keep.has(u):
+				e["far_since_ms"] = 0
+				_stream_far.erase(u)
+			elif int(e["far_since_ms"]) == 0:
+				e["far_since_ms"] = now
+				_stream_far[u] = true
+	# 3) sleep what has been unwanted long enough.
+	var now_ms: int = Time.get_ticks_msec()
+	for u in _stream_far.keys():
+		if Time.get_ticks_usec() - t0 > _stream_budget_usec:
+			break
+		var e: Dictionary = prop_registry.get_entry(u)
+		if e.is_empty() or not prop_registry.live.has(u) or int(e["far_since_ms"]) == 0:
+			_stream_far.erase(u)
+			continue
+		if now_ms - int(e["far_since_ms"]) < _stream_dormant_delay(str(e["type"])):
+			continue
+		if int(e["kind"]) == PropRegistry.KIND_GROUND and _stream_should_live(e):
+			e["far_since_ms"] = 0  # its chunk came back
+			_stream_far.erase(u)
+			continue
+		if _stream_sleep(u):
+			_stream_far.erase(u)
+	_stream_stat_usec += Time.get_ticks_usec() - t0
+	if now_ms - _stream_stat_last_ms >= STREAM_STATS_MS:
+		_stream_stat_last_ms = now_ms
+		if _stream_stat_made > 0 or _stream_stat_slept > 0 or not _stream_queue.is_empty():
+			print("[Stream] registry=%d live=%d queue=%d far=%d | made=%d slept=%d | %.1f ms/%ds" % [
+				prop_registry.size(), prop_registry.live.size(), _stream_queue.size(), _stream_far.size(),
+				_stream_stat_made, _stream_stat_slept, _stream_stat_usec / 1000.0, STREAM_STATS_MS / 1000])
+		if not _stream_cost.is_empty():
+			var parts: PackedStringArray = []
+			for t in _stream_cost:
+				var c: Array = _stream_cost[t]
+				parts.append("%s=%d×%.1fms (max %.1f)" % [t, c[0], c[1] / 1000.0 / maxf(c[0], 1), c[2] / 1000.0])
+			print("[Stream/types] " + " | ".join(parts))
+		_stream_cost.clear()
+		_stream_stat_made = 0
+		_stream_stat_slept = 0
+		_stream_stat_usec = 0
+
+
+## Copy the live pose of [param uuid] into its stored object_data (parent-local, with the parent it
+## really has in the tree — a rebased root is under its planet by now).
+func _stream_capture(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	var node = e.get("node")
+	if node == null or not is_instance_valid(node) or not (node is Node3D):
+		return
+	var body := node as Node3D
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	var parent: Node = body.get_parent()
+	if parent is Planet:
+		od["parent_id"] = (parent as Planet).uuid
+	elif parent == universe_scene:
+		od["parent_id"] = ""
+	else:
+		var pid: String = PropSpawn.parent_frame_uuid(body)
+		if pid != "":
+			od["parent_id"] = pid
+	od["position"] = {"x": body.position.x, "y": body.position.y, "z": body.position.z}
+	od["rotation"] = {"x": body.rotation.x, "y": body.rotation.y, "z": body.rotation.z}
+	e["event"]["data"]["object_data"] = od
+
+
+## Put [param uuid] (and its registry children) back to data. False when it cannot sleep yet: still
+## moving, or holding a player (a seated driver would be freed with it).
+func _stream_sleep(uuid: String) -> bool:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	var node = e.get("node")
+	if node == null or not is_instance_valid(node):
+		e["node"] = null
+		prop_registry.live.erase(uuid)
+		return true
+	if node is RigidBody3D and not (node as RigidBody3D).freeze and not (node as RigidBody3D).sleeping:
+		return false
+	if (node as Node).has_meta(ZONE_FROZEN_META) or _stream_holds_player(node):
+		return false
+	var subtree: Array = prop_registry.subtree(uuid)
+	for u in subtree:
+		_stream_capture(u)
+	# Children first (flag + bookkeeping only: they are freed with their root).
+	for i in range(subtree.size() - 1, -1, -1):
+		var u: String = subtree[i]
+		var ce: Dictionary = prop_registry.get_entry(u)
+		var n = ce.get("node")
+		if n != null and is_instance_valid(n):
+			_free_without_delete(n, u == uuid)
+		ce["node"] = null
+		ce["far_since_ms"] = 0
+		prop_registry.live.erase(u)
+		_stream_live_radius.erase(u)
+		_stream_queued.erase(u)
+	_stream_place(uuid)  # where it was captured
+	_stream_stat_slept += subtree.size()
+	return true
+
+
+## Does [param node]'s subtree contain a Player (a seated driver, a passenger)?
+func _stream_holds_player(node: Node) -> bool:
+	var stack: Array = node.get_children()
+	while not stack.is_empty():
+		var c: Node = stack.pop_back()
+		if c is Player:
+			return true
+		stack.append_array(c.get_children())
+	return false
+
+
+## Forget [param uuid] and its registry children: another server owns them now (or we lost the zone).
+## Live nodes are freed WITHOUT a Horizon delete. Returns false when a player rides in it (retry later).
+func _stream_forget(uuid: String) -> bool:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty():
+		return true
+	var node = e.get("node")
+	if node != null and is_instance_valid(node) and _stream_holds_player(node):
+		return false
+	var dropped: Array = prop_registry.forget(uuid)
+	for i in range(dropped.size() - 1, -1, -1):
+		var de: Dictionary = dropped[i]
+		var n = de.get("node")
+		if n != null and is_instance_valid(n):
+			_free_without_delete(n, de["uuid"] == uuid)
+		_stream_queued.erase(de["uuid"])
+		_stream_far.erase(de["uuid"])
+		_stream_live_radius.erase(de["uuid"])
+		_stream_moved.erase(de["uuid"])
+	return true
+
+
+## Free a prop node without telling Horizon it is gone (dormancy, zone loss, bulk unload): the delete
+## guard is armed, and every server-side table forgets it. [param do_free] false = bookkeeping only
+## (a child freed along with its root).
+func _free_without_delete(node: Node, do_free: bool = true) -> void:
+	var net = PropSync.of(node)
+	if net == null:
+		net = node
+	if "server_reparenting" in net:
+		net.server_reparenting = true
+	if do_free:
+		_keep_pads_of(node)
+	if node is RigidBody3D:
+		_cull_forget(node.get_instance_id())
+	var uuid: String = str(net.uuid) if "uuid" in net else ""
+	if uuid != "":
+		for ptype in props_list.keys():
+			if ptype != "planets" and props_list[ptype].has(uuid):
+				props_list[ptype].erase(uuid)
+		props_update.erase(uuid)
+		props_list_last_movement.erase(uuid)
+		props_list_last_rotation.erase(uuid)
+		props_list_creationdate.erase(uuid)
+	_cull_indexed_total = -1
+	if do_free:
+		node.queue_free()
+
+
+## The TerrainPads under [param node] stay registered when it leaves the tree: the building sleeps or
+## goes to another server, the level ground under it does not (TerrainPad.keep_on_exit).
+func _keep_pads_of(node: Node) -> void:
+	var stack: Array = [node]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is TerrainPad:
+			(n as TerrainPad).keep_on_exit = true
+		stack.append_array(n.get_children())
+
+
+## scenename -> Array of TerrainPad templates (TerrainPad.template_relative_to + the root's scale);
+## [] for a scene without a pad. One throw-away instance per scene type, never put in the tree.
+var _stream_pad_templates: Dictionary = {}
+
+func _stream_pad_templates_for(scenename: String) -> Array:
+	if _stream_pad_templates.has(scenename):
+		return _stream_pad_templates[scenename]
+	var out: Array = []
+	var ps: PackedScene = props_scene.get(scenename)
+	if ps == null and scenename != "" and ResourceLoader.exists("res://" + scenename):
+		ps = load("res://" + scenename)
+	if ps != null:
+		var inst: Node = ps.instantiate()
+		var root_scale := (inst as Node3D).transform.basis.get_scale() if inst is Node3D else Vector3.ONE
+		var stack: Array = [inst]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			if n is TerrainPad and _pad_named_by_root(n, inst):
+				var t: Dictionary = (n as TerrainPad).template_relative_to(inst)
+				if not t.is_empty():
+					t["root_scale"] = root_scale
+					out.append(t)
+			stack.append_array(n.get_children())
+		inst.free()
+	_stream_pad_templates[scenename] = out
+	return out
+
+
+## Does the live [param pad] name itself after [param root]'s uuid ("prop:<uuid>", see
+## TerrainPad._resolve_uuid)? Only then does a record stated from the data carry the same identity as
+## the one the node will register — otherwise the ground would get two pads.
+static func _pad_named_by_root(pad: Node, root: Node) -> bool:
+	if PropSync.of(root) == null:
+		return false
+	var n: Node = pad.get_parent()
+	while n != null and n != root:
+		if PropSync.of(n) != null:
+			return false
+		n = n.get_parent()
+	return n == root
+
+
+## Register the terrain pads of a building from its DATA, before (or without) its node: the chunks
+## under it are then built level from the start. Its node, when it comes, states the very same record
+## and PlanetData.register_pad finds nothing to rebuild. Registering a pad on chunks that are already
+## built rebuilds them — and a server collision rebuild is an unload then a reload, the ground gone
+## from under whoever stands there for the length of a chunk build, once per building.
+func _stream_register_pads(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or int(e["kind"]) != PropRegistry.KIND_GROUND or prop_registry.live.has(uuid):
+		return
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	var templates: Array = _stream_pad_templates_for(str(od.get("scenename", "")))
+	if templates.is_empty():
+		return
+	var planet = props_list["planets"].get(e["world"])
+	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+		return
+	var terrain: PlanetTerrain = (planet as Planet).planet_terrain
+	var rot: Vector3 = _stream_vec(od.get("rotation", {}))
+	var to_terrain: Transform3D = terrain.global_transform.affine_inverse() * (planet as Planet).global_transform
+	for t in templates:
+		var item := Transform3D(Basis.from_euler(rot).scaled(t["root_scale"]), e["pos"])
+		var rec: Dictionary = TerrainPad.record_from((planet as Planet).planet_data,
+				to_terrain * item * (t["rel"] as Transform3D), t["box_size"], t["box_local"],
+				float(t["apron"]), float(t["h_offset"]), "prop:" + uuid)
+		if not rec.has("_refusal"):
+			terrain.register_terrain_pad(rec)
+
+
+## A pad can turn a coarse planet's collision to the finest grid (PlanetData.collision_detail_nside
+## lists has_pads): the keys computed before are then on the wrong grid, re-index that planet.
+func _stream_check_nside() -> void:
+	for puuid in _stream_nside.keys():
+		var planet = props_list["planets"].get(puuid)
+		if not (planet is Planet) or (planet as Planet).planet_data == null:
+			continue
+		var pd: PlanetData = (planet as Planet).planet_data
+		var now := Vector2i(pd.collision_detail_nside(), pd.export_nside)
+		if now == _stream_nside[puuid]:
+			continue
+		_stream_nside[puuid] = now
+		var n := 0
+		for u in prop_registry.entries.keys():
+			var e: Dictionary = prop_registry.entries[u]
+			if int(e["kind"]) == PropRegistry.KIND_GROUND and str(e["world"]) == str(puuid):
+				prop_registry.place_ground(u, str(puuid), e["pos"], _stream_chunk_keys(planet as Planet, e["pos"]))
+				n += 1
+		print("[Stream] %s collision grid is now n%d: %d item(s) re-indexed" % [(planet as Planet).name, now.x, n])
+		var keys := PackedStringArray()
+		for k in (planet as Planet).planet_terrain.residency_keys():
+			keys.append(k)
+		_stream_on_residency(keys, PackedStringArray(), str(puuid))
+
+
+## Server: does a prop of [param type] stand in the square field of half-size [param half] around
+## [param zone] — asleep or not? MiningZone asks this before (re)generating its rocks: the tree alone
+## only shows the rocks near a player.
+func registry_has_type_in_field(zone: Node3D, type: String, half: float) -> bool:
+	var planet := _planet_ancestor_of(zone)
+	if planet == null or planet.planet_data == null:
+		return false
+	var keys := _stream_chunk_keys(planet, zone.global_position)
+	if keys.is_empty():
+		return false
+	var ns: Vector2i = _stream_nside[planet.uuid]
+	var fine: String = keys[0]
+	var candidates: Array = [fine]
+	if ns.x > ns.y:  # small fine chunks: the field may overhang onto the neighbours
+		var ipix: int = int(fine.get_slice("_p", 1))
+		var nbrs: Dictionary = HEALPix.get_neighbors_nest(ns.x, ipix)
+		for d in nbrs:
+			if int(nbrs[d]) >= 0:
+				candidates.append("hp_n%d_p%d" % [ns.x, int(nbrs[d])])
+	for k in candidates:
+		for u in prop_registry.uuids_on_chunk(planet.uuid, k):
+			var e: Dictionary = prop_registry.entries[u]
+			if str(e["type"]) != type:
+				continue
+			var local: Vector3 = zone.to_local(e["pos"])  # planet-local == global: the planet sits at the origin
+			if absf(local.x) <= half and absf(local.z) <= half:
+				return true
+	return false
 
 
 # ── Origin-rebase frame helpers ──────────────────────────────────────────────────────────────────
@@ -2420,7 +3250,6 @@ func remove_player(event: Dictionary) -> void:
 
 func freeze_object(event: Dictionary, append = true) -> bool:
 	# we will freeze scenes objects
-	print("Freeze object: %s" % event)
 	var object = event["data"]
 	if object["object_type"] == "planet":
 		if props_list["planets"].has(object["object_uuid"]):
@@ -2447,7 +3276,18 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 	if object["object_type"] == "star":
 		# TODO not yet managed
 		return false
-	# other props
+	# other props: another server simulates it now. Out of the registry, node freed without a delete.
+	# Unknown uuid = nothing to do (we skipped it at creation because it was outside our zones).
+	if prop_registry.has(str(object["object_uuid"])):
+		if _stream_forget(str(object["object_uuid"])):
+			return true
+		# A player still rides in it: hold it frozen, and forget it after their own hand-over.
+		var riding = prop_registry.get_entry(str(object["object_uuid"])).get("node")
+		if riding != null and is_instance_valid(riding):
+			_zone_freeze_prop(riding)
+		if append:
+			pending_freeze_objects.append(event)
+		return false
 	var found = false
 	for proptype in props_list.keys():
 		if props_list[proptype].has(object["object_uuid"]):
@@ -2455,12 +3295,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 			_zone_freeze_prop(prop)
 			found = true
 			break
-	if not found:
-		if append:
-			pending_freeze_objects.append(event)
-			return false
-		return false
-	return true
+	return found
 
 ## Ground to load AHEAD of players Horizon is about to hand us: {planet_uuid: [{pos, until_ms}]}.
 ## A player transferred from another server is held (no gravity, no moves) until the collision
@@ -2516,16 +3351,15 @@ func _unload_world_objects() -> void:
 			var prop = props_list[proptype][prop_uuid]
 			if prop == null or not is_instance_valid(prop):
 				continue
-			var net = PropSync.of(prop)
-			if net == null:
-				net = prop
-			if "server_reparenting" in net:
-				net.server_reparenting = true
-			if prop is RigidBody3D:
-				_cull_forget(prop.get_instance_id())
-			prop.queue_free()
+			_free_without_delete(prop)
 			freed += 1
 		props_list[proptype] = {}
+	prop_registry = PropRegistry.new()
+	_stream_queue.clear()
+	_stream_queued.clear()
+	_stream_far.clear()
+	_stream_moved.clear()
+	_stream_live_radius.clear()
 	for player_uuid in players_list.keys():
 		var player = players_list[player_uuid]
 		if is_instance_valid(player):
@@ -2674,6 +3508,21 @@ func _zone_unfreeze_prop(prop: Node) -> void:
 func _apply_zones_to_existing_objects() -> void:
 	var frozen := 0
 	var woken := 0
+	# Registry roots outside our zones are forgotten, asleep or not: Horizon hands them back with
+	# initial_object if a zone change ever returns them to us. A root carrying a player is kept (and
+	# frozen below) until that player's own hand-over — freeing it would free them.
+	var forgotten := 0
+	for uuid in prop_registry.entries.keys():
+		var e: Dictionary = prop_registry.get_entry(uuid)
+		if e.is_empty() or _stream_in_zones(e):
+			continue
+		var kind: int = int(e["kind"])
+		if kind != PropRegistry.KIND_GROUND and kind != PropRegistry.KIND_RADIUS:
+			continue
+		if _stream_forget(uuid):
+			forgotten += 1
+	if forgotten > 0:
+		print("[zone] %d registry item(s) outside our zones forgotten" % forgotten)
 	for proptype in props_list.keys():
 		if proptype == "planets":
 			continue
