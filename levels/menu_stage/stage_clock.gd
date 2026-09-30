@@ -11,6 +11,13 @@ extends RefCounted
 const _ITERATIONS : int = 5
 
 
+## 17.25 -> "17:15".
+static func format(hours: float) -> String:
+	var minutes : int = roundi(fposmod(hours, 24.0) * 60.0)
+	@warning_ignore("integer_division")
+	return "%02d:%02d" % [(minutes / 60) % 24, minutes % 60]
+
+
 ## Put `planet` at `hour` (0..24) for the planet-local point `anchor_local`. Returns the hour reached.
 static func set_hour(planet: Planet, anchor_local: Vector3, hour: float) -> float:
 	var day_s : float = planet.rotation_period_hours * 3600.0
