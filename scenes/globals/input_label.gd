@@ -28,16 +28,32 @@ static func for_event(event: InputEvent) -> String:
 ## The modifiers held with a key OR a mouse button, so "Alt + ²" and "Alt + wheel" don't read as a
 ## bare key. They stay untranslated: Ctrl/Alt/Shift are what is written on the keys themselves.
 static func _modifiers(event: InputEventWithModifiers) -> String:
+	var system: String = OS.get_name()
 	var mods := ""
 	if event.ctrl_pressed:
 		mods += "Ctrl + "
 	if event.alt_pressed:
-		mods += "Alt + "
+		mods += alt_name(system) + " + "
 	if event.shift_pressed:
 		mods += "Shift + "
 	if event.meta_pressed:
-		mods += "Meta + "
+		mods += meta_name(system) + " + "
 	return mods
+
+
+## What the Alt key is called on [param system] (OS.get_name()): a Mac keyboard prints Option.
+static func alt_name(system: String) -> String:
+	return "Option" if system == "macOS" else "Alt"
+
+
+## What the Meta key is called on [param system]: no keyboard has "Meta" written on it.
+static func meta_name(system: String) -> String:
+	match system:
+		"macOS":
+			return "Cmd"
+		"Windows":
+			return "Win"
+	return "Super"
 
 
 ## A mouse button's name WITHOUT the modifiers Godot's as_text() would prepend in its own format.
