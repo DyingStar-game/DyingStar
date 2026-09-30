@@ -3276,6 +3276,24 @@ func get_grade_profile(fid: int) -> Dictionary:
 	return _grade_profiles.get(fid, {})
 
 
+## Every line profile that is KNOWN without working for one, feature_id →
+## profile: the ones built when the planet has built them, the baked ones
+## otherwise. Never starts a profile and never waits for a tile — for a reader
+## that only draws what there is (the star chart marking the tunnels), on a
+## planet that may not even be loaded. A baked profile is taken as it is: its
+## line is not re-hashed against the pack. Main thread (reads the bake once).
+func known_grade_profiles() -> Dictionary:
+	if not has_profiled_lines():
+		return {}
+	if _grade_built:
+		return _grade_profiles
+	_ensure_grade_bake()
+	var out := {}
+	for fid: Variant in _grade_baked:
+		out[int(fid)] = (_grade_baked[fid] as Dictionary).get("profile", {})
+	return out
+
+
 ## Every viaduct span of every profiled line (kind railway / profiled_road),
 ## in RoadBridge's shape.
 func get_grade_spans() -> Array:
