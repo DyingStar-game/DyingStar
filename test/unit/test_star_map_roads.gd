@@ -322,3 +322,11 @@ func test_a_short_span_is_not_marked_and_a_tunnel_has_a_bed() -> void:
 		widest = maxf(widest, absf(corner.normalized().y))
 	assert_lt(widest, absf(points[0].normalized().y),
 		"and between the two side lines, short of them: nothing lies over it but the way")
+
+## From high up the tunnels and the bridges are detail the map does not need, and thirteen thousand
+## canyon crossings a string of signs along every way: they are marked from some thirty km up.
+func test_tunnels_and_bridges_are_marked_only_from_close_enough() -> void:
+	assert_true(StarMapRoads.marks_spans(40.0), "forty metres to the pixel: marked")
+	assert_true(StarMapRoads.marks_spans(StarMapRoads.SPANS_WITHIN), "and at the limit")
+	assert_false(StarMapRoads.marks_spans(200.0), "two hundred: the ways alone")
+	assert_false(StarMapRoads.marks_spans(0.0), "no scale yet: nothing marked")
