@@ -114,6 +114,9 @@ const POI_BODY_KEEP: float = 0.75
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
 const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
+## How much of the screen's height a group of towns is spread over once opened (_open_poi_cluster).
+## Two thirds: wide enough to come apart, with their surroundings still around them.
+const CLUSTER_OPEN_FILL: float = 0.66
 
 ## SphereMesh is 0.5 in radius, so everything drawn on a body is sized against THAT, not against 1.0.
 ## Getting this wrong is what turned the spin axes into the long stray lines of the first version.
@@ -323,6 +326,9 @@ var _ground_key: String = ""
 ## Point of interest under the cursor, or -1 — the same relationship to _poi_focus that _hover has to
 ## the body focus.
 var _poi_hover: int = -1
+## Group of points of interest under the cursor, named by its first member, or -1. A group is not a
+## place: it cannot be selected, only opened (see _open_poi_cluster).
+var _poi_cluster_hover: int = -1
 ## The ring drawn around the hovered and the selected body. One mesh for both: it is rebuilt every
 ## frame anyway, and a chart with two nodes for two circles is two nodes too many.
 var _halo: MeshInstance3D = null
@@ -648,6 +654,7 @@ func _rebuild() -> void:
 	# sits at that index until the cursor moves.
 	_hover = -1
 	_poi_hover = -1
+	_poi_cluster_hover = -1
 	_player_index = -1
 	_player_ray = null
 
@@ -1482,10 +1489,11 @@ func _refresh_points_of_interest() -> void:
 		_poi_key = key
 		_poi_focus = -1
 		_poi_hover = -1
+		_poi_cluster_hover = -1
 	# The camera itself rather than pieces of it: the layer sizes each badge on its own distance and
 	# projects the names to screen to keep them from piling up, and both need the real thing.
 	_poi_layer.refresh(key, sphere.position, sphere.basis.orthonormalized(),
-			sphere.scale.x * MESH_RADIUS, _camera, _poi_focus, _poi_hover)
+			sphere.scale.x * MESH_RADIUS, _camera, _poi_focus, _poi_hover, _poi_cluster_hover)
 
 
 ## The ambient steps back as a body fills the screen.
@@ -1731,6 +1739,7 @@ func _forget_points_of_interest() -> void:
 	_poi_key = ""
 	_poi_focus = -1
 	_poi_hover = -1
+	_poi_cluster_hover = -1
 
 
 ## Names of bodies that the body in front of them has swallowed.
@@ -2542,6 +2551,21 @@ func _frame_poi(poi_index: int) -> void:
 	_frame_on_surface(_blocker, _poi_layer.entries[poi_index]["dir"])
 
 
+## Go down onto a group of towns until it comes apart — the click on a marker carrying a number.
+##
+## The group exists because its towns share a few pixels, so the height asked for is the one at which
+## the ground they cover fills [constant CLUSTER_OPEN_FILL] of the screen: from there they are badges
+## again, or smaller groups to open in turn. Never lower than the height a single place is shown from —
+## towns standing on the very same spot would otherwise call the camera down to the floor.
+func _open_poi_cluster(first: int) -> void:
+	var extent: Dictionary = _poi_layer.cluster_extent(first)
+	if extent.is_empty() or _blocker < 0:
+		return
+	var across_m: float = 2.0 * float(extent["spread"]) * float(_bodies[_blocker]["radius_m"])
+	_frame_on_surface(_blocker, extent["dir"], maxf(PLAYER_FOCUS_ALTITUDE_M,
+			across_m / (StarMapCamera.SCREEN_SPAN * CLUSTER_OPEN_FILL)))
+
+
 ## Go to a PLACE ON A BODY: frame the body, and turn it until the place faces you.
 ##
 ## The single path for a town and for your own marker alike, and it exists because they were two.
@@ -2805,12 +2829,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			# ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it,
 			# what the cursor is on is you — the dot or its name (see _player_under).
 			var on_you: bool = _player_under(button.position)
-			var poi: int = -1 if on_you else _poi_layer.pick(_camera.project_ray_origin(button.position),
-					_camera.project_ray_normal(button.position))
+			var ray_from: Vector3 = _camera.project_ray_origin(button.position)
+			var ray_dir: Vector3 = _camera.project_ray_normal(button.position)
+			var poi: int = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
+			var cluster: int = -1 if on_you or poi >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
 			if poi >= 0:
 				_poi_focus = poi
 				if button.double_click:
 					_frame_poi(poi)
+			elif cluster >= 0:
+				# A group is not a place to select: one click opens it.
+				_open_poi_cluster(cluster)
 			else:
 				var hit: int = _player_index if on_you else _pick(button.position)
 				_select(hit)
@@ -2840,8 +2869,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Same order as the click, or the highlight would point at something else than what a click
 		# would take.
 		var on_you: bool = _player_under(at)
-		_poi_hover = -1 if on_you else _poi_layer.pick(_camera.project_ray_origin(at), _camera.project_ray_normal(at))
+		var ray_from: Vector3 = _camera.project_ray_origin(at)
+		var ray_dir: Vector3 = _camera.project_ray_normal(at)
+		_poi_hover = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
+		_poi_cluster_hover = -1 if on_you or _poi_hover >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
 		if on_you:
 			_hover = _player_index
 		else:
-			_hover = -1 if _poi_hover >= 0 else _pick(at)
+			_hover = -1 if _poi_hover >= 0 or _poi_cluster_hover >= 0 else _pick(at)
