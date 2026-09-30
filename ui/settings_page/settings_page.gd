@@ -19,10 +19,11 @@ const _PAGE_THEME : Theme = preload("res://ui/settings_page/settings_theme.tres"
 ## Under the host's TopBar, which stays over this page (its arrow is the way back).
 const _GAP_UNDER_BAR_PX : float = 16.0
 const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
-## The see-through veil: this dark from the screen's left edge...
-const VEIL_ALPHA : float = 0.82
+## The see-through veil: this dark from the screen's left edge — dark enough that bright ground or a
+## lit building behind the settings no longer shows through their text (0.82 let it)...
+const VEIL_ALPHA : float = 0.93
 ## ...until this far short of the settings' right edge (their controls have their own dark box)...
-const VEIL_FADE_IN_PX : float = 140.0
+const VEIL_FADE_IN_PX : float = 60.0
 ## ...then easing out to nothing this far past it: beyond, the scene keeps its true colours.
 const VEIL_FADE_OUT_PX : float = 240.0
 ## Stops drawing the ease (smoothstep) between those two points.
