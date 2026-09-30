@@ -210,9 +210,11 @@ func _notification(what: int) -> void:
 ## level and pitch, through the tile's frame, exactly as [method StarMapRelief.build_tile] builds it —
 ## less the canyons, which a line crosses or follows from above. Static and handed everything, because
 ## it runs on a worker.
+##
+## [param lift] is how far clear, for a kind of line that lies under another.
 static func on_drawn_ground(data: PlanetData, frame: PlanetData.TileFrame, nside: int,
-		pitch: float, dir: Vector3) -> Vector3:
+		pitch: float, dir: Vector3, lift: float = LIFT) -> Vector3:
 	var metres: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null,
 			nside, frame, pitch, CrackCarve.NONE)
 	return dir * (StarMapRelief.MESH_RADIUS
-			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + LIFT))
+			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + lift))

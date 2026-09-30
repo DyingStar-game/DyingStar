@@ -17,6 +17,12 @@ extends StarMapTileLines
 
 ## What a canyon is drawn in: the shadow it is from above.
 const COLOUR: Color = Color(0.10, 0.08, 0.07)
+## How far the canyons float over the ground: two thirds of what the roads do, so a road crossing a
+## canyon is drawn OVER it, as the bridge it crosses on is. At the same height the two fought for the
+## same pixels and the canyon, drawn last, won.
+const UNDER_THE_ROADS: float = LIFT * 2.0 / 3.0
+## Drawn before anything else that blends, for the same reason.
+const RENDER_PRIORITY: int = -1
 ## How many points across one block of the network the tracing looks at. Four finds every canyon
 ## between two blocks; fewer steps over the narrow end of a block and leaves gaps.
 const SAMPLES_PER_BLOCK: float = 4.0
@@ -40,6 +46,7 @@ func _ready() -> void:
 	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	# The strips are seen from above whichever way their corners were wound.
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_material.render_priority = RENDER_PRIORITY
 
 
 ## Draw the network over [param tiles] — the ground's own tiles, and only those the ground draws FLAT:
@@ -184,8 +191,8 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				# came out in pieces that did not meet.
 				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), frame) < 0.5:
 					continue
-				var from: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n])
-				var to: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n + 1])
+				var from: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n], UNDER_THE_ROADS)
+				var to: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n + 1], UNDER_THE_ROADS)
 				points.append(from)
 				points.append(to)
 				colours.append(COLOUR)
