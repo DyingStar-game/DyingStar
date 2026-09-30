@@ -1631,7 +1631,7 @@ func _refresh_ground() -> void:
 	# neither a pack nor the service has anything at a level nobody exported.
 	var published: Dictionary = StarMapRelief.published(key, _ground.wanted())
 	if _roads != null:
-		_roads.show_over(published, _ground.level())
+		_roads.show_over(published, _ground_scale(), float(_bodies[index]["radius_m"]))
 	# The ground's OWN tiles here, not the published ones: a tile cut fine enough to carve the canyons
 	# needs no line over them, and only the ground's set says which those are.
 	if _canyons != null:
