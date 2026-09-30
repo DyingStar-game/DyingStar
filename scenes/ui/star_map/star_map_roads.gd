@@ -54,6 +54,11 @@ const SPAN_JOIN: float = 6.0
 ## railway crossing a canyon every four km would be signs from end to end. They too come in as the
 ## view comes down.
 const SPAN_MIN: float = 1.5
+## The tunnels and bridges are marked only in a view at least this close, in metres of ground to the
+## pixel: some thirty km up on a 1080-line screen. From higher they are detail the map does not need —
+## what reads from there is where the ways go — and a railway crossing a canyon every four km was a
+## string of signs.
+const SPANS_WITHIN: float = 50.0
 ## Under the ground: dark, on a darker bed between its two lines. Over the void: light, and nothing
 ## under it — the void is what is there.
 ##
@@ -77,6 +82,8 @@ var _spans_from: Vector2i = Vector2i(-1, -1)
 ## out — and the size that was worked out for.
 var _drawn_spans: Dictionary = {}
 var _drawn_spans_for: float = -1.0
+## Whether the view is close enough for them to be marked at all: see [constant SPANS_WITHIN].
+var _spans_shown: bool = false
 
 
 
@@ -101,7 +108,7 @@ func _available() -> bool:
 func _laying() -> Array:
 	var data: PlanetData = StarMapTiles.for_body(body_key).data
 	var pack: ModifierPack = _pack
-	var signs: Dictionary = {"step": _sign_step, "spans": _spans_to_draw(data)}
+	var signs: Dictionary = {"step": _sign_step, "spans": _spans_to_draw(data) if _spans_shown else {}}
 	if data == null or data.radius <= 0.0:
 		var key: String = body_key
 		return [func(id: int) -> Array:
@@ -135,10 +142,17 @@ func _release() -> void:
 ## every ring. When the size changes, everything laid is laid again.
 func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float) -> void:
 	var step: float = sign_length(metres_per_pixel, radius_m)
-	if not is_equal_approx(step, _sign_step):
+	var spans_shown: bool = marks_spans(metres_per_pixel)
+	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown:
 		_sign_step = step
+		_spans_shown = spans_shown
 		lay_again()
 	refresh(tiles)
+
+
+## Is a view at [param metres_per_pixel] close enough for the tunnels and the bridges to be marked?
+static func marks_spans(metres_per_pixel: float) -> bool:
+	return metres_per_pixel > 0.0 and metres_per_pixel <= SPANS_WITHIN
 
 
 ## The length of a sign ([constant SIGN_PIXELS]) on a body [param radius_m] across seen at
