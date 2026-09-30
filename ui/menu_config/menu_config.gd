@@ -22,6 +22,8 @@ const ACTION_GROUPS : Dictionary = {
 		"star_map_zoom_out": "%%ACT_STAR_MAP_ZOOM_OUT",
 		"toggle_chat": "%%ACT_TOGGLE_CHAT",
 		"write_in_chat": "%%ACT_WRITE_IN_CHAT",
+		"toggle_speaker": "%%ACT_TOGGLE_SPEAKER",
+		"toggle_microphone": "%%ACT_TOGGLE_MICROPHONE",
 		"game_record": "%%ACT_GAME_RECORD",
 		"screenshot": "%%ACT_SCREENSHOT",
 		"screenshot_debug": "%%ACT_SCREENSHOT_DEBUG",
