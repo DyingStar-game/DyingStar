@@ -11,7 +11,7 @@ var _sent := EventRate.new()
 func lines(body: Node3D) -> PackedStringArray:
 	var agent : Node = NetworkOrchestrator.network_agent
 	var out : PackedStringArray = [
-		ReadoutFormat.rated(Engine.get_frames_per_second(), 30.0, "FPS"),
+		ReadoutFormat.graded(Engine.get_frames_per_second(), PerfReadout.FPS_GOOD, PerfReadout.FPS_FAIR, "FPS"),
 		"%s players" % (str(agent.players_list.size()) if agent != null and "players_list" in agent else "-"),
 		"%d objects" % int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 		"%s scenes" % _scenes(agent),

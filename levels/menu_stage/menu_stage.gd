@@ -24,6 +24,8 @@ const MENU_SUN_ELEVATION_DEG : float = 5.0
 const READY_TIMEOUT_S : float = 10.0
 ## Far tiles keep arriving after the first ground: the props are put back on it for this long.
 const RESNAP_FOR_S : float = 60.0
+## The stage joins this group, so Settings > Graphics can find it for its hour slider.
+const GROUP : StringName = &"menu_stage"
 
 var _session := StageSession.new()
 var _probe : TileServiceProbe = null
@@ -33,6 +35,7 @@ var _outpost : StageOutpost = null
 var _anchor : Vector3 = Vector3.ZERO
 ## The sunrise hour, solved once (a hundred placements of the planet).
 var _sunrise_hour : float = -1.0
+var _hour : float = 12.0
 var _live : bool = false
 var _resnap_left : float = 0.0
 var _resnap_tick : float = 0.0
@@ -41,6 +44,7 @@ var _resnap_tick : float = 0.0
 
 
 func _ready() -> void:
+	add_to_group(GROUP)
 	_menu.screen_changed.connect(go_to)
 	if not SettingsManager.render.is_menu_stage_enabled():
 		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
@@ -93,7 +97,13 @@ func go_to(key: StringName) -> void:
 		_rig.glide_to_view(station.transform)
 
 
+## The hour of day on the stage (0..24).
+func hour() -> float:
+	return _hour
+
+
 func set_hour(value: float) -> void:
+	_hour = value
 	if _live:
 		StageClock.set_hour(_planet, _anchor, value)
 

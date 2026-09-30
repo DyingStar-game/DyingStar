@@ -18,6 +18,8 @@ const HOVER_COLOR : Color = Color(1.0, 1.0, 1.0, 0.07)
 ## A value in its healthy range (FPS, TPS), and one that is not — or a warning to be seen at once.
 const GOOD_COLOR : Color = Color(0.45, 0.9, 0.45)
 const ALERT_COLOR : Color = Color(1.0, 0.3, 0.3)
+## Between the two: playable, not comfortable (30-60 FPS, say).
+const FAIR_COLOR : Color = Color(1.0, 0.82, 0.3)
 
 ## The settings lines' caption size, small as in SQUAD so a page shows its options at a glance
 ## (settings_label.tres says the same for the lines written in scenes). Section headings stand one

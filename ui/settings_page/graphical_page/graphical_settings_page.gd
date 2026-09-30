@@ -16,6 +16,8 @@ const RESOLUTIONS: Array[Vector2i] = [
 ## Seconds before a just-applied resolution auto-reverts unless the player confirms (Windows-style
 ## safety: a resolution too big for the screen must not lock them out of the settings).
 const _RES_CONFIRM_SECS: int = 10
+## How often the frame-rate line at the top is refreshed.
+const _PERF_PERIOD_S : float = 0.25
 var _res_prev_size: Vector2i = Vector2i.ZERO  # resolution to restore if the change is refused
 var _res_dialog: ConfirmationDialog = null
 var _res_timer: Timer = null
@@ -55,10 +57,63 @@ func _ready() -> void:
 		SettingsManager.set_fov(v))
 	var factory := SettingsRowFactory.new()
 	var gallery : VBoxContainer = _build_gallery(factory)
-	var rendering : VBoxContainer = _build_rendering(factory)
+	var scene : VBoxContainer = _build_scene(factory)
+	_build_perf(factory)
+	var rendering : VBoxContainer = _build_rendering(factory, gallery)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
-	for rows in [gallery, _rows, rendering]:
+	for rows in [gallery, scene, _rows, rendering]:
 		SettingsRow.wrap_rows(rows)
+
+## Above everything: the frame rate and GPU time, green / yellow / red, refreshed as options change
+## — what an option costs, read without leaving the page (PerfReadout, the in-game panel's line).
+func _build_perf(factory: SettingsRowFactory) -> void:
+	var line := RichTextLabel.new()
+	line.bbcode_enabled = true
+	line.fit_content = true
+	line.scroll_active = false
+	line.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	line.add_theme_font_override("normal_font", SettingsRowFactory.FONT)
+	line.add_theme_font_size_override("normal_font_size", factory.label_size)
+	_rows.add_child(line)
+	_rows.move_child(line, 0)
+	var refresh := func() -> void: line.text = "\n".join(PerfReadout.lines())
+	var timer := Timer.new()
+	timer.wait_time = _PERF_PERIOD_S
+	timer.autostart = true
+	timer.timeout.connect(refresh)
+	add_child(timer)
+	refresh.call()
+
+
+## In the main menu over its live stage: the hour of day there, to judge the options by day and by
+## night. Applied when the drag ends — every change turns the whole planet, and every chunk with it.
+func _build_scene(factory: SettingsRowFactory) -> VBoxContainer:
+	var scene := VBoxContainer.new()
+	var stage : MenuStage = get_tree().get_first_node_in_group(MenuStage.GROUP) as MenuStage
+	if stage == null or not stage.is_live():
+		return scene
+	scene.add_child(factory.header("%%MENU_GFX_SECTION_SCENE"))
+	var line : HBoxContainer = factory.row("%%MENU_GFX_HOUR")
+	var bar : HSlider = factory.slider(0.0, 24.0, 0.25)
+	bar.value = stage.hour()
+	var value : Label = factory.value_label()
+	value.text = StageClock.format(bar.value)
+	var dragging : Array = [false]
+	bar.drag_started.connect(func() -> void: dragging[0] = true)
+	bar.drag_ended.connect(func(_moved: bool) -> void:
+		dragging[0] = false
+		stage.set_hour(bar.value))
+	bar.value_changed.connect(func(v: float) -> void:
+		value.text = StageClock.format(v)
+		if not dragging[0]:
+			stage.set_hour(v))
+	line.add_child(bar)
+	line.add_child(value)
+	scene.add_child(line)
+	_rows.add_child(scene)
+	_rows.move_child(scene, 0)
+	return scene
+
 
 ## At the very top: the F7 photos (the F8 bug-report shots in a sub-folder) and the F6 recordings,
 ## each opened in the OS file manager.
@@ -77,10 +132,10 @@ func _build_gallery(factory: SettingsRowFactory) -> VBoxContainer:
 	return gallery
 
 ## A "Display" heading over the scene's lines, then the generated rendering lines at the end.
-func _build_rendering(factory: SettingsRowFactory) -> VBoxContainer:
+func _build_rendering(factory: SettingsRowFactory, gallery: VBoxContainer) -> VBoxContainer:
 	var display : Label = factory.header("%%MENU_GFX_SECTION_DISPLAY")
 	_rows.add_child(display)
-	_rows.move_child(display, 1)
+	_rows.move_child(display, gallery.get_index() + 1)
 	var rendering := VBoxContainer.new()
 	_rows.add_child(rendering)
 	var view := GraphicsOptionsView.new(factory)
