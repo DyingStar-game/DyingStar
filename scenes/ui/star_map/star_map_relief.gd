@@ -116,9 +116,17 @@ static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 	# finer, so nothing finer would ever be downloaded, so the depth would never grow. One level beyond
 	# leaves the view half a step ahead of its data — a doubling, against the sixty-fourfold stretch this
 	# replaces — and keeps the stream probing the level below.
-	var cap: int = data_depth(body_key, centre_dir) * 2
+	var depth: int = data_depth(body_key, centre_dir)
+	var cap: int = depth * 2
+	# ...except where the ground is known all the way down and the body carves canyons into it: those
+	# are not in the tiles at all, the game adds them as it builds a chunk, and a mesh too coarse to hold
+	# one is told to leave them out. There the chart goes on past what is published, as far as it takes
+	# to draw them — on the published heights, with nothing invented but what the game itself computes.
+	var detail: int = detail_nside(body_key) if depth >= finest_nside(body_key) else 0
+	if detail > 0:
+		cap = detail
 	return patch_for(manifest, centre_dir, altitude_m,
-			float(manifest.get("radius", 0.0)), view_angle, cap)
+			float(manifest.get("radius", 0.0)), view_angle, cap, detail)
 
 
 ## The same decision, against a manifest handed in rather than read from disk, so the arithmetic can be
@@ -127,9 +135,11 @@ static func plan_patch(body_key: String, centre_dir: Vector3, altitude_m: float,
 ## Returns [code]{"tiles": PackedInt64Array of StarMapGround ids, "level": int, "ceiling": int}[/code].
 ## [code]level[/code] is the level of the tile under the camera; [code]ceiling[/code] the finest level
 ## the walk was allowed, after [constant PATCH_TILES_MAX] had its say.
+## [param detail], when finer than what the manifest publishes, lets the walk go that far: see
+## [method detail_nside].
 static func patch_for(manifest: Dictionary, centre_dir: Vector3, altitude_m: float,
-		radius: float, view_angle: float = -1.0, cap: int = 0) -> Dictionary:
-	var ceiling: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
+		radius: float, view_angle: float = -1.0, cap: int = 0, detail: int = 0) -> Dictionary:
+	var ceiling: int = maxi(maxi(int(manifest.get("nside_max", TILE_NSIDE)), detail), TILE_NSIDE)
 	if cap > 0:
 		ceiling = mini(ceiling, maxi(cap, TILE_NSIDE))
 	if centre_dir.length_squared() <= 0.0 or altitude_m < 0.0 or radius <= 0.0:
@@ -331,6 +341,73 @@ static func finest_nside(body_key: String) -> int:
 	return maxi(int(_manifest(body_key).get("nside_max", TILE_NSIDE)), TILE_NSIDE)
 
 
+## How many levels past the published ones the chart may cut its tiles to hold procedural detail.
+## Three: each is four times the tiles for the same ground, and a body whose canyons need more than
+## that to show is a body whose canyons are too narrow for a chart.
+const DETAIL_LEVELS_MAX: int = 3
+## What the floor of a canyon keeps of the rock's colour. Seen from above a chasm is a shadow before it
+## is a shape: left the colour of the plateau, a 180 m slot between two sunlit rims does not read at all.
+const CANYON_SHADE: float = 0.4
+
+
+## The level the chart DRAWS a body's ground down to, which on a body with a crack network is finer
+## than the one it reads ([method finest_nside]).
+##
+## The canyons are the game's own arithmetic, and that arithmetic refuses to carve a mesh whose vertices
+## stand further apart than half a canyon's width — it would come out as a row of spikes. The finest
+## published level of Tarsis III puts a vertex every 265 m, its canyons are 250 m wide: the chart asked
+## for them at every tile and was told no at every vertex. Two levels on, the pitch is 66 m and they are
+## drawn.
+##
+## The published level itself on a body with no network, or with one so narrow that
+## [constant DETAIL_LEVELS_MAX] levels do not reach it. Main thread, like everything that resolves a reader.
+static func detail_nside(body_key: String) -> int:
+	var finest: int = finest_nside(body_key)
+	var data: PlanetData = StarMapTiles.for_body(body_key).data
+	if data == null or not data.corundum_default_biome:
+		return finest
+	return detail_nside_for(finest, data.radius, data.crack_width_m)
+
+
+## [method detail_nside] on plain numbers, so the arithmetic can be pinned without a planet.
+static func detail_nside_for(finest: int, radius: float, crack_width_m: float) -> int:
+	if radius <= 0.0 or crack_width_m <= 0.0:
+		return finest
+	var nside: int = finest
+	for _level: int in range(DETAIL_LEVELS_MAX + 1):
+		if tile_pitch(radius, nside) < crack_width_m * 0.5:
+			return nside
+		nside *= 2
+	return finest
+
+
+## Ground covered by one step of a tile's mesh, in metres.
+static func tile_pitch(radius: float, nside: int, grid_res: int = StarMapGround.GRID_RES) -> float:
+	return radius * HEALPix.pixel_angular_size(nside) / float(grid_res)
+
+
+## [param id] as the body PUBLISHES it: itself, or — for a tile cut finer than the data, see
+## [method detail_nside] — its ancestor at the finest published level. What anything that reads a
+## pack or asks the tile service must be handed: neither knows of a level nobody exported.
+static func published_id(body_key: String, id: int) -> int:
+	var finest: int = finest_nside(body_key)
+	var nside: int = StarMapGround.id_nside(id)
+	var ipix: int = StarMapGround.id_ipix(id)
+	while nside > finest:
+		@warning_ignore("integer_division")
+		nside /= 2
+		ipix = ipix >> 2  # nested order: a pixel's parent is its index with the last two bits dropped
+	return StarMapGround.tile_id(nside, ipix)
+
+
+## A set of tile ids, each as the body publishes it ([method published_id]).
+static func published(body_key: String, tiles: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for id: int in tiles:
+		out[published_id(body_key, id)] = true
+	return out
+
+
 ## Pixels at a level. Kept here rather than reached for through HEALPix so the arithmetic that sizes a
 ## patch and the arithmetic that walks it cannot drift apart.
 static func npix(nside: int) -> int:
@@ -413,7 +490,7 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	var has_relief: bool = not mountains.is_empty() or not ridges.is_empty() or not volcanoes.is_empty()
 	# Ground covered by one step of the mesh. A feature narrower than this cannot be drawn honestly, and
 	# saying so is what keeps a knife-edge crest from coming out as a row of spikes.
-	var pitch: float = radius * HEALPix.pixel_angular_size(nside) / float(grid_res)
+	var pitch: float = tile_pitch(radius, nside, grid_res)
 	# The GAME's sampler when the body's PlanetData is to hand — which is every body with a scene — so
 	# the chart draws the ground a ship will land on rather than a second opinion about it. Measured
 	# against the game at the same level before this, over Tarsis III: within 4 m on average at n256
@@ -427,6 +504,13 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 		frame = data.make_tile_frame()
 		data.prepare_mountain_frame(frame, nside, ipix)
 		CrackCarve.prepare_frame(data, frame, nside, ipix)
+	# Does this tile hold canyons? Only one fine enough for the game to carve them: coarser, the sampler
+	# leaves them out by itself and is asked as before. Where it does, the carve is taken apart from the
+	# relief — the way a chunk builds its own vertices — because the chart wants to know WHICH vertices
+	# stand on a canyon's floor, to shade them.
+	var carved: bool = data != null and data.corundum_default_biome \
+			and data.crack_width_m > 0.0 and pitch < data.crack_width_m * 0.5
+	var cracks: int = CrackCarve.NONE if carved else CrackCarve.AUTO
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -437,18 +521,26 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 			# Per vertex, and by the OUTLINE of the patch it falls in: one rock for a whole tile drew
 			# the boundary between two biomes along the edges of the mesh instead of along the shape
 			# the level design drew, which reads as rectangles of colour laid over the ground.
+			var colour: Color = Color.WHITE
 			if not paint.is_empty():
-				colours.append(RockCatalogue.tint(dir, radius, _rock_at(paint, dir), Color.WHITE))
+				colour = RockCatalogue.tint(dir, radius, _rock_at(paint, dir), Color.WHITE)
 			var metres: float
 			if data != null:
 				# Mountains included: the sampler adds them, at this tile's pitch, as it does for a chunk.
 				if vx == 0 or vy == 0 or vx == grid_res or vy == grid_res:
 					metres = data.sample_height_boundary(dir, ipix, -1, Vector2i(-1, -1), null,
-							nside, frame, pitch)
+							nside, frame, pitch, cracks)
 				else:
 					metres = data.sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null,
-							nside, frame, pitch)
-			else:
+							nside, frame, pitch, cracks)
+				if carved:
+					var carve: float = CrackCarve.offset(data, dir, frame, pitch, CrackCarve.AUTO)
+					metres += carve
+					if carve < 0.0:
+						colour = colour.darkened(1.0 - CANYON_SHADE)
+			if carved or not paint.is_empty():
+				colours.append(colour)
+			if data == null:
 				# u follows the face's x, v its y — the same parametrisation get_pixel_grid walks, so a
 				# vertex and the texel under it are the same place by construction.
 				metres = _sample(heights, side,
@@ -483,7 +575,10 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.set_meta("source_nside", int(from[0]))
+	# A tile cut finer than anything published ([method detail_nside]) and read from the finest level
+	# there is has all the data it will ever have: it is not standing in for anything.
+	var published: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
+	mesh.set_meta("source_nside", nside if int(from[0]) >= published else int(from[0]))
 	if StarMapGround.DEBUG_GROUND:
 		StarMapTiles.stat_add("tiles", 1)
 		StarMapTiles.stat_add("provisional", 1 if int(from[0]) < nside else 0)

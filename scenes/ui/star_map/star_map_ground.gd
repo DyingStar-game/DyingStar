@@ -394,7 +394,11 @@ func _pump() -> void:
 		var ipix: int = id_ipix(id)
 		# Resolved HERE, on the main thread: the answer comes from a pack, and a pack is opened and read
 		# from one thread at a time. The worker is handed a string.
-		var paint: Dictionary = zones.tile_of(nside, ipix) if zones != null else {}
+		# By the tile as PUBLISHED: one cut finer than the data has no entry of its own in the pack, and
+		# the outlines of its ancestor cover it.
+		var paint_id: int = StarMapRelief.published_id(key, id)
+		var paint: Dictionary = zones.tile_of(id_nside(paint_id), id_ipix(paint_id)) \
+				if zones != null else {}
 		var task: int = WorkerThreadPool.add_task(func() -> void:
 			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader))
 		_in_flight[id] = {"task": task, "slot": slot}

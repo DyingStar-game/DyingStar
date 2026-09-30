@@ -2292,6 +2292,41 @@ func crack_exclusion_pois() -> Array:
 	return out
 
 
+## [method crack_exclusion_pois] read from a planet's SCENE FILE, for whoever samples a planet that is
+## not loaded — the grade bake, the star chart: every POI node under PlanetTerrain/POIs with a "Zone"
+## sphere, as a planet-local direction and a radius. Composed from the scene's own transforms — the
+## planet root cancels out of local_dir_of — nothing instantiated. Same order as the POI container's
+## children.
+static func crack_exclusion_pois_of_scene(packed: PackedScene) -> Array:
+	if packed == null:
+		return []
+	var st := packed.get_state()
+	var xf := {}
+	var radius := {}
+	var order: Array[String] = []
+	for ni in st.get_node_count():
+		var np := str(st.get_node_path(ni)).trim_prefix("./")
+		var t := Transform3D.IDENTITY
+		for pi in st.get_node_property_count(ni):
+			var pname := st.get_node_property_name(ni, pi)
+			var v: Variant = st.get_node_property_value(ni, pi)
+			if pname == &"transform" and v is Transform3D:
+				t = v
+			elif pname == &"shape" and v is SphereShape3D:
+				radius[np] = (v as SphereShape3D).radius
+		xf[np] = t
+		order.append(np)
+	var base: Transform3D = (xf.get("PlanetTerrain", Transform3D.IDENTITY) as Transform3D) \
+			* (xf.get("PlanetTerrain/POIs", Transform3D.IDENTITY) as Transform3D)
+	var out: Array = []
+	for np in order:
+		if np.get_base_dir() != "PlanetTerrain/POIs" or not radius.has(np + "/Zone"):
+			continue
+		var pos: Vector3 = (base * (xf[np] as Transform3D)).origin
+		out.append({"dir": pos.normalized(), "radius": float(radius[np + "/Zone"])})
+	return out
+
+
 ## The first POI in [param spheres] whose influence sphere, grown by [param margin], contains
 ## [param world_pos] — as {name, position, radius, distance}. Empty when the point is clear.
 ##

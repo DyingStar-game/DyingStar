@@ -107,6 +107,44 @@ static func _edge_distance(dir: Vector3, radius: float, spacing_m: float, vtx_sp
 	return d - nz.rim(dir, radius, eff)
 
 
+## Which block of the network [param dir] stands on, for whoever draws the network
+## as LINES rather than carving it (the star chart, from too high up for a mesh to
+## hold a crack): [the point the Voronoi is read at, the feature point of the cell
+## it falls in], both in cell units. Two directions on the same block answer the
+## same feature point; where it changes between two of them, a crack runs between
+## — along the plane halfway between the two feature points, which is where
+## [method _edge_distance] reaches zero.
+##
+## The same warped point as [method _edge_distance], at full detail, so the lines
+## wander as the cracks do. The rim noise is not in it: it eats the rims, it does
+## not move the crack.
+static func crack_cell(dir: Vector3, radius: float, spacing_m: float,
+		noise: CrackNoise = null) -> Array[Vector3]:
+	var nz := noise if noise != null else CrackNoise.plain()
+	var q := nz.warp(dir * radius, dir, radius, nz.finest_m) / spacing_m
+	return [q, _voronoi_site(q, nz)]
+
+
+## The feature point of the cell holding [param x]: the first pass of
+## [method _voronoi_gd], answered as an absolute position so it names the cell.
+static func _voronoi_site(x: Vector3, nz: CrackNoise) -> Vector3:
+	var n := x.floor()
+	var ix := int(n.x)
+	var iy := int(n.y)
+	var iz := int(n.z)
+	var site := Vector3.ZERO
+	var md := 1.0e9
+	for k in range(-1, 2):
+		for j in range(-1, 2):
+			for i in range(-1, 2):
+				var p := n + Vector3(i, j, k) + _jitter(ix + i, iy + j, iz + k, nz)
+				var d := p.distance_squared_to(x)
+				if d < md:
+					md = d
+					site = p
+	return site
+
+
 ## How far inside the rim the foot of the wall sits, in metres: the
 ## horizontal run of the wall, so a 180 m wall stands at 89.98°. Not zero:
 ## the foot has to read as inside the crack (d < half) and the rim as outside.
