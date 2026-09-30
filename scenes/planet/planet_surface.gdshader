@@ -349,9 +349,10 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	vec2 g2x = rot2 * dSTdx, g2y = rot2 * dSTdy;
 	vec2 g3x = rot3 * dSTdx, g3y = rot3 * dSTdy;
 
-	// Height: one set of taps for the parallax AND the blend bias.
+	// Height: one set of taps for the parallax AND the blend bias. Quality 1 skips both (three taps
+	// fewer): the blend then leans on the albedo's luminance, the relief sits flat.
 	vec3 H = vec3(1.0);
-	if (height_scale > 0.0 || height_blend > 0.0) {
+	if (planet_hex_quality >= 2 && (height_scale > 0.0 || height_blend > 0.0)) {
 		H = vec3(textureGrad(height_texture, st1, g1x, g1y).r,
 		         textureGrad(height_texture, st2, g2x, g2y).r,
 		         textureGrad(height_texture, st3, g3x, g3y).r);
@@ -362,7 +363,7 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// shift is metres on the plane, i.e. view_t * s in tile UV, rotated into
 	// each tile's frame.  1/(V.N) is dropped on purpose (no swimming at grazing
 	// angles).
-	if (height_scale > 0.0) {
+	if (planet_hex_quality >= 2 && height_scale > 0.0) {
 		vec3 W0 = hex_weights(mix(vec3(1.0), H, height_blend), w, r);
 		vec2 shift = view_t * ((dot(W0, H) - 0.5) * height_scale * s);
 		st1 += rot1 * shift;
@@ -380,28 +381,25 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	D = mix(D, H, height_blend);
 	vec3 W = hex_weights(D, w, r);
 
-	if (planet_hex_quality >= 2) {
-		// Normal map: same samples, same weights.  Godot normal maps are OpenGL
-		// (+Y = image top) while the plane's v axis runs down the image, so y is
-		// flipped; then the tile was rotated by rot in UV space, so its gradient
-		// rotates back by rotᵀ.
-		const vec2 FLIP_V = vec2(1.0, -1.0);
-		vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
-		vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
-		vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
-		nxy = W.x * n1 + W.y * n2 + W.z * n3;
+	// Normal map: same samples, same weights, at every hex quality — the relief (cracks, bumps) is
+	// what gives the repetition away first when it is left untiled.  Godot normal maps are OpenGL
+	// (+Y = image top) while the plane's v axis runs down the image, so y is flipped; then the tile
+	// was rotated by rot in UV space, so its gradient rotates back by rotᵀ.
+	const vec2 FLIP_V = vec2(1.0, -1.0);
+	vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
+	vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
+	vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
+	nxy = W.x * n1 + W.y * n2 + W.z * n3;
 
+	if (planet_hex_quality >= 2) {
 		// Roughness: same samples, same weights, one channel.
 		vec4 r1 = textureGrad(roughness_texture, st1, g1x, g1y);
 		vec4 r2 = textureGrad(roughness_texture, st2, g2x, g2y);
 		vec4 r3 = textureGrad(roughness_texture, st3, g3x, g3y);
 		rough = W.x * r1[roughness_channel] + W.y * r2[roughness_channel] + W.z * r3[roughness_channel];
 	} else {
-		// Quality 1: the two secondary maps from one untiled tap each.  Their
-		// repetition is far less visible than the albedo's.
-		vec2 st = p * s;
-		nxy = (textureGrad(normal_texture, st, dSTdx, dSTdy).xy * 2.0 - 1.0) * vec2(1.0, -1.0);
-		rough = textureGrad(roughness_texture, st, dSTdx, dSTdy)[roughness_channel];
+		// Quality 1: roughness from one untiled tap — its repetition does not show.
+		rough = textureGrad(roughness_texture, p * s, dSTdx, dSTdy)[roughness_channel];
 	}
 
 	// Blend the 3 samples together using calculated weights
