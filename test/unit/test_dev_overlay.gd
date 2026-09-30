@@ -17,6 +17,7 @@ func before_each() -> void:
 	add_child_autofree(_panel)
 	# Start from "everything off", whatever this machine's settings say.
 	for sig in [SettingsManager.show_debug_changed, SettingsManager.surface_debug_changed,
+			SettingsManager.music_debug_changed,
 			SettingsManager.movement_debug_changed, SettingsManager.vehicle_hud_changed]:
 		sig.emit(false)
 
@@ -68,3 +69,9 @@ func test_it_sits_on_the_right() -> void:
 func test_only_the_server_box_is_capped() -> void:
 	assert_gt(_section("%%HUD_DEV_SERVER_BOX").max_height_px, 0.0, "the zone list scrolls on its own")
 	assert_eq(_section("%%HUD_DEV_CLIENT").max_height_px, 0.0, "the other sections grow with their text")
+
+
+func test_the_music_section_has_its_own_switch() -> void:
+	SettingsManager.music_debug_changed.emit(true)
+	assert_true(_section("%%HUD_DEV_MUSIC").box.visible, "shown without the other debug readouts")
+	assert_false(_section("%%HUD_DEV_CLIENT").box.visible, "which stay off")

@@ -169,3 +169,40 @@ static func surface_lines(info: Dictionary, body: Node) -> PackedStringArray:
 		"surface: %s%s" % [family if family != "" else "INCONNUE", mapped],
 		ReadoutFormat.escape("via %s : %s" % [String(info.get("source", "?")), String(info.get("detail", ""))]),
 	]
+
+
+# ── Music ───────────────────────────────────────────────────────────────────────────────────────
+
+## What plays and WHY — MusicDirector.debug_state's own answer, so what you read is what you hear:
+##   track     the file, and how far into it; or the silence, and how long before the next one
+##   playlist  the .tres it comes from
+##   case      the line of music_table.tres that won (or the zone's own playlist, or no rule at all)
+##   where     all the player's situation is made of — a rule can only match what is listed here
+##   next      the playlist about to take over, while the new situation has not held long enough yet
+static func music_lines(state: Dictionary) -> PackedStringArray:
+	if state.is_empty():
+		return ["music --"]
+	var track : String = String(state.get("track", ""))
+	var gap_s : float = float(state.get("gap_left_s", -1.0))
+	var playing : String = "(silence)"
+	if track != "":
+		playing = "%s  %s / %s" % [track, _minutes(float(state.get("position_s", 0.0))),
+			_minutes(float(state.get("length_s", 0.0)))]
+	elif gap_s >= 0.0:
+		playing = "(silence, next track in %d s)" % ceili(gap_s)
+	var playlist : String = String(state.get("playlist", ""))
+	var out : PackedStringArray = [
+		ReadoutFormat.escape("track: %s" % playing),
+		ReadoutFormat.escape("playlist: %s" % (playlist if playlist != "" else "(none)")),
+		ReadoutFormat.escape("case: %s" % String(state.get("why", "?"))),
+		ReadoutFormat.escape("where: %s" % String(state.get("where", "?"))),
+	]
+	if state.has("pending"):
+		var pending : String = String(state["pending"])
+		out.append(ReadoutFormat.escape("next: %s" % (pending if pending != "" else "(silence)")))
+	return out
+
+
+static func _minutes(seconds: float) -> String:
+	var whole : int = int(seconds)
+	return "%d:%02d" % [whole / 60, whole % 60]
