@@ -3294,6 +3294,15 @@ func known_grade_profiles() -> Dictionary:
 	return out
 
 
+## Every chasm crossing that is KNOWN without walking a road for it, in
+## RoadBridge's shape: the ones found when the planet has found them, the
+## baked ones otherwise — see [method known_grade_profiles], same reader.
+func known_bridge_spans() -> Array:
+	if _bridge_spans_built:
+		return _bridge_spans
+	return _baked_bridges().get("spans", [])
+
+
 ## Every viaduct span of every profiled line (kind railway / profiled_road),
 ## in RoadBridge's shape.
 func get_grade_spans() -> Array:

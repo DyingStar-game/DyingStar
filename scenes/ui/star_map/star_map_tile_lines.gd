@@ -243,3 +243,27 @@ static func add_line(points: PackedVector3Array, colours: PackedColorArray, from
 		colours.append(colour)
 		colours.append(colour)
 		previous = next
+
+
+## One stretch of line as a strip with a width on the ground, two triangles, for the triangles a
+## kind of line may lay beside its lines ([method _laying]). [param from] and [param to]
+## are its ends ON the drawn ground; [param half_width] half its width as an angle at the body's
+## centre. Each end runs half a width past its point, so two stretches meeting at an angle overlap
+## instead of leaving a notch.
+static func add_ribbon(corners: PackedVector3Array, from: Vector3, to: Vector3,
+		half_width: float) -> void:
+	var up: Vector3 = (from + to).normalized()
+	var along: Vector3 = (to - from)
+	along = (along - up * along.dot(up)).normalized()
+	if along == Vector3.ZERO:
+		return
+	var across: Vector3 = up.cross(along)
+	var from_r: float = from.length()
+	var to_r: float = to.length()
+	var from_dir: Vector3 = from / from_r - along * half_width
+	var to_dir: Vector3 = to / to_r + along * half_width
+	var a: Vector3 = (from_dir - across * half_width).normalized() * from_r
+	var b: Vector3 = (from_dir + across * half_width).normalized() * from_r
+	var c: Vector3 = (to_dir + across * half_width).normalized() * to_r
+	var d: Vector3 = (to_dir - across * half_width).normalized() * to_r
+	corners.append_array(PackedVector3Array([a, b, c, a, c, d]))

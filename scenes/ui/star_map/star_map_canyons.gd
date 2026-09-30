@@ -192,7 +192,7 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				points.append(to)
 				colours.append(COLOUR)
 				colours.append(COLOUR)
-				_add_ribbon(corners, from, to, half_width)
+				add_ribbon(corners, from, to, half_width)
 	corner_colours.resize(corners.size())
 	corner_colours.fill(COLOUR)
 	return [points, colours, corners, corner_colours]
@@ -233,29 +233,6 @@ static func _fork(grid: Array[PackedVector3Array], read_at: PackedVector3Array,
 	var v: float = clampf((a * q - p * c) / det, 0.0, 1.0)
 	return grid[vy][vx].lerp(grid[vy][vx + 1], u).lerp(
 			grid[vy + 1][vx].lerp(grid[vy + 1][vx + 1], u), v).normalized()
-
-
-## One stretch of canyon as a strip as wide as the canyon, two triangles. [param from] and [param to]
-## are its ends ON the drawn ground; [param half_width] half its width as an angle at the body's
-## centre. Each end runs half a width past its point, so two stretches meeting at an angle overlap
-## instead of leaving a notch.
-static func _add_ribbon(corners: PackedVector3Array, from: Vector3, to: Vector3,
-		half_width: float) -> void:
-	var up: Vector3 = (from + to).normalized()
-	var along: Vector3 = (to - from)
-	along = (along - up * along.dot(up)).normalized()
-	if along == Vector3.ZERO:
-		return
-	var across: Vector3 = up.cross(along)
-	var from_r: float = from.length()
-	var to_r: float = to.length()
-	var from_dir: Vector3 = from / from_r - along * half_width
-	var to_dir: Vector3 = to / to_r + along * half_width
-	var a: Vector3 = (from_dir - across * half_width).normalized() * from_r
-	var b: Vector3 = (from_dir + across * half_width).normalized() * from_r
-	var c: Vector3 = (to_dir + across * half_width).normalized() * to_r
-	var d: Vector3 = (to_dir - across * half_width).normalized() * to_r
-	corners.append_array(PackedVector3Array([a, b, c, a, c, d]))
 
 
 ## Where the canyon between two points of the grid crosses the line from one to the other, as a
