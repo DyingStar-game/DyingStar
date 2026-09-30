@@ -22,9 +22,6 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 	GameStates.CONNEXION_ERROR : "res://ui/error_message/error_message.tscn",
 }
 
-const MENU_MUSIC_PATH: String = "res://assets/_universe/audio/music/DyingStart_testV1.mp3"
-const MENU_MUSIC_FADE_OUT_SECONDS: float = 5.0
-
 const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
 
 @export var levels: Array[PackedScene]
@@ -39,9 +36,6 @@ var distinguish_instances: Dictionary = {
 var univers_creation_entities: Dictionary = {}
 
 var connexion_error_message: String = ""
-
-var _menu_music_player: AudioStreamPlayer = null
-var _menu_music_fade_tween: Tween = null
 
 @onready var game_is_paused: bool = false
 
@@ -79,64 +73,14 @@ func _ready():
 		change_game_state(GameStates.SERVER_UNIVERS_CREATION)
 	else:
 		change_network_role(NetworkRole.PLAYER)
-		menu_music()
+		# With no player in the world yet, this is the menu music (see MusicDirector).
+		MusicDirector.start()
 		if OS.has_feature("devmode"):
 			change_game_state(GameStates.PLAYING)
 		else:
 			var instance = LOADING_SCENE.instantiate()
 			get_tree().root.add_child.call_deferred(instance)
 			change_game_state(GameStates.UNIVERSE_MENU)
-
-func menu_music() -> void:
-	if _menu_music_fade_tween != null and _menu_music_fade_tween.is_valid():
-		_menu_music_fade_tween.kill()
-		_menu_music_fade_tween = null
-
-	if _menu_music_player != null and is_instance_valid(_menu_music_player):
-		_menu_music_player.volume_db = 0.0
-		if not _menu_music_player.playing:
-			_menu_music_player.play()
-		return
-
-	var stream: AudioStream = load(MENU_MUSIC_PATH)
-	if stream == null:
-		push_warning("menu_music: failed to load %s" % MENU_MUSIC_PATH)
-		return
-
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-
-	_menu_music_player = AudioStreamPlayer.new()
-	_menu_music_player.name = "MenuMusicPlayer"
-	_menu_music_player.stream = stream
-	_menu_music_player.bus = "Music"  # so the Audio settings Music slider controls it
-	_menu_music_player.autoplay = false
-	_menu_music_player.volume_db = 0.0
-	add_child(_menu_music_player)
-	_menu_music_player.play()
-
-func stop_menu_music(fade_seconds: float = MENU_MUSIC_FADE_OUT_SECONDS) -> void:
-	if _menu_music_player == null or not is_instance_valid(_menu_music_player):
-		return
-
-	if _menu_music_fade_tween != null and _menu_music_fade_tween.is_valid():
-		_menu_music_fade_tween.kill()
-		_menu_music_fade_tween = null
-
-	var player := _menu_music_player
-	# Detach the reference now so a subsequent menu_music() call creates a fresh player
-	# instead of resurrecting the one being faded out.
-	_menu_music_player = null
-
-	if fade_seconds <= 0.0:
-		player.stop()
-		player.queue_free()
-		return
-
-	_menu_music_fade_tween = create_tween()
-	_menu_music_fade_tween.tween_property(player, "volume_db", -80.0, fade_seconds)
-	_menu_music_fade_tween.tween_callback(Callable(player, "stop"))
-	_menu_music_fade_tween.tween_callback(Callable(player, "queue_free"))
 
 func _notification(what):
 	match what:

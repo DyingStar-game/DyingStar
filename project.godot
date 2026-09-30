@@ -28,6 +28,7 @@ driver/enable_input=true
 
 SettingsManager="*res://scenes/globals/settings_manager.gd"
 Globals="*res://scenes/globals/globals.gd"
+MusicDirector="*res://scenes/audio/music/music_director.gd"
 GameOrchestrator="*res://scenes/globals/game_orchestrator.gd"
 NetworkOrchestrator="*res://scenes/globals/network_orchestrator.gd"
 ChatNetwork="*res://scenes/globals/chat_network.gd"

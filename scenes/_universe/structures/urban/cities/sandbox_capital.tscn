@@ -11,7 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="10_uow4d"]
 [ext_resource type="Script" uid="uid://5l13eh73avyv" path="res://scenes/common/area_3d.gd" id="11_04krg"]
 [ext_resource type="AudioStream" uid="uid://ciwe4yq6ux1pi" path="res://assets/_universe/audio/ambience/sandstorm_001.ogg" id="12_yc6ci"]
-[ext_resource type="AudioStream" uid="uid://jfgcabkqn6rm" path="res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg" id="13_yc6ci"]
+[ext_resource type="Script" path="res://scenes/audio/music/music_zone.gd" id="13_music"]
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="14_4lkw2"]
 [ext_resource type="PackedScene" uid="uid://cynv06ddhi8kr" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="16_47dne"]
 [ext_resource type="Material" uid="uid://0j1nxxxq4kpn" path="res://assets/_universe/environment/terrain/regolith_grey_2.tres" id="16_a2whl"]
@@ -105,6 +105,9 @@ shader_parameter/density = 0.09999999747
 shader_parameter/grad_tex = SubResource("GradientTexture1D_yc6ci")
 shader_parameter/emission = Color(0.8, 0.6, 0.3, 1)
 shader_parameter/fog_speed = 1.5
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_music"]
+radius = 1500.0
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_4lkw2"]
 size = Vector3(690.5352568304834, 135.52, 279.48)
@@ -275,12 +278,15 @@ volume_db = -80.0
 bus = &"SFX"
 parameters/looping = true
 
-[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=2143320687]
-stream = ExtResource("13_yc6ci")
-volume_db = -20.0
-autoplay = true
-bus = &"Music"
-parameters/looping = true
+[node name="MusicZone" type="Area3D" parent="." unique_id=2143320687]
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+script = ExtResource("13_music")
+tag = &"capital"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MusicZone" unique_id=2143320688]
+shape = SubResource("SphereShape3D_music")
 
 [node name="Ramp Test Zone" type="Node3D" parent="." unique_id=1918257768]
 

@@ -252,7 +252,8 @@ func setup() -> void:
 	if loading != null:
 		loading.queue_free()
 
-	GameOrchestrator.stop_menu_music()
+	# The world is on screen: from here the music follows where this player is.
+	MusicDirector.follow(player)
 
 ## Per-frame client work: REMOTE avatar interpolation + name tag, or the OWNER's seat ride / camera /
 ## HUD prompts / mouse capture / input sampling. Runs on this role's own child node, so the engine

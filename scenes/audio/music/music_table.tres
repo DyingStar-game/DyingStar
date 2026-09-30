@@ -1,0 +1,102 @@
+[gd_resource type="Resource" script_class="MusicTable" format=3 uid="uid://dhbw3bp24y7h7"]
+
+[ext_resource type="Script" uid="uid://3r2g1ifns0cu" path="res://scenes/audio/music/music_table.gd" id="1"]
+[ext_resource type="Script" uid="uid://caxkarkl5mf2u" path="res://scenes/audio/music/music_rule.gd" id="2"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/menu.tres" id="3"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/space.tres" id="4"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/capital.tres" id="5"]
+[ext_resource type="Script" uid="uid://drdv53naeb0gp" path="res://scenes/audio/music/music_playlist.gd" id="5_dwdbk"]
+[ext_resource type="AudioStream" uid="uid://jfgcabkqn6rm" path="res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg" id="6_tu0l4"]
+
+[sub_resource type="Resource" id="rule_menu"]
+resource_name = "MENU → menu"
+script = ExtResource("2")
+situation = 0
+playlist = ExtResource("3")
+
+[sub_resource type="Resource" id="rule_capital"]
+resource_name = "ZONE capital → capital"
+script = ExtResource("2")
+situation = 1
+only = "capital"
+playlist = ExtResource("5")
+
+[sub_resource type="Resource" id="rule_eva"]
+resource_name = "EVA → space"
+script = ExtResource("2")
+situation = 2
+playlist = ExtResource("4")
+
+[sub_resource type="Resource" id="rule_station"]
+resource_name = "STATION → space"
+script = ExtResource("2")
+situation = 3
+playlist = ExtResource("4")
+
+[sub_resource type="Resource" id="rule_poi_capital"]
+resource_name = "POI Palaka-Pital → silence"
+script = ExtResource("2")
+situation = 4
+only = "Palaka-Pital"
+
+[sub_resource type="Resource" id="rule_poi_spaceport"]
+resource_name = "POI major_airport_city → silence"
+script = ExtResource("2")
+situation = 4
+only = "major_airport_city"
+
+[sub_resource type="Resource" id="rule_poi_railway"]
+resource_name = "POI major_railway_city → silence"
+script = ExtResource("2")
+situation = 4
+only = "major_railway_city"
+
+[sub_resource type="Resource" id="rule_poi_mining"]
+resource_name = "POI mining_village → silence"
+script = ExtResource("2")
+situation = 4
+only = "mining_village"
+
+[sub_resource type="Resource" id="rule_poi_mining_fr"]
+resource_name = "POI village mining → silence"
+script = ExtResource("2")
+situation = 4
+only = "village mining"
+
+[sub_resource type="Resource" id="rule_poi_factory"]
+resource_name = "POI factory_village → silence"
+script = ExtResource("2")
+situation = 4
+only = "factory_village"
+
+[sub_resource type="Resource" id="rule_poi_factory_fr"]
+resource_name = "POI village usine → silence"
+script = ExtResource("2")
+situation = 4
+only = "village usine"
+
+[sub_resource type="Resource" id="rule_poi_city"]
+resource_name = "POI city → silence"
+script = ExtResource("2")
+situation = 4
+only = "city"
+
+[sub_resource type="Resource" id="rule_poi_any"]
+resource_name = "POI → silence"
+script = ExtResource("2")
+situation = 4
+
+[sub_resource type="Resource" id="Resource_q5ran"]
+script = ExtResource("5_dwdbk")
+tracks = Array[AudioStream]([ExtResource("6_tu0l4")])
+metadata/_custom_type_script = "uid://drdv53naeb0gp"
+
+[sub_resource type="Resource" id="rule_wild"]
+resource_name = "WILD → ::Resource_q5ran"
+script = ExtResource("2")
+situation = 5
+playlist = SubResource("Resource_q5ran")
+
+[resource]
+script = ExtResource("1")
+rules = Array[ExtResource("2")]([SubResource("rule_menu"), SubResource("rule_capital"), SubResource("rule_eva"), SubResource("rule_station"), SubResource("rule_poi_capital"), SubResource("rule_poi_spaceport"), SubResource("rule_poi_railway"), SubResource("rule_poi_mining"), SubResource("rule_poi_mining_fr"), SubResource("rule_poi_factory"), SubResource("rule_poi_factory_fr"), SubResource("rule_poi_city"), SubResource("rule_poi_any"), SubResource("rule_wild")])
