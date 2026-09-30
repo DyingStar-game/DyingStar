@@ -202,3 +202,81 @@ func test_a_point_is_put_on_the_facet_the_mesh_draws() -> void:
 	assert_eq(StarMapDrawnTile.facet_height(0.0, 300.0, 100.0, 0.0, 0.5, 0.5), 0.0, "on the fold again")
 	assert_eq(StarMapDrawnTile.facet_height(0.0, 300.0, 100.0, 0.0, 1.0, 0.0), 300.0)
 	assert_eq(StarMapDrawnTile.facet_height(0.0, 300.0, 100.0, 0.0, 0.0, 1.0), 100.0)
+
+# ---------------------------------------------------------------------------
+# Tunnels
+# ---------------------------------------------------------------------------
+
+## A way 1 000 m long along the equator, in two points, as one tile would hold it.
+const WAY: Array[Vector3] = [Vector3(0, 0, 1), Vector3(0.0998334166, 0, 0.9950041653)]
+
+
+func _way() -> PackedVector3Array:
+	return PackedVector3Array(WAY)
+
+
+## A way under a mountain was drawn over it like any other. It now carries a dark line either side for
+## as long as it is in the tunnel, splayed at each mouth.
+func test_a_tunnel_is_a_line_either_side_of_the_way_splayed_at_its_mouths() -> void:
+	var points := PackedVector3Array()
+	var colours := PackedColorArray()
+	var step: float = 0.002
+	StarMapRoads.add_tunnels(points, colours, _way(), PackedFloat64Array([0.0, 1000.0]),
+			[Vector2(250.0, 500.0)], step, 1.0, _flat)
+	assert_eq(points.size(), 12, "each side: its line and a splay at either mouth")
+	for colour: Color in colours:
+		assert_eq(colour, StarMapRoads.TUNNEL_COLOUR)
+	var mouth: Vector3 = WAY[0].slerp(WAY[1], 0.25)
+	var far_mouth: Vector3 = WAY[0].slerp(WAY[1], 0.5)
+	assert_almost_eq(points[0].angle_to(mouth), step * StarMapRoads.TUNNEL_SIDE, 1.0e-6,
+		"a side line starts beside the mouth, a little out from the way")
+	assert_almost_eq(points[1].angle_to(far_mouth), step * StarMapRoads.TUNNEL_SIDE, 1.0e-6,
+		"and ends beside the other")
+	assert_almost_eq(points[0].y, -points[6].y, 1.0e-9, "the two sides stand either side of the way")
+	# The splay at the first mouth: further from the way than the side line, and back out of the tunnel.
+	assert_gt(absf(points[3].y), absf(points[2].y), "leaning out from the way")
+	assert_lt(points[3].angle_to(WAY[0]), points[2].angle_to(WAY[0]), "and away from the tunnel")
+
+
+func test_a_tunnel_running_on_into_the_next_tile_has_no_mouth_here() -> void:
+	var points := PackedVector3Array()
+	var colours := PackedColorArray()
+	StarMapRoads.add_tunnels(points, colours, _way(), PackedFloat64Array([2000.0, 3000.0]),
+			[Vector2(1500.0, 2400.0)], 0.002, 1.0, _flat)
+	assert_eq(points.size(), 8, "each side: its line, and one splay at the mouth that IS here")
+	points.clear()
+	colours.clear()
+	StarMapRoads.add_tunnels(points, colours, _way(), PackedFloat64Array([2000.0, 3000.0]),
+			[Vector2(100.0, 900.0), Vector2(3500.0, 3600.0)], 0.002, 1.0, _flat)
+	assert_eq(points.size(), 0, "a tunnel elsewhere on the line draws nothing on this piece")
+
+
+func test_a_stretch_is_found_between_the_points_of_the_way() -> void:
+	var inside: PackedVector3Array = StarMapRoads.stretch_of(_way(), PackedFloat64Array([0.0, 1000.0]),
+			250.0, 500.0, 0.01)
+	assert_eq(inside.size(), 4, "0.025 of arc in pieces no longer than 0.01: three of them")
+	assert_almost_eq(inside[0].angle_to(WAY[0]), 0.025, 1.0e-9, "from 250 m along")
+	assert_almost_eq(inside[3].angle_to(WAY[0]), 0.05, 1.0e-9, "to 500 m along")
+
+
+## The tunnels are the game's own: where a line's profile says it runs under the ground.
+func test_the_tunnels_drawn_are_the_ones_the_lines_profiles_hold() -> void:
+	var data: PlanetData = StarMapTiles.offline_data(BODY)
+	if data == null:
+		pending("pas de PlanetData ou de tuiles %s sur cette machine" % BODY)
+		return
+	var profiles: Dictionary = data.known_grade_profiles()
+	if profiles.is_empty():
+		pending("pas de profils de ligne precalcules pour %s" % BODY)
+		return
+	var roads: StarMapRoads = add_child_autofree(StarMapRoads.new())
+	roads.body_key = BODY
+	var tunnels: Dictionary = roads._known_tunnels(data)
+	var spans: int = 0
+	for fid: int in tunnels:
+		assert_true(profiles.has(fid), "each from a profile")
+		for span: Vector2 in tunnels[fid]:
+			assert_gt(span.y, span.x, "from one mouth to the other, in metres along the line")
+			spans += 1
+	gut.p("%d tunnel(s) on %d line(s) of %s" % [spans, tunnels.size(), BODY])
+	assert_eq(roads._known_tunnels(data), tunnels, "and read once, not at every batch")
