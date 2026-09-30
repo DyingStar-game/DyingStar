@@ -175,9 +175,9 @@ const OPTIONS : Array[Dictionary] = [
 		"help": "%%MENU_GFX_HELP_ATMOSPHERE_QUALITY", "kind": CHOICE,
 		"choices": _QUALITY, "default": 2, "presets": [0, 1, 2, 3],
 		"client_ini": ["debug_atmo_view_steps", "debug_atmo_light_steps"]},
-	# planet_surface.gdshader's cost dial: 2 = full hex tiling, 1 = hex albedo only (0 = plain).
-	# Never 0 here: the hex tiling is what re-orients the ground textures and hides their repetition,
-	# so every level keeps it — the cheaper one drops only its relief (normal, roughness, parallax).
+	# planet_surface.gdshader's cost dial: 2 = full hex tiling, 1 = hex albedo and normal without
+	# parallax nor tiled roughness (0 = plain). Never 0 here: the hex tiling is what re-orients the
+	# ground textures and hides their repetition, so both levels keep it on the colour AND the relief.
 	# A 0 stored by an older build cleans to the default.
 	{"key": "ground_quality", "section": SEC_WORLD, "label": "%%MENU_GFX_GROUND",
 		"help": "%%MENU_GFX_HELP_GROUND_QUALITY", "kind": CHOICE,

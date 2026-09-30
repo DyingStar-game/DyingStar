@@ -397,7 +397,7 @@ func _ready() -> void:
 		print("[CPerf] !! debug_no_terrain_blend=true — objects meet the ground on a hard cut line:"
 				+ " measurement mode, not a fix.")
 	# Cost dial of planet_surface.gdshader (the hex-tiled corundum ground), a shader global so no
-	# material has to be swapped: 2 = full, 1 = hex albedo only, 0 = plain triplanar texture(). A
+	# material has to be swapped: 2 = full, 1 = hex albedo and normal only, 0 = plain triplanar texture(). A
 	# RX 5700 XT spent 30 ms of GPU per frame on the full version where a RTX 3080 spent 3, and
 	# textureGrad + anisotropic sampling is the suspected AMD-specific cost; 0 is the same shader on
 	# the sampler's fast path, so a player's rgpu at 0 versus 2 names it in one session.
@@ -405,7 +405,7 @@ func _ready() -> void:
 	if hex_q != 2:
 		RenderingServer.global_shader_parameter_set("planet_hex_quality", hex_q)
 		print("[CPerf] !! debug_hex_quality=%d — planet ground hex tiling reduced (%s)." % [hex_q,
-				"hex albedo, plain normal/roughness" if hex_q == 1
+				"hex albedo and normal, no parallax, plain roughness" if hex_q == 1
 				else "NO hex tiling, plain triplanar: repetition is visible"])
 	_print_boot_detail()
 
