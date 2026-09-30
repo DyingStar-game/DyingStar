@@ -24,10 +24,14 @@ const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
 const VEIL_ALPHA : float = 0.93
 ## ...until this far short of the settings' right edge (their controls have their own dark box)...
 const VEIL_FADE_IN_PX : float = 60.0
-## ...then easing out to nothing this far past it: beyond, the scene keeps its true colours.
-const VEIL_FADE_OUT_PX : float = 240.0
+## ...then easing out to nothing this far past it: beyond, the scene keeps its true colours. Wide:
+## at 240 px the edge of the veil read as a dark column standing over the scene.
+const VEIL_FADE_OUT_PX : float = 560.0
 ## Stops drawing the ease (smoothstep) between those two points.
-const _VEIL_STEPS : int = 8
+const _VEIL_STEPS : int = 24
+## Texels across the veil's texture: one per screen pixel or so, so the ease shows no steps. At 256
+## it did, stretched over a wide screen.
+const _VEIL_TEXELS : int = 2048
 
 ## Set before adding the page: no opaque background, only a veil, so the scene shows through (the
 ## menu stage, or the game behind the pause menu).
@@ -117,9 +121,9 @@ static func veil_texture(solid_to: float) -> GradientTexture2D:
 	gradient.offsets = offsets
 	gradient.colors = colors
 	var texture := GradientTexture2D.new()
+	texture.width = _VEIL_TEXELS
+	texture.height = 1
 	texture.gradient = gradient
 	texture.fill_from = Vector2(0.0, 0.5)
 	texture.fill_to = Vector2(1.0, 0.5)
-	texture.width = 256
-	texture.height = 1
 	return texture
