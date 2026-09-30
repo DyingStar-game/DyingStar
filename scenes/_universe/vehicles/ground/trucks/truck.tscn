@@ -21,7 +21,7 @@
 [ext_resource type="AudioStream" uid="uid://b3a1inhihbo80" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-idle.ogg" id="10_4yw1w"]
 [ext_resource type="PackedScene" uid="uid://cjkq1jpjbgd6a" path="res://assets/_universe/vehicles/ground/flatbed_small_mini_truck.glb" id="19_lnse2"]
 [ext_resource type="Resource" path="res://scenes/common/wheel_scrub.tres" id="90_scrub"]
-[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="90_t1"]
+[ext_resource type="Resource" uid="uid://cr7m3w86e4bsq" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="90_t1"]
 [ext_resource type="AudioStream" uid="uid://dxl4bmbemj1bx" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_struck_constant.mp3" id="91_scrubfast"]
 [ext_resource type="Script" uid="uid://blyv56ducsrlp" path="res://scenes/_universe/vehicles/vehicle_component_slot.gd" id="91_slot"]
 
@@ -42,9 +42,9 @@ collision_layer = 4
 collision_mask = 15
 mass = 1425.0
 script = ExtResource("1_vehicle")
-max_payload = 1200.0
+torque_response = 1.0
 factory_engines = Array[ExtResource("2_fjb8t")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("90_t1")])
-steer_speed = 0.8
+steer_speed = 0.2
 steer_return_speed = 1.0
 steering_wheel_ratio = 4.0
 steering_wheel_axis = Vector3(0, -1, 0)
@@ -56,6 +56,7 @@ suspension_damping_compression = 0.38
 suspension_damping_relaxation = 0.8
 wheel_roll_influence = 0.05
 debug_color_driven_wheels = false
+max_payload = 1200.0
 cargo_bay_size = Vector3(1.6, 0.6, 1.9)
 cargo_bay_offset = Vector3(0, 0.4, 1.05)
 debug_show_cargo_bay = false
@@ -195,7 +196,7 @@ transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.6343371992
 screen = NodePath("../Model/Carrosserie/Screen_Rear")
 
 [node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
-transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/Carrosserie/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true
@@ -290,7 +291,7 @@ outdoor_shape = NodePath("CollisionShape3D_out")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FL" unique_id=372280171]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, -0.18)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -306,7 +307,7 @@ outdoor_shape = NodePath("CollisionShape3D_out")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FR" unique_id=372280172]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, -0.18)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -322,7 +323,7 @@ outdoor_shape = NodePath("CollisionShape3D_out")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RL" unique_id=372280173]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
@@ -339,7 +340,7 @@ outdoor_shape = NodePath("CollisionShape3D_out")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
 [node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RR" unique_id=372280174]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 0.0, 0.15)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
