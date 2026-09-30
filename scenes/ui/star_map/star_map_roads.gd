@@ -34,6 +34,9 @@ const SLEEPER_EVERY: float = 3.0
 const SLEEPER_HALF: float = 0.75
 
 var _pack: ModifierPack = null
+## The step the sleepers are sized on, for the whole view: see [method show_over]. Zero until a view
+## says, and each tile then uses its own.
+var _sleeper_step: float = 0.0
 
 
 ## The pack for this body, opened once. A body with no pack is an ordinary answer — most of them have
@@ -57,18 +60,19 @@ func _available() -> bool:
 func _laying() -> Array:
 	var data: PlanetData = StarMapTiles.for_body(body_key).data
 	var pack: ModifierPack = _pack
+	var sleepers: float = _sleeper_step
 	if data == null or data.radius <= 0.0:
 		var key: String = body_key
 		return [func(id: int) -> Array:
 			return _lay_tile(pack, StarMapGround.id_nside(id), StarMapGround.id_ipix(id),
 					func(dir: Vector3) -> Vector3:
 						return dir * (StarMapRelief.MESH_RADIUS
-								* (StarMapRelief.surface_factor(key, dir) + LIFT))), false]
+								* (StarMapRelief.surface_factor(key, dir) + LIFT)), sleepers), false]
 	return [func(id: int) -> Array:
 		# The ground THAT TILE draws, which costs nothing until a way asks where it stands.
 		var tile := StarMapDrawnTile.new(data, StarMapGround.id_nside(id), StarMapGround.id_ipix(id))
 		return _lay_tile(pack, tile.nside, tile.ipix, func(dir: Vector3) -> Vector3:
-			return tile.place(dir, LIFT)), true]
+			return tile.place(dir, LIFT), sleepers), true]
 
 
 func _release() -> void:
@@ -77,21 +81,43 @@ func _release() -> void:
 		_pack = null
 
 
+## Draw the ways crossing [param tiles], with the railways' sleepers sized for a view whose finest
+## ground is at [param level].
+##
+## ONE size for the whole view, which is why it is not each tile's own: a view mixes levels, fine under
+## the camera and coarser ring by ring, and sleepers sized tile by tile doubled in length and spacing at
+## every ring. When the level changes, everything laid is laid again.
+func show_over(tiles: Dictionary, level: int) -> void:
+	var step: float = mesh_step(level)
+	if not is_equal_approx(step, _sleeper_step):
+		_sleeper_step = step
+		lay_again()
+	refresh(tiles)
+
+
+## One step of the mesh of a tile at [param nside], as an angle at the body's centre.
+static func mesh_step(nside: int) -> float:
+	return HEALPix.pixel_angular_size(nside) / float(StarMapGround.GRID_RES) if nside > 0 else 0.0
+
+
 # ---------------------------------------------------------------------------
 
 ## Every way crossing one tile, as line segments, each surveyed point put on the ground by
 ## [param place]. Static and handed everything, because it may run on a worker.
 ##
+## [param sleeper_step] sizes the railways' sleepers; zero leaves it to the tile's own step.
+##
 ## The pack stores lon/lat in DEGREES, which is what [method HEALPix.lonlat2vec] takes — the two agree,
 ## and it is worth saying so here because the neighbouring call in this file's own tests once did not.
-static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable) -> Array:
+static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable,
+		sleeper_step: float = 0.0) -> Array:
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
 	if not pack.has_tile(nside, ipix):
 		return [points, colours]
 	var tile: Dictionary = pack.decode_tile(pack.read_tile(nside, ipix), 0.0, ModifierPack.MASK_ROAD)
 	# One step of the tile's mesh, as an angle: no piece of a way is drawn longer than that.
-	var step: float = HEALPix.pixel_angular_size(nside) / float(StarMapGround.GRID_RES)
+	var step: float = mesh_step(nside)
 	for entry: Variant in (tile["roads"] as Array):
 		var road: Dictionary = entry
 		var line: PackedVector2Array = road["centerline"]
@@ -99,39 +125,49 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 			continue
 		var kind: String = str(road.get("road_type", ""))
 		var tint: Color = COLOURS.get(kind, UNKNOWN_COLOUR)
-		# How far since the last sleeper, carried from one stretch of the way to the next so they
-		# stay evenly spaced round a bend.
-		var since_sleeper: float = 0.0
-		var previous: Vector3 = HEALPix.lonlat2vec(line[0].x, line[0].y)
-		for i: int in range(1, line.size()):
-			var next: Vector3 = HEALPix.lonlat2vec(line[i].x, line[i].y)
-			add_line(points, colours, previous, next, step, place, tint)
-			if kind == RAILWAY:
-				since_sleeper = _add_sleepers(points, colours, previous, next, step, since_sleeper,
-						place, tint)
-			previous = next
+		var way := PackedVector3Array()
+		for at: Vector2 in line:
+			way.append(HEALPix.lonlat2vec(at.x, at.y))
+		for i: int in range(1, way.size()):
+			add_line(points, colours, way[i - 1], way[i], step, place, tint)
+		if kind == RAILWAY:
+			add_sleepers(points, colours, way, sleeper_step if sleeper_step > 0.0 else step, place, tint)
 	return [points, colours]
 
 
-## The sleepers of a stretch of railway: short strokes across the line, which is how a map has always
-## said "railway" and what tells it from a road when both are a pixel wide. Sized on the tile's own
-## step, so they are the same few pixels at every height — a tile is drawn at the level where its step
-## is a few pixels.
+## The sleepers of a railway: short strokes across the line, which is how a map has always said
+## "railway" and what tells it from a road when both are a pixel wide.
 ##
-## Returns how far past the last sleeper the stretch ends, for the next one to carry on from.
-static func _add_sleepers(points: PackedVector3Array, colours: PackedColorArray, from: Vector3,
-		to: Vector3, step: float, since: float, place: Callable, tint: Color) -> float:
-	var length: float = from.angle_to(to)
-	var every: float = step * SLEEPER_EVERY
-	if length <= 0.0 or every <= 0.0:
-		return since
-	var across: Vector3 = from.cross(to).normalized()
-	var at: float = every - since
-	while at <= length:
-		var on_line: Vector3 = from.slerp(to, at / length)
-		points.append(place.call((on_line - across * (step * SLEEPER_HALF)).normalized()))
-		points.append(place.call((on_line + across * (step * SLEEPER_HALF)).normalized()))
-		colours.append(tint)
-		colours.append(tint)
-		at += every
-	return length - (at - every)
+## [param way] is the piece of the railway one tile holds; [param step] the length they are sized on —
+## [constant SLEEPER_EVERY] of it apart, [constant SLEEPER_HALF] of it to each side.
+##
+## Spread EVENLY over the piece, half a gap in from each end, rather than counted off from its start:
+## a railway reaches the chart cut at every tile edge, and counting afresh in each tile left a gap of
+## any length at each edge. Spread this way the two half gaps either side of an edge make a whole one.
+## And every stroke is the same length, standing level at the height of the line: its two ends put on
+## the ground one by one stood on different ground, and came out longer on a slope.
+static func add_sleepers(points: PackedVector3Array, colours: PackedColorArray,
+		way: PackedVector3Array, step: float, place: Callable, tint: Color) -> void:
+	var length: float = 0.0
+	for i: int in range(1, way.size()):
+		length += way[i - 1].angle_to(way[i])
+	var count: int = roundi(length / (step * SLEEPER_EVERY)) if step > 0.0 else 0
+	if count <= 0:
+		return
+	var gap: float = length / float(count)
+	var next_at: float = gap * 0.5
+	var walked: float = 0.0
+	for i: int in range(1, way.size()):
+		var stretch: float = way[i - 1].angle_to(way[i])
+		if stretch <= 0.0:
+			continue
+		var across: Vector3 = way[i - 1].cross(way[i]).normalized()
+		while next_at <= walked + stretch:
+			var on_line: Vector3 = way[i - 1].slerp(way[i], (next_at - walked) / stretch)
+			var height: float = (place.call(on_line) as Vector3).length()
+			points.append((on_line - across * (step * SLEEPER_HALF)).normalized() * height)
+			points.append((on_line + across * (step * SLEEPER_HALF)).normalized() * height)
+			colours.append(tint)
+			colours.append(tint)
+			next_at += gap
+		walked += stretch

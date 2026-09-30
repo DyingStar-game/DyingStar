@@ -35,6 +35,10 @@ var _task: int = -1
 var _job: Dictionary = {}
 ## New segments arrived since the mesh was last put together.
 var _dirty: bool = false
+## Lines laid before the last [method lay_again], drawn for a tile until it is laid afresh.
+var _outdated: Dictionary = {}
+## The worker in flight was started before the last [method lay_again]: what it brings is not kept.
+var _job_outdated: bool = false
 
 
 func _ready() -> void:
@@ -59,8 +63,9 @@ func refresh(tiles: Dictionary) -> void:
 	if not _available():
 		mesh = null
 		return
-	if _segments.size() > SEGMENTS_KEPT and _task < 0:
+	if _segments.size() + _outdated.size() > SEGMENTS_KEPT and _task < 0:
 		_segments.clear()  # crude, and rare: one refresh pays for its whole view again
+		_outdated.clear()
 	_start_missing()
 	_assemble()
 
@@ -74,13 +79,25 @@ func finish() -> void:
 		_assemble()
 
 
+## Lay everything again: something every tile's lines depend on has changed. What is on screen stays
+## there, tile by tile, until its replacement is laid — emptying the view for the time that takes would
+## blink the whole network off at each change.
+func lay_again() -> void:
+	_outdated.merge(_segments, true)
+	_segments.clear()
+	_job_outdated = _task >= 0
+	_dirty = true
+
+
 ## Let go of the body.
 func clear() -> void:
 	_wait()
 	_job = {}
+	_job_outdated = false
 	_dirty = false
 	_drawn.clear()
 	_segments.clear()
+	_outdated.clear()
 	mesh = null
 	_release()
 
@@ -147,8 +164,12 @@ func _harvest() -> void:
 ## so nothing may ask about it again: is_task_completed on a spent id does not answer "done".
 func _take() -> void:
 	_wait()
-	for id: int in _job:
-		_segments[id] = _job[id]
+	# Laid the old way while [method lay_again] was being asked for: not kept, so it is laid afresh.
+	if not _job_outdated:
+		for id: int in _job:
+			_segments[id] = _job[id]
+			_outdated.erase(id)
+	_job_outdated = false
 	_job = {}
 	_dirty = true
 
@@ -164,25 +185,24 @@ func _assemble() -> void:
 	_dirty = false
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
+	# And what a kind of line laid beside them to give them a width, if it did.
+	var faces := PackedVector3Array()
+	var face_colours := PackedColorArray()
 	for id: int in _drawn:
-		if not _segments.has(id):
+		# As laid now, or failing that as laid before the last lay_again.
+		var cached: Array = _segments.get(id, _outdated.get(id, []))
+		if cached.is_empty():
 			continue
-		var cached: Array = _segments[id]
 		points.append_array(cached[0])
 		colours.append_array(cached[1])
+		if cached.size() >= 4:
+			faces.append_array(cached[2])
+			face_colours.append_array(cached[3])
 	if points.is_empty():
 		mesh = null
 		return
 	var built := ArrayMesh.new()
 	_add_surface(built, Mesh.PRIMITIVE_LINES, points, colours)
-	# And what a kind of line laid beside them to give them a width, if it did.
-	var faces := PackedVector3Array()
-	var face_colours := PackedColorArray()
-	for id: int in _drawn:
-		var cached: Array = _segments.get(id, [])
-		if cached.size() >= 4:
-			faces.append_array(cached[2])
-			face_colours.append_array(cached[3])
 	if not faces.is_empty():
 		_add_surface(built, Mesh.PRIMITIVE_TRIANGLES, faces, face_colours)
 	mesh = built

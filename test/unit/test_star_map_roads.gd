@@ -149,25 +149,46 @@ func test_a_long_stretch_is_cut_to_the_step_of_the_mesh() -> void:
 	assert_eq(points.size(), 2, "a stretch shorter than a step is left as it is")
 
 
-func test_a_railway_carries_sleepers_evenly_round_a_bend() -> void:
+## The sleepers were counted off from the start of each piece of railway, and a railway reaches the
+## chart cut at every tile edge: the gap at each edge came out any length. And their two ends were put
+## on the ground one by one, so a sleeper on a slope was longer than its neighbours.
+func test_sleepers_are_evenly_spread_and_all_the_same_length() -> void:
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
 	var step: float = 0.01
-	var a := Vector3(0, 0, 1)
-	var b := Vector3(sin(0.05), 0, cos(0.05))
-	var left: float = StarMapRoads._add_sleepers(points, colours, a, b, step, 0.0, _flat, Color.WHITE)
-	assert_eq(points.size(), 2, "one every three steps: 0.03 along a stretch of 0.05")
-	assert_almost_eq(left, 0.02, 1.0e-9, "and 0.02 run since")
-	var middle: Vector3 = (points[0] + points[1]).normalized()
-	assert_almost_eq(middle.angle_to(a), 0.03, 1.0e-9, "on the line")
-	assert_almost_eq(points[0].angle_to(points[1]), 2.0 * step * StarMapRoads.SLEEPER_HALF, 1.0e-6,
-		"a step and a half long")
-	assert_almost_eq(absf((points[1] - points[0]).normalized().dot((b - a).normalized())), 0.0, 1.0e-6,
-		"across it")
-	StarMapRoads._add_sleepers(points, colours, b, Vector3(sin(0.08), 0, cos(0.08)), step, left, _flat, Color.WHITE)
-	assert_eq(points.size(), 4, "the next stretch places its first 0.01 in, not a whole interval")
-	assert_almost_eq((points[2] + points[3]).normalized().angle_to(a), 0.06, 1.0e-9)
+	# A piece with a bend in it, 0.10 long: round(0.10 / 0.03) = 3 sleepers, 0.0333 apart.
+	var way := PackedVector3Array([Vector3(0, 0, 1), Vector3(sin(0.04), 0, cos(0.04)),
+			Vector3(sin(0.04), 0, cos(0.04)).rotated(Vector3.RIGHT, -0.06)])
+	# Ground that slopes: higher to one side of the line than the other.
+	var sloping: Callable = func(dir: Vector3) -> Vector3: return dir * (1.0 + dir.y * 0.5)
+	StarMapRoads.add_sleepers(points, colours, way, step, sloping, Color.WHITE)
+	assert_eq(points.size(), 6, "three sleepers, two ends each")
+	assert_eq(colours.size(), points.size())
+	var walked: Array[float] = []
+	for n: int in range(0, points.size(), 2):
+		assert_almost_eq(points[n].normalized().angle_to(points[n + 1].normalized()),
+				2.0 * step * StarMapRoads.SLEEPER_HALF, 1.0e-6, "each a step and a half long")
+		assert_almost_eq(points[n].length(), points[n + 1].length(), 1.0e-9,
+			"and level: both ends at the height of the line, whatever the ground does to either side")
+		var middle: Vector3 = (points[n].normalized() + points[n + 1].normalized()).normalized()
+		var along: float = way[0].angle_to(middle) if n == 0 else 0.04 + way[1].angle_to(middle)
+		walked.append(along)
+	assert_almost_eq(walked[0], 0.10 / 6.0, 1.0e-4, "the first half a gap in from the start")
+	assert_almost_eq(walked[1] - walked[0], 0.10 / 3.0, 1.0e-4, "then a gap apart, round the bend too")
+	assert_almost_eq(walked[2] - walked[1], 0.10 / 3.0, 1.0e-4)
+	assert_almost_eq(0.10 - walked[2], 0.10 / 6.0, 1.0e-4,
+		"and the last half a gap from the end: with the next tile's half, a whole one")
+	points.clear()
+	colours.clear()
+	StarMapRoads.add_sleepers(points, colours, PackedVector3Array([way[0], Vector3(sin(0.01), 0, cos(0.01))]),
+			step, sloping, Color.WHITE)
+	assert_eq(points.size(), 0, "a piece shorter than half a gap carries none")
 
+
+func test_one_size_of_sleeper_for_a_whole_view() -> void:
+	assert_almost_eq(StarMapRoads.mesh_step(64), StarMapRoads.mesh_step(32) * 0.5, 1.0e-12,
+		"a level finer, half the step: tile by tile, the sleepers doubled at every ring of the view")
+	assert_eq(StarMapRoads.mesh_step(0), 0.0, "no level yet, no size: each tile falls back on its own")
 
 ## A point between four vertices is put on the facet the mesh draws there, not on the true ground,
 ## which can stand hundreds of metres off it at a coarse level.
