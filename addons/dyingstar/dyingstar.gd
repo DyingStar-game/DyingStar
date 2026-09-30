@@ -3,20 +3,28 @@ extends EditorPlugin
 
 const MainPanel = preload("res://addons/dyingstar/main_panel.tscn")
 const ServerPropsIO = preload("res://addons/dyingstar/server_props_io.gd")
+const PropSyncInspector = preload("res://addons/dyingstar/prop_sync_inspector.gd")
 
 const ITEM_IMPORT := 0
 const ITEM_EXPORT := 1
 const ITEM_CLEAR := 2
 const ITEM_UPDATE_DEFS := 3
 const ITEM_VIEW_DEFS := 4
+const ITEM_UPDATE_DEFS_LOCAL := 5
 
-## GitHub source of the network definitions (<type>_def.json), fetched on startup and on demand.
+## Local horizonserver checkout, next to this project: the PRIMARY source of the network definitions
+## (no network, same branch as the server you run). GitHub is the fallback when it is absent.
+const HORIZON_PROPS_DIR := "../horizonserver/ds_genericprops/props"
+
+## GitHub source of the network definitions (<type>_def.json), when there is no local horizonserver.
 const DEFS_API := "https://api.github.com/repos/DyingStar-game/horizonserver/contents/ds_genericprops/props?ref=develop"
 const DEFS_HEADERS := ["User-Agent: dyingstar-godot-plugin", "Accept: application/vnd.github+json"]
 ## Fallback type list when the GitHub API listing is rate-limited (403): each file is then fetched
 ## by its own api.github.com contents URL. The listing is preferred when available (discovers new types).
-const DEFS_KNOWN := ["box", "building", "city", "mining_depot", "miningrock", "miningzone",
-	"crate_container", "planet", "player", "spawnbuilding", "star", "storagewarehouse", "vehicle"]
+const DEFS_KNOWN := ["box", "building", "cargo_depot", "city", "crate_container", "mining_depot",
+	"miningrock", "miningzone", "planet", "player", "poi_village", "shelf", "spawnbuilding", "star",
+	"storagewarehouse", "vehicle", "vehicle_component", "vehicle_lift", "vehicle_lift_platform",
+	"vehicle_lift_platformsystem"]
 
 var main_panel_instance
 var _menu_button: MenuButton = null
@@ -26,8 +34,9 @@ var _file_dialog: EditorFileDialog = null
 var _dialog_mode := ""  # "import" or "export"
 var _http: HTTPRequest = null
 var _defs_loading := false
-var _defs_ready := false  # whether Import/Export are allowed (fresh fetch OK, or cache accepted)
-var _defs_abort := false  # set by "Use cache instead" to stop the in-progress download
+var _defs_ready := false  # whether Import/Export are allowed (items_def/ updated, or current accepted)
+var _defs_abort := false  # set by "Keep current defs" to stop the in-progress download
+var _inspector_plugin: EditorInspectorPlugin = null
 
 
 func _enable_plugin() -> void:
@@ -45,10 +54,12 @@ func _enter_tree() -> void:
 	_http.timeout = 20.0  # never hang forever (would lock _defs_loading and the menus)
 	EditorInterface.get_base_control().add_child(_http)
 	_install_menu()
-	# Never reach for the network on our own: ask the developer first. Downloading on every editor
-	# start froze the editor for seconds, and every devmode/N-clients restart from the bottom panel
-	# re-triggered the whole thing. The cache alone decides whether Import/Export are usable — this
-	# MUST be set here, or they would stay greyed out forever now that no fetch runs at startup.
+	_inspector_plugin = PropSyncInspector.new()
+	add_inspector_plugin(_inspector_plugin)
+	# Never update on our own: ask the developer first. Downloading on every editor start froze the
+	# editor for seconds, and every devmode/N-clients restart from the bottom panel re-triggered the
+	# whole thing. The items_def/ files alone decide whether Import/Export are usable — this MUST be
+	# set here, or they would stay greyed out forever since no update runs at startup.
 	_defs_ready = ServerPropsIO.has_network_defs()
 	_refresh_menu_state()
 	_ask_refresh_defs.call_deferred()
@@ -60,6 +71,9 @@ func _exit_tree() -> void:
 		main_panel_instance.queue_free()
 		main_panel_instance = null
 	_remove_menu()
+	if _inspector_plugin != null:
+		remove_inspector_plugin(_inspector_plugin)
+		_inspector_plugin = null
 	if is_instance_valid(_file_dialog):
 		_file_dialog.queue_free()
 		_file_dialog = null
@@ -108,7 +122,9 @@ func _install_menu() -> void:
 	add_tool_menu_item("DyingStar — Import server props…", _on_import)
 	add_tool_menu_item("DyingStar — Export server props…", _on_export)
 	add_tool_menu_item("DyingStar — Clear server props", _on_clear)
-	add_tool_menu_item("DyingStar — Update network definitions", _on_update_defs)
+	if _local_defs_dir() != "":
+		add_tool_menu_item("DyingStar — Update network definitions (horizonserver)", _sync_defs_local)
+	add_tool_menu_item("DyingStar — Update network definitions (GitHub)", _on_update_defs)
 	add_tool_menu_item("DyingStar — View network definitions…", _on_view_defs)
 	_tool_menu_added = true
 
@@ -119,7 +135,11 @@ func _fill_popup(pm: PopupMenu) -> void:
 	pm.add_separator()
 	pm.add_item("Clear server props (build clean)", ITEM_CLEAR)
 	pm.add_separator()
-	pm.add_item("Update network definitions (GitHub)", ITEM_UPDATE_DEFS)
+	pm.add_item("Update network definitions from horizonserver (%s)" % HORIZON_PROPS_DIR.get_base_dir().get_base_dir(),
+		ITEM_UPDATE_DEFS_LOCAL)
+	pm.set_item_tooltip(pm.get_item_index(ITEM_UPDATE_DEFS_LOCAL),
+		"Copy the <type>_def.json files of %s into res://%s/." % [_local_defs_path(), ServerPropsIO.DEFS_DIR.trim_prefix("res://")])
+	pm.add_item("Update network definitions from GitHub", ITEM_UPDATE_DEFS)
 	pm.add_item("View network definitions…", ITEM_VIEW_DEFS)
 	pm.id_pressed.connect(_on_menu_id)
 	_refresh_menu_state()
@@ -136,7 +156,8 @@ func _remove_menu() -> void:
 		remove_tool_menu_item("DyingStar — Import server props…")
 		remove_tool_menu_item("DyingStar — Export server props…")
 		remove_tool_menu_item("DyingStar — Clear server props")
-		remove_tool_menu_item("DyingStar — Update network definitions")
+		remove_tool_menu_item("DyingStar — Update network definitions (horizonserver)")
+		remove_tool_menu_item("DyingStar — Update network definitions (GitHub)")
 		remove_tool_menu_item("DyingStar — View network definitions…")
 		_tool_menu_added = false
 
@@ -181,6 +202,8 @@ func _on_menu_id(id: int) -> void:
 			_on_clear()
 		ITEM_UPDATE_DEFS:
 			_on_update_defs()
+		ITEM_UPDATE_DEFS_LOCAL:
+			_sync_defs_local()
 		ITEM_VIEW_DEFS:
 			_on_view_defs()
 
@@ -262,43 +285,103 @@ func _report(action: String, res: Dictionary) -> void:
 	dlg.canceled.connect(dlg.queue_free)
 
 
-# ── Network definitions (fetched from GitHub) ──────────────────────────────────
+# ── Network definitions (items_def/, updated from ../horizonserver or GitHub) ───
 
 func _on_update_defs() -> void:
 	_refresh_defs()
 
 
-## Startup prompt: the developer decides whether we go to GitHub at all. Deferred so it does not pop
+## Absolute path of the local horizonserver props directory (may not exist).
+func _local_defs_path() -> String:
+	return ProjectSettings.globalize_path("res://").path_join(HORIZON_PROPS_DIR).simplify_path()
+
+
+## The local horizonserver props directory, or "" when there is no checkout next to this project.
+func _local_defs_dir() -> String:
+	var d := _local_defs_path()
+	return d if DirAccess.dir_exists_absolute(d) else ""
+
+
+## The primary source: the local horizonserver when present, else GitHub.
+func _update_defs_auto() -> void:
+	if _local_defs_dir() != "":
+		_sync_defs_local()
+	else:
+		_refresh_defs()
+
+
+## Copy ../horizonserver's <type>_def.json files into items_def/. Local disk: synchronous, no progress.
+func _sync_defs_local() -> void:
+	if _defs_loading:
+		return
+	var dir := _local_defs_dir()
+	var msg := ""
+	if dir == "":
+		msg = "FAILED — no local horizonserver at %s." % _local_defs_path()
+	else:
+		var files := {}
+		for fname in DirAccess.get_files_at(dir):
+			if fname.ends_with(ServerPropsIO.DEFS_SUFFIX):
+				files[fname] = FileAccess.get_file_as_string(dir.path_join(fname))
+		var count := ServerPropsIO.write_defs(files)
+		if count > 0:
+			_on_defs_written()
+			msg = "OK — %d type definitions copied from %s into items_def/." % [count, dir]
+		else:
+			msg = "FAILED — no valid definition in %s; items_def/ left unchanged." % dir
+	_status(msg)
+	var dlg := AcceptDialog.new()
+	dlg.title = "DyingStar — Network definitions"
+	dlg.dialog_text = msg
+	dlg.exclusive = false  # exclusive dialogs collide with the Save-Scene modal -> editor crash
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.canceled.connect(dlg.queue_free)
+	dlg.popup_centered()
+
+
+## items_def/ was rewritten: enable Import/Export, show the new files, refresh an open PropSync dropdown.
+func _on_defs_written() -> void:
+	_defs_ready = true
+	_refresh_menu_state()
+	EditorInterface.get_resource_filesystem().scan()
+	var edited := EditorInterface.get_inspector().get_edited_object()
+	if edited != null:
+		edited.notify_property_list_changed()
+
+
+## Startup prompt: the developer decides whether we update at all. Deferred so it does not pop
 ## while the editor is still building itself, and NOT exclusive — an exclusive dialog collides with
 ## the editor's own Save-Scene modal and crashes it (same reason as _propose_cached below).
 func _ask_refresh_defs() -> void:
 	var cd := ConfirmationDialog.new()
 	cd.title = "DyingStar — Network definitions"
 	cd.exclusive = false
+	var local := _local_defs_dir() != ""
+	var source := ("the local horizonserver\n(%s)" % _local_defs_path()) if local else "GitHub"
 	if _defs_ready:
-		cd.dialog_text = "Update the network definitions from GitHub?\nCached: %d types." % (
-			ServerPropsIO.load_network_defs().size()
-		)
-		cd.get_cancel_button().text = "Use cache"
+		cd.dialog_text = "Update the network definitions from %s?\nCurrent items_def/: %d types." % [
+			source, ServerPropsIO.load_network_defs().size()]
+		cd.get_cancel_button().text = "Keep current"
 	else:
-		cd.dialog_text = ("Update the network definitions from GitHub?\n"
-			+ "No cache yet — Import / Export stay disabled until you do.")
+		cd.dialog_text = ("Update the network definitions from %s?\n" % source
+			+ "items_def/ is empty — Import / Export stay disabled until you do.")
 		cd.get_cancel_button().text = "Later"
-	cd.get_ok_button().text = "Update"
+	cd.get_ok_button().text = "Update from horizonserver" if local else "Update from GitHub"
 	EditorInterface.get_base_control().add_child(cd)
 	cd.confirmed.connect(_on_startup_update.bind(cd))
-	# Declining reuses the existing handlers: keep the cache when there is one, else stay disabled.
+	# Declining reuses the existing handlers: keep items_def/ when it has defs, else stay disabled.
 	cd.canceled.connect((_on_use_cached if _defs_ready else _on_decline_cached).bind(cd))
 	cd.popup_centered()
 
 
 func _on_startup_update(cd: ConfirmationDialog) -> void:
 	cd.queue_free()
-	_refresh_defs()
+	_update_defs_auto()
 
 
-## Fetch the <type>_def.json files from GitHub, cache them, and refresh the menu state. Used both on
-## startup and by the "Update network definitions" menu item (always hits GitHub).
+## Fetch the <type>_def.json files from GitHub into items_def/, and refresh the menu state. Used on
+## startup when there is no local horizonserver, and by the "… from GitHub" menu item.
 func _refresh_defs() -> void:
 	if _defs_loading or not is_instance_valid(_http):
 		return
@@ -323,30 +406,30 @@ func _refresh_defs() -> void:
 	dlg.add_child(vbox)
 	EditorInterface.get_base_control().add_child(dlg)
 	dlg.get_ok_button().disabled = true  # cannot dismiss while downloading
-	# "Use cache instead": skip the download and use the cached defs (disabled when there is no cache).
-	var cache_btn := dlg.add_button("Use cache instead", false, "use_cache")
+	# "Keep current defs": skip the download and keep items_def/ (disabled when it is empty).
+	var cache_btn := dlg.add_button("Keep current defs", false, "use_cache")
 	cache_btn.disabled = not ServerPropsIO.has_network_defs()
 	dlg.custom_action.connect(_on_progress_action.bind(dlg))
 	dlg.popup_centered(Vector2i(520, 160))
 	var count := await _fetch_defs(lbl, bar)
 	if _defs_abort:
-		return  # the "Use cache instead" button already handled everything
+		return  # the "Keep current defs" button already handled everything
 	_defs_loading = false
 	if count > 0:
-		_defs_ready = true
+		_on_defs_written()
 		_finish_dialog(dlg, lbl, bar,
-			"OK — updated %d type definitions from GitHub.\nImport / Export are now enabled." % count)
+			"OK — updated %d type definitions from GitHub into items_def/.\nImport / Export are now enabled." % count)
 	elif ServerPropsIO.has_network_defs():
-		dlg.queue_free()  # close the progress modal; let the designer choose whether to use the cache
+		dlg.queue_free()  # close the progress modal; let the designer choose whether to keep items_def/
 		_propose_cached()
 	else:
 		_defs_ready = false
 		_finish_dialog(dlg, lbl, bar,
-			"FAILED — could not fetch the definitions and no cache is available.\nImport / Export disabled.")
+			"FAILED — could not fetch the definitions and items_def/ is empty.\nImport / Export disabled.")
 	_refresh_menu_state()
 
 
-## "Use cache instead" pressed in the progress modal: stop the download and use the cached defs.
+## "Keep current defs" pressed in the progress modal: stop the download and keep items_def/.
 func _on_progress_action(action: StringName, dlg: AcceptDialog) -> void:
 	if String(action) != "use_cache":
 		return
@@ -354,7 +437,7 @@ func _on_progress_action(action: StringName, dlg: AcceptDialog) -> void:
 	_defs_loading = false
 	_defs_ready = true
 	_refresh_menu_state()
-	_status("DyingStar: using the cached network definitions (download skipped).")
+	_status("DyingStar: keeping the network definitions in items_def/ (download skipped).")
 	if is_instance_valid(dlg):
 		dlg.queue_free()
 
@@ -369,14 +452,14 @@ func _finish_dialog(dlg: AcceptDialog, lbl: Label, bar: ProgressBar, msg: String
 	_status(msg)
 
 
-## GitHub unreachable but a cache exists: ask the designer whether to use the cached definitions.
+## GitHub unreachable but items_def/ has definitions: ask the designer whether to use them.
 func _propose_cached() -> void:
 	var n := ServerPropsIO.load_network_defs().size()
 	var cd := ConfirmationDialog.new()
 	cd.title = "DyingStar — Network definitions"
 	cd.exclusive = false  # exclusive dialogs collide with the Save-Scene modal -> editor crash
-	cd.dialog_text = "Could not reach GitHub.\nUse the previously cached definitions (%d types)?" % n
-	cd.get_ok_button().text = "Use cached"
+	cd.dialog_text = "Could not reach GitHub.\nUse the current definitions in items_def/ (%d types)?" % n
+	cd.get_ok_button().text = "Use current"
 	cd.get_cancel_button().text = "Disable"
 	EditorInterface.get_base_control().add_child(cd)
 	cd.confirmed.connect(_on_use_cached.bind(cd))
@@ -387,14 +470,14 @@ func _propose_cached() -> void:
 func _on_use_cached(cd: ConfirmationDialog) -> void:
 	_defs_ready = true
 	_refresh_menu_state()
-	_status("DyingStar: using the cached network definitions (Import / Export enabled).")
+	_status("DyingStar: using the network definitions in items_def/ (Import / Export enabled).")
 	cd.queue_free()
 
 
 func _on_decline_cached(cd: ConfirmationDialog) -> void:
 	_defs_ready = false
 	_refresh_menu_state()
-	_status("DyingStar: cached definitions declined — Import / Export disabled.")
+	_status("DyingStar: current definitions declined — Import / Export disabled.")
 	cd.queue_free()
 
 
@@ -404,7 +487,7 @@ func _status(msg: String) -> void:
 		main_panel_instance.show_status(msg)
 
 
-## Show the cached network definitions ({type: [properties]}) in a searchable tree.
+## Show the network definitions of items_def/ ({type: [properties]}) in a searchable tree.
 func _on_view_defs() -> void:
 	var defs := ServerPropsIO.load_network_defs()
 	var dlg := AcceptDialog.new()
@@ -459,14 +542,15 @@ func _populate_defs_tree(tree: Tree, defs: Dictionary, filter: String) -> void:
 		tree.create_item(root).set_text(0, msg)
 
 
-## Download the props directory listing then each <type>_def.json, parse the union of channel
-## properties per type, and write the cache. Returns the type count (0 = failure; cache untouched).
+## Download the props directory listing then each <type>_def.json, and mirror them into items_def/.
+## Returns the type count (0 = failure; items_def/ untouched).
 func _fetch_defs(lbl: Label, bar: ProgressBar) -> int:
 	# List via the GitHub API (1 call) to discover every <type>_def.json; fall back to the built-in
 	# list if it fails. File CONTENT is fetched from the SAME api.github.com host (base64): raw
 	# .githubusercontent.com times out via Godot's HTTPRequest on some networks (even when curl works).
 	lbl.text = "Listing definitions on GitHub…"
 	var files: Array = []  # [{name, url}]  url = api.github.com contents URL
+	var listed := false  # a real listing: types gone from GitHub may be removed from items_def/
 	var r := await _http_req(DEFS_API, DEFS_HEADERS)
 	if _http_ok(r):
 		var listing = JSON.parse_string((r[3] as PackedByteArray).get_string_from_utf8())
@@ -475,16 +559,17 @@ func _fetch_defs(lbl: Label, bar: ProgressBar) -> int:
 				var n := str(item.get("name", ""))
 				if n.ends_with("_def.json"):
 					files.append({"name": n, "url": str(item.get("url", ""))})
+			listed = not files.is_empty()
 	if files.is_empty():
 		push_warning("DyingStar defs: API listing unavailable %s — using the built-in list." % _http_status(r))
 		for t in DEFS_KNOWN:
 			files.append({"name": "%s_def.json" % t, "url": DEFS_API.replace("?ref=", "/%s_def.json?ref=" % t)})
 	bar.max_value = max(1, files.size())
 	bar.value = 0
-	var defs := {}
+	var downloaded := {}  # {"<type>_def.json": text}
 	var i := 0
 	for fobj in files:
-		if _defs_abort:  # "Use cache instead" was pressed
+		if _defs_abort:  # "Keep current defs" was pressed
 			return 0
 		i += 1
 		var fname := str(fobj["name"])
@@ -501,26 +586,13 @@ func _fetch_defs(lbl: Label, bar: ProgressBar) -> int:
 		if typeof(meta) != TYPE_DICTIONARY:
 			continue
 		var b64 := str(meta.get("content", "")).replace("\n", "").replace("\r", "")
-		var dj = JSON.parse_string(Marshalls.base64_to_utf8(b64))
-		if typeof(dj) != TYPE_DICTIONARY:
-			continue
-		var props: Array = []
-		for ch in dj.get("channels", []):
-			for p in ch.get("properties", []):
-				var ps := str(p).strip_edges()
-				if ps != "" and not props.has(ps):
-					props.append(ps)
-		defs[fname.trim_suffix("_def.json")] = props
-	if defs.is_empty():
-		push_error("DyingStar defs: nothing parsed; keeping the previous cache")
-		return 0
-	var f := FileAccess.open(ServerPropsIO.DEFS_CACHE, FileAccess.WRITE)
-	if f == null:
-		push_error("DyingStar defs: cannot write cache %s" % ServerPropsIO.DEFS_CACHE)
-		return 0
-	f.store_string(JSON.stringify(defs, "    "))
-	f.close()
-	return defs.size()
+		downloaded[fname] = Marshalls.base64_to_utf8(b64)
+	# A partial download (rate limit, timeout) or the built-in list must not delete the defs it missed.
+	var complete := listed and downloaded.size() == files.size()
+	if not complete:
+		push_warning("DyingStar defs: %d/%d files downloaded%s; other items_def/ files kept" % [
+			downloaded.size(), files.size(), "" if listed else " (built-in list)"])
+	return ServerPropsIO.write_defs(downloaded, complete)
 
 
 ## Reuse the SHARED HTTPRequest (created in _enter_tree, which the editor polls correctly; a fresh
@@ -541,7 +613,8 @@ func _http_status(r: Array) -> String:
 	return "(result %d, HTTP %d)" % [int(r[0]), int(r[1])]
 
 
-## Grey out Import/Export while the network definitions are missing or being fetched.
+## Grey out Import/Export while the network definitions are missing or being fetched, and the
+## horizonserver update when there is no local checkout.
 func _refresh_menu_state() -> void:
 	var ready := _defs_ready and not _defs_loading
 	for pm in [_ds_popup, (_menu_button.get_popup() if is_instance_valid(_menu_button) else null)]:
@@ -551,3 +624,6 @@ func _refresh_menu_state() -> void:
 			var idx: int = pm.get_item_index(id)
 			if idx >= 0:
 				pm.set_item_disabled(idx, not ready)
+		var local_idx: int = pm.get_item_index(ITEM_UPDATE_DEFS_LOCAL)
+		if local_idx >= 0:
+			pm.set_item_disabled(local_idx, _defs_loading or _local_defs_dir() == "")

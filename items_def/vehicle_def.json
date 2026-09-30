@@ -1,0 +1,53 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 200.0,
+			"frequency": 30.0,
+			"lod": [
+				{
+					"distance": 100.0,
+					"frequency": 30.0
+				},
+				{
+					"distance": 200.0,
+					"frequency": 10.0
+				}
+			],
+			"properties": [
+				"position",
+				"rotation",
+				"pilot_uuid",
+				"steering",
+				"speed",
+				"handbrake",
+				"headlights",
+				"engine",
+				"doors",
+				"seats",
+				"components"
+			]
+		},
+		{
+			"zone": 1,
+			"distance": 100.0,
+			"frequency": 1.0,
+			"properties": [
+				"horn",
+				"horn_special",
+				"mass",
+				"cargo_mass",
+				"suspension"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 200.0,
+			"frequency": 1.0,
+			"properties": [
+				"scenename",
+				"parent_id"
+			]
+		}
+	]
+}

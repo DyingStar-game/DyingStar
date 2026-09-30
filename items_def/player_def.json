@@ -1,0 +1,45 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 200.0,
+			"frequency": 30.0,
+			"lod": [
+				{
+					"distance": 30.0,
+					"frequency": 15.0
+				},
+				{
+					"distance": 100.0,
+					"frequency": 5.0
+				},
+				{
+					"distance": 200.0,
+					"frequency": 2.0
+				}
+			],
+			"properties": [
+				"position",
+				"rotation",
+				"velocity",
+				"action",
+				"tools",
+				"head",
+				"head_yaw",
+				"stance",
+				"seat",
+				"perforating",
+				"carrying",
+				"flashlight",
+				"carry_prompt",
+				"scenename",
+				"name",
+				"parent_id",
+				"spawn_appartment_id",
+				"is_npc",
+				"conversation",
+				"npc_arrived"
+			]
+		}
+	]
+}

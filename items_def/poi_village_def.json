@@ -1,0 +1,28 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 150.0,
+			"frequency": 30.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 10000.0,
+			"frequency": 1.0,
+			"properties": [
+				"is_spawned",
+				"spawn_scene",
+				"radius_m",
+				"population",
+				"type",
+				"name",
+				"scenename"
+			]
+		}
+	]
+}

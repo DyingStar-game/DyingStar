@@ -1,0 +1,26 @@
+{
+	"channels": [
+		{
+			"zone": 6,
+			"distance": 1203.0,
+			"frequency": 1.0,
+			"properties": [
+				"position",
+				"rotation",
+				"scenename",
+				"parent_id",
+				"zone_size",
+				"rock_count",
+				"min_spacing",
+				"weight_small",
+				"weight_medium",
+				"weight_large",
+				"richness",
+				"richness_spread",
+				"mineral_id",
+				"generated",
+				"last_generation_datetime"
+			]
+		}
+	]
+}

@@ -1,0 +1,23 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 150.0,
+			"frequency": 30.0,
+			"properties": [
+				"position",
+				"rotation",
+				"shelf_slots_occupied",
+				"parent_id"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 153.0,
+			"frequency": 3.0,
+			"properties": [
+				"scenename"
+			]
+		}
+	]
+}
