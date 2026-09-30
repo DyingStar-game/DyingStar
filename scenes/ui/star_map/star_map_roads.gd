@@ -29,19 +29,30 @@ const COLOURS: Dictionary = {
 const UNKNOWN_COLOUR: Color = Color(0.85, 0.85, 0.85)
 ## The kind of way drawn with sleepers across it.
 const RAILWAY: String = "railway"
-## A sleeper every so many steps of the view's mesh, and half its length in the same steps.
+## The length the map's signs are sized on, in pixels: a sleeper, the sides of a tunnel. On the ground
+## it is that many pixels' worth of metres at the view's scale, taken to the nearest power of two so
+## the ways are laid again once per doubling of the scale and not at every notch of the wheel — the
+## signs are therefore this size to within a third either way.
+##
+## In pixels because that is what a sign is read in. It was a step of the ground's mesh, on the
+## reckoning that a step is about five pixels; it is anything from three to twenty, and the tunnels
+## came out five times too wide.
+const SIGN_PIXELS: float = 4.0
+## A sleeper every so many signs' lengths, and half its own length in the same.
 const SLEEPER_EVERY: float = 3.0
 const SLEEPER_HALF: float = 0.75
-## A tunnel or a bridge: a line either side of the way for as long as it lasts, this many steps out
-## from it, splayed at each end by a stroke this many steps long — the way a map draws both. Each
-## stroke is [constant SPAN_THICK] steps thick: a step is about five pixels, so that is a stroke some
-## three pixels thick, standing five clear of the way.
-const SPAN_SIDE: float = 1.0
+## A tunnel or a bridge: a line either side of the way for as long as it lasts, this far out from it,
+## splayed at each end by a stroke this long — the way a map draws both — each stroke this thick.
+const SPAN_SIDE: float = 0.8
 const SPAN_WING: float = 1.2
-const SPAN_THICK: float = 0.6
-## One shorter than this many steps is not marked: its sign would be wider than it is long, and a
-## railway crossing a canyon every four km would be signs from end to end. They come in as the view
-## comes down.
+const SPAN_THICK: float = 0.5
+## Two of them closer together than this are drawn as ONE, from the first mouth to the last: a line
+## through a massif is a tunnel, a cutting, a tunnel, and as many signs end to end is a saw blade.
+## They come apart as the view comes down, since the distance is in signs' lengths.
+const SPAN_JOIN: float = 6.0
+## One shorter than this, once joined, is not marked: its sign would be wider than it is long, and a
+## railway crossing a canyon every four km would be signs from end to end. They too come in as the
+## view comes down.
 const SPAN_MIN: float = 1.5
 ## Under the ground: dark, on a darker bed between its two lines. Over the void: light, and nothing
 ## under it — the void is what is there.
@@ -61,6 +72,10 @@ var _sign_step: float = 0.0
 ## loaded planet goes on profiling its lines in the background, and those born since are wanted too.
 var _spans: Dictionary = {}
 var _spans_from: Vector2i = Vector2i(-1, -1)
+## The same, as they are DRAWN at the current size of sign — joined where close, the short ones left
+## out — and the size that was worked out for.
+var _drawn_spans: Dictionary = {}
+var _drawn_spans_for: float = -1.0
 
 
 func _ready() -> void:
@@ -90,8 +105,7 @@ func _available() -> bool:
 func _laying() -> Array:
 	var data: PlanetData = StarMapTiles.for_body(body_key).data
 	var pack: ModifierPack = _pack
-	var signs: Dictionary = {"step": _sign_step, "spans": _known_spans(data),
-			"radius": data.radius if data != null else 0.0}
+	var signs: Dictionary = {"step": _sign_step, "spans": _spans_to_draw(data)}
 	if data == null or data.radius <= 0.0:
 		var key: String = body_key
 		return [func(id: int) -> Array:
@@ -112,23 +126,35 @@ func _release() -> void:
 		_pack = null
 	_spans = {}
 	_spans_from = Vector2i(-1, -1)
+	_drawn_spans = {}
+	_drawn_spans_for = -1.0
 
 
 ## Draw the ways crossing [param tiles], with the map's signs — a railway's sleepers, the sides of a
-## tunnel or a bridge — sized for a view whose finest ground is at [param level].
+## tunnel or a bridge — sized for a view in which a pixel covers [param metres_per_pixel] of a body
+## [param radius_m] across.
 ##
 ## ONE size for the whole view, which is why it is not each tile's own: a view mixes levels, fine under
 ## the camera and coarser ring by ring, and sleepers sized tile by tile doubled in length and spacing at
-## every ring. When the level changes, everything laid is laid again.
-func show_over(tiles: Dictionary, level: int) -> void:
-	var step: float = mesh_step(level)
+## every ring. When the size changes, everything laid is laid again.
+func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float) -> void:
+	var step: float = sign_length(metres_per_pixel, radius_m)
 	if not is_equal_approx(step, _sign_step):
 		_sign_step = step
 		lay_again()
 	refresh(tiles)
 
 
-## One step of the mesh of a tile at [param nside], as an angle at the body's centre.
+## The length of a sign ([constant SIGN_PIXELS]) on a body [param radius_m] across seen at
+## [param metres_per_pixel], as an angle at its centre. Zero when either is unknown.
+static func sign_length(metres_per_pixel: float, radius_m: float) -> float:
+	if metres_per_pixel <= 0.0 or radius_m <= 0.0:
+		return 0.0
+	return pow(2.0, roundf(log(metres_per_pixel * SIGN_PIXELS) / log(2.0))) / radius_m
+
+
+## One step of the mesh of a tile at [param nside], as an angle at the body's centre: the longest a
+## piece of a way is drawn on that tile.
 static func mesh_step(nside: int) -> float:
 	return HEALPix.pixel_angular_size(nside) / float(StarMapGround.GRID_RES) if nside > 0 else 0.0
 
@@ -165,6 +191,48 @@ func _known_spans(data: PlanetData) -> Dictionary:
 	return _spans
 
 
+## [method _known_spans] as drawn at the current size of sign: see [method join_spans]. Worked out
+## again only when the size or what is known has changed — thirteen thousand crossings on Tarsis III
+## are not to be sorted for every batch of tiles. Main thread.
+func _spans_to_draw(data: PlanetData) -> Dictionary:
+	var was: Vector2i = _spans_from
+	var known: Dictionary = _known_spans(data)
+	if data == null or _sign_step <= 0.0:
+		return known
+	if was == _spans_from and is_equal_approx(_drawn_spans_for, _sign_step):
+		return _drawn_spans
+	_drawn_spans_for = _sign_step
+	var sign_m: float = _sign_step * data.radius
+	_drawn_spans = {}
+	for sort: String in known:
+		var lines: Dictionary = {}
+		for fid: int in known[sort]:
+			var drawn: Array[Vector2] = join_spans(known[sort][fid], sign_m * SPAN_JOIN, sign_m * SPAN_MIN)
+			if not drawn.is_empty():
+				lines[fid] = drawn
+		_drawn_spans[sort] = lines
+	return _drawn_spans
+
+
+## [param spans] — Vector2(from, to) along one line, in metres, in any order — with every run of them
+## less than [param join_m] apart made into one, and what is then shorter than [param shortest_m]
+## left out. In order along the line.
+static func join_spans(spans: Array, join_m: float, shortest_m: float) -> Array[Vector2]:
+	var sorted: Array = spans.duplicate()
+	sorted.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+	var joined: Array[Vector2] = []
+	for span: Vector2 in sorted:
+		if not joined.is_empty() and span.x - joined[joined.size() - 1].y < join_m:
+			joined[joined.size() - 1].y = maxf(joined[joined.size() - 1].y, span.y)
+		else:
+			joined.append(span)
+	var out: Array[Vector2] = []
+	for span: Vector2 in joined:
+		if span.y - span.x >= shortest_m:
+			out.append(span)
+	return out
+
+
 static func _note_span(into: Dictionary, fid: int, span: Vector2) -> void:
 	if not into.has(fid):
 		into[fid] = []
@@ -177,7 +245,7 @@ static func _note_span(into: Dictionary, fid: int, span: Vector2) -> void:
 ## [param place]. Static and handed everything, because it may run on a worker.
 ##
 ## [param signs] is what the map's signs need: "step", the length they are sized on (zero leaves it to
-## the tile's own), "spans", see [method _known_spans], and "radius", the body's, in metres.
+## the tile's own), and "spans", see [method _spans_to_draw].
 ##
 ## The pack stores lon/lat in DEGREES, which is what [method HEALPix.lonlat2vec] takes — the two agree,
 ## and it is worth saying so here because the neighbouring call in this file's own tests once did not.
@@ -198,7 +266,7 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 	if sign_step <= 0.0:
 		sign_step = step
 	var spans: Dictionary = signs.get("spans", {})
-	var shortest_m: float = sign_step * SPAN_MIN * float(signs.get("radius", 0.0))
+
 	for entry: Variant in (tile["roads"] as Array):
 		var road: Dictionary = entry
 		var line: PackedVector2Array = road["centerline"]
@@ -222,7 +290,7 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 			var before: int = points.size()
 			var beds: int = strips.size()
 			add_span_signs(points, colours, way, along, here, sign_step, step, place, sort[1],
-					shortest_m, strips if sort[2] else null)
+					0.0, strips if sort[2] else null)
 			for n: int in range(beds, strips.size()):
 				strip_colours.append(TUNNEL_BED)
 			beds = strips.size()

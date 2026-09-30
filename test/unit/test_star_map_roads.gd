@@ -185,10 +185,29 @@ func test_sleepers_are_evenly_spread_and_all_the_same_length() -> void:
 	assert_eq(points.size(), 0, "a piece shorter than half a gap carries none")
 
 
-func test_one_size_of_sleeper_for_a_whole_view() -> void:
-	assert_almost_eq(StarMapRoads.mesh_step(64), StarMapRoads.mesh_step(32) * 0.5, 1.0e-12,
-		"a level finer, half the step: tile by tile, the sleepers doubled at every ring of the view")
-	assert_eq(StarMapRoads.mesh_step(0), 0.0, "no level yet, no size: each tile falls back on its own")
+## The signs were sized on a step of the ground's mesh, reckoned at five pixels; a step is anything from
+## three to twenty, and the tunnels came out five times too wide. They are sized in pixels.
+func test_a_sign_is_a_few_pixels_at_every_scale() -> void:
+	var radius: float = 6356000.0
+	for metres_per_pixel: float in [3.0, 40.0, 850.0, 20000.0]:
+		var pixels: float = StarMapRoads.sign_length(metres_per_pixel, radius) * radius / metres_per_pixel
+		assert_between(pixels, StarMapRoads.SIGN_PIXELS / 1.5, StarMapRoads.SIGN_PIXELS * 1.5,
+			"%.0f m to the pixel" % metres_per_pixel)
+	assert_eq(StarMapRoads.sign_length(40.0, radius), StarMapRoads.sign_length(44.0, radius),
+		"and the same over a small change of scale: the ways are not laid again at every notch")
+	assert_eq(StarMapRoads.sign_length(0.0, radius), 0.0, "no scale yet, no size: each tile falls back on its own")
+
+
+## A line through a massif is a tunnel, a cutting, a tunnel: as many signs end to end read as a saw
+## blade. Close ones are drawn as one, and come apart as the view comes down.
+func test_tunnels_close_together_are_drawn_as_one() -> void:
+	var spans: Array = [Vector2(900.0, 1000.0), Vector2(0.0, 300.0), Vector2(350.0, 600.0), Vector2(5000.0, 5020.0)]
+	assert_eq(StarMapRoads.join_spans(spans, 400.0, 100.0), [Vector2(0.0, 1000.0)] as Array[Vector2],
+		"from high up: three within 400 m of one another make one, and 20 m on its own is not marked")
+	assert_eq(StarMapRoads.join_spans(spans, 100.0, 10.0),
+		[Vector2(0.0, 600.0), Vector2(900.0, 1000.0), Vector2(5000.0, 5020.0)] as Array[Vector2],
+		"lower: the pair 50 m apart still one, the others on their own")
+	assert_eq(StarMapRoads.join_spans(spans, 20.0, 10.0).size(), 4, "lower still: every one of them")
 
 ## A point between four vertices is put on the facet the mesh draws there, not on the true ground,
 ## which can stand hundreds of metres off it at a coarse level.
