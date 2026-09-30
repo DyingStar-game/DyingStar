@@ -718,6 +718,7 @@ func _process_impl() -> void:
 	# 48 players — a quarter of the CPU, and a 25 ms stall every 6th frame that pushed the physics
 	# clock into catch-up.  Chunks load asynchronously over seconds anyway; 4 sweeps/s is plenty.
 	_stream_drain()
+	_release_ground_holds()
 
 	var _now_pins: int = Time.get_ticks_msec()
 	if _now_pins - _pin_last_ms >= PIN_INTERVAL_MS:
@@ -850,6 +851,12 @@ func _refresh_active_body_pins() -> void:
 				# oscillation on every crossing (measured: server TPS 60 -> 10 from walking ~5 m
 				# near the depot crates). Only FROZEN bodies can safely lose their ground.
 				_pin_node_to_planet_chunk(rb, pins_by_planet)
+		# Held bodies are frozen FOR their ground: they are the ones that must ask for it, whatever
+		# their type ("vehicle" is not in PIN_PROP_TYPES).
+		for id in _ground_held:
+			var held = _ground_held[id]
+			if is_instance_valid(held):
+				_pin_node_to_planet_chunk(held as Node3D, pins_by_planet)
 
 	if _perf_report:
 		var _tpc: int = Time.get_ticks_usec()
@@ -1105,7 +1112,75 @@ func _ground_missing_under(body: Node3D) -> bool:
 	return not planet.planet_terrain.has_collision_under(body.global_position)
 
 
+## Bodies held frozen until the terrain collision under them is built: instance_id -> RigidBody3D.
+##
+## A body must never turn dynamic over a chunk whose collision is still being generated. It would
+## sink through the empty ground for the few seconds the worker takes, and the chunk would then
+## appear AROUND it: Jolt depenetrates it out of the terrain and throws it anywhere. That is what
+## the trucks did when a zone split or merged (2026-10-01): the zone hand-over woke them at once,
+## the chunk under them was not even requested — a frozen body pins nothing, and "vehicle" is not
+## among PIN_PROP_TYPES — and the ground arrived under them seconds later. The same holds for the
+## crates, and for anything the settle-culler wakes on a player's approach.
+##
+## Every path that turns a planet body dynamic goes through [method _hold_if_no_ground]; a held body
+## pins its chunk like an awake one (_refresh_active_body_pins) and [method _release_ground_holds]
+## lets it go on the first tick its collision is in place.
+var _ground_held: Dictionary = {}
+const GROUND_HOLD_META := "_ground_hold"
+
+
+## Hold [param rb] frozen if the ground under it is not built yet. True when held.
+func _hold_if_no_ground(rb: RigidBody3D) -> bool:
+	if rb.freeze:
+		return false
+	# Carried or bed-loaded: its carrier owns its freeze (the culler's rule, _is_cullable_body).
+	var carrier: Node = rb.get_parent()
+	if carrier is Player or carrier is Vehicle:
+		return false
+	if not _ground_missing_under(rb):
+		return false
+	rb.linear_velocity = Vector3.ZERO
+	rb.angular_velocity = Vector3.ZERO
+	rb.freeze = true
+	rb.set_meta(GROUND_HOLD_META, true)
+	_ground_held[rb.get_instance_id()] = rb
+	return true
+
+
+## Forget the hold on [param rb] without waking it — another freeze (zone, culler) takes over.
+## True when it was held: the caller then knows the body is only frozen for the ground.
+func _drop_ground_hold(rb: RigidBody3D) -> bool:
+	if not rb.has_meta(GROUND_HOLD_META):
+		return false
+	rb.remove_meta(GROUND_HOLD_META)
+	_ground_held.erase(rb.get_instance_id())
+	return true
+
+
+## Per tick: wake the held bodies whose ground now exists.
+func _release_ground_holds() -> void:
+	if _ground_held.is_empty():
+		return
+	var released: int = 0
+	for id in _ground_held.keys():
+		var rb = _ground_held[id]
+		if not is_instance_valid(rb) or not (rb as RigidBody3D).has_meta(GROUND_HOLD_META):
+			_ground_held.erase(id)
+			continue
+		if _ground_missing_under(rb):
+			continue
+		_drop_ground_hold(rb)
+		rb.freeze = false
+		rb.linear_velocity = Vector3.ZERO
+		rb.angular_velocity = Vector3.ZERO
+		released += 1
+	if released > 0:
+		print("[ground] %d body(ies) released onto their terrain collision, %d still waiting"
+				% [released, _ground_held.size()])
+
+
 func _freeze_culled_body(rb: RigidBody3D) -> void:
+	_drop_ground_hold(rb)  # the culler's freeze replaces the hold; its wake re-checks the ground
 	rb.linear_velocity = Vector3.ZERO
 	rb.angular_velocity = Vector3.ZERO
 	rb.freeze = true
@@ -1136,6 +1211,9 @@ func _unfreeze_culled_body(rb: RigidBody3D) -> void:
 		rb.freeze = true
 		rb.set_physics_process(false)
 		_set_prop_sync_ticking(rb, false)
+	else:
+		# Woken by a player's approach, which says nothing about the chunk under THIS body.
+		_hold_if_no_ground(rb)
 	# Force a replication resend so it re-registers in Horizon/GORC for nearby clients after idling.
 	# The replication state lives on the PropSync component when the prop has one, on the root for a
 	# not-yet-migrated legacy prop — reading it off the root only would silently skip every PropSync
@@ -2069,6 +2147,8 @@ func _adopt_transferred_prop(prop: Node3D, object_data: Dictionary) -> void:
 	if prop.has_method("server_adopt_state"):
 		prop.server_adopt_state(object_data)
 	_zone_unfreeze_prop(prop)
+	if prop is RigidBody3D:
+		_hold_if_no_ground(prop as RigidBody3D)  # the zone we just took: its ground may not be built
 	var carrier: Node = prop.get_parent()
 	if carrier is Player and carrier.has_method("server_adopt_carried"):
 		carrier.server_adopt_carried(prop)
@@ -3479,9 +3559,11 @@ func _zone_freeze_prop(prop: Node) -> void:
 		return
 	if prop is RigidBody3D and (prop as RigidBody3D).get_meta("_culled_frozen", false):
 		return
+	# A body held for its ground is frozen for that reason only: it must come back dynamic.
+	var held: bool = prop is RigidBody3D and _drop_ground_hold(prop as RigidBody3D)
 	prop.set_meta(ZONE_FROZEN_META, {
 		"physics": prop.is_physics_processing(),
-		"freeze": (prop as RigidBody3D).freeze if prop is RigidBody3D else false,
+		"freeze": (prop as RigidBody3D).freeze and not held if prop is RigidBody3D else false,
 	})
 	prop.set_physics_process(false)
 	_set_prop_sync_ticking(prop, false)
@@ -3498,6 +3580,8 @@ func _zone_unfreeze_prop(prop: Node) -> void:
 	_set_prop_sync_ticking(prop, true)
 	if prop is RigidBody3D:
 		(prop as RigidBody3D).freeze = prev.get("freeze", false)
+		# A merge hands us a zone whose ground we have not built: wait for it.
+		_hold_if_no_ground(prop as RigidBody3D)
 
 
 ## Re-evaluates every spawned prop against the zones we just received: a prop we froze because it
