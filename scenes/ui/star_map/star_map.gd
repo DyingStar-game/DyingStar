@@ -311,6 +311,8 @@ var _ground: StarMapGround = null
 ## The ways drawn over that ground. Its own node, with its own file handle, so the ground knows nothing
 ## about roads and the roads know nothing about how a tile is built.
 var _roads: StarMapRoads = null
+## The canyons, drawn the same way from the heights where the ground is too coarse to carry them.
+var _canyons: StarMapCanyons = null
 ## And what asks the service for the ground neither of them has yet. Not a node: it owns a worker
 ## thread and a queue, nothing in the scene.
 var _stream: StarMapStream = StarMapStream.new()
@@ -1585,6 +1587,7 @@ func _refresh_ground() -> void:
 		if _ground.get_parent() != sphere:
 			_adopt(sphere, _ground)
 			_adopt(sphere, _roads)
+			_adopt(sphere, _canyons)
 	else:
 		_drop_ground()
 		_ground = StarMapGround.new()
@@ -1609,6 +1612,9 @@ func _refresh_ground() -> void:
 		_roads = StarMapRoads.new()
 		_roads.body_key = key
 		sphere.add_child(_roads)
+		_canyons = StarMapCanyons.new()
+		_canyons.body_key = key
+		sphere.add_child(_canyons)
 		_ground_body = index
 		_ground_key = key
 	# The real height above the ground, which is what makes the level follow the zoom. Safe to hand over
@@ -1616,10 +1622,18 @@ func _refresh_ground() -> void:
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
 	# chooses. That cycle is what this rewrite exists to remove.
 	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
+	# What is drawn over the ground, and what is asked of the tile service, goes by the tiles as the
+	# body PUBLISHES them: near the ground the chart cuts finer than that to hold the canyons, and
+	# neither a pack nor the service has anything at a level nobody exported.
+	var published: Dictionary = StarMapRelief.published(key, _ground.wanted())
 	if _roads != null:
-		_roads.refresh(_ground.wanted())
+		_roads.refresh(published)
+	# The ground's OWN tiles here, not the published ones: a tile cut fine enough to carve the canyons
+	# needs no line over them, and only the ground's set says which those are.
+	if _canyons != null:
+		_canyons.show_over(_ground.wanted(), _ground_scale())
 	# And ask for what is wanted but has never been downloaded.
-	_stream.want(key, _ground.wanted())
+	_stream.want(key, published)
 	# The answers land in the disk cache behind the ground's back, so it has to be told: a tile drawn
 	# from a coarser ancestor a second before its own data arrived would otherwise stand for ever.
 	if _stream.took_delivery():
@@ -1660,7 +1674,7 @@ func _view_half_angle(index: int) -> float:
 ## spheres. The ground keeps its tiles, its queue and its builds in flight; [method _refresh_ground]
 ## hangs it back on the new sphere of the same body.
 func _park_ground() -> void:
-	for node: Node in [_ground, _roads]:
+	for node: Node in [_ground, _roads, _canyons]:
 		if node != null and is_instance_valid(node) and node.get_parent() != null:
 			node.get_parent().remove_child(node)
 	_ground_body = -1
@@ -1684,11 +1698,13 @@ func _drop_ground() -> void:
 	if _zones != null:
 		_zones.close()
 	_zones = null
-	if _roads != null:
-		_roads.clear()
-		if is_instance_valid(_roads):
-			_roads.queue_free()
+	for lines: StarMapTileLines in [_roads, _canyons]:
+		if lines != null:
+			lines.clear()
+			if is_instance_valid(lines):
+				lines.queue_free()
 	_roads = null
+	_canyons = null
 	if _ground != null:
 		_ground.clear()
 		if is_instance_valid(_ground):

@@ -127,13 +127,19 @@ static func root_properties(path: String) -> Dictionary:
 	return out
 
 
+## Where a body's scene file is.
+##
 ## ⚠️ The extension is resolved, not assumed: body_files() accepts a binary .scn too, and rebuilding
 ## "<key>.tscn" would then load nothing. ResourceLoader.exists() follows remaps; DirAccess does not.
-static func body_properties(system: String, key: String) -> Dictionary:
+static func body_path(system: String, key: String) -> String:
 	var path: String = path_of(system, "%s.tscn" % key)
 	if not ResourceLoader.exists(path):
 		path = path_of(system, "%s.scn" % key)
-	return root_properties(path)
+	return path
+
+
+static func body_properties(system: String, key: String) -> Dictionary:
+	return root_properties(body_path(system, key))
 
 
 ## The body a moon orbits, by the naming convention — "tarsis_3_1" belongs to "tarsis_3" — which is

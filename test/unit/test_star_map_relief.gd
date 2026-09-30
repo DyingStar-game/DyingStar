@@ -429,8 +429,13 @@ func test_the_chart_draws_at_most_one_level_beyond_its_data() -> void:
 		var known: int = StarMapRelief.data_depth(BODY, dir)
 		# Right down on the deck, where the geometry would otherwise ask for the finest level there is.
 		var level: int = int(StarMapRelief.plan_patch(BODY, dir, 1.0e3)["level"])
-		assert_lte(level, known * 2,
-				"%s: known to n%d, so drawn at n%d at the most" % [str(poi["label"]), known, known * 2])
+		# Where the ground is known all the way down there is no data left to wait for, and the chart
+		# may cut finer still to hold what the game adds on top of it: see detail_nside.
+		var most: int = known * 2
+		if known >= StarMapRelief.finest_nside(BODY):
+			most = StarMapRelief.detail_nside(BODY)
+		assert_lte(level, most,
+				"%s: known to n%d, so drawn at n%d at the most" % [str(poi["label"]), known, most])
 		checked += 1
 	assert_gt(checked, 10, "sanity: every town was looked at")
 

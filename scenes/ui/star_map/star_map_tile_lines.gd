@@ -1,0 +1,201 @@
+class_name StarMapTileLines
+extends MeshInstance3D
+## Lines drawn over the ground of ONE body, laid tile by tile: the roads, the canyons.
+##
+## What the two have in common is everything but the lines themselves. They cover the tiles the ground
+## is drawing, so they change when the view does; laying a tile's lines means asking the height field
+## where each point stands, which is too slow for the frame, so it happens on a worker; and the wanted
+## set changes by a handful of tiles at a time, so what was laid is kept. That life cycle is here, once.
+## A kind of line says only whether it has anything to draw ([method _available]) and how one tile is
+## laid ([method _laying]).
+
+## How far the lines float over the ground, as a fraction of the body's drawn radius.
+##
+## They have to clear the surface the chart DRAWS, which is not the surface they were surveyed on: the
+## mesh samples the height field at 24 points across a tile, so between two samples the drawn ground
+## wanders from the true one by whatever the terrain does in between. Laid flat, a road would dip in and
+## out of the hillside. Three hundredths of a thousandth is about 190 m on Tarsis III — invisible from
+## anywhere a whole network is being read, and still clear of that wander.
+const LIFT: float = 3.0e-5
+## How many tiles' worth of lines are kept. A little over two views of
+## [constant StarMapRelief.PATCH_TILES_MAX], so zooming out and back in finds both levels still there.
+const SEGMENTS_KEPT: int = 1024
+
+var body_key: String = ""
+
+var _drawn: Dictionary = {}
+## The lines of each tile already laid on the ground, id -> [points, colours]. The expensive half of a
+## refresh is not concatenating lines, it is working out where they go — and the wanted set changes by
+## a handful of tiles, so almost all of it is the same as last time.
+var _segments: Dictionary = {}
+var _material: StandardMaterial3D = null
+## The worker laying the tiles not seen yet, or -1, and the slot it fills: id -> [points, colours].
+## While it runs, whatever [method _laying] captured is the worker's alone.
+var _task: int = -1
+var _job: Dictionary = {}
+## New segments arrived since the mesh was last put together.
+var _dirty: bool = false
+
+
+func _ready() -> void:
+	_material = StandardMaterial3D.new()
+	# Unshaded, because a line has no surface to be lit: shaded, the far side of a planet would carry
+	# lines that fade out exactly where the ground does, which is the one place a map still has to read.
+	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_material.vertex_color_use_as_albedo = true
+	material_override = _material
+
+
+## Draw the lines crossing [param tiles], which are the ground's own tiles, keyed as [StarMapGround]
+## keys them.
+##
+## Does nothing at all when the set has not changed, which is most frames: the tiles come from a
+## decision taken four times a second at most.
+func refresh(tiles: Dictionary) -> void:
+	_harvest()
+	if tiles == _drawn and not _dirty:
+		return
+	_drawn = tiles.duplicate()
+	if not _available():
+		mesh = null
+		return
+	if _segments.size() > SEGMENTS_KEPT and _task < 0:
+		_segments.clear()  # crude, and rare: one refresh pays for its whole view again
+	_start_missing()
+	_assemble()
+
+
+## Wait for the lines still being laid and draw them. For a caller that needs the mesh NOW — a test;
+## the chart itself just refreshes again next frame.
+func finish() -> void:
+	if _task >= 0:
+		_take()
+	if _dirty:
+		_assemble()
+
+
+## Let go of the body.
+func clear() -> void:
+	_wait()
+	_job = {}
+	_dirty = false
+	_drawn.clear()
+	_segments.clear()
+	mesh = null
+	_release()
+
+
+# ---------------------------------------------------------------------------
+# What a kind of line answers
+# ---------------------------------------------------------------------------
+
+## Is there anything to draw on this body at all? Asked at every change of view; remember a no.
+func _available() -> bool:
+	return false
+
+
+## How one tile is laid: a Callable taking a tile id and returning [code][points, colours][/code], the
+## two ends of each segment in the body's frame and a colour for each.
+##
+## Asked once per batch, on the main thread, and that is where it must resolve whatever needs one — a
+## planet's data, a noise built on first use. The second element says whether the Callable may then
+## run on a worker: it may when it holds everything it reads and touches nothing of the node.
+func _laying() -> Array:
+	return [Callable(), false]
+
+
+## Let go of whatever [method _available] opened.
+func _release() -> void:
+	pass
+
+
+# ---------------------------------------------------------------------------
+
+## Queue the tiles of the current view that have nothing laid yet.
+func _start_missing() -> void:
+	if _task >= 0:
+		return  # what the worker does not cover is asked for on a later refresh
+	var missing: Array[int] = []
+	for id: int in _drawn:
+		if not _segments.has(id):
+			missing.append(id)
+	if missing.is_empty():
+		return
+	var how: Array = _laying()
+	var lay: Callable = how[0]
+	if not bool(how[1]):
+		for id: int in missing:
+			_segments[id] = lay.call(id)
+		_dirty = true
+		return
+	var slot: Dictionary = {}
+	_job = slot
+	_task = WorkerThreadPool.add_task(func() -> void:
+		for id: int in missing:
+			slot[id] = lay.call(id))
+
+
+## Take in what the worker has finished, if it has.
+func _harvest() -> void:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
+		_take()
+
+
+## Wait for the worker — at once when it is done — and take its lines in. Its id is gone once waited on,
+## so nothing may ask about it again: is_task_completed on a spent id does not answer "done".
+func _take() -> void:
+	_wait()
+	for id: int in _job:
+		_segments[id] = _job[id]
+	_job = {}
+	_dirty = true
+
+
+func _wait() -> void:
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+
+
+## Put the mesh together from the lines laid so far for the current view.
+func _assemble() -> void:
+	_dirty = false
+	var points := PackedVector3Array()
+	var colours := PackedColorArray()
+	for id: int in _drawn:
+		if not _segments.has(id):
+			continue
+		var cached: Array = _segments[id]
+		points.append_array(cached[0])
+		colours.append_array(cached[1])
+	if points.is_empty():
+		mesh = null
+		return
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = points
+	arrays[Mesh.ARRAY_COLOR] = colours
+	var built := ArrayMesh.new()
+	built.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
+	mesh = built
+
+
+# On deletion, NOT on leaving the tree: the chart takes this off its sphere every time it is opened and
+# hangs it back on the new one, and clearing there would throw the lines away with each F2.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE:
+		return
+	_wait()
+	_release()
+
+
+## [param dir] on the ground a tile DRAWS, lifted clear of it: the game's sampler at the tile's own
+## level and pitch, through the tile's frame, exactly as [method StarMapRelief.build_tile] builds it —
+## less the canyons, which a line crosses or follows from above. Static and handed everything, because
+## it runs on a worker.
+static func on_drawn_ground(data: PlanetData, frame: PlanetData.TileFrame, nside: int,
+		pitch: float, dir: Vector3) -> Vector3:
+	var metres: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null,
+			nside, frame, pitch, CrackCarve.NONE)
+	return dir * (StarMapRelief.MESH_RADIUS
+			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + LIFT))
