@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="MusicPlaylist" format=3]
+
+[ext_resource type="Script" path="res://scenes/audio/music/music_playlist.gd" id="1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/music/beyond_horizon.mp3" id="2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/music/tin_can.ogg" id="3"]
+
+[resource]
+script = ExtResource("1")
+tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3")])
