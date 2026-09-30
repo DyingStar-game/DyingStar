@@ -158,8 +158,7 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 	var corners := PackedVector3Array()
 	var corner_colours := PackedColorArray()
 	var half_width: float = data.crack_width_m * 0.5 / data.radius
-	var frame: PlanetData.TileFrame = null
-	var pitch: float = StarMapRelief.tile_pitch(data.radius, nside)
+	var tile := StarMapDrawnTile.new(data, nside, ipix)
 	for vy: int in range(grid_res):
 		for vx: int in range(grid_res):
 			var here: int = vy * stride + vx
@@ -169,10 +168,6 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 					met.append(side)
 			if met.size() < 2:
 				continue
-			if frame == null:
-				frame = data.make_tile_frame()
-				data.prepare_mountain_frame(frame, nside, ipix)
-				CrackCarve.prepare_frame(data, frame, nside, ipix)
 			var ends: Array[Vector3] = met
 			if met.size() > 2:
 				var fork: Vector3 = _fork(grid, read_at, blocks, vx, vy, stride)
@@ -189,10 +184,10 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				# only. Whether a canyon runs here is already known; testing the carve itself at the
 				# middle of a stretch dropped the ones that cut a corner near a fork, and the network
 				# came out in pieces that did not meet.
-				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), frame) < 0.5:
+				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), tile.frame) < 0.5:
 					continue
-				var from: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n], UNDER_THE_ROADS)
-				var to: Vector3 = on_drawn_ground(data, frame, nside, pitch, ends[n + 1], UNDER_THE_ROADS)
+				var from: Vector3 = tile.place(ends[n], UNDER_THE_ROADS)
+				var to: Vector3 = tile.place(ends[n + 1], UNDER_THE_ROADS)
 				points.append(from)
 				points.append(to)
 				colours.append(COLOUR)
