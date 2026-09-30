@@ -20,9 +20,11 @@ const NETWORK_NODE_NAME := "dyingstarNetwork"
 ## The PropSync component every prop carries as a child (see scenes/globals/prop_sync.gd). It holds
 ## the networked `type_name` / `uuid`; the prop itself is its PARENT (the body), never this node.
 const PROP_SYNC_NODE_NAME := "PropSync"
-## Cache of the per-type network property allowlists, fetched from horizonserver's <type>_def.json
-## files by the editor plugin. {type: [property names]}. Empty until "Update network definitions".
-const DEFS_CACHE := "res://addons/dyingstar/network_defs.json"
+## horizonserver's <type>_def.json files, copied verbatim and versioned in the repo. The editor
+## plugin refreshes them from ../horizonserver (or GitHub); each type's union of channel properties
+## is its network allowlist.
+const DEFS_DIR := "res://items_def"
+const DEFS_SUFFIX := "_def.json"
 
 ## Session identity table: node instance id -> {type, uuid, data}. Populated on import, read on
 ## export, emptied on clear. Kept OFF the nodes so saving the scene never serializes it (no crash).
@@ -36,7 +38,7 @@ static func export_to_json(scene_root: Node, path: String) -> Dictionary:
 			"The scene root has no uuid. Open the scene of a server prop (its root must carry a uuid) before exporting."}
 	var defs := load_network_defs()
 	if defs.is_empty():
-		return {"ok": false, "error": "Network definitions not loaded — run 'Update network definitions' first."}
+		return {"ok": false, "error": "No network definitions in items_def/ — run 'Update network definitions' first."}
 	# The scene root is the top prop: emit it (server position kept from its recorded data), then
 	# collect the props under the dyingstarNetwork marker — that subtree is what gets serialized.
 	var objects: Array = []
@@ -114,7 +116,7 @@ static func import_from_json(scene_root: Node, path: String) -> Dictionary:
 	if scene_root == null:
 		return {"ok": false, "error": "Open a scene first."}
 	if not has_network_defs():
-		return {"ok": false, "error": "Network definitions not loaded — run 'Update network definitions' first."}
+		return {"ok": false, "error": "No network definitions in items_def/ — run 'Update network definitions' first."}
 	# The scene's ROOT node is the anchor: it must already BE a server prop (carry a uuid). We record
 	# the matching JSON object's identity for it (never recreate it) and put the rest under the
 	# dyingstarNetwork marker. No uuid on the root -> refuse: this scene is not a server prop.
@@ -343,21 +345,64 @@ static func _v3(v: Vector3) -> Dictionary:
 static func _to_v3(d) -> Vector3:
 	return Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
 
-# ── Network definitions (from horizonserver <type>_def.json, cached by the editor plugin) ─────
+# ── Network definitions (horizonserver <type>_def.json, versioned in items_def/) ─────────────
 
-## {type: [property names]}. Empty until the plugin runs "Update network definitions".
+## {type: [property names]}, read from the <type>_def.json files in items_def/.
 static func load_network_defs() -> Dictionary:
-	if not FileAccess.file_exists(DEFS_CACHE):
-		return {}
-	var f := FileAccess.open(DEFS_CACHE, FileAccess.READ)
-	if f == null:
-		return {}
-	var parsed = JSON.parse_string(f.get_as_text())
-	f.close()
-	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+	var defs := {}
+	for fname in DirAccess.get_files_at(DEFS_DIR):
+		if not fname.ends_with(DEFS_SUFFIX):
+			continue
+		var dj = JSON.parse_string(FileAccess.get_file_as_string(DEFS_DIR.path_join(fname)))
+		if typeof(dj) == TYPE_DICTIONARY:
+			defs[fname.trim_suffix(DEFS_SUFFIX)] = parse_def(dj)
+	return defs
 
 static func has_network_defs() -> bool:
 	return not load_network_defs().is_empty()
+
+## The union of a <type>_def.json's channel properties, in declaration order.
+static func parse_def(dj: Dictionary) -> Array:
+	var props: Array = []
+	for ch in dj.get("channels", []):
+		for p in ch.get("properties", []):
+			var ps := str(p).strip_edges()
+			if ps != "" and not props.has(ps):
+				props.append(ps)
+	return props
+
+## Every type with a definition, sorted (the PropSync type_name dropdown).
+static func def_types() -> PackedStringArray:
+	var types := PackedStringArray(load_network_defs().keys())
+	types.sort()
+	return types
+
+## Mirror a source's definitions into items_def/: {"<type>_def.json": text}. Files that do not
+## parse as a JSON object are skipped; when none is valid nothing is touched (the repo copy stays).
+## With `mirror`, the <type>_def.json files absent from the source are removed — only pass it when
+## `files` is the source's complete listing. Returns the number of files written.
+static func write_defs(files: Dictionary, mirror := true) -> int:
+	var valid := {}
+	for fname in files:
+		if str(fname).ends_with(DEFS_SUFFIX) and typeof(JSON.parse_string(str(files[fname]))) == TYPE_DICTIONARY:
+			valid[fname] = files[fname]
+		else:
+			push_warning("DyingStar defs: %s is not a valid definition, skipped" % fname)
+	if valid.is_empty():
+		push_error("DyingStar defs: nothing valid; keeping items_def/ as is")
+		return 0
+	DirAccess.make_dir_recursive_absolute(DEFS_DIR)
+	for fname in valid:
+		var f := FileAccess.open(DEFS_DIR.path_join(fname), FileAccess.WRITE)
+		if f == null:
+			push_error("DyingStar defs: cannot write %s" % DEFS_DIR.path_join(fname))
+			return 0
+		f.store_string(valid[fname])
+		f.close()
+	for fname in DirAccess.get_files_at(DEFS_DIR):
+		if mirror and fname.ends_with(DEFS_SUFFIX) and not files.has(fname):
+			DirAccess.remove_absolute(DEFS_DIR.path_join(fname))
+	return valid.size()
 
 ## Strip each object's object_data down to the properties its type's definition allows. Unknown
 ## types are left untouched (better to over-export than to silently drop something).

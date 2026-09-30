@@ -1,0 +1,33 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 10000.0,
+			"frequency": 5.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id",
+				"x_spacing",
+				"z_spacing",
+				"y_spacing",				
+				"total",
+				"available",
+				"cols",
+				"rows",
+				"floors",
+				"spawn_point",
+				"apartments"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 10001.0,
+			"frequency": 3.0,
+			"properties": [
+				"scenename",
+				"name"
+			]
+		}
+	]
+}

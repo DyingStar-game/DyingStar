@@ -1,0 +1,43 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 200.0,
+			"frequency": 30.0,
+			"lod": [
+				{
+					"distance": 100.0,
+					"frequency": 30.0
+				},
+				{
+					"distance": 200.0,
+					"frequency": 10.0
+				}
+			],
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id",
+				"can_be_breakable",
+				"inert_density"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 203.0,
+			"frequency": 3.0,
+			"properties": [
+				"scenename",
+				"fractures",
+				"kick",
+				"mineral_id",
+				"host_rock_id",
+				"weight",
+				"blocs",
+				"ore_seed",
+				"mineral_id",
+				"host_rock_id"
+			]
+		}
+	]
+}

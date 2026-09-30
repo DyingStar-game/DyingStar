@@ -54,6 +54,5 @@ assets/qgis/creationtime.txt
 assets/qgis/export.tar.gz
 heights.pack
 
-addons/dyingstar/network_defs.json
 # F7 screenshots taken while running from the editor (CapturePaths.screenshots_dir)
 /screenshots/
