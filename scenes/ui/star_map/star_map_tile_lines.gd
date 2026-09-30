@@ -11,11 +11,11 @@ extends MeshInstance3D
 
 ## How far the lines float over the ground, as a fraction of the body's drawn radius.
 ##
-## They have to clear the surface the chart DRAWS, which is not the surface they were surveyed on: the
-## mesh samples the height field at 24 points across a tile, so between two samples the drawn ground
-## wanders from the true one by whatever the terrain does in between. Laid flat, a road would dip in and
-## out of the hillside. Three hundredths of a thousandth is about 190 m on Tarsis III — invisible from
-## anywhere a whole network is being read, and still clear of that wander.
+## They are laid on the surface the chart DRAWS ([StarMapDrawnTile]), and still have to clear it: a
+## piece of line is straight where the ground under it is two facets meeting at a fold, and the depth
+## buffer at these distances does not tell two things apart that are a few metres from one another.
+## Three hundredths of a thousandth is about 190 m on Tarsis III — invisible from anywhere a whole
+## network is being read.
 const LIFT: float = 3.0e-5
 ## How many tiles' worth of lines are kept. A little over two views of
 ## [constant StarMapRelief.PATCH_TILES_MAX], so zooming out and back in finds both levels still there.
@@ -206,15 +206,20 @@ func _notification(what: int) -> void:
 	_release()
 
 
-## [param dir] on the ground a tile DRAWS, lifted clear of it: the game's sampler at the tile's own
-## level and pitch, through the tile's frame, exactly as [method StarMapRelief.build_tile] builds it —
-## less the canyons, which a line crosses or follows from above. Static and handed everything, because
-## it runs on a worker.
+## A line from [param from] to [param to], two directions on the body, cut into pieces no longer than
+## [param step] (an angle at the body's centre) and each end put on the ground by [param place].
 ##
-## [param lift] is how far clear, for a kind of line that lies under another.
-static func on_drawn_ground(data: PlanetData, frame: PlanetData.TileFrame, nside: int,
-		pitch: float, dir: Vector3, lift: float = LIFT) -> Vector3:
-	var metres: float = data.sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null,
-			nside, frame, pitch, CrackCarve.NONE)
-	return dir * (StarMapRelief.MESH_RADIUS
-			* (1.0 + StarMapRelief.EXAGGERATION * metres / data.radius + lift))
+## Cut, because a line between two points far apart is a CHORD: it runs straight through the curve of
+## the planet and under whatever relief stands between its ends. The export gives a railway across a
+## hundred-km tile in a handful of points, and between them the line was under the ground.
+static func add_line(points: PackedVector3Array, colours: PackedColorArray, from: Vector3,
+		to: Vector3, step: float, place: Callable, colour: Color) -> void:
+	var pieces: int = maxi(1, ceili(from.angle_to(to) / maxf(step, 1.0e-9)))
+	var previous: Vector3 = place.call(from)
+	for n: int in range(1, pieces + 1):
+		var next: Vector3 = place.call(from.slerp(to, float(n) / float(pieces)))
+		points.append(previous)
+		points.append(next)
+		colours.append(colour)
+		colours.append(colour)
+		previous = next
