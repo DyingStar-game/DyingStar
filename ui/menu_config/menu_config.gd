@@ -153,6 +153,10 @@ func _ready() -> void:
 	SettingsManager.load_keybindings()
 	keycode_dic = SettingsManager.keybindings.duplicate()
 	_factory.style_header($PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/Title)
+	# Reached like any line, and named with the button that presses it while it has the focus.
+	save_config.focus_mode = Control.FOCUS_ALL
+	save_config.focus_entered.connect(_label_save)
+	save_config.focus_exited.connect(_label_save)
 	create_action_list()
 
 func create_action_list() -> void:
@@ -393,7 +397,7 @@ func _input(event: InputEvent) -> void:
 		entry[InputDevice.KEYS[_remapping_device]] = InputEventCodec.encode(bound)
 		keycode_dic[action_to_remap] = entry
 		_end_remap()
-		save_config.visible = true
+		_offer_save()
 
 	# The key being bound must not also fire the action it is being bound to, nor the click press the
 	# row under the pointer or scroll the list.
@@ -417,7 +421,24 @@ func _on_reset_button_pressed() -> void:
 	InputMap.load_from_project_settings()
 	keycode_dic.clear()
 	create_action_list()
+	_offer_save()
+
+
+## There are changes to save: the Save button shows — and, without the mouse, takes the focus, so A
+## saves straight away (up from it goes back to the lines for another change).
+func _offer_save() -> void:
 	save_config.visible = true
+	if not InputDevice.pointer:
+		save_config.grab_focus.call_deferred()
+
+
+## "Save changes (A)" while it has the focus without the mouse; the plain words otherwise.
+func _label_save() -> void:
+	var hint : String = InputLabel.for_action(&"ui_accept")
+	# The key itself when plain, so a change of language still translates it.
+	save_config.text = tr("%%KM_SAVEKEYCHANGE") + " (" + hint + ")" \
+			if save_config.has_focus() and not InputDevice.pointer and hint != "" else "%%KM_SAVEKEYCHANGE"
+
 
 func _on_text_edit_text_changed(_new_text: String) -> void:
 	_refresh_visibility()
@@ -435,4 +456,8 @@ func _on_save_button_pressed() -> void:
 
 	# Keep the runtime owner in step with the file, so nothing re-reads it to know the truth.
 	SettingsManager.keybindings = keycode_dic.duplicate()
+	var had_focus : bool = save_config.has_focus()
 	save_config.visible = false
+	# Saved with A: the focus goes back to the page's first line rather than nowhere.
+	if had_focus:
+		MenuFocus.take(self)

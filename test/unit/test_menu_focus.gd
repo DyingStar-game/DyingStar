@@ -150,3 +150,14 @@ func test_the_triggers_and_bumpers_step_rather_than_reach_for_the_page() -> void
 	assert_false(MenuFocus.wants_focus(rt), "RT steps the bar")
 	assert_false(MenuFocus.wants_focus(_pad_button(JOY_BUTTON_RIGHT_SHOULDER)), "RB steps the tabs")
 	assert_true(MenuFocus.wants_focus(_pad_button(JOY_BUTTON_DPAD_DOWN)), "the cross reaches for the page")
+
+
+func test_after_a_change_on_the_pad_save_takes_the_focus_and_names_its_button() -> void:
+	var config : Control = (load("res://ui/menu_config/MenuConfig.tscn") as PackedScene).instantiate()
+	add_child_autofree(config)
+	InputDevice.pointer = false
+	InputDevice.last = InputDevice.Kind.GAMEPAD
+	config._offer_save()
+	await wait_process_frames(1)
+	assert_true(config.save_config.has_focus(), "A saves straight away")
+	assert_string_ends_with(config.save_config.text, "(A)")
