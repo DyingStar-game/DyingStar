@@ -114,6 +114,8 @@ const POI_BODY_KEEP: float = 0.75
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
 const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
+## The right stick pushed all the way turns the view like a drag of this many pixels a second.
+const STICK_ORBIT_PX_PER_S: float = 600.0
 ## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
 ## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
 ## following keeps it there; this only tells that apart from a station selected from elsewhere.
@@ -1105,6 +1107,10 @@ func _process(delta: float) -> void:
 			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, -delta))
 		if Input.is_action_pressed("star_map_zoom_out"):
 			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, delta))
+		# The right stick turns the view as a drag does, the triggers zoom (the zoom actions).
+		var stick: Vector2 = Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+		if stick != Vector2.ZERO:
+			_turn_view(stick * stick.length() * STICK_ORBIT_PX_PER_S * delta)
 	_cam.advance(delta)
 	# Before the distance is read, and every frame: the ground under the camera changes when you orbit,
 	# and nothing else re-tests the floor once a gesture that is not a zoom has moved you.
@@ -2918,13 +2924,17 @@ func _input(event: InputEvent) -> void:
 	if not _dragging:
 		return
 	if event is InputEventMouseMotion:
-		var motion := event as InputEventMouseMotion
-		# Over a station the gesture turns about the station; anywhere else, about the world.
-		if _station_under_camera() >= 0:
-			_cam.lean(motion.relative)
-		else:
-			_cam.orbit(motion.relative, _guard_radius())
+		_turn_view((event as InputEventMouseMotion).relative)
 		get_viewport().set_input_as_handled()
+
+
+## Turn the view by [param relative], in pixels of drag: the mouse's middle button and the gamepad's
+## right stick alike. Over a station the gesture turns about the station; anywhere else, about the world.
+func _turn_view(relative: Vector2) -> void:
+	if _station_under_camera() >= 0:
+		_cam.lean(relative)
+	else:
+		_cam.orbit(relative, _guard_radius())
 
 
 func _unhandled_input(event: InputEvent) -> void:

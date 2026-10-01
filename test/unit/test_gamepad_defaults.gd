@@ -1,0 +1,43 @@
+extends GutTest
+## Every action a player plays with has a gamepad button or stick out of the box; only the keyboard's
+## own conveniences (chat, captures, the debug tools) are left to it.
+
+## Bound on the keyboard only, on purpose: typing, filing captures, or tools for developers.
+const KEYBOARD_ONLY : Array[String] = [
+	"toggle_chat", "write_in_chat", "toggle_speaker", "toggle_microphone", "game_record", "screenshot",
+	"screenshot_debug", "spawn_wheel", "toggle_eva", "zapette", "debug_time_forward", "debug_time_back",
+	"debug_toggle_moon_lights", "debug_isolate_light", "toggle_debug", "walk_speed_up", "walk_speed_down",
+	"vehicle_reset", "vehicle_horn_special", "vehicle_speed_limiter", "vehicle_limiter_up",
+	"vehicle_limiter_down", "eva_stabilize",
+]
+
+
+func test_every_played_action_has_a_gamepad_default() -> void:
+	InputMap.load_from_project_settings()
+	var missing : Array[String] = []
+	for action: StringName in InputMap.get_actions():
+		var name : String = String(action)
+		if name.begins_with("ui_") or KEYBOARD_ONLY.has(name):
+			continue
+		if InputDevice.bindings(action, InputDevice.Kind.GAMEPAD).is_empty():
+			missing.append(name)
+	assert_eq(missing, [] as Array[String], "actions with no gamepad binding")
+
+
+func test_the_view_turns_with_the_right_stick() -> void:
+	InputMap.load_from_project_settings()
+	for action: StringName in [&"look_left", &"look_right", &"look_up", &"look_down"]:
+		var pad : Array[InputEvent] = InputDevice.bindings(action, InputDevice.Kind.GAMEPAD)
+		assert_eq(pad.size(), 1, "%s on a stick" % action)
+		var motion := pad[0] as InputEventJoypadMotion
+		assert_true(motion != null and (motion.axis == JOY_AXIS_RIGHT_X or motion.axis == JOY_AXIS_RIGHT_Y),
+			"%s on the right stick" % action)
+	assert_true(MenuConfig.labels_of(MenuConfig.ACTION_GROUPS["%%KM_GROUP_ON_FOOT"]).has("look_left"),
+		"and listed in the controls page, to be changed")
+
+
+func test_moving_reads_the_left_stick_as_a_stick() -> void:
+	InputMap.load_from_project_settings()
+	var forward := InputDevice.bindings(&"move_forward", InputDevice.Kind.GAMEPAD)[0] as InputEventJoypadMotion
+	assert_eq(forward.axis, JOY_AXIS_LEFT_Y)
+	assert_eq(forward.axis_value, -1.0, "forward is the stick pushed up")
