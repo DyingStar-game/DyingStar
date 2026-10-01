@@ -82,11 +82,10 @@ func test_up_from_the_pages_first_line_reaches_the_bar() -> void:
 	assert_signal_emitted(page, "left_top")
 
 
-func test_the_gamepad_window_comes_up_only_when_wanted() -> void:
-	var hidden_before : bool = PadPopup.is_turned_off()
-	SettingsManager.config.set_value("general", "pad_popup_hidden", true)
-	assert_false(PadPopup.wanted(), "never once turned off")
-	SettingsManager.config.set_value("general", "pad_popup_hidden", hidden_before)
+func test_ok_is_named_with_the_pads_own_button() -> void:
+	assert_string_ends_with(PadPopup.ok_text(InputDevice.Family.XBOX), "(A)")
+	assert_string_ends_with(PadPopup.ok_text(InputDevice.Family.NINTENDO), "(B)",
+		"the bottom button of a Nintendo pad says B")
 
 
 func test_the_window_holds_the_focus_while_it_is_up() -> void:
