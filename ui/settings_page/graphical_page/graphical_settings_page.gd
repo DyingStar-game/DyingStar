@@ -16,8 +16,6 @@ const RESOLUTIONS: Array[Vector2i] = [
 ## Seconds before a just-applied resolution auto-reverts unless the player confirms (Windows-style
 ## safety: a resolution too big for the screen must not lock them out of the settings).
 const _RES_CONFIRM_SECS: int = 10
-## How often the frame-rate line at the top is refreshed.
-const _PERF_PERIOD_S : float = 0.25
 var _res_prev_size: Vector2i = Vector2i.ZERO  # resolution to restore if the change is refused
 var _res_dialog: ConfirmationDialog = null
 var _res_timer: Timer = null
@@ -58,32 +56,10 @@ func _ready() -> void:
 	var factory := SettingsRowFactory.new()
 	var gallery : VBoxContainer = _build_gallery(factory)
 	var scene : VBoxContainer = _build_scene(factory)
-	_build_perf(factory)
 	var rendering : VBoxContainer = _build_rendering(factory, gallery)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	for rows in [gallery, scene, _rows, rendering]:
 		SettingsRow.wrap_rows(rows)
-
-## Above everything: the frame rate and GPU time, green / yellow / red, refreshed as options change
-## — what an option costs, read without leaving the page (PerfReadout, the in-game panel's line).
-func _build_perf(factory: SettingsRowFactory) -> void:
-	var line := RichTextLabel.new()
-	line.bbcode_enabled = true
-	line.fit_content = true
-	line.scroll_active = false
-	line.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	line.add_theme_font_override("normal_font", SettingsRowFactory.FONT)
-	line.add_theme_font_size_override("normal_font_size", factory.label_size)
-	_rows.add_child(line)
-	_rows.move_child(line, 0)
-	var refresh := func() -> void: line.text = "\n".join(PerfReadout.lines())
-	var timer := Timer.new()
-	timer.wait_time = _PERF_PERIOD_S
-	timer.autostart = true
-	timer.timeout.connect(refresh)
-	add_child(timer)
-	refresh.call()
-
 
 ## In the main menu over its live stage: the hour of day there, to judge the options by day and by
 ## night. Applied when the drag ends — every change turns the whole planet, and every chunk with it.
