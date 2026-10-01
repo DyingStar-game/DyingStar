@@ -60,15 +60,23 @@ var from_channel: bool = false
 ## n'invalide rien : on écrit ailleurs et on supprime les anciennes.
 var cache_root: String = "user://tile_cache/"
 
-## Connexion HTTP conservée entre deux tuiles. Propriété du SEUL fil de téléchargement,
-## et le code le vérifie au lieu de le supposer — voir [method _reuses_connection].
-var _conn: HTTPClient = null
-var _conn_host: String = ""
-var _conn_port: int = 0
-var _conn_tls: bool = false
-## Identifiant du fil de téléchargement, seul autorisé à réutiliser _conn. 0 tant qu'il
-## n'a pas démarré.
-var _worker_tid: int = 0
+## Connexion HTTP conservée d'une tuile à l'autre par UN fil de téléchargement.
+class Link:
+	var http: HTTPClient = null
+	var host: String = ""
+	var port: int = 0
+	var tls: bool = false
+
+## Nombre de fils de téléchargement, chacun avec sa connexion. Lu par [method start].
+##
+## Une tuile pèse ~1,4 Kio : son coût est l'aller-retour, pas le débit (~27 ms sur le service
+## de préprod, 2026-10-01). Un seul fil servait donc ~37 tuiles/s, et un démarrage à froid au
+## menu attendait ~45 s. Six connexions par hôte, c'est ce que s'autorisent les navigateurs ;
+## mesuré à froid : 38 -> 124 tuiles/s, file du menu vidée en 8 s au lieu de 44.
+var download_threads: int = 6
+## Identifiant de fil -> Link. Chaque fil de téléchargement s'inscrit en démarrant et n'utilise
+## que la sienne : le code le vérifie au lieu de le supposer — voir [method _own_link].
+var _links: Dictionary = {}
 
 ## Délai maximal d'une requête, en millisecondes.
 ##
@@ -88,10 +96,10 @@ var lru: TileCacheLru = null
 ## Callable(url) -> [code:int, body:PackedByteArray].
 var fetcher: Callable = Callable()
 
-## Fil de téléchargement. Le chemin d'échantillonnage tourne sur WorkerThreadPool ; y
+## Fils de téléchargement. Le chemin d'échantillonnage tourne sur WorkerThreadPool ; y
 ## attendre une socket gèlerait la génération de terrain. Les demandes sont donc mises en
 ## file et servies ici, pendant que l'appelant diffère le chunk concerné.
-var _thread: Thread = null
+var _threads: Array[Thread] = []
 var _queue: Array[Vector3i] = []      # (ipix, nside, genre)
 ## Direction (repère de la planète) du centre de chaque tuile de _queue, même indice ; ZERO
 ## pour les travaux qui ne sont pas des tuiles.
@@ -405,17 +413,19 @@ func fetch_now(nside: int, ipix: int) -> bool:
 	if not has_tile(nside, ipix):
 		return false
 	var url := tile_url(nside, ipix)
-	if _misses.has(url):
+	_mutex.lock()
+	var missed: bool = _misses.has(url)
+	_mutex.unlock()
+	if missed:
 		return false
 	var res: Array = _request(url)
-	if res[0] != 200:
+	if res[0] != 200 or decode_envelope(res[1]).is_empty():
 		# Un 404 ici est une incohérence : la carte de présence l'annonçait. On le retient
-		# pour ne pas boucler dessus, et il ressortira dans les compteurs.
+		# pour ne pas boucler dessus, et il ressortira dans les compteurs. De même pour une
+		# tuile corrompue.
+		_mutex.lock()
 		_misses[url] = true
-		net_failed += 1
-		return false
-	if decode_envelope(res[1]).is_empty():
-		_misses[url] = true
+		_mutex.unlock()
 		net_failed += 1
 		return false
 	net_tiles += 1
@@ -520,25 +530,32 @@ func purge_other_versions() -> int:
 	return removed
 
 
-## Démarre le fil de téléchargement. Idempotent.
+## Démarre les fils de téléchargement. Idempotent.
 func start() -> void:
-	if _thread != null:
+	if not _threads.is_empty():
 		return
 	_quit = false
-	_thread = Thread.new()
-	_thread.start(_worker)
+	for _i in maxi(download_threads, 1):
+		var t := Thread.new()
+		t.start(_worker)
+		_threads.append(t)
 
 
-## Arrête le fil et l'attend. À appeler avant de libérer la source.
+## Arrête les fils et les attend. À appeler avant de libérer la source.
 func stop() -> void:
-	if _thread == null:
+	if _threads.is_empty():
 		return
 	_mutex.lock()
 	_quit = true
 	_mutex.unlock()
-	_sem.post()
-	_thread.wait_to_finish()
-	_thread = null
+	for _t in _threads:
+		_sem.post()
+	for t in _threads:
+		t.wait_to_finish()
+	_threads.clear()
+	_mutex.lock()
+	_links.clear()
+	_mutex.unlock()
 	if lru != null:
 		lru.save()
 
@@ -628,20 +645,24 @@ func _forget(kind: int, nside: int, ipix: int) -> void:
 	_mutex.unlock()
 
 
-## Cet appel a-t-il le droit de réutiliser la connexion conservée ?
+## La connexion conservée du fil appelant, ou null s'il n'est pas un fil de téléchargement.
 ##
 ## Un HTTPClient partagé entre deux fils se corrompt : deux requêtes entrelacées sur le
 ## même flux ont donné un signal 11 dans les entrailles de HTTPClient, découvert en
-## sondant le plancher pendant que le fil téléchargeait des tuiles. Tout appelant qui
-## n'est pas le fil de téléchargement reçoit donc une connexion jetable — c'est
-## exactement le comportement d'avant, et cela ne concerne que open_planet, une requête
-## par planète.
-func _reuses_connection() -> bool:
-	return _worker_tid != 0 and OS.get_thread_caller_id() == _worker_tid
+## sondant le plancher pendant que le fil téléchargeait des tuiles. Chaque fil de
+## téléchargement a donc la sienne, et tout autre appelant reçoit une connexion jetable —
+## cela ne concerne que open_planet, une requête par planète.
+func _own_link() -> Link:
+	_mutex.lock()
+	var link: Link = _links.get(OS.get_thread_caller_id())
+	_mutex.unlock()
+	return link
 
 
 func _worker() -> void:
-	_worker_tid = OS.get_thread_caller_id()
+	_mutex.lock()
+	_links[OS.get_thread_caller_id()] = Link.new()
+	_mutex.unlock()
 	while true:
 		_sem.wait()
 		_mutex.lock()
@@ -697,14 +718,15 @@ func _http_get(url: String) -> Array:
 	var port: int = u["port"]
 	var path: String = u["path"]
 	var tls: bool = u["tls"]
-	if not _reuses_connection():
+	var link := _own_link()
+	if link == null:
 		return _http_fresh(host, port, path, tls)
 	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
 	# ne doit pas se traduire par une tuile manquante.
-	var res := _http_once(host, port, path, tls)
+	var res := _http_once(link, host, port, path, tls)
 	if res[0] == 0:
-		_conn = null
-		res = _http_once(host, port, path, tls)
+		link.http = null
+		res = _http_once(link, host, port, path, tls)
 	return res
 
 
@@ -751,13 +773,27 @@ func _http_fresh(host: String, port: int, path: String, tls: bool = false) -> Ar
 	return _drain(http, deadline)
 
 
+## Pause entre deux poll() sans nouvelle du réseau, en µs.
+##
+## Les boucles d'attente tournaient à vide : un fil occupait un cœur entier pendant chaque
+## aller-retour (~27 ms). Invisible avec un seul fil ; avec six, six cœurs pris au terrain, à
+## la physique et au jeu pendant tout un démarrage à froid.
+const POLL_IDLE_USEC := 500
+
+
+## Un poll(), puis une courte pause : l'attente d'une réponse ne doit pas occuper un cœur.
+static func _poll(http: HTTPClient) -> void:
+	http.poll()
+	OS.delay_usec(POLL_IDLE_USEC)
+
+
 ## Attend que la connexion s'établisse, ou que l'échéance tombe. Rend false sur échéance.
 func _await(http: HTTPClient, deadline: int, connecting: bool) -> bool:
 	while http.get_status() == HTTPClient.STATUS_CONNECTING \
 			or http.get_status() == HTTPClient.STATUS_RESOLVING:
 		if Time.get_ticks_msec() > deadline:
 			return false
-		http.poll()
+		_poll(http)
 	return http.get_status() == HTTPClient.STATUS_CONNECTED or not connecting
 
 
@@ -766,7 +802,7 @@ func _drain(http: HTTPClient, deadline: int) -> Array:
 	while http.get_status() == HTTPClient.STATUS_REQUESTING:
 		if Time.get_ticks_msec() > deadline:
 			return [0, PackedByteArray()]
-		http.poll()
+		_poll(http)
 	var code := http.get_response_code()
 	if code == 0:
 		return [0, PackedByteArray()]
@@ -775,32 +811,35 @@ func _drain(http: HTTPClient, deadline: int) -> Array:
 		if Time.get_ticks_msec() > deadline:
 			return [0, PackedByteArray()]
 		http.poll()
-		body.append_array(http.read_response_body_chunk())
+		var chunk := http.read_response_body_chunk()
+		if chunk.is_empty():
+			OS.delay_usec(POLL_IDLE_USEC)
+		body.append_array(chunk)
 	net_requests += 1
 	return [code, body]
 
 
-## Une requête sur la connexion courante, qu'elle rouvre si besoin. [0, vide] signale une
+## Une requête sur la connexion du fil, qu'elle rouvre si besoin. [0, vide] signale une
 ## connexion inutilisable — à l'appelant de réessayer une fois.
-func _http_once(host: String, port: int, path: String, tls: bool = false) -> Array:
+func _http_once(link: Link, host: String, port: int, path: String, tls: bool = false) -> Array:
 	var deadline := Time.get_ticks_msec() + request_timeout_ms
-	if _conn == null or _conn_host != host or _conn_port != port or _conn_tls != tls \
-			or _conn.get_status() != HTTPClient.STATUS_CONNECTED:
-		_conn = HTTPClient.new()
-		_conn_host = host
-		_conn_port = port
-		_conn_tls = tls
-		if _conn.connect_to_host(host, port, _tls_options(tls)) != OK:
-			_conn = null
+	if link.http == null or link.host != host or link.port != port or link.tls != tls \
+			or link.http.get_status() != HTTPClient.STATUS_CONNECTED:
+		link.http = HTTPClient.new()
+		link.host = host
+		link.port = port
+		link.tls = tls
+		if link.http.connect_to_host(host, port, _tls_options(tls)) != OK:
+			link.http = null
 			return [0, PackedByteArray()]
-		if not _await(_conn, deadline, true):
-			_conn = null
+		if not _await(link.http, deadline, true):
+			link.http = null
 			return [0, PackedByteArray()]
-	if _conn.request(HTTPClient.METHOD_GET, path, []) != OK:
+	if link.http.request(HTTPClient.METHOD_GET, path, []) != OK:
 		return [0, PackedByteArray()]
-	var res := _drain(_conn, deadline)
+	var res := _drain(link.http, deadline)
 	if res[0] == 0:
-		_conn = null
+		link.http = null
 	return res
 
 
