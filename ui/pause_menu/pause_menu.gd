@@ -6,6 +6,8 @@ var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.
 ## The settings (general/graphics/audio/controls), open for as long as the pause menu is: Esc lands
 ## on them straight away, see-through, the game running behind. Null while the game plays.
 var _settings_overlay: Node = null
+## Esc or B went down over the menu; the game resumes when it comes up (see _unhandled_input).
+var _resume_armed: bool = false
 
 @onready var main_pause_menu: PausePage = $PausePage
 
@@ -17,6 +19,9 @@ func _ready() -> void:
 	# The settings' lines are what the pad or the arrows reach first; up from the top of them is the
 	# bar (Resume, Back to the menu, Quit), down from the bar is the page again.
 	main_pause_menu.bar.leads_focus = false
+	main_pause_menu.bar.took_focus.connect(func() -> void:
+		if is_instance_valid(_settings_overlay):
+			_settings_overlay.release_focus())
 	main_pause_menu.bar.left_bottom.connect(func() -> void:
 		if is_instance_valid(_settings_overlay):
 			_settings_overlay.focus_first())
@@ -45,9 +50,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			_open()
 	else:
+		# The settings ARE the pause menu now: Esc, or B on the gamepad, goes back to the game, like
+		# Resume — when the key comes back UP. Resumed on the press, the game woke with B still down,
+		# and B is crouch: the press that closed the menu crouched the player as well.
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
-			# The settings ARE the pause menu now: Esc, or B on the gamepad, goes back to the game,
-			# like Resume.
+			_resume_armed = true
+		elif _resume_armed and (event.is_action_released("pause") or event.is_action_released("ui_cancel")):
+			_resume_armed = false
 			_resume()
 
 		# Only "pause" (Esc) or the Resume button leaves the pause menu — a click in the void must not

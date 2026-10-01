@@ -82,10 +82,36 @@ func test_up_from_the_pages_first_line_reaches_the_bar() -> void:
 	assert_signal_emitted(page, "left_top")
 
 
-func test_the_invitation_names_the_pads_own_button() -> void:
-	assert_string_contains(PadInvite.invitation(InputDevice.Family.XBOX), "A")
-	assert_string_contains(PadInvite.invitation(InputDevice.Family.PLAYSTATION),
-		String(TranslationServer.translate("%%PAD_PS_CROSS")))
+func test_the_gamepad_window_comes_up_only_when_wanted() -> void:
+	var hidden_before : bool = PadPopup.is_turned_off()
+	SettingsManager.config.set_value("general", "pad_popup_hidden", true)
+	assert_false(PadPopup.wanted(), "never once turned off")
+	SettingsManager.config.set_value("general", "pad_popup_hidden", hidden_before)
+
+
+func test_the_window_holds_the_focus_while_it_is_up() -> void:
+	var popup := PadPopup.new()
+	add_child(popup)
+	assert_true(MenuFocus.modal, "the menus leave it the focus")
+	var bar := TopBar.new()
+	bar.add_entry(&"one", "one")
+	add_child_autofree(bar)
+	bar._input(_pad_button(JOY_BUTTON_A))
+	assert_ne(get_viewport().gui_get_focus_owner(), bar.tabs.button(&"one"), "the A for OK is not the bar's")
+	popup.close()
+	assert_false(MenuFocus.modal)
+
+
+func test_a_pad_unknown_by_name_is_still_a_pad() -> void:
+	assert_eq(InputDevice.family_of("XInput Gamepad (GLFW)", false), InputDevice.Family.XBOX,
+		"its shoulders LB / RB, not Button 10 / 11")
+
+
+func test_a_stick_steers_a_wheel_as_the_mouse_does() -> void:
+	var part : Vector2 = RadialMenu.stick_pointer(Vector2(0.5, 0), 110.0, 305.0, 110.0)
+	assert_between(part.length(), 110.0, 305.0, "part way: in the ring")
+	assert_gt(RadialMenu.stick_pointer(Vector2(1, 0), 110.0, 305.0, 110.0).length(), 305.0,
+		"all the way: out in a submenu")
 
 
 ## Godot's own menu actions carry no gamepad button for pressing or going back: A did nothing on a

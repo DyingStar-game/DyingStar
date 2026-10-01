@@ -104,7 +104,7 @@ func _ready() -> void:
 ## takes it, and that press is spent on it. From there the cross, the stick or the arrows go line to
 ## line (Godot's focus navigation, inside the page's SubViewport).
 func _input(event: InputEvent) -> void:
-	if BindingCapture.listening:
+	if BindingCapture.listening or MenuFocus.modal:
 		return
 	var owner : Control = settings_container.gui_get_focus_owner()
 	if owner != null:
@@ -116,6 +116,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if MenuFocus.wants_focus(event) and focus_first():
 		get_viewport().set_input_as_handled()
+
+
+## The page lets go of the focus: the bar over it took it.
+func release_focus() -> void:
+	settings_container.gui_release_focus()
 
 
 ## The focus on the page's first line. Down from the bar over it.

@@ -76,9 +76,11 @@ static func _use_pad(device: int) -> void:
 
 ## The family of a gamepad named [param joy_name] (Input.get_joy_name), [param known] to Godot's
 ## mapping table or not.
+##
+## A pad Godot's table does not know by name is still read by its name: an XInput pad on Windows can
+## come up unknown, and naming its shoulder buttons "Button 10 / 11" read as broken. Only a device
+## whose name says nothing of a pad (a flight stick, a wheel) is numbered.
 static func family_of(joy_name: String, known: bool) -> Family:
-	if not known:
-		return Family.GENERIC
 	var name : String = joy_name.to_lower()
 	for word: String in ["playstation", "dualshock", "dualsense", "ps3", "ps4", "ps5", "sony"]:
 		if name.contains(word):
@@ -86,7 +88,12 @@ static func family_of(joy_name: String, known: bool) -> Family:
 	for word: String in ["nintendo", "switch", "joy-con", "joycon"]:
 		if name.contains(word):
 			return Family.NINTENDO
-	return Family.XBOX
+	if known:
+		return Family.XBOX
+	for word: String in ["xbox", "xinput", "controller", "gamepad", "game pad", "pad"]:
+		if name.contains(word):
+			return Family.XBOX
+	return Family.GENERIC
 
 
 ## Which device [param event] is a binding of, or -1 for neither (a mouse motion, a touch).

@@ -8,6 +8,10 @@ extends RefCounted
 ## focus instead. With the mouse in hand nothing is given the focus: a focus frame over a menu being
 ## clicked is noise.
 
+## A window is up over the menu (PadPopup): the bar and the tabs leave the focus and the shoulder
+## buttons to it.
+static var modal : bool = false
+
 
 ## Is [param event] somebody reaching for the menu without the mouse: a gamepad button, a stick pushed
 ## (InputDevice.STICK_WAKE), an arrow key or Enter?
