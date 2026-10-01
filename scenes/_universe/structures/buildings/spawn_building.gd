@@ -28,6 +28,41 @@ var _apartments_created: bool = false
 
 
 
+## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
+const PAD_MARGIN_M := 0.5
+
+
+## The TerrainPad footprint of a building of [param data]'s rows / cols / spacings, local to the
+## TerrainPad node ({size, local}, what its marker box would hold). Static so the server can state the
+## pad of a building that has no node yet (server.gd _stream_register_pads) with the same numbers.
+## Apartments run from x = 0 towards −x (one or two rows) and from z = 0 towards +z (cols).
+static func terrain_pad_box(data: Dictionary) -> Dictionary:
+	var w: float = float(data.get("rows", 1)) * absf(float(data.get("x_spacing", -5.16)))
+	var l: float = float(data.get("cols", 1)) * absf(float(data.get("z_spacing", 3.16)))
+	return {
+		"size": Vector3(w + 2.0 * PAD_MARGIN_M, 0.2, l + 2.0 * PAD_MARGIN_M),
+		"local": Transform3D(Basis.IDENTITY, Vector3(-0.5 * w, 0.0, 0.5 * l)),
+	}
+
+
+## Fit the TerrainPad to the building as it is now: the box drawn in the scene is one size for all
+## of them (53 m long), which levelled the ground of the neighbours of a short building — at THEIR
+## altitude, half a building floating or buried on a slope — and not the far end of a long one.
+func _fit_terrain_pad() -> void:
+	var pad := get_node_or_null("TerrainPad") as TerrainPad
+	if pad == null:
+		return
+	var box := terrain_pad_box({"rows": rows, "cols": cols, "x_spacing": x_spacing,
+			"z_spacing": z_spacing})
+	pad.set_footprint(box["size"], box["local"])
+
+
+func _enter_tree() -> void:
+	# Before the TerrainPad child's own _enter_tree: it reads the marker box there.
+	_fit_terrain_pad()
+
+
+
 func _create_apartments():
 	if _apartments_created:
 		return
@@ -122,6 +157,8 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	if data.has("y_spacing"):
 		y_spacing = data["y_spacing"]
+
+	_fit_terrain_pad()
 
 	if data.has("apartments"):
 		apartments = data["apartments"]

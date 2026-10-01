@@ -469,6 +469,24 @@ func template_relative_to(root: Node) -> Dictionary:
 			"apron": apron_m, "h_offset": height_offset}
 
 
+## Resize the footprint from code, for a building whose size comes from its data (a spawn building's
+## rows and cols): a box drawn once in the scene would level the ground of its neighbours on one
+## side and leave its own far end on the raw relief on the other. [param size] and [param local] are
+## what the marker box would hold — local to this node. The marker is resized too while it exists,
+## so _enter_tree, which re-reads it, finds the same numbers.
+func set_footprint(size: Vector3, local: Transform3D) -> void:
+	var box := _find_box()
+	if box != null:
+		box.size = size
+		box.transform = local
+	if _box_read and _box_size == size and _box_local == local:
+		return
+	_box_size = size
+	_box_local = local
+	_box_read = true
+	_mark_dirty()
+
+
 ## Half the levelled footprint in metres, as the box currently measures it:
 ## .x across the box's local X, .y across its local Z, the scale it stands
 ## under included. Vector2.ZERO when there is no usable box. This is what the
