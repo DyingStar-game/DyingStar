@@ -86,3 +86,19 @@ func test_the_invitation_names_the_pads_own_button() -> void:
 	assert_string_contains(PadInvite.invitation(InputDevice.Family.XBOX), "A")
 	assert_string_contains(PadInvite.invitation(InputDevice.Family.PLAYSTATION),
 		String(TranslationServer.translate("%%PAD_PS_CROSS")))
+
+
+## Godot's own menu actions carry no gamepad button for pressing or going back: A did nothing on a
+## focused entry. They are written out in project.godot with the pad's buttons and the left stick.
+func test_a_presses_b_goes_back_and_the_stick_moves() -> void:
+	InputMap.load_from_project_settings()
+	assert_true(_pad_button(JOY_BUTTON_A).is_action_pressed(&"ui_accept"), "A presses")
+	assert_true(_pad_button(JOY_BUTTON_B).is_action_pressed(&"ui_cancel"), "B goes back")
+	var stick := InputEventJoypadMotion.new()
+	stick.axis = JOY_AXIS_LEFT_Y
+	stick.axis_value = 0.9
+	assert_true(stick.is_action_pressed(&"ui_down"), "the left stick moves down")
+	var enter := InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.pressed = true
+	assert_true(enter.is_action_pressed(&"ui_accept"), "and Enter still presses")

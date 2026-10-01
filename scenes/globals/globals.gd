@@ -91,6 +91,13 @@ func _ready() -> void:
 		get_tree().root.window_input.connect(AltGr.feed)
 		# Keyboard and mouse, or the gamepad: what the HUD names a key after (InputDevice).
 		get_tree().root.window_input.connect(InputDevice.feed)
+	else:
+		set_process(false)
+
+
+## The gamepads are looked at directly: their events do not pass through the window (InputDevice).
+func _process(_delta: float) -> void:
+	InputDevice.poll_pads()
 
 
 func _notification(what: int) -> void:
