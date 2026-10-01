@@ -283,6 +283,34 @@ static func ground_altitude_m(body_key: String, local_dir: Vector3) -> float:
 	return (surface_factor(body_key, local_dir) - 1.0) * radius / EXAGGERATION
 
 
+## Where a ray meets a body's GROUND, as a direction in the body's own frame, or ZERO when it misses.
+##
+## The chart knew which body the cursor was over, never where on it. Met against the reference sphere
+## alone, the point is off by the relief under it — kilometres over a summit seen from above, more at
+## a grazing angle — so the sphere is grown to the ground found at the last guess and the ray met again,
+## [param iterations] times. A ray that grazes past the grown sphere keeps the last point it had.
+##
+## [param centre], [param drawn_radius] and [param basis] are the body as DRAWN (its sphere's position,
+## scale × MESH_RADIUS, and orthonormal basis), so the point is the one under the cursor on screen.
+static func surface_hit(origin: Vector3, dir: Vector3, centre: Vector3, drawn_radius: float,
+		basis: Basis, body_key: String, iterations: int = 3) -> Vector3:
+	var to_body: Basis = basis.inverse()
+	var factor: float = 1.0
+	var local: Vector3 = Vector3.ZERO
+	for _pass: int in range(maxi(iterations, 1)):
+		var along_ray: float = (centre - origin).dot(dir)
+		var radius: float = drawn_radius * factor
+		var disc: float = along_ray * along_ray - ((centre - origin).length_squared() - radius * radius)
+		if disc < 0.0:
+			break  # past the limb: the last point, or nothing
+		var t: float = along_ray - sqrt(disc)
+		if t <= 0.0:
+			break  # the body is behind, or the eye inside it
+		local = (to_body * (origin + dir * t - centre)).normalized()
+		factor = surface_factor(body_key, local)
+	return local
+
+
 ## Is this tile's OWN data on disk, as opposed to an ancestor's standing in for it?
 ##
 ## The question a tile built from a coarser level has to be able to answer before it is worth building
