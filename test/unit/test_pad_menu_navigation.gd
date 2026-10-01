@@ -43,7 +43,7 @@ func test_the_buttons_are_named_either_side_and_only_on_the_pad() -> void:
 	assert_not_null(first, "a hint before the tabs")
 	assert_not_null(last, "and one after")
 	first._refresh()
-	assert_eq(first.text, "LB", "named after the button bound")
+	assert_eq(first.text, "[LB]", "named after the button bound")
 	assert_eq(first.self_modulate.a, 0.0, "hidden with the mouse in hand")
 	InputDevice.last = InputDevice.Kind.GAMEPAD
 	first._refresh()
@@ -85,14 +85,16 @@ func test_a_pad_is_in_hand_when_something_changes_not_when_something_is_held() -
 func test_the_focused_entry_shows_its_button_without_moving_the_others() -> void:
 	var strip := _strip()
 	strip.allow_focus()
-	var hint := strip.get_child(strip.button(&"a").get_index() + 1) as PadHint
-	assert_not_null(hint, "a hint beside each entry")
-	assert_eq(hint.custom_minimum_size.x, TabStrip.ACCEPT_HINT_WIDTH, "its room kept, shown or not")
+	var hint := strip.button(&"a").get_node("AcceptHint") as PadHint
+	assert_not_null(hint, "a hint on each entry")
+	assert_eq(hint.anchor_left, 1.0, "right after its text")
+	assert_eq(strip.get_theme_constant("separation"), 36 + int(TabStrip.ACCEPT_HINT_GAP + TabStrip.ACCEPT_HINT_WIDTH),
+			"its room kept between the entries, shown or not")
 	InputDevice.last = InputDevice.Kind.GAMEPAD
 	hint._refresh()
 	assert_eq(hint.self_modulate.a, 0.0, "hidden while its entry has not the focus")
 	strip.button(&"a").grab_focus()
 	hint._refresh()
 	assert_eq(hint.self_modulate.a, 1.0, "shown when it has")
-	assert_eq(hint.text, "A")
+	assert_eq(hint.text, "(A)")
 	strip.button(&"a").release_focus()

@@ -83,10 +83,21 @@ func _text(key: String, font_size: int, color: Color) -> Label:
 func _ready() -> void:
 	_shown = true
 	MenuFocus.modal = true
-	# "OK (A)": the pad's own bottom button, as printed on it.
-	_ok.text = ok_text(InputDevice.likely_family())
+	_label_ok()
 	# On OK at once: A or Enter closes it.
 	_ok.grab_focus()
+
+
+## "OK (A)": the pad's own bottom button, as printed on it — kept up with the pad, so the one the player
+## picks up names its own button ("OK (✕)" on a DualSense).
+func _process(_delta: float) -> void:
+	_label_ok()
+
+
+func _label_ok() -> void:
+	var text : String = ok_text(InputDevice.likely_family())
+	if _ok.text != text:
+		_ok.text = text
 
 
 ## "OK (A)", the button named as printed on a pad of [param family].

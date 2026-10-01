@@ -89,16 +89,16 @@ static func moved(before: PackedFloat32Array, now: PackedFloat32Array) -> bool:
 
 
 ## The family of the pad the player is most likely holding: the one last used, or else the first one
-## plugged in that names itself a pad (a virtual device or a flight stick can come first).
+## plugged in that names itself a pad (a virtual device or a flight stick can come first). None does:
+## the Xbox layout, the common one — "Button 1" for a pad not yet touched read as a fault.
 static func likely_family() -> Family:
 	if last == Kind.GAMEPAD:
 		return family
-	var pads : Array[int] = Input.get_connected_joypads()
-	for device: int in pads:
+	for device: int in Input.get_connected_joypads():
 		var found : Family = family_of(Input.get_joy_name(device), Input.is_joy_known(device))
 		if found != Family.GENERIC:
 			return found
-	return Family.GENERIC if not pads.is_empty() else family
+	return Family.XBOX
 
 
 static func _use_pad(device: int) -> void:
