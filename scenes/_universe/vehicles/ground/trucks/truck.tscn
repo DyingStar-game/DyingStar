@@ -151,7 +151,6 @@ disable_3d = true
 handle_input_locally = false
 size = Vector2i(1921, 1112)
 size_2d_override_stretch = true
-render_target_update_mode = 4
 
 [node name="VehiculeDashboard" parent="Gui3D/SubViewport" unique_id=957292936 instance=ExtResource("5_d2vf6")]
 

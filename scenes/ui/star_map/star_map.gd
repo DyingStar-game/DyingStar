@@ -411,6 +411,7 @@ func setup(player: Node3D) -> void:
 
 func open() -> void:
 	_rebuild()
+	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	show()
 	if not _opened_before or _moved_since_closed():
 		_opened_before = true
@@ -470,6 +471,7 @@ func close() -> void:
 	# It is parked at the next rebuild and picked up again by key; see [method _park_ground]. Builds
 	# still in flight are harmless: a worker writes into its own slot and nothing else.
 	hide()
+	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 
 func _exit_tree() -> void:
@@ -502,7 +504,9 @@ func _build_ui() -> void:
 	# Its OWN world: the real planets, chunks and atmospheres are not in it.
 	_viewport.own_world_3d = true
 	_viewport.transparent_bg = false  # it paints its own sky now
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Only while the chart is open: it is a whole 3D world with its own sky, and it used to render
+	# every frame from the start of the game, hidden or not. open() / close() switch it.
+	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	container.add_child(_viewport)
 
 	_world_root = Node3D.new()
