@@ -1,7 +1,8 @@
 class_name StarMapCursorReadout
 extends Control
 
-## Longitude, latitude and height of the ground under the cursor, written beside it.
+## Longitude, latitude and height of the ground under the cursor, written beside it. On the gamepad,
+## with no cursor, of the ground at the centre of the screen, marked with a small cross.
 ##
 ## A drawing over the chart, like the scale bar: it never takes a click. It stands on a dark plate:
 ## over a starfield light text reads alone, over sunlit ground it did not, outline and all. The chart
@@ -14,11 +15,15 @@ const PLATE_COLOR: Color = Color(0.04, 0.05, 0.07, 0.82)
 ## Room between the text and the plate's edge, across and up and down.
 const PADDING: Vector2 = Vector2(8.0, 4.0)
 const CORNER_RADIUS: int = 4
+## The cross at the centre on the gamepad: half its arms, and their width.
+const CROSS_HALF: float = 7.0
+const CROSS_WIDTH: float = 2.0
 
 var _plate := StyleBoxFlat.new()
 
 var _text: String = ""
 var _at: Vector2 = Vector2.ZERO
+var _cross: bool = false
 
 
 func _init() -> void:
@@ -28,12 +33,14 @@ func _init() -> void:
 	_plate.set_corner_radius_all(CORNER_RADIUS)
 
 
-## Write [param text] beside the cursor at [param cursor].
-func show_at(cursor: Vector2, text: String) -> void:
-	if text == _text and cursor == _at and visible:
+## Write [param text] beside the cursor at [param cursor]; with [param cross], mark that point too
+## (there is no cursor on the gamepad).
+func show_at(cursor: Vector2, text: String, cross: bool = false) -> void:
+	if text == _text and cursor == _at and cross == _cross and visible:
 		return
 	_text = text
 	_at = cursor
+	_cross = cross
 	visible = true
 	queue_redraw()
 
@@ -46,6 +53,9 @@ func hide_readout() -> void:
 func _draw() -> void:
 	if _text == "":
 		return
+	if _cross:
+		draw_line(_at - Vector2(CROSS_HALF, 0.0), _at + Vector2(CROSS_HALF, 0.0), TEXT_COLOR, CROSS_WIDTH)
+		draw_line(_at - Vector2(0.0, CROSS_HALF), _at + Vector2(0.0, CROSS_HALF), TEXT_COLOR, CROSS_WIDTH)
 	var font: Font = get_theme_default_font()
 	var font_size: int = get_theme_default_font_size()
 	var span: Vector2 = font.get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)

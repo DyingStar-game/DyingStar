@@ -2246,9 +2246,10 @@ func _refresh_cursor_readout() -> void:
 		return
 	var body: int = _blocker
 	var on_a_name: bool = _poi_hover >= 0 or _poi_cluster_hover >= 0 or (_hover >= 0 and _hover == _player_index)
-	# On the gamepad the cursor is put away (InputDevice.fit_cursor): nothing points at the ground.
+	# On the gamepad the cursor is put away (InputDevice.fit_cursor): the centre of the screen is what
+	# points, where the stick turns the ground under — and the hovers, the mouse's, do not count.
 	var on_pad: bool = InputDevice.last == InputDevice.Kind.GAMEPAD
-	if body < 0 or body >= _bodies.size() or _dragging or on_a_name or on_pad:
+	if body < 0 or body >= _bodies.size() or _dragging or (on_a_name and not on_pad):
 		_cursor_readout.hide_readout()
 		return
 	var sphere: MeshInstance3D = _bodies[body]["sphere"]
@@ -2256,14 +2257,14 @@ func _refresh_cursor_readout() -> void:
 		_cursor_readout.hide_readout()
 		return
 	var key: String = str(_bodies[body]["key"])
-	var at: Vector2 = _cursor_readout.get_local_mouse_position()
+	var at: Vector2 = _cursor_readout.size * 0.5 if on_pad else _cursor_readout.get_local_mouse_position()
 	var local: Vector3 = StarMapRelief.surface_hit(_camera.project_ray_origin(at),
 			_camera.project_ray_normal(at), sphere.position, sphere.scale.x * MESH_RADIUS,
 			sphere.basis.orthonormalized(), key)
 	if local == Vector3.ZERO:
 		_cursor_readout.hide_readout()
 		return
-	_cursor_readout.show_at(at, cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"])))
+	_cursor_readout.show_at(at, cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"])), on_pad)
 
 
 ## What the cursor readout says for the ground along [param local] on [param body_key]: longitude and
