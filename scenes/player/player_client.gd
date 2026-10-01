@@ -165,6 +165,10 @@ func setup() -> void:
 	var torch_budget := TorchShadowBudget.new()
 	torch_budget.name = "TorchShadowBudget"
 	player.add_child(torch_budget)
+	# And for the lamps of the world: the nearest few cast, the atlas is never full (see the class).
+	var lamp_budget := LampShadowBudget.new()
+	lamp_budget.name = "LampShadowBudget"
+	player.add_child(lamp_budget)
 
 	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
 	player._emote_wheel = RadialMenu.new()
