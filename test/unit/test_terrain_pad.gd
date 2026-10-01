@@ -174,6 +174,45 @@ func test_nearest_picks_the_pad_you_stand_on() -> void:
 	assert_eq(str(PadBed.nearest([_rec, b], _east(39.0), MPD)["rec"]["uuid"]), "pad_b")
 
 
+## Two buildings 10 m apart on a slope, their platforms 7 m apart in height: the
+## layout of tarsis_3 village 2, where the nearest-pad rule drew a 7 m cliff
+## halfway between them, saw-toothed by the grid.
+func _terraced_neighbour() -> Dictionary:
+	var b := PadBed.record("pad_b", 30.0 / MPD, 0.0, 0.0, 10.0, 15.0, 8.0, 0.0)
+	b["z"] = 107.0
+	return b
+
+
+func test_neighbouring_pads_join_without_a_cliff() -> void:
+	var b := _terraced_neighbour()
+	var step := 0.05
+	var prev := PadBed.apply(80.0, _east(-30.0), [_rec, b], MPD)
+	var e := -30.0 + step
+	while e < 60.0:
+		var y := PadBed.apply(80.0, _east(e), [_rec, b], MPD)
+		assert_lte(absf(y - prev), 0.2, "%.2f m east: the ground must not jump" % e)
+		prev = y
+		e += step
+
+
+func test_each_neighbour_still_meets_its_own_floor() -> void:
+	var b := _terraced_neighbour()
+	for e: float in [-10.0, 0.0, 9.99, 10.0]:
+		assert_eq(PadBed.apply(80.0, _east(e), [_rec, b], MPD), 100.0, "%.2f m east" % e)
+	for e: float in [20.0, 20.01, 30.0, 40.0]:
+		assert_almost_eq(PadBed.apply(80.0, _east(e), [_rec, b], MPD), 107.0, 0.02,
+				"%.2f m east" % e)
+
+
+func test_the_blend_does_not_depend_on_the_order() -> void:
+	var b := _terraced_neighbour()
+	var e := 10.0
+	while e <= 20.0:
+		assert_eq(PadBed.apply(80.0, _east(e), [_rec, b], MPD),
+				PadBed.apply(80.0, _east(e), [b, _rec], MPD), "%.2f m east" % e)
+		e += 0.37
+
+
 # ── The refinement predicate and the index's bound ───────────────────────
 
 func test_reach_is_an_upper_bound_on_what_apply_moves() -> void:
@@ -307,6 +346,26 @@ func test_no_box_means_no_pad() -> void:
 	assert_eq(pad.footprint_half_extents(), Vector2.ZERO)
 	assert_gt(pad._get_configuration_warnings().size(), 0,
 			"and the inspector must say so rather than fail silently")
+
+
+func test_set_footprint_replaces_the_box() -> void:
+	var pad := _pad_with_box(Vector3(14.7, 0.2, 53.3))
+	pad.set_footprint(Vector3(11.0, 0.2, 20.0), Transform3D(Basis.IDENTITY, Vector3(-5.0, 0.0, 9.0)))
+	assert_eq(pad.footprint_half_extents(), Vector2(5.5, 10.0))
+	assert_eq((pad.get_node("Ground") as CSGBox3D).size, Vector3(11.0, 0.2, 20.0),
+			"the marker follows, so a later _enter_tree re-reads the same footprint")
+
+
+func test_spawn_building_pad_fits_its_rows_and_cols() -> void:
+	# The scene's box is 53 m long whatever the building: a 6-col building levelled
+	# 34 m of its neighbours' ground at its own altitude.
+	var script: Script = load("res://scenes/_universe/structures/buildings/spawn_building.gd")
+	# Called through Script.call, as server.gd states the pad of a sleeping building.
+	var box: Dictionary = script.call("terrain_pad_box", {"rows": 2.0, "cols": 6.0})
+	assert_almost_eq((box["size"] as Vector3).x, 2.0 * 5.16 + 1.0, 1e-9)
+	assert_almost_eq((box["size"] as Vector3).z, 6.0 * 3.16 + 1.0, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.x, -5.16, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.z, 9.48, 1e-9)
 
 
 func test_the_footprint_survives_the_marker_being_freed() -> void:

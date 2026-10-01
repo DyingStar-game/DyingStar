@@ -257,14 +257,61 @@ static func height_at(h: float, rec: Dictionary, d: float) -> float:
 	return lerpf(z, h, (d - apron) / talus)
 
 
-## The per-vertex pad rule: [param h] moved by the nearest of [param pads].
+## The per-vertex pad rule: [param h] moved by the nearest of [param pads],
+## blended with every other pad that reaches the point.
+##
+## The nearest pad alone switches altitude on the line halfway between two
+## pads: on a slope, two neighbours' platforms differ by metres and that line
+## becomes a cliff the grid draws as saw teeth (tarsis_3 village 2). Outside
+## every footprint, each pad's own rule ([method height_at]) is therefore
+## weighted by 1/d², faded to 0 over the last PadSettings.NEIGHBOUR_FADE_M of
+## its reach:
+##   · 1/d² grows without bound at a footprint's edge, so the ground meets
+##     every building at its own floor, with a level start, and ramps across
+##     the gap to the next one;
+##   · the fade makes a pad join and leave the blend at weight 0, so the
+##     ground is continuous wherever the set of pads changes (the measured
+##     talus cap keeps a margin, so its own rule has normally handed the
+##     ground back to the relief by then);
+##   · it never involves a pad beyond its reach_m, the only pads the index
+##     guarantees to every chunk containing the point (a pad seen by one chunk
+##     and not by its neighbour would tear their shared border).
+## Inside a footprint nothing is blended. A point only one pad reaches gets
+## exactly the single-pad rule — a lone building is untouched by this.
 static func apply(h: float, lonlat: Vector2, pads: Array, m_per_deg: float) -> float:
 	if pads.is_empty():
 		return h
 	var q := nearest(pads, lonlat, m_per_deg)
 	if not q["hit"]:
 		return h
-	return height_at(h, q["rec"], float(q["d"]))
+	var d_min := float(q["d"])
+	var near_h := height_at(h, q["rec"], d_min)
+	if pads.size() < 2 or d_min <= 0.0:
+		return near_h
+	var blend: Array = []
+	for rec: Dictionary in pads:
+		var d := sdf_m(rec, lonlat, m_per_deg)
+		var fade := (float(rec["apron_m"]) + talus_cap(rec) - d) / PadSettings.NEIGHBOUR_FADE_M
+		if fade > 0.0:
+			blend.append([str(rec["uuid"]), d, rec, minf(fade, 1.0)])
+	if blend.is_empty():
+		return near_h
+	if blend.size() == 1:
+		# Not necessarily the nearest: past its own reach the nearest pad has
+		# faded out while a farther one with a wider talus still holds the ground.
+		return height_at(h, blend[0][2], float(blend[0][1]))
+	# Summed in uuid order: the index hands pads in an order that depends on
+	# the chunk, and the mesh, the collision and the neighbouring chunk must
+	# add the same floats in the same order to get the same bits.
+	blend.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	var sw := 0.0
+	var swh := 0.0
+	for e: Array in blend:
+		var d: float = e[1]
+		var w: float = float(e[3]) / (d * d)
+		sw += w
+		swh += w * height_at(h, e[2], d)
+	return swh / sw
 
 
 ## The coarse-LOD rule, the exact counterpart of GradeBed.shaved_height: within

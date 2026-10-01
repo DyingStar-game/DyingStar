@@ -48,6 +48,17 @@ const TALUS_MAX_M := 120.0
 ## band and the rebuild set both cover the last sub-vertex the rule moves.
 const REACH_MARGIN_M := 2.0
 
+## Neighbouring pads that sit at different altitudes are BLENDED where both
+## reach (PadBed.apply), not split on the line halfway between them: on a slope
+## that line was a cliff, saw-toothed by the grid — tarsis_3 village 2, 61 m
+## between its highest and lowest platform, buildings 8 m apart. A pad's weight
+## fades to 0 over this last stretch of its reach, so it joins and leaves the
+## blend without a step.
+##
+## Not in [method signature]: a chunk any pad reaches is never put in the disk
+## cache (PlanetData.chunk_cache_ineligible), so nothing baked depends on it.
+const NEIGHBOUR_FADE_M := 4.0
+
 # ── Pad altitude ─────────────────────────────────────────────────────────
 
 ## The raw relief is sampled on a SAMPLE_N × SAMPLE_N grid over the footprint

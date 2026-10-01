@@ -3029,6 +3029,7 @@ func _stream_pad_templates_for(scenename: String) -> Array:
 				var t: Dictionary = (n as TerrainPad).template_relative_to(inst)
 				if not t.is_empty():
 					t["root_scale"] = root_scale
+					t["root_script"] = inst.get_script()
 					out.append(t)
 			stack.append_array(n.get_children())
 		inst.free()
@@ -3071,11 +3072,30 @@ func _stream_register_pads(uuid: String) -> void:
 	var to_terrain: Transform3D = terrain.global_transform.affine_inverse() * (planet as Planet).global_transform
 	for t in templates:
 		var item := Transform3D(Basis.from_euler(rot).scaled(t["root_scale"]), e["pos"])
+		var box_size: Vector3 = t["box_size"]
+		var box_local: Transform3D = t["box_local"]
+		# A building sized by its data (spawn building rows / cols) fits its pad to it
+		# (terrain_pad_box): the scene's box would state a different record from the node's.
+		var fit: Dictionary = _stream_pad_box_from_data(t.get("root_script"), od)
+		if not fit.is_empty():
+			box_size = fit["size"]
+			box_local = fit["local"]
 		var rec: Dictionary = TerrainPad.record_from((planet as Planet).planet_data,
-				to_terrain * item * (t["rel"] as Transform3D), t["box_size"], t["box_local"],
+				to_terrain * item * (t["rel"] as Transform3D), box_size, box_local,
 				float(t["apron"]), float(t["h_offset"]), "prop:" + uuid)
 		if not rec.has("_refusal"):
 			terrain.register_terrain_pad(rec)
+
+
+## The footprint the building script derives from [param od] (its static terrain_pad_box), {} when
+## its scene's box is the footprint.
+static func _stream_pad_box_from_data(script, od: Dictionary) -> Dictionary:
+	if not (script is Script):
+		return {}
+	for m in (script as Script).get_script_method_list():
+		if m["name"] == "terrain_pad_box":
+			return (script as Script).call("terrain_pad_box", od)
+	return {}
 
 
 ## A pad can turn a coarse planet's collision to the finest grid (PlanetData.collision_detail_nside
