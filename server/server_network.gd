@@ -77,28 +77,46 @@ func _process(delta: float) -> void:
 			}
 			peer.send_text(JSON.stringify(handshake))
 			print("Sent check_server_started to Horizon.")
-		while peer.get_available_packet_count():
-			var packet = peer.get_packet()
-			if peer.was_string_packet():
-				var packet_text = packet.get_string_from_utf8()
-				# print("SERVER - Received packet: %s" % [packet_text])
-				var _th: int = Time.get_ticks_usec() if PropNet.prof_on else 0
-				var message = JSON.parse_string(packet_text)
-				if message != null:
-					# Horizon's own clock, on the packet it just sent. Feeding it here rather than in
-					# one handler catches EVERY message, which is what lets the estimator converge:
-					# the timestamp is whole seconds, so accuracy comes from seeing many samples
-					# (see Globals.sync_clock).
-					if message is Dictionary and message.has("timestamp"):
-						Globals.sync_clock(float(message["timestamp"]))
-					dispatch_horizon_message(message)
-					if PropNet.prof_on:
-						_prof_horizon(message, Time.get_ticks_usec() - _th)
-					if devmode:
-						_devmode_horizon_mapping(message)
-			else:
-				print("< Got binary data from peer: %d ... echoing" % [packet.size()])
-				peer.send_text(packet)
+		_read_packets()
+
+
+## Push out what the physics tick just queued and take in what Horizon sent, WITHOUT waiting for the
+## end of the frame. send_text only queues: the bytes leave on poll(), and _process polls once per
+## rendered frame. When a physics step overruns, the engine runs up to 8 catch-up steps per frame
+## (5-6 frames/s on 2026-10-01): inputs then waited ~180 ms to be read and positions left in bursts
+## of 4 — the lag felt while walking. server.gd calls this right after its 30 Hz send, so both
+## directions keep that 30 Hz cadence whatever the frame rate. Connection handling stays in _process.
+func pump() -> void:
+	if peer.get_ready_state() != WebSocketPeer.STATE_OPEN or not _peer_handshake_sent:
+		return
+	peer.poll()
+	if peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		_read_packets()
+
+
+func _read_packets() -> void:
+	while peer.get_available_packet_count():
+		var packet = peer.get_packet()
+		if peer.was_string_packet():
+			var packet_text = packet.get_string_from_utf8()
+			# print("SERVER - Received packet: %s" % [packet_text])
+			var _th: int = Time.get_ticks_usec() if PropNet.prof_on else 0
+			var message = JSON.parse_string(packet_text)
+			if message != null:
+				# Horizon's own clock, on the packet it just sent. Feeding it here rather than in
+				# one handler catches EVERY message, which is what lets the estimator converge:
+				# the timestamp is whole seconds, so accuracy comes from seeing many samples
+				# (see Globals.sync_clock).
+				if message is Dictionary and message.has("timestamp"):
+					Globals.sync_clock(float(message["timestamp"]))
+				dispatch_horizon_message(message)
+				if PropNet.prof_on:
+					_prof_horizon(message, Time.get_ticks_usec() - _th)
+				if devmode:
+					_devmode_horizon_mapping(message)
+		else:
+			print("< Got binary data from peer: %d ... echoing" % [packet.size()])
+			peer.send_text(packet)
 
 
 ## Take whoever is knocking on the port, and hand the link to the NEWEST Horizon that proves itself.

@@ -244,6 +244,7 @@ func _physics_process(_delta: float) -> void:
 		_horizon_update_counter = 0
 		send_players_newposition_to_horizon()
 		send_props_update_to_horizon()
+		ServerNetwork.pump()  # send now and read inputs now, not at the end of the frame
 	if PropNet.prof_on:
 		# _perf_tick prints and resets INSIDE this window, so its own report frame lands in the next
 		# window's bucket. Over a 2 s window that is noise; it keeps the accounting simple.
