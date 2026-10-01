@@ -30,6 +30,9 @@ const SCREEN_PAN_MARGIN: float = 0.08
 ## scaled by camera_sensitivity: a console is read at the same speed whatever the player's mouse
 ## settings, and the rate is converted back into an equivalent mouse delta only when it is applied.
 const SCREEN_PAN_RATE: float = 1.1
+## How fast the right stick turns the view, pushed all the way (rad/s). Like the edge pan, a rate in
+## radians converted to a mouse delta only when applied, so camera_sensitivity does not change it.
+const STICK_LOOK_RATE: float = 2.4
 ## How often the ground is re-probed (s). A step comes every metre or so; sampling at 60 Hz would cast
 ## sixty rays to answer a question that changes when you walk into another room.
 const SURFACE_SAMPLE_S: float = 0.2
@@ -279,6 +282,8 @@ func _process(_delta: float) -> void:
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
 		_apply_cursor_mode(_ui_focus())  # a panel opened at the wheel needs the pointer, same as on foot
+		if not _ui_focus():
+			player.mouse_motion += _stick_look(_delta)  # free look at the wheel, from the stick too
 		player._ride_seat(player._seat_node)
 		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
@@ -300,6 +305,8 @@ func _process(_delta: float) -> void:
 	# 3D screen, the spawn wheel, OR the pause menu is open. Otherwise capture the mouse and move the
 	# camera. (Without the pause case, this would re-capture every frame and hide the menu cursor.)
 	var ui_focus: bool = _ui_focus()
+	if not ui_focus:
+		player.mouse_motion += _stick_look(_delta)
 
 	# Mining (aim, perforation, head sync) runs in the MiningTool — but ONLY while in direct control, so
 	# you can't aim or drill while a menu/wheel is up (its polled input would otherwise fire while paused,
@@ -591,6 +598,17 @@ func _pan_along_screen(delta: float) -> void:
 	var step: float = SCREEN_PAN_RATE * delta / maxf(player.camera_sensitivity, 0.001)
 	player.mouse_motion = -push * step
 	_handle_camera_motion()
+
+
+## The right stick, as the mouse motion it stands for this frame: the look actions, turning the view at
+## STICK_LOOK_RATE pushed all the way. Squared, so a small push is a fine aim and a full one a turn.
+## Through mouse_motion, the one road the view is turned by: aiming slows it and perforating holds it
+## for the stick as for the mouse, and a carried crate tumbles under it the same way.
+func _stick_look(delta: float) -> Vector2:
+	var stick: Vector2 = Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+	if stick == Vector2.ZERO:
+		return Vector2.ZERO
+	return -stick * stick.length() * (STICK_LOOK_RATE * delta / maxf(player.camera_sensitivity, 0.001))
 
 
 ## How hard the pointer leans on one axis of the window: 0 anywhere in the free middle, then growing
