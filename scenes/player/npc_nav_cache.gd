@@ -381,8 +381,14 @@ func request_box(pos_world: Vector3, goal_world: Vector3, up_world: Vector3) -> 
 			# The cell we are about to step into is always prefetched, even across a block boundary
 			# (the NPC switches map there and needs ground on the other side); the corridor beyond
 			# it stays within this block, the only map a route can use.
-			if c != cell and not wanted.has(c) and (wanted.is_empty() or _block_key(c) == box.block.key):
-				wanted.append(c)
+			if c != cell and not wanted.has(c):
+				if wanted.is_empty() or _block_key(c) == box.block.key:
+					wanted.append(c)
+				else:
+					# A straight line that has left the (square) block never comes back into it: stop.
+					# Without this a goal kilometres away walked the whole line in HALF steps on every
+					# call — 6 ms each, 90 % of the server tick with 68 NPCs (2026-10-01).
+					break
 			if t >= length:
 				break
 			t = minf(t + HALF, length)
