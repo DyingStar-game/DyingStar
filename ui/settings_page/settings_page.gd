@@ -71,14 +71,27 @@ func _ready() -> void:
 	for key: String in CATEGORIES:
 		tabs.add_entry(StringName(key), key)
 	tabs.selected.connect(func(key: StringName) -> void: open(String(key)))
+	# The tabs, and at the other end of their row the frame rate: on every tab, so what an option costs
+	# shows wherever the option is, not only on the Graphics tab where it was the first line.
+	var row := HBoxContainer.new()
+	row.name = "TabRow"
+	row.add_child(tabs)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gap)
+	var perf := PerfLabel.new()
+	perf.name = "Perf"
+	perf.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(perf)
 	var column : VBoxContainer = $Control/MarginContainer/VBoxContainer
-	column.add_child(tabs)
-	column.move_child(tabs, 0)
+	column.add_child(row)
+	column.move_child(row, 0)
 	var rule := HSeparator.new()
 	column.add_child(rule)
 	column.move_child(rule, 1)
 	var sounds : Node = _SOUNDS.instantiate()
-	sounds.root_path = NodePath("../Control/MarginContainer/VBoxContainer/Tabs")
+	sounds.root_path = NodePath("../Control/MarginContainer/VBoxContainer/TabRow/Tabs")
 	add_child(sounds)
 	open("%%MENU_CAT_GENERAL")
 
