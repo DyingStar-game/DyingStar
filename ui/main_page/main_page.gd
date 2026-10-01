@@ -43,7 +43,12 @@ func _ready() -> void:
 	bar.add_entry(QUIT, "%%MENU_QUIT")
 	bar.entry_pressed.connect(_on_entry_pressed)
 	bar.back_pressed.connect(_close_settings)
+	bar.left_bottom.connect(func() -> void:
+		if is_instance_valid(_settings_overlay):
+			_settings_overlay.focus_first())
 	add_child(bar)
+	# A gamepad plugged in and not yet taken up: say it can drive the menu.
+	$Control.add_child(PadInvite.new())
 	is_ready = true
 
 
@@ -60,7 +65,9 @@ func _on_entry_pressed(key: StringName) -> void:
 ## Esc closes the settings overlay (back to the main menu). No-op when it is already closed. The
 ## host menu owns its overlay's lifecycle, mirroring the pause menu — see PauseMenu._unhandled_input.
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause") and is_instance_valid(_settings_overlay):
+	# Esc, or B on the gamepad (ui_cancel).
+	if (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")) \
+			and is_instance_valid(_settings_overlay):
 		_close_settings()
 		get_viewport().set_input_as_handled()
 
@@ -77,9 +84,12 @@ func _on_settings_pressed() -> void:
 	# Connected before it enters the tree: its _ready opens the first category, which must be heard.
 	_settings_overlay.category_changed.connect(_on_category_changed)
 	_settings_overlay.tree_exited.connect(_on_settings_closed)
+	_settings_overlay.left_top.connect(bar.focus_entry)
 	add_child(_settings_overlay)
 	# Over a stage the settings are see-through: the menu's own buttons would show under them.
 	$Control.visible = not _stage_mode
+	# The page's lines are what the pad or the arrows move through now, not the bar's entries.
+	bar.leads_focus = false
 	bar.set_active(SETTINGS)
 	bar.set_back_visible(true)
 
@@ -87,6 +97,10 @@ func _on_settings_pressed() -> void:
 func _on_settings_closed() -> void:
 	_settings_overlay = null
 	$Control.visible = true
+	bar.leads_focus = true
+	# Back on the bar, where you came from: on the pad, the Settings entry has the focus again.
+	if not InputDevice.pointer and bar.tabs.button(SETTINGS) != null:
+		bar.tabs.button(SETTINGS).grab_focus()
 	bar.set_active(&"")
 	bar.set_back_visible(false)
 	screen_changed.emit(&"home")

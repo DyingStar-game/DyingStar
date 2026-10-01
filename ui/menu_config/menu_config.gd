@@ -258,7 +258,6 @@ func _add_action_row(action: String, label_key: String) -> Control:
 		var cell : Button = _factory.button(_binding_text(action, kind))
 		cell.custom_minimum_size.x = CELL_WIDTH
 		cell.size_flags_horizontal = Control.SIZE_SHRINK_END
-		cell.focus_mode = Control.FOCUS_NONE
 		cell.pressed.connect(_on_input_button_pressed.bind(cell, action, kind))
 		line.add_child(cell)
 	var row := SettingsRow.new()

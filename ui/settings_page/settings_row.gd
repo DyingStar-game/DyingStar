@@ -45,6 +45,12 @@ func _ready() -> void:
 func _watch(control: Control) -> void:
 	control.mouse_entered.connect(_on_enter)
 	control.mouse_exited.connect(_on_exit)
+	# And when its control has the focus, reached with the cross, the stick or the arrows: the line
+	# shows where you are, as the pointer's does. Not after a click: the pointer already says it.
+	control.focus_entered.connect(func() -> void:
+		if not InputDevice.pointer:
+			_on_enter())
+	control.focus_exited.connect(func() -> void: add_theme_stylebox_override("panel", _idle))
 
 
 func _on_enter() -> void:

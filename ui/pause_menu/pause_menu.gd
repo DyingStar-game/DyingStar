@@ -14,6 +14,12 @@ func _ready() -> void:
 	# The settings are the pause menu's content: their entry is always the active one, and "Resume"
 	# is the way back (no "‹ Back" beside it saying the same).
 	main_pause_menu.bar.set_active(PausePage.SETTINGS)
+	# The settings' lines are what the pad or the arrows reach first; up from the top of them is the
+	# bar (Resume, Back to the menu, Quit), down from the bar is the page again.
+	main_pause_menu.bar.leads_focus = false
+	main_pause_menu.bar.left_bottom.connect(func() -> void:
+		if is_instance_valid(_settings_overlay):
+			_settings_overlay.focus_first())
 
 ## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
 ## disables its whole UserInterface subtree (Player._enter_tree), which is the single place that
@@ -39,8 +45,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			_open()
 	else:
-		if event.is_action_pressed("pause"):
-			# The settings ARE the pause menu now: Esc goes back to the game, like Resume.
+		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
+			# The settings ARE the pause menu now: Esc, or B on the gamepad, goes back to the game,
+			# like Resume.
 			_resume()
 
 		# Only "pause" (Esc) or the Resume button leaves the pause menu — a click in the void must not
@@ -103,6 +110,7 @@ func _open_settings() -> void:
 	_settings_overlay = settings_scene.instantiate()
 	_settings_overlay.see_through = true
 	_settings_overlay.tree_exited.connect(func() -> void: _settings_overlay = null)
+	_settings_overlay.left_top.connect(main_pause_menu.bar.focus_entry)
 	add_child(_settings_overlay)
 
 

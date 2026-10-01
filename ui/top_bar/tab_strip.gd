@@ -21,6 +21,8 @@ var _active : StringName = &""
 ## The gamepad actions that step to the previous and the next entry, or empty: see [method pad_navigation].
 var _pad_previous : StringName = &""
 var _pad_next : StringName = &""
+## The entries take the focus, for the gamepad's and the arrows' navigation: see [method allow_focus].
+var _focusable : bool = false
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -33,7 +35,8 @@ func _init(p_font_size: int = 20, separation: int = 36) -> void:
 func add_entry(key: StringName, label_key: String, prefix: String = "") -> Button:
 	var button := Button.new()
 	# NOT flat: a flat button draws no stylebox, and the active line under the entry is one.
-	button.focus_mode = Control.FOCUS_NONE
+	button.focus_mode = Control.FOCUS_ALL if _focusable else Control.FOCUS_NONE
+	button.add_theme_color_override("font_focus_color", SettingsStyle.ACTIVE_COLOR)
 	button.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	button.add_theme_font_override("font", SettingsRowFactory.FONT)
 	button.add_theme_font_size_override("font_size", font_size)
@@ -81,6 +84,14 @@ func step(direction: int) -> void:
 	var at : int = keys.find(_active)
 	var to : int = 0 if at < 0 else posmod(at + direction, keys.size())
 	selected.emit(keys[to])
+
+
+## Let the entries take the focus, so the cross, the stick or the arrows move along them and A or Enter
+## presses one. The focused entry is drawn in the active amber, as under the pointer.
+func allow_focus() -> void:
+	_focusable = true
+	for key: StringName in _buttons:
+		(_buttons[key] as Button).focus_mode = Control.FOCUS_ALL
 
 
 func button(key: StringName) -> Button:

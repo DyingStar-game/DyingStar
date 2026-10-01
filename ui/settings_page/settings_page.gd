@@ -3,6 +3,8 @@ extends CanvasLayer
 ## The category on show changed (its translation key, e.g. the graphics one) — the main menu stage
 ## glides to match it.
 signal category_changed(key: String)
+## Up from the page's first line: the bar over the page should take the focus (its host has it).
+signal left_top
 
 ## The categories, as tabs across the top: translation key -> page. The key is also what
 ## category_changed carries (MainPage.SCREEN_OF_CATEGORY).
@@ -98,6 +100,29 @@ func _ready() -> void:
 	open("%%MENU_CAT_GENERAL")
 
 
+## Nothing in the page has the focus and somebody reaches for it without the mouse: its first line
+## takes it, and that press is spent on it. From there the cross, the stick or the arrows go line to
+## line (Godot's focus navigation, inside the page's SubViewport).
+func _input(event: InputEvent) -> void:
+	if BindingCapture.listening:
+		return
+	var owner : Control = settings_container.gui_get_focus_owner()
+	if owner != null:
+		# Up from the first line: out of the page, onto the bar (Resume, Settings, Quit...).
+		if owner == MenuFocus.first_item(settings_container) and event.is_action_pressed("ui_up"):
+			settings_container.gui_release_focus()
+			left_top.emit()
+			get_viewport().set_input_as_handled()
+		return
+	if MenuFocus.wants_focus(event) and focus_first():
+		get_viewport().set_input_as_handled()
+
+
+## The focus on the page's first line. Down from the bar over it.
+func focus_first() -> bool:
+	return MenuFocus.take(settings_container)
+
+
 ## Show one category (its translation key, a CATEGORIES key).
 func open(category_key: String) -> void:
 	if tabs.active() == StringName(category_key):
@@ -111,6 +136,11 @@ func open(category_key: String) -> void:
 	if box != null:
 		box.visible = not see_through
 	settings_container.add_child(page)
+	# A long page scrolls to the focused line; and on the pad the first line takes the focus at once,
+	# so a category opened with the shoulder buttons is ready to be moved through.
+	MenuFocus.follow(page)
+	if not InputDevice.pointer:
+		MenuFocus.take.call_deferred(page)
 	tabs.set_active(StringName(category_key))
 	category_changed.emit(category_key)
 
