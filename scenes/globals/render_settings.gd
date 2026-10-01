@@ -34,6 +34,9 @@ var _config : ConfigFile
 var _save : Callable
 ## Last effective value of every option, to report only what really moved.
 var _effective : Dictionary = {}
+## The benchmark's sweep: key -> value that APPLIES without being stored. Never in the ConfigFile,
+## never saved, so a crash mid-run leaves settings.ini as it was; emptied, the stored values apply again.
+var _transient : Dictionary = {}
 
 
 func _init(config: ConfigFile, save: Callable, capabilities: Dictionary = {}) -> void:
@@ -86,7 +89,7 @@ func effective(key: String) -> Variant:
 		return null
 	if _block(option).get("force", false):
 		return GraphicsOptions.off_value(option)
-	var value : Variant = get_value(key)
+	var value : Variant = _transient[key] if _transient.has(key) else get_value(key)
 	if option["kind"] == GraphicsOptions.CHOICE and not choice_available(key, value):
 		return GraphicsOptions.off_value(option)
 	return value
@@ -120,6 +123,7 @@ func set_value(key: String, value: Variant) -> void:
 		return
 	_config.set_value(GraphicsOptions.SECTION, key, _clean(option, value))
 	_save.call()
+	_transient.erase(key)  # a deliberate choice wins over a measurement in progress
 	_sync()
 
 
@@ -131,7 +135,28 @@ func apply_preset(preset_name: String) -> void:
 	for option in GraphicsOptions.OPTIONS:
 		_config.set_value(GraphicsOptions.SECTION, option["key"], _preset_value(option, preset_name))
 	_save.call()
+	_transient.clear()
 	_sync()
+
+
+## Apply `values` (key -> value) on top of the stored ones WITHOUT storing them: the benchmark turns
+## one effect down at a time this way. Replaces the previous overrides as a whole, so {} gives back
+## exactly the stored values. Emits `changed` once, with exactly the options whose effective value
+## moved — every listener (RenderApplier, the sun's shadows, the atmosphere, the draw ranges) follows.
+## The pages and preset() keep showing the stored values: this is a measurement, not a choice.
+func set_transient(values: Dictionary) -> void:
+	_transient = {}
+	for key in values:
+		var option : Dictionary = GraphicsOptions.find(key)
+		if option.is_empty():
+			push_error("RenderSettings: unknown option '%s'" % key)
+			continue
+		_transient[key] = _clean(option, values[key])
+	_sync()
+
+
+func has_transient() -> bool:
+	return not _transient.is_empty()
 
 
 ## The preset the stored values amount to, or CUSTOM. Derived, never stored: a label that is saved
