@@ -2027,6 +2027,12 @@ func _process(delta: float) -> void:
 	# Sound upkeep — also on the bench (no network), hence before the replica guard below.
 	_update_engine_sound(delta)
 	_update_horn(delta)
+	# Frozen and off the network — a set piece (the main menu's stage): no physics hangs the wheels
+	# and no server sends them, so they would sit on their mounts, a whole rest length up in the body.
+	# Drawn as a replica that has not heard yet: the rest pose, rolling with the moves it is given.
+	if freeze and not _is_networked() and not GameOrchestrator.is_server():
+		_update_wheels_visual(delta)
+		return
 	if not _is_networked() or GameOrchestrator.is_server():
 		return
 	# Smooth for everyone, driver included: the driver is parented to the vehicle, so the camera

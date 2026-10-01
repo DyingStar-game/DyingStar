@@ -8,6 +8,7 @@ extends Node3D
 ## and which way it faces: moved in the editor, nothing floats nor sinks. The ground under a far
 ## piece is only known once its terrain tiles have arrived, so the stage calls resnap() for a while.
 ## A piece that must stand above the ground (a stacked container) carries a `stage_lift` metadata.
+## A vehicle stands on its wheels, not on its origin: it is lifted by its ground clearance.
 
 ## Put the pieces back on the ground at run time.
 @export var snap_to_ground : bool = true
@@ -66,10 +67,24 @@ func resnap() -> float:
 	var largest : float = 0.0
 	for piece in _pieces():
 		var dir : Vector3 = piece.position.normalized()
-		var target : Vector3 = dir * (float(_ground.call(dir)) + float(piece.get_meta(&"stage_lift", 0.0)))
+		var lift : float = float(piece.get_meta(&"stage_lift", 0.0)) + ground_clearance(piece)
+		var target : Vector3 = dir * (float(_ground.call(dir)) + lift)
 		largest = maxf(largest, target.distance_to(piece.position))
 		piece.position = target
 	return largest
+
+
+## How far a vehicle's origin stands above the ground on its wheels at rest: each wheel hangs its
+## rest length below its mount and touches the ground one radius below that. 0 for anything else.
+static func ground_clearance(node: Node) -> float:
+	if not node is VehicleBody3D:
+		return 0.0
+	var clearance : float = 0.0
+	for child in node.get_children():
+		if child is VehicleWheel3D:
+			var wheel := child as VehicleWheel3D
+			clearance = maxf(clearance, wheel.wheel_rest_length + wheel.wheel_radius - wheel.position.y)
+	return clearance
 
 
 ## What stands on the ground: every direct child but the viewpoints' folder.

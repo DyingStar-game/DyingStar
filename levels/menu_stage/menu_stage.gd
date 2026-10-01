@@ -148,12 +148,22 @@ func _build() -> void:
 		if terrain != null and terrain.desired_chunk_count() > 0:
 			built = float(terrain.active_chunk_count()) / terrain.desired_chunk_count()
 		_progress(0.5 + 0.5 * maxf(built, waited / READY_TIMEOUT_S))
-	_outpost.start(_planet.planet_data.radius, _planet.planet_data.crack_aware_surface_dist)
+	_outpost.start(_planet.planet_data.radius, _drawn_ground)
 	_resnap_left = RESNAP_FOR_S
 	_menu.set_stage_mode(true)
 	_splash(false)
 	print("[MenuStage] live on %s after %.1f s (ground %s)" % [PLANET_NAME, waited,
 		"ready" if ground_ready[0] else "late"])
+
+
+## The ground as the chunks DRAW it, distance from the centre along `dir`: the relief a body stands on
+## (levelled under the pads, carved by the roads and rails) plus the biome's own relief, which the
+## chunks add and no ground query does — 15 to 25 cm on the outpost's plateau, the height the figures'
+## ankles were cut by. The relief's fade near roads is left out: no figure stands on one.
+func _drawn_ground(dir: Vector3) -> float:
+	var data : PlanetData = _planet.planet_data
+	var biome : BiomeDefinition = data.biome_at(dir)
+	return data.carved_surface_dist(dir) + BiomeRelief.offset(dir, data.radius, biome)
 
 
 ## The menu's light: the sun just risen (MENU_SUN_ELEVATION_DEG), whatever the season. Solved on

@@ -53,5 +53,6 @@ func place() -> void:
 	var dir : Vector3 = _loop.dir_at(radius, _angle)
 	var heading : float = _angle + (90.0 if clockwise else -90.0)
 	var planet : Node3D = Planet.of(self)
-	var local := Transform3D(_loop.basis_at(dir, heading), _loop.point(radius, _angle))
+	var lift : float = StageOutpost.ground_clearance(_vehicle)
+	var local := Transform3D(_loop.basis_at(dir, heading), _loop.point(radius, _angle, lift))
 	_vehicle.global_transform = planet.global_transform * local
