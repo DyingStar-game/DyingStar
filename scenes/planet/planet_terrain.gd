@@ -1631,6 +1631,9 @@ func _update_terrain() -> void:
 	# chunks selected (visible as thin radial slices far from the player).
 	var local_cam := global_transform.basis.inverse() * (camera_pos - global_position)
 	_last_local_cam = local_cam
+	# The tile download serves the tiles nearest this first (RemoteTileSource._take_next).
+	if not is_server and planet_data.remote_source != null and local_cam != Vector3.ZERO:
+		planet_data.remote_source.set_focus(local_cam.normalized())
 	var cam_dist := local_cam.length()
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —

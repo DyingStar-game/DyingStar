@@ -93,6 +93,12 @@ var fetcher: Callable = Callable()
 ## file et servies ici, pendant que l'appelant diffère le chunk concerné.
 var _thread: Thread = null
 var _queue: Array[Vector3i] = []      # (ipix, nside, genre)
+## Direction (repère de la planète) du centre de chaque tuile de _queue, même indice ; ZERO
+## pour les travaux qui ne sont pas des tuiles.
+var _queue_dir: Array[Vector3] = []
+## D'où regarde la caméra (repère de la planète, normé), posé par PlanetTerrain. ZERO = pas de
+## caméra : la file est servie dans l'ordre d'arrivée.
+var _focus_dir: Vector3 = Vector3.ZERO
 var _queued: Dictionary = {}          # "n/p" -> true, pour ne pas redemander
 var _mutex: Mutex = Mutex.new()
 var _sem: Semaphore = Semaphore.new()
@@ -548,11 +554,44 @@ func _enqueue(nside: int, ipix: int, kind: int) -> void:
 	if not known:
 		_queued[key] = true
 		_queue.append(Vector3i(ipix, nside, kind))
+		_queue_dir.append(HEALPix.pix2vec_nest(nside, ipix) if kind == JOB_TILE else Vector3.ZERO)
 		if kind == JOB_TILE:
 			stat_requested += 1
 	_mutex.unlock()
 	if not known:
 		_sem.post()
+
+
+## D'où regarde la caméra, en direction normée dans le repère de la planète (thread principal).
+func set_focus(dir: Vector3) -> void:
+	_mutex.lock()
+	_focus_dir = dir
+	_mutex.unlock()
+
+
+## Le travail à servir maintenant (sous _mutex) : une carte de présence ou le plancher d'abord
+## — ils débloquent tout le reste —, puis la tuile la plus proche de la caméra.
+##
+## La file était servie dans l'ordre d'arrivée. À froid, la première passe de LOD demande les
+## tuiles de tout l'horizon d'un coup : les grossières, peu nombreuses, arrivaient vite et les
+## chunks lointains se construisaient, tandis que les fines du sol sous les pieds attendaient
+## leur tour — le paysage apparaissait de loin vers soi (2026-10-01).
+func _take_next() -> Vector3i:
+	var best := 0
+	if _focus_dir != Vector3.ZERO:
+		var best_dot := -INF
+		for i in _queue.size():
+			if _queue[i].z != JOB_TILE:
+				best = i
+				break
+			var d: float = _queue_dir[i].dot(_focus_dir)
+			if d > best_dot:
+				best_dot = d
+				best = i
+	var item: Vector3i = _queue[best]
+	_queue.remove_at(best)
+	_queue_dir.remove_at(best)
+	return item
 
 
 ## Oublie qu'un travail était en file, une fois traité.
@@ -587,7 +626,7 @@ func _worker() -> void:
 		if _quit:
 			_mutex.unlock()
 			return
-		var item: Vector3i = _queue.pop_front() if not _queue.is_empty() else Vector3i(-1, -1, 0)
+		var item: Vector3i = _take_next() if not _queue.is_empty() else Vector3i(-1, -1, 0)
 		_mutex.unlock()
 		if item.x < 0:
 			continue
