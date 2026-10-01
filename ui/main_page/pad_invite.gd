@@ -15,9 +15,14 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	grow_horizontal = Control.GROW_DIRECTION_BOTH
-	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	# A band across the bottom of the screen, its text centred: anchored to the bottom edge with a
+	# height of its own. Anchored with no height, it started AT the bottom edge and drew below it.
+	anchor_left = 0.0
+	anchor_right = 1.0
+	anchor_top = 1.0
+	anchor_bottom = 1.0
+	offset_top = -MARGIN_PX - FONT_SIZE * 2.0
 	offset_bottom = -MARGIN_PX
 	add_theme_font_override("font", SettingsRowFactory.FONT)
 	add_theme_font_size_override("font_size", FONT_SIZE)

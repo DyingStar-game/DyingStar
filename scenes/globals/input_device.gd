@@ -49,6 +49,22 @@ static func feed(event: InputEvent) -> void:
 			pointer = true
 
 
+## Look at the gamepads themselves, once a frame: a button down, a stick or a trigger pushed means the
+## player is on the pad. The window's event stream (feed) never carries gamepad events — they reach
+## the game through Input, not through the window — so that alone left the pad never noticed: the HUD
+## kept naming keys and the menus kept their tab hints hidden. Called by Globals.
+static func poll_pads() -> void:
+	for device: int in Input.get_connected_joypads():
+		for button: int in range(JOY_BUTTON_SDL_MAX):
+			if Input.is_joy_button_pressed(device, button as JoyButton):
+				_use_pad(device)
+				return
+		for axis: int in range(JOY_AXIS_SDL_MAX):
+			if absf(Input.get_joy_axis(device, axis as JoyAxis)) >= STICK_WAKE:
+				_use_pad(device)
+				return
+
+
 static func _use_pad(device: int) -> void:
 	last = Kind.GAMEPAD
 	pointer = false
