@@ -106,6 +106,23 @@ size_flags_vertical = 1
 step = 0.1
 value = 50.0
 
+[node name="UI" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1730594416]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/UI" unique_id=1730594417]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_AUDIO_UI"
+label_settings = ExtResource("settings_label")
+
+[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/UI" unique_id=1730594418]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+size_flags_vertical = 1
+step = 0.1
+value = 50.0
+
 [node name="Microphone" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1571395218]
 layout_mode = 2
 

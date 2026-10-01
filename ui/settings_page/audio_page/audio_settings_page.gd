@@ -9,6 +9,8 @@ const TEST_GREEN : Color = Color(0.2, 0.7, 0.25)
 @onready var music : HSlider = $MarginContainer/VBoxContainer/Music/HSlider
 @onready var sfx : HSlider = $MarginContainer/VBoxContainer/SFX/HSlider
 @onready var voip : HSlider = $MarginContainer/VBoxContainer/VoIP/HSlider
+## The interface's own sounds (hover, click), on their own bus so they can be turned down alone.
+@onready var interface : HSlider = $MarginContainer/VBoxContainer/UI/HSlider
 @onready var microphone_device : OptionButton = $MarginContainer/VBoxContainer/Microphone/OptionButton
 @onready var speaker_device : OptionButton = $MarginContainer/VBoxContainer/Speaker/OptionButton
 @onready var test_button : Button = $MarginContainer/VBoxContainer/Microphone_testing/Button
@@ -19,10 +21,12 @@ func _ready() -> void:
 	music.value = SettingsManager.get_audio_volume("music")
 	sfx.value = SettingsManager.get_audio_volume("sfx")
 	voip.value = SettingsManager.get_audio_volume("voip")
+	interface.value = SettingsManager.get_audio_volume("ui")
 	general.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("general", v))
 	music.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("music", v))
 	sfx.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("sfx", v))
 	voip.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("voip", v))
+	interface.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("ui", v))
 	load_microphone_devices()
 	load_speaker_devices()
 	microphone_device.item_selected.connect(
