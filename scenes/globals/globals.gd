@@ -98,6 +98,7 @@ func _ready() -> void:
 ## The gamepads are looked at directly: their events do not pass through the window (InputDevice).
 func _process(_delta: float) -> void:
 	InputDevice.poll_pads()
+	InputDevice.fit_cursor()
 
 
 func _notification(what: int) -> void:
