@@ -300,6 +300,34 @@ var _star_dir_world: Vector3 = Vector3.UP
 var _cam_history: PackedVector3Array = PackedVector3Array()
 ## Last known camera position in planet-local space (for distance priority).
 var _last_local_cam: Vector3 = Vector3.ZERO
+## The leaf set the last traversal + balance produced, and what it was computed for. Both depend only
+## on the camera's place in the planet's frame and the terrain distance, so a camera that has not moved
+## gets the same answer: the pass cost 10-14 ms four times a second standing still at the spawn —
+## every one of the 17-34 ms frames of a quiet minute. The entries are SHARED with each pass's
+## `desired`: nothing below may write into one — a chunk handed to the pipeline gets its own copy.
+var _desired_cache: Dictionary = {}
+var _desired_cache_cam: Vector3 = Vector3.INF
+var _desired_cache_mult: float = -1.0
+## How far the camera may move (m) before any decision of the last traversal could change: the smallest
+## gap, over every node it looked at, between the camera distance and the threshold that node was
+## judged against (split, LOD tier, backface, horizon). Measured during the pass, so the reuse is exact:
+## within it the same pass would give the same answer, and it shrinks on its own near a threshold.
+## Speed needs no rule of its own: a truck spends the gap faster, so it recomputes more often.
+var _desired_cache_slack: float = 0.0
+## Running minimum of that gap during a traversal, in LOD-distance units (scaled by the terrain mult).
+var _trav_slack: float = INF
+## What a traversal reads instead of the live members, frozen when it starts: on a worker, the main
+## thread keeps updating _terrain_mult and _cam_alt_above_surface while it runs.
+var _trav_mult: float = 1.0
+var _trav_alt: float = 0.0
+## The worker computing the next leaf set (-1: none), and what it produced. A traversal and its balance
+## read and write only these, _node_geom and the _bal_prev_* caches, and only one runs at a time.
+var _lod_task: int = -1
+var _lod_result: Dictionary = {}
+var _lod_result_cam: Vector3 = Vector3.INF
+var _lod_result_mult: float = -1.0
+var _lod_result_slack: float = 0.0
+var _lod_result_usec: int = 0
 
 ## Cache of feature nodes (caves) attached per chunk
 ## so we can free them when the chunk is unloaded.  key → Array[Node3D].
@@ -1431,6 +1459,7 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 
 
 func _exit_tree() -> void:
+	_join_lod_task()
 	_join_worker_tasks()
 	# Joindre le fil de téléchargement avant que la planète disparaisse.
 	if planet_data != null and planet_data.remote_source != null:
@@ -1666,12 +1695,25 @@ func _update_terrain() -> void:
 
 	var desired: Dictionary = {}
 	var _tk := _perf_begin()
-	for base_pix in BASE_PIXEL_COUNT:
-		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired)
-	_perf_end("terrain_traverse", _tk)
-	_tk = _perf_begin()
-	_balance_and_stitch(desired, local_cam)
-	_perf_end("terrain_balance", _tk)
+	_collect_lod_task()
+	if (_desired_cache_cam != Vector3.INF and _desired_cache_mult == _terrain_mult
+			and local_cam.distance_to(_desired_cache_cam) < _desired_cache_slack):
+		desired = _desired_cache.duplicate()
+		_perf_end("terrain_reuse", _tk)
+	elif _lod_on_worker() and _desired_cache_cam != Vector3.INF:
+		# The camera has moved: the new leaf set is worked out on a worker, and this pass carries on
+		# with the last one — one update (0.25 s) behind, which is what a step at 4 Hz always was.
+		if _lod_task < 0:
+			_start_lod_task(local_cam, horizon_dot)
+		desired = _desired_cache.duplicate()
+		_perf_end("terrain_reuse", _tk)
+	else:
+		_trav_mult = _terrain_mult
+		_trav_alt = _cam_alt_above_surface
+		_compute_desired(local_cam, horizon_dot)
+		_adopt_lod_result()
+		desired = _desired_cache.duplicate()
+		_perf_end("terrain_traverse", _tk)
 	_tk = _perf_begin()
 
 	_desired_count = desired.size()
@@ -1709,7 +1751,7 @@ func _update_terrain() -> void:
 			return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
 	var _tks := _perf_begin()
 	for key in _new_keys:
-		_try_create_or_defer(desired[key])
+		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
 		pipeline[key] = true
 	_perf_end("steps:new", _tks)
 	_tks = _perf_begin()
@@ -1757,7 +1799,7 @@ func _update_terrain() -> void:
 		if not _active_chunks.has(key) or pipeline.has(key):
 			continue
 		var _act: Dictionary = _active_chunks[key]
-		var _want: Dictionary = desired[key]
+		var _want: Dictionary = desired[key].duplicate()  # shared with the cache: never written in place
 		if _act.lod != _want.lod:
 			_remove_chunk(key)
 			_try_create_or_defer(_want)
@@ -2422,18 +2464,22 @@ func _resolve_planet_data() -> PlanetData:
 ## 20 ms of the update, i.e. of the physics step. Bounded by the nodes ever
 ## visited on this planet (a few thousand); cleared with the chunks.
 var _node_geom: Dictionary = {}
+## The same, for the look-ahead traversal: it runs on the main thread while the leaf-set worker may be
+## writing _node_geom, so the two never share one.
+var _node_geom_prefetch: Dictionary = {}
 
 
 func _traverse(nside: int, ipix: int, depth: int,
-		local_cam: Vector3, horizon_dot: float, out: Dictionary) -> void:
+		local_cam: Vector3, horizon_dot: float, out: Dictionary,
+		geom_cache: Dictionary, track_slack: bool) -> void:
 
 	var node_id := (nside << 32) | ipix
-	var geom: Array = _node_geom.get(node_id, [])
+	var geom: Array = geom_cache.get(node_id, [])
 	if geom.is_empty():
 		var cd := HEALPix.pix2vec_nest(nside, ipix)
 		# Shared with the star chart, which cuts its ground by the same rule (PlanetLod).
 		geom = [cd, PlanetLod.chunk_diagonal(nside, ipix, planet_data.radius)]
-		_node_geom[node_id] = geom
+		geom_cache[node_id] = geom
 	var center_dir: Vector3 = geom[0]
 	var center_pos := center_dir * planet_data.radius
 	var chunk_diag: float = geom[1]
@@ -2450,11 +2496,14 @@ func _traverse(nside: int, ipix: int, depth: int,
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
 	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_cam_alt_above_surface), _terrain_mult)
+		_trav_alt), _trav_mult)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
-		if center_dir.dot(local_cam.normalized()) < BACKFACE_DOT:
+		var _bf_dot: float = center_dir.dot(local_cam.normalized())
+		if track_slack:
+			_trav_slack = minf(_trav_slack, absf(_bf_dot - BACKFACE_DOT) * _cam_r)
+		if _bf_dot < BACKFACE_DOT:
 			return
 
 	# ── Horizon culling ──────────────────────────────────────────
@@ -2468,12 +2517,16 @@ func _traverse(nside: int, ipix: int, depth: int,
 		var cam_dir := local_cam.normalized()
 		var dot_val := center_dir.dot(cam_dir)
 		# visible when dot_val > horizon_dot - chunk_angular_radius
+		if track_slack:
+			_trav_slack = minf(_trav_slack, absf(dot_val - (horizon_dot - chunk_angular_radius)) * _cam_r)
 		if dot_val < horizon_dot - chunk_angular_radius:
 			return
 
 	# Decide whether to subdivide
 	var should_subdivide := false
 	if depth < planet_data.max_quadtree_depth:
+		if track_slack:
+			_trav_slack = minf(_trav_slack, absf(dist - chunk_diag * SUBDIVIDE_FACTOR))
 		if PlanetLod.wants_split(dist, chunk_diag):
 			should_subdivide = true
 
@@ -2481,11 +2534,14 @@ func _traverse(nside: int, ipix: int, depth: int,
 		var child_nside := nside * 2
 		var children := HEALPix.child_pixels(ipix)
 		for child_ipix in children:
-			_traverse(child_nside, child_ipix, depth + 1, local_cam, horizon_dot, out)
+			_traverse(child_nside, child_ipix, depth + 1, local_cam, horizon_dot, out, geom_cache, track_slack)
 	else:
 		# Leaf — record desired chunk
 		# Per-chunk LOD: use camera-to-chunk distance (not altitude-based).
 		var lod := planet_data.get_lod_level(dist)
+		if track_slack:
+			for tier_edge in [planet_data.lod0_distance, planet_data.lod1_distance, planet_data.lod2_distance]:
+				_trav_slack = minf(_trav_slack, absf(dist - float(tier_edge)))
 		var key := _chunk_key_hp(nside, ipix)
 		# Snap centre to float32 so mi.position matches the cc_f32 used
 		# inside generate_mesh.  Without this, the float64→float32 delta
@@ -2537,7 +2593,7 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
 	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_cam_alt_above_surface), _terrain_mult)
+		_trav_alt), _trav_mult)
 	var key := _chunk_key_hp(nside, ipix)
 	return {
 		"key": key,
@@ -2563,6 +2619,63 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 ## bit per edge whose same-level neighbour is absent while its parent is a
 ## leaf. Left to 0 on the levels PlanetChunk.edge_stitch_applies rules out,
 ## so those chunks keep one cache file and never re-bake for a neighbour.
+## The leaf set for a camera at [param local_cam]: the traversal and its 2:1 balance, into _lod_result*.
+## Runs on a worker (_start_lod_task) or inline; touches no scene node and no live member but those
+## listed with _lod_task.
+func _compute_desired(local_cam: Vector3, horizon_dot: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	var desired: Dictionary = {}
+	_trav_slack = INF
+	for base_pix in BASE_PIXEL_COUNT:
+		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired, _node_geom, true)
+	_balance_and_stitch(desired, local_cam)
+	_lod_result = desired
+	_lod_result_cam = local_cam
+	_lod_result_mult = _trav_mult
+	# Back to metres of camera motion: beyond VIEW_DISTANCE_NEAR_M a distance runs 1/mult as fast as the
+	# camera (_view_scaled); half of it keeps clear of rounding and of the altitude term.
+	_lod_result_slack = 0.5 * _trav_slack * minf(_trav_mult, 1.0)
+	_lod_result_usec = Time.get_ticks_usec() - t0
+
+
+func _lod_on_worker() -> bool:
+	return not is_server and not Engine.is_editor_hint()
+
+
+func _start_lod_task(local_cam: Vector3, horizon_dot: float) -> void:
+	_trav_mult = _terrain_mult
+	_trav_alt = _cam_alt_above_surface
+	_lod_task = WorkerThreadPool.add_task(_compute_desired.bind(local_cam, horizon_dot), false, "terrain_lod")
+
+
+## A finished worker hands its leaf set over; one still running is left alone.
+func _collect_lod_task() -> void:
+	if _lod_task < 0 or not WorkerThreadPool.is_task_completed(_lod_task):
+		return
+	WorkerThreadPool.wait_for_task_completion(_lod_task)
+	_lod_task = -1
+	_adopt_lod_result()
+
+
+func _adopt_lod_result() -> void:
+	_desired_cache = _lod_result
+	_desired_cache_cam = _lod_result_cam
+	_desired_cache_mult = _lod_result_mult
+	_desired_cache_slack = _lod_result_slack
+	_lod_result = {}
+	if not is_server:
+		ClientPerf.gauge("terrain_slack_m:" + str(get_parent().name), _desired_cache_slack)
+		ClientPerf.gauge("terrain_lod_ms:" + str(get_parent().name), _lod_result_usec / 1000.0)
+
+
+## Wait for the leaf-set worker, if one runs: before the state it writes is cleared, and before exit.
+func _join_lod_task() -> void:
+	if _lod_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_lod_task)
+		_lod_task = -1
+		_lod_result = {}
+
+
 func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 	if desired.is_empty():
 		_bal_prev_trav.clear()
@@ -3473,7 +3586,7 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 	# active or in pipeline (don't duplicate work already queued).
 	var prefetch_desired: Dictionary = {}
 	for base_pix in BASE_PIXEL_COUNT:
-		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired)
+		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired, _node_geom_prefetch, false)
 
 	# One snapshot, not one linear scan of the backlog per predicted key.
 	var pipeline := _pipeline_keys()
@@ -4514,9 +4627,12 @@ func _release_volcano_nodes(key: String, info: Dictionary) -> void:
 
 
 func _clear_all_chunks() -> void:
+	_join_lod_task()  # it writes _node_geom, cleared below
+	_desired_cache_cam = Vector3.INF  # the next pass recomputes from scratch
 	for key in _active_chunks.keys():
 		_remove_chunk(key)
 	_node_geom.clear()
+	_node_geom_prefetch.clear()
 
 
 # ------------------------------------------------------------------
