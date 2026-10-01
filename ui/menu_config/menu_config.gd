@@ -293,9 +293,9 @@ func _build_tabs() -> void:
 		_tab_bar.queue_free()
 	_tab_bar = TabStrip.new(TAB_FONT_SIZE, 28)
 	_tab_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
-	# Reached like any other item, with the cross or the arrows, and opened with A: the shoulder
-	# buttons are the settings' categories and the triggers the bar's entries.
-	_tab_bar.allow_focus()
+	# Reached like any other item, with the cross or the arrows, which then open the tab beside: the
+	# shoulder buttons are the settings' categories and the triggers the bar's entries.
+	_tab_bar.arrows_select()
 	var holder : Node = search_bar.get_parent()
 	holder.add_child(_tab_bar)
 	holder.move_child(_tab_bar, search_bar.get_index() + 1)
