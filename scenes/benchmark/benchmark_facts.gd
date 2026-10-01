@@ -118,8 +118,13 @@ static func _place(player: Node3D) -> Array:
 		return [["planet", "-"], ["other_players", others]]
 	var here : Vector3 = player.global_position
 	var lonlat : Vector2 = planet.lonlat_of(here)
+	# The local hour matters as much as the place: at night the atmosphere stops integrating at the
+	# planet's shadow and costs a fraction of its daytime price (98 vs 60 fps measured at the same spot).
+	var hour : float = planet.get_local_solar_time(here)
 	return [["planet", planet.name], ["lat", snappedf(lonlat.y, 0.0001)], ["lon", snappedf(lonlat.x, 0.0001)],
-		["elevation_m", roundi(planet.elevation_of(here))], ["other_players", others]]
+		["elevation_m", roundi(planet.elevation_of(here))],
+		["local_time", "%02d:%02d" % [int(hour), int(fmod(hour, 1.0) * 60.0)] if hour >= 0.0 else "-"],
+		["other_players", others]]
 
 
 static func _window_mode() -> String:
