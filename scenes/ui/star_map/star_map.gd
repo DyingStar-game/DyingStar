@@ -116,6 +116,8 @@ const POI_BODY_KEEP: float = 0.75
 const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
 ## The right stick pushed all the way turns the view like a drag of this many pixels a second.
 const STICK_ORBIT_PX_PER_S: float = 600.0
+## Two presses of A this close together are the pad's double click (travel to what is selected).
+const PAD_DOUBLE_CLICK_MS: int = 400
 ## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
 ## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
 ## following keeps it there; this only tells that apart from a station selected from elsewhere.
@@ -296,6 +298,10 @@ var _dragging: bool = false
 ## Body under the cursor, or -1. Drives the orbit highlight; distinct from _cam.focus, which the camera
 ## follows and the info panel describes.
 var _hover: int = -1
+## When A was last pressed on the chart (Time.get_ticks_msec), for the pad's double click.
+var _pad_click_at: int = -PAD_DOUBLE_CLICK_MS
+## B or Escape went down over the chart; it closes when the key comes back up (see _input).
+var _close_armed: bool = false
 var _info_panel: PanelContainer = null
 var _info_text: RichTextLabel = null
 ## The towns of whichever body is close enough to read. One layer, reused: only ever one body is being
@@ -452,6 +458,7 @@ func _open_on_player() -> void:
 
 func close() -> void:
 	_dragging = false
+	_close_armed = false  # closed by F2 with B half down: the next opening must not close on its release
 	_clear_search()
 	if is_instance_valid(_player):
 		_left_body = Planet.of(_player)
@@ -1139,6 +1146,10 @@ func _process(delta: float) -> void:
 	_refresh_halo()
 	_refresh_info()
 	_refresh_scale()
+	# The mouse hovers as it moves (_unhandled_input); the pad's pointer stands still while the chart
+	# turns under it, so it hovers once a frame.
+	if _pad_points() and not is_typing():
+		_hover_at(_pointer())
 	_refresh_cursor_readout()
 	_update_readout(t)
 
@@ -2246,25 +2257,34 @@ func _refresh_cursor_readout() -> void:
 		return
 	var body: int = _blocker
 	var on_a_name: bool = _poi_hover >= 0 or _poi_cluster_hover >= 0 or (_hover >= 0 and _hover == _player_index)
-	# On the gamepad the cursor is put away (InputDevice.fit_cursor): the centre of the screen is what
-	# points, where the stick turns the ground under — and the hovers, the mouse's, do not count.
-	var on_pad: bool = InputDevice.last == InputDevice.Kind.GAMEPAD
-	if body < 0 or body >= _bodies.size() or _dragging or (on_a_name and not on_pad):
+	var on_pad: bool = _pad_points()
+	var at: Vector2 = _pointer()
+	var text: String = ""
+	if body >= 0 and body < _bodies.size() and not _dragging and not on_a_name \
+			and is_instance_valid(_bodies[body]["sphere"]):
+		var sphere: MeshInstance3D = _bodies[body]["sphere"]
+		var key: String = str(_bodies[body]["key"])
+		var local: Vector3 = StarMapRelief.surface_hit(_camera.project_ray_origin(at),
+				_camera.project_ray_normal(at), sphere.position, sphere.scale.x * MESH_RADIUS,
+				sphere.basis.orthonormalized(), key)
+		if local != Vector3.ZERO:
+			text = cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"]))
+	# On the pad the cross stays with nothing to write: it is what hovers and selects.
+	if text == "" and not on_pad:
 		_cursor_readout.hide_readout()
-		return
-	var sphere: MeshInstance3D = _bodies[body]["sphere"]
-	if not is_instance_valid(sphere):
-		_cursor_readout.hide_readout()
-		return
-	var key: String = str(_bodies[body]["key"])
-	var at: Vector2 = _cursor_readout.size * 0.5 if on_pad else _cursor_readout.get_local_mouse_position()
-	var local: Vector3 = StarMapRelief.surface_hit(_camera.project_ray_origin(at),
-			_camera.project_ray_normal(at), sphere.position, sphere.scale.x * MESH_RADIUS,
-			sphere.basis.orthonormalized(), key)
-	if local == Vector3.ZERO:
-		_cursor_readout.hide_readout()
-		return
-	_cursor_readout.show_at(at, cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"])), on_pad)
+	else:
+		_cursor_readout.show_at(at, text, on_pad)
+
+
+## On the gamepad the cursor is put away (InputDevice.fit_cursor): the centre of the screen points
+## instead — it hovers, selects with A and reads the ground, as the cursor does with the mouse.
+func _pad_points() -> bool:
+	return InputDevice.last == InputDevice.Kind.GAMEPAD
+
+
+## Where the chart is pointed at: the cursor, or the centre of the screen on the gamepad.
+func _pointer() -> Vector2:
+	return get_viewport().get_visible_rect().size * 0.5 if _pad_points() else get_viewport().get_mouse_position()
 
 
 ## What the cursor readout says for the ground along [param local] on [param body_key]: longitude and
@@ -2917,11 +2937,19 @@ func _input(event: InputEvent) -> void:
 	# back out of is the box, and shutting the whole screen would also throw away the view you had just
 	# travelled to. Handled here rather than left to fall through, since the same key opens the pause
 	# menu: unconsumed, closing the chart would hand you the pause menu in the same breath.
+	#
+	# Closed when the key comes back UP: closed on the press, the game woke with B still down, and B is
+	# crouch — the press that closed the chart crouched the player as well (as in the pause menu).
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
 		if is_typing():
 			_search.release_focus()
 		else:
-			close()
+			_close_armed = true
+		get_viewport().set_input_as_handled()
+		return
+	if _close_armed and (event.is_action_released("ui_cancel") or event.is_action_released("pause")):
+		_close_armed = false
+		close()
 		get_viewport().set_input_as_handled()
 		return
 	if not _dragging:
@@ -2946,31 +2974,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
 		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
-			# Towns first. They are only ever drawn ON the body you are already looking at, so a marker
-			# under the cursor is unambiguously what you meant — and testing the body first would make
-			# every town unclickable, the planet being directly behind each of them.
-			#
-			# ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it,
-			# what the cursor is on is you — the dot or its name (see _player_under).
-			var on_you: bool = _player_under(button.position)
-			var ray_from: Vector3 = _camera.project_ray_origin(button.position)
-			var ray_dir: Vector3 = _camera.project_ray_normal(button.position)
-			var poi: int = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
-			var cluster: int = -1 if on_you or poi >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
-			if poi >= 0:
-				_poi_focus = poi
-				if button.double_click:
-					_frame_poi(poi)
-			elif cluster >= 0:
-				# A group is not a place to select: one click opens it.
-				_open_poi_cluster(cluster)
-			else:
-				var hit: int = _player_index if on_you else _pick(button.position)
-				_select(hit)
-				# A double click is also a click: the selection above has already happened, and this only
-				# adds the journey. Godot sends the plain press first, so both always agree.
-				if button.double_click:
-					_frame_body(hit)
+			_click_at(button.position, button.double_click)
 			get_viewport().set_input_as_handled()
 		elif button.button_index == MOUSE_BUTTON_RIGHT and button.pressed:
 			# Right click is the way home. Left click having been reduced to selecting, something still
@@ -2989,15 +2993,56 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		# Hover only. The drag lives in _input, so it survives passing over the GUI.
-		var at: Vector2 = (event as InputEventMouseMotion).position
-		# Same order as the click, or the highlight would point at something else than what a click
-		# would take.
-		var on_you: bool = _player_under(at)
-		var ray_from: Vector3 = _camera.project_ray_origin(at)
-		var ray_dir: Vector3 = _camera.project_ray_normal(at)
-		_poi_hover = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
-		_poi_cluster_hover = -1 if on_you or _poi_hover >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
-		if on_you:
-			_hover = _player_index
-		else:
-			_hover = -1 if _poi_hover >= 0 or _poi_cluster_hover >= 0 else _pick(at)
+		_hover_at((event as InputEventMouseMotion).position)
+	elif event is InputEventJoypadButton and event.is_action_pressed("ui_accept") and not is_typing():
+		# A, at the centre of the screen: the pad's click. Twice in a row is its double click.
+		var now: int = Time.get_ticks_msec()
+		var double: bool = now - _pad_click_at <= PAD_DOUBLE_CLICK_MS
+		_click_at(_pointer(), double)
+		_pad_click_at = -PAD_DOUBLE_CLICK_MS if double else now
+		get_viewport().set_input_as_handled()
+
+
+## A click at [param at] (the mouse's left button, or A on the pad at the centre of the screen), with
+## [param double] for a double click.
+##
+## Towns first. They are only ever drawn ON the body you are already looking at, so a marker under the
+## cursor is unambiguously what you meant — and testing the body first would make every town
+## unclickable, the planet being directly behind each of them.
+##
+## ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it, what
+## the cursor is on is you — the dot or its name (see _player_under).
+func _click_at(at: Vector2, double: bool) -> void:
+	var on_you: bool = _player_under(at)
+	var ray_from: Vector3 = _camera.project_ray_origin(at)
+	var ray_dir: Vector3 = _camera.project_ray_normal(at)
+	var poi: int = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
+	var cluster: int = -1 if on_you or poi >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
+	if poi >= 0:
+		_poi_focus = poi
+		if double:
+			_frame_poi(poi)
+	elif cluster >= 0:
+		# A group is not a place to select: one click opens it.
+		_open_poi_cluster(cluster)
+	else:
+		var hit: int = _player_index if on_you else _pick(at)
+		_select(hit)
+		# A double click is also a click: the selection above has already happened, and this only
+		# adds the journey. Godot sends the plain press first, so both always agree.
+		if double:
+			_frame_body(hit)
+
+
+## What [param at] is over, for the highlight. Same order as the click, or the highlight would point at
+## something else than what a click would take.
+func _hover_at(at: Vector2) -> void:
+	var on_you: bool = _player_under(at)
+	var ray_from: Vector3 = _camera.project_ray_origin(at)
+	var ray_dir: Vector3 = _camera.project_ray_normal(at)
+	_poi_hover = -1 if on_you else _poi_layer.pick(ray_from, ray_dir)
+	_poi_cluster_hover = -1 if on_you or _poi_hover >= 0 else _poi_layer.pick_cluster(ray_from, ray_dir)
+	if on_you:
+		_hover = _player_index
+	else:
+		_hover = -1 if _poi_hover >= 0 or _poi_cluster_hover >= 0 else _pick(at)

@@ -2,7 +2,8 @@ class_name StarMapCursorReadout
 extends Control
 
 ## Longitude, latitude and height of the ground under the cursor, written beside it. On the gamepad,
-## with no cursor, of the ground at the centre of the screen, marked with a small cross.
+## with no cursor, the centre of the screen points instead, marked with a small cross — drawn even
+## with nothing to write, since it is what the pad hovers and selects with.
 ##
 ## A drawing over the chart, like the scale bar: it never takes a click. It stands on a dark plate:
 ## over a starfield light text reads alone, over sunlit ground it did not, outline and all. The chart
@@ -51,11 +52,11 @@ func hide_readout() -> void:
 
 
 func _draw() -> void:
-	if _text == "":
-		return
 	if _cross:
 		draw_line(_at - Vector2(CROSS_HALF, 0.0), _at + Vector2(CROSS_HALF, 0.0), TEXT_COLOR, CROSS_WIDTH)
 		draw_line(_at - Vector2(0.0, CROSS_HALF), _at + Vector2(0.0, CROSS_HALF), TEXT_COLOR, CROSS_WIDTH)
+	if _text == "":
+		return
 	var font: Font = get_theme_default_font()
 	var font_size: int = get_theme_default_font_size()
 	var span: Vector2 = font.get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
