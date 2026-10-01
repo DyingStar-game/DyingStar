@@ -23,6 +23,9 @@ const STICK_WAKE : float = 0.5
 const MOUSE_WAKE : float = 4.0
 ## The keys of a binding per device in user://inputs.map.
 const KEYS : Dictionary = {Kind.KEYBOARD_MOUSE: "km", Kind.GAMEPAD: "pad"}
+## After a pad's button, how long the mouse's moves are not the player's: Start opens the pause menu,
+## the mouse is let go, and the cursor it puts back moves — that took the menu off the pad at once.
+const PAD_GRACE_MS : int = 400
 
 static var last : Kind = Kind.KEYBOARD_MOUSE
 ## The last input came from the mouse, not from a key or the pad: a menu then shows no focus frame.
@@ -32,6 +35,8 @@ static var family : Family = Family.XBOX
 static var _seen : Dictionary = {}
 ## The mouse cursor is hidden by fit_cursor (and is to come back with the mouse), not by the game.
 static var _hid_cursor : bool = false
+## When the pad was last used (Time.get_ticks_msec), for PAD_GRACE_MS.
+static var _pad_at : int = -PAD_GRACE_MS
 
 
 static func feed(event: InputEvent) -> void:
@@ -48,7 +53,8 @@ static func feed(event: InputEvent) -> void:
 		last = Kind.KEYBOARD_MOUSE
 		pointer = true
 	elif event is InputEventMouseMotion:
-		if (event as InputEventMouseMotion).relative.length() >= MOUSE_WAKE:
+		if (event as InputEventMouseMotion).relative.length() >= MOUSE_WAKE \
+				and Time.get_ticks_msec() - _pad_at >= PAD_GRACE_MS:
 			last = Kind.KEYBOARD_MOUSE
 			pointer = true
 
@@ -126,6 +132,7 @@ static func likely_family() -> Family:
 static func _use_pad(device: int) -> void:
 	last = Kind.GAMEPAD
 	pointer = false
+	_pad_at = Time.get_ticks_msec()
 	# Asked of a pad that is there: an event from one just unplugged (or made up by a test) has no
 	# name to read, and would turn every button into a number.
 	if Input.get_connected_joypads().has(device):

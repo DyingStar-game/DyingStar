@@ -144,3 +144,15 @@ func test_the_cursor_is_put_away_on_the_pad_and_back_with_the_mouse() -> void:
 	assert_eq(InputDevice.cursor_mode(hidden, false, true), visible, "back with the mouse")
 	assert_eq(InputDevice.cursor_mode(hidden, false, false), hidden, "a cursor the game hid stays hidden")
 	assert_eq(InputDevice.cursor_mode(captured, true, false), captured, "a captured mouse is left alone")
+
+
+func test_the_mouse_let_go_by_a_menu_the_pad_opened_does_not_take_it_back() -> void:
+	InputDevice.feed(_button(JOY_BUTTON_START))
+	var freed := InputEventMouseMotion.new()
+	freed.relative = Vector2(300, 200)
+	InputDevice.feed(freed)
+	assert_eq(InputDevice.last, InputDevice.Kind.GAMEPAD, "the cursor put back is not the player")
+	assert_false(InputDevice.pointer, "the menu stays on the pad")
+	InputDevice._pad_at -= InputDevice.PAD_GRACE_MS
+	InputDevice.feed(freed)
+	assert_eq(InputDevice.last, InputDevice.Kind.KEYBOARD_MOUSE, "later, the mouse moved is the player")

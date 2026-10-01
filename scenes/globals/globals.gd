@@ -93,12 +93,21 @@ func _ready() -> void:
 		get_tree().root.window_input.connect(InputDevice.feed)
 	else:
 		set_process(false)
+		set_process_input(false)
 
 
 ## The gamepads are looked at directly: their events do not pass through the window (InputDevice).
 func _process(_delta: float) -> void:
 	InputDevice.poll_pads()
 	InputDevice.fit_cursor()
+
+
+## A pad's button, as it comes in: _input runs before any node's _unhandled_input, so the menu Start
+## opens already knows it was opened from the pad — the frame's poll comes after the event, and left
+## the pause menu on the mouse.
+func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton:
+		InputDevice.feed(event)
 
 
 func _notification(what: int) -> void:
