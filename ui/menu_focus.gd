@@ -12,10 +12,21 @@ extends RefCounted
 ## buttons to it.
 static var modal : bool = false
 
+## The actions that step along a row of tabs or the bar rather than reach for an item.
+const STEPPING : Array[StringName] = [&"ui_page_previous", &"ui_page_next", &"ui_subpage_previous",
+		&"ui_subpage_next"]
+
 
 ## Is [param event] somebody reaching for the menu without the mouse: a gamepad button, a stick pushed
 ## (InputDevice.STICK_WAKE), an arrow key or Enter?
+##
+## Not the shoulder buttons or the triggers: they step the tabs and the bar (TabStrip.pad_navigation),
+## and taken as a reach for the page they pulled the focus back into it from the bar they had just
+## moved it along — in the pause menu the triggers seemed to do nothing.
 static func wants_focus(event: InputEvent) -> bool:
+	for action: StringName in STEPPING:
+		if InputMap.has_action(action) and event.is_action(action):
+			return false
 	if event is InputEventJoypadButton:
 		return (event as InputEventJoypadButton).pressed
 	if event is InputEventJoypadMotion:

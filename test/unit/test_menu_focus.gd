@@ -127,3 +127,12 @@ func test_a_presses_b_goes_back_and_the_stick_moves() -> void:
 	enter.keycode = KEY_ENTER
 	enter.pressed = true
 	assert_true(enter.is_action_pressed(&"ui_accept"), "and Enter still presses")
+
+
+func test_the_triggers_and_bumpers_step_rather_than_reach_for_the_page() -> void:
+	var rt := InputEventJoypadMotion.new()
+	rt.axis = JOY_AXIS_TRIGGER_RIGHT
+	rt.axis_value = 1.0
+	assert_false(MenuFocus.wants_focus(rt), "RT steps the bar")
+	assert_false(MenuFocus.wants_focus(_pad_button(JOY_BUTTON_RIGHT_SHOULDER)), "RB steps the tabs")
+	assert_true(MenuFocus.wants_focus(_pad_button(JOY_BUTTON_DPAD_DOWN)), "the cross reaches for the page")

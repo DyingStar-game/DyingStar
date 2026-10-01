@@ -106,6 +106,10 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if BindingCapture.listening or MenuFocus.modal:
 		return
+	# The bar over the page has the focus: the press is the bar's (down from it is the bar's to hand on).
+	var outside : Control = get_viewport().gui_get_focus_owner()
+	if outside != null and not is_ancestor_of(outside):
+		return
 	var owner : Control = settings_container.gui_get_focus_owner()
 	if owner != null:
 		# Up from the first line: out of the page, onto the bar (Resume, Settings, Quit...).
