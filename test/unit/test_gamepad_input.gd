@@ -134,3 +134,13 @@ func test_the_family_comes_from_the_pads_name() -> void:
 	assert_eq(InputDevice.family_of("Nintendo Switch Pro Controller", true), InputDevice.Family.NINTENDO)
 	assert_eq(InputDevice.family_of("Thrustmaster T.16000M", false), InputDevice.Family.GENERIC,
 		"unknown to Godot: numbered")
+
+
+func test_the_cursor_is_put_away_on_the_pad_and_back_with_the_mouse() -> void:
+	var visible := Input.MOUSE_MODE_VISIBLE
+	var hidden := Input.MOUSE_MODE_HIDDEN
+	var captured := Input.MOUSE_MODE_CAPTURED
+	assert_eq(InputDevice.cursor_mode(visible, true, false), hidden, "hidden on the pad")
+	assert_eq(InputDevice.cursor_mode(hidden, false, true), visible, "back with the mouse")
+	assert_eq(InputDevice.cursor_mode(hidden, false, false), hidden, "a cursor the game hid stays hidden")
+	assert_eq(InputDevice.cursor_mode(captured, true, false), captured, "a captured mouse is left alone")

@@ -30,6 +30,8 @@ static var pointer : bool = true
 static var family : Family = Family.XBOX
 ## Each pad's buttons and axes as last seen by poll_pads, by device: what CHANGED is what counts.
 static var _seen : Dictionary = {}
+## The mouse cursor is hidden by fit_cursor (and is to come back with the mouse), not by the game.
+static var _hid_cursor : bool = false
 
 
 static func feed(event: InputEvent) -> void:
@@ -49,6 +51,26 @@ static func feed(event: InputEvent) -> void:
 		if (event as InputEventMouseMotion).relative.length() >= MOUSE_WAKE:
 			last = Kind.KEYBOARD_MOUSE
 			pointer = true
+
+
+## On the gamepad the mouse cursor is put away — it would sit in the middle of a menu pointing at
+## nothing — and it comes back as soon as the mouse moves. Only a VISIBLE cursor is hidden, and only
+## the one hidden here is shown again: a game that captures the mouse keeps it. Called by Globals.
+static func fit_cursor() -> void:
+	var mode : Input.MouseMode = cursor_mode(Input.mouse_mode, last == Kind.GAMEPAD, _hid_cursor)
+	if mode != Input.mouse_mode:
+		Input.mouse_mode = mode
+	_hid_cursor = last == Kind.GAMEPAD and mode == Input.MOUSE_MODE_HIDDEN
+
+
+## The cursor mode for one in [param mode], the player [param on_pad] or not, the cursor [param hid]
+## by fit_cursor or not.
+static func cursor_mode(mode: Input.MouseMode, on_pad: bool, hid: bool) -> Input.MouseMode:
+	if on_pad and mode == Input.MOUSE_MODE_VISIBLE:
+		return Input.MOUSE_MODE_HIDDEN
+	if not on_pad and hid and mode == Input.MOUSE_MODE_HIDDEN:
+		return Input.MOUSE_MODE_VISIBLE
+	return mode
 
 
 ## Look at the gamepads themselves, once a frame: a button down, a stick or a trigger pushed means the
