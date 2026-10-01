@@ -16,11 +16,11 @@ extends Area3D
 ## broke.
 ##
 ## WHY IT MATTERS, precisely: this zone hangs under a planet, and a planet SPINS in discrete steps
-## (PlanetBody.rotation_update_hz, 3 Hz — about 148 m of arc per step at SandBox's surface). When the
+## (PlanetBody.rotation_update_hz, 0.25 Hz — about 1.8 km of arc per step at SandBox's surface). When the
 ## frame jumps, Jolt does NOT move every body at the same moment: an Area3D is repositioned at once,
 ## while a CharacterBody3D — the player — is a KINEMATIC body, whose new pose is merely recorded and
 ## only reached during the NEXT physics step. Comparing an area against the player's body therefore
-## compares two different instants, and 148 m of mismatch against a 1.24 m box drops the overlap and
+## compares two different instants, and hundreds of metres of mismatch against a 1.24 m box drop the overlap and
 ## regains it, once every spin step, without the player ever having moved. Comparing two AREAS of the
 ## same frame cannot desynchronise: both are repositioned in the same breath, whatever the spin rate.
 ##
