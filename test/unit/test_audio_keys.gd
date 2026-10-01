@@ -28,7 +28,7 @@ func test_no_button_of_the_hud_keeps_a_key_of_its_own() -> void:
 
 
 func test_they_are_listed_in_the_controls_page_under_general() -> void:
-	var general: Dictionary = MenuConfig.ACTION_GROUPS["%%KM_GROUP_GENERAL"]
+	var general: Dictionary = MenuConfig.labels_of(MenuConfig.ACTION_GROUPS["%%KM_GROUP_GENERAL"])
 	for action: StringName in KEYS:
 		assert_true(general.has(String(action)), "%s can be found and rebound" % action)
 

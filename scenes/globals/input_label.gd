@@ -73,6 +73,10 @@ static func _mouse_button_name(index: int) -> String:
 ## key has no printable label. Physical keycodes keep bindings layout-independent; this only affects
 ## how they READ.
 static func _physical_key_name(physical_keycode: int) -> String:
+	# No keyboard layout to ask without a window (the headless test runner, the server): the key's own
+	# name, which is the US one. Asked anyway, the display server answers with an error per key.
+	if DisplayServer.get_name() == "headless":
+		return OS.get_keycode_string(physical_keycode)
 	var label := DisplayServer.keyboard_get_label_from_physical(physical_keycode)
 	if label != 0:
 		var label_text := OS.get_keycode_string(label)

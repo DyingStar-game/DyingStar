@@ -14,19 +14,31 @@ static var is_shown: bool = false
 ## also what starts a vault or a climb -- it was reported as "the vault key is not configurable",
 ## when it was configurable all along under a name that never mentioned vaulting. "action" and
 ## "interact" are worse still: two different keys whose names say the same thing.
+##
+## A family can be cut into SECTIONS, each under its own title: an entry whose value is a dictionary
+## of its own is a section, keyed by its title. General gathers four unrelated things (the star chart,
+## the chat, the sound, the captures) and read as one long list without them.
 const ACTION_GROUPS : Dictionary = {
 	"%%KM_GROUP_GENERAL": {
 		"pause": "%%ACT_PAUSE",
-		"star_map": "%%ACT_STAR_MAP",
-		"star_map_zoom_in": "%%ACT_STAR_MAP_ZOOM_IN",
-		"star_map_zoom_out": "%%ACT_STAR_MAP_ZOOM_OUT",
-		"toggle_chat": "%%ACT_TOGGLE_CHAT",
-		"write_in_chat": "%%ACT_WRITE_IN_CHAT",
-		"toggle_speaker": "%%ACT_TOGGLE_SPEAKER",
-		"toggle_microphone": "%%ACT_TOGGLE_MICROPHONE",
-		"game_record": "%%ACT_GAME_RECORD",
-		"screenshot": "%%ACT_SCREENSHOT",
-		"screenshot_debug": "%%ACT_SCREENSHOT_DEBUG",
+		"%%KM_SECTION_STAR_MAP": {
+			"star_map": "%%ACT_STAR_MAP",
+			"star_map_zoom_in": "%%ACT_STAR_MAP_ZOOM_IN",
+			"star_map_zoom_out": "%%ACT_STAR_MAP_ZOOM_OUT",
+		},
+		"%%KM_SECTION_CHAT": {
+			"toggle_chat": "%%ACT_TOGGLE_CHAT",
+			"write_in_chat": "%%ACT_WRITE_IN_CHAT",
+		},
+		"%%KM_SECTION_AUDIO": {
+			"toggle_speaker": "%%ACT_TOGGLE_SPEAKER",
+			"toggle_microphone": "%%ACT_TOGGLE_MICROPHONE",
+		},
+		"%%KM_SECTION_GALLERY": {
+			"screenshot": "%%ACT_SCREENSHOT",
+			"screenshot_debug": "%%ACT_SCREENSHOT_DEBUG",
+			"game_record": "%%ACT_GAME_RECORD",
+		},
 	},
 	"%%KM_GROUP_ON_FOOT": {
 		"move_forward": "%%ACT_MOVE_FORWARD",
@@ -98,7 +110,8 @@ var remapping_button = null
 ## Decides what the keys pressed during a capture add up to. Alive only while one is running.
 var _capture: BindingCapture = null
 
-## One entry per displayed family: {"header": Label, "rows": {translated label -> Button}}.
+## One entry per displayed family: {"header": Label, "rows": {translated label -> Button},
+## "sections": [{"header": Label, "rows": Array[Button]}]} — the titled sections of the family.
 var _groups: Array[Dictionary] = []
 var _tab_bar: TabStrip = null
 ## The settings pages' heading look, for the page title and the family headings.
@@ -130,13 +143,20 @@ func create_action_list() -> void:
 		item.queue_free()
 	var unfiled : Array[String] = _listable_actions()
 	for group_key in ACTION_GROUPS:
-		var members : Array[String] = []
-		for action in ACTION_GROUPS[group_key]:
-			if unfiled.has(action):
-				members.append(action)
-				unfiled.erase(action)
-		_add_group(str(group_key), members, ACTION_GROUPS[group_key])
-	_add_group(GROUP_OTHER, unfiled, {})
+		var sections : Array = []
+		for section: Array in sections_of(ACTION_GROUPS[group_key]):
+			var members : Dictionary = {}
+			for action: String in section[1]:
+				if unfiled.has(action):
+					members[action] = section[1][action]
+					unfiled.erase(action)
+			if not members.is_empty():
+				sections.append([section[0], members])
+		_add_group(str(group_key), sections)
+	var others : Dictionary = {}
+	for action: String in unfiled:
+		others[action] = action.replace("_", " ")
+	_add_group(GROUP_OTHER, [["", others]] if not others.is_empty() else [])
 	_build_tabs()
 	_refresh_visibility()
 
@@ -155,22 +175,59 @@ func _listable_actions() -> Array[String]:
 	return out
 
 
-## One family: a heading (only ever shown while searching, see _refresh_visibility) and its rows.
-func _add_group(group_key: String, actions: Array[String], labels: Dictionary) -> void:
-	if actions.is_empty():
+## A family's entries as its sections, in order: [title key ("" for none), {action: label key}].
+## Consecutive actions outside any section make one untitled section.
+static func sections_of(group: Dictionary) -> Array:
+	var out : Array = []
+	var loose : Dictionary = {}
+	for key: String in group:
+		if group[key] is Dictionary:
+			if not loose.is_empty():
+				out.append(["", loose])
+				loose = {}
+			out.append([key, group[key]])
+		else:
+			loose[key] = group[key]
+	if not loose.is_empty():
+		out.append(["", loose])
+	return out
+
+
+## Every action of a family, section or not, with its label key.
+static func labels_of(group: Dictionary) -> Dictionary:
+	var out : Dictionary = {}
+	for section: Array in sections_of(group):
+		out.merge(section[1])
+	return out
+
+
+## One family: a heading (only ever shown while searching, see _refresh_visibility), and its
+## sections, each under its title if it has one, as [title key, {action: label key}].
+func _add_group(group_key: String, sections: Array) -> void:
+	if sections.is_empty():
 		return
 	var header := Label.new()
 	header.text = group_key
 	_factory.style_header(header)
 	action_list.add_child(header)
 	var rows : Dictionary = {}
-	for action in actions:
-		var label_key : String = str(labels.get(action, action.replace("_", " ")))
-		var row : Button = _add_action_row(action, label_key)
-		# Keyed by what the player READS, because that is what they type in the search box: keying
-		# by "%%ACT_JUMP" would make searching for "jump" match nothing.
-		rows[tr(label_key)] = row
-	_groups.append({"header": header, "rows": rows})
+	var titled : Array[Dictionary] = []
+	for section: Array in sections:
+		var title : Label = null
+		if str(section[0]) != "":
+			title = _factory.header(str(section[0]))
+			action_list.add_child(title)
+		var section_rows : Array[Button] = []
+		for action: String in section[1]:
+			var label_key : String = str(section[1][action])
+			var row : Button = _add_action_row(action, label_key)
+			# Keyed by what the player READS, because that is what they type in the search box:
+			# keying by "%%ACT_JUMP" would make searching for "jump" match nothing.
+			rows[tr(label_key)] = row
+			section_rows.append(row)
+		if title != null:
+			titled.append({"header": title, "rows": section_rows})
+	_groups.append({"header": header, "rows": rows, "sections": titled})
 
 
 func _add_action_row(action: String, label_key: String) -> Button:
@@ -232,6 +289,10 @@ func _refresh_visibility() -> void:
 		# Without a search the open tab already says it, and an empty one would read as a dead
 		# category.
 		group["header"].visible = searching and any_shown
+		# A section's title goes with its family's tab. During a search the family heading says where
+		# a hit is; a section title over one surviving row would only repeat it.
+		for section: Dictionary in group["sections"]:
+			(section["header"] as Label).visible = not searching and i == _tab
 	# While searching no tab is open: the hits come from every family.
 	_tab_bar.set_active(&"" if searching else StringName(str(_tab)))
 
