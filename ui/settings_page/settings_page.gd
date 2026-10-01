@@ -71,6 +71,8 @@ func _ready() -> void:
 	for key: String in CATEGORIES:
 		tabs.add_entry(StringName(key), key)
 	tabs.selected.connect(func(key: StringName) -> void: open(String(key)))
+	# On the gamepad, the shoulder buttons step through the categories.
+	tabs.pad_navigation(&"ui_page_previous", &"ui_page_next")
 	# The tabs, and at the other end of their row the frame rate: on every tab, so what an option costs
 	# shows wherever the option is, not only on the Graphics tab where it was the first line.
 	var row := HBoxContainer.new()

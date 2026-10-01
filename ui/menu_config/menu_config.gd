@@ -294,6 +294,8 @@ func _build_tabs() -> void:
 		_tab_bar.queue_free()
 	_tab_bar = TabStrip.new(TAB_FONT_SIZE, 28)
 	_tab_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
+	# The families with the triggers; the shoulder buttons are the settings' own tabs, above.
+	_tab_bar.pad_navigation(&"ui_subpage_previous", &"ui_subpage_next")
 	var holder : Node = search_bar.get_parent()
 	holder.add_child(_tab_bar)
 	holder.move_child(_tab_bar, search_bar.get_index() + 1)
@@ -348,6 +350,7 @@ func _on_input_button_pressed(cell: Button, action: String, kind: InputDevice.Ki
 		_remapping_device = kind
 		# Listening to the clicked column's device only: a key does not land in the gamepad's cell.
 		_capture = BindingCapture.new(kind)
+		BindingCapture.listening = true
 		cell.text = str(LISTENING[kind])
 	get_tree().root.get_viewport().set_input_as_handled()
 
@@ -402,6 +405,7 @@ func _end_remap() -> void:
 	action_to_remap = null
 	remapping_button = null
 	_capture = null
+	BindingCapture.listening = false
 
 func _on_reset_button_pressed() -> void:
 	InputMap.load_from_project_settings()

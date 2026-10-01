@@ -18,6 +18,9 @@ var _buttons : Dictionary = {}  # key -> Button
 var _labels : Dictionary = {}  # key -> translation key
 var _prefixes : Dictionary = {}  # key -> text drawn before it (an arrow)
 var _active : StringName = &""
+## The gamepad actions that step to the previous and the next entry, or empty: see [method pad_navigation].
+var _pad_previous : StringName = &""
+var _pad_next : StringName = &""
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -43,6 +46,41 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 	add_child(button)
 	_style(key)
 	return button
+
+
+## Let the gamepad step through the entries with [param previous] and [param next] (actions: the
+## shoulder buttons, the triggers), with their buttons named at either end of the row while the
+## player is on the pad (PadHint). Polled, so a trigger — an axis — steps once per pull.
+func pad_navigation(previous: StringName, next: StringName) -> void:
+	_pad_previous = previous
+	_pad_next = next
+	var before := PadHint.new(previous, font_size - 2)
+	add_child(before)
+	move_child(before, 0)
+	add_child(PadHint.new(next, font_size - 2))
+
+
+func _process(_delta: float) -> void:
+	if _pad_previous == &"" or not is_visible_in_tree() or BindingCapture.listening:
+		return
+	if Input.is_action_just_pressed(_pad_previous):
+		step(-1)
+	elif Input.is_action_just_pressed(_pad_next):
+		step(1)
+
+
+## Select the entry [param direction] places from the active one, round the ends, skipping hidden
+## entries; the first one when none is active. Emits [signal selected], as a click does.
+func step(direction: int) -> void:
+	var keys : Array[StringName] = []
+	for key: StringName in _buttons:
+		if (_buttons[key] as Button).visible:
+			keys.append(key)
+	if keys.is_empty():
+		return
+	var at : int = keys.find(_active)
+	var to : int = 0 if at < 0 else posmod(at + direction, keys.size())
+	selected.emit(keys[to])
 
 
 func button(key: StringName) -> Button:
