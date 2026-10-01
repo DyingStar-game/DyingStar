@@ -8,5 +8,5 @@ script = ExtResource("1_1lgou")
 
 [node name="PropSync" type="Node" parent="." unique_id=981730709]
 script = ExtResource("1_c6x0m")
-type_name = "poi_villages"
+type_name = "poi_village"
 metadata/_custom_type_script = "uid://crq5yq1gfb42p"

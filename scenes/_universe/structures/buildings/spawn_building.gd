@@ -10,6 +10,10 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 @export var x_spacing: float = -5.16
 @export var z_spacing: float = 3.16
 @export var y_spacing: float = 3.25
+## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot.
+@export var spawn_point: Vector3 = Vector3(-1.934, 0.071, 1.471)
+## uuid of the poi_village this building belongs to ("" = none): Horizon fills villages by it.
+@export var poi_uuid: String = ""
 
 @export var apartments = [
 	{
@@ -25,8 +29,6 @@ var total: int = 1
 var available: int = 0
 
 var _apartments_created: bool = false
-
-
 
 ## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
 const PAD_MARGIN_M := 0.5
@@ -133,6 +135,9 @@ func _fill_pseudo_plate() -> void:
 func apply_prop_data(data: Dictionary) -> void:
 	if data.has("name"):
 		name = data["name"]
+
+	if data.has("poi_uuid"):
+		poi_uuid = data["poi_uuid"]
 
 	if data.has("total"):
 		total = data["total"]

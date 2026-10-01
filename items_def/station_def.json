@@ -15,6 +15,13 @@
 			"distance": 200001.0,
 			"frequency": 3.0,
 			"properties": [
+				"is_spawned",
+				"spawn_requested",
+				"spawn_scene",
+				"radius_m",
+				"population",
+				"type",
+				"name",
 				"scenename"
 			]
 		}

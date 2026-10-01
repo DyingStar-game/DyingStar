@@ -17,7 +17,8 @@
 				"rows",
 				"floors",
 				"spawn_point",
-				"apartments"
+				"apartments",
+				"poi_uuid"
 			]
 		},
 		{
