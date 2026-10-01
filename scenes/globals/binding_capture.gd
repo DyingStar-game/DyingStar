@@ -22,6 +22,10 @@ const MODIFIERS: Array[Key] = [KEY_CTRL, KEY_SHIFT, KEY_ALT, KEY_META]
 ## stick brushed on the way to a button is not taken for the binding.
 const AXIS_BIND: float = 0.6
 
+## A capture is running somewhere: whatever else the gamepad does in a menu (stepping through tabs)
+## holds still, or the button being bound would also do it. Set by the controls page.
+static var listening: bool = false
+
 ## The device this capture listens to (InputDevice.Kind).
 var device: InputDevice.Kind = InputDevice.Kind.KEYBOARD_MOUSE
 
