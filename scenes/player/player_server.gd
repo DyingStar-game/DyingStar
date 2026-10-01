@@ -129,6 +129,10 @@ var _npc_path_retry_timer: float = 0.0
 ## Server-only: consecutive idle ticks (no goal, no facing turn, settled on the floor), used to
 ## throttle move_and_slide for idle NPCs — the same sleep real players get (see _physics_process).
 var _npc_idle_ticks: int = 0
+## Same throttle for an NPC that HAS a goal but no route to walk yet (see the no-waypoint branch of
+## _npc_physics_process): ticks spent standing on the floor waiting.
+var _npc_hold_ticks: int = 0
+var _npc_hold_miss: int = 0  # TEMP diagnostic, see [NpcHoldMiss]
 ## Throttle for the temporary _NPC_DEBUG report.
 var _npc_debug_timer: float = 0.0
 ## Progress watchdog (see _npc_update_stuck): where the NPC stood when the current window opened, and
@@ -1508,6 +1512,8 @@ func _npc_physics_process(delta: float) -> void:
 			and player.is_on_floor() and player.velocity.length_squared() < 0.0001:
 		_npc_idle_ticks += 1
 		if _npc_idle_ticks > 30 and (_npc_idle_ticks % 10) != 0:
+			if PropNet.prof_on:
+				PropNet.prof_npc_state[0] += 1
 			return
 	else:
 		_npc_idle_ticks = 0
@@ -1552,6 +1558,8 @@ func _npc_physics_process(delta: float) -> void:
 		var _horiz: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
 		player.velocity = _horiz + _vertical
 		var _tm0: int = Time.get_ticks_usec() if PropNet.prof_on else 0
+		if PropNet.prof_on:
+			PropNet.prof_npc_state[1] += 1
 		_npc_move_and_slide()
 		_npc_update_face_target(delta)
 		if PropNet.prof_on:
@@ -1609,7 +1617,34 @@ func _npc_physics_process(delta: float) -> void:
 		var _idle: Vector3 = (player.velocity - _vertical).move_toward(Vector3.ZERO, _NPC_WALK_SPEED)
 		player.velocity = _idle + _vertical
 		var _tm1: int = Time.get_ticks_usec() if PropNet.prof_on else 0
-		_npc_move_and_slide()
+		# Waiting with a goal but no route (box still baking, or wedged between two back-off attempts —
+		# up to 60 s): standing still on the floor, so the same 1-in-10 sleep as an idle NPC instead of
+		# a full move_and_slide per tick. On a skipped tick the velocity goes back to the settled zero a
+		# floor contact would leave, or this tick's gravity dose would pile up and slam the next slide.
+		if not _arrived and player.is_on_floor() and _idle.length_squared() < 0.0001:
+			_npc_hold_ticks += 1
+			_npc_hold_miss = 0
+		else:
+			_npc_hold_ticks = 0
+			# TEMP diagnostic (2026-10-01): waiting NPCs that never fall asleep in the loaded scene.
+			_npc_hold_miss += 1
+			if PropNet.prof_on and not _arrived and _npc_hold_miss == 60:
+				var _c: KinematicCollision3D = player.get_last_slide_collision()
+				print("[NpcHoldMiss] %s on_floor=%s on_wall=%s horiz=%.4f m/s vert=%.3f floor_angle=%.1f° slides=%d collider=%s local=%s" % [
+						player.name, player.is_on_floor(), player.is_on_wall(), _idle.length(),
+						_vertical.dot(player.up_direction),
+						rad_to_deg(player.get_floor_angle(player.up_direction)) if player.is_on_floor() else -1.0,
+						player.get_slide_collision_count(),
+						(_c.get_collider() as Node).get_path() if _c != null and _c.get_collider() is Node else "none",
+						player.position])
+		if _npc_hold_ticks > 3 and (_npc_hold_ticks % 10) != 0:
+			player.velocity = Vector3.ZERO
+			if PropNet.prof_on:
+				PropNet.prof_npc_state[2] += 1
+		else:
+			_npc_move_and_slide()
+			if PropNet.prof_on:
+				PropNet.prof_npc_state[3] += 1
 		if PropNet.prof_on:
 			PropNet.prof_npc_move_usec += Time.get_ticks_usec() - _tm1
 			_tm1 = Time.get_ticks_usec()
@@ -1626,6 +1661,9 @@ func _npc_physics_process(delta: float) -> void:
 			PropNet.prof_npc_emit_usec += Time.get_ticks_usec() - _tm1
 		return
 
+	_npc_hold_ticks = 0  # walking again: the next wait starts its sleep count from scratch
+	if PropNet.prof_on:
+		PropNet.prof_npc_state[4] += 1
 	# Steer toward the next path point in the ground plane; gravity owns the vertical axis.
 	var _to_dest: Vector3 = (_next as Vector3) - player.global_position
 	_to_dest -= player.up_direction * _to_dest.dot(player.up_direction)

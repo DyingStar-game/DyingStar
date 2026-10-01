@@ -133,6 +133,9 @@ static var prof_npc_emit_usec: int = 0
 static var prof_npc_stuck_usec: int = 0
 ## Why _npc_ensure_coverage left its fast path: [fast, no_cache, no_box, pending, dirty_or_freed, periodic, outside_inner]
 static var prof_npc_cov: Array = [0, 0, 0, 0, 0, 0, 0]
+## NPC ticks by state: [idle asleep, idle slid, waiting asleep, waiting slid, walking]. Waiting = has a
+## goal but no route (bake pending / stuck back-off). The slid ones are the move_and_slide calls.
+static var prof_npc_state: Array = [0, 0, 0, 0, 0]
 ## Main-loop _process side (TIME_PROCESS): Horizon message dispatch, by "namespace/event[/type]"
 ## key -> [count, usec], plus server.gd's own _process. proc= in [Perf] had nobody to blame.
 static var prof_horizon_msgs: int = 0
@@ -245,6 +248,7 @@ static func prof_reset() -> void:
 	prof_npc_emit_usec = 0
 	prof_npc_stuck_usec = 0
 	prof_npc_cov = [0, 0, 0, 0, 0, 0, 0]
+	prof_npc_state = [0, 0, 0, 0, 0]
 	prof_horizon_msgs = 0
 	prof_horizon_usec = 0
 	prof_horizon_by_type.clear()
