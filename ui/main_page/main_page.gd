@@ -43,13 +43,32 @@ func _ready() -> void:
 	bar.add_entry(QUIT, "%%MENU_QUIT")
 	bar.entry_pressed.connect(_on_entry_pressed)
 	bar.back_pressed.connect(_close_settings)
+	bar.took_focus.connect(func() -> void:
+		if is_instance_valid(_settings_overlay):
+			_settings_overlay.release_focus())
 	bar.left_bottom.connect(func() -> void:
 		if is_instance_valid(_settings_overlay):
 			_settings_overlay.focus_first())
 	add_child(bar)
-	# A gamepad plugged in and not yet taken up: say it can drive the menu.
-	$Control.add_child(PadInvite.new())
+	# A gamepad plugged in: say it can drive the menus — at once, and when one is plugged in later.
+	_offer_pad.call_deferred()
+	Input.joy_connection_changed.connect(func(_device: int, connected: bool) -> void:
+		if connected:
+			_offer_pad())
 	is_ready = true
+
+
+## The "Gamepad detected" window, when a pad is there and the player has not turned it off.
+func _offer_pad() -> void:
+	if not is_inside_tree() or not PadPopup.wanted() or get_node_or_null("PadPopup") != null:
+		return
+	var popup := PadPopup.new()
+	popup.name = "PadPopup"
+	# Closed with the pad's A: the menu is driven from the pad now, from the bar's first entry.
+	popup.closed.connect(func() -> void:
+		if not InputDevice.pointer and not is_instance_valid(_settings_overlay):
+			MenuFocus.take(bar.tabs))
+	add_child(popup)
 
 
 func _on_entry_pressed(key: StringName) -> void:

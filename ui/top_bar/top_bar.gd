@@ -11,6 +11,8 @@ signal entry_pressed(key: StringName)
 signal back_pressed
 ## Down from an entry: the page under the bar should take the focus (its host knows which).
 signal left_bottom
+## The bar took the focus (the triggers): the page under it should let go of its own.
+signal took_focus
 
 ## Above the settings page (5) and the in-game panels (4).
 const LAYER : int = 6
@@ -82,6 +84,9 @@ func _init() -> void:
 	tabs.selected.connect(entry_pressed.emit)
 	tabs.allow_focus()
 	_back.allow_focus()
+	# LT / RT walk along the entries, from anywhere on the screen; A presses the one reached.
+	tabs.pad_navigation(&"ui_subpage_previous", &"ui_subpage_next", true)
+	tabs.focus_stepped.connect(took_focus.emit)
 	row.add_child(tabs)
 	var sounds : Node = _SOUNDS.instantiate()
 	sounds.root_path = NodePath("../Area/Row/Tabs")
@@ -95,6 +100,8 @@ func _ready() -> void:
 ## Nothing has the focus and somebody reaches for the menu without the mouse: the first entry takes it,
 ## and that press is spent on it. From there Godot moves the focus along the bar by itself.
 func _input(event: InputEvent) -> void:
+	if MenuFocus.modal:
+		return
 	var owner : Control = get_viewport().gui_get_focus_owner()
 	if owner != null:
 		# Down from the bar: into the page under it, when there is one.

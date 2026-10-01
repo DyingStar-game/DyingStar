@@ -8,6 +8,8 @@ extends HBoxContainer
 ## so it is redone when the language changes.
 
 signal selected(key: StringName)
+## The gamepad moved the focus onto an entry (see [method pad_navigation]).
+signal focus_stepped
 
 const _UNDERLINE_PX : int = 2
 const _PAD_X : float = 4.0
@@ -23,6 +25,9 @@ var _pad_previous : StringName = &""
 var _pad_next : StringName = &""
 ## The entries take the focus, for the gamepad's and the arrows' navigation: see [method allow_focus].
 var _focusable : bool = false
+## Stepping with the pad moves the FOCUS along the entries rather than selecting them: on a bar whose
+## entries do things (Quit), a press of a trigger must not do them.
+var _step_focus : bool = false
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -54,9 +59,12 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 ## Let the gamepad step through the entries with [param previous] and [param next] (actions: the
 ## shoulder buttons, the triggers), with their buttons named at either end of the row while the
 ## player is on the pad (PadHint). Polled, so a trigger — an axis — steps once per pull.
-func pad_navigation(previous: StringName, next: StringName) -> void:
+##
+## [param move_focus]: step the focus instead, the entry being pressed with A.
+func pad_navigation(previous: StringName, next: StringName, move_focus: bool = false) -> void:
 	_pad_previous = previous
 	_pad_next = next
+	_step_focus = move_focus
 	var before := PadHint.new(previous, font_size - 2)
 	add_child(before)
 	move_child(before, 0)
@@ -64,12 +72,19 @@ func pad_navigation(previous: StringName, next: StringName) -> void:
 
 
 func _process(_delta: float) -> void:
-	if _pad_previous == &"" or not is_visible_in_tree() or BindingCapture.listening:
+	if _pad_previous == &"" or not is_visible_in_tree() or BindingCapture.listening or MenuFocus.modal:
 		return
+	var direction : int = 0
 	if Input.is_action_just_pressed(_pad_previous):
-		step(-1)
+		direction = -1
 	elif Input.is_action_just_pressed(_pad_next):
-		step(1)
+		direction = 1
+	if direction == 0:
+		return
+	if _step_focus:
+		step_focus(direction)
+	else:
+		step(direction)
 
 
 ## Select the entry [param direction] places from the active one, round the ends, skipping hidden
@@ -92,6 +107,24 @@ func allow_focus() -> void:
 	_focusable = true
 	for key: StringName in _buttons:
 		(_buttons[key] as Button).focus_mode = Control.FOCUS_ALL
+
+
+## Move the focus [param direction] entries along from the focused one (from the active one, or before
+## the first, when none of them has it), round the ends.
+func step_focus(direction: int) -> void:
+	var visible_buttons : Array[Button] = []
+	for key: StringName in _buttons:
+		if (_buttons[key] as Button).visible:
+			visible_buttons.append(_buttons[key])
+	if visible_buttons.is_empty():
+		return
+	var at : int = visible_buttons.find(get_viewport().gui_get_focus_owner())
+	if at < 0:
+		at = visible_buttons.find(_buttons.get(_active))
+	var to : int = (0 if direction > 0 else visible_buttons.size() - 1) if at < 0 \
+			else posmod(at + direction, visible_buttons.size())
+	visible_buttons[to].grab_focus()
+	focus_stepped.emit()
 
 
 func button(key: StringName) -> Button:
