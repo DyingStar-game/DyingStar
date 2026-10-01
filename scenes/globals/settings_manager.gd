@@ -48,8 +48,8 @@ var render : RenderSettings
 var render_applier : RenderApplier = null
 ## Settings > General > Interface size. Same arrangement as `language`; applied to the root window.
 var ui_scale : UiScaleSettings
-## The saved keybindings as action -> key text, empty when nothing was ever remapped. Kept so the
-## controls page can show and re-save them without parsing the file a second time.
+## The saved keybindings as action -> {device key: binding text} (InputDevice.KEYS), empty when
+## nothing was ever remapped. Kept so the controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
 
 func _ready() -> void:
@@ -94,10 +94,24 @@ func load_keybindings() -> void:
 	for action_name in (parsed as Dictionary).keys():
 		if not InputMap.has_action(action_name):
 			continue  # an action renamed or removed since the file was written
-		var ev_str: String = str(parsed[action_name])
-		keybindings[action_name] = ev_str
-		InputMap.action_erase_events(action_name)
-		InputMap.action_add_event(action_name, InputEventCodec.decode(ev_str))
+		var by_device: Dictionary = keybindings_of(parsed[action_name])
+		keybindings[action_name] = by_device
+		# Each device's binding over that device's defaults only: a remapped key keeps the default
+		# gamepad button, and the reverse.
+		for device_key: String in by_device:
+			InputDevice.rebind(action_name, InputEventCodec.decode(str(by_device[device_key])))
+
+
+## One action's entry of user://inputs.map as {device key: binding text} (InputDevice.KEYS). A file
+## written before gamepads held one string per action, a key or a mouse button: it reads as that.
+static func keybindings_of(entry: Variant) -> Dictionary:
+	if entry is Dictionary:
+		var out: Dictionary = {}
+		for device_key: String in InputDevice.KEYS.values():
+			if (entry as Dictionary).has(device_key):
+				out[device_key] = str(entry[device_key])
+		return out
+	return {InputDevice.KEYS[InputDevice.Kind.KEYBOARD_MOUSE]: str(entry)}
 
 func initialize_settings():
 	config.set_value("video", "fullscreen", false)

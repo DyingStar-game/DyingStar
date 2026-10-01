@@ -89,6 +89,8 @@ func _ready() -> void:
 	# AltGr and its fake Ctrl, tracked from EVERY window event before any node can swallow it.
 	if not OS.has_feature("dedicated_server"):
 		get_tree().root.window_input.connect(AltGr.feed)
+		# Keyboard and mouse, or the gamepad: what the HUD names a key after (InputDevice).
+		get_tree().root.window_input.connect(InputDevice.feed)
 
 
 func _notification(what: int) -> void:

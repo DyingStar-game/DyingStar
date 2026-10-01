@@ -34,10 +34,18 @@ static func wins(event: InputEvent, action: StringName) -> bool:
 
 
 ## How many modifiers the best binding of [param action] for this key asks for, or -1 when none of its
-## bindings answers this event.
+## bindings answers this event. A gamepad has no modifiers: a binding of the same button (or the same
+## stick, the same way) answers with none.
 static func _precision(event: InputEvent, action: StringName) -> int:
+	if not InputMap.has_action(action):
+		return -1
+	if InputDevice.kind_of(event) == InputDevice.Kind.GAMEPAD:
+		for bound: InputEvent in InputMap.action_get_events(action):
+			if _same_input(bound, event):
+				return 0
+		return -1
 	var held := event as InputEventWithModifiers
-	if held == null or not InputMap.has_action(action):
+	if held == null:
 		return -1
 	var held_mask: int = held.get_modifiers_mask()
 	var best: int = -1
@@ -60,6 +68,12 @@ static func _same_input(bound: InputEvent, event: InputEvent) -> bool:
 		return b.keycode != KEY_NONE and b.keycode == e.keycode
 	if bound is InputEventMouseButton and event is InputEventMouseButton:
 		return (bound as InputEventMouseButton).button_index == (event as InputEventMouseButton).button_index
+	if bound is InputEventJoypadButton and event is InputEventJoypadButton:
+		return (bound as InputEventJoypadButton).button_index == (event as InputEventJoypadButton).button_index
+	if bound is InputEventJoypadMotion and event is InputEventJoypadMotion:
+		var b: InputEventJoypadMotion = bound
+		var e: InputEventJoypadMotion = event
+		return b.axis == e.axis and signf(b.axis_value) == signf(e.axis_value)
 	return false
 
 

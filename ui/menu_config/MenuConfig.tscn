@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://drbfy20lnxnl0"]
 
 [ext_resource type="Script" uid="uid://xy85b8xbi3ak" path="res://ui/menu_config/menu_config.gd" id="1_7wffm"]
-[ext_resource type="PackedScene" uid="uid://c8lapfbcseu04" path="res://ui/menu_config/input_button.tscn" id="1_ndumg"]
 [ext_resource type="PackedScene" uid="uid://dp6jm5jmika20" path="res://ui/InstallSounds.tscn" id="3_c8v1g"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7wffm"]
@@ -83,18 +82,6 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 0
-
-[node name="InputButton" parent="PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/ActionList" unique_id=291085482 instance=ExtResource("1_ndumg")]
-layout_mode = 2
-
-[node name="InputButton2" parent="PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/ActionList" unique_id=136088277 instance=ExtResource("1_ndumg")]
-layout_mode = 2
-
-[node name="InputButton3" parent="PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/ActionList" unique_id=1426176373 instance=ExtResource("1_ndumg")]
-layout_mode = 2
-
-[node name="InputButton4" parent="PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/ActionList" unique_id=331999592 instance=ExtResource("1_ndumg")]
-layout_mode = 2
 
 [node name="SaveButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer" unique_id=1965769690]
 visible = false
