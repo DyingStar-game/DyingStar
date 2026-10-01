@@ -9,6 +9,8 @@ extends CanvasLayer
 
 signal entry_pressed(key: StringName)
 signal back_pressed
+## Down from an entry: the page under the bar should take the focus (its host knows which).
+signal left_bottom
 
 ## Above the settings page (5) and the in-game panels (4).
 const LAYER : int = 6
@@ -22,6 +24,9 @@ const _SOUNDS : PackedScene = preload("res://ui/InstallSounds.tscn")
 var tabs : TabStrip
 var _back : TabStrip
 var _area : Control
+## The bar is what the gamepad or the arrows reach first: true on the home screen, false while a page
+## under it (the settings) has the items to move through.
+var leads_focus : bool = true
 
 
 func _init() -> void:
@@ -75,6 +80,8 @@ func _init() -> void:
 	tabs.name = "Tabs"
 	tabs.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	tabs.selected.connect(entry_pressed.emit)
+	tabs.allow_focus()
+	_back.allow_focus()
 	row.add_child(tabs)
 	var sounds : Node = _SOUNDS.instantiate()
 	sounds.root_path = NodePath("../Area/Row/Tabs")
@@ -83,6 +90,30 @@ func _init() -> void:
 
 func _ready() -> void:
 	SafeArea.keep(_area)
+
+
+## Nothing has the focus and somebody reaches for the menu without the mouse: the first entry takes it,
+## and that press is spent on it. From there Godot moves the focus along the bar by itself.
+func _input(event: InputEvent) -> void:
+	var owner : Control = get_viewport().gui_get_focus_owner()
+	if owner != null:
+		# Down from the bar: into the page under it, when there is one.
+		if (tabs.is_ancestor_of(owner) or _back.is_ancestor_of(owner)) and event.is_action_pressed("ui_down"):
+			owner.release_focus()
+			left_bottom.emit()
+			get_viewport().set_input_as_handled()
+		return
+	if leads_focus and MenuFocus.wants_focus(event) and MenuFocus.take(tabs):
+		get_viewport().set_input_as_handled()
+
+
+## The focus on the bar: on its active entry, or its first. Up from the top of the page under it.
+func focus_entry() -> void:
+	var active : Button = tabs.button(tabs.active())
+	if active != null and active.is_visible_in_tree():
+		active.grab_focus()
+	else:
+		MenuFocus.take(tabs)
 
 
 func add_entry(key: StringName, label_key: String) -> Button:

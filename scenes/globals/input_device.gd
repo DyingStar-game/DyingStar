@@ -25,6 +25,8 @@ const MOUSE_WAKE : float = 4.0
 const KEYS : Dictionary = {Kind.KEYBOARD_MOUSE: "km", Kind.GAMEPAD: "pad"}
 
 static var last : Kind = Kind.KEYBOARD_MOUSE
+## The last input came from the mouse, not from a key or the pad: a menu then shows no focus frame.
+static var pointer : bool = true
 static var family : Family = Family.XBOX
 
 
@@ -35,15 +37,21 @@ static func feed(event: InputEvent) -> void:
 	elif event is InputEventJoypadMotion:
 		if absf((event as InputEventJoypadMotion).axis_value) >= STICK_WAKE:
 			_use_pad(event.device)
-	elif event is InputEventKey or event is InputEventMouseButton:
+	elif event is InputEventKey:
 		last = Kind.KEYBOARD_MOUSE
+		pointer = false
+	elif event is InputEventMouseButton:
+		last = Kind.KEYBOARD_MOUSE
+		pointer = true
 	elif event is InputEventMouseMotion:
 		if (event as InputEventMouseMotion).relative.length() >= MOUSE_WAKE:
 			last = Kind.KEYBOARD_MOUSE
+			pointer = true
 
 
 static func _use_pad(device: int) -> void:
 	last = Kind.GAMEPAD
+	pointer = false
 	# Asked of a pad that is there: an event from one just unplugged (or made up by a test) has no
 	# name to read, and would turn every button into a number.
 	if Input.get_connected_joypads().has(device):
