@@ -4,7 +4,7 @@ extends CanvasLayer
 ## when one is plugged in while it is up), saying the menus and the game can be played with it. Once a
 ## launch: back from a game to the menu, it does not come up again.
 ##
-## In the menu's own look — the top bar's dark strip and its rule, the heading in the active amber —
+## In the menu's own look — the top bar's dark strip, the heading in the active amber —
 ## over a veil across the whole screen that says the rest waits. OK is named with the pad's own
 ## button, "OK (A)", and A, Enter, B or Escape close it.
 ##
@@ -16,9 +16,9 @@ signal closed
 ## Over the top bar (TopBar.LAYER).
 const LAYER : int = 7
 const WIDTH_PX : float = 420.0
-## The top bar's own strip and rule (TopBar._init), a shade more opaque: a window, not a band.
+## The top bar's own strip (TopBar._init), a shade more opaque: a window, not a band. No border: a
+## white line round it read as foreign to the menu.
 const PANEL_COLOR : Color = Color(0.07, 0.08, 0.1, 0.96)
-const RULE_COLOR : Color = Color(1.0, 1.0, 1.0, 0.25)
 const VEIL_COLOR : Color = Color(0.0, 0.0, 0.0, 0.6)
 const BODY_COLOR : Color = Color(0.85, 0.87, 0.92)
 
@@ -48,8 +48,6 @@ func _init() -> void:
 	panel.custom_minimum_size = Vector2(WIDTH_PX, 0)
 	var style := StyleBoxFlat.new()
 	style.bg_color = PANEL_COLOR
-	style.set_border_width_all(1)
-	style.border_color = RULE_COLOR
 	style.set_content_margin_all(28)
 	panel.add_theme_stylebox_override("panel", style)
 	centre.add_child(panel)
@@ -65,6 +63,7 @@ func _init() -> void:
 	# OK in the top bar's style (a strip of one entry), so it reads as the menu's own.
 	var strip := TabStrip.new(SettingsStyle.FONT_SIZE + 5)
 	strip.alignment = BoxContainer.ALIGNMENT_CENTER
+	strip.accept_hints = false  # "OK (A)" names its button already
 	strip.allow_focus()
 	_ok = strip.add_entry(&"ok", "%%PAD_POPUP_OK")
 	strip.selected.connect(func(_key: StringName) -> void: close())
@@ -85,11 +84,7 @@ func _ready() -> void:
 	_shown = true
 	MenuFocus.modal = true
 	# "OK (A)": the pad's own bottom button, as printed on it.
-	var pads : Array[int] = Input.get_connected_joypads()
-	var family : InputDevice.Family = InputDevice.family
-	if not pads.is_empty():
-		family = InputDevice.family_of(Input.get_joy_name(pads[0]), Input.is_joy_known(pads[0]))
-	_ok.text = ok_text(family)
+	_ok.text = ok_text(InputDevice.likely_family())
 	# On OK at once: A or Enter closes it.
 	_ok.grab_focus()
 

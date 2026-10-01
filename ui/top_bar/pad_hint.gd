@@ -8,6 +8,8 @@ extends Label
 ## the mouse sends them away. Names what the action is bound to, so a rebound button is named right.
 
 var action : StringName
+## Shown only while this control has the focus — the "A" beside the entry it would press — or null.
+var focus_of : Control = null
 
 
 func _init(p_action: StringName, font_size: int = SettingsStyle.FONT_SIZE) -> void:
@@ -32,8 +34,9 @@ func _process(_delta: float) -> void:
 func _refresh() -> void:
 	var on_pad : bool = InputDevice.last == InputDevice.Kind.GAMEPAD
 	var bound : Array[InputEvent] = InputDevice.bindings(action, InputDevice.Kind.GAMEPAD)
+	var here : bool = focus_of == null or focus_of.has_focus()
 	# Kept in the layout, only see-through, so the tabs do not shift when the hints come and go.
-	self_modulate.a = 1.0 if on_pad and not bound.is_empty() else 0.0
+	self_modulate.a = 1.0 if on_pad and here and not bound.is_empty() else 0.0
 	var name_now : String = InputLabel.for_event(bound[0]) if not bound.is_empty() else ""
 	if text != name_now:
 		text = name_now

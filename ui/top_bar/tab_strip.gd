@@ -28,6 +28,14 @@ var _focusable : bool = false
 ## Stepping with the pad moves the FOCUS along the entries rather than selecting them: on a bar whose
 ## entries do things (Quit), a press of a trigger must not do them.
 var _step_focus : bool = false
+## The hint after the entries (see [method pad_navigation]), kept last as entries are added after it.
+var _hint_after : PadHint = null
+
+## Room kept beside each focusable entry for the button that presses it ("A"), shown only on the
+## focused entry and on the pad: kept even when hidden, so the entries never move.
+const ACCEPT_HINT_WIDTH : float = 34.0
+## Set false before allow_focus() where an entry already names its button ("OK (A)").
+var accept_hints : bool = true
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -52,8 +60,21 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 	_labels[key] = label_key
 	_prefixes[key] = prefix
 	add_child(button)
+	if _focusable and accept_hints:
+		_add_accept_hint(button)
+	if _hint_after != null:
+		move_child(_hint_after, -1)
 	_style(key)
 	return button
+
+
+## The "A" beside [param button], shown while it has the focus on the pad.
+func _add_accept_hint(button: Button) -> void:
+	var hint := PadHint.new(&"ui_accept", font_size - 4)
+	hint.focus_of = button
+	hint.custom_minimum_size.x = ACCEPT_HINT_WIDTH
+	add_child(hint)
+	move_child(hint, button.get_index() + 1)
 
 
 ## Let the gamepad step through the entries with [param previous] and [param next] (actions: the
@@ -68,7 +89,8 @@ func pad_navigation(previous: StringName, next: StringName, move_focus: bool = f
 	var before := PadHint.new(previous, font_size - 2)
 	add_child(before)
 	move_child(before, 0)
-	add_child(PadHint.new(next, font_size - 2))
+	_hint_after = PadHint.new(next, font_size - 2)
+	add_child(_hint_after)
 
 
 func _process(_delta: float) -> void:
@@ -104,9 +126,13 @@ func step(direction: int) -> void:
 ## Let the entries take the focus, so the cross, the stick or the arrows move along them and A or Enter
 ## presses one. The focused entry is drawn in the active amber, as under the pointer.
 func allow_focus() -> void:
+	if _focusable:
+		return
 	_focusable = true
 	for key: StringName in _buttons:
 		(_buttons[key] as Button).focus_mode = Control.FOCUS_ALL
+		if accept_hints:
+			_add_accept_hint(_buttons[key])
 
 
 ## Move the focus [param direction] entries along from the focused one (from the active one, or before
