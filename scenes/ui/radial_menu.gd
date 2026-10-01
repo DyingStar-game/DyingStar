@@ -127,13 +127,9 @@ func _process(_delta: float) -> void:
 func _stick() -> Vector2:
 	if InputDevice.last != InputDevice.Kind.GAMEPAD:
 		return Vector2.ZERO
-	var best := Vector2.ZERO
-	for device: int in Input.get_connected_joypads():
-		for axes: Array in [[JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y], [JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y]]:
-			var push := Vector2(Input.get_joy_axis(device, axes[0]), Input.get_joy_axis(device, axes[1]))
-			if push.length() > best.length():
-				best = push
-	return best
+	var left : Vector2 = InputDevice.pad_stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y)
+	var right : Vector2 = InputDevice.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+	return left if left.length() >= right.length() else right
 
 
 ## Where a stick pushed by [param stick] points on the wheel, as the mouse would: part way, in the ring

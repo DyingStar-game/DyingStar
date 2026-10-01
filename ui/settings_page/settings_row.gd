@@ -50,7 +50,7 @@ func _watch(control: Control) -> void:
 	control.focus_entered.connect(func() -> void:
 		if not InputDevice.pointer:
 			_on_enter())
-	control.focus_exited.connect(func() -> void: add_theme_stylebox_override("panel", _idle))
+	control.focus_exited.connect(_on_exit)  # still lit while the pointer is over it
 
 
 func _on_enter() -> void:

@@ -156,3 +156,16 @@ func test_the_mouse_let_go_by_a_menu_the_pad_opened_does_not_take_it_back() -> v
 	InputDevice._pad_at -= InputDevice.PAD_GRACE_MS
 	InputDevice.feed(freed)
 	assert_eq(InputDevice.last, InputDevice.Kind.KEYBOARD_MOUSE, "later, the mouse moved is the player")
+
+
+func test_a_pad_binding_answers_every_pad() -> void:
+	var made := InputEventJoypadButton.new()  # device 0, as a capture or a decode makes it
+	made.button_index = JOY_BUTTON_X
+	InputDevice.rebind(ACTION, made)
+	assert_eq(InputDevice.bindings(ACTION, InputDevice.Kind.GAMEPAD)[0].device, -1,
+			"any pad: the player's may come after a virtual one")
+
+
+func test_a_damaged_pad_line_is_no_binding() -> void:
+	assert_null(InputEventCodec.decode("joy_button_x"), "not button A")
+	assert_null(InputEventCodec.decode("joy_axis__+"), "not axis 0")

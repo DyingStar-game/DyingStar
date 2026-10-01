@@ -50,10 +50,10 @@ static func for_event(event: InputEvent) -> String:
 	if event is InputEventMouseButton:
 		return _modifiers(event) + _mouse_button_name(event.button_index)
 	if event is InputEventJoypadButton:
-		return pad_button_name((event as InputEventJoypadButton).button_index, InputDevice.family)
+		return pad_button_name((event as InputEventJoypadButton).button_index, InputDevice.likely_family())
 	if event is InputEventJoypadMotion:
 		var motion : InputEventJoypadMotion = event
-		return pad_axis_name(motion.axis, motion.axis_value, InputDevice.family)
+		return pad_axis_name(motion.axis, motion.axis_value, InputDevice.likely_family())
 	return event.as_text()
 
 

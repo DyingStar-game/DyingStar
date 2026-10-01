@@ -1,3 +1,4 @@
+class_name SettingsPage
 extends CanvasLayer
 
 ## The category on show changed (its translation key, e.g. the graphics one) — the main menu stage
@@ -110,10 +111,11 @@ func _input(event: InputEvent) -> void:
 	var outside : Control = get_viewport().gui_get_focus_owner()
 	if outside != null and not is_ancestor_of(outside):
 		return
-	var owner : Control = settings_container.gui_get_focus_owner()
-	if owner != null:
-		# Up from the first line: out of the page, onto the bar (Resume, Settings, Quit...).
-		if owner == MenuFocus.first_item(settings_container) and event.is_action_pressed("ui_up"):
+	if settings_container.gui_get_focus_owner() != null:
+		# Up from the first line: out of the page, onto the bar (Resume, Settings, Quit...). The action
+		# first: the walk for the first line is not for every mouse move.
+		if event.is_action_pressed("ui_up") \
+				and settings_container.gui_get_focus_owner() == MenuFocus.first_item(settings_container):
 			settings_container.gui_release_focus()
 			left_top.emit()
 			get_viewport().set_input_as_handled()
@@ -129,7 +131,17 @@ func release_focus() -> void:
 
 ## The focus on the page's first line. Down from the bar over it.
 func focus_first() -> bool:
-	return MenuFocus.take(settings_container)
+	return _take_focus(settings_container)
+
+
+## The focus into [param root], taken from the bar over the page: one owner, never one in each.
+func _take_focus(root: Node) -> bool:
+	if not is_instance_valid(root) or root.is_queued_for_deletion():
+		return false
+	var taken : bool = MenuFocus.take(root)
+	if taken:
+		get_viewport().gui_release_focus()
+	return taken
 
 
 ## Show one category (its translation key, a CATEGORIES key).
@@ -149,7 +161,7 @@ func open(category_key: String) -> void:
 	# so a category opened with the shoulder buttons is ready to be moved through.
 	MenuFocus.follow(page)
 	if not InputDevice.pointer:
-		MenuFocus.take.call_deferred(page)
+		_take_focus.call_deferred(page)
 	tabs.set_active(StringName(category_key))
 	category_changed.emit(category_key)
 

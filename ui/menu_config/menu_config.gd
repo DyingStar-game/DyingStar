@@ -407,6 +407,12 @@ func _end_remap() -> void:
 	_capture = null
 	BindingCapture.listening = false
 
+
+## Freed in the middle of a capture (the menu closed, the game left): the menus are not left deaf.
+func _exit_tree() -> void:
+	if is_remapping:
+		_end_remap()
+
 func _on_reset_button_pressed() -> void:
 	InputMap.load_from_project_settings()
 	keycode_dic.clear()

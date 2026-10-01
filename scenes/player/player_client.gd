@@ -281,8 +281,9 @@ func _process(_delta: float) -> void:
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
-		_apply_cursor_mode(_ui_focus())  # a panel opened at the wheel needs the pointer, same as on foot
-		if not _ui_focus():
+		var seated_focus: bool = _ui_focus()
+		_apply_cursor_mode(seated_focus)  # a panel opened at the wheel needs the pointer, same as on foot
+		if not seated_focus:
 			player.mouse_motion += _stick_look(_delta)  # free look at the wheel, from the stick too
 		player._ride_seat(player._seat_node)
 		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
@@ -605,7 +606,7 @@ func _pan_along_screen(delta: float) -> void:
 ## Through mouse_motion, the one road the view is turned by: aiming slows it and perforating holds it
 ## for the stick as for the mouse, and a carried crate tumbles under it the same way.
 func _stick_look(delta: float) -> Vector2:
-	var stick: Vector2 = Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+	var stick: Vector2 = InputDevice.pad_vector(&"look_left", &"look_right", &"look_up", &"look_down")
 	if stick == Vector2.ZERO:
 		return Vector2.ZERO
 	return -stick * stick.length() * (STICK_LOOK_RATE * delta / maxf(player.camera_sensitivity, 0.001))

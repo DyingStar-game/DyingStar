@@ -16,15 +16,6 @@ func _ready() -> void:
 	# The settings are the pause menu's content: their entry is always the active one, and "Resume"
 	# is the way back (no "‹ Back" beside it saying the same).
 	main_pause_menu.bar.set_active(PausePage.SETTINGS)
-	# The settings' lines are what the pad or the arrows reach first; up from the top of them is the
-	# bar (Resume, Back to the menu, Quit), down from the bar is the page again.
-	main_pause_menu.bar.leads_focus = false
-	main_pause_menu.bar.took_focus.connect(func() -> void:
-		if is_instance_valid(_settings_overlay):
-			_settings_overlay.release_focus())
-	main_pause_menu.bar.left_bottom.connect(func() -> void:
-		if is_instance_valid(_settings_overlay):
-			_settings_overlay.focus_first())
 
 ## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
 ## disables its whole UserInterface subtree (Player._enter_tree), which is the single place that
@@ -119,12 +110,15 @@ func _open_settings() -> void:
 	_settings_overlay = settings_scene.instantiate()
 	_settings_overlay.see_through = true
 	_settings_overlay.tree_exited.connect(func() -> void: _settings_overlay = null)
-	_settings_overlay.left_top.connect(main_pause_menu.bar.focus_entry)
 	add_child(_settings_overlay)
+	# The settings' lines are what the pad or the arrows reach first; up from the top of them is the
+	# bar (Resume, Back to the menu, Quit), down from the bar is the page again.
+	main_pause_menu.bar.attach_page(_settings_overlay)
 
 
 ## Show the menu, on the settings. Paired with _close() so the two halves cannot drift apart.
 func _open() -> void:
+	_resume_armed = false  # a B let go of over a menu closed by a click must not resume the next one
 	visible = true
 	main_pause_menu.visible = true
 	_hide_game_interface()
@@ -136,6 +130,7 @@ func _open() -> void:
 ## is the family of bug this file just came out of. The state change stays at the call site: closing
 ## to PLAYING and closing to UNIVERSE_MENU are different decisions, and only the hiding is shared.
 func _close() -> void:
+	_resume_armed = false
 	visible = false
 	main_pause_menu.visible = false
 	_restore_game_interface()
