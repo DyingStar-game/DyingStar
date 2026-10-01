@@ -90,7 +90,7 @@ func test_an_f7_photo_hides_it_for_its_frame() -> void:
 	var panel := _panel()
 	panel.add_section(ReadoutSection.new("A", _lines, 1.0))
 	panel._process(0.0)
-	panel.visible = false  # what Screenshot._hide_interface() does to every CanvasLayer
+	panel.visible = false  # what InterfaceHider.hide_all() does to every CanvasLayer
 	panel._process(0.0)
 	assert_false(panel.visible, "does not put itself back into the photo")
 	assert_true(panel.is_shown(), "while still considering itself on")
