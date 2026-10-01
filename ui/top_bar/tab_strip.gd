@@ -30,6 +30,8 @@ var _focusable : bool = false
 var _step_focus : bool = false
 ## The hint after the entries (see [method pad_navigation]), kept last as entries are added after it.
 var _hint_after : PadHint = null
+## The way the pad held last frame (-1, 0, 1): a step on each new pull, not on every frame of one.
+var _held : int = 0
 
 ## Room kept beside each focusable entry for the button that presses it ("A"), shown only on the
 ## focused entry and on the pad: kept even when hidden, so the entries never move.
@@ -110,14 +112,13 @@ func pad_navigation(previous: StringName, next: StringName, move_focus: bool = f
 
 
 func _process(_delta: float) -> void:
-	if _pad_previous == &"" or not is_visible_in_tree() or BindingCapture.listening or MenuFocus.modal:
+	if _pad_previous == &"":
 		return
-	var direction : int = 0
-	if Input.is_action_just_pressed(_pad_previous):
-		direction = -1
-	elif Input.is_action_just_pressed(_pad_next):
-		direction = 1
-	if direction == 0:
+	# Read on the pad in hand only (InputDevice.pad_held): another device can hold the triggers.
+	var held : int = -1 if InputDevice.pad_held(_pad_previous) else (1 if InputDevice.pad_held(_pad_next) else 0)
+	var direction : int = held if held != _held else 0
+	_held = held
+	if direction == 0 or not is_visible_in_tree() or BindingCapture.listening or MenuFocus.modal:
 		return
 	if _step_focus:
 		step_focus(direction)
