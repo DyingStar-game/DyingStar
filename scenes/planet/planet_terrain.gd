@@ -328,6 +328,12 @@ var _lod_result_cam: Vector3 = Vector3.INF
 var _lod_result_mult: float = -1.0
 var _lod_result_slack: float = 0.0
 var _lod_result_usec: int = 0
+## Whether the running task computes a leaf set (else only a look-ahead traversal).
+var _lod_task_desired: bool = false
+## The look-ahead waiting for the next task, and the set the last task traversed for it.
+var _pending_prefetch_cam: Vector3 = Vector3.INF
+var _pending_prefetch_dot: float = -1.0
+var _prefetch_result: Dictionary = {}
 
 ## Cache of feature nodes (caves) attached per chunk
 ## so we can free them when the chunk is unloaded.  key → Array[Node3D].
@@ -2642,10 +2648,28 @@ func _lod_on_worker() -> bool:
 	return not is_server and not Engine.is_editor_hint()
 
 
-func _start_lod_task(local_cam: Vector3, horizon_dot: float) -> void:
+## [param with_desired]: also compute the leaf set (else only the waiting look-ahead, if any).
+func _start_lod_task(local_cam: Vector3, horizon_dot: float, with_desired: bool = true) -> void:
 	_trav_mult = _terrain_mult
 	_trav_alt = _cam_alt_above_surface
-	_lod_task = WorkerThreadPool.add_task(_compute_desired.bind(local_cam, horizon_dot), false, "terrain_lod")
+	_lod_task_desired = with_desired
+	var prefetch_cam := _pending_prefetch_cam
+	var prefetch_dot := _pending_prefetch_dot
+	_pending_prefetch_cam = Vector3.INF
+	_lod_task = WorkerThreadPool.add_task(
+		_lod_work.bind(local_cam, horizon_dot, with_desired, prefetch_cam, prefetch_dot), false, "terrain_lod")
+
+
+## Worker: the leaf set and/or the look-ahead traversal, from the inputs frozen by _start_lod_task.
+func _lod_work(local_cam: Vector3, horizon_dot: float, with_desired: bool,
+		prefetch_cam: Vector3, prefetch_dot: float) -> void:
+	if with_desired:
+		_compute_desired(local_cam, horizon_dot)
+	if prefetch_cam != Vector3.INF:
+		var found: Dictionary = {}
+		for base_pix in BASE_PIXEL_COUNT:
+			_traverse(1, base_pix, 0, prefetch_cam, prefetch_dot, found, _node_geom_prefetch, false)
+		_prefetch_result = found
 
 
 ## A finished worker hands its leaf set over; one still running is left alone.
@@ -2654,7 +2678,12 @@ func _collect_lod_task() -> void:
 		return
 	WorkerThreadPool.wait_for_task_completion(_lod_task)
 	_lod_task = -1
-	_adopt_lod_result()
+	if _lod_task_desired:
+		_adopt_lod_result()
+	if not _prefetch_result.is_empty():
+		var found := _prefetch_result
+		_prefetch_result = {}
+		_prefetch_register(found)
 
 
 func _adopt_lod_result() -> void:
@@ -2674,6 +2703,8 @@ func _join_lod_task() -> void:
 		WorkerThreadPool.wait_for_task_completion(_lod_task)
 		_lod_task = -1
 		_lod_result = {}
+		_prefetch_result = {}
+		_pending_prefetch_cam = Vector3.INF
 
 
 func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
@@ -3558,8 +3589,27 @@ func _drop_cache_write(info: Dictionary) -> void:
 ## Look-ahead prefetch: estimate camera velocity from history and submit
 ## recipe + mesh tasks for chunks the camera is moving towards.
 func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
-	if _cam_history.size() < 2:
+	var predicted_cam := _prefetch_target(local_cam)
+	if predicted_cam == Vector3.INF:
 		return
+	if _lod_on_worker():
+		# The traversal goes to the leaf-set worker (one task at a time); its result is registered when
+		# collected. A newer prediction replaces one still waiting.
+		_pending_prefetch_cam = predicted_cam
+		_pending_prefetch_dot = horizon_dot
+		if _lod_task < 0:
+			_start_lod_task(local_cam, horizon_dot, false)
+		return
+	var prefetch_desired: Dictionary = {}
+	for base_pix in BASE_PIXEL_COUNT:
+		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired, _node_geom_prefetch, false)
+	_prefetch_register(prefetch_desired)
+
+
+## Where the camera will be in LOOKAHEAD_S, or INF when there is nothing new to prefetch for.
+func _prefetch_target(local_cam: Vector3) -> Vector3:
+	if _cam_history.size() < 2:
+		return Vector3.INF
 	# Velocity = average of recent frame deltas (planet-local space).
 	var vel := Vector3.ZERO
 	for i in range(1, _cam_history.size()):
@@ -3572,21 +3622,20 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 	# main traversal just built: a second full traversal for nothing (20 ms
 	# in the physics step, every 0.25 s, standing still).
 	if lead.length() < 50.0:
-		return
+		return Vector3.INF
 	var predicted_cam := local_cam + lead
 	# Nor does a prediction that has barely moved since the last one: a
 	# finest chunk is ~800 m across on tarsis_3, and redoing the traversal
 	# for a point a few tens of metres on cost 7-12 ms every update in a
 	# moving vehicle (ClientPerf terrain_prefetch, 2026-09-24).
 	if predicted_cam.distance_to(_last_prefetch_cam) < PREFETCH_MIN_MOVE_M:
-		return
+		return Vector3.INF
 	_last_prefetch_cam = predicted_cam
+	return predicted_cam
 
-	# Traverse from predicted position — only register chunks not already
-	# active or in pipeline (don't duplicate work already queued).
-	var prefetch_desired: Dictionary = {}
-	for base_pix in BASE_PIXEL_COUNT:
-		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired, _node_geom_prefetch, false)
+
+## Queue what a look-ahead traversal found that is neither on screen nor in flight (main thread).
+func _prefetch_register(prefetch_desired: Dictionary) -> void:
 
 	# One snapshot, not one linear scan of the backlog per predicted key.
 	var pipeline := _pipeline_keys()
