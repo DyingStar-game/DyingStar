@@ -1041,7 +1041,8 @@ func _any_wheel_open() -> bool:
 ## transitions that must stay rare, and the embedded game window reports a mode of its own.
 func _apply_cursor_mode(ui_focus: bool) -> void:
 	if ui_focus:
-		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		# Free, not captured: hidden is free too — the cursor put away while on the gamepad (InputDevice).
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.mouse_mode == Input.MOUSE_MODE_CONFINED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.mouse_motion = Vector2.ZERO  # freeze the look while the panel has the pointer
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
