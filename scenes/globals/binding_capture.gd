@@ -9,11 +9,21 @@ extends RefCounted
 ## in between — sprint sits on a bare Shift, the EVA descent on a bare Ctrl, and both must stay
 ## bindable.
 ##
+## On the gamepad there is no modifier to wait for: a button is bound as it goes down, a stick or a
+## trigger once pushed past [constant AXIS_BIND], one way. A capture listens to ONE device, the one
+## whose column was clicked; the other device's events are not for it.
+##
 ## Kept apart from the page, and without a node, so the rules can be tested with plain events.
 
 enum Verdict { WAIT, BIND }
 
 const MODIFIERS: Array[Key] = [KEY_CTRL, KEY_SHIFT, KEY_ALT, KEY_META]
+## How far a stick or a trigger must go to be bound: well past its rest and its drift, so that the
+## stick brushed on the way to a button is not taken for the binding.
+const AXIS_BIND: float = 0.6
+
+## The device this capture listens to (InputDevice.Kind).
+var device: InputDevice.Kind = InputDevice.Kind.KEYBOARD_MOUSE
 
 ## What to bind, once [method feed] has answered BIND. Built fresh, never the live event: a modifier
 ## key reports its own flag as held on some platforms, which saved a bare Alt as "Alt+Alt".
@@ -26,7 +36,15 @@ var _held: Array[Key] = []
 var _several: bool = false
 
 
+func _init(for_device: InputDevice.Kind = InputDevice.Kind.KEYBOARD_MOUSE) -> void:
+	device = for_device
+
+
 func feed(event: InputEvent) -> Verdict:
+	if InputDevice.kind_of(event) != device:
+		return Verdict.WAIT
+	if device == InputDevice.Kind.GAMEPAD:
+		return _feed_pad(event)
 	var mouse := event as InputEventMouseButton
 	if mouse != null:
 		if not mouse.pressed:
@@ -50,6 +68,25 @@ func feed(event: InputEvent) -> Verdict:
 	made.physical_keycode = code
 	_copy_modifiers(key, made)
 	bound = made
+	return Verdict.BIND
+
+
+func _feed_pad(event: InputEvent) -> Verdict:
+	var button := event as InputEventJoypadButton
+	if button != null:
+		if not button.pressed:
+			return Verdict.WAIT
+		var made := InputEventJoypadButton.new()
+		made.button_index = button.button_index
+		bound = made
+		return Verdict.BIND
+	var motion := event as InputEventJoypadMotion
+	if motion == null or absf(motion.axis_value) < AXIS_BIND:
+		return Verdict.WAIT
+	var pushed := InputEventJoypadMotion.new()
+	pushed.axis = motion.axis
+	pushed.axis_value = signf(motion.axis_value)
+	bound = pushed
 	return Verdict.BIND
 
 

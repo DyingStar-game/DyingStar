@@ -14,6 +14,10 @@ extends RefCounted
 ## nothing to write in a file.
 
 const MOUSE_PREFIX := "mouse_"
+## Gamepads: "joy_button_<index>", and "joy_axis_<axis>_+" or "_-" for a stick or a trigger pushed one
+## way. No modifiers: a pad has none.
+const JOY_BUTTON_PREFIX := "joy_button_"
+const JOY_AXIS_PREFIX := "joy_axis_"
 ## Prefix to flag, in the order they are written.
 const MODIFIER_PREFIXES: Dictionary = {
 	"Ctrl+": KEY_MASK_CTRL,
@@ -30,10 +34,25 @@ static func encode(event: InputEvent) -> String:
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event
 		return _modifiers_text(mb) + MOUSE_PREFIX + str(mb.button_index)
+	if event is InputEventJoypadButton:
+		return JOY_BUTTON_PREFIX + str((event as InputEventJoypadButton).button_index)
+	if event is InputEventJoypadMotion:
+		var motion: InputEventJoypadMotion = event
+		return JOY_AXIS_PREFIX + str(motion.axis) + ("_-" if motion.axis_value < 0.0 else "_+")
 	return ""
 
 
 static func decode(text: String) -> InputEvent:
+	if text.begins_with(JOY_BUTTON_PREFIX):
+		var button := InputEventJoypadButton.new()
+		button.button_index = int(text.substr(JOY_BUTTON_PREFIX.length())) as JoyButton
+		return button
+	if text.begins_with(JOY_AXIS_PREFIX):
+		var motion := InputEventJoypadMotion.new()
+		var axis_text: String = text.substr(JOY_AXIS_PREFIX.length())
+		motion.axis = int(axis_text.get_slice("_", 0)) as JoyAxis
+		motion.axis_value = -1.0 if axis_text.ends_with("_-") else 1.0
+		return motion
 	var mask: int = 0
 	var rest: String = text
 	var found: bool = true

@@ -102,16 +102,30 @@ const GROUP_OTHER : String = "%%KM_GROUP_OTHER"
 ## Tabs carry the navigation: the settings tabs' own look (TabStrip), a step smaller.
 const TAB_FONT_SIZE : int = 15
 
-var input_button_scene = preload("res://ui/menu_config/input_button.tscn")
+## The two devices a binding belongs to, in their columns' order (InputDevice.Kind).
+const COLUMNS : Array[InputDevice.Kind] = [InputDevice.Kind.KEYBOARD_MOUSE, InputDevice.Kind.GAMEPAD]
+## Each column's heading, and what its cell says while it listens.
+const COLUMN_TITLES : Dictionary = {
+	InputDevice.Kind.KEYBOARD_MOUSE: "%%KM_COLUMN_KEYBOARD", InputDevice.Kind.GAMEPAD: "%%KM_COLUMN_PAD",
+}
+const LISTENING : Dictionary = {
+	InputDevice.Kind.KEYBOARD_MOUSE: "%%KM_PRESS_KEY", InputDevice.Kind.GAMEPAD: "%%KM_PRESS_PAD",
+}
+## What a cell with nothing bound shows.
+const UNBOUND : String = "—"
+## A binding cell's width, both columns alike.
+const CELL_WIDTH : float = 180.0
 
 var is_remapping = false
 var action_to_remap = null
 var remapping_button = null
+## The device of the cell being captured (InputDevice.Kind).
+var _remapping_device : InputDevice.Kind = InputDevice.Kind.KEYBOARD_MOUSE
 ## Decides what the keys pressed during a capture add up to. Alive only while one is running.
 var _capture: BindingCapture = null
 
-## One entry per displayed family: {"header": Label, "rows": {translated label -> Button},
-## "sections": [{"header": Label, "rows": Array[Button]}]} — the titled sections of the family.
+## One entry per displayed family: {"header": Label, "rows": {translated label -> its line},
+## "sections": [{"header": Label}]} — the titled sections of the family.
 var _groups: Array[Dictionary] = []
 var _tab_bar: TabStrip = null
 ## The settings pages' heading look, for the page title and the family headings.
@@ -141,6 +155,7 @@ func create_action_list() -> void:
 	_groups.clear()
 	for item in action_list.get_children():
 		item.queue_free()
+	_add_column_titles()
 	var unfiled : Array[String] = _listable_actions()
 	for group_key in ACTION_GROUPS:
 		var sections : Array = []
@@ -217,31 +232,55 @@ func _add_group(group_key: String, sections: Array) -> void:
 		if str(section[0]) != "":
 			title = _factory.header(str(section[0]))
 			action_list.add_child(title)
-		var section_rows : Array[Button] = []
 		for action: String in section[1]:
 			var label_key : String = str(section[1][action])
-			var row : Button = _add_action_row(action, label_key)
 			# Keyed by what the player READS, because that is what they type in the search box:
 			# keying by "%%ACT_JUMP" would make searching for "jump" match nothing.
-			rows[tr(label_key)] = row
-			section_rows.append(row)
+			rows[tr(label_key)] = _add_action_row(action, label_key)
 		if title != null:
-			titled.append({"header": title, "rows": section_rows})
+			titled.append({"header": title})
 	_groups.append({"header": header, "rows": rows, "sections": titled})
 
 
-func _add_action_row(action: String, label_key: String) -> Button:
-	var action_bt = input_button_scene.instantiate()
-	var action_label = action_bt.find_child("LabelAction")
-	var input_label = action_bt.find_child("LabelInput")
+## One action: its name, then a cell per device (keyboard and mouse, gamepad), each showing that
+## device's binding and capturing a new one when clicked. Lit as a whole under the pointer, like the
+## other settings pages' lines.
+func _add_action_row(action: String, label_key: String) -> Control:
 	# The KEY goes in, not translated text: a Label re-translates its own text, so the list follows
 	# a language change on its own.
-	action_label.text = label_key
-	var events = InputMap.action_get_events(action)
-	input_label.text = InputLabel.for_event(events[0] as InputEvent) if not events.is_empty() else ""
-	action_list.add_child(action_bt)
-	action_bt.pressed.connect(_on_input_button_pressed.bind(action_bt, action))
-	return action_bt
+	var line : HBoxContainer = _factory.row(label_key)
+	(line.get_child(0) as Label).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for kind: InputDevice.Kind in COLUMNS:
+		var cell : Button = _factory.button(_binding_text(action, kind))
+		cell.custom_minimum_size.x = CELL_WIDTH
+		cell.size_flags_horizontal = Control.SIZE_SHRINK_END
+		cell.focus_mode = Control.FOCUS_NONE
+		cell.pressed.connect(_on_input_button_pressed.bind(cell, action, kind))
+		line.add_child(cell)
+	var row := SettingsRow.new()
+	row.add_child(line)
+	action_list.add_child(row)
+	return row
+
+
+## What a cell shows: the device's first binding of the action, or a dash.
+static func _binding_text(action: String, kind: InputDevice.Kind) -> String:
+	var events : Array[InputEvent] = InputDevice.bindings(action, kind)
+	return InputLabel.for_event(events[0]) if not events.is_empty() else UNBOUND
+
+
+## The columns' headings, over the list: what each column of cells binds.
+func _add_column_titles() -> void:
+	var line := HBoxContainer.new()
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(spacer)
+	for kind: InputDevice.Kind in COLUMNS:
+		var title : Label = _factory.header(str(COLUMN_TITLES[kind]))
+		title.custom_minimum_size.x = CELL_WIDTH
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		line.add_child(title)
+	action_list.add_child(line)
 
 
 ## A row of family tabs under the search box. Built from the groups that actually produced rows, so
@@ -297,13 +336,15 @@ func _refresh_visibility() -> void:
 	_tab_bar.set_active(&"" if searching else StringName(str(_tab)))
 
 
-func _on_input_button_pressed(b, a):
+func _on_input_button_pressed(cell: Button, action: String, kind: InputDevice.Kind) -> void:
 	if !is_remapping:
 		is_remapping = true
-		action_to_remap = a
-		remapping_button = b
-		_capture = BindingCapture.new()
-		b.find_child("LabelInput").text = "%%KM_PRESS_KEY"
+		action_to_remap = action
+		remapping_button = cell
+		_remapping_device = kind
+		# Listening to the clicked column's device only: a key does not land in the gamepad's cell.
+		_capture = BindingCapture.new(kind)
+		cell.text = str(LISTENING[kind])
 	get_tree().root.get_viewport().set_input_as_handled()
 
 ## In _input, not _unhandled_input: the page is covered with controls, and a control under the pointer
@@ -323,26 +364,27 @@ func _input(event: InputEvent) -> void:
 	if not is_remapping:
 		return
 
-	# The pointer stays free to move while we listen; only keys and buttons are ours.
-	if not (event is InputEventKey or event is InputEventMouseButton):
+	# The pointer stays free to move while we listen; only keys, buttons and the gamepad are ours.
+	if InputDevice.kind_of(event) < 0:
 		return
 
-	if event.is_action_pressed("pause"):
+	# The ESCAPE KEY aborts, from either column: the gamepad has no key of its own to give up with, and
+	# its Start button may be the very one being bound to the pause.
+	if event is InputEventKey and event.is_action_pressed("pause"):
 		# Esc ABORTS the capture instead of being bound to the action. Both used to happen at once:
 		# the old Esc branch emitted "return", then this one bound Escape to whatever was selected.
-		var kept: Array[InputEvent] = InputMap.action_get_events(action_to_remap)
-		remapping_button.find_child("LabelInput").text = (
-			InputLabel.for_event(kept[0]) if not kept.is_empty() else ""
-		)
+		remapping_button.text = _binding_text(action_to_remap, _remapping_device)
 		_end_remap()
 	elif _capture.feed(event) == BindingCapture.Verdict.BIND:
 		# Which key, and with which modifiers, is BindingCapture's call: a modifier going down waits
 		# for the key it is held for, so Alt+X is bound as Alt+X and not as Alt.
 		var bound: InputEvent = _capture.bound
-		InputMap.action_erase_events(action_to_remap)
-		InputMap.action_add_event(action_to_remap, bound)
-		_update_action_list(remapping_button, bound)
-		keycode_dic.set(action_to_remap, InputEventCodec.encode(bound))
+		# This device's bindings only: the key leaves the gamepad's button where it was.
+		InputDevice.rebind(action_to_remap, bound)
+		remapping_button.text = InputLabel.for_event(bound)
+		var entry: Dictionary = SettingsManager.keybindings_of(keycode_dic.get(action_to_remap, {}))
+		entry[InputDevice.KEYS[_remapping_device]] = InputEventCodec.encode(bound)
+		keycode_dic[action_to_remap] = entry
 		_end_remap()
 		save_config.visible = true
 
@@ -356,9 +398,6 @@ func _end_remap() -> void:
 	action_to_remap = null
 	remapping_button = null
 	_capture = null
-
-func _update_action_list(button: Button, ev: InputEvent):
-	button.find_child("LabelInput").text = InputLabel.for_event(ev)
 
 func _on_reset_button_pressed() -> void:
 	InputMap.load_from_project_settings()
