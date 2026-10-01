@@ -130,9 +130,13 @@ var _orbit: KeplerOrbit = null
 
 ## Time since the last spin refresh.
 var _spin_accum: float = 0.0
-## Nodes visited by the last _carry_dynamic_bodies walk. Diagnostic only (ClientPerf reads it): the
-## cost of the 3 Hz refresh is proportional to it, and a duplicated zone doubles it silently.
+## Bodies handled by the last _carry_dynamic_bodies pass. Diagnostic only (ClientPerf reads it): the
+## cost of the refresh is proportional to it, and a duplicated zone doubles it silently.
 var _carry_visits: int = 0
+## Every RigidBody3D under this body, kept up to date by the tree's node_added / node_removed. The
+## refresh used to FIND them by walking the whole subtree in GDScript — 19 118 nodes on Tarsis 3 at every
+## step, for a few dozen bodies. Clients only: the server never spins.
+var _carried: Dictionary = {}
 
 ## Runtime-created water sphere (ocean surface).
 var _water_sphere: MeshInstance3D
@@ -202,6 +206,7 @@ func _ready() -> void:
 		_build_orbit()
 		if _orbit != null:
 			_place_at_time(Globals.sim_time())
+		_track_carried_bodies()
 
 
 # ------------------------------------------------------------------
@@ -259,7 +264,7 @@ func _physics_process(delta: float) -> void:
 	var _perf_token: int = ClientPerf.scope_begin()
 	_place_at_time(Globals.sim_time())
 	_carry_visits = 0
-	_carry_dynamic_bodies(self)
+	_carry_dynamic_bodies()
 	ClientPerf.scope_end("planet_spin", _perf_token)
 	ClientPerf.gauge("carry_visits:" + name, _carry_visits)
 
@@ -438,9 +443,9 @@ func _build_orbit() -> void:
 ## editor-placed, sleeping WindValley rigs drift off the terrain while the crates looked fine).
 ## Recomputing from the local pose is idempotent, so it cannot double-apply.
 ##
-## Walks the whole subtree except the terrain (whose static colliders follow the scene graph on their
-## own, and which holds far too many nodes to visit at this rate), so props carried by a player or
-## parented under a structure are carried too, not just the planet's direct children.
+## Every RigidBody3D anywhere under this body except in the terrain (whose static colliders follow the
+## scene graph on their own), so props carried by a player or parented under a structure are carried
+## too, not just the planet's direct children. Found through a registry (_carried), not a walk.
 ##
 ## ⚠️ CharacterBody3D (the player) is deliberately absent, and adding it would make things WORSE.
 ## Such a body needs nothing here: the NODE owns its pose, so the scene graph already carries it —
@@ -454,14 +459,36 @@ func _build_orbit() -> void:
 ## own AreaDetector does the looking (Player.connect_area_detect, ScreenZone).
 ## NB: "kinematic" here is a Jolt MOTION TYPE, not a node class — a RigidBody3D frozen in
 ## FREEZE_MODE_KINEMATIC (PropNet.apply_ride_freeze_mode, for cargo riding a truck) is kinematic too.
-func _carry_dynamic_bodies(node: Node) -> void:
-	for child: Node in node.get_children():
-		_carry_visits += 1
-		if child == planet_terrain:
+func _carry_dynamic_bodies() -> void:
+	for body: Variant in _carried.keys():
+		if not is_instance_valid(body):
+			_carried.erase(body)
 			continue
-		if child is RigidBody3D:
-			_carry_body(child)
-		_carry_dynamic_bodies(child)
+		_carry_visits += 1
+		if planet_terrain != null and planet_terrain.is_ancestor_of(body):
+			continue  # the terrain's colliders follow the scene graph on their own
+		_carry_body(body)
+
+
+## Start the registry of carried bodies: those already under this body, then every one that arrives or
+## leaves. A reparent (a crate picked up, loaded on a truck) is a removal then an addition, so it stays
+## right without anyone having to tell this node.
+func _track_carried_bodies() -> void:
+	for node: Node in find_children("*", "RigidBody3D", true, false):
+		_carried[node] = true
+	get_tree().node_added.connect(_on_tree_node_added)
+	get_tree().node_removed.connect(_on_tree_node_removed)
+
+
+func _on_tree_node_added(node: Node) -> void:
+	if node is RigidBody3D and is_ancestor_of(node):
+		_carried[node] = true
+
+
+func _on_tree_node_removed(node: Node) -> void:
+	if node is RigidBody3D:
+		_carried.erase(node)
+
 
 ## Move one body's physics pose onto the spun frame, as cheaply as the body's state allows.
 ##
