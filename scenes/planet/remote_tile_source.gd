@@ -96,6 +96,10 @@ var _queue: Array[Vector3i] = []      # (ipix, nside, genre)
 ## Direction (repère de la planète) du centre de chaque tuile de _queue, même indice ; ZERO
 ## pour les travaux qui ne sont pas des tuiles.
 var _queue_dir: Array[Vector3] = []
+## Quand chaque travail de _queue a été mis en file (Time.get_ticks_msec), même indice.
+var _queue_since: Array[int] = []
+## Temps passé dans fetch_now, cumulé (µs) : rapporté au nombre de tuiles, ce qu'une tuile coûte.
+var stat_fetch_usec: int = 0
 ## D'où regarde la caméra (repère de la planète, normé), posé par PlanetTerrain. ZERO = pas de
 ## caméra : la file est servie dans l'ordre d'arrivée.
 var _focus_dir: Vector3 = Vector3.ZERO
@@ -555,11 +559,28 @@ func _enqueue(nside: int, ipix: int, kind: int) -> void:
 		_queued[key] = true
 		_queue.append(Vector3i(ipix, nside, kind))
 		_queue_dir.append(HEALPix.pix2vec_nest(nside, ipix) if kind == JOB_TILE else Vector3.ZERO)
+		_queue_since.append(Time.get_ticks_msec())
 		if kind == JOB_TILE:
 			stat_requested += 1
 	_mutex.unlock()
 	if not known:
 		_sem.post()
+
+
+## L'état du téléchargement, pour ClientPerf : la file (taille, attente de la plus ancienne en ms)
+## et les cumuls — demandées, servies, refusées, temps passé à télécharger (µs).
+func queue_stats() -> Dictionary:
+	_mutex.lock()
+	var oldest := 0
+	if not _queue_since.is_empty():
+		var first := Time.get_ticks_msec()
+		for t in _queue_since:
+			first = mini(first, t)
+		oldest = Time.get_ticks_msec() - first
+	var out := {"queued": _queue.size(), "oldest_ms": oldest, "requested": stat_requested,
+		"fetched": stat_fetched, "failed": stat_failed, "fetch_usec": stat_fetch_usec}
+	_mutex.unlock()
+	return out
 
 
 ## D'où regarde la caméra, en direction normée dans le repère de la planète (thread principal).
@@ -591,6 +612,7 @@ func _take_next() -> Vector3i:
 	var item: Vector3i = _queue[best]
 	_queue.remove_at(best)
 	_queue_dir.remove_at(best)
+	_queue_since.remove_at(best)
 	return item
 
 
@@ -640,8 +662,11 @@ func _worker() -> void:
 			has_tile(item.y, item.x)
 			_forget(item.z, item.y, item.x)
 			continue
+		var t0 := Time.get_ticks_usec()
 		var ok := fetch_now(item.y, item.x)
+		var spent := Time.get_ticks_usec() - t0
 		_mutex.lock()
+		stat_fetch_usec += spent
 		if ok:
 			stat_fetched += 1
 		else:

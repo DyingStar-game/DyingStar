@@ -276,6 +276,13 @@ var _mesh_tasks: Dictionary = {}
 var _assemble_queue: Array[Dictionary] = []
 ## Overflow queue when max_mesh_tasks is reached.
 var _mesh_task_backlog: Array[Dictionary] = []
+## The keys in _mesh_task_backlog, for a duplicate test that does not walk it, and whether it was
+## appended to since it was last sorted. It used to be scanned and fully re-sorted on EVERY insert:
+## a fast flight queues hundreds of chunks in one LOD pass into a backlog of thousands, and one pass
+## took 0.5-3.6 s of the main thread (ClientPerf steps:new, EVA flight 2026-10-01). It is now sorted
+## once, nearest first, when it is drained.
+var _backlog_keys: Dictionary = {}
+var _backlog_unsorted: bool = false
 ## Disk-cache meshes being read by ResourceLoader's threads.
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
@@ -1634,6 +1641,14 @@ func _update_terrain() -> void:
 	# The tile download serves the tiles nearest this first (RemoteTileSource._take_next).
 	if not is_server and planet_data.remote_source != null and local_cam != Vector3.ZERO:
 		planet_data.remote_source.set_focus(local_cam.normalized())
+		if ClientPerf.enabled:
+			var q: Dictionary = planet_data.remote_source.queue_stats()
+			var who: String = str(get_parent().name)
+			ClientPerf.gauge("tiles_queued:" + who, q["queued"])
+			ClientPerf.gauge("tiles_oldest_ms:" + who, q["oldest_ms"])
+			ClientPerf.gauge("tiles_fetched:" + who, q["fetched"])
+			ClientPerf.gauge("tiles_fetch_ms_avg:" + who,
+				float(q["fetch_usec"]) / 1000.0 / maxf(float(q["fetched"] + q["failed"]), 1.0))
 	var cam_dist := local_cam.length()
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —
@@ -3417,22 +3432,15 @@ func _queue_mesh_task(info: Dictionary) -> void:
 			return
 
 	if _mesh_tasks.size() >= max_mesh_tasks:
-		# Backlog — insert sorted so nearest chunks are processed first.
-		for item in _mesh_task_backlog:
-			if item.key == key:
-				return
-		_mesh_task_backlog.append(info)
-		_mesh_task_backlog.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			return a.center.distance_squared_to(_last_local_cam) < b.center.distance_squared_to(_last_local_cam))
+		# Backlog — sorted nearest first when drained (_drain_backlog).
+		_backlog_push(info)
 		return
 
 	# Streaming : une tâche mesh ne peut pas attendre une socket, donc le chunk repart au
 	# backlog tant que ses tuiles manquent. Sans source distante, toujours true.
 	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix,
 			int(info.get("stitch", 0)) != 0):
-		# any() plutôt qu'un helper : évite d'empiler deux fois le même chunk en attente.
-		if not _mesh_task_backlog.any(func(it: Dictionary) -> bool: return it.key == key):
-			_mesh_task_backlog.append(info)
+		_backlog_push(info)  # never twice the same chunk waiting
 		return
 
 	var lod: int = info.lod
@@ -3490,11 +3498,26 @@ func _drain_backlog() -> void:
 	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
 	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
 	var tries := mini(_mesh_task_backlog.size(), max_mesh_tasks * 2)
+	if tries > 0 and _backlog_unsorted:
+		var cam := _last_local_cam
+		_mesh_task_backlog.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return a.center.distance_squared_to(cam) < b.center.distance_squared_to(cam))
+		_backlog_unsorted = false
 	while tries > 0 and _mesh_tasks.size() < max_mesh_tasks:
 		var info: Dictionary = _mesh_task_backlog[0]
 		_mesh_task_backlog.remove_at(0)
+		_backlog_keys.erase(info.key)
 		_queue_mesh_task(info)
 		tries -= 1
+
+
+## Put a chunk in the backlog unless it already waits there.
+func _backlog_push(info: Dictionary) -> void:
+	if _backlog_keys.has(info.key):
+		return
+	_backlog_keys[info.key] = true
+	_mesh_task_backlog.append(info)
+	_backlog_unsorted = true
 
 
 ## Poll completed mesh tasks and move them to _assemble_queue.
