@@ -56,3 +56,5 @@ heights.pack
 
 # F7 screenshots taken while running from the editor (CapturePaths.screenshots_dir)
 /screenshots/
+# In-game benchmark reports written while running from the editor (CapturePaths.benchmarks_dir)
+/benchmarks/

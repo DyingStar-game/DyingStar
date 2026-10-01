@@ -245,3 +245,25 @@ static func same(a: Variant, b: Variant) -> bool:
 	if typeof(a) != typeof(b):
 		return false
 	return a == b
+
+
+## How a value of `option` reads: a translation key or a literal ("4x", "x1.50", "500 m"), for the
+## caller to pass through tr(). The Graphics page shows the slider numbers with it, the benchmark
+## names each step with it.
+static func value_text(option: Dictionary, value: Variant) -> String:
+	match option["kind"]:
+		TOGGLE:
+			return "%%MENU_ON" if bool(value) else "%%MENU_OFF"
+		CHOICE:
+			for choice in option["choices"]:
+				if same(choice[0], value):
+					return str(choice[1])
+			return str(value)
+	match option.get("format", ""):
+		FORMAT_PERCENT:
+			return "%d %%" % roundi(float(value) * 100.0)
+		FORMAT_MULTIPLIER:
+			return "x%.2f" % float(value)
+		FORMAT_METERS:
+			return "%d m" % roundi(float(value))
+	return str(value)

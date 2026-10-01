@@ -27,11 +27,14 @@ static func documents_dir(sub: String) -> String:
 ## that folder cannot be written — an install under Program Files, a read-only share.
 ## The F7 photos go at the top, the F8 bug-report shots in "debug", the F6 recordings in "records".
 static func screenshots_dir(sub: String = "") -> String:
-	var rel: String = "screenshots" if sub == "" else "screenshots".path_join(sub)
-	var dir: String = game_dir().path_join(rel)
-	if _writable(dir):
-		return dir
-	return documents_dir(rel)
+	return _game_or_documents("screenshots" if sub == "" else "screenshots".path_join(sub))
+
+
+## <game folder>/benchmarks, where the in-game benchmark writes its reports — with the same fallback
+## to Documents/DyingStar/benchmarks. Beside the screenshots, not in them: a report is not a picture,
+## and it is the one file a player is asked to send.
+static func benchmarks_dir() -> String:
+	return _game_or_documents("benchmarks")
 
 
 ## Where the F6 recordings land.
@@ -49,10 +52,23 @@ static func open_videos() -> void:
 	_open(videos_dir())
 
 
+## Settings > Graphics > Benchmark: the reports folder.
+static func open_benchmarks() -> void:
+	_open(benchmarks_dir())
+
+
 ## In the OS file manager (Explorer, Finder, the Linux one). The folder is created first by the
 ## *_dir() call, so the button works before the first capture.
 static func _open(dir: String) -> void:
 	OS.shell_show_in_file_manager(dir, true)
+
+
+## <game folder>/<rel> when it can be written, else Documents/DyingStar/<rel>. Created either way.
+static func _game_or_documents(rel: String) -> String:
+	var dir: String = game_dir().path_join(rel)
+	if _writable(dir):
+		return dir
+	return documents_dir(rel)
 
 
 static func game_dir() -> String:

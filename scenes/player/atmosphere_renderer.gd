@@ -416,6 +416,11 @@ func set_aerial_enabled(on: bool) -> void:
 		_aerial_quad.visible = on
 
 
+## Whether the aerial-perspective pass draws right now (Alt+I and client.ini can turn it off).
+func is_aerial_enabled() -> bool:
+	return is_instance_valid(_aerial_quad) and _aerial_quad.visible
+
+
 ## Switches the sky's SPECULAR reflection off. Separate from the ambient on purpose: they are two
 ## lights of two colours. The ambient is the whole dome averaged, so it carries the sky's MEAN
 ## colour; the reflection is directional and returns a narrow band of it.
