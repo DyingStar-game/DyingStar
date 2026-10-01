@@ -2338,6 +2338,7 @@ func update_generic_object(event: Dictionary) -> void:
 		prop_registry.merge_data(uuid, object_data)
 		if object_data.has("parent_id") or object_data.has("position"):
 			_stream_replace_if_asleep(uuid)
+		_stream_wake_requested_village(uuid)
 	if props_list.has(type) and props_list[type].has(uuid):
 		var object = props_list[type][uuid]
 		if not is_instance_valid(object):
@@ -2448,6 +2449,7 @@ func create_generic_object(event: Dictionary) -> void:
 		_stream_mark_if_unwanted(uuid)
 	elif _stream_should_live(entry):
 		_stream_enqueue(uuid)
+	_stream_wake_requested_village(uuid)
 
 
 ## Decide where [param uuid] is indexed, from its stored object_data (see PropRegistry kinds).
@@ -2600,6 +2602,21 @@ func _stream_enqueue(uuid: String) -> void:
 	_stream_queued[uuid] = true
 	_stream_queue.append(uuid)
 	_stream_sort_dirty = true
+
+
+## A poi_village whose habs Horizon requested (spawn_requested, for new players) needs a node to spawn
+## them, even with nobody around: wake it now. Once its habs are published it is just another
+## unwanted item and goes back to sleep.
+func _stream_wake_requested_village(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or str(e["type"]) != "poi_village" or prop_registry.live.has(uuid):
+		return
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	if not bool(od.get("spawn_requested", false)) or bool(od.get("is_spawned", false)):
+		return
+	print("[Server] poi_village %s: habs requested by Horizon, waking it to spawn them" % uuid)
+	_stream_materialize(uuid)
+	_stream_mark_if_unwanted(uuid)
 
 
 ## Create the node of [param uuid] (and of its registry children). Returns it, or null.

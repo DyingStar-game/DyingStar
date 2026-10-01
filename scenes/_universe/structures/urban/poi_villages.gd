@@ -1,6 +1,9 @@
 extends Node3D
 
 @export var is_spawned: bool = false
+## Set by Horizon when it needs this village's habs for new players (on top of the spawn when the
+## village is loaded, a player nearby).
+@export var spawn_requested: bool = false
 @export var spawn_scene: String = ""
 @export var radius_m: int = 0
 @export var population: int = 0
@@ -20,6 +23,8 @@ func _process(delta: float) -> void:
 func apply_prop_data(data: Dictionary) -> void:
 	if data.has("is_spawned"):
 		is_spawned = data["is_spawned"]
+	if data.has("spawn_requested"):
+		spawn_requested = data["spawn_requested"]
 	if data.has("spawn_scene"):
 		spawn_scene = data["spawn_scene"]
 	if data.has("radius_m"):
@@ -74,7 +79,9 @@ func spawn_items() -> void:
 		# Deterministic uuid: a server restart upserts the same items instead of piling duplicates.
 		var item_uuid: String = PropSpawn.stable_uuid("%s|%s" % [s.uuid, item.name])
 		NetworkOrchestrator.protected_prop_uuids[item_uuid] = true  # world infrastructure
-		NetworkOrchestrator.spawn_prop_authoritative({
+		# The item's own network properties (its <type>_def.json), with the values set in the layout.
+		var data: Dictionary = _def_properties(item, item_sync.type_name)
+		data.merge({
 			"type": item_sync.type_name,
 			"uuid": item_uuid,
 			"scenename": item.scene_file_path.trim_prefix("res://"),
@@ -82,10 +89,55 @@ func spawn_items() -> void:
 			"name": str(item.name),
 			"position": {"x": xform.origin.x, "y": xform.origin.y, "z": xform.origin.z},
 			"rotation": {"x": rot.x, "y": rot.y, "z": rot.z},
-		})
+		}, true)
+		if item_sync.type_name == "spawnbuilding":
+			# A new building of this village, every apartment free: the layout node still carries
+			# the script's defaults (test apartment, total 1 / available 0). poi_uuid ties it to us
+			# for Horizon's apartment assignment (parent_id is our parent, not the village).
+			var capacity: int = int(item.rows) * int(item.cols) * int(item.floors)
+			data.merge({"poi_uuid": s.uuid, "apartments": [], "total": capacity, "available": capacity}, true)
+		NetworkOrchestrator.spawn_prop_authoritative(data)
 		spawned += 1
 	layout.free()
 	print("[PoiVillages] %s: %d items spawned from %s" % [name, spawned, path])
 
 	s.server_prop_update({"is_spawned": true})
-	
+
+
+## {type_name: [property names]} read from items_def/<type>_def.json, shared by every village.
+static var _def_cache: Dictionary = {}
+
+## The properties the item's type declares in its def, with the item's current values. Properties
+## the node does not have are skipped; vectors/colours become the {x, y, z} dicts the network uses.
+func _def_properties(item: Node, type_name: String) -> Dictionary:
+	if not _def_cache.has(type_name):
+		var path := "%s/%s%s" % [ServerPropsIO.DEFS_DIR, type_name, ServerPropsIO.DEFS_SUFFIX]
+		var dj = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+		if typeof(dj) != TYPE_DICTIONARY:
+			push_warning("[PoiVillages] no network definition %s" % path)
+		_def_cache[type_name] = ServerPropsIO.parse_def(dj) if typeof(dj) == TYPE_DICTIONARY else []
+	var out: Dictionary = {}
+	for prop in _def_cache[type_name]:
+		var value = item.get(prop)
+		if value == null and not _has_property(item, prop):
+			continue
+		match typeof(value):
+			TYPE_VECTOR3, TYPE_VECTOR3I:
+				value = {"x": value.x, "y": value.y, "z": value.z}
+			TYPE_VECTOR2, TYPE_VECTOR2I:
+				value = {"x": value.x, "y": value.y}
+			TYPE_COLOR:
+				value = {"r": value.r, "g": value.g, "b": value.b, "a": value.a}
+			TYPE_STRING_NAME, TYPE_NODE_PATH:
+				value = str(value)
+			TYPE_OBJECT:
+				continue  # a node / resource reference cannot travel over the network
+		out[prop] = value
+	return out
+
+
+static func _has_property(obj: Object, prop: String) -> bool:
+	for p in obj.get_property_list():
+		if p["name"] == prop:
+			return true
+	return false
