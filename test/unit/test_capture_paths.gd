@@ -19,3 +19,9 @@ func test_recordings_go_in_a_sub_folder_of_the_screenshots() -> void:
 	var dir: String = CapturePaths.videos_dir()
 	assert_eq(dir, CapturePaths.screenshots_dir().path_join("records"), "<game>/screenshots/records")
 	assert_true(DirAccess.dir_exists_absolute(dir), "created on demand")
+
+
+func test_benchmark_reports_live_beside_the_screenshots() -> void:
+	var dir: String = CapturePaths.benchmarks_dir()
+	assert_eq(dir, CapturePaths.game_dir().path_join("benchmarks"), "<game>/benchmarks")
+	assert_true(DirAccess.dir_exists_absolute(dir), "created on demand")

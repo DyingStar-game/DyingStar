@@ -1125,10 +1125,11 @@ func _service_wheel(
 	elif event.is_action_released(action) and wheel.visible:
 		wheel.confirm()
 
-## The pause menu (Esc) is open: a HARD modal — the game must ignore ALL player input (seated
-## controls, radial wheels, jump, interaction…). Checked once at the top of _unhandled_input.
+## The pause menu (Esc) is open, or the benchmark drives the view: a HARD modal — the game must ignore
+## ALL player input (seated controls, radial wheels, jump, interaction…). Checked once at the top of
+## _unhandled_input.
 func _menu_open() -> bool:
-	return GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU
+	return GameOrchestrator.current_state == GameOrchestrator.GameStates.PAUSE_MENU or BenchmarkRunner.running
 
 ## The local player is typing in the chat: the keyboard belongs to the text field, not to gameplay.
 ## This MUST be part of the input lock, because most gameplay reads POLL the Input singleton

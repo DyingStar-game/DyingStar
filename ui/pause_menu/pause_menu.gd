@@ -12,6 +12,8 @@ var _resume_armed: bool = false
 @onready var main_pause_menu: PausePage = $PausePage
 
 func _ready() -> void:
+	# The benchmark closes the menu before it measures (BenchmarkRunner.launch).
+	add_to_group(&"pause_menu")
 	main_pause_menu.bar.entry_pressed.connect(_on_entry_pressed)
 	# The settings are the pause menu's content: their entry is always the active one, and "Resume"
 	# is the way back (no "‹ Back" beside it saying the same).
@@ -94,6 +96,13 @@ func _restore_game_interface() -> void:
 		if is_instance_valid(item):
 			item.visible = true
 	_put_away.clear()
+
+
+## Back to the game, from outside the menu: the benchmark, launched from its Graphics page, needs the
+## game itself on screen. Nothing to do when this menu is not the one open.
+func resume() -> void:
+	if visible:
+		_resume()
 
 
 ## Back to the game: Resume or Esc.

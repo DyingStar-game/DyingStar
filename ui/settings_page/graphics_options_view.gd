@@ -175,11 +175,4 @@ func _refresh_row(render: RenderSettings, entry: Dictionary) -> void:
 
 
 static func _format(option: Dictionary, value: float) -> String:
-	match option.get("format", ""):
-		GraphicsOptions.FORMAT_PERCENT:
-			return "%d %%" % roundi(value * 100.0)
-		GraphicsOptions.FORMAT_MULTIPLIER:
-			return "x%.2f" % value
-		GraphicsOptions.FORMAT_METERS:
-			return "%d m" % roundi(value)
-	return str(value)
+	return GraphicsOptions.value_text(option, value)
