@@ -86,7 +86,7 @@ func test_losing_the_window_drops_the_pointer() -> void:
 
 func test_an_f7_photo_hides_it_for_its_frame() -> void:
 	assert_true(_overlay.is_shown(), "on")
-	# What Screenshot._hide_interface() does to every CanvasLayer, restored after the capture.
+	# What InterfaceHider.hide_all() does to every CanvasLayer, restored after the capture.
 	_overlay.visible = false
 	_overlay._process(0.0)
 	assert_false(_overlay.visible, "the panel does not put itself back into the photo")

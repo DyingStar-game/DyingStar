@@ -61,7 +61,7 @@ const REPORT_INTERVAL: float = 2.0
 
 ## A frame this long is reported on its own line, immediately, with the time it happened. Below the
 ## threshold frames only feed the window's worst-frame figure. 50 ms = under 20 fps for one frame.
-const HITCH_MS: float = 50.0
+const HITCH_MS: float = PerfMath.HITCH_MS
 
 ## Recount the planet subtrees only every Nth heartbeat: it is an O(nodes) GDScript walk and the
 ## figure moves slowly. 2 => every 4 s at REPORT_INTERVAL 2 s.
@@ -343,15 +343,6 @@ var _prev_nodes: int = 0
 var _deep: Dictionary = {}
 ## name -> last value pushed by gauge(). For counts a scope timer cannot express (nodes visited).
 var _gauges: Dictionary = {}
-
-const _PIPE_MONITORS: Array[int] = [
-	Performance.PIPELINE_COMPILATIONS_CANVAS,
-	Performance.PIPELINE_COMPILATIONS_MESH,
-	Performance.PIPELINE_COMPILATIONS_SURFACE,
-	Performance.PIPELINE_COMPILATIONS_DRAW,
-	Performance.PIPELINE_COMPILATIONS_SPECIALIZATION,
-]
-
 
 func _ready() -> void:
 	if OS.has_feature("dedicated_server"):
@@ -821,8 +812,8 @@ func _report() -> void:
 
 	var pipe_now: Array[int] = []
 	var pipe_delta: Array[String] = []
-	for i: int in _PIPE_MONITORS.size():
-		var v: int = int(Performance.get_monitor(_PIPE_MONITORS[i]))
+	for i: int in PerfMath.PIPE_MONITORS.size():
+		var v: int = int(Performance.get_monitor(PerfMath.PIPE_MONITORS[i]))
 		pipe_now.append(v)
 		pipe_delta.append(str(v - _pipe_prev[i]))
 	_pipe_prev = pipe_now
@@ -944,16 +935,10 @@ func _print_distribution() -> void:
 		+ " | <8=%d <17=%d <34=%d <50=%d <100=%d <250=%d 250+=%d"
 		+ " | %.0f%% of the window was spent in frames over 34 ms"
 	) % [
-		_clock(), n, _pct(ordered, 0.50), _pct(ordered, 0.90), _pct(ordered, 0.99), _pct(ordered, 1.0),
+		_clock(), n, PerfMath.percentile(ordered, 0.50), PerfMath.percentile(ordered, 0.90),
+		PerfMath.percentile(ordered, 0.99), PerfMath.percentile(ordered, 1.0),
 		buckets[0], buckets[1], buckets[2], buckets[3], buckets[4], buckets[5], buckets[6],
 		100.0 * stalled_ms / maxf(total_ms, 0.001)])
-
-
-func _pct(ordered: PackedFloat32Array, q: float) -> float:
-	var n: int = ordered.size()
-	if n == 0:
-		return 0.0
-	return ordered[clampi(int(round(q * float(n - 1))), 0, n - 1)]
 
 
 ## Memory, on both sides of the wall. `mem=` in the main line is Godot's own static allocation; what
