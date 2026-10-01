@@ -43,9 +43,10 @@ func _ready() -> void:
 	bar.add_entry(QUIT, "%%MENU_QUIT")
 	bar.entry_pressed.connect(_on_entry_pressed)
 	bar.back_pressed.connect(_close_settings)
+	# LT / RT from inside the settings: out of them, as B would, onto the bar's next or previous entry.
 	bar.took_focus.connect(func() -> void:
 		if is_instance_valid(_settings_overlay):
-			_settings_overlay.release_focus())
+			_close_settings())
 	bar.left_bottom.connect(func() -> void:
 		if is_instance_valid(_settings_overlay):
 			_settings_overlay.focus_first())
@@ -117,8 +118,11 @@ func _on_settings_closed() -> void:
 	_settings_overlay = null
 	$Control.visible = true
 	bar.leads_focus = true
-	# Back on the bar, where you came from: on the pad, the Settings entry has the focus again.
-	if not InputDevice.pointer and bar.tabs.button(SETTINGS) != null:
+	# Back on the bar, where you came from: on the pad, the Settings entry has the focus again — unless
+	# the triggers closed them, and already put the focus on the entry they stepped to.
+	var focused : Control = get_viewport().gui_get_focus_owner()
+	var on_bar : bool = focused != null and bar.tabs.is_ancestor_of(focused)
+	if not InputDevice.pointer and not on_bar and bar.tabs.button(SETTINGS) != null:
 		bar.tabs.button(SETTINGS).grab_focus()
 	bar.set_active(&"")
 	bar.set_back_visible(false)
