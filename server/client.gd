@@ -46,6 +46,10 @@ var props_list: Dictionary = {
 }
 # We need it when a channel arrives before another in the case of this channel not have the scenename property
 var props_pre_creations: Dictionary = {}
+## Objects that left our zone, hidden and paused, freed one per frame (_retire / _free_retired).
+## Freed at once, leaving the spawn by air dropped ~6 000 nodes in two frames and the engine stalled
+## 1.1-1.3 s releasing their meshes, materials and bodies (ClientPerf sync, EVA flight 2026-10-01).
+var _retired: Array[Node] = []
 # DIAGNOSTIC (temporary): object_id -> true, so "update for an object we never built" is reported ONCE
 # per object instead of tens of thousands of times. An object can go missing through two paths that
 # used to be completely silent — a node freed with its parent, and a create still waiting on the
@@ -278,6 +282,7 @@ func _load_client_ini_file() -> void:
 		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
 
 func _process(_delta: float) -> void:
+	_free_retired()
 	# `net:watch` — the two per-frame housekeeping walks, so the accounting of _process is complete
 	# and neither can hide inside "everything else".
 	var _watch_tok: int = _net_t()
@@ -798,10 +803,81 @@ func delete_object(event: Dictionary) -> void:
 				# from the carrier's hands over distance). It is freed with its player anyway.
 				if prop_instance.get_parent() is Player:
 					return
-				prop_instance.queue_free()
+				_retire(prop_instance)
 				props_list[type].erase(event["object_id"])
 				return
 		print("unknown object type for deletion")
+
+## Gone for the game now — hidden, paused, out of props_list at the caller — and freed later, one per
+## frame: the cost of releasing a building is spread instead of paid for every object of a zone at once.
+func _retire(node: Node) -> void:
+	# The building left our zone, not the world: its level ground stays. Unregistered, each pad
+	# rebuilt every chunk it touched — ~200 ms per building leaving, flying off the spawn — and the
+	# ground under a building still standing out there went back to the slope. As the server does
+	# for a building put to sleep (Server._keep_pads_of).
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is TerrainPad:
+			(n as TerrainPad).keep_on_exit = true
+		stack.append_array(n.get_children())
+	if node is Node3D:
+		(node as Node3D).visible = false
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	_retired.append(node)
+
+
+## A few nodes of the retired objects freed per frame (see _retire). A whole building in one frame
+## still cost 130-150 ms of release; freed a leaf at a time — the deepest last node, then its emptied
+## parent, up to the root — under a time budget a frame, unseen while they go.
+## Time a frame may spend on it, µs. A count was not a bound: one step can be a whole physics body
+## or CSG tree, several ms each, and 32 of them cost 150-340 ms a frame.
+const RETIRE_BUDGET_USEC := 2000
+
+
+func _free_retired() -> void:
+	if _retired.is_empty():
+		return
+	var _tok: int = _net_t()
+	_free_retired_some()
+	_net_t_end("net:retire", _tok)
+	ClientPerf.gauge("net:retired_left", _retired.size())
+
+
+func _free_retired_some() -> void:
+	var deadline := Time.get_ticks_usec() + RETIRE_BUDGET_USEC
+	while not _retired.is_empty():
+		# Untyped on purpose: an object can be freed with its parent (a crate in a truck's bed) while
+		# it waits here, and assigning a freed instance to a typed variable is a script error that
+		# stopped this loop every frame — 4 700 errors and their backtraces in the log.
+		var entry: Variant = _retired.back()
+		if not is_instance_valid(entry):
+			_retired.pop_back()
+			continue
+		var root: Node = entry
+		var leaf: Node = root
+		while leaf.get_child_count() > 0:
+			leaf = leaf.get_child(leaf.get_child_count() - 1)
+		# Never take apart what is rebuilt whole on every removal: a CSG shape (its parent's mesh is
+		# re-baked) or a physics body (its compound shape is rebuilt for each CollisionShape3D gone).
+		# Leaf by leaf through those cost 130-220 ms of script a frame. Such a group goes whole.
+		var up: Node = leaf.get_parent()
+		while up != null and up != root:
+			if up is CSGShape3D or up is CollisionObject3D:
+				leaf = up
+			up = up.get_parent()
+		if leaf == root:
+			_retired.pop_back()
+		else:
+			# Out of the tree now: queue_free acts at the end of the frame, and the same leaf would
+			# be found again by the next round of this loop.
+			var holder: Node = leaf.get_parent()
+			if holder != null:
+				holder.remove_child(leaf)
+		leaf.queue_free()
+		if Time.get_ticks_usec() >= deadline:
+			break
+
 
 func _flush_pending_parent_delete() -> void:
 	print("Flushing pending parent delete event: %s" % pending_parent_delete_event)
@@ -839,7 +915,7 @@ func _flush_pending_parent_delete() -> void:
 						(me as Node3D).global_position.distance_to(
 						(prop_instance as Node3D).global_position)])
 				return
-			prop_instance.queue_free()
+			_retire(prop_instance)
 		props_list[type].erase(event["object_id"])
 
 ## Apply a player's gameplay state on the client — flashlight, equipped tool, head/helmet, carrying,
