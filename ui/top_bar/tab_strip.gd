@@ -33,13 +33,18 @@ var _hint_after : PadHint = null
 
 ## Room kept beside each focusable entry for the button that presses it ("A"), shown only on the
 ## focused entry and on the pad: kept even when hidden, so the entries never move.
-const ACCEPT_HINT_WIDTH : float = 34.0
+const ACCEPT_HINT_WIDTH : float = 40.0
+## Between an entry's text and its "(A)".
+const ACCEPT_HINT_GAP : float = 4.0
 ## Set false before allow_focus() where an entry already names its button ("OK (A)").
 var accept_hints : bool = true
+## The space between entries asked for, before the room for the "(A)" is added to it.
+var _separation : int
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
 	font_size = p_font_size
+	_separation = separation
 	add_theme_constant_override("separation", separation)
 	alignment = BoxContainer.ALIGNMENT_END
 
@@ -68,13 +73,19 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 	return button
 
 
-## The "A" beside [param button], shown while it has the focus on the pad.
+## The "(A)" right after [param button]'s text, shown while it has the focus on the pad. A child of the
+## entry, in the room the strip keeps after it (allow_focus): close to its entry, not floating
+## between two of them.
 func _add_accept_hint(button: Button) -> void:
-	var hint := PadHint.new(&"ui_accept", font_size - 4)
+	var hint := PadHint.new(&"ui_accept", font_size - 4, "(%s)")
+	hint.name = "AcceptHint"
 	hint.focus_of = button
-	hint.custom_minimum_size.x = ACCEPT_HINT_WIDTH
-	add_child(hint)
-	move_child(hint, button.get_index() + 1)
+	hint.anchor_left = 1.0
+	hint.anchor_right = 1.0
+	hint.anchor_bottom = 1.0
+	hint.offset_left = ACCEPT_HINT_GAP
+	hint.offset_right = ACCEPT_HINT_GAP + ACCEPT_HINT_WIDTH
+	button.add_child(hint)
 
 
 ## Let the gamepad step through the entries with [param previous] and [param next] (actions: the
@@ -86,6 +97,7 @@ func pad_navigation(previous: StringName, next: StringName, move_focus: bool = f
 	_pad_previous = previous
 	_pad_next = next
 	_step_focus = move_focus
+	# In brackets, "[LT]": they step along the row; the "(A)" beside an entry presses it.
 	var before := PadHint.new(previous, font_size - 2)
 	add_child(before)
 	move_child(before, 0)
@@ -129,6 +141,8 @@ func allow_focus() -> void:
 	if _focusable:
 		return
 	_focusable = true
+	if accept_hints:
+		add_theme_constant_override("separation", _separation + int(ACCEPT_HINT_GAP + ACCEPT_HINT_WIDTH))
 	for key: StringName in _buttons:
 		(_buttons[key] as Button).focus_mode = Control.FOCUS_ALL
 		if accept_hints:

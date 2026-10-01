@@ -10,10 +10,13 @@ extends Label
 var action : StringName
 ## Shown only while this control has the focus — the "A" beside the entry it would press — or null.
 var focus_of : Control = null
+## How the button's name is written: "[LT]", or "(A)" beside the entry it presses.
+var format : String
 
 
-func _init(p_action: StringName, font_size: int = SettingsStyle.FONT_SIZE) -> void:
+func _init(p_action: StringName, font_size: int = SettingsStyle.FONT_SIZE, p_format: String = "[%s]") -> void:
 	action = p_action
+	format = p_format
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -37,6 +40,6 @@ func _refresh() -> void:
 	var here : bool = focus_of == null or focus_of.has_focus()
 	# Kept in the layout, only see-through, so the tabs do not shift when the hints come and go.
 	self_modulate.a = 1.0 if on_pad and here and not bound.is_empty() else 0.0
-	var name_now : String = InputLabel.for_event(bound[0]) if not bound.is_empty() else ""
+	var name_now : String = format % InputLabel.for_event(bound[0]) if not bound.is_empty() else ""
 	if text != name_now:
 		text = name_now
