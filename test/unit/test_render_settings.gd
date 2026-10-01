@@ -198,3 +198,85 @@ func test_the_overlay_switch_persists_and_tells() -> void:
 	assert_true(s.is_overlay_enabled(), "stored")
 	assert_eq(told, [true], "told once")
 	assert_eq(_saves, 1, "saved")
+
+
+# ── Transient values: the benchmark's sweep ──
+
+func test_a_transient_value_applies_without_being_stored_or_saved() -> void:
+	var s := _settings()
+	s.apply_preset(GpuTier.ULTRA)
+	var file_before : String = _config.encode_to_text()
+	var saves_before : int = _saves
+	s.set_transient({"ssao": 0, "shadows": false})
+	assert_eq(s.effective("ssao"), 0, "the override applies")
+	assert_false(s.effective("shadows"), "both of them")
+	assert_eq(s.get_value("ssao"), 3, "the stored value is untouched")
+	assert_eq(s.preset(), GpuTier.ULTRA, "the page still reads as the player's preset")
+	assert_eq(_saves, saves_before, "nothing saved")
+	assert_eq(_config.encode_to_text(), file_before, "the file is byte for byte the same")
+	assert_true(s.has_transient(), "a measurement is in progress")
+
+
+func test_clearing_the_transient_values_gives_back_exactly_the_stored_ones() -> void:
+	var s := _settings()
+	s.apply_preset(GpuTier.HIGH)
+	var before : Dictionary = {}
+	for option in GraphicsOptions.OPTIONS:
+		before[option["key"]] = s.effective(option["key"])
+	s.set_transient({"render_scale": 0.5, "atmosphere_quality": 0, "terrain_distance": 0.5})
+	s.set_transient({})
+	for key in before:
+		assert_true(GraphicsOptions.same(s.effective(key), before[key]), "%s is back" % key)
+	assert_false(s.has_transient(), "nothing left over")
+
+
+func test_an_old_file_gains_no_key_from_a_transient_value() -> void:
+	var s := _settings()
+	s.set_transient({"glow": 0})
+	s.set_transient({})
+	assert_false(_config.has_section_key(GraphicsOptions.SECTION, "glow"), "nothing written")
+
+
+func test_transient_changes_report_exactly_what_moved() -> void:
+	var s := _settings()
+	s.apply_preset(GpuTier.ULTRA)
+	var seen : Array = []
+	s.changed.connect(func(keys: PackedStringArray) -> void: seen.append(keys))
+	s.set_transient({"ssao": 0})
+	assert_eq(seen.back(), PackedStringArray(["ssao"]), "turned down: one option moved")
+	s.set_transient({"ssil": 0})
+	assert_has(seen.back(), "ssao", "the previous override is lifted")
+	assert_has(seen.back(), "ssil", "and the next one applies, in the same change")
+	s.set_transient({})
+	assert_eq(seen.back(), PackedStringArray(["ssil"]), "cleared: only what was overridden comes back")
+
+
+func test_a_real_choice_during_a_measurement_wins_and_is_saved() -> void:
+	var s := _settings()
+	s.set_transient({"debanding": false})
+	s.set_value("debanding", true)
+	assert_true(s.effective("debanding"), "the player's choice applies")
+	assert_eq(_config.get_value(GraphicsOptions.SECTION, "debanding"), true, "and is stored")
+	assert_false(s.has_transient(), "the override for that option is gone")
+
+
+func test_the_renderer_rules_still_apply_over_a_transient_value() -> void:
+	var s := _settings()
+	s.set_value("upscale_mode", Viewport.SCALING_3D_MODE_FSR2)
+	s.set_transient({"aa_taa": true})
+	assert_false(s.effective("aa_taa"), "FSR 2.2 still forces TAA off")
+	s.set_transient({"shadows": false})
+	assert_eq(s.availability("shadow_sun_res"), "%%MENU_GFX_WHY_SHADOWS_OFF", "rules read the effective value")
+
+
+func test_the_applier_follows_a_transient_value_and_puts_it_back() -> void:
+	var s := _settings()
+	var vp := SubViewport.new()
+	add_child_autofree(vp)
+	var applier := RenderApplier.new(s, vp)  # kept: a signal does not keep a RefCounted alive
+	applier.apply_all()
+	assert_almost_eq(vp.scaling_3d_scale, 1.0, 0.001, "the player's scale")
+	s.set_transient({"render_scale": 0.5})
+	assert_almost_eq(vp.scaling_3d_scale, 0.5, 0.001, "the measurement's scale")
+	s.set_transient({})
+	assert_almost_eq(vp.scaling_3d_scale, 1.0, 0.001, "back to the player's")
