@@ -40,6 +40,8 @@ const ACCEPT_HINT_GAP : float = 4.0
 var accept_hints : bool = true
 ## The space between entries asked for, before the room for the "(A)" is added to it.
 var _separation : int
+## Left and right change the tab: see [method arrows_select].
+var _arrows_select : bool = false
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -61,6 +63,7 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 	button.add_theme_color_override("font_hover_color", SettingsStyle.ACTIVE_COLOR)
 	button.add_theme_color_override("font_pressed_color", SettingsStyle.ACTIVE_COLOR)
 	button.pressed.connect(func() -> void: selected.emit(key))
+	button.gui_input.connect(_on_entry_input)
 	_buttons[key] = button
 	_labels[key] = label_key
 	_prefixes[key] = prefix
@@ -70,6 +73,7 @@ func add_entry(key: StringName, label_key: String, prefix: String = "") -> Butto
 	if _hint_after != null:
 		move_child(_hint_after, -1)
 	_style(key)
+	_update_focus_modes()
 	return button
 
 
@@ -149,6 +153,46 @@ func allow_focus() -> void:
 			_add_accept_hint(_buttons[key])
 
 
+## Tabs over a page (Controls' families): left and right — the cross, the stick, the arrows — open
+## the tab beside the open one, as LB / RB do the settings' categories. Only the open tab takes the
+## focus, so coming down onto the row lands on it, never on a neighbour that would open instead.
+func arrows_select() -> void:
+	accept_hints = false  # left and right open a tab: no A to press
+	allow_focus()
+	_arrows_select = true
+	_update_focus_modes()
+
+
+func _on_entry_input(event: InputEvent) -> void:
+	if not _arrows_select:
+		return
+	var direction : int = 0
+	if event.is_action_pressed(&"ui_left", true):
+		direction = -1
+	elif event.is_action_pressed(&"ui_right", true):
+		direction = 1
+	if direction != 0:
+		step(direction)
+		accept_event()
+
+
+func _update_focus_modes() -> void:
+	if not _arrows_select:
+		return
+	var had_focus : bool = false
+	for key: StringName in _buttons:
+		had_focus = had_focus or (_buttons[key] as Button).has_focus()
+	var open : Button = _buttons.get(_active)
+	# The new tab takes the focus before the old one gives up the right to it.
+	if open != null:
+		open.focus_mode = Control.FOCUS_ALL
+		if had_focus:
+			open.grab_focus()
+	for key: StringName in _buttons:
+		if _buttons[key] != open:
+			(_buttons[key] as Button).focus_mode = Control.FOCUS_NONE
+
+
 ## Move the focus [param direction] entries along from the focused one (from the active one, or before
 ## the first, when none of them has it), round the ends.
 func step_focus(direction: int) -> void:
@@ -179,6 +223,7 @@ func set_active(key: StringName) -> void:
 	_active = key
 	for k: StringName in _buttons:
 		_style(k)
+	_update_focus_modes()
 
 
 func _notification(what: int) -> void:

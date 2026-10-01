@@ -98,3 +98,22 @@ func test_the_focused_entry_shows_its_button_without_moving_the_others() -> void
 	assert_eq(hint.self_modulate.a, 1.0, "shown when it has")
 	assert_eq(hint.text, "(A)")
 	strip.button(&"a").release_focus()
+
+
+func test_left_and_right_open_the_tab_beside_with_arrows_select() -> void:
+	var strip := TabStrip.new()
+	strip.arrows_select()
+	for key: StringName in [&"a", &"b", &"c"]:
+		strip.add_entry(key, String(key))
+	add_child_autofree(strip)
+	strip.selected.connect(strip.set_active)
+	strip.set_active(&"a")
+	assert_eq(strip.button(&"b").focus_mode, Control.FOCUS_NONE, "only the open tab takes the focus")
+	strip.button(&"a").grab_focus()
+	var right := InputEventAction.new()
+	right.action = &"ui_right"
+	right.pressed = true
+	strip._on_entry_input(right)
+	assert_eq(strip.active(), &"b", "right opens the next tab")
+	assert_true(strip.button(&"b").has_focus(), "and the focus goes with it")
+	assert_eq(strip.button(&"a").focus_mode, Control.FOCUS_NONE)
