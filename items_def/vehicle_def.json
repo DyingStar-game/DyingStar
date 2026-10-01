@@ -25,7 +25,9 @@
 				"engine",
 				"doors",
 				"seats",
-				"components"
+				"components",
+				"limiter_on",
+				"limiter_kmh"
 			]
 		},
 		{
@@ -37,7 +39,8 @@
 				"horn_special",
 				"mass",
 				"cargo_mass",
-				"suspension"
+				"suspension",
+				"odometer_km"
 			]
 		},
 		{

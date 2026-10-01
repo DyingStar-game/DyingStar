@@ -1,0 +1,33 @@
+[gd_resource type="ArrayMesh" format=4 uid="uid://b3ukd18easbn"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hk60t"]
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_em6w3"]
+_surfaces = [{
+"aabb": AABB(0, -0.4000001, -3.5, 1e-05, 0.8000001, 7),
+"format": 34896613377,
+"index_count": 48,
+"index_data": PackedByteArray("AAABAAIAAAACAAMABAABAAAABAAFAAEABgAFAAQABgAHAAUACAAHAAYACAAJAAcACgAJAAgACgALAAkADAALAAoADAANAAsADgANAAwADgAPAA0AEAAPAA4AEAARAA8A"),
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 18,
+"vertex_data": PackedByteArray("AAD////fAAAAAAAA/98AAAAAAAD//wAAAAD/////AAAAAP///78AAAAAAAD/vwAAAAD///+fAAAAAAAA/58AAAAA////fwAAAAAAAP9/AAAAAP///18AAAAAAAD/XwAAAAD///8/AAAAAAAA/z8AAAAA////HwAAAAAAAP8fAAAAAP//AAAAAAAAAAAAAAAA")
+}]
+blend_shape_mode = 0
+
+[resource]
+resource_name = "CargoDepot_Building Window Fence Mesh"
+_surfaces = [{
+"aabb": AABB(0, -0.4000001, -3.5, 1e-05, 0.8000001, 7),
+"attribute_data": PackedByteArray("yHPLhx9czoIfXGmCyHNlh8hzMIgfXDSDyHOWiB9cmoPIc/yIH1wAhMhzYokfXGaEyHPIiR9cy4TIcy2KH1wxhchzk4ofXJeF"),
+"format": 34896613399,
+"index_count": 48,
+"index_data": PackedByteArray("AAABAAIAAAACAAMABAABAAAABAAFAAEABgAFAAQABgAHAAUACAAHAAYACAAJAAcACgAJAAgACgALAAkADAALAAoADAANAAsADgANAAwADgAPAA0AEAAPAA4AEAARAA8A"),
+"material": SubResource("StandardMaterial3D_hk60t"),
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 18,
+"vertex_data": PackedByteArray("AAD////f5v0AAAAA/9/m/QAAAAD//+b9AAD/////5v0AAP///7/m/QAAAAD/v+b9AAD///+f5v0AAAAA/5/m/QAA////f+b9AAAAAP9/5v0AAP///1/m/QAAAAD/X+b9AAD///8/5v0AAAAA/z/m/QAA////H+b9AAAAAP8f5v0AAP//AADm/QAAAAAAAOb9SQLaPkkC2j5JAto+SQLaPkkC2j5JAto+SQLaPkkC2j5JAto+SQLaPkkC2j5JAto+SQLaPkkC2j5JAto+SQLaPkkC2j5JAto+")
+}]
+blend_shape_mode = 0
+shadow_mesh = SubResource("ArrayMesh_em6w3")

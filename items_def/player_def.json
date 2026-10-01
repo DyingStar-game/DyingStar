@@ -27,6 +27,7 @@
 				"head",
 				"head_yaw",
 				"stance",
+				"floating",
 				"seat",
 				"perforating",
 				"carrying",

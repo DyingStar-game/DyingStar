@@ -3,20 +3,20 @@
 [ext_resource type="Material" uid="uid://cfw4xedexidi0" path="res://assets/_universe/environment/terrain/regolith_grey_simple.tres" id="2_xg6ju"]
 [ext_resource type="Material" uid="uid://5haip4wcx6f0" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001.tres" id="3_gm21b"]
 [ext_resource type="Material" uid="uid://c0at27ib77dy6" path="res://assets/_universe/_shared/materials/urban_wire_fence.tres" id="5_8j60v"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="5_53ejv"]
 [ext_resource type="PackedScene" uid="uid://bj6b574fct2mo" path="res://scenes/_universe/props/lighting/led_panel_1x0.3m.tscn" id="5_yil1r"]
-[ext_resource type="Texture2D" uid="uid://cafs8ny53vs1f" path="res://assets/_universe/_shared/materials/urban_wire_fence_albedo.png" id="8_53ejv"]
-[ext_resource type="Texture2D" uid="uid://cwvt1f2vco38o" path="res://assets/_universe/_shared/materials/urban_wire_fence_heightmap.png" id="9_fh7er"]
-[ext_resource type="Texture2D" uid="uid://danjruw88tstg" path="res://assets/_universe/_shared/materials/urban_wire_fence_normal.png" id="10_lv7gl"]
-[ext_resource type="Texture2D" uid="uid://biqvnkv0741u8" path="res://assets/_universe/_shared/materials/urban_wire_fence_orm.png" id="11_r75w6"]
+[ext_resource type="ArrayMesh" uid="uid://btkgth6gr4huf" path="res://scenes/_universe/structures/industrial/reception_desk_mesh.tres" id="9_afwdq"]
+[ext_resource type="ArrayMesh" uid="uid://b3ukd18easbn" path="res://scenes/_universe/structures/industrial/cargo_depot_window_mesh.tres" id="9_fh7er"]
+[ext_resource type="ArrayMesh" uid="uid://cjwxrcpdyny5t" path="res://scenes/_universe/structures/industrial/reception_desk_fence_mesh.tres" id="10_53ejv"]
+[ext_resource type="ArrayMesh" uid="uid://cu10vopdd2qp2" path="res://scenes/_universe/structures/industrial/stairs_mesh.tres" id="11_fh7er"]
+[ext_resource type="Shape3D" uid="uid://24d5gcn3yxob" path="res://scenes/_universe/structures/industrial/cargo_depot_collider_shape.tres" id="11_lv7gl"]
+[ext_resource type="ArrayMesh" uid="uid://bh1sdx3crolml" path="res://scenes/_universe/structures/industrial/cargo_depot_mesh.tres" id="12_53ejv"]
+[ext_resource type="Shape3D" uid="uid://pvhvwot5l0jv" path="res://scenes/_universe/structures/industrial/reception_desk_collider_shape.tres" id="14_kay3c"]
+[ext_resource type="Shape3D" uid="uid://dhjivf00xarfy" path="res://scenes/_universe/structures/industrial/reception_desk_fence_collider_shape.tres" id="15_bfkre"]
+[ext_resource type="Shape3D" uid="uid://7gu1abixw0uu" path="res://scenes/_universe/structures/industrial/stairs_collider_shape.tres" id="17_2hcbk"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="terrain_pad_1"]
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
-size = Vector3(0.6533500856057799, 0.4556689657149491, 0.47686243570660736)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_nr3d1"]
-size = Vector3(0.7199609975132262, 0.4981677124351336, 0.5562900045570132)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gm21b"]
 size = Vector3(11.762, 1.5, 2.889)
@@ -27,27 +27,18 @@ size = Vector3(0.37, 0.5, 0.24)
 [sub_resource type="BoxShape3D" id="BoxShape3D_dagjk"]
 size = Vector3(0.52, 0.35, 0.35)
 
-[sub_resource type="ORMMaterial3D" id="ORMMaterial3D_n6irm"]
-transparency = 1
-albedo_texture = ExtResource("8_53ejv")
-orm_texture = ExtResource("11_r75w6")
-normal_enabled = true
-normal_texture = ExtResource("10_lv7gl")
-heightmap_enabled = true
-heightmap_scale = 9.75
-heightmap_deep_parallax = true
-heightmap_min_layers = 8
-heightmap_max_layers = 32
-heightmap_texture = ExtResource("9_fh7er")
-uv1_offset = Vector3(0, 0.52, 0.5)
-uv1_triplanar = true
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(0.6533500856057799, 0.4556689657149491, 0.47686243570660736)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_nr3d1"]
+size = Vector3(0.7199609975132262, 0.4981677124351336, 0.5562900045570132)
 
 [node name="CargoDepot" type="Node3D" unique_id=693024100]
 script = ExtResource("script_cargo")
 pnj_zones = {
 "Reception": {
 "PNJPlace0": {
-"path": NodePath("ReceptionDesk/PNJPlace0"),
+"path": NodePath("Reception Desk/PNJPlace0"),
 "position": Vector3(0.717, 0.251, 3.903),
 "size": Vector3(0.72, 0.498, 0.556)
 }
@@ -109,156 +100,12 @@ script = ExtResource("terrain_pad_1")
 
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=693024102]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09100000000034925, -0.1999999999970896, 46.721999999994296)
+visible = false
 size = Vector3(20.77126677457909, 0.2, 96.91522609360618)
 
 [node name="PropSync" type="Node" parent="." unique_id=1925827598]
 script = ExtResource("propsync_1")
 type_name = "cargo_depot"
-
-[node name="floor" type="CSGCombiner3D" parent="." unique_id=1168523488]
-material_overlay = ExtResource("3_gm21b")
-use_collision = true
-
-[node name="floor" type="CSGBox3D" parent="floor" unique_id=1703356859]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.008231521, -0.5, 47.495770657958985)
-size = Vector3(19.92444762205014, 1, 75.07212517168773)
-
-[node name="floor3" type="CSGBox3D" parent="floor" unique_id=961726506]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0057674646, -0.5, 89.98721691459656)
-size = Vector3(11.916180997226547, 1, 10.025707958775229)
-
-[node name="floor2" type="CSGBox3D" parent="floor" unique_id=638508050]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00031864643, -0.5, 4.959085191192628)
-size = Vector3(11.963961978560292, 1, 10.030576222690796)
-
-[node name="walls" type="CSGCombiner3D" parent="." unique_id=272998775]
-material_override = ExtResource("2_xg6ju")
-use_collision = true
-
-[node name="wall01" type="CSGBox3D" parent="walls" unique_id=135442379]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1362741, 0)
-size = Vector3(12, 3.727451899078005, 0.12)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="walls/wall01" unique_id=280226474]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14454257, 0)
-operation = 2
-size = Vector3(1.9, 2.016536894038836, 0.3)
-
-[node name="wall06" type="CSGBox3D" parent="walls" unique_id=1487791472]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 5.940000000002328, 1.0683631, 5)
-size = Vector3(10, 3.8632739517470327, 0.12)
-
-[node name="door to delete" type="CSGBox3D" parent="walls/wall06" unique_id=227837144]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07301420000000025, 0.02010309957565304, 0)
-operation = 2
-size = Vector3(1.1460283906935729, 2.1981428331246207, 1)
-
-[node name="wall07" type="CSGBox3D" parent="walls" unique_id=529961147]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.940000000002328, 1.141845, 5)
-size = Vector3(10, 3.716309947456466, 0.12)
-
-[node name="wall_junk_room_01" type="CSGBox3D" parent="walls" unique_id=1642500494]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1452028, 94.95427644970484)
-size = Vector3(12, 3.7095944720267657, 0.12)
-
-[node name="wall_junk_room_02" type="CSGBox3D" parent="walls" unique_id=84285821]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 5.940000000002323, 1.0649918, 90.0099869540893)
-size = Vector3(10, 3.870016354807376, 0.12)
-
-[node name="wall_junk_room_03" type="CSGBox3D" parent="walls" unique_id=367168057]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.940000000002334, 1.1756152, 90.0099869540893)
-size = Vector3(10, 3.648769618732331, 0.12)
-
-[node name="wall02" type="CSGBox3D" parent="walls" unique_id=958342489]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 10)
-size = Vector3(20, 15, 0.12)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="walls/wall02" unique_id=532417651]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.40340576, 0)
-operation = 2
-size = Vector3(1.9, 2.193188333614671, 0.3)
-
-[node name="wall03" type="CSGBox3D" parent="walls" unique_id=1320769288]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 85)
-size = Vector3(20, 15, 0.12)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="walls/wall03" unique_id=142446083]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.46688567677863135, 0)
-operation = 2
-size = Vector3(1.9, 2, 0.3)
-
-[node name="wall04" type="CSGBox3D" parent="walls" unique_id=813156635]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, 9.940000000002328, 0.5, 47.473312)
-size = Vector3(74.94662893016994, 15, 0.12)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="walls/wall04" unique_id=1806217533]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.21009933111029, 1.036803882995848, 0.1387354154217384)
-operation = 2
-size = Vector3(7.014694118751322, 0.7748995637675762, 1)
-
-[node name="wall05" type="CSGBox3D" parent="walls" unique_id=649545581]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -9.940000000002328, 0.5, 47.51852989196777)
-size = Vector3(75.03706136485562, 15, 0.12)
-
-[node name="roof" type="CSGCombiner3D" parent="." unique_id=350732683]
-use_collision = true
-
-[node name="roof" type="CSGBox3D" parent="roof" unique_id=329547845]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.05999999999767169, 7.935022048606768, 47.47299999999814)
-size = Vector3(74.947, 0.12, 20)
-
-[node name="roof2" type="CSGBox3D" parent="roof" unique_id=560195331]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.05744648411927988, 2.94199999999546, 5)
-size = Vector3(10, 0.12, 12)
-
-[node name="roof_junk_room" type="CSGBox3D" parent="roof" unique_id=1132521495]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -0.05744648411928509, 2.94199999999546, 89.97990979136347)
-size = Vector3(10, 0.12, 12)
-
-[node name="ReceptionDesk" type="CSGCombiner3D" parent="." unique_id=1794383938]
-use_collision = true
-
-[node name="CSGBox3D" type="CSGBox3D" parent="ReceptionDesk" unique_id=881814249]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.01761742142944333, 0.5500000000029104, 3.2630000000062864)
-size = Vector3(11.826161685105037, 1.1, 0.6)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="ReceptionDesk/CSGBox3D" unique_id=1134992856]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7588284743281892, 0.5021373708014818, 0.006375529)
-operation = 2
-size = Vector3(0.7522567086889467, 0.35813434590272664, 0.6185318751522573)
-
-[node name="PNJBoxDepositPlayer" type="Area3D" parent="ReceptionDesk" unique_id=1529539961 groups=["active_monitor"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6445629073999144, 1.085475980516691, 3.4498896940085153)
-collision_mask = 8
-monitorable = false
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ReceptionDesk/PNJBoxDepositPlayer" unique_id=1112239262]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1215791573473739, 0.03131821800000001, -0.18433270994817752)
-shape = SubResource("BoxShape3D_gy7pr")
-debug_color = Color(0.34901962, 0.48235294, 1, 0.41960785)
-
-[node name="PNJPlace0" type="Area3D" parent="ReceptionDesk" unique_id=637677703]
-editor_description = "Reception"
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6791612797878013, 0, 4.056549149022716)
-collision_layer = 0
-collision_mask = 0
-monitoring = false
-monitorable = false
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ReceptionDesk/PNJPlace0" unique_id=1758589282]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03742133440450201, 0.25091615, -0.1536556228410486)
-shape = SubResource("BoxShape3D_nr3d1")
-debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
-
-[node name="fence" type="CSGBox3D" parent="ReceptionDesk" unique_id=257375520]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.06137475837226169, 1.9845640979774473, 3.148337700533633)
-size = Vector3(11.829775515364418, 1.984039205639192, 0.1)
-material = ExtResource("5_8j60v")
-
-[node name="CSGBox3D" type="CSGBox3D" parent="ReceptionDesk/fence" unique_id=2089876031]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7234246668953249, -0.6351050650008254, 0)
-operation = 2
-size = Vector3(0.9631633646024512, 0.9897648373769244, 1)
 
 [node name="reception_area" type="Area3D" parent="." unique_id=119297318 groups=["active_monitor"]]
 collision_mask = 2
@@ -482,64 +329,100 @@ debug_color = Color(0.3492929, 0.4840585, 1, 0.41960785)
 [node name="Lights" type="Node3D" parent="." unique_id=167323431]
 
 [node name="Reception" type="Node3D" parent="Lights" unique_id=423351807]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)
 
-[node name="light_entrance" parent="Lights/Reception" unique_id=1369784005 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 0.834715496324699)
+[node name="LedPanel 01" parent="Lights/Reception" unique_id=1369784005 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999999941792, -3.5)
 
-[node name="LedPanel1x0_3m" parent="Lights/Reception" unique_id=189823100 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 2.881999999997788, 3.5939999999973224)
+[node name="LedPanel 02" parent="Lights/Reception" unique_id=2055788584 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, -3.5)
 
-[node name="LedPanel1x0_3m2" parent="Lights/Reception" unique_id=751132091 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 3.5939999999973224)
+[node name="LedPanel 03" parent="Lights/Reception" unique_id=223917988 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999999941792, 1.5494672527479487)
 
-[node name="LedPanel1x0_3m3" parent="Lights/Reception" unique_id=1444919995 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 2.881999999997788, 3.5939999999973224)
-
-[node name="LedPanel1x0_3m4" parent="Lights/Reception" unique_id=131767375 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 2.881999999997788, 7.47287366980585)
-
-[node name="LedPanel1x0_3m5" parent="Lights/Reception" unique_id=1492010943 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 7.47287366980585)
-
-[node name="LedPanel1x0_3m6" parent="Lights/Reception" unique_id=1146250788 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 2.881999999997788, 7.47287366980585)
+[node name="LedPanel 04" parent="Lights/Reception" unique_id=246430673 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, 1.5494672527479487)
 
 [node name="Depot" type="Node3D" parent="Lights" unique_id=1483077739]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 47.5)
 
-[node name="LedPanel1x0_3m7" parent="Lights/Depot" unique_id=1661957030 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 7.869851440875111, 12)
+[node name="LedPanel 01" parent="Lights/Depot" unique_id=1603082243 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 7.350000000005821, -28.125)
 
-[node name="LedPanel1x0_3m8" parent="Lights/Depot" unique_id=791685398 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.869851440875111, 12)
+[node name="LedPanel 02" parent="Lights/Depot" unique_id=1421061804 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 7.350000000005821, -28.125)
 
-[node name="LedPanel1x0_3m9" parent="Lights/Depot" unique_id=434325629 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 7.869851440875111, 12)
+[node name="LedPanel 03" parent="Lights/Depot" unique_id=206467335 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 7.350000000005821, -9.375)
 
-[node name="LedPanel1x0_3m10" parent="Lights/Depot" unique_id=1009523132 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 7.869851440875111, 20)
+[node name="LedPanel 04" parent="Lights/Depot" unique_id=252961199 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 7.350000000005821, -9.375)
 
-[node name="LedPanel1x0_3m11" parent="Lights/Depot" unique_id=808080329 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.869851440875111, 20)
+[node name="LedPanel 05" parent="Lights/Depot" unique_id=1073788581 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 7.350000000005821, 9.375)
 
-[node name="LedPanel1x0_3m12" parent="Lights/Depot" unique_id=1629742767 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 7.869851440875111, 20)
+[node name="LedPanel 06" parent="Lights/Depot" unique_id=328236478 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 7.350000000005821, 9.375)
 
-[node name="LedPanel1x0_3m13" parent="Lights/Depot" unique_id=1580268183 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 7.869851440875111, 28)
+[node name="LedPanel 07" parent="Lights/Depot" unique_id=687269574 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 7.350000000005821, 28.125)
 
-[node name="LedPanel1x0_3m14" parent="Lights/Depot" unique_id=1743171469 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.869851440875111, 28)
+[node name="LedPanel 08" parent="Lights/Depot" unique_id=187824868 instance=ExtResource("5_53ejv")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 7.350000000005821, 28.125)
 
-[node name="LedPanel1x0_3m15" parent="Lights/Depot" unique_id=47551676 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 7.869851440875111, 28)
+[node name="DepotBasement" type="Node3D" parent="Lights" unique_id=216737544]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4, 47.5)
+
+[node name="LedPanel 01" parent="Lights/DepotBasement" unique_id=1794117550 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 3.3999999999941792, -28.125)
+
+[node name="LedPanel 02" parent="Lights/DepotBasement" unique_id=613617107 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 3.3999999999941792, -28.125)
+
+[node name="LedPanel 03" parent="Lights/DepotBasement" unique_id=422225511 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 3.3999999999941792, -9.375)
+
+[node name="LedPanel 04" parent="Lights/DepotBasement" unique_id=109728590 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 3.3999999999941792, -9.375)
+
+[node name="LedPanel 05" parent="Lights/DepotBasement" unique_id=300857320 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 3.3999999999941792, 9.375)
+
+[node name="LedPanel 06" parent="Lights/DepotBasement" unique_id=1701328749 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 3.3999999999941792, 9.375)
+
+[node name="LedPanel 07" parent="Lights/DepotBasement" unique_id=1082393184 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.334000000002561, 3.3999999999941792, 28.125)
+
+[node name="LedPanel 08" parent="Lights/DepotBasement" unique_id=939993715 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.334000000002561, 3.3999999999941792, 28.125)
 
 [node name="Junk" type="Node3D" parent="Lights" unique_id=1861887610]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 90)
 
-[node name="LedPanel1x0_3m1" parent="Lights/Junk" unique_id=473935978 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 86.3095914797591)
+[node name="LedPanel 02" parent="Lights/Junk" unique_id=754754384 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, -2)
 
-[node name="LedPanel1x0_3m2" parent="Lights/Junk" unique_id=1251524462 instance=ExtResource("5_yil1r")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.881999999997788, 92.24254083360852)
+[node name="LedPanel 03" parent="Lights/Junk" unique_id=237783171 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999999941792, 2)
+
+[node name="LedPanel 04" parent="Lights/Junk" unique_id=1666854088 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, 2)
+
+[node name="Junk Basement" type="Node3D" parent="Lights" unique_id=1866568324]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4, 90)
+
+[node name="LedPanel 01" parent="Lights/Junk Basement" unique_id=1314096751 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999999941792, -2)
+
+[node name="LedPanel 02" parent="Lights/Junk Basement" unique_id=202162621 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, -2)
+
+[node name="LedPanel 03" parent="Lights/Junk Basement" unique_id=416576300 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999999941792, 2)
+
+[node name="LedPanel 04" parent="Lights/Junk Basement" unique_id=1257331707 instance=ExtResource("5_yil1r")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, 2)
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1281901473]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.857416347148768, 1.9449055731039908, 89.82074714987318)
@@ -549,16 +432,76 @@ text = "Meal zone"
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 5.864430206046919, 1.9449055731039908, 89.82074714987318)
 text = "Mandatory activity"
 
-[node name="wall_fence" type="Node3D" parent="." unique_id=2088191985]
+[node name="Building" type="StaticBody3D" parent="." unique_id=559847608]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 47.5)
+collision_mask = 0
 
-[node name="CSGBox3D" type="CSGBox3D" parent="wall_fence" unique_id=868733360]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.939721307763206, 1.531393731836872, 14.273355060425356)
-use_collision = true
-size = Vector3(0.1, 0.7777388577569582, 7.001030949551932)
-material = SubResource("ORMMaterial3D_n6irm")
+[node name="Visual" type="MeshInstance3D" parent="Building" unique_id=1545817782]
+mesh = ExtResource("12_53ejv")
+surface_material_override/0 = ExtResource("3_gm21b")
+surface_material_override/1 = ExtResource("2_xg6ju")
 
-[connection signal="body_entered" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_entered"]
-[connection signal="body_exited" from="ReceptionDesk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_exited"]
+[node name="Window Fence Visual" type="MeshInstance3D" parent="Building" unique_id=603402830]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.978000000002794, 1.5, -33.25)
+mesh = ExtResource("9_fh7er")
+surface_material_override/0 = ExtResource("5_8j60v")
+
+[node name="Collider" type="CollisionShape3D" parent="Building" unique_id=456585351]
+shape = ExtResource("11_lv7gl")
+
+[node name="Reception Desk" type="StaticBody3D" parent="." unique_id=2093268212]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3.1499999999941792)
+collision_mask = 0
+
+[node name="Visual Desk" type="MeshInstance3D" parent="Reception Desk" unique_id=722449418]
+mesh = ExtResource("9_afwdq")
+
+[node name="Visual Fence" type="MeshInstance3D" parent="Reception Desk" unique_id=1430086163]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1000000000058208, 0)
+mesh = ExtResource("10_53ejv")
+surface_material_override/0 = ExtResource("5_8j60v")
+
+[node name="Collider Desk" type="CollisionShape3D" parent="Reception Desk" unique_id=2009492750]
+shape = ExtResource("14_kay3c")
+
+[node name="Collider Fence" type="CollisionShape3D" parent="Reception Desk" unique_id=962344953]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1000000000058208, 0)
+shape = ExtResource("15_bfkre")
+
+[node name="PNJBoxDepositPlayer" type="Area3D" parent="Reception Desk" unique_id=1529539961 groups=["active_monitor"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6445629073999144, 1.085475980516691, 0.2998896940143361)
+collision_mask = 8
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Reception Desk/PNJBoxDepositPlayer" unique_id=1112239262]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1215791573473739, 0.03131821800000001, -0.18433270994817752)
+shape = SubResource("BoxShape3D_gy7pr")
+debug_color = Color(0.34901962, 0.48235294, 1, 0.41960785)
+
+[node name="PNJPlace0" type="Area3D" parent="Reception Desk" unique_id=637677703]
+editor_description = "Reception"
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6791612797878013, 0, 0.9065491490285372)
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Reception Desk/PNJPlace0" unique_id=1758589282]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03742133440450201, 0.25091615, -0.1536556228410486)
+shape = SubResource("BoxShape3D_nr3d1")
+debug_color = Color(0.96168846, 1.540184e-06, 0.51167804, 0.41960785)
+
+[node name="Stairs" type="StaticBody3D" parent="." unique_id=580713670]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 91.7931557845978)
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="Stairs" unique_id=27679853]
+mesh = ExtResource("11_fh7er")
+surface_material_override/0 = ExtResource("3_gm21b")
+
+[node name="Collider" type="CollisionShape3D" parent="Stairs" unique_id=254567093]
+shape = ExtResource("17_2hcbk")
+
 [connection signal="body_entered" from="reception_area" to="." method="_on_reception_area_body_entered"]
 [connection signal="body_exited" from="reception_area" to="." method="_on_reception_area_body_exited"]
 [connection signal="body_entered" from="TempZone/Place0/PNJBoxDepositTempZone" to="." method="_on_pnj_box_deposit_temp_zone_body_entered" binds= [0]]
@@ -577,3 +520,5 @@ material = SubResource("ORMMaterial3D_n6irm")
 [connection signal="body_exited" from="TempZone/Place6/PNJBoxDepositTempZone" to="." method="_on_pnj_box_deposit_temp_zone_body_exited" binds= [6]]
 [connection signal="body_entered" from="TempZone/Place7/PNJBoxDepositTempZone" to="." method="_on_pnj_box_deposit_temp_zone_body_entered" binds= [7]]
 [connection signal="body_exited" from="TempZone/Place7/PNJBoxDepositTempZone" to="." method="_on_pnj_box_deposit_temp_zone_body_exited" binds= [7]]
+[connection signal="body_entered" from="Reception Desk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_entered"]
+[connection signal="body_exited" from="Reception Desk/PNJBoxDepositPlayer" to="." method="_on_box_counter_body_exited"]

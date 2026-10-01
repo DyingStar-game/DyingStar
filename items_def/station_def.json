@@ -2,7 +2,7 @@
 	"channels": [
 		{
 			"zone": 0,
-			"distance": 150.0,
+			"distance": 200000.0,
 			"frequency": 30.0,
 			"properties": [
 				"position",
@@ -12,15 +12,9 @@
 		},
 		{
 			"zone": 6,
-			"distance": 10000.0,
-			"frequency": 1.0,
+			"distance": 200001.0,
+			"frequency": 3.0,
 			"properties": [
-				"is_spawned",
-				"spawn_scene",
-				"radius_m",
-				"population",
-				"type",
-				"name",
 				"scenename"
 			]
 		}
