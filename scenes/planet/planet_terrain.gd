@@ -1825,7 +1825,10 @@ func _update_terrain() -> void:
 		var _act: Dictionary = _active_chunks[key]
 		var _want: Dictionary = desired[key].duplicate()  # shared with the cache: never written in place
 		if _act.lod != _want.lod:
-			_remove_chunk(key)
+			# Swapped, not removed: the old mesh stays on screen until the new quality is assembled.
+			# Removed here, every chunk crossing a quality threshold left a hole for as long as its
+			# rebuild took — ground blinking ahead of anyone moving (2026-10-01).
+			_want["_swap"] = true
 			_try_create_or_defer(_want)
 			pipeline[key] = true
 		elif int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
