@@ -368,6 +368,8 @@ var _player_index: int = -1
 var _player_ray: MeshInstance3D = null
 ## Which way you look in the game, drawn from your marker (see StarMapViewCone).
 var _view_cone: StarMapViewCone = null
+## Longitude, latitude and height of the ground under the cursor, beside it, close to a body.
+var _cursor_readout: StarMapCursorReadout = null
 ## False until the chart is first opened: that first opening lands on you (see _open_on_player).
 var _opened_before: bool = false
 ## Where you were when the chart was last closed: the body you belonged to (null in open space) and your
@@ -563,6 +565,8 @@ func _build_ui() -> void:
 	# Over the 3D chart, under every panel: added here, after the viewport and before the rest.
 	_view_cone = StarMapViewCone.new()
 	add_child(_view_cone)
+	_cursor_readout = StarMapCursorReadout.new()
+	add_child(_cursor_readout)
 	_readout = Label.new()
 	_readout.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_readout.position = Vector2(16, 16)
@@ -1129,6 +1133,7 @@ func _process(delta: float) -> void:
 	_refresh_halo()
 	_refresh_info()
 	_refresh_scale()
+	_refresh_cursor_readout()
 	_update_readout(t)
 
 
@@ -2226,6 +2231,54 @@ func _add_halo(mesh: ImmediateMesh, index: int, colour: Color) -> bool:
 
 ## The side panel: what the scene knows about the followed body. Deliberately the same numbers the
 ## chart is drawing from, so the panel can never disagree with what you see.
+## Where on the ground the cursor is: longitude, latitude and height, beside it.
+##
+## Once a frame rather than on each mouse move: the body turns and the camera travels under a cursor
+## that stays still, and the ground under it changes with them. Only over the body close enough for its
+## towns to be drawn, and not while turning the view or pointing at a town, a group or you: a name is
+## there already, and the numbers would sit on it.
+func _refresh_cursor_readout() -> void:
+	if _cursor_readout == null:
+		return
+	var body: int = _blocker
+	var on_a_name: bool = _poi_hover >= 0 or _poi_cluster_hover >= 0 or (_hover >= 0 and _hover == _player_index)
+	if body < 0 or body >= _bodies.size() or _dragging or on_a_name:
+		_cursor_readout.hide_readout()
+		return
+	var sphere: MeshInstance3D = _bodies[body]["sphere"]
+	if not is_instance_valid(sphere):
+		_cursor_readout.hide_readout()
+		return
+	var key: String = str(_bodies[body]["key"])
+	var at: Vector2 = _cursor_readout.get_local_mouse_position()
+	var local: Vector3 = StarMapRelief.surface_hit(_camera.project_ray_origin(at),
+			_camera.project_ray_normal(at), sphere.position, sphere.scale.x * MESH_RADIUS,
+			sphere.basis.orthonormalized(), key)
+	if local == Vector3.ZERO:
+		_cursor_readout.hide_readout()
+		return
+	_cursor_readout.show_at(at, cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"])))
+
+
+## What the cursor readout says for the ground along [param local] on [param body_key]: longitude and
+## latitude to as many decimals as a pixel resolves ([param metres_per_pixel] on a body
+## [param radius_m] across), and the height when the body has a relief to read it from.
+static func cursor_text(body_key: String, local: Vector3, metres_per_pixel: float,
+		radius_m: float) -> String:
+	var lonlat: Vector2 = HEALPix.vec2lonlat(local)
+	var decimals: int = 3
+	if metres_per_pixel > 0.0 and radius_m > 0.0:
+		var degrees_per_pixel: float = rad_to_deg(metres_per_pixel / radius_m)
+		decimals = clampi(ceili(-log(degrees_per_pixel) / log(10.0)), 1, 5)
+	var number: String = "%." + str(decimals) + "f"
+	var lon: String = number % lonlat.x
+	var lat: String = number % lonlat.y
+	if not StarMapRelief.has_data(body_key):
+		return TranslationServer.translate("%%HUD_MAP_CURSOR_LONLAT") % [lon, lat]
+	return TranslationServer.translate("%%HUD_MAP_CURSOR") % [lon, lat,
+			Globals.format_thousands(StarMapRelief.ground_altitude_m(body_key, local))]
+
+
 func _refresh_info() -> void:
 	# A selected town wins: it is the more precise answer to "what am I looking at", and the body it
 	# stands on is named in its own panel anyway.
