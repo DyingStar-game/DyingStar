@@ -10,16 +10,6 @@ extends Node3D
 @export var type: String = ""
 
 
-# Called when the node enters the scene tree for the first time.
-func _ready() -> void:
-	pass # Replace with function body.
-
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta: float) -> void:
-	pass
-
-
 func apply_prop_data(data: Dictionary) -> void:
 	if data.has("is_spawned"):
 		is_spawned = data["is_spawned"]
