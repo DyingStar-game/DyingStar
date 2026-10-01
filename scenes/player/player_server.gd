@@ -138,6 +138,8 @@ var _npc_progress_timer: float = 0.0
 ## How many rungs of the recovery ladder we have climbed without regaining headway. Reset by real
 ## progress and by a new goal; drives _npc_try_unstick's escalation.
 var _npc_recover_step: int = 0
+## The "wedged off the navmesh" warning already went out for this goal: one line per NPC, not one per try.
+var _npc_wedge_warned: bool = false
 ## Intermediate world point the ROUTE is aimed at instead of the goal while working around a blockage
 ## (null = none), and how long it stays valid. A detour is never a destination: arrival is always judged
 ## against the real goal.
@@ -229,6 +231,11 @@ const _NPC_NAV_COLLISION_MASK: int = NpcNavCache.COLLISION_MASK
 ## How long (s) a stuck NPC's re-bake request leaves a freshly baked box alone: a box baked less than
 ## this ago is not what is wedging it, and re-baking it for every stuck NPC in a crowd is a bake storm.
 const _NPC_STUCK_REBAKE_MIN_AGE: float = 30.0
+## Longest wait (s) between two recovery attempts of an NPC that keeps failing. From the third rung on,
+## the wait doubles after every failed attempt (5, 10, 20, 40 s, then this): a detour is 11 nav queries
+## at ~0.7 ms each when the target is unreachable, and on 2026-10-01 45 NPCs wedged for good were
+## retrying it every 2.5 s — with their empty-path repath every ~0.25 s, the bulk of a 10 ms NPC tick.
+const _NPC_STUCK_BACKOFF_MAX: float = 60.0
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Server placement: sit the body at its spawn position and start monitoring detection zones.
@@ -1585,6 +1592,9 @@ func _npc_physics_process(delta: float) -> void:
 	_npc_path_retry_timer -= delta
 	if _npc_path_retry_timer <= 0.0:
 		_npc_path_retry_timer = _NPC_REPATH_S if _npc_path_idx < _npc_path.size() else randf() * 0.5
+		if _npc_recover_step >= 3:
+			# Failing for a while: no faster than the recovery itself (see _npc_stuck_window).
+			_npc_path_retry_timer = maxf(_npc_path_retry_timer, _npc_stuck_window())
 		_npc_repath()
 
 	var _next = _npc_next_path_point()
@@ -1915,6 +1925,15 @@ func _npc_reset_recovery() -> void:
 	_npc_detour = null
 	_npc_detour_timer = 0.0
 	_npc_detour_count = 0
+	_npc_wedge_warned = false
+
+## How long the watchdog waits before judging headway again. The first rungs (re-bake, snap, first
+## detour) come every _NPC_PROGRESS_WINDOW; past them the wait doubles per failed attempt, up to
+## _NPC_STUCK_BACKOFF_MAX — an NPC that cannot get out stays cheap instead of re-querying forever.
+func _npc_stuck_window() -> float:
+	if _npc_recover_step < 3:
+		return _NPC_PROGRESS_WINDOW
+	return minf(_NPC_PROGRESS_WINDOW * pow(2.0, float(_npc_recover_step - 2)), _NPC_STUCK_BACKOFF_MAX)
 
 ## Progress watchdog. An NPC that covers less than _NPC_PROGRESS_MIN of ground in _NPC_PROGRESS_WINDOW
 ## is not getting anywhere — wedged on geometry, orbiting a waypoint, or parked at the closest reachable
@@ -1932,7 +1951,15 @@ func _npc_update_stuck(delta: float) -> void:
 		_npc_progress_ref = player.global_position
 		return
 	_npc_progress_timer += delta
-	if _npc_progress_timer < _NPC_PROGRESS_WINDOW:
+	if _npc_recover_step > 0 and _npc_progress_timer < _npc_stuck_window() \
+			and player.global_position.distance_to(_npc_progress_ref) >= _NPC_PROGRESS_MIN:
+		# Moving again in the middle of a long back-off wait (unblocked, pushed): back to normal NOW,
+		# not at the end of a 60 s window.
+		_npc_progress_timer = 0.0
+		_npc_progress_ref = player.global_position
+		_npc_recover_step = 0
+		return
+	if _npc_progress_timer < _npc_stuck_window():
 		return
 	var _moved: float = player.global_position.distance_to(_npc_progress_ref)
 	_npc_progress_timer = 0.0
@@ -2085,7 +2112,8 @@ func _npc_snap_onto_mesh() -> void:
 	# against geometry its path wrongly crosses, and the nearest mesh is THROUGH that geometry.
 	if _gap > 0.3 and _gap <= _NPC_STUCK_SNAP_MAX:
 		player.global_position = _nearest + player.up_direction * 0.05
-	elif _gap > _NPC_STUCK_SNAP_MAX:
+	elif _gap > _NPC_STUCK_SNAP_MAX and not _npc_wedge_warned:
+		_npc_wedge_warned = true
 		push_warning("NPC %s wedged %.1f m off the navmesh; refusing to snap (it would tunnel through geometry)"
 				% [player.name, _gap])
 
