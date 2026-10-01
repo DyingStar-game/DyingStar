@@ -7,6 +7,5 @@ script = ExtResource("1_rcam")
 max_distance = 5.0
 
 [node name="SubViewport" type="SubViewport" parent="." unique_id=1503875210]
-render_target_update_mode = 4
 
 [node name="Camera3D" type="Camera3D" parent="SubViewport" unique_id=1480709256]
