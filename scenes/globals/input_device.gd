@@ -26,6 +26,8 @@ const KEYS : Dictionary = {Kind.KEYBOARD_MOUSE: "km", Kind.GAMEPAD: "pad"}
 ## After a pad's button, how long the mouse's moves are not the player's: Start opens the pause menu,
 ## the mouse is let go, and the cursor it puts back moves — that took the menu off the pad at once.
 const PAD_GRACE_MS : int = 400
+## How far back poll_pads compares the axes: a push spread over this long still wakes the pad.
+const AXIS_WINDOW_MS : int = 250
 
 static var last : Kind = Kind.KEYBOARD_MOUSE
 ## The last input came from the mouse, not from a key or the pad: a menu then shows no focus frame.
@@ -33,6 +35,9 @@ static var pointer : bool = true
 static var family : Family = Family.XBOX
 ## Each pad's buttons and axes as last seen by poll_pads, by device: what CHANGED is what counts.
 static var _seen : Dictionary = {}
+## When each pad's axes in _seen were taken (Time.get_ticks_msec): kept AXIS_WINDOW_MS, so a stick
+## pushed slowly still moves far enough against them.
+static var _seen_at : Dictionary = {}
 ## The mouse cursor is hidden by fit_cursor (and is to come back with the mouse), not by the game.
 static var _hid_cursor : bool = false
 ## When the pad was last used (Time.get_ticks_msec), for PAD_GRACE_MS.
@@ -92,6 +97,9 @@ static func cursor_mode(mode: Input.MouseMode, on_pad: bool, hid: bool) -> Input
 ## going down, or a stick or trigger moving well across, is a player.
 static func poll_pads() -> void:
 	var used : int = -1
+	var clock : int = Time.get_ticks_msec()
+	var seen : Dictionary = {}  # rebuilt: a pad unplugged leaves nothing behind for one plugged later
+	var seen_at : Dictionary = {}
 	for device: int in Input.get_connected_joypads():
 		var now : PackedFloat32Array = PackedFloat32Array()
 		for button: int in range(JOY_BUTTON_SDL_MAX):
@@ -99,11 +107,25 @@ static func poll_pads() -> void:
 		for axis: int in range(JOY_AXIS_SDL_MAX):
 			now.append(Input.get_joy_axis(device, axis as JoyAxis))
 		var before : PackedFloat32Array = _seen.get(device, now)
-		_seen[device] = now
+		var taken : int = _seen_at.get(device, clock)
 		if used < 0 and moved(before, now):
 			used = device
+		# The buttons are compared frame to frame (a press is a press); the axes against a moment ago.
+		var keep : bool = clock - taken < AXIS_WINDOW_MS and used != device
+		seen[device] = _merge(now, before) if keep else now
+		seen_at[device] = taken if keep else clock
+	_seen = seen
+	_seen_at = seen_at
 	if used >= 0:
 		_use_pad(used)
+
+
+## [param now]'s buttons with [param before]'s axes.
+static func _merge(now: PackedFloat32Array, before: PackedFloat32Array) -> PackedFloat32Array:
+	var out : PackedFloat32Array = now.duplicate()
+	for i: int in range(JOY_BUTTON_SDL_MAX, mini(out.size(), before.size())):
+		out[i] = before[i]
+	return out
 
 
 ## Has a pad gone from [param before] to [param now] (buttons, then axes, as poll_pads lists them) by a
@@ -173,25 +195,45 @@ static func kind_of(event: InputEvent) -> int:
 	return -1
 
 
-## The bindings of [param action] on [param kind], in the order the InputMap holds them.
 ## Is [param action] held on the pad in the player's hands (see [member pad]) — on it alone.
 ##
 ## Input.is_action_pressed takes every device together, and a device that rests with an axis pushed
 ## (a virtual pad holding its triggers at full) holds an action on the triggers for good: the real
 ## pad's pull is then never a NEW press, and the triggers stepped nothing in the menus.
 static func pad_held(action: StringName) -> bool:
+	return pad_strength(action) > 0.0
+
+
+## How hard [param action] is held on the pad in hand, 0 to 1 (0 within its deadzone): see pad_held.
+static func pad_strength(action: StringName) -> float:
 	if pad < 0 or not InputMap.has_action(action):
-		return false
+		return 0.0
 	var deadzone : float = InputMap.action_get_deadzone(action)
+	var best : float = 0.0
 	for event: InputEvent in bindings(action, Kind.GAMEPAD):
 		if event is InputEventJoypadButton:
 			if Input.is_joy_button_pressed(pad, (event as InputEventJoypadButton).button_index):
-				return true
+				return 1.0
 		else:
 			var motion := event as InputEventJoypadMotion
-			if pushed(motion, Input.get_joy_axis(pad, motion.axis), deadzone):
-				return true
-	return false
+			var value : float = Input.get_joy_axis(pad, motion.axis)
+			if pushed(motion, value, deadzone):
+				best = maxf(best, absf(value))
+	return best
+
+
+## Input.get_vector, on the pad in hand only (see pad_held): a stick pushed, length 0 to 1.
+static func pad_vector(negative_x: StringName, positive_x: StringName, negative_y: StringName,
+		positive_y: StringName) -> Vector2:
+	return Vector2(pad_strength(positive_x) - pad_strength(negative_x),
+			pad_strength(positive_y) - pad_strength(negative_y)).limit_length(1.0)
+
+
+## A stick's two axes on the pad in hand, raw (ZERO with no pad in hand).
+static func pad_stick(axis_x: JoyAxis, axis_y: JoyAxis) -> Vector2:
+	if pad < 0:
+		return Vector2.ZERO
+	return Vector2(Input.get_joy_axis(pad, axis_x), Input.get_joy_axis(pad, axis_y))
 
 
 ## An axis at [param value] pushes the way [param motion] is bound, past [param deadzone].
@@ -199,6 +241,7 @@ static func pushed(motion: InputEventJoypadMotion, value: float, deadzone: float
 	return value * signf(motion.axis_value) >= deadzone
 
 
+## The bindings of [param action] on [param kind], in the order the InputMap holds them.
 static func bindings(action: StringName, kind: Kind) -> Array[InputEvent]:
 	var out : Array[InputEvent] = []
 	if not InputMap.has_action(action):
@@ -217,4 +260,8 @@ static func rebind(action: StringName, event: InputEvent) -> void:
 		return
 	for old: InputEvent in bindings(action, kind):
 		InputMap.action_erase_event(action, old)
+	# Any pad, as the defaults are: made with device 0, the binding answered the first pad alone, and
+	# the player's can come after a virtual one or a flight stick.
+	if kind == Kind.GAMEPAD:
+		event.device = -1
 	InputMap.action_add_event(action, event)

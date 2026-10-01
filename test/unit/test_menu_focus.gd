@@ -3,6 +3,8 @@ extends GutTest
 ## lands on the first item, then the focus moves item to item; up from the page reaches the bar above
 ## it and down from the bar the page again; B goes back.
 
+const PAGE : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
+
 
 func after_each() -> void:
 	InputDevice.last = InputDevice.Kind.KEYBOARD_MOUSE
@@ -57,11 +59,23 @@ func test_down_from_the_bar_hands_over_to_the_page() -> void:
 	var bar := TopBar.new()
 	bar.add_entry(&"one", "one")
 	add_child_autofree(bar)
+	var page : SettingsPage = PAGE.instantiate()
+	add_child_autofree(page)
+	bar.attach_page(page)
+	assert_false(bar.leads_focus, "the page leads now")
 	bar.tabs.button(&"one").grab_focus()
-	watch_signals(bar)
 	bar._input(_action(&"ui_down"))
-	assert_signal_emitted(bar, "left_bottom")
 	assert_null(get_viewport().gui_get_focus_owner(), "the bar lets go")
+	assert_not_null(page.settings_container.gui_get_focus_owner(), "the page's first line has it")
+
+
+func test_down_from_the_bar_with_no_page_keeps_the_focus() -> void:
+	var bar := TopBar.new()
+	bar.add_entry(&"one", "one")
+	add_child_autofree(bar)
+	bar.tabs.button(&"one").grab_focus()
+	bar._input(_action(&"ui_down"))
+	assert_eq(get_viewport().gui_get_focus_owner(), bar.tabs.button(&"one"), "nowhere to go: it stays")
 
 
 func test_a_bar_under_an_open_page_does_not_take_the_first_press() -> void:
@@ -74,7 +88,7 @@ func test_a_bar_under_an_open_page_does_not_take_the_first_press() -> void:
 
 
 func test_up_from_the_pages_first_line_reaches_the_bar() -> void:
-	var page : CanvasLayer = (load("res://ui/settings_page/settings_page.tscn") as PackedScene).instantiate()
+	var page : CanvasLayer = PAGE.instantiate()
 	add_child_autofree(page)
 	assert_true(page.focus_first(), "the page has a first line")
 	watch_signals(page)

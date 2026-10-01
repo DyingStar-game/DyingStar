@@ -9,9 +9,7 @@ extends CanvasLayer
 
 signal entry_pressed(key: StringName)
 signal back_pressed
-## Down from an entry: the page under the bar should take the focus (its host knows which).
-signal left_bottom
-## The bar took the focus (the triggers): the page under it should let go of its own.
+## The bar took the focus with the triggers, from the page under it (which has let go of its own).
 signal took_focus
 
 ## Above the settings page (5) and the in-game panels (4).
@@ -27,8 +25,11 @@ var tabs : TabStrip
 var _back : TabStrip
 var _area : Control
 ## The bar is what the gamepad or the arrows reach first: true on the home screen, false while a page
-## under it (the settings) has the items to move through.
+## under it (the settings) has the items to move through — see attach_page.
 var leads_focus : bool = true
+## The page under the bar (a SettingsPage), or null: down from the bar goes into it, up from its top
+## comes back, and the triggers take the focus out of it.
+var _page : SettingsPage = null
 
 
 func _init() -> void:
@@ -86,7 +87,7 @@ func _init() -> void:
 	_back.allow_focus()
 	# LT / RT walk along the entries, from anywhere on the screen; A presses the one reached.
 	tabs.pad_navigation(&"ui_subpage_previous", &"ui_subpage_next", true)
-	tabs.focus_stepped.connect(took_focus.emit)
+	tabs.focus_stepped.connect(_on_stepped)
 	row.add_child(tabs)
 	var sounds : Node = _SOUNDS.instantiate()
 	sounds.root_path = NodePath("../Area/Row/Tabs")
@@ -102,16 +103,35 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if MenuFocus.modal:
 		return
-	var owner : Control = get_viewport().gui_get_focus_owner()
-	if owner != null:
-		# Down from the bar: into the page under it, when there is one.
-		if (tabs.is_ancestor_of(owner) or _back.is_ancestor_of(owner)) and event.is_action_pressed("ui_down"):
-			owner.release_focus()
-			left_bottom.emit()
+	var focused : Control = get_viewport().gui_get_focus_owner()
+	if focused != null:
+		# Down from the bar: into the page under it, when there is one and it has a line to take it —
+		# else the focus stays on the bar rather than going nowhere.
+		if event.is_action_pressed("ui_down") and (tabs.is_ancestor_of(focused) or _back.is_ancestor_of(focused)) \
+				and is_instance_valid(_page) and _page.focus_first():
 			get_viewport().set_input_as_handled()
 		return
 	if leads_focus and MenuFocus.wants_focus(event) and MenuFocus.take(tabs):
 		get_viewport().set_input_as_handled()
+
+
+## [param page] opens under the bar, until it leaves the tree: it has the items the pad moves through
+## first, down from the bar goes into it and up from its first line comes back.
+func attach_page(page: SettingsPage) -> void:
+	_page = page
+	leads_focus = false
+	page.left_top.connect(focus_entry)
+	page.tree_exited.connect(func() -> void:
+		if _page == page:
+			_page = null
+			leads_focus = true)
+
+
+## The triggers put the focus on an entry: the page under the bar lets go of its own.
+func _on_stepped() -> void:
+	if is_instance_valid(_page):
+		_page.release_focus()
+	took_focus.emit()
 
 
 ## The focus on the bar: on its active entry, or its first. Up from the top of the page under it.

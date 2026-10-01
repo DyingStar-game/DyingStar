@@ -76,6 +76,9 @@ func feed(event: InputEvent) -> Verdict:
 
 
 func _feed_pad(event: InputEvent) -> Verdict:
+	# The pad in hand only: another device (a virtual pad, a flight stick) may hold a button or an axis.
+	if InputDevice.pad >= 0 and event.device != InputDevice.pad:
+		return Verdict.WAIT
 	var button := event as InputEventJoypadButton
 	if button != null:
 		if not button.pressed:

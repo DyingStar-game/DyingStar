@@ -44,12 +44,17 @@ static func encode(event: InputEvent) -> String:
 
 static func decode(text: String) -> InputEvent:
 	if text.begins_with(JOY_BUTTON_PREFIX):
+		var index_text: String = text.substr(JOY_BUTTON_PREFIX.length())
+		if not index_text.is_valid_int():
+			return null  # a damaged line is no binding, not button A
 		var button := InputEventJoypadButton.new()
-		button.button_index = int(text.substr(JOY_BUTTON_PREFIX.length())) as JoyButton
+		button.button_index = int(index_text) as JoyButton
 		return button
 	if text.begins_with(JOY_AXIS_PREFIX):
-		var motion := InputEventJoypadMotion.new()
 		var axis_text: String = text.substr(JOY_AXIS_PREFIX.length())
+		if not axis_text.get_slice("_", 0).is_valid_int():
+			return null
+		var motion := InputEventJoypadMotion.new()
 		motion.axis = int(axis_text.get_slice("_", 0)) as JoyAxis
 		motion.axis_value = -1.0 if axis_text.ends_with("_-") else 1.0
 		return motion

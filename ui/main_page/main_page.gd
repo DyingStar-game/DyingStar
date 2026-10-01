@@ -47,9 +47,6 @@ func _ready() -> void:
 	bar.took_focus.connect(func() -> void:
 		if is_instance_valid(_settings_overlay):
 			_close_settings())
-	bar.left_bottom.connect(func() -> void:
-		if is_instance_valid(_settings_overlay):
-			_settings_overlay.focus_first())
 	add_child(bar)
 	# A gamepad plugged in: say it can drive the menus — at once, and when one is plugged in later.
 	_offer_pad.call_deferred()
@@ -59,7 +56,7 @@ func _ready() -> void:
 	is_ready = true
 
 
-## The "Gamepad detected" window, when a pad is there and the player has not turned it off.
+## The "Gamepad detected" window, when a pad is there and it has not come up yet this launch.
 func _offer_pad() -> void:
 	if not is_inside_tree() or not PadPopup.wanted() or get_node_or_null("PadPopup") != null:
 		return
@@ -104,12 +101,11 @@ func _on_settings_pressed() -> void:
 	# Connected before it enters the tree: its _ready opens the first category, which must be heard.
 	_settings_overlay.category_changed.connect(_on_category_changed)
 	_settings_overlay.tree_exited.connect(_on_settings_closed)
-	_settings_overlay.left_top.connect(bar.focus_entry)
 	add_child(_settings_overlay)
+	# The page's lines are what the pad or the arrows move through now, not the bar's entries.
+	bar.attach_page(_settings_overlay)
 	# Over a stage the settings are see-through: the menu's own buttons would show under them.
 	$Control.visible = not _stage_mode
-	# The page's lines are what the pad or the arrows move through now, not the bar's entries.
-	bar.leads_focus = false
 	bar.set_active(SETTINGS)
 	bar.set_back_visible(true)
 
@@ -117,7 +113,6 @@ func _on_settings_pressed() -> void:
 func _on_settings_closed() -> void:
 	_settings_overlay = null
 	$Control.visible = true
-	bar.leads_focus = true
 	# Back on the bar, where you came from: on the pad, the Settings entry has the focus again — unless
 	# the triggers closed them, and already put the focus on the entry they stepped to.
 	var focused : Control = get_viewport().gui_get_focus_owner()

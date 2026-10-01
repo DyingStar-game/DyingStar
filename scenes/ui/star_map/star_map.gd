@@ -1108,7 +1108,7 @@ func _process(delta: float) -> void:
 		if Input.is_action_pressed("star_map_zoom_out"):
 			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, delta))
 		# The right stick turns the view as a drag does, the triggers zoom (the zoom actions).
-		var stick: Vector2 = Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+		var stick: Vector2 = InputDevice.pad_vector(&"look_left", &"look_right", &"look_up", &"look_down")
 		if stick != Vector2.ZERO:
 			_turn_view(stick * stick.length() * STICK_ORBIT_PX_PER_S * delta)
 	_cam.advance(delta)
@@ -2235,8 +2235,6 @@ func _add_halo(mesh: ImmediateMesh, index: int, colour: Color) -> bool:
 	return true
 
 
-## The side panel: what the scene knows about the followed body. Deliberately the same numbers the
-## chart is drawing from, so the panel can never disagree with what you see.
 ## Where on the ground the cursor is: longitude, latitude and height, beside it.
 ##
 ## Once a frame rather than on each mouse move: the body turns and the camera travels under a cursor
@@ -2248,7 +2246,9 @@ func _refresh_cursor_readout() -> void:
 		return
 	var body: int = _blocker
 	var on_a_name: bool = _poi_hover >= 0 or _poi_cluster_hover >= 0 or (_hover >= 0 and _hover == _player_index)
-	if body < 0 or body >= _bodies.size() or _dragging or on_a_name:
+	# On the gamepad the cursor is put away (InputDevice.fit_cursor): nothing points at the ground.
+	var on_pad: bool = InputDevice.last == InputDevice.Kind.GAMEPAD
+	if body < 0 or body >= _bodies.size() or _dragging or on_a_name or on_pad:
 		_cursor_readout.hide_readout()
 		return
 	var sphere: MeshInstance3D = _bodies[body]["sphere"]
@@ -2285,6 +2285,8 @@ static func cursor_text(body_key: String, local: Vector3, metres_per_pixel: floa
 			Globals.format_thousands(StarMapRelief.ground_altitude_m(body_key, local))]
 
 
+## The side panel: what the scene knows about the followed body. Deliberately the same numbers the
+## chart is drawing from, so the panel can never disagree with what you see.
 func _refresh_info() -> void:
 	# A selected town wins: it is the more precise answer to "what am I looking at", and the body it
 	# stands on is named in its own panel anyway.

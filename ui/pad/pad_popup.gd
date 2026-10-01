@@ -114,6 +114,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func close() -> void:
-	MenuFocus.modal = false
+	MenuFocus.modal = false  # at once: the bar takes the focus on closed, before the window is gone
 	closed.emit()
 	queue_free()
+
+
+## Freed without OK too (with the screen under it): the menus are not left waiting on a window gone.
+func _exit_tree() -> void:
+	MenuFocus.modal = false
