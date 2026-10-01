@@ -646,6 +646,11 @@ func _perf_tick(delta: float) -> void:
 			_cv[0], _cv[1], _cv[2], _cv[3], _cv[4], _cv[5], _cv[6],
 			PropNet.prof_npc_path_usec / 1000.0 / _fr, PropNet.prof_npc_widen_usec / 1000.0 / _fr,
 			PropNet.prof_npc_detour_usec / 1000.0 / _fr])
+		var _st: Array = PropNet.prof_npc_state
+		var _slides: int = _st[1] + _st[3] + _st[4]
+		print("[Perf/npc] ticks per window: idle asleep=%d slid=%d | waiting asleep=%d slid=%d | walking=%d | move_and_slide %.0fus each" % [
+			_st[0], _st[1], _st[2], _st[3], _st[4],
+			(PropNet.prof_npc_move_usec / float(_slides)) if _slides > 0 else 0.0])
 		# The two candidate causes of the collision-query cost, side by side. `slides` above ~1 means
 		# move_and_slide keeps re-casting against an unstable contact; chunk load/unload counts show
 		# whether terrain colliders are being rebuilt under the walking player. Plus the gravity Area3D
