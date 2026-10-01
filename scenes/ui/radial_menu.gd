@@ -17,6 +17,8 @@ extends Control
 #   wheel.confirm()
 # Move the mouse toward a slice to highlight it; push further out over a category to reach its
 # children. confirm() emits option_selected(data) for the highlighted leaf (or cancelled otherwise).
+# On the gamepad a stick does the same: pushed part way it picks a slice, pushed all the way out over
+# a category it reaches the children; let go, the last pick holds until the wheel is released.
 
 signal option_selected(data)
 signal cancelled
@@ -32,6 +34,12 @@ signal cancelled
 var _options: Array = []
 var _selected: int = -1      # hovered top-level slice (-1 = none)
 var _sub_selected: int = -1  # hovered submenu child of _selected (-1 = none)
+## A stick has steered this opening: the mouse no longer does (see _process).
+var _steered: bool = false
+
+## How far a stick must go to steer, and from how far it reaches past the ring into a submenu.
+const STICK_STEER: float = 0.35
+const STICK_OUTER: float = 0.85
 
 func _ready() -> void:
 	# Independent of the parent's transform so the wheel always sits in viewport space.
@@ -47,6 +55,7 @@ func open(options: Array) -> void:
 	_options = options
 	_selected = -1
 	_sub_selected = -1
+	_steered = false
 	visible = true
 	set_process(true)
 	queue_redraw()
@@ -91,6 +100,12 @@ func _submenu_child_angle(top_i: int, j: int, m: int) -> float:
 func _process(_delta: float) -> void:
 	var center := get_viewport_rect().size / 2.0
 	var v := get_local_mouse_position() - center
+	var stick: Vector2 = _stick()
+	if stick.length() >= STICK_STEER:
+		_steered = true
+		v = stick_pointer(stick, inner_radius, radius, submenu_radius_gap)
+	elif _steered:
+		return  # the stick let go: its last pick holds until the wheel is released
 	var dist := v.length()
 	if _options.is_empty() or dist < inner_radius:
 		_selected = -1
@@ -106,6 +121,28 @@ func _process(_delta: float) -> void:
 		var sub: Array = [] if _selected < 0 else _options[_selected].get("submenu", [])
 		_sub_selected = _nearest_child(v, sub)
 	queue_redraw()
+
+## The stronger of the two sticks, when the player is on the gamepad; ZERO otherwise. Read off the
+## pads themselves: the move and look actions are also keys, and the keyboard does not steer a wheel.
+func _stick() -> Vector2:
+	if InputDevice.last != InputDevice.Kind.GAMEPAD:
+		return Vector2.ZERO
+	var best := Vector2.ZERO
+	for device: int in Input.get_connected_joypads():
+		for axes: Array in [[JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y], [JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y]]:
+			var push := Vector2(Input.get_joy_axis(device, axes[0]), Input.get_joy_axis(device, axes[1]))
+			if push.length() > best.length():
+				best = push
+	return best
+
+
+## Where a stick pushed by [param stick] points on the wheel, as the mouse would: part way, in the ring
+## between [param inner] and [param ring]; all the way (past STICK_OUTER), out where a submenu's
+## children stand ([param ring] + [param gap] / 2).
+static func stick_pointer(stick: Vector2, inner: float, ring: float, gap: float) -> Vector2:
+	var reach: float = (ring + gap * 0.5) if stick.length() >= STICK_OUTER else (inner + ring) * 0.5
+	return stick.normalized() * reach
+
 
 ## Index of the submenu child of `_selected` nearest the mouse vector `v` (by angle), or -1.
 func _nearest_child(v: Vector2, sub: Array) -> int:
