@@ -17,6 +17,15 @@ var player: Node3D = null
 ## The sun whose star direction we reuse (set by PlayerClient; never recomputed here).
 var sun: PlayerSunLight = null
 
+## Size of the transmittance table, texels: the mu axis (star height) gets the resolution, the
+## altitude axis much less. Must match TRANSMITTANCE_LUT_SIZE in atmosphere_common.gdshaderinc.
+const TRANSMITTANCE_LUT_SIZE := Vector2(256.0, 64.0)
+## The pushed constants the table depends on. Everything else (the star, the camera, the exposure)
+## changes every frame and never requires a refill.
+const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_beta", "rayleigh_scale_height",
+	"mie_beta", "haze_top", "haze_bottom", "haze_falloff", "mie_scale_height", "absorption_beta",
+	"absorption_center", "absorption_width"]
+
 ## Trades quality for cost on the main view. Set from Graphics > Atmosphere quality (see
 ## _apply_quality); `debug_atmo_view_steps` / `debug_atmo_light_steps` in client.ini still win.
 @export var view_steps: int = 32
@@ -82,6 +91,14 @@ var sun: PlayerSunLight = null
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
+## The transmittance table (see atmosphere_common.gdshaderinc): a small half-float render target,
+## filled once per atmosphere, read by both shaders. Off with client.ini `debug_atmo_no_lut`.
+var _lut_viewport: SubViewport = null
+var _lut_material: ShaderMaterial = null
+var _use_lut: bool = true
+## What the table was last filled for: refilled when any constant it depends on changes (another
+## body, the debug haze lift), never otherwise — the star's direction is NOT one of them.
+var _lut_key: String = ""
 ## Which contributor the development switches currently remove. See cycle_light_isolation().
 var _isolation: int = 0
 
@@ -109,6 +126,12 @@ func _ready() -> void:
 		_build_plain_environment()
 		return
 	_build_environment()
+	_use_lut = not ClientConfig.get_bool("debug_atmo_no_lut", false)
+	if _use_lut:
+		_build_transmittance_lut()
+	else:
+		print("[Atmosphere] !! debug_atmo_no_lut=true — the light's path integrated per sample, as before"
+			+ " the transmittance table. Slower; the reference to compare the table against.")
 	if ClientConfig.get_bool("debug_no_aerial", false):
 		print("[Atmosphere] !! debug_no_aerial=true — sky dome kept, aerial perspective pass removed.")
 		return
@@ -151,6 +174,84 @@ func _build_environment() -> void:
 	# what the "visibility at ground level" figure of the model would be measured against.
 	env.volumetric_fog_enabled = false
 	_attach(env)
+
+
+## The transmittance table's render target. Half float: a transmittance through the dust storm at the
+## horizon is ~1e-12, which 8 bits would round to black long before the physics does. Nothing draws it
+## to the screen; the two shaders sample its texture.
+func _build_transmittance_lut() -> void:
+	_lut_viewport = SubViewport.new()
+	_lut_viewport.name = "TransmittanceLut"
+	_lut_viewport.size = Vector2i(TRANSMITTANCE_LUT_SIZE)
+	_lut_viewport.use_hdr_2d = true
+	_lut_viewport.disable_3d = true
+	_lut_viewport.transparent_bg = false
+	_lut_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_lut_material = ShaderMaterial.new()
+	_lut_material.shader = load("res://scenes/_universe/environment/atmosphere_transmittance_lut.gdshader")
+	var fill := ColorRect.new()
+	fill.size = TRANSMITTANCE_LUT_SIZE
+	fill.material = _lut_material
+	_lut_viewport.add_child(fill)
+	add_child(_lut_viewport)
+	_sky_material.set_shader_parameter("transmittance_lut", _lut_viewport.get_texture())
+
+
+## Refill the table when the air it describes changed. [param values] are the constants pushed to the
+## view shaders this frame; only the ones the table depends on are compared.
+func _refresh_transmittance_lut(values: Dictionary, profile: AtmosphereProfile) -> void:
+	if _lut_viewport == null:
+		return
+	var lut_values := {}
+	for key in LUT_KEYS:
+		lut_values[key] = values[key]
+	var key := var_to_str(lut_values)
+	if key == _lut_key:
+		return
+	_lut_key = key
+	for param in lut_values:
+		_lut_material.set_shader_parameter(param, lut_values[param])
+	_lut_material.set_shader_parameter("planet_center", Vector3.ZERO)
+	_lut_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	if not debug_pretend_lowlands:
+		_check_transmittance_lut.call_deferred(profile)
+
+
+## Compare a few texels of the freshly filled table with AtmosphereProfile.transmittance_to_star, the
+## CPU twin of the same integral, and say in the log how far apart they are. A table that disagrees with
+## the physics would tint every sunset without a single error anywhere; this is what would show it.
+func _check_transmittance_lut(profile: AtmosphereProfile) -> void:
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	if _lut_viewport == null or not is_instance_valid(profile):
+		return
+	var image := _lut_viewport.get_texture().get_image()
+	if image == null:
+		return
+	var worst := 0.0
+	for uv in [Vector2(0.9, 0.05), Vector2(0.5, 0.05), Vector2(0.2, 0.3), Vector2(0.05, 0.5), Vector2(0.6, 0.9)]:
+		var r_mu := _lut_r_mu(uv, profile)
+		var expected := profile.transmittance_to_star(r_mu.x - profile.planet_radius, r_mu.y)
+		var got := image.get_pixelv(Vector2i(uv * TRANSMITTANCE_LUT_SIZE))
+		worst = maxf(worst, maxf(absf(got.r - expected.r), maxf(absf(got.g - expected.g), absf(got.b - expected.b))))
+	print("[Atmosphere] transmittance table filled for %s: worst gap to the CPU integral %.4f" % [
+		current_body().name if current_body() != null else "?", worst])
+
+
+## GDScript twin of transmittance_lut_r_mu() in atmosphere_common.gdshaderinc, for the check above only.
+static func _lut_r_mu(uv: Vector2, profile: AtmosphereProfile) -> Vector2:
+	var size := TRANSMITTANCE_LUT_SIZE
+	var x_mu := ((floorf(uv.x * size.x) + 0.5) / size.x - 0.5 / size.x) / (1.0 - 1.0 / size.x)
+	var x_r := ((floorf(uv.y * size.y) + 0.5) / size.y - 0.5 / size.y) / (1.0 - 1.0 / size.y)
+	var radius := profile.planet_radius
+	var top := radius + profile.atmosphere_top
+	var h := sqrt(maxf(top * top - radius * radius, 0.0))
+	var rho := h * x_r
+	var r := sqrt(rho * rho + radius * radius)
+	var d_min := top - r
+	var d := d_min + x_mu * (rho + h - d_min)
+	var mu := 1.0 if d == 0.0 else (h * h - rho * rho - d * d) / (2.0 * r * d)
+	return Vector2(r, clampf(mu, -1.0, 1.0))
 
 
 ## Hand the new Environment to the world, with the player's effect options (SSAO, SSR, SSIL, glow)
@@ -212,6 +313,8 @@ func _build_aerial_quad() -> void:
 	# and the fix then is two passes, blend_mul for the transmittance and blend_add for the
 	# in-scattering, which composites without reading the screen at all.
 	_aerial_material.render_priority = -100
+	if _lut_viewport != null:
+		_aerial_material.set_shader_parameter("transmittance_lut", _lut_viewport.get_texture())
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	_aerial_quad = MeshInstance3D.new()
@@ -356,7 +459,9 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"view_steps": view_steps,
 		"light_steps": light_steps,
 		"sky_exposure": _sky_exposure(profile),
+		"use_transmittance_lut": _use_lut,
 	}
+	_refresh_transmittance_lut(values, profile)
 	_apply(values)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
 	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)

@@ -49,6 +49,18 @@ uniform vec3 star_color = vec3(1.0);
 uniform int view_steps = 32;
 uniform int light_steps = 8;
 
+// The light's way IN, precomputed (Bruneton 2017, Hillaire 2020): what fraction of the starlight
+// survives from the top of the air down to a point depends on two numbers only, the point's distance
+// from the centre and the star's height seen from there — the air is spherically symmetric. So it is
+// integrated ONCE per atmosphere into a small table (atmosphere_transmittance_lut.gdshader, rendered
+// by AtmosphereRenderer) and read back by every view sample, instead of a light_steps loop per view
+// sample: 48 x 12 = 624 extinction evaluations per pixel at Ultra became 48. Measured on an RTX 3090
+// at 3440x1400, that inner loop was half of the whole frame.
+// Off (client.ini debug_atmo_no_lut) = the loop, kept as the reference to compare against.
+uniform sampler2D transmittance_lut : filter_linear, repeat_disable;
+uniform bool use_transmittance_lut = false;
+const vec2 TRANSMITTANCE_LUT_SIZE = vec2(256.0, 64.0);
+
 // Physical radiance is in W/m2/sr and the engine's lights are in arbitrary units, so the two need a
 // bridge. This is the ONLY non-physical number in the model: it scales, it never tints.
 uniform float sky_exposure = 1.0;
@@ -135,6 +147,52 @@ float mie_phase(float cos_theta, float g) {
 	float g2 = g * g;
 	float d = 1.0 + g2 - 2.0 * g * cos_theta;
 	return 0.0795775 * (1.0 - g2) / (d * sqrt(d) * (2.0 + g2));
+}
+
+
+// Texel centres span [0.5/size, 1 - 0.5/size]: without this the ends of the range are read half from
+// the clamped border and the horizon and the zenith come out slightly wrong.
+float lut_coord(float x, float size) {
+	return 0.5 / size + x * (1.0 - 1.0 / size);
+}
+
+
+float lut_unit(float u, float size) {
+	return (u - 0.5 / size) / (1.0 - 1.0 / size);
+}
+
+
+// Bruneton's mapping of (r = distance from the centre, mu = cosine of the star's zenith angle) onto the
+// table. It spends the texels where the transmittance changes fast — near the ground, near the horizon
+// — and covers only rays that reach the top of the air: a ray into the ground is tested apart, sharp,
+// so the terminator is never blurred by the table's filtering.
+vec2 transmittance_lut_uv(float r, float mu) {
+	float top = planet_radius + atmosphere_top;
+	float h = sqrt(max(top * top - planet_radius * planet_radius, 0.0));
+	float rho = sqrt(max(r * r - planet_radius * planet_radius, 0.0));
+	float discriminant = r * r * (mu * mu - 1.0) + top * top;
+	float d = max(-r * mu + sqrt(max(discriminant, 0.0)), 0.0);
+	float d_min = top - r;
+	float d_max = rho + h;
+	float x_mu = (d - d_min) / max(d_max - d_min, 1.0e-3);
+	float x_r = rho / max(h, 1.0e-3);
+	return vec2(lut_coord(x_mu, TRANSMITTANCE_LUT_SIZE.x), lut_coord(x_r, TRANSMITTANCE_LUT_SIZE.y));
+}
+
+
+// The inverse, for the shader that fills the table: which (r, mu) a texel stands for.
+vec2 transmittance_lut_r_mu(vec2 uv) {
+	float x_mu = lut_unit(uv.x, TRANSMITTANCE_LUT_SIZE.x);
+	float x_r = lut_unit(uv.y, TRANSMITTANCE_LUT_SIZE.y);
+	float top = planet_radius + atmosphere_top;
+	float h = sqrt(max(top * top - planet_radius * planet_radius, 0.0));
+	float rho = h * x_r;
+	float r = sqrt(rho * rho + planet_radius * planet_radius);
+	float d_min = top - r;
+	float d_max = rho + h;
+	float d = d_min + x_mu * (d_max - d_min);
+	float mu = d == 0.0 ? 1.0 : (h * h - rho * rho - d * d) / (2.0 * r * d);
+	return vec2(r, clamp(mu, -1.0, 1.0));
 }
 
 
@@ -227,10 +285,18 @@ vec3 scatter(
 		if (ray_sphere(p, to_star, planet_radius).x > 0.0) {
 			continue;
 		}
-		float to_top = ray_sphere(p, to_star, planet_radius + atmosphere_top).y;
-		vec3 depth_light = optical_depth(p, to_star, to_top, steps_light);
-
-		vec3 transmittance = exp(-(depth_view + depth_light));
+		vec3 transmittance;
+		if (use_transmittance_lut) {
+			// Below the reference sphere (a valley) the air is as dense as at its floor: read the floor.
+			vec3 from_centre = p - planet_center;
+			float r = clamp(length(from_centre), planet_radius, planet_radius + atmosphere_top);
+			float mu = dot(from_centre, to_star) / max(length(from_centre), 1.0);
+			transmittance = exp(-depth_view) * texture(transmittance_lut, transmittance_lut_uv(r, mu)).rgb;
+		} else {
+			float to_top = ray_sphere(p, to_star, planet_radius + atmosphere_top).y;
+			vec3 depth_light = optical_depth(p, to_star, to_top, steps_light);
+			transmittance = exp(-(depth_view + depth_light));
+		}
 		sum_rayleigh += density_r * transmittance * step_width;
 		sum_mie += density_m * transmittance * step_width;
 	}
