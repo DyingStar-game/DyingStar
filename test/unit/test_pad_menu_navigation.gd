@@ -117,3 +117,16 @@ func test_left_and_right_open_the_tab_beside_with_arrows_select() -> void:
 	assert_eq(strip.active(), &"b", "right opens the next tab")
 	assert_true(strip.button(&"b").has_focus(), "and the focus goes with it")
 	assert_eq(strip.button(&"a").focus_mode, Control.FOCUS_NONE)
+
+
+
+func test_a_trigger_is_read_on_the_pad_in_hand_only() -> void:
+	InputDevice.pad = -1
+	assert_false(InputDevice.pad_held(&"ui_subpage_next"), "no pad in hand: nothing held, whatever else is plugged")
+	var rt := InputEventJoypadMotion.new()
+	rt.axis = JOY_AXIS_TRIGGER_RIGHT
+	rt.axis_value = 1.0
+	assert_true(InputDevice.pushed(rt, 0.8, 0.5), "pulled past the deadzone")
+	assert_false(InputDevice.pushed(rt, 0.3, 0.5), "not far enough")
+	rt.axis_value = -1.0
+	assert_false(InputDevice.pushed(rt, 0.8, 0.5), "the other way")

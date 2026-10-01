@@ -37,6 +37,8 @@ static var _seen : Dictionary = {}
 static var _hid_cursor : bool = false
 ## When the pad was last used (Time.get_ticks_msec), for PAD_GRACE_MS.
 static var _pad_at : int = -PAD_GRACE_MS
+## The pad the player last used, or -1.
+static var pad : int = -1
 
 
 static func feed(event: InputEvent) -> void:
@@ -133,6 +135,7 @@ static func _use_pad(device: int) -> void:
 	last = Kind.GAMEPAD
 	pointer = false
 	_pad_at = Time.get_ticks_msec()
+	pad = device
 	# Asked of a pad that is there: an event from one just unplugged (or made up by a test) has no
 	# name to read, and would turn every button into a number.
 	if Input.get_connected_joypads().has(device):
@@ -171,6 +174,31 @@ static func kind_of(event: InputEvent) -> int:
 
 
 ## The bindings of [param action] on [param kind], in the order the InputMap holds them.
+## Is [param action] held on the pad in the player's hands (see [member pad]) — on it alone.
+##
+## Input.is_action_pressed takes every device together, and a device that rests with an axis pushed
+## (a virtual pad holding its triggers at full) holds an action on the triggers for good: the real
+## pad's pull is then never a NEW press, and the triggers stepped nothing in the menus.
+static func pad_held(action: StringName) -> bool:
+	if pad < 0 or not InputMap.has_action(action):
+		return false
+	var deadzone : float = InputMap.action_get_deadzone(action)
+	for event: InputEvent in bindings(action, Kind.GAMEPAD):
+		if event is InputEventJoypadButton:
+			if Input.is_joy_button_pressed(pad, (event as InputEventJoypadButton).button_index):
+				return true
+		else:
+			var motion := event as InputEventJoypadMotion
+			if pushed(motion, Input.get_joy_axis(pad, motion.axis), deadzone):
+				return true
+	return false
+
+
+## An axis at [param value] pushes the way [param motion] is bound, past [param deadzone].
+static func pushed(motion: InputEventJoypadMotion, value: float, deadzone: float) -> bool:
+	return value * signf(motion.axis_value) >= deadzone
+
+
 static func bindings(action: StringName, kind: Kind) -> Array[InputEvent]:
 	var out : Array[InputEvent] = []
 	if not InputMap.has_action(action):
