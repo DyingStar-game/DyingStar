@@ -78,12 +78,20 @@ const DISTANCE_FACTOR := 1.0
 @export var rotation_period_hours: float = 0.0
 ## Axial tilt in DEGREES about the local Z axis — the `tilt_rad` column, converted from radians.
 @export var axial_tilt_deg: float = 0.0
-## How many times per second the planet transform is refreshed. 2-3 Hz is plenty (ddurieux) and it
-## keeps the cost of carrying the dynamic bodies along (see _carry_dynamic_bodies) affordable.
+## How many times per second the planet transform is refreshed. It was 2-3 Hz (ddurieux), which keeps
+## the cost of carrying the dynamic bodies along (see _carry_dynamic_bodies) affordable.
 ## ⚠️ A CPU budget knob, never a correctness one. Raising it does NOT reduce the one-step kinematic lag
 ## described in _carry_dynamic_bodies — that lag is one physics step whatever the rate, so at 60 Hz a
 ## ~150 m spike once every 20 frames simply becomes a PERMANENT ~7 m offset.
-@export var rotation_update_hz: float = 3.0
+##
+## 0.25 Hz (one step every 4 s): every step moves every lamp of the planet at once, and some of them
+## came out of it with a wrong shadow — the light of the spawn apartments and the cargo depot through
+## their walls — until the next step. Measured 2026-10-01 at the spawn, frame by frame: shadows switching
+## at 3 Hz and 1 Hz, none over 8 steps at 0.25 Hz. The rendering cause is NOT found (not the atlas, not
+## the camera, not a one-frame lag, not the moons); this rate makes it rare enough not to be seen.
+## Fewer steps are also fewer hitches: each is the whole subtree's transforms and Jolt's re-insertion.
+## The price is a bigger step (~1.8 km of arc at SandBox's surface), so a bigger one-step lag above.
+@export var rotation_update_hz: float = 0.25
 
 @export_group("Orbit")
 ## Orbital elements, RAW as in tarsis.json / the celestial DB (resourcesDynamic) so the data is a
