@@ -453,36 +453,89 @@ func test_floor_does_not_overwrite_a_fresher_tile() -> void:
 # La connexion conservée n'appartient qu'au fil de téléchargement
 # ===================================================================
 
-func test_only_the_download_thread_reuses_the_connection() -> void:
+func test_only_a_download_thread_reuses_a_connection() -> void:
 	# LA régression : un HTTPClient partagé entre deux fils se corrompt. Deux requêtes
 	# entrelacées sur le même flux ont donné un signal 11 dans les entrailles de
 	# HTTPClient — le plancher sondé depuis le thread principal pendant que le fil
-	# téléchargeait des tuiles. Tout appelant qui n'est pas le fil reçoit donc une
-	# connexion jetable, ce qui est le comportement d'origine.
+	# téléchargeait des tuiles. Tout appelant qui n'est pas un fil de téléchargement reçoit
+	# donc une connexion jetable, ce qui est le comportement d'origine.
 	var rts := RemoteTileSource.new()
-	assert_false(rts._reuses_connection(), "fil non démarré : personne ne réutilise")
+	assert_null(rts._own_link(), "fils non démarrés : personne ne réutilise")
 
-	rts._worker_tid = OS.get_thread_caller_id() + 1
-	assert_false(rts._reuses_connection(),
-			"un autre fil que celui de téléchargement ne touche jamais à _conn")
+	rts._links[OS.get_thread_caller_id() + 1] = RemoteTileSource.Link.new()
+	assert_null(rts._own_link(), "la connexion d'un autre fil n'est jamais prêtée")
 
-	rts._worker_tid = OS.get_thread_caller_id()
-	assert_true(rts._reuses_connection(), "le fil de téléchargement, lui, la conserve")
+	rts._links[OS.get_thread_caller_id()] = RemoteTileSource.Link.new()
+	assert_not_null(rts._own_link(), "un fil de téléchargement, lui, garde la sienne")
 
 
-func test_the_worker_claims_the_connection_when_it_starts() -> void:
+func test_each_worker_claims_its_own_connection_when_it_starts() -> void:
 	var rts := RemoteTileSource.new()
 	rts.cache_root = FLOOR_DIR
-	assert_eq(rts._worker_tid, 0)
+	rts.download_threads = 3
 	rts.start()
-	# start() lance le fil ; il s'inscrit dès sa première instruction.
+	# start() lance les fils ; chacun s'inscrit dès sa première instruction.
 	var t0 := Time.get_ticks_msec()
-	while rts._worker_tid == 0 and Time.get_ticks_msec() - t0 < 2000:
+	while rts._links.size() < 3 and Time.get_ticks_msec() - t0 < 2000:
 		OS.delay_msec(5)
-	assert_ne(rts._worker_tid, 0, "le fil doit s'être inscrit")
-	assert_ne(rts._worker_tid, OS.get_thread_caller_id(),
-			"et ce n'est pas le thread principal")
+	assert_eq(rts._links.size(), 3, "un lien par fil")
+	assert_false(rts._links.has(OS.get_thread_caller_id()), "et aucun au thread principal")
 	rts.stop()
+	assert_eq(rts._links.size(), 0, "arrêtés, les fils rendent leurs liens")
+
+
+# ===================================================================
+# Plusieurs fils de téléchargement
+# ===================================================================
+
+var _par_mutex := Mutex.new()
+var _par_in_flight := 0
+var _par_peak := 0
+
+
+## Comme _fake_fetch, mais appelé par plusieurs fils à la fois : compte sous verrou, et
+## retient combien de requêtes étaient en vol ensemble.
+func _slow_fetch(url: String) -> Array:
+	_par_mutex.lock()
+	_hits[url] = int(_hits.get(url, 0)) + 1
+	_par_in_flight += 1
+	_par_peak = maxi(_par_peak, _par_in_flight)
+	var body: Variant = _served.get(url)
+	_par_mutex.unlock()
+	OS.delay_msec(10)            # l'aller-retour, qui est ce que les fils parallélisent
+	_par_mutex.lock()
+	_par_in_flight -= 1
+	_par_mutex.unlock()
+	return [200, body] if body != null else [404, PackedByteArray()]
+
+
+func test_several_threads_fetch_every_tile_once_and_together() -> void:
+	var s := _serve_pointer()
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	_served["http://h/dist/p/cafe/n64/f0/present.bin"] = bits
+	for i in 24:
+		_served["http://h/dist/p/cafe/n64/f0/f%d.bin" % i] = _bytes(GOLDEN_PLAIN)
+	assert_true(s.has_tile(64, 0), "carte de présence en main avant de lancer les fils")
+	_hits.clear()
+	_par_in_flight = 0
+	_par_peak = 0
+	s.fetcher = _slow_fetch
+	s.download_threads = 4
+	s.start()
+	for i in 24:
+		s.queue(64, i)
+	var t0 := Time.get_ticks_msec()
+	while s.queue_stats()["fetched"] < 24 and Time.get_ticks_msec() - t0 < 5000:
+		OS.delay_msec(5)
+	s.stop()
+	assert_eq(s.queue_stats()["fetched"], 24, "toutes les tuiles servies")
+	for i in 24:
+		assert_eq(_hits.get("http://h/dist/p/cafe/n64/f0/f%d.bin" % i, 0), 1,
+				"tuile %d téléchargée une seule fois" % i)
+		assert_eq(s.take(64, i).size(), 16, "tuile %d relue du cache" % i)
+	assert_gt(_par_peak, 1, "les requêtes partent ensemble, pas l'une après l'autre")
 
 
 func test_crc_survives_an_uninitialised_table() -> void:
