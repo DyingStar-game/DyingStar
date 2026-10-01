@@ -6,12 +6,14 @@
 [ext_resource type="Texture2D" uid="uid://cwvt1f2vco38o" path="res://assets/_universe/_shared/materials/urban_wire_fence_heightmap.png" id="4"]
 
 [resource]
-transparency = 1
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+cull_mode = 2
 albedo_texture = ExtResource("1")
 orm_texture = ExtResource("2")
 normal_enabled = true
 normal_texture = ExtResource("3")
-heightmap_enabled = true
 heightmap_scale = 9.75
 heightmap_deep_parallax = true
 heightmap_min_layers = 8

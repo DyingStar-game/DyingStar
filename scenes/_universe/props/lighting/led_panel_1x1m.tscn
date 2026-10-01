@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bj6b574fct2mo"]
+[gd_scene format=3 uid="uid://b2qwb6wo5x1bi"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fogpe"]
 resource_name = "Phare"
@@ -11,18 +11,17 @@ emission_energy_multiplier = 25.0
 
 [sub_resource type="BoxMesh" id="BoxMesh_ws83t"]
 material = SubResource("StandardMaterial3D_fogpe")
-size = Vector3(1, 0.02, 0.3)
+size = Vector3(1, 0.03, 1)
 
-[node name="LedPanel1x0_3m" type="Node3D" unique_id=1369784005]
+[node name="LedPanel1x1m" type="Node3D" unique_id=1369784005]
 
-[node name="Visual" type="MeshInstance3D" parent="." unique_id=1986544565]
+[node name="Visual" type="MeshInstance3D" parent="." unique_id=332684572]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.00999999999476131, 0)
 mesh = SubResource("BoxMesh_ws83t")
 
 [node name="AreaLight3D" type="AreaLight3D" parent="." unique_id=2031148013]
 transform = Transform3D(1, 0, 0, 0, 6.123233995736766e-17, 1, 0, -1, 6.123233995736766e-17, 0, -0.02999999999883584, 0)
-light_energy = 8.0
+light_energy = 32.0
 shadow_enabled = true
 area_range = 50.0
 area_attenuation = 2.0
-area_size = Vector2(1, 0.3)
