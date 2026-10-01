@@ -28,6 +28,8 @@ static var last : Kind = Kind.KEYBOARD_MOUSE
 ## The last input came from the mouse, not from a key or the pad: a menu then shows no focus frame.
 static var pointer : bool = true
 static var family : Family = Family.XBOX
+## Each pad's buttons and axes as last seen by poll_pads, by device: what CHANGED is what counts.
+static var _seen : Dictionary = {}
 
 
 static func feed(event: InputEvent) -> void:
@@ -53,16 +55,50 @@ static func feed(event: InputEvent) -> void:
 ## player is on the pad. The window's event stream (feed) never carries gamepad events — they reach
 ## the game through Input, not through the window — so that alone left the pad never noticed: the HUD
 ## kept naming keys and the menus kept their tab hints hidden. Called by Globals.
+##
+## By what CHANGES, not by what is held: a device can sit with an axis away from zero — a trigger
+## that rests at -1 on some drivers, a virtual pad left with a stick off centre — and read as held, it
+## kept the HUD on the gamepad for good and named that device's buttons, "Axis 5+" for LT. A button
+## going down, or a stick or trigger moving well across, is a player.
 static func poll_pads() -> void:
+	var used : int = -1
 	for device: int in Input.get_connected_joypads():
+		var now : PackedFloat32Array = PackedFloat32Array()
 		for button: int in range(JOY_BUTTON_SDL_MAX):
-			if Input.is_joy_button_pressed(device, button as JoyButton):
-				_use_pad(device)
-				return
+			now.append(1.0 if Input.is_joy_button_pressed(device, button as JoyButton) else 0.0)
 		for axis: int in range(JOY_AXIS_SDL_MAX):
-			if absf(Input.get_joy_axis(device, axis as JoyAxis)) >= STICK_WAKE:
-				_use_pad(device)
-				return
+			now.append(Input.get_joy_axis(device, axis as JoyAxis))
+		var before : PackedFloat32Array = _seen.get(device, now)
+		_seen[device] = now
+		if used < 0 and moved(before, now):
+			used = device
+	if used >= 0:
+		_use_pad(used)
+
+
+## Has a pad gone from [param before] to [param now] (buttons, then axes, as poll_pads lists them) by a
+## player's hand: a button down, or an axis moved by more than STICK_WAKE.
+static func moved(before: PackedFloat32Array, now: PackedFloat32Array) -> bool:
+	for i: int in range(mini(before.size(), now.size())):
+		if i < JOY_BUTTON_SDL_MAX:
+			if now[i] > 0.5 and before[i] < 0.5:
+				return true
+		elif absf(now[i] - before[i]) >= STICK_WAKE:
+			return true
+	return false
+
+
+## The family of the pad the player is most likely holding: the one last used, or else the first one
+## plugged in that names itself a pad (a virtual device or a flight stick can come first).
+static func likely_family() -> Family:
+	if last == Kind.GAMEPAD:
+		return family
+	var pads : Array[int] = Input.get_connected_joypads()
+	for device: int in pads:
+		var found : Family = family_of(Input.get_joy_name(device), Input.is_joy_known(device))
+		if found != Family.GENERIC:
+			return found
+	return Family.GENERIC if not pads.is_empty() else family
 
 
 static func _use_pad(device: int) -> void:
