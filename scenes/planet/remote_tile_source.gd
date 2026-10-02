@@ -100,16 +100,30 @@ var fetcher: Callable = Callable()
 ## attendre une socket gèlerait la génération de terrain. Les demandes sont donc mises en
 ## file et servies ici, pendant que l'appelant diffère le chunk concerné.
 var _threads: Array[Thread] = []
-var _queue: Array[Vector3i] = []      # (ipix, nside, genre)
-## Direction (repère de la planète) du centre de chaque tuile de _queue, même indice ; ZERO
-## pour les travaux qui ne sont pas des tuiles.
-var _queue_dir: Array[Vector3] = []
-## Quand chaque travail de _queue a été mis en file (Time.get_ticks_msec), même indice.
-var _queue_since: Array[int] = []
+## Cartes de présence et plancher : ils débloquent tout le reste, servis d'abord, dans l'ordre
+## d'arrivée. (ipix, nside, genre), et quand chacun a été mis en file (Time.get_ticks_msec).
+var _urgent: Array[Vector3i] = []
+var _urgent_since: Array[int] = []
+## Tiles waiting, in service order: Vector2(-priority, -id) sorted ascending, so the next to serve is
+## LAST (pop_back), and of two at the same priority the first queued. The engine's own Vector2 order
+## sorts it — no script comparator — and this build is double precision, so the key loses nothing
+## (a float build would only tie very close tiles).
+## Each pop used to scan the whole queue and score every tile, under _mutex, for each of the six
+## threads: the main thread's queue() and set_focus() waited on that lock.
+var _tiles: Array[Vector2] = []
+## id → [job (ipix, nside, genre), centre direction, msec queued].
+var _tile_jobs: Dictionary = {}
+var _next_tile_id: int = 0
+## The focus and view _tiles was last ranked for, and whether set_focus has moved past them.
+var _ranked_focus: Vector3 = Vector3.ZERO
+var _ranked_view: Vector3 = Vector3.ZERO
+var _rerank_due: bool = false
+## The focus moves this far (rad) before the tiles are ranked again: ~100 m on a 600 km body.
+const RERANK_FOCUS_RAD := 0.0002
 ## Temps passé dans fetch_now, cumulé (µs) : rapporté au nombre de tuiles, ce qu'une tuile coûte.
 var stat_fetch_usec: int = 0
 ## D'où regarde la caméra (repère de la planète, normé), posé par PlanetTerrain. ZERO = pas de
-## caméra : la file est servie dans l'ordre d'arrivée.
+## caméra : les tuiles sont servies dans l'ordre d'arrivée (_tile_score).
 var _focus_dir: Vector3 = Vector3.ZERO
 ## Where the camera looks, along the ground at _focus_dir (unit tangent; zero: no preference, as
 ## when looking straight down).
@@ -595,15 +609,23 @@ func queue(nside: int, ipix: int) -> void:
 
 func _enqueue(nside: int, ipix: int, kind: int) -> void:
 	var key := "%d/%d/%d" % [kind, nside, ipix]
+	var job := Vector3i(ipix, nside, kind)
+	var dir := HEALPix.pix2vec_nest(nside, ipix) if kind == JOB_TILE else Vector3.ZERO
+	var since := Time.get_ticks_msec()
 	_mutex.lock()
 	var known: bool = _queued.has(key)
 	if not known:
 		_queued[key] = true
-		_queue.append(Vector3i(ipix, nside, kind))
-		_queue_dir.append(HEALPix.pix2vec_nest(nside, ipix) if kind == JOB_TILE else Vector3.ZERO)
-		_queue_since.append(Time.get_ticks_msec())
 		if kind == JOB_TILE:
+			var id := _next_tile_id
+			_next_tile_id += 1
+			_tile_jobs[id] = [job, dir, since]
+			var rank := Vector2(-_tile_score(dir, since), -id)
+			_tiles.insert(_tiles.bsearch(rank), rank)
 			stat_requested += 1
+		else:
+			_urgent.append(job)
+			_urgent_since.append(since)
 	_mutex.unlock()
 	if not known:
 		_sem.post()
@@ -613,13 +635,14 @@ func _enqueue(nside: int, ipix: int, kind: int) -> void:
 ## et les cumuls — demandées, servies, refusées, temps passé à télécharger (µs).
 func queue_stats() -> Dictionary:
 	_mutex.lock()
-	var oldest := 0
-	if not _queue_since.is_empty():
-		var first := Time.get_ticks_msec()
-		for t in _queue_since:
-			first = mini(first, t)
-		oldest = Time.get_ticks_msec() - first
-	var out := {"queued": _queue.size(), "oldest_ms": oldest, "requested": stat_requested,
+	var now := Time.get_ticks_msec()
+	var first := now
+	for t in _urgent_since:
+		first = mini(first, t)
+	for rec: Array in _tile_jobs.values():
+		first = mini(first, int(rec[2]))
+	var out := {"queued": _urgent.size() + _tiles.size(), "oldest_ms": now - first,
+		"requested": stat_requested,
 		"fetched": stat_fetched, "failed": stat_failed, "fetch_usec": stat_fetch_usec,
 		"downloaded": stat_downloaded, "already_cached": stat_already_cached}
 	_mutex.unlock()
@@ -632,10 +655,42 @@ func queue_stats() -> Dictionary:
 ## (PlanetLod.view_weight). Zero for none.
 func set_focus(dir: Vector3, view: Vector3 = Vector3.ZERO) -> void:
 	var along := view - dir * view.dot(dir)
+	var tangent := along.normalized() if along.length_squared() > 1e-6 else Vector3.ZERO
 	_mutex.lock()
 	_focus_dir = dir
-	_focus_view = along.normalized() if along.length_squared() > 1e-6 else Vector3.ZERO
+	_focus_view = tangent
+	# Ranked again by the next pop (_take_next), once the camera has moved or turned enough to
+	# change what comes first — not on every update.
+	if (_ranked_focus == Vector3.ZERO) != (dir == Vector3.ZERO) \
+			or _ranked_focus.angle_to(dir) > RERANK_FOCUS_RAD \
+			or (tangent != Vector3.ZERO and tangent.dot(_ranked_view) < PlanetLod.VIEW_RERANK_DOT):
+		_rerank_due = true
 	_mutex.unlock()
+
+
+## A tile's rank in the queue (lower first): [method tile_priority] around the focus, or the time it
+## was queued when there is no camera (arrival order). Under _mutex.
+func _tile_score(dir: Vector3, since: int) -> float:
+	if _focus_dir == Vector3.ZERO:
+		return float(since)
+	return tile_priority(dir, _focus_dir, _focus_view)
+
+
+## Score every waiting tile for the current focus and sort them again. Under _mutex.
+func _rerank_tiles() -> void:
+	for i in _tiles.size():
+		var id := -int(_tiles[i].y)
+		var rec: Array = _tile_jobs[id]
+		_tiles[i] = Vector2(-_tile_score(rec[1], rec[2]), -id)
+	_tiles.sort()
+	_ranked_focus = _focus_dir
+	_ranked_view = _focus_view
+	_rerank_due = false
+
+
+## Is anything waiting? Under _mutex.
+func _has_work() -> bool:
+	return not _urgent.is_empty() or not _tiles.is_empty()
 
 
 ## How far down the queue a tile at [param tile_dir] comes for a camera above [param focus]
@@ -661,22 +716,15 @@ static func tile_priority(tile_dir: Vector3, focus: Vector3, view: Vector3) -> f
 ## chunks lointains se construisaient, tandis que les fines du sol sous les pieds attendaient
 ## leur tour — le paysage apparaissait de loin vers soi (2026-10-01).
 func _take_next() -> Vector3i:
-	var best := 0
-	if _focus_dir != Vector3.ZERO:
-		var best_score := INF
-		for i in _queue.size():
-			if _queue[i].z != JOB_TILE:
-				best = i
-				break
-			var score := tile_priority(_queue_dir[i], _focus_dir, _focus_view)
-			if score < best_score:
-				best_score = score
-				best = i
-	var item: Vector3i = _queue[best]
-	_queue.remove_at(best)
-	_queue_dir.remove_at(best)
-	_queue_since.remove_at(best)
-	return item
+	if not _urgent.is_empty():
+		_urgent_since.remove_at(0)
+		return _urgent.pop_front()
+	if _rerank_due:
+		_rerank_tiles()
+	var id := -int(_tiles.pop_back().y)
+	var job: Vector3i = _tile_jobs[id][0]
+	_tile_jobs.erase(id)
+	return job
 
 
 ## Oublie qu'un travail était en file, une fois traité.
@@ -715,7 +763,7 @@ func _worker() -> void:
 		if _quit:
 			_mutex.unlock()
 			return
-		var item: Vector3i = _take_next() if not _queue.is_empty() else Vector3i(-1, -1, 0)
+		var item: Vector3i = _take_next() if _has_work() else Vector3i(-1, -1, 0)
 		_mutex.unlock()
 		if item.x < 0:
 			continue

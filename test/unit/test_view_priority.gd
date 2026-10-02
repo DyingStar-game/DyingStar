@@ -41,3 +41,32 @@ func test_looking_straight_down_has_no_preferred_side() -> void:
 	var src := RemoteTileSource.new()
 	src.set_focus(Vector3.UP, Vector3.DOWN)
 	assert_eq(src._focus_view, Vector3.ZERO)
+
+
+func _pop_ipix(src: RemoteTileSource) -> int:
+	return src._take_next().x
+
+
+func test_the_tile_queue_serves_the_nearest_first_and_follows_the_camera() -> void:
+	var src := RemoteTileSource.new()
+	var near := 100
+	var mid := 2000
+	var far := 30000
+	src.set_focus(HEALPix.pix2vec_nest(64, near))
+	for ipix in [far, near, mid]:
+		src._enqueue(64, ipix, RemoteTileSource.JOB_TILE)
+	assert_eq(_pop_ipix(src), near, "the tile under the camera first")
+	# The camera moves over the far tile: the queue is ranked again at the next pop.
+	src.set_focus(HEALPix.pix2vec_nest(64, far))
+	assert_eq(_pop_ipix(src), far)
+	assert_eq(_pop_ipix(src), mid)
+
+
+func test_without_a_camera_tiles_go_in_arrival_order_after_maps() -> void:
+	var src := RemoteTileSource.new()
+	src._enqueue(64, 7, RemoteTileSource.JOB_TILE)
+	src._enqueue(64, 9, RemoteTileSource.JOB_TILE)
+	src._enqueue(64, 0, RemoteTileSource.JOB_PRESENCE)
+	assert_eq(src._take_next().z, RemoteTileSource.JOB_PRESENCE, "a presence map unblocks the rest")
+	assert_eq(_pop_ipix(src), 7)
+	assert_eq(_pop_ipix(src), 9)
