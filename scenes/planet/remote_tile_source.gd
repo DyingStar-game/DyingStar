@@ -111,6 +111,9 @@ var stat_fetch_usec: int = 0
 ## D'où regarde la caméra (repère de la planète, normé), posé par PlanetTerrain. ZERO = pas de
 ## caméra : la file est servie dans l'ordre d'arrivée.
 var _focus_dir: Vector3 = Vector3.ZERO
+## Where the camera looks, along the ground at _focus_dir (unit tangent; zero: no preference, as
+## when looking straight down).
+var _focus_view: Vector3 = Vector3.ZERO
 var _queued: Dictionary = {}          # "n/p" -> true, pour ne pas redemander
 var _mutex: Mutex = Mutex.new()
 var _sem: Semaphore = Semaphore.new()
@@ -613,10 +616,31 @@ func queue_stats() -> Dictionary:
 
 
 ## D'où regarde la caméra, en direction normée dans le repère de la planète (thread principal).
-func set_focus(dir: Vector3) -> void:
+##
+## [param view]: where it looks, in the same frame — the tiles in view go before those behind it
+## (PlanetLod.view_weight). Zero for none.
+func set_focus(dir: Vector3, view: Vector3 = Vector3.ZERO) -> void:
+	var along := view - dir * view.dot(dir)
 	_mutex.lock()
 	_focus_dir = dir
+	_focus_view = along.normalized() if along.length_squared() > 1e-6 else Vector3.ZERO
 	_mutex.unlock()
+
+
+## How far down the queue a tile at [param tile_dir] comes for a camera above [param focus]
+## looking along [param view] (unit tangent or zero): its angular gap (1 − cos), stretched like a
+## distance by [method PlanetLod.view_weight] for lying away from the view. Lower comes first.
+static func tile_priority(tile_dir: Vector3, focus: Vector3, view: Vector3) -> float:
+	var d := tile_dir.dot(focus)
+	var gap := 1.0 - d
+	if view == Vector3.ZERO:
+		return gap
+	var along := tile_dir - focus * d
+	var l2 := along.length_squared()
+	if l2 <= 1e-12:
+		return gap
+	var w := PlanetLod.view_weight(along.dot(view) / sqrt(l2))
+	return gap * w * w
 
 
 ## Le travail à servir maintenant (sous _mutex) : une carte de présence ou le plancher d'abord
@@ -629,14 +653,14 @@ func set_focus(dir: Vector3) -> void:
 func _take_next() -> Vector3i:
 	var best := 0
 	if _focus_dir != Vector3.ZERO:
-		var best_dot := -INF
+		var best_score := INF
 		for i in _queue.size():
 			if _queue[i].z != JOB_TILE:
 				best = i
 				break
-			var d: float = _queue_dir[i].dot(_focus_dir)
-			if d > best_dot:
-				best_dot = d
+			var score := tile_priority(_queue_dir[i], _focus_dir, _focus_view)
+			if score < best_score:
+				best_score = score
 				best = i
 	var item: Vector3i = _queue[best]
 	_queue.remove_at(best)

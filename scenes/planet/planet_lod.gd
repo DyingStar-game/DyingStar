@@ -14,6 +14,18 @@ extends RefCounted
 ## Subdivide a chunk while the camera is closer than its diagonal times this.
 const SUBDIVIDE_FACTOR := 1.5
 
+## Build order, not cut: how much further a chunk or tile counts for lying away from where the camera
+## looks. Straight ahead ×1, to the side ×(1 + K/2), behind ×(1 + K). The cut itself ignores the view
+## direction — the ground behind stays as fine as in front, it only comes second — so turning round,
+## in VR above all, never meets coarse ground refining.
+const VIEW_PRIORITY_K := 3.0
+
+
+## The distance factor of [constant VIEW_PRIORITY_K] for a chunk or tile whose direction from the
+## camera makes [param view_dot] (cosine) with the view direction.
+static func view_weight(view_dot: float) -> float:
+	return 1.0 + VIEW_PRIORITY_K * (1.0 - view_dot) * 0.5
+
 
 ## Length of a chunk's diagonal on the reference sphere, from its SW corner to its NE corner.
 static func chunk_diagonal(nside: int, ipix: int, radius: float) -> float:
