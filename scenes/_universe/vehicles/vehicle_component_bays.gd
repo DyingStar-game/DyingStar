@@ -242,7 +242,11 @@ func rebind() -> int:
 		if sid == "":
 			continue
 		var slot: Node = find(sid)
-		if slot == null or not slot.is_free():
+		# Free, or WAITING for this very part: after a restart the vehicle's saved bay table comes back
+		# before its parts and names each bay's occupant — a bay "taken" by the part now arriving is
+		# its bay. Treating it as taken left every engine lying on the ground after a restart.
+		if slot == null or slot.occupant != null \
+				or (str(slot.occupant_uuid) != "" and str(slot.occupant_uuid) != str(child.uuid)):
 			continue
 		child.set_meta("component_slot_ref", slot)  # so taking it back out frees the bay
 		_pinned[child] = slot.seat(child)

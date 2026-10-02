@@ -84,3 +84,18 @@ func test_a_truck_restored_with_its_bays_is_not_refitted() -> void:
 	# equipped already — even with a bay emptied by hand — and must not get a ghost engine.
 	_truck.client_channel_data_update({"components": {"slot_fl": "e1", "slot_fr": "", "slot_rl": "", "slot_rr": ""}})
 	assert_true(_truck._factory_fitted)
+
+
+func test_a_restart_puts_each_saved_part_back_in_its_bay() -> void:
+	# What a server restart does: the truck's bay table comes back first (each bay waiting for a part),
+	# then the parts, each with its slot_id. Each bay must take the part it is waiting for — skipping a
+	# bay because it is "taken" left every engine lying on the ground after a restart.
+	_truck.client_channel_data_update({"components": {"slot_fl": "e1", "slot_fr": "", "slot_rl": "", "slot_rr": ""}})
+	var part : VehicleComponent = (load("res://scenes/_universe/props/vehicles/engine_t1.tscn") as PackedScene).instantiate()
+	part.uuid = "e1"
+	part.slot_id = "slot_fl"
+	_truck.add_child(part)
+	assert_eq(_truck.bays.rebind(), 1, "the part is rebound")
+	assert_eq(_truck.bays.find("slot_fl").occupant, part, "into the bay that was waiting for it")
+	# Seating reads the bay's global transform, which an instantiated, never-added truck has not got.
+	assert_engine_error_count(2, "out of the tree: the pose, not the binding")
