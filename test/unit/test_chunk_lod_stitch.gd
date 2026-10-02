@@ -276,7 +276,11 @@ func test_an_edge_over_a_cliff_is_left_to_the_skirt() -> void:
 # ===================================================================
 
 func _leaf(t: PlanetTerrain, nside: int, ipix: int, depth: int) -> Dictionary:
-	return t._leaf_info(nside, ipix, depth, Vector3(0.0, 0.0, RADIUS + 100.0))
+	return t._leaf_info(_lod_pass(t), nside, ipix, depth)
+
+
+func _lod_pass(t: PlanetTerrain) -> PlanetTerrain.LodPass:
+	return t._new_pass(Vector3(0.0, 0.0, RADIUS + 100.0), -1.0, {}, false)
 
 
 func test_balance_splits_a_two_level_coarser_neighbour_and_masks_the_edge() -> void:
@@ -298,7 +302,7 @@ func test_balance_splits_a_two_level_coarser_neighbour_and_masks_the_edge() -> v
 	var lg := _leaf(t, n >> 2, w >> 4, 1)
 	desired[lg.key] = lg
 
-	t._balance_and_stitch(desired, Vector3(0.0, 0.0, RADIUS + 100.0))
+	t._balance_and_stitch(desired, _lod_pass(t))
 
 	assert_false(desired.has(lg.key), "le grand-parent trop grossier doit être découpé")
 	var parent_key: String = t._chunk_key_hp(n >> 1, w >> 2)
@@ -324,7 +328,7 @@ func test_mask_ignores_a_neighbour_of_another_quality_lod() -> void:
 	var lp := _leaf(t, n >> 1, w >> 2, 2)
 	lp["lod"] = 2  # drawn at a coarser grid: the stitch could not meet it
 	desired[lp.key] = lp
-	t._balance_and_stitch(desired, Vector3(0.0, 0.0, RADIUS + 100.0))
+	t._balance_and_stitch(desired, _lod_pass(t))
 	assert_eq(int(desired[lf.key].get("stitch", 0)), 0)
 	t.free()
 
