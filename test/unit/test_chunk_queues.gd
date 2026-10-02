@@ -36,9 +36,21 @@ func test_the_queue_serves_the_nearest_first_whatever_the_insertion_order() -> v
 	var queue: Array[Dictionary] = []
 	for z in [5000.0, 100.0, 2000.0, 800.0]:
 		var info := {"center": Vector3(0, 0, -z)}
-		t._queue_insert(queue, info, info)
+		t._queue_insert(queue, info, info.center)
 	var order: Array[float] = []
 	while not queue.is_empty():
 		order.append(-(queue.pop_back() as Dictionary).center.z)
 	assert_eq(order, [100.0, 800.0, 2000.0, 5000.0])
+	t.free()
+
+
+func test_a_chunk_put_back_during_the_drain_waits_aside() -> void:
+	# Its tiles missing, the best chunk goes back at the same priority: put straight back it would
+	# be popped again and take every try of the drain.
+	var t := PlanetTerrain.new()
+	t._backlog_draining = true
+	t._backlog_push({"key": "a", "center": Vector3(0, 0, -100)})
+	assert_eq(t._mesh_task_backlog.size(), 0, "not back in the backlog during the drain")
+	assert_eq(t._backlog_held.size(), 1)
+	assert_true(t._backlog_keys.has("a"), "still known, so not queued twice")
 	t.free()

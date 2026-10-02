@@ -27,6 +27,14 @@ static func view_weight(view_dot: float) -> float:
 	return 1.0 + VIEW_PRIORITY_K * (1.0 - view_dot) * 0.5
 
 
+## [param squared] — a squared distance, or anything that grows like one (1 − cos of an angle) —
+## stretched by [method view_weight] as the distance itself would be: the one ordering rule of the
+## mesh queues (PlanetTerrain.build_priority) and the tile queue (RemoteTileSource.tile_priority).
+static func view_stretched(squared: float, view_dot: float) -> float:
+	var w := view_weight(view_dot)
+	return squared * w * w
+
+
 ## Length of a chunk's diagonal on the reference sphere, from its SW corner to its NE corner.
 static func chunk_diagonal(nside: int, ipix: int, radius: float) -> float:
 	var corners: Array = HEALPix.get_pixel_corners(nside, ipix)
