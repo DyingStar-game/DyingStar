@@ -329,7 +329,7 @@ var _view_dir_local: Vector3 = Vector3.ZERO
 ## The camera and view the backlog's and the assembly queue's priorities were last worked out for.
 var _backlog_rank_at: Array = [Vector3.INF, Vector3.ZERO]
 var _assemble_rank_at: Array = [Vector3.INF, Vector3.ZERO]
-## Disk-cache meshes being read by ResourceLoader's threads.
+## Disk-cache meshes being read by ResourceLoader's threads (reported as chunk_cache_reading).
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
 var _cache_loads: Dictionary = {}
@@ -1724,6 +1724,7 @@ func _update_terrain() -> void:
 			ClientPerf.gauge("chunk_cache_other_stitch:" + who, _stat_cache_other_stitch)
 			ClientPerf.gauge("chunk_cache_ineligible:" + who, _stat_cache_ineligible)
 			ClientPerf.gauge("chunk_cache_rejected:" + who, _stat_cache_rejected)
+			ClientPerf.gauge("chunk_cache_reading:" + who, _cache_loads.size())
 	var cam_dist := local_cam.length()
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —
@@ -3591,22 +3592,25 @@ func _request_cache_load(info: Dictionary) -> bool:
 
 ## Hand the finished disk-cache reads over: a valid mesh to the assembly
 ## queue, anything else back to the builder.
+##
+## One walk in request order — ResourceLoader's threads finish them roughly in
+## that order — under ONE budget for the status checks and the takes together.
+## A first version scanned every read in flight, then took what was done under
+## a budget: the reads it left loaded piled up, the scan grew with them, and a
+## fast flight over known ground spent 600 ms/s here (72 fps, 2026-10-02). What
+## the walk does not reach waits for the next frame.
 func _poll_cache_loads() -> void:
 	if _cache_loads.is_empty():
 		return
-	var done: Array[String] = []
-	for key: String in _cache_loads:
-		var st := ResourceLoader.load_threaded_get_status(_cache_loads[key].path)
-		if st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-			done.append(key)
-	# The budget counts the takes, not the scan above: with hundreds in flight the scan alone could
-	# spend it, and nothing would ever be taken. One at least, as the assembly does.
 	var t0 := Time.get_ticks_usec()
 	var taken := 0
-	for key in done:
-		# What is left stays loaded and is taken next frame (CACHE_POLL_BUDGET_MS).
+	# A snapshot: a take erases its entry.
+	for key: String in _cache_loads.keys():
 		if taken > 0 and (Time.get_ticks_usec() - t0) >= CACHE_POLL_BUDGET_MS * 1000.0:
 			break
+		if ResourceLoader.load_threaded_get_status(_cache_loads[key].path) \
+				== ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			continue
 		taken += 1
 		var entry: Dictionary = _cache_loads[key]
 		_cache_loads.erase(key)
