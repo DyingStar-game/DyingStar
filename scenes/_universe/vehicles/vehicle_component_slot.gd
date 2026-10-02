@@ -21,7 +21,7 @@ extends Marker3D
 ## Deliberately NOT parented under the hatch mesh it belongs to. Those meshes carry a non-uniform
 ## scale (0.175, 0.225, 0.325); Jolt handles a non-uniformly scaled shape badly, and a body
 ## reparented under one would inherit it. Bays are direct children of the vehicle, exactly like
-## SeatDriver and Handle_FL.
+## SeatDriver and HandleFL.
 
 ## Hatch guarding this bay: the door_id of a VehicleDoorHandle on the same vehicle. Empty means
 ## open access. Same idea, and the same spelling, as VehicleSeat.door_id.

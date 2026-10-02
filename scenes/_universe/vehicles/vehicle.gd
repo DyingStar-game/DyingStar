@@ -53,6 +53,8 @@ const SCRUB_SAMPLE_S: float = 0.5
 ## often it retries. 600 frames at 60 Hz is ten seconds, which is the same order the shelf uses to
 ## find its own crates again.
 const REBIND_WINDOW_FRAMES: int = 600
+## How long after spawn the whole state is sent again (s), see _full_resend_in.
+const FULL_STATE_RESEND_S: float = 2.0
 const REBIND_EVERY_FRAMES: int = 30
 
 # --- Driving ------------------------------------------------------------------
@@ -379,7 +381,7 @@ const REBIND_EVERY_FRAMES: int = 30
 ## Designer-placed box (a CollisionShape3D with a BoxShape3D) marking WHERE a dropped item is allowed
 ## to load/stick. Drop a crate inside it (from in the bed or reaching over) and it loads. Leave unset
 ## to fall back to the cargo_bay box. Its physics collision is turned off at runtime — it is only a
-## zone marker. (The truck wires its "Cargo_loading_zone" node here.)
+## zone marker. (The truck wires its "CargoLoadingZone" node here.)
 @export var cargo_loading_zone: CollisionShape3D
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
@@ -684,10 +686,7 @@ var _net_brake: bool = false
 var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
 var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the server
-var _net_last_speed: float = 0.0  # server: last replicated speed (km/h), change detection
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
-var _net_last_cargo_mass: float = -1.0  # server: last replicated cargo load (kg), change detection
-var _net_last_mass: float = -1.0  # server: last replicated total mass (kg), change detection
 ## The real "up" for this vehicle: opposite the gravity acting on it (radial on a planet, world-up on
 ## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
 ## measure tilt against THIS, not world Y. Defaults to world up until the first physics step.
@@ -699,10 +698,7 @@ var _gravity_up: Vector3 = Vector3.UP
 var gravity_magnitude: float = 6.867
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
-var _net_last_handbrake: bool = false  # server: last replicated hand brake, change detection
 var _headlights_on: bool = false  # server: head lights on/off
-var _net_last_headlights: bool = false  # server: last replicated head lights, change detection
-var _net_last_steering: float = 0.0  # server: last replicated front-wheel steer angle (rad)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _powertrain := VehiclePowertrain.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
@@ -744,15 +740,12 @@ var _steering_wheel: Node3D = null          # GLB "steering_wheel" mesh that tur
 var _steering_wheel_rest: Basis = Basis.IDENTITY  # its closed/centered orientation
 var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door open/close clips)
 var _engine_on: bool = false                # engine running (server state; mirrored on each replica)
-var _net_last_engine: bool = false          # server: last replicated engine state, change detection
 ## Client: false until _ready is done. Replicated state that lands BEFORE that is the spawn snapshot
 ## (the truck's current state, which we are only now hearing about) and must be applied SILENTLY;
 ## anything after it is a real change and gets its sound. Late-join guard for engine + hand brake.
 var _spawned: bool = false
 var _horn_on: bool = false                  # server: normal horn key held by the driver
-var _net_last_horn: bool = false            # server: last replicated horn state, change detection
 var _horn_special_count: int = 0            # server: number of special-horn (Alt) shots fired so far
-var _net_last_horn_special: int = 0         # server: last replicated shot count, change detection
 var _net_horn_special_count: int = -1       # client: last shot count seen (-1 = none received yet)
 var _horn_player: AudioStreamPlayer3D = null  # client: the looping horn sound while it blows
 var _idle_player: AudioStreamPlayer3D = null  # client: the looping engine-idle sound
@@ -762,12 +755,10 @@ var _engine_sound_wait: float = 0.0         # client: seconds left of the start-
 var _horn_held_secs: float = 0.0            # client: how long the current honk has been sounding
 var _horn_fade_left: float = 0.0            # client: seconds left of the horn's fade-out (0 = not fading)
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
-var _net_last_doors: Dictionary = {}        # SERVER: last replicated door state, change detection
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 ## door_id -> the Tween swinging it right now, so a second toggle can cancel the first one
 ## instead of stacking on top of it. Server and client both run these (see _swing_door).
 var _door_tweens: Dictionary = {}
-var _net_last_components: Dictionary = {}   # SERVER: last replicated bay occupancy, change detection
 ## CLIENT: the bay table as last received. Kept because a part named in it may not EXIST yet — props
 ## and their vehicle are created independently — so the table has to be re-applied until every part
 ## it names has turned up. Without that, a late part stays a loose dynamic body and falls out.
@@ -778,11 +769,18 @@ var _net_components: Dictionary = {}
 var _rebind_frames: int = REBIND_WINDOW_FRAMES
 ## SERVER: the factory fit has been turned into real parts (once per vehicle, ever).
 var _factory_fitted: bool = false
-var _net_last_seats: Dictionary = {}        # SERVER: last replicated seat occupancy, change detection
-## SERVER: last replicated wheel heights (cm, vehicle frame), change detection. CLIENT: the heights
-## received, applied instead of the flat rest pose so a replica shows the real suspension.
-var _net_last_suspension: Array = []
+## CLIENT: the wheel heights received (cm, vehicle frame), applied instead of the flat rest pose so a
+## replica shows the real suspension.
 var _net_suspension: Array = []
+## SERVER: the last value sent for each key of full_state(). A key absent from it has never been sent,
+## so it goes out on the next tick: the whole state on the first one, from spawn, every key with its
+## value — an admin reading the database sees "headlights": false, not nothing.
+var _net_sent: Dictionary = {}
+## SERVER: seconds until the whole state is sent once more. Horizon drops, without a word, an update
+## for an object it has not finished creating (handlers/update.rs: no gorc id, nothing done) — and
+## the first tick of a vehicle spawned at runtime races its own create_object. Sent again once, a
+## moment later, so nothing waits for the next change to reach the database.
+var _full_resend_in: float = FULL_STATE_RESEND_S
 var _net_seats: Dictionary = {}             # CLIENT: seat name -> occupant uuid ("" = free), for prompts
 
 func _ready() -> void:
@@ -791,6 +789,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_update_plates()
+	_door_state = _own_doors(_door_state)  # every door in the state from the start, shut
 	_server_live = GameOrchestrator.is_server()
 	add_to_group("vehicle")  # so a pilot can find and enter us
 	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
@@ -1080,7 +1079,7 @@ func lock_dropped_cargo(body: Node) -> bool:
 ## item released BY HAND inside the zone). Every few frames, ask the PHYSICS ENGINE which prop bodies
 ## overlap the loading zone — by collision MASK (the prop layer), so it returns exactly the crates/rocks
 ## inside it, no world-wide group scan — and lock those that have come to REST. Same zone box as the
-## hand-drop (the designer Cargo_loading_zone, else the cargo bay); throttled, it only rescues free-fall.
+## hand-drop (the designer CargoLoadingZone, else the cargo bay); throttled, it only rescues free-fall.
 func _scan_bay_for_settled_cargo() -> void:
 	_bay_scan_tick += 1
 	if _bay_scan_tick < BAY_SCAN_FRAMES:
@@ -1116,17 +1115,17 @@ func _scan_bay_for_settled_cargo() -> void:
 		if rb.linear_velocity.length() <= cargo_settle_speed:
 			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
-## Resolve the designer loading zone (explicit @export, else a child named "Cargo_loading_zone") and
+## Resolve the designer loading zone (explicit @export, else a child named "CargoLoadingZone") and
 ## turn OFF its physics collision: a CollisionShape3D under this VehicleBody3D would otherwise be a
 ## real (huge) collider. We only read its box to test where loading is allowed.
 func _setup_loading_zone() -> void:
 	if cargo_loading_zone == null:
-		cargo_loading_zone = get_node_or_null("Cargo_loading_zone") as CollisionShape3D
+		cargo_loading_zone = get_node_or_null("CargoLoadingZone") as CollisionShape3D
 	if cargo_loading_zone != null:
 		cargo_loading_zone.disabled = true
 
 ## True when a world point is inside the loading zone (where a dropped item is allowed to stick).
-## Uses the designer's Cargo_loading_zone box if set, else falls back to the cargo_bay box (blockout).
+## Uses the designer's CargoLoadingZone box if set, else falls back to the cargo_bay box (blockout).
 func is_point_in_loading_zone(world_point: Vector3) -> bool:
 	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
 		var local := cargo_loading_zone.global_transform.affine_inverse() * world_point
@@ -1753,10 +1752,34 @@ func _find_anim_player() -> AnimationPlayer:
 ## SERVER: flip a door's open state; _replicate_transform then pushes it to clients. A door handle
 ## is operated on foot by anyone nearby (not gated on the driver).
 func server_toggle_door(door_id: String) -> void:
-	if door_id == "":
+	if not door_ids().has(door_id):
+		# Only this vehicle's doors: the id comes from a client, and whatever it names would otherwise
+		# be written into the state and kept in the database for good.
+		if door_id != "":
+			push_warning("Vehicle %s: no door '%s', toggle refused" % [uuid, door_id])
 		return
 	_door_state[door_id] = not is_door_open(door_id)
 	_apply_door(door_id, _door_state[door_id])
+
+## The doors of this vehicle: the door_ids of its VehicleDoorHandle nodes (seats and bays name these
+## too). The only keys the door state may hold.
+func door_ids() -> PackedStringArray:
+	var ids := PackedStringArray()
+	for h in find_children("*", "VehicleDoorHandle", true, false):
+		var id := str(h.door_id)
+		if id != "" and not ids.has(id):
+			ids.append(id)
+	return ids
+
+
+## [param saved] (a door state from the database or a hand-over) kept to this vehicle's doors, every one
+## present: a door missing from it is shut, a key that is no door here (an old mesh name) is dropped.
+func _own_doors(saved: Dictionary) -> Dictionary:
+	var doors: Dictionary = {}
+	for id in door_ids():
+		doors[id] = bool(saved.get(id, false))
+	return doors
+
 
 ## The VehicleDoorHandle node driving `door_id` on THIS vehicle (or null). Used server-side to
 ## line-of-sight-check a door toggle against the handle's real position (it rides its door at runtime).
@@ -2460,25 +2483,14 @@ func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.005, 0.005, 0.005))
 	var my_parent_id: String = _net_parent_id()
-	var my_speed: float = snappedf(linear_velocity.length() * 3.6, 0.1)
-	var my_cargo: float = snappedf(get_cargo_mass(), 0.1)
-	var my_mass: float = snappedf(mass, 0.1)  # total weight (empty + cargo + seated players)
-	var my_steering: float = snappedf(steering, 0.01)
-	var my_seats: Dictionary = _seat_occupancy_now()
 	odometer.track(position, my_parent_id)
-	var parts_data: Dictionary = {}
-	for part in _net_parts():
-		part.write_changes(parts_data)
-	if parts_data.is_empty() and my_pos == _net_last_position and my_rot == _net_last_rotation \
-			and my_parent_id == _net_last_parent_id \
-			and my_speed == _net_last_speed and my_cargo == _net_last_cargo_mass \
-			and _handbrake == _net_last_handbrake and my_mass == _net_last_mass \
-			and _headlights_on == _net_last_headlights and my_steering == _net_last_steering \
-			and _horn_on == _net_last_horn and _horn_special_count == _net_last_horn_special \
-			and _engine_on == _net_last_engine and _door_state == _net_last_doors \
-			and my_seats == _net_last_seats:
-		return
+	if _full_resend_in > 0.0:
+		_full_resend_in -= get_physics_process_delta_time()
+		if _full_resend_in <= 0.0:
+			_forget_sent()
 	var data: Dictionary = {}
+	for part in _net_parts():
+		part.write_changes(data)
 	# The parent goes out WITH the position it qualifies, in the same payload — never in a message of
 	# its own, so the receiver can never apply a local position in the previous frame.
 	if my_parent_id != _net_last_parent_id:
@@ -2492,50 +2504,45 @@ func _replicate_transform() -> void:
 	if my_rot != _net_last_rotation:
 		data["rotation"] = my_rot
 		_net_last_rotation = my_rot
-	if my_speed != _net_last_speed:
-		data["speed"] = my_speed
-		_net_last_speed = my_speed
-	if my_cargo != _net_last_cargo_mass:
-		data["cargo_mass"] = my_cargo
-		_net_last_cargo_mass = my_cargo
-	if _handbrake != _net_last_handbrake:
-		data["handbrake"] = _handbrake
-		_net_last_handbrake = _handbrake
-	if my_mass != _net_last_mass:
-		data["mass"] = my_mass
-		_net_last_mass = my_mass
-	if _headlights_on != _net_last_headlights:
-		data["headlights"] = _headlights_on
-		_net_last_headlights = _headlights_on
-	if my_steering != _net_last_steering:
-		data["steering"] = my_steering
-		_net_last_steering = my_steering
-	if _horn_on != _net_last_horn:
-		data["horn"] = _horn_on
-		_net_last_horn = _horn_on
-	if _horn_special_count != _net_last_horn_special:
-		data["horn_special"] = _horn_special_count
-		_net_last_horn_special = _horn_special_count
-	if _engine_on != _net_last_engine:
-		data["engine"] = _engine_on
-		_net_last_engine = _engine_on
-	if _door_state != _net_last_doors:
-		data["doors"] = _door_state.duplicate()
-		_net_last_doors = _door_state.duplicate()
-	if my_seats != _net_last_seats:
-		data["seats"] = my_seats.duplicate()
-		_net_last_seats = my_seats.duplicate()
-	var my_components: Dictionary = bays.occupancy()
-	if my_components != _net_last_components:
-		data["components"] = my_components.duplicate()
-		_net_last_components = my_components.duplicate()
-	var suspension: Array = _sample_suspension()
-	if suspension != _net_last_suspension:
-		data["suspension"] = suspension
-		_net_last_suspension = suspension.duplicate()
-	data.merge(parts_data)
-
+	var state: Dictionary = full_state()
+	for key: String in state:
+		if not _net_sent.has(key) or _net_sent[key] != state[key]:
+			data[key] = state[key]
+			_net_sent[key] = state[key]
+	if data.is_empty():
+		return
 	emit_signal("hs_server_prop_update", uuid, data, type_name, has_parent)
+
+
+## The vehicle's replicated state as it is now: every key, with its value even when it is the default
+## (a door never opened is false, an empty seat is ""). Keys are snake_case, seats and bays by
+## VehicleNetKey. The transform goes out by its own rules (_replicate_transform), and the parts' keys
+## by theirs (VehicleNetPart). Every key must be whitelisted in horizonserver's vehicle_def.json.
+func full_state() -> Dictionary:
+	return {
+		"pilot_uuid": pilot_uuid,
+		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
+		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
+		"handbrake": _handbrake,
+		"mass": snappedf(mass, 0.1),  # total weight (empty + cargo + seated players)
+		"headlights": _headlights_on,
+		"steering": snappedf(steering, 0.01),
+		"horn": _horn_on,
+		"horn_special": _horn_special_count,
+		"engine": _engine_on,
+		"doors": _door_state.duplicate(),
+		"seats": _seat_occupancy_now(),
+		"components": bays.occupancy(),
+		"suspension": _sample_suspension(),
+	}
+
+
+## SERVER: forget what was sent, so the next tick sends the whole state again (the spawn resend; a
+## bay table rebuilt from the database).
+func _forget_sent() -> void:
+	_net_sent.clear()
+	for part in _net_parts():
+		part.forget_sent()
 
 
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
@@ -2559,7 +2566,7 @@ func _components_pending() -> bool:
 
 func _apply_components(table: Dictionary) -> void:
 	for slot in bays.all():
-		var wanted: String = str(table.get(str(slot.name), ""))
+		var wanted: String = str(table.get(VehicleNetKey.of(slot), ""))
 		slot.occupant_uuid = wanted
 		slot.occupant = null
 		if wanted == "":
@@ -2595,8 +2602,8 @@ func _rebind_restored_components() -> void:
 	# of one already on its way back.
 	if _rebind_frames <= REBIND_WINDOW_FRAMES / 2:
 		_fit_factory_engines()
-	if bays.rebind() > 0 and bays.occupancy() == _net_last_components:
-		_net_last_components = {}  # force the table back onto the wire: the replicas need it too
+	if bays.rebind() > 0:
+		_net_sent.erase("components")  # the table back onto the wire: the replicas need it too
 
 ## SERVER: turn the chassis's factory engines into REAL parts sitting in its bays — once, ever.
 ##
@@ -2628,12 +2635,12 @@ func _fit_factory_engines() -> void:
 		var pose: Transform3D = global_transform.affine_inverse() * slot.global_transform
 		NetworkOrchestrator.spawn_prop_authoritative({
 			"type": "vehicle_component",
-			"uuid": PropSpawn.stable_uuid("%s:%s" % [str(uuid), str(slot.name)]),
+			"uuid": PropSpawn.stable_uuid("%s:%s" % [str(uuid), VehicleNetKey.of(slot)]),
 			"position": {"x": pose.origin.x, "y": pose.origin.y, "z": pose.origin.z},
 			"rotation": _euler_dict(pose.basis.get_euler()),
 			"scenename": str(spec.scene_path).trim_prefix("res://"),
 			"parent_id": str(uuid),
-			"slot_id": str(slot.name),
+			"slot_id": VehicleNetKey.of(slot),
 		})
 	_factory_fitted = true
 
@@ -2646,7 +2653,7 @@ func _euler_dict(e: Vector3) -> Dictionary:
 func _seat_occupancy_now() -> Dictionary:
 	var occ: Dictionary = {}
 	for seat in _seats():
-		occ[str(seat.name)] = seat.occupant_uuid
+		occ[VehicleNetKey.of(seat)] = seat.occupant_uuid
 	return occ
 
 func _enter_tree() -> void:
@@ -2796,10 +2803,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_play_special_horn()
 		_net_horn_special_count = count
 	if data.has("pilot_uuid"):
-		var new_pilot := str(data["pilot_uuid"])
 		pilot_uuid = str(data["pilot_uuid"])
 	if data.has("components"):
-		_net_components = (data["components"] as Dictionary).duplicate()
+		_net_components = _normalized(data["components"])
+		# Restored from the database (the server runs this at boot): the vehicle was equipped once
+		# already, whatever is in its bays now. The factory set must not be fitted a second time.
+		_factory_fitted = true
 		_apply_components(_net_components)
 	if data.has("doors"):
 		var new_doors: Dictionary = data["doors"]
@@ -2811,13 +2820,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 		# (_door_state) is written ONLY by server_toggle_door. Without this, a truck left with a door
 		# open came back with the server believing every door shut: the client showed the open door
 		# and happily let you press E, the server refused the seat, and you were ejected on the spot.
-		# It never healed either, since _door_state and _net_last_doors were both empty, so the
-		# server saw nothing to replicate and never corrected the client.
+		# Kept to this vehicle's own doors (_own_doors): a key that is no door here — an old mesh name
+		# from before a rename — is dropped instead of living on in the database.
 		if GameOrchestrator.is_server():
-			_door_state = new_doors.duplicate()
-			_net_last_doors = _door_state.duplicate()
+			_door_state = _own_doors(new_doors)
 	if data.has("seats"):
-		_net_seats = (data["seats"] as Dictionary).duplicate()  # for _seat_is_taken (prompt + entry gate)
+		_net_seats = _normalized(data["seats"])  # for _seat_is_taken (prompt + entry gate)
 
 ## Client: reparent under the prop's parent (e.g. the planet/city) when spawned.
 func client_parent_change(parent: Node) -> void:
@@ -2858,7 +2866,6 @@ func server_enter(player: Node, seat_name: String = "", force: bool = false) -> 
 	if seat.is_driver_seat():
 		_pilot = player
 		pilot_uuid = str(player.client_uuid) if "client_uuid" in player else ""
-		_replicate_pilot()
 		print("🚚 Vehicle %s: DRIVER enter (%s)" % [uuid, pilot_uuid])
 	else:
 		print("🚚 Vehicle %s: passenger enter (%s)" % [uuid, seat_name])
@@ -2906,7 +2913,6 @@ func server_exit(player: Node) -> void:
 		_throttle = 0.0
 		engine_force = 0.0
 		set_horn(false)  # a driver bailing out mid-honk must not leave the horn stuck on
-		_replicate_pilot()
 		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
 		# the parked truck still even with no driver. It releases on throttle when someone drives.
 	# Put the player back on the ground beside the vehicle, on the side of the seat it used.
@@ -2936,12 +2942,11 @@ func server_adopt_state(data: Dictionary) -> void:
 	for part in _net_parts():
 		part.read(data)
 	if data.has("seats"):
-		_net_seats = (data["seats"] as Dictionary).duplicate()
+		_net_seats = _normalized(data["seats"])
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
 	if data.has("doors"):
-		_door_state = (data["doors"] as Dictionary).duplicate()
-		_net_last_doors = _door_state.duplicate()
+		_door_state = _own_doors(data["doors"])
 	_handbrake = bool(data.get("handbrake", _handbrake))
 
 ## The seat the sender replicated for [param player_uuid] ("" when it was not aboard): the seat
@@ -2953,7 +2958,7 @@ func seat_name_of(player_uuid: String) -> String:
 	if pilot_uuid == player_uuid:
 		for seat in _seats():
 			if seat.is_driver_seat():
-				return str(seat.name)
+				return VehicleNetKey.of(seat)
 	return ""
 
 ## All seats of this vehicle (designer-placed VehicleSeat children).
@@ -2964,12 +2969,23 @@ func _seats() -> Array:
 			out.append(c)
 	return out
 
-## Find a seat by its node name (the client sends which box it used).
+## Find a seat by its key (VehicleNetKey; the client sends which box it used, the hand-over the key
+## it replicated — either spelling, normalized).
 func _find_seat(seat_name: String) -> Node:
+	var key: String = VehicleNetKey.normalize(seat_name)
 	for seat in _seats():
-		if seat.name == seat_name:
+		if VehicleNetKey.of(seat) == key:
 			return seat
 	return null
+
+
+## [param table] (seats or bays, from the network or the database) with its keys as the state spells
+## them, so an older save ("SeatDriver", "Slot_FL") reads the same.
+static func _normalized(table: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in table:
+		out[VehicleNetKey.normalize(str(key))] = table[key]
+	return out
 
 ## The seat currently occupied by the given player (by client_uuid).
 func _find_seat_of(player: Node) -> Node:
@@ -2980,9 +2996,6 @@ func _find_seat_of(player: Node) -> Node:
 		if seat.occupant_uuid == who:
 			return seat
 	return null
-
-func _replicate_pilot() -> void:
-	emit_signal("hs_server_prop_update", uuid, {"pilot_uuid": pilot_uuid}, type_name, has_parent)
 
 ## Free any seat whose occupant vanished (a player who disconnected while seated has their node
 ## freed by the network layer). Without this the seat stays "taken" forever and a freed _pilot
@@ -3000,7 +3013,6 @@ func _release_vanished_occupants() -> void:
 		if seat.is_driver_seat():
 			_pilot = null
 			pilot_uuid = ""
-			_replicate_pilot()
 		print("🚚 Vehicle %s: freed a seat whose occupant disconnected" % uuid)
 	# Drop bed walkers whose node was freed (disconnect) — their AreaDetector can't fire an exit.
 	for player in _bed_players.keys():

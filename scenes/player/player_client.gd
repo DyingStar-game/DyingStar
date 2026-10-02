@@ -890,7 +890,7 @@ func _seat_is_taken(seat: Node) -> bool:
 	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
 	if veh == null or not ("_net_seats" in veh):
 		return false
-	var occupant: String = str(veh._net_seats.get(str(seat.name), ""))
+	var occupant: String = str(veh._net_seats.get(VehicleNetKey.of(seat), ""))
 	return occupant != "" and occupant != str(player.client_uuid)
 
 ## Take the seat we are standing in: tell the server, lock walking, start riding locally.
@@ -908,7 +908,7 @@ func _enter_seat(seat: Node) -> void:
 	player.client_send_action_to_server({
 		"action": "enter_vehicle",
 		"target_uuid": player._seat_vehicle_uuid,
-		"seat": seat.name,
+		"seat": VehicleNetKey.of(seat),
 	})
 	player.active = false  # lock walking while seated
 	player.set_seated(true)

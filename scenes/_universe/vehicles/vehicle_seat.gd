@@ -17,7 +17,7 @@ enum Role {DRIVER, PASSENGER}
 ## Where the occupant sits (and, for the driver, the camera eye point). Falls back to the
 ## seat node's own transform if left empty.
 @export var sit_point: Marker3D
-## Door that gates this seat: its door_id (a VehicleDoorHandle's door_id, e.g. "Front_l_door"). When
+## Door that gates this seat: its door_id (a VehicleDoorHandle's door_id, e.g. "front_l_door"). When
 ## set, the player must OPEN that door before E can board this seat. Leave empty to board directly.
 @export var door_id: String = ""
 

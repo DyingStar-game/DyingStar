@@ -18,5 +18,9 @@ for every change, not the state of a feature.
 
   Enforced by `test/unit/test_export_docs.gd`, which lists every undocumented export (third-party addons
   excluded).
+- **Nodes are PascalCase** (Godot's style guide): `SeatDriver`, `SlotFL`, not `Slot_FL` or `hanbreak`.
+  A vehicle's seat and bay names are also the keys of its replicated state, in snake_case through
+  `VehicleNetKey` (`SlotFL` -> `slot_fl`). Enforced on the vehicle scenes by
+  `test/unit/test_vehicle_node_names.gd`; nodes that come from a Blender model keep their Blender name.
 - Lint with `gdlint` (rules in `gdlintrc`, 140 characters per line).
 - Unit tests are GUT, in `test/unit/`.

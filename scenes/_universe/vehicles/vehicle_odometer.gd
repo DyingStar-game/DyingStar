@@ -44,6 +44,10 @@ func write_changes(data: Dictionary) -> void:
 		_sent_km = km_now
 
 
+func forget_sent() -> void:
+	_sent_km = -1.0
+
+
 func read(data: Dictionary) -> void:
 	if data.has(KEY):
 		_sent_km = float(data[KEY])
