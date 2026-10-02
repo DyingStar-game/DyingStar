@@ -7,7 +7,6 @@
 			"properties": [
 				"position",
 				"rotation",
-				"scenename",
 				"parent_id"
 			]
 		},
@@ -17,7 +16,6 @@
 			"frequency": 5.0,
 			"properties": [
 				"scenename",
-				"data",
 				"terrain_settled"
 			]
 		}

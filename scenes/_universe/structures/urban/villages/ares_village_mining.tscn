@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://d14u2bcesufk6" path="res://scenes/_universe/structures/buildings/spawn_building.tscn" id="2_n6sqd"]
 [ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="3_limx2"]
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="4_hnyaj"]
+[ext_resource type="PackedScene" uid="uid://dk07ej5iwa2mg" path="res://scenes/_universe/structures/industrial/garage.tscn" id="4_n6sqd"]
 
 [node name="AresVillageMining" type="Node3D" unique_id=1311035986]
 
@@ -62,3 +63,6 @@ transform = Transform3D(-0.9999999999999998, 0, 1.2246467991473527e-16, 0, 0.999
 
 [node name="MiningDepot" parent="." unique_id=1889403175 instance=ExtResource("4_hnyaj")]
 transform = Transform3D(-1.0000000000000002, 0, 1.2246467991473532e-16, 0, 1, 0, -1.2246467991473535e-16, 0, -1, -12, 0.6000000000058208, -97)
+
+[node name="Garage" parent="." unique_id=1534038917 instance=ExtResource("4_n6sqd")]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 52.04122373947572, 0, -118.95151438820612)
