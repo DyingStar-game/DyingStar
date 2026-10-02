@@ -62,6 +62,14 @@ const SPEED_LOD_EXIT := 0.8
 ## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
 ## does not rebuild the fine ring just to drop it again.
 const SPEED_LOD_HOLD_MS := 2000
+## The scale moves one step (×2 or ×0.5) at a time, this long (ms) apart at least: jumping from 1 to
+## 0.25 at once replaced the whole fine ground in one LOD pass — 30-60 ms frames for ~3 s on every
+## take-off, and an 860-chunk burst on stopping (2026-10-02).
+const SPEED_LOD_STEP_MS := 1000
+## Most time (ms) one update spends handing new chunks to the pipeline (Step 1). What is left stays
+## desired and is handed over at the next update, best first: the scale going back to full detail
+## after a fast flight once queued ~860 disk-cache reads in one update (105 ms).
+const NEW_CHUNKS_BUDGET_MS := 6.0
 ## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
 const KNOWN_MISS_MS := 2000
 ## The mesh backlog and the assembly queue are ranked again (build_priority) once the view has turned
@@ -179,6 +187,10 @@ var _terrain_mult: float = 1.0
 ## on the server), and since when a finer one has been due (-1: none).
 var _speed_lod_scale: float = 1.0
 var _speed_lod_finer_since: int = -1
+## When the scale last moved (msec; SPEED_LOD_STEP_MS).
+var _speed_lod_changed_at: int = -SPEED_LOD_STEP_MS
+## client.ini debug_no_speed_lod, read once: -1 not read yet, 0 on, 1 off.
+var _speed_lod_off: int = -1
 ## Chunks the last LOD update wanted on screen (see desired_chunk_count).
 var _desired_count: int = 0
 
@@ -1888,7 +1900,11 @@ func _update_terrain() -> void:
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
 			return prio[a] < prio[b])
 	var _tks := _perf_begin()
+	var t_new := Time.get_ticks_usec()
 	for key in _new_keys:
+		# Best first, so what the budget leaves for the next update is the least urgent.
+		if Time.get_ticks_usec() - t_new >= NEW_CHUNKS_BUDGET_MS * 1000.0:
+			break
 		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
 		pipeline[key] = true
 	_perf_end("steps:new", _tks)
@@ -2796,22 +2812,32 @@ func _lod_mult() -> float:
 ## Camera speed over the last second, from the history (one sample per UPDATE_INTERVAL), into
 ## _speed_lod_scale. Coarser at once; finer only after SPEED_LOD_HOLD_MS below the step.
 func _update_speed_lod() -> void:
+	if _speed_lod_off < 0:
+		_speed_lod_off = 1 if ClientConfig.get_bool("debug_no_speed_lod", false) else 0
 	var n := _cam_history.size()
-	if n < 2 or ClientConfig.get_bool("debug_no_speed_lod", false):
+	if n < 2 or _speed_lod_off == 1:
 		_speed_lod_scale = 1.0
 		return
 	var back := mini(n - 1, 4)
 	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / (back * UPDATE_INTERVAL)
 	var want := speed_lod_scale(speed, _speed_lod_scale)
-	if want <= _speed_lod_scale:
-		_speed_lod_scale = want
+	var now := Time.get_ticks_msec()
+	var stepped := now - _speed_lod_changed_at >= SPEED_LOD_STEP_MS
+	# One step at a time (the steps are halvings: SPEED_LOD_STEPS), SPEED_LOD_STEP_MS apart.
+	if want < _speed_lod_scale:
 		_speed_lod_finer_since = -1
-	elif _speed_lod_finer_since < 0:
-		_speed_lod_finer_since = Time.get_ticks_msec()
-	elif Time.get_ticks_msec() - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS:
-		_speed_lod_scale = want
+		if stepped:
+			_speed_lod_scale = maxf(want, _speed_lod_scale * 0.5)
+			_speed_lod_changed_at = now
+	elif want > _speed_lod_scale:
+		if _speed_lod_finer_since < 0:
+			_speed_lod_finer_since = now
+		elif now - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS and stepped:
+			_speed_lod_scale = minf(want, _speed_lod_scale * 2.0)
+			_speed_lod_changed_at = now
+	else:
 		_speed_lod_finer_since = -1
-	if ClientPerf.enabled:
+	if ClientPerf.enabled and get_parent() != null:
 		ClientPerf.gauge("terrain_speed_ms:" + str(get_parent().name), speed)
 		ClientPerf.gauge("terrain_speed_scale:" + str(get_parent().name), _speed_lod_scale)
 
