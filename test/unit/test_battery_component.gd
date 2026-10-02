@@ -79,3 +79,8 @@ func test_the_charge_comes_from_the_network() -> void:
 	_part.apply_prop_data({"charge_j": 90.0e6, "slot_id": "slot_fl"})
 	assert_almost_eq(_part.charge_j, 90.0e6, 1.0, "the replicated charge")
 	assert_eq(_part.slot_id, "slot_fl", "and the bay, as any part")
+
+
+func test_the_gauge_is_green_then_red_when_low() -> void:
+	assert_eq(VehicleBattery.gauge_color(0.63), VehicleBattery.GAUGE_FILL, "green while charged")
+	assert_eq(VehicleBattery.gauge_color(0.1), VehicleBattery.GAUGE_LOW, "red under 20 %")
