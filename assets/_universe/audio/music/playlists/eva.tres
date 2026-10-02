@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="MusicPlaylist" format=3 uid="uid://cwvst7e2r2dad"]
+[gd_resource type="Resource" script_class="MusicPlaylist" format=3]
 
 [ext_resource type="Script" uid="uid://drdv53naeb0gp" path="res://scenes/audio/music/music_playlist.gd" id="1"]
 [ext_resource type="AudioStream" uid="uid://coonwu46pvyfh" path="res://assets/_universe/audio/music/beyond_horizon.mp3" id="2"]
@@ -7,9 +7,10 @@
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/meloncholia.ogg" id="5"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/eva_atmo_1_wip.ogg" id="6"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/syd_where_are_you.ogg" id="7"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/music/balade.ogg" id="8"]
 
 [resource]
 script = ExtResource("1")
-tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7")])
+tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8")])
 gap_min_s = 60.0
 gap_max_s = 180.0
