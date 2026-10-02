@@ -44,6 +44,15 @@ var accept_hints : bool = true
 var _separation : int
 ## Left and right change the tab: see [method arrows_select].
 var _arrows_select : bool = false
+## Entries drawn as buttons (see [method frame_entries]): their minimum height, 0 = flat text.
+var _frame_height : float = 0.0
+
+## A framed entry (frame_entries): its fill, its border at rest (amber under the pointer or the focus),
+## and the room each side of its text.
+const _FRAME_FILL : Color = Color(1.0, 1.0, 1.0, 0.06)
+const _FRAME_BORDER : Color = Color(1.0, 1.0, 1.0, 0.35)
+const _FRAME_BORDER_PX : int = 1
+const _FRAME_PAD_X : float = 28.0
 
 
 func _init(p_font_size: int = 20, separation: int = 36) -> void:
@@ -154,6 +163,15 @@ func allow_focus() -> void:
 			_add_accept_hint(_buttons[key])
 
 
+## Draw the entries as buttons rather than as flat text: the same capitals and colours, in a frame
+## [param min_height] px high that lights amber under the pointer or the focus. For an entry that stands
+## alone as a button (a window's OK), where flat text read as a caption.
+func frame_entries(min_height: float) -> void:
+	_frame_height = min_height
+	for k: StringName in _buttons:
+		_style(k)
+
+
 ## Tabs over a page (Controls' families): left and right — the cross, the stick, the arrows — open
 ## the tab beside the open one, as LB / RB do the settings' categories. Only the open tab takes the
 ## focus, so coming down onto the row lands on it, never on a neighbour that would open instead.
@@ -238,6 +256,9 @@ func _style(key: StringName) -> void:
 	var on : bool = key == _active
 	button.text = _prefixes[key] + tr(_labels[key]).to_upper()
 	button.add_theme_color_override("font_color", SettingsStyle.ACTIVE_COLOR if on else SettingsStyle.INACTIVE_COLOR)
+	if _frame_height > 0.0:
+		_frame(button)
+		return
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color.TRANSPARENT
 	style.content_margin_left = _PAD_X
@@ -248,3 +269,23 @@ func _style(key: StringName) -> void:
 		style.border_color = SettingsStyle.ACTIVE_COLOR
 	for state in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
 		button.add_theme_stylebox_override(state, style)
+
+
+## A framed entry (frame_entries): a faint fill and a thin border, amber under the pointer and the focus.
+func _frame(button: Button) -> void:
+	button.custom_minimum_size.y = _frame_height
+	var rest : StyleBoxFlat = _frame_box(_FRAME_BORDER)
+	var lit : StyleBoxFlat = _frame_box(SettingsStyle.ACTIVE_COLOR)
+	button.add_theme_stylebox_override("normal", rest)
+	for state in ["hover", "pressed", "hover_pressed", "focus"]:
+		button.add_theme_stylebox_override(state, lit)
+
+
+static func _frame_box(border: Color) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = _FRAME_FILL
+	box.border_color = border
+	box.set_border_width_all(_FRAME_BORDER_PX)
+	box.content_margin_left = _FRAME_PAD_X
+	box.content_margin_right = _FRAME_PAD_X
+	return box

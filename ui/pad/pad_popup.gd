@@ -21,6 +21,8 @@ const WIDTH_PX : float = 420.0
 const PANEL_COLOR : Color = Color(0.07, 0.08, 0.1, 0.96)
 const VEIL_COLOR : Color = Color(0.0, 0.0, 0.0, 0.6)
 const BODY_COLOR : Color = Color(0.85, 0.87, 0.92)
+## The OK button's height (px): a button to press, taller than the top bar's entries.
+const OK_HEIGHT_PX : float = 48.0
 
 ## Shown once this launch already.
 static var _shown : bool = false
@@ -60,8 +62,10 @@ func _init() -> void:
 	var body : Label = _text("%%PAD_POPUP_TEXT", SettingsStyle.FONT_SIZE + 1, BODY_COLOR)
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(body)
-	# OK in the top bar's style (a strip of one entry), so it reads as the menu's own.
+	# OK in the top bar's style (a strip of one entry), so it reads as the menu's own — framed as a button,
+	# taller than the bar's entries: alone under the text, flat capitals read as a caption.
 	var strip := TabStrip.new(SettingsStyle.FONT_SIZE + 5)
+	strip.frame_entries(OK_HEIGHT_PX)
 	strip.alignment = BoxContainer.ALIGNMENT_CENTER
 	strip.accept_hints = false  # "OK (A)" names its button already
 	strip.allow_focus()

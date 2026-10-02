@@ -115,6 +115,18 @@ func test_the_window_holds_the_focus_while_it_is_up() -> void:
 	assert_false(MenuFocus.modal)
 
 
+func test_ok_looks_like_a_button() -> void:
+	var popup := PadPopup.new()
+	add_child(popup)
+	var ok : Button = popup._ok
+	assert_gte(ok.custom_minimum_size.y, PadPopup.OK_HEIGHT_PX, "taller than the bar's entries")
+	var normal := ok.get_theme_stylebox("normal") as StyleBoxFlat
+	assert_gt(normal.border_width_top, 0, "framed, not flat text")
+	var focus := ok.get_theme_stylebox("focus") as StyleBoxFlat
+	assert_eq(focus.border_color, SettingsStyle.ACTIVE_COLOR, "amber under the focus, as the menu's entries")
+	popup.close()
+
+
 func test_a_pad_unknown_by_name_is_still_a_pad() -> void:
 	assert_eq(InputDevice.family_of("XInput Gamepad (GLFW)", false), InputDevice.Family.XBOX,
 		"its shoulders LB / RB, not Button 10 / 11")
