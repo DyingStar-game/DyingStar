@@ -7,7 +7,8 @@ extends Panel
 ## about it (the screen is just another child). Put this script on the UI scene's root.
 ##
 ## Expects these child Labels (rename here if your scene differs):
-## Speed, RPM, Load, Overloaded, Powertrain, Transmission, Handbrake, Light, Limiter, Odometer.
+## Speed, RPM, Load, Overloaded, Powertrain, Transmission, Handbrake, Light, Limiter, Odometer;
+## and a BatteryBars container, filled with one row per battery fitted (bar + percentage).
 
 ## The speed limiter: green while it is on, red while it is holding the truck back over its limit
 ## (engine braking), dimmed while it is off. The chosen step stays readable in every state, only the
@@ -15,6 +16,11 @@ extends Panel
 const LIMITER_ON_COLOR := Color(0.4627451, 0.96862745, 0.0)  # the green of the other "on" lights
 const LIMITER_BRAKING_COLOR := Color(1.0, 0.0, 0.25882354)  # the red of the overload warning
 const LIMITER_OFF_COLOR := Color(1.0, 1.0, 1.0, 0.45)
+## A battery row: the one in use at full strength, the others dimmed.
+const BATTERY_IDLE_ALPHA := 0.45
+## Size of a battery bar on the screen (px) and of its percentage.
+const BATTERY_BAR_SIZE := Vector2(520.0, 40.0)
+const BATTERY_FONT_SIZE := 44
 
 ## Beyond this distance (m) from the player's view the screen stops rendering and its labels stop
 ## updating: it keeps its last image, unreadable from there anyway. Every truck carried a 1921x1112
@@ -37,6 +43,7 @@ var _state: String = ""
 @onready var _light: Label = $Light
 @onready var _limiter: Label = $Limiter
 @onready var _odometer: Label = $Odometer
+@onready var _battery_bars: VBoxContainer = $BatteryBars
 
 func _ready() -> void:
 	_vehicle = _find_vehicle()
@@ -48,9 +55,10 @@ func _process(_delta: float) -> void:
 	if _far_from_view():
 		_set_state("far")
 		return
-	# Engine off: the screen goes dark (matches the rear-view screens). Multiplying by black keeps
-	# the panel opaque, so the cab screen reads as a powered-off display rather than a frozen dash.
-	if not _vehicle.is_engine_on():
+	# Engine off, or no charge left: the screen goes dark (matches the rear-view screens). Multiplying
+	# by black keeps the panel opaque, so the cab screen reads as a powered-off display rather than a
+	# frozen dash. It draws nothing from the batteries, but it needs one with some charge.
+	if not _vehicle.is_engine_on() or not _vehicle.energy.has_energy():
 		modulate = Color(0, 0, 0, 1)
 		_set_state("off")
 		return
@@ -68,6 +76,42 @@ func _process(_delta: float) -> void:
 	_limiter.text = "%s  %d km/h" % [tr("%%HUD_LIMITER"), limiter.cap_kmh]
 	_limiter.modulate = _limiter_color(limiter, _vehicle.get_display_speed_kmh())
 	_odometer.text = "%s  %s km" % [tr("%%HUD_ODOMETER"), _km_text(_vehicle.odometer.km())]
+	_show_batteries(_vehicle.energy.levels())
+
+
+## One row per battery, in bay order (VehicleEnergy.levels): its charge as a bar, the percentage at
+## its end, the one in use at full strength and the others dimmed.
+func _show_batteries(levels: Array[Dictionary]) -> void:
+	while _battery_bars.get_child_count() < levels.size():
+		_battery_bars.add_child(_battery_row())
+	while _battery_bars.get_child_count() > levels.size():
+		var extra: Node = _battery_bars.get_child(_battery_bars.get_child_count() - 1)
+		_battery_bars.remove_child(extra)
+		extra.queue_free()
+	for i in levels.size():
+		var row: HBoxContainer = _battery_bars.get_child(i)
+		var level: Dictionary = levels[i]
+		(row.get_child(0) as ProgressBar).value = float(level["fraction"]) * 100.0
+		(row.get_child(1) as Label).text = EnergyFormat.percent(float(level["fraction"]))
+		row.modulate.a = 1.0 if bool(level["active"]) else BATTERY_IDLE_ALPHA
+
+
+## A battery row: a bar and its percentage.
+static func _battery_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "BatteryRow"
+	row.add_theme_constant_override("separation", 16)
+	var bar := ProgressBar.new()
+	bar.name = "Charge"
+	bar.custom_minimum_size = BATTERY_BAR_SIZE
+	bar.show_percentage = false
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(bar)
+	var percent := Label.new()
+	percent.name = "Percent"
+	percent.add_theme_font_size_override("font_size", BATTERY_FONT_SIZE)
+	row.add_child(percent)
+	return row
 
 
 static func _limiter_color(limiter: VehicleSpeedLimiter, speed_kmh: float) -> Color:

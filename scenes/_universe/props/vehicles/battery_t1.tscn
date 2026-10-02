@@ -1,0 +1,64 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/vehicles/vehicle_battery.gd" id="1_battery"]
+[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/battery_t1.tres" id="2_spec"]
+[ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="6_0088b"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_battery"]
+size = Vector3(0.4, 0.3, 0.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_battery"]
+albedo_color = Color(0.16, 0.2, 0.24, 1)
+metallic = 0.7
+roughness = 0.5
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_battery"]
+size = Vector3(0.4, 0.3, 0.6)
+
+[node name="BatteryT1" type="RigidBody3D" unique_id=1840273361]
+collision_layer = 8
+collision_mask = 15
+mass = 25.0
+script = ExtResource("1_battery")
+spec = ExtResource("2_spec")
+icon_faces = 25
+icon_fill = 0.45
+id_type = "BAT"
+id_short_display = true
+sfx_pick_up = ExtResource("sfx_pick")
+sfx_landing = ExtResource("sfx_landing")
+
+[node name="PropSync" type="Node" parent="." unique_id=1840273362]
+script = ExtResource("propsync_1")
+type_name = "vehicle_component"
+enable_carry = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1840273363]
+material_override = ExtResource("6_0088b")
+mesh = SubResource("BoxMesh_battery")
+surface_material_override/0 = SubResource("StandardMaterial3D_battery")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1840273364]
+shape = SubResource("BoxShape3D_battery")
+
+[node name="Area3D" type="Area3D" parent="." unique_id=1840273365]
+collision_layer = 32
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=1840273366]
+shape = SubResource("BoxShape3D_battery")
+
+[node name="IdFrameTop" type="Label3D" parent="." unique_id=1840273367 groups=["prop_id_label"]]
+transform = Transform3D(1.3669316428620764e-17, 0.3282112443506985, 1.110223e-16, 0, -4.163336342344336e-17, 1.0000000000000002, 0.22324425128049644, -2.009647876139071e-17, -6.797931e-33, 0.1349999999947613, 0.15099999999802094, 0)
+text = "ARES-BAT-XXXXXXXX"
+
+[node name="IdFrameLeft" type="Label3D" parent="." unique_id=1840273368 groups=["prop_id_label"]]
+transform = Transform3D(1.3669316428620758e-17, 0, -1, 0, 0.3282112443506984, 0, 0.2232442512804964, 0, 6.123032e-17, -0.20014930447905763, 0.08706938597529035, 0)
+text = "ARES-BAT-XXXXXXXX"
+
+[node name="IdFrameRight" type="Label3D" parent="." unique_id=1840273369 groups=["prop_id_label"]]
+transform = Transform3D(0, 0, 1, 0, 0.3282112443506984, 0, -0.2232442512804964, 0, 0, 0.20014930447905763, 0.08706938597529035, 0)
+text = "ARES-BAT-XXXXXXXX"

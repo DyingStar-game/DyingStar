@@ -10,7 +10,8 @@
 				"scenename",
 				"parent_id",
 				"slot_id",
-				"weight"
+				"weight",
+				"charge_j"
 			]
 		},
 		{

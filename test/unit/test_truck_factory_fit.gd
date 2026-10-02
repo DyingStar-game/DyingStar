@@ -29,7 +29,7 @@ func after_each() -> void:
 ## Build the sizing model the same way the vehicle does, from the scene's own values.
 func _spec() -> VehicleDriveSpec:
 	var spec := VehicleDriveSpec.new()
-	spec.motors.assign(_truck.factory_engines)
+	spec.motors.assign(_factory_motors())
 	spec.wheel_radius = _truck.wheel_radius
 	spec.pump_efficiency = _truck.pump_efficiency
 	spec.hydraulic_efficiency = _truck.hydraulic_efficiency
@@ -43,31 +43,44 @@ func _spec() -> VehicleDriveSpec:
 	return spec
 
 
-func test_truck_leaves_the_works_with_three_t1_motors() -> void:
-	assert_eq(_truck.factory_engines.size(), 3, "the MVP column of the sheet says 3 T1 motors")
-	for e in _truck.factory_engines:
-		assert_not_null(e, "no empty slot in the factory fit")
+## The factory fit's motors, batteries and other parts left out.
+func _factory_motors() -> Array[VehicleEngineSpec]:
+	var out: Array[VehicleEngineSpec] = []
+	for c in _truck.factory_components:
+		if c is VehicleEngineSpec:
+			out.append(c)
+	return out
+
+
+func test_truck_leaves_the_works_with_two_t1_motors_and_a_battery() -> void:
+	# The battery sheet's MVP column: 2 T1 motors and 1 T1 battery ("2 is pleasant, 3 is overkill").
+	assert_eq(_truck.factory_components.size(), 3, "three parts for four bays")
+	var motors := _factory_motors()
+	assert_eq(motors.size(), 2, "two T1 motors")
+	for e in motors:
 		assert_eq(e.torque_nm, 600.0, "a T1 produces 600 Nm")
 		assert_eq(e.power_w, 100000.0, "a T1 draws 100 kW")
 		assert_eq(e.tier, 1, "a T1 is tier 1")
+	var batteries := _truck.factory_components.filter(func(c): return c is VehicleBatterySpec)
+	assert_eq(batteries.size(), 1, "and one T1 battery, without which it does not start")
 
 
 func test_masses_close_the_sheet() -> void:
 	# The sheet's mVide INCLUDES the modules (confirmed by its author), so the scene carries the
-	# BARE chassis and the factory fit makes up the rest: 1425 + 3 x 25 = 1500 = mVide. Payload is
+	# BARE chassis and the factory fit makes up the rest: 1425 + 3 x 25 (2 motors, 1 battery) = 1500. Payload is
 	# mCharge - mVide, so a fully loaded truck weighs 2700 exactly like the sheet says.
 	assert_almost_eq(_truck.mass, 1425.0, 0.1, "bare chassis, modules excluded")
 	var fitted: float = 0.0
-	for e in _truck.factory_engines:
-		fitted += e.mass_kg
+	for c in _truck.factory_components:
+		fitted += c.mass_kg
 	assert_almost_eq(e_mass_of(_truck), 25.0, 0.01, "a T1 weighs 25 kg — light enough to carry")
 	assert_almost_eq(_truck.mass + fitted, SHEET_EMPTY_MASS, 0.1, "chassis + modules = mVide")
 	assert_almost_eq(_truck.max_payload, 2700.0 - SHEET_EMPTY_MASS, 0.1, "payload = mCharge - mVide")
 
 
-## Mass of one factory engine.
+## Mass of one factory part.
 func e_mass_of(truck: Vehicle) -> float:
-	return float(truck.factory_engines[0].mass_kg)
+	return float(truck.factory_components[0].mass_kg)
 
 
 func test_chassis_matches_the_mvp_column() -> void:
@@ -82,13 +95,14 @@ func test_chassis_matches_the_mvp_column() -> void:
 func test_factory_fit_produces_the_sheet_figures() -> void:
 	var spec := _spec()
 	assert_true(spec.is_valid(), "a factory-fitted truck is drivable")
-	assert_almost_eq(spec.mech_power_w() / 1000.0, 172.8, 0.1, "mech power (kW)")
-	assert_almost_eq(spec.mech_torque_nm(), 1800.0, 1.0, "mech torque (Nm)")
-	assert_almost_eq(spec.tractive_force_n(), 6000.0, 5.0, "tractive force (N)")
+	# The battery sheet's MVP column, 2 T1 motors.
+	assert_almost_eq(spec.mech_power_w() / 1000.0, 115.2, 0.1, "mech power (kW)")
+	assert_almost_eq(spec.mech_torque_nm(), 1200.0, 1.0, "mech torque (Nm)")
+	assert_almost_eq(spec.tractive_force_n(), 4000.0, 5.0, "tractive force (N)")
 	assert_almost_eq(spec.v_max_motor_ms() * 3.6, 103.68, 0.1, "top speed (km/h)")
 	assert_eq(spec.limiting_factor(SHEET_EMPTY_MASS), "MOTOR", "engine-limited, not drag-limited")
-	assert_almost_eq(spec.max_acceleration(SHEET_EMPTY_MASS), 3.93, 0.02, "acceleration (m/s2)")
-	assert_almost_eq(rad_to_deg(spec.max_slope_rad(SHEET_EMPTY_MASS)), 34.92, 0.05, "slope (deg)")
+	assert_almost_eq(spec.max_acceleration(SHEET_EMPTY_MASS), 2.598, 0.02, "acceleration (m/s2)")
+	assert_almost_eq(rad_to_deg(spec.max_slope_rad(SHEET_EMPTY_MASS)), 22.23, 0.05, "slope (deg)")
 
 
 func test_wheel_radius_follows_the_sheet() -> void:
@@ -126,9 +140,8 @@ func test_the_chassis_caps_the_engine_count_at_the_sheet_figure() -> void:
 	assert_eq(bays.fitted_count(VehicleComponentSpec.Kind.ENGINE), 0, "nothing fitted yet")
 	assert_eq(bays.refuse_reason(engine), "", "an empty chassis takes an engine")
 	assert_ne(bays.refuse_reason(null), "", "and refuses something that is not a part at all")
-	# A kind with no limit declared is never refused, so shipping a battery needs no new rule.
-	var battery := VehicleComponentSpec.new()
-	battery.kind = VehicleComponentSpec.Kind.BATTERY
+	# A kind with no limit declared is never refused: batteries are not capped.
+	var battery := VehicleBatterySpec.new()
 	assert_eq(bays.limit_for(VehicleComponentSpec.Kind.BATTERY), -1, "no cap on batteries yet")
 	assert_eq(bays.refuse_reason(battery), "", "so a battery is accepted")
 

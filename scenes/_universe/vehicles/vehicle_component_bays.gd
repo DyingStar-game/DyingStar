@@ -105,10 +105,20 @@ func refuse_reason(spec: VehicleComponentSpec) -> String:
 	return ""
 
 
+## Why the part in [param slot] cannot be taken out right now, or "" when it can. One gate for every
+## kind of part: the battery in use stays in while the engine runs (GDD 6.1), the others come out.
+func removal_refused(slot: Node) -> String:
+	if slot == null or slot.occupant == null or vehicle == null:
+		return ""
+	if slot.occupant is VehicleBattery and vehicle.is_engine_on() and vehicle.energy.active() == slot.occupant:
+		return "Switch the engine off first"
+	return ""
+
+
 ## The engines actually driving the vehicle: what is BOLTED IN, and nothing else.
 ##
-## factory_engines is deliberately NOT added here. It is the list the chassis leaves the works
-## with, and Vehicle._fit_factory_engines() turns it into real parts sitting in bays — so counting
+## factory_components is deliberately NOT added here. It is the list the chassis leaves the works
+## with, and Vehicle._fit_factory_components() turns it into real parts sitting in bays — so counting
 ## it too would count every factory engine twice (a truck read 7 motors: 3 ghosts + 4 real ones).
 ## What you can see in the bays IS what drives the truck; that is the whole point of the feature.
 func engines() -> Array[VehicleEngineSpec]:

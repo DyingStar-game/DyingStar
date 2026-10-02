@@ -57,23 +57,9 @@ font_size = 50
 font_size = 80
 font_color = Color(0.4627451, 0.96862745, 0, 1)
 
-[sub_resource type="LabelSettings" id="LabelSettings_vptbq"]
-font = ExtResource("2_77xpl")
-font_size = 235
-font_color = Color(0.8098958, 0.8098958, 0.8098958, 1)
-
 [sub_resource type="FontVariation" id="FontVariation_75ksl"]
 base_font = ExtResource("2_77xpl")
 variation_embolden = 0.31
-
-[sub_resource type="LabelSettings" id="LabelSettings_75ksl"]
-font = SubResource("FontVariation_75ksl")
-font_size = 55
-font_color = Color(0.5911458, 0.5911458, 0.5911458, 1)
-
-[sub_resource type="FontVariation" id="FontVariation_q7ufo"]
-base_font = ExtResource("2_77xpl")
-variation_embolden = 0.73
 
 [node name="VehicleUi" type="Panel" unique_id=957292936]
 custom_minimum_size = Vector2(1400, 720)
@@ -228,50 +214,13 @@ label_settings = SubResource("LabelSettings_7dvew")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="VB" type="VBoxContainer" parent="." unique_id=131133817]
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 38.5
-offset_top = 62.5
-offset_right = -40.5
-offset_bottom = 1.5
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 20
-
-[node name="Metrics" type="VBoxContainer" parent="VB" unique_id=1140167809]
-visible = false
-layout_mode = 2
-
-[node name="Battery" type="VBoxContainer" parent="VB" unique_id=813366366]
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 29
-
-[node name="VB" type="VBoxContainer" parent="VB/Battery" unique_id=864542686]
-layout_mode = 2
-theme_override_constants/separation = -51
-
-[node name="RockCount" type="Label" parent="VB/Battery/VB" unique_id=103966222]
-layout_mode = 2
-text = "5"
-label_settings = SubResource("LabelSettings_vptbq")
-horizontal_alignment = 1
-
-[node name="RockCountLabel" type="Label" parent="VB/Battery/VB" unique_id=1637336048]
-layout_mode = 2
-text = "%%HUD_ROCK_FRAGMENTS"
-label_settings = SubResource("LabelSettings_75ksl")
-horizontal_alignment = 1
-
-[node name="TriggerCollect" type="Button" parent="VB/Battery" unique_id=1862706612]
-layout_mode = 2
-theme_override_fonts/font = SubResource("FontVariation_q7ufo")
-theme_override_font_sizes/font_size = 66
-text = "%%HUD_SEND"
+[node name="BatteryBars" type="VBoxContainer" parent="." unique_id=1733004413]
+layout_mode = 0
+offset_left = 620.0
+offset_top = 40.0
+offset_right = 1300.0
+offset_bottom = 280.0
+theme_override_constants/separation = 16
 
 [node name="TextureRect" type="TextureRect" parent="." unique_id=1171561382]
 modulate = Color(0.8697917, 0.8697917, 0.8697917, 1)
@@ -294,8 +243,6 @@ text = "Light ON"
 label_settings = SubResource("LabelSettings_7dvew")
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[connection signal="pressed" from="VB/Battery/TriggerCollect" to="." method="_on_trigger_collect_pressed"]
 
 [node name="Limiter" type="Label" parent="." unique_id=1733004411]
 layout_mode = 0

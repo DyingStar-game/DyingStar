@@ -66,60 +66,36 @@ func part_name() -> String:
 ## Server-side this is skipped outright: a dedicated server draws nothing, and 16 trucks x 3 motors
 ## would be 96 sprites built and kept for an eye that does not exist.
 func _build_icons() -> void:
-	if OS.has_feature("dedicated_server") or spec == null or spec.icon == null:
+	if OS.has_feature("dedicated_server") or spec == null:
 		return
 	var box: AABB = Globals.collision_aabb(self, Transform3D.IDENTITY)
 	if box.size == Vector3.ZERO:
 		return
-	for face in _ICON_FACES:
-		if int(icon_faces) & int(face["bit"]) == 0:
-			continue
-		var sprite := _make_icon_sprite(box, face)
-		if sprite != null:
-			add_child(sprite)
+	for face in ComponentFace.selected(int(icon_faces)):
+		if spec.icon != null:
+			var sprite := _make_icon_sprite(box, face)
+			if sprite != null:
+				add_child(sprite)
+		_decorate_face(box, face)
 
 
-## One face's worth: the outward normal, which way is "up" on it, and the flag that selects it.
-const _ICON_FACES: Array[Dictionary] = [
-	{"bit": 1, "normal": Vector3.UP, "up": Vector3.FORWARD},
-	{"bit": 2, "normal": Vector3.FORWARD, "up": Vector3.UP},
-	{"bit": 4, "normal": Vector3.BACK, "up": Vector3.UP},
-	{"bit": 8, "normal": Vector3.LEFT, "up": Vector3.UP},
-	{"bit": 16, "normal": Vector3.RIGHT, "up": Vector3.UP},
-]
-## How far off the surface the sprite sits (m). Enough to beat depth fighting with the hull at the
-## distances this is looked at, small enough that it still reads as paint and not as a floating sign.
-const _ICON_LIFT := 0.003
+## What else a kind of part paints on each of its icon faces, beside the pictogram (a battery adds
+## its charge gauge). Nothing for a plain part. Client side only, like the pictogram.
+func _decorate_face(_box: AABB, _face: Dictionary) -> void:
+	pass
 
 
-## An unlit, non-billboard sprite laid flat on one face of [param box]. Null when it would not fit.
+## An unlit, non-billboard sprite of the spec's pictogram laid flat on one face of [param box]
+## (ComponentFace). Null when it would not fit.
 func _make_icon_sprite(box: AABB, face: Dictionary) -> Sprite3D:
-	var normal: Vector3 = face["normal"]
-	var up: Vector3 = face["up"]
-	var right: Vector3 = up.cross(normal)
-	# The face's own extent, measured on the box along the two axes that lie IN it.
-	var span_w: float = absf(right.dot(box.size))
-	var span_h: float = absf(up.dot(box.size))
-	if span_w <= 0.0 or span_h <= 0.0:
+	if spec == null or spec.icon == null:
 		return null
-	var tex_size: Vector2 = spec.icon.get_size()
-	if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+	var layout: Dictionary = ComponentFace.layout(box, face, spec.icon.get_size())
+	if layout.is_empty():
 		return null
-	# Lay the pictogram along the face's LONG axis. A landscape icon dropped on the short side of
-	# an oblong face fits in a fraction of the room available and reads as rotated next to the
-	# serial, which runs the long way. Both quarter turns are measured and the roomier one wins,
-	# so this stays right for a face of any proportion rather than for this crate's 0.4 x 0.6.
-	var upright: float = minf(span_w / tex_size.x, span_h / tex_size.y)
-	var turned: float = minf(span_h / tex_size.x, span_w / tex_size.y)
-	if turned > upright:
-		var was_up: Vector3 = up
-		up = right
-		right = -was_up
-	# Fit the texture inside that rectangle, keeping its aspect, then shrink to icon_fill.
-	var scale_to_fit: float = maxf(upright, turned)
 	var sprite := Sprite3D.new()
 	sprite.texture = spec.icon
-	sprite.pixel_size = scale_to_fit * clampf(icon_fill, 0.1, 1.0)
+	sprite.pixel_size = float(layout["scale"]) * clampf(icon_fill, 0.1, 1.0)
 	# Unlit and alpha-cut: a pictogram is paint, not a surface to relight, and DISCARD keeps it
 	# crisp without entering the transparency sort (where it would flicker against its own hull).
 	sprite.shaded = false
@@ -127,6 +103,5 @@ func _make_icon_sprite(box: AABB, face: Dictionary) -> Sprite3D:
 	sprite.double_sided = false
 	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	var centre: Vector3 = box.get_center() + normal * (absf(normal.dot(box.size)) * 0.5 + _ICON_LIFT)
-	sprite.transform = Transform3D(Basis(right, up, normal), centre)
+	sprite.transform = layout["transform"]
 	return sprite
