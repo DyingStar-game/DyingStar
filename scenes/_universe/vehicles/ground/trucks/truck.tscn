@@ -37,6 +37,14 @@ size = Vector3(0.03758665739610478, 0.1044873444532186, 0.14503269956207987)
 [sub_resource type="BoxShape3D" id="BoxShape3D_hatch"]
 size = Vector3(0.22, 0.7, 0.65)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_plate"]
+albedo_color = Color(0.92, 0.92, 0.88, 1)
+roughness = 0.6
+
+[sub_resource type="QuadMesh" id="QuadMesh_plate"]
+material = SubResource("StandardMaterial3D_plate")
+size = Vector2(0.56, 0.13)
+
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 collision_layer = 4
 collision_mask = 15
@@ -342,5 +350,19 @@ metadata/_custom_type_script = "uid://kbp6qag1idal"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
+
+[node name="PlateRear" type="MeshInstance3D" parent="." unique_id=1962500959]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19281422699231943, 2.062)
+cast_shadow = 0
+mesh = SubResource("QuadMesh_plate")
+
+[node name="IdFrameTruck" type="Label3D" parent="PlateRear" unique_id=1962500958 groups=["prop_id_label"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.002)
+pixel_size = 0.0015
+double_sided = false
+modulate = Color(0.08, 0.08, 0.1, 1)
+text = "ARES-TRUCK-XXXXXXXX"
+font_size = 32
+outline_size = 0
 
 [editable path="Model"]

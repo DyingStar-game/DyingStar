@@ -30,22 +30,14 @@ func _ready() -> void:
 	_update_id_labels()
 
 ## Human-readable "company-type-uuid" serial shown on the crate. The UUID is the real unique key; the
-## company/type prefix is cosmetic. Empty until the uuid is assigned.
+## company/type prefix is cosmetic. Empty until the uuid is assigned. (PropSerial, shared with Vehicle.)
 func serial() -> String:
-	if uuid == "":
-		return ""
-	var uuid_display: String = uuid.split("-")[0].to_upper() if id_short_display else uuid
-	return "%s-%s-%s" % [id_company, id_type, uuid_display]
+	return PropSerial.format(id_company, id_type, uuid, id_short_display)
 
-## Fill every id "frame" on this crate — the Label3D children in the group "prop_id_label" (one per
-## face) — with the current serial. Called from the uuid setter AND _ready, so it survives any order.
+## Fill every id "frame" on this crate (PropSerial.LABEL_GROUP, one per face) with the current serial.
+## Called from the uuid setter AND _ready, so it survives any order.
 func _update_id_labels() -> void:
-	if uuid == "":
-		return
-	var txt: String = serial()
-	for node in find_children("*", "Label3D", true, false):
-		if node.is_in_group("prop_id_label"):
-			(node as Label3D).text = txt
+	PropSerial.fill(self, serial())
 
 ## Cached component, resolved lazily so a facade access before _ready still works.
 func _prop_sync() -> PropSync:
