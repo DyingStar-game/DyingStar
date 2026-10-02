@@ -623,6 +623,7 @@ func server_action_received(data: Dictionary) -> void:
 				# Server-authoritative: same gate as the client — grabbable (not already carried) AND a
 				# clear line of sight, so a thin wall can't be exploited to grab through it.
 				var can_grab: bool = _stance == 0 and parent_node != null and parent_node.has_method("interact") \
+						and not _component_locked(parent_node) \
 						and parent_node.interact(player) and not _is_blocked_by_geometry(parent_node)
 				if can_grab:
 					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
@@ -834,6 +835,14 @@ func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 		if found != null:
 			return found
 	return null
+
+## A part its bay will not give back right now (VehicleComponentBays.removal_refused): the battery in
+## use, while the engine runs. Checked before interact(), which would mark it carried.
+func _component_locked(part: Node) -> bool:
+	if not part.has_meta("component_slot_ref"):
+		return false
+	var slot = part.get_meta("component_slot_ref")
+	return is_instance_valid(slot) and slot.vehicle() != null and slot.vehicle().bays.removal_refused(slot) != ""
 
 ## Find a carriable (group "carriable") by its uuid (server-side). Used to pick up
 ## exactly the object the client aimed at. (#124)

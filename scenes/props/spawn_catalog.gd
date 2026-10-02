@@ -66,6 +66,10 @@ const ENTRIES := {
 		"label": "%%SPAWN_ENGINE_T1", "scene": "res://scenes/_universe/props/vehicles/engine_t1.tscn",
 		"type": "vehicle_component", "distance": 2.0, "origin_height": 0.3,
 	},
+	"battery_t1": {
+		"label": "%%SPAWN_BATTERY_T1", "scene": "res://scenes/_universe/props/vehicles/battery_t1.tscn",
+		"type": "vehicle_component", "distance": 2.0, "origin_height": 0.3,
+	},
 	"truck": {
 		"label": "%%SPAWN_TRUCK", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
@@ -79,6 +83,7 @@ const WHEEL := [
 	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
 			"pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"key": "engine_t1"},
+	{"key": "battery_t1"},
 	{"key": "truck"},
 ]
 

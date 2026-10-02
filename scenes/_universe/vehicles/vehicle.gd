@@ -99,9 +99,10 @@ const REBIND_EVERY_FRAMES: int = 30
 ## the engines bolted into it: the transmission, the bodywork and the tyres are the chassis. They
 ## feed VehicleDriveSpec, which turns them plus the fitted engines into force and top speed.
 ##
-## Engines fitted at the factory. The chassis leaves the works with these, and they are what makes
-## it drivable before anyone opens a hatch. Leave empty for a vehicle that must be equipped first.
-@export var factory_engines: Array[VehicleEngineSpec] = []
+## Components fitted at the factory (engines, batteries…), one per bay in bay order. The chassis
+## leaves the works with these, and they are what makes it drivable before anyone opens a hatch. Leave
+## empty for a vehicle that must be equipped first.
+@export var factory_components: Array[VehicleComponentSpec] = []
 ## Drag coefficient (Cx): 1.05 for a perfect cube, 0.2 for a sports car, 0.45 for a jeep.
 @export var drag_coefficient: float = 1.0
 ## Frontal area facing the airflow (m2) — width x height, near enough.
@@ -123,10 +124,10 @@ const REBIND_EVERY_FRAMES: int = 30
 ## How many engines this chassis will run — the sheet's "Nb moteur T1" per vehicle. It belongs to
 ## the CHASSIS, not to any one bay: the truck's four hatches are four identical boxes, and typing a
 ## kind into each would freeze game design into a scene. -1 = no limit. Other kinds of component
-## get their own line in _component_limit() when they ship.
+## get their own line in VehicleComponentBays.limit_for() when they need one.
 @export var max_engines: int = 3
 ## Mass of the BARE chassis (kg): modules and payload excluded. The design sheet's mVide MINUS the
-## factory modules — 1500 - 3 x 25 for the MVP truck.
+## factory modules — 1500 - 3 x 25 for the MVP truck (two T1 motors and a T1 battery).
 ##
 ## DECLARED, not captured from `mass` at _ready, and that distinction is a bug fix. A persisted
 ## vehicle has its replicated mass written BEFORE _ready runs: create_generic_object applies the
@@ -733,6 +734,14 @@ var limiter: VehicleSpeedLimiter:
 			_limiter.taper_kmh = limiter_taper_kmh
 		return _limiter
 var _limiter: VehicleSpeedLimiter = null
+## The batteries fitted and what the motors draw on them (VehicleEnergy): one at a time, in bay order.
+## A property like bays, for the same reason.
+var energy: VehicleEnergy:
+	get:
+		if _energy == null:
+			_energy = VehicleEnergy.new(bays)
+		return _energy
+var _energy: VehicleEnergy = null
 # Real-model parts (all optional). Empty / null when the vehicle uses the procedural blockout.
 var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under VehicleWheel3D (runtime)
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
@@ -1974,6 +1983,8 @@ func toggle_engine() -> void:
 		return  # can't START above walking pace; stopping (the else) is unrestricted
 	if not _engine_on and bays.first_engine() == null:
 		return  # nothing to run: an empty bay has no ignition
+	if not _engine_on and not energy.has_energy():
+		return  # no charge left in any battery (or no battery at all): no ignition either
 	set_engine(not _engine_on)
 
 ## Engine on/off, on the server as well as on each replica (which gets it replicated). Switching it ON
@@ -2601,7 +2612,7 @@ func _rebind_restored_components() -> void:
 	# on a truck somebody equipped: fitting the factory set now would bolt a second engine on top
 	# of one already on its way back.
 	if _rebind_frames <= REBIND_WINDOW_FRAMES / 2:
-		_fit_factory_engines()
+		_fit_factory_components()
 	if bays.rebind() > 0:
 		_net_sent.erase("components")  # the table back onto the wire: the replicas need it too
 
@@ -2616,8 +2627,8 @@ func _rebind_restored_components() -> void:
 ## that once doubled the whole world's contents. Nothing is installed here: the parts are spawned
 ## parented to us, carrying their slot_id, and rebind() above adopts them on a later frame. One path
 ## for parts that come from the factory and parts that come back from the database.
-func _fit_factory_engines() -> void:
-	if _factory_fitted or factory_engines.is_empty() or str(uuid) == "":
+func _fit_factory_components() -> void:
+	if _factory_fitted or factory_components.is_empty() or str(uuid) == "":
 		return
 	var free_bays: Array = []
 	for s in bays.all():
@@ -2627,7 +2638,7 @@ func _fit_factory_engines() -> void:
 		_factory_fitted = true  # already equipped (restored from the database): nothing to do
 		return
 	var i: int = 0
-	for spec in factory_engines:
+	for spec in factory_components:
 		if spec == null or str(spec.scene_path) == "" or i >= free_bays.size():
 			continue
 		var slot: Node = free_bays[i]
@@ -3057,6 +3068,7 @@ func _apply_drive(delta: float) -> void:
 	var immobilized: bool = is_immobilized()
 	if immobilized or _handbrake or not _engine_on:
 		force = 0.0
+	_draw_energy(force, delta)
 
 	# VehicleBody3D drives toward +Z for a positive engine_force; our cab faces -Z, so negate.
 	engine_force = -force
@@ -3243,6 +3255,8 @@ func set_headlights(on: bool) -> void:
 
 ## Server: flip the head lights; _replicate_transform then pushes the new state to clients.
 func toggle_headlights() -> void:
+	if not _headlights_on and not energy.has_energy():
+		return  # the lights draw nothing, but they need a battery with some charge left
 	set_headlights(not _headlights_on)
 
 ## True when the head lights are on — server state, or the replicated state on a client replica
@@ -3265,6 +3279,33 @@ func _on_bays_changed() -> void:
 	# running, gauges lit, nothing under the bonnet.
 	if _engine_on and bays.first_engine() == null:
 		set_engine(false)
+	_cut_if_no_energy()
+
+## SERVER: what the motors cost the batteries this tick, for a per-wheel drive [param force] (N).
+## The torque requested is the share of the full force the throttle asked for, times the torque of
+## the motors fitted — the battery follows the torque, not the speed. Nothing is drawn without
+## force: no throttle, hand brake, engine off. Running dry cuts the engine and the lights.
+func _draw_energy(force: float, delta: float) -> void:
+	if force == 0.0 or _powertrain.engine_power <= 0.0:
+		return
+	var torque_nm: float = 0.0
+	for motor in bays.engines():
+		torque_nm += motor.torque_nm
+	torque_nm *= clampf(absf(force) / _powertrain.engine_power, 0.0, 1.0)
+	if energy.draw_for_torque(torque_nm, delta) > 0.0:
+		_cut_if_no_energy()
+
+
+## SERVER: with no charge left anywhere (or no battery), stop the engine and put the lights out. The
+## dashboard and the rear cameras follow the engine.
+func _cut_if_no_energy() -> void:
+	if (_is_networked() and not GameOrchestrator.is_server()) or energy.has_energy():
+		return  # a replica gets the engine and the lights from the server
+	if _engine_on:
+		set_engine(false)
+	if _headlights_on:
+		set_headlights(false)
+
 
 ## How many wheels the engine actually drives. Godot applies engine_force to EACH wheel flagged
 ## use_as_traction, so the per-wheel figure is the total pull divided by this. Never zero.

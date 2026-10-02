@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://p8lbfuk68g7s"]
 
 [ext_resource type="Script" uid="uid://cmfqj2v23317q" path="res://scenes/_universe/vehicles/vehicle.gd" id="1_vehicle"]
-[ext_resource type="Script" uid="uid://cvvfvsjgceiw3" path="res://scenes/_universe/vehicles/vehicle_engine_spec.gd" id="2_fjb8t"]
 [ext_resource type="AudioStream" uid="uid://c4882t4qc0ryu" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg" id="2_urxpd"]
 [ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/_universe/vehicles/vehicle_seat.gd" id="3_seat"]
 [ext_resource type="AudioStream" uid="uid://bkuepip360vt2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg" id="3_udf22"]
@@ -22,6 +21,8 @@
 [ext_resource type="PackedScene" uid="uid://cjkq1jpjbgd6a" path="res://assets/_universe/vehicles/ground/flatbed_small_mini_truck.glb" id="19_lnse2"]
 [ext_resource type="Resource" path="res://scenes/common/wheel_scrub.tres" id="90_scrub"]
 [ext_resource type="Resource" uid="uid://cr7m3w86e4bsq" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="90_t1"]
+[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/battery_t1.tres" id="91_battery"]
+[ext_resource type="Script" path="res://scenes/_universe/vehicles/vehicle_component_spec.gd" id="92_component_spec"]
 [ext_resource type="AudioStream" uid="uid://dxl4bmbemj1bx" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_struck_constant.mp3" id="91_scrubfast"]
 [ext_resource type="Script" uid="uid://blyv56ducsrlp" path="res://scenes/_universe/vehicles/vehicle_component_slot.gd" id="91_slot"]
 
@@ -51,7 +52,7 @@ collision_mask = 15
 mass = 1425.0
 script = ExtResource("1_vehicle")
 torque_response = 1.0
-factory_engines = Array[ExtResource("2_fjb8t")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("90_t1")])
+factory_components = Array[ExtResource("92_component_spec")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("91_battery")])
 steer_speed = 0.2
 steer_return_speed = 1.0
 steering_wheel_ratio = 4.0

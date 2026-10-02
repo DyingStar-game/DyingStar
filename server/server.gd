@@ -95,6 +95,8 @@ var box50cm_scene: PackedScene = preload("res://scenes/_universe/props/container
 var props_scene: Dictionary = {
 	'scenes/_universe/props/vehicles/engine_t1.tscn':
 		preload('res://scenes/_universe/props/vehicles/engine_t1.tscn'),
+	'scenes/_universe/props/vehicles/battery_t1.tscn':
+		preload('res://scenes/_universe/props/vehicles/battery_t1.tscn'),
 	'scenes/_universe/props/containers/container_benne_1200x240x240.tscn':
 		preload('res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn'),
 	'scenes/_universe/props/containers/container_liquid_1200x240x240.tscn':

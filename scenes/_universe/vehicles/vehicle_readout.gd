@@ -137,7 +137,10 @@ func _bays_line() -> String:
 		return "── Bays: none"
 	var parts: PackedStringArray = PackedStringArray()
 	for b in all_bays:
-		parts.append("%s %s" % [b.name, b.occupant_name()])
+		var charge: String = ""
+		if b.occupant is VehicleBattery:
+			charge = " " + EnergyFormat.charge(b.occupant.charge_j, b.occupant.capacity_j())
+		parts.append("%s %s%s" % [b.name, b.occupant_name(), charge])
 	return "── Bays: " + " · ".join(parts)
 
 

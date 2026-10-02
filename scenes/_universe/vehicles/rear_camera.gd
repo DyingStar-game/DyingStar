@@ -94,7 +94,8 @@ func _process(delta: float) -> void:
 
 ## True when the owning vehicle's engine is running (the screen is lit only then).
 func _is_powered() -> bool:
-	return _vehicle != null and is_instance_valid(_vehicle) and _vehicle.is_engine_on()
+	return _vehicle != null and is_instance_valid(_vehicle) and _vehicle.is_engine_on() \
+			and _vehicle.energy.has_energy()
 
 ## Swap the screen between the live feed and the black "off" image, and stop the render pass when off.
 func _apply_power(on: bool) -> void:
