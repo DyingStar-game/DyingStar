@@ -119,6 +119,11 @@ var _quit: bool = false
 var stat_requested: int = 0
 var stat_fetched: int = 0
 var stat_failed: int = 0
+## Parmi les servies : celles qu'il a fallu télécharger, et celles déjà sur disque à leur tour de
+## file. stat_fetched seul les confondait — 34 000 « servies » pour 6 650 téléchargées sur un vol
+## EVA, ce qui se lisait comme un re-téléchargement (2026-10-02).
+var stat_downloaded: int = 0
+var stat_already_cached: int = 0
 
 ## Cumuls de TOUT le processus, toutes planètes confondues — c'est le volume réellement
 ## descendu du réseau que l'on veut voir, pas celui d'une planète en particulier.
@@ -595,7 +600,8 @@ func queue_stats() -> Dictionary:
 			first = mini(first, t)
 		oldest = Time.get_ticks_msec() - first
 	var out := {"queued": _queue.size(), "oldest_ms": oldest, "requested": stat_requested,
-		"fetched": stat_fetched, "failed": stat_failed, "fetch_usec": stat_fetch_usec}
+		"fetched": stat_fetched, "failed": stat_failed, "fetch_usec": stat_fetch_usec,
+		"downloaded": stat_downloaded, "already_cached": stat_already_cached}
 	_mutex.unlock()
 	return out
 
@@ -684,12 +690,17 @@ func _worker() -> void:
 			_forget(item.z, item.y, item.x)
 			continue
 		var t0 := Time.get_ticks_usec()
+		var was_cached := FileAccess.file_exists(tile_cache_path(item.y, item.x))
 		var ok := fetch_now(item.y, item.x)
 		var spent := Time.get_ticks_usec() - t0
 		_mutex.lock()
 		stat_fetch_usec += spent
 		if ok:
 			stat_fetched += 1
+			if was_cached:
+				stat_already_cached += 1
+			else:
+				stat_downloaded += 1
 		else:
 			stat_failed += 1
 		_mutex.unlock()
