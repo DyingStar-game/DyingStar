@@ -10,7 +10,6 @@ display_name = "Tundra"
 description = "Polar biome defined by the absence of trees and the presence of frozen ground. Vegetation is limited to mosses, lichens, and dwarf shrubs."
 color = Color(0.561, 0.659, 0.71, 1)
 detail_texture_scale = 2.0
-elevation_max = 3000.0
 terrain_roughness = 0.6
 supports_vegetation = true
 default_vegetation_density = 0.1

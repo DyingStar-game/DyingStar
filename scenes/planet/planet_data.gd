@@ -108,13 +108,6 @@ var chunk_data_version: String = ""
 @export var lod1_distance: float = 50000.0
 ## Distance from the surface (m) below which a chunk is LOD tier 2; past it, tier 3 (the coarsest).
 @export var lod2_distance: float = 200000.0
-## NOTE: unused since get_lod_level() caps the tier at 3 (the far-LOD placeholder sphere is removed —
-## distant bodies render their coarse LOD-3 chunks at every distance, star-lit on the celestial layer).
-## Kept for scene compatibility and in case the sphere hand-off is ever re-enabled.
-@export var lod3_distance: float = 2000000.0
-## NOTE: unused — LOD 4 was the removed far-LOD placeholder sphere. Only read from the planet JSON; kept
-## for scene compatibility.
-@export var lod4_distance: float = 500000000.0
 
 @export_group("Terrain")
 ## Material applied to every terrain chunk mesh.  If not set, a default
@@ -782,10 +775,6 @@ func load_from_planet_json(path: String = "") -> bool:
 			lod1_distance = float(lod_cfg["lod1_distance"])
 		if lod_cfg.has("lod2_distance"):
 			lod2_distance = float(lod_cfg["lod2_distance"])
-		if lod_cfg.has("lod3_distance"):
-			lod3_distance = float(lod_cfg["lod3_distance"])
-		if lod_cfg.has("lod4_distance"):
-			lod4_distance = float(lod_cfg["lod4_distance"])
 
 	# Auto-populate GeoJSON paths from the "files" dict if not already set.
 	if data.has("files"):
@@ -4918,8 +4907,8 @@ func get_lod_level(surface_distance: float) -> int:
 		return 2
 	# Capped at 3: LOD 4 was a far-LOD placeholder SPHERE, now REMOVED by design — distant bodies render
 	# their coarse LOD-3 chunks at every distance (on the celestial layer, lit by the star in the terrain
-	# shader), so a planet keeps its real terrain instead of popping to a smooth sphere. lod3_distance is
-	# now unused (kept as an @export so existing scenes don't churn).
+	# shader), so a planet keeps its real terrain instead of popping to a smooth sphere. Past lod2_distance
+	# it is tier 3, whatever the distance.
 	return 3
 
 

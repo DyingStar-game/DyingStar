@@ -10,7 +10,6 @@ display_name = "Temperate Forest"
 description = "Forest formation composed of deciduous trees or mixed stands. It features a thick layer of decomposing litter."
 color = Color(0.176, 0.353, 0.118, 1)
 detail_texture_scale = 2.0
-elevation_max = 2000.0
 terrain_roughness = 0.9
 supports_vegetation = true
 default_vegetation_density = 0.7

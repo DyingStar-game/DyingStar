@@ -10,7 +10,6 @@ display_name = "Tropical Forest"
 description = "A high-density vegetation ecosystem characterized by a closed canopy and multiple vegetation layers. Humidity is saturated."
 color = Color(0.102, 0.353, 0.063, 1)
 detail_texture_scale = 2.0
-elevation_max = 1500.0
 terrain_roughness = 0.95
 supports_vegetation = true
 default_vegetation_density = 0.9

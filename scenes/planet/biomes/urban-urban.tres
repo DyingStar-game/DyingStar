@@ -10,7 +10,6 @@ display_name = "Urban - Urban"
 description = "High-density surface of artificial structures and integrated infrastructure. The natural ground is completely sealed by synthetic or metallic coatings."
 category = "artificial"
 color = Color(0.439, 0.439, 0.439, 1)
-elevation_max = 2000.0
 terrain_roughness = 0.3
 supports_vegetation = true
 default_vegetation_density = 0.05

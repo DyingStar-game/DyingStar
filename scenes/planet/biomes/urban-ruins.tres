@@ -11,7 +11,6 @@ description = "Urban or industrial complex in a state of advanced structural deg
 category = "artificial"
 color = Color(0.416, 0.376, 0.376, 1)
 detail_texture_scale = 2.0
-elevation_max = 2000.0
 terrain_roughness = 1.3
 supports_vegetation = true
 default_vegetation_density = 0.4

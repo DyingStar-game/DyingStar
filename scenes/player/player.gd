@@ -47,8 +47,6 @@ const _SURFACE_CATCH_MARGIN := 3.0
 ## Default walk speed (m/s): the starting mouse-wheel tier, and the server's fallback until the owner
 ## picks one. Must sit between walk_speed_min and walk_speed_max.
 @export var walk_speed: float = 1.5
-## Backward walk speed (m/s). Currently unused: no script reads it — walking backward uses the normal walk speed.
-@export var walk_back_speed: float = 0.8
 ## Walk speed is adjustable by the mouse wheel between these bounds, in walk_speed_step increments
 ## (GDD: 0.5-3 m/s, 6 tiers). walk_speed above is the initial/default tier and MUST sit inside these
 ## bounds — outside, the first wheel notch clamps into range and speed jumps instead of stepping.
@@ -76,10 +74,6 @@ var stand_body_height: float = 1.8
 ## Jump impulse as a multiple of the local gravity: take-off speed (m/s) = jump_height × gravity.
 ## Not a height in metres despite the name. Higher = higher jump.
 @export var jump_height: float = 0.5
-## Climb speed (m/s). Currently unused: no script reads it (vault / climb use the durations below).
-@export var regular_climb_speed: float = 6.0
-## Fast climb speed (m/s). Currently unused: no script reads it (vault / climb use the durations below).
-@export var fast_climb_speed: float = 8.0
 ## Speed multiplier while something is carried in the hands (issue #124): 0.5 = half speed.
 ## Lower = slower with hands full.
 @export var carry_speed_factor: float = 0.5
@@ -157,17 +151,11 @@ var stand_body_height: float = 1.8
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
 ## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
 @export var interact_ray_length: float = 1.5
-## Arm length (m). Currently unused: no script reads it (reach is interact_ray_length).
-@export var arm_length: float = 0.5
 
 @export_subgroup("Camera")
 ## Look sensitivity: mouse look turns 0.001 rad per pixel × this. Higher = faster look. The right-stick
 ## and screen-edge pan rates are compensated for it, so they do not depend on it.
 @export_range(1.0, 10.0) var camera_sensitivity: float = 2.0
-## Camera look dead zone, start (0..0.5). Currently unused: no script reads it.
-@export_range(0.0, 0.5) var camera_start_deadzone: float = .2
-## Camera look dead zone, end (0..0.5). Currently unused: no script reads it.
-@export_range(0.0, 0.5) var camera_end_deadzone: float = .1
 
 # --- Audio SFX — all OPTIONAL: an unassigned sound simply plays nothing -------
 # Drop an audio file straight into a Sound slot; each sound then has its own volume, fade-out curve

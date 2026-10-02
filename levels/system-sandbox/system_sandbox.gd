@@ -1,8 +1,6 @@
 class_name SystemSandbox
 extends Node3D
 
-## Node meant to hold spawned props (SmallProps in the scene). Not read by any code at the moment.
-@export var spawn_node: Node
 ## Network uuid of this level root. "" = the world frame: props parented here are published with parent_id "".
 @export var uuid: String = ""
 

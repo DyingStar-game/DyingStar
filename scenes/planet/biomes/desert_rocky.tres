@@ -10,7 +10,6 @@ display_name = "Rocky Desert"
 description = "An arid expanse characterized by bare rock slabs and stone plateaus (mesas) sculpted by erosion. The topography is marked by badlands formations where geological strata are exposed."
 color = Color(0.627, 0.455, 0.31, 1)
 detail_texture_scale = 2.0
-elevation_max = 3000.0
 terrain_roughness = 1.4
 default_vegetation_density = 0.01
 wind_strength = 1.4

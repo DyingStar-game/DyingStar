@@ -10,7 +10,6 @@ display_name = "Savanna"
 description = "A tropical or subtropical ecosystem characterized by a dry grassy carpet dotted with isolated trees. This biome is governed by a marked water seasonality (alternating dry and rainy seasons)."
 color = Color(0.722, 0.659, 0.29, 1)
 detail_texture_scale = 3.0
-elevation_max = 1500.0
 terrain_roughness = 0.6
 supports_vegetation = true
 default_vegetation_density = 0.2

@@ -11,7 +11,6 @@ description = "Industrial agricultural production zone. Characterized by a geome
 category = "artificial"
 color = Color(0.627, 0.753, 0.251, 1)
 detail_texture_scale = 4.0
-elevation_max = 1500.0
 terrain_roughness = 0.3
 supports_vegetation = true
 default_vegetation_density = 0.9

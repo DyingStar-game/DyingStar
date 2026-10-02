@@ -24,8 +24,6 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 
 const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
 
-## Level scenes registered on the orchestrator. Not read by any code: scenes are loaded from the state paths above.
-@export var levels: Array[PackedScene]
 
 var current_network_role = null
 var current_state = null

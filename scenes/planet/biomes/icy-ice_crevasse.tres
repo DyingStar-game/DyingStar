@@ -11,7 +11,6 @@ description = "A deep structural rupture within a glacial body or thick ice pack
 category = "cryo"
 color = Color(0.565, 0.722, 0.816, 1)
 detail_texture_scale = 2.0
-elevation_max = 4000.0
 terrain_roughness = 1.6
 wind_strength = 1.5
 movement_speed_factor = 0.3

@@ -6,8 +6,6 @@ extends RigidBody3D
 ## child node (type_name "box", non-carriable) — see the scene. The body exposes `uuid` so it can be
 ## resolved as a networked parent by uuid.
 
-## World3D meant for the box's interior space. Not read by any code yet (placeholder).
-@export var inside_space: World3D
 
 var _sync: PropSync
 
