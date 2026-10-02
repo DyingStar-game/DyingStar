@@ -91,7 +91,10 @@ func _show_batteries(levels: Array[Dictionary]) -> void:
 	for i in levels.size():
 		var row: HBoxContainer = _battery_bars.get_child(i)
 		var level: Dictionary = levels[i]
-		(row.get_child(0) as ProgressBar).value = float(level["fraction"]) * 100.0
+		var bar := row.get_child(0) as ProgressBar
+		bar.value = float(level["fraction"]) * 100.0
+		# The battery's own gauge colour (green, red when low), so the dash and the part agree.
+		(bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = VehicleBattery.gauge_color(float(level["fraction"]))
 		(row.get_child(1) as Label).text = EnergyFormat.percent(float(level["fraction"]))
 		row.modulate.a = 1.0 if bool(level["active"]) else BATTERY_IDLE_ALPHA
 
@@ -106,6 +109,7 @@ static func _battery_row() -> HBoxContainer:
 	bar.custom_minimum_size = BATTERY_BAR_SIZE
 	bar.show_percentage = false
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.add_theme_stylebox_override("fill", StyleBoxFlat.new())  # its own, coloured per refresh
 	row.add_child(bar)
 	var percent := Label.new()
 	percent.name = "Percent"

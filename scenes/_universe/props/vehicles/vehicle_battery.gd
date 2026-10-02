@@ -149,8 +149,14 @@ func _refresh_gauges() -> void:
 		var width: float = g["width"]
 		fill.scale.x = maxf(f, 0.001)
 		fill.position.x = -width * 0.5 * (1.0 - f)
-		(fill.material_override as StandardMaterial3D).albedo_color = GAUGE_LOW if f < GAUGE_LOW_FRACTION else GAUGE_FILL
+		(fill.material_override as StandardMaterial3D).albedo_color = gauge_color(f)
 		(g["label"] as Label3D).text = EnergyFormat.charge(charge_j, capacity_j())
+
+
+## The colour of a battery gauge at [param fraction] of charge: green, red when low. The part's own
+## gauge and the cab dashboard's bars both use it, so they always agree.
+static func gauge_color(fraction: float) -> Color:
+	return GAUGE_LOW if fraction < GAUGE_LOW_FRACTION else GAUGE_FILL
 
 
 ## An unlit flat quad of [param size] (m) and [param color], at [param at] in the gauge's frame.
