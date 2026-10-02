@@ -33,10 +33,11 @@ func test_the_chart_cuts_its_ground_as_the_planet_does() -> void:
 	terrain.is_server = true
 	for altitude: float in [3.0e5, 3.0e4, 1.0e3]:
 		var cam: Vector3 = Vector3(0.3, 0.8, -0.5).normalized()
-		terrain._trav_alt = altitude  # what a traversal reads (frozen when it starts)
-		var planet: Dictionary = {}
+		var lod_pass := terrain._new_pass(cam * (RADIUS + altitude), -1.0, {}, false)
+		lod_pass.alt = altitude  # what the traversal reads (frozen when it starts)
 		for base: int in range(12):
-			terrain._traverse(1, base, 0, cam * (RADIUS + altitude), -1.0, planet, {}, false)
+			terrain._traverse(lod_pass, 1, base, 0)
+		var planet: Dictionary = lod_pass.out
 		var theirs: Dictionary = {}
 		for key: String in planet:
 			theirs[StarMapGround.tile_id(int(planet[key]["nside"]), int(planet[key]["ipix"]))] = true

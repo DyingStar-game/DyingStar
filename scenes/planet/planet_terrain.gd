@@ -367,21 +367,52 @@ var _desired_cache_mult: float = -1.0
 ## within it the same pass would give the same answer, and it shrinks on its own near a threshold.
 ## Speed needs no rule of its own: a truck spends the gap faster, so it recomputes more often.
 var _desired_cache_slack: float = 0.0
-## Running minimum of that gap during a traversal, in LOD-distance units (scaled by the terrain mult).
-var _trav_slack: float = INF
-## What a traversal reads instead of the live members, frozen when it starts: on a worker, the main
-## thread keeps updating _terrain_mult and _cam_alt_above_surface while it runs.
-var _trav_mult: float = 1.0
-var _trav_alt: float = 0.0
-## The same without the fast-flight share (_terrain_mult): what a chunk already in the mesh disk cache
-## is cut by (_traverse).
-var _trav_full_mult: float = 1.0
+
+
+## One traversal: its inputs, frozen when it starts — on the leaf-set worker, the main thread keeps
+## updating the camera, _terrain_mult and _cam_alt_above_surface meanwhile — and what it measures.
+## Built on the main thread by _new_pass.
+class LodPass extends RefCounted:
+	## Planet-local camera, its distance from the centre and its direction.
+	var cam: Vector3
+	var cam_r: float
+	var cam_dir: Vector3
+	var horizon_dot: float
+	## Graphics > Terrain distance with the fast-flight share (_lod_mult), and without it: what a chunk
+	## already in the mesh disk cache is cut by.
+	var mult: float
+	var full_mult: float
+	## Camera altitude above the real surface (_cam_alt_above_surface).
+	var alt: float
+	## The LOD tier edges (lod0..lod2_distance), for the slack.
+	var tier_edges: PackedFloat64Array
+	## node id → [centre dir, diagonal], kept across passes (_node_geom or _node_geom_prefetch).
+	var geom: Dictionary
+	## The leaves found: key → leaf record.
+	var out: Dictionary = {}
+	## Measure the slack (the main leaf set) or not (the look-ahead).
+	var track_slack: bool
+	## Running minimum of the gap to any threshold, in LOD-distance units (see _desired_cache_slack).
+	var slack: float = INF
+	## Chunks cut finer than the fast-flight scale allowed, their meshes being known.
+	var known_splits: int = 0
+
+	## Note a gap between a distance and the threshold it was judged against.
+	func gap(value: float) -> void:
+		if track_slack:
+			slack = minf(slack, absf(value))
+
+	## Note the gaps between [param dist] and every LOD tier edge.
+	func tier_gaps(dist: float) -> void:
+		if track_slack:
+			for edge in tier_edges:
+				slack = minf(slack, absf(dist - edge))
+
+
 ## Fast flight: (node id << 2 | LOD tier) → true when that chunk's unstitched mesh is in the disk
 ## cache, or the msec until which a miss stands (KNOWN_MISS_MS). Read and written by the traversal
 ## alone, one at a time; cleared with _node_geom.
 var _known_mesh: Dictionary = {}
-## Chunks a traversal cut finer than the fast-flight scale allowed, their meshes being known.
-var _trav_known_splits: int = 0
 var _lod_result_known_splits: int = 0
 ## The worker computing the next leaf set (-1: none), and what it produced. A traversal and its balance
 ## read and write only these, _node_geom and the _bal_prev_* caches, and only one runs at a time.
@@ -1814,10 +1845,7 @@ func _update_terrain() -> void:
 		desired = _desired_cache
 		_perf_end("terrain_reuse", _tk)
 	else:
-		_trav_mult = _lod_mult()
-		_trav_full_mult = _terrain_mult
-		_trav_alt = _cam_alt_above_surface
-		_compute_desired(local_cam, horizon_dot)
+		_compute_desired(_new_pass(local_cam, horizon_dot, _node_geom, true))
 		_adopt_lod_result()
 		desired = _desired_cache
 		_perf_end("terrain_traverse", _tk)
@@ -2580,46 +2608,68 @@ var _node_geom: Dictionary = {}
 var _node_geom_prefetch: Dictionary = {}
 
 
-func _traverse(nside: int, ipix: int, depth: int,
-		local_cam: Vector3, horizon_dot: float, out: Dictionary,
-		geom_cache: Dictionary, track_slack: bool) -> void:
+## A traversal's inputs, frozen now, on the main thread: [param cam] planet-local, [param geom] the
+## node geometry memo it may fill (_node_geom for the leaf set, _node_geom_prefetch for the look-ahead).
+func _new_pass(cam: Vector3, horizon_dot: float, geom: Dictionary, track_slack: bool) -> LodPass:
+	var p := LodPass.new()
+	p.cam = cam
+	p.cam_r = cam.length()
+	p.cam_dir = cam / p.cam_r if p.cam_r > 0.0 else Vector3.ZERO
+	p.horizon_dot = horizon_dot
+	p.mult = _lod_mult()
+	p.full_mult = _terrain_mult
+	p.alt = _cam_alt_above_surface
+	p.tier_edges = PackedFloat64Array([planet_data.lod0_distance, planet_data.lod1_distance,
+			planet_data.lod2_distance])
+	p.geom = geom
+	p.track_slack = track_slack
+	return p
 
+
+## [centre direction, diagonal] of a quadtree node, memoised in the pass's geometry dictionary.
+## Shared with the star chart, which cuts its ground by the same rule (PlanetLod).
+func _node_geom_of(p: LodPass, nside: int, ipix: int) -> Array:
 	var node_id := (nside << 32) | ipix
-	var geom: Array = geom_cache.get(node_id, [])
+	var geom: Array = p.geom.get(node_id, [])
 	if geom.is_empty():
-		var cd := HEALPix.pix2vec_nest(nside, ipix)
-		# Shared with the star chart, which cuts its ground by the same rule (PlanetLod).
-		geom = [cd, PlanetLod.chunk_diagonal(nside, ipix, planet_data.radius)]
-		geom_cache[node_id] = geom
+		geom = [HEALPix.pix2vec_nest(nside, ipix), PlanetLod.chunk_diagonal(nside, ipix, planet_data.radius)]
+		p.geom[node_id] = geom
+	return geom
+
+
+## A node's LOD distance for the pass's camera, through [param mult] (p.mult or p.full_mult).
+##
+## LOD distance = max(surface distance to the chunk, camera altitude above
+## the ACTUAL terrain surface).  Straight-line distance to the sea-level
+## chunk centre is wrong twice over: cracks/valleys put the camera below
+## the centres, and high terrain (tarsis_3's plateau is ~5.6 km above the
+## sea-level radius) inflates EVERY distance by its elevation — so the
+## quadtree never reached its finest depth and the render sat coarser than
+## the always-finest collision (player under the displayed floor).  The
+## surface (horizontal) distance ignores the radial gap entirely; the
+## terrain-relative altitude still coarsens the view from high up / space.
+func _lod_dist(p: LodPass, center_dir: Vector3, mult: float) -> float:
+	var cam_dir := p.cam_dir if p.cam_r > 0.0 else center_dir
+	return _view_scaled(PlanetLod.distance(cam_dir, center_dir, planet_data.radius, p.alt), mult)
+
+
+func _traverse(p: LodPass, nside: int, ipix: int, depth: int) -> void:
+	var geom := _node_geom_of(p, nside, ipix)
 	var center_dir: Vector3 = geom[0]
 	var center_pos := center_dir * planet_data.radius
 	var chunk_diag: float = geom[1]
-
-	# LOD distance = max(surface distance to the chunk, camera altitude above
-	# the ACTUAL terrain surface).  Straight-line distance to the sea-level
-	# chunk centre is wrong twice over: cracks/valleys put the camera below
-	# the centres, and high terrain (tarsis_3's plateau is ~5.6 km above the
-	# sea-level radius) inflates EVERY distance by its elevation — so the
-	# quadtree never reached its finest depth and the render sat coarser than
-	# the always-finest collision (player under the displayed floor).  The
-	# surface (horizontal) distance ignores the radial gap entirely; the
-	# terrain-relative altitude still coarsens the view from high up / space.
-	var _cam_r := local_cam.length()
-	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
-	var lod_dist := PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius, _trav_alt)
-	var dist := _view_scaled(lod_dist, _trav_mult)
-	# Fast flight (_trav_mult below _trav_full_mult): what the chunk would be cut by without it. Ground
+	var dist := _lod_dist(p, center_dir, p.mult)
+	# Fast flight (p.mult below p.full_mult): what the chunk would be cut by without it. Ground
 	# already in the mesh disk cache is cut by this one — the scale is there to spare BUILDING a ring
 	# crossed in seconds, and reading a known mesh back costs no mesh task.
 	var dist_full := dist
-	if _trav_full_mult != _trav_mult:
-		dist_full = _view_scaled(lod_dist, _trav_full_mult)
+	if p.full_mult != p.mult:
+		dist_full = _lod_dist(p, center_dir, p.full_mult)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
-		var _bf_dot: float = center_dir.dot(local_cam.normalized())
-		if track_slack:
-			_trav_slack = minf(_trav_slack, absf(_bf_dot - BACKFACE_DOT) * _cam_r)
+		var _bf_dot: float = center_dir.dot(p.cam_dir)
+		p.gap((_bf_dot - BACKFACE_DOT) * p.cam_r)
 		if _bf_dot < BACKFACE_DOT:
 			return
 
@@ -2627,52 +2677,41 @@ func _traverse(nside: int, ipix: int, depth: int,
 	# Skip chunks whose centre is beyond the geometric horizon.
 	# Add the chunk's angular half-size so partially-visible chunks
 	# at the horizon edge are kept.
-	if not is_server and horizon_dot > -1.0:
+	if not is_server and p.horizon_dot > -1.0:
 		var chunk_angular_radius := 0.0
 		if planet_data.radius > 0.0:
 			chunk_angular_radius = (chunk_diag * 0.5) / planet_data.radius
-		var cam_dir := local_cam.normalized()
-		var dot_val := center_dir.dot(cam_dir)
+		var dot_val := center_dir.dot(p.cam_dir)
 		# visible when dot_val > horizon_dot - chunk_angular_radius
-		if track_slack:
-			_trav_slack = minf(_trav_slack, absf(dot_val - (horizon_dot - chunk_angular_radius)) * _cam_r)
-		if dot_val < horizon_dot - chunk_angular_radius:
+		p.gap((dot_val - (p.horizon_dot - chunk_angular_radius)) * p.cam_r)
+		if dot_val < p.horizon_dot - chunk_angular_radius:
 			return
 
 	# Decide whether to subdivide
 	var should_subdivide := false
 	if depth < planet_data.max_quadtree_depth:
-		if track_slack:
-			_trav_slack = minf(_trav_slack, absf(dist - chunk_diag * SUBDIVIDE_FACTOR))
+		p.gap(dist - chunk_diag * SUBDIVIDE_FACTOR)
 		if PlanetLod.wants_split(dist, chunk_diag):
 			should_subdivide = true
 		elif dist_full != dist:
 			# Tracked whether or not it splits: approaching this threshold changes the answer too.
-			if track_slack:
-				_trav_slack = minf(_trav_slack, absf(dist_full - chunk_diag * SUBDIVIDE_FACTOR))
-			if PlanetLod.wants_split(dist_full, chunk_diag) \
-					and _children_known(nside, ipix, _cam_dir_l, geom_cache):
+			p.gap(dist_full - chunk_diag * SUBDIVIDE_FACTOR)
+			if PlanetLod.wants_split(dist_full, chunk_diag) and _children_known(p, nside, ipix):
 				should_subdivide = true
-				if track_slack:  # the main traversal's count, not the look-ahead's
-					_trav_known_splits += 1
+				p.known_splits += 1
 
 	if should_subdivide:
 		var child_nside := nside * 2
-		var children := HEALPix.child_pixels(ipix)
-		for child_ipix in children:
-			_traverse(child_nside, child_ipix, depth + 1, local_cam, horizon_dot, out, geom_cache, track_slack)
+		for child_ipix in HEALPix.child_pixels(ipix):
+			_traverse(p, child_nside, child_ipix, depth + 1)
 	else:
 		# Leaf — record desired chunk
 		# Per-chunk LOD: use camera-to-chunk distance (not altitude-based).
 		var lod := planet_data.get_lod_level(dist)
-		if track_slack:
-			for tier_edge in [planet_data.lod0_distance, planet_data.lod1_distance, planet_data.lod2_distance]:
-				_trav_slack = minf(_trav_slack, absf(dist - float(tier_edge)))
+		p.tier_gaps(dist)
 		if dist_full != dist:
 			var lod_full := planet_data.get_lod_level(dist_full)
-			if track_slack:
-				for tier_edge in [planet_data.lod0_distance, planet_data.lod1_distance, planet_data.lod2_distance]:
-					_trav_slack = minf(_trav_slack, absf(dist_full - float(tier_edge)))
+			p.tier_gaps(dist_full)
 			if lod_full != lod and _mesh_known(nside, ipix, lod_full):
 				lod = lod_full
 		var key := _chunk_key_hp(nside, ipix)
@@ -2680,7 +2719,7 @@ func _traverse(nside: int, ipix: int, depth: int,
 		# inside generate_mesh.  Without this, the float64→float32 delta
 		# (~0.12 m per component at planet radius) shifts adjacent chunks'
 		# shared-edge vertices apart, creating visible seams.
-		out[key] = {
+		p.out[key] = {
 			"key": key,
 			"nside": nside,
 			"ipix": ipix,
@@ -2692,19 +2731,12 @@ func _traverse(nside: int, ipix: int, depth: int,
 
 ## Are the four children of (nside, ipix) all in the mesh disk cache, at the tier they would get
 ## without the fast-flight scale? Traversal only.
-func _children_known(nside: int, ipix: int, cam_dir: Vector3, geom_cache: Dictionary) -> bool:
+func _children_known(p: LodPass, nside: int, ipix: int) -> bool:
 	if _chunk_cache == null:
 		return false
 	var child_nside := nside * 2
 	for child_ipix in HEALPix.child_pixels(ipix):
-		var node_id := (child_nside << 32) | child_ipix
-		var geom: Array = geom_cache.get(node_id, [])
-		if geom.is_empty():
-			var cd := HEALPix.pix2vec_nest(child_nside, child_ipix)
-			geom = [cd, PlanetLod.chunk_diagonal(child_nside, child_ipix, planet_data.radius)]
-			geom_cache[node_id] = geom
-		var d := _view_scaled(PlanetLod.distance(cam_dir, geom[0], planet_data.radius, _trav_alt),
-				_trav_full_mult)
+		var d := _lod_dist(p, _node_geom_of(p, child_nside, child_ipix)[0], p.full_mult)
 		if not _mesh_known(child_nside, child_ipix, planet_data.get_lod_level(d)):
 			return false
 	return true
@@ -2801,12 +2833,9 @@ static func speed_lod_scale(speed: float, current: float) -> float:
 
 ## The leaf record _traverse would have written for (nside, ipix) — for the
 ## chunks the 2:1 balance pass adds after the traversal.
-func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictionary:
+func _leaf_info(p: LodPass, nside: int, ipix: int, depth: int) -> Dictionary:
 	var center_dir := HEALPix.pix2vec_nest(nside, ipix)
-	var _cam_r := local_cam.length()
-	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
-	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_trav_alt), _trav_mult)
+	var dist := _lod_dist(p, center_dir, p.mult)
 	var key := _chunk_key_hp(nside, ipix)
 	return {
 		"key": key,
@@ -2818,24 +2847,21 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 	}
 
 
-## The leaf set for a camera at [param local_cam]: the traversal and its 2:1 balance, into _lod_result*.
+## The leaf set of pass [param p]: the traversal and its 2:1 balance, into _lod_result*.
 ## Runs on a worker (_start_lod_task) or inline; touches no scene node and no live member but those
 ## listed with _lod_task.
-func _compute_desired(local_cam: Vector3, horizon_dot: float) -> void:
+func _compute_desired(p: LodPass) -> void:
 	var t0 := Time.get_ticks_usec()
-	var desired: Dictionary = {}
-	_trav_slack = INF
-	_trav_known_splits = 0
 	for base_pix in BASE_PIXEL_COUNT:
-		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired, _node_geom, true)
-	_balance_and_stitch(desired, local_cam)
-	_lod_result = desired
-	_lod_result_cam = local_cam
-	_lod_result_mult = _trav_mult
+		_traverse(p, 1, base_pix, 0)
+	_balance_and_stitch(p.out, p)
+	_lod_result = p.out
+	_lod_result_cam = p.cam
+	_lod_result_mult = p.mult
 	# Back to metres of camera motion: beyond VIEW_DISTANCE_NEAR_M a distance runs 1/mult as fast as the
 	# camera (_view_scaled); half of it keeps clear of rounding and of the altitude term.
-	_lod_result_slack = 0.5 * _trav_slack * minf(_trav_mult, 1.0)
-	_lod_result_known_splits = _trav_known_splits
+	_lod_result_slack = 0.5 * p.slack * minf(p.mult, 1.0)
+	_lod_result_known_splits = p.known_splits
 	_lod_result_usec = Time.get_ticks_usec() - t0
 
 
@@ -2845,27 +2871,23 @@ func _lod_on_worker() -> bool:
 
 ## [param with_desired]: also compute the leaf set (else only the waiting look-ahead, if any).
 func _start_lod_task(local_cam: Vector3, horizon_dot: float, with_desired: bool = true) -> void:
-	_trav_mult = _lod_mult()
-	_trav_full_mult = _terrain_mult
-	_trav_alt = _cam_alt_above_surface
 	_lod_task_desired = with_desired
-	var prefetch_cam := _pending_prefetch_cam
-	var prefetch_dot := _pending_prefetch_dot
+	var desired_pass: LodPass = _new_pass(local_cam, horizon_dot, _node_geom, true) if with_desired else null
+	var prefetch_pass: LodPass = null
+	if _pending_prefetch_cam != Vector3.INF:
+		prefetch_pass = _new_pass(_pending_prefetch_cam, _pending_prefetch_dot, _node_geom_prefetch, false)
 	_pending_prefetch_cam = Vector3.INF
-	_lod_task = WorkerThreadPool.add_task(
-		_lod_work.bind(local_cam, horizon_dot, with_desired, prefetch_cam, prefetch_dot), false, "terrain_lod")
+	_lod_task = WorkerThreadPool.add_task(_lod_work.bind(desired_pass, prefetch_pass), false, "terrain_lod")
 
 
-## Worker: the leaf set and/or the look-ahead traversal, from the inputs frozen by _start_lod_task.
-func _lod_work(local_cam: Vector3, horizon_dot: float, with_desired: bool,
-		prefetch_cam: Vector3, prefetch_dot: float) -> void:
-	if with_desired:
-		_compute_desired(local_cam, horizon_dot)
-	if prefetch_cam != Vector3.INF:
-		var found: Dictionary = {}
+## Worker: the leaf set and/or the look-ahead traversal, from the passes _start_lod_task froze.
+func _lod_work(desired_pass: LodPass, prefetch_pass: LodPass) -> void:
+	if desired_pass != null:
+		_compute_desired(desired_pass)
+	if prefetch_pass != null:
 		for base_pix in BASE_PIXEL_COUNT:
-			_traverse(1, base_pix, 0, prefetch_cam, prefetch_dot, found, _node_geom_prefetch, false)
-		_prefetch_result = found
+			_traverse(prefetch_pass, 1, base_pix, 0)
+		_prefetch_result = prefetch_pass.out
 
 
 ## A finished worker hands its leaf set over; one still running is left alone.
@@ -2918,7 +2940,7 @@ func _join_lod_task() -> void:
 ## bit per edge whose same-level neighbour is absent while its parent is a
 ## leaf. Left to 0 on the levels PlanetChunk.edge_stitch_applies rules out,
 ## so those chunks keep one cache file and never re-bake for a neighbour.
-func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
+func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 	if desired.is_empty():
 		_bal_prev_trav.clear()
 		_bal_prev_out.clear()
@@ -2993,7 +3015,7 @@ func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 				while a_nside >= 1:
 					var aid := (a_nside << 32) | a_ipix
 					if leaves.has(aid):
-						_split_leaf(desired, leaves, aid, local_cam)
+						_split_leaf(desired, leaves, aid, p)
 						changed = true
 						break
 					a_nside >>= 1
@@ -3045,14 +3067,14 @@ func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 
 ## Replace leaf [param id] by its four children in both [param desired] and
 ## the integer index [param leaves].
-func _split_leaf(desired: Dictionary, leaves: Dictionary, id: int, local_cam: Vector3) -> void:
+func _split_leaf(desired: Dictionary, leaves: Dictionary, id: int, p: LodPass) -> void:
 	var key: String = leaves[id]
 	var depth: int = int(desired[key].depth)
 	desired.erase(key)
 	leaves.erase(id)
 	var nside: int = (id >> 32) << 1
 	for cip in HEALPix.child_pixels(id & 0xFFFFFFFF):
-		var info := _leaf_info(nside, cip, depth + 1, local_cam)
+		var info := _leaf_info(p, nside, cip, depth + 1)
 		desired[info.key] = info
 		leaves[(nside << 32) | cip] = info.key
 
@@ -3907,10 +3929,10 @@ func _prefetch_look_ahead(local_cam: Vector3, horizon_dot: float) -> void:
 		if _lod_task < 0:
 			_start_lod_task(local_cam, horizon_dot, false)
 		return
-	var prefetch_desired: Dictionary = {}
+	var p := _new_pass(predicted_cam, horizon_dot, _node_geom_prefetch, false)
 	for base_pix in BASE_PIXEL_COUNT:
-		_traverse(1, base_pix, 0, predicted_cam, horizon_dot, prefetch_desired, _node_geom_prefetch, false)
-	_prefetch_register(prefetch_desired)
+		_traverse(p, 1, base_pix, 0)
+	_prefetch_register(p.out)
 
 
 ## Where the camera will be in LOOKAHEAD_S, or INF when there is nothing new to prefetch for.
