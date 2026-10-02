@@ -3,9 +3,10 @@
 [ext_resource type="Script" uid="uid://3r2g1ifns0cu" path="res://scenes/audio/music/music_table.gd" id="1"]
 [ext_resource type="Script" uid="uid://caxkarkl5mf2u" path="res://scenes/audio/music/music_rule.gd" id="2"]
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/menu.tres" id="3"]
-[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/space.tres" id="4"]
+[ext_resource type="Resource" uid="uid://cwvst7e2r2dad" path="res://assets/_universe/audio/music/playlists/space.tres" id="4"]
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/capital.tres" id="5"]
-[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/wild.tres" id="6"]
+[ext_resource type="Resource" uid="uid://b72xnvm8sxa8f" path="res://assets/_universe/audio/music/playlists/wild.tres" id="6"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/eva.tres" id="7"]
 
 [sub_resource type="Resource" id="rule_menu"]
 resource_name = "MENU → menu"
@@ -21,10 +22,10 @@ only = "capital"
 playlist = ExtResource("5")
 
 [sub_resource type="Resource" id="rule_eva"]
-resource_name = "EVA → space"
+resource_name = "EVA → eva"
 script = ExtResource("2")
 situation = 2
-playlist = ExtResource("4")
+playlist = ExtResource("7")
 
 [sub_resource type="Resource" id="rule_station"]
 resource_name = "STATION → space"
