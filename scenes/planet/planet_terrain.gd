@@ -62,14 +62,18 @@ const SPEED_LOD_EXIT := 0.8
 ## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
 ## does not rebuild the fine ring just to drop it again.
 const SPEED_LOD_HOLD_MS := 2000
-## The scale moves one step (×2 or ×0.5) at a time, this long (ms) apart at least: jumping from 1 to
-## 0.25 at once replaced the whole fine ground in one LOD pass — 30-60 ms frames for ~3 s on every
-## take-off, and an 860-chunk burst on stopping (2026-10-02).
-const SPEED_LOD_STEP_MS := 1000
-## Most time (ms) one update spends handing new chunks to the pipeline (Step 1). What is left stays
-## desired and is handed over at the next update, best first: the scale going back to full detail
-## after a fast flight once queued ~860 disk-cache reads in one update (105 ms).
-const NEW_CHUNKS_BUDGET_MS := 6.0
+## The LOD update's steps under a time budget each (ms), so a leaf set that changes wholesale — the
+## fast-flight scale switching, coming back to full detail after it — spreads over a few updates
+## instead of one long frame: 30-60 ms frames for ~3 s on take-off, 105-135 ms on stopping
+## (2026-10-02). What a step leaves is still there at the next update (4 Hz) and taken then.
+## Steps 1 and 3 together: handing chunks to the pipeline, best first (~860 disk-cache reads queued
+## in one update on stopping).
+const HANDOVER_BUDGET_MS := 6.0
+## Step 2, each phase: examining the chunks no longer desired, then taking them off screen. One not yet
+## removed only stays on screen one update longer.
+const STALE_BUDGET_MS := 4.0
+## Registering a look-ahead result (_prefetch_step).
+const PREFETCH_BUDGET_MS := 3.0
 ## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
 const KNOWN_MISS_MS := 2000
 ## The mesh backlog and the assembly queue are ranked again (build_priority) once the view has turned
@@ -187,8 +191,6 @@ var _terrain_mult: float = 1.0
 ## on the server), and since when a finer one has been due (-1: none).
 var _speed_lod_scale: float = 1.0
 var _speed_lod_finer_since: int = -1
-## When the scale last moved (msec; SPEED_LOD_STEP_MS).
-var _speed_lod_changed_at: int = -SPEED_LOD_STEP_MS
 ## client.ini debug_no_speed_lod, read once: -1 not read yet, 0 on, 1 off.
 var _speed_lod_off: int = -1
 ## Chunks the last LOD update wanted on screen (see desired_chunk_count).
@@ -438,6 +440,10 @@ var _lod_task_desired: bool = false
 var _pending_prefetch_cam: Vector3 = Vector3.INF
 var _pending_prefetch_dot: float = -1.0
 var _prefetch_result: Dictionary = {}
+## A look-ahead result still being registered, a few per update (_prefetch_step); a newer one replaces it.
+var _prefetch_todo: Array = []
+## Where Step 2's examination of stale chunks resumes (it is budgeted: STALE_BUDGET_MS).
+var _stale_cursor: int = 0
 
 ## Cache of feature nodes (caves) attached per chunk
 ## so we can free them when the chunk is unloaded.  key → Array[Node3D].
@@ -1843,6 +1849,7 @@ func _update_terrain() -> void:
 	var desired: Dictionary = {}
 	var _tk := _perf_begin()
 	_collect_lod_task()
+	_prefetch_step()
 	if (_desired_cache_cam != Vector3.INF and _desired_cache_mult == _lod_mult()
 			and local_cam.distance_to(_desired_cache_cam) < _desired_cache_slack):
 		desired = _desired_cache
@@ -1900,10 +1907,11 @@ func _update_terrain() -> void:
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
 			return prio[a] < prio[b])
 	var _tks := _perf_begin()
-	var t_new := Time.get_ticks_usec()
+	# Steps 1 and 3 share HANDOVER_BUDGET_MS.
+	var t_handover := Time.get_ticks_usec()
 	for key in _new_keys:
 		# Best first, so what the budget leaves for the next update is the least urgent.
-		if Time.get_ticks_usec() - t_new >= NEW_CHUNKS_BUDGET_MS * 1000.0:
+		if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
 			break
 		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
 		pipeline[key] = true
@@ -1922,29 +1930,45 @@ func _update_terrain() -> void:
 	var _flight := _pipeline_tree_index()
 	var _flight_anc: Dictionary = _flight[0]
 	var _flight_self: Dictionary = _flight[1]
-	for key in _active_chunks:
+	var stale: Array[String] = []
+	for key: String in _active_chunks:
 		if not desired.has(key):
-			# A stale chunk whose area is already fully covered by ACTIVE finer
-			# chunks must go NOW, regardless of pipeline state: its replacement
-			# is on screen, so no hole is possible. Without this, the constant
-			# pipeline churn near the player (per-chunk LOD re-queues) keeps
-			# _has_pending_replacement() true forever and the coarse parent
-			# lingers as a second, uncarved surface stacked over the fine one.
-			var st_nside := _parse_nside_from_key(key)
-			var st_ipix := _parse_ipix_from_key(key)
-			if st_nside > 0 and st_ipix >= 0 \
-					and _covered_by_active_descendants(st_nside, st_ipix):
+			stale.append(key)
+	# Examined under STALE_BUDGET_MS, resuming where the last update stopped so every one is reached.
+	var t_stale := Time.get_ticks_usec()
+	var n_stale := stale.size()
+	var examined := 0
+	while examined < n_stale:
+		if examined > 0 and Time.get_ticks_usec() - t_stale >= STALE_BUDGET_MS * 1000.0:
+			break
+		var key: String = stale[(_stale_cursor + examined) % n_stale]
+		examined += 1
+		# A stale chunk whose area is already fully covered by ACTIVE finer
+		# chunks must go NOW, regardless of pipeline state: its replacement
+		# is on screen, so no hole is possible. Without this, the constant
+		# pipeline churn near the player (per-chunk LOD re-queues) keeps
+		# _has_pending_replacement() true forever and the coarse parent
+		# lingers as a second, uncarved surface stacked over the fine one.
+		var st_nside := _parse_nside_from_key(key)
+		var st_ipix := _parse_ipix_from_key(key)
+		if st_nside > 0 and st_ipix >= 0 \
+				and _covered_by_active_descendants(st_nside, st_ipix):
+			to_remove.append(key)
+		elif st_nside > 0 and st_ipix >= 0:
+			if not _flight_anc.has(_flight_id(st_nside, st_ipix)) \
+					and not _flight_has_ancestor(_flight_self, st_nside, st_ipix):
 				to_remove.append(key)
-			elif st_nside > 0 and st_ipix >= 0:
-				if not _flight_anc.has(_flight_id(st_nside, st_ipix)) \
-						and not _flight_has_ancestor(_flight_self, st_nside, st_ipix):
-					to_remove.append(key)
-			elif not _has_pending_replacement(key) and not _has_pending_coarser(key):
-				to_remove.append(key)
+		elif not _has_pending_replacement(key) and not _has_pending_coarser(key):
+			to_remove.append(key)
+	_stale_cursor = (_stale_cursor + examined) % maxi(n_stale, 1)
 	_perf_end("steps:scan_remove", _tks)
 	_tks = _perf_begin()
-	for key in to_remove:
-		_remove_chunk(key)
+	# Off screen under the same budget; one left over is found stale again next update.
+	var t_remove := Time.get_ticks_usec()
+	for i in to_remove.size():
+		if i > 0 and Time.get_ticks_usec() - t_remove >= STALE_BUDGET_MS * 1000.0:
+			break
+		_remove_chunk(to_remove[i])
 	_perf_end("steps:remove", _tks)
 	_tks = _perf_begin()
 
@@ -1959,6 +1983,8 @@ func _update_terrain() -> void:
 		# rebuild took — ground blinking ahead of anyone moving (2026-10-01). A stitch change
 		# only moves the seam edges: the old mesh's skirt still covers the seam meanwhile.
 		if _act.lod != _want.lod or int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
+			if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
+				break  # the rest next update: still on screen meanwhile, at their old quality
 			var _swap: Dictionary = _want.duplicate()
 			_swap["_swap"] = true
 			_try_create_or_defer(_swap)
@@ -2821,21 +2847,13 @@ func _update_speed_lod() -> void:
 	var back := mini(n - 1, 4)
 	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / (back * UPDATE_INTERVAL)
 	var want := speed_lod_scale(speed, _speed_lod_scale)
-	var now := Time.get_ticks_msec()
-	var stepped := now - _speed_lod_changed_at >= SPEED_LOD_STEP_MS
-	# One step at a time (the steps are halvings: SPEED_LOD_STEPS), SPEED_LOD_STEP_MS apart.
-	if want < _speed_lod_scale:
+	if want <= _speed_lod_scale:
+		_speed_lod_scale = want
 		_speed_lod_finer_since = -1
-		if stepped:
-			_speed_lod_scale = maxf(want, _speed_lod_scale * 0.5)
-			_speed_lod_changed_at = now
-	elif want > _speed_lod_scale:
-		if _speed_lod_finer_since < 0:
-			_speed_lod_finer_since = now
-		elif now - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS and stepped:
-			_speed_lod_scale = minf(want, _speed_lod_scale * 2.0)
-			_speed_lod_changed_at = now
-	else:
+	elif _speed_lod_finer_since < 0:
+		_speed_lod_finer_since = Time.get_ticks_msec()
+	elif Time.get_ticks_msec() - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS:
+		_speed_lod_scale = want
 		_speed_lod_finer_since = -1
 	if ClientPerf.enabled and get_parent() != null:
 		ClientPerf.gauge("terrain_speed_ms:" + str(get_parent().name), speed)
@@ -2923,9 +2941,9 @@ func _collect_lod_task() -> void:
 	if _lod_task_desired:
 		_adopt_lod_result()
 	if not _prefetch_result.is_empty():
-		var found := _prefetch_result
+		# Registered a few per update (_prefetch_step): all at once cost ~16 ms on take-off.
+		_prefetch_todo = _prefetch_result.values()
 		_prefetch_result = {}
-		_prefetch_register(found)
 
 
 func _adopt_lod_result() -> void:
@@ -2948,6 +2966,7 @@ func _join_lod_task() -> void:
 		_lod_result = {}
 		_prefetch_result = {}
 		_pending_prefetch_cam = Vector3.INF
+	_prefetch_todo.clear()
 
 
 ## 2:1 balance of the leaf set, then the LOD-seam stitch mask of every leaf.
@@ -3990,39 +4009,59 @@ func _prefetch_target(local_cam: Vector3) -> Vector3:
 
 ## Queue what a look-ahead traversal found that is neither on screen nor in flight (main thread).
 func _prefetch_register(prefetch_desired: Dictionary) -> void:
-
 	# One snapshot, not one linear scan of the backlog per predicted key.
 	var pipeline := _pipeline_keys()
-	for key in prefetch_desired:
-		if _active_chunks.has(key) or pipeline.has(key):
-			continue
-		var info: Dictionary = prefetch_desired[key]
-		# File/pyramid mode has no recipe pipeline — chunks lazy-load their .r32
-		# tiles on the worker thread. Warm the exact pyramid tile the mesh will
-		# sample so that task doesn't stall on disk I/O, then skip the recipe path
-		# (submitting recipes without a pack is what spams "Invalid Task ID").
-		if planet_data.chunk_heightmaps_dir != "":
-			var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
-			if _ht.x >= 0:
-				planet_data.load_chunk_heightmap(_ht.x, _ht.y)
-			continue
-		# Only prefetch recipes (light I/O), not mesh tasks (CPU-heavy) to
-		# avoid starving the current-frame mesh pipeline.
-		var epd_nside := planet_data.export_nside
-		var export_ipix: int = info["ipix"]
-		var cur_nside: int = info["nside"]
-		while cur_nside > epd_nside:
-			export_ipix = HEALPix.parent_pixel(export_ipix)
-			cur_nside /= 2
-		while cur_nside < epd_nside:
-			export_ipix = export_ipix * 4
-			cur_nside *= 2
-		var export_key := "hp_n%d_p%d" % [epd_nside, export_ipix]
-		if not planet_data.is_chunk_cached(export_key):
-			if not _recipe_waiters.has(export_key):
-				_recipe_waiters[export_key] = {}
-			_recipe_waiters[export_key][key] = info
-			_submit_recipe_if_needed(export_key, export_ipix)
+	for key: String in prefetch_desired:
+		_prefetch_register_one(prefetch_desired[key], pipeline)
+
+
+## Register what is left of a look-ahead result under PREFETCH_BUDGET_MS — it is advisory, the LOD
+## pass builds what it needs anyway.
+func _prefetch_step() -> void:
+	if _prefetch_todo.is_empty():
+		return
+	var pipeline := _pipeline_keys()
+	var t0 := Time.get_ticks_usec()
+	var done := 0
+	while not _prefetch_todo.is_empty():
+		if done > 0 and Time.get_ticks_usec() - t0 >= PREFETCH_BUDGET_MS * 1000.0:
+			break
+		_prefetch_register_one(_prefetch_todo.pop_back(), pipeline)
+		done += 1
+
+
+## Queue the recipe (or warm the tile) one predicted chunk will need, unless it is on screen or in
+## flight ([param pipeline]: _pipeline_keys()).
+func _prefetch_register_one(info: Dictionary, pipeline: Dictionary) -> void:
+	var key: String = info.key
+	if _active_chunks.has(key) or pipeline.has(key):
+		return
+	# File/pyramid mode has no recipe pipeline — chunks lazy-load their .r32
+	# tiles on the worker thread. Warm the exact pyramid tile the mesh will
+	# sample so that task doesn't stall on disk I/O, then skip the recipe path
+	# (submitting recipes without a pack is what spams "Invalid Task ID").
+	if planet_data.chunk_heightmaps_dir != "":
+		var _ht := TileResidency.chunk_tile(planet_data, info.nside, info.ipix)
+		if _ht.x >= 0:
+			planet_data.load_chunk_heightmap(_ht.x, _ht.y)
+		return
+	# Only prefetch recipes (light I/O), not mesh tasks (CPU-heavy) to
+	# avoid starving the current-frame mesh pipeline.
+	var epd_nside := planet_data.export_nside
+	var export_ipix: int = info["ipix"]
+	var cur_nside: int = info["nside"]
+	while cur_nside > epd_nside:
+		export_ipix = HEALPix.parent_pixel(export_ipix)
+		cur_nside /= 2
+	while cur_nside < epd_nside:
+		export_ipix = export_ipix * 4
+		cur_nside *= 2
+	var export_key := "hp_n%d_p%d" % [epd_nside, export_ipix]
+	if not planet_data.is_chunk_cached(export_key):
+		if not _recipe_waiters.has(export_key):
+			_recipe_waiters[export_key] = {}
+		_recipe_waiters[export_key][key] = info
+		_submit_recipe_if_needed(export_key, export_ipix)
 
 
 # ------------------------------------------------------------------
