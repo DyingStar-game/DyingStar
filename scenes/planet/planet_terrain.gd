@@ -296,6 +296,12 @@ var _mesh_slots: int = 0
 var _stat_mesh_done: int = 0
 var _stat_mesh_usec: int = 0
 var _stat_tile_waits: int = 0
+## For ClientPerf: why a chunk did not come from the mesh disk cache — no file for it, no file
+## for its stitch mask though one exists unstitched, excluded (pads), or the file was unusable.
+var _stat_cache_absent: int = 0
+var _stat_cache_other_stitch: int = 0
+var _stat_cache_ineligible: int = 0
+var _stat_cache_rejected: int = 0
 ## Overflow queue when max_mesh_tasks is reached.
 var _mesh_task_backlog: Array[Dictionary] = []
 ## The keys in _mesh_task_backlog, for a duplicate test that does not walk it, and whether it was
@@ -1669,6 +1675,8 @@ func _update_terrain() -> void:
 			ClientPerf.gauge("tiles_queued:" + who, q["queued"])
 			ClientPerf.gauge("tiles_oldest_ms:" + who, q["oldest_ms"])
 			ClientPerf.gauge("tiles_fetched:" + who, q["fetched"])
+			ClientPerf.gauge("tiles_downloaded:" + who, q["downloaded"])
+			ClientPerf.gauge("tiles_already_cached:" + who, q["already_cached"])
 			ClientPerf.gauge("tiles_fetch_ms_avg:" + who,
 				float(q["fetch_usec"]) / 1000.0 / maxf(float(q["fetched"] + q["failed"]), 1.0))
 			ClientPerf.gauge("mesh_running:" + who, _mesh_tasks.size())
@@ -1678,6 +1686,12 @@ func _update_terrain() -> void:
 			ClientPerf.gauge("mesh_ms_avg:" + who,
 				_stat_mesh_usec / 1000.0 / maxf(float(_stat_mesh_done), 1.0))
 			ClientPerf.gauge("mesh_tile_waits:" + who, _stat_tile_waits)
+			if _chunk_cache != null:
+				ClientPerf.gauge("chunk_cache_hits:" + who, _chunk_cache.cache_hits)
+			ClientPerf.gauge("chunk_cache_absent:" + who, _stat_cache_absent)
+			ClientPerf.gauge("chunk_cache_other_stitch:" + who, _stat_cache_other_stitch)
+			ClientPerf.gauge("chunk_cache_ineligible:" + who, _stat_cache_ineligible)
+			ClientPerf.gauge("chunk_cache_rejected:" + who, _stat_cache_rejected)
 	var cam_dist := local_cam.length()
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —
@@ -3454,8 +3468,14 @@ func _request_cache_load(info: Dictionary) -> bool:
 	if _cache_loads.has(info.key):
 		return true
 	var st: int = int(info.get("stitch", 0))
-	if not _chunk_cache.has_mesh(info.key, info.lod, st) \
-			or planet_data.chunk_cache_ineligible(info.nside, info.ipix):
+	if not _chunk_cache.has_mesh(info.key, info.lod, st):
+		if st != 0 and _chunk_cache.has_mesh(info.key, info.lod, 0):
+			_stat_cache_other_stitch += 1
+		else:
+			_stat_cache_absent += 1
+		return false
+	if planet_data.chunk_cache_ineligible(info.nside, info.ipix):
+		_stat_cache_ineligible += 1
 		return false
 	var _tkc := _perf_begin()
 	var path := _chunk_cache.mesh_path(info.key, info.lod, st)
@@ -3490,6 +3510,7 @@ func _poll_cache_loads() -> void:
 			info["_from_disk_cache"] = true
 			_assemble_queue.append({"info": info, "mesh": mesh})
 		else:
+			_stat_cache_rejected += 1
 			info["_skip_disk_cache"] = true
 			_try_create_or_defer(info)
 
