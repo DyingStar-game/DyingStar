@@ -141,9 +141,23 @@ static var net_failed: int = 0
 ## Allers-retours HTTP réellement émis. Distinct du nombre de tuiles : c'est le coût qui
 ## domine sur un vrai réseau, et c'est lui que la connexion conservée fait chuter.
 static var net_requests: int = 0
+## The net_* counters are bumped by every download thread of every source: unguarded, concurrent
+## += lose updates (six threads since 2026-10-01).
+static var _net_mutex: Mutex = Mutex.new()
 
 
 ## Une ligne lisible du volume téléchargé depuis le démarrage, ou "" si rien.
+## Add to the process-wide counters under _net_mutex.
+static func _net_count(tiles: int, tile_bytes: int, maps: int, map_bytes: int, failed: int) -> void:
+	_net_mutex.lock()
+	net_tiles += tiles
+	net_tile_bytes += tile_bytes
+	net_maps += maps
+	net_map_bytes += map_bytes
+	net_failed += failed
+	_net_mutex.unlock()
+
+
 static func net_line() -> String:
 	if net_tiles + net_maps + net_failed == 0:
 		return ""
@@ -381,8 +395,7 @@ func has_tile(nside: int, ipix: int) -> bool:
 			return false
 		_mutex.lock()
 		_present[key] = res[1]
-		net_maps += 1
-		net_map_bytes += (res[1] as PackedByteArray).size()
+		_net_count(0, 0, 1, (res[1] as PackedByteArray).size(), 0)
 		_mutex.unlock()
 	_mutex.lock()
 	var bits: PackedByteArray = _present[key]
@@ -434,10 +447,9 @@ func fetch_now(nside: int, ipix: int) -> bool:
 		_mutex.lock()
 		_misses[url] = true
 		_mutex.unlock()
-		net_failed += 1
+		_net_count(0, 0, 0, 0, 1)
 		return false
-	net_tiles += 1
-	net_tile_bytes += (res[1] as PackedByteArray).size()
+	_net_count(1, (res[1] as PackedByteArray).size(), 0, 0, 0)
 	var path := tile_cache_path(nside, ipix)
 	if not AtomicFile.write_buffer(path, res[1]):
 		return false
@@ -467,15 +479,14 @@ func fetch_floor() -> int:
 		return 0
 	var res: Array = _request(floor_url())
 	if res[0] != 200:
-		net_failed += 1
+		_net_count(0, 0, 0, 0, 1)
 		return 0
 	var blob: PackedByteArray = res[1]
 	var entries := decode_floor(blob)
 	if entries.is_empty():
-		net_failed += 1
+		_net_count(0, 0, 0, 0, 1)
 		return 0
-	net_maps += 1
-	net_map_bytes += blob.size()
+	_net_count(0, 0, 1, blob.size(), 0)
 	var n := 0
 	for e: Dictionary in entries:
 		var path := tile_cache_path(e["nside"], e["ipix"])
@@ -639,8 +650,7 @@ static func tile_priority(tile_dir: Vector3, focus: Vector3, view: Vector3) -> f
 	var l2 := along.length_squared()
 	if l2 <= 1e-12:
 		return gap
-	var w := PlanetLod.view_weight(along.dot(view) / sqrt(l2))
-	return gap * w * w
+	return PlanetLod.view_stretched(gap, along.dot(view) / sqrt(l2))
 
 
 ## Le travail à servir maintenant (sous _mutex) : une carte de présence ou le plancher d'abord
@@ -856,7 +866,9 @@ func _drain(http: HTTPClient, deadline: int) -> Array:
 		if chunk.is_empty():
 			OS.delay_usec(POLL_IDLE_USEC)
 		body.append_array(chunk)
+	_net_mutex.lock()
 	net_requests += 1
+	_net_mutex.unlock()
 	return [code, body]
 
 

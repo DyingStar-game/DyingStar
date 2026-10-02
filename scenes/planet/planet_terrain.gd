@@ -321,6 +321,9 @@ var _mesh_task_backlog: Array[Dictionary] = []
 ## flight 2026-10-01). Both the backlog and _assemble_queue are now kept in service order instead
 ## (_queue_insert, _queue_refresh).
 var _backlog_keys: Dictionary = {}
+## While _drain_backlog runs: the chunks it put back, kept out of the backlog until it is done.
+var _backlog_draining: bool = false
+var _backlog_held: Array[Dictionary] = []
 ## Where the camera looks, in the planet's frame (unit; zero on the server and in the editor).
 var _view_dir_local: Vector3 = Vector3.ZERO
 ## The camera and view the backlog's and the assembly queue's priorities were last worked out for.
@@ -2642,12 +2645,15 @@ func _traverse(nside: int, ipix: int, depth: int,
 			_trav_slack = minf(_trav_slack, absf(dist - chunk_diag * SUBDIVIDE_FACTOR))
 		if PlanetLod.wants_split(dist, chunk_diag):
 			should_subdivide = true
-		elif dist_full != dist and PlanetLod.wants_split(dist_full, chunk_diag):
+		elif dist_full != dist:
+			# Tracked whether or not it splits: approaching this threshold changes the answer too.
 			if track_slack:
 				_trav_slack = minf(_trav_slack, absf(dist_full - chunk_diag * SUBDIVIDE_FACTOR))
-			if _children_known(nside, ipix, _cam_dir_l, geom_cache):
+			if PlanetLod.wants_split(dist_full, chunk_diag) \
+					and _children_known(nside, ipix, _cam_dir_l, geom_cache):
 				should_subdivide = true
-				_trav_known_splits += 1
+				if track_slack:  # the main traversal's count, not the look-ahead's
+					_trav_known_splits += 1
 
 	if should_subdivide:
 		var child_nside := nside * 2
@@ -2683,10 +2689,6 @@ func _traverse(nside: int, ipix: int, depth: int,
 		}
 
 
-## A chunk's LOD distance as Graphics > Terrain distance sees it: unchanged within
-## VIEW_DISTANCE_NEAR_M of the camera, stretched (mult > 1: detail reaches
-## further) or compressed (mult < 1) beyond — continuous at the boundary, so
-## no chunk jumps a level for crossing it.
 ## Are the four children of (nside, ipix) all in the mesh disk cache, at the tier they would get
 ## without the fast-flight scale? Traversal only.
 func _children_known(nside: int, ipix: int, cam_dir: Vector3, geom_cache: Dictionary) -> bool:
@@ -2726,6 +2728,10 @@ func _mesh_known(nside: int, ipix: int, lod: int) -> bool:
 	return false
 
 
+## A chunk's LOD distance as Graphics > Terrain distance sees it: unchanged within
+## VIEW_DISTANCE_NEAR_M of the camera, stretched (mult > 1: detail reaches
+## further) or compressed (mult < 1) beyond — continuous at the boundary, so
+## no chunk jumps a level for crossing it.
 static func _view_scaled(dist: float, mult: float) -> float:
 	if dist <= VIEW_DISTANCE_NEAR_M:
 		return dist
@@ -2811,20 +2817,6 @@ func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictio
 	}
 
 
-## 2:1 balance of the leaf set, then the LOD-seam stitch mask of every leaf.
-##
-## Balance: no leaf may share an edge with a leaf more than ONE quadtree level
-## coarser — the stitch (PlanetChunk._stitch_edge_heights) bakes a chunk's
-## border on its PARENT grid, which is only the neighbour's grid at exactly
-## one level of difference. The split factor makes deeper jumps rare, not
-## impossible (HEALPix pixels distort near the poles); a too-coarse neighbour
-## is split until it is one level away. A culled neighbour (horizon / back
-## face, absent from the set) constrains nothing.
-##
-## Mask (client only — the server's finest-grid collision never stitches):
-## bit per edge whose same-level neighbour is absent while its parent is a
-## leaf. Left to 0 on the levels PlanetChunk.edge_stitch_applies rules out,
-## so those chunks keep one cache file and never re-bake for a neighbour.
 ## The leaf set for a camera at [param local_cam]: the traversal and its 2:1 balance, into _lod_result*.
 ## Runs on a worker (_start_lod_task) or inline; touches no scene node and no live member but those
 ## listed with _lod_task.
@@ -2911,6 +2903,20 @@ func _join_lod_task() -> void:
 		_pending_prefetch_cam = Vector3.INF
 
 
+## 2:1 balance of the leaf set, then the LOD-seam stitch mask of every leaf.
+##
+## Balance: no leaf may share an edge with a leaf more than ONE quadtree level
+## coarser — the stitch (PlanetChunk._stitch_edge_heights) bakes a chunk's
+## border on its PARENT grid, which is only the neighbour's grid at exactly
+## one level of difference. The split factor makes deeper jumps rare, not
+## impossible (HEALPix pixels distort near the poles); a too-coarse neighbour
+## is split until it is one level away. A culled neighbour (horizon / back
+## face, absent from the set) constrains nothing.
+##
+## Mask (client only — the server's finest-grid collision never stitches):
+## bit per edge whose same-level neighbour is absent while its parent is a
+## leaf. Left to 0 on the levels PlanetChunk.edge_stitch_applies rules out,
+## so those chunks keep one cache file and never re-bake for a neighbour.
 func _balance_and_stitch(desired: Dictionary, local_cam: Vector3) -> void:
 	if desired.is_empty():
 		_bal_prev_trav.clear()
@@ -3588,16 +3594,20 @@ func _request_cache_load(info: Dictionary) -> bool:
 func _poll_cache_loads() -> void:
 	if _cache_loads.is_empty():
 		return
-	var t0 := Time.get_ticks_usec()
 	var done: Array[String] = []
 	for key: String in _cache_loads:
 		var st := ResourceLoader.load_threaded_get_status(_cache_loads[key].path)
 		if st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			done.append(key)
+	# The budget counts the takes, not the scan above: with hundreds in flight the scan alone could
+	# spend it, and nothing would ever be taken. One at least, as the assembly does.
+	var t0 := Time.get_ticks_usec()
+	var taken := 0
 	for key in done:
 		# What is left stays loaded and is taken next frame (CACHE_POLL_BUDGET_MS).
-		if (Time.get_ticks_usec() - t0) >= CACHE_POLL_BUDGET_MS * 1000.0:
+		if taken > 0 and (Time.get_ticks_usec() - t0) >= CACHE_POLL_BUDGET_MS * 1000.0:
 			break
+		taken += 1
 		var entry: Dictionary = _cache_loads[key]
 		_cache_loads.erase(key)
 		var info: Dictionary = entry.info
@@ -3607,7 +3617,7 @@ func _poll_cache_loads() -> void:
 		if mesh != null and _cached_mesh_valid(mesh, info):
 			_chunk_cache.cache_hits += 1
 			info["_from_disk_cache"] = true
-			_queue_insert(_assemble_queue, {"info": info, "mesh": mesh}, info)
+			_queue_insert(_assemble_queue, {"info": info, "mesh": mesh}, info.center)
 		else:
 			_stat_cache_rejected += 1
 			info["_skip_disk_cache"] = true
@@ -3692,16 +3702,25 @@ func _queue_mesh_task(info: Dictionary) -> void:
 ## en attente d'un téléchargement relancerait la boucle sans fin (phase 3 du doc).
 func _drain_backlog() -> void:
 	# Plafonné : évaluer la résidence d'un chunk coûte une passe sur sa tuile et ses huit
-	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
-	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
+	# voisines, et le backlog peut contenir des centaines d'entrées. Il est rangé par priorité
+	# (build_priority), la meilleure en fin de liste, donc s'arrêter tôt sert d'abord ce qui est
+	# sous le joueur et devant lui.
 	var tries := mini(_mesh_task_backlog.size(), _mesh_slot_count() * 2)
 	if tries > 0:
-		_queue_refresh(_mesh_task_backlog, _backlog_rank_at, func(i: Dictionary) -> Dictionary: return i)
-	while tries > 0 and _mesh_tasks.size() < _mesh_slot_count():
+		_queue_refresh(_mesh_task_backlog, _backlog_rank_at)
+	# A chunk whose tiles are still missing goes back to the backlog — at the same priority, so still
+	# the best: put back at once, the next pop would take it again and spend every try on it. Those
+	# are held aside (_backlog_push) and go back in once the drain is done.
+	_backlog_draining = true
+	while tries > 0 and _mesh_tasks.size() < _mesh_slot_count() and not _mesh_task_backlog.is_empty():
 		var info: Dictionary = _mesh_task_backlog.pop_back()
 		_backlog_keys.erase(info.key)
 		_queue_mesh_task(info)
 		tries -= 1
+	_backlog_draining = false
+	for info: Dictionary in _backlog_held:
+		_queue_insert(_mesh_task_backlog, info, info.center)
+	_backlog_held.clear()
 
 
 ## Mesh tasks allowed at once: [member max_mesh_tasks], unless client.ini forces another.
@@ -3722,8 +3741,7 @@ static func build_priority(center: Vector3, cam: Vector3, view: Vector3) -> floa
 	var d2 := to.length_squared()
 	if view == Vector3.ZERO or d2 <= 0.0:
 		return d2
-	var w := PlanetLod.view_weight(to.dot(view) / sqrt(d2))
-	return d2 * w * w
+	return PlanetLod.view_stretched(d2, to.dot(view) / sqrt(d2))
 
 
 ## Where the active camera looks, in the planet's frame; zero on the server, in the editor or with no
@@ -3743,27 +3761,31 @@ func _backlog_push(info: Dictionary) -> void:
 	if _backlog_keys.has(info.key):
 		return
 	_backlog_keys[info.key] = true
-	_queue_insert(_mesh_task_backlog, info, info)
+	if _backlog_draining:
+		_backlog_held.append(info)
+		return
+	_queue_insert(_mesh_task_backlog, info, info.center)
 
 
 ## Put [param item] into [param queue] at its place in service order — the one to serve first LAST,
-## so taking it is a pop_back and not a remove_at(0) that moves the whole array. [param info] is the
-## chunk record whose centre ranks it; its priority is kept on the item ("_prio").
-func _queue_insert(queue: Array, item: Dictionary, info: Dictionary) -> void:
-	item["_prio"] = build_priority(info.center, _last_local_cam, _view_dir_local)
+## so taking it is a pop_back and not a remove_at(0) that moves the whole array. [param center] is
+## the chunk's centre; it and the priority are kept on the item ("_center", "_prio").
+func _queue_insert(queue: Array, item: Dictionary, center: Vector3) -> void:
+	item["_center"] = center
+	item["_prio"] = build_priority(center, _last_local_cam, _view_dir_local)
 	queue.insert(queue.bsearch_custom(item, _serve_later), item)
 
 
 ## Rework every priority of [param queue] and sort it again, once the camera has moved
 ## QUEUE_RESORT_M or the view turned past BACKLOG_RESORT_DOT since [param rank_at] (camera, view)
-## — what comes first has changed. [param info_of] gives an item's chunk record.
-func _queue_refresh(queue: Array, rank_at: Array, info_of: Callable) -> void:
+## — what comes first has changed.
+func _queue_refresh(queue: Array, rank_at: Array) -> void:
 	# No view (server, editor): the camera's move alone counts.
 	var turned := _view_dir_local != Vector3.ZERO and _view_dir_local.dot(rank_at[1]) < BACKLOG_RESORT_DOT
 	if _last_local_cam.distance_to(rank_at[0]) < QUEUE_RESORT_M and not turned:
 		return
 	for item: Dictionary in queue:
-		item["_prio"] = build_priority(info_of.call(item).center, _last_local_cam, _view_dir_local)
+		item["_prio"] = build_priority(item["_center"], _last_local_cam, _view_dir_local)
 	queue.sort_custom(_serve_later)
 	rank_at[0] = _last_local_cam
 	rank_at[1] = _view_dir_local
@@ -3799,7 +3821,7 @@ func _poll_mesh_tasks() -> void:
 		if mesh != null:
 			if not String(entry.result_ref[1]).is_empty():
 				entry.info["_cache_pending"] = entry.result_ref[1]
-			_queue_insert(_assemble_queue, {"info": entry.info, "mesh": mesh}, entry.info)
+			_queue_insert(_assemble_queue, {"info": entry.info, "mesh": mesh}, entry.info.center)
 		else:
 			push_warning("[PlanetTerrain] mesh task for '%s' returned null" % key)
 
@@ -3818,7 +3840,7 @@ func _poll_mesh_tasks() -> void:
 func _process_assemble_queue() -> void:
 	# Sort nearest-first so close terrain appears before distant shells.
 	var _tks := _perf_begin()
-	_queue_refresh(_assemble_queue, _assemble_rank_at, func(i: Dictionary) -> Dictionary: return i.info)
+	_queue_refresh(_assemble_queue, _assemble_rank_at)
 	_perf_end("asm:sort", _tks)
 	var assembled := 0
 	var _batch_t0 := Time.get_ticks_usec()
