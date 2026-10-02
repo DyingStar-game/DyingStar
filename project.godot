@@ -527,4 +527,5 @@ planet_hex_quality={
 
 [threading]
 
+worker_pool/low_priority_thread_ratio=0.8
 worker_pool/max_threads.dedicated_server=8
