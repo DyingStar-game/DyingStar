@@ -1795,19 +1795,23 @@ func _update_terrain() -> void:
 		# dot = cos(angle), so visible when dot > cos(horizon_angle).
 		horizon_dot = cos(horizon_angle)
 
+	# The leaf set, read in place — no copy (~500 entries, 4 Hz): this pass only reads it, and a leaf-set
+	# pass never writes into a set it handed over. Each builds a NEW dictionary of NEW entries; the ones
+	# it carries over from the last pass (_bal_prev_out) are re-inserted, not written. What the pipeline
+	# takes gets its own copy (steps 1 and 3).
 	var desired: Dictionary = {}
 	var _tk := _perf_begin()
 	_collect_lod_task()
 	if (_desired_cache_cam != Vector3.INF and _desired_cache_mult == _lod_mult()
 			and local_cam.distance_to(_desired_cache_cam) < _desired_cache_slack):
-		desired = _desired_cache.duplicate()
+		desired = _desired_cache
 		_perf_end("terrain_reuse", _tk)
 	elif _lod_on_worker() and _desired_cache_cam != Vector3.INF:
 		# The camera has moved: the new leaf set is worked out on a worker, and this pass carries on
 		# with the last one — one update (0.25 s) behind, which is what a step at 4 Hz always was.
 		if _lod_task < 0:
 			_start_lod_task(local_cam, horizon_dot)
-		desired = _desired_cache.duplicate()
+		desired = _desired_cache
 		_perf_end("terrain_reuse", _tk)
 	else:
 		_trav_mult = _lod_mult()
@@ -1815,7 +1819,7 @@ func _update_terrain() -> void:
 		_trav_alt = _cam_alt_above_surface
 		_compute_desired(local_cam, horizon_dot)
 		_adopt_lod_result()
-		desired = _desired_cache.duplicate()
+		desired = _desired_cache
 		_perf_end("terrain_traverse", _tk)
 	_tk = _perf_begin()
 
@@ -1907,19 +1911,15 @@ func _update_terrain() -> void:
 		if not _active_chunks.has(key) or pipeline.has(key):
 			continue
 		var _act: Dictionary = _active_chunks[key]
-		var _want: Dictionary = desired[key].duplicate()  # shared with the cache: never written in place
-		if _act.lod != _want.lod:
-			# Swapped, not removed: the old mesh stays on screen until the new quality is assembled.
-			# Removed here, every chunk crossing a quality threshold left a hole for as long as its
-			# rebuild took — ground blinking ahead of anyone moving (2026-10-01).
-			_want["_swap"] = true
-			_try_create_or_defer(_want)
-			pipeline[key] = true
-		elif int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
-			# Only the seam edges change: keep the old mesh on screen (its
-			# skirt still covers the seam) until the re-baked one is assembled.
-			_want["_swap"] = true
-			_try_create_or_defer(_want)
+		var _want: Dictionary = desired[key]  # shared with the cache: copied before any write
+		# Swapped, not removed: the old mesh stays on screen until the new quality is assembled.
+		# Removed here, every chunk crossing a quality threshold left a hole for as long as its
+		# rebuild took — ground blinking ahead of anyone moving (2026-10-01). A stitch change
+		# only moves the seam edges: the old mesh's skirt still covers the seam meanwhile.
+		if _act.lod != _want.lod or int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
+			var _swap: Dictionary = _want.duplicate()
+			_swap["_swap"] = true
+			_try_create_or_defer(_swap)
 			pipeline[key] = true
 	_perf_end("steps:requeue", _tks)
 
