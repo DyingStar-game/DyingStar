@@ -12,7 +12,6 @@ description = "A temperate biome dominated by a continuous herbaceous layer and 
 color = Color(0.49, 0.682, 0.322, 1)
 terrain_material_override = ExtResource("2")
 detail_texture_scale = 4.0
-elevation_max = 2000.0
 terrain_roughness = 0.7
 supports_vegetation = true
 default_vegetation_density = 0.15

@@ -11,10 +11,6 @@ extends Area3D
 
 signal interacted()
 
-## Prompt text (or translation key, e.g. %%HUD_REQUEST_SHIP) meant for the HUD when aimed at. NOTE: not
-## read by anything yet — the HUD prompt only comes from Interactable nodes.
-@export var label = "Interact"
-
 
 func _ready() -> void:
 	# Self-configuring: the scene only has to place the shape, never remember a layer number.

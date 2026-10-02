@@ -12,12 +12,6 @@ extends StaticBody3D
 ## player_server.gd) can free the slot.
 
 @export_group("Shelf")
-## Display name of this shelf. Informational only: not read by any code yet.
-@export var shelf_name: String = "Shelf"
-## Number of shelf levels (rows of slots). Informational only: the real slots come from shelf_slots.
-@export var shelf_tiers: int = 10
-## Slots per shelf level. Informational only: the real slots come from shelf_slots.
-@export var shelf_horizontal_capacity: int = 10
 ## Local (shelf-space) positions of every slot; authored in the scene.
 @export var shelf_slots: Array[Vector3] = []
 ## Editor button: print this shelf as the JSON block the NPC service consumes (scenename + slots).

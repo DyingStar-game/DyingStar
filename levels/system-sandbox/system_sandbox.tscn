@@ -25,9 +25,8 @@ volumetric_fog_enabled = true
 volumetric_fog_density = 0.0
 volumetric_fog_albedo = Color(0.78431374, 0.627451, 0.3764706, 1)
 
-[node name="SystemSandbox" type="Node3D" unique_id=1170441495 node_paths=PackedStringArray("spawn_node")]
+[node name="SystemSandbox" type="Node3D" unique_id=1170441495]
 script = ExtResource("1_6wdpo")
-spawn_node = NodePath("SmallProps")
 
 [node name="Star" parent="." unique_id=735687915 instance=ExtResource("6_0y0hx")]
 custom_aabb = AABB(0, 0, 0, 0, 0, 0)

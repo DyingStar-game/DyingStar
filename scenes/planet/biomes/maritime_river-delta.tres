@@ -10,7 +10,6 @@ display_name = "Maritime River-Delta"
 description = "Alluvial wetland at the river mouth."
 color = Color(0.102, 0.431, 0.361, 1)
 detail_texture_scale = 2.0
-elevation_max = 50.0
 terrain_roughness = 0.4
 supports_vegetation = true
 default_vegetation_density = 0.4

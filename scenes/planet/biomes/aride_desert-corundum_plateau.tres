@@ -9,5 +9,4 @@ biome_index = 91
 display_name = "Corundum Plateau"
 description = "High plateaus of extremely hard rock. The walls are sharp and virtually unaffected by conventional erosion"
 color = Color(0.823, 0.784, 0.69, 1)
-elevation_max = 2000.0
 terrain_roughness = 0.85

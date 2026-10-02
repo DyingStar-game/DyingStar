@@ -11,7 +11,6 @@ description = "Artificial grassland ecosystem whose parameters have been modifie
 category = "artificial"
 color = Color(0.376, 0.753, 0.251, 1)
 detail_texture_scale = 4.0
-elevation_max = 2000.0
 terrain_roughness = 0.5
 supports_vegetation = true
 default_vegetation_density = 0.3

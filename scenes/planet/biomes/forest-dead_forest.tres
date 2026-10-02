@@ -10,7 +10,6 @@ display_name = "Dead Forest"
 description = "Tree stand that has lost its biological viability. The woody structures survive as charred or mineralized skeletons."
 color = Color(0.361, 0.29, 0.227, 1)
 detail_texture_scale = 2.0
-elevation_max = 2000.0
 terrain_roughness = 1.1
 supports_vegetation = true
 default_vegetation_density = 0.3

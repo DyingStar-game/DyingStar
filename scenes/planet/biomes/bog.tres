@@ -13,7 +13,6 @@ color = Color(0.353, 0.416, 0.29, 1)
 detail_texture_scale = 2.0
 has_shallow_water = true
 shallow_water_material = ExtResource("2")
-elevation_max = 500.0
 terrain_roughness = 0.3
 supports_vegetation = true
 default_vegetation_density = 0.3

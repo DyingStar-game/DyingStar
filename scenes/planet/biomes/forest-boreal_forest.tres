@@ -10,7 +10,6 @@ display_name = "Boreal Forest"
 description = "A vast belt of conifers adapted to cold climates. The soil is acidic and species biodiversity is reduced."
 color = Color(0.118, 0.29, 0.165, 1)
 detail_texture_scale = 2.0
-elevation_max = 2500.0
 terrain_roughness = 0.85
 supports_vegetation = true
 default_vegetation_density = 0.75

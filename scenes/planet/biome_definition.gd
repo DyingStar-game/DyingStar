@@ -69,11 +69,6 @@ extends Resource
 ## Should be a semi-transparent ShaderMaterial (e.g. swamp_water.tres).
 @export var shallow_water_material: Material
 
-## Typical elevation range where this biome appears (meters above sea level).
-## Used by procedural placement and validation — not a hard constraint.
-@export var elevation_min: float = 0.0
-## Upper end of that typical elevation range (m above sea level).
-@export var elevation_max: float = 10000.0
 
 ## Terrain roughness multiplier. 1.0 = use heightmap as-is.
 ## <1 smooths (ice, sand dunes), >1 exaggerates (mountains, cliffs).

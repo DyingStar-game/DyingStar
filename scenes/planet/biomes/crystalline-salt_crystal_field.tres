@@ -11,7 +11,5 @@ description = "Massive sedimentary deposit of halites. The biome is characterize
 category = "mineral"
 color = Color(0.878, 0.847, 0.784, 1)
 detail_texture_scale = 2.0
-elevation_min = -500.0
-elevation_max = 1500.0
 terrain_roughness = 1.2
 movement_speed_factor = 0.7
