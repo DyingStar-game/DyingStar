@@ -60,6 +60,28 @@ static var _corundum_logged := false
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 
 
+## Works out a linear feature's half width in degrees, the field the vertex loops below read.
+##
+## Called on a freshly decoded tile BEFORE PlanetData caches it, while it is one thread's
+## alone. Once cached, every mesh task under that tile shares these Dictionaries, and each
+## prepare_zone() INSERTS keys (`half_width_deg`, `_hw_converted`): two tasks inserting into
+## the same Dictionary corrupt it natively — the cold-menu crashes seen once ~10 mesh tasks
+## ran at once instead of 4 (2026-10-01). The calls in the loops then find the zone done and
+## only read it. Same type dispatch as those loops.
+static func prepare_linear_zone(zone: Dictionary, radius: float) -> void:
+	match str(zone.get("type", "")):
+		"volcanic_geothermal-lava_river", "maritime_river-river":
+			return
+		"icy-ice_crevasse":
+			IcyIceCrevasseTerrain.prepare_zone(zone, radius)
+		"aride_desert-dry_river_bed":
+			ArideDesertDryRiverBedTerrain.prepare_zone(zone, radius)
+		"rocky_landform-pressure_canyon":
+			RockyLandformPressureCanyonTerrain.prepare_zone(zone, radius)
+		_:
+			RockyLandformCanyonTerrain.prepare_zone(zone, radius)
+
+
 ## Generate a visual [ArrayMesh] for one terrain chunk.
 ## [param data] — planet configuration (heightmap, radius, etc.)
 ## [param face] — cube face index 0–5
@@ -3987,4 +4009,3 @@ static func _compute_tangents(verts: PackedVector3Array,
 		out[vi * 4 + 2] = t.z
 		out[vi * 4 + 3] = sign_w
 	return out
-

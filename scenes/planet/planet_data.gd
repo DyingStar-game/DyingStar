@@ -1479,6 +1479,10 @@ func get_chunk_modifiers(nside: int, ipix: int) -> Dictionary:
 	if raw.is_empty():
 		return {}
 	var decoded: Dictionary = pack.decode_tile(raw, radius * PI / 180.0)
+	# Still this thread's alone: the derived fields the mesh tasks would otherwise insert
+	# into the shared copy (see PlanetChunk.prepare_linear_zone).
+	for zone: Dictionary in decoded.get("linear_features", []):
+		PlanetChunk.prepare_linear_zone(zone, radius)
 
 	_modifier_mutex.lock()
 	var again: Variant = _modifier_tiles.get(key)
@@ -2912,6 +2916,16 @@ func mountains_active() -> bool:
 func warm_mountains() -> void:
 	_mtn_finest_spacing = terrain_vertex_spacing_m()
 	crack_noise()  # built here, on the main thread, before any chunk worker asks
+	# The same for every lazy static a mesh task reaches. Each marks itself tried, then
+	# loads a C# script (ResourceLoader, off the main thread) and assigns a static the
+	# other tasks are reading; the HEALPix tables resize two static arrays. The first ~10
+	# tasks of a cold start all got there at once: native crashes ~5 s into the menu
+	# (2026-10-01).
+	TileFrame.native_available()
+	MountainRelief.native_available()
+	VolcanoRelief.native_available()
+	GradeBed.native_available()
+	HEALPix._build_tables()
 	var found := false
 	var pack = _ensure_modifier_pack()
 	if pack != null:
