@@ -1,0 +1,22 @@
+# CLAUDE.md — DyingStar-game
+
+Conventions for anyone (human or AI) changing this Godot project. Keep this file short: rules that hold
+for every change, not the state of a feature.
+
+## GDScript
+
+- **Every `@export` has a tooltip.** Put a `##` doc comment on the line(s) directly above it: Godot shows
+  that text when the property is hovered in the Inspector, and the team tunes most of the game there.
+  Say what it does, its unit (m, s, deg, dB, px, 0..1…) and what raising or lowering it changes. An
+  `@export_group` / `@export_subgroup` line goes above the doc comment, never between it and the variable.
+
+  ```gdscript
+  @export_group("Head camera (first person)")
+  ## Camera catch-up rate (per second) towards its target: higher = snappier, lower = smoother.
+  @export var head_cam_smooth: float = 12.0
+  ```
+
+  Enforced by `test/unit/test_export_docs.gd`, which lists every undocumented export (third-party addons
+  excluded).
+- Lint with `gdlint` (rules in `gdlintrc`, 140 characters per line).
+- Unit tests are GUT, in `test/unit/`.
