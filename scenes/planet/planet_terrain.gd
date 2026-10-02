@@ -62,6 +62,8 @@ const SPEED_LOD_EXIT := 0.8
 ## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
 ## does not rebuild the fine ring just to drop it again.
 const SPEED_LOD_HOLD_MS := 2000
+## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
+const KNOWN_MISS_MS := 2000
 
 ## Tolerance (m) for validating cached chunk geometry against the live surface
 ## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
@@ -355,6 +357,16 @@ var _trav_slack: float = INF
 ## thread keeps updating _terrain_mult and _cam_alt_above_surface while it runs.
 var _trav_mult: float = 1.0
 var _trav_alt: float = 0.0
+## The same without the fast-flight share (_terrain_mult): what a chunk already in the mesh disk cache
+## is cut by (_traverse).
+var _trav_full_mult: float = 1.0
+## Fast flight: (node id << 2 | LOD tier) → true when that chunk's unstitched mesh is in the disk
+## cache, or the msec until which a miss stands (KNOWN_MISS_MS). Read and written by the traversal
+## alone, one at a time; cleared with _node_geom.
+var _known_mesh: Dictionary = {}
+## Chunks a traversal cut finer than the fast-flight scale allowed, their meshes being known.
+var _trav_known_splits: int = 0
+var _lod_result_known_splits: int = 0
 ## The worker computing the next leaf set (-1: none), and what it produced. A traversal and its balance
 ## read and write only these, _node_geom and the _bal_prev_* caches, and only one runs at a time.
 var _lod_task: int = -1
@@ -1778,6 +1790,7 @@ func _update_terrain() -> void:
 		_perf_end("terrain_reuse", _tk)
 	else:
 		_trav_mult = _lod_mult()
+		_trav_full_mult = _terrain_mult
 		_trav_alt = _cam_alt_above_surface
 		_compute_desired(local_cam, horizon_dot)
 		_adopt_lod_result()
@@ -2567,8 +2580,14 @@ func _traverse(nside: int, ipix: int, depth: int,
 	# terrain-relative altitude still coarsens the view from high up / space.
 	var _cam_r := local_cam.length()
 	var _cam_dir_l: Vector3 = local_cam / _cam_r if _cam_r > 0.0 else center_dir
-	var dist := _view_scaled(PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius,
-		_trav_alt), _trav_mult)
+	var lod_dist := PlanetLod.distance(_cam_dir_l, center_dir, planet_data.radius, _trav_alt)
+	var dist := _view_scaled(lod_dist, _trav_mult)
+	# Fast flight (_trav_mult below _trav_full_mult): what the chunk would be cut by without it. Ground
+	# already in the mesh disk cache is cut by this one — the scale is there to spare BUILDING a ring
+	# crossed in seconds, and reading a known mesh back costs no mesh task.
+	var dist_full := dist
+	if _trav_full_mult != _trav_mult:
+		dist_full = _view_scaled(lod_dist, _trav_full_mult)
 
 	# Client-side back-face culling (skip chunks behind the planet)
 	if not is_server:
@@ -2601,6 +2620,12 @@ func _traverse(nside: int, ipix: int, depth: int,
 			_trav_slack = minf(_trav_slack, absf(dist - chunk_diag * SUBDIVIDE_FACTOR))
 		if PlanetLod.wants_split(dist, chunk_diag):
 			should_subdivide = true
+		elif dist_full != dist and PlanetLod.wants_split(dist_full, chunk_diag):
+			if track_slack:
+				_trav_slack = minf(_trav_slack, absf(dist_full - chunk_diag * SUBDIVIDE_FACTOR))
+			if _children_known(nside, ipix, _cam_dir_l, geom_cache):
+				should_subdivide = true
+				_trav_known_splits += 1
 
 	if should_subdivide:
 		var child_nside := nside * 2
@@ -2614,6 +2639,13 @@ func _traverse(nside: int, ipix: int, depth: int,
 		if track_slack:
 			for tier_edge in [planet_data.lod0_distance, planet_data.lod1_distance, planet_data.lod2_distance]:
 				_trav_slack = minf(_trav_slack, absf(dist - float(tier_edge)))
+		if dist_full != dist:
+			var lod_full := planet_data.get_lod_level(dist_full)
+			if track_slack:
+				for tier_edge in [planet_data.lod0_distance, planet_data.lod1_distance, planet_data.lod2_distance]:
+					_trav_slack = minf(_trav_slack, absf(dist_full - float(tier_edge)))
+			if lod_full != lod and _mesh_known(nside, ipix, lod_full):
+				lod = lod_full
 		var key := _chunk_key_hp(nside, ipix)
 		# Snap centre to float32 so mi.position matches the cc_f32 used
 		# inside generate_mesh.  Without this, the float64→float32 delta
@@ -2633,6 +2665,45 @@ func _traverse(nside: int, ipix: int, depth: int,
 ## VIEW_DISTANCE_NEAR_M of the camera, stretched (mult > 1: detail reaches
 ## further) or compressed (mult < 1) beyond — continuous at the boundary, so
 ## no chunk jumps a level for crossing it.
+## Are the four children of (nside, ipix) all in the mesh disk cache, at the tier they would get
+## without the fast-flight scale? Traversal only.
+func _children_known(nside: int, ipix: int, cam_dir: Vector3, geom_cache: Dictionary) -> bool:
+	if _chunk_cache == null:
+		return false
+	var child_nside := nside * 2
+	for child_ipix in HEALPix.child_pixels(ipix):
+		var node_id := (child_nside << 32) | child_ipix
+		var geom: Array = geom_cache.get(node_id, [])
+		if geom.is_empty():
+			var cd := HEALPix.pix2vec_nest(child_nside, child_ipix)
+			geom = [cd, PlanetLod.chunk_diagonal(child_nside, child_ipix, planet_data.radius)]
+			geom_cache[node_id] = geom
+		var d := _view_scaled(PlanetLod.distance(cam_dir, geom[0], planet_data.radius, _trav_alt),
+				_trav_full_mult)
+		if not _mesh_known(child_nside, child_ipix, planet_data.get_lod_level(d)):
+			return false
+	return true
+
+
+## Is this chunk's unstitched mesh at [param lod] in the disk cache? A file found stays known; a miss
+## is looked at again after KNOWN_MISS_MS, since the chunk may have been built since. Traversal only.
+func _mesh_known(nside: int, ipix: int, lod: int) -> bool:
+	if _chunk_cache == null:
+		return false
+	var id := ((((nside << 32) | ipix)) << 2) | lod
+	var seen: Variant = _known_mesh.get(id)
+	if seen is bool:
+		return true
+	var now := Time.get_ticks_msec()
+	if seen != null and now < int(seen):
+		return false
+	if _chunk_cache.has_mesh(_chunk_key_hp(nside, ipix), lod):
+		_known_mesh[id] = true
+		return true
+	_known_mesh[id] = now + KNOWN_MISS_MS
+	return false
+
+
 static func _view_scaled(dist: float, mult: float) -> float:
 	if dist <= VIEW_DISTANCE_NEAR_M:
 		return dist
@@ -2739,6 +2810,7 @@ func _compute_desired(local_cam: Vector3, horizon_dot: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	var desired: Dictionary = {}
 	_trav_slack = INF
+	_trav_known_splits = 0
 	for base_pix in BASE_PIXEL_COUNT:
 		_traverse(1, base_pix, 0, local_cam, horizon_dot, desired, _node_geom, true)
 	_balance_and_stitch(desired, local_cam)
@@ -2748,6 +2820,7 @@ func _compute_desired(local_cam: Vector3, horizon_dot: float) -> void:
 	# Back to metres of camera motion: beyond VIEW_DISTANCE_NEAR_M a distance runs 1/mult as fast as the
 	# camera (_view_scaled); half of it keeps clear of rounding and of the altitude term.
 	_lod_result_slack = 0.5 * _trav_slack * minf(_trav_mult, 1.0)
+	_lod_result_known_splits = _trav_known_splits
 	_lod_result_usec = Time.get_ticks_usec() - t0
 
 
@@ -2758,6 +2831,7 @@ func _lod_on_worker() -> bool:
 ## [param with_desired]: also compute the leaf set (else only the waiting look-ahead, if any).
 func _start_lod_task(local_cam: Vector3, horizon_dot: float, with_desired: bool = true) -> void:
 	_trav_mult = _lod_mult()
+	_trav_full_mult = _terrain_mult
 	_trav_alt = _cam_alt_above_surface
 	_lod_task_desired = with_desired
 	var prefetch_cam := _pending_prefetch_cam
@@ -2802,6 +2876,7 @@ func _adopt_lod_result() -> void:
 	if not is_server:
 		ClientPerf.gauge("terrain_slack_m:" + str(get_parent().name), _desired_cache_slack)
 		ClientPerf.gauge("terrain_lod_ms:" + str(get_parent().name), _lod_result_usec / 1000.0)
+		ClientPerf.gauge("terrain_known_splits:" + str(get_parent().name), _lod_result_known_splits)
 
 
 ## Wait for the leaf-set worker, if one runs: before the state it writes is cleared, and before exit.
@@ -4818,6 +4893,7 @@ func _clear_all_chunks() -> void:
 		_remove_chunk(key)
 	_node_geom.clear()
 	_node_geom_prefetch.clear()
+	_known_mesh.clear()
 
 
 # ------------------------------------------------------------------
