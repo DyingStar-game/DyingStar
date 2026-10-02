@@ -64,9 +64,15 @@ const SPEED_LOD_EXIT := 0.8
 const SPEED_LOD_HOLD_MS := 2000
 ## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
 const KNOWN_MISS_MS := 2000
-## The mesh backlog is sorted again (by PlanetLod.view_weight) once the view has turned this far since
-## the last sort: cos 20°.
+## The mesh backlog and the assembly queue are ranked again (build_priority) once the view has turned
+## this far since the last ranking: cos 20°...
 const BACKLOG_RESORT_DOT := 0.94
+## ... or once the camera has moved this far (m).
+const QUEUE_RESORT_M := 200.0
+## Most time (ms) a frame spends taking disk-cache reads over (_poll_cache_loads). Each costs a
+## validation against the live surface; a fast flight over known ground finished hundreds at once,
+## all in one frame (450-750 ms frames, 2026-10-02).
+const CACHE_POLL_BUDGET_MS := 3.0
 
 ## Tolerance (m) for validating cached chunk geometry against the live surface
 ## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
@@ -309,17 +315,17 @@ var _stat_cache_ineligible: int = 0
 var _stat_cache_rejected: int = 0
 ## Overflow queue when max_mesh_tasks is reached.
 var _mesh_task_backlog: Array[Dictionary] = []
-## The keys in _mesh_task_backlog, for a duplicate test that does not walk it, and whether it was
-## appended to since it was last sorted. It used to be scanned and fully re-sorted on EVERY insert:
-## a fast flight queues hundreds of chunks in one LOD pass into a backlog of thousands, and one pass
-## took 0.5-3.6 s of the main thread (ClientPerf steps:new, EVA flight 2026-10-01). It is now sorted
-## once, nearest first, when it is drained.
+## The keys in _mesh_task_backlog, for a duplicate test that does not walk it. It used to be scanned
+## and fully re-sorted on EVERY insert: a fast flight queues hundreds of chunks in one LOD pass into a
+## backlog of thousands, and one pass took 0.5-3.6 s of the main thread (ClientPerf steps:new, EVA
+## flight 2026-10-01). Both the backlog and _assemble_queue are now kept in service order instead
+## (_queue_insert, _queue_refresh).
 var _backlog_keys: Dictionary = {}
-var _backlog_unsorted: bool = false
-## Where the camera looks, in the planet's frame (unit; zero on the server and in the editor), and
-## where it looked at the last backlog sort.
+## Where the camera looks, in the planet's frame (unit; zero on the server and in the editor).
 var _view_dir_local: Vector3 = Vector3.ZERO
-var _backlog_sort_view: Vector3 = Vector3.ZERO
+## The camera and view the backlog's and the assembly queue's priorities were last worked out for.
+var _backlog_rank_at: Array = [Vector3.INF, Vector3.ZERO]
+var _assemble_rank_at: Array = [Vector3.INF, Vector3.ZERO]
 ## Disk-cache meshes being read by ResourceLoader's threads.
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
@@ -1606,7 +1612,9 @@ func _physics_process(_delta: float) -> void:
 	# (main-thread node creation + cache write) or in the LOD update below.
 	var _tk := _perf_begin()
 	_poll_pending_recipes()
+	var _tkc := _perf_begin()
 	_poll_cache_loads()
+	_perf_end("asm:cache_poll", _tkc)
 	_poll_mesh_tasks()
 	_process_assemble_queue()
 	_perf_end("terrain_assemble", _tk)
@@ -3350,17 +3358,15 @@ func _cached_geom_valid(first_vertex: Vector3, origin: Vector3, key: String,
 
 ## Mesh variant of _cached_geom_valid: pulls the first vertex out of the mesh.
 func _cached_mesh_valid(mesh: ArrayMesh, info: Dictionary) -> bool:
-	if mesh.get_surface_count() == 0:
-		return false
-	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	if verts.is_empty():
+	var v0: Variant = ChunkDiskCache.first_vertex(mesh)
+	if v0 == null:
 		return false
 	var _ns: int = info.get("nside", 0)
 	var _res: int = planet_data.get_resolution_for_lod(info.get("lod", 0))
 	var _pitch := 0.0
 	if _ns > 0 and _res > 0:
 		_pitch = HEALPix.pixel_side_length(_ns, planet_data.radius) / float(_res)
-	return _cached_geom_valid(Vector3(verts[0]), info.center, info.key,
+	return _cached_geom_valid(v0 as Vector3, info.center, info.key,
 			planet_data.sample_nside_for(_ns), _pitch)
 
 
@@ -3582,12 +3588,16 @@ func _request_cache_load(info: Dictionary) -> bool:
 func _poll_cache_loads() -> void:
 	if _cache_loads.is_empty():
 		return
+	var t0 := Time.get_ticks_usec()
 	var done: Array[String] = []
 	for key: String in _cache_loads:
 		var st := ResourceLoader.load_threaded_get_status(_cache_loads[key].path)
 		if st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			done.append(key)
 	for key in done:
+		# What is left stays loaded and is taken next frame (CACHE_POLL_BUDGET_MS).
+		if (Time.get_ticks_usec() - t0) >= CACHE_POLL_BUDGET_MS * 1000.0:
+			break
 		var entry: Dictionary = _cache_loads[key]
 		_cache_loads.erase(key)
 		var info: Dictionary = entry.info
@@ -3597,7 +3607,7 @@ func _poll_cache_loads() -> void:
 		if mesh != null and _cached_mesh_valid(mesh, info):
 			_chunk_cache.cache_hits += 1
 			info["_from_disk_cache"] = true
-			_assemble_queue.append({"info": info, "mesh": mesh})
+			_queue_insert(_assemble_queue, {"info": info, "mesh": mesh}, info)
 		else:
 			_stat_cache_rejected += 1
 			info["_skip_disk_cache"] = true
@@ -3617,7 +3627,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 			return
 
 	if _mesh_tasks.size() >= _mesh_slot_count():
-		# Backlog — sorted nearest first when drained (_drain_backlog).
+		# Backlog — kept in service order (_queue_insert), served by _drain_backlog.
 		_backlog_push(info)
 		return
 
@@ -3685,24 +3695,10 @@ func _drain_backlog() -> void:
 	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
 	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
 	var tries := mini(_mesh_task_backlog.size(), _mesh_slot_count() * 2)
-	if _view_dir_local.dot(_backlog_sort_view) < BACKLOG_RESORT_DOT:
-		_backlog_unsorted = true  # the view turned: what comes first changed
-	if tries > 0 and _backlog_unsorted:
-		var cam := _last_local_cam
-		var view := _view_dir_local
-		var ranked: Array = []
-		for info: Dictionary in _mesh_task_backlog:
-			ranked.append([build_priority(info.center, cam, view), info])
-		ranked.sort_custom(func(a: Array, b: Array) -> bool:
-			return a[0] < b[0])
-		_mesh_task_backlog.clear()
-		for r: Array in ranked:
-			_mesh_task_backlog.append(r[1])
-		_backlog_unsorted = false
-		_backlog_sort_view = view
+	if tries > 0:
+		_queue_refresh(_mesh_task_backlog, _backlog_rank_at, func(i: Dictionary) -> Dictionary: return i)
 	while tries > 0 and _mesh_tasks.size() < _mesh_slot_count():
-		var info: Dictionary = _mesh_task_backlog[0]
-		_mesh_task_backlog.remove_at(0)
+		var info: Dictionary = _mesh_task_backlog.pop_back()
 		_backlog_keys.erase(info.key)
 		_queue_mesh_task(info)
 		tries -= 1
@@ -3747,8 +3743,35 @@ func _backlog_push(info: Dictionary) -> void:
 	if _backlog_keys.has(info.key):
 		return
 	_backlog_keys[info.key] = true
-	_mesh_task_backlog.append(info)
-	_backlog_unsorted = true
+	_queue_insert(_mesh_task_backlog, info, info)
+
+
+## Put [param item] into [param queue] at its place in service order — the one to serve first LAST,
+## so taking it is a pop_back and not a remove_at(0) that moves the whole array. [param info] is the
+## chunk record whose centre ranks it; its priority is kept on the item ("_prio").
+func _queue_insert(queue: Array, item: Dictionary, info: Dictionary) -> void:
+	item["_prio"] = build_priority(info.center, _last_local_cam, _view_dir_local)
+	queue.insert(queue.bsearch_custom(item, _serve_later), item)
+
+
+## Rework every priority of [param queue] and sort it again, once the camera has moved
+## QUEUE_RESORT_M or the view turned past BACKLOG_RESORT_DOT since [param rank_at] (camera, view)
+## — what comes first has changed. [param info_of] gives an item's chunk record.
+func _queue_refresh(queue: Array, rank_at: Array, info_of: Callable) -> void:
+	# No view (server, editor): the camera's move alone counts.
+	var turned := _view_dir_local != Vector3.ZERO and _view_dir_local.dot(rank_at[1]) < BACKLOG_RESORT_DOT
+	if _last_local_cam.distance_to(rank_at[0]) < QUEUE_RESORT_M and not turned:
+		return
+	for item: Dictionary in queue:
+		item["_prio"] = build_priority(info_of.call(item).center, _last_local_cam, _view_dir_local)
+	queue.sort_custom(_serve_later)
+	rank_at[0] = _last_local_cam
+	rank_at[1] = _view_dir_local
+
+
+## Service order: [param a] before [param b] in the array when it is to be served LATER.
+static func _serve_later(a: Dictionary, b: Dictionary) -> bool:
+	return float(a["_prio"]) > float(b["_prio"])
 
 
 ## Poll completed mesh tasks and move them to _assemble_queue.
@@ -3776,7 +3799,7 @@ func _poll_mesh_tasks() -> void:
 		if mesh != null:
 			if not String(entry.result_ref[1]).is_empty():
 				entry.info["_cache_pending"] = entry.result_ref[1]
-			_assemble_queue.append({"info": entry.info, "mesh": mesh})
+			_queue_insert(_assemble_queue, {"info": entry.info, "mesh": mesh}, entry.info)
 		else:
 			push_warning("[PlanetTerrain] mesh task for '%s' returned null" % key)
 
@@ -3794,16 +3817,15 @@ func _poll_mesh_tasks() -> void:
 ## before distant LODs.
 func _process_assemble_queue() -> void:
 	# Sort nearest-first so close terrain appears before distant shells.
-	if _assemble_queue.size() > 1:
-		_assemble_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			return a.info.center.distance_squared_to(_last_local_cam) < b.info.center.distance_squared_to(_last_local_cam))
+	var _tks := _perf_begin()
+	_queue_refresh(_assemble_queue, _assemble_rank_at, func(i: Dictionary) -> Dictionary: return i.info)
+	_perf_end("asm:sort", _tks)
 	var assembled := 0
 	var _batch_t0 := Time.get_ticks_usec()
 	while assembled < MAX_ASSEMBLE_PER_FRAME and not _assemble_queue.is_empty():
 		if assembled > 0 and (Time.get_ticks_usec() - _batch_t0) / 1000.0 >= ASSEMBLE_BUDGET_MS:
 			break
-		var item: Dictionary = _assemble_queue[0]
-		_assemble_queue.remove_at(0)
+		var item: Dictionary = _assemble_queue.pop_back()
 		var info: Dictionary = item.info
 		var mesh: ArrayMesh = item.mesh
 		# Built before a line profile was born under it (the mesh has the
