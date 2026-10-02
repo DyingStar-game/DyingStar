@@ -16,6 +16,8 @@ extends VehicleComponentSpec
 ## ELECTRIC = single-speed, instant torque. THERMAL = gearbox with automatic shifting.
 enum Propulsion {ELECTRIC, THERMAL}
 
+## Propulsion type: ELECTRIC = single-speed, instant torque; THERMAL = automatic gearbox (shows the
+## Thermal gearbox settings below).
 @export var propulsion: Propulsion = Propulsion.ELECTRIC
 ## Electrical power drawn (W). Together with the torque it fixes the motor's angular speed, and
 ## therefore the vehicle's top speed: omega_max = mech power / mech torque.
@@ -30,10 +32,16 @@ enum Propulsion {ELECTRIC, THERMAL}
 @export_group("Thermal gearbox")
 ## Torque multiplier per gear, lowest gear first. THERMAL only.
 @export var gear_ratios: Array[float] = [2.5, 1.7, 1.25, 1.0, 0.8]
+## Engine RPM above which the automatic gearbox shifts up a gear. THERMAL only.
 @export var shift_up_rpm: float = 3400.0
+## Engine RPM below which the automatic gearbox shifts down a gear. THERMAL only.
 @export var shift_down_rpm: float = 1400.0
+## Torque multiplier in reverse: higher = stronger pull backward. THERMAL only.
 @export var reverse_ratio: float = 2.5
+## Lowest engine RPM (idle): the floor of the gearbox RPM and of the engine sound's rev. THERMAL only.
 @export var idle_rpm: float = 800.0
+## Highest engine RPM (red line), reached at top speed in the top gear; also the top of the engine sound's
+## rev. THERMAL only.
 @export var redline_rpm: float = 4000.0
 
 ## Mechanical power (W) this engine delivers to the transmission, its own losses taken out.

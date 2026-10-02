@@ -3,6 +3,8 @@ extends Area3D
 
 signal interacted()
 
+## Prompt shown when the player aims at this interactable, after the action key ("[E] <label>").
+## Translated, so a translation key (e.g. %%HUD_PILOT_SHIP) works.
 @export var label = "Interact"
 
 func _ready() -> void:

@@ -4,17 +4,25 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 ## child node (type_name "spawnbuilding", non-carriable); custom state (apartments/slots) is applied via
 ## apply_prop_data(). The body exposes `uuid` so it can be resolved as a networked parent by uuid.
 
-@export var rows: int = 1 # 1 or 2
-@export var cols: int = 1 # from 1
-@export var floors: int = 1 # from 1
+## Number of apartment rows: 1 or 2 (the second row is turned to face the first).
+@export var rows: int = 1
+## Number of apartments per row, along +Z (from 1).
+@export var cols: int = 1
+## Number of storeys (from 1).
+@export var floors: int = 1
+## Apartment depth along X (m). Negative = rows extend towards -X; the second row sits at twice this offset.
 @export var x_spacing: float = -5.16
+## Distance (m) between two neighbouring apartments of a row, along Z.
 @export var z_spacing: float = 3.16
+## Height (m) of one storey: the distance between two floors.
 @export var y_spacing: float = 3.25
 ## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot.
 @export var spawn_point: Vector3 = Vector3(-1.934, 0.071, 1.471)
 ## uuid of the poi_village this building belongs to ("" = none): Horizon fills villages by it.
 @export var poi_uuid: String = ""
 
+## Occupied apartments, as {floor, row, col, player_uuid, player_name}: each gets a "HOME <name>" plate.
+## Replicated from the server; the default is a test entry.
 @export var apartments = [
 	{
 		"floor": 0,

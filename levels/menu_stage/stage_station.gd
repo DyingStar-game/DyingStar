@@ -7,4 +7,5 @@ extends Camera3D
 ## `key` names it: a menu screen (&"home", &"settings", &"settings_graphics", &"settings_audio",
 ## &"settings_controls" — MainPage.SCREEN_OF_CATEGORY).
 
+## Menu screen this viewpoint belongs to (see above); the camera rig looks it up by this name. Must be unique.
 @export var key : StringName = &""

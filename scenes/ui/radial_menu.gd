@@ -23,12 +23,18 @@ extends Control
 signal option_selected(data)
 signal cancelled
 
+## Outer radius (px) of the main ring, around the screen center. Pointing past it reaches a category's
+## submenu arc; labels sit halfway between inner_radius and this.
 @export var radius: float = 305.0
+## Radius (px) of the central dead zone: pointing inside it selects nothing (releasing there cancels).
 @export var inner_radius: float = 110.0
+## Label font size (px). Also scales the highlight discs and the thickness of the submenu band.
 @export var font_size: int = 23
+## Text shown in the center while nothing actionable is hovered (e.g. "Spawn", "Emote"). Empty = no center text.
 @export var title: String = ""
 ## How far past `radius` the submenu arc sits, and the angular gap (rad) between its children.
 @export var submenu_radius_gap: float = 110.0
+## Angular gap (rad) between neighbouring submenu children on their arc. Higher = children spread wider.
 @export var submenu_spread: float = 0.42
 
 var _options: Array = []

@@ -1,8 +1,11 @@
 extends Area3D
 
-@export var fade_in_duration := 2.0   # secondes pour monter
-@export var fade_out_duration := 3.0  # secondes pour descendre
-@export var target_volume_db := -50.0   # volume max quand dans la zone
+## Time (s) to fade the zone's sound in when a player enters it.
+@export var fade_in_duration := 2.0
+## Time (s) to fade the sound out (then stop it) when the player leaves.
+@export var fade_out_duration := 3.0
+## Volume (dB) reached inside the zone, faded in from -80 dB.
+@export var target_volume_db := -50.0
 
 var _tween: Tween
 

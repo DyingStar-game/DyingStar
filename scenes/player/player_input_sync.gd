@@ -2,9 +2,13 @@ class_name PlayerInput
 
 extends MultiplayerSynchronizer
 
+## Owner's movement input (move_left/right/forward/back vector, -1..1 per axis), synced from the authority.
 @export var move_direction: Vector2
+## Owner's look input to sync. Never written by this script (stays zero).
 @export var mouse_motion: Vector2
+## True while the owner holds the sprint action, synced from the authority.
 @export var sprint: bool
+## True on the frame the owner presses jump, synced from the authority.
 @export var jump: bool
 
 @onready var player = get_parent() as Player

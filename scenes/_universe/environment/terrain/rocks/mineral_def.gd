@@ -27,11 +27,13 @@ extends Resource
 @export_group("Albedo")
 ## When true the ore is drawn with `albedo_tex` (triplanar, local space) instead of a flat color.
 @export var use_texture: bool = false
+## Ore vein color texture (triplanar, local space), multiplied by `color`. Only used when `use_texture` is true.
 @export var albedo_tex: Texture2D = null
 ## Tints the texture, or IS the ore color when `use_texture` is false.
 @export var color: Color = Color(0.1, 0.8, 0.2)
 
 @export_group("Surface")
+## Ore vein normal map (triplanar, local space). Only applied when `use_texture` is true; null = flat.
 @export var normal_tex: Texture2D = null
 ## Strength of the ore normal-map relief (0 = flat). Ignored when no `normal_tex`.
 @export_range(0.0, 2.0) var normal_strength: float = 1.0
@@ -39,7 +41,9 @@ extends Resource
 @export var tex_scale: float = 1.0
 
 @export_group("Material")
+## Metalness of the ore veins (0 = dielectric, 1 = full metal). The barren rock around them stays non-metal.
 @export_range(0.0, 1.0) var metallic: float = 1.0
+## Surface roughness of the ore veins (0 = mirror-polished, 1 = matte); blended with the rock's own roughness.
 @export_range(0.0, 1.0) var roughness: float = 0.14
 ## Self-illumination. 0 = realistic metal; >0 = glows (the old cryptonite preset used ~9).
 @export var emission: float = 0.0

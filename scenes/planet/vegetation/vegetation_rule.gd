@@ -47,6 +47,7 @@ extends Resource
 @export_group("Transform")
 ## Scale range — each instance picks a uniform scale in [min, max].
 @export var scale_min: float = 0.8
+## Upper bound of the random uniform scale (see scale_min). Higher = bigger largest instances.
 @export var scale_max: float = 1.4
 ## Whether to apply a random Y-axis rotation.
 @export var random_yaw: bool = true

@@ -5,6 +5,7 @@ extends CanvasLayer
 
 ## How long the message stays fully visible, then how long it takes to fade, in seconds.
 @export var hold_seconds: float = 2.5
+## How long (s) the message takes to fade out after hold_seconds. 0 = disappears at once.
 @export var fade_seconds: float = 0.6
 
 var _label: Label = null

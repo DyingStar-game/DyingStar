@@ -20,6 +20,7 @@ extends Resource
 @export_group("Transform")
 ## Each instance picks a uniform scale in [member scale_min]..[member scale_max].
 @export var scale_min: float = 1.0
+## Upper bound of the random uniform scale (1 = original size). Equal to scale_min = no variation.
 @export var scale_max: float = 1.0
 ## Whether to apply a random rotation around the placement's up axis.
 @export var random_yaw: bool = true

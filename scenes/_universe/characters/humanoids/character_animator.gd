@@ -75,13 +75,19 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## by type and by height. Default 0 = no shift. Tune live.
 @export_group("Vault pose offsets")
 @export_subgroup("SafetyVault")
+## Base body-frame shift (m) of the puppet while the SafetyVault clip plays. 0 = no shift.
 @export var vault_offset: Vector3 = Vector3.ZERO
+## Extra SafetyVault shift (m) per metre of obstacle height, added to vault_offset.
 @export var vault_offset_per_m: Vector3 = Vector3.ZERO
 @export_subgroup("ClimbUp 1m")
+## Base body-frame shift (m) of the puppet while the ClimbUp_1m clip plays. 0 = no shift.
 @export var climb1_offset: Vector3 = Vector3.ZERO
+## Extra ClimbUp_1m shift (m) per metre of obstacle height, added to climb1_offset.
 @export var climb1_offset_per_m: Vector3 = Vector3.ZERO
 @export_subgroup("ClimbUp 2m")
+## Base body-frame shift (m) of the puppet while the ClimbUp_2m clip plays. 0 = no shift.
 @export var climb2_offset: Vector3 = Vector3.ZERO
+## Extra ClimbUp_2m shift (m) per metre of obstacle height, added to climb2_offset.
 @export var climb2_offset_per_m: Vector3 = Vector3.ZERO
 
 @export_group("EVA pose")
@@ -104,6 +110,8 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## Seated only: the body is locked, so the head also follows the look YAW (left/right). Standing, the body
 ## carries the yaw and this stays 0. Same calibration idea (gain sign + local axis) as the pitch.
 @export var head_look_yaw_gain: float = 1.0
+## Local axis the head turns about for the seated look YAW — try (0,0,1) or (1,0,0) if it nods or tilts
+## instead of turning left/right.
 @export var head_look_yaw_axis: Vector3 = Vector3(0, 1, 0)
 ## Max head deflection (degrees) from center on each axis, so the neck never snaps to an impossible angle.
 @export var head_look_max_deg: float = 70.0

@@ -76,7 +76,9 @@ extends Resource
 ## puts it back on ground that actually exists, at any planet resolution.
 @export var abutment_grid_spans: float = 1.5
 
+## Depth of the deck slab under the road surface (m). On the ramps the underside is pushed below the terrain.
 @export var deck_thickness_m: float = 0.60
+## Height of the side parapets above the deck surface (m). 0 = no parapets.
 @export var parapet_height_m: float = 1.20
 
 ## See the class header: this is a physics budget.

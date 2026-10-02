@@ -18,6 +18,7 @@ extends Resource
 
 ## Silence between two tracks, drawn between these two bounds. Both at zero: continuous music.
 @export_range(0.0, 900.0, 1.0, "suffix:s") var gap_min_s: float = 0.0
+## Upper bound of that silence (s). Set both bounds equal for a fixed gap.
 @export_range(0.0, 900.0, 1.0, "suffix:s") var gap_max_s: float = 0.0
 
 ## Level of the whole playlist, on top of the player's Music slider.

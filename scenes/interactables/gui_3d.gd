@@ -1,8 +1,12 @@
 ## From: https://github.com/godotengine/godot-demo-projects/blob/master/viewport/gui_in_3d/gui_3d.gd
 extends Node3D
 
+## SubViewport holding the 2D interface. Shown on node_quad and fed the mouse/keyboard input routed from 3D.
 @export var node_viewport: SubViewport
+## Screen mesh the interface is displayed on. Its 0..1 UVs and size map 3D hits to viewport pixels; gets an
+## unshaded material showing node_viewport when it has no material_override.
 @export var node_quad: MeshInstance3D
+## Area3D picked by the mouse ray: its hover/input events are converted and pushed into node_viewport.
 @export var node_area: Area3D
 
 ## Used for checking if the mouse is inside the Area3D.

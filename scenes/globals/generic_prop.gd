@@ -15,6 +15,7 @@ extends RigidBody3D
 ## server-generated and persisted in ScyllaDB) lives in the PropSync child; these two only brand it as
 ## "company-type". Defined here once so every prop inherits them — set the values per scene in the Inspector.
 @export var id_company: String = "ARES"
+## Second part of that serial prefix: the prop type (e.g. HAUL in ARES-HAUL-...).
 @export var id_type: String = "HAUL"
 ## Show only the UUID's first block, uppercased (e.g. ARES-HAUL-8C44B2F9), to fit a small face. The
 ## identity stays the FULL UUID; this is display-only.
@@ -133,9 +134,13 @@ func send_properties_to_client(parent_uuid: String) -> void:
 ## Family → samples for the impact when this prop is dropped (see SurfaceSounds). The SURFACE decides
 ## the sound, so one library covers every ground it can land on instead of a stream per case.
 @export var sfx_landing: SurfaceSounds
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_landing_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_landing_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_landing_distance: float = 30.0
+## How the sound fades with distance.
 @export var sfx_landing_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 

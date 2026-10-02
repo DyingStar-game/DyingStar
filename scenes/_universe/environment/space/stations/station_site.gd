@@ -26,6 +26,7 @@ enum AltitudeMode {
 @export var body_key: String = ""
 ## Its proper name; the kind of station is added around it (see display_name).
 @export var proper_name: String = ""
+## How the orbit's altitude is chosen: FIXED uses altitude_m, SYNCHRONOUS derives it from the body's day.
 @export var altitude_mode: AltitudeMode = AltitudeMode.FIXED
 ## Metres above the body's reference radius (FIXED only).
 @export var altitude_m: float = 400000.0

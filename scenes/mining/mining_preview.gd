@@ -12,9 +12,13 @@ const ASTRONAUT_SCENE := preload("res://assets/_universe/characters/humanoids/as
 const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn")
 
 @export_group("Equipment placement")
-@export var hand_offset := Vector3(0.4, 1.0, -0.4)   # mount position = pivot
-@export var item_offset := Vector3.ZERO              # model offset inside the mount
+## Mount position on the body = the PIVOT the held tool rotates around (MiningTool.equipment_hand_offset).
+@export var hand_offset := Vector3(0.4, 1.0, -0.4)
+## Model offset inside the mount, to put the grip on the pivot (MiningTool.equipment_item_offset).
+@export var item_offset := Vector3.ZERO
+## Base rotation (deg) making the model point forward (-Z) (MiningTool.equipment_item_rotation_deg).
 @export var item_rotation_deg := Vector3(0, -90, 0)
+## Uniform scale of the perforator model (MiningTool.equipment_item_scale).
 @export var item_scale := 2.0
 ## Chisel TIP in the perforator's local space. Move the ORANGE "Bit TIP" gizmo onto
 ## the chisel point (set play_animation = false first), then copy this value into
@@ -24,23 +28,35 @@ const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/ro
 @export_range(-80, 80) var preview_pitch_deg := 0.0
 
 @export_group("Perforation animation")
+## Play the jackhammer animation. Off = tool and bit held at rest (to place the bit TIP gizmo).
 @export var play_animation := true
+## Jackhammer rate: back-and-forth jabs per second (MiningTool.perforation_hammer_freq).
 @export var hammer_freq := 10.0
 ## Animate only the chisel/bit node, not the whole tool.
 @export var animate_bit_only := true
+## Name of the chisel/bit node in the perforator model (F6 prints its node tree). Tick Rebuild after changing.
 @export var bit_node_name := "hammerdrill_chiselflat"
 ## Local axis the bit slides along (try (0,0,1), (0,1,0), (1,0,0)).
 @export var bit_axis := Vector3(0, 0, 1)
+## Travel (m) of the bit along bit_axis on each jab (MiningTool.bit_amplitude).
 @export var bit_amplitude := 0.06
+## Whole-tool jab depth (m) when the bit is not animated alone (MiningTool.perforation_hammer_amplitude).
 @export var hammer_amplitude := 0.18
+## Random tremble (m) of the whole tool while animating (MiningTool.perforation_shake_amplitude).
 @export var shake_amplitude := 0.025
 
 @export_group("Scene")
+## Show the astronaut model, for scale. Structural: tick Rebuild after changing.
 @export var show_astronaut := true
+## Show a mining rock in front of the tool. Structural: tick Rebuild after changing.
 @export var show_rock := true
+## Uniform scale of the preview rock.
 @export var rock_scale := 1.0
+## Distance (m) of the preview rock in front of the origin, along -Z.
 @export var rock_distance := 1.5
+## Show the axis gizmos (world origin, pivot, perforator origin). Structural: tick Rebuild after changing.
 @export var show_axes := true
+## Length (m) of the world-origin axes gizmo. Structural: tick Rebuild after changing.
 @export var axes_length := 1.0
 ## 3D label size for the gizmos (smaller = tinier text).
 @export var gizmo_label_size := 0.0012
@@ -60,11 +76,17 @@ const ROCK_SCENE := preload("res://scenes/_universe/environment/terrain/rocks/ro
 @export var aim_roll_deg := 90.0
 
 @export_group("Camera (F6 run mode: right-drag = orbit, wheel = zoom)")
+## Height (m) of the point the F6 orbit camera turns around. Applied on Rebuild.
 @export var camera_target_height := 1.0
+## Starting distance (m) of the F6 orbit camera from its target. Applied on Rebuild.
 @export var camera_distance := 3.0
+## Orbit speed of the F6 camera, in radians per pixel of right-drag (higher = faster).
 @export var orbit_sensitivity := 0.01
+## Distance (m) the F6 camera moves per mouse-wheel notch.
 @export var zoom_step := 0.3
+## Closest distance (m) the F6 camera can zoom in to.
 @export var zoom_min := 0.5
+## Farthest distance (m) the F6 camera can zoom out to.
 @export var zoom_max := 12.0
 
 var _mount: EquipmentMount

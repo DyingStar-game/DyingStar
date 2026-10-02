@@ -23,7 +23,9 @@ const CHANNEL_LABELS : Dictionary = {
 	"UNSPECIFIED": "%%CHAT_UNSPECIFIED",
 }
 
+## Line where the player types a message; Enter sends it on the selected channel, then closes write mode.
 @export var input_field: LineEdit
+## Chat log: received messages are appended here as BBCode ([time] (channel) author: text).
 @export var output_field: RichTextLabel
 #@export var channel_selector: OptionButton
 

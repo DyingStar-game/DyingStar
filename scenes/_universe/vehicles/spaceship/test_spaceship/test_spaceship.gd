@@ -2,8 +2,13 @@ class_name Spaceship
 
 extends RigidBody3D
 
+## Thrust of the move / strafe keys, scaled by force_multiplier (1000) and delta — a force factor, not
+## a speed in m/s. Higher = harder acceleration.
 @export var speed = 300
+## Roll torque of roll_left / roll_right, scaled by force_multiplier (1000) and delta. Higher = faster roll.
 @export var roll_speed = 100
+## Pitch / yaw torque impulse per mouse pixel, scaled by force_multiplier (1000). Higher = twitchier
+## mouse steering.
 @export var mouse_sensitivity = 0.01
 
 var active = false

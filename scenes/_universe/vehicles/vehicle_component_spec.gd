@@ -19,6 +19,7 @@ enum Kind {ENGINE, BATTERY, TANK}
 
 ## Shown in the HUD and in the carry prompt.
 @export var display_name: String = "Component"
+## What this component is (engine, battery, tank): a vehicle slot only accepts its own kind.
 @export var kind: Kind = Kind.ENGINE
 ## T1, T2, T4... A higher tier is meant to be BETTER, not merely more numerous.
 @export var tier: int = 1

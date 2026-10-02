@@ -1,12 +1,17 @@
 extends Node3D
 
+## True once the networked items of spawn_scene have been spawned (server-side), so they never spawn twice.
 @export var is_spawned: bool = false
 ## Set by Horizon when it needs this village's habs for new players (on top of the spawn when the
 ## village is loaded, a player nearby).
 @export var spawn_requested: bool = false
+## Layout scene whose networked items are spawned in this village (res:// path; the prefix may be omitted).
 @export var spawn_scene: String = ""
+## Radius of the village (m), from the POI data. Informational: replicated, not read by the game code.
 @export var radius_m: int = 0
+## Population of the village, from the POI data. Informational: replicated, not read by the game code.
 @export var population: int = 0
+## Kind of POI, from the POI data (e.g. "mining village"). Informational: replicated, not read by the game code.
 @export var type: String = ""
 
 

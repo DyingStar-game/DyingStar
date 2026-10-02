@@ -8,7 +8,8 @@ extends Area3D
 # 	gravity_direction = -global_basis.y
 
 
-#this fix gravity when transform the node (local direction instead of worldwide gravity definiting)
+## Gravity direction in this node's LOCAL space (not world space): re-applied as the area's gravity_direction
+## whenever the node is moved or rotated, so gravity follows the grid's orientation.
 @export var local_gravity_direction := Vector3(0, -1, 0)
 
 func _notification(what: int):

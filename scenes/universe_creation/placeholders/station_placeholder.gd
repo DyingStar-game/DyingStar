@@ -2,6 +2,8 @@
 class_name StationPlaceholder
 extends MeshInstance3D
 
+## Universe coordinates of this station: its position x 100 (the setter scales whatever is assigned, and
+## _ready / moving it in the editor overwrite it). NOTE: not read anywhere — universe_map recomputes it.
 @export var real_coordinates: Vector3 = Vector3.ZERO:
 	set(value):
 		real_coordinates = value * 100.0

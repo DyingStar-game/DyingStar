@@ -107,6 +107,8 @@ const REBIND_EVERY_FRAMES: int = 30
 ## Transmission losses downstream of the motor's own efficiency. The design sheet splits them in
 ## two stages, a pump and a hydraulic one, both typically 0.8.
 @export_range(0.0, 1.0, 0.01) var pump_efficiency: float = 0.8
+## Second (hydraulic) stage of those transmission losses, 0..1. Multiplied with pump_efficiency on the
+## motor's force: lower = less force at the wheels.
 @export_range(0.0, 1.0, 0.01) var hydraulic_efficiency: float = 0.8
 ## Fixed gearing of the chassis: how its transmission trades speed for pull. A hauler uses a high
 ## factor (more torque, less speed), a buggy a low one. Applied to TORQUE only.
@@ -419,57 +421,85 @@ const REBIND_EVERY_FRAMES: int = 30
 @export_subgroup("Door close")
 ## Played at the door, when it closes.
 @export var sfx_door_close: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_door_close_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_door_close_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_door_close_distance: float = 40.0
+## How the sound fades with distance.
 @export var sfx_door_close_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Engine start")
 ## Played when a driver takes the wheel (engine cranking / start-up).
 @export var sfx_engine_start: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_engine_start_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_engine_start_falloff: float = 10.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_engine_start_distance: float = 60.0
+## How the sound fades with distance.
 @export var sfx_engine_start_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
 
 @export_subgroup("Engine stop")
 ## Played when the driver cuts the engine (key I again).
 @export var sfx_engine_stop: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_engine_stop_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_engine_stop_falloff: float = 10.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_engine_stop_distance: float = 60.0
+## How the sound fades with distance.
 @export var sfx_engine_stop_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
 
 @export_subgroup("Lights on")
 ## Played when the head lights are switched on (key L).
 @export var sfx_lights_on: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_lights_on_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_lights_on_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_lights_on_distance: float = 25.0
+## How the sound fades with distance.
 @export var sfx_lights_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Lights off")
 ## Played when the head lights are switched off.
 @export var sfx_lights_off: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_lights_off_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_lights_off_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_lights_off_distance: float = 25.0
+## How the sound fades with distance.
 @export var sfx_lights_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Handbrake on")
 ## Played when the hand brake is pulled (hold Space at low speed).
 @export var sfx_handbrake_on: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_handbrake_on_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_handbrake_on_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_handbrake_on_distance: float = 30.0
+## How the sound fades with distance.
 @export var sfx_handbrake_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Handbrake off")
 ## Played when the hand brake is released — by the key, or automatically when the driver accelerates.
 @export var sfx_handbrake_off: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_handbrake_off_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_handbrake_off_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_handbrake_off_distance: float = 30.0
+## How the sound fades with distance.
 @export var sfx_handbrake_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Engine running")
@@ -479,8 +509,11 @@ const REBIND_EVERY_FRAMES: int = 30
 @export var sfx_engine_idle: AudioStream
 ## Loudness at idle.
 @export_range(-40.0, 12.0, 0.5) var sfx_engine_idle_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_engine_idle_falloff: float = 8.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_engine_idle_distance: float = 50.0
+## How the sound fades with distance.
 @export var sfx_engine_idle_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
 ## Playback speed of the sample at the red line: 2 = an octave up. This IS the revving effect — the
 ## higher, the more the engine "screams" at speed. 1 = no pitch change at all.
@@ -494,9 +527,13 @@ const REBIND_EVERY_FRAMES: int = 30
 @export_subgroup("Horn")
 ## Normal horn (key H): HELD — it blows for as long as the key is down (looped automatically).
 @export var sfx_horn: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_horn_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_horn_falloff: float = 40.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_horn_distance: float = 150.0
+## How the sound fades with distance.
 @export var sfx_horn_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.FAR_REACHING
 ## Shortest honk (s): a quick tap still blows for this long, instead of being cut mid-sample. Holding
 ## the key simply keeps it going — one sample covers both.
@@ -507,9 +544,13 @@ const REBIND_EVERY_FRAMES: int = 30
 @export_subgroup("Horn (special)")
 ## Special horn — air horn, siren… (key Alt+H): ONE SHOT, the sample plays once in full, no loop.
 @export var sfx_horn_special: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_horn_special_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_horn_special_falloff: float = 60.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_horn_special_distance: float = 250.0
+## How the sound fades with distance.
 @export var sfx_horn_special_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.FAR_REACHING
 
 @export_subgroup("Tyre scrub (steering)")
@@ -517,9 +558,13 @@ const REBIND_EVERY_FRAMES: int = 30
 ## noise depends on what the tyre is standing on, and one repeated sample is instantly heard as one
 ## repeated sample. Same resource type the footsteps use -- drop the files in, fill a family slot.
 @export var sfx_wheel_scrub: SurfaceSounds
+## Loudness in decibels at full scrub (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_wheel_scrub_db: float = -6.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading. Also used by the tyre roll.
 @export_range(0.5, 200.0, 0.5) var sfx_wheel_scrub_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off). Also used by the tyre roll.
 @export_range(1.0, 500.0, 1.0) var sfx_wheel_scrub_distance: float = 30.0
+## How the sound fades with distance. Also used by the tyre roll.
 @export var sfx_wheel_scrub_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 ## How fast the steering must turn (rad/s) before a tyre is heard scrubbing. Below it the driver is
 ## trimming their line, which makes no noise; above it they are hauling the wheel round.
@@ -536,6 +581,8 @@ const REBIND_EVERY_FRAMES: int = 30
 ## It must LOOP cleanly: unlike the manoeuvre scuffs it runs for as long as the drive lasts, so a seam
 ## comes back every few seconds and is unmistakable.
 @export var sfx_wheel_roll: AudioStream
+## Loudness in decibels once the roll is at full level (0 = the sample's own level, negative = quieter).
+## Its falloff, distance and attenuation are the Tyre scrub ones.
 @export_range(-40.0, 12.0, 0.5) var sfx_wheel_roll_db: float = -6.0
 ## Speed (km/h) at which the rolling noise reaches FULL volume. It is a ramp, not a switch: the sound
 ## rises with the speed from standstill to here, then holds. Tyres do not start making noise at some
@@ -550,6 +597,7 @@ const REBIND_EVERY_FRAMES: int = 30
 ## The plate's "company-type" prefix (see PropSerial): the same serial as a crate's, on the vehicle's
 ## plates — the Label3D nodes in the group PropSerial.LABEL_GROUP. Set per vehicle scene.
 @export var id_company: String = "ARES"
+## The plate's "type" part of the serial (company-TYPE-uuid), e.g. TRUCK. Set per vehicle scene.
 @export var id_type: String = "TRUCK"
 ## Only the uuid's first block, uppercased: a full uuid is far wider than a plate.
 @export var id_short_display: bool = true
