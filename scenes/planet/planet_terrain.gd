@@ -51,6 +51,17 @@ const ASSEMBLE_BUDGET_MS := 6.0
 const MAX_SERVER_CHUNK_TASKS := 4
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
+## Fast flight: [speed m/s, terrain mult]. From each speed on, the LOD distances beyond
+## VIEW_DISTANCE_NEAR_M are scaled by that mult, as Graphics > Terrain distance does: 0.5 is
+## one quadtree level coarser, 0.25 two. A fine ring the camera crosses in a few seconds
+## is not worth building: at full detail the mesh tasks fell behind and the ground came in
+## late, then all at once. Trucks (~30 m/s) never reach the first step.
+const SPEED_LOD_STEPS := [[150.0, 0.5], [500.0, 0.25]]
+## A step already taken is left only below this share of its speed...
+const SPEED_LOD_EXIT := 0.8
+## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
+## does not rebuild the fine ring just to drop it again.
+const SPEED_LOD_HOLD_MS := 2000
 
 ## Tolerance (m) for validating cached chunk geometry against the live surface
 ## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
@@ -155,6 +166,10 @@ const VIEW_DISTANCE_NEAR_M := 200.0
 ## Graphics > Terrain distance, re-read once per LOD update (client only; the server keeps 1.0 and
 ## so its traversal, cache keys and all, is exactly what it always was).
 var _terrain_mult: float = 1.0
+## The fast-flight share of the terrain mult (SPEED_LOD_STEPS; 1.0 below the first step and
+## on the server), and since when a finer one has been due (-1: none).
+var _speed_lod_scale: float = 1.0
+var _speed_lod_finer_since: int = -1
 ## Chunks the last LOD update wanted on screen (see desired_chunk_count).
 var _desired_count: int = 0
 
@@ -1710,6 +1725,8 @@ func _update_terrain() -> void:
 	_cam_history.append(local_cam)
 	if _cam_history.size() > CAM_HISTORY_SIZE:
 		_cam_history.remove_at(0)
+	if not is_server:
+		_update_speed_lod()
 
 	# One-shot debug on first valid update
 	# if _active_chunks.is_empty():
@@ -1734,7 +1751,7 @@ func _update_terrain() -> void:
 	var desired: Dictionary = {}
 	var _tk := _perf_begin()
 	_collect_lod_task()
-	if (_desired_cache_cam != Vector3.INF and _desired_cache_mult == _terrain_mult
+	if (_desired_cache_cam != Vector3.INF and _desired_cache_mult == _lod_mult()
 			and local_cam.distance_to(_desired_cache_cam) < _desired_cache_slack):
 		desired = _desired_cache.duplicate()
 		_perf_end("terrain_reuse", _tk)
@@ -1746,7 +1763,7 @@ func _update_terrain() -> void:
 		desired = _desired_cache.duplicate()
 		_perf_end("terrain_reuse", _tk)
 	else:
-		_trav_mult = _terrain_mult
+		_trav_mult = _lod_mult()
 		_trav_alt = _cam_alt_above_surface
 		_compute_desired(local_cam, horizon_dot)
 		_adopt_lod_result()
@@ -2627,6 +2644,47 @@ func _sync_distance_options() -> void:
 	_terrain_mult = DrawRange.multiplier("terrain_distance")
 
 
+## The mult a traversal runs with: Graphics > Terrain distance, coarsened in fast flight.
+func _lod_mult() -> float:
+	return _terrain_mult * _speed_lod_scale
+
+
+## Camera speed over the last second, from the history (one sample per UPDATE_INTERVAL), into
+## _speed_lod_scale. Coarser at once; finer only after SPEED_LOD_HOLD_MS below the step.
+func _update_speed_lod() -> void:
+	var n := _cam_history.size()
+	if n < 2 or ClientConfig.get_bool("debug_no_speed_lod", false):
+		_speed_lod_scale = 1.0
+		return
+	var back := mini(n - 1, 4)
+	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / (back * UPDATE_INTERVAL)
+	var want := speed_lod_scale(speed, _speed_lod_scale)
+	if want <= _speed_lod_scale:
+		_speed_lod_scale = want
+		_speed_lod_finer_since = -1
+	elif _speed_lod_finer_since < 0:
+		_speed_lod_finer_since = Time.get_ticks_msec()
+	elif Time.get_ticks_msec() - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS:
+		_speed_lod_scale = want
+		_speed_lod_finer_since = -1
+	if ClientPerf.enabled:
+		ClientPerf.gauge("terrain_speed_ms:" + str(get_parent().name), speed)
+		ClientPerf.gauge("terrain_speed_scale:" + str(get_parent().name), _speed_lod_scale)
+
+
+## The SPEED_LOD_STEPS mult for a camera at [param speed] m/s, [param current] being the one in
+## use: a step it already holds is left only below SPEED_LOD_EXIT of its speed.
+static func speed_lod_scale(speed: float, current: float) -> float:
+	var scale := 1.0
+	for step: Array in SPEED_LOD_STEPS:
+		var at: float = step[0]
+		if current <= float(step[1]):
+			at *= SPEED_LOD_EXIT
+		if speed >= at:
+			scale = step[1]
+	return scale
+
+
 ## The leaf record _traverse would have written for (nside, ipix) — for the
 ## chunks the 2:1 balance pass adds after the traversal.
 func _leaf_info(nside: int, ipix: int, depth: int, local_cam: Vector3) -> Dictionary:
@@ -2685,7 +2743,7 @@ func _lod_on_worker() -> bool:
 
 ## [param with_desired]: also compute the leaf set (else only the waiting look-ahead, if any).
 func _start_lod_task(local_cam: Vector3, horizon_dot: float, with_desired: bool = true) -> void:
-	_trav_mult = _terrain_mult
+	_trav_mult = _lod_mult()
 	_trav_alt = _cam_alt_above_surface
 	_lod_task_desired = with_desired
 	var prefetch_cam := _pending_prefetch_cam
