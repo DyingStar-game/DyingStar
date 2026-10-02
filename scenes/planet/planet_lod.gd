@@ -21,6 +21,11 @@ const SUBDIVIDE_FACTOR := 1.5
 const VIEW_PRIORITY_K := 3.0
 
 
+## A queue ranked by [method view_stretched] is ranked again once the view has turned this far since:
+## cos 20°. Shared by the mesh queues (PlanetTerrain) and the tile queue (RemoteTileSource).
+const VIEW_RERANK_DOT := 0.94
+
+
 ## The distance factor of [constant VIEW_PRIORITY_K] for a chunk or tile whose direction from the
 ## camera makes [param view_dot] (cosine) with the view direction.
 static func view_weight(view_dot: float) -> float:

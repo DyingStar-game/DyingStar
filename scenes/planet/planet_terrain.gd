@@ -65,9 +65,7 @@ const SPEED_LOD_HOLD_MS := 2000
 ## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
 const KNOWN_MISS_MS := 2000
 ## The mesh backlog and the assembly queue are ranked again (build_priority) once the view has turned
-## this far since the last ranking: cos 20°...
-const BACKLOG_RESORT_DOT := 0.94
-## ... or once the camera has moved this far (m).
+## PlanetLod.VIEW_RERANK_DOT since the last ranking, or once the camera has moved this far (m).
 const QUEUE_RESORT_M := 200.0
 ## Most time (ms) a frame spends taking disk-cache reads over (_poll_cache_loads). Each costs a
 ## validation against the live surface; a fast flight over known ground finished hundreds at once,
@@ -3803,11 +3801,12 @@ func _queue_insert(queue: Array, item: Dictionary, center: Vector3) -> void:
 
 
 ## Rework every priority of [param queue] and sort it again, once the camera has moved
-## QUEUE_RESORT_M or the view turned past BACKLOG_RESORT_DOT since [param rank_at] (camera, view)
+## QUEUE_RESORT_M or the view turned past PlanetLod.VIEW_RERANK_DOT since [param rank_at] (camera, view)
 ## — what comes first has changed.
 func _queue_refresh(queue: Array, rank_at: Array) -> void:
 	# No view (server, editor): the camera's move alone counts.
-	var turned := _view_dir_local != Vector3.ZERO and _view_dir_local.dot(rank_at[1]) < BACKLOG_RESORT_DOT
+	var turned := _view_dir_local != Vector3.ZERO \
+			and _view_dir_local.dot(rank_at[1]) < PlanetLod.VIEW_RERANK_DOT
 	if _last_local_cam.distance_to(rank_at[0]) < QUEUE_RESORT_M and not turned:
 		return
 	for item: Dictionary in queue:
