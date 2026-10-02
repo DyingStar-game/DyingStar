@@ -353,9 +353,12 @@ func _process(delta: float) -> void:
 			_head_cam.capture_rest(head_now, _player.camera_pivot.position)  # first frame: the neutral reference
 			var moving: bool = float(_player.locomotion_sample.get("planar_speed", 0.0)) >= MOVE_EPSILON
 			var one_shot: bool = _stance_transition != &"" or _vault_clip != &""
-			var target: Vector3 = _head_cam.target(head_now, _shown_stance, one_shot,
-					not moving and not one_shot and _emote_phase == EmotePhase.NONE,
-					is_instance_valid(_player.screen_interacting), head_cam_forward, delta)
+			# Still = the posture's own pose: no gait, no one-shot, no emote, no turn on the spot (each moves
+			# the head, and the eye point taken now is kept for good).
+			var still: bool = not moving and not one_shot and _emote_phase == EmotePhase.NONE \
+					and _current != anim_set.turn_left and _current != anim_set.turn_right
+			var target: Vector3 = _head_cam.target(head_now, _shown_stance, one_shot, moving, still,
+					is_instance_valid(_player.screen_interacting), head_cam_forward)
 			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
 		else:
 			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a
