@@ -5,8 +5,7 @@
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/menu.tres" id="3"]
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/space.tres" id="4"]
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/capital.tres" id="5"]
-[ext_resource type="Script" uid="uid://drdv53naeb0gp" path="res://scenes/audio/music/music_playlist.gd" id="5_dwdbk"]
-[ext_resource type="AudioStream" uid="uid://jfgcabkqn6rm" path="res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg" id="6_tu0l4"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/wild.tres" id="6"]
 
 [sub_resource type="Resource" id="rule_menu"]
 resource_name = "MENU → menu"
@@ -86,16 +85,11 @@ resource_name = "POI → silence"
 script = ExtResource("2")
 situation = 4
 
-[sub_resource type="Resource" id="Resource_q5ran"]
-script = ExtResource("5_dwdbk")
-tracks = Array[AudioStream]([ExtResource("6_tu0l4")])
-metadata/_custom_type_script = "uid://drdv53naeb0gp"
-
 [sub_resource type="Resource" id="rule_wild"]
-resource_name = "WILD → ::Resource_q5ran"
+resource_name = "WILD → wild"
 script = ExtResource("2")
 situation = 5
-playlist = SubResource("Resource_q5ran")
+playlist = ExtResource("6")
 
 [resource]
 script = ExtResource("1")
