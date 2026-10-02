@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://dk07ej5iwa2mg"]
+
+[ext_resource type="PackedScene" uid="uid://c17mvq7136cgs" path="res://assets/_universe/structures/industrial/garage.glb" id="1_wl12i"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_dtmlv"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_dtmlv"]
+
+[node name="Garage" type="Node3D" unique_id=1534038917]
+
+[node name="garage" parent="." unique_id=1594753760 instance=ExtResource("1_wl12i")]
+collision_mask = 0
+
+[node name="PropSync" type="Node" parent="." unique_id=67144920]
+script = ExtResource("2_dtmlv")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=453094849]
+script = ExtResource("3_dtmlv")
+apron_m = 12.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1617964166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.638463, -0.5275682651205718, -20.188978)
+size = Vector3(21, 1, 43)
