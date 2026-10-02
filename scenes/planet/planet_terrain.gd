@@ -64,6 +64,9 @@ const SPEED_LOD_EXIT := 0.8
 const SPEED_LOD_HOLD_MS := 2000
 ## How long a traversal trusts that a chunk's mesh is NOT in the disk cache before looking again.
 const KNOWN_MISS_MS := 2000
+## The mesh backlog is sorted again (by PlanetLod.view_weight) once the view has turned this far since
+## the last sort: cos 20°.
+const BACKLOG_RESORT_DOT := 0.94
 
 ## Tolerance (m) for validating cached chunk geometry against the live surface
 ## (see _cached_geom_valid). Generous: cracks are ~200 m deep, the failure mode
@@ -313,6 +316,10 @@ var _mesh_task_backlog: Array[Dictionary] = []
 ## once, nearest first, when it is drained.
 var _backlog_keys: Dictionary = {}
 var _backlog_unsorted: bool = false
+## Where the camera looks, in the planet's frame (unit; zero on the server and in the editor), and
+## where it looked at the last backlog sort.
+var _view_dir_local: Vector3 = Vector3.ZERO
+var _backlog_sort_view: Vector3 = Vector3.ZERO
 ## Disk-cache meshes being read by ResourceLoader's threads.
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
@@ -1678,9 +1685,11 @@ func _update_terrain() -> void:
 	# chunks selected (visible as thin radial slices far from the player).
 	var local_cam := global_transform.basis.inverse() * (camera_pos - global_position)
 	_last_local_cam = local_cam
-	# The tile download serves the tiles nearest this first (RemoteTileSource._take_next).
+	_view_dir_local = _local_view_dir()
+	# The tile download serves the tiles nearest this first, those in view before those behind
+	# (RemoteTileSource._take_next).
 	if not is_server and planet_data.remote_source != null and local_cam != Vector3.ZERO:
-		planet_data.remote_source.set_focus(local_cam.normalized())
+		planet_data.remote_source.set_focus(local_cam.normalized(), _view_dir_local)
 		if ClientPerf.enabled:
 			var q: Dictionary = planet_data.remote_source.queue_stats()
 			var who: String = str(get_parent().name)
@@ -1829,8 +1838,13 @@ func _update_terrain() -> void:
 		if not _active_chunks.has(key) and not pipeline.has(key):
 			_new_keys.append(key)
 	if _new_keys.size() > 1:
+		# Nearest first, those in view before those behind (build_priority). Worked out once per key:
+		# the sort compares each many times.
+		var prio := {}
+		for key in _new_keys:
+			prio[key] = build_priority(desired[key].center, local_cam, _view_dir_local)
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
-			return desired[a].center.distance_squared_to(local_cam) < desired[b].center.distance_squared_to(local_cam))
+			return prio[a] < prio[b])
 	var _tks := _perf_begin()
 	for key in _new_keys:
 		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
@@ -3671,11 +3685,21 @@ func _drain_backlog() -> void:
 	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
 	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
 	var tries := mini(_mesh_task_backlog.size(), _mesh_slot_count() * 2)
+	if _view_dir_local.dot(_backlog_sort_view) < BACKLOG_RESORT_DOT:
+		_backlog_unsorted = true  # the view turned: what comes first changed
 	if tries > 0 and _backlog_unsorted:
 		var cam := _last_local_cam
-		_mesh_task_backlog.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			return a.center.distance_squared_to(cam) < b.center.distance_squared_to(cam))
+		var view := _view_dir_local
+		var ranked: Array = []
+		for info: Dictionary in _mesh_task_backlog:
+			ranked.append([build_priority(info.center, cam, view), info])
+		ranked.sort_custom(func(a: Array, b: Array) -> bool:
+			return a[0] < b[0])
+		_mesh_task_backlog.clear()
+		for r: Array in ranked:
+			_mesh_task_backlog.append(r[1])
 		_backlog_unsorted = false
+		_backlog_sort_view = view
 	while tries > 0 and _mesh_tasks.size() < _mesh_slot_count():
 		var info: Dictionary = _mesh_task_backlog[0]
 		_mesh_task_backlog.remove_at(0)
@@ -3692,6 +3716,30 @@ func _mesh_slot_count() -> int:
 		var forced := 0 if is_server else ClientConfig.get_int("debug_mesh_tasks", 0)
 		_mesh_slots = forced if forced > 0 else max_mesh_tasks
 	return _mesh_slots
+
+
+## Which chunk to build first: the squared distance from [param cam] to [param center], stretched
+## by [method PlanetLod.view_weight] for lying away from [param view] (zero: distance alone). The
+## chunk under the player still comes first — it is metres away, the rest kilometres.
+static func build_priority(center: Vector3, cam: Vector3, view: Vector3) -> float:
+	var to := center - cam
+	var d2 := to.length_squared()
+	if view == Vector3.ZERO or d2 <= 0.0:
+		return d2
+	var w := PlanetLod.view_weight(to.dot(view) / sqrt(d2))
+	return d2 * w * w
+
+
+## Where the active camera looks, in the planet's frame; zero on the server, in the editor or with no
+## camera. In VR this is the head.
+func _local_view_dir() -> Vector3:
+	if is_server or Engine.is_editor_hint():
+		return Vector3.ZERO
+	var vp := get_viewport()
+	var cam: Camera3D = vp.get_camera_3d() if vp != null else null
+	if cam == null:
+		return Vector3.ZERO
+	return (global_transform.basis.inverse() * -cam.global_transform.basis.z).normalized()
 
 
 ## Put a chunk in the backlog unless it already waits there.
