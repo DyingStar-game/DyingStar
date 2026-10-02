@@ -2671,7 +2671,7 @@ func _stream_seed_replication(node: Node, od: Dictionary) -> void:
 		return
 	var body := node as Node3D
 	state.server_last_position = snapped(body.position, Vector3(0.005, 0.005, 0.005))
-	state.server_last_rotation = snapped(body.rotation, Vector3(0.005, 0.005, 0.005))
+	state.server_last_rotation = snapped(body.rotation, Vector3.ONE * PropNet.rotation_quantum(body))
 	if "server_last_parent_id" in state:
 		state.server_last_parent_id = str(od["parent_id"])
 
@@ -3107,8 +3107,14 @@ func _stream_register_pads(uuid: String) -> void:
 		var rec: Dictionary = TerrainPad.record_from((planet as Planet).planet_data,
 				to_terrain * item * (t["rel"] as Transform3D), box_size, box_local,
 				float(t["apron"]), float(t["h_offset"]), "prop:" + uuid)
-		if not rec.has("_refusal"):
-			terrain.register_terrain_pad(rec)
+		if rec.has("_refusal"):
+			continue
+		# Measured by an earlier server for this geometry and relief: no relief sample, no tile wait.
+		if od.get("terrain_settled") is Dictionary:
+			var st: Dictionary = (planet as Planet).planet_data.pad_settled_stats(rec, od["terrain_settled"])
+			if not st.is_empty():
+				rec["settled"] = st
+		terrain.register_terrain_pad(rec)
 
 
 ## The footprint the building script derives from [param od] (its static terrain_pad_box), {} when

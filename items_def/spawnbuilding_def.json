@@ -27,7 +27,8 @@
 			"frequency": 3.0,
 			"properties": [
 				"scenename",
-				"name"
+				"name",
+				"terrain_settled"
 			]
 		}
 	]

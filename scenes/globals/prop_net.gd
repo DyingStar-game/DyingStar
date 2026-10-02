@@ -341,6 +341,15 @@ static func ride_pin(body: Node3D, state = null) -> void:
 ## them, so the comparison never converged and the optimisation was a no-op — measured 2026-09-06 at
 ## 24 bed-loaded crates re-sent 45x/s, ~107 KB/s of identical JSON to Horizon and ~9% of the client's
 ## frame budget, for cargo whose LOCAL pose is constant by construction.
+## Step the replicated (and persisted) Euler rotation of [param body] is snapped to, in radians.
+## 0.005 rad (0.29°) for a physics body, which tumbles and must not flood Horizon. Finer for
+## everything else — buildings and static infrastructure, sent only when they move: a building
+## persisted at 0.29° comes back tilted past TerrainPad.SNAP_EPSILON_DEG on every restart, is
+## straightened, re-measured, and sent back rounded again.
+static func rotation_quantum(body: Node) -> float:
+	return 0.005 if body is RigidBody3D else 0.0001
+
+
 static func server_tick(body: Node, state = null) -> void:
 	if not GameOrchestrator.is_server():
 		return
@@ -359,7 +368,7 @@ static func server_tick(body: Node, state = null) -> void:
 	if body is RigidBody3D and (body.freeze or body.sleeping) and not rides:
 		return
 	var pos: Vector3 = snapped(body.position, Vector3(0.005, 0.005, 0.005))  # 5 mm precision is enough
-	var rot: Vector3 = snapped(body.rotation, Vector3(0.005, 0.005, 0.005)) # precision at 0.57 degrees
+	var rot: Vector3 = snapped(body.rotation, Vector3.ONE * rotation_quantum(body))
 	# verify the state object tracks the parent_id (component PropSync always does; a legacy root may not)
 	var tracks_parent: bool = "server_last_parent_id" in state
 	if parent is Player:

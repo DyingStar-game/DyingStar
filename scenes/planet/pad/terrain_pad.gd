@@ -152,6 +152,7 @@ func _exit_tree() -> void:
 		# gone from this tree, not from the world, and neither is the level ground under it.
 		# Unregistering would rebuild every chunk it touches — twice, the building coming back —
 		# pulling the collision from under whoever stands there.
+		_stop_waiting_for_tiles()
 		_uuid = ""
 		return
 	_unregister()
@@ -217,6 +218,13 @@ func _apply() -> void:
 	if not _uuid.is_empty() and _uuid != uuid:
 		_unregister()
 	_uuid = uuid
+	# Measured once already, by the server, for this very geometry and relief: level the ground from
+	# that, without sampling the relief and without waiting for its tiles.
+	var sync := _settled_sync()
+	if sync != null and not sync.terrain_settled.is_empty():
+		var st: Dictionary = terrain.planet_data.pad_settled_stats(rec, sync.terrain_settled)
+		if not st.is_empty():
+			rec["settled"] = st
 	terrain.register_terrain_pad(rec)
 	var z: float = terrain.terrain_pad_altitude(rec)
 	var what := "emprise %.1f × %.1f m + %.0f m de tablier" % [
@@ -226,6 +234,10 @@ func _apply() -> void:
 		# not readable, so the platform has no altitude and the pad is set aside
 		# until they arrive (PlanetData.retry_starved_pads).
 		_say("pad '%s' EN ATTENTE des tuiles d'élévation — %s" % [uuid, what])
+		# Called back once they are there: nothing else moves this node to re-run _apply, and the
+		# building would stay off its platform, its measure never persisted.
+		if terrain.has_signal("pads_caught_up") and not terrain.pads_caught_up.is_connected(_on_pads_caught_up):
+			terrain.pads_caught_up.connect(_on_pads_caught_up)
 		return
 	# The gap is the thing to look at when a building looks wrong: the platform
 	# sits at the MEDIAN of the relief under the footprint, which is not the
@@ -244,33 +256,80 @@ func _apply() -> void:
 			uuid, what, z, own, own - z, tilt, _tilt_drop_m(tilt, rec),
 			float(rec["lon"]), float(rec["lat"]), finest,
 			HEALPix.vec2pix_nest(finest, HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])))])
-	if snap_building and bool(terrain.get("is_server")) and not Engine.is_editor_hint():
+	if not bool(terrain.get("is_server")) or Engine.is_editor_hint():
+		return
+	var moved := false
+	if snap_building:
 		# Orientation FIRST: straightening a tilted building moves its origin,
 		# so the altitude must be measured after, not before.
-		_align_building_to_surface(terrain)
-		_sit_building_on_platform(terrain, z)
+		moved = _align_building_to_surface(terrain)
+		moved = _sit_building_on_platform(terrain, z) or moved
+	# A building that just moved is called back by its transform notification: the measure is
+	# persisted from that pass, the one that finds nothing left to correct.
+	if not moved:
+		_publish_settled(terrain, sync)
+
+
+## Persist what this pad measured in its building's terrain_settled field, so the next server that
+## materializes it (restart, wake, hand-over) and every client that receives it level the ground
+## without sampling the relief. Server only; silent when the persisted entry already says the same.
+func _publish_settled(terrain: Node, sync: PropSync) -> void:
+	if sync == null or sync.uuid.is_empty():
+		return
+	var data = terrain.get("planet_data")
+	var relief: String = data.relief_signature if data != null else ""
+	if relief.is_empty():
+		return
+	var entry: Dictionary = data.pad_settled_entry(_uuid)
+	if entry.is_empty():
+		return
+	var pads: Dictionary = {}
+	if str(sync.terrain_settled.get("relief", "")) == relief and sync.terrain_settled.get("pads") is Dictionary:
+		pads = (sync.terrain_settled["pads"] as Dictionary).duplicate()
+	var old = pads.get(_uuid)
+	if old is Dictionary and PadBed.settled_stats(entry, old) == PadBed.quantise_stats(entry):
+		return
+	pads[_uuid] = entry
+	sync.terrain_settled = {"relief": relief, "pads": pads}
+	sync.server_prop_update({"terrain_settled": sync.terrain_settled})
+	print("[TerrainPad] pad '%s' mesuré et persisté (plateau à %.2f m)" % [_uuid, float(entry["z"])])
+
+
+## The PropSync of the networked building this pad belongs to — the one its uuid is taken from
+## (see _resolve_uuid) — or null for a pad placed in the scene.
+func _settled_sync() -> PropSync:
+	if Engine.is_editor_hint() or not _uuid.begins_with("prop:"):
+		return null
+	var n: Node = get_parent()
+	while n != null and not (n is PlanetTerrain):
+		var s := PropSync.of(n)
+		if s != null and not s.uuid.is_empty():
+			return s
+		n = n.get_parent()
+	return null
 
 
 ## Move the building radially so THIS node lands on the platform. Server only:
 ## the server owns a networked prop's pose, and PropNet replicates the change
 ## like any other movement, so every client converges and Horizon persists it.
 ## Idempotent — the move fires a transform notification, we are called back,
-## and the second pass finds nothing left to correct.
-func _sit_building_on_platform(terrain: Node, z: float) -> void:
+## and the second pass finds nothing left to correct. True when it moved it.
+func _sit_building_on_platform(terrain: Node, z: float) -> bool:
 	var delta := z - _own_altitude(terrain)
 	if is_nan(delta) or absf(delta) < SNAP_EPSILON_M:
-		return
+		return false
 	var body := _building_root()
 	# Only a building standing directly ON the body: never something riding a
 	# vehicle or held by a player, whose pose belongs to its carrier.
 	if body == null or not (body.get_parent() is Planet):
-		return
+		return false
 	var pxf := (terrain as Node3D).global_transform
 	var local := pxf.affine_inverse() * body.global_position
 	if local.length_squared() < 1.0:
-		return
+		return false
 	body.global_position = pxf * (local + local.normalized() * delta)
 	print("[TerrainPad] bâtiment '%s' reposé sur son plateau (%+.2f m)" % [_uuid, delta])
+	return true
 
 
 ## The prop this pad belongs to: the outermost node under the planet, which is
@@ -312,14 +371,15 @@ func _tilt_drop_m(tilt_deg: float, rec: Dictionary) -> float:
 ## its heading (−Z projected on the tangent plane) preserved, its scale kept.
 ## The same rule as PlanetTerrain.compute_surface_transform, which is what the
 ## editor's Snap to planet surface applies — a networked building never gets
-## it, because Horizon replays whatever pose was stored for it.
-func _align_building_to_surface(terrain: Node) -> void:
+## it, because Horizon replays whatever pose was stored for it. True when it
+## turned the building.
+func _align_building_to_surface(terrain: Node) -> bool:
 	var tilt := _own_tilt_deg(terrain)
 	if is_nan(tilt) or tilt < SNAP_EPSILON_DEG:
-		return
+		return false
 	var body := _building_root()
 	if body == null or not (body.get_parent() is Planet):
-		return
+		return false
 	var pxf := (terrain as Node3D).global_transform
 	var inv := pxf.affine_inverse()
 	var up := (inv * body.global_position).normalized()
@@ -336,6 +396,7 @@ func _align_building_to_surface(terrain: Node) -> void:
 	body.global_transform = Transform3D(
 			pxf.basis * Basis(x_axis, up, z_axis).scaled(gscale), body.global_position)
 	print("[TerrainPad] bâtiment '%s' redressé sur la normale (%.2f°)" % [_uuid, tilt])
+	return true
 
 
 ## The world point that must end up ON the platform: the centre of the box's
@@ -384,7 +445,21 @@ static func _same_pose(a: Transform3D, b: Transform3D) -> bool:
 func _unregister() -> void:
 	if _terrain != null and not _uuid.is_empty() and is_instance_valid(_terrain):
 		_terrain.unregister_terrain_pad(_uuid)
+	_stop_waiting_for_tiles()
 	_uuid = ""
+
+
+func _on_pads_caught_up(uuids: Array) -> void:
+	if not uuids.has(_uuid):
+		return
+	_stop_waiting_for_tiles()
+	_mark_dirty()
+
+
+func _stop_waiting_for_tiles() -> void:
+	if _terrain != null and is_instance_valid(_terrain) and _terrain.has_signal("pads_caught_up") \
+			and _terrain.pads_caught_up.is_connected(_on_pads_caught_up):
+		_terrain.pads_caught_up.disconnect(_on_pads_caught_up)
 
 
 ## The quantised pad record this node describes, {} when it cannot be stated
