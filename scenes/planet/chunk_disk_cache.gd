@@ -169,6 +169,7 @@ func mesh_path(chunk_key: String, lod: int, stitch: int = 0) -> String:
 func write_mesh_pending(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) -> String:
 	if not _enabled or mesh == null:
 		return ""
+	stamp_first_vertex(mesh)
 	var tmp := AtomicFile.temp_path(mesh_path(chunk_key, lod, stitch))
 	if ResourceSaver.save(mesh, tmp, ResourceSaver.FLAG_COMPRESS) != OK:
 		DirAccess.remove_absolute(tmp)
@@ -194,6 +195,7 @@ func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) ->
 	if not _enabled:
 		return
 	var path := _res_path(chunk_key, lod, "mesh", stitch)
+	stamp_first_vertex(mesh)
 	var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 	var err := AtomicFile.save_resource(mesh, path, ResourceSaver.FLAG_COMPRESS)
 	if _t0 != 0:
@@ -203,6 +205,34 @@ func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) ->
 		cache_saves += 1
 	else:
 		push_warning("[ChunkDiskCache] Failed to save mesh to '%s': %d" % [path, err])
+
+
+## Metadata a cached mesh carries: its first vertex, which the load-time check
+## (PlanetTerrain._cached_mesh_valid) compares to the live surface.
+const FIRST_VERTEX_META := &"chunk_first_vertex"
+
+
+## Record the first vertex on [param mesh] before it is saved, so that reading
+## it back costs a metadata lookup instead of [method Mesh.surface_get_arrays],
+## which copies every array of the surface — on the main thread, for each of the
+## hundreds of chunks a fast flight reads back at once.
+static func stamp_first_vertex(mesh: ArrayMesh) -> void:
+	if mesh.has_meta(FIRST_VERTEX_META) or mesh.get_surface_count() == 0:
+		return
+	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	if not verts.is_empty():
+		mesh.set_meta(FIRST_VERTEX_META, verts[0])
+
+
+## The first vertex of a mesh, from its metadata, or from its arrays for a file
+## written before the metadata existed; null when it has none.
+static func first_vertex(mesh: ArrayMesh) -> Variant:
+	if mesh.has_meta(FIRST_VERTEX_META):
+		return mesh.get_meta(FIRST_VERTEX_META)
+	if mesh.get_surface_count() == 0:
+		return null
+	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	return null if verts.is_empty() else verts[0]
 
 
 # ── Collision shape cache (server) ────────────────────────────────
