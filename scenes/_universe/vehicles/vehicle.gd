@@ -546,9 +546,23 @@ const REBIND_EVERY_FRAMES: int = 30
 ## it only bites when the speed jumps rather than climbs -- a vehicle spawning mid-drive, or landing.
 @export_range(0.0, 2.0, 0.01) var sfx_wheel_roll_attack_secs: float = 0.25
 
+@export_group("Registration plate")
+## The plate's "company-type" prefix (see PropSerial): the same serial as a crate's, on the vehicle's
+## plates — the Label3D nodes in the group PropSerial.LABEL_GROUP. Set per vehicle scene.
+@export var id_company: String = "ARES"
+@export var id_type: String = "TRUCK"
+## Only the uuid's first block, uppercased: a full uuid is far wider than a plate.
+@export var id_short_display: bool = true
+@export_group("")
+
 # Networking (GenericProp contract). uuid is set by the prop spawn pipeline; an EMPTY uuid
 # means bench / standalone mode (the vehicle drives locally instead of being replicated).
-var uuid: String = ""
+var uuid: String = "":
+	set(value):
+		uuid = value
+		# The client sets it before the vehicle enters the tree, the server may set it after: both
+		# orders end with the plates written (see _ready).
+		_update_plates()
 var type_name: String = "vehicle"
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_rotation: Vector3 = Vector3.ZERO
@@ -728,6 +742,7 @@ func _ready() -> void:
 	_rebuild()
 	if Engine.is_editor_hint():
 		return
+	_update_plates()
 	_server_live = GameOrchestrator.is_server()
 	add_to_group("vehicle")  # so a pilot can find and enter us
 	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
@@ -760,6 +775,16 @@ func _ready() -> void:
 		if spawn_rotation != Vector3.ZERO:
 			rotation = spawn_rotation
 	_spawned = true  # from now on, replicated engine / hand brake changes are real events → they sound
+
+## The registration: "company-type-uuid", as on a crate (PropSerial). Empty until the uuid arrives.
+func serial() -> String:
+	return PropSerial.format(id_company, id_type, uuid, id_short_display)
+
+
+## Write the registration on the plates. A no-op without a uuid: the plate keeps its placeholder.
+func _update_plates() -> void:
+	PropSerial.fill(self, serial())
+
 
 ## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
 func _is_networked() -> bool:
