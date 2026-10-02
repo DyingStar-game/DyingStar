@@ -66,11 +66,13 @@ func _hatch_open(slot: Node) -> bool:
 	return slot.door_id == "" or vehicle.is_door_open(slot.door_id)
 
 
-## A bay by its node name — the key the network table is written with, so it must stay stable
-## across a restart. Null when there is no such bay.
+## A bay by its key (VehicleNetKey) — the key the network table and a part's slot_id are written with,
+## so it must stay stable across a restart. Either spelling (an older save says "Slot_FL"). Null when
+## there is no such bay.
 func find(slot_name: String) -> Node:
+	var key: String = VehicleNetKey.normalize(slot_name)
 	for s in all():
-		if str(s.name) == slot_name:
+		if VehicleNetKey.of(s) == key:
 			return s
 	return null
 
@@ -128,12 +130,12 @@ func total_mass() -> float:
 	return total
 
 
-## Who is in which bay, as {bay name: component uuid}. DERIVED on demand and never stored, exactly
+## Who is in which bay, as {bay key: component uuid} (VehicleNetKey). DERIVED on demand and never stored, exactly
 ## like Vehicle._seat_occupancy_now() — a cached copy is a copy that can disagree.
 func occupancy() -> Dictionary:
 	var occ: Dictionary = {}
 	for s in all():
-		occ[str(s.name)] = s.occupant_uuid
+		occ[VehicleNetKey.of(s)] = s.occupant_uuid
 	return occ
 
 
@@ -160,8 +162,9 @@ func install(slot: Node, part: Node) -> String:
 	else:
 		part.reparent(vehicle)
 	_pinned[part] = slot.seat(part)
-	part.slot_id = str(slot.name)
+	part.slot_id = VehicleNetKey.of(slot)
 	part.send_properties_to_client(str(vehicle.uuid))
+	_publish_slot(part)
 	changed.emit()
 	return ""
 
@@ -175,8 +178,18 @@ func remove(slot: Node) -> Node:
 	part = slot.release()
 	if part != null:
 		part.slot_id = ""
+		_publish_slot(part)
 	changed.emit()
 	return part
+
+
+## Put the part's bay (its slot_id, "" when loose) on the wire, so the database knows it: rebind()
+## finds a part's bay after a restart by that key alone. A part fitted by hand used to keep it in
+## memory only, and came back from a restart loose, falling through the truck.
+static func _publish_slot(part: Node) -> void:
+	var sync: PropSync = PropSync.of(part)
+	if sync != null:
+		sync.server_prop_update({"slot_id": str(part.slot_id)})
 
 
 ## Re-assert every fitted part's pose. A KINEMATIC child drifts under a parent that moves, so this

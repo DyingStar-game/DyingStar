@@ -17,6 +17,11 @@ func write_changes(_data: Dictionary) -> void:
 	pass
 
 
+## Forget what was sent, so the next write_changes sends every key again (see Vehicle._forget_sent).
+func forget_sent() -> void:
+	pass
+
+
 ## Take the keys of this part found in [param data], and remember them as sent: a value that came
 ## from the network or the database must not be sent straight back.
 func read(_data: Dictionary) -> void:

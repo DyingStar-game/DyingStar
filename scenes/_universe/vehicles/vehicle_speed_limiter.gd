@@ -82,6 +82,11 @@ func write_changes(data: Dictionary) -> void:
 		_sent_kmh = cap_kmh
 
 
+func forget_sent() -> void:
+	_sent_on = null
+	_sent_kmh = -1
+
+
 func read(data: Dictionary) -> void:
 	if data.has(KEY_ON):
 		enabled = bool(data[KEY_ON])

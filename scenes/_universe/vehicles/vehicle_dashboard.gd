@@ -7,7 +7,7 @@ extends Panel
 ## about it (the screen is just another child). Put this script on the UI scene's root.
 ##
 ## Expects these child Labels (rename here if your scene differs):
-## speed, RPM, Load, Overloaded, Elec_THerm, Transmission, hanbreak, Light, Limiter, Odometer.
+## Speed, RPM, Load, Overloaded, Powertrain, Transmission, Handbrake, Light, Limiter, Odometer.
 
 ## The speed limiter: green while it is on, red while it is holding the truck back over its limit
 ## (engine braking), dimmed while it is off. The chosen step stays readable in every state, only the
@@ -27,13 +27,13 @@ var _screen: SubViewport = null
 ## Last applied state, to touch the SubViewport only on a change: "live", "off", "far".
 var _state: String = ""
 
-@onready var _speed: Label = $speed
+@onready var _speed: Label = $Speed
 @onready var _rpm: Label = $RPM
 @onready var _load: Label = $Load
 @onready var _overloaded: Label = $Overloaded
-@onready var _powertrain: Label = $Elec_THerm
+@onready var _powertrain: Label = $Powertrain
 @onready var _transmission: Label = $Transmission
-@onready var _handbrake: Label = $hanbreak
+@onready var _handbrake: Label = $Handbrake
 @onready var _light: Label = $Light
 @onready var _limiter: Label = $Limiter
 @onready var _odometer: Label = $Odometer

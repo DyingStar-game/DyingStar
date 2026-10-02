@@ -11,7 +11,7 @@ extends Area3D
 ## per-vehicle wiring — future vehicles just add VehicleDoorHandle nodes and set door_id.
 
 ## Which door this handle opens: the prefix of its Blender animation clips on the vehicle's GLB
-## (e.g. "Front_l_door" → clips "Front_l_door_open" / "Front_l_door_close"). A handle with no clip
+## (e.g. "front_l_door" → clips "front_l_door_open" / "front_l_door_close"). A handle with no clip
 ## still works via the Vehicle's code hinge-swing fallback on the mesh named door_id.
 @export var door_id: String = ""
 ## Fallback swing ONLY (door with no Blender clip): max opening angle of the door, in degrees.

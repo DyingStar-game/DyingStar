@@ -75,7 +75,7 @@ font_color = Color(0.5911458, 0.5911458, 0.5911458, 1)
 base_font = ExtResource("2_77xpl")
 variation_embolden = 0.73
 
-[node name="vehicule_UI" type="Panel" unique_id=957292936]
+[node name="VehicleUi" type="Panel" unique_id=957292936]
 custom_minimum_size = Vector2(1400, 720)
 anchors_preset = 15
 anchor_right = 1.0
@@ -99,7 +99,7 @@ expand_mode = 1
 stretch_mode = 1
 metadata/_edit_use_anchors_ = true
 
-[node name="speed2" type="Label" parent="." unique_id=837518597]
+[node name="SpeedCaption" type="Label" parent="." unique_id=837518597]
 custom_minimum_size = Vector2(0, 400)
 layout_mode = 0
 offset_left = 115.0
@@ -112,7 +112,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 uppercase = true
 
-[node name="speed" type="Label" parent="." unique_id=1795226927]
+[node name="Speed" type="Label" parent="." unique_id=1795226927]
 custom_minimum_size = Vector2(0, 400)
 layout_mode = 0
 offset_left = 115.0
@@ -173,7 +173,7 @@ label_settings = SubResource("LabelSettings_mnwnm")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Elec_Therm_Type" type="Label" parent="." unique_id=1880924138]
+[node name="PowertrainCaption" type="Label" parent="." unique_id=1880924138]
 layout_mode = 0
 offset_left = 1486.0
 offset_top = 874.0
@@ -184,7 +184,7 @@ label_settings = SubResource("LabelSettings_k5r17")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Elec_THerm" type="Label" parent="." unique_id=556447191]
+[node name="Powertrain" type="Label" parent="." unique_id=556447191]
 layout_mode = 0
 offset_left = 1480.0
 offset_top = 937.0
@@ -195,7 +195,7 @@ label_settings = SubResource("LabelSettings_nctt3")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Transmission_Type" type="Label" parent="." unique_id=802735000]
+[node name="TransmissionCaption" type="Label" parent="." unique_id=802735000]
 layout_mode = 0
 offset_left = 83.0
 offset_top = 874.0
@@ -217,7 +217,7 @@ label_settings = SubResource("LabelSettings_nctt3")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="hanbreak" type="Label" parent="." unique_id=723791449]
+[node name="Handbrake" type="Label" parent="." unique_id=723791449]
 layout_mode = 0
 offset_left = 305.0
 offset_top = 527.0

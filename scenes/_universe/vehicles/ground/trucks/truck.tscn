@@ -101,19 +101,19 @@ sfx_wheel_roll_kmh = 5.0
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10000000000582077, 0.4349999999976717, -0.5050000000046566)
 
-[node name="Col_bed" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 867818081) index="2" unique_id=1755557740]
+[node name="Col_bed" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="2" unique_id=630403907]
 visible = false
 
-[node name="Col_bed_left" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 867818081) index="3" unique_id=871189725]
+[node name="Col_bed_left" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="3" unique_id=1194082000]
 visible = false
 
-[node name="Col_bed_rear" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 867818081) index="4" unique_id=886591201]
+[node name="Col_bed_rear" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="4" unique_id=1171132569]
 visible = false
 
-[node name="Col_bed_right" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 867818081) index="5" unique_id=1991758710]
+[node name="Col_bed_right" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="5" unique_id=185276424]
 visible = false
 
-[node name="Col_cabin" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 867818081) index="6" unique_id=1880637761]
+[node name="Col_cabin" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="6" unique_id=1049753045]
 visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
@@ -124,7 +124,7 @@ monitoring = false
 script = ExtResource("3_seat")
 role = 0
 sit_point = NodePath("SitPoint")
-door_id = "Front_l_door"
+door_id = "front_l_door"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatDriver" unique_id=1010304140]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1999999999970896, 0, 0.5)
@@ -140,7 +140,7 @@ collision_mask = 0
 monitoring = false
 script = ExtResource("3_seat")
 sit_point = NodePath("SitPoint")
-door_id = "Front_r_door"
+door_id = "front_r_door"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPassenger" unique_id=1477251655]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1999999999970896, 0, 0.5)
@@ -198,155 +198,155 @@ transform = Transform3D(1, 0, 0, 0, -0.6741734925434366, 0.7385730173461422, 0, 
 spot_range = 4.0
 spot_angle = 33.29
 
-[node name="RearCamera_Rear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+[node name="RearCameraRear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.634337199246993e-17, 0.7091372917707068, 0.705070423021777, -8.684140332348007e-17, 0.705070423021777, -0.7091372917707068, -0.00059340561188747, 1.515455978092255, 0.09343121015790744)
 screen = NodePath("../Model/Carrosserie/Screen_Rear")
 
-[node name="RearCamera_RetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
-transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+[node name="RearCameraRetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/Carrosserie/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true
 
-[node name="RearCamera_RetroR" parent="." unique_id=86175484 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
+[node name="RearCameraRetroR" parent="." unique_id=86175484 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, 9.47236311194868e-18, 1.0605402120460131e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -8.710929498070396e-17, 0.49999999999999994, -0.8660254037844387, 0.9771233102491468, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/Carrosserie/ScreenR_Retro")
 resolution = Vector2i(200, 320)
 mirror = true
 
-[node name="Cargo_loading_zone" type="CollisionShape3D" parent="." unique_id=551701719]
+[node name="CargoLoadingZone" type="CollisionShape3D" parent="." unique_id=551701719]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00917181405348205, 0.4900656582491637, 1.167679956857709)
 shape = SubResource("BoxShape3D_nd433")
 debug_color = Color(0.22392991, 0.61549836, 0.4901445, 0.41960785)
 
-[node name="Handle_FL" type="Area3D" parent="." unique_id=372280064 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
+[node name="HandleFL" type="Area3D" parent="." unique_id=372280064 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Front_l_door"
+door_id = "front_l_door"
 open_angle_deg = 60.0
 reverse = true
-outdoor_shape = NodePath("CollisionShape3D_out")
-indoor_shape = NodePath("CollisionShape3D_in")
+outdoor_shape = NodePath("CollisionShapeOut")
+indoor_shape = NodePath("CollisionShapeIn")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_FL" unique_id=266252602]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleFL" unique_id=266252602]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8771307377480202, 0.9530118970551352, -0.5995300287153289)
 shape = SubResource("BoxShape3D_8eohf")
 debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 
-[node name="CollisionShape3D_in" type="CollisionShape3D" parent="Handle_FL" unique_id=1932272077]
+[node name="CollisionShapeIn" type="CollisionShape3D" parent="HandleFL" unique_id=1932272077]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.80846598368544, 0.9530118970551352, -0.9405029228353458)
 shape = SubResource("BoxShape3D_8eohf")
 debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 
-[node name="Handle_FR" type="Area3D" parent="." unique_id=1072075434 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
+[node name="HandleFR" type="Area3D" parent="." unique_id=1072075434 node_paths=PackedStringArray("outdoor_shape", "indoor_shape")]
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Front_r_door"
+door_id = "front_r_door"
 open_angle_deg = 60.0
-outdoor_shape = NodePath("CollisionShape3D_out")
-indoor_shape = NodePath("CollisionShape3D2_in")
+outdoor_shape = NodePath("CollisionShapeOut")
+indoor_shape = NodePath("CollisionShapeIn")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_FR" unique_id=1401805639]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleFR" unique_id=1401805639]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8736682503675075, 0.9530118970551352, -0.5995300287153289)
 shape = SubResource("BoxShape3D_8eohf")
 debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 
-[node name="CollisionShape3D2_in" type="CollisionShape3D" parent="Handle_FR" unique_id=1969757675]
+[node name="CollisionShapeIn" type="CollisionShape3D" parent="HandleFR" unique_id=1969757675]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8121952957268729, 0.9530118970551352, -0.9362578415127812)
 shape = SubResource("BoxShape3D_8eohf")
 debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 
-[node name="flatbed_small_mini_truck" parent="." unique_id=115087127 instance=ExtResource("19_lnse2")]
+[node name="FlatbedSmallMiniTruck" parent="." unique_id=115087127 instance=ExtResource("19_lnse2")]
 transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, -0.00206990235642834, 0.4319164637378363, 1.061855327619314)
 
-[node name="Slot_FL" type="Marker3D" parent="." unique_id=740110021]
+[node name="SlotFL" type="Marker3D" parent="." unique_id=740110021]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.04)
 script = ExtResource("91_slot")
-door_id = "Cube_007"
+door_id = "hatch_fl"
 
-[node name="Slot_FR" type="Marker3D" parent="." unique_id=740110022]
+[node name="SlotFR" type="Marker3D" parent="." unique_id=740110022]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.04)
 script = ExtResource("91_slot")
-door_id = "Cube_006"
+door_id = "hatch_fr"
 
-[node name="Slot_RL" type="Marker3D" parent="." unique_id=740110023]
+[node name="SlotRL" type="Marker3D" parent="." unique_id=740110023]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.74)
 script = ExtResource("91_slot")
-door_id = "Cube_004"
+door_id = "hatch_rl"
 
-[node name="Slot_RR" type="Marker3D" parent="." unique_id=740110024]
+[node name="SlotRR" type="Marker3D" parent="." unique_id=740110024]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.74)
 script = ExtResource("91_slot")
-door_id = "Cube_005"
+door_id = "hatch_rr"
 
-[node name="Handle_Hatch_FL" type="Area3D" parent="." unique_id=372280071 node_paths=PackedStringArray("outdoor_shape")]
+[node name="HandleHatchFL" type="Area3D" parent="." unique_id=372280071 node_paths=PackedStringArray("outdoor_shape")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.89, 0.34, 0.22)
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Cube_007"
+door_id = "hatch_fl"
 open_angle_deg = 60.0
 reverse = true
-outdoor_shape = NodePath("CollisionShape3D_out")
+outdoor_shape = NodePath("CollisionShapeOut")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FL" unique_id=372280171]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleHatchFL" unique_id=372280171]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
-[node name="Handle_Hatch_FR" type="Area3D" parent="." unique_id=372280072 node_paths=PackedStringArray("outdoor_shape")]
+[node name="HandleHatchFR" type="Area3D" parent="." unique_id=372280072 node_paths=PackedStringArray("outdoor_shape")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.89, 0.34, 0.22)
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Cube_006"
+door_id = "hatch_fr"
 open_angle_deg = 60.0
-outdoor_shape = NodePath("CollisionShape3D_out")
+outdoor_shape = NodePath("CollisionShapeOut")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_FR" unique_id=372280172]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleHatchFR" unique_id=372280172]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.18)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
-[node name="Handle_Hatch_RL" type="Area3D" parent="." unique_id=372280073 node_paths=PackedStringArray("outdoor_shape")]
+[node name="HandleHatchRL" type="Area3D" parent="." unique_id=372280073 node_paths=PackedStringArray("outdoor_shape")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.89, 0.34, 0.59)
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Cube_004"
+door_id = "hatch_rl"
 open_angle_deg = 60.0
-outdoor_shape = NodePath("CollisionShape3D_out")
+outdoor_shape = NodePath("CollisionShapeOut")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RL" unique_id=372280173]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleHatchRL" unique_id=372280173]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
 
-[node name="Handle_Hatch_RR" type="Area3D" parent="." unique_id=372280074 node_paths=PackedStringArray("outdoor_shape")]
+[node name="HandleHatchRR" type="Area3D" parent="." unique_id=372280074 node_paths=PackedStringArray("outdoor_shape")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.89, 0.34, 0.59)
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("7_tuoiw")
-door_id = "Cube_005"
+door_id = "hatch_rr"
 open_angle_deg = 60.0
 reverse = true
-outdoor_shape = NodePath("CollisionShape3D_out")
+outdoor_shape = NodePath("CollisionShapeOut")
 metadata/_custom_type_script = "uid://kbp6qag1idal"
 
-[node name="CollisionShape3D_out" type="CollisionShape3D" parent="Handle_Hatch_RR" unique_id=372280174]
+[node name="CollisionShapeOut" type="CollisionShape3D" parent="HandleHatchRR" unique_id=372280174]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
 shape = SubResource("BoxShape3D_hatch")
 debug_color = Color(0.2, 0.9, 0.5, 0.42)
@@ -362,7 +362,6 @@ pixel_size = 0.0015
 double_sided = false
 modulate = Color(0.08, 0.08, 0.1, 1)
 text = "ARES-TRUCK-XXXXXXXX"
-font_size = 32
 outline_size = 0
 
 [editable path="Model"]
