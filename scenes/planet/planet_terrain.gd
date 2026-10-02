@@ -274,6 +274,13 @@ var _mesh_tasks: Dictionary = {}
 ## Mesh-data computed and ready to be assembled into scene objects (main thread).
 ## Each entry: { info: Dictionary, mesh: ArrayMesh }
 var _assemble_queue: Array[Dictionary] = []
+## Mesh tasks allowed at once, worked out on first use (_mesh_slot_count).
+var _mesh_slots: int = 0
+## For ClientPerf: mesh tasks finished, their summed submit-to-collect time (µs), and chunks
+## sent back to the backlog because their tiles were not on disk yet.
+var _stat_mesh_done: int = 0
+var _stat_mesh_usec: int = 0
+var _stat_tile_waits: int = 0
 ## Overflow queue when max_mesh_tasks is reached.
 var _mesh_task_backlog: Array[Dictionary] = []
 ## The keys in _mesh_task_backlog, for a duplicate test that does not walk it, and whether it was
@@ -1649,6 +1656,13 @@ func _update_terrain() -> void:
 			ClientPerf.gauge("tiles_fetched:" + who, q["fetched"])
 			ClientPerf.gauge("tiles_fetch_ms_avg:" + who,
 				float(q["fetch_usec"]) / 1000.0 / maxf(float(q["fetched"] + q["failed"]), 1.0))
+			ClientPerf.gauge("mesh_running:" + who, _mesh_tasks.size())
+			ClientPerf.gauge("mesh_backlog:" + who, _mesh_task_backlog.size())
+			ClientPerf.gauge("mesh_slots:" + who, _mesh_slot_count())
+			ClientPerf.gauge("mesh_done:" + who, _stat_mesh_done)
+			ClientPerf.gauge("mesh_ms_avg:" + who,
+				_stat_mesh_usec / 1000.0 / maxf(float(_stat_mesh_done), 1.0))
+			ClientPerf.gauge("mesh_tile_waits:" + who, _stat_tile_waits)
 	var cam_dist := local_cam.length()
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —
@@ -3434,7 +3448,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		if item.info.key == key:
 			return
 
-	if _mesh_tasks.size() >= max_mesh_tasks:
+	if _mesh_tasks.size() >= _mesh_slot_count():
 		# Backlog — sorted nearest first when drained (_drain_backlog).
 		_backlog_push(info)
 		return
@@ -3444,6 +3458,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix,
 			int(info.get("stitch", 0)) != 0):
 		_backlog_push(info)  # never twice the same chunk waiting
+		_stat_tile_waits += 1
 		return
 
 	var lod: int = info.lod
@@ -3477,6 +3492,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		"result_ref": result_ref,
 		"info": info,
 		"prof": prof,
+		"t0": Time.get_ticks_usec(),
 	}
 	_mesh_tasks[key] = task_entry
 
@@ -3500,18 +3516,28 @@ func _drain_backlog() -> void:
 	# Plafonné : évaluer la résidence d'un chunk coûte une passe sur sa tuile et ses huit
 	# voisines, et le backlog peut contenir des centaines d'entrées. Il est trié du plus
 	# proche au plus lointain, donc s'arrêter tôt sert d'abord ce qui est sous le joueur.
-	var tries := mini(_mesh_task_backlog.size(), max_mesh_tasks * 2)
+	var tries := mini(_mesh_task_backlog.size(), _mesh_slot_count() * 2)
 	if tries > 0 and _backlog_unsorted:
 		var cam := _last_local_cam
 		_mesh_task_backlog.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return a.center.distance_squared_to(cam) < b.center.distance_squared_to(cam))
 		_backlog_unsorted = false
-	while tries > 0 and _mesh_tasks.size() < max_mesh_tasks:
+	while tries > 0 and _mesh_tasks.size() < _mesh_slot_count():
 		var info: Dictionary = _mesh_task_backlog[0]
 		_mesh_task_backlog.remove_at(0)
 		_backlog_keys.erase(info.key)
 		_queue_mesh_task(info)
 		tries -= 1
+
+
+## Mesh tasks allowed at once: [member max_mesh_tasks], unless client.ini forces another.
+func _mesh_slot_count() -> int:
+	if _mesh_slots == 0:
+		# Measurement switch (client.ini `debug_mesh_tasks`): compare another count with the
+		# default on the same flight.
+		var forced := 0 if is_server else ClientConfig.get_int("debug_mesh_tasks", 0)
+		_mesh_slots = forced if forced > 0 else max_mesh_tasks
+	return _mesh_slots
 
 
 ## Put a chunk in the backlog unless it already waits there.
@@ -3540,6 +3566,8 @@ func _poll_mesh_tasks() -> void:
 			continue
 		WorkerThreadPool.wait_for_task_completion(task_id)
 		completed_keys.append(key)
+		_stat_mesh_done += 1
+		_stat_mesh_usec += Time.get_ticks_usec() - int(entry.get("t0", 0))
 		if PropNet.prof_on:
 			TerrainProfiler.commit_mesh(entry.get("prof", {}))
 		var mesh: ArrayMesh = entry.result_ref[0] as ArrayMesh
