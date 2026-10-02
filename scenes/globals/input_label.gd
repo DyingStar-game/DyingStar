@@ -18,6 +18,12 @@ const PAD_BUTTONS : Dictionary = {
 }
 ## The cross, JoyButton 11 to 14, the same on every pad.
 const PAD_DPAD : Array[String] = ["%%PAD_DPAD_UP", "%%PAD_DPAD_DOWN", "%%PAD_DPAD_LEFT", "%%PAD_DPAD_RIGHT"]
+## The mouse buttons a player binds, by MouseButton index: named in the game's language. Godot's own
+## names ("Left Mouse Button") are English whatever the language; past this list they are kept.
+const MOUSE_BUTTONS : Dictionary = {
+	MOUSE_BUTTON_LEFT: "%%MOUSE_LEFT", MOUSE_BUTTON_RIGHT: "%%MOUSE_RIGHT", MOUSE_BUTTON_MIDDLE: "%%MOUSE_MIDDLE",
+	MOUSE_BUTTON_WHEEL_UP: "%%MOUSE_WHEEL_UP", MOUSE_BUTTON_WHEEL_DOWN: "%%MOUSE_WHEEL_DOWN",
+}
 ## The two sticks and the two triggers, per family: [left stick, right stick, left trigger, right].
 const PAD_AXES : Dictionary = {
 	InputDevice.Family.XBOX: ["LS", "RS", "LT", "RT"],
@@ -75,12 +81,22 @@ static func pad_axis_name(axis: int, value: float, family: InputDevice.Family) -
 		return _tr("%%PAD_AXIS") % [axis + 1, "-" if value < 0.0 else "+"]
 	if axis >= JOY_AXIS_TRIGGER_LEFT:
 		return str(names[2 + axis - JOY_AXIS_TRIGGER_LEFT])
-	var stick : String = str(names[0 if axis <= JOY_AXIS_LEFT_Y else 1])
+	var stick : String = pad_stick_name(axis, family)
 	var horizontal : bool = axis == JOY_AXIS_LEFT_X or axis == JOY_AXIS_RIGHT_X
 	var way : String = "%%PAD_DPAD_UP" if value < 0.0 else "%%PAD_DPAD_DOWN"
 	if horizontal:
 		way = "%%PAD_DPAD_LEFT" if value < 0.0 else "%%PAD_DPAD_RIGHT"
 	return stick + " " + _tr(way)
+
+
+## The stick [param axis] belongs to, as a whole ("RS"), on a pad of [param family]: for a line that
+## says what a stick does rather than which way it is pushed. Numbered like pad_axis_name on a device
+## Godot does not know.
+static func pad_stick_name(axis: int, family: InputDevice.Family) -> String:
+	var names : Array = PAD_AXES.get(family, [])
+	if names.is_empty() or axis > JOY_AXIS_RIGHT_Y:
+		return _tr("%%PAD_AXIS") % [axis + 1, ""]
+	return str(names[0 if axis <= JOY_AXIS_LEFT_Y else 1])
 
 
 ## Static, so no tr() of its own: the translation server's.
@@ -121,6 +137,8 @@ static func meta_name(system: String) -> String:
 
 ## A mouse button's name WITHOUT the modifiers Godot's as_text() would prepend in its own format.
 static func _mouse_button_name(index: int) -> String:
+	if MOUSE_BUTTONS.has(index):
+		return _tr(str(MOUSE_BUTTONS[index]))
 	var bare := InputEventMouseButton.new()
 	bare.button_index = index as MouseButton
 	return bare.as_text()

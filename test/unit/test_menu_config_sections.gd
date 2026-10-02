@@ -11,6 +11,9 @@ func test_general_is_cut_into_four_titled_sections() -> void:
 	assert_eq(titles, ["", "%%KM_SECTION_STAR_MAP", "%%KM_SECTION_CHAT", "%%KM_SECTION_AUDIO",
 			"%%KM_SECTION_GALLERY"], "pause on its own first, then the four")
 	assert_true((sections[1][1] as Dictionary).has("star_map"), "the chart under its title")
+	for gesture: String in ["star_map_select", "star_map_reset", "star_map_orbit", "star_map_zoom_step_in",
+			"star_map_zoom_step_out", "star_map_orbit_left"]:
+		assert_true((sections[1][1] as Dictionary).has(gesture), "%s with the chart, to be changed" % gesture)
 	assert_true((sections[4][1] as Dictionary).has("screenshot"), "the captures under theirs")
 
 

@@ -117,7 +117,7 @@ const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
 ## The right stick pushed all the way turns the view like a drag of this many pixels a second.
 const STICK_ORBIT_PX_PER_S: float = 600.0
 ## Two presses of A this close together are the pad's double click (travel to what is selected).
-const PAD_DOUBLE_CLICK_MS: int = 400
+const DOUBLE_PRESS_MS: int = 400
 ## The chart's CanvasLayer: over the game's panels (OverlayPanel.LAYER) and the settings page.
 const LAYER: int = 10
 ## The info panel's place from the right edge, before any inset (set_right_inset).
@@ -274,8 +274,10 @@ var _sunlight: OmniLight3D = null
 ## The chart's own environment, kept because its ambient is DIMMED on approach — see
 ## [method _refresh_lighting].
 var _env: Environment = null
-## The controls, centred at the foot of the chart.
+## The controls, centred at the foot of the chart, named with the player's own keys (StarMapHelp).
 var _help: Label
+## The device the help line was last written for (InputDevice.Kind), -1 before the first time.
+var _help_kind: int = -1
 ## One entry per body: {sphere, orbit, live, radius_m, spin_hours, tilt_deg}. `orbit` places it when
 ## it has elements; `live` when it does not (a moon, positioned by the network).
 var _bodies: Array[Dictionary] = []
@@ -306,7 +308,7 @@ var _dragging: bool = false
 ## follows and the info panel describes.
 var _hover: int = -1
 ## When A was last pressed on the chart (Time.get_ticks_msec), for the pad's double click.
-var _pad_click_at: int = -PAD_DOUBLE_CLICK_MS
+var _select_at: int = -DOUBLE_PRESS_MS
 ## B or Escape went down over the chart; it closes when the key comes back up (see _input).
 var _close_armed: bool = false
 var _info_panel: PanelContainer = null
@@ -418,6 +420,7 @@ func setup(player: Node3D) -> void:
 
 func open() -> void:
 	_rebuild()
+	_refresh_help()  # the keys may have been rebound since the last time
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	show()
 	if not _opened_before or _moved_since_closed():
@@ -590,7 +593,6 @@ func _build_ui() -> void:
 	# The chart's own numbers (bodies, zoom, relief tiles) are debug: they go to the debug panel
 	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it.
 	_help = Label.new()
-	_help.text = "%%HUD_MAP_HELP"
 	_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_help.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -1133,7 +1135,8 @@ func _process(delta: float) -> void:
 		if Input.is_action_pressed("star_map_zoom_out"):
 			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, delta))
 		# The right stick turns the view as a drag does, the triggers zoom (the zoom actions).
-		var stick: Vector2 = InputDevice.pad_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+		var stick: Vector2 = InputDevice.pad_vector(&"star_map_orbit_left", &"star_map_orbit_right",
+				&"star_map_orbit_up", &"star_map_orbit_down")
 		if stick != Vector2.ZERO:
 			_turn_view(stick * stick.length() * STICK_ORBIT_PX_PER_S * delta)
 	_cam.advance(delta)
@@ -1169,6 +1172,14 @@ func _process(delta: float) -> void:
 	if _pad_points() and not is_typing():
 		_hover_at(_pointer())
 	_refresh_cursor_readout()
+	if InputDevice.last != _help_kind:
+		_refresh_help()
+
+
+## The help line, for the device in the player's hands: the mouse's buttons, or the pad's.
+func _refresh_help() -> void:
+	_help_kind = InputDevice.last
+	_help.text = StarMapHelp.text(InputDevice.last)
 
 
 ## Where every body IS this frame — true positions only, nothing drawn yet. Runs before the origin is
@@ -2983,9 +2994,14 @@ func _input(event: InputEvent) -> void:
 		return
 	if not _dragging:
 		return
-	if event is InputEventMouseMotion:
+	# The release too: the button may come back up over a panel, which would keep it from the chart.
+	if event.is_action_released("star_map_orbit"):
+		_dragging = false
+	elif event is InputEventMouseMotion:
 		_turn_view((event as InputEventMouseMotion).relative)
-		get_viewport().set_input_as_handled()
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 
 ## Turn the view by [param relative], in pixels of drag: the mouse's middle button and the gamepad's
@@ -2997,43 +3013,52 @@ func _turn_view(relative: Vector2) -> void:
 		_cam.orbit(relative, _guard_radius())
 
 
+## Every gesture is an action (Settings > Controls > Star map), so any of them can be moved to another
+## button, a key or the pad.
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventMouseButton:
-		var button := event as InputEventMouseButton
-		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
-			_click_at(button.position, button.double_click)
-			get_viewport().set_input_as_handled()
-		elif button.button_index == MOUSE_BUTTON_RIGHT and button.pressed:
-			# Right click is the way home. Left click having been reduced to selecting, something still
-			# has to back the view out — and a gesture beats hunting for the button, which on an
-			# ultrawide is a long way from where you are looking.
-			_on_reset_pressed()
-			get_viewport().set_input_as_handled()
-		elif button.button_index == MOUSE_BUTTON_MIDDLE:
-			_dragging = button.pressed
-			get_viewport().set_input_as_handled()
-		elif button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
-			_zoom_by(1.0 / StarMapCamera.ZOOM_STEP)
-			get_viewport().set_input_as_handled()
-		elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN and button.pressed:
-			_zoom_by(StarMapCamera.ZOOM_STEP)
-			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion:
+	if event is InputEventMouseMotion:
 		# Hover only. The drag lives in _input, so it survives passing over the GUI.
 		_hover_at((event as InputEventMouseMotion).position)
-	elif event is InputEventJoypadButton and event.is_action_pressed("ui_accept") and not is_typing():
-		# A, at the centre of the screen: the pad's click. Twice in a row is its double click.
-		var now: int = Time.get_ticks_msec()
-		var double: bool = now - _pad_click_at <= PAD_DOUBLE_CLICK_MS
-		_click_at(_pointer(), double)
-		_pad_click_at = -PAD_DOUBLE_CLICK_MS if double else now
-		get_viewport().set_input_as_handled()
+		return
+	# A key typed into the search box is a letter, not a gesture; a click there is still a click.
+	if is_typing() and not event is InputEventMouseButton:
+		return
+	if event.is_action_pressed("star_map_select"):
+		_select_pressed(event)
+	elif event.is_action_pressed("star_map_reset"):
+		# The way home. Select having been reduced to selecting, something still has to back the view
+		# out — and a gesture beats hunting for the button, which on an ultrawide is a long way from
+		# where you are looking.
+		_on_reset_pressed()
+	elif event.is_action_pressed("star_map_orbit"):
+		_dragging = true  # until released, see _input
+	elif event.is_action_pressed("star_map_zoom_step_in"):
+		_zoom_by(1.0 / StarMapCamera.ZOOM_STEP)
+	elif event.is_action_pressed("star_map_zoom_step_out"):
+		_zoom_by(StarMapCamera.ZOOM_STEP)
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 
-## A click at [param at] (the mouse's left button, or A on the pad at the centre of the screen), with
-## [param double] for a double click.
+## Select, from whatever it is bound to. A mouse button clicks where the cursor is and has its own
+## double click; a key or the pad's A clicks at the pointer (the centre of the screen on the pad),
+## and twice within DOUBLE_PRESS_MS is their double click.
+func _select_pressed(event: InputEvent) -> void:
+	var mouse := event as InputEventMouseButton
+	if mouse != null:
+		_click_at(mouse.position, mouse.double_click)
+		return
+	var now: int = Time.get_ticks_msec()
+	var double: bool = now - _select_at <= DOUBLE_PRESS_MS
+	_select_at = -DOUBLE_PRESS_MS if double else now
+	_click_at(_pointer(), double)
+
+
+## A click at [param at] (star_map_select: the mouse's left button, or A on the pad at the centre of
+## the screen), with [param double] for a double click.
 ##
 ## Towns first. They are only ever drawn ON the body you are already looking at, so a marker under the
 ## cursor is unambiguously what you meant — and testing the body first would make every town
