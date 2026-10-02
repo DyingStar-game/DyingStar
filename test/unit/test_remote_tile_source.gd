@@ -263,6 +263,20 @@ func test_fetch_now_caches_and_take_reads_it_back() -> void:
 		assert_eq(got[i], i)
 
 
+func test_queueing_a_tile_already_on_disk_asks_for_nothing() -> void:
+	var s := _serve_pointer()
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	_served["http://h/dist/p/cafe/n64/f0/present.bin"] = bits
+	_served["http://h/dist/p/cafe/n64/f0/f3.bin"] = _bytes(GOLDEN_PLAIN)
+	assert_true(s.fetch_now(64, 3))
+	s.queue(64, 3)
+	assert_eq(s.stat_requested, 0, "la tuile est sur disque : pas de travail en file")
+	s.queue(64, 4)
+	assert_eq(s.stat_requested, 1, "une tuile absente, elle, se demande")
+
+
 func test_take_never_hits_the_network() -> void:
 	# take() est appelé sur le chemin chaud : il doit rendre vide plutôt que d'attendre.
 	var s := _serve_pointer()

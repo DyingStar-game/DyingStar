@@ -570,6 +570,12 @@ func stop() -> void:
 func queue(nside: int, ipix: int) -> void:
 	if not serves(nside):
 		return
+	# Déjà sur disque : rien à télécharger. Le préchargement (TileResidency.prefetch) refait
+	# son anneau toutes les 5 s, même à l'arrêt — ~90 tuiles, tous niveaux, déjà en cache pour
+	# la plupart — et chacune réveillait un fil de téléchargement pour rien : 10 000 sur un vol
+	# EVA de 3 minutes, pour une seule réellement téléchargée (2026-10-02).
+	if FileAccess.file_exists(tile_cache_path(nside, ipix)):
+		return
 	_enqueue(nside, ipix, JOB_TILE)
 
 
