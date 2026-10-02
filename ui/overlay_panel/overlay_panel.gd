@@ -17,6 +17,9 @@ extends CanvasLayer
 ##   - while it holds the pointer it swallows keys (AltGr turns every key into Ctrl+Alt+key, and the
 ##     Alt shortcuts would fire) and the wheel outside every panel (it would change the walk speed).
 
+## The panel came up or went away (see reevaluate): for what must make room for it.
+signal shown_changed(shown: bool)
+
 enum Edge { LEFT, RIGHT }
 
 ## Below the settings page (5) and the star map (10): the pause menu covers the panels, not the reverse.
@@ -97,6 +100,7 @@ func reevaluate() -> void:
 			appeared = _active_sections()
 		else:
 			_set_held(false)
+		shown_changed.emit(wanted)
 	if _shown:
 		for section in appeared:
 			section.restart()
@@ -104,6 +108,12 @@ func reevaluate() -> void:
 
 func is_shown() -> bool:
 	return _shown
+
+
+## How much of its edge the panel takes while shown, margins included: what something beside it
+## leaves free.
+func footprint_px() -> float:
+	return _panel.offset_right - _panel.offset_left + 2.0 * _MARGIN_PX
 
 
 func wants_pointer() -> bool:

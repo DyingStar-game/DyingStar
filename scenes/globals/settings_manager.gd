@@ -1,21 +1,11 @@
 extends Node
 
-## Emitted when a debug toggle changes, so live systems (e.g. vehicles) react without a restart.
-signal cargo_debug_changed(on: bool)
 ## Emitted when the camera field of view changes, so the active player camera updates live.
 signal fov_changed(fov: float)
-## Emitted when the "show debug panels" toggle changes, so the in-game HUD reacts live (menu ↔ key).
-signal show_debug_changed(on: bool)
-signal vehicle_hud_changed(on: bool)
-signal movement_debug_changed(on: bool)
-signal surface_debug_changed(on: bool)
-signal music_debug_changed(on: bool)
 ## Emitted when the shadows toggle changes, so the day/night sun enables/disables its shadow live.
 signal shadows_changed(on: bool)
 ## Emitted when the shadow distance changes, so the day/night sun updates its shadow range live.
 signal shadow_distance_changed(distance: float)
-## Emitted when the celestial-gizmo toggle changes, so the in-world star/planet markers show/hide live.
-signal celestial_gizmos_changed(on: bool)
 ## Emitted when the local microphone is muted/unmuted, so the voice client actually STOPS SENDING.
 ## No audio bus is involved: a bus mute is applied after the effect chain, so AudioEffectCapture
 ## would keep feeding the voice client and the others would still hear us.
@@ -48,6 +38,9 @@ var render : RenderSettings
 var render_applier : RenderApplier = null
 ## Settings > General > Interface size. Same arrangement as `language`; applied to the root window.
 var ui_scale : UiScaleSettings
+## The debug switches (Settings > Debug). Same arrangement as `language`; on a dedicated server, the
+## few it reads come from server.ini.
+var debug : DebugSettings
 ## The saved keybindings as action -> {device key: binding text} (InputDevice.KEYS), empty when
 ## nothing was ever remapped. Kept so the controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
@@ -56,6 +49,7 @@ func _ready() -> void:
 	language = LanguageSettings.new(config, save_settings)
 	render = RenderSettings.new(config, save_settings)
 	ui_scale = UiScaleSettings.new(config, save_settings, get_tree().root)
+	debug = DebugSettings.new(config, save_settings, _server_ini_flag)
 	if OS.has_feature("dedicated_server"):
 		return
 	render.caps = RenderSettings.current_caps()
@@ -122,16 +116,7 @@ func initialize_settings():
 	config.set_value("video", "dev_mode", false)
 	# The rendering options (shadows included) are not listed here: GraphicsOptions owns their
 	# defaults, and RenderSettings.ensure_initialized() writes the preset guessed for this GPU.
-	config.set_value("general", "cargo_debug", false)
-	# Off by default: labelled markers pointing at the star and every planet/moon (dev/orientation aid).
-	config.set_value("general", "celestial_gizmos", false)
-	# Shown by default: we are in early alpha, so the in-game debug panels are on out of the box.
-	config.set_value("general", "show_debug", true)
-	config.set_value("general", "movement_debug", false)
-	# Shown by default: it is the driver's only dashboard until the in-cab one exists (GDD).
-	config.set_value("general", "vehicle_hud", true)
-	config.set_value("general", "surface_debug", false)
-	config.set_value("general", "music_debug", false)
+	debug.write_defaults()
 	# "auto" follows the OS on first launch, so a French player is not greeted in English.
 	config.set_value("general", "language", "auto")
 	for key in AUDIO_BUSES:
@@ -302,72 +287,6 @@ func set_dev_mode(on: bool) -> void:
 func is_dev_mode() -> bool:
 	return config.get_value("video", "dev_mode", false)
 
-## Cargo debug: draw a green envelope around items REALLY locked into a vehicle bed (dev aid). Lives
-## under [general]; emits so vehicles toggle their markers live.
-func set_cargo_debug(on: bool) -> void:
-	config.set_value("general", "cargo_debug", on)
-	save_settings()
-	cargo_debug_changed.emit(on)
-
-func is_cargo_debug() -> bool:
-	return config.get_value("general", "cargo_debug", false)
-
-## Show/hide in-world markers pointing at the star and each planet/moon (orientation aid). Lives under
-## [general]; emits so the marker layer toggles live without a restart. Default off.
-func set_celestial_gizmos(on: bool) -> void:
-	config.set_value("general", "celestial_gizmos", on)
-	save_settings()
-	celestial_gizmos_changed.emit(on)
-
-func is_celestial_gizmos() -> bool:
-	return config.get_value("general", "celestial_gizmos", false)
-
-## Show/hide the in-game debug panels (server/client FPS, coords, counts…). Persisted under [general];
-## emits so the HUD toggles live and the settings menu stays in sync with the toggle_debug key.
-## Default true (early alpha).
-func set_show_debug(on: bool) -> void:
-	config.set_value("general", "show_debug", on)
-	save_settings()
-	show_debug_changed.emit(on)
-
-func is_show_debug() -> bool:
-	return config.get_value("general", "show_debug", true)
-
-## Show/hide the vehicle dashboard overlay while driving (speed, rpm, weight, bays, drive model).
-## Separate from show_debug on purpose: that one governs the player panels, and someone who wants a
-## clean view from the cab should not have to give up the rest. Emits so it toggles WHILE seated.
-func set_vehicle_hud(on: bool) -> void:
-	config.set_value("general", "vehicle_hud", on)
-	save_settings()
-	vehicle_hud_changed.emit(on)
-
-func is_vehicle_hud() -> bool:
-	return config.get_value("general", "vehicle_hud", true)
-
-## Movement debug: a small on-screen readout (speed / mouse-wheel walk tier / current animation clip).
-## Lives under [general]; emits so the player HUD toggles live. Default off (dev/calibration aid).
-func set_movement_debug(on: bool) -> void:
-	config.set_value("general", "movement_debug", on)
-	save_settings()
-	movement_debug_changed.emit(on)
-
-func is_movement_debug() -> bool:
-	# A dedicated server never loads settings.ini (see _ready), so this used
-	# to be a constant false there — and the server is the one side whose
-	# step-up probe sees terrain (collision is server-only). The server
-	# reads `[debug] movement=true` in server.ini instead (same file and
-	# `srvini=` override as its `perf` key), resolved once.
-	if OS.has_feature("dedicated_server"):
-		if _server_movement_debug < 0:
-			_server_movement_debug = 1 if _server_ini_flag("debug", "movement") else 0
-		return _server_movement_debug == 1
-	return config.get_value("general", "movement_debug", false)
-
-
-## -1 unresolved, else 0/1 — see is_movement_debug.
-var _server_movement_debug: int = -1
-
-
 ## A numeric key of the server's ini, or [param default] when the file or the key is missing. A
 ## hand-edited value may come back as a String; it is parsed as a float.
 static func _server_ini_number(section: String, key: String, default: float) -> float:
@@ -398,28 +317,6 @@ static func _server_ini_flag(section: String, key: String) -> bool:
 	var v: Variant = cfg.get_value(section, key, false)
 	return (v is bool and bool(v)) or (v is int and int(v) != 0) \
 			or (v is String and String(v).strip_edges().to_lower() in ["true", "1", "yes"])
-
-## Surface debug: an on-screen readout of the ground under your feet — the taxonomy family, how it was
-## worked out, and whether a footstep sample exists for it. Its own toggle rather than a line added to
-## the movement readout: someone chasing a wrong footstep sound has no use for animation clips, and
-## someone tuning a walk cycle has none for material ids.
-func set_surface_debug(on: bool) -> void:
-	config.set_value("general", "surface_debug", on)
-	save_settings()
-	surface_debug_changed.emit(on)
-
-func is_surface_debug() -> bool:
-	return config.get_value("general", "surface_debug", false)
-
-## Music debug: which track plays, from which playlist, and which line of the MusicTable decided it.
-## For whoever fills that table in: a rule that never wins looks exactly like a rule that is missing.
-func set_music_debug(on: bool) -> void:
-	config.set_value("general", "music_debug", on)
-	save_settings()
-	music_debug_changed.emit(on)
-
-func is_music_debug() -> bool:
-	return config.get_value("general", "music_debug", false)
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)

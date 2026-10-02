@@ -61,10 +61,10 @@ func take(kind: Kind) -> void:
 	WorkerThreadPool.add_task(_save.bind(image, path), false, "screenshot")
 
 
-## Show the debug panels for the capture, then give the player's own setting back. Goes through the
-## signal rather than SettingsManager.set_show_debug, which would SAVE the forced value.
+## Show the debug panels for the capture, then give the player's own setting back. A preview rather
+## than DebugSettings.set_on, which would SAVE the forced value.
 func _force_debug_panels(on: bool) -> void:
-	SettingsManager.show_debug_changed.emit(true if on else SettingsManager.is_show_debug())
+	SettingsManager.debug.preview(&"show_debug", true if on else SettingsManager.debug.is_on(&"show_debug"))
 
 
 ## Worker thread: nothing here may touch the scene tree.

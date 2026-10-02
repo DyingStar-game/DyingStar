@@ -128,6 +128,23 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_OFF"
 
+[node name="StarMapDebug" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/StarMapDebug"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_STAR_MAP_DEBUG"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/StarMapDebug"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_OFF"
+
 [node name="VehicleHud" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
