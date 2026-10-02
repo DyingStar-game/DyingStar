@@ -1069,7 +1069,7 @@ func _physics_process_impl(delta: float) -> void:
 	# Movement trace (server.ini [debug] movement=true): what the body stands on and slides against,
 	# every 200 ms while it moves or is airborne — the step-up probe only speaks when it fires, and a
 	# body that hops by itself never asks it anything.
-	if SettingsManager.is_movement_debug():
+	if SettingsManager.debug.is_on(&"movement_debug"):
 		_report_move()
 
 	# Landing: the instant we are back on the floor after being airborne, emit a "land:<n>" event so
@@ -1375,7 +1375,7 @@ func _report_move() -> void:
 ## leaves silence meaning two different things -- nothing ahead, or this code never ran -- and telling
 ## those apart is half of what we are trying to find out.
 func _report_step(p: Dictionary) -> void:
-	if not SettingsManager.is_movement_debug():
+	if not SettingsManager.debug.is_on(&"movement_debug"):
 		return
 	var reason: String = String(p["reason"])
 	# "clear" means the probe found nothing ahead. While you are walking that is simply true, and

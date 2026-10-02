@@ -199,7 +199,7 @@ func setup() -> void:
 	var can_take_pointer := func() -> bool: return not _input_locked()
 	for panel: OverlayPanel in [GraphicsOverlay.in_game(), DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
-			_driven_vehicle)]:
+			_driven_vehicle, _star_map)]:
 		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
 
 	player.global_position = player.spawn_position
@@ -1099,7 +1099,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
 	if InputCombo.pressed(event, "toggle_debug"):
-		SettingsManager.set_show_debug(not SettingsManager.is_show_debug())
+		SettingsManager.debug.set_on(&"show_debug", not SettingsManager.debug.is_on(&"show_debug"))
 
 
 ## Open/confirm the radial wheels: emote on T, spawn on Alt+T. Called before the wheel lock in

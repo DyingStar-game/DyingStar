@@ -406,7 +406,7 @@ func _process(delta: float) -> void:
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
 ## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.
 func _physics_process(_delta: float) -> void:
-	if _is_local and SettingsManager.is_movement_debug():
+	if _is_local and SettingsManager.debug.is_on(&"movement_debug"):
 		_vault_debug = VaultProbe.probe(_player)
 		# The step-up itself decides on the direction we MOVE in -- sidling along a wall steps up on the
 		# wall's face, not on whatever the camera faces. But a READOUT probed that way is blank exactly

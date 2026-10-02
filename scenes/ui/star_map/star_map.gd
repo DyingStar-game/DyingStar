@@ -118,6 +118,12 @@ const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
 const STICK_ORBIT_PX_PER_S: float = 600.0
 ## Two presses of A this close together are the pad's double click (travel to what is selected).
 const PAD_DOUBLE_CLICK_MS: int = 400
+## The chart's CanvasLayer: over the game's panels (OverlayPanel.LAYER) and the settings page.
+const LAYER: int = 10
+## The info panel's place from the right edge, before any inset (set_right_inset).
+const INFO_PANEL_X: float = -360.0
+## The help line's distance from the bottom of the screen.
+const HELP_MARGIN_PX: float = 16.0
 ## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
 ## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
 ## following keeps it there; this only tells that apart from a station selected from elsewhere.
@@ -268,7 +274,8 @@ var _sunlight: OmniLight3D = null
 ## The chart's own environment, kept because its ambient is DIMMED on approach — see
 ## [method _refresh_lighting].
 var _env: Environment = null
-var _readout: Label
+## The controls, centred at the foot of the chart.
+var _help: Label
 ## One entry per body: {sphere, orbit, live, radius_m, spin_hours, tilt_deg}. `orbit` places it when
 ## it has elements; `live` when it does not (a moon, positioned by the network).
 var _bodies: Array[Dictionary] = []
@@ -399,7 +406,7 @@ var _max_body_units: float = 1.0
 
 
 func _ready() -> void:
-	layer = 10
+	layer = LAYER
 	hide()
 	_build_ui()
 
@@ -580,17 +587,24 @@ func _build_ui() -> void:
 	add_child(_view_cone)
 	_cursor_readout = StarMapCursorReadout.new()
 	add_child(_cursor_readout)
-	_readout = Label.new()
-	_readout.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_readout.position = Vector2(16, 16)
-	_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_readout)
+	# The chart's own numbers (bodies, zoom, relief tiles) are debug: they go to the debug panel
+	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it.
+	_help = Label.new()
+	_help.text = "%%HUD_MAP_HELP"
+	_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_help.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_help.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_help.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_help.offset_top = -HELP_MARGIN_PX
+	_help.offset_bottom = -HELP_MARGIN_PX
+	_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_help)
 
-	# Two shortcuts, under the readout. Buttons rather than keys: rare, deliberate actions — and a
+	# Two shortcuts, in the top left corner. Buttons rather than keys: rare, deliberate actions — and a
 	# Control consumes its own click, so picking a body is never triggered underneath.
 	var buttons := HBoxContainer.new()
 	buttons.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	buttons.position = Vector2(16, 62)
+	buttons.position = Vector2(16, 16)
 	buttons.add_theme_constant_override("separation", 8)
 	# The row itself must not eat the mouse; each Button still receives its own clicks.
 	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -644,7 +658,7 @@ func _build_ui() -> void:
 	# Info panel. Hidden until you pick a body, and filled from what the scene knows about it.
 	_info_panel = PanelContainer.new()
 	_info_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_info_panel.position = Vector2(-360, 16)
+	_info_panel.position = Vector2(INFO_PANEL_X, 16)
 	_info_panel.custom_minimum_size = Vector2(340, 0)
 	_info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_info_panel.hide()
@@ -1155,7 +1169,6 @@ func _process(delta: float) -> void:
 	if _pad_points() and not is_typing():
 		_hover_at(_pointer())
 	_refresh_cursor_readout()
-	_update_readout(t)
 
 
 ## Where every body IS this frame — true positions only, nothing drawn yet. Runs before the origin is
@@ -2880,19 +2893,31 @@ func _ground_scale() -> float:
 	return step / UNITS_PER_METRE / pixels
 
 
-func _update_readout(t: float) -> void:
+## The chart's state, for the debug panel (DevOverlay, Settings > Debug > Star map debug): bodies,
+## what is followed, zoom and simulated time, then the relief under the camera. Escaped for BBCode.
+func debug_lines() -> PackedStringArray:
 	var focused: String = tr("%%HUD_MAP_SYSTEM")
 	if _cam.focus >= 0 and _cam.focus < _bodies.size():
 		focused = str(_bodies[_cam.focus]["name"])
 	# The zoom through the shared distance rule — metres, then km, then millions of km. Printed as
 	# "%.2f million km" it read "0.00" for everything under 5 000 km, the whole range a planet is read in.
-	_readout.text = tr("%%HUD_MAP_READOUT") % [
-			_bodies.size(), focused, Globals.format_distance(_view / UNITS_PER_METRE), t]
-	_readout.text += "  " + _relief_readout()
-	_readout.text += "\n" + tr("%%HUD_MAP_HELP")
+	var lines := PackedStringArray([tr("%%HUD_MAP_READOUT") % [
+			_bodies.size(), focused, Globals.format_distance(_view / UNITS_PER_METRE), Globals.sim_time()]])
+	var relief: String = _relief_readout()
+	if relief != "":
+		lines.append(relief)
+	for i in lines.size():
+		lines[i] = ReadoutFormat.escape(lines[i])
+	return lines
 
 
-## What the ground under the camera is being drawn from, for the corner of the screen.
+## Keep the info panel clear of [param px] at the right edge: the debug panel, while it shows over the
+## chart. 0 puts it back in its corner.
+func set_right_inset(px: float) -> void:
+	_info_panel.position.x = INFO_PANEL_X - px
+
+
+## What the ground under the camera is being drawn from, for the debug panel.
 ##
 ## Three facts, and each one answers a question the others cannot. The DEPTH says how fine the ground is;
 ## the TILE COUNT says whether it is finished, which is what separates a chart still filling in from one

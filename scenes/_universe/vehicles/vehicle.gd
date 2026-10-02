@@ -732,8 +732,8 @@ func _ready() -> void:
 	add_to_group("vehicle")  # so a pilot can find and enter us
 	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
 	if not OS.has_feature("dedicated_server"):
-		_cargo_debug = SettingsManager.is_cargo_debug()  # dev aid: green envelope on locked cargo
-		SettingsManager.cargo_debug_changed.connect(_on_cargo_debug_changed)
+		_cargo_debug = SettingsManager.debug.is_on(&"cargo_debug")  # dev aid: green envelope on locked cargo
+		SettingsManager.debug.watch(&"cargo_debug", _on_cargo_debug_changed)
 	_sync_powertrain()
 	bays.rebuild_drive_spec()  # the model of what is fitted; rebuilt whenever that changes
 	set_headlights(_headlights_on)  # start in a known state (off) on the server and every client
