@@ -5436,11 +5436,53 @@ var _pad_alt: Dictionary = {}
 ## would level the ground at two different altitudes and the building would
 ## stand on one of them.
 var _pads_starved: Dictionary = {}
+## Uuids retry_starved_pads() gave an altitude, until PlanetTerrain takes them (take_caught_up_pads):
+## their TerrainPad has to come back and seat its building on the platform it now has.
+var _pads_caught_up: Array[String] = []
 ## feature_id → Array[Vector2] of along-intervals a pad's footprint covers.
 ## Rebuilt whole on every pad change and replaced in one assignment, like the
 ## index itself: the mesh workers read it while the main thread edits.
 var _pad_road_excl: Dictionary = {}
+## uuid → {feature_id: Array[Vector2]} — the along-intervals ONE pad cuts, unmerged. A pad that
+## appears, moves or goes re-cuts only its own roads and re-merges only the features it touches:
+## rebuilding every pad's cuts on every change was quadratic, ~20 ms a pad, and a cold boot that
+## measures fifty pads one by one spent 35 s of main thread in it (2026-10-02).
+var _pad_road_cuts: Dictionary = {}
 var _pad_mutex: Mutex = Mutex.new()
+
+
+## Fingerprint of everything the pad sampler's heights depend on (elevation
+## export, relief algorithms, mountains, cracks…), set by PlanetTerrain from the
+## same parts as its chunk cache key, minus what only changes how the ground
+## LOOKS. A building's persisted pad altitudes (terrain_settled) carry it, and
+## are only trusted while it still matches. Empty until PlanetTerrain sets it:
+## nothing persisted is trusted then, and nothing is published.
+var relief_signature: String = ""
+
+
+## The {z, span, talus_m} a building persisted for the pad [param rec] in its
+## terrain_settled field [param settled], or {} when they cannot be trusted:
+## the relief was re-exported since, or the building moved or was resized.
+func pad_settled_stats(rec: Dictionary, settled: Dictionary) -> Dictionary:
+	if relief_signature.is_empty() or str(settled.get("relief", "")) != relief_signature:
+		return {}
+	var pads = settled.get("pads", {})
+	if not (pads is Dictionary):
+		return {}
+	var entry = (pads as Dictionary).get(str(rec.get("uuid", "")), {})
+	return PadBed.settled_stats(rec, entry) if entry is Dictionary else {}
+
+
+## What a building persists about its registered pad [param uuid] (one entry of
+## terrain_settled.pads), {} while that pad has no altitude yet.
+func pad_settled_entry(uuid: String) -> Dictionary:
+	_pad_mutex.lock()
+	var rec: Dictionary = _pads.get_rec(uuid) if _pads != null else {}
+	var stats: Dictionary = _pad_alt.get(uuid, {})
+	_pad_mutex.unlock()
+	if rec.is_empty() or stats.is_empty():
+		return {}
+	return PadBed.settled_entry(rec, stats)
 
 
 func _ensure_pads() -> PadIndex:
@@ -5468,8 +5510,14 @@ func pad_sampler() -> Callable:
 
 ## Register or move a pad. Returns the finest-level pixels whose chunks are now
 ## stale ({} when nothing changed, or when the pad is waiting for a tile).
+##
+## [param rec_in] may carry "settled": the {z, span, talus_m} its building
+## persisted (see pad_settled_stats). They are taken as they are — no relief
+## sample, and no wait for an elevation tile either.
 func register_pad(rec_in: Dictionary) -> Dictionary:
 	var rec := PadBed.quantise(rec_in)
+	var settled: Dictionary = rec.get("settled", {})
+	rec.erase("settled")
 	var uuid := str(rec.get("uuid", ""))
 	if uuid.is_empty():
 		return {}
@@ -5485,7 +5533,7 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 		_pad_mutex.unlock()
 		return {}
 	var dirty: Dictionary = idx.pixels_of(old) if not old.is_empty() else {}
-	var stats := _pad_stats_if_readable(rec)
+	var stats := settled if not settled.is_empty() else _pad_stats_if_readable(rec)
 	# Copy-on-write: the workers read the published index, so it is the CLONE
 	# that is edited and the reference that is swapped, in one assignment.
 	var next := idx.clone()
@@ -5499,7 +5547,7 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 		next.unregister(uuid)
 		_pad_alt.erase(uuid)
 		_pads = next
-		_pad_road_excl = _build_pad_road_exclusions(next)
+		_set_pad_road_cuts(uuid, {})
 		_pad_mutex.unlock()
 		return dirty
 	_pads_starved.erase(uuid)
@@ -5511,7 +5559,7 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 	_pad_alt[uuid] = stats
 	dirty.merge(next.pixels_of(rec))
 	_pads = next
-	_pad_road_excl = _build_pad_road_exclusions(next)
+	_set_pad_road_cuts(uuid, rec)
 	_pad_mutex.unlock()
 	return dirty
 
@@ -5527,7 +5575,7 @@ func unregister_pad(uuid: String) -> Dictionary:
 		var rec := next.unregister(uuid)
 		dirty = next.pixels_of(rec)
 		_pads = next
-		_pad_road_excl = _build_pad_road_exclusions(next)
+		_set_pad_road_cuts(uuid, {})
 	_pad_mutex.unlock()
 	return dirty
 
@@ -5579,7 +5627,16 @@ func retry_starved_pads() -> Dictionary:
 	for uuid: String in _pads_starved.keys().duplicate():
 		var rec: Dictionary = _pads_starved[uuid]
 		dirty.merge(register_pad(rec))
+		if not _pads_starved.has(uuid):
+			_pads_caught_up.append(uuid)
 	return dirty
+
+
+## The pads retry_starved_pads() gave an altitude since the last call, emptied by the call.
+func take_caught_up_pads() -> Array[String]:
+	var out := _pads_caught_up
+	_pads_caught_up = []
+	return out
 
 
 ## Are any pads still waiting for their elevation tiles?
@@ -5605,7 +5662,7 @@ func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
 			seen[ipix] = true
 			if not _grade_tile_available(ipix):
 				return {}
-	return PadBed.pad_stats(rec, pad_sampler(), m_per_deg)
+	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(), m_per_deg))
 
 
 ## Where a road must stop: the viaduct decks (bridges) AND the building pads it
@@ -5628,45 +5685,89 @@ func road_exclusions_for_feature(fid: int) -> Array:
 	return RoadCut.merge_intervals(bridges + pads)
 
 
-## The along-intervals every registered pad covers, per road feature. Rebuilt
-## whole rather than patched: pads are a handful per body, the roads near one
-## are a handful too, and a whole rebuild cannot leave a stale interval behind.
+## The along-intervals every registered pad covers, per road feature, merged —
+## what road_exclusions_for_feature hands RoadCut.split. Kept up to date pad by
+## pad (_set_pad_road_cuts); this full rebuild is the reference it must equal.
 func _build_pad_road_exclusions(idx: PadIndex) -> Dictionary:
+	var out := {}
+	if idx == null or idx.is_empty():
+		return out
+	for rec: Dictionary in idx.all():
+		var cuts := _pad_cuts_of(rec)
+		for fid: int in cuts:
+			if not out.has(fid):
+				out[fid] = []
+			(out[fid] as Array).append_array(cuts[fid])
+	for fid: int in out:
+		out[fid] = RoadCut.merge_intervals(out[fid])
+	return out
+
+
+## Pad [param uuid] now cuts its roads as [param rec] says ({} = it is gone):
+## re-cut its own roads, then re-merge only the features its old or new cuts
+## touch. The published table is replaced, never edited — the mesh workers read
+## it while the main thread writes (call with _pad_mutex held).
+func _set_pad_road_cuts(uuid: String, rec: Dictionary) -> void:
+	var touched := {}
+	for fid: int in _pad_road_cuts.get(uuid, {}):
+		touched[fid] = true
+	var cuts := _pad_cuts_of(rec) if not rec.is_empty() else {}
+	for fid: int in cuts:
+		touched[fid] = true
+	if cuts.is_empty():
+		_pad_road_cuts.erase(uuid)
+	else:
+		_pad_road_cuts[uuid] = cuts
+	if touched.is_empty():
+		return
+	# Shallow copy: the untouched features keep their arrays, which nobody edits.
+	var out := _pad_road_excl.duplicate()
+	for fid: int in touched:
+		var all: Array = []
+		for u: String in _pad_road_cuts:
+			all.append_array((_pad_road_cuts[u] as Dictionary).get(fid, []))
+		if all.is_empty():
+			out.erase(fid)
+		else:
+			out[fid] = RoadCut.merge_intervals(all)
+	_pad_road_excl = out
+
+
+## feature_id → Array[Vector2] of the along-intervals ONE pad's footprint covers,
+## unmerged. {} without roads.
+func _pad_cuts_of(rec: Dictionary) -> Dictionary:
 	var out := {}
 	# has_roads() opens the pack if it is not open yet — the guard must not be
 	# on _modifier_pack, which is still null the first time a pad registers.
-	if idx == null or idx.is_empty() or not has_roads():
+	if not has_roads():
 		return out
 	var m_per_deg := radius * PI / 180.0
 	var nside: int = 1 << maxi(max_quadtree_depth, 0)
-	for rec: Dictionary in idx.all():
-		var ipix := HEALPix.vec2pix_nest(nside,
-				HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])))
-		var pix: Array = [ipix]
-		for nb in HEALPix.get_neighbors_nest(nside, ipix).values():
-			if int(nb) >= 0:
-				pix.append(int(nb))
-		var seen := {}
-		for ip: int in pix:
-			for r: Dictionary in get_roads_for_chunk(nside, int(ip)):
-				var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
-				var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
-				if cl.size() < 2 or cum.size() != cl.size():
-					continue
-				var fid := int(r.get("feature_id", -1))
-				# The pack clips a feature per tile, so the same stretch can be
-				# handed to us by several neighbours: key on the piece's start.
-				var key := "%d_%.3f" % [fid, cum[0]]
-				if seen.has(key):
-					continue
-				seen[key] = true
-				var cuts := PadBed.road_exclusion(rec, cl, cum, m_per_deg,
-						float(r.get("half_width_m", RoadTerrain.get_half_width_m(r))))
-				if cuts.is_empty():
-					continue
-				if not out.has(fid):
-					out[fid] = []
-				(out[fid] as Array).append_array(cuts)
-	for fid: int in out:
-		out[fid] = RoadCut.merge_intervals(out[fid])
+	var ipix := HEALPix.vec2pix_nest(nside,
+			HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])))
+	var pix: Array = [ipix]
+	for nb in HEALPix.get_neighbors_nest(nside, ipix).values():
+		if int(nb) >= 0:
+			pix.append(int(nb))
+	var seen := {}
+	for ip: int in pix:
+		for r: Dictionary in get_roads_for_chunk(nside, int(ip)):
+			var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
+			var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
+			if cl.size() < 2 or cum.size() != cl.size():
+				continue
+			var fid := int(r.get("feature_id", -1))
+			# The pack clips a feature per tile, so the same stretch can be
+			# handed to us by several neighbours: key on the piece's start.
+			var key := "%d_%.3f" % [fid, cum[0]]
+			if seen.has(key):
+				continue
+			seen[key] = true
+			var cuts := PadBed.road_exclusion(rec, cl, cum, m_per_deg,
+					float(r.get("half_width_m", RoadTerrain.get_half_width_m(r))))
+			if cuts.is_empty():
+				continue
+			if not out.has(fid):
+				out[fid] = []
+			(out[fid] as Array).append_array(cuts)
 	return out

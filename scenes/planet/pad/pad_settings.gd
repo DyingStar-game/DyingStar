@@ -100,6 +100,12 @@ const ROAD_CUT_STEP_M := 0.25
 const Q_DEG := 1e-7
 const Q_RAD := 1e-4
 const Q_M := 0.01
+## The derived altitudes (z, span, talus_m) are quantised too, finer: they are
+## persisted in the building's data (terrain_settled) and come back through
+## Horizon's JSON, which does not keep every bit of a float. Every machine
+## re-quantises what it reads, so the server that measured the pad and a client
+## that only read it level the ground at the very same altitude.
+const Q_Z_M := 0.001
 
 # ── Grid gate ────────────────────────────────────────────────────────────
 

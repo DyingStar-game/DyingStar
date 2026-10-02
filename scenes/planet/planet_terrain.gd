@@ -20,6 +20,9 @@ signal initial_chunks_ready
 ## out (PropRegistry), and creates them while the collision is still being built — the ground-missing
 ## freeze holds their bodies until it lands. See residency_keys().
 signal residency_changed(added: PackedStringArray, removed: PackedStringArray)
+## The pads [param uuids], set aside for an elevation tile, have their altitude now: their TerrainPad
+## comes back to seat its building and, on the server, persist the measure.
+signal pads_caught_up(uuids: Array)
 
 const BASE_PIXEL_COUNT := 12
 ## Seconds between full LOD-tree updates.
@@ -719,6 +722,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
+		# The same key without the parts that only change how the ground looks (skirts, rock tints):
+		# what a building's persisted pad altitude (terrain_settled) is checked against.
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s" % [
+			data.planet_name, data.export_nside, data.radius,
+			data.max_height, data.height_offset, data.terrain_exaggeration,
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)
 		# Server collision shapes live in a dedicated folder so they don't
 		# mix with client visual-mesh cache entries.  Server-only suffix:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
@@ -4682,6 +4691,13 @@ func _poll_starved_pads() -> void:
 		return
 	_next_pad_retry_ms = now + BRIDGE_RETRY_INTERVAL_MS
 	_pads_changed(planet_data.retry_starved_pads())
+	_announce_caught_up_pads()
+
+
+func _announce_caught_up_pads() -> void:
+	var uuids := planet_data.take_caught_up_pads()
+	if not uuids.is_empty():
+		pads_caught_up.emit(uuids)
 
 
 ## A pad appeared, moved or went: [param dirty] holds the finest-level pixels
@@ -4700,6 +4716,7 @@ func _catch_up_starved_pads_now() -> void:
 	if planet_data == null or not planet_data.pads_incomplete():
 		return
 	var dirty: Dictionary = planet_data.retry_starved_pads()
+	_announce_caught_up_pads()
 	if dirty.is_empty():
 		return
 	_late_pads_dirty.merge(dirty)

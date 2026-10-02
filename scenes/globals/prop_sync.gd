@@ -38,6 +38,11 @@ var server_parent_resend: int = 0
 var _parent_cache_id: int = 0
 var _parent_uuid_cache: String = ""
 
+## The building's persisted terrain-pad measures ({relief, pads: {pad uuid: entry}}), as replicated in
+## its "terrain_settled" field: a TerrainPad under this prop levels the ground from them instead of
+## sampling the relief, and the server skips re-seating the building. {} until the server has measured.
+var terrain_settled: Dictionary = {}
+
 var has_parent: bool = false
 var carried: bool = false             # carried by a player (issue #124)
 ## Set by the server just before it frees a prop it hands over rather than destroys (server meshing, a
@@ -291,6 +296,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# Apply the name
 	if "name" in data:
 		body.name = data["name"]
+	if data.get("terrain_settled") is Dictionary:
+		terrain_settled = data["terrain_settled"]
 	if body != null and body.has_method("apply_prop_data"):
 		body.apply_prop_data(data)
 

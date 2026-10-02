@@ -58,6 +58,58 @@ static func quantise(rec: Dictionary) -> Dictionary:
 	return out
 
 
+## [param stats] ({z, span, talus_m}, as [method pad_stats] returns them) snapped
+## to PadSettings.Q_Z_M — see there for why.
+static func quantise_stats(stats: Dictionary) -> Dictionary:
+	return {"z": snappedf(float(stats.get("z", 0.0)), PadSettings.Q_Z_M),
+			"span": snappedf(float(stats.get("span", 0.0)), PadSettings.Q_Z_M),
+			"talus_m": snappedf(float(stats.get("talus_m", 0.0)), PadSettings.Q_Z_M)}
+
+
+## What a building persists about one of its pads once the server has measured
+## it (the building's terrain_settled field): the geometry the measure was
+## taken for, and the measure.
+static func settled_entry(rec: Dictionary, stats: Dictionary) -> Dictionary:
+	var q := quantise(rec)
+	var out := quantise_stats(stats)
+	for k in ["lon", "lat", "yaw", "hx", "hy", "apron_m", "z_off"]:
+		out[k] = float(q[k])
+	return out
+
+
+## The persisted stats of [param entry] if it was measured for the geometry of
+## [param rec], else {} — the building moved, or its footprint changed, since.
+## Both sides are re-quantised: [param entry] came back through JSON.
+##
+## Within ONE quantum, not exactly: the building's pose itself is persisted
+## rounded (PropNet: 5 mm, and its rotation), so the pose a restart replays is
+## a few millimetres off the one the measure was taken on, and its quantised
+## longitude can land on the next step. A step is a centimetre — far below
+## anything that moves the median the platform sits at.
+static func settled_stats(rec: Dictionary, entry: Dictionary) -> Dictionary:
+	if entry.is_empty() or not (entry.has("z") and entry.has("talus_m") and entry.has("span")):
+		return {}
+	var a := quantise(rec)
+	var b := quantise(entry)
+	for k: String in SETTLED_TOLERANCE:
+		var d := absf(float(a.get(k, INF)) - float(b.get(k, -INF)))
+		if k == "lon" or k == "yaw":
+			d = minf(d, absf(d - (360.0 if k == "lon" else TAU)))  # across the wrap
+		if not (d <= SETTLED_TOLERANCE[k]):
+			return {}
+	return quantise_stats(entry)
+
+
+## How far each field may drift from the measured geometry before the measure is
+## taken again: one quantum and a half, so one rounding step passes and two do not.
+const SETTLED_TOLERANCE := {
+	"lon": 1.5 * PadSettings.Q_DEG, "lat": 1.5 * PadSettings.Q_DEG,
+	"yaw": 1.5 * PadSettings.Q_RAD,
+	"hx": 1.5 * PadSettings.Q_M, "hy": 1.5 * PadSettings.Q_M,
+	"apron_m": 1.5 * PadSettings.Q_M, "z_off": 1.5 * PadSettings.Q_M,
+}
+
+
 ## Do the two records describe the same geometry? Compared on the quantised
 ## fields only — `z` is derived, not authored.
 static func same_geometry(a: Dictionary, b: Dictionary) -> bool:
