@@ -214,10 +214,20 @@ func test_a_level_below_the_published_range_is_never_asked_for() -> void:
 	assert_eq(_hits.size(), 0)
 
 
-func test_queueing_a_level_outside_the_range_fetches_nothing() -> void:
+func test_queue_asks_only_for_what_needs_a_download() -> void:
 	var s := _serve_pointer()
 	s.queue(1024, 0)
 	assert_eq(s.stat_requested, 0, "rien à demander : le service ne publie pas ce niveau")
+	var bits := PackedByteArray()
+	bits.resize(512)
+	bits.fill(0xFF)
+	_served["http://h/dist/p/cafe/n64/f0/present.bin"] = bits
+	_served["http://h/dist/p/cafe/n64/f0/f3.bin"] = _bytes(GOLDEN_PLAIN)
+	assert_true(s.fetch_now(64, 3))
+	s.queue(64, 3)
+	assert_eq(s.stat_requested, 0, "la tuile est sur disque : pas de travail en file")
+	s.queue(64, 4)
+	assert_eq(s.stat_requested, 1, "une tuile absente, elle, se demande")
 
 
 func test_a_shard_map_that_404s_is_asked_for_only_once() -> void:
@@ -261,20 +271,6 @@ func test_fetch_now_caches_and_take_reads_it_back() -> void:
 	assert_eq(got.size(), 16, "relu du cache disque")
 	for i in 16:
 		assert_eq(got[i], i)
-
-
-func test_queueing_a_tile_already_on_disk_asks_for_nothing() -> void:
-	var s := _serve_pointer()
-	var bits := PackedByteArray()
-	bits.resize(512)
-	bits.fill(0xFF)
-	_served["http://h/dist/p/cafe/n64/f0/present.bin"] = bits
-	_served["http://h/dist/p/cafe/n64/f0/f3.bin"] = _bytes(GOLDEN_PLAIN)
-	assert_true(s.fetch_now(64, 3))
-	s.queue(64, 3)
-	assert_eq(s.stat_requested, 0, "la tuile est sur disque : pas de travail en file")
-	s.queue(64, 4)
-	assert_eq(s.stat_requested, 1, "une tuile absente, elle, se demande")
 
 
 func test_take_never_hits_the_network() -> void:
