@@ -81,6 +81,7 @@ func test_the_charge_comes_from_the_network() -> void:
 	assert_eq(_part.slot_id, "slot_fl", "and the bay, as any part")
 
 
-func test_the_gauge_is_green_then_red_when_low() -> void:
-	assert_eq(VehicleBattery.gauge_color(0.63), VehicleBattery.GAUGE_FILL, "green while charged")
+func test_the_gauge_goes_green_orange_red() -> void:
+	assert_eq(VehicleBattery.gauge_color(0.63), VehicleBattery.GAUGE_FILL, "green above half")
+	assert_eq(VehicleBattery.gauge_color(0.35), VehicleBattery.GAUGE_MID, "orange from half down")
 	assert_eq(VehicleBattery.gauge_color(0.1), VehicleBattery.GAUGE_LOW, "red under 20 %")

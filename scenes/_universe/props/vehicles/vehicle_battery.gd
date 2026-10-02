@@ -19,7 +19,10 @@ const GAUGE_GAP := 0.012
 const GAUGE_TEXT_PIXEL := 0.0007
 const GAUGE_BACK := Color(0.08, 0.08, 0.09)
 const GAUGE_FILL := Color(0.35, 0.85, 0.4)
+const GAUGE_MID := Color(0.95, 0.6, 0.15)
 const GAUGE_LOW := Color(0.9, 0.3, 0.25)
+## Below this charge (0..1) the gauge turns orange.
+const GAUGE_MID_FRACTION := 0.5
 ## Below this charge (0..1) the gauge turns red.
 const GAUGE_LOW_FRACTION := 0.2
 
@@ -153,10 +156,12 @@ func _refresh_gauges() -> void:
 		(g["label"] as Label3D).text = EnergyFormat.charge(charge_j, capacity_j())
 
 
-## The colour of a battery gauge at [param fraction] of charge: green, red when low. The part's own
-## gauge and the cab dashboard's bars both use it, so they always agree.
+## The colour of a battery gauge at [param fraction] of charge: green, orange from half down, red when
+## low. The part's own gauge and the cab dashboard's bars both use it, so they always agree.
 static func gauge_color(fraction: float) -> Color:
-	return GAUGE_LOW if fraction < GAUGE_LOW_FRACTION else GAUGE_FILL
+	if fraction < GAUGE_LOW_FRACTION:
+		return GAUGE_LOW
+	return GAUGE_MID if fraction < GAUGE_MID_FRACTION else GAUGE_FILL
 
 
 ## An unlit flat quad of [param size] (m) and [param color], at [param at] in the gauge's frame.
