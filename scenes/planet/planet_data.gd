@@ -49,6 +49,8 @@ var _height_fallback_hits: int = 0
 var planet_json: String = str("assets/qgis/export/", planet_name, "/planet.json")
 
 @export_group("Water")
+## Show a water sphere at water_level around the planet and let liquid biomes render as water on the
+## chunks. Off = no ocean anywhere, even where a liquid biome is mapped.
 @export var has_ocean: bool = false
 ## Water surface elevation relative to sea-level radius, in meters.
 @export var water_level: float = 0.0
@@ -102,12 +104,16 @@ var chunk_data_version: String = ""
 @export_group("LOD Distances")
 ## Distance thresholds from the planet surface (in meters) for each LOD tier.
 @export var lod0_distance: float = 5000.0
+## Distance from the surface (m) below which a chunk is LOD tier 1; past it, tier 2.
 @export var lod1_distance: float = 50000.0
+## Distance from the surface (m) below which a chunk is LOD tier 2; past it, tier 3 (the coarsest).
 @export var lod2_distance: float = 200000.0
 ## NOTE: unused since get_lod_level() caps the tier at 3 (the far-LOD placeholder sphere is removed —
 ## distant bodies render their coarse LOD-3 chunks at every distance, star-lit on the celestial layer).
 ## Kept for scene compatibility and in case the sphere hand-off is ever re-enabled.
 @export var lod3_distance: float = 2000000.0
+## NOTE: unused — LOD 4 was the removed far-LOD placeholder sphere. Only read from the planet JSON; kept
+## for scene compatibility.
 @export var lod4_distance: float = 500000000.0
 
 @export_group("Terrain")
@@ -144,9 +150,15 @@ var chunk_data_version: String = ""
 @export var crack_depth_m: float = 22.0
 ## Organic cracks (CrackNoise): seed, meander and rim noise (amplitude, wavelength, m).
 @export var crack_noise_seed: int = 0
+## How far (m) each crack wanders sideways (domain-warp amplitude). 0 = straight Voronoi edges. Clamped
+## so the warp never folds the network over itself.
 @export var crack_meander_amp_m: float = 0.0
+## Length (m) of one meander wave along a crack. Shorter = tighter wiggles.
 @export var crack_meander_wavelength_m: float = 1500.0
+## How deep (m) the rim noise eats into each crack wall (alcoves and narrows). 0 = clean walls. Clamped
+## to crack_width_m so a crack never closes.
 @export var crack_rim_amp_m: float = 0.0
+## Size (m) of the rim noise features along a wall. Shorter = more frequent alcoves.
 @export var crack_rim_wavelength_m: float = 400.0
 ## A POI's influence sphere is kept whole: no crack inside it, and over this
 ## many metres outside it the crack depth ramps back to full (a ramp, not a
@@ -170,6 +182,7 @@ var chunk_data_version: String = ""
 @export var debug_mountain_enabled: bool = false
 ## Centre of the debug massif (lon, lat in degrees) and its radius (km).
 @export var debug_mountain_lonlat: Vector2 = Vector2.ZERO
+## Radius (km) of the debug massif's circular outline. 0 = no massif (only the ridge, if any).
 @export var debug_mountain_radius_km: float = 15.0
 ## Style keys of MountainNoise.Params (amplitude_m, wavelength_m, octaves,
 ## persistence, ridge, exponent, terrace_step_m, terrace_width, warp, lift_m,
@@ -179,6 +192,7 @@ var chunk_data_version: String = ""
 ## keys (height_m, width_m, sharpness, roughness, warp_m, asymmetry,
 ## terrace_step_m, terrace_width, seed).
 @export var debug_ridge_points: PackedVector2Array = PackedVector2Array()
+## Style keys of the debug ridge (see debug_ridge_points above). Missing keys take the defaults.
 @export var debug_ridge_style: Dictionary = {"height_m": 400.0, "width_m": 1200.0, "sharpness": 0.7, "asymmetry": 0.5}
 
 @export_group("Debug volcano")
@@ -189,6 +203,7 @@ var chunk_data_version: String = ""
 @export var debug_volcano_enabled: bool = false
 ## Summit (lon, lat in degrees).
 @export var debug_volcano_lonlat: Vector2 = Vector2.ZERO
+## Volcano preset (VolcanoRelief.PRESETS) the debug volcano starts from; debug_volcano_style overrides it.
 @export_enum("stratovolcano", "shield", "caldera", "cinder_cone", "lava_dome") var debug_volcano_type: String = "stratovolcano"
 ## Keys overriding the type preset (VolcanoRelief.PRESETS): base_diameter_m,
 ## height_m, crater_diameter_m, crater_depth_m, floor_frac, flank_exponent,
@@ -201,6 +216,7 @@ var chunk_data_version: String = ""
 ## carried it. Points (lon, lat) FROM THE SOURCE DOWNHILL. Ignored once the
 ## pack has a lava part.
 @export var debug_lava_enabled: bool = false
+## The flow's centre line, (lon, lat) in degrees from the source downhill. Needs at least 2 points.
 @export var debug_lava_points: PackedVector2Array = PackedVector2Array()
 ## Keys: state (active / cooling / solid), width_start_m, width_end_m, depth_m.
 @export var debug_lava_style: Dictionary = {"state": "active", "width_start_m": 20.0, "width_end_m": 40.0, "depth_m": 3.0}
@@ -210,7 +226,9 @@ var chunk_data_version: String = ""
 ## lon/lat, as if the pack's fumarole part carried it. Ignored once the pack
 ## has a fumarole part.
 @export var debug_fumarole_enabled: bool = false
+## Centre of the debug fumarole field (lon, lat in degrees).
 @export var debug_fumarole_lonlat: Vector2 = Vector2.ZERO
+## Radius (km) of the debug fumarole field. 0 = no field.
 @export var debug_fumarole_radius_km: float = 1.5
 ## Keys: density (vents/km²), radius, intensity, gas (steam / sulfur / co2 /
 ## chlorine), plume_height_m, stain, seed.
@@ -257,13 +275,17 @@ var chunk_data_version: String = ""
 ## Relative share of each rock size in the mix (small, medium, large). Mirrors MiningZone's own
 ## weight_small/medium/large; any positive ratio works.
 @export_range(0.0, 1.0) var mining_zone_weight_small: float = 0.6
+## Relative share of MEDIUM rocks in a zone's mix (see mining_zone_weight_small).
 @export_range(0.0, 1.0) var mining_zone_weight_medium: float = 0.3
+## Relative share of LARGE rocks in a zone's mix (see mining_zone_weight_small).
 @export_range(0.0, 1.0) var mining_zone_weight_large: float = 0.1
 ## Which minerals this planet yields, and their relative frequency. Ids must exist in
 ## MineralRegistry.ALL; unknown ones are dropped with a warning at planning time. The two arrays are
 ## read in parallel — a missing weight counts as 1.0.
 @export var mining_zone_minerals: PackedStringArray = PackedStringArray(
 	["iron", "gold", "cryptonite"])
+## Relative frequency of each entry of mining_zone_minerals, read in parallel (missing = 1.0).
+## Higher = that mineral is picked more often.
 @export var mining_zone_mineral_weights: PackedFloat32Array = PackedFloat32Array([0.6, 0.3, 0.1])
 ## The BARREN rock the ore sits in on THIS planet — the local geology. Every zone the planner
 ## seeds here weighs its rocks' gangue with this mineral's density (MiningZone._host_rock_density),
@@ -273,6 +295,7 @@ var chunk_data_version: String = ""
 @export var mining_zone_host_rock: String = "granite"
 ## Range the per-zone ore richness is drawn from (0 = poor, 1 = rich).
 @export_range(0.0, 1.0) var mining_zone_richness_min: float = 0.25
+## Upper bound of the per-zone ore richness range (0 = poor, 1 = rich). See mining_zone_richness_min.
 @export_range(0.0, 1.0) var mining_zone_richness_max: float = 0.75
 ## Clearance (m) kept OUTSIDE a POI's own influence sphere. tarsis_4's POIs range from 1 km
 ## (mining villages) to 40 km (major cities), and a deposit must not creep into any of them.

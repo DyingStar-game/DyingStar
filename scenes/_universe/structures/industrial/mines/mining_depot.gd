@@ -10,6 +10,8 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## is what crate_volume() reads to decide how much ore fills one crate.
 const CRATE_SCENE = preload("res://scenes/_universe/props/containers/hauling_box.tscn")
 const CRATE_SCENENAME = "scenes/_universe/props/containers/hauling_box.tscn"
+## Designer-placed depot: tick it on the instance dropped in a world scene. On the server it spawns the REAL
+## networked depot at the same spot (deterministic uuid) and frees itself.
 @export var placeholder = false
 ## Optional explicit network id for a designer-placed depot. Leave EMPTY and it is derived
 ## automatically from the depot's fixed position (stable across restarts, no setup needed).

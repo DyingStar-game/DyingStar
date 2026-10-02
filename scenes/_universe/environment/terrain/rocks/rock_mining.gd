@@ -39,7 +39,9 @@ const ORE_T_POOR := 0.72
 ## is a real hue rather than a darkening factor: a pure black crack read as a hole punched in the
 ## rock. It is applied with the sRGB `source_color` hint, so what you pick is what you see.
 @export var groove_width: float = 0.005
+## Colour showing at the bottom of the fault groove (sRGB, applied as is).
 @export var groove_color: Color = Color("3f1f06")
+## Bump depth of the groove: higher = deeper-looking crack, negative = raised instead of dug, 0 = flat.
 @export var groove_strength: float = 0.1
 
 ## Crack irregularity — what turns the fault from a ruled line into a fracture. The shader WARPS the
@@ -48,7 +50,9 @@ const ORE_T_POOR := 0.72
 ## 0 gives the old straight line back), `crack_width_var` how much the groove width breathes along
 ## it. Same value on server and client, so the aim tolerance below stays in step (_fault_tolerance).
 @export var crack_warp_freq: float = 9.0
+## How far the crack wanders off its plane (rock-local metres). 0 = straight line.
 @export var crack_warp_amp: float = 0.045
+## How much the groove width varies along the crack, 0..1. 0 = constant width.
 @export_range(0.0, 1.0) var crack_width_var: float = 0.7
 
 # Fracture history
@@ -95,6 +99,8 @@ var _coll_layer: int = 1
 var _coll_mask: int = 1
 var _coll_disabled: bool = false
 
+## Ore this rock carries: revealed on the cut faces only, sets the ore density and colour. Overwritten
+## by the replicated mineral_id at spawn; an inert mineral means no ore.
 @export var mineral: MineralDef = MineralRegistry.GOLD
 
 #####################################################################

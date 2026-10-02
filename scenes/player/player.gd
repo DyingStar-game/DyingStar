@@ -44,30 +44,44 @@ const _SURFACE_CATCH_MARGIN := 3.0
 @export var mass: float = 75.0
 
 @export_subgroup("Movement")
+## Default walk speed (m/s): the starting mouse-wheel tier, and the server's fallback until the owner
+## picks one. Must sit between walk_speed_min and walk_speed_max.
 @export var walk_speed: float = 1.5
+## Backward walk speed (m/s). Currently unused: no script reads it — walking backward uses the normal walk speed.
 @export var walk_back_speed: float = 0.8
 ## Walk speed is adjustable by the mouse wheel between these bounds, in walk_speed_step increments
 ## (GDD: 0.5-3 m/s, 6 tiers). walk_speed above is the initial/default tier and MUST sit inside these
 ## bounds — outside, the first wheel notch clamps into range and speed jumps instead of stepping.
 @export var walk_speed_min: float = 0.5
+## Fastest mouse-wheel walk tier (m/s). Also sets the walk animation's top playback rate (CharacterAnimator).
 @export var walk_speed_max: float = 3.0
+## Walk speed change (m/s) per mouse-wheel notch (walk_speed_up / walk_speed_down).
 @export var walk_speed_step: float = 0.5
+## Ground speed (m/s) while sprint is held. Still capped by crouch_speed / prone_speed in those stances;
+## also sets where the animation switches from walk to sprint.
 @export var sprint_speed: float = 5.0
 ## GDD: crouching is "limited to 2 m/s" — a CEILING, so it caps the wheel-chosen walk speed rather
 ## than forcing a pace (see PlayerServer: speed = minf(speed, crouch_speed)). At 2.0 a crouched
 ## player therefore moves at whatever tier they picked, up to 2 m/s.
 @export var crouch_speed: float = 2.0
+## Speed ceiling (m/s) while prone: caps the walk / sprint speed, like crouch_speed does when crouched.
 @export var prone_speed: float = 0.5
 ## Physics capsule height (m) per stance — the standing height is read from the scene. The collider
 ## shrinks so a crouched/prone player fits under low obstacles; feet stay on the ground.
 @export var crouch_collider_height: float = 1.2
+## Physics capsule height (m) while prone (see crouch_collider_height). Also places the name tag.
 @export var prone_collider_height: float = 0.6
 ## Standing height, captured from the scene's capsule in _ready (see stance_height).
 var stand_body_height: float = 1.8
+## Jump impulse as a multiple of the local gravity: take-off speed (m/s) = jump_height × gravity.
+## Not a height in metres despite the name. Higher = higher jump.
 @export var jump_height: float = 0.5
+## Climb speed (m/s). Currently unused: no script reads it (vault / climb use the durations below).
 @export var regular_climb_speed: float = 6.0
+## Fast climb speed (m/s). Currently unused: no script reads it (vault / climb use the durations below).
 @export var fast_climb_speed: float = 8.0
-# Speed multiplier while carrying an ore (issue #124): slower with hands full.
+## Speed multiplier while something is carried in the hands (issue #124): 0.5 = half speed.
+## Lower = slower with hands full.
 @export var carry_speed_factor: float = 0.5
 ## How fast (m/s²) the horizontal velocity is steered toward the target speed, so the body ramps up
 ## and coasts to a stop instead of snapping. Applied ON THE FLOOR only — the GDD gives the jump no air
@@ -85,6 +99,7 @@ var stand_body_height: float = 1.8
 ## "ClimbUp_1m" clip, above that "ClimbUp_2m". Read an obstacle's exact height on the debug HUD and set
 ## the thresholds just below it (e.g. a ~1 m pallet should read as a 1 m climb, so keep vault_low_max < 1).
 @export var vault_low_max: float = 0.9
+## Top of the ClimbUp_1m band (m): a taller ledge (up to vault_max_height) uses ClimbUp_2m.
 @export var vault_climb1_max: float = 1.7
 ## How far below the detected ledge top (m) the face is checked. Probing near the LIP (not at a fixed
 ## knee height) lets an ELEVATED ledge — a platform with a gap under it — be vaulted too, not only
@@ -92,6 +107,8 @@ var stand_body_height: float = 1.8
 @export var vault_face_margin: float = 0.15
 ## How far ahead (m) an obstacle is detected, and how far ONTO the ledge the body finishes.
 @export var vault_reach: float = 0.6
+## How far (m) past the probed ledge point a climb (1 m / 2 m) ends on top. The low vault-over uses
+## vault_over_distance instead.
 @export var vault_land_forward: float = 0.4
 ## SafetyVault (low band) is a vault-OVER: instead of ending ON TOP, the body clears the obstacle and
 ## lands this far forward (m) at ~ground height — so the pose stays horizontal, no rise onto the top.
@@ -101,7 +118,9 @@ var stand_body_height: float = 1.8
 @export var vault_arc_margin: float = 0.2
 ## Scripted climb durations (s) per clip — tune to match the actual clip lengths.
 @export var vault_duration: float = 0.6
+## Duration (s) of the scripted ClimbUp_1m climb.
 @export var climb1_duration: float = 0.9
+## Duration (s) of the scripted ClimbUp_2m climb.
 @export var climb2_duration: float = 1.3
 ## Delay (s) after a vault before another can start, so you don't chain-climb the same ledge.
 @export var vault_cooldown: float = 0.4
@@ -125,6 +144,8 @@ var stand_body_height: float = 1.8
 @export var float_roll_accel: float = 1.5
 ## Weightless: thrust of strafe_up / strafe_down along the body's own up, in m/s².
 @export var float_vertical_thrust: float = 10.0
+## Weightless: acceleration (m/s²) of the move keys' thrusters, also the stabilize brake's strength.
+## PlayerServer currently forces it to 10 every 0g frame, so the Inspector value has no effect.
 @export var player_thruster_force = 10
 
 @export_subgroup("Carry & interaction")
@@ -136,11 +157,16 @@ var stand_body_height: float = 1.8
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
 ## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
 @export var interact_ray_length: float = 1.5
+## Arm length (m). Currently unused: no script reads it (reach is interact_ray_length).
 @export var arm_length: float = 0.5
 
 @export_subgroup("Camera")
+## Look sensitivity: mouse look turns 0.001 rad per pixel × this. Higher = faster look. The right-stick
+## and screen-edge pan rates are compensated for it, so they do not depend on it.
 @export_range(1.0, 10.0) var camera_sensitivity: float = 2.0
+## Camera look dead zone, start (0..0.5). Currently unused: no script reads it.
 @export_range(0.0, 0.5) var camera_start_deadzone: float = .2
+## Camera look dead zone, end (0..0.5). Currently unused: no script reads it.
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
 
 # --- Audio SFX — all OPTIONAL: an unassigned sound simply plays nothing -------
@@ -159,17 +185,25 @@ var stand_body_height: float = 1.8
 @export_subgroup("Torch on")
 ## Played when the player switches the torch on.
 @export var sfx_torch_on: AudioStream
+## Loudness (dB) of the torch-on sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_torch_on_db: float = 0.0
+## Reference distance (m) of the torch-on sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_torch_on_falloff: float = 3.0
+## Hard cut-off (m) of the torch-on sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_torch_on_distance: float = 20.0
+## How the torch-on sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_torch_on_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Torch off")
 ## Played when the player switches the torch off.
 @export var sfx_torch_off: AudioStream
+## Loudness (dB) of the torch-off sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_torch_off_db: float = 0.0
+## Reference distance (m) of the torch-off sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_torch_off_falloff: float = 3.0
+## Hard cut-off (m) of the torch-off sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_torch_off_distance: float = 20.0
+## How the torch-off sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_torch_off_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Footsteps")
@@ -178,9 +212,13 @@ var stand_body_height: float = 1.8
 ## a machine. A family with no samples plays the library's "missing" marker, so a hole is audible
 ## rather than silent. Leave null for no footsteps at all.
 @export var sfx_footsteps: SurfaceSounds
+## Loudness (dB) of the footsteps at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_footstep_db: float = -6.0
+## Reference distance (m) of the footsteps: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_footstep_falloff: float = 3.0
+## Hard cut-off (m) of the footsteps: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_footstep_distance: float = 25.0
+## How the footsteps fades with distance (see Sfx3D.Attenuation).
 @export var sfx_footstep_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 ## One step every N metres WALKED — not every N seconds. The cadence then follows the speed on its own:
 ## running covers the distance faster, so the steps come faster. This is the stride length.
@@ -189,33 +227,49 @@ var stand_body_height: float = 1.8
 @export_subgroup("Jump")
 ## Played when the player jumps (the effort, not the landing).
 @export var sfx_jump: AudioStream
+## Loudness (dB) of the jump sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_jump_db: float = 0.0
+## Reference distance (m) of the jump sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_jump_falloff: float = 3.0
+## Hard cut-off (m) of the jump sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_jump_distance: float = 25.0
+## How the jump sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_jump_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Vault (over a low obstacle)")
 ## Played when the player vaults OVER a low obstacle (SafetyVault). See Vault / climb stats.
 @export var sfx_vault: AudioStream
+## Loudness (dB) of the vault sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_vault_db: float = 0.0
+## Reference distance (m) of the vault sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_vault_falloff: float = 3.0
+## Hard cut-off (m) of the vault sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_vault_distance: float = 25.0
+## How the vault sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_vault_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Climb 1m")
 ## Played when the player climbs ONTO a ~1 m ledge (ClimbUp_1m).
 @export var sfx_climb_1m: AudioStream
+## Loudness (dB) of the 1 m climb sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_climb_1m_db: float = 0.0
+## Reference distance (m) of the 1 m climb sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_climb_1m_falloff: float = 3.0
+## Hard cut-off (m) of the 1 m climb sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_climb_1m_distance: float = 25.0
+## How the 1 m climb sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_climb_1m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_subgroup("Climb 2m")
 ## Played when the player climbs ONTO a ~2 m ledge (ClimbUp_2m).
 @export var sfx_climb_2m: AudioStream
+## Loudness (dB) of the 2 m climb sound at its Falloff distance.
 @export_range(-40.0, 12.0, 0.5) var sfx_climb_2m_db: float = 0.0
+## Reference distance (m) of the 2 m climb sound: past it the sound starts really fading.
 @export_range(0.5, 200.0, 0.5) var sfx_climb_2m_falloff: float = 3.0
+## Hard cut-off (m) of the 2 m climb sound: further away it is not played at all.
 @export_range(1.0, 500.0, 1.0) var sfx_climb_2m_distance: float = 25.0
+## How the 2 m climb sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_climb_2m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_group("")

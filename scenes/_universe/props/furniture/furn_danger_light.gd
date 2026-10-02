@@ -1,6 +1,8 @@
 @tool
 extends Node3D
 
+## Switches the danger light on: the bulb spins (rotation_speed, rad/s) and its two spotlights show.
+## Also previews in the editor.
 @export var enabled = false
 var rotation_speed = 10.0
 

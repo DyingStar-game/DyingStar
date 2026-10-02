@@ -10,6 +10,8 @@ extends Node3D
 ## "_planet_SandBox", or the uuid of an object spawned elsewhere). Nested props derive their own
 ## parent_id automatically from their Godot parent's uuid — designers only place nodes under here.
 
+## GORC parent id that this root's DIRECT children attach to in the JSON (e.g. "_planet_SandBox").
+## Currently not read: the exporter parents them to the scene root's uuid instead.
 @export var parent_id: String = "_planet_SandBox"
 
 ## Surface the node's purpose in the scene tree (yellow triangle), so a level designer knows this

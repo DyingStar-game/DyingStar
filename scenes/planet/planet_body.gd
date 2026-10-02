@@ -21,6 +21,8 @@ const MASS_EARTH := 5.972e24
 ## orbit lands where the network placed the body. Flip in lockstep with the service (services PR #25).
 const DISTANCE_FACTOR := 1.0
 
+## Configuration of this body (radius, elevation data, LOD, biomes, atmosphere…). Assigning another
+## one in the editor rebuilds the planet.
 @export var planet_data: PlanetData:
 	set(value):
 		if Engine.is_editor_hint() and planet_data:
@@ -31,6 +33,8 @@ const DISTANCE_FACTOR := 1.0
 			if planet_data:
 				planet_data.changed.connect(_on_planet_data_changed)
 			_setup_planet()
+## Network id of this body in the celestial DB, e.g. "_planet_SandBox": the parent_id props are spawned
+## under, and the seed key of per-planet hashes (mining zones).
 @export var uuid: String = ""
 
 ## Colour this body reads as from space — used by the system chart (StarMap), and available to
@@ -102,9 +106,13 @@ const DISTANCE_FACTOR := 1.0
 ## network later is a drop-in. Only PLANETS are wired for now; moons keep their network offset and ride
 ## their planet's orbit (they will orbit on their own once the parent-spin frame is decoupled).
 @export var orbit_periapsis_au: float = 0.0
+## Farthest distance from the primary (AU, unscaled). With periapsis it sets the semi-major axis.
 @export var orbit_apoapsis_au: float = 0.0
+## Tilt of the orbital plane (degrees).
 @export var orbit_inclination_deg: float = 0.0
+## Longitude of the ascending node (degrees): where the orbit crosses the reference plane going up.
 @export var orbit_ascending_node_deg: float = 0.0
+## Argument of periapsis (degrees): angle from the ascending node to the closest point of the orbit.
 @export var orbit_arg_periapsis_deg: float = 0.0
 ## Mean anomaly at the elements' epoch (unix t = 0), in degrees — the M0_deg column. The phase then
 ## advances with sim_time, matching the service which anchors on the same absolute time.

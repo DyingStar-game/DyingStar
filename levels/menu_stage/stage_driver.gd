@@ -5,10 +5,13 @@ extends Node3D
 ## vehicle stays frozen and is carried). Placed in menu_stage_world.tscn: move this node to move the
 ## loop's centre, set the loop in the inspector.
 
+## Radius (m) of the loop around this node's position.
 @export var radius : float = 140.0
+## Vehicle speed along the loop, in km/h.
 @export var speed_kmh : float = 30.0
 ## Where on the loop the vehicle starts, in degrees from the local north.
 @export var start_deg : float = 0.0
+## Direction of travel: true = clockwise (angle increasing from north), false = counter-clockwise.
 @export var clockwise : bool = true
 
 var _vehicle : Node3D = null

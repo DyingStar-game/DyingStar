@@ -72,6 +72,7 @@ extends Resource
 ## Typical elevation range where this biome appears (meters above sea level).
 ## Used by procedural placement and validation — not a hard constraint.
 @export var elevation_min: float = 0.0
+## Upper end of that typical elevation range (m above sea level).
 @export var elevation_max: float = 10000.0
 
 ## Terrain roughness multiplier. 1.0 = use heightmap as-is.

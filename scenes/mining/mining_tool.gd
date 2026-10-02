@@ -34,15 +34,22 @@ const REJECT_DURATION := 0.3
 @export var orient_tool_at_rock: bool = true
 
 @export_group("Perforation")
-@export var perforation_hammer_freq: float = 10.0       # back-and-forth jabs per second
+## Jackhammer rate while perforating: back-and-forth jabs per second (higher = faster hammering).
+@export var perforation_hammer_freq: float = 10.0
 ## Animate only the chisel/bit node (reciprocating) instead of the whole tool.
 @export var animate_bit_only: bool = true
+## Name of the chisel/bit node inside the perforator model, animated when animate_bit_only is on.
+## If it is not found, the whole tool jabs instead.
 @export var bit_node_name: String = "hammerdrill_chiselflat"
 ## Local axis the bit slides along.
 @export var bit_axis: Vector3 = Vector3(0, 0, 1)
+## Travel (m) of the bit along bit_axis on each jab (also used by the off-fault reject jab).
 @export var bit_amplitude: float = 0.06
-@export var perforation_hammer_amplitude: float = 0.18  # whole-tool jab depth (m)
-@export var perforation_shake_amplitude: float = 0.025  # tremble (m)
+## Whole-tool jab depth (m) along the aim, used when the bit is not animated alone
+## (animate_bit_only off, or bit node not found).
+@export var perforation_hammer_amplitude: float = 0.18
+## Random tremble (m) of the whole tool while perforating, in both animation modes.
+@export var perforation_shake_amplitude: float = 0.025
 
 @export_group("Equipment placement")
 ## Mount position on the body. This is the PIVOT the held item rotates around when aiming.
@@ -82,37 +89,57 @@ const REJECT_DURATION := 0.3
 ## Held LOOP while perforating a rock (starts on the drill, stops on release / completion). Played on
 ## every body (the perforating state is replicated), so nearby players hear it too.
 @export var sfx_perforate: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_perforate_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_perforate_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_perforate_distance: float = 30.0
+## How the sound fades with distance.
 @export var sfx_perforate_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
 @export_subgroup("Perforate end")
 ## One-shot when a perforation COMPLETES (the drill finishes and the rock fractures). Owner-local.
 @export var sfx_perforate_end: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_perforate_end_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_perforate_end_falloff: float = 4.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_perforate_end_distance: float = 30.0
+## How the sound fades with distance.
 @export var sfx_perforate_end_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
 @export_subgroup("Perforate fail")
 ## One-shot when a perforation is attempted OFF a fault (the bit bounces, no cut). Owner-local feedback.
 @export var sfx_perforate_fail: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_perforate_fail_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_perforate_fail_falloff: float = 3.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_perforate_fail_distance: float = 25.0
+## How the sound fades with distance.
 @export var sfx_perforate_fail_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 @export_subgroup("Equip")
 ## One-shot when the perforator is equipped (tool select, key 1). Played on every body (tool state replicated).
 @export var sfx_equip: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_equip_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_equip_falloff: float = 3.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_equip_distance: float = 20.0
+## How the sound fades with distance.
 @export var sfx_equip_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 @export_subgroup("Unequip")
 ## One-shot when the perforator is put away (unequipped). Played on every body (tool state replicated).
 @export var sfx_unequip: AudioStream
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_unequip_db: float = 0.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
 @export_range(0.5, 200.0, 0.5) var sfx_unequip_falloff: float = 3.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
 @export_range(1.0, 500.0, 1.0) var sfx_unequip_distance: float = 20.0
+## How the sound fades with distance.
 @export var sfx_unequip_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
 @export_group("")

@@ -4,8 +4,11 @@ extends CanvasLayer
 
 signal exited
 
+## Heading shown at the top of the error panel.
 @export var title: String
+## Body text of the panel. Replaced by GameOrchestrator.connexion_error_message when that one is set.
 @export var message: String
+## Text of the button that closes the panel and returns to the universe menu.
 @export var exit_button_label: String
 
 @onready var background: ColorRect = $ErrorMessage/Background

@@ -13,6 +13,7 @@ extends Resource
 ## Used when no rule fits, so an unforeseen kind of site is still drawn and still clickable rather than
 ## silently absent — an absent marker looks exactly like a bug in the export.
 @export var fallback_icon: Texture2D = null
+## Tint of the fallback icon, used when no rule fits a place.
 @export var fallback_tint: Color = Color(0.82, 0.86, 0.92, 1.0)
 
 ## Drawn for several places too close on screen to tell apart, with their number beside it. Of no kind

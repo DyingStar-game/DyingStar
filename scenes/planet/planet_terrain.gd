@@ -120,7 +120,9 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 ## Planet-local X/Y/Z used by the "Go to coordinates" button below. Any point
 ## in space is projected onto the surface along its direction from the centre.
 @export var editor_goto_x: float = 0.0
+## Planet-local Y (m) used by the "Go to coordinates" button below.
 @export var editor_goto_y: float = 0.0
+## Planet-local Z (m) used by the "Go to coordinates" button below.
 @export var editor_goto_z: float = 0.0
 ## Inspector button: put the viewport 200 m above the x/y/z above, upright,
 ## and update the lon/lat fields to match.
@@ -150,9 +152,12 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 ## the POIs are inert zone markers until gameplay code wires them up, so they
 ## can't perturb the player controller or the interaction rays.
 @export_flags_3d_physics var poi_collision_layer: int = 0
+## Collision mask applied to the generated POI Area3Ds (see poi_collision_layer). 0 by default.
 @export_flags_3d_physics var poi_collision_mask: int = 0
 # Resolved through a getter, not an initializer, so the editor can never read
 # the button callback back as Nil ("value is Nil, but Callable was expected").
+## Inspector button: (re)build the "POIs" subtree of Area3Ds from poi_json_path. Replaces it,
+## never appends.
 @export_tool_button("Import POI from JSON")
 var _import_poi_action: Callable:
 	get: return import_poi_from_json

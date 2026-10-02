@@ -29,6 +29,8 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## Trades quality for cost on the main view. Set from Graphics > Atmosphere quality (see
 ## _apply_quality); `debug_atmo_view_steps` / `debug_atmo_light_steps` in client.ini still win.
 @export var view_steps: int = 32
+## Samples marched toward the light at each view sample (cost = view_steps x light_steps per pixel).
+## Higher = smoother scattering, slower. Set from the quality setting too.
 @export var light_steps: int = 8
 ## Multiplies the physical-to-engine exposure derived below. 1.0 = the derived value; this is the
 ## ONE knob that is allowed to be turned by eye, and it may only scale, never tint.
@@ -52,6 +54,8 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## against the stop and could not open further as the moon sank. Godot's own defaults (0 to 800) span
 ## a factor of eight, which is a camera's range, not an eye's.
 @export var adaptation_min_sensitivity: float = 20.0
+## Ceiling of the auto-exposure sensitivity: how far the eye can open in the dark. Higher = dim
+## moonlit ground still reads; see the derivation above.
 @export var adaptation_max_sensitivity: float = 2.0e7
 ## How fast it opens and closes. Real dark adaptation takes minutes; this is deliberately quicker,
 ## because a player who turns around should not wait for the world to appear.
@@ -86,6 +90,7 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## It fakes the OBSERVER, never the planet: measured from the ground the column is no longer the
 ## calibrated one. A way to look, and nothing more.
 @export var debug_pretend_lowlands: bool = false
+## Altitude (m) the observer pretends to stand at when debug_pretend_lowlands is on.
 @export var debug_pretend_altitude: float = 380.0
 
 var _sky_material: ShaderMaterial = null

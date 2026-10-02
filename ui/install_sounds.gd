@@ -1,5 +1,6 @@
 extends Node
 
+## Node whose direct Button children get the UI hover and press sounds (not recursive). Required.
 @export var root_path : NodePath
 
 # create audio player instances

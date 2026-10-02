@@ -17,9 +17,12 @@ extends Resource
 ## march needs an order of magnitude more to do the same.
 const EXTINCTION_STEPS := 64
 
-@export var planet_radius: float = 0.0          # m
-@export var atmosphere_top: float = 0.0         # m above the surface
-@export var gravity: float = 0.0                # m/s^2
+## Radius of the body's reference sphere (m): the ground level altitudes are measured from.
+@export var planet_radius: float = 0.0
+## Height of the top of the atmosphere above the surface (m). 0 = airless body (no scattering).
+@export var atmosphere_top: float = 0.0
+## Surface gravity (m/s^2). Used at import to derive rayleigh_scale_height.
+@export var gravity: float = 0.0
 
 @export_group("Rayleigh")
 ## Scattering coefficient at ground level, 1/m, at 680 / 550 / 440 nm.
@@ -27,11 +30,17 @@ const EXTINCTION_STEPS := 64
 ## below the Nishita constants every tutorial copies, because those assume a flat
 ## refractive index instead of a dispersion formula.
 @export var rayleigh_beta: Vector3 = Vector3.ZERO
-@export var rayleigh_scale_height: float = 0.0  # m
+## Rayleigh scale height (m): the altitude over which the gas density drops by a factor e
+## (higher = thicker air aloft).
+@export var rayleigh_scale_height: float = 0.0
 
 @export_group("Mie / haze")
-@export var mie_beta: Vector3 = Vector3.ZERO    # 1/m at ground level
-@export var mie_g: float = 0.0                  # Henyey-Greenstein asymmetry
+## Haze (Mie) scattering coefficient, 1/m at 680 / 550 / 440 nm, where the haze density is 1
+## (ground level, or inside the slab when haze_top > 0).
+@export var mie_beta: Vector3 = Vector3.ZERO
+## Henyey-Greenstein asymmetry of the haze, -1..1: higher = more light scattered forward (brighter glow
+## around the star).
+@export var mie_g: float = 0.0
 ## 1.0 = non-absorbing (corundum). Below 1.0 the layer also darkens.
 @export var mie_albedo: float = 1.0
 ## 0 = exponential profile with `mie_scale_height`.
@@ -41,21 +50,27 @@ const EXTINCTION_STEPS := 64
 ## Sandbox it runs from 500 m to 4 km, which leaves the valleys UNDER the veil rather than in it —
 ## a permanent ceiling overhead and clear air to see across.
 @export var haze_bottom: float = 0.0            # m
-@export var haze_falloff: float = 0.0           # m, soft upper edge
-@export var mie_scale_height: float = 1200.0    # m, only when haze_top == 0
+## Softness (m) of the haze slab's edges: half-width of the fade at both haze_bottom and haze_top.
+@export var haze_falloff: float = 0.0
+## Haze scale height (m) of the exponential profile. Only used when haze_top == 0.
+@export var mie_scale_height: float = 1200.0
 
 @export_group("Absorption")
 ## Ozone-like band absorption. Vector3.ZERO when the body has none.
 @export var absorption_beta: Vector3 = Vector3.ZERO
-@export var absorption_center: float = 25000.0  # m, layer centre
-@export var absorption_width: float = 15000.0   # m, half-width
+## Altitude (m) of the centre of the absorption layer, where its density peaks.
+@export var absorption_center: float = 25000.0
+## Half-width (m) of the absorption layer: its density falls linearly to 0 this far from the centre.
+@export var absorption_width: float = 15000.0
 
 @export_group("Star and ground")
 ## Albedo of the GROUND, not the planetary (Bond) albedo the system JSON
 ## publishes: the haze above it is most of what the JSON figure measures.
 @export var ground_albedo: float = 0.0
-@export var star_irradiance: float = 0.0        # W/m2 at this body
-@export var star_angular_diameter: float = 0.0  # degrees
+## Irradiance of the star at this body's distance (W/m2), above the atmosphere: how bright the sunlight is.
+@export var star_irradiance: float = 0.0
+## Apparent diameter of the star's disc in the sky (deg).
+@export var star_angular_diameter: float = 0.0
 ## Effective temperature of the star, K. Drives the colour below.
 @export var star_temperature: float = 0.0
 ## Linear colour of the star, normalised so its brightest channel is 1. Derived

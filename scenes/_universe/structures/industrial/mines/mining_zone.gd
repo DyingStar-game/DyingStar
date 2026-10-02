@@ -63,7 +63,9 @@ const DETECT_MARGIN := 210.0          # metres beyond the field half-size at whi
 @export var min_spacing: float = 8.0
 ## Relative share of each size in the mix (small, medium, large). Any positive ratio works.
 @export_range(0.0, 1.0) var weight_small: float = 0.6
+## Relative share of MEDIUM rocks in the mix (see weight_small).
 @export_range(0.0, 1.0) var weight_medium: float = 0.3
+## Relative share of LARGE rocks in the mix (see weight_small).
 @export_range(0.0, 1.0) var weight_large: float = 0.1
 
 @export_group("Ore")
@@ -91,8 +93,12 @@ const DETECT_MARGIN := 210.0          # metres beyond the field half-size at whi
 @export var trigger_area: Area3D
 
 @export_group("State")
+## Persisted: true once the field has been populated, so a server restart does not re-populate it.
+## Set by the server; leave off in a scene.
 @export var generated: bool = false
-@export var last_generation_datetime: int = 946724400  # 2000-01-01 00:00:00 UTC (epoch)
+## Persisted: unix time (s) of the last field generation. Seeds the rock draw, so the next cycle rolls a
+## fresh field. Default 946724400 = 2000-01-01 00:00:00 UTC, the "never generated" sentinel.
+@export var last_generation_datetime: int = 946724400
 
 @export_group("Editor")
 ## EDITOR PREVIEW: toggle ON to populate the field with rock instances right in the editor

@@ -8,18 +8,21 @@ extends Node3D
 
 @export_group("PNJ")
 
+## Marks this depot as a workplace for PNJ (NPC) workers. Replicated with the depot (cargo_depot_def.json).
 @export var is_pnj_workplace: bool = false
 
-# Scanned from the scene tree: { category: { area_name: { position, size, path } } }.
-# Category comes from each PNJPlace* Area3D "editor_description" field.
+## Scanned from the scene tree: { category: { area_name: { position, size, path } } }.
+## Category comes from each PNJPlace* Area3D "editor_description" field.
 @export var pnj_zones: Dictionary = {}
 
 # Resolved through a getter, not an initializer, so the editor can never read the button
 # callback back as Nil ("value is Nil, but Callable was expected").
+## Editor: fill pnj_zones from the PNJPlace* Area3D children, grouped by their editor_description.
 @export_tool_button("Scan PNJ zones")
 var _scan_pnj_zones_action: Callable:
 	get: return scan_pnj_zones
 
+## Editor: print pnj_zones as JSON to the Output panel.
 @export_tool_button("Convert to JSON")
 var _pnj_zones_to_json_action: Callable:
 	get: return pnj_zones_to_json
