@@ -19,5 +19,4 @@ anim_set = ExtResource("4_animset")
 seated_puppet_offset = Vector3(0, 0.43, -0.29)
 vault_offset = Vector3(0, -0.3, 0)
 head_look_max_deg = 50.0
-head_cam_amount = 0.439
 turn_rate_threshold = 0.1

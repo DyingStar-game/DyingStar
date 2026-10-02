@@ -139,7 +139,6 @@ var stand_body_height: float = 1.8
 @export var arm_length: float = 0.5
 
 @export_subgroup("Camera")
-@export_range(0.0, 1.0) var view_bobbing_amount: float = 1.0
 @export_range(1.0, 10.0) var camera_sensitivity: float = 2.0
 @export_range(0.0, 0.5) var camera_start_deadzone: float = .2
 @export_range(0.0, 0.5) var camera_end_deadzone: float = .1
@@ -406,7 +405,7 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## The camera pivot's RESTING offset from the body, captured once from the scene.
 ##
 ## Read it, never camera_pivot.position, wherever the offset is used as a geometric constant. The pivot
-## is ANIMATED at runtime -- the head-cam follow writes the head's bob and lean into it every frame --
+## is ANIMATED at runtime -- the head camera writes the posture's eye height and the lean into it (HeadCam) --
 ## and _ride_seat subtracts it to place the body under a seat's eye point. Taking the live value there
 ## fed the animation straight back into the body position: seated, the view drifted off centre as you
 ## looked around, and the further the camera had been moved from its rest, the further it wandered.

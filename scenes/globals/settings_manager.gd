@@ -112,7 +112,6 @@ func initialize_settings():
 	config.set_value("video", "v_sync", false)
 	config.set_value("video", "max_fps", 144)
 	config.set_value("video", "fov", 100.0)
-	config.set_value("video", "screen_shake", true)
 	config.set_value("video", "dev_mode", false)
 	# The rendering options (shadows included) are not listed here: GraphicsOptions owns their
 	# defaults, and RenderSettings.ensure_initialized() writes the preset guessed for this GPU.

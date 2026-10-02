@@ -109,19 +109,13 @@ const IDLE_VARIATION_DURATION: float = 6.0
 @export var head_look_max_deg: float = 70.0
 
 @export_group("Head camera (first person)")
-## The camera follows the head bone's bob (POSITION only — orientation stays mouse-driven), so the
-## animated body never clips through a fixed camera. Owner + on foot only (the seat ride owns it seated).
-@export var head_cam_follow: bool = true
-## How much of the head's BOUNCE to apply (0 = none, 1 = full) -- the up/down and side-to-side of each
-## stride, which is what makes a first-person view sickening. The FORWARD component is never damped:
-## see the follow itself for why the two cannot share a setting.
-@export_range(0.0, 1.0) var head_cam_amount: float = 1.0
-## Camera catch-up rate (per second): higher = snappier / less lag, lower = smoother / more damping.
+## Camera catch-up rate (per second) towards its target (HeadCam): higher = snappier, lower = smoother.
+## It is also how fast the view goes down or up when you change posture.
 @export var head_cam_smooth: float = 12.0
 ## How far FORWARD (m) the first-person eye sits from the head bone. The head mesh is collapsed for the
-## owner, but the NECK is a separate bone and its geometry stays -- so as the head bobs at a fast walk, the
-## camera drifts back over its own throat and you see it. Moving the eye to the front of the skull, the
-## way a real eye sits, leaves the neck behind the camera where it belongs. 0 = the old behaviour.
+## owner, but the NECK is a separate bone and its geometry stays -- so as the torso leans into a fast gait,
+## the camera drifts back over its own throat and you see it. Moving the eye to the front of the skull, the
+## way a real eye sits, leaves the neck behind the camera where it belongs. 0 = eye on the head bone.
 @export_range(0.0, 0.4, 0.005) var head_cam_forward: float = 0.12
 
 @export_group("Turn in place")
@@ -137,9 +131,7 @@ var _puppet: Node3D = null  # the puppet root (our parent); shifted down while s
 var _puppet_base_position: Vector3 = Vector3.ZERO
 var _puppet_base_basis: Basis = Basis.IDENTITY  # the puppet is instanced rotated (player.tscn)
 var _float_tilt: float = 0.0  # radians, blended toward float_pitch_deg while floating (see _process)
-var _camera_base_pos: Vector3 = Vector3.ZERO  # first-person camera rest position (head-cam follow, local)
-var _head_rest_body: Vector3 = Vector3.ZERO   # head bone position (body frame) at rest, the follow origin
-var _head_rest_captured: bool = false         # captured lazily on the first idle frame (see _process)
+var _head_cam := HeadCam.new()  # first-person camera placement from the head bone (no bob), see HeadCam
 var _head_bone: int = -1
 var _neck_bone: int = -1
 var _current: StringName = &""
@@ -340,49 +332,22 @@ func _process(delta: float) -> void:
 		var pivot := Vector3(0.0, float_pivot_height, 0.0)
 		_puppet.basis = tip * _puppet_base_basis
 		_puppet.position = _puppet_base_position + offset + pivot - tip * pivot
-	# First-person camera follows the head bone's bob (position only; the mouse still owns orientation), so
-	# the animated body never clips through a fixed camera. Owner on foot only — the seat ride owns the
-	# camera position when seated, so restore the base there. Smoothed to avoid motion sickness.
+	# First-person camera placed from the head bone (position only; the mouse still owns orientation), so
+	# the animated body never clips through a fixed camera — without the stride's bob (see HeadCam). Owner
+	# on foot only — the seat ride owns the camera position when seated, so restore the base there.
 	if _is_local and _head_bone != -1 and _player.camera_pivot != null:
 		# Seated, or floating: the head bone swings with a tipped puppet, and a camera taking its delta would
 		# pitch the view with it. Restore the base there, like the seat does.
 		var seated_cam: bool = _player.floating or (not _player.locomotion_sample.is_empty()
 				and bool(_player.locomotion_sample.get("seated", false)))
-		if head_cam_follow and not seated_cam:
+		if not seated_cam:
 			var head_now: Vector3 = _player.to_local(_skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone).origin))
-			if not _head_rest_captured:  # first idle frame: this head position is the neutral reference
-				_head_rest_body = head_now
-				_camera_base_pos = _player.camera_pivot.position
-				_head_rest_captured = true
-			# Forward in the BODY frame, not the camera's: offsetting along the look direction would drive the
-			# eye into the chest as soon as you looked down. Here it stays at the front of the skull whatever
-			# you are looking at, which is where an eye actually is.
-			# Two motions live in this one offset, and they must be treated differently:
-			#   the BOUNCE -- up/down and side to side, a few times a second. Damping it is the whole point of
-			#     head_cam_amount, and it is what keeps a first-person view from being sickening.
-			#   the LEAN -- forward, as the torso pitches over going from a walk to a sprint. Damping
-			#     THAT walks the body out from under the camera and you end up looking at your own neck.
-			#
-			# They are split by AXIS, not by a low-pass: a filter slow enough to ignore the stride is also slow
-			# enough to lag a whole gait change, so the neck showed for the half second it took to catch up.
-			# The axes have no such conflict -- the lean is followed in full, and instantly.
-			var offset: Vector3 = head_now - _head_rest_body
-			# Reading a 3D screen: the view has to HOLD STILL. Idle breathing walks the head a centimetre or
-			# two, several times a second — unnoticeable while playing, maddening while putting a pointer on
-			# a list entry, because the whole panel drifts out from under it.
-			# The offset is DROPPED rather than frozen: the camera then eases to its rest pose through the
-			# same smoothing and settles there, instead of stopping wherever the bob happened to leave it.
-			# Trade-off taken knowingly: walking while a console holds the pointer animates the body under a
-			# still camera. It costs nothing visible — the owner's head and neck are hidden (HEAD_HIDE_SCALE)
-			# — and a steady view is the entire point of standing at a screen.
-			if is_instance_valid(_player.screen_interacting):
-				offset = Vector3.ZERO
-			# Forward in the BODY frame, not the camera's: offsetting along the look direction would drive the
-			# eye into the chest as soon as you looked down. Here it stays at the front of the skull whatever
-			# you are looking at, which is where an eye actually is.
-			var target: Vector3 = _camera_base_pos \
-				+ Vector3(offset.x * head_cam_amount, offset.y * head_cam_amount, offset.z) \
-				+ Vector3(0.0, 0.0, -head_cam_forward)
+			_head_cam.capture_rest(head_now, _player.camera_pivot.position)  # first frame: the neutral reference
+			var moving: bool = float(_player.locomotion_sample.get("planar_speed", 0.0)) >= MOVE_EPSILON
+			var one_shot: bool = _stance_transition != &"" or _vault_clip != &""
+			var target: Vector3 = _head_cam.target(head_now, _shown_stance, one_shot,
+					not moving and not one_shot and _emote_phase == EmotePhase.NONE,
+					is_instance_valid(_player.screen_interacting), head_cam_forward, delta)
 			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
 		else:
 			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a
@@ -391,9 +356,8 @@ func _process(delta: float) -> void:
 			# too -- the pivot is at its rest right now if nobody has moved it yet.
 			# Seated: the ride owns the camera, raised by the seated eye height. That lifts the EYE only --
 			# the body stays on the seat where _ride_seat put it (see Player.seat_eye_height).
-			if not _head_rest_captured:
-				_camera_base_pos = _player.camera_pivot.position
-				_head_rest_captured = true
+			if not _head_cam.rest_captured:
+				_head_cam.camera_base = _player.camera_pivot.position
 			# Per ROLE: the seat pose is chosen by role a few lines down (sit_driving vs sit_passenger)
 			# and the two clips do not put the head in the same place. One eye height for both left the
 			# passenger looking from too low. The offset is a DELTA off the driver's tuning, so it is zero
@@ -401,7 +365,7 @@ func _process(delta: float) -> void:
 			var eye: float = _player.seat_eye_height
 			if not bool(_player.locomotion_sample.get("driver", false)):
 				eye += _player.passenger_eye_offset
-			_player.camera_pivot.position = _camera_base_pos + Vector3(0.0, eye, 0.0)
+			_player.camera_pivot.position = _head_cam.camera_base + Vector3(0.0, eye, 0.0)
 
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
 ## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.
