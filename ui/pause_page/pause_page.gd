@@ -5,6 +5,7 @@ extends Control
 
 const RESUME : StringName = &"resume"
 const SETTINGS : StringName = &"settings"
+const CREDITS : StringName = &"credits"
 const RETURN_MENU : StringName = &"return_menu"
 const QUIT : StringName = &"quit"
 
@@ -15,6 +16,7 @@ func _init() -> void:
 	bar = TopBar.new()
 	bar.add_entry(RESUME, "%%PAUSEPAGE_RESUMEGAME")
 	bar.add_entry(SETTINGS, "%%MENU_SETTINGS")
+	bar.add_entry(CREDITS, "%%MENU_CAT_CREDITS")
 	bar.add_entry(RETURN_MENU, "%%PAUSEPAGE_RETURNMENU")
 	bar.add_entry(QUIT, "%%PAUSEPAGE_QUITGAME")
 

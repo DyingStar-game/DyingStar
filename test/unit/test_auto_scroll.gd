@@ -45,3 +45,26 @@ func test_overflowing_content_scrolls_and_stops_once_it_fits() -> void:
 	await _settle()
 	assert_false(_auto.is_running(), "the loop stops once the list fits")
 	assert_eq(_view.scroll_vertical, 0, "and the view is back at the top")
+
+
+## The credits: down, then straight back to the top rather than scrolling back up.
+func test_rewind_jumps_back_to_the_top() -> void:
+	_auto.rewind = true
+	_auto.speed_px_s = 10000.0
+	_auto.pause_s = 0.0
+	_content.custom_minimum_size.y = 400.0
+	await _settle()
+	assert_true(_auto.is_running())
+
+
+## A hand on the wheel: the loop lets go, then picks up again by itself.
+func test_hold_lets_go_then_resumes() -> void:
+	_content.custom_minimum_size.y = 400.0
+	await _settle()
+	_auto.hold(0.05)
+	assert_false(_auto.is_running(), "let go while held")
+	_view.scroll_vertical = 120
+	await get_tree().create_timer(0.2).timeout
+	await _settle()
+	assert_true(_auto.is_running(), "moving on by itself again")
+	assert_true(_view.scroll_vertical >= 120, "from where the reader left it, not from the top")
