@@ -40,4 +40,5 @@ for every change, not the state of a feature.
   One pseudo per Discord id. A shared material's credit is the `author` / `license` of its `material.json`.
 - **`assets/credits.json` is generated** by `python3 tools/generate_credits.py` (the main menu's Credits shows
   it); never edit it by hand. On a pull request, `.github/workflows/credits.yml` rewrites it and fails on a
-  malformed credit file; `--validate` checks them locally.
+  malformed credit file or on a model / texture the pull request adds with no credit (those already in
+  the project are not asked yet); `--validate --new-since origin/develop` checks the same locally.

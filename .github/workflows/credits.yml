@@ -4,8 +4,8 @@ name: "Credits list"
 # .txt beside each asset, so nobody has to remember to regenerate it.
 #
 # On a pull request that touches an asset or a credit: check every credit file (a malformed one fails
-# here, with the file and line), rewrite the list, and push it onto the pull request's branch as its
-# own commit. A pull request from a fork cannot be pushed to: it fails with the command to run.
+# here, with the file and line) and that every model or texture the pull request ADDS is credited,
+# rewrite the list, and push it onto the pull request's branch as its own commit. A pull request from a fork cannot be pushed to: it fails with the command to run.
 #
 # Repository settings this needs (Settings > Actions > General):
 #   * Workflow permissions: "Read and write permissions".
@@ -41,10 +41,20 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.CREDITS_BOT_TOKEN || github.token }}
+          # The whole history: what the pull request added is told against where it left develop.
+          fetch-depth: 0
 
-      # Python 3 stdlib only: no setup step.
+      # The base branch from this repository, also for a fork's pull request (whose origin is the fork).
+      - name: Fetch the base branch
+        env:
+          BASE_REPO: ${{ github.repository }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: git fetch --no-tags "https://github.com/$BASE_REPO.git" "$BASE_REF"
+
+      # Python 3 stdlib only: no setup step. A model or texture added without a credit fails here too;
+      # those already in the project are not asked for one yet.
       - name: Check the credit files
-        run: python3 tools/generate_credits.py --validate
+        run: python3 tools/generate_credits.py --validate --new-since FETCH_HEAD
 
       - name: Rewrite the credits list
         run: python3 tools/generate_credits.py

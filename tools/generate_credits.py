@@ -27,12 +27,21 @@ Errors, all reported before exiting with code 1:
   * a line in neither form, or a Discord id that is not a number;
   * a `.txt` that credits no file (its asset was renamed or removed);
   * one Discord id under two pseudos (the page would show the same person twice);
-  * a sound with no credit file.
+  * a sound with no credit file;
+  * with --new-since REF: a model or texture ADDED since REF that nothing
+    credits. Only the added ones: most of those already in the project have
+    no credit yet, and asking for all of them at once would block everyone.
+
+A model or texture is credited by a `.txt` of its base name, by a `<base>_*`
+set (the textures exported with a model named alike), by the material.json of
+its folder, or by the License.txt of a library folder it sits in (not the
+project's own assets/LICENSE).
 
 Usage:
     python3 tools/generate_credits.py              # rewrite assets/credits.json
     python3 tools/generate_credits.py --check      # fail if it is not up to date
     python3 tools/generate_credits.py --validate   # check the credit files only
+    python3 tools/generate_credits.py --validate --new-since origin/develop
 
 Dependencies: none -- Python 3 standard library only, so CI needs no pip step.
 """
@@ -53,6 +62,11 @@ OUTPUT = REPO_ROOT / "assets" / "credits.json"
 ROOTS = ("assets", "assets_blender")
 
 AUDIO = {".ogg", ".mp3", ".wav", ".flac"}
+# What a new file must be credited for, besides sounds (always checked).
+MODELS_AND_TEXTURES = {".glb", ".gltf", ".blend", ".fbx", ".obj",
+                       ".png", ".jpg", ".jpeg", ".exr", ".webp", ".tga", ".hdr"}
+# A library's own licence file, which credits everything in its folder.
+LIBRARY_LICENCES = {"license.txt", "license.md"}
 # Beside an asset but never the asset itself.
 NOT_ASSETS = {".txt", ".import", ".blend1", ".uid", ".md"}
 # Licence and generated files that sit among the assets but credit nothing by name.
@@ -234,6 +248,43 @@ def pseudo_conflicts(credits: list[Credit]) -> list[str]:
             % (id_, ", ".join(sorted(names))) for id_, names in sorted(seen.items()) if len(names) > 1]
 
 
+def added_since(ref: str, root: Path) -> set[Path]:
+    """Files under ROOTS added on this branch since it left [ref] (merge-base, as a pull request sees it)."""
+    listed = subprocess.run(["git", "diff", "--name-only", "--diff-filter=A", "-z", ref + "...HEAD", "--", *ROOTS],
+                            cwd=root, capture_output=True, check=True).stdout.decode("utf-8")
+    return {root / name for name in listed.split("\0") if name}
+
+
+def is_credited(path: Path, folders: dict[Path, list[Path]], root: Path) -> bool:
+    """Whether a credit file, a material.json or a library licence covers [path]."""
+    folder = folders.get(path.parent, [])
+    for other in folder:
+        if other.name == "material.json":
+            return True
+        if is_credit_file(other):
+            base = other.stem
+            if path.stem == base or path.name.startswith(base + "_"):
+                return True
+    tops = {root / top for top in ROOTS}
+    parent = path.parent
+    while parent not in tops and root in parent.parents:
+        if any(f.name.lower() in LIBRARY_LICENCES for f in folders.get(parent, [])):
+            return True
+        parent = parent.parent
+    return False
+
+
+def uncredited(added: set[Path], files: list[Path], root: Path) -> list[str]:
+    """The models and textures among [added] that nothing credits."""
+    folders: dict[Path, list[Path]] = {}
+    for path in files:
+        folders.setdefault(path.parent, []).append(path)
+    return ["%s: new %s with no credit -- add %s.txt beside it, or one <prefix>.txt for a set of "
+            "<prefix>_* files" % (path.relative_to(root).as_posix(), path.suffix.lower(), path.stem)
+            for path in sorted(added)
+            if path.suffix.lower() in MODELS_AND_TEXTURES and not is_credited(path, folders, root)]
+
+
 def render(credits: list[Credit]) -> str:
     """The JSON text, stable for a given set of credits: no date, fixed order, LF."""
     out: dict[str, list[dict]] = {category: [] for category in CATEGORIES}
@@ -247,9 +298,13 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="fail if assets/credits.json is not up to date")
     mode.add_argument("--validate", action="store_true", help="check the credit files only, write nothing")
+    parser.add_argument("--new-since", metavar="REF",
+                        help="also fail on a model or texture added since REF that nothing credits")
     args = parser.parse_args(argv)
 
     credits, errors = collect()
+    if args.new_since:
+        errors.extend(uncredited(added_since(args.new_since, REPO_ROOT), tracked_files(REPO_ROOT), REPO_ROOT))
     if errors:
         print("%d credit problem(s):" % len(errors), file=sys.stderr)
         for error in errors:

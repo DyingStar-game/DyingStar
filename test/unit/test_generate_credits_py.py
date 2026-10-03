@@ -20,7 +20,7 @@ from pathlib import Path
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(_REPO, "tools"))
 
-from generate_credits import collect, parse_line, render  # noqa: E402
+from generate_credits import collect, parse_line, render, uncredited  # noqa: E402
 
 MEMBER = "Discord - Pierro - 852633379459039302"
 
@@ -142,6 +142,60 @@ class TestPairing(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(credits[0].asset, "mat_rock")
         self.assertEqual(credits[0].url, "https://polyhaven.com/a/rock")
+
+
+class TestNewModelsAndTextures(unittest.TestCase):
+    """--new-since: a model or texture added on the branch needs a credit; what was there before does not."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.root = Path(self._dir.name)
+
+    def tearDown(self) -> None:
+        self._dir.cleanup()
+
+    def _write(self, rel: str, text: str = "") -> Path:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def _uncredited(self, *added: Path) -> list:
+        files = sorted(p for p in self.root.rglob("*") if p.is_file())
+        return uncredited(set(added), files, self.root)
+
+    def test_a_new_model_without_credit_is_an_error(self) -> None:
+        crate = self._write("assets/props/crate.glb")
+        errors = self._uncredited(crate)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("crate.txt", errors[0])
+
+    def test_its_own_credit_file_covers_it(self) -> None:
+        crate = self._write("assets/props/crate.glb")
+        self._write("assets/props/crate.txt", MEMBER)
+        self.assertEqual(self._uncredited(crate), [])
+
+    def test_the_model_s_credit_covers_the_textures_named_after_it(self) -> None:
+        self._write("assets/props/crate.glb")
+        self._write("assets/props/crate.txt", MEMBER)
+        albedo = self._write("assets/props/crate_albedo.png")
+        self.assertEqual(self._uncredited(albedo), [])
+
+    def test_a_material_json_covers_its_folder(self) -> None:
+        self._write("assets/materials/mat_rock/material.json", "{}")
+        normal = self._write("assets/materials/mat_rock/rock_normal.png")
+        self.assertEqual(self._uncredited(normal), [])
+
+    def test_a_library_licence_covers_its_folder_but_not_the_project_s(self) -> None:
+        self._write("assets/LICENSE", "CC BY-NC-SA 4.0")
+        self._write("assets/Animation Library/License.txt", "CC0")
+        anim = self._write("assets/Animation Library/Unity/anim.glb")
+        loose = self._write("assets/props/loose.png")
+        self.assertEqual(self._uncredited(anim), [], "the library's own licence")
+        self.assertEqual(len(self._uncredited(loose)), 1, "the project's assets/LICENSE credits nobody")
+
+    def test_sounds_and_other_files_are_left_to_the_other_checks(self) -> None:
+        self.assertEqual(self._uncredited(self._write("assets/data/poi.json")), [])
 
 
 class TestOutput(unittest.TestCase):
