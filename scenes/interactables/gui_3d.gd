@@ -39,12 +39,14 @@ func _ready() -> void:
 func _mouse_entered_area() -> void:
 	is_mouse_inside = true
 	# Notify the viewport that the mouse is now hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
 
 
 func _mouse_exited_area() -> void:
 	# Notify the viewport that the mouse is no longer hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
 	is_mouse_inside = false
 
 
@@ -67,7 +69,8 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	# can still be focused in the first place.
 	if node_viewport.gui_get_focus_owner() == null:
 		return
-	node_viewport.push_input(input_event)
+	if node_viewport != null:
+		node_viewport.push_input(input_event)
 
 
 ## Width/height (m) of the interactive surface, taken from the MESH — the surface whose 0..1 UVs the
@@ -108,7 +111,7 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 
 	var event_pos_2d := Vector2()
 
-	if is_mouse_inside:
+	if is_mouse_inside and node_viewport != null:
 		# Convert the relative event position from 3D to 2D.
 		event_pos_2d = Vector2(event_pos_3d.x, -event_pos_3d.y)
 
@@ -124,6 +127,7 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 		event_pos_2d.x *= node_viewport.size.x
 		event_pos_2d.y *= node_viewport.size.y
 		# We need to do these conversions so the event's position is in the viewport's coordinate system.
+		#print_rich("[color=gold]mouse_input_event[/color] quad_mesh_size = %.1v, event_pos_2d = %.1v" % [quad_mesh_size, event_pos_2d])
 
 	elif last_event_pos_2d != null:
 		# Fall back to the last known event position.
@@ -152,4 +156,5 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 	last_event_time = now
 
 	# Finally, send the processed input event to the viewport.
-	node_viewport.push_input(input_event)
+	if node_viewport != null:
+		node_viewport.push_input(input_event)

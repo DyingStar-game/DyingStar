@@ -21,6 +21,12 @@ signal hs_server_prop_delete
 ## When true the host is pickable/carriable (issue #124): added to group "carriable" and interact()
 ## honours `carried`. Depots / buildings / static infrastructure leave this false.
 @export var enable_carry: bool = false
+## Client: glide toward the replicated pose instead of snapping to it on every packet. Off by default —
+## most props are at rest and a snap is free — but a prop the SERVER moves continuously (a lift
+## platform) otherwise steps at the network rate, and against the vehicles / players standing on it,
+## which are smoothed by NetInterpolator, those steps show as a visible judder. Never applied while the
+## host rides a Player / Vehicle: ride_pin holds that constant local pose itself.
+@export var smooth_transform: bool = false
 
 var uuid: String = ""
 
@@ -55,6 +61,8 @@ var _server_live: bool = false
 # Last replicated LOCAL pose, re-asserted every render frame while riding a vehicle bed (see _process).
 var _ride_local_pos: Vector3 = Vector3.ZERO
 var _ride_local_rot: Vector3 = Vector3.ZERO
+# Client smoothing of the replicated pose, created on the first update when smooth_transform is set.
+var _interp: NetInterpolator = null
 
 # The host body, resolved once. get_parent() runs per prop per physics frame, which with ~1000 props
 # resting on a planet is measurable on its own. Cleared on _enter_tree (the body may have been
@@ -156,6 +164,8 @@ func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 	PropNet.ride_pin(_body(), self)  # hold the constant local bed pose at render rate (no jitter)
+	if _interp != null and not PropNet.rides_parent(_body()):
+		_interp.update(_body(), delta)
 	if _landing_watch:
 		_watch_landing(delta)
 
@@ -224,6 +234,8 @@ func client_parent_change(parent: Node) -> void:
 	var body := _body()
 	body.reparent(parent)
 	has_parent = true
+	if _interp != null:
+		_interp.snap_next()  # the local frame changed: gliding from the old local pose would be wrong
 	PropNet.apply_ride_freeze_mode(body)  # KINEMATIC under a vehicle so it rides the moving truck
 	var was_carried := _carried_locally
 	_carried_locally = _is_carrier(parent)
@@ -292,7 +304,10 @@ func _apply_carry_collision_exception(parent: Node) -> void:
 ## (reception lists, machine state, …) through an optional apply_prop_data(data) method on the body.
 func client_channel_data_update(data: Dictionary) -> void:
 	var body := _body()
-	PropNet.apply_client_transform(body, self, data)
+	if smooth_transform and body != null and not PropNet.rides_parent(body):
+		_set_smooth_target(body, data)
+	else:
+		PropNet.apply_client_transform(body, self, data)
 	# Apply the name
 	if "name" in data:
 		body.name = data["name"]
@@ -300,6 +315,22 @@ func client_channel_data_update(data: Dictionary) -> void:
 		terrain_settled = data["terrain_settled"]
 	if body != null and body.has_method("apply_prop_data"):
 		body.apply_prop_data(data)
+
+## Client, smooth_transform: record the replicated LOCAL pose as the interpolation target (the same
+## _ride_local_* fields apply_client_transform fills, so a later ride_pin still has the right pose).
+## A payload without position / rotation (a state-only update) keeps the previous target.
+func _set_smooth_target(body: Node3D, data: Dictionary) -> void:
+	if _interp == null:
+		_interp = NetInterpolator.new()
+		_ride_local_pos = body.position
+		_ride_local_rot = body.rotation
+	if not (data.has("position") or data.has("rotation")):
+		return
+	if data.has("position"):
+		_ride_local_pos = Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
+	if data.has("rotation"):
+		_ride_local_rot = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
+	_interp.set_target(body, _ride_local_pos, Basis.from_euler(_ride_local_rot))
 
 # ── Carry contract (issue #124): a carriable prop becomes pickable with E ──
 func interact(_interactor: Node = null) -> bool:

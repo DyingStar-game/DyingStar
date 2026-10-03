@@ -1,0 +1,77 @@
+[gd_scene format=3 uid="uid://ls2ntiaejh3w"]
+
+[ext_resource type="Script" uid="uid://c0rjpefga5nwo" path="res://addons/vehicle_lift/common/beacon/beacon.gd" id="1_sw0ti"]
+[ext_resource type="ArrayMesh" uid="uid://c5y48bq0u5ay3" path="res://addons/vehicle_lift/common/beacon/beacon_p01_lod0.mesh" id="2_ls06l"]
+[ext_resource type="Material" uid="uid://c7yvs1lgxt444" path="res://addons/vehicle_lift/common/materials/beacon_orange_transparent_plastic.material" id="3_s0a1d"]
+[ext_resource type="Material" uid="uid://bga3t5m1eoal2" path="res://addons/vehicle_lift/common/materials/beacon_black_mat_plastic.material" id="4_dt58n"]
+[ext_resource type="ArrayMesh" uid="uid://diqani0huau4o" path="res://addons/vehicle_lift/common/beacon/beacon_p01_lod1.mesh" id="5_dt58n"]
+[ext_resource type="ArrayMesh" uid="uid://cy0nurvd5fpns" path="res://addons/vehicle_lift/common/beacon/beacon_p03_lod0.mesh" id="5_ijh3e"]
+[ext_resource type="Material" uid="uid://dlktdpj4lvd5a" path="res://addons/vehicle_lift/common/materials/platform_shiny_metal.material" id="6_0jyak"]
+[ext_resource type="ArrayMesh" uid="uid://bmoaq6k2utn1r" path="res://addons/vehicle_lift/common/beacon/beacon_p03_lod1.mesh" id="8_ijh3e"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_fti8b"]
+radius = 0.064453125
+height = 0.1902771
+
+[node name="Beacon" type="StaticBody3D" unique_id=573036365]
+collision_mask = 0
+script = ExtResource("1_sw0ti")
+
+[node name="P01 Visual LOD0" type="MeshInstance3D" parent="." unique_id=809981001]
+visibility_parent = NodePath("../P01 Visual LOD1")
+visibility_range_end = 3.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("2_ls06l")
+surface_material_override/0 = ExtResource("3_s0a1d")
+surface_material_override/1 = ExtResource("4_dt58n")
+
+[node name="P01 Visual LOD1" type="MeshInstance3D" parent="." unique_id=1075734344]
+visibility_range_begin = 3.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("5_dt58n")
+surface_material_override/0 = ExtResource("3_s0a1d")
+surface_material_override/1 = ExtResource("4_dt58n")
+
+[node name="Interior" type="Node3D" parent="." unique_id=315876252]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.094, 0)
+
+[node name="Reflector Visual LOD0" type="MeshInstance3D" parent="Interior" unique_id=1115148956]
+visibility_parent = NodePath("../Reflector Visual LOD1")
+visibility_range_end = 2.0
+visibility_range_end_margin = 0.5
+mesh = ExtResource("5_ijh3e")
+surface_material_override/0 = ExtResource("6_0jyak")
+
+[node name="Reflector Visual LOD1" type="MeshInstance3D" parent="Interior" unique_id=1075231002]
+visibility_range_begin = 2.0
+visibility_range_begin_margin = 0.5
+mesh = ExtResource("8_ijh3e")
+surface_material_override/0 = ExtResource("6_0jyak")
+
+[node name="Lights" type="Node3D" parent="Interior" unique_id=497871403]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.047, 0)
+visible = false
+
+[node name="Right" type="SpotLight3D" parent="Interior/Lights" unique_id=32947669]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0.01, 0, 0)
+light_color = Color(0.74507636, 0.461748, 0, 1)
+light_energy = 10.0
+light_size = 0.02
+shadow_enabled = true
+distance_fade_enabled = true
+spot_attenuation = 2.0
+
+[node name="Left" type="SpotLight3D" parent="Interior/Lights" unique_id=2064556349]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -0.01, 0, 0)
+light_color = Color(0.74507636, 0.461748, 0, 1)
+light_energy = 10.0
+light_size = 0.02
+shadow_enabled = true
+distance_fade_enabled = true
+spot_attenuation = 2.0
+
+[node name="Collider" type="CollisionShape3D" parent="." unique_id=27943400]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.095, 0)
+shape = SubResource("CapsuleShape3D_fti8b")

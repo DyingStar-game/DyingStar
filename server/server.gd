@@ -2227,6 +2227,8 @@ func _materialize_event(event: Dictionary) -> Node:
 	# for props not yet migrated to the component (so migration is incremental). Body-level ops
 	# (physics/freeze/transform/props_list) stay on the root; only the contract (uuid/signals/data) moves.
 	var net = PropSync.of(spawnable_prop_instance)
+	if spawnable_prop_instance is VehicleLift:
+		print("nombre d'enfants : %d" % spawnable_prop_instance.get_child_count())
 	if net == null:
 		net = spawnable_prop_instance
 	spawnable_prop_instance.set_physics_process(false)
