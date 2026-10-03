@@ -16,6 +16,10 @@ const CATEGORIES : Dictionary = {
 	"%%MENU_CAT_CONTROLS": preload("res://ui/settings_page/control_page/control_settings_page.tscn"),
 	"%%MENU_CAT_DEBUG": preload("res://ui/settings_page/debug_page/debug_settings_page.tscn"),
 }
+## The credits, in the same frame as the settings (bar, veil, pad focus): one tab, which titles them.
+const CREDITS : Dictionary = {
+	"%%MENU_CAT_CREDITS": preload("res://ui/settings_page/credits_page/credits_settings_page.tscn"),
+}
 const _TAB_FONT_SIZE : int = 18
 ## Every page's controls one step under the captions (which keep their LabelSettings).
 const _PAGE_THEME : Theme = preload("res://ui/settings_page/settings_theme.tres")
@@ -40,13 +44,21 @@ const _VEIL_TEXELS : int = 2048
 ## menu stage, or the game behind the pause menu).
 ## The pause menu keeps the default.
 var see_through : bool = false
+## Set before adding the page: the credits (CREDITS) in this frame instead of the settings — no tab
+## row, no veil.
+var show_credits : bool = false
+## The tabs on show, CATEGORIES or CREDITS (show_credits), the first one open.
+var categories : Dictionary = CATEGORIES
 var tabs : TabStrip
 
 @onready var settings_container : SubViewport = $Control/MarginContainer/VBoxContainer/Body/SubViewportContainer/SubViewport
 
 
 func _ready() -> void:
-	if see_through:
+	# The credits carry their own dark column, centred: the scene shows on either side of it.
+	if see_through and show_credits:
+		($Control/Background as CanvasItem).visible = false
+	elif see_through:
 		var background : TextureRect = $Control/Background
 		background.visible = false
 		# Dark behind the settings only, fading out just past them: the page stays readable over bright
@@ -71,7 +83,8 @@ func _ready() -> void:
 	tabs = TabStrip.new(_TAB_FONT_SIZE)
 	tabs.name = "Tabs"
 	tabs.alignment = BoxContainer.ALIGNMENT_BEGIN
-	for key: String in CATEGORIES:
+	categories = CREDITS if show_credits else CATEGORIES
+	for key: String in categories:
 		tabs.add_entry(StringName(key), key)
 	tabs.selected.connect(func(key: StringName) -> void: open(String(key)))
 	# On the gamepad, the shoulder buttons step through the categories.
@@ -95,10 +108,17 @@ func _ready() -> void:
 	var rule := HSeparator.new()
 	column.add_child(rule)
 	column.move_child(rule, 1)
+	# The credits read across the whole width, with no tab or frame rate over them: the bar above
+	# already says where you are.
+	row.visible = not show_credits
+	rule.visible = not show_credits
+	# Nor the empty share on the right that leaves the scene in view beside the settings: the credits
+	# fill the whole page under the bar.
+	($Control/MarginContainer/VBoxContainer/Body/Scenery as Control).visible = not show_credits
 	var sounds : Node = _SOUNDS.instantiate()
 	sounds.root_path = NodePath("../Control/MarginContainer/VBoxContainer/TabRow/Tabs")
 	add_child(sounds)
-	open("%%MENU_CAT_GENERAL")
+	open(categories.keys()[0])
 
 
 ## Nothing in the page has the focus and somebody reaches for it without the mouse: its first line
@@ -144,13 +164,13 @@ func _take_focus(root: Node) -> bool:
 	return taken
 
 
-## Show one category (its translation key, a CATEGORIES key).
+## Show one category (its translation key, a key of `categories`).
 func open(category_key: String) -> void:
 	if tabs.active() == StringName(category_key):
 		return
 	for child in settings_container.get_children():
 		child.queue_free()
-	var page : Control = (CATEGORIES[category_key] as PackedScene).instantiate()
+	var page : Control = (categories[category_key] as PackedScene).instantiate()
 	page.theme = _PAGE_THEME
 	# Over a scene the veil is the page's background: its own box would draw a hard edge over it.
 	var box : CanvasItem = page.get_node_or_null("ColorRect")

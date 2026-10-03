@@ -3,9 +3,12 @@ extends Control
 ## The full settings menu (general / graphics / audio / controls) — reused from the main menu.
 var settings_scene: PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 
-## The settings (general/graphics/audio/controls), open for as long as the pause menu is: Esc lands
-## on them straight away, see-through, the game running behind. Null while the game plays.
+## The settings (general/graphics/audio/controls), or the credits in their frame: one of the two is
+## open for as long as the pause menu is — Esc lands on the settings straight away, see-through, the
+## game running behind. Null while the game plays.
 var _settings_overlay: Node = null
+## The bar entry the overlay belongs to (PausePage.SETTINGS or CREDITS), marked active.
+var _overlay_entry : StringName = &""
 ## Esc or B went down over the menu; the game resumes when it comes up (see _unhandled_input).
 var _resume_armed: bool = false
 
@@ -15,8 +18,8 @@ func _ready() -> void:
 	# The benchmark closes the menu before it measures (BenchmarkRunner.launch).
 	add_to_group(&"pause_menu")
 	main_pause_menu.bar.entry_pressed.connect(_on_entry_pressed)
-	# The settings are the pause menu's content: their entry is always the active one, and "Resume"
-	# is the way back (no "‹ Back" beside it saying the same).
+	# The settings (or the credits) are the pause menu's content: their entry is always the active one,
+	# and "Resume" is the way back (no "‹ Back" beside it saying the same).
 	main_pause_menu.bar.set_active(PausePage.SETTINGS)
 
 ## This menu belongs to ONE player body — the local one. It is not guarded here: a remote body
@@ -58,8 +61,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_entry_pressed(key: StringName) -> void:
 	match key:
-		PausePage.SETTINGS:
-			_open_settings()
+		PausePage.SETTINGS, PausePage.CREDITS:
+			_open_overlay(key)
 		PausePage.QUIT:
 			get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
 		PausePage.RETURN_MENU:
@@ -111,18 +114,28 @@ func _resume() -> void:
 	_close()
 
 
-## The full settings (general/graphics/audio/controls) under the bar, on General, see-through so the
-## game shows beside them. DRY: the same page as the main menu's.
-func _open_settings() -> void:
+## The full settings (general/graphics/audio/controls) under the bar, on General — or, for the Credits
+## entry, the credits in the same frame — see-through so the game shows beside them. DRY: the same
+## page as the main menu's. Already open for that entry: nothing; open for the other: swapped.
+func _open_overlay(entry: StringName) -> void:
 	if is_instance_valid(_settings_overlay):
-		return
-	_settings_overlay = settings_scene.instantiate()
-	_settings_overlay.see_through = true
-	_settings_overlay.tree_exited.connect(func() -> void: _settings_overlay = null)
-	add_child(_settings_overlay)
-	# The settings' lines are what the pad or the arrows reach first; up from the top of them is the
+		if _overlay_entry == entry:
+			return
+		_settings_overlay.queue_free()
+	var overlay : Node = settings_scene.instantiate()
+	overlay.show_credits = entry == PausePage.CREDITS
+	overlay.see_through = true
+	# Only the overlay on show: the one swapped out leaves the tree after its successor came in.
+	overlay.tree_exited.connect(func() -> void:
+		if _settings_overlay == overlay:
+			_settings_overlay = null)
+	_settings_overlay = overlay
+	_overlay_entry = entry
+	add_child(overlay)
+	main_pause_menu.bar.set_active(entry)
+	# The page's lines are what the pad or the arrows reach first; up from the top of them is the
 	# bar (Resume, Back to the menu, Quit), down from the bar is the page again.
-	main_pause_menu.bar.attach_page(_settings_overlay)
+	main_pause_menu.bar.attach_page(overlay)
 
 
 ## Show the menu, on the settings. Paired with _close() so the two halves cannot drift apart.
@@ -131,7 +144,7 @@ func _open() -> void:
 	visible = true
 	main_pause_menu.visible = true
 	_hide_game_interface()
-	_open_settings()
+	_open_overlay(PausePage.SETTINGS)
 
 
 ## Hide the menu. THREE paths close it — Esc, Resume, Return to menu — and each used to repeat the

@@ -14,18 +14,21 @@ const SCREEN_OF_CATEGORY : Dictionary = {
 ## The top bar's entries.
 const ENTER : StringName = &"enter"
 const SETTINGS : StringName = &"settings"
+const CREDITS : StringName = &"credits"
 const QUIT : StringName = &"quit"
 ## "Graphics quality" button, from the bottom-right corner.
 const _QUALITY_MARGIN_PX : float = 40.0
 
 var is_ready: bool = false
 var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
-## The settings overlay while it is open, else null — so Esc closes it (back to the main menu) the same
-## way it does in the pause menu, instead of doing nothing.
+## The settings (or credits) overlay while it is open, else null — so Esc closes it (back to the main
+## menu) the same way it does in the pause menu, instead of doing nothing.
 var _settings_overlay: Node = null
+## The bar entry the overlay belongs to (SETTINGS or CREDITS): marked active, and focused again on close.
+var _overlay_entry : StringName = &""
 ## A live 3D stage stands behind the menu: no still background, see-through settings.
 var _stage_mode : bool = false
-## Logo, Enter / Settings / Quit, and the way back from the settings (TopBar).
+## Logo, Enter / Settings / Credits / Quit, and the way back from the settings (TopBar).
 var bar : TopBar = null
 ## Bottom right of the home screen, over a stage: "Graphics quality: High" — the preset in use (the
 ## one detected for this GPU on a first launch), and a way straight to Settings > Graphics.
@@ -40,6 +43,7 @@ func _ready() -> void:
 	bar = TopBar.new()
 	bar.add_entry(ENTER, "%%MAINPAGE_ENTER")
 	bar.add_entry(SETTINGS, "%%MENU_SETTINGS")
+	bar.add_entry(CREDITS, "%%MENU_CAT_CREDITS")
 	bar.add_entry(QUIT, "%%MENU_QUIT")
 	bar.entry_pressed.connect(_on_entry_pressed)
 	bar.back_pressed.connect(_close_settings)
@@ -74,8 +78,9 @@ func _on_entry_pressed(key: StringName) -> void:
 		ENTER:
 			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
 		SETTINGS:
-			if not is_instance_valid(_settings_overlay):
-				_on_settings_pressed()
+			_open_overlay(SETTINGS)
+		CREDITS:
+			_open_overlay(CREDITS)
 		QUIT:
 			get_tree().quit()
 
@@ -94,31 +99,47 @@ func _close_settings() -> void:
 	if is_instance_valid(_settings_overlay):
 		_settings_overlay.queue_free()
 
-func _on_settings_pressed() -> void:
+## The settings frame under the bar for the bar's [param entry]: the settings, or the credits in the
+## same frame. Already open for that entry: nothing; open for the other: swapped.
+func _open_overlay(entry: StringName) -> void:
+	if is_instance_valid(_settings_overlay):
+		if _overlay_entry == entry:
+			return
+		_settings_overlay.queue_free()
 	# Track the overlay so Esc or the bar's arrow closes it (back).
-	_settings_overlay = settings_scene.instantiate()
-	_settings_overlay.see_through = _stage_mode
+	var overlay : Node = settings_scene.instantiate()
+	overlay.show_credits = entry == CREDITS
+	overlay.see_through = _stage_mode
+	_settings_overlay = overlay
+	_overlay_entry = entry
 	# Connected before it enters the tree: its _ready opens the first category, which must be heard.
-	_settings_overlay.category_changed.connect(_on_category_changed)
-	_settings_overlay.tree_exited.connect(_on_settings_closed)
-	add_child(_settings_overlay)
+	overlay.category_changed.connect(_on_category_changed)
+	overlay.tree_exited.connect(_on_settings_closed.bind(overlay))
+	add_child(overlay)
 	# The page's lines are what the pad or the arrows move through now, not the bar's entries.
-	bar.attach_page(_settings_overlay)
+	bar.attach_page(overlay)
 	# Over a stage the settings are see-through: the menu's own buttons would show under them.
 	$Control.visible = not _stage_mode
-	bar.set_active(SETTINGS)
+	bar.set_active(entry)
 	bar.set_back_visible(true)
 
 
-func _on_settings_closed() -> void:
+## [param overlay] left: back to the home screen — unless another one already took its place.
+func _on_settings_closed(overlay: Node) -> void:
+	if overlay != _settings_overlay:
+		return
 	_settings_overlay = null
+	# The whole menu is leaving (the game closes with the overlay open): nothing to hand back.
+	if not is_inside_tree():
+		return
 	$Control.visible = true
-	# Back on the bar, where you came from: on the pad, the Settings entry has the focus again — unless
-	# the triggers closed them, and already put the focus on the entry they stepped to.
+	# Back on the bar, where you came from: on the pad, its entry has the focus again — unless the
+	# triggers closed the overlay, and already put the focus on the entry they stepped to.
 	var focused : Control = get_viewport().gui_get_focus_owner()
 	var on_bar : bool = focused != null and bar.tabs.is_ancestor_of(focused)
-	if not InputDevice.pointer and not on_bar and bar.tabs.button(SETTINGS) != null:
-		bar.tabs.button(SETTINGS).grab_focus()
+	if not InputDevice.pointer and not on_bar and bar.tabs.button(_overlay_entry) != null:
+		bar.tabs.button(_overlay_entry).grab_focus()
+	_overlay_entry = &""
 	bar.set_active(&"")
 	bar.set_back_visible(false)
 	screen_changed.emit(&"home")
@@ -158,6 +179,5 @@ func _label_quality() -> void:
 
 ## The graphics-quality button: Settings, straight on its Graphics tab.
 func _open_graphics() -> void:
-	if not is_instance_valid(_settings_overlay):
-		_on_settings_pressed()
+	_open_overlay(SETTINGS)
 	_settings_overlay.open("%%MENU_CAT_GRAPHICS")
