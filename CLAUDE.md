@@ -24,3 +24,20 @@ for every change, not the state of a feature.
   `test/unit/test_vehicle_node_names.gd`; nodes that come from a Blender model keep their Blender name.
 - Lint with `gdlint` (rules in `gdlintrc`, 140 characters per line).
 - Unit tests are GUT, in `test/unit/`.
+
+## Assets
+
+- **Every sound, model or texture someone made has its credit.** A `.txt` with the asset's base name
+  beside it (`truck-horn.ogg` -> `truck-horn.txt`; for a texture set, `<base>_*`), one line per author:
+
+  ```
+  Discord - <pseudo> - <numeric Discord id>
+  <Site> - <author> - <URL> - <licence>
+  ```
+
+  The first is a community member (CC0 by project rule, so no licence is written); the second a
+  third-party source such as `Freesound - RescopicSound - https://freesound.org/s/750433/ - CC BY-NC 4.0`.
+  One pseudo per Discord id. A shared material's credit is the `author` / `license` of its `material.json`.
+- **`assets/credits.json` is generated** by `python3 tools/generate_credits.py` (the main menu's Credits shows
+  it); never edit it by hand. On a pull request, `.github/workflows/credits.yml` rewrites it and fails on a
+  malformed credit file; `--validate` checks them locally.

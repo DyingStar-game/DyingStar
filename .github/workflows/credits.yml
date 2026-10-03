@@ -1,0 +1,69 @@
+name: "Credits list"
+
+# Keeps assets/credits.json -- the list the main menu's Credits page shows -- in step with the credit
+# .txt beside each asset, so nobody has to remember to regenerate it.
+#
+# On a pull request that touches an asset or a credit: check every credit file (a malformed one fails
+# here, with the file and line), rewrite the list, and push it onto the pull request's branch as its
+# own commit. A pull request from a fork cannot be pushed to: it fails with the command to run.
+#
+# Repository settings this needs (Settings > Actions > General):
+#   * Workflow permissions: "Read and write permissions".
+#   * Optional secret CREDITS_BOT_TOKEN (fine-grained token, Contents: read and write on this
+#     repository): a commit pushed with the default GITHUB_TOKEN does not start the other workflows,
+#     so if checks are required on develop, the bot's commit would wait for them forever. With this
+#     token it starts them like any push.
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - "assets/**"
+      - "assets_blender/**"
+      - "tools/generate_credits.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: credits-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  credits:
+    name: Regenerate the credits list
+    runs-on: ubuntu-latest
+    steps:
+      # The branch itself, not the merge commit GitHub tests by default: the bot pushes onto it.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.CREDITS_BOT_TOKEN || github.token }}
+
+      # Python 3 stdlib only: no setup step.
+      - name: Check the credit files
+        run: python3 tools/generate_credits.py --validate
+
+      - name: Rewrite the credits list
+        run: python3 tools/generate_credits.py
+
+      - name: Push it onto the pull request
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if git diff --quiet -- assets/credits.json; then
+            echo "assets/credits.json is already up to date."
+            exit 0
+          fi
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error file=assets/credits.json::The credits list is out of date. Run 'python3 tools/generate_credits.py' and commit assets/credits.json."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/credits.json
+          git commit -m "chore(credits): regenerate the credits list"
+          git push
