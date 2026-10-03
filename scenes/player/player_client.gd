@@ -113,6 +113,9 @@ var _air_time: float = 0.0         # seconds spent in the air since that jump
 ## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
 ## it is a client-side view, and no remote avatar has any use for one.
 var _star_map: StarMap = null
+## Full-screen services terminal (F3): the same modal treatment, for the social/mission/economy REST
+## services. Local player only.
+var _services: TerminalUI = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -193,6 +196,9 @@ func setup() -> void:
 	_star_map = StarMap.new()
 	player.get_node("UserInterface").add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
+	# Services terminal (F3): social / mission / economie, opened as a full-screen modal like the chart.
+	_services = TerminalUI.new()
+	player.get_node("UserInterface").add_child(_services)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -747,7 +753,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_star_map.open()
 		return
-	if _star_map_open(): return
+	if InputCombo.pressed(event, "toggle_services") and _services != null:
+		if _services.is_open():
+			_services.close()
+		else:
+			_services.open()
+		return
+	if _star_map_open() or _services_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
 	# (the seat's door must be open — open it first by looking at its handle) and we stand up when it
 	# says so, in the `unseat` branch of _apply_replicated_action.
@@ -1195,16 +1207,20 @@ func _input_locked() -> bool:
 	return _modal_open() or _screen_typing()
 
 
-## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart. A 3D
-## screen is deliberately NOT in this list — it takes the pointer, never the game — which is what
-## lets the view still pan across a console while its filter box has the keyboard.
+## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart, the
+## services terminal. A 3D screen is deliberately NOT in this list — it takes the pointer, never the
+## game — which is what lets the view still pan across a console while its filter box has the keyboard.
 func _modal_open() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _services_open()
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.
 func _star_map_open() -> bool:
 	return _star_map != null and _star_map.is_open()
+
+## The services terminal is modal in the same way (F3).
+func _services_open() -> bool:
+	return _services != null and _services.is_open()
 
 
 ## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR
