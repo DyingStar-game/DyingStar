@@ -3,11 +3,91 @@
 [ext_resource type="PackedScene" uid="uid://c17mvq7136cgs" path="res://assets/_universe/structures/industrial/garage.glb" id="1_wl12i"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_dtmlv"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_dtmlv"]
+[ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://scenes/_universe/structures/spawn_kiosk/spawn_kiosk.tscn" id="4_u0y64"]
+[ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="5_truck"]
+[ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg" id="6_5left"]
+[ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
+size = Vector3(15.98678550078057, 1, 41.15108700777546)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3av62"]
+size = Vector3(0.5759233596963895, 8.999177813853976, 11.533979218493414)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wn7d4"]
+size = Vector3(0.5759233596963895, 8.999177813853976, 40.7961641160673)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_dagjk"]
+size = Vector3(0.48697699902641034, 3.7578103496571202, 29.315359421034373)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hfp2y"]
+size = Vector3(0.48697699902641034, 4.9431019497687885, 1.425175132540744)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_5left"]
+size = Vector3(0.48697699902641034, 4.9431019497687885, 1.1836110813092091)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_5iueg"]
+size = Vector3(0.48697699902641034, 8.09641436817742, 15.867739222869204)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_it5te"]
+size = Vector3(15.41651200285014, 5.878037875947257, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fyfm0"]
+size = Vector3(1.9300036668046232, 0.982875679677818, 4.008007256641804)
 
 [node name="Garage" type="Node3D" unique_id=1534038917]
 
 [node name="garage" parent="." unique_id=1594753760 instance=ExtResource("1_wl12i")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0004020153180437358, 0, -0.0018133747635715736)
 collision_mask = 0
+
+[node name="CollisionShapeFloor" type="CollisionShape3D" parent="garage" unique_id=1188942111]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.544735670089722, -0.4890367858145761, -20.37022089958191)
+shape = SubResource("BoxShape3D_gy7pr")
+
+[node name="CollisionShapeWall001" type="CollisionShape3D" parent="garage" unique_id=835324038]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07254429, 3.9995890041992186, -5.768235)
+shape = SubResource("BoxShape3D_3av62")
+
+[node name="CollisionShapeWall010" type="CollisionShape3D" parent="garage" unique_id=700394887]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.327472655286197, 3.9995890041992186, -20.39932802520752)
+shape = SubResource("BoxShape3D_wn7d4")
+
+[node name="CollisionShapeWall002" type="CollisionShape3D" parent="garage" unique_id=492671210]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 6.61680246452676, -26.151234406656826)
+shape = SubResource("BoxShape3D_dagjk")
+
+[node name="CollisionShapeWall003" type="CollisionShape3D" parent="garage" unique_id=851643508]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 2.407095245186569, -16.768950987286175)
+shape = SubResource("BoxShape3D_hfp2y")
+
+[node name="CollisionShapeWall004" type="CollisionShape3D" parent="garage" unique_id=319104713]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 2.407095245186569, -22.66085413373184)
+shape = SubResource("BoxShape3D_hfp2y")
+
+[node name="CollisionShapeWall005" type="CollisionShape3D" parent="garage" unique_id=1202465814]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 2.407095245186569, -28.5527572801775)
+shape = SubResource("BoxShape3D_hfp2y")
+
+[node name="CollisionShapeWall006" type="CollisionShape3D" parent="garage" unique_id=61116670]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 2.407095245186569, -34.45320124726445)
+shape = SubResource("BoxShape3D_hfp2y")
+
+[node name="CollisionShapeWall007" type="CollisionShape3D" parent="garage" unique_id=322069494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 2.407095245186569, -40.22814349198267)
+shape = SubResource("BoxShape3D_5left")
+
+[node name="CollisionShapeWall008" type="CollisionShape3D" parent="garage" unique_id=1957954614]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -7.658957950770855, 3.983751586739303, -40.567801608507295)
+shape = SubResource("BoxShape3D_5iueg")
+
+[node name="CollisionShapeWall009" type="CollisionShape3D" parent="garage" unique_id=1770623440]
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -7.658957950770855, 3.983751586739303, -0.23740663758005986)
+shape = SubResource("BoxShape3D_5iueg")
+
+[node name="CollisionShapeContainer01" type="CollisionShape3D" parent="garage" unique_id=207793138]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.687612457248758, 2.439019, -4.889310899024975)
+shape = SubResource("BoxShape3D_it5te")
 
 [node name="PropSync" type="Node" parent="." unique_id=67144920]
 script = ExtResource("2_dtmlv")
@@ -22,3 +102,39 @@ metadata/_custom_type_script = "uid://custckqbhkkow"
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1617964166]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.638463, -0.5275682651205718, -20.188978)
 size = Vector3(21, 1, 43)
+
+[node name="SpawnKiosk" parent="." unique_id=1096407299 node_paths=PackedStringArray("spawn_marker") instance=ExtResource("4_u0y64")]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -19.76679997038584)
+kiosk_text = "Request a truck"
+spawn_scene = ExtResource("5_truck")
+spawn_marker = NodePath("../SpawnVehicule")
+spawn_cooldown = 30.0
+
+[node name="SpawnVehicule" type="Marker3D" parent="." unique_id=194993262]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -19.9798519296165)
+
+[node name="BatterieZone1" type="Decal" parent="." unique_id=1354213166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0302175237847133, -0.007852504202932264, -9.959797003836849)
+size = Vector3(2, 0.06675516680570581, 2)
+texture_albedo = ExtResource("6_5left")
+
+[node name="BatterieZone2" type="Decal" parent="." unique_id=1605340679]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0182295867468727, -0.007852504202932264, -7.930431123823636)
+size = Vector3(2, 0.06675516680570581, 2)
+texture_albedo = ExtResource("6_5left")
+
+[node name="Label3D" type="Label3D" parent="." unique_id=1633786288]
+transform = Transform3D(6.123233995736765e-17, 0, -0.9999999999999999, 0, 1, 0, 0.9999999999999999, 0, 6.123233995736765e-17, -0.023759946585931502, 1.2000011328085565, -9.112079011595533)
+text = "Recharging batteries"
+
+[node name="ChargingZone" type="Area3D" parent="." unique_id=5421193]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8391555582872652, 0.1831103834099197, -9.129739718076717)
+collision_layer = 0
+collision_mask = 8
+monitorable = false
+script = ExtResource("7_5iueg")
+metadata/_custom_type_script = "uid://db0rt5lmk5ogb"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ChargingZone" unique_id=1758788660]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.21332854, 0.32814604, 0.19308972)
+shape = SubResource("BoxShape3D_fyfm0")

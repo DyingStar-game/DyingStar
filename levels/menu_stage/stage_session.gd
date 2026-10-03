@@ -24,7 +24,10 @@ func begin(root: Node) -> void:
 func end() -> void:
 	if _saved.is_empty():
 		return
-	NetworkOrchestrator.universe_scene = _saved["universe_scene"]
+	# Back from a session, the universe saved by begin() has been freed since: hand back none rather
+	# than fail here and leave the frozen clock (time_scale 0) and the mouse to the next session.
+	var universe = _saved["universe_scene"]
+	NetworkOrchestrator.universe_scene = universe if is_instance_valid(universe) else null
 	Globals.time_scale = _saved["time_scale"]
 	Globals.debug_time_offset = _saved["debug_time_offset"]
 	Input.mouse_mode = _saved["mouse_mode"]

@@ -7,12 +7,23 @@ extends Node3D
 @export var spawn_requested: bool = false
 ## Layout scene whose networked items are spawned in this village (res:// path; the prefix may be omitted).
 @export var spawn_scene: String = ""
-## Radius of the village (m), from the POI data. Informational: replicated, not read by the game code.
+## Radius of the village (m), from the POI data: no canyon inside it, and no mining zone (the POI
+## zone, PlanetTerrain.set_poi_zone). Larger = a wider patch of whole ground around the village.
 @export var radius_m: int = 0
 ## Population of the village, from the POI data. Informational: replicated, not read by the game code.
 @export var population: int = 0
 ## Kind of POI, from the POI data (e.g. "mining village"). Informational: replicated, not read by the game code.
 @export var type: String = ""
+
+## How long the server waits for the elevation tile under the village before spawning its items at
+## the stored pose anyway (ms): a village whose habs Horizon asked for must not wait forever.
+const GROUND_WAIT_MAX_MS := 30000
+## Retry period while that tile is on its way (s).
+const GROUND_RETRY_S := 0.5
+
+## First time spawn_items found the ground unreadable (0 = it has not), and whether a retry is set.
+var _ground_wait_since_ms: int = 0
+var _ground_retry_pending: bool = false
 
 
 func apply_prop_data(data: Dictionary) -> void:
@@ -31,6 +42,10 @@ func apply_prop_data(data: Dictionary) -> void:
 	if data.has("name"):
 		name = data["name"]
 
+	if not GameOrchestrator.is_server():
+		# The server registers every village it knows from its data (server.gd); a client registers
+		# the ones it receives. Deferred: the first call runs before add_child and the uuid.
+		_register_zone.call_deferred()
 	if not is_spawned and GameOrchestrator.is_server():
 		# Deferred: create_generic_object calls us BEFORE registering this village in props_list, so
 		# a child spawned right now could not find its parent_id and would sit in the pending queue.
@@ -53,6 +68,11 @@ func spawn_items() -> void:
 	if packed == null:
 		push_warning("[PoiVillages] %s: spawn_scene '%s' not found" % [name, path])
 		return
+	# Stand on the ground FIRST: every item's pose is composed with ours below, so a village stored
+	# kilometres above or under its ground (startup_items.json) spawns all of it there. The buildings
+	# with a TerrainPad would come back down; everything else (the mining depot) would not.
+	if not _stand_on_ground():
+		return  # the elevation under us is on its way: called back by the retry
 	is_spawned = true  # before spawning: apply_prop_data runs again on every replicated update
 
 	# The items are published under OUR parent's frame, not under the village itself: their pose is
@@ -97,6 +117,79 @@ func spawn_items() -> void:
 	print("[PoiVillages] %s: %d items spawned from %s" % [name, spawned, path])
 
 	s.server_prop_update({"is_spawned": true})
+
+
+## Move the village radially onto the ground under its centre, +Y along the radial, heading kept —
+## the editor's Snap to planet surface, at runtime, on the server. The new pose replicates and is
+## persisted like any move (PropNet). False while the elevation tile there is not readable yet: a
+## retry is then set, and after GROUND_WAIT_MAX_MS the village gives up and stays where it is.
+func _stand_on_ground() -> bool:
+	var terrain := _planet_terrain()
+	if terrain == null or terrain.planet_data == null:
+		return true  # not on a body: nothing to stand on
+	var pxf := terrain.global_transform
+	var inv := pxf.affine_inverse()
+	var local := inv * global_position
+	if local.length_squared() < 1.0:
+		return true
+	var up := local.normalized()
+	var ready := terrain.planet_data.height_ready_at(up)
+	if ready == 0:
+		var now := Time.get_ticks_msec()
+		if _ground_wait_since_ms == 0:
+			_ground_wait_since_ms = now
+		if now - _ground_wait_since_ms < GROUND_WAIT_MAX_MS:
+			if not _ground_retry_pending:
+				_ground_retry_pending = true
+				get_tree().create_timer(GROUND_RETRY_S).timeout.connect(func() -> void:
+					_ground_retry_pending = false
+					spawn_items())
+			return false
+		push_warning("[PoiVillages] %s: no elevation under the village after %d s, items spawned at the stored pose"
+				% [name, GROUND_WAIT_MAX_MS / 1000])
+		return true
+	if ready < 0:
+		push_warning("[PoiVillages] %s: no elevation will ever be published here, items spawned at the stored pose"
+				% name)
+		return true
+	var ground: Vector3 = terrain.surface_point_for_direction(up)
+	var b := inv.basis * global_transform.basis
+	var z_axis := b.z - up * b.z.dot(up)
+	if z_axis.length_squared() < 1e-9:
+		z_axis = up.cross(Vector3.RIGHT)
+		if z_axis.length_squared() < 1e-9:
+			z_axis = up.cross(Vector3.BACK)
+	z_axis = z_axis.normalized()
+	var x_axis := up.cross(z_axis).normalized()
+	z_axis = x_axis.cross(up).normalized()
+	global_transform = Transform3D(pxf.basis * Basis(x_axis, up, z_axis).scaled(b.get_scale()), pxf * ground)
+	print("[PoiVillages] %s posé sur le sol (%+.1f m)" % [name, ground.length() - local.length()])
+	return true
+
+
+## CLIENT: hand this village's zone to its planet's terrain, so the canyons stay out of it and the
+## ground the client draws matches the server's collision. Never withdrawn when the village goes out
+## of range: the ground under it does not change for that.
+func _register_zone() -> void:
+	if not is_inside_tree() or radius_m <= 0:
+		return
+	var s := PropSync.of(self)
+	var terrain := _planet_terrain()
+	if s == null or s.uuid == "" or terrain == null:
+		return
+	var planet := terrain.get_parent() as Node3D
+	var local: Vector3 = planet.global_transform.affine_inverse() * global_position
+	terrain.set_poi_zone(s.uuid, str(name), local, float(radius_m))
+
+
+## The terrain of the body this village stands on: its nearest Planet ancestor's.
+func _planet_terrain() -> PlanetTerrain:
+	var n: Node = get_parent()
+	while n != null:
+		if n is Planet:
+			return (n as Planet).planet_terrain
+		n = n.get_parent()
+	return null
 
 
 ## {type_name: [property names]} read from items_def/<type>_def.json, shared by every village.

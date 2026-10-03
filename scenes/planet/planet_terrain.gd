@@ -147,24 +147,6 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 ## Read by the "Planet Tools" editor plugin's "Snap to surface" action.
 @export var editor_snap_height_offset: float = 0.0
 
-## ── POI import (QGIS) ─────────────────────────────────────────────
-## JSON produced by tools/planettech/qgis/export_poi.py. Empty → derived from the planet
-## name: res://assets/qgis/export/<planet_name>_poi.json
-@export_file("*.json") var poi_json_path: String = ""
-## Collision layer/mask applied to the generated POI Area3Ds. 0/0 by default:
-## the POIs are inert zone markers until gameplay code wires them up, so they
-## can't perturb the player controller or the interaction rays.
-@export_flags_3d_physics var poi_collision_layer: int = 0
-## Collision mask applied to the generated POI Area3Ds (see poi_collision_layer). 0 by default.
-@export_flags_3d_physics var poi_collision_mask: int = 0
-# Resolved through a getter, not an initializer, so the editor can never read
-# the button callback back as Nil ("value is Nil, but Callable was expected").
-## Inspector button: (re)build the "POIs" subtree of Area3Ds from poi_json_path. Replaces it,
-## never appends.
-@export_tool_button("Import POI from JSON")
-var _import_poi_action: Callable:
-	get: return import_poi_from_json
-
 var planet_data: PlanetData
 var is_server: bool = false
 
@@ -481,9 +463,17 @@ static func _read_dbg_flags() -> void:
 	if _dbg_no_road_surfaces:
 		print("[PlanetTerrain] !! debug_no_road_surfaces=true — road and lava crust surfaces hidden")
 
-## POIs resolved from the "POIs" child, built on first use (see poi_spheres). Only a re-import
-## changes them, and that needs an editor restart, so it is never invalidated at runtime.
-var _poi_cache: Array = []
+## The POIs listed in this body's <planet>_poi.json (StarMapPoi records), read at initialize. Baked:
+## the crack network leaves them whole from the first chunk (PlanetData.set_crack_exclusions).
+var _static_pois: Array[Dictionary] = []
+## Ground point (planet frame) under each static POI, by index in _static_pois, once readable.
+var _static_ground: Dictionary = {}
+## The networked POI zones of this body — the POI villages — as uuid → {name, local_pos (planet
+## frame), radius, ground (planet frame, null until the relief there could be read)}. They keep the
+## crack network out (PlanetData.set_dynamic_crack_exclusions) and the mining zones away.
+## Registered by the server for every village it knows (PropRegistry) and by a client for every
+## village it receives; never dropped for being out of range, only when the village is deleted.
+var _poi_zones: Dictionary = {}
 
 ## Buffered desired set when set_resident_chunks() is called before
 ## the planet finishes initializing (rare race during Horizon boot).
@@ -537,10 +527,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		#      the visual crack floor matches the full-depth physics floor.
 		# corundum_default_rock is baked colour: a planet switched from the
 		# milky rock to a red one must not serve milky meshes.
-		# The POI spheres the crack network keeps whole: given to the sampler
-		# here, before the key (they are baked geometry), before the bridge
-		# spans walk the chasms and before any chunk carves.
-		data.set_crack_exclusions(crack_exclusion_pois())
+		# The POIs the crack network keeps whole. Those listed in the planet's
+		# <planet>_poi.json are given to the sampler here, before the key (they are
+		# baked geometry), before the bridge spans walk the chasms and before any
+		# chunk carves. The networked ones (POI villages, set_poi_zone) arrive
+		# later and are in no key: a chunk one reaches stays out of the disk cache.
+		_static_pois = StarMapPoi.load_for(data.planet_name)
+		data.set_crack_exclusions(poi_crack_exclusions(data.planet_name))
 		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s_poi%s_cn%s" % [
 			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
@@ -2388,222 +2381,121 @@ func _terrain_pad_of(n3: Node) -> TerrainPad:
 
 
 # ------------------------------------------------------------------
-# POI import (QGIS)
+# POI zones (the networked POI villages)
 # ------------------------------------------------------------------
 
-## Inspector button: rebuild the "POIs" child from the JSON exported by
-## tools/planettech/qgis/export_poi.py. Each POI becomes an Area3D named after it, holding
-## a SphereShape3D of its influence radius, sitting on the terrain surface at
-## its longitude/latitude. The nodes are owned by the edited scene, so they are
-## saved into the planet's .tscn and can be tweaked by hand afterwards; the
-## QGIS attributes ride along as node metadata.
-##
-## Re-running replaces the whole "POIs" subtree — it never appends.
-func import_poi_from_json() -> void:
-	if not Engine.is_editor_hint():
-		return
-
-	var data := _resolve_planet_data()
-	if data == null:
-		push_warning("[PlanetTerrain] Import POI: no PlanetData on this node or "
-			+ "its parent Planet.")
-		return
-	if data.radius <= 0.0:
-		push_warning("[PlanetTerrain] Import POI: PlanetData.radius is not set "
-			+ "yet (it comes from the chunk manifest) — reopen the scene first.")
-		return
-	# compute_surface_transform() reads the *member*, and silently returns the
-	# node untouched when it is null — which would drop every POI to sea level.
-	# Adopt the resolved resource, exactly as initialize() would have.
-	if planet_data == null:
-		planet_data = data
-
-	var path := poi_json_path
-	if path.is_empty():
-		path = "res://assets/qgis/export/%s_poi.json" % data.planet_name
-	if not FileAccess.file_exists(path):
-		push_warning("[PlanetTerrain] Import POI: '%s' not found — run "
-			% path + "tools/planettech/qgis/export_poi.py from the QGIS Python console first.")
-		return
-
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(parsed) != TYPE_DICTIONARY or typeof(parsed.get("pois")) != TYPE_ARRAY:
-		push_warning("[PlanetTerrain] Import POI: '%s' is not a POI export " % path
-			+ "(expected an object with a \"pois\" array).")
-		return
-
-	# Resolved through Engine.get_singleton (as elsewhere in this file) rather
-	# than the EditorInterface global: this script also ships in the exported
-	# game, where that global does not exist.
-	var ei = Engine.get_singleton("EditorInterface")
-	if ei == null:
-		return
-	var scene_root: Node = ei.get_edited_scene_root()
-	if scene_root == null:
-		push_warning("[PlanetTerrain] Import POI: no scene is open in the editor.")
-		return
-
-	var imported := build_poi_nodes(parsed["pois"], data, scene_root)
-	ei.mark_scene_as_unsaved()
-	print("[PlanetTerrain] Imported %d POI from %s" % [imported, path])
-
-
-## (Re)build the "POIs" child from [param pois] (the parsed JSON array) and
-## return how many were placed. Split out of [method import_poi_from_json] so
-## it carries no editor dependency and can be driven from a test harness;
-## [param owner_node] is what the created nodes are owned by (the edited scene
-## root in the editor) — pass null to leave them unowned.
-func build_poi_nodes(pois: Array, data: PlanetData, owner_node: Node) -> int:
-	# Replace, never append: drop any previous import before rebuilding.
-	var previous := get_node_or_null("POIs")
-	if previous:
-		remove_child(previous)
-		previous.queue_free()
-
-	var container := Node3D.new()
-	container.name = "POIs"
-	add_child(container)
-	if owner_node != null:
-		container.owner = owner_node
-
-	var imported := 0
-	for entry in pois:
-		if typeof(entry) != TYPE_DICTIONARY:
-			continue
-		if _add_poi_node(container, owner_node, data, entry):
-			imported += 1
-	return imported
-
-
-## Build one Area3D for [param entry] under [param container]. Returns false
-## when the entry carries no usable position.
-func _add_poi_node(container: Node3D, owner_node: Node, data: PlanetData,
-		entry: Dictionary) -> bool:
-	if not (entry.has("lon") and entry.has("lat")):
-		push_warning("[PlanetTerrain] Import POI: entry without lon/lat skipped.")
-		return false
-
-	var dir := HEALPix.lonlat2vec(float(entry["lon"]), float(entry["lat"]))
-
-	var area := Area3D.new()
-	# Fall back to the id when the POI has no name — a node name can't be empty.
-	var poi_name := _poi_str(entry, "name").validate_node_name()
-	area.name = poi_name if not poi_name.is_empty() \
-		else "POI_%d" % _poi_int(entry, "id")
-	# force_readable_name so two POIs sharing a name become "Foo"/"Foo2", not
-	# "@Area3D@42" — the whole point is to recognise them in the Scene dock.
-	container.add_child(area, true)
-	if owner_node != null:
-		area.owner = owner_node
-
-	area.monitoring = false
-	area.monitorable = false
-	area.collision_layer = poi_collision_layer
-	area.collision_mask = poi_collision_mask
-
-	var sphere := SphereShape3D.new()
-	var radius = entry.get("radius")
-	sphere.radius = maxf(0.1 if radius == null else float(radius), 0.1)
-	var shape := CollisionShape3D.new()
-	shape.shape = sphere
-	shape.name = "Zone"
-	area.add_child(shape)
-	# A child without an owner is not serialised into the .tscn.
-	if owner_node != null:
-		shape.owner = owner_node
-
-	# QGIS may carry an explicit ground elevation; otherwise sample the terrain
-	# heightmap through compute_surface_transform(), which also stands the node
-	# up along the surface normal.
-	var elevation = entry.get("elevation")
-	if elevation != null:
-		area.position = dir * (data.radius + float(elevation))
-	else:
-		area.position = dir * data.radius
-		area.global_transform = compute_surface_transform(area)
-
-	# Metadata is serialised with the node, so the QGIS attributes survive the
-	# save without needing a dedicated POI class or resource.
-	area.set_meta("poi_id", _poi_int(entry, "id"))
-	area.set_meta("poi_type", _poi_str(entry, "poi_type"))
-	area.set_meta("population", _poi_int(entry, "population"))
-	area.set_meta("description", _poi_str(entry, "description"))
-	area.set_meta("lon", float(entry["lon"]))
-	area.set_meta("lat", float(entry["lat"]))
-	return true
-
-
-## The POIs of this planet as [code]{name, position (world), radius}[/code], read once and cached.
-##
-## The radius is NOT in the node metadata — it exists only as the child "Zone" CollisionShape3D's
-## SphereShape3D radius, which is why this accessor exists rather than every caller walking the
-## tree. The POI Area3Ds are inert markers (collision_layer 0, monitoring off), so consumers do a
-## distance test against this list instead of a physics query.
-func poi_spheres() -> Array:
-	if not _poi_cache.is_empty():
-		return _poi_cache
-	var container: Node = get_node_or_null("POIs")
-	if container == null:
-		return _poi_cache
-	for child in container.get_children():
-		if not (child is Node3D):
-			continue
-		var shape_node := child.get_node_or_null("Zone") as CollisionShape3D
-		if shape_node == null or not (shape_node.shape is SphereShape3D):
-			continue
-		_poi_cache.append({
-			"name": String(child.name),
-			"position": (child as Node3D).global_position,
-			"radius": (shape_node.shape as SphereShape3D).radius,
-		})
-	return _poi_cache
-
-
-## The POIs as the crack network wants them (PlanetData.set_crack_exclusions): planet-LOCAL unit
-## directions and radii, so the pure carve can test them without the scene tree. Body-fixed like
-## every direction the sampler reads — the POI nodes spin with the planet.
-func crack_exclusion_pois() -> Array:
-	var planet := get_parent() as Planet
+## The crack exclusions of the POIs listed in [param body_key]'s <body>_poi.json, as
+## PlanetData.set_crack_exclusions takes them — for the planet at initialize and for whoever samples
+## a planet that is not loaded (the grade bake, the star chart). Static: the file is all it reads.
+static func poi_crack_exclusions(body_key: String) -> Array:
 	var out: Array = []
-	for poi in poi_spheres():
-		var d: Vector3 = planet.local_dir_of(poi["position"] as Vector3) if planet != null \
-				else (poi["position"] as Vector3).normalized()
-		out.append({"dir": d, "radius": float(poi["radius"])})
+	for p: Dictionary in StarMapPoi.load_for(body_key):
+		if float(p.get("radius_m", 0.0)) > 0.0:
+			out.append({"dir": p["dir"], "radius": float(p["radius_m"])})
 	return out
 
 
-## [method crack_exclusion_pois] read from a planet's SCENE FILE, for whoever samples a planet that is
-## not loaded — the grade bake, the star chart: every POI node under PlanetTerrain/POIs with a "Zone"
-## sphere, as a planet-local direction and a radius. Composed from the scene's own transforms — the
-## planet root cancels out of local_dir_of — nothing instantiated. Same order as the POI container's
-## children.
-static func crack_exclusion_pois_of_scene(packed: PackedScene) -> Array:
-	if packed == null:
-		return []
-	var st := packed.get_state()
-	var xf := {}
-	var radius := {}
-	var order: Array[String] = []
-	for ni in st.get_node_count():
-		var np := str(st.get_node_path(ni)).trim_prefix("./")
-		var t := Transform3D.IDENTITY
-		for pi in st.get_node_property_count(ni):
-			var pname := st.get_node_property_name(ni, pi)
-			var v: Variant = st.get_node_property_value(ni, pi)
-			if pname == &"transform" and v is Transform3D:
-				t = v
-			elif pname == &"shape" and v is SphereShape3D:
-				radius[np] = (v as SphereShape3D).radius
-		xf[np] = t
-		order.append(np)
-	var base: Transform3D = (xf.get("PlanetTerrain", Transform3D.IDENTITY) as Transform3D) \
-			* (xf.get("PlanetTerrain/POIs", Transform3D.IDENTITY) as Transform3D)
-	var out: Array = []
-	for np in order:
-		if np.get_base_dir() != "PlanetTerrain/POIs" or not radius.has(np + "/Zone"):
+## Register or update the POI zone [param uuid]: a sphere of [param radius_m] around
+## [param local_pos] (planet frame) that the crack network leaves whole and the mining zones keep
+## away from. A real change re-carves the chunks it reaches — on the server an unload and reload, on
+## a client a swap — and keeps them out of the disk cache from now on.
+func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: float) -> void:
+	if uuid.is_empty() or radius_m <= 0.0 or local_pos.length_squared() < 1.0:
+		return
+	var old: Dictionary = _poi_zones.get(uuid, {})
+	var dir := local_pos.normalized()
+	if not old.is_empty() and float(old["radius"]) == radius_m \
+			and (old["local_pos"] as Vector3).normalized().distance_to(dir) * _poi_radius_m() < 0.5:
+		old["name"] = poi_name
+		return  # the same ground: a village re-seated radially, or a mere update
+	_poi_zones[uuid] = {"name": poi_name, "local_pos": local_pos, "radius": radius_m, "ground": null}
+	_poi_zones_changed([old, _poi_zones[uuid]])
+
+
+## Forget the POI zone [param uuid] (its village was deleted): the cracks come back under it.
+func remove_poi_zone(uuid: String) -> void:
+	if not _poi_zones.has(uuid):
+		return
+	var old: Dictionary = _poi_zones[uuid]
+	_poi_zones.erase(uuid)
+	_poi_zones_changed([old])
+
+
+## Hand the zones to the sampler and re-carve the chunks the [param changed] ones reach.
+func _poi_zones_changed(changed: Array) -> void:
+	if planet_data == null:
+		return
+	var excl: Array = []
+	for z: Dictionary in _poi_zones.values():
+		excl.append({"dir": (z["local_pos"] as Vector3).normalized(), "radius": float(z["radius"])})
+	planet_data.set_dynamic_crack_exclusions(excl)
+	if not _initialized:
+		return  # no chunk built yet
+	# The pixels of a grid about as fine as the zone is wide: _chunk_touches_tiles maps them onto
+	# chunks of every LOD, coarser or finer.
+	var reach := 0.0
+	for z in changed:
+		if not (z as Dictionary).is_empty():
+			reach = maxf(reach, float(z["radius"]) + planet_data.crack_poi_margin_m)
+	if reach <= 0.0:
+		return
+	var nside := 1
+	while nside < (1 << planet_data.max_quadtree_depth) \
+			and HEALPix.pixel_side_length(nside * 2, planet_data.radius) > reach * 0.5:
+		nside *= 2
+	var tiles := {}
+	for z in changed:
+		if (z as Dictionary).is_empty():
 			continue
-		var pos: Vector3 = (base * (xf[np] as Transform3D)).origin
-		out.append({"dir": pos.normalized(), "radius": float(radius[np + "/Zone"])})
+		var centre: Vector3 = (z["local_pos"] as Vector3).normalized()
+		var r := float(z["radius"]) + planet_data.crack_poi_margin_m
+		tiles[HEALPix.vec2pix_nest(nside, centre)] = true
+		var side := HEALPix.pixel_side_length(nside, planet_data.radius)
+		var east := Vector3.UP.cross(centre)
+		if east.length_squared() < 1e-12:
+			east = Vector3.RIGHT
+		east = east.normalized()
+		var north := centre.cross(east).normalized()
+		var rings := maxi(1, ceili(r / maxf(side * 0.5, 1.0)))
+		var steps := maxi(8, ceili(TAU * r / maxf(side * 0.5, 1.0)))
+		for ri in range(1, rings + 1):
+			var rr := r * float(ri) / float(rings) / planet_data.radius
+			for k in steps:
+				var a := TAU * float(k) / float(steps)
+				var d := (centre + (east * cos(a) + north * sin(a)) * rr).normalized()
+				tiles[HEALPix.vec2pix_nest(nside, d)] = true
+	_rebuild_chunks_on_tiles(tiles, nside, "d'une zone de POI")
+	_invalidate_nav_over(tiles, nside)
+
+
+func _poi_radius_m() -> float:
+	return planet_data.radius if planet_data != null else 1.0
+
+
+## The POIs as [code]{name, position (world), radius}[/code], for a distance test (mining zone
+## siting, rock culling — see first_blocking_poi): those of the JSON and the networked ones. The
+## position is the ground under the POI's centre, not a village's own stored altitude: a village
+## stored kilometres off its ground must still keep a deposit away. Read once per POI, as soon as
+## the relief there is readable (the JSON carries no altitude).
+func poi_spheres() -> Array:
+	var planet := get_parent() as Node3D
+	var xf: Transform3D = planet.global_transform if planet != null else global_transform
+	var out: Array = []
+	for i in _static_pois.size():
+		var p: Dictionary = _static_pois[i]
+		var sdir: Vector3 = p["dir"]
+		if float(p.get("radius_m", 0.0)) <= 0.0:
+			continue
+		if not _static_ground.has(i) and planet_data != null and planet_data.height_ready_at(sdir) == 1:
+			_static_ground[i] = surface_point_for_direction(sdir)
+		var slocal: Vector3 = _static_ground.get(i, sdir * (planet_data.radius if planet_data != null else 1.0))
+		out.append({"name": p.get("name", ""), "position": xf * slocal, "radius": float(p["radius_m"])})
+	for z: Dictionary in _poi_zones.values():
+		var dir: Vector3 = (z["local_pos"] as Vector3).normalized()
+		if z["ground"] == null and planet_data != null and planet_data.height_ready_at(dir) == 1:
+			z["ground"] = surface_point_for_direction(dir)
+		var local: Vector3 = z["ground"] if z["ground"] != null else z["local_pos"]
+		out.append({"name": z["name"], "position": xf * local, "radius": float(z["radius"])})
 	return out
 
 
@@ -2622,29 +2514,6 @@ static func first_blocking_poi(world_pos: Vector3, spheres: Array, margin: float
 			hit["distance"] = d
 			return hit
 	return {}
-
-
-## JSON field readers that tolerate a missing key *and* an explicit null — a
-## hand-edited export shouldn't abort the import on a cast error.
-func _poi_str(entry: Dictionary, key: String) -> String:
-	var value = entry.get(key)
-	return "" if value == null else str(value)
-
-
-func _poi_int(entry: Dictionary, key: String) -> int:
-	var value = entry.get(key)
-	return 0 if value == null else int(value)
-
-
-## The terrain's own PlanetData, or the parent Planet's when initialize() has
-## not run yet (the button can be clicked on a freshly opened scene).
-func _resolve_planet_data() -> PlanetData:
-	if planet_data != null:
-		return planet_data
-	var parent := get_parent()
-	if parent != null and parent.get("planet_data") != null:
-		return parent.planet_data
-	return null
 
 
 # ------------------------------------------------------------------

@@ -268,11 +268,10 @@ static func _prepare_offline(key: String) -> PlanetData:
 		return null
 	made.remote_source = source
 	made.warm_mountains()
-	# The canyons spare the towns, as they do on the planet once loaded: without its exclusions the
-	# chart would draw a chasm through a village that the game will not have.
+	# The canyons spare the towns of the body's POI file, as they do on the planet once loaded. The
+	# networked villages the chart (built offline) does not know.
 	if made.corundum_default_biome:
-		made.set_crack_exclusions(PlanetTerrain.crack_exclusion_pois_of_scene(
-				load(SystemScenes.body_path(StarMap.SYSTEM, key)) as PackedScene))
+		made.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(key))
 	return made
 
 

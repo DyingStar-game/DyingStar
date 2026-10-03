@@ -420,6 +420,17 @@ func server_action_received(data: Dictionary) -> void:
 		"spawn_prop":
 			# Dev spawn wheel (key T): the client only NAMES what it wants; we own everything else.
 			_spawn_from_catalog(str(data.get("key", "")))
+		"kiosk_spawn":
+			# A SpawnKiosk button: the client names the kiosk (building uuid + path inside it), the kiosk
+			# decides the scene, the place and whether it is free.
+			var building: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
+			var kiosk: Node = building.get_node_or_null(NodePath(str(data.get("kiosk", "")))) \
+					if building != null else null
+			if kiosk is SpawnKiosk \
+					and player.global_position.distance_to(kiosk.global_position) <= kiosk.use_range:
+				kiosk.server_request_spawn()
+			else:
+				print("🏪 Kiosk spawn refused: unknown kiosk or out of range (%s)" % str(data.get("kiosk", "")))
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
@@ -676,6 +687,13 @@ func server_action_received(data: Dictionary) -> void:
 					# Mark as carrying on all clients (perforator stows) (issue #124).
 					player.server_send_properties_to_client({"carrying": true})
 				if not picked_up:
+					# TEMPORARY (battery carry diagnosis): which gate refused the grab.
+					print("[carry] refused target=%s found=%s stance=%d locked=%s interact=%s blocked=%s" % [
+						str(data.get("target_uuid", "")), str(parent_node),
+						_stance,
+						str(parent_node != null and _component_locked(parent_node)),
+						str(parent_node != null and parent_node.has_method("interact") and parent_node.interact(player)),
+						str(parent_node != null and _is_blocked_by_geometry(parent_node))])
 					# Grabbed nothing: tell the owner to undo its optimistic stow (issue #124).
 					player.server_send_properties_to_client({"carrying": false})
 
