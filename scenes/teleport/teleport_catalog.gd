@@ -13,9 +13,8 @@ extends RefCounted
 ##   DERIVED   — computed for ANY body. Without these, eighteen bodies out of nineteen would offer an
 ##               empty list and could only be reached by typing coordinates.
 ##
-## The POI file is preferred over the `Area3D` nodes baked into a planet scene even though both exist:
-## the nodes are GENERATED from this very file by PlanetTerrain.import_poi_from_json(), so the two
-## agree by construction — and reading an 8 KB JSON costs nothing next to loading a planet scene.
+## The POI file is the only list of them on the client: the planet scenes no longer carry POI nodes
+## (the villages are networked props now), and reading an 8 KB JSON costs nothing.
 
 const POI_DIR: String = "res://assets/qgis/export"
 ## How far above the ground a derived or ground-mode destination puts you. Small: enough not to spawn

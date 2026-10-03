@@ -1588,7 +1588,9 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 
 	if frame_changed:
 		var parent_name: String = player.get_parent().name if player.get_parent() != null else "<none>"
-		print("[Server] player %s frame '%s' -> '%s' (%s)" % [client_uuid, last_frame, frame_uuid, parent_name])
+		print("[Server] player %s frame '%s' -> '%s' (%s) sent local %s (tree local %s, global %s, parent path %s)" % [
+				client_uuid, last_frame, frame_uuid, parent_name, position, player.position,
+				player.global_position, player.get_parent().get_path() if player.get_parent() != null else "<none>"])
 		if frame_uuid == "":
 			# The body sits under a node Horizon knows nothing about, so its LOCAL position is about to
 			# be published as WORLD coordinates. Harmless while every frame is motionless; a runaway the
@@ -1791,6 +1793,10 @@ func _on_prop_delete(
 	# Gone for good: drop the data too (the nodes are already being freed, children included), and
 	# the pad of a building deleted while asleep (a live one unregisters its own on the way out).
 	var gone: Dictionary = prop_registry.get_entry(uuid)
+	if not gone.is_empty() and str(gone["type"]) == "poi_village":
+		var vp = props_list["planets"].get(gone["world"])
+		if vp is Planet and (vp as Planet).planet_terrain != null:
+			(vp as Planet).planet_terrain.remove_poi_zone(uuid)
 	if not gone.is_empty() and int(gone["kind"]) == PropRegistry.KIND_GROUND:
 		var gp = props_list["planets"].get(gone["world"])
 		if gp is Planet and (gp as Planet).planet_terrain != null:
@@ -2345,6 +2351,8 @@ func update_generic_object(event: Dictionary) -> void:
 		prop_registry.merge_data(uuid, object_data)
 		if object_data.has("parent_id") or object_data.has("position"):
 			_stream_replace_if_asleep(uuid)
+		if object_data.has("position") or object_data.has("radius_m"):
+			_stream_register_poi_zone(uuid)
 		_stream_wake_requested_village(uuid)
 	if props_list.has(type) and props_list[type].has(uuid):
 		var object = props_list[type][uuid]
@@ -2443,6 +2451,9 @@ func create_generic_object(event: Dictionary) -> void:
 		return
 	prop_registry.upsert(event)
 	_stream_place(uuid)
+	# Before the zone test: a village another server simulates still keeps the canyons out of the
+	# ground this server builds near it.
+	_stream_register_poi_zone(uuid)
 	var entry: Dictionary = prop_registry.get_entry(uuid)
 	if not _stream_in_zones(entry):
 		prop_registry.forget(uuid)  # another server simulates it; Horizon hands it over if it comes
@@ -3073,6 +3084,20 @@ static func _pad_named_by_root(pad: Node, root: Node) -> bool:
 			return false
 		n = n.get_parent()
 	return n == root
+
+
+## A POI village's zone, from its DATA: every village the server knows keeps the crack network out
+## of its ground and the mining zones away, asleep or not (PlanetTerrain.set_poi_zone).
+func _stream_register_poi_zone(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or str(e["type"]) != "poi_village" or not (e.get("pos") is Vector3):
+		return
+	var planet = props_list["planets"].get(e["world"])
+	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+		return
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	(planet as Planet).planet_terrain.set_poi_zone(uuid, str(od.get("name", uuid)), e["pos"],
+			float(od.get("radius_m", 0)))
 
 
 ## Register the terrain pads of a building from its DATA, before (or without) its node: the chunks

@@ -144,7 +144,7 @@ func test_grade_profiles_bake_fresh() -> void:
 			continue
 		data.apply_chunk_manifest()
 		# The crossings: the POI spheres set first, as PlanetTerrain does.
-		data.set_crack_exclusions(tool._scene_crack_pois(planet))
+		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(planet))
 		if data.corundum_default_biome and data.has_roads():
 			checked += 1
 			assert_false(data._baked_bridges().is_empty(),

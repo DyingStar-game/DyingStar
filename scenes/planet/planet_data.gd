@@ -155,8 +155,9 @@ var chunk_data_version: String = ""
 @export var crack_rim_wavelength_m: float = 400.0
 ## A POI's influence sphere is kept whole: no crack inside it, and over this
 ## many metres outside it the crack depth ramps back to full (a ramp, not a
-## step: walkable). The spheres come from the planet's POI nodes (PlanetTerrain
-## gives them to [method set_crack_exclusions] before the first chunk).
+## step: walkable). The spheres are the planet's POIs: the ones listed in its
+## <planet>_poi.json (baked, [method set_crack_exclusions]) and the networked
+## POI villages ([method set_dynamic_crack_exclusions], as they arrive).
 @export var crack_poi_margin_m: float = 300.0
 ## The crack network stops under the mountains: full depth on a range's
 ## outline (a ridge's foot), none this many metres inside — a ramp of its
@@ -3436,6 +3437,19 @@ func grade_line_export_tiles(fid: int) -> Dictionary:
 ## can never arrive (no streaming source, or the service publishes no tile
 ## there and the pack has nothing to climb to), so waiting would be for
 ## nothing. Queues every missing tile on the streaming source otherwise.
+## Is the relief at [param dir] readable for real, not the flat global map a
+## missing tile falls back to? 1 = yes; 0 = not yet, its tile is asked for;
+## -1 = never (nothing will ever be published there). For one-off placements
+## (a POI village standing itself on the ground) that must not read a fallback.
+func height_ready_at(dir: Vector3) -> int:
+	if chunk_heightmaps_dir == "":
+		return 1
+	var st := _grade_tiles_missing({HEALPix.vec2pix_nest(export_nside, dir.normalized()): true})
+	if int(st["missing"]) == 0:
+		return 1
+	return -1 if bool(st["hopeless"]) else 0
+
+
 func _grade_tiles_missing(tiles: Dictionary) -> Dictionary:
 	var missing := 0
 	var hopeless := false
@@ -3830,6 +3844,11 @@ func grade_chunk_provisional(nside: int, ipix: int) -> bool:
 ##     pad appears or goes.
 func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 	if grade_chunk_provisional(nside, ipix):
+		return true
+	# A networked POI zone (a village) is not baked data either: it arrives at run time, so a chunk
+	# its crack exclusion reaches is never served from, nor written to, the planet-wide cache.
+	if not _crack_pois_dynamic.is_empty() and not crack_pois_near(HEALPix.pix2vec_nest(nside, ipix),
+			HEALPix.pixel_side_length(nside, radius), _crack_pois_dynamic).is_empty():
 		return true
 	return _pads != null and not _pads.is_empty() and not _pads.gather(nside, ipix).is_empty()
 
@@ -4663,31 +4682,54 @@ func cracks_apply_at(dir: Vector3) -> bool:
 
 
 ## The POI spheres the crack network keeps whole, planet-local:
-## [{dir: Vector3, radius: float}], see [method set_crack_exclusions].
+## [{dir: Vector3, radius: float}] — the baked ones and the networked ones,
+## published together (see [method set_crack_exclusions]).
 var _crack_pois: Array = []
+## The baked half: the POIs of the planet's <planet>_poi.json. In the chunk
+## cache key and the bridge bake key ([method crack_exclusion_fingerprint]).
+var _crack_pois_static: Array = []
+## The networked half: the POI villages, arriving at run time. In no key — a
+## chunk one reaches stays out of the disk cache (chunk_cache_ineligible).
+var _crack_pois_dynamic: Array = []
 
 
-## Give the crack network the POIs to keep whole — MAIN THREAD, before the
-## first chunk task and before the bridge spans (which walk the chasms).
+## Give the crack network the BAKED POIs to keep whole (the planet's
+## <planet>_poi.json, PlanetTerrain.poi_crack_exclusions) — MAIN THREAD, before
+## the first chunk task and before the bridge spans (which walk the chasms).
 ## [param pois]: [{dir: Vector3 (planet-local unit), radius: float (m)}].
 func set_crack_exclusions(pois: Array) -> void:
-	_crack_pois = []
+	_crack_pois_static = _clean_crack_pois(pois)
+	_crack_pois = _crack_pois_static + _crack_pois_dynamic
+
+
+## Give the crack network the NETWORKED POIs (the POI villages) — MAIN THREAD,
+## whenever they change. They arrive while chunks are being built, so the list
+## is published in one assignment: a worker holds either the old or the new.
+## The chunks a change reaches are rebuilt by PlanetTerrain (set_poi_zone).
+func set_dynamic_crack_exclusions(pois: Array) -> void:
+	_crack_pois_dynamic = _clean_crack_pois(pois)
+	_crack_pois = _crack_pois_static + _crack_pois_dynamic
+
+
+static func _clean_crack_pois(pois: Array) -> Array:
+	var out: Array = []
 	for p in pois:
 		var d: Vector3 = (p as Dictionary).get("dir", Vector3.ZERO)
 		var r := float((p as Dictionary).get("radius", 0.0))
 		if d.length_squared() < 0.5 or r <= 0.0:
 			continue
-		_crack_pois.append({"dir": d.normalized(), "radius": r})
+		out.append({"dir": d.normalized(), "radius": r})
+	return out
 
 
 ## The exclusions a chunk around [param center_dir] can meet: those whose
 ## sphere plus the margin reaches within [param reach_m] of its centre. The
 ## per-vertex test then loops over a handful instead of the planet's list.
-func crack_pois_near(center_dir: Vector3, reach_m: float) -> Array:
-	if _crack_pois.is_empty():
+func crack_pois_near(center_dir: Vector3, reach_m: float, pois: Array = _crack_pois) -> Array:
+	if pois.is_empty():
 		return []
 	var out: Array = []
-	for p in _crack_pois:
+	for p in pois:
 		var d_m: float = (center_dir - (p["dir"] as Vector3)).length() * radius
 		if d_m < reach_m + float(p["radius"]) + crack_poi_margin_m:
 			out.append(p)
@@ -4731,12 +4773,13 @@ func crack_noise() -> CrackNoise:
 	return _crack_noise
 
 
-## Re-keys the chunk cache: the exclusions are baked geometry.
+## Re-keys the chunk cache: the BAKED exclusions are baked geometry (the
+## networked ones are in no key, see [member _crack_pois_dynamic]).
 func crack_exclusion_fingerprint() -> String:
-	if _crack_pois.is_empty():
+	if _crack_pois_static.is_empty():
 		return ""
 	var parts := PackedStringArray()
-	for p in _crack_pois:
+	for p in _crack_pois_static:
 		var d: Vector3 = p["dir"]
 		parts.append("%.5f,%.5f,%.5f,%.0f" % [d.x, d.y, d.z, float(p["radius"])])
 	return ("%s|%.0f" % [",".join(parts), crack_poi_margin_m]).sha1_text().substr(0, 10)

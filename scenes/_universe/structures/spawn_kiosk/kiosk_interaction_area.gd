@@ -1,4 +1,4 @@
-extends Area3D
+extends Interactable
 
 ## PASSIVE BY DESIGN, like ScreenZone / VehicleSeat / VehicleDoorHandle: a look-at target for the
 ## player's InteractRay, which calls interact() on what it hits. It is DETECTED; it never detects.
@@ -8,16 +8,6 @@ extends Area3D
 ## physics step for nothing, the cost measured at ~6 ms/tick per area far from the world origin. And
 ## sitting on `world` rather than `interactable`, it was invisible to the InteractRay (mask 32), so
 ## the kiosk could not in fact be used at all.
-
-signal interacted()
-
-
-func _ready() -> void:
-	# Self-configuring: the scene only has to place the shape, never remember a layer number.
-	collision_layer = 1 << (Globals.LAYER_INTERACTABLE - 1)
-	collision_mask = 0  # we look for nobody
-	monitoring = false
-	monitorable = true
-
-func interact(interactor: Node = null) -> void:
-	emit_signal("interacted", interactor)
+##
+## It is an Interactable now — the layers, interact() and the HUD prompt (`label`) all come from there,
+## and the player's `action` key only ever presses an Interactable (PlayerClient._aimed_interactable).
