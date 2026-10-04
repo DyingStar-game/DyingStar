@@ -58,3 +58,8 @@ heights.pack
 /screenshots/
 # In-game benchmark reports written while running from the editor (CapturePaths.benchmarks_dir)
 /benchmarks/
+
+# Personal instructions for your own AI coding agent (see AGENTS.md)
+CLAUDE.local.md
+AGENTS.override.md
+.claude/settings.local.json
