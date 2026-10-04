@@ -38,6 +38,11 @@ func _on_ground(poi: Dictionary = {}) -> MusicContext:
 	return context
 
 
+## The table the game ships, as MusicDirector loads it.
+func _shipped() -> MusicTable:
+	return load("res://scenes/audio/music/music_table.tres") as MusicTable
+
+
 func test_without_a_player_it_is_the_menu() -> void:
 	var context: MusicContext = MusicContext.new()
 	context.in_menu = true
@@ -156,13 +161,34 @@ func test_the_smallest_influence_sphere_holding_the_player_wins() -> void:
 
 
 func test_the_shipped_table_loads_and_has_music_for_the_menu() -> void:
-	var shipped: MusicTable = load("res://scenes/audio/music/music_table.tres") as MusicTable
+	var shipped: MusicTable = _shipped()
 	assert_not_null(shipped, "music_table.tres is a MusicTable")
 	var context: MusicContext = MusicContext.new()
 	context.in_menu = true
 	var playlist: MusicPlaylist = shipped.playlist_for(context)
 	assert_not_null(playlist, "the menu has a playlist")
 	assert_not_null(playlist.next_after(null), "with a track that loads")
+
+
+## The places with music of their own in the shipped table: a zone tagged shop, corpo_hall, combat or
+## ship (a MusicZone a level designer puts in a scene), and the mining and factory villages.
+func test_the_shipped_table_has_music_for_zones_and_villages() -> void:
+	var shipped: MusicTable = _shipped()
+	var by_tag: Dictionary = {}
+	for tag: String in ["shop", "corpo_hall", "combat", "ship"]:
+		var zone: MusicContext = _on_ground()
+		zone.zone_tag = StringName(tag)
+		by_tag[tag] = shipped.playlist_for(zone)
+		assert_not_null(by_tag[tag], "a '%s' zone has its playlist" % tag)
+		if by_tag[tag] != null:
+			assert_not_null((by_tag[tag] as MusicPlaylist).next_after(null), "with a track that loads")
+	assert_same(by_tag.shop, by_tag.corpo_hall, "shops and corporate halls share one playlist")
+	for poi_name: String in ["mining_village_02", "factory_village_01"]:
+		var village: MusicContext = _on_ground({"name": poi_name, "kind": "", "radius_m": 1000.0})
+		var playlist: MusicPlaylist = shipped.playlist_for(village)
+		assert_not_null(playlist, "%s is no longer a chosen silence" % poi_name)
+		if playlist != null:
+			assert_not_null(playlist.next_after(null), "with a track that loads")
 
 
 func test_overlapping_zones_are_settled_by_priority() -> void:
@@ -205,5 +231,5 @@ func test_a_rule_names_itself_from_what_it_holds() -> void:
 	rule.situation = MusicRule.Situation.POI
 	rule.only = "village mining"
 	assert_eq(rule.resource_name, "POI village mining → silence", "and again at each change")
-	var shipped: MusicTable = load("res://scenes/audio/music/music_table.tres") as MusicTable
+	var shipped: MusicTable = _shipped()
 	assert_eq(shipped.rules[0].resource_name, "MENU → menu", "the playlist is named by its file")

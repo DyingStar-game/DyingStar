@@ -37,6 +37,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "dyingstar_mixage_v3.mp3",
+			"path": "res://assets/_universe/audio/music/dyingstar_mixage_v3.mp3",
+			"author": "Repto Eternef",
+			"source": "Discord",
+			"id": "322087903414976515",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "DyingStart_testV1.mp3",
 			"path": "res://assets/_universe/audio/music/DyingStart_testV1.mp3",
 			"author": "Repto Eternef",
@@ -55,6 +64,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "embrace_the_chaos.ogg",
+			"path": "res://assets/_universe/audio/music/embrace_the_chaos.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "eva_atmo_1_wip.ogg",
 			"path": "res://assets/_universe/audio/music/eva_atmo_1_wip.ogg",
 			"author": "Solstium",
@@ -62,6 +80,24 @@
 			"id": "116239126713335808",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "gravity_waves_wip.ogg",
+			"path": "res://assets/_universe/audio/music/gravity_waves_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "hyperpropre.mp3",
+			"path": "res://assets/_universe/audio/music/hyperpropre.mp3",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
 		},
 		{
 			"asset": "lodestar_alan_mihaly.mp3",
@@ -82,6 +118,24 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "mist.mp3",
+			"path": "res://assets/_universe/audio/music/mist.mp3",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "overloaded.ogg",
+			"path": "res://assets/_universe/audio/music/overloaded.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
 			"asset": "sandbox_ambiance.ogg",
 			"path": "res://assets/_universe/audio/music/sandbox_ambiance.ogg",
 			"author": "Plx",
@@ -100,11 +154,47 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "sandwave_wip.ogg",
+			"path": "res://assets/_universe/audio/music/sandwave_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "shooting_star_crunch_wip.ogg",
+			"path": "res://assets/_universe/audio/music/shooting_star_crunch_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
 			"asset": "syd_where_are_you.ogg",
 			"path": "res://assets/_universe/audio/music/syd_where_are_you.ogg",
 			"author": "Alan Mihàly",
 			"source": "Discord",
 			"id": "1123047331693068420",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "the_funky_lounge_folks_small_rabbits.ogg",
+			"path": "res://assets/_universe/audio/music/the_funky_lounge_folks_small_rabbits.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "the_need_for_silence_v10.ogg",
+			"path": "res://assets/_universe/audio/music/the_need_for_silence_v10.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},

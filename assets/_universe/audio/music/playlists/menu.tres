@@ -3,7 +3,8 @@
 [ext_resource type="Script" path="res://scenes/audio/music/music_playlist.gd" id="1"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/DyingStart_testV1.mp3" id="2"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/lodestar_alan_mihaly.mp3" id="3"]
+[ext_resource type="AudioStream" uid="uid://3fycy3ouy7rg" path="res://assets/_universe/audio/music/dyingstar_mixage_v3.mp3" id="4"]
 
 [resource]
 script = ExtResource("1")
-tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3")])
+tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4")])

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="MusicPlaylist" format=3]
+
+[ext_resource type="Script" uid="uid://drdv53naeb0gp" path="res://scenes/audio/music/music_playlist.gd" id="1"]
+[ext_resource type="AudioStream" uid="uid://dhag185bs03d3" path="res://assets/_universe/audio/music/shooting_star_crunch_wip.ogg" id="2"]
+[ext_resource type="AudioStream" uid="uid://m6yq0s3mp8ye" path="res://assets/_universe/audio/music/the_need_for_silence_v10.ogg" id="3"]
+[ext_resource type="AudioStream" uid="uid://i5cv1q26575f" path="res://assets/_universe/audio/music/embrace_the_chaos.ogg" id="4"]
+
+[resource]
+script = ExtResource("1")
+tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4")])

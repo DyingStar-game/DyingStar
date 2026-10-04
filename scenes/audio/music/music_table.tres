@@ -7,6 +7,10 @@
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/capital.tres" id="5"]
 [ext_resource type="Resource" uid="uid://b72xnvm8sxa8f" path="res://assets/_universe/audio/music/playlists/wild.tres" id="6"]
 [ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/eva.tres" id="7"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/shops.tres" id="8"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/combat.tres" id="9"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/ship.tres" id="10"]
+[ext_resource type="Resource" path="res://assets/_universe/audio/music/playlists/villages.tres" id="11"]
 
 [sub_resource type="Resource" id="rule_menu"]
 resource_name = "MENU → menu"
@@ -20,6 +24,34 @@ script = ExtResource("2")
 situation = 1
 only = "capital"
 playlist = ExtResource("5")
+
+[sub_resource type="Resource" id="rule_zone_shop"]
+resource_name = "ZONE shop → shops"
+script = ExtResource("2")
+situation = 1
+only = "shop"
+playlist = ExtResource("8")
+
+[sub_resource type="Resource" id="rule_zone_corpo_hall"]
+resource_name = "ZONE corpo_hall → shops"
+script = ExtResource("2")
+situation = 1
+only = "corpo_hall"
+playlist = ExtResource("8")
+
+[sub_resource type="Resource" id="rule_zone_combat"]
+resource_name = "ZONE combat → combat"
+script = ExtResource("2")
+situation = 1
+only = "combat"
+playlist = ExtResource("9")
+
+[sub_resource type="Resource" id="rule_zone_ship"]
+resource_name = "ZONE ship → ship"
+script = ExtResource("2")
+situation = 1
+only = "ship"
+playlist = ExtResource("10")
 
 [sub_resource type="Resource" id="rule_eva"]
 resource_name = "EVA → eva"
@@ -52,28 +84,32 @@ situation = 4
 only = "major_railway_city"
 
 [sub_resource type="Resource" id="rule_poi_mining"]
-resource_name = "POI mining_village → silence"
+resource_name = "POI mining_village → villages"
 script = ExtResource("2")
 situation = 4
 only = "mining_village"
+playlist = ExtResource("11")
 
 [sub_resource type="Resource" id="rule_poi_mining_fr"]
-resource_name = "POI village mining → silence"
+resource_name = "POI village mining → villages"
 script = ExtResource("2")
 situation = 4
 only = "village mining"
+playlist = ExtResource("11")
 
 [sub_resource type="Resource" id="rule_poi_factory"]
-resource_name = "POI factory_village → silence"
+resource_name = "POI factory_village → villages"
 script = ExtResource("2")
 situation = 4
 only = "factory_village"
+playlist = ExtResource("11")
 
 [sub_resource type="Resource" id="rule_poi_factory_fr"]
-resource_name = "POI village usine → silence"
+resource_name = "POI village usine → villages"
 script = ExtResource("2")
 situation = 4
 only = "village usine"
+playlist = ExtResource("11")
 
 [sub_resource type="Resource" id="rule_poi_city"]
 resource_name = "POI city → silence"
@@ -94,4 +130,4 @@ playlist = ExtResource("6")
 
 [resource]
 script = ExtResource("1")
-rules = Array[ExtResource("2")]([SubResource("rule_menu"), SubResource("rule_capital"), SubResource("rule_eva"), SubResource("rule_station"), SubResource("rule_poi_capital"), SubResource("rule_poi_spaceport"), SubResource("rule_poi_railway"), SubResource("rule_poi_mining"), SubResource("rule_poi_mining_fr"), SubResource("rule_poi_factory"), SubResource("rule_poi_factory_fr"), SubResource("rule_poi_city"), SubResource("rule_poi_any"), SubResource("rule_wild")])
+rules = Array[ExtResource("2")]([SubResource("rule_menu"), SubResource("rule_capital"), SubResource("rule_zone_shop"), SubResource("rule_zone_corpo_hall"), SubResource("rule_zone_combat"), SubResource("rule_zone_ship"), SubResource("rule_eva"), SubResource("rule_station"), SubResource("rule_poi_capital"), SubResource("rule_poi_spaceport"), SubResource("rule_poi_railway"), SubResource("rule_poi_mining"), SubResource("rule_poi_mining_fr"), SubResource("rule_poi_factory"), SubResource("rule_poi_factory_fr"), SubResource("rule_poi_city"), SubResource("rule_poi_any"), SubResource("rule_wild")])

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="MusicPlaylist" format=3]
+
+[ext_resource type="Script" uid="uid://drdv53naeb0gp" path="res://scenes/audio/music/music_playlist.gd" id="1"]
+[ext_resource type="AudioStream" uid="uid://0i27p0nmkjp0" path="res://assets/_universe/audio/music/mist.mp3" id="2"]
+
+[resource]
+script = ExtResource("1")
+tracks = Array[AudioStream]([ExtResource("2")])
+gap_min_s = 60.0
+gap_max_s = 180.0
