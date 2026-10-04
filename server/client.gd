@@ -62,6 +62,9 @@ var my_player_uuid: String = ""
 var my_player_created: bool = false
 ## True once the disappearance of my own body has been reported (see _watch_own_player_alive).
 var _own_player_lost: bool = false
+## Where my own body last was while it was in the tree: where it is put back if something pulls it out
+## (see _recover_own_player).
+var _own_last_global: Transform3D = Transform3D()
 ## Physics frames between two network heartbeats (~5 s at 60 Hz).
 const _NET_HEARTBEAT: int = 300
 var _net_beat: int = 0
@@ -485,7 +488,13 @@ func _watch_own_player_alive() -> void:
 		return
 	if is_instance_valid(player_entity) and player_entity.is_inside_tree():
 		_own_player_lost = false
+		_own_last_global = player_entity.global_transform
 		return
+	if is_instance_valid(player_entity):
+		# Still alive, only pulled out of the tree. Put it back every frame it is out, not once: the
+		# frame it belongs to may only come back a few frames later (a vehicle re-created by the game
+		# server it was just handed to).
+		_recover_own_player()
 	if _own_player_lost:
 		return  # said once; saying it every frame would cost more than it explains
 	_own_player_lost = true
@@ -495,6 +504,53 @@ func _watch_own_player_alive() -> void:
 		held = str(pending_parent_delete_event.get("object_id", "?"))
 	push_warning("[client] MY PLAYER IS GONE (%s). ancestors I was protecting: %s | delete held back: %s"
 			% [why, str(my_parents_uuids), held])
+
+
+## Puts my own body back in the tree after something pulled it out while it was still alive, and takes
+## the view back.
+##
+## While my body is out of the tree, so is my camera, and Godot hands the view to whatever other camera
+## the viewport knows (Viewport::_camera_3d_make_next_current): another avatar's eyes, a truck's cab.
+## Nothing on the body can fix that — its own _process does not run out of the tree. Seen on preprod
+## (2026-10-04): driving a truck across a game-server hand-over, the truck was pulled out of our scene
+## with the body seated in it, and the player watched through other players' eyes until he quit.
+##
+## The body goes under the closest ancestor it had that is in the tree again (the same vehicle re-created,
+## else its planet), at the place it last was; the server's next move fixes the frame and position
+## through _apply_my_frame as usual.
+func _recover_own_player() -> void:
+	var target: Node = null
+	for uuid in my_parents_uuids:
+		var node: Node = _search_parent_node(uuid)
+		if node != null and node.is_inside_tree():
+			target = node
+			break
+	if target == null:
+		if my_parents_uuids.size() > 1:
+			return  # the frame is still on its way: try again next frame rather than drop into space
+		target = universe_scene
+	if target == null or not target.is_inside_tree():
+		return
+	var body: Node3D = player_entity
+	var holder: Node = body.get_parent()
+	if holder != null:
+		holder.remove_child(body)
+	target.add_child(body)
+	body.global_transform = _own_last_global
+	if body.has_method("reset_physics_interpolation"):
+		body.reset_physics_interpolation()
+	if body.has_method("net_reset_interp"):
+		body.net_reset_interp()
+	# Seated: the seat we rode went with the old vehicle node. Ride the same seat of the vehicle we are
+	# put back in, or the body keeps chasing a seat that is no longer in the tree.
+	if "_seat_node" in body and body._seat_node != null and (not is_instance_valid(body._seat_node) or not body._seat_node.is_inside_tree()):
+		if "uuid" in target and str(target.uuid) == body._seat_vehicle_uuid and body._seat_is_driver and target.has_method("_driver_seat"):
+			body._seat_node = target._driver_seat()
+			body._seat_vehicle_node = target
+	if body.camera != null:
+		body.camera.make_current()
+	my_parents_uuids = _collect_parents_uuids(body)
+	push_warning("[client] my player was out of the tree: put back under %s" % target.name)
 
 
 func _collect_parents_uuids(node: Node) -> Array:
