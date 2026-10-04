@@ -26,6 +26,35 @@ const DEFS_KNOWN := ["box", "building", "cargo_depot", "city", "crate_container"
 	"storagewarehouse", "vehicle", "vehicle_component", "vehicle_lift", "vehicle_lift_platform",
 	"vehicle_lift_platformsystem"]
 
+
+## Dev/test tools, keyed by their InputMap action: `true` = switched ON, `false` = switched OFF.
+## A tool that is switched off keeps its code and its binding ON PURPOSE — we will need it again —
+## so this is the single switch: PlayerClient skips building the tool, and the controls menu hides
+## its binding (a key that does nothing must not be rebindable). Flip the value to bring a tool back,
+## nothing else to change. A tool missing from this dictionary counts as OFF (see is_dev_tool_enabled).
+##
+## A tool with NO binding may use a plain name instead (see Teleporter.DEV_TOOL, "teleporter" —
+## you walk into it, you do not press it). The controls menu simply never looks such a key up.
+## What does not change is WHERE the switch is read: a tool is switched off where it RUNS. The
+## teleporter is server-authoritative, so the server refuses; greying the interface out is only a
+## courtesy.
+const ENABLED_DEV_TOOLS: Dictionary = {
+	"teleporter": false,   # test teleporter cabin — no binding: you walk into it
+	"spawn_wheel": false,  # dev spawn wheel (Alt+T) — testing phase over
+	"zapette": false,      # admin cleanup tool (key 2) — testing phase over
+	"toggle_eva": false,   # EVA free-flight ($) — testing phase over, normal play only
+	"debug_time": false,    # sky clock sweep (debug_time_forward / debug_time_back)
+	"debug_toggle_moon_lights": false,  # moon lights on/off (Alt+key)
+	"debug_isolate_light": false,       # remove one light contributor at a time (Alt+key)
+	# Not an InputMap action: a build switch. The chunk mesh gets its edge skirts (the curtains
+	# dropped under every chunk border that hide LOD seams) only when ON — OFF bakes bare grids,
+	# to see the seams themselves or measure the skirt's share of the build. Part of the mesh
+	# cache key (PlanetTerrain), so flipping it re-bakes instead of serving cached skirts.
+	"build_chunk_skirts": false,
+}
+const SETTINGS_PREFIX = "DyingStar/outils_dev/"
+
+
 var main_panel_instance
 var _menu_button: MenuButton = null
 var _ds_popup: PopupMenu = null  # the menu when hosted in an editor MenuBar
@@ -44,7 +73,7 @@ func _enable_plugin() -> void:
 
 
 func _disable_plugin() -> void:
-	pass
+	remove_custom_settings()
 
 
 func _enter_tree() -> void:
@@ -56,6 +85,7 @@ func _enter_tree() -> void:
 	_install_menu()
 	_inspector_plugin = PropSyncInspector.new()
 	add_inspector_plugin(_inspector_plugin)
+	add_custom_settings()
 	# Never update on our own: ask the developer first. Downloading on every editor start froze the
 	# editor for seconds, and every devmode/N-clients restart from the bottom panel re-triggered the
 	# whole thing. The items_def/ files alone decide whether Import/Export are usable — this MUST be
@@ -627,3 +657,37 @@ func _refresh_menu_state() -> void:
 		var local_idx: int = pm.get_item_index(ITEM_UPDATE_DEFS_LOCAL)
 		if local_idx >= 0:
 			pm.set_item_disabled(local_idx, _defs_loading or _local_defs_dir() == "")
+
+
+func add_custom_settings() -> void:
+	var needs_save := false
+	
+	for key in ENABLED_DEV_TOOLS:
+		var setting_name = SETTINGS_PREFIX + str(key)
+		var default_value = ENABLED_DEV_TOOLS[key]
+		
+		if not ProjectSettings.has_setting(setting_name):
+			ProjectSettings.set_setting(setting_name, default_value)
+			needs_save = true
+			
+		ProjectSettings.set_initial_value(setting_name, default_value)
+		
+		var property_info = {
+			"name": setting_name,
+			"type": TYPE_BOOL,
+			"hint": PROPERTY_HINT_NONE
+		}
+		ProjectSettings.add_property_info(property_info)
+		
+		ProjectSettings.set_as_basic(setting_name, true)
+	
+	if needs_save:
+		ProjectSettings.save()
+
+
+func remove_custom_settings() -> void:
+	for key in ENABLED_DEV_TOOLS:
+		var setting_name = SETTINGS_PREFIX + str(key)
+		if ProjectSettings.has_setting(setting_name):
+			ProjectSettings.clear(setting_name)
+	ProjectSettings.save()
