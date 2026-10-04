@@ -2734,6 +2734,8 @@ func _compute_carry_prompt() -> String:
 		return ""  # standing only: no "pick up" prompt while crouched or prone
 	player.interact_ray.force_raycast_update()
 	var prop = player._aimed_carriable()
+	if prop != null and _component_locked(prop) and not _is_blocked_by_geometry(prop):
+		return "locked"  # a part of a running vehicle: the HUD says why it stays in
 	if prop != null and prop.has_method("interact") and prop.interact(player) \
 			and not _is_blocked_by_geometry(prop):
 		return "carry"

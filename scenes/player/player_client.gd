@@ -336,6 +336,7 @@ func _process(_delta: float) -> void:
 
 
 	player.interact_label.hide()
+	player.interact_label.modulate = Color.WHITE  # only a refusal ("locked" below) is drawn in red
 	player.can_interact = false
 	# An Interactable under the crosshair (a console) says what `action` will do to it. The press itself is
 	# handled with every other use of `action` (_unhandled_input), where it takes priority.
@@ -398,6 +399,11 @@ func _process(_delta: float) -> void:
 				what = str(aimed.part_name())
 			player.interact_label.text = _prompt(&"action",
 					tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
+			player.interact_label.show()
+		elif player._carry_prompt == "locked":
+			# A part of a running vehicle: no key to press, only why — in red, it is a refusal.
+			player.interact_label.text = tr("%%HUD_PART_ENGINE_RUNNING")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
 
 	var dir_vect = Vector3.ZERO
