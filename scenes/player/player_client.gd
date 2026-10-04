@@ -770,7 +770,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_send_vehicle_action("reset_vehicle")  # put the vehicle back upright
 		_send_horn_input(event)
 		if InputCombo.pressed(event, "vehicle_ignition"):
-			_send_vehicle_action("vehicle_ignition")  # refused by the vehicle while it rolls
+			_send_vehicle_action("vehicle_ignition")  # on or off at any speed; refused with no motor or no charge
 		if InputCombo.pressed(event, "vehicle_lights"):
 			_send_vehicle_action("vehicle_lights")
 		if _handle_limiter_input(event):

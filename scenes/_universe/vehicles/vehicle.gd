@@ -59,9 +59,13 @@ const REBIND_EVERY_FRAMES: int = 30
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
-## Ignition: the engine must be started (key I, driver only) before the vehicle can drive, and it can
-## only be switched on/off while standing still — below this speed (km/h). A vehicle spawns engine off.
-@export_range(0.0, 20.0, 0.5) var ignition_max_kmh: float = 3.0
+## Wheels off the ground, throttle down: how fast the driven wheels spin up towards full speed (km/h of
+## road speed per second). Nothing holds a wheel in the air back, so the motor revs up quickly. Higher =
+## a sharper rev-up on a jump.
+@export var airborne_rev_up_kmh_s: float = 120.0
+## Wheels off the ground, throttle released: how fast they spin down (km/h per second). Lower = they keep
+## turning longer after the foot comes off.
+@export var airborne_spin_down_kmh_s: float = 30.0
 ## How fast the applied torque ramps to the throttle (1/s). Lower = gentler launch (keeps a
 ## heavy vehicle from leaping off the line).
 @export var torque_response: float = 2.5
@@ -646,6 +650,9 @@ var _grip_log_ticks: int = 0
 ## gated on this stamp being the current frame.
 var _wheel_contacts_frame: int = -1
 var _throttle: float = 0.0
+## SERVER: the driven wheels' speed (km/h) while none touches the ground: Godot stops driving a wheel in
+## the air, so its free spin is kept here instead (see _update_free_wheels).
+var _free_wheel_kmh: float = 0.0
 var _pilot: Node3D = null
 ## Server: until this time (Time.get_ticks_msec) the driver a hand-over or the database told us about
 ## (pilot_uuid) is still expected to be re-seated here; after it, an empty driver seat means nobody
@@ -693,6 +700,10 @@ var _net_brake: bool = false
 var _net_steering: float = 0.0  # replicated front-wheel steer angle (rad)
 var _wheel_last_pos: Vector3 = Vector3.ZERO  # client: to derive wheel spin from speed
 var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the server
+## Client: the driven wheels' speed (km/h) replicated from the server (get_wheel_kmh), and whether the
+## server sent it at all — a Horizon that does not relay "wheel_kmh" yet leaves the gauge on _net_speed.
+var _net_wheel_kmh: float = 0.0
+var _net_wheel_seen: bool = false
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
 ## The real "up" for this vehicle: opposite the gravity acting on it (radial on a planet, world-up on
 ## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
@@ -1980,18 +1991,21 @@ func _sfx_muted() -> bool:
 	# authority is not a headless build (an editor instance running as the server).
 	return _is_networked() and GameOrchestrator.is_server()
 
-## SERVER: the driver turns the ignition key (I). STARTING needs a near-standstill (below
-## ignition_max_kmh); STOPPING is always allowed, at any speed — a kill switch (unwise while rolling
-## IRL, but the driver can always cut it). The state is replicated, so every client hears the start-up
+## SERVER: the driver turns the ignition key (I): on or off, at any speed — an electric motor needs no
+## standstill to start, and the driver can always cut it. The engine must be running for the vehicle to
+## drive, and a vehicle spawns engine off. The state is replicated, so every client hears the start-up
 ## + the idle, and a vehicle with a dead engine does not drive (see _physics_process).
+## Every press is logged with what came of it: a refused start says nothing on screen.
 func toggle_engine() -> void:
-	if not _engine_on and absf(get_display_speed_kmh()) > ignition_max_kmh:
-		return  # can't START above walking pace; stopping (the else) is unrestricted
+	var at : String = "%.0f km/h" % absf(get_display_speed_kmh())
 	if not _engine_on and bays.first_engine() == null:
+		print("[Vehicle] ignition refused: no motor (%s)" % at)
 		return  # nothing to run: an empty bay has no ignition
 	if not _engine_on and not energy.has_energy():
+		print("[Vehicle] ignition refused: no charge (%s)" % at)
 		return  # no charge left in any battery (or no battery at all): no ignition either
 	set_engine(not _engine_on)
+	print("[Vehicle] ignition: %s (%s)" % ["on" if _engine_on else "off", at])
 
 ## Engine on/off, on the server as well as on each replica (which gets it replicated). Switching it ON
 ## plays the start-up sound; the idle loop follows on its own (see _update_engine_idle).
@@ -2017,8 +2031,8 @@ func is_engine_on() -> bool:
 
 ## The engine note. ONE looped sample (recorded at idle) covers the whole rev range: its pitch and its
 ## volume are pushed up with the engine RPM, which is exactly how a car engine reads to the ear. No
-## replication needed — the engine state and the speed are already known here, and get_engine_rpm()
-## works on a replica too (it is derived from the replicated speed). Called every frame.
+## replication of its own — the engine state and the wheels' speed are already known here, and
+## get_engine_rpm() works on a replica too (it is derived from the replicated wheel_kmh). Called every frame.
 func _update_engine_sound(delta: float) -> void:
 	if _engine_sound_wait > 0.0:
 		_engine_sound_wait -= delta  # cranking: the loop waits its turn (see set_engine)
@@ -2028,7 +2042,7 @@ func _update_engine_sound(delta: float) -> void:
 		_start_or_stop_engine_sound(running)
 	if _idle_player == null or not _idle_player.playing:
 		return
-	# Chase the target rev ratio instead of jumping to it: the RPM comes from the (networked, snapped)
+	# Chase the target rev ratio instead of jumping to it: the RPM comes from the (networked, snapped) wheel
 	# speed, so a raw follow would step and warble. This is the engine's "inertia".
 	var target: float = _rev_ratio()
 	_rev = move_toward(_rev, target, sfx_engine_rev_response * delta)
@@ -2037,7 +2051,7 @@ func _update_engine_sound(delta: float) -> void:
 
 ## Where the engine sits between idle (0.0) and the red line (1.0) right now. THERMAL revs between
 ## idle_rpm and redline_rpm within each gear (so the note falls back on every shift, like a real
-## gearbox); ELECTRIC has no gears: the RPM just tracks the speed up to motor_max_rpm.
+## gearbox); ELECTRIC has no gears: the RPM just tracks the driven wheels' speed up to motor_max_rpm.
 func _rev_ratio() -> float:
 	# Read from the POWERTRAIN, not from exports: those figures come from the engine that is
 	# actually fitted now, so the note follows the part rather than a setting on the chassis.
@@ -2539,6 +2553,7 @@ func full_state() -> Dictionary:
 	return {
 		"pilot_uuid": _pilot_uuid_now(),
 		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
+		"wheel_kmh": snappedf(get_wheel_kmh(), 0.1),
 		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
 		"handbrake": _handbrake,
 		"mass": snappedf(mass, 0.1),  # total weight (empty + cargo + seated players)
@@ -2794,6 +2809,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_net_steering = float(data["steering"])
 	if data.has("speed"):
 		_net_speed = float(data["speed"])
+	if data.has("wheel_kmh"):
+		_net_wheel_kmh = float(data["wheel_kmh"])
+		_net_wheel_seen = true
 	if data.has("cargo_mass"):
 		_net_cargo_mass = float(data["cargo_mass"])
 	if data.has("mass"):
@@ -3168,7 +3186,35 @@ func _apply_drive(delta: float) -> void:
 		for wheel in _wheels:
 			if wheel.use_as_traction and not wheel.is_in_contact():
 				_spin_wheel_visual(wheel, -signf(_throttle) * 25.0 * delta)
+	_update_free_wheels(delta)
 	_update_steering_wheel(steering)  # turn the volant (server/bench); a replica does it in _update_wheels_visual
+
+
+## SERVER: on the ground the driven wheels' speed is the one Godot simulates; in the air a free wheel
+## spins up with the throttle (nothing holds it back) and down without it. From the speed at take-off,
+## so the gauge does not jump when the truck leaves the ground.
+func _update_free_wheels(delta: float) -> void:
+	if _driven_wheels_grounded():
+		_free_wheel_kmh = _rolling_wheel_kmh()
+		return
+	var target : float = _powertrain.max_speed_kmh * _throttle
+	_free_wheel_kmh = free_wheel_step(_free_wheel_kmh, target, airborne_rev_up_kmh_s,
+			airborne_spin_down_kmh_s, delta)
+
+
+## [param current] (km/h) towards [param target]: at [param rise] (km/h per second) when that spins the
+## wheel faster, at [param fall] when it lets it slow down.
+static func free_wheel_step(current: float, target: float, rise: float, fall: float, delta: float) -> float:
+	var rate : float = rise if absf(target) > absf(current) else fall
+	return move_toward(current, target, rate * delta)
+
+
+## True while at least one driven wheel touches the ground.
+func _driven_wheels_grounded() -> bool:
+	for wheel in _wheels:
+		if wheel.use_as_traction and wheel.is_in_contact():
+			return true
+	return false
 
 ## Cancel the hand-brake drift HERE (after the physics step), NOT in _physics_process — setting
 ## linear_velocity before the step fought the wheel suspension and made the body sink onto its
@@ -3439,10 +3485,43 @@ func _sync_steering() -> void:
 	_steering_model.self_center_speed = steer_self_center_speed
 	_steering_model.self_center_ref_kmh = steer_self_center_ref_kmh
 
+## The motor turns with the wheels it drives (an electric motor on a fixed reduction): its revs come
+## from THEIR speed, not the body's. The body's speed counted a fall, a jump or a slide as revs — the
+## engine screamed in free fall with nobody on the throttle.
 func get_engine_rpm() -> float:
-	# Base it on the DISPLAY speed (replicated) so the gauge works on the client replica too —
-	# there linear_velocity is 0 (physics off). RPM uses |speed|, so the magnitude is fine.
-	return _powertrain.engine_rpm(get_display_speed_kmh())
+	return _powertrain.engine_rpm(get_wheel_kmh())
+
+
+## How fast the driven wheels turn, as a road speed (km/h; negative in reverse). On the server, the
+## wheels Godot simulates while one touches the ground, else their free spin (_update_free_wheels). On a
+## client replica (no physics), the figure the server sent — or, until one arrives, the body's speed.
+func get_wheel_kmh() -> float:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _net_wheel_kmh if _net_wheel_seen else _net_speed
+	return _rolling_wheel_kmh() if _driven_wheels_grounded() else _free_wheel_kmh
+
+
+## The driven wheels' speed as Godot simulates it (km/h).
+func _rolling_wheel_kmh() -> float:
+	var rpms := PackedFloat32Array()
+	var radii := PackedFloat32Array()
+	for wheel in _wheels:
+		if wheel.use_as_traction:
+			rpms.append(wheel.get_rpm())
+			radii.append(wheel.wheel_radius)
+	return wheel_kmh_of(rpms, radii)
+
+
+## The road speed (km/h) of wheels turning at [param rpms] (rev/min) with [param radii] (m), averaged:
+## one revolution covers 2π·r. 0 with no wheel.
+static func wheel_kmh_of(rpms: PackedFloat32Array, radii: PackedFloat32Array) -> float:
+	var count : int = mini(rpms.size(), radii.size())
+	if count == 0:
+		return 0.0
+	var total : float = 0.0
+	for i in count:
+		total += rpms[i] * TAU * radii[i] * 60.0 / 1000.0
+	return total / count
 
 ## HUD label: the current gear (THERMAL) or empty (ELECTRIC has no gears).
 func get_gear_label() -> String:

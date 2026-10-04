@@ -94,3 +94,16 @@ func test_the_battery_in_use_stays_in_while_the_engine_runs() -> void:
 	assert_eq(_truck.bays.removal_refused(bay_in_use), "", "engine off: it comes out")
 	assert_not_null(battery)
 	assert_not_null(spare)
+
+
+## The key works at any speed, both ways: a motor needs no standstill to start, and the driver can
+## always cut it. It used to refuse a start above 3 km/h, silently.
+func test_the_ignition_works_at_any_speed() -> void:
+	_fit(ENGINE, 0)
+	_fit(BATTERY, 1)
+	_truck.bays.rebuild_drive_spec()
+	_truck.linear_velocity = Vector3(0.0, 0.0, -50.0 / 3.6)  # 50 km/h
+	_truck.toggle_engine()
+	assert_true(_truck.is_engine_on(), "started while rolling")
+	_truck.toggle_engine()
+	assert_false(_truck.is_engine_on(), "and cut while rolling")

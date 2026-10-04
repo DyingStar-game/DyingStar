@@ -515,7 +515,7 @@ func server_action_received(data: Dictionary) -> void:
 		"vehicle_ignition":
 			var veh_i = _piloted_vehicle(data)
 			if veh_i != null and veh_i.has_method("toggle_engine"):
-				veh_i.toggle_engine()  # refused by the vehicle itself if it is still rolling
+				veh_i.toggle_engine()  # at any speed; the vehicle refuses a start with no motor or no charge
 		"vehicle_horn":
 			var veh_n = _piloted_vehicle(data)
 			if veh_n != null and veh_n.has_method("set_horn"):
