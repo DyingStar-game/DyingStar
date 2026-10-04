@@ -1,9 +1,9 @@
 # 0025. Switch developer tools off in one table, keep their code, and refuse them where they run
 
 - **Status:** Accepted
-- **Date:** 2026-08-20 (inverted, off in CI: 2026-09-14) · **Recorded:** 2026-10-04 · **Updated:** —
+- **Date:** 2026-08-20 (inverted, off in CI: 2026-09-14) · **Recorded:** 2026-10-04 · **Updated:** 2026-10-04
 - **Deciders:** KiFouine, David Durieux
-- **Evidence:** d23be211 (#263), 42ba637d, 0df375a4, 4bfbfa52 (#297)
+- **Evidence:** d23be211 (#263), 42ba637d, 0df375a4, 4bfbfa52 (#297), #356
 
 ## Context
 
@@ -18,8 +18,11 @@ leaving them on ships them. Some run on the client, others (EVA, teleporter) on 
 - It is read only through `Globals.is_dev_tool_enabled()`; a key missing from the table is OFF.
 - A switched-off tool keeps its code and binding, so flipping one value brings it back. The client
   does not build it, the controls menu hides its binding, and the code around copes without it.
-- A tool is refused where it RUNS: the server checks the table for EVA and the teleporter, since an
-  old or modified client would still ask ([0002](0002-the-game-server-is-authoritative.md)).
+- A tool is refused where it RUNS, since an old or modified client would still ask
+  ([0002](0002-the-game-server-is-authoritative.md)). One gate in front of the server's action
+  dispatcher refuses every action listed in `PlayerServer.DEV_TOOL_OF_ACTION` (`delete_prop` →
+  `zapette`, `spawn_prop` → `spawn_wheel`, `toggle_eva`) while its tool is off; the teleporter
+  checks the table itself.
 - The repository may keep a tool ON for developers. The client and both server build workflows
   `sed` `spawn_wheel`, `zapette`, `toggle_eva` and `build_chunk_skirts` to `false` before export,
   then `grep` each line and fail the build if one is not `false`.
@@ -35,6 +38,9 @@ leaving them on ships them. Some run on the client, others (EVA, teleporter) on 
   ([0017](0017-bump-chunk-cache-version-on-terrain-change.md)).
 - A change must not delete or gut a switched-off tool, check a server-run tool only on the client,
   or read the dictionary without `is_dev_tool_enabled()`.
+- A new client action that belongs to a dev tool needs its line in `DEV_TOOL_OF_ACTION`, and its
+  tool in the server builds' `sed` loop. Until #356 only EVA and the teleporter were checked: the
+  server ran `delete_prop` and `spawn_prop` for any client that sent them.
 
 ## Rejected alternatives
 
@@ -47,7 +53,7 @@ leaving them on ships them. Some run on the client, others (EVA, teleporter) on 
 
 - `scenes/globals/globals.gd`: `ENABLED_DEV_TOOLS` and `is_dev_tool_enabled()`
 - `scenes/player/player_client.gd`: builds or skips the client-side tools
-- `scenes/player/player_server.gd`: refuses EVA when switched off
+- `scenes/player/player_server.gd`: `DEV_TOOL_OF_ACTION` and the gate in `server_action_received`
 - `scenes/_universe/structures/buildings/teleporter/teleporter.gd`: server-side refusal
 - `ui/menu_config/menu_config.gd`: hides a switched-off tool's binding
 - `.github/workflows/build-client.yaml`: switches the tools off before the client export
@@ -55,4 +61,6 @@ leaving them on ships them. Some run on the client, others (EVA, teleporter) on 
 
 ## Enforced by
 
-- The three build workflows: the `grep` after each `sed` fails the build. No unit test.
+- The three build workflows: the `grep` after each `sed` fails the build.
+- `test/unit/test_dev_tool_gate.gd`: the gate, the real switch it reads, the tool names, and the
+  server builds switching every gated tool off.

@@ -55,4 +55,4 @@ it names under **In the code** still exist.
 | [0022](0022-chat-voice-and-login-services.md) | Launcher JWT for login; chat straight to MQTT; LiveKit voice with Horizon choosing who hears whom. |
 | [0023](0023-vehicle-parts-are-physical.md) | Engines and batteries are physical parts in generic bays; nothing comes out while running. |
 | [0024](0024-asset-credits-and-licences.md) | A credit `.txt` beside every asset; `credits.json` is generated and checked by CI. |
-| [0025](0025-dev-tools-off-by-one-table.md) | Dev tools switch in `ENABLED_DEV_TOOLS`; their code stays; builds force them off. |
+| [0025](0025-dev-tools-off-by-one-table.md) | Dev tools switch in `ENABLED_DEV_TOOLS`; their code stays; builds force them off; the server refuses them. |
