@@ -160,6 +160,14 @@ var pending_messages_player_parenting: Array[Dictionary] = []
 # same for generic objects
 var pending_messages_generic_objects_parenting: Array[Dictionary] = []
 var pending_freeze_objects: Array[Dictionary] = []
+## Players created ASLEEP for a hand-over (create_player with `dormant`): uuid -> {node, adopted}.
+## In the tree, placed, PROCESS_MODE_DISABLED, and NOT in players_list: they send nothing to Horizon,
+## take no input and are not counted, until activate_object wakes them with fresh state. Instancing
+## ~60 players at the switch cost the new server ~2.4 s of main loop, and the handed-over players a
+## freeze; asleep, that cost is paid during the warm-up. A vehicle asleep is simply zone-frozen
+## (_zone_freeze_prop): activate_object adopts it like a prop driven in from another server.
+var _dormant_players: Dictionary = {}
+const DORMANT_META := "_dormant"
 var check_pending_objects_timer: int = 0
 var check_out_of_zone_after_split: int = 0
 
@@ -833,6 +841,12 @@ func _refresh_active_body_pins() -> void:
 			if _perf_report:
 				_perf_planner_usec += Time.get_ticks_usec() - _tpl
 	_mining_planner.end_sweep()
+	# Players asleep for a hand-over: the ground under them is built before they wake (pins only, no
+	# mining plan — they are not playing here yet).
+	for dormant_uuid in _dormant_players:
+		var dormant_node = _dormant_players[dormant_uuid]["node"]
+		if is_instance_valid(dormant_node) and dormant_node is Node3D:
+			_pin_node_to_planet_chunk(dormant_node as Node3D, pins_by_planet)
 	_pin_prewarm_positions(pins_by_planet)
 	if _perf_report:
 		var _tpb: int = Time.get_ticks_usec()
@@ -1486,6 +1500,10 @@ func _send_metrics():
 						"chunks_loading": _chunks_loading(),
 						"objects_number": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 						"players_number": players_list.size(),
+						# This server creates hand-over players asleep (dormant) and wakes them with
+						# activate_object: Horizon uses that path only when this is announced.
+						"dormant_spawn": true,
+						"dormant_number": _dormant_players.size(),
 						# Every scene this server holds — the props of the PropRegistry, asleep or not,
 						# plus the planets (always in the tree, never in the registry) — vs the scenes
 						# actually in the tree (props_list, planets included).
@@ -1981,6 +1999,7 @@ func create_player(event: Dictionary) -> void:
 		prints("ERROR: No player UUID found in event: %s" % event)
 		return
 
+	_drop_dormant_player(player_uuid)  # an asleep copy of a hand-over: this create replaces it
 	if players_list.has(player_uuid):
 		# Player reconnecting — clean up stale instance and respawn
 		prints("Player reconnecting, removing stale instance: %s" % player_uuid)
@@ -2064,12 +2083,23 @@ func create_player(event: Dictionary) -> void:
 		spawned_entity_instance.spawn_up = spawned_entity_instance.global_position.normalized()
 
 	spawned_entity_instance.set_uuid(player_uuid)
+	if bool(event["data"].get("dormant", false)):
+		_make_dormant_player(spawned_entity_instance, player_uuid, adopted_planet != null)
+		return
+	_register_player(spawned_entity_instance, player_uuid, adopted_planet != null)
+
+
+## The live half of create_player, shared with activate_object: list the player, seed what the moves
+## are compared against, connect it to Horizon, seat it back in its vehicle, adopt what it carries.
+## [param adopted] = WE put it under a planet while Horizon still has parent "" (see the seed below).
+func _register_player(spawned_entity_instance: Node, player_uuid: String, adopted: bool) -> void:
 	players_list.set(player_uuid, spawned_entity_instance)
-	# Ask for the collision under this player NOW rather than up to PIN_INTERVAL_MS from
+	# Ask for the collision under this player on the NEXT frame rather than up to PIN_INTERVAL_MS from
 	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
-	# frame of pinning latency is a frame of frozen player. Idempotent — the sweep pushes the whole set,
-	# so calling it early cannot drop another player's pins.
-	_refresh_active_body_pins()
+	# frame of pinning latency is a frame of frozen player. Not a sweep per player any more: a sweep
+	# walks every player (and plans mining for the real ones), ~25 ms at 48 players, and a hand-over
+	# creating 60 players ran 60 growing sweeps in a row — about half of its ~2.4 s.
+	_pin_last_ms = 0
 	prints("spawning player", player_uuid, "in world of",
 		_planet_ancestor_of(spawned_entity_instance).name if _planet_ancestor_of(spawned_entity_instance) != null else "ROOT",
 		"at local", spawned_entity_instance.position, "true", _true_position(spawned_entity_instance))
@@ -2084,7 +2114,7 @@ func create_player(event: Dictionary) -> void:
 	# for a parent it already knows it, and re-announcing it on the first tick would be noise. When
 	# WE adopted the player into a planet world, Horizon still has parent "" while the positions we
 	# emit are planet-local: the memo stays "" so the first _on_player_move announces the planet.
-	players_list_last_parent[player_uuid] = "" if adopted_planet != null \
+	players_list_last_parent[player_uuid] = "" if adopted \
 			else PropSpawn.parent_frame_uuid(spawned_entity_instance)
 
 	spawned_entity_instance.connect("hs_server_move", _on_player_move)
@@ -2100,6 +2130,88 @@ func create_player(event: Dictionary) -> void:
 			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 	_stream_adopt_waiting(player_uuid)  # what they carry, if it arrived first
+
+
+## A player created for a hand-over, kept asleep until activate_object: placed in the tree (its scene
+## instanced, _ready run — the expensive part), out of physics and processing, out of players_list.
+func _make_dormant_player(node: Node, player_uuid: String, adopted: bool) -> void:
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	node.set_meta(DORMANT_META, true)
+	players_list_creationdate.erase(player_uuid)
+	_dormant_players[player_uuid] = {"node": node, "adopted": adopted}
+	print("[zone] player %s created asleep for a hand-over" % player_uuid)
+
+
+## Forget an asleep player (it left the zone before the switch, quit, or is created again): out of the
+## tree NOW (a vehicle it sits in must not count it as a rider any more), freed, and the props that
+## waited for it as their parent (what it carries) forgotten with it.
+func _drop_dormant_player(player_uuid: String) -> bool:
+	if not _dormant_players.has(player_uuid):
+		return false
+	var node = _dormant_players[player_uuid]["node"]
+	_dormant_players.erase(player_uuid)
+	for child in prop_registry.take_waiting(player_uuid):
+		prop_registry.forget(child)
+	if is_instance_valid(node):
+		var holder: Node = node.get_parent()
+		if holder != null:
+			holder.remove_child(node)
+		node.queue_free()
+	print("[zone] asleep player %s dropped" % player_uuid)
+	return true
+
+
+## Horizon's switch of a hand-over: wake what create_player / create_generic_object made asleep, with
+## the state it has NOW (the sender kept simulating it during the warm-up). Vehicles come first (a
+## zone-frozen prop, adopted like one driven in from another server), then their riders. Anything not
+## asleep here is created the normal way: a player who arrived during the warm-up, an older server.
+func activate_object(event: Dictionary) -> void:
+	var data: Dictionary = event["data"]
+	var player_uuid: String = str(data.get("object_uuid", ""))
+	if str(data.get("object_type", "")) != "player":
+		create_generic_object(event)
+		return
+	if not _dormant_players.has(player_uuid):
+		if players_list.has(player_uuid):
+			return  # already live here: it crossed a border into our zones meanwhile
+		create_player(event)
+		return
+	var entry: Dictionary = _dormant_players[player_uuid]
+	var node = entry["node"]
+	var od: Dictionary = data.get("object_data", {})
+	if not is_instance_valid(node) or not od.has("position"):
+		_drop_dormant_player(player_uuid)
+		create_player(event)
+		return
+	var pos := Vector3(od["position"]["x"], od["position"]["y"], od["position"]["z"])
+	var adopted := false
+	var pid: String = str(od.get("parent_id", ""))
+	if pid != "":
+		var parent: Node = _search_parent_node(pid)
+		if parent == null:
+			# Its frame is not here: start over through the normal path, which waits for it.
+			_drop_dormant_player(player_uuid)
+			create_player(event)
+			return
+		if node.get_parent() != parent:
+			node.reparent(parent, false)
+	else:
+		# Same origin rebase as create_player: true universe coordinates, into the owning planet.
+		var owner_planet := _owning_planet(pos)
+		if owner_planet != null:
+			if node.get_parent() != owner_planet:
+				node.reparent(owner_planet, false)
+			pos = pos - _planet_orbital_abs(owner_planet)
+			adopted = true
+		elif node.get_parent() != universe_scene:
+			node.reparent(universe_scene, false)
+	_dormant_players.erase(player_uuid)
+	node.position = pos
+	node.remove_meta(DORMANT_META)
+	node.process_mode = Node.PROCESS_MODE_INHERIT
+	_register_player(node, player_uuid, adopted)
+	print("[zone] player %s woken for the hand-over" % player_uuid)
+
 
 func set_serverinfo(uuid: String) -> void:
 	serverinfo_uuid = uuid
@@ -2162,6 +2274,8 @@ func _adopt_transferred_prop(prop: Node3D, object_data: Dictionary) -> void:
 	if prop.has_method("server_adopt_state"):
 		prop.server_adopt_state(object_data)
 	_zone_unfreeze_prop(prop)
+	if prop.has_method("server_adopt_velocity"):
+		prop.server_adopt_velocity(object_data)
 	if prop is RigidBody3D:
 		_hold_if_no_ground(prop as RigidBody3D)  # the zone we just took: its ground may not be built
 	var carrier: Node = prop.get_parent()
@@ -2443,6 +2557,12 @@ func create_generic_object(event: Dictionary) -> void:
 	if uuid == "":
 		_materialize_event(event.duplicate(true))
 		return
+	var dormant: bool = bool(data.get("dormant", false))
+	if dormant:
+		data.erase("dormant")  # kept out of the registry: a later wake-up must not freeze it again
+		if props_list.has(type) and props_list[type].has(uuid) and is_instance_valid(props_list[type][uuid]):
+			return  # we already have it (live, or zone-frozen): activate_object adopts it at the switch
+		event["_immediate"] = true  # built now, during the warm-up — that is the point
 	# Already in the tree: the historical duplicate / hand-over handling.
 	if props_list.has(type) and props_list[type].has(uuid) and is_instance_valid(props_list[type][uuid]):
 		_materialize_event(event)
@@ -2463,8 +2583,12 @@ func create_generic_object(event: Dictionary) -> void:
 	_stream_register_pads(uuid)
 	if bool(event.get("_immediate", false)):
 		var ti: int = Time.get_ticks_usec()
-		_stream_materialize(uuid)
+		var built = _stream_materialize(uuid)
 		_stream_note_cost(type, Time.get_ticks_usec() - ti)
+		if dormant and built != null and is_instance_valid(built):
+			# Asleep = zone-frozen: no physics, no replication, never put to sleep by the streamer,
+			# and activate_object (create_generic_object on an existing frozen prop) adopts it.
+			_zone_freeze_prop(built)
 		_stream_mark_if_unwanted(uuid)
 	elif _stream_should_live(entry):
 		_stream_enqueue(uuid)
@@ -2604,8 +2728,10 @@ func _stream_should_live(entry: Dictionary) -> bool:
 ## Positions of the viewers of [param world] ("space" or a planet uuid), in that world's coordinates.
 func _stream_viewers(world: String) -> Array:
 	var out: Array = []
-	for puuid in players_list:
-		var p = players_list[puuid]
+	var bodies: Array = players_list.values()
+	for dormant_uuid in _dormant_players:
+		bodies.append(_dormant_players[dormant_uuid]["node"])  # what is around them streams in now
+	for p in bodies:
 		if not is_instance_valid(p) or not (p is Node3D):
 			continue
 		var planet := _planet_ancestor_of(p as Node3D)
@@ -3411,6 +3537,7 @@ func _on_player_update(
 
 func remove_player(event: Dictionary) -> void:
 	var player_uuid = event["data"]["object_uuid"]
+	_drop_dormant_player(str(player_uuid))
 	# Self-healing backstop: if this (PNJ) player owned a depot's reception role, free it so the
 	# role never stays stuck on a gone owner. The depots register in the "cargo_depots" group.
 	for depot in get_tree().get_nodes_in_group("cargo_depots"):
@@ -3449,6 +3576,8 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 			return false
 		return false
 	if object["object_type"] == "player":
+		if _drop_dormant_player(str(object["object_uuid"])):
+			return true
 		if players_list.has(object["object_uuid"]):
 			var player = players_list[object["object_uuid"]]
 			print("erase player (1): %s" % object["object_uuid"])

@@ -246,6 +246,9 @@ func dispatch_horizon_message(message: Dictionary):
 						print("Star object not yet managed")
 					_:
 						NetworkOrchestrator.network_agent.create_generic_object(message)
+			"activate_object":
+				# the switch of a hand-over: wake what initial_object created asleep, with fresh state
+				NetworkOrchestrator.network_agent.activate_object(message)
 			"initial_object_end":
 				#  Ok let's go, unpause to begin simulation
 				# get_tree().paused = false
