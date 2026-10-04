@@ -9,22 +9,27 @@ among non-resources), so the game cannot read them: this script gathers them
 into one JSON file that it can. Nobody edits that file by hand -- a pull
 request that touches a credit gets it rewritten by .github/workflows/credits.yml.
 
-A credit file holds one line per author, in one of two forms:
+A credit file holds one line per author, in one of three forms:
 
     Discord - <pseudo> - <numeric Discord id>
     <Site> - <author> - <URL> - <licence>
+    Unknown
 
 The first is a community member, whose work is under the project's asset
 licence (assets/LICENSE), so none is written. The second is a third-party
 source (Freesound, Pixabay...), whose licence must be stated because some of
-them require the attribution the Credits page gives.
+them require the attribution the Credits page gives. The third is a work whose
+author was lost (tracks recovered after an accident): the page shows "owner
+wanted" in their place so they can come forward, and the work is removed on
+request. It stands alone in its file: a known author would make it untrue.
 
 A `.txt` credits the file of the same base name (`truck-horn.txt` ->
 `truck-horn.ogg`); when there is none, every file starting `<base>_` (a texture
 set: `metal_iron_041A_4K.txt` -> `metal_iron_041A_4K_Color.jpg`, ...).
 
 Errors, all reported before exiting with code 1:
-  * a line in neither form, or a Discord id that is not a number;
+  * a line in none of the forms, or a Discord id that is not a number;
+  * an `Unknown` line beside another credit line;
   * a `.txt` that credits no file (its asset was renamed or removed);
   * one Discord id under two pseudos (the page would show the same person twice);
   * a sound with no credit file;
@@ -80,6 +85,8 @@ MEMBER_LICENCE = "CC BY-NC-SA 4.0"
 DISCORD = re.compile(r"^Discord - (?P<author>.+?) - (?P<id>\S+)$")
 THIRD_PARTY = re.compile(r"^(?P<site>.+?) - (?P<author>.+?) - (?P<url>https?://\S+) - (?P<license>.+)$")
 URL_IN_TEXT = re.compile(r"https?://\S+")
+# The whole line of a work whose author is not known, and the source it gives.
+UNKNOWN = "Unknown"
 
 
 @dataclass(frozen=True)
@@ -109,7 +116,7 @@ class Credit:
 
 
 def parse_line(line: str) -> dict | None:
-    """The fields of one credit line, or None when it is in neither form.
+    """The fields of one credit line, or None when it is in none of the forms.
 
     Raises ValueError for a Discord line whose id is not a number: it is
     recognisably a Discord credit, so "not a credit line" would mislead.
@@ -125,6 +132,8 @@ def parse_line(line: str) -> dict | None:
     if match:
         return {"source": match["site"].strip(), "author": match["author"].strip(), "id": "",
                 "url": match["url"], "license": match["license"].strip()}
+    if line == UNKNOWN:
+        return {"source": UNKNOWN, "author": "", "id": "", "url": "", "license": "unknown"}
     return None
 
 
@@ -176,10 +185,12 @@ def read_sidecar(sidecar: Path, folder: list[Path], root: Path, errors: list[str
             errors.append("%s:%d: %s" % (rel, number, error))
             continue
         if fields is None:
-            errors.append("%s:%d: not a credit line: %r\n    expected 'Discord - <pseudo> - <id>' "
-                          "or '<Site> - <author> - <URL> - <licence>'" % (rel, number, line.strip()))
+            errors.append("%s:%d: not a credit line: %r\n    expected 'Discord - <pseudo> - <id>', "
+                          "'<Site> - <author> - <URL> - <licence>' or 'Unknown'" % (rel, number, line.strip()))
             continue
         credits.append(Credit(category=category, asset=label, path=path, **fields))
+    if len(credits) > 1 and any(c.source == UNKNOWN for c in credits):
+        errors.append("%s: 'Unknown' must stand alone: the file also names an author" % rel)
     if not credits and not any(e.startswith(rel) for e in errors):
         errors.append("%s: empty credit file" % rel)
     return credits

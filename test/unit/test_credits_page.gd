@@ -140,6 +140,60 @@ func test_the_credited_music_that_exists_is_what_can_play() -> void:
 	assert_eq(CreditsSettingsPage.music_paths(FIXTURE).size(), 0, "a credit with no path plays nothing")
 
 
+## A work whose author was lost says so where the name goes — a translation key, unlike a name — and
+## comes after the works whose author is known.
+func test_a_lost_author_reads_owner_wanted_and_comes_last() -> void:
+	var music : Array = [
+		{"asset": "zeta.ogg", "author": "", "source": "Unknown", "license": "unknown"},
+		{"asset": "alpha.ogg", "author": "Koothka", "source": "Discord"},
+	]
+	var lines : Array[Dictionary] = CreditsSettingsPage.lines_of(music)
+	assert_eq(lines.map(func(l: Dictionary) -> bool: return l.owner_wanted), [false, true])
+	var file := FileAccess.open(FIXTURE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"music": music}))
+	file.close()
+	var caption : Label = _rows(_page())[1].find_children("*", "Label", true, false)[0]
+	assert_eq(caption.text, "%%MENU_CREDITS_OWNER_WANTED")
+	assert_ne(caption.auto_translate_mode, Node.AUTO_TRANSLATE_MODE_DISABLED, "the key is translated")
+
+
+## Every track in the project has a play button, and only tracks do. Pressed, it plays that track over
+## the drawn one; pressed again, the drawn one comes back.
+func test_a_track_plays_from_its_line_and_stops() -> void:
+	var page : CreditsSettingsPage = PAGE.instantiate()
+	add_child_autofree(page)
+	var drawn : MusicPlaylist = MusicDirector.override()
+	var credits : Dictionary = CreditsSettingsPage.load_credits(CreditsSettingsPage.CREDITS_PATH)
+	var playable : Array = CreditsSettingsPage.lines_of(credits.music).filter(
+			func(l: Dictionary) -> bool: return ResourceLoader.exists(l.path))
+	var toggles : Array[Node] = page.find_children("*", "PlayToggle", true, false)
+	assert_eq(toggles.size(), playable.size(), "one button per track line, none on sounds or models")
+	var path : String = playable[0].path
+	page.toggle_track(path)
+	assert_eq(MusicDirector.override().tracks[0].resource_path, path)
+	assert_eq(toggles.filter(func(t: PlayToggle) -> bool: return t.playing).size(), 1, "only its button stops")
+	page.toggle_track(path)
+	assert_eq(MusicDirector.override(), drawn, "the drawn track again")
+	assert_true(toggles.all(func(t: PlayToggle) -> bool: return not t.playing))
+
+
+## The pad and the keyboard reach every track: "accept" on a focused track line plays it.
+func test_accept_on_a_track_line_plays_it() -> void:
+	var page : CreditsSettingsPage = PAGE.instantiate()
+	add_child_autofree(page)
+	var drawn : MusicPlaylist = MusicDirector.override()
+	var toggle : PlayToggle = page.find_children("*", "PlayToggle", true, false)[0]
+	var row : Node = toggle
+	while not row is SettingsRow:
+		row = row.get_parent()
+	var accept := InputEventAction.new()
+	accept.action = &"ui_accept"
+	accept.pressed = true
+	(row as SettingsRow).gui_input.emit(accept)
+	assert_true(toggle.playing)
+	assert_ne(MusicDirector.override(), drawn)
+
+
 ## The page's track wins over the place's music while it is open, and lets go when it closes.
 func test_the_music_is_handed_back_on_close() -> void:
 	var page : CreditsSettingsPage = PAGE.instantiate()

@@ -54,6 +54,15 @@ class TestLineGrammar(unittest.TestCase):
     def test_bare_url_is_not_a_credit_line(self) -> None:
         self.assertIsNone(parse_line("https://sketchfab.com/3d-models/metal-shelf"))
 
+    def test_unknown_owner_line(self) -> None:
+        fields = parse_line("Unknown")
+        self.assertEqual(fields["source"], "Unknown")
+        self.assertEqual(fields["author"], "", "the page writes 'owner wanted' in its place")
+        self.assertEqual(fields["license"], "unknown")
+
+    def test_unknown_is_the_whole_line(self) -> None:
+        self.assertIsNone(parse_line("Unknown - someone"))
+
 
 class TestPairing(unittest.TestCase):
     """Which file a .txt credits, and what is reported."""
@@ -127,6 +136,21 @@ class TestPairing(unittest.TestCase):
         _credits, errors = self._collect()
         self.assertEqual(len(errors), 1)
         self.assertIn("several pseudos", errors[0])
+
+    def test_a_lost_author_is_credited_as_unknown(self) -> None:
+        self._write("assets/_universe/audio/music/lost.ogg")
+        self._write("assets/_universe/audio/music/lost.txt", "Unknown\n")
+        credits, errors = self._collect()
+        self.assertEqual(errors, [], "a work whose author is lost still counts as credited")
+        self.assertEqual([(c.category, c.asset, c.source, c.author) for c in credits],
+                         [("music", "lost.ogg", "Unknown", "")])
+
+    def test_unknown_beside_an_author_is_an_error(self) -> None:
+        self._write("assets/_universe/audio/music/lost.ogg")
+        self._write("assets/_universe/audio/music/lost.txt", "Unknown\n" + MEMBER)
+        _credits, errors = self._collect()
+        self.assertEqual(len(errors), 1)
+        self.assertIn("must stand alone", errors[0])
 
     def test_licence_files_are_not_credit_files(self) -> None:
         self._write("assets/LICENSE", "CC BY-NC-SA 4.0")

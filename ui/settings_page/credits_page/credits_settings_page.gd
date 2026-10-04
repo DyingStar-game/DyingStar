@@ -6,6 +6,8 @@ extends Control
 ## Read like a film's: the whole page under the bar scrolling up on its own, one of the credited tracks
 ## playing.
 ## Scrolling by hand (wheel, arrows, stick) takes over; the column moves on again after a while.
+## Every track has a play button (or "accept" on its focused line) to hear it; pressed again, it stops
+## and the drawn track comes back. A work whose author is lost shows "owner wanted" in their place.
 ##
 ## The list is res://assets/credits.json, written by tools/generate_credits.py from the credit .txt
 ## beside each asset (those files never reach a build, the JSON does). Nobody edits it by hand.
@@ -30,6 +32,10 @@ const GAP_PX : int = 40
 const COLUMN_COLOR : Color = Color(0.02, 0.025, 0.035, 0.72)
 ## A stick pushed past this (0..1) counts as scrolling by hand.
 const STICK_DEADZONE : float = 0.5
+## Gap between a track's play button and its name, in pixels.
+const TOGGLE_GAP_PX : int = 8
+## The source tools/generate_credits.py gives a work whose author is lost (an "Unknown" credit line).
+const UNKNOWN_SOURCE : String = "Unknown"
 const _LABEL_SETTINGS : LabelSettings = preload("res://ui/settings_page/settings_label.tres")
 
 ## The list read by _ready. A test points it at a fixture before adding the page.
@@ -38,6 +44,12 @@ var credits_path : String = CREDITS_PATH
 var _auto : AutoScroll
 ## The track this page asked MusicDirector for, or null.
 var _music : MusicPlaylist = null
+## The track drawn at random when the page opened: what plays while no line is picked.
+var _random : MusicPlaylist = null
+## res:// path of the track picked on a line, or "" while the drawn one plays.
+var _picked : String = ""
+## Play buttons by their track's res:// path: a track with two authors has two lines, so two buttons.
+var _toggles : Dictionary = {}
 
 @onready var _rows : VBoxContainer = $ScrollContainer/Content/Column/MarginContainer/VBoxContainer
 @onready var _column : PanelContainer = $ScrollContainer/Content/Column
@@ -53,7 +65,9 @@ func _ready() -> void:
 	_auto.speed_px_s = SCROLL_SPEED_PX_S
 	_auto.rewind = true
 	$ScrollContainer.add_child(_auto)
-	_play(music_paths(credits))
+	_random = drawn(music_paths(credits))
+	if _random != null:
+		_set_music(_random)
 
 
 ## The music goes back to what the place plays once the credits close.
@@ -103,18 +117,43 @@ static func music_paths(credits: Dictionary) -> PackedStringArray:
 	return paths
 
 
-## One of [param paths], drawn at random, played over everything else while the page is open. Only
-## the drawn one is loaded: a whole playlist would read every track from disk.
-func _play(paths: PackedStringArray) -> void:
+## One of [param paths], drawn at random, to play over everything else while the page is open; null when
+## there is none. Only the drawn one is loaded: a whole playlist would read every track from disk.
+static func drawn(paths: PackedStringArray) -> MusicPlaylist:
 	if paths.is_empty():
-		return
-	var track : AudioStream = load(paths[randi() % paths.size()]) as AudioStream
+		return null
+	return looping(load(paths[randi() % paths.size()]) as AudioStream)
+
+
+## A playlist of [param track] alone, round and round; null for no track.
+static func looping(track: AudioStream) -> MusicPlaylist:
 	if track == null:
-		return
-	_music = MusicPlaylist.new()
-	_music.tracks = [track]
-	_music.shuffle = false  # one track, round and round
-	MusicDirector.set_override(_music)
+		return null
+	var playlist := MusicPlaylist.new()
+	playlist.tracks = [track]
+	playlist.shuffle = false
+	return playlist
+
+
+## Play the track of a line, or stop it when it is the one playing: the drawn track comes back.
+func toggle_track(path: String) -> void:
+	if _picked == path:
+		_picked = ""
+		_set_music(_random)
+	else:
+		var picked : MusicPlaylist = looping(load(path) as AudioStream)
+		if picked == null:
+			return
+		_picked = path
+		_set_music(picked)
+	for toggle_path: String in _toggles:
+		for toggle: PlayToggle in _toggles[toggle_path]:
+			toggle.playing = toggle_path == _picked
+
+
+func _set_music(playlist: MusicPlaylist) -> void:
+	_music = playlist
+	MusicDirector.set_override(playlist)
 
 
 ## The thanks at the very top, then one centred heading per non-empty section and one line per work and
@@ -136,22 +175,27 @@ func build(credits: Dictionary) -> void:
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_rows.add_child(heading)
 		for line: Dictionary in lines:
-			_rows.add_child(_line(factory, line.author, line.work))
+			_rows.add_child(_line(factory, line, category == "music"))
 	_rows.add_child(_spacer())
 
 
-## One section's credits as {author, work}, once each, sorted by author then work.
+## One section's credits as {author, work, path, owner_wanted}, once each, sorted by author then work;
+## the works still looking for their owner come last.
 static func lines_of(credits: Array) -> Array[Dictionary]:
 	var seen : Dictionary = {}
 	for credit: Variant in credits:
 		if not credit is Dictionary:
 			continue
 		var line : Dictionary = {"author": str(credit.get("author", "")),
-				"work": work_name(str(credit.get("asset", "")))}
+				"work": work_name(str(credit.get("asset", ""))),
+				"path": str(credit.get("path", "")),
+				"owner_wanted": str(credit.get("source", "")) == UNKNOWN_SOURCE}
 		seen["%s|%s" % [line.author, line.work]] = line
 	var lines : Array[Dictionary] = []
 	lines.assign(seen.values())
 	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a.owner_wanted != b.owner_wanted:
+			return b.owner_wanted
 		var by_author : int = a.author.naturalnocasecmp_to(b.author)
 		return by_author < 0 if by_author != 0 else a.work.naturalnocasecmp_to(b.work) < 0)
 	return lines
@@ -166,24 +210,48 @@ static func work_name(asset: String) -> String:
 
 
 ## The author right-aligned against the middle, the work left-aligned from it — a film's credits —
-## lit on hover and on focus like any settings line.
-func _line(factory: SettingsRowFactory, author: String, work: String) -> SettingsRow:
-	var line : HBoxContainer = factory.row(author)
-	line.add_theme_constant_override("separation", GAP_PX)
-	var caption : Label = line.get_child(0)
-	# A person's name is shown as written, never looked up as a translation key.
-	caption.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+## lit on hover and on focus like any settings line. A lost author reads "owner wanted"; a [param playable]
+## line whose track is in the project gets a play button before the work, and "accept" on it plays too.
+func _line(factory: SettingsRowFactory, line: Dictionary, playable: bool) -> SettingsRow:
+	var owner_wanted : bool = line.owner_wanted
+	var hbox : HBoxContainer = factory.row("%%MENU_CREDITS_OWNER_WANTED" if owner_wanted else line.author)
+	hbox.add_theme_constant_override("separation", GAP_PX)
+	var caption : Label = hbox.get_child(0)
+	# A person's name is shown as written, never looked up as a translation key; "owner wanted" is one.
+	if not owner_wanted:
+		caption.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	_half(caption, HORIZONTAL_ALIGNMENT_RIGHT)
 	var title := Label.new()
-	title.text = work
+	title.text = line.work
 	title.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	title.label_settings = _LABEL_SETTINGS
 	title.mouse_filter = Control.MOUSE_FILTER_PASS
 	_half(title, HORIZONTAL_ALIGNMENT_LEFT)
-	line.add_child(title)
+	var path : String = line.path
+	var toggle : PlayToggle = null
+	if playable and not path.is_empty() and ResourceLoader.exists(path):
+		toggle = PlayToggle.new()
+		toggle.pressed.connect(toggle_track.bind(path))
+		if not _toggles.has(path):
+			_toggles[path] = []
+		(_toggles[path] as Array).append(toggle)
+		var work := HBoxContainer.new()
+		work.add_theme_constant_override("separation", TOGGLE_GAP_PX)
+		work.mouse_filter = Control.MOUSE_FILTER_PASS
+		work.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		work.add_child(toggle)
+		work.add_child(title)
+		hbox.add_child(work)
+	else:
+		hbox.add_child(title)
 	var row := SettingsRow.new()
 	row.focus_mode = Control.FOCUS_ALL
-	row.add_child(line)
+	row.add_child(hbox)
+	if toggle != null:
+		row.gui_input.connect(func(event: InputEvent) -> void:
+			if event.is_action_pressed("ui_accept"):
+				toggle_track(path)
+				row.accept_event())
 	return row
 
 
