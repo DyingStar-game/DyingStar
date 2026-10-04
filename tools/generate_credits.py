@@ -14,10 +14,10 @@ A credit file holds one line per author, in one of two forms:
     Discord - <pseudo> - <numeric Discord id>
     <Site> - <author> - <URL> - <licence>
 
-The first is a community member; their work is CC0 by project rule, so no
-licence is written. The second is a third-party source (Freesound, Pixabay...),
-whose licence must be stated because some of them require the attribution the
-Credits page gives.
+The first is a community member, whose work is under the project's asset
+licence (assets/LICENSE), so none is written. The second is a third-party
+source (Freesound, Pixabay...), whose licence must be stated because some of
+them require the attribution the Credits page gives.
 
 A `.txt` credits the file of the same base name (`truck-horn.txt` ->
 `truck-horn.ogg`); when there is none, every file starting `<base>_` (a texture
@@ -74,8 +74,8 @@ NOT_CREDITS = {"license", "license.txt", "license.md", "readme.txt", "blender_as
 
 # The page's sections, in its order.
 CATEGORIES = ("music", "sfx", "models")
-# A community member's work is CC0 by project rule.
-MEMBER_LICENCE = "CC0"
+# A community member's work is under the project's asset licence (assets/LICENSE).
+MEMBER_LICENCE = "CC BY-NC-SA 4.0"
 
 DISCORD = re.compile(r"^Discord - (?P<author>.+?) - (?P<id>\S+)$")
 THIRD_PARTY = re.compile(r"^(?P<site>.+?) - (?P<author>.+?) - (?P<url>https?://\S+) - (?P<license>.+)$")

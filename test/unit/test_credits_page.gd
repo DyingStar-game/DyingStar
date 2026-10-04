@@ -7,15 +7,15 @@ const FIXTURE_PATH : String = "user://test_credits.json"
 const FIXTURE : Dictionary = {
 	"music": [
 		{"asset": "a_starry_night.ogg", "author": "Koothka", "source": "Discord", "id": "311230863675359232",
-			"url": "", "license": "CC0"},
+			"url": "", "license": "CC BY-NC-SA 4.0"},
 	],
 	"sfx": [
 		{"asset": "button.ogg", "author": "RescopicSound", "source": "Freesound", "id": "",
 			"url": "https://freesound.org/s/750433/", "license": "CC BY-NC 4.0"},
 		{"asset": "door.ogg", "author": "Pierro", "source": "Discord", "id": "852633379459039302",
-			"url": "", "license": "CC0"},
+			"url": "", "license": "CC BY-NC-SA 4.0"},
 		{"asset": "door-close.ogg", "author": "Pierro", "source": "Discord", "id": "852633379459039302",
-			"url": "", "license": "CC0"},
+			"url": "", "license": "CC BY-NC-SA 4.0"},
 		{"asset": "button_important.ogg", "author": "RescopicSound", "source": "Freesound", "id": "",
 			"url": "https://freesound.org/s/756269/", "license": "CC BY 4.0"},
 	],

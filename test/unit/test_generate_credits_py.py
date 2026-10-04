@@ -31,7 +31,7 @@ class TestLineGrammar(unittest.TestCase):
         self.assertEqual(fields["source"], "Discord")
         self.assertEqual(fields["author"], "Pierro")
         self.assertEqual(fields["id"], "852633379459039302")
-        self.assertEqual(fields["license"], "CC0", "a member's work is CC0 by project rule")
+        self.assertEqual(fields["license"], "CC BY-NC-SA 4.0", "a member's work is under the asset licence")
 
     def test_pseudo_with_a_slash_and_trailing_space(self) -> None:
         fields = parse_line("Discord - KiFouine / WarpZone_Bar - 111043432687874048 ")

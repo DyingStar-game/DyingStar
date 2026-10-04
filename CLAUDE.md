@@ -35,7 +35,7 @@ for every change, not the state of a feature.
   <Site> - <author> - <URL> - <licence>
   ```
 
-  The first is a community member (CC0 by project rule, so no licence is written); the second a
+  The first is a community member (under the project's asset licence, `assets/LICENSE`, so no licence is written); the second a
   third-party source such as `Freesound - RescopicSound - https://freesound.org/s/750433/ - CC BY-NC 4.0`.
   One pseudo per Discord id. A shared material's credit is the `author` / `license` of its `material.json`.
 - **`assets/credits.json` is generated** by `python3 tools/generate_credits.py` (the main menu's Credits shows
