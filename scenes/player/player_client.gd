@@ -1103,6 +1103,11 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			step = -Globals.DEBUG_TIME_STEP
 		if step != 0.0:
 			Globals.debug_time_offset += step
+			# The planet only turns every few seconds (Planet.rotation_update_hz): show the new hour at
+			# once, as before that refresh was slowed, rather than up to 4 s later.
+			var body : Planet = Planet.of(player)
+			if body != null:
+				body.turn_now()
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
 	if (InputCombo.pressed(event, "debug_toggle_moon_lights")
