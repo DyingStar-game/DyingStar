@@ -199,9 +199,10 @@ func create_action_list() -> void:
 func _listable_actions() -> Array[String]:
 	var out : Array[String] = []
 	for action in InputMap.get_actions():
+		var setting_name = "DyingStar/outils_dev/" + String(action)
 		if action.begins_with("ui_"):
 			continue
-		if Globals.ENABLED_DEV_TOOLS.has(action) and not Globals.is_dev_tool_enabled(action):
+		if ProjectSettings.has_setting(setting_name) and not ProjectSettings.get_setting(setting_name, false):
 			continue
 		out.append(action)
 	return out

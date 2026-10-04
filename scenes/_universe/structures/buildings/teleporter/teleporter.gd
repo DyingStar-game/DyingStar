@@ -19,7 +19,7 @@ extends Node3D
 ## The screen contract is [ScreenZone]'s: expose update_screen(data), plus the optional
 ## screen_focus_changed(). Same wiring as the mining depot.
 
-## Key in [constant Globals.ENABLED_DEV_TOOLS]. It has no InputMap binding — the cabin is walked
+## Key in [Project Settings DyingStar/outils_dev]. It has no InputMap binding — the cabin is walked
 ## into, not pressed — so nothing in the controls menu looks for it; the entry is purely the switch.
 const DEV_TOOL: StringName = &"teleporter"
 ## Metres of air left under a vehicle that travels with you: enough to settle onto its wheels.
@@ -63,7 +63,7 @@ func _ready() -> void:
 	if GameOrchestrator.is_server():
 		return  # the headless server has no interface to build
 	_ui.teleport_requested.connect(_on_ui_teleport_requested)
-	_ui.set_enabled(Globals.is_dev_tool_enabled(DEV_TOOL))
+	_ui.set_enabled(ProjectSettings.get_setting("DyingStar/outils_dev/" + DEV_TOOL, false))
 	_ui.load_systems(TeleportCatalog.systems(), system)
 
 
@@ -160,8 +160,8 @@ func update_screen(data: Dictionary) -> void:
 		return  # some other screen action; not ours
 	# A dev tool is switched off where it RUNS, not where it is triggered: a client with an old build,
 	# or one that simply skips the greyed-out interface, still gets nowhere.
-	if not Globals.is_dev_tool_enabled(DEV_TOOL):
-		push_warning("[Teleporter] refused: the teleporter is switched off (Globals.ENABLED_DEV_TOOLS)")
+	if not ProjectSettings.get_setting("DyingStar/outils_dev/" + DEV_TOOL, false):
+		push_warning("[Teleporter] refused: the teleporter is switched off (Project Settings DyingStar/outils_dev/teleporter)")
 		return
 	if not is_instance_valid(_actor):
 		push_warning("[Teleporter] refused: no actor — the screen was not told who pressed")

@@ -705,7 +705,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# their own tile and met with a step (PlanetData._pruned_tile_climbs).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
-		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
+		var _sk := "_sk%d" % int(ProjectSettings.get_setting("DyingStar/outils_dev/build_chunk_skirts", false))
 		# The rock catalogue (rocks.json) is baked colour too: a tint retouched
 		# in rocks.py and re-exported must not be served from old meshes.
 		var _rk := ""
@@ -5196,4 +5196,3 @@ func _editor_flight_place(planet: Planet, cam: Vector3, radius: float) -> void:
 func _editor_camera_world() -> Vector3:
 	var local := _get_editor_camera_local()
 	return Vector3.INF if local == Vector3.INF else global_position + local
-
