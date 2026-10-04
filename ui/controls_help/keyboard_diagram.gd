@@ -119,3 +119,14 @@ static func key_face(keycode: int) -> String:
 			return String.chr(label).to_upper()
 	return InputLabel._physical_key_name(keycode)
 
+
+## The drawn key that prints [param keycode] in the active layout (a binding by letter — the microphone
+## on M — sits on AZERTY where QWERTY has its comma), or [param keycode] itself when no key prints it.
+static func physical_of(keycode: int) -> int:
+	if DisplayServer.get_name() != "headless":
+		for row: Array in ROWS:
+			for key: Array in row:
+				if key[0] != KEY_NONE and DisplayServer.keyboard_get_keycode_from_physical(key[0]) == keycode:
+					return key[0]
+	return keycode
+

@@ -100,7 +100,9 @@ static func name_of(event: InputEvent) -> String:
 static func spot_of(event: InputEvent) -> String:
 	var key := event as InputEventKey
 	if key != null:
-		return "key:%d" % (key.physical_keycode if key.physical_keycode != KEY_NONE else key.keycode)
+		if key.physical_keycode != KEY_NONE:
+			return "key:%d" % key.physical_keycode
+		return "key:%d" % KeyboardDiagram.physical_of(key.keycode)  # bound by letter: where it is printed
 	var button := event as InputEventMouseButton
 	if button != null:
 		return MOUSE_SPOTS.get(button.button_index, "")
