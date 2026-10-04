@@ -18,10 +18,16 @@ func _init(bays: VehicleComponentBays) -> void:
 
 
 ## The batteries fitted, in bay order.
+##
+## A bay can still name a battery that is gone: the server frees a fitted part as a prop of its own
+## when it leaves the zone, while the truck itself is still there for a few frames. Testing `is` on
+## that freed node is a script error, and in a release build the function then returns a null
+## where its caller expects an Array — the server crashed iterating it (SIGSEGV in active(), from
+## the dashboard, each time a driven truck crossed a server border).
 func batteries() -> Array[VehicleBattery]:
 	var out: Array[VehicleBattery] = []
 	for s in _bays.all():
-		if s.occupant is VehicleBattery:
+		if is_instance_valid(s.occupant) and s.occupant is VehicleBattery:
 			out.append(s.occupant)
 	return out
 
