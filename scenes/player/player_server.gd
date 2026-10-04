@@ -1356,7 +1356,15 @@ func _try_start_step_up(move_dir: Vector3) -> bool:
 	_step_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
 	_step_time = 0.0
 	_stepping = true
+	_drop_vertical_speed()  # the glide owns the height now
 	return true
+
+
+## The speed along up goes: a step glide moves the body itself, so no collision ever cancels the gravity
+## added on the ticks between two steps. Walking up a slope that reads as steps, it piled up to 20 m/s
+## (measured) and was waiting to fling the body as soon as a tick moved it again.
+func _drop_vertical_speed() -> void:
+	player.velocity = player.velocity.slide(player.up_direction)
 
 ## One `[Move]` line per 200 ms while the body moves or is in the air: floor state, vertical speed
 ## along up, and every slide collision of the last move (collider name, its normal's tilt from up,
@@ -1441,6 +1449,7 @@ func _server_update_step(delta: float) -> void:
 	_emit_move()
 	if s >= 1.0:
 		_stepping = false
+		_drop_vertical_speed()
 
 ## Network parent to attach to every replicated move while the origin rebase has this player
 ## parented DIRECTLY to a Planet (server.gd create_player routes unparented spawns there; every
