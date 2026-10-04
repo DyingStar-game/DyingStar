@@ -1436,6 +1436,13 @@ func player_move(message: Dictionary):
 		if absf(input_x) > 1.5 or absf(input_y) > 1.5:
 			return
 		var player = players_list[message["player_id"]]
+		# The relay can swap two packets sent a few ms apart: a late "forward" after the "stop" would
+		# keep the player walking with nobody on the keys. Only a newer packet is applied (MoveOrder).
+		var seq: int = int(message["data"].get("seq", -1))
+		if not MoveOrder.is_newer(seq, player.last_move_seq):
+			return
+		if seq >= 0:
+			player.last_move_seq = seq
 		player.input_from_server.input_direction = Vector2(input_x, input_y)
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
