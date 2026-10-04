@@ -854,8 +854,8 @@ func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 			return found
 	return null
 
-## A part its bay will not give back right now (VehicleComponentBays.removal_refused): the battery in
-## use, while the engine runs. Checked before interact(), which would mark it carried.
+## A part its bay will not give back right now (VehicleComponentBays.removal_refused): any part, while
+## the engine runs. Checked before interact(), which would mark it carried.
 func _component_locked(part: Node) -> bool:
 	if not part.has_meta("component_slot_ref"):
 		return false

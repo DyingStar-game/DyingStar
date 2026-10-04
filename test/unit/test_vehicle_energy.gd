@@ -83,15 +83,20 @@ func test_running_dry_stops_the_engine() -> void:
 	assert_false(_truck.is_engine_on())
 
 
-func test_the_battery_in_use_stays_in_while_the_engine_runs() -> void:
+## Nothing comes out of a running vehicle — not the battery in use, not a spare, not a motor.
+func test_no_part_comes_out_while_the_engine_runs() -> void:
+	var motor : VehicleComponent = _fit(ENGINE, 0)
 	var battery : VehicleBattery = _fit(BATTERY, 1)
 	var spare : VehicleBattery = _fit(BATTERY, 3)
-	var bay_in_use: Node = _truck.bays.all()[1]
+	var bays : Array = _truck.bays.all()
 	_truck._engine_on = true
-	assert_ne(_truck.bays.removal_refused(bay_in_use), "", "the one in use stays in")
-	assert_eq(_truck.bays.removal_refused(_truck.bays.all()[3]), "", "a spare comes out")
+	assert_ne(_truck.bays.removal_refused(bays[1]), "", "the battery in use stays in")
+	assert_ne(_truck.bays.removal_refused(bays[3]), "", "so does a spare")
+	assert_ne(_truck.bays.removal_refused(bays[0]), "", "and the motor")
 	_truck._engine_on = false
-	assert_eq(_truck.bays.removal_refused(bay_in_use), "", "engine off: it comes out")
+	for index: int in [0, 1, 3]:
+		assert_eq(_truck.bays.removal_refused(bays[index]), "", "engine off: bay %d gives its part back" % index)
+	assert_not_null(motor)
 	assert_not_null(battery)
 	assert_not_null(spare)
 
