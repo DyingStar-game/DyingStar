@@ -105,12 +105,15 @@ per author:
 ```
 Discord - <pseudo> - <numeric Discord id>
 <Site> - <author> - <URL> - <licence>
+Unknown
 ```
 
 The first is a community member (under the asset licence, so no licence is written); the second a
-third-party source such as `Freesound - RescopicSound - https://freesound.org/s/750433/ - CC BY-NC 4.0`.
+third-party source such as `Freesound - RescopicSound - https://freesound.org/s/750433/ - CC BY-NC 4.0`;
+`Unknown`, alone in its file, a work given to the project whose author's name was lost (the Credits page
+shows "owner wanted"; the work is removed if its author asks).
 One pseudo per Discord id. A shared material's credit is the `author` / `license` of its
-`material.json`. No asset without a known licence. On a pull request, `.github/workflows/credits.yml`
+`material.json`. No asset of unknown origin: `Unknown` is for a lost name, not a lost source. On a pull request, `.github/workflows/credits.yml`
 regenerates `assets/credits.json` and pushes a commit to your branch: pull before you push again
 ([ADR 0024](docs/adr/0024-asset-credits-and-licences.md)).
 
