@@ -1629,6 +1629,7 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 		print("erase player (2): %s" % client_uuid)
 		players_list.erase(client_uuid)
 		_release_carried_for_transfer(player)
+		_unseat_for_transfer(player)
 		player.queue_free()
 	players_newposition[client_uuid] = prep
 
@@ -2972,6 +2973,28 @@ func _stream_sleep(uuid: String) -> bool:
 	return true
 
 
+## Physics frame a seated player was taken out of a vehicle for a hand-over (see _unseat_for_transfer).
+const RIDER_LEFT_META := "_rider_left_frame"
+
+
+## A seated player leaving THIS server (handed over, out of our zones), before its body is freed: the
+## seat is released and the body taken out of the vehicle now. Freeing a collision-less body straight
+## out of a frozen VehicleBody3D's frame — what the hand-over did — crashed the game server (SIGSEGV
+## 1-6 s after every hand-over of a driven truck, 4 out of 4 on preprod 2026-10-04; remove_player
+## documents the same sequence before the 2026-09-13 crash). The vehicle is then held a little longer
+## (_stream_forget) so that the body and the vehicle are never freed in the same physics frame.
+func _unseat_for_transfer(player: Node) -> void:
+	if not ("_seat_node" in player) or not is_instance_valid(player._seat_node):
+		return
+	var vehicle: Node = player._seat_node.get_parent()
+	if vehicle != null and vehicle.has_method("server_release_seat"):
+		vehicle.server_release_seat(player)
+		vehicle.set_meta(RIDER_LEFT_META, Engine.get_physics_frames())
+	var holder: Node = player.get_parent()
+	if holder != null:
+		holder.remove_child(player)
+
+
 ## Does [param node]'s subtree contain a Player (a seated driver, a passenger)?
 func _stream_holds_player(node: Node) -> bool:
 	var stack: Array = node.get_children()
@@ -2991,6 +3014,10 @@ func _stream_forget(uuid: String) -> bool:
 		return true
 	var node = e.get("node")
 	if node != null and is_instance_valid(node) and _stream_holds_player(node):
+		return false
+	# A rider was just taken out of it: not in the same physics frame (see _unseat_for_transfer).
+	if node != null and is_instance_valid(node) and node.has_meta(RIDER_LEFT_META) \
+			and Engine.get_physics_frames() - int(node.get_meta(RIDER_LEFT_META)) < 2:
 		return false
 	var dropped: Array = prop_registry.forget(uuid)
 	for i in range(dropped.size() - 1, -1, -1):
@@ -3029,6 +3056,11 @@ func _free_without_delete(node: Node, do_free: bool = true) -> void:
 		props_list_creationdate.erase(uuid)
 	_cull_indexed_total = -1
 	if do_free:
+		# A vehicle leaves the physics space before it is freed: its wheels keep RAW pointers to the
+		# ground they last touched (see vehicle.gd _wheel_contacts_frame), and that ground is freed in
+		# the same burst when a zone is lost.
+		if node is VehicleBody3D:
+			node.process_mode = Node.PROCESS_MODE_DISABLED
 		node.queue_free()
 
 
@@ -3422,6 +3454,7 @@ func freeze_object(event: Dictionary, append = true) -> bool:
 			print("erase player (1): %s" % object["object_uuid"])
 			players_list.erase(object["object_uuid"])
 			_release_carried_for_transfer(player)
+			_unseat_for_transfer(player)
 			player.queue_free()
 			return true
 		return false
