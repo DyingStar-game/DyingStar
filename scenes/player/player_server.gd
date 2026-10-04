@@ -31,6 +31,15 @@ const GROUND_SEARCH := 30.0
 const _DIALOG_LINE_INTERVAL := 4.0
 ## Max distance (m) between the player and a shelf for a drop to snap into it (see _shelf_for_drop).
 const _SHELF_DROP_RANGE := 4.0
+## Client actions that belong to a dev tool (Globals.ENABLED_DEV_TOOLS), and that tool. While the tool is
+## off, server_action_received refuses the action before running it. A tool is switched off where it RUNS,
+## not where it is triggered: the client only hides the key, so a client that asks anyway (an old build,
+## a modified one) must still get nothing. A new dev-tool action is one line here.
+const DEV_TOOL_OF_ACTION: Dictionary = {
+	"delete_prop": &"zapette",
+	"spawn_prop": &"spawn_wheel",
+	"toggle_eva": &"toggle_eva",
+}
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -306,9 +315,20 @@ func _process_stance_request() -> void:
 		_server_drop_carried_item()
 	player.server_send_properties_to_client({"stance": _stance})
 
+## True when [param action] may run: it belongs to no dev tool, or its tool is on (DEV_TOOL_OF_ACTION).
+## [param is_tool_enabled] takes a tool name and answers; the game passes Globals.is_dev_tool_enabled.
+static func is_action_allowed(action: String, is_tool_enabled: Callable) -> bool:
+	var tool: StringName = DEV_TOOL_OF_ACTION.get(action, &"")
+	return tool == &"" or bool(is_tool_enabled.call(tool))
+
 ## Authoritative dispatcher for a client action, called by the network layer through Player (only the
 ## dedicated server ever receives it). Every branch reads/writes the shared body via `player`.
 func server_action_received(data: Dictionary) -> void:
+	var action: String = str(data.get("action", ""))
+	if not is_action_allowed(action, Globals.is_dev_tool_enabled):
+		push_warning("[DevTools] %s asked for '%s', but its dev tool is switched off: refused"
+				% [player.client_uuid, action])
+		return
 	match data["action"]:
 		JUMP:
 			player.is_jumping = true
@@ -347,14 +367,11 @@ func server_action_received(data: Dictionary) -> void:
 			# EVA free-flight (dev test aid): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
 			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.
-			#
-			# Checked HERE as well as on the client, and this is the check that counts: movement is
-			# server-authoritative, so a client that asked anyway — an old build, a modified one —
-			# would still fly. Switching a tool off has to happen where the tool actually runs.
-			if Globals.is_dev_tool_enabled("toggle_eva"):
-				player.eva_mode = not player.eva_mode
-				player.velocity = Vector3.ZERO
-				player.server_send_properties_to_client({"eva": player.eva_mode})
+			# Switched off with its dev tool by the gate at the top (DEV_TOOL_OF_ACTION): movement is
+			# server-authoritative, so that refusal, not the client's hidden key, is the check that counts.
+			player.eva_mode = not player.eva_mode
+			player.velocity = Vector3.ZERO
+			player.server_send_properties_to_client({"eva": player.eva_mode})
 		"screen_state":
 			# A 3D screen (mining depot, teleporter) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
@@ -394,7 +411,8 @@ func server_action_received(data: Dictionary) -> void:
 					Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)),
 					Vector3(dd.get("x", 0.0), dd.get("y", 0.0), dd.get("z", 0.0)))
 		"delete_prop":
-			# Admin cleanup tool: permanently remove a player-spawned prop.
+			# Admin cleanup tool (dev tool "zapette", refused at the top while it is off): permanently
+			# remove a player-spawned prop.
 			var del_type: String = str(data.get("type", ""))
 			var del_uuid: String = str(data.get("uuid", ""))
 			var deletable := ["miningrock", "box", "mining_depot", "crate_container", "vehicle",
@@ -418,7 +436,8 @@ func server_action_received(data: Dictionary) -> void:
 					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
 					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
 		"spawn_prop":
-			# Dev spawn wheel (key T): the client only NAMES what it wants; we own everything else.
+			# Dev spawn wheel (dev tool "spawn_wheel", refused at the top while it is off): the client only
+			# NAMES what it wants; we own everything else.
 			_spawn_from_catalog(str(data.get("key", "")))
 		"kiosk_spawn":
 			# A SpawnKiosk button: the client names the kiosk (building uuid + path inside it), the kiosk
