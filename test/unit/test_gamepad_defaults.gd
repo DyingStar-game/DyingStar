@@ -18,6 +18,11 @@ const MOUSE_GESTURES : Dictionary = {
 	"star_map_zoom_step_out": "star_map_zoom_out",
 }
 
+## Reached on the pad through another action's button rather than a binding of its own: the controls
+## help is a long press of the star map's button (the pad has no button left to give it).
+const PAD_THROUGH : Dictionary = {
+	"controls_help": "star_map",
+}
 
 func test_every_played_action_has_a_gamepad_default() -> void:
 	InputMap.load_from_project_settings()
@@ -26,6 +31,9 @@ func test_every_played_action_has_a_gamepad_default() -> void:
 		var name : String = String(action)
 		if name.begins_with("ui_") or KEYBOARD_ONLY.has(name) or MOUSE_GESTURES.has(name):
 			continue
+		if PAD_THROUGH.has(name):
+			name = PAD_THROUGH[name]  # its way in on the pad is that action's button
+			action = StringName(name)
 		if InputDevice.bindings(action, InputDevice.Kind.GAMEPAD).is_empty():
 			missing.append(name)
 	assert_eq(missing, [] as Array[String], "actions with no gamepad binding")
