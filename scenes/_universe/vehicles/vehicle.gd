@@ -2547,6 +2547,10 @@ func full_state() -> Dictionary:
 		"horn": _horn_on,
 		"horn_special": _horn_special_count,
 		"engine": _engine_on,
+		# Velocity in the vehicle's own axes, for a hand-over: the server taking a moving truck
+		# over (server_adopt_state) gives it back its speed instead of stopping it dead. Body axes,
+		# so it does not depend on the frame each server expresses world vectors in.
+		"velocity_local": _velocity_local_now(),
 		"doors": _door_state.duplicate(),
 		"seats": _seat_occupancy_now(),
 		"components": bays.occupancy(),
@@ -2976,6 +2980,19 @@ func server_release_seat(player: Node) -> void:
 		set_horn(false)
 	print("🚚 Vehicle %s: seat released (player handed over)" % uuid)
 
+## Server, after a hand-over adoption (pose set, velocity zeroed, body unfrozen): give a moving
+## vehicle back the speed the sender replicated, instead of stopping it dead under its driver.
+## Called once the body is dynamic again: a velocity set while frozen does not survive the unfreeze.
+func server_adopt_velocity(data: Dictionary) -> void:
+	var vl = data.get("velocity_local")
+	if vl is Dictionary and vl.has("x"):
+		linear_velocity = global_transform.basis * Vector3(float(vl["x"]), float(vl["y"]), float(vl["z"]))
+
+## Server: the velocity in the vehicle's own axes, snapped so a parked truck replicates no noise.
+func _velocity_local_now() -> Dictionary:
+	var v: Vector3 = global_transform.basis.inverse() * linear_velocity
+	return {"x": snappedf(v.x, 0.01), "y": snappedf(v.y, 0.01), "z": snappedf(v.z, 0.01)}
+
 ## Server: the driver as it is NOW, for replication. The driver seat's occupant when someone sits in
 ## it; else the driver a hand-over or the database announced, while it may still be re-seated
 ## (EXPECTED_PILOT_MS); else nobody. A replicated pilot_uuid used to live on forever once its player
@@ -3004,6 +3021,10 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 func server_adopt_state(data: Dictionary) -> void:
 	for part in _net_parts():
 		part.read(data)
+	if data.has("engine"):
+		set_engine(bool(data["engine"]))
+	if data.has("headlights"):
+		set_headlights(bool(data["headlights"]))
 	if data.has("seats"):
 		_net_seats = _normalized(data["seats"])
 	if data.has("pilot_uuid"):
