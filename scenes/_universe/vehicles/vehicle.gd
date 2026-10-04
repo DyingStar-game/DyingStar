@@ -647,6 +647,12 @@ var _grip_log_ticks: int = 0
 var _wheel_contacts_frame: int = -1
 var _throttle: float = 0.0
 var _pilot: Node3D = null
+## Server: until this time (Time.get_ticks_msec) the driver a hand-over or the database told us about
+## (pilot_uuid) is still expected to be re-seated here; after it, an empty driver seat means nobody
+## drives (see _pilot_uuid_now).
+var _expected_pilot_until_ms: int = 0
+## How long a driver announced by a hand-over or a restore is waited for before the seat is said free.
+const EXPECTED_PILOT_MS := 10000
 var _cab_cam: Camera3D = null
 var _empty_mass: float = 0.0  # runtime copy of empty_mass (see _ready)
 var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), added to the mass
@@ -2531,7 +2537,7 @@ func _replicate_transform() -> void:
 ## by theirs (VehicleNetPart). Every key must be whitelisted in horizonserver's vehicle_def.json.
 func full_state() -> Dictionary:
 	return {
-		"pilot_uuid": pilot_uuid,
+		"pilot_uuid": _pilot_uuid_now(),
 		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
 		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
 		"handbrake": _handbrake,
@@ -2815,6 +2821,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 		_net_horn_special_count = count
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
+		_expected_pilot_until_ms = Time.get_ticks_msec() + EXPECTED_PILOT_MS
 	if data.has("components"):
 		_net_components = _normalized(data["components"])
 		# Restored from the database (the server runs this at boot): the vehicle was equipped once
@@ -2939,6 +2946,51 @@ func server_exit(player: Node) -> void:
 			player.call_deferred("_safe_reparent_and_sync", frame)
 	print("🚚 Vehicle %s: seat exit" % uuid)
 
+## Server: [param player] leaves THIS SERVER from its seat (handed over to another game server, gone
+## out of our zones): the seat, the pilot and the weight are released now, with none of server_exit's
+## exit move — the body is freed right after and the next server seats it again from the replicated
+## seat map. Without it the frozen vehicle kept a freed _pilot and a seat whose occupant was gone:
+## _release_vanished_occupants, which would clean them, runs from _physics_process, which the zone
+## freeze turns off.
+func server_release_seat(player: Node) -> void:
+	var seat: Node = _find_seat_of(player)
+	if seat == null:
+		return
+	seat.occupant_uuid = ""
+	seat.occupant = null
+	seat.occupant_mass = 0.0
+	if "piloting" in player:
+		player.piloting = false
+	if "_seat_node" in player:
+		player._seat_node = null
+	_occupant_mass = maxf(0.0, _occupant_mass - _player_mass(player))
+	_refresh_mass()
+	if seat.is_driver_seat() and _pilot == player:
+		_pilot = null
+		pilot_uuid = ""
+		_net_throttle = 0.0
+		_net_steer = 0.0
+		_net_brake = false
+		_throttle = 0.0
+		engine_force = 0.0
+		set_horn(false)
+	print("🚚 Vehicle %s: seat released (player handed over)" % uuid)
+
+## Server: the driver as it is NOW, for replication. The driver seat's occupant when someone sits in
+## it; else the driver a hand-over or the database announced, while it may still be re-seated
+## (EXPECTED_PILOT_MS); else nobody. A replicated pilot_uuid used to live on forever once its player
+## was gone (quit or crash while driving, hand-over): restored, adopted, sent again at every update,
+## and persisted — the seat looked taken to everyone else, days later.
+func _pilot_uuid_now() -> String:
+	if not GameOrchestrator.is_server():
+		return pilot_uuid
+	var seat := _driver_seat()
+	if seat != null and seat.occupant_uuid != "":
+		return str(seat.occupant_uuid)
+	if Time.get_ticks_msec() < _expected_pilot_until_ms:
+		return pilot_uuid
+	return ""
+
 ## Drop position beside the vehicle, on the side of the given seat (left vs right, derived from
 ## the seat's local X so any layout works), raised so the player lands on the ground on exit.
 func _exit_position_for_seat(seat: Node) -> Vector3:
@@ -2956,6 +3008,7 @@ func server_adopt_state(data: Dictionary) -> void:
 		_net_seats = _normalized(data["seats"])
 	if data.has("pilot_uuid"):
 		pilot_uuid = str(data["pilot_uuid"])
+		_expected_pilot_until_ms = Time.get_ticks_msec() + EXPECTED_PILOT_MS
 	if data.has("doors"):
 		_door_state = _own_doors(data["doors"])
 	_handbrake = bool(data.get("handbrake", _handbrake))
