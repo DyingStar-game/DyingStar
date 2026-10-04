@@ -1,7 +1,7 @@
 extends ServicePanel
 
-## App « Marché » : catalogue des biens échangeables, carnet d'ordres (passer/annuler), demandes
-## (créer/annuler/honorer) et transactions. Couvre /api/market/*.
+## App « Marché » : the tradable goods catalogue, the order book (place / cancel), demands
+## (create / cancel / fulfil) and trades. Covers /api/market/*.
 
 const SIDE_ENTRIES: Array = [
 	["sell", "%%SVC_ENUM_ORDER_SELL"],
@@ -45,7 +45,7 @@ var _order_qty: LineEdit
 var _order_price: LineEdit
 var _order_currency: LineEdit
 var _order_instance: LineEdit
-var _order_corp: LineEdit
+var _order_corp_picker: ServiceTargetPicker
 var _demands: ItemList
 var _demand_good: LineEdit
 var _demand_status: OptionButton
@@ -55,7 +55,7 @@ var _demand_qty: LineEdit
 var _demand_max: LineEdit
 var _demand_currency: LineEdit
 var _demand_message: LineEdit
-var _demand_corp: LineEdit
+var _demand_corp_picker: ServiceTargetPicker
 var _fulfill_price: LineEdit
 var _trades: ItemList
 var _trade_status: OptionButton
@@ -108,7 +108,9 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	_order_price = _number_field(tr("%%SVC_PH_PRICE"), 140.0)
 	_order_currency = _field(tr("%%SVC_PH_CURRENCY"), 140.0)
 	_order_instance = _field(tr("%%SVC_PH_INSTANCE_ID"), 240.0)
-	_order_corp = _field(tr("%%SVC_PH_CORP_ID"), 240.0)
+	_order_corp_picker = ServiceTargetPicker.new()
+	_order_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
+	adopt_field(_order_corp_picker.search_field())
 	form.add_child(_label(tr("%%SVC_LBL_SIDE"), DIM))
 	form.add_child(_order_new_side)
 	form.add_child(_label(tr("%%SVC_LBL_KIND"), DIM))
@@ -122,8 +124,8 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	form.add_child(_order_currency)
 	form.add_child(_label(tr("%%SVC_LBL_INSTANCE_ID"), DIM))
 	form.add_child(_order_instance)
-	form.add_child(_label(tr("%%SVC_LBL_CORPORATION_ID"), DIM))
-	form.add_child(_order_corp)
+	form.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
+	form.add_child(_order_corp_picker)
 	_action_button(form, tr("%%SVC_ACT_PLACE_ORDER"), func() -> void: _place_order())
 	page.add_child(_card(tr("%%SVC_ACT_PLACE_ORDER"), form))
 
@@ -154,7 +156,9 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	_demand_max = _number_field(tr("%%SVC_PH_MAX_PRICE"), 140.0)
 	_demand_currency = _field(tr("%%SVC_PH_CURRENCY"), 140.0)
 	_demand_message = _field(tr("%%SVC_PH_MESSAGE_OPTIONAL"), 320.0)
-	_demand_corp = _field(tr("%%SVC_PH_CORP_ID"), 240.0)
+	_demand_corp_picker = ServiceTargetPicker.new()
+	_demand_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
+	adopt_field(_demand_corp_picker.search_field())
 	form.add_child(_label(tr("%%SVC_LBL_KIND"), DIM))
 	form.add_child(_demand_kind)
 	form.add_child(_label(tr("%%SVC_HINT_STACK_INSTANCE"), DIM))
@@ -168,8 +172,8 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	form.add_child(_demand_currency)
 	form.add_child(_label(tr("%%SVC_LBL_MESSAGE"), DIM))
 	form.add_child(_demand_message)
-	form.add_child(_label(tr("%%SVC_LBL_CORPORATION_ID"), DIM))
-	form.add_child(_demand_corp)
+	form.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
+	form.add_child(_demand_corp_picker)
 	_action_button(form, tr("%%SVC_ACT_CREATE_DEMAND"), func() -> void: _create_demand())
 	page.add_child(_card(tr("%%SVC_ACT_CREATE_DEMAND"), form))
 
@@ -279,8 +283,8 @@ func _place_order() -> void:
 	}
 	if _order_instance.text.strip_edges() != "":
 		body["instanceId"] = _order_instance.text.strip_edges()
-	if _order_corp.text.strip_edges() != "":
-		body["corporationId"] = _order_corp.text.strip_edges()
+	if _order_corp_picker.picked_id() != "":
+		body["corporationId"] = _order_corp_picker.picked_id()
 	if _report(await PlayerServices.market_order_create(body), tr("%%SVC_MSG_ORDER_PLACED")):
 		_order_qty.text = ""
 		_order_price.text = ""
@@ -315,8 +319,8 @@ func _create_demand() -> void:
 		body["message"] = _demand_message.text.strip_edges()
 	if _demand_instance.text.strip_edges() != "":
 		body["instanceId"] = _demand_instance.text.strip_edges()
-	if _demand_corp.text.strip_edges() != "":
-		body["corporationId"] = _demand_corp.text.strip_edges()
+	if _demand_corp_picker.picked_id() != "":
+		body["corporationId"] = _demand_corp_picker.picked_id()
 	if _report(await PlayerServices.market_demand_create(body), tr("%%SVC_MSG_DEMAND_CREATED")):
 		_demand_qty.text = ""
 		_demand_max.text = ""

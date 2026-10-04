@@ -436,13 +436,6 @@ func _unblock(player_id: String) -> void:
 # Petits utilitaires locaux
 # ---------------------------------------------------------------------------------------------
 
-## Vide un conteneur de tous ses enfants visibles.
-static func _clear(box: Node) -> void:
-	for child: Node in box.get_children():
-		box.remove_child(child)
-		child.queue_free()
-
-
 func _empty_label(text: String) -> Label:
 	var label := _label(text, ServiceStyle.MUTED)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

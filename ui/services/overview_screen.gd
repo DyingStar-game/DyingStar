@@ -136,6 +136,9 @@ func _apply(profile: Dictionary, wallet: Dictionary, requests: Dictionary, missi
 					corporation_found = true
 		if not corporation_found:
 			bits.append(tr("%%SVC_MSG_NO_CORPORATION"))
+		var group: Variant = me.get("group")
+		if group is Dictionary:
+			bits.append(ServiceTypes.dash((group as Dictionary).get("name")))
 		bits.append(tr("%%SVC_FMT_REPUTATION") % ServiceTypes.num(me.get("reputation")))
 		_sub_label.text = "   ·   ".join(bits)
 	else:

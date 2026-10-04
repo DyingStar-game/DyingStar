@@ -1,13 +1,13 @@
 extends ServicePanel
 
-## App « Inventaire » : les piles et objets possédés par le joueur, le détail d'une pile (disponible /
-## réservé), et l'inventaire d'une corporation. Couvre /api/me/inventory* et
+## App « Inventaire » : the player's stacks and owned instances, a stack's detail (available /
+## reserved), and a corporation's inventory. Covers /api/me/inventory* and
 ## /api/corporations/{id}/inventory*.
 
 var _stacks: ItemList
 var _instances: ItemList
 var _stack_detail: Label
-var _corp_id: LineEdit
+var _corp_picker: ServiceTargetPicker
 var _corp_stacks: ItemList
 var _corp_instances: ItemList
 
@@ -20,7 +20,7 @@ func _build() -> void:
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_INVENTORY"), tr("%%SVC_TAB_CORP_INVENTORY")]))
 
-	# Mon inventaire — piles, instances, et le détail de la pile sélectionnée.
+	# My inventory — stacks, instances, and the detail of the selected stack.
 	_stacks = _list(220.0)
 	_stacks.item_selected.connect(func(_i: int) -> void: _load_stack_detail())
 	pages[0].add_child(_titled(tr("%%SVC_LBL_STACKS"), _stacks, true))
@@ -32,10 +32,12 @@ func _build() -> void:
 	columns.add_child(_titled(tr("%%SVC_LBL_STACK_DETAIL"), _stack_detail, true))
 	pages[0].add_child(columns)
 
-	# Corporation — on demande l'id, puis on affiche piles + instances.
+	# Corporation — the corporation is picked, not typed, then its stacks and instances load.
 	var corp_row := _row()
-	_corp_id = _field(tr("%%SVC_PH_CORP_ID"), 320.0)
-	corp_row.add_child(_corp_id)
+	_corp_picker = ServiceTargetPicker.new()
+	_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
+	adopt_field(_corp_picker.search_field())
+	corp_row.add_child(_corp_picker)
 	_action_button(corp_row, tr("%%SVC_ACT_LOAD"), func() -> void: _load_corp())
 	pages[1].add_child(corp_row)
 	var corp_columns := _row(18)
@@ -75,7 +77,7 @@ func _load_stack_detail() -> void:
 
 func _load_corp() -> void:
 	release_fields()
-	var corporation_id: String = _corp_id.text.strip_edges()
+	var corporation_id: String = _corp_picker.picked_id()
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return

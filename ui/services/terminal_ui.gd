@@ -15,6 +15,8 @@ const APPS: Array = [
 		"icon": ServiceAppIcon.Kind.IDENTITY, "path": "res://ui/services/profile_panel.gd"},
 	{"id": "contacts", "title": "%%SVC_APP_CONTACTS", "area": "friends",
 		"icon": ServiceAppIcon.Kind.CONTACTS, "path": "res://ui/services/friends_panel.gd"},
+	{"id": "squad", "title": "%%SVC_APP_SQUAD", "area": "groups",
+		"icon": ServiceAppIcon.Kind.SQUAD, "path": "res://ui/services/groups_panel.gd"},
 	{"id": "corporations", "title": "%%SVC_APP_CORPORATIONS", "area": "corporations",
 		"icon": ServiceAppIcon.Kind.CORPORATIONS, "path": "res://ui/services/corporations_panel.gd"},
 	{"id": "missions", "title": "%%SVC_APP_MISSIONS", "area": "missions",

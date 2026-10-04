@@ -6,7 +6,7 @@ extends Control
 ## kept to the same visual family (rounded corners, even stroke, generous margins) so the app grid
 ## reads as one system.
 
-enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET }
+enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD }
 
 @export var kind: Kind = Kind.IDENTITY
 @export var colour: Color = Color(1, 1, 1, 1)
@@ -42,6 +42,8 @@ func _draw() -> void:
 			_inventory(origin, side, stroke)
 		Kind.MARKET:
 			_market(origin, side, stroke)
+		Kind.SQUAD:
+			_squad(origin, side, stroke)
 
 
 func _p(origin: Vector2, side: float, x: float, y: float) -> Vector2:
@@ -132,3 +134,16 @@ func _market(o: Vector2, s: float, w: float) -> void:
 	draw_line(_p(o, s, 0.82, 0.62), _p(o, s, 0.22, 0.62), colour, w, true)
 	draw_line(_p(o, s, 0.32, 0.52), _p(o, s, 0.20, 0.62), colour, w, true)
 	draw_line(_p(o, s, 0.32, 0.72), _p(o, s, 0.20, 0.62), colour, w, true)
+
+
+## Squad: three heads in a triangle formation, linked — a temporary group, not an org chart.
+func _squad(o: Vector2, s: float, w: float) -> void:
+	var top: Vector2 = _p(o, s, 0.50, 0.30)
+	var left: Vector2 = _p(o, s, 0.26, 0.70)
+	var right: Vector2 = _p(o, s, 0.74, 0.70)
+	draw_line(left, right, colour, w, true)
+	draw_line(top, left, colour, w, true)
+	draw_line(top, right, colour, w, true)
+	draw_circle(top, 0.10 * s, colour)
+	draw_circle(left, 0.10 * s, colour)
+	draw_circle(right, 0.10 * s, colour)

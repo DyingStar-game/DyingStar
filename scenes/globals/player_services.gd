@@ -15,8 +15,8 @@ extends Node
 ## A mutation that succeeded announces it on [signal changed] so the visible section can refresh
 ## itself without every caller remembering to.
 
-## A mutating call succeeded. [param area] is one of: profile, friends, corporations, missions,
-## economy. The terminal refreshes the matching section when it is the one on screen.
+## A mutating call succeeded. [param area] is one of: profile, friends, groups, corporations,
+## missions, economy. The terminal refreshes the matching section when it is the one on screen.
 signal changed(area: String)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
@@ -209,6 +209,68 @@ func friend_suggestions(limit: int = 20) -> Dictionary:
 func friend_remove(player_id: String) -> Dictionary:
 	var r: Dictionary = await _http_delete(SERVICE_SOCIAL, "/api/friends/%s" % player_id)
 	if _ok(r): changed.emit("friends")
+	return r
+
+
+# ---------------------------------------------------------------------------------------------
+# Temporary groups (a player belongs to at most one)
+# ---------------------------------------------------------------------------------------------
+
+## The caller's group with their join date, or null when they have none.
+func my_group() -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/groups")
+
+func group_invitations() -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/group/invitations")
+
+func group_invitation_accept(invitation_id: int) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
+			"/api/me/group/invitations/%d/accept" % invitation_id)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_invitation_decline(invitation_id: int) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
+			"/api/me/group/invitations/%d/decline" % invitation_id)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_create(body: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/groups", body)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_get(group_id: String) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/groups/%s" % group_id)
+
+func group_update(group_id: String, patch: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_patch(SERVICE_SOCIAL, "/api/groups/%s" % group_id, patch)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_disband(group_id: String) -> Dictionary:
+	var r: Dictionary = await _http_delete(SERVICE_SOCIAL, "/api/groups/%s" % group_id)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_members(group_id: String) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/groups/%s/members" % group_id)
+
+func group_invite(group_id: String, player_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
+			"/api/groups/%s/invitations" % group_id, {"playerId": player_id})
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_leave(group_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/groups/%s/leave" % group_id)
+	if _ok(r): changed.emit("groups")
+	return r
+
+func group_member_remove(group_id: String, player_id: String) -> Dictionary:
+	var r: Dictionary = await _http_delete(SERVICE_SOCIAL,
+			"/api/groups/%s/members/%s" % [group_id, player_id])
+	if _ok(r): changed.emit("groups")
 	return r
 
 
@@ -407,6 +469,31 @@ func missions_list(status: String = "", kind: String = "", category: String = ""
 		"issuerType": issuer_type, "issuerId": issuer_id, "visibility": visibility, "limit": limit,
 	})
 
+## The mission builder's discovery catalogue: categories, objective kinds (evaluation, quantity
+## flag, summary, params JSON Schema), prerequisite kinds and the reward schema.
+func mission_kinds() -> Dictionary:
+	return await _http_get(SERVICE_MISSION, "/api/missions/kinds")
+
+## Dry-run a mission spec (mode "player" enforces the reward/escrow rules): no persistence, no
+## escrow. Returns the normalized spec on success, or the precise 400 the create would answer.
+func mission_validate(mission_body: Dictionary) -> Dictionary:
+	return await _http_post(SERVICE_MISSION, "/api/missions/validate",
+			{"mode": "player", "mission": mission_body})
+
+## Restrict a mission to the members of the caller's group (the Squad). Creator or issuing
+## corporation member only; rejected while the mission has active assignees.
+func mission_share(mission_id: String, group_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION,
+			"/api/missions/%s/share" % mission_id, {"groupId": group_id})
+	if _ok(r): changed.emit("missions")
+	return r
+
+## Back to public/corporation access (rejected while the mission has active assignees).
+func mission_unshare(mission_id: String) -> Dictionary:
+	var r: Dictionary = await _http_delete(SERVICE_MISSION, "/api/missions/%s/share" % mission_id)
+	if _ok(r): changed.emit("missions")
+	return r
+
 func mission_create(body: Dictionary) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions", body)
 	if _ok(r): changed.emit("missions")
@@ -433,6 +520,13 @@ func mission_complete(mission_id: String) -> Dictionary:
 func mission_progress(mission_id: String, objective_id: String, quantity: int) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION,
 			"/api/missions/%s/objectives/%s/progress" % [mission_id, objective_id], {"quantity": quantity})
+	if _ok(r): changed.emit("missions")
+	return r
+
+## Confirm an issuer-verified objective (`manual` kind) — mission creator only.
+func mission_confirm(mission_id: String, objective_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION,
+			"/api/missions/%s/objectives/%s/confirm" % [mission_id, objective_id])
 	if _ok(r): changed.emit("missions")
 	return r
 
@@ -612,7 +706,10 @@ func market_trades(status: String = "", limit: int = 20) -> Dictionary:
 # ---------------------------------------------------------------------------------------------
 
 func health(service: String = SERVICE_SOCIAL) -> Dictionary:
-	var h := PackedStringArray(["Accept: application/json"])
+	var h := PackedStringArray([
+			"Accept: application/json",
+			"Accept-Language: " + SettingsManager.language.resolve(),
+	])
 	return await _client.request(HTTPClient.METHOD_GET, _url(service, "/api/health", {}), h)
 
 
@@ -658,7 +755,12 @@ func _url(service: String, path: String, query: Dictionary = {}) -> String:
 	return url
 
 func _headers() -> PackedStringArray:
-	var headers := PackedStringArray(["Accept: application/json"])
+	# Accept-Language carries the player's language — resolve() turns "auto" into a real en/fr
+	# code — so the services answer their own text (error messages, catalogue summaries) in it.
+	var headers := PackedStringArray([
+			"Accept: application/json",
+			"Accept-Language: " + SettingsManager.language.resolve(),
+	])
 	var token: String = _player_token()
 	if token != "":
 		headers.append("Authorization: Bearer " + token)

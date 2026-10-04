@@ -65,15 +65,38 @@ const MISSION_STATUS_KEYS: Dictionary = {
 	"cancelled": "%%SVC_ENUM_STATUS_CANCELLED",
 	"expired": "%%SVC_ENUM_STATUS_EXPIRED",
 }
+## Objective lifecycle — its own enum (pending / in_progress / failed), not the mission's.
+const OBJECTIVE_STATUS_KEYS: Dictionary = {
+	"pending": "%%SVC_ENUM_OBJ_STATUS_PENDING",
+	"in_progress": "%%SVC_ENUM_OBJ_STATUS_IN_PROGRESS",
+	"completed": "%%SVC_ENUM_OBJ_STATUS_COMPLETED",
+	"failed": "%%SVC_ENUM_OBJ_STATUS_FAILED",
+}
 const MISSION_KIND_KEYS: Dictionary = {
 	"dynamic": "%%SVC_ENUM_KIND_DYNAMIC",
 	"scenario": "%%SVC_ENUM_KIND_SCENARIO",
 	"player": "%%SVC_ENUM_KIND_PLAYER",
 }
+## Who measures an objective kind (the catalogue's `evaluation`): the game server, this
+## service's own measurement, or the mission creator's confirmation.
+const EVALUATION_KEYS: Dictionary = {
+	"game": "%%SVC_ENUM_EVAL_GAME",
+	"service": "%%SVC_ENUM_EVAL_SERVICE",
+	"issuer": "%%SVC_ENUM_EVAL_ISSUER",
+}
 const MISSION_CATEGORY_KEYS: Dictionary = {
 	"delivery": "%%SVC_ENUM_CATEGORY_DELIVERY",
 	"transport": "%%SVC_ENUM_CATEGORY_TRANSPORT",
 	"generic": "%%SVC_ENUM_CATEGORY_GENERIC",
+	"mining": "%%SVC_ENUM_CATEGORY_MINING",
+	"farming": "%%SVC_ENUM_CATEGORY_FARMING",
+	"crafting": "%%SVC_ENUM_CATEGORY_CRAFTING",
+	"construction": "%%SVC_ENUM_CATEGORY_CONSTRUCTION",
+	"trading": "%%SVC_ENUM_CATEGORY_TRADING",
+	"exploration": "%%SVC_ENUM_CATEGORY_EXPLORATION",
+	"salvage": "%%SVC_ENUM_CATEGORY_SALVAGE",
+	"combat": "%%SVC_ENUM_CATEGORY_COMBAT",
+	"reception": "%%SVC_ENUM_CATEGORY_RECEPTION",
 }
 const ISSUER_TYPE_KEYS: Dictionary = {
 	"system": "%%SVC_ENUM_ISSUER_SYSTEM",
@@ -85,6 +108,12 @@ const ISSUER_TYPE_KEYS: Dictionary = {
 const VISIBILITY_KEYS: Dictionary = {
 	"public": "%%SVC_ENUM_VISIBILITY_PUBLIC",
 	"corporation": "%%SVC_ENUM_VISIBILITY_CORPORATION",
+}
+## Holder kind of a mission's escrow payer (who funded it — and who gets the refund).
+const ESCROW_PAYER_KEYS: Dictionary = {
+	"player": "%%SVC_ENUM_PAYER_PLAYER",
+	"corporation": "%%SVC_ENUM_PAYER_CORPORATION",
+	"politics": "%%SVC_ENUM_PAYER_POLITICS",
 }
 const RECRUITMENT_KEYS: Dictionary = {
 	"open": "%%SVC_ENUM_RECRUITMENT_OPEN",
@@ -210,8 +239,16 @@ static func mission_status_label(value: Variant) -> String:
 	return _enum(value, MISSION_STATUS_KEYS)
 
 
+static func objective_status_label(value: Variant) -> String:
+	return _enum(value, OBJECTIVE_STATUS_KEYS)
+
+
 static func mission_kind_label(value: Variant) -> String:
 	return _enum(value, MISSION_KIND_KEYS)
+
+
+static func evaluation_label(value: Variant) -> String:
+	return _enum(value, EVALUATION_KEYS)
 
 
 static func mission_category_label(value: Variant) -> String:
@@ -224,6 +261,10 @@ static func issuer_type_label(value: Variant) -> String:
 
 static func visibility_label(value: Variant) -> String:
 	return _enum(value, VISIBILITY_KEYS)
+
+
+static func escrow_payer_label(value: Variant) -> String:
+	return _enum(value, ESCROW_PAYER_KEYS)
 
 
 static func recruitment_label(value: Variant) -> String:
@@ -355,6 +396,25 @@ static func block_line(block: Dictionary) -> String:
 	return text("%%SVC_FMT_BLOCK_LINE") % [profile_line(block), dash(block.get("blockedAt"))]
 
 
+# ---------------------------------------------------------------------------------------------
+# Temporary groups
+# ---------------------------------------------------------------------------------------------
+
+## The group's name, with its head count when the payload carries one (`/api/me/groups` answers a
+## bare Group — no memberCount — so the caller refreshes the line once the members have landed).
+static func group_line(group: Dictionary) -> String:
+	var name: String = dash(group.get("name"))
+	if group.get("memberCount") == null:
+		return name
+	return text("%%SVC_FMT_GROUP_MEMBERS") % [name,
+			num(group.get("memberCount")), num(group.get("maxMembers"))]
+
+
+## The invite line under a received invitation's card: when the group asked.
+static func group_invitation_line(invitation: Dictionary) -> String:
+	return text("%%SVC_FMT_GROUP_INVITATION") % dash(invitation.get("createdAt"))
+
+
 static func report_line(report: Dictionary) -> String:
 	return "#%s  %s  %s  (%s)" % [
 		dash(report.get("id")), report_target_label(report.get("targetType")),
@@ -440,31 +500,56 @@ static func corporation_activity_line(entry: Dictionary) -> String:
 # Missions
 # ---------------------------------------------------------------------------------------------
 
-static func reward_text(reward: Variant) -> String:
-	if not (reward is Dictionary):
-		return "—"
-	var parts: PackedStringArray = PackedStringArray()
-	var economic: Variant = (reward as Dictionary).get("economic")
-	if economic is Dictionary:
-		parts.append("%s %s" % [dash((economic as Dictionary).get("amount")),
-				dash((economic as Dictionary).get("currency"))])
-	var item: Variant = (reward as Dictionary).get("item")
-	if item is Dictionary:
-		parts.append("%s x%s" % [dash((item as Dictionary).get("itemId")),
-				dash((item as Dictionary).get("quantity"))])
-	return ", ".join(parts) if parts.size() > 0 else "—"
+## One reward component of the new `rewards` list: "1000 credits", "ore x5".
+static func _reward_component(component: Dictionary) -> String:
+	if str(component.get("type", "")) == "item":
+		return "%s x%s" % [dash(component.get("itemId")), dash(component.get("quantity"))]
+	var currency: String = str(component.get("currency", "credits"))
+	return "%s %s" % [dash(component.get("amount")), currency]
+
+
+## The mission's rewards: the new `rewards` array ({type: credits|item}), with the legacy
+## singular `reward` object ({economic, item}) accepted as a fallback so no payload shape
+## renders as an em dash.
+static func rewards_text(rewards: Variant) -> String:
+	if rewards is Array:
+		var parts := PackedStringArray()
+		for component: Variant in rewards:
+			if component is Dictionary:
+				var line: String = _reward_component(component)
+				if line != "":
+					parts.append(line)
+		return ", ".join(parts) if parts.size() > 0 else "—"
+	if rewards is Dictionary:
+		var parts := PackedStringArray()
+		var economic: Variant = (rewards as Dictionary).get("economic")
+		if economic is Dictionary:
+			parts.append("%s %s" % [dash((economic as Dictionary).get("amount")),
+					dash((economic as Dictionary).get("currency"))])
+		var item: Variant = (rewards as Dictionary).get("item")
+		if item is Dictionary:
+			parts.append("%s x%s" % [dash((item as Dictionary).get("itemId")),
+					dash((item as Dictionary).get("quantity"))])
+		return ", ".join(parts) if parts.size() > 0 else "—"
+	return "—"
+
+
+## A gate checked at acceptance: kind plus its structured params, compact.
+static func prerequisite_line(prerequisite: Dictionary) -> String:
+	var params: Variant = prerequisite.get("params")
+	var compact: String = "—" if params == null else JSON.stringify(params)
+	if compact == "{}":
+		compact = "—"
+	return text("%%SVC_FMT_PREREQ_LINE") % [dash(prerequisite.get("kind")), compact]
 
 
 static func mission_line(mission: Dictionary) -> String:
+	var rewards: Variant = mission.get("rewards")
+	if rewards == null:
+		rewards = mission.get("reward")
 	return "%s  [%s/%s]  %s  %s" % [dash(mission.get("title")),
 			mission_kind_label(mission.get("kind")), mission_category_label(mission.get("category")),
-			mission_status_label(mission.get("status")), reward_text(mission.get("reward"))]
-
-
-static func objective_line(objective: Dictionary) -> String:
-	return "%s  %d/%d  %s  (%s)" % [dash(objective.get("title")),
-			num(objective.get("currentProgress")), num(objective.get("targetQuantity")),
-			dash(objective.get("unit")), mission_status_label(objective.get("status"))]
+			mission_status_label(mission.get("status")), rewards_text(rewards)]
 
 
 static func assignment_line(assignment: Dictionary) -> String:

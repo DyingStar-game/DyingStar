@@ -85,6 +85,13 @@ func release_fields() -> void:
 			area.release_focus()
 
 
+## Adopt a focusable field the panel does not build itself — a composed control's input (the
+## target picker's search) — so the screen contract still shields gameplay while it holds the
+## keyboard.
+func adopt_field(field: LineEdit) -> void:
+	_fields.append(field)
+
+
 # ---------------------------------------------------------------------------------------------
 # Building blocks
 # ---------------------------------------------------------------------------------------------
@@ -192,8 +199,9 @@ static func _presence_colour(status: String) -> Color:
 			return DIM
 
 
-## A small coloured disc for a presence status, ringed so it reads over an avatar.
-func _presence_dot(status: String) -> Control:
+## A small coloured disc for a presence status, ringed so it reads over an avatar. Static, for the
+## same reason as [method _avatar_initial]: the composed controls outside the panels draw it too.
+static func _presence_dot(status: String) -> Control:
 	var dot := Panel.new()
 	dot.custom_minimum_size = Vector2(12, 12)
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -203,8 +211,9 @@ func _presence_dot(status: String) -> Control:
 
 
 ## A generated avatar: a disc carrying the contact's initial, optionally badged with a presence dot in
-## its bottom-right corner. The project ships no portrait set, so the initial IS the portrait.
-func _avatar_initial(name: String, size: float = 44.0, presence: String = "") -> Control:
+## its bottom-right corner. The project ships no portrait set, so the initial IS the portrait. Static
+## so composed controls outside the panels (the target picker) can draw the same face.
+static func _avatar_initial(name: String, size: float = 44.0, presence: String = "") -> Control:
 	var holder := Control.new()
 	holder.custom_minimum_size = Vector2(size, size)
 	holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -383,6 +392,14 @@ func _titled(text: String, body: Control, stretch: bool = false) -> VBoxContaine
 	box.add_child(_subheading(text))
 	box.add_child(body)
 	return box
+
+
+## Empty a container of all its children, freeing them. Shared: every section rebuilds its
+## dynamic lists (members, invitations, clauses) by clearing first.
+static func _clear(box: Node) -> void:
+	for child: Node in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
 
 
 # ---------------------------------------------------------------------------------------------

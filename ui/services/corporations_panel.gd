@@ -18,18 +18,18 @@ var _detail: Label
 var _members: ItemList
 var _ranks: ItemList
 var _requests: ItemList
-var _invite_player: LineEdit
+var _invite_picker: ServiceTargetPicker
 var _rank_id: LineEdit
 var _rank_name: LineEdit
 var _rank_priority: LineEdit
 var _rank_default: CheckBox
-var _transfer_player: LineEdit
-var _parent_id: LineEdit
+var _transfer_picker: ServiceTargetPicker
+var _parent_picker: ServiceTargetPicker
 var _create_name: LineEdit
 var _create_ticker: LineEdit
 var _create_recruitment: OptionButton
-# Treasury (moved here from the bank).
-var _corporation_id: LineEdit
+# Treasury (moved here from the bank): one corporation pick feeds every action below it.
+var _corp_picker: ServiceTargetPicker
 var _corp_wallet: ItemList
 var _corp_ledger: ItemList
 var _corp_report: ItemList
@@ -37,14 +37,14 @@ var _corp_from: LineEdit
 var _corp_to: LineEdit
 var _donation_amount: LineEdit
 var _selected_id: String = ""
-# Salaires / prime / paie (economie endpoints).
+# Salaries / prime / payroll (economy endpoints).
 var _salary_roles: ItemList
 var _salary_members: ItemList
 var _salary_role: LineEdit
 var _salary_role_amount: LineEdit
-var _salary_member: LineEdit
+var _salary_member_picker: ServiceTargetPicker
 var _salary_member_amount: LineEdit
-var _prime_player: LineEdit
+var _prime_picker: ServiceTargetPicker
 var _prime_amount: LineEdit
 
 
@@ -57,7 +57,8 @@ func _build() -> void:
 			tr("%%SVC_TAB_MY_CORPS"), tr("%%SVC_TAB_DIRECTORY"), tr("%%SVC_TAB_MANAGE"),
 			tr("%%SVC_TAB_CREATE"), tr("%%SVC_TAB_TREASURY")]))
 
-	# Mes corps — one sub-tile per corporation, then the two entries (join / create), then invitations.
+	# My corporations — one sub-tile per corporation, then the two entries (join / create), then
+	# the invitations.
 	_my_corps_grid = GridContainer.new()
 	_my_corps_grid.columns = 2
 	_my_corps_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -75,7 +76,7 @@ func _build() -> void:
 	_action_button(my_req_row, tr("%%SVC_ACT_DECLINE"), func() -> void: _my_request(false))
 	pages[0].add_child(my_req_row)
 
-	# Annuaire
+	# Directory
 	var search_row := _row()
 	_search = _field(tr("%%SVC_PH_SEARCH"), 240.0)
 	_search.text_submitted.connect(func(_t: String) -> void: _search_directory())
@@ -87,12 +88,14 @@ func _build() -> void:
 	_directory.item_selected.connect(func(_i: int) -> void: _load_detail())
 	pages[1].add_child(_titled(tr("%%SVC_LBL_DIRECTORY"), _directory, true))
 	var invite_row := _row()
-	_invite_player = _field(tr("%%SVC_PH_INVITE_PLAYER"), 260.0)
-	invite_row.add_child(_invite_player)
+	_invite_picker = ServiceTargetPicker.new()
+	_invite_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+	adopt_field(_invite_picker.search_field())
+	invite_row.add_child(_invite_picker)
 	_action_button(invite_row, tr("%%SVC_ACT_INVITE"), func() -> void: _invite_selected())
 	pages[1].add_child(invite_row)
 
-	# Gérer (detail + membership actions)
+	# Manage (detail + membership actions)
 	_detail = _label(tr("%%SVC_MSG_SELECT_CORP"), DIM)
 	_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	pages[2].add_child(_titled(tr("%%SVC_LBL_CORPORATION"), _detail))
@@ -132,19 +135,23 @@ func _build() -> void:
 	pages[2].add_child(rank_row)
 
 	var transfer_row := _row()
-	_transfer_player = _field(tr("%%SVC_PH_NEW_LEADER"), 240.0)
-	transfer_row.add_child(_transfer_player)
+	_transfer_picker = ServiceTargetPicker.new()
+	_transfer_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+	adopt_field(_transfer_picker.search_field())
+	transfer_row.add_child(_transfer_picker)
 	_action_button(transfer_row, tr("%%SVC_ACT_TRANSFER"), func() -> void: _transfer())
 	pages[2].add_child(transfer_row)
 
 	var parent_row := _row()
-	_parent_id = _field(tr("%%SVC_PH_PARENT_HOLDING"), 260.0)
-	parent_row.add_child(_parent_id)
+	_parent_picker = ServiceTargetPicker.new()
+	_parent_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
+	adopt_field(_parent_picker.search_field())
+	parent_row.add_child(_parent_picker)
 	_action_button(parent_row, tr("%%SVC_ACT_ATTACH"), func() -> void: _set_parent())
 	_action_button(parent_row, tr("%%SVC_ACT_DETACH"), func() -> void: _detach_parent())
 	pages[2].add_child(parent_row)
 
-	# Créer
+	# Create
 	var create := VBoxContainer.new()
 	create.add_theme_constant_override("separation", 10)
 	_create_name = _field(tr("%%SVC_LBL_NAME"), 260.0)
@@ -159,14 +166,16 @@ func _build() -> void:
 	_action_button(create, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: _create_corporation())
 	pages[3].add_child(_titled(tr("%%SVC_ACT_CREATE_CORP"), create))
 
-	# Trésorerie
+	# Treasury
 	var corp := VBoxContainer.new()
 	corp.add_theme_constant_override("separation", 10)
-	_corporation_id = _field(tr("%%SVC_PH_CORP_ID"), 300.0)
+	_corp_picker = ServiceTargetPicker.new()
+	_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
+	adopt_field(_corp_picker.search_field())
 	_corp_from = _field(tr("%%SVC_PH_FROM"), 170.0)
 	_corp_to = _field(tr("%%SVC_PH_TO"), 170.0)
 	corp.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
-	corp.add_child(_corporation_id)
+	corp.add_child(_corp_picker)
 	var load_row := _row()
 	_action_button(load_row, tr("%%SVC_ACT_LOAD"), func() -> void: _load_corp())
 	_action_button(load_row, tr("%%SVC_ACT_REPORT"), func() -> void: _load_report())
@@ -190,7 +199,7 @@ func _build() -> void:
 	_action_button(donation, tr("%%SVC_ACT_DONATE"), func() -> void: _donate())
 	pages[4].add_child(donation)
 
-	# Salaires / prime / paie (mêmes corporation id que la trésorerie).
+	# Salaries / prime / payroll — the same corporation pick as the treasury.
 	var salary_columns := _row(18)
 	_salary_roles = _list(120.0)
 	salary_columns.add_child(_titled(tr("%%SVC_LBL_ROLE_DEFAULTS"), _salary_roles, true))
@@ -209,20 +218,24 @@ func _build() -> void:
 	pages[4].add_child(role_salary)
 
 	var member_salary := _row()
-	_salary_member = _field(tr("%%SVC_PH_PLAYER_ID"), 240.0)
+	_salary_member_picker = ServiceTargetPicker.new()
+	_salary_member_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+	adopt_field(_salary_member_picker.search_field())
 	_salary_member_amount = _number_field(tr("%%SVC_PH_AMOUNT"), 140.0)
 	member_salary.add_child(_label(tr("%%SVC_LBL_MEMBER"), DIM))
-	member_salary.add_child(_salary_member)
+	member_salary.add_child(_salary_member_picker)
 	member_salary.add_child(_salary_member_amount)
 	_action_button(member_salary, tr("%%SVC_ACT_SET_MEMBER_SALARY"), func() -> void: _set_member_salary())
 	_action_button(member_salary, tr("%%SVC_ACT_REMOVE_SALARY"), func() -> void: _remove_member_salary())
 	pages[4].add_child(member_salary)
 
 	var prime_row := _row()
-	_prime_player = _field(tr("%%SVC_PH_PLAYER_ID"), 240.0)
+	_prime_picker = ServiceTargetPicker.new()
+	_prime_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+	adopt_field(_prime_picker.search_field())
 	_prime_amount = _number_field(tr("%%SVC_PH_AMOUNT"), 140.0)
 	prime_row.add_child(_label(tr("%%SVC_LBL_PRIME"), DIM))
-	prime_row.add_child(_prime_player)
+	prime_row.add_child(_prime_picker)
 	prime_row.add_child(_prime_amount)
 	_action_button(prime_row, tr("%%SVC_ACT_PRIME"), func() -> void: _prime())
 	pages[4].add_child(prime_row)
@@ -248,13 +261,21 @@ func _apply_mine(result: Dictionary) -> void:
 	for child: Node in _my_corps_grid.get_children():
 		_my_corps_grid.remove_child(child)
 		child.queue_free()
+	# A GridContainer sizes its columns from the children's minimums: without SIZE_EXPAND_FILL the
+	# column never receives the grid's width, and an autowrap label (minimum ≈ 0) collapses to one
+	# letter per line. The corp tiles below carry the same flag — these messages must too.
 	if not bool(result.get("ok", false)):
-		_my_corps_grid.add_child(_label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", "")), WARN))
+		var error := _label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", "")), WARN)
+		error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		error.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_my_corps_grid.columns = 1
+		_my_corps_grid.add_child(error)
 		return
 	var memberships: Variant = result.get("data")
 	if not (memberships is Array) or (memberships as Array).is_empty():
 		var empty := _label(tr("%%SVC_MSG_NO_CORPS"), ServiceStyle.MUTED)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_my_corps_grid.columns = 1
 		_my_corps_grid.add_child(empty)
 		return
@@ -361,11 +382,13 @@ func _invite_selected() -> void:
 
 func _invite_by_id() -> void:
 	release_fields()
-	var player_id: String = _invite_player.text.strip_edges()
+	var player_id: String = _invite_picker.picked_id()
 	if _selected_id == "" or player_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_AND_PLAYER"), WARN)
 		return
-	_report(await PlayerServices.corporation_invite(_selected_id, player_id), tr("%%SVC_MSG_INVITE_SENT"))
+	var result: Dictionary = await PlayerServices.corporation_invite(_selected_id, player_id)
+	if _report(result, tr("%%SVC_MSG_INVITE_SENT")):
+		_invite_picker.clear_pick()
 
 
 ## Load a corporation's detail and open the management tab.
@@ -377,6 +400,10 @@ func _open_detail(corporation_id: String) -> void:
 	var subsidiaries: Dictionary = await PlayerServices.corporation_subsidiaries(_selected_id)
 	if bool(detail.get("ok", false)) and detail.get("data") is Dictionary:
 		var corp: Dictionary = detail.get("data")
+		# The corporation opened here is the one the treasury page will act on: one pick, shared
+		# by the wallet, the report, the donations, the salaries, the primes and the payroll.
+		_corp_picker.set_pick(str(corp.get("id", "")), ServiceTargetPicker.KIND_CORPORATION,
+				str(corp.get("name", "")))
 		var parent_text: String = ServiceTypes.dash(corp.get("parentId"))
 		var subsidiary_text := PackedStringArray()
 		if bool(subsidiaries.get("ok", false)) and subsidiaries.get("data") is Array:
@@ -490,13 +517,14 @@ func _transfer() -> void:
 	if _selected_id == "":
 		_say(tr("%%SVC_MSG_SELECT_CORP_SHORT"), WARN)
 		return
-	var player_id: String = _transfer_player.text.strip_edges()
+	var player_id: String = _transfer_picker.picked_id()
 	if player_id == "":
 		_say(tr("%%SVC_MSG_NEED_NEW_LEADER"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_transfer(_selected_id, player_id)
 	if _report(result, tr("%%SVC_MSG_TRANSFER_DONE")):
+		_transfer_picker.clear_pick()
 		_open_detail(_selected_id)
 
 
@@ -536,13 +564,13 @@ func _set_parent() -> void:
 		_say(tr("%%SVC_MSG_SELECT_CORP_SHORT"), WARN)
 		return
 	release_fields()
-	var parent_id: String = _parent_id.text.strip_edges()
+	var parent_id: String = _parent_picker.picked_id()
 	if parent_id == "":
 		_say(tr("%%SVC_MSG_NEED_PARENT"), WARN)
 		return
 	var result: Dictionary = await PlayerServices.corporation_set_parent(_selected_id, parent_id)
 	if _report(result, tr("%%SVC_MSG_PARENT_SET")):
-		_parent_id.text = ""
+		_parent_picker.clear_pick()
 		_open_detail(_selected_id)
 
 
@@ -582,9 +610,14 @@ func _disband_selected() -> void:
 # Treasury (moved here from the bank)
 # ---------------------------------------------------------------------------------------------
 
+## The corporation every action on this page acts on: the single pick made once, at the top.
+func _picked_corp() -> String:
+	return _corp_picker.picked_id()
+
+
 func _load_corp() -> void:
 	release_fields()
-	var corporation_id: String = _corporation_id.text.strip_edges()
+	var corporation_id: String = _picked_corp()
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
@@ -626,7 +659,7 @@ func _apply_corp_ledger(result: Dictionary) -> void:
 
 func _load_report() -> void:
 	release_fields()
-	var corporation_id: String = _corporation_id.text.strip_edges()
+	var corporation_id: String = _picked_corp()
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
@@ -653,7 +686,7 @@ func _load_report() -> void:
 
 func _donate() -> void:
 	release_fields()
-	var corporation_id: String = _corporation_id.text.strip_edges()
+	var corporation_id: String = _picked_corp()
 	if corporation_id == "" or not _donation_amount.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_CORP_AMOUNT"), WARN)
 		return
@@ -665,12 +698,12 @@ func _donate() -> void:
 
 
 # ---------------------------------------------------------------------------------------------
-# Salaires / prime / paie (economie)
+# Salaries / prime / payroll (economy)
 # ---------------------------------------------------------------------------------------------
 
 func _load_salaries() -> void:
 	release_fields()
-	var corporation_id: String = _corporation_id.text.strip_edges()
+	var corporation_id: String = _picked_corp()
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
@@ -699,58 +732,58 @@ func _apply_salary_list(list: ItemList, value: Variant, formatter: Callable, emp
 
 
 func _set_role_salary() -> void:
-	if _corporation_id.text.strip_edges() == "" or _salary_role.text.strip_edges() == "" \
+	if _picked_corp() == "" or _salary_role.text.strip_edges() == "" \
 			or not _salary_role_amount.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_SALARY_FIELDS"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_salary_set_role(
-			_corporation_id.text.strip_edges(), _salary_role.text.strip_edges(), int(_salary_role_amount.text))
+			_picked_corp(), _salary_role.text.strip_edges(), int(_salary_role_amount.text))
 	if _report(result, tr("%%SVC_MSG_SALARY_ROLE_SET")):
 		_load_salaries()
 
 
 func _set_member_salary() -> void:
-	if _corporation_id.text.strip_edges() == "" or _salary_member.text.strip_edges() == "" \
+	if _picked_corp() == "" or _salary_member_picker.picked_id() == "" \
 			or not _salary_member_amount.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_SALARY_FIELDS"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_salary_set_member(
-			_corporation_id.text.strip_edges(), _salary_member.text.strip_edges(),
+			_picked_corp(), _salary_member_picker.picked_id(),
 			int(_salary_member_amount.text))
 	if _report(result, tr("%%SVC_MSG_SALARY_MEMBER_SET")):
 		_load_salaries()
 
 
 func _remove_member_salary() -> void:
-	if _corporation_id.text.strip_edges() == "" or _salary_member.text.strip_edges() == "":
+	if _picked_corp() == "" or _salary_member_picker.picked_id() == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_AND_PLAYER"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_salary_remove_member(
-			_corporation_id.text.strip_edges(), _salary_member.text.strip_edges())
+			_picked_corp(), _salary_member_picker.picked_id())
 	if _report(result, tr("%%SVC_MSG_SALARY_REMOVED")):
 		_load_salaries()
 
 
 func _prime() -> void:
-	if _corporation_id.text.strip_edges() == "" or _prime_player.text.strip_edges() == "" \
+	if _picked_corp() == "" or _prime_picker.picked_id() == "" \
 			or not _prime_amount.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_CORP_AND_PLAYER"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_prime(
-			_corporation_id.text.strip_edges(), _prime_player.text.strip_edges(), int(_prime_amount.text))
+			_picked_corp(), _prime_picker.picked_id(), int(_prime_amount.text))
 	if _report(result, tr("%%SVC_MSG_PRIME_SENT")):
 		_load_corp()
 
 
 func _payroll() -> void:
-	if _corporation_id.text.strip_edges() == "":
+	if _picked_corp() == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
 	release_fields()
-	var result: Dictionary = await PlayerServices.corporation_payroll(_corporation_id.text.strip_edges())
+	var result: Dictionary = await PlayerServices.corporation_payroll(_picked_corp())
 	if _report(result, tr("%%SVC_MSG_PAYROLL_DONE")):
 		_load_corp()
