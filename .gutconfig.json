@@ -4,9 +4,7 @@
  "configured_dirs": [
   "res://test/integration"
  ],
- "dirs": [
-  "res://test/unintegrationit"
- ],
+ "dirs": [],
  "disable_colors": false,
  "double_strategy": 1,
  "errors_do_not_cause_failure": false,
