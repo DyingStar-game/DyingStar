@@ -1463,8 +1463,12 @@ func _net_parent_uuid():
 
 ## Replicate the body's current pose to clients (server-authoritative move). Shared by the scripted glides
 ## (vault, step-up) so they emit exactly like the normal tick.
+##
+## It leaves new_input_from_server alone: those glides return before the input is read, so a "stop" that
+## came in during one was marked read without ever being applied — a key released mid-step kept the
+## player walking (on a slope, climbing it step after step) with nobody on the keys (measured
+## 2026-10-04). The flag is cleared where the input is taken, at the end of the normal tick.
 func _emit_move() -> void:
-	player.new_input_from_server = false
 	# NOTE: this used to send global_rotation while every other sender sent the LOCAL rotation the
 	# client contract expects (see Player.net_set_target) — identical only while the parent's basis is
 	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
