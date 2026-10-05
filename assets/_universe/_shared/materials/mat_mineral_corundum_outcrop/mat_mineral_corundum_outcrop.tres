@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://obkysrhfqa5s"]
+
+[ext_resource type="Texture2D" uid="uid://b3h7wjd1m2c48" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop/tex_mineral_corundum_outcrop_albedo.png" id="1_hxtb3"]
+[ext_resource type="Texture2D" uid="uid://cuajvcjtk8le1" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop/tex_mineral_corundum_outcrop_normal.png" id="2_q7wxs"]
+[ext_resource type="Texture2D" uid="uid://c8x4xp3yi5db8" path="res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop/tex_mineral_corundum_outcrop_roughness.png" id="3_3rl34"]
+
+[resource]
+resource_name = "mat_mineral_corundum_outcrop"
+albedo_texture = ExtResource("1_hxtb3")
+roughness_texture = ExtResource("3_3rl34")
+normal_enabled = true
+normal_texture = ExtResource("2_q7wxs")
