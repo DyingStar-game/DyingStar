@@ -36,8 +36,10 @@ func test_every_mining_village_spawns_a_teleporter() -> void:
 	assert_not_null(found, "the layout references the cabin's scene")
 	if found == null:
 		return
-	var instanced := "parent=\".\" instance=ExtResource(\"%s\")" % found.get_string(1)
-	assert_eq(text.count(instanced), 1, "one cabin, a direct child of the layout")
+	# The editor writes a unique_id (and may write more) between parent and instance: match any.
+	var instanced := RegEx.create_from_string(
+			"\\[node name=\"[^\"]+\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"%s\"\\)\\]" % found.get_string(1))
+	assert_eq(instanced.search_all(text).size(), 1, "one cabin, a direct child of the layout")
 
 
 func test_no_scene_but_the_village_layout_places_a_cabin() -> void:
