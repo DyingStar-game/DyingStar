@@ -2,7 +2,8 @@ extends GutTest
 ## ares_city_factory, the layout of the factory POIs (spawn_scene of their poi_village entries in
 ## Horizon's seed): an industrial zone with no homes. At least two garages, mining depots aligned in
 ## groups of three or four, at least two cargo depots with stacked containers around them, floodlights,
-## two teleporter cabins. Every direct child is a networked prop, spawned by poi_villages.gd.
+## two teleporter cabins. Every item is a networked prop, spawned by poi_villages.gd: the direct children,
+## and the containers under their storage area.
 ## Read from the file: its buildings pull in materials that raise engine errors on load.
 
 const FACTORY := "res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn"
@@ -15,7 +16,7 @@ const CONTAINERS := "res://scenes/_universe/props/containers/container_"
 ## Depots further apart than this on one line belong to two groups (side by side: 32 m, apron to apron).
 const SIDE_BY_SIDE_M := 40.0
 
-var _items: Array = []  # [scene path, Transform3D, node name] of every direct child
+var _items: Array = []  # [scene path, Transform3D in the layout's frame, key] of every networked item
 
 
 func before_all() -> void:
@@ -23,10 +24,18 @@ func before_all() -> void:
 	var paths := {}
 	for ext in RegEx.create_from_string("\\[ext_resource [^\\]]*path=\"([^\"]+)\" id=\"([^\"]+)\"\\]").search_all(text):
 		paths[ext.get_string(2)] = ext.get_string(1)
-	var node := RegEx.create_from_string("\\[node name=\"([^\"]+)\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"([^\"]+)\"\\)\\]" \
+	var node := RegEx.create_from_string("\\[node name=\"([^\"]+)\" parent=\"([^\"]+)\"[^\\]]*instance=ExtResource\\(\"([^\"]+)\"\\)\\]" \
 			+ "\\ntransform = (Transform3D\\([^)]*\\))")
+	var frames := {}  # a direct child's name -> its transform: what the items under it are local to
 	for m in node.search_all(text):
-		_items.append([paths.get(m.get_string(2), ""), str_to_var(m.get_string(3)), m.get_string(1)])
+		var xf: Transform3D = str_to_var(m.get_string(4))
+		var key := m.get_string(1)
+		if m.get_string(2) == ".":
+			frames[key] = xf
+		else:
+			xf = frames[m.get_string(2)] * xf
+			key = "%s/%s" % [m.get_string(2), key]  # poi_villages draws a child's uuid from this key
+		_items.append([paths.get(m.get_string(3), ""), xf, key])
 
 
 func test_it_has_no_homes() -> void:
@@ -68,7 +77,7 @@ func test_its_mining_depots_stand_in_aligned_groups_of_three_or_four() -> void:
 func test_containers_are_stacked_around_the_cargo_depots() -> void:
 	var containers := _items.filter(func(it: Array) -> bool: return (it[0] as String).begins_with(CONTAINERS))
 	assert_gte(containers.size(), 20, "plenty of them")
-	var stacked := containers.filter(func(it: Array) -> bool: return (it[0] as String).contains("_tier"))
+	var stacked := containers.filter(func(it: Array) -> bool: return (it[1] as Transform3D).origin.y > 1.0)
 	assert_gt(stacked.size(), 0, "some stacked two or three high")
 	for item: Array in _items:
 		if item[0] != CARGO:
@@ -97,7 +106,7 @@ func test_every_name_is_unique() -> void:
 		names[item[2]] = true
 
 
-## A scene with a PropSync, its own or the one of the scene it inherits (a container's _tierN).
+## A scene with a PropSync, its own or the one of the scene it inherits.
 func _networked(path: String) -> bool:
 	var text := FileAccess.get_file_as_string(path)
 	if text.contains("prop_sync.gd"):

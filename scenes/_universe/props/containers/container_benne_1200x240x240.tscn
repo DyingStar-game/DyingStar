@@ -4,7 +4,6 @@
 [ext_resource type="PackedScene" uid="uid://g4d670sy5626" path="res://assets/_universe/props/containers/container_benne_1200x240x240.glb" id="2_nyfv5"]
 [ext_resource type="Material" uid="uid://iu6yviv6ftqn" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/mat_metal_yellow_hauling.tres" id="3_yellow"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
-[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="pad_ds"]
 [ext_resource type="Texture2D" path="res://assets/textures/decals/ares_logo/ares_logo_decal_crop.png" id="ares_logo"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_nyfv5"]
@@ -16,15 +15,6 @@ script = ExtResource("1_nyfv5")
 [node name="PropSync" type="Node" parent="."]
 script = ExtResource("propsync_ds")
 type_name = "simple_building"
-
-[node name="TerrainPad" type="Node3D" parent="."]
-script = ExtResource("pad_ds")
-apron_m = 1.5
-metadata/_custom_type_script = "uid://custckqbhkkow"
-
-[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
-size = Vector3(12, 1, 2.4)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=925483459]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
