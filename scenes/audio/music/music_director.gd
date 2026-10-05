@@ -28,6 +28,9 @@ var _last_track: AudioStream = null
 ## Seconds of silence left before the next track; negative while a track plays or nothing is due.
 var _gap_left_s: float = -1.0
 
+## Plays instead of what the table would choose, while set (the Credits page's track): set_override.
+var _override: MusicPlaylist = null
+
 ## body name → its points of interest, read once (StarMapPoi.load_for parses a file).
 var _pois_by_body: Dictionary = {}
 
@@ -49,6 +52,23 @@ func start() -> void:
 	set_process(true)
 	_context = _read_context()
 	_switch_to(table.playlist_for(_context))
+
+
+## [param playlist] plays instead of the table's choice, at once (no settle time), until it is cleared
+## with null — then the table decides again. The Credits page sets its track this way.
+func set_override(playlist: MusicPlaylist) -> void:
+	_override = playlist
+	if table == null or not is_processing():
+		return  # not started (server, tests): kept for when it is
+	if playlist != null:
+		_switch_to(playlist)
+	elif _context != null:
+		_switch_to(table.playlist_for(_context))  # else the next probe decides
+
+
+## What plays instead of the table's choice, or null.
+func override() -> MusicPlaylist:
+	return _override
 
 
 ## The player whose situation decides the music from now on: ours, once it stands in the world. When it
@@ -92,7 +112,7 @@ func _probe() -> void:
 	if context == null:
 		return
 	_context = context
-	var target: MusicPlaylist = table.playlist_for(context)
+	var target: MusicPlaylist = _override if _override != null else table.playlist_for(context)
 	if target == _current:
 		_wanted = _current
 		return

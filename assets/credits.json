@@ -1,0 +1,899 @@
+{
+	"music": [
+		{
+			"asset": "a_starry_night.ogg",
+			"path": "res://assets/_universe/audio/music/a_starry_night.ogg",
+			"author": "Koothka",
+			"source": "Discord",
+			"id": "311230863675359232",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "balade.ogg",
+			"path": "res://assets/_universe/audio/music/balade.ogg",
+			"author": "LRC",
+			"source": "Discord",
+			"id": "169605761494810624",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "beyond_horizon.mp3",
+			"path": "res://assets/_universe/audio/music/beyond_horizon.mp3",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "beyond_horizon_percu.mp3",
+			"path": "res://assets/_universe/audio/music/beyond_horizon_percu.mp3",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "dyingstar_mixage_v3.mp3",
+			"path": "res://assets/_universe/audio/music/dyingstar_mixage_v3.mp3",
+			"author": "Repto Eternef",
+			"source": "Discord",
+			"id": "322087903414976515",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "DyingStart_testV1.mp3",
+			"path": "res://assets/_universe/audio/music/DyingStart_testV1.mp3",
+			"author": "Repto Eternef",
+			"source": "Discord",
+			"id": "322087903414976515",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "dynamic_event_1_wip.ogg",
+			"path": "res://assets/_universe/audio/music/dynamic_event_1_wip.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "embrace_the_chaos.ogg",
+			"path": "res://assets/_universe/audio/music/embrace_the_chaos.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "eva_atmo_1_wip.ogg",
+			"path": "res://assets/_universe/audio/music/eva_atmo_1_wip.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "gravity_waves_wip.ogg",
+			"path": "res://assets/_universe/audio/music/gravity_waves_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "hyperpropre.mp3",
+			"path": "res://assets/_universe/audio/music/hyperpropre.mp3",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "lodestar_alan_mihaly.mp3",
+			"path": "res://assets/_universe/audio/music/lodestar_alan_mihaly.mp3",
+			"author": "Alan Mihàly",
+			"source": "Discord",
+			"id": "1123047331693068420",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "meloncholia.ogg",
+			"path": "res://assets/_universe/audio/music/meloncholia.ogg",
+			"author": "Koothka",
+			"source": "Discord",
+			"id": "311230863675359232",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mist.mp3",
+			"path": "res://assets/_universe/audio/music/mist.mp3",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "overloaded.ogg",
+			"path": "res://assets/_universe/audio/music/overloaded.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "sandbox_ambiance.ogg",
+			"path": "res://assets/_universe/audio/music/sandbox_ambiance.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "sandbox_peacefull_explo_1-DUDUK.ogg",
+			"path": "res://assets/_universe/audio/music/sandbox_peacefull_explo_1-DUDUK.ogg",
+			"author": "Hugo Lisoir",
+			"source": "Discord",
+			"id": "278291200514195466",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "sandwave_wip.ogg",
+			"path": "res://assets/_universe/audio/music/sandwave_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "shooting_star_crunch_wip.ogg",
+			"path": "res://assets/_universe/audio/music/shooting_star_crunch_wip.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "syd_where_are_you.ogg",
+			"path": "res://assets/_universe/audio/music/syd_where_are_you.ogg",
+			"author": "Alan Mihàly",
+			"source": "Discord",
+			"id": "1123047331693068420",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "the_funky_lounge_folks_small_rabbits.ogg",
+			"path": "res://assets/_universe/audio/music/the_funky_lounge_folks_small_rabbits.ogg",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
+			"asset": "the_need_for_silence_v10.ogg",
+			"path": "res://assets/_universe/audio/music/the_need_for_silence_v10.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "tin_can.ogg",
+			"path": "res://assets/_universe/audio/music/tin_can.ogg",
+			"author": "Solstium",
+			"source": "Discord",
+			"id": "116239126713335808",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		}
+	],
+	"sfx": [
+		{
+			"asset": "button.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/button.mp3",
+			"author": "RescopicSound",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/750433/",
+			"license": "CC BY-NC 4.0"
+		},
+		{
+			"asset": "button_important.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/button_important.ogg",
+			"author": "joseegn",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/756269/",
+			"license": "CC BY 4.0"
+		},
+		{
+			"asset": "car-handbreak-off.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-off.ogg",
+			"author": "Sadiquecat",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/819022/",
+			"license": "CC0"
+		},
+		{
+			"asset": "car-handbreak-on.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-on.ogg",
+			"author": "Sadiquecat",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/819022/",
+			"license": "CC0"
+		},
+		{
+			"asset": "car-horn.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg",
+			"author": "guitarguy1985",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/54086/",
+			"license": "CC0"
+		},
+		{
+			"asset": "car-horn.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg",
+			"author": "zerolagtime",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/66586/",
+			"license": "CC0"
+		},
+		{
+			"asset": "crate-pick-up.mp3",
+			"path": "res://assets/_universe/audio/sfx/props/crate-pick-up.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "crate-put-down-ground.mp3",
+			"path": "res://assets/_universe/audio/sfx/props/crate-put-down-ground.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "crate-put-down-metal.mp3",
+			"path": "res://assets/_universe/audio/sfx/props/crate-put-down-metal.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hammer-drill-end.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/hammer-drill-end.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hammer-drill-equip.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/hammer-drill-equip.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hammer-drill-fail.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/hammer-drill-fail.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hammer-drill-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/hammer-drill-loop.ogg",
+			"author": "tanweraman",
+			"source": "Pixabay",
+			"id": "",
+			"url": "https://pixabay.com/sound-effects/road-hammer-drill-machine-short-278458/",
+			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "machine-button-off.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/machine-button-off.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "machine-button-on.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/machine-button-on.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "male-jump.wav",
+			"path": "res://assets/_universe/audio/sfx/characters/male-jump.wav",
+			"author": "Artmasterrich",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/345437/",
+			"license": "CC0"
+		},
+		{
+			"asset": "missing-sound.wav",
+			"path": "res://assets/_universe/audio/sfx/ui/missing-sound.wav",
+			"author": "winerius",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/732716/",
+			"license": "CC0"
+		},
+		{
+			"asset": "sandstorm_001.ogg",
+			"path": "res://assets/_universe/audio/ambience/sandstorm_001.ogg",
+			"author": "bernhoftbret",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/843296/",
+			"license": "CC0"
+		},
+		{
+			"asset": "special-lee-horn.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg",
+			"author": "Myinstants",
+			"source": "Myinstants",
+			"id": "",
+			"url": "https://www.myinstants.com/en/instant/general-lee-horn-36023/",
+			"license": "Unknown"
+		},
+		{
+			"asset": "step_grass_1.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_grass_1.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_grass_2.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_grass_2.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_grass_3.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_grass_3.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_grass_4.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_grass_4.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_metal_1.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_metal_1.mp3",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_metal_2.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_metal_2.mp3",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "step_stone_1.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_stone_1.mp3",
+			"author": "Fission9",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/521590/",
+			"license": "CC0"
+		},
+		{
+			"asset": "step_stone_2.mp3",
+			"path": "res://assets/_universe/audio/sfx/characters/step_stone_2.mp3",
+			"author": "Fission9",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/521590/",
+			"license": "CC0"
+		},
+		{
+			"asset": "torch-lamp-off.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/torch-lamp-off.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "torch-lamp-on.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/tools/torch-lamp-on.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-door-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-door-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-elec-engine-idle.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-idle.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-engine-idle.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-idle.ogg",
+			"author": "kyles",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/455736/",
+			"license": "CC0"
+		},
+		{
+			"asset": "truck-engine-start.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-start.ogg",
+			"author": "kyles",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/455736/",
+			"license": "CC0"
+		},
+		{
+			"asset": "truck-engine-stop.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-stop.ogg",
+			"author": "GiocoSound",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/401557/",
+			"license": "CC0"
+		},
+		{
+			"asset": "truck-headlight-off.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-off.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-headlight-on.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-on.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "vault-high.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/vault-high.ogg",
+			"author": "tanweraman",
+			"source": "Pixabay",
+			"id": "",
+			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
+			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "vault.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/vault.ogg",
+			"author": "tanweraman",
+			"source": "Pixabay",
+			"id": "",
+			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
+			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "wheel_struck_constant.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_struck_constant.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wheel_turn_on_gravel_1.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_1.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wheel_turn_on_gravel_2.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_2.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wheel_turn_on_gravel_3.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_3.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wheel_turn_on_gravel_4.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_4.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wheel_turn_on_gravel_5.mp3",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/wheel_turn_on_gravel_5.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		}
+	],
+	"models": [
+		{
+			"asset": "building_apartment_002.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/building_apartment_002.blend",
+			"author": "Mapper",
+			"source": "Discord",
+			"id": "154253769717186561",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "conteneur.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/conteneur.blend",
+			"author": "BenLatouro",
+			"source": "Discord",
+			"id": "950703145783291924",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_12x2.6.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_12x2.6.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_6x2.6.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_6x2.6.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_lateraux.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_lateraux.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_square_container.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_square_container.blend",
+			"author": "BARDOK",
+			"source": "Discord",
+			"id": "306742655034064897",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_superpose.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_superpose.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_test.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/habitat_test.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hazard_stripes.jpg",
+			"path": "res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg",
+			"author": "Kjpargeter",
+			"source": "Freepik",
+			"id": "",
+			"url": "http://www.freepik.com",
+			"license": "Freepik License (attribution)"
+		},
+		{
+			"asset": "iron_plate_0.5x0.3.blend",
+			"path": "res://assets_blender/_universe/props/furniture/iron_plate_0.5x0.3.blend",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mat_concrete_wall_rough",
+			"path": "res://assets/_universe/_shared/materials/mat_concrete_wall_rough",
+			"author": "WarpZone",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_concrete_wall_smooth",
+			"path": "res://assets/_universe/_shared/materials/mat_concrete_wall_smooth",
+			"author": "DDurieux",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_metal_diamondplate2k",
+			"path": "res://assets/_universe/_shared/materials/mat_metal_diamondplate2k",
+			"author": "AmbientCG",
+			"source": "",
+			"id": "",
+			"url": "https://ambientcg.com/",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_metal_yellow_hauling",
+			"path": "res://assets/_universe/_shared/materials/mat_metal_yellow_hauling",
+			"author": "AmbientCG",
+			"source": "",
+			"id": "",
+			"url": "https://ambientcg.com/a/PaintedPlaster004",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_metal_yellow_rusty",
+			"path": "res://assets/_universe/_shared/materials/mat_metal_yellow_rusty",
+			"author": "WarpZone",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_mineral_corundum_outcrop",
+			"path": "res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop",
+			"author": "Poly Haven",
+			"source": "",
+			"id": "",
+			"url": "https://polyhaven.com/a/rock_face_03",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_mineral_corundum_outcrop_marble_01",
+			"path": "res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop_marble_01",
+			"author": "Poly Haven",
+			"source": "",
+			"id": "",
+			"url": "https://polyhaven.com/a/marble_rock_01",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_mineral_corundum_pure",
+			"path": "res://assets/_universe/_shared/materials/mat_mineral_corundum_pure",
+			"author": "WarpZone",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "AGPL-3.0"
+		},
+		{
+			"asset": "mat_mineral_corundum_sapphire",
+			"path": "res://assets/_universe/_shared/materials/mat_mineral_corundum_sapphire",
+			"author": "WarpZone",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "AGPL-3.0"
+		},
+		{
+			"asset": "mat_vegetation_bark_pine",
+			"path": "res://assets/_universe/_shared/materials/mat_vegetation_bark_pine",
+			"author": "AmbientCG",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "metal_iron_041A_4K_*",
+			"path": "res://assets_blender/_universe/_shared/materials/metals/metal_iron_041A_4K_Color.jpg",
+			"author": "CC0 Textures",
+			"source": "CC0 Textures",
+			"id": "",
+			"url": "https://cc0-textures.com/t/cc0t-metal-041-a",
+			"license": "CC0"
+		},
+		{
+			"asset": "metal_shelf.glb",
+			"path": "res://assets/_universe/props/furniture/metal_shelf.glb",
+			"author": "Mehdi Shahsavan",
+			"source": "Sketchfab",
+			"id": "",
+			"url": "https://skfb.ly/oTVyP",
+			"license": "CC BY 4.0"
+		},
+		{
+			"asset": "mini_truck.blend",
+			"path": "res://assets_blender/_universe/vehicles/ground/mini_truck.blend",
+			"author": "Tarcellos",
+			"source": "Discord",
+			"id": "571991741763158016",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "outdoor_lamppost_2.2m_001.blend",
+			"path": "res://assets_blender/_universe/props/furniture/outdoor_lamppost_2.2m_001.blend",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "test_containers_12x2.6.blend",
+			"path": "res://assets_blender/_universe/props/containers/test_containers_12x2.6.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "test_containers_12x3.blend",
+			"path": "res://assets_blender/_universe/props/containers/test_containers_12x3.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "test_containers_6x2.6.blend",
+			"path": "res://assets_blender/_universe/props/containers/test_containers_6x2.6.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "test_containers_6x3.blend",
+			"path": "res://assets_blender/_universe/props/containers/test_containers_6x3.blend",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wind_valley.blend",
+			"path": "res://assets_blender/_universe/structures/industrial/wind_valley.blend",
+			"author": "[3D] Stup Boulon",
+			"source": "Discord",
+			"id": "369271943003635713",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wind_valley.blend",
+			"path": "res://assets_blender/_universe/structures/industrial/wind_valley.blend",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wind_valley.blend",
+			"path": "res://assets_blender/_universe/structures/industrial/wind_valley.blend",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		}
+	]
+}

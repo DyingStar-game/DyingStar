@@ -7,9 +7,10 @@
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/a_starry_night.ogg" id="5"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/eva_atmo_1_wip.ogg" id="6"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/music/syd_where_are_you.ogg" id="7"]
+[ext_resource type="AudioStream" uid="uid://dhag185bs03d3" path="res://assets/_universe/audio/music/shooting_star_crunch_wip.ogg" id="8"]
 
 [resource]
 script = ExtResource("1")
-tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7")])
+tracks = Array[AudioStream]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8")])
 gap_min_s = 60.0
 gap_max_s = 180.0

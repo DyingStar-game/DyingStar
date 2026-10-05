@@ -153,6 +153,15 @@ jobs:
       - name: Parser unit tests
         run: python3 test/unit/test_area_monitoring_py.py
 
+      # The main menu's Credits page reads assets/credits.json, written from the credit .txt beside
+      # each asset. On a pull request credits.yml rewrites it; this is the net for what lands on a
+      # branch without one (a direct push, a fork the bot could not push to).
+      - name: Check the credits list
+        run: python3 tools/generate_credits.py --check
+
+      - name: Credits generator unit tests
+        run: python3 test/unit/test_generate_credits_py.py
+
   linter:
     name: Run GDScript linter
     runs-on: ubuntu-latest

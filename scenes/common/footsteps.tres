@@ -8,9 +8,6 @@
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/characters/step_metal_1.mp3" id="m1"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/characters/step_metal_2.mp3" id="m2"]
 [ext_resource type="AudioStream" uid="uid://dnqohk4goy70l" path="res://assets/_universe/audio/sfx/ui/missing-sound.wav" id="miss"]
-[ext_resource type="AudioStream" uid="uid://c1tttf5kvfq30" path="res://assets/_universe/audio/sfx/characters/step_sand_1.mp3" id="s1"]
-[ext_resource type="AudioStream" uid="uid://bisrs6xcxhoic" path="res://assets/_universe/audio/sfx/characters/step_sand_2.mp3" id="s2"]
-[ext_resource type="AudioStream" uid="uid://b6wbq1r07dnl2" path="res://assets/_universe/audio/sfx/characters/step_sand_3.mp3" id="s3"]
 [ext_resource type="AudioStream" uid="uid://tvl1x0upmmqw" path="res://assets/_universe/audio/sfx/characters/step_stone_1.mp3" id="t1"]
 [ext_resource type="AudioStream" uid="uid://bkdes1xx6o1c7" path="res://assets/_universe/audio/sfx/characters/step_stone_2.mp3" id="t2"]
 
@@ -19,13 +16,10 @@ script = ExtResource("1")
 by_family = {
 &"brick": [ExtResource("t1"), ExtResource("t2")],
 &"concrete": [ExtResource("t1"), ExtResource("t2")],
-&"dirt": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
-&"gravel": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
 &"metal": [ExtResource("m1"), ExtResource("m2")],
 &"mineral": [ExtResource("t1"), ExtResource("t2")],
 &"organic": [ExtResource("g1"), ExtResource("g2"), ExtResource("g3"), ExtResource("g4")],
 &"rock": [ExtResource("t1"), ExtResource("t2")],
-&"sand": [ExtResource("s1"), ExtResource("s2"), ExtResource("s3")],
 &"stone": [ExtResource("t1"), ExtResource("t2")],
 &"vegetation": [ExtResource("g1"), ExtResource("g2"), ExtResource("g3"), ExtResource("g4")]
 }

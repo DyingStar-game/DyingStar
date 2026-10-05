@@ -9,7 +9,8 @@
     1.0
   ],
   "license": "CC0-1.0",
-  "author": "https://ambientcg.com/",
+  "author": "AmbientCG",
+  "notes": "https://ambientcg.com/",
   "ai_generated": false,
   "delivery": {
     "type": "hosted",
