@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="5_propsync"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="6_terrainpad"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="7_neon"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 [ext_resource type="Script" uid="uid://cvsvr52nn75xd" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
@@ -116,3 +117,6 @@ light_energy = 0.5
 light_range = 11.0
 light_attenuation = 2.2
 light_offset = 5.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=1597114316]
+script = ExtResource("pc_photocell")

@@ -789,6 +789,18 @@ func star() -> Node3D:
 	return _find_sun()
 
 
+## The star's height above the horizon at `world_pos`, in degrees (negative: below it); -90 without a
+## star. The horizon is the plane square to the radial through the point, the planet taken as a
+## sphere: relief that hides the star is not counted. Pure geometry of the shared clock, like
+## get_local_solar_time, so every client finds the same value.
+func sun_elevation_at(world_pos: Vector3) -> float:
+	var sun: Node3D = _find_sun()
+	if sun == null:
+		return -90.0
+	var up: Vector3 = (world_pos - global_position).normalized()
+	return rad_to_deg(asin(clampf(up.dot((sun.global_position - world_pos).normalized()), -1.0, 1.0)))
+
+
 func _find_sun() -> Node3D:
 	## Walk siblings of the planet in the universe scene looking for the star.
 	var parent := get_parent()
