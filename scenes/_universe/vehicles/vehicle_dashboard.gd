@@ -46,6 +46,10 @@ var _state: String = ""
 @onready var _battery_bars: VBoxContainer = $BatteryBars
 
 func _ready() -> void:
+	# Nobody looks at a screen on the server: it only cost a frame of work per truck there.
+	if GameOrchestrator.is_server():
+		set_process(false)
+		return
 	_vehicle = _find_vehicle()
 	_screen = get_viewport() as SubViewport
 

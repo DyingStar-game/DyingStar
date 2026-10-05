@@ -2176,6 +2176,17 @@ func activate_object(event: Dictionary) -> void:
 	var data: Dictionary = event["data"]
 	var player_uuid: String = str(data.get("object_uuid", ""))
 	if str(data.get("object_type", "")) != "player":
+		var type: String = str(data.get("object_type", ""))
+		var existing = props_list[type].get(player_uuid) if props_list.has(type) else null
+		if existing != null and is_instance_valid(existing) and not existing.has_meta(ZONE_FROZEN_META):
+			# Horizon wakes a vehicle only on a server it does not hand to: a LIVE copy here is
+			# a stale one (left over from an earlier zone change), and create_generic_object would
+			# keep it where it was — the driver re-seated in it and rolled back (preprod).
+			_adopt_transferred_prop(existing, data.get("object_data", {}))
+			if prop_registry.has(player_uuid):
+				prop_registry.merge_data(player_uuid, data.get("object_data", {}))
+				_stream_moved[player_uuid] = true
+			return
 		create_generic_object(event)
 		return
 	if not _dormant_players.has(player_uuid):
@@ -2280,6 +2291,12 @@ func _adopt_transferred_prop(prop: Node3D, object_data: Dictionary) -> void:
 		prop.angular_velocity = Vector3.ZERO
 	if prop.has_method("server_adopt_state"):
 		prop.server_adopt_state(object_data)
+	# Frozen for its missing ground when it was built (a hand-over's vehicle is built asleep during
+	# the warm-up, often before its chunk): the zone unfreeze below does not lift that one, and a
+	# vehicle is not cullable, so nothing else would — the truck stayed frozen under its driver, no
+	# physics, no engine (minikube, 2026-10-04).
+	if prop is RigidBody3D and (prop as RigidBody3D).get_meta("_culled_frozen", false):
+		_unfreeze_culled_body(prop as RigidBody3D)
 	_zone_unfreeze_prop(prop)
 	if prop.has_method("server_adopt_velocity"):
 		prop.server_adopt_velocity(object_data)
@@ -2416,6 +2433,14 @@ func _materialize_event(event: Dictionary) -> Node:
 	if not props_list.has(event["data"]["object_type"]):
 		props_list[event["data"]["object_type"]] = {}
 	props_list[event["data"]["object_type"]][event["data"]["object_uuid"]] = spawnable_prop_instance
+	# Driven in from another server (add_prop at a border): its state and its speed, as an adoption
+	# gives them — created the plain way, the truck stopped dead under its driver.
+	# Not on a load from the database (initial_object): a saved speed is not a speed any more.
+	if str(event.get("event", "")) != "initial_object" and str(object_data.get("pilot_uuid", "")) != "" \
+			and object_data.has("velocity_local") and spawnable_prop_instance.has_method("server_adopt_velocity"):
+		if spawnable_prop_instance.has_method("server_adopt_state"):
+			spawnable_prop_instance.server_adopt_state(object_data)
+		spawnable_prop_instance.server_adopt_velocity(object_data)
 
 	# check if the prop lives in one of our zones (its world = the planet it is parented under,
 	# or space; its position compared to the zone bounds in that world's coordinates); if not,

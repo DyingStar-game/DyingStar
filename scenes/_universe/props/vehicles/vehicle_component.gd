@@ -40,6 +40,12 @@ func _ready() -> void:
 	if slot_id != "":
 		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 		freeze = true
+		# Frozen is not enough: a kinematic body still collides, and it sits INSIDE the chassis. Until
+		# the bay seats it (rebind, up to half a second later) it pushed the truck out of itself —
+		# a truck handed to another server at a border shot up in the air on flat ground.
+		var holder: Node = get_parent()
+		if holder is PhysicsBody3D:
+			(holder as PhysicsBody3D).add_collision_exception_with(self)
 	_build_icons()
 
 ## PropSync applies the replicated transform, then hands us the rest of the payload.

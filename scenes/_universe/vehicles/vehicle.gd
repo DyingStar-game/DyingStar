@@ -56,6 +56,9 @@ const REBIND_WINDOW_FRAMES: int = 600
 ## How long after spawn the whole state is sent again (s), see _full_resend_in.
 const FULL_STATE_RESEND_S: float = 2.0
 const REBIND_EVERY_FRAMES: int = 30
+## How long a hand-over's velocity waits for a frozen truck to wake (ms): later, it is no longer
+## the speed the truck had, and launching it would be worse than a stop.
+const ADOPTED_VELOCITY_MS: int = 1500
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -793,6 +796,9 @@ var _net_components: Dictionary = {}
 ## be re-linked to their bay. A window rather than a one-shot, because a prop and its vehicle are
 ## recreated independently and in no guaranteed order — the part may not exist yet when we spawn.
 var _rebind_frames: int = REBIND_WINDOW_FRAMES
+## SERVER: a hand-over's velocity waiting for the body to be dynamic (server_adopt_velocity).
+var _adopted_velocity_local := Vector3.ZERO
+var _adopted_velocity_until_ms: int = 0
 ## SERVER: the factory fit has been turned into real parts (once per vehicle, ever).
 var _factory_fitted: bool = false
 ## CLIENT: the wheel heights received (cm, vehicle frame), applied instead of the flat rest pose so a
@@ -2199,6 +2205,7 @@ func _physics_process_impl(delta: float) -> void:
 		if not GameOrchestrator.is_server():
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
+		_apply_adopted_velocity()
 		# Parked (asleep, no pilot) <-> moving edge for the NPC navmesh. Detected HERE, on the actual
 		# `sleeping` state, rather than where the settle block below sets it: Jolt also sleeps a body
 		# on its own and wakes it on any collision, and neither passes through that block.
@@ -3000,11 +3007,26 @@ func server_release_seat(player: Node) -> void:
 
 ## Server, after a hand-over adoption (pose set, velocity zeroed, body unfrozen): give a moving
 ## vehicle back the speed the sender replicated, instead of stopping it dead under its driver.
-## Called once the body is dynamic again: a velocity set while frozen does not survive the unfreeze.
+##
+## A truck that crossed a border is often built frozen (its ground not loaded yet): a velocity set
+## then is lost at the unfreeze, and the truck stopped dead under its driver. Kept, and given at
+## the first dynamic physics frame — unless that comes too late to still be the truck's speed.
 func server_adopt_velocity(data: Dictionary) -> void:
 	var vl = data.get("velocity_local")
-	if vl is Dictionary and vl.has("x"):
-		linear_velocity = global_transform.basis * Vector3(float(vl["x"]), float(vl["y"]), float(vl["z"]))
+	if not (vl is Dictionary and vl.has("x")):
+		return
+	# Always at the next dynamic physics frame: the server may still freeze the body right after
+	# (ground hold, zone), which zeroes a velocity set now.
+	_adopted_velocity_local = Vector3(float(vl["x"]), float(vl["y"]), float(vl["z"]))
+	_adopted_velocity_until_ms = Time.get_ticks_msec() + ADOPTED_VELOCITY_MS
+
+## SERVER, each physics frame: the velocity server_adopt_velocity kept while the body was frozen.
+func _apply_adopted_velocity() -> void:
+	if _adopted_velocity_until_ms == 0 or freeze:
+		return
+	if Time.get_ticks_msec() <= _adopted_velocity_until_ms:
+		linear_velocity = global_transform.basis * _adopted_velocity_local
+	_adopted_velocity_until_ms = 0
 
 ## Server: the velocity in the vehicle's own axes, snapped so a parked truck replicates no noise.
 func _velocity_local_now() -> Dictionary:
