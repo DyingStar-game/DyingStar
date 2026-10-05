@@ -77,7 +77,9 @@ it. Never work around one silently.
   `client.ini`, `server.ini`, `test/ini/*.ini`, `settings.ini`, `export_presets.cfg`.
 - Generated files, never edited by hand: `assets/credits.json` (`tools/generate_credits.py`),
   `*.translation` (Godot import of the CSV), `items_def/*_def.json` (editor menu *DyingStar → Update
-  network definitions*, copied from horizonserver), shared materials (`addons/dyingstar/`).
+  network definitions*, copied from horizonserver), the shared materials' `.tres` (menu *DyingStar →
+  Rebuild shared materials*, from each `material.json`; a pull request fails if it was not run,
+  [ADR 0026](docs/adr/0026-shared-materials-linked-by-name-generated-and-checked.md)).
 - Third-party addons are not ours to edit: `gut`, `open-world-database`, `uuid`, `godot-livekit`, `mqtt`.
   Ours: `addons/dyingstar`, `addons/planet_tools`.
 - `ENABLED_DEV_TOOLS` in `scenes/globals/globals.gd`: the build workflows switch tools off with `sed`, so

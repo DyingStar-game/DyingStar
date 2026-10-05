@@ -56,3 +56,4 @@ it names under **In the code** still exist.
 | [0023](0023-vehicle-parts-are-physical.md) | Engines and batteries are physical parts in generic bays; nothing comes out while running. |
 | [0024](0024-asset-credits-and-licences.md) | A credit `.txt` beside every asset; `credits.json` is generated and checked by CI; a lost author is `Unknown`. |
 | [0025](0025-dev-tools-off-by-one-table.md) | Dev tools switch in `ENABLED_DEV_TOOLS`; their code stays; builds force them off; the server refuses them. |
+| [0026](0026-shared-materials-linked-by-name-generated-and-checked.md) | Shared materials link by name, are generated from `material.json`, and a pull request checks they are. |
