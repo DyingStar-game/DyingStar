@@ -1,11 +1,12 @@
 extends GutTest
 ## The teleporter is a networked building: every mining village spawns one from its layout
-## (poi_villages.gd), and the station's comes from Horizon's seed. A cabin dropped into a world scene
-## by hand would not be networked — every machine would load its own copy from the scene file, with
-## no uuid — so no scene holds one except the village layout.
+## (poi_villages.gd), every factory city two, and the station's comes from Horizon's seed. A cabin
+## dropped into a world scene by hand would not be networked — every machine would load its own copy
+## from the scene file, with no uuid — so no scene holds one except those layouts.
 
 const TELEPORTER := "res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn"
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
+const FACTORY := "res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn"
 ## Where world scenes live.
 const SCENE_ROOTS: Array[String] = ["res://scenes", "res://levels"]
 
@@ -30,24 +31,34 @@ func test_the_cabin_is_a_networked_building_that_levels_its_ground() -> void:
 ## cabin instanced right under the layout's root is one per village. Read from the file rather than
 ## instantiated: the layout's buildings pull in every material they use, for nothing this test asks.
 func test_every_mining_village_spawns_a_teleporter() -> void:
-	var text := FileAccess.get_file_as_string(VILLAGE)
-	var ref := RegEx.create_from_string("\\[ext_resource [^\\]]*path=\"%s\" id=\"([^\"]+)\"\\]" % TELEPORTER)
-	var found := ref.search(text)
-	assert_not_null(found, "the layout references the cabin's scene")
-	if found == null:
-		return
-	# The editor writes a unique_id (and may write more) between parent and instance: match any.
-	var instanced := RegEx.create_from_string(
-			"\\[node name=\"[^\"]+\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"%s\"\\)\\]" % found.get_string(1))
-	assert_eq(instanced.search_all(text).size(), 1, "one cabin, a direct child of the layout")
+	assert_eq(_cabins_in(VILLAGE), 1, "one cabin, a direct child of the layout")
 
 
-func test_no_scene_but_the_village_layout_places_a_cabin() -> void:
+func test_every_factory_city_spawns_two_teleporters() -> void:
+	assert_eq(_cabins_in(FACTORY), 2, "two cabins, direct children of the layout")
+
+
+func test_no_scene_but_the_layouts_places_a_cabin() -> void:
 	var holders: PackedStringArray = []
 	for root: String in SCENE_ROOTS:
 		holders.append_array(_scenes_referencing(root, TELEPORTER))
-	assert_eq(holders, PackedStringArray([VILLAGE]),
-			"a hand-placed cabin is not networked: put it in the village layout or in Horizon's seed")
+	holders.sort()
+	assert_eq(holders, PackedStringArray([FACTORY, VILLAGE]),
+			"a hand-placed cabin is not networked: put it in a layout or in Horizon's seed")
+
+
+## How many cabins are direct children of [param layout]: the ones poi_villages.gd spawns.
+func _cabins_in(layout: String) -> int:
+	var text := FileAccess.get_file_as_string(layout)
+	var ref := RegEx.create_from_string("\\[ext_resource [^\\]]*path=\"%s\" id=\"([^\"]+)\"\\]" % TELEPORTER)
+	var found := ref.search(text)
+	assert_not_null(found, "%s references the cabin's scene" % layout.get_file())
+	if found == null:
+		return 0
+	# The editor writes a unique_id (and may write more) between parent and instance: match any.
+	var instanced := RegEx.create_from_string(
+			"\\[node name=\"[^\"]+\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"%s\"\\)\\]" % found.get_string(1))
+	return instanced.search_all(text).size()
 
 
 ## The .tscn files under [param dir] that reference [param scene_path].

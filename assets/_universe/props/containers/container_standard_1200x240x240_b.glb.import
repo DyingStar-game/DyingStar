@@ -42,19 +42,19 @@ materials/extract_path=""
 _subresources={
 "nodes": {
 "PATH:container_standard_1200x240x240_b_LOD0": {
-"mesh_instance/visibility_range_end": 15.0
+"mesh_instance/visibility_range_end": 200.0
 },
 "PATH:container_standard_1200x240x240_b_LOD1": {
-"mesh_instance/visibility_range_begin": 15.0,
-"mesh_instance/visibility_range_end": 40.0
+"mesh_instance/visibility_range_begin": 200.0,
+"mesh_instance/visibility_range_end": 400.0
 },
 "PATH:container_standard_1200x240x240_b_LOD2": {
-"mesh_instance/visibility_range_begin": 40.0,
-"mesh_instance/visibility_range_end": 80.0
+"mesh_instance/visibility_range_begin": 400.0,
+"mesh_instance/visibility_range_end": 800.0
 },
 "PATH:container_standard_1200x240x240_b_LOD3": {
-"mesh_instance/visibility_range_begin": 80.0,
-"mesh_instance/visibility_range_end": 150.0
+"mesh_instance/visibility_range_begin": 800.0,
+"mesh_instance/visibility_range_end": 1500.0
 }
 }
 }
