@@ -124,6 +124,12 @@ regenerates `assets/credits.json` and pushes a commit to your branch: pull befor
   (`fix(vehicles): a restart puts every saved part back in its bay`). The body says why, with
   measurements when there are some.
 - Pull requests are merged by rebase: each commit lands on `develop` as written.
+- **The documentation moves with the change.** A pull request that changes how something works, a
+  contract or a workflow updates the page that describes it in
+  [technical-docs](https://github.com/DyingStar-game/technical-docs) (developer.dyingstar-game.com),
+  in a pull request of its own linked from this one; a rule an agent could undo also gets its ADR, or
+  an update of the existing one. Fix a page you find wrong on the way. The game's `docs/` folder holds
+  the ADRs and a few engine notes, not the documentation.
 - **No AI attribution, anywhere**: no `Co-Authored-By` trailer naming an AI, no "Generated with …"
   line, no robot emoji, in commits or pull requests. The human who opens the pull request answers
   for it.
@@ -132,6 +138,7 @@ regenerates `assets/credits.json` and pushes a commit to your branch: pull befor
   - **Tests**: the tests added and run, what was tried in game, failures that already exist on
     `develop`.
   - **Lockstep with …** when a horizonserver pull request must be deployed with it.
+  - **Docs**: the technical-docs pull request that goes with it, or why none is needed.
   - **Changelog**: `CHANGELOG_EN` is required for a player-visible change; fill `CHANGELOG_FR` too
     (left empty, it reuses the English). Both are written for players, not developers.
 
