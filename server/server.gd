@@ -2794,6 +2794,17 @@ func _stream_wake_requested_village(uuid: String) -> void:
 	_stream_mark_if_unwanted(uuid)
 
 
+## Wake a prop this server holds as data only (nobody near it, see PropRegistry) and return its node;
+## null when the registry does not know it. For a place someone is about to stand in — the station a
+## teleporter sends a player to: the stream wakes a prop only once a player is near it, too late for a
+## trip. Marked like any woken prop, so it goes back to sleep if nobody comes after all.
+func wake_prop(uuid: String) -> Node:
+	var node: Node = _stream_materialize(uuid)
+	if node != null:
+		_stream_mark_if_unwanted(uuid)
+	return node
+
+
 ## Create the node of [param uuid] (and of its registry children). Returns it, or null.
 func _stream_materialize(uuid: String) -> Node:
 	var e: Dictionary = prop_registry.get_entry(uuid)

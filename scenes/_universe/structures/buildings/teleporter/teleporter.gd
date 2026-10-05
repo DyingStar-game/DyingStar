@@ -199,10 +199,7 @@ func update_screen(data: Dictionary) -> void:
 ## SERVER: a trip to a station. The uuid comes from a client, so it must name a station this server
 ## really holds — a player cannot be sent under an arbitrary node.
 func _request_station(dest: TeleportDestination) -> void:
-	var agent = NetworkOrchestrator.network_agent
-	var station: OrbitalStation = null
-	if agent != null and agent.has_method("_search_parent_node"):
-		station = agent._search_parent_node(dest.station_uuid) as OrbitalStation
+	var station: OrbitalStation = find_station(NetworkOrchestrator.network_agent, dest.station_uuid)
 	if station == null:
 		push_warning("[Teleporter] refused: station %s is not on this server" % dest.station_uuid)
 		return
@@ -211,6 +208,19 @@ func _request_station(dest: TeleportDestination) -> void:
 			% [_actor.client_uuid, dest.describe(), local_pos.x, local_pos.y, local_pos.z])
 	_pending = {"body": station, "pos": local_pos, "mode": dest.height_mode}
 	set_physics_process(true)
+
+
+## SERVER: the station [param uuid] names, among the props [param agent] (the game server) holds; null
+## when it holds none. A station nobody is near only sleeps in the server's registry, as data: it is
+## woken here, since the traveller is about to stand in it. Before that, every trip to a station far
+## from all players was refused as "not on this server".
+static func find_station(agent: Object, uuid: String) -> OrbitalStation:
+	if agent == null or not agent.has_method("_search_parent_node"):
+		return null
+	var station := agent._search_parent_node(uuid) as OrbitalStation
+	if station == null and agent.has_method("wake_prop"):
+		station = agent.wake_prop(uuid) as OrbitalStation
+	return station
 
 
 ## SERVER, deferred: send the actor. Deferred because it reparents a body. [param frame] is a Planet
