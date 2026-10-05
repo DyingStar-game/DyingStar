@@ -8,7 +8,7 @@ extends Node3D
 # "miningrock" props, so they replicate + persist like any other rock. A fully-depleted
 # zone re-generates on the next entry (renewable, no persisted marker needed).
 #
-# Place an instance of Mining_Zone.tscn in the world (e.g. sandbox_capital.tscn) and tune
+# Place an instance of Mining_Zone.tscn in the world (e.g. a planet scene) and tune
 # the @export values per zone (mineral, richness, density, size mix).
 #
 # Generation runs from _physics_process, NOT from the body_entered callback: the ground

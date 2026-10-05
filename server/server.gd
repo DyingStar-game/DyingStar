@@ -139,8 +139,6 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/props/containers/box_50cm.tscn'),
 	'scenes/_universe/props/containers/box_4m.tscn':
 		preload('res://scenes/_universe/props/containers/box_4m.tscn'),
-	'scenes/_universe/structures/urban/cities/sandbox_capital.tscn':
-		preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
 	'scenes/_universe/environment/space/stations/orbital_station.tscn':
 		preload('res://scenes/_universe/environment/space/stations/orbital_station.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
