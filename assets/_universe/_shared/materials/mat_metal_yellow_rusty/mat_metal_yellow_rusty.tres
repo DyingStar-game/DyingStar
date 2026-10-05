@@ -1,0 +1,16 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://dxv7ow7ndxo8l"]
+
+[ext_resource type="Texture2D" uid="uid://bi3gf5g7p8sa7" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/tex_metal_yellow_rusty_albedo.png" id="1_2nxhf"]
+[ext_resource type="Texture2D" uid="uid://c8x21viu0ngww" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/tex_metal_yellow_rusty_metallic.png" id="2_8wesl"]
+[ext_resource type="Texture2D" uid="uid://cl8rrsm2syls1" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/tex_metal_yellow_rusty_normal.png" id="3_ruone"]
+[ext_resource type="Texture2D" uid="uid://cysqklsa8aflh" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/tex_metal_yellow_rusty_roughness.png" id="4_f0ix4"]
+
+[resource]
+resource_name = "mat_metal_yellow_rusty"
+albedo_texture = ExtResource("1_2nxhf")
+metallic = 1.0
+metallic_texture = ExtResource("2_8wesl")
+roughness_texture = ExtResource("4_f0ix4")
+normal_enabled = true
+normal_texture = ExtResource("3_ruone")
+uv1_scale = Vector3(0.5, 0.5, 1)

@@ -65,6 +65,14 @@ jobs:
       - name: Import project
         run: timeout 40m "$GODOT" --headless --path . --import || true
 
+      # The shared material library is generated from its material.json files (DyingStar > Rebuild
+      # shared materials, in the editor). A manifest changed without regenerating fails here, before a
+      # model ships with a stale material. Compared property by property, so Linux reads exactly what
+      # Windows wrote.
+      - name: Shared material library up to date
+        run: |
+          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_shared_material_library.gd -gexit
+
       - name: C# twins against GDScript (bit for bit)
         run: |
           "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest="$NATIVE_TESTS" -gexit

@@ -4,6 +4,7 @@ extends EditorPlugin
 const MainPanel = preload("res://addons/dyingstar/main_panel.tscn")
 const ServerPropsIO = preload("res://addons/dyingstar/server_props_io.gd")
 const PropSyncInspector = preload("res://addons/dyingstar/prop_sync_inspector.gd")
+const SharedMaterialRebuild = preload("res://addons/dyingstar/shared_material_rebuild.gd")
 
 const ITEM_IMPORT := 0
 const ITEM_EXPORT := 1
@@ -11,6 +12,7 @@ const ITEM_CLEAR := 2
 const ITEM_UPDATE_DEFS := 3
 const ITEM_VIEW_DEFS := 4
 const ITEM_UPDATE_DEFS_LOCAL := 5
+const ITEM_REBUILD_MATERIALS := 6
 
 ## Local horizonserver checkout, next to this project: the PRIMARY source of the network definitions
 ## (no network, same branch as the server you run). GitHub is the fallback when it is absent.
@@ -126,6 +128,7 @@ func _install_menu() -> void:
 		add_tool_menu_item("DyingStar — Update network definitions (horizonserver)", _sync_defs_local)
 	add_tool_menu_item("DyingStar — Update network definitions (GitHub)", _on_update_defs)
 	add_tool_menu_item("DyingStar — View network definitions…", _on_view_defs)
+	add_tool_menu_item("DyingStar — Rebuild shared materials", _rebuild_shared_materials)
 	_tool_menu_added = true
 
 
@@ -141,6 +144,11 @@ func _fill_popup(pm: PopupMenu) -> void:
 		"Copy the <type>_def.json files of %s into res://%s/." % [_local_defs_path(), ServerPropsIO.DEFS_DIR.trim_prefix("res://")])
 	pm.add_item("Update network definitions from GitHub", ITEM_UPDATE_DEFS)
 	pm.add_item("View network definitions…", ITEM_VIEW_DEFS)
+	pm.add_separator()
+	pm.add_item("Rebuild shared materials", ITEM_REBUILD_MATERIALS)
+	pm.set_item_tooltip(pm.get_item_index(ITEM_REBUILD_MATERIALS),
+		"After adding or changing a material.json: regenerate the shared material library, then reimport\n"
+		+ "the models that still show one of its materials unlinked. A pull request checks it was done.")
 	pm.id_pressed.connect(_on_menu_id)
 	_refresh_menu_state()
 
@@ -159,6 +167,7 @@ func _remove_menu() -> void:
 		remove_tool_menu_item("DyingStar — Update network definitions (horizonserver)")
 		remove_tool_menu_item("DyingStar — Update network definitions (GitHub)")
 		remove_tool_menu_item("DyingStar — View network definitions…")
+		remove_tool_menu_item("DyingStar — Rebuild shared materials")
 		_tool_menu_added = false
 
 
@@ -206,9 +215,15 @@ func _on_menu_id(id: int) -> void:
 			_sync_defs_local()
 		ITEM_VIEW_DEFS:
 			_on_view_defs()
+		ITEM_REBUILD_MATERIALS:
+			_rebuild_shared_materials()
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────
+
+func _rebuild_shared_materials() -> void:
+	SharedMaterialRebuild.new().run()
+
 
 func _on_import() -> void:
 	_open_dialog("import")
