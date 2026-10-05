@@ -39,12 +39,7 @@ static func set_hour(planet: Planet, anchor_local: Vector3, hour: float) -> floa
 
 ## The sun's height above the horizon at the anchor, in degrees (negative: below it).
 static func sun_elevation(planet: Planet, anchor_local: Vector3) -> float:
-	var star : Node3D = planet.star()
-	if star == null:
-		return -90.0
-	var here : Vector3 = planet.to_global(anchor_local)
-	var up : Vector3 = (here - planet.global_position).normalized()
-	return rad_to_deg(asin(clampf(up.dot((star.global_position - here).normalized()), -1.0, 1.0)))
+	return planet.sun_elevation_at(planet.to_global(anchor_local))
 
 
 ## Put the sun `elevation_deg` above the horizon, in the morning (sunrise side) or the evening — a

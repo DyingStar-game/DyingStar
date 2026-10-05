@@ -302,8 +302,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 		body.apply_prop_data(data)
 
 # ── Carry contract (issue #124): a carriable prop becomes pickable with E ──
+## The one question both the "Carry [E]" prompt and the grab ask (PlayerServer). It must check
+## enable_carry itself: the prompt reaches any prop with a PropSync, not only the "carriable" group.
 func interact(_interactor: Node = null) -> bool:
-	return not carried
+	return enable_carry and not carried
 
 func set_carried(value: bool) -> void:
 	carried = value

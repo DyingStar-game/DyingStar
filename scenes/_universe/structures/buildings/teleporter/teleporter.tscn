@@ -4,7 +4,11 @@
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="2_gui3d"]
 [ext_resource type="Script" uid="uid://d0di0eip2q2wk" path="res://scenes/_universe/structures/buildings/teleporter/teleporter_ui.gd" id="3_teleui"]
 [ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="4_screenzone"]
-[ext_resource type="Script" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="5_propsync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="6_terrainpad"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="7_neon"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
+[ext_resource type="Script" uid="uid://cvsvr52nn75xd" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(2.8, 1.44)
@@ -21,9 +25,23 @@ size = Vector3(7.2, 4.6, 11.2)
 [node name="Teleporter" type="Node3D" unique_id=928753654]
 script = ExtResource("1_tele")
 
-
-[node name="TerrainBlend" type="Node" parent="."]
+[node name="TerrainBlend" type="Node" parent="." unique_id=1239410832]
 script = ExtResource("tblend_ds")
+
+[node name="PropSync" type="Node" parent="." unique_id=1030050733]
+script = ExtResource("5_propsync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=1097917272]
+script = ExtResource("6_terrainpad")
+apron_m = 6.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=2051061211]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(8, 1, 12)
+
 [node name="Blockout" type="CSGBox3D" parent="." unique_id=134378902]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
 use_collision = true
@@ -87,3 +105,18 @@ monitorable = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Interior" unique_id=366441831]
 shape = SubResource("BoxShape3D_interior")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1080573755]
+transform = Transform3D(-1, 0, 1.2246064e-16, 0, 1, 0, -1.2246064e-16, 0, -1, 0, 4.5, -6.03)
+script = ExtResource("7_neon")
+text_key = "%%SIGN_TELEPORTER"
+color = Color(0.1, 0.85, 1, 1)
+glow = 1.5
+letter_height = 0.36
+light_energy = 0.5
+light_range = 11.0
+light_attenuation = 2.2
+light_offset = 5.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=1597114316]
+script = ExtResource("pc_photocell")

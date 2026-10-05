@@ -7,6 +7,8 @@
 [ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="5_truck"]
 [ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg" id="6_5left"]
 [ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="8_neon"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
 size = Vector3(15.98678550078057, 1, 41.15108700777546)
@@ -18,7 +20,7 @@ size = Vector3(0.5759233596963895, 8.999177813853976, 11.533979218493414)
 size = Vector3(0.5759233596963895, 8.999177813853976, 40.7961641160673)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_dagjk"]
-size = Vector3(0.48697699902641034, 3.7578103496571202, 29.315359421034373)
+size = Vector3(0.48697699902641034, 3.75781034965712, 29.315359421034373)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hfp2y"]
 size = Vector3(0.48697699902641034, 4.9431019497687885, 1.425175132540744)
@@ -38,7 +40,7 @@ size = Vector3(1.9300036668046232, 0.982875679677818, 4.008007256641804)
 [node name="Garage" type="Node3D" unique_id=1534038917]
 
 [node name="garage" parent="." unique_id=1594753760 instance=ExtResource("1_wl12i")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0004020153180437358, 0, -0.0018133747635715736)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00040201531804373, 0, -0.00181337476357157)
 collision_mask = 0
 
 [node name="CollisionShapeFloor" type="CollisionShape3D" parent="garage" unique_id=1188942111]
@@ -50,11 +52,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07254429, 3.99958900419921
 shape = SubResource("BoxShape3D_3av62")
 
 [node name="CollisionShapeWall010" type="CollisionShape3D" parent="garage" unique_id=700394887]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.327472655286197, 3.9995890041992186, -20.39932802520752)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.327472655286195, 3.9995890041992186, -20.39932802520752)
 shape = SubResource("BoxShape3D_wn7d4")
 
 [node name="CollisionShapeWall002" type="CollisionShape3D" parent="garage" unique_id=492671210]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 6.61680246452676, -26.151234406656826)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0808394, 6.61680246452676, -26.151234406656823)
 shape = SubResource("BoxShape3D_dagjk")
 
 [node name="CollisionShapeWall003" type="CollisionShape3D" parent="garage" unique_id=851643508]
@@ -82,7 +84,7 @@ transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995
 shape = SubResource("BoxShape3D_5iueg")
 
 [node name="CollisionShapeWall009" type="CollisionShape3D" parent="garage" unique_id=1770623440]
-transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -7.658957950770855, 3.983751586739303, -0.23740663758005986)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -7.658957950770855, 3.983751586739303, -0.23740663758005984)
 shape = SubResource("BoxShape3D_5iueg")
 
 [node name="CollisionShapeContainer01" type="CollisionShape3D" parent="garage" unique_id=207793138]
@@ -114,21 +116,21 @@ spawn_cooldown = 30.0
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -19.9798519296165)
 
 [node name="BatterieZone1" type="Decal" parent="." unique_id=1354213166]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0302175237847133, -0.007852504202932264, -9.959797003836849)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.030217523784713, -0.00785250420293226, -9.959797003836847)
 size = Vector3(2, 0.06675516680570581, 2)
 texture_albedo = ExtResource("6_5left")
 
 [node name="BatterieZone2" type="Decal" parent="." unique_id=1605340679]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0182295867468727, -0.007852504202932264, -7.930431123823636)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.0182295867468727, -0.00785250420293226, -7.930431123823636)
 size = Vector3(2, 0.06675516680570581, 2)
 texture_albedo = ExtResource("6_5left")
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1633786288]
-transform = Transform3D(6.123233995736765e-17, 0, -0.9999999999999999, 0, 1, 0, 0.9999999999999999, 0, 6.123233995736765e-17, -0.023759946585931502, 1.2000011328085565, -9.112079011595533)
+transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, -0.0237599465859315, 1.2000011328085565, -9.112079011595531)
 text = "Recharging batteries"
 
 [node name="ChargingZone" type="Area3D" parent="." unique_id=5421193]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8391555582872652, 0.1831103834099197, -9.129739718076717)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8391555582872652, 0.1831103834099197, -9.129739718076715)
 collision_layer = 0
 collision_mask = 8
 monitorable = false
@@ -138,3 +140,18 @@ metadata/_custom_type_script = "uid://db0rt5lmk5ogb"
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ChargingZone" unique_id=1758788660]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.21332854, 0.32814604, 0.19308972)
 shape = SubResource("BoxShape3D_fyfm0")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1647205584]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, 0.48, 6.6, -26.15)
+script = ExtResource("8_neon")
+text_key = "%%SIGN_GARAGE"
+letter_height = 1.4
+depth = 0.08
+light_energy = 1.0
+light_range = 14.5
+light_attenuation = 2.25
+light_offset = 5.0
+fade_distance = 400.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=2140967028]
+script = ExtResource("pc_photocell")

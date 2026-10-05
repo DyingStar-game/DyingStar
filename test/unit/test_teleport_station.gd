@@ -44,3 +44,40 @@ func test_the_catalog_describes_the_sandbox_station() -> void:
 	assert_true(dest.is_station())
 	assert_eq(dest.station_uuid, sites[0].uuid())
 	assert_string_contains(dest.detail, "400 km", "its orbit is described")
+
+
+## A station nobody is near sleeps in the server's registry: the trip wakes it rather than refusing it
+## ("not on this server" was every trip to the station from the planet).
+func test_a_sleeping_station_is_woken_for_the_trip() -> void:
+	var station := OrbitalStation.new()
+	var asleep := _server_holding(null, station)
+	assert_same(Teleporter.find_station(asleep, "s"), station, "woken from the registry")
+	assert_eq(asleep.get("woken"), ["s"])
+	var live := _server_holding(station, null)
+	assert_same(Teleporter.find_station(live, "s"), station, "already live: nothing to wake")
+	assert_eq(live.get("woken"), [])
+	assert_null(Teleporter.find_station(_server_holding(null, null), "s"), "unknown here: refused")
+	assert_null(Teleporter.find_station(null, "s"), "no server")
+	station.free()
+
+
+## A stand-in for the game server: [param live] is what its scene holds, [param sleeping] what waking
+## the uuid gives.
+func _server_holding(live: Node, sleeping: Node) -> Object:
+	var script := GDScript.new()
+	script.source_code = "\n".join([
+		"extends RefCounted",
+		"var live: Node",
+		"var sleeping: Node",
+		"var woken: Array = []",
+		"func _search_parent_node(_uuid: String) -> Node:",
+		"\treturn live",
+		"func wake_prop(uuid: String) -> Node:",
+		"\twoken.append(uuid)",
+		"\treturn sleeping",
+	])
+	script.reload()
+	var server: RefCounted = script.new()
+	server.set("live", live)
+	server.set("sleeping", sleeping)
+	return server

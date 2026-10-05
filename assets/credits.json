@@ -291,6 +291,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "generator-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/generator-loop.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "hammer-drill-end.ogg",
 			"path": "res://assets/_universe/audio/sfx/machine/tools/hammer-drill-end.ogg",
 			"author": "WarpZone",
@@ -633,6 +642,15 @@
 			"id": "950703145783291924",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "furn_floodlight_outdoor_lg.glb",
+			"path": "res://assets/_universe/props/furniture/furn_floodlight_outdoor_lg.glb",
+			"author": "SangeetBlaze",
+			"source": "Sketchfab",
+			"id": "",
+			"url": "https://sketchfab.com/3d-models/outdoor-floodlights-ea5d32f3dbc94d26a0ae1c73b1ae604c",
+			"license": "CC BY 4.0"
 		},
 		{
 			"asset": "habitat_12x2.6.blend",

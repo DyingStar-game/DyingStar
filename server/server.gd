@@ -139,8 +139,6 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/props/containers/box_50cm.tscn'),
 	'scenes/_universe/props/containers/box_4m.tscn':
 		preload('res://scenes/_universe/props/containers/box_4m.tscn'),
-	'scenes/_universe/structures/urban/cities/sandbox_capital.tscn':
-		preload('res://scenes/_universe/structures/urban/cities/sandbox_capital.tscn'),
 	'scenes/_universe/environment/space/stations/orbital_station.tscn':
 		preload('res://scenes/_universe/environment/space/stations/orbital_station.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
@@ -2794,6 +2792,17 @@ func _stream_wake_requested_village(uuid: String) -> void:
 	print("[Server] poi_village %s: habs requested by Horizon, waking it to spawn them" % uuid)
 	_stream_materialize(uuid)
 	_stream_mark_if_unwanted(uuid)
+
+
+## Wake a prop this server holds as data only (nobody near it, see PropRegistry) and return its node;
+## null when the registry does not know it. For a place someone is about to stand in — the station a
+## teleporter sends a player to: the stream wakes a prop only once a player is near it, too late for a
+## trip. Marked like any woken prop, so it goes back to sleep if nobody comes after all.
+func wake_prop(uuid: String) -> Node:
+	var node: Node = _stream_materialize(uuid)
+	if node != null:
+		_stream_mark_if_unwanted(uuid)
+	return node
 
 
 ## Create the node of [param uuid] (and of its registry children). Returns it, or null.

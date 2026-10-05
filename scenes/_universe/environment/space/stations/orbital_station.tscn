@@ -3,7 +3,6 @@
 [ext_resource type="Script" uid="uid://dyj5aqjhbt1ls" path="res://scenes/_universe/environment/space/stations/orbital_station.gd" id="1_station"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
 [ext_resource type="PackedScene" uid="uid://cn1e5bp50weao" path="res://scenes/_universe/environment/space/stations/test_station/test_station.tscn" id="3_model"]
-[ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="4_tb45s"]
 
 [node name="OrbitalStation" type="StaticBody3D" unique_id=1168617042]
 script = ExtResource("1_station")
@@ -17,6 +16,3 @@ type_name = "station"
 [node name="Arrival" type="Marker3D" parent="." unique_id=1655806559]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -42.5, 0.17586637973924124, -50.34)
 gizmo_extents = 2.0
-
-[node name="Teleporter" parent="." unique_id=928753654 instance=ExtResource("4_tb45s")]
-transform = Transform3D(-1.8369095e-16, 0, 1, 0, 1, 0, -1, 0, -1.8369095e-16, -23.85423938674552, -1.9317462854612368, -40.62550122908625)

@@ -19,15 +19,12 @@ mass = 500.0
 script = ExtResource("1_ync2l")
 sfx_pick_up = ExtResource("sfx_pick")
 sfx_landing = ExtResource("sfx_landing")
-type_name = "crate_container"
-carriable = false
 
 [node name="crate_container" parent="." unique_id=1626612544 instance=ExtResource("1_i7idy")]
 
 [node name="PropSync" type="Node" parent="."]
 script = ExtResource("propsync_1")
-type_name = "generic_prop"
-enable_carry = true
+type_name = "crate_container"
 
 [node name="box_container" parent="crate_container" index="0" unique_id=110172060]
 surface_material_override/0 = ExtResource("2_pe8a8")

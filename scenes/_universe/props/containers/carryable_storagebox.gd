@@ -8,7 +8,7 @@ extends GenericProp
 ## Area3D. Replicates as the "box" type (box_def.json), so only the scene/mesh differs.
 ##
 ## Kept SEPARATE from scenes/_universe/props/containers/* on purpose: those extend generic_storagebox.gd and
-## are placed as STATIC, non-carriable decor in levels (sandbox_capital, the planets, SimpleBoxTest).
+## are placed as STATIC, non-carriable decor in levels (the planets, SimpleBoxTest).
 ##
 ## The networked type key ("box") is set on the PropSync CHILD node per scene (see box_50cm.tscn), not here —
 ## so this script only needs GenericProp's behaviour and adds no _ready() of its own.
