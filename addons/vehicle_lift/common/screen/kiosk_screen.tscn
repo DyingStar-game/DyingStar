@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://d25wh2x6r4thu"]
+
+[ext_resource type="ArrayMesh" uid="uid://bl23g5gnvvlob" path="res://addons/vehicle_lift/common/screen/kiosk_screen.mesh" id="1_fog5h"]
+[ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://addons/vehicle_lift/common/materials/platform_principal.material" id="2_rb3cs"]
+[ext_resource type="Material" uid="uid://uwdsv4o1gqj2" path="res://addons/vehicle_lift/common/materials/platform_railing.material" id="3_t6724"]
+[ext_resource type="Material" uid="uid://cnd4glaqf4nwr" path="res://addons/vehicle_lift/common/materials/screen_border.material" id="4_wk2ba"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
+size = Vector3(0.645, 0.35, 0.112)
+
+[node name="Kiosk Screen" type="StaticBody3D" unique_id=2079123855]
+collision_mask = 0
+
+[node name="Visual" type="MeshInstance3D" parent="." unique_id=2037017777]
+mesh = ExtResource("1_fog5h")
+surface_material_override/0 = ExtResource("2_rb3cs")
+surface_material_override/1 = ExtResource("3_t6724")
+surface_material_override/2 = ExtResource("4_wk2ba")
+
+[node name="Collider" type="CollisionShape3D" parent="." unique_id=867370699]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.018917352)
+shape = SubResource("BoxShape3D_fti8b")

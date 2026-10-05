@@ -1,0 +1,371 @@
+[gd_scene format=3 uid="uid://b2nf01fos6i0i"]
+
+[ext_resource type="Script" uid="uid://bw1klnu0p5niy" path="res://addons/vehicle_lift/common/screen/interfaces/lift_base_interface.gd" id="1_momvy"]
+[ext_resource type="Texture2D" uid="uid://ckv5wda0byguk" path="res://addons/vehicle_lift/common/screen/interfaces/cursor.png" id="2_ffkhq"]
+[ext_resource type="Shader" uid="uid://cjexvmdds2xsr" path="res://addons/vehicle_lift/common/screen/interfaces/lift_segment_desaturate.gdshader" id="2_momvy"]
+[ext_resource type="Theme" uid="uid://bfera8tskxfqy" path="res://addons/vehicle_lift/common/screen/interfaces/base_interface.theme" id="2_vc2ai"]
+[ext_resource type="Texture2D" uid="uid://cu41ke6uyn6mg" path="res://addons/vehicle_lift/common/screen/interfaces/lift_element_upper_landing.png" id="3_vc2ai"]
+[ext_resource type="Texture2D" uid="uid://cchiuycdii1ug" path="res://addons/vehicle_lift/common/screen/interfaces/lift_element_platform.png" id="4_ocxug"]
+[ext_resource type="Texture2D" uid="uid://b3gq3e11sutre" path="res://addons/vehicle_lift/common/screen/interfaces/lift_element_segment.png" id="5_bwyr8"]
+[ext_resource type="Texture2D" uid="uid://c6tlw6ok2vt5q" path="res://addons/vehicle_lift/common/screen/interfaces/lift_element_lower_landing.png" id="6_r0nrp"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_4gjfp"]
+shader = ExtResource("2_momvy")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dn4wx"]
+shader = ExtResource("2_momvy")
+
+[node name="Lift Interface" type="Control" unique_id=1238492079]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_momvy")
+
+[node name="Screen Global" type="VBoxContainer" parent="." unique_id=1273289967]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_vc2ai")
+
+[node name="Top Container" type="MarginContainer" parent="Screen Global" unique_id=1136212992]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Lift Name" type="Label" parent="Screen Global/Top Container" unique_id=610426069]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 0
+theme_override_font_sizes/font_size = 20
+text = "COUCOU"
+
+[node name="Bottom Container" type="HBoxContainer" parent="Screen Global" unique_id=731189905]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 6.0
+
+[node name="Infos Container" type="MarginContainer" parent="Screen Global/Bottom Container" unique_id=350390284]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 4.0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Screen Global/Bottom Container/Infos Container" unique_id=641051870]
+layout_mode = 2
+alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer" unique_id=164906263]
+layout_mode = 2
+
+[node name="Weight Label" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer" unique_id=370290434]
+layout_mode = 2
+text = "Poids : "
+
+[node name="Weight Value" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer" unique_id=1713204014]
+layout_mode = 2
+text = "0 kg"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer" unique_id=1557907375]
+layout_mode = 2
+
+[node name="Mouse Coord Label" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer2" unique_id=972913960]
+layout_mode = 2
+text = "Mouse Coord : "
+
+[node name="Mouse Coord Value" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer2" unique_id=413149189]
+layout_mode = 2
+
+[node name="Buttons Container" type="MarginContainer" parent="Screen Global/Bottom Container" unique_id=641826501]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 2.0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Graphic Container" type="MarginContainer" parent="Screen Global/Bottom Container" unique_id=929286437]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 2.0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Screen Global/Bottom Container/Graphic Container" unique_id=2086321151]
+layout_mode = 2
+theme_override_constants/separation = 0
+alignment = 1
+
+[node name="Upper Landing" type="Control" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=1543192305]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Background" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Upper Landing" unique_id=750137970]
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("3_vc2ai")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Platform" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Upper Landing" unique_id=384144506]
+visible = false
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_ocxug")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Up Segment" type="Control" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=341191791]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_dn4wx")
+instance_shader_parameters/amount = 0.0
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Background" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Up Segment" unique_id=1411950107]
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("5_bwyr8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Platform" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Up Segment" unique_id=67018788]
+visible = false
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_ocxug")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Middle Segment" type="Control" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=1880302475]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Background" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Middle Segment" unique_id=1490570729]
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("5_bwyr8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Platform" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Middle Segment" unique_id=1510069767]
+visible = false
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_ocxug")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Bottom Segment" type="Control" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=663337252]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Background" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Bottom Segment" unique_id=1702042347]
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("5_bwyr8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Platform" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Bottom Segment" unique_id=873067546]
+visible = false
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_ocxug")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Lower Landing" type="Control" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=1470435612]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Background" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Lower Landing" unique_id=1097619842]
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("6_r0nrp")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Platform" type="TextureRect" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Lower Landing" unique_id=646333461]
+visible = false
+material = SubResource("ShaderMaterial_4gjfp")
+instance_shader_parameters/amount = 0.50000002375
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_ocxug")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Progress Container" type="VBoxContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer" unique_id=2031054569]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Lift State" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container" unique_id=1855441332]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Arrêté"
+horizontal_alignment = 1
+
+[node name="GridContainer" type="GridContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container" unique_id=304100761]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 0
+theme_override_constants/v_separation = 0
+columns = 2
+
+[node name="Arrival Label" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1075787376]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Arrivée :"
+horizontal_alignment = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1095492467]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Arrival Value" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer" unique_id=1396710011]
+unique_name_in_owner = true
+layout_mode = 2
+text = "60"
+horizontal_alignment = 2
+
+[node name="Arrival Units" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer" unique_id=671874852]
+layout_mode = 2
+text = "secondes"
+
+[node name="Distance Label" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1703902265]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Distance :"
+horizontal_alignment = 2
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1857412328]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Distance Value" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer2" unique_id=1263600900]
+unique_name_in_owner = true
+layout_mode = 2
+text = "60"
+horizontal_alignment = 2
+
+[node name="Distance Unit" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer2" unique_id=2107519013]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "m"
+
+[node name="Separator" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer2" unique_id=71153969]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "/"
+horizontal_alignment = 1
+
+[node name="Distance Max Value" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer2" unique_id=795375997]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "600"
+
+[node name="Distance Max Unit" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer2" unique_id=158498693]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "m"
+
+[node name="Mouse Cursor" type="TextureRect" parent="." unique_id=1159294738]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+mouse_filter = 2
+texture = ExtResource("2_ffkhq")
+expand_mode = 1
