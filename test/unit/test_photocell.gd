@@ -16,18 +16,18 @@ const WIRED := {
 
 func test_arriving_at_night_the_lamp_is_already_on() -> void:
 	var night := _lamp()
-	night.cell.update(-10.0)
+	night.cell.update(_night(night.cell))
 	assert_true(night.light.visible, "switched at once: no wait on the first reading")
 	var day := _lamp()
-	day.cell.update(20.0)
+	day.cell.update(_day(day.cell))
 	assert_false(day.light.visible, "off in daylight")
 
 
 func test_at_dusk_each_lamp_waits_its_own_delay() -> void:
 	var lamp := _lamp()
 	var cell: Photocell = lamp.cell
-	cell.update(10.0)
-	cell.update(-3.5)
+	cell.update(_day(cell))
+	cell.update(_dusk(cell))
 	var wait := cell.delay_s()
 	assert_between(wait, 0.0, cell.max_delay_s)
 	cell.advance(wait - 0.01)
@@ -39,19 +39,19 @@ func test_at_dusk_each_lamp_waits_its_own_delay() -> void:
 func test_when_the_clock_jumps_the_lamp_switches_at_once() -> void:
 	var lamp := _lamp()
 	var cell: Photocell = lamp.cell
-	cell.update(10.0)
-	cell.update(-12.0, true)
+	cell.update(_day(cell))
+	cell.update(_night(cell), true)
 	assert_true(lamp.light.visible, "the hour slider, the dev clock: night fell all at once")
 
 
 func test_between_the_thresholds_the_lamp_keeps_its_state() -> void:
 	var lamp := _lamp()
 	var cell: Photocell = lamp.cell
-	cell.update(-10.0)
-	cell.update(-2.0)
+	cell.update(_night(cell))
+	cell.update((cell.on_below_deg + cell.off_above_deg) * 0.5)
 	cell.advance(1000.0)
-	assert_true(lamp.light.visible, "-2° is above on_below but under off_above: no blinking")
-	cell.update(-0.5)
+	assert_true(lamp.light.visible, "above on_below but under off_above: no blinking")
+	cell.update(_dawn(cell))
 	cell.advance(cell.max_delay_s)
 	assert_false(lamp.light.visible, "off at dawn")
 
@@ -59,9 +59,9 @@ func test_between_the_thresholds_the_lamp_keeps_its_state() -> void:
 func test_back_over_the_threshold_before_the_wait_cancels_it() -> void:
 	var lamp := _lamp()
 	var cell: Photocell = lamp.cell
-	cell.update(10.0)
-	cell.update(-3.5)
-	cell.update(-0.5)
+	cell.update(_day(cell))
+	cell.update(_dusk(cell))
+	cell.update(_dawn(cell))
 	cell.advance(1000.0)
 	assert_false(lamp.light.visible)
 
@@ -81,9 +81,9 @@ func test_it_switches_a_neon_sign_which_strikes_before_it_holds() -> void:
 	sign.add_child(cell)
 	add_child_autofree(sign)
 	cell.set_process(false)
-	cell.update(20.0)
+	cell.update(_day(cell))
 	assert_false(sign.lit, "off in daylight")
-	cell.update(-10.0)
+	cell.update(_night(cell))
 	cell.advance(cell.max_delay_s)
 	assert_true(sign.lit)
 	assert_true(sign.is_igniting(), "the tube strikes a few times first")
@@ -102,6 +102,23 @@ func test_the_lamps_and_signs_are_wired() -> void:
 		var under := RegEx.create_from_string("\\[node [^\\n]*parent=\"%s\"[^\\n]*\\]\\nscript = ExtResource\\(\"%s\"\\)"
 				% [WIRED[path], ext.get_string(1)])
 		assert_not_null(under.search(text), "%s: the Photocell drives its %s" % [path, WIRED[path]])
+
+
+## Heights of the star taken from the cell's own thresholds, so the tests follow their tuning.
+func _night(cell: Photocell) -> float:
+	return cell.on_below_deg - 10.0
+
+
+func _dusk(cell: Photocell) -> float:
+	return cell.on_below_deg - 0.5
+
+
+func _dawn(cell: Photocell) -> float:
+	return cell.off_above_deg + 0.5
+
+
+func _day(cell: Photocell) -> float:
+	return cell.off_above_deg + 10.0
 
 
 ## A light with a Photocell under it, in the tree, its clock fed by hand.

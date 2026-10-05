@@ -21,21 +21,22 @@ extends Node3D
 ## The lights this photocell switches: a Light3D is shown or hidden, anything with set_lit(bool) —
 ## a NeonSign — is asked to. Empty: it drives its parent.
 @export var targets: Array[Node] = []
-## Height of the star (degrees) under which the lights come on at dusk. Around -3°, a clear sky gives
-## some 30 lux, which is where real photocells switch on.
-@export_range(-18.0, 10.0, 0.5) var on_below_deg: float = -3.0:
+## Height of the star (degrees) under which the lights come on at dusk. +2°: before the star has set,
+## as the light is already failing under Tarsis 3's haze (tuned in game; a clear Earth sky would call
+## for -3°, some 30 lux, where real photocells switch on).
+@export_range(-18.0, 10.0, 0.5) var on_below_deg: float = 2.0:
 	set(value):
 		on_below_deg = value
 		update_configuration_warnings()
 ## Height of the star (degrees) above which they go off at dawn. Kept above on_below_deg, so a lamp
 ## sitting at the threshold never blinks.
-@export_range(-18.0, 10.0, 0.5) var off_above_deg: float = -1.0:
+@export_range(-18.0, 10.0, 0.5) var off_above_deg: float = 4.0:
 	set(value):
 		off_above_deg = value
 		update_configuration_warnings()
 ## Longest wait (s) between the star crossing the threshold and this lamp switching. Each lamp draws
-## its own wait in that range, so a village does not switch all at once.
-@export_range(0.0, 120.0, 1.0) var max_delay_s: float = 30.0
+## its own wait in that range, so a village comes on one lamp at a time over a couple of minutes.
+@export_range(0.0, 600.0, 1.0) var max_delay_s: float = 120.0
 
 ## How often the star is read, in seconds of the shared clock. It moves a fraction of a degree a
 ## minute, so this costs nothing and misses nothing.
