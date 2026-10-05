@@ -16,6 +16,7 @@ const YELLOW := "res://assets/_universe/_shared/materials/mat_metal_yellow_hauli
 ## The layouts that stack containers.
 const LAYOUTS: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
+	"res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn",
 ]
 
 
