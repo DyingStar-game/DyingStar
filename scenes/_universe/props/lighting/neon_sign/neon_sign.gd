@@ -86,8 +86,6 @@ const CAP_HEIGHT := 0.72
 ## A neon tube does not come on clean: the gas strikes a few times first. [lit?, seconds] steps,
 ## each stretched or shortened a little at random, then the tube holds.
 const IGNITION: Array = [[true, 0.05], [false, 0.12], [true, 0.04], [false, 0.25], [true, 0.08], [false, 0.06]]
-## How dark an unlit tube is: coloured glass, not black.
-const UNLIT_DARKEN := 0.75
 
 ## Whether the sign is switched on. A sign stays lit unless a Photocell switches it (set_lit).
 var lit: bool = true
@@ -168,7 +166,9 @@ func _apply() -> void:
 	mesh.pixel_size = letter_height / (FONT_SIZE * CAP_HEIGHT)
 	mesh.depth = depth
 	var tube := _tube.material_override as StandardMaterial3D
-	tube.albedo_color = color if _glowing else color.darkened(UNLIT_DARKEN)
+	# Switched off (by day), the tube keeps its colour: painted glass, without glow or light. Darkened, it
+	# read as a black word on the facade.
+	tube.albedo_color = color
 	tube.emission_enabled = _glowing
 	tube.emission = color
 	tube.emission_energy_multiplier = glow

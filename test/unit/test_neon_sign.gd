@@ -56,7 +56,7 @@ func test_the_sign_shows_the_translation_and_glows() -> void:
 	assert_eq(light.omni_attenuation, 2.0, "the falloff reaches the built light")
 
 
-func test_switched_off_the_tube_is_dark_glass_and_its_light_is_out() -> void:
+func test_switched_off_the_tube_keeps_its_colour_without_glow_or_light() -> void:
 	var sign := NeonSign.new()
 	add_child_autofree(sign)
 	var tube := _internal(sign, MeshInstance3D) as MeshInstance3D
@@ -65,7 +65,7 @@ func test_switched_off_the_tube_is_dark_glass_and_its_light_is_out() -> void:
 	var material := tube.material_override as StandardMaterial3D
 	assert_false(material.emission_enabled, "no glow")
 	assert_false(light.visible, "no light on the wall")
-	assert_ne(material.albedo_color, sign.color, "darker than the lit colour, still tinted")
+	assert_eq(material.albedo_color, sign.color, "it keeps its colour by day, it does not turn black")
 	sign.set_lit(true, false)
 	assert_true(material.emission_enabled, "back on at once when not animated")
 	assert_true(light.visible)
