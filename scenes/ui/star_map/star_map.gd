@@ -2923,9 +2923,13 @@ func debug_lines() -> PackedStringArray:
 
 
 ## Keep the info panel clear of [param px] at the right edge: the debug panel, while it shows over the
-## chart. 0 puts it back in its corner.
+## chart. 0 puts it back in its corner. Offsets, not position: the panel is anchored to the right edge,
+## and once in the tree its position is measured from the LEFT one, so writing -360 there put the whole
+## panel off screen, every time the chart opened.
 func set_right_inset(px: float) -> void:
-	_info_panel.position.x = INFO_PANEL_X - px
+	var width: float = _info_panel.offset_right - _info_panel.offset_left
+	_info_panel.offset_left = INFO_PANEL_X - px
+	_info_panel.offset_right = _info_panel.offset_left + width
 
 
 ## What the ground under the camera is being drawn from, for the debug panel.
