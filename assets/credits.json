@@ -626,6 +626,15 @@
 	],
 	"models": [
 		{
+			"asset": "ares_logo_decal_*",
+			"path": "res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "building_apartment_002.blend",
 			"path": "res://assets_blender/_universe/structures/buildings/building_apartment_002.blend",
 			"author": "Mapper",
