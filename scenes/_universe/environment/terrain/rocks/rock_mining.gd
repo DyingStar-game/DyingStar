@@ -686,7 +686,7 @@ func can_be_carried() -> bool:
 ## Carry contract. PlayerServer asks this twice — once to decide whether to show the "Carry [E]"
 ## prompt (_compute_carry_prompt) and again to authorise the actual grab (server_action_received) —
 ## so this one override gates both. Without it the question fell through to PropSync.interact(),
-## which only answers "is somebody else already holding it?", and every rock offered the prompt.
+## which knows enable_carry and `carried` but not size or mass, and every rock offered the prompt.
 func interact(_interactor: Node = null) -> bool:
 	return can_be_carried() and not carried
 
