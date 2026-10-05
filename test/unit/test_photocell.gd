@@ -1,9 +1,15 @@
 extends GutTest
-## Photocell, the twilight switch: on below on_below_deg, off above off_above_deg, each lamp after its
-## own wait, the same wait on every client, at once when the clock jumps. The star's height and the
-## seconds are fed by hand here (update / advance), the way _process feeds them in the game.
+## Photocell, the twilight switch: on below on_below_light, off above off_above_light, each lamp after
+## its own wait, the same wait on every client, at once when the clock jumps. The daylight and the
+## seconds are fed by hand here (update / advance), the way _process feeds them in the game. The
+## daylight itself (Planet.daylight) is checked against Tarsis 3's air at the end.
 
 const PHOTOCELL := "res://scenes/common/photocell.gd"
+const TARSIS_3_AIR := "res://scenes/planet/atmospheres/tarsis_3.tres"
+## The median altitude of Tarsis 3's villages (m), above the veil: where the thresholds were tuned.
+const VILLAGE_M := 5130.0
+## The village under the veil the lamps stayed off in, the star high in a dark sky (2026-10-05).
+const UNDER_THE_VEIL_M := -406.0
 ## The scenes whose lights follow the daylight, and the node each one's Photocell sits under.
 const WIRED := {
 	"res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn": "SpotLight3D",
@@ -48,7 +54,7 @@ func test_between_the_thresholds_the_lamp_keeps_its_state() -> void:
 	var lamp := _lamp()
 	var cell: Photocell = lamp.cell
 	cell.update(_night(cell))
-	cell.update((cell.on_below_deg + cell.off_above_deg) * 0.5)
+	cell.update((cell.on_below_light + cell.off_above_light) * 0.5)
 	cell.advance(1000.0)
 	assert_true(lamp.light.visible, "above on_below but under off_above: no blinking")
 	cell.update(_dawn(cell))
@@ -104,21 +110,46 @@ func test_the_lamps_and_signs_are_wired() -> void:
 		assert_not_null(under.search(text), "%s: the Photocell drives its %s" % [path, WIRED[path]])
 
 
-## Heights of the star taken from the cell's own thresholds, so the tests follow their tuning.
-func _night(cell: Photocell) -> float:
-	return cell.on_below_deg - 10.0
+## Over the plateau the lamps keep the thresholds they were tuned with by eye: the star at +2° and +4°.
+func test_over_a_village_the_lamps_switch_at_two_and_four_degrees() -> void:
+	var air: AtmosphereProfile = load(TARSIS_3_AIR)
+	var cell := Photocell.new()
+	assert_almost_eq(Planet.daylight(air, VILLAGE_M, 2.0), cell.on_below_light, cell.on_below_light * 0.05)
+	assert_almost_eq(Planet.daylight(air, VILLAGE_M, 4.0), cell.off_above_light, cell.off_above_light * 0.05)
+	cell.free()
+
+
+## Under the veil the same star, 25° up, lets through less light than at +2° over the plateau.
+func test_under_the_veil_the_lamps_are_on_while_the_star_stands_high() -> void:
+	var air: AtmosphereProfile = load(TARSIS_3_AIR)
+	var cell := Photocell.new()
+	assert_lt(Planet.daylight(air, UNDER_THE_VEIL_M, 25.0), cell.on_below_light, "on at 25°: a dark sky")
+	assert_gt(Planet.daylight(air, VILLAGE_M, 25.0), cell.off_above_light, "off at 25° over the plateau")
+	assert_gt(Planet.daylight(air, UNDER_THE_VEIL_M, 90.0), cell.off_above_light,
+			"the star overhead lets through 13 %: off")
+	cell.free()
+
+
+func test_with_no_air_the_daylight_is_the_slant_of_the_star() -> void:
+	assert_almost_eq(Planet.daylight(null, 0.0, 30.0), 0.5, 0.0001)
+	assert_eq(Planet.daylight(null, 0.0, -5.0), 0.0, "below the horizon")
+
+
+## Readings taken from the cell's own thresholds, so the tests follow their tuning.
+func _night(_cell: Photocell) -> float:
+	return 0.0
 
 
 func _dusk(cell: Photocell) -> float:
-	return cell.on_below_deg - 0.5
+	return cell.on_below_light * 0.9
 
 
 func _dawn(cell: Photocell) -> float:
-	return cell.off_above_deg + 0.5
+	return cell.off_above_light * 1.1
 
 
 func _day(cell: Photocell) -> float:
-	return cell.off_above_deg + 10.0
+	return cell.off_above_light * 3.0
 
 
 ## A light with a Photocell under it, in the tree, its clock fed by hand.

@@ -9,13 +9,10 @@
 [ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="7_ha2q5"]
 [ext_resource type="PackedScene" uid="uid://b5xfna23cscve" path="res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn" id="8_80d3s"]
 [ext_resource type="PackedScene" uid="uid://dbgj4o4hffedt" path="res://scenes/_universe/props/containers/container_standard_a_1200x240x240.tscn" id="cont_a"]
-[ext_resource type="PackedScene" path="res://scenes/_universe/props/containers/container_standard_a_1200x240x240_tier2.tscn" id="cont_a2"]
-[ext_resource type="PackedScene" path="res://scenes/_universe/props/containers/container_standard_a_1200x240x240_tier3.tscn" id="cont_a3"]
 [ext_resource type="PackedScene" uid="uid://nc8eir5a4h68" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn" id="cont_b"]
-[ext_resource type="PackedScene" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240_tier2.tscn" id="cont_b2"]
-[ext_resource type="PackedScene" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240_tier3.tscn" id="cont_b3"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="cont_l"]
 [ext_resource type="PackedScene" uid="uid://dbhjkpit6n4ns" path="res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn" id="cont_s"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/storage/pad_storage_area.tscn" id="storage_area"]
 
 [node name="AresVillageMining" type="Node3D" unique_id=1311035986]
 
@@ -130,83 +127,111 @@ transform = Transform3D(-0.7071067811865474, 0, 0.7071067811865478, 0, 1, 0, -0.
 [node name="FloodlightOutdoor7" parent="." unique_id=166565646 instance=ExtResource("8_80d3s")]
 transform = Transform3D(-0.7071067811865475, 0, 0.7071067811865477, 0, 1, 0, -0.7071067811865477, 0, -0.7071067811865475, -13.47612566884149, 0.00185639311264607, -86.86983235497323)
 
-[node name="DepotYard_1_1" parent="." unique_id=2071637767 instance=ExtResource("cont_a")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -56.68351919186247, -7.1054274e-15, -55.6231320595179)
+[node name="Storage_DepotYard" parent="." instance=ExtResource("storage_area")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -57.932962, 0, -55.595138)
+size = Vector2(14.195599, 18.084325)
 
-[node name="DepotYard_1_2" parent="." unique_id=652599468 instance=ExtResource("cont_b2")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -56.68351919186247, 2.499999999999993, -55.6231320595179)
+[node name="DepotYard_1_1" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.027994, 0, 1.249442)
 
-[node name="DepotYard_1_3" parent="." unique_id=1400613662 instance=ExtResource("cont_a3")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -56.68351919186247, 4.999999999999993, -55.6231320595179)
+[node name="DepotYard_1_2" parent="Storage_DepotYard" instance=ExtResource("cont_b")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.027994, 2.5, 1.249442)
 
-[node name="DepotYard_2_1" parent="." unique_id=593402958 instance=ExtResource("cont_b")]
-transform = Transform3D(-0.010472, 0, 0.999945, 0, 1, 0, -0.999945, 0, -0.010472, -62.154185165876584, 0, -55.509575539764676)
+[node name="DepotYard_1_3" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.027994, 5, 1.249442)
 
-[node name="DepotYard_2_2" parent="." unique_id=167509341 instance=ExtResource("cont_a2")]
-transform = Transform3D(-0.010472, 0, 0.999945, 0, 1, 0, -0.999945, 0, -0.010472, -62.154185165876584, 2.5, -55.509575539764676)
+[node name="DepotYard_2_1" parent="Storage_DepotYard" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999945, 0, 0.010472, 0, 1, 0, -0.010472, 0, 0.999945, -0.085562, 0, -4.221224)
 
-[node name="DepotYard_3" parent="." unique_id=1667377794 instance=ExtResource("cont_l")]
-transform = Transform3D(0.008727, 0, 0.999962, 0, 1, 0, -0.999962, 0, 0.008727, -51.143115630511936, 0, -55.68269330688247)
+[node name="DepotYard_2_2" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(0.999945, 0, 0.010472, 0, 1, 0, -0.010472, 0, 0.999945, -0.085562, 2.5, -4.221224)
 
-[node name="DepotYard_4_1" parent="." unique_id=1971122130 instance=ExtResource("cont_b")]
-transform = Transform3D(-0.005236, 0, 0.999986, 0, 1, 0, -0.999986, 0, -0.005236, -59.283519191862474, -7.1054274e-15, -55.6231320595179)
+[node name="DepotYard_3" parent="Storage_DepotYard" instance=ExtResource("cont_l")]
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 0.087556, 0, 6.789846)
 
-[node name="DepotYard_4_2" parent="." unique_id=1659337374 instance=ExtResource("cont_a2")]
-transform = Transform3D(-0.005236, 0, 0.999986, 0, 1, 0, -0.999986, 0, -0.005236, -59.283519191862474, 2.499999999999993, -55.6231320595179)
+[node name="DepotYard_4_1" parent="Storage_DepotYard" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999986, 0, 0.005236, 0, 1, 0, -0.005236, 0, 0.999986, 0.027994, 0, -1.350558)
 
-[node name="DepotYard_5_1" parent="." unique_id=679307581 instance=ExtResource("cont_a")]
-transform = Transform3D(0.003491, 0, 0.999994, 0, 1, 0, -0.999994, 0, 0.003491, -64.75418516587658, 0, -55.509575539764676)
+[node name="DepotYard_4_2" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(0.999986, 0, 0.005236, 0, 1, 0, -0.005236, 0, 0.999986, 0.027994, 2.5, -1.350558)
 
-[node name="DepotYard_5_2" parent="." unique_id=1408117574 instance=ExtResource("cont_b2")]
-transform = Transform3D(0.003491, 0, 0.999994, 0, 1, 0, -0.999994, 0, 0.003491, -64.75418516587658, 2.5, -55.509575539764676)
+[node name="DepotYard_5_1" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(0.999994, 0, -0.003491, 0, 1, 0, 0.003491, 0, 0.999994, -0.085562, 0, -6.821224)
 
-[node name="DepotYard_5_3" parent="." unique_id=1444461674 instance=ExtResource("cont_b3")]
-transform = Transform3D(0.003491, 0, 0.999994, 0, 1, 0, -0.999994, 0, 0.003491, -64.75418516587658, 5, -55.509575539764676)
+[node name="DepotYard_5_2" parent="Storage_DepotYard" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999994, 0, -0.003491, 0, 1, 0, 0.003491, 0, 0.999994, -0.085562, 2.5, -6.821224)
 
-[node name="DepotYard_6" parent="." unique_id=1255570196 instance=ExtResource("cont_a")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -53.74311563051194, 0, -55.68269330688247)
+[node name="DepotYard_5_3" parent="Storage_DepotYard" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999994, 0, -0.003491, 0, 1, 0, 0.003491, 0, 0.999994, -0.085562, 5, -6.821224)
 
-[node name="OreSkip_1" parent="." unique_id=287236270 instance=ExtResource("cont_s")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.840648619596621, 0, -113.17433150290317)
+[node name="DepotYard_6" parent="Storage_DepotYard" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.087556, 0, 4.189846)
 
-[node name="OreSkip_2" parent="." unique_id=1110642194 instance=ExtResource("cont_s")]
-transform = Transform3D(0.999997392012423, 0, -0.002137509380595523, 0, 0.9999999999999999, 0, 0.002137509380595523, 0, 0.999997392012423, -13.953286116238605, 0, -110.37433150290317)
-
-[node name="OreSkip_3" parent="." unique_id=1783274467 instance=ExtResource("cont_s")]
-transform = Transform3D(0.9999211292502087, 0, -0.01258295223654322, 0, 1, 0, 0.01258295223654322, 0, 0.9999211292502087, -13.971875703489626, 0, -107.57433150290318)
-
-[node name="GarageStore_1_1" parent="." unique_id=1254917690 instance=ExtResource("cont_a")]
-transform = Transform3D(0.4476743884628986, 0, -0.8941966461099985, 0, 1, 0, 0.8941966461099985, 0, 0.4476743884628986, 118.59693961501594, -3.5527137e-15, -115.05888559503111)
-
-[node name="GarageStore_1_2" parent="." unique_id=842944253 instance=ExtResource("cont_a2")]
-transform = Transform3D(0.4476743884628986, 0, -0.8941966461099985, 0, 1, 0, 0.8941966461099985, 0, 0.4476743884628986, 118.59693961501594, 2.4999999999999964, -115.05888559503111)
-
-[node name="GarageStore_2" parent="." unique_id=776321190 instance=ExtResource("cont_s")]
-transform = Transform3D(0.45877376975959744, 0, -0.8885536421812518, 0, 1, 0, 0.8885536421812518, 0, 0.45877376975959744, 112.06753890769313, 0, -115.94973658421847)
-
-[node name="GarageStore_3_1" parent="." unique_id=818491776 instance=ExtResource("cont_b")]
-transform = Transform3D(0.4398537227055349, 0, -0.8980695210255618, 0, 1, 0, 0.8980695210255618, 0, 0.4398537227055349, 114.55552194991253, 0, -117.14067424870963)
-
-[node name="GarageStore_3_2" parent="." unique_id=1291944710 instance=ExtResource("cont_a2")]
-transform = Transform3D(0.4398537227055349, 0, -0.8980695210255618, 0, 1, 0, 0.8980695210255618, 0, 0.4398537227055349, 114.55552194991253, 2.5, -117.14067424870963)
-
-[node name="GarageStore_3_3" parent="." unique_id=311443004 instance=ExtResource("cont_b3")]
-transform = Transform3D(0.4398537227055349, 0, -0.8980695210255618, 0, 1, 0, 0.8980695210255618, 0, 0.4398537227055349, 114.55552194991253, 5, -117.14067424870963)
-
-[node name="EastStack_1" parent="." unique_id=77622187 instance=ExtResource("cont_a")]
+[node name="Storage_EastStack" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.866025, 0, 0.5, 0, 1, 0, -0.5, 0, 0.866025, 98.5, 0, -41.5)
+size = Vector2(14, 4.4)
 
-[node name="EastStack_2" parent="." unique_id=994997288 instance=ExtResource("cont_b2")]
-transform = Transform3D(0.866025, 0, 0.5, 0, 1, 0, -0.5, 0, 0.866025, 98.5, 2.5, -41.5)
+[node name="EastStack_1" parent="Storage_EastStack" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
-[node name="EastTank" parent="." unique_id=1446122507 instance=ExtResource("cont_l")]
+[node name="EastStack_2" parent="Storage_EastStack" instance=ExtResource("cont_b")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+
+[node name="Storage_EastTank" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.5, 0, -0.866025, 0, 1, 0, 0.866025, 0, 0.5, 104, 0, -22)
+size = Vector2(14, 4.4)
 
-[node name="SouthEast" parent="." unique_id=1640507331 instance=ExtResource("cont_b")]
+[node name="EastTank" parent="Storage_EastTank" instance=ExtResource("cont_l")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="Storage_GarageStore" parent="." instance=ExtResource("storage_area")]
+transform = Transform3D(0.447674, 0, -0.894197, 0, 1, 0, 0.894197, 0, 0.447674, 115.295639, 0, -115.494082)
+size = Vector2(17.734118, 9.914372)
+
+[node name="GarageStore_1_1" parent="Storage_GarageStore" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.867059, 0, -2.757186)
+
+[node name="GarageStore_1_2" parent="Storage_GarageStore" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.867059, 2.5, -2.757186)
+
+[node name="GarageStore_2" parent="Storage_GarageStore" instance=ExtResource("cont_s")]
+transform = Transform3D(0.999922, 0, 0.012451, 0, 1, 0, -0.012451, 0, 0.999922, -1.852583, 0, 2.682571)
+
+[node name="GarageStore_3_1" parent="Storage_GarageStore" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, -1.803709, 0, -0.075327)
+
+[node name="GarageStore_3_2" parent="Storage_GarageStore" instance=ExtResource("cont_a")]
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, -1.803709, 2.5, -0.075327)
+
+[node name="GarageStore_3_3" parent="Storage_GarageStore" instance=ExtResource("cont_b")]
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, -1.803709, 5, -0.075327)
+
+[node name="Storage_OreSkip" parent="." instance=ExtResource("storage_area")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.913574, 0, -110.33663)
+size = Vector2(14.145852, 10.075403)
+
+[node name="OreSkip_1" parent="Storage_OreSkip" instance=ExtResource("cont_s")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.072926, 0, -2.837701)
+
+[node name="OreSkip_2" parent="Storage_OreSkip" instance=ExtResource("cont_s")]
+transform = Transform3D(0.999998, 0, -0.002138, 0, 1, 0, 0.002138, 0, 0.999998, -0.039712, 0, -0.037701)
+
+[node name="OreSkip_3" parent="Storage_OreSkip" instance=ExtResource("cont_s")]
+transform = Transform3D(0.999921, 0, -0.012583, 0, 1, 0, 0.012583, 0, 0.999921, -0.058301, 0, 2.762299)
+
+[node name="Storage_SouthEast" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.978148, 0, 0.207912, 0, 1, 0, -0.207912, 0, 0.978148, 40, 0, 92)
+size = Vector2(14, 4.4)
 
-[node name="SouthWestStack_1" parent="." unique_id=631533421 instance=ExtResource("cont_a")]
+[node name="SouthEast" parent="Storage_SouthEast" instance=ExtResource("cont_b")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="Storage_SouthWestStack" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.939693, 0, -0.34202, 0, 1, 0, 0.34202, 0, 0.939693, -60, 0, 90)
+size = Vector2(14, 4.4)
 
-[node name="SouthWestStack_2" parent="." unique_id=58950190 instance=ExtResource("cont_a2")]
-transform = Transform3D(0.939693, 0, -0.34202, 0, 1, 0, 0.34202, 0, 0.939693, -60, 2.5, 90)
+[node name="SouthWestStack_1" parent="Storage_SouthWestStack" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="SouthWestStack_2" parent="Storage_SouthWestStack" instance=ExtResource("cont_a")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)

@@ -86,37 +86,64 @@ func spawn_items() -> void:
 	var layout: Node = packed.instantiate()
 	var spawned: int = 0
 	for item in layout.get_children():
-		var item_sync := PropSync.of(item)
-		if item_sync == null or not (item is Node3D) or item.scene_file_path == "":
+		if not is_spawnable(item):
 			continue  # decoration baked into the layout, not a networked prop
-		var xform: Transform3D = frame * (item as Node3D).transform  # layout root = us -> parent frame
-		var rot: Vector3 = xform.basis.get_euler()
-		# Deterministic uuid: a server restart upserts the same items instead of piling duplicates.
-		var item_uuid: String = PropSpawn.stable_uuid("%s|%s" % [s.uuid, item.name])
-		NetworkOrchestrator.protected_prop_uuids[item_uuid] = true  # world infrastructure
-		# The item's own network properties (its <type>_def.json), with the values set in the layout.
-		var data: Dictionary = _def_properties(item, item_sync.type_name)
-		data.merge({
-			"type": item_sync.type_name,
-			"uuid": item_uuid,
-			"scenename": item.scene_file_path.trim_prefix("res://"),
-			"parent_id": parent_uuid,
-			"name": str(item.name),
-			"position": {"x": xform.origin.x, "y": xform.origin.y, "z": xform.origin.z},
-			"rotation": {"x": rot.x, "y": rot.y, "z": rot.z},
-		}, true)
-		if item_sync.type_name == "spawnbuilding":
-			# A new building of this village, every apartment free: the layout node still carries
-			# the script's defaults (test apartment, total 1 / available 0). poi_uuid ties it to us
-			# for Horizon's apartment assignment (parent_id is our parent, not the village).
-			var capacity: int = int(item.rows) * int(item.cols) * int(item.floors)
-			data.merge({"poi_uuid": s.uuid, "apartments": [], "total": capacity, "available": capacity}, true)
-		NetworkOrchestrator.spawn_prop_authoritative(data)
+		# layout root = us -> parent frame
+		var item_uuid := _spawn_item(item, frame * (item as Node3D).transform, parent_uuid, str(item.name), s.uuid)
 		spawned += 1
+		# What the layout placed UNDER it (the containers of a storage area) is spawned as its children:
+		# their pose stays local to it, so they follow it when the server seats it on its ground.
+		for child in layout_children(item, layout):
+			_spawn_item(child, (child as Node3D).transform, item_uuid, "%s/%s" % [item.name, child.name], s.uuid)
+			spawned += 1
 	layout.free()
 	print("[PoiVillages] %s: %d items spawned from %s" % [name, spawned, path])
 
 	s.server_prop_update({"is_spawned": true})
+
+
+## Whether a layout node is a networked prop poi_villages spawns: a PropSync, from a scene.
+static func is_spawnable(node: Node) -> bool:
+	return PropSync.of(node) != null and node is Node3D and node.scene_file_path != ""
+
+
+## The networked props the LAYOUT placed under [param item] (not the ones of item's own scene): what a
+## storage area carries. Nodes the layout file declares are owned by the layout's root.
+static func layout_children(item: Node, layout: Node) -> Array[Node]:
+	var out: Array[Node] = []
+	for child in item.get_children():
+		if child.owner == layout and is_spawnable(child):
+			out.append(child)
+	return out
+
+
+## Spawn one layout [param item] at [param xform], expressed in the frame [param parent_uuid] names, and
+## return its uuid: stable, drawn from the village's uuid and [param key], so a server restart upserts
+## the same items instead of piling duplicates.
+func _spawn_item(item: Node, xform: Transform3D, parent_uuid: String, key: String, village_uuid: String) -> String:
+	var item_sync := PropSync.of(item)
+	var rot: Vector3 = xform.basis.get_euler()
+	var item_uuid: String = PropSpawn.stable_uuid("%s|%s" % [village_uuid, key])
+	NetworkOrchestrator.protected_prop_uuids[item_uuid] = true  # world infrastructure
+	# The item's own network properties (its <type>_def.json), with the values set in the layout.
+	var data: Dictionary = _def_properties(item, item_sync.type_name)
+	data.merge({
+		"type": item_sync.type_name,
+		"uuid": item_uuid,
+		"scenename": item.scene_file_path.trim_prefix("res://"),
+		"parent_id": parent_uuid,
+		"name": str(item.name),
+		"position": {"x": xform.origin.x, "y": xform.origin.y, "z": xform.origin.z},
+		"rotation": {"x": rot.x, "y": rot.y, "z": rot.z},
+	}, true)
+	if item_sync.type_name == "spawnbuilding":
+		# A new building of this village, every apartment free: the layout node still carries
+		# the script's defaults (test apartment, total 1 / available 0). poi_uuid ties it to us
+		# for Horizon's apartment assignment (parent_id is our parent, not the village).
+		var capacity: int = int(item.rows) * int(item.cols) * int(item.floors)
+		data.merge({"poi_uuid": village_uuid, "apartments": [], "total": capacity, "available": capacity}, true)
+	NetworkOrchestrator.spawn_prop_authoritative(data)
+	return item_uuid
 
 
 ## Move the village radially onto the ground under its centre, +Y along the radial, heading kept —

@@ -1,8 +1,0 @@
-[gd_scene format=3]
-
-[ext_resource type="PackedScene" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn" id="1_base"]
-
-[node name="ContainerStandardB1200x240x240Tier3" instance=ExtResource("1_base")]
-
-[node name="Ground" parent="TerrainPad" index="0"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5.5, 0)

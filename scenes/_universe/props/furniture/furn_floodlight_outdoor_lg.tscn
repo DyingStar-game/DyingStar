@@ -62,7 +62,7 @@ stream = ExtResource("5_generator")
 [node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=310351402]
 transform = Transform3D(1, 0, 0, 0, -0.9854532445146164, 0.16994676482832977, 0, -0.16994676482832977, -0.9854532445146164, 0, 4.403532448902638, 0.23604006380648213)
 light_color = Color(0.8666667, 0.7921569, 0.69803923, 1)
-light_energy = 2.0
+light_energy = 4.0
 spot_range = 30.0
 spot_angle = 30.94
 

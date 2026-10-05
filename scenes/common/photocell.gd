@@ -3,11 +3,13 @@ class_name Photocell
 extends Node3D
 
 ## A twilight switch, like the photocell on a street lamp: it switches the lights it drives on when
-## the system star sinks below the horizon HERE, and off when it rises again. Opt-in: only the lights
-## a Photocell drives react, so a building's ceiling lights stay as they are.
+## the daylight HERE fails, and off when it comes back. It reads the light that reaches the ground
+## (Planet.daylight_at), not the star's height: under the corundum veil the star can stand 30° up in
+## a dark sky, and a lamp there must be lit while the same star leaves a plateau village in full day.
+## Opt-in: only the lights a Photocell drives react, so a building's ceiling lights stay as they are.
 ##
-## Purely visual, worked out on every client from the shared clock (Globals.sim_time) and the star's
-## geometry (Planet.sun_elevation_at) — the way the orbits are — so no message travels and the server
+## Purely visual, worked out on every client from the shared clock (Globals.sim_time), the star's
+## geometry and the air it crosses — the way the orbits are — so no message travels and the server
 ## takes no part. Every client checks on the same 2 s ticks of that clock and each lamp waits its own
 ## delay, drawn from the uuid of the prop it belongs to: the lamps of a village come on one after the
 ## other, and the same lamp at the same moment on every screen.
@@ -21,18 +23,20 @@ extends Node3D
 ## The lights this photocell switches: a Light3D is shown or hidden, anything with set_lit(bool) —
 ## a NeonSign — is asked to. Empty: it drives its parent.
 @export var targets: Array[Node] = []
-## Height of the star (degrees) under which the lights come on at dusk. +2°: before the star has set,
-## as the light is already failing under Tarsis 3's haze (tuned in game; a clear Earth sky would call
-## for -3°, some 30 lux, where real photocells switch on).
-@export_range(-18.0, 10.0, 0.5) var on_below_deg: float = 2.0:
+## Daylight (share of the star's full overhead light reaching flat ground, Planet.daylight_at) under
+## which the lights come on at dusk. 0.011 is the star at +2° over a village at 5130 m, the median of
+## Tarsis 3's villages, where it was tuned by eye; the same light comes with the star at 6° at 3700 m,
+## inside the top of the veil, and at 31° under it. A real photocell switches near 30 lux, some
+## 0.0003 of a clear noon: this one runs brighter, as Tarsis 3's haze reads dark long before that.
+@export_range(0.0, 0.2, 0.0005) var on_below_light: float = 0.011:
 	set(value):
-		on_below_deg = value
+		on_below_light = value
 		update_configuration_warnings()
-## Height of the star (degrees) above which they go off at dawn. Kept above on_below_deg, so a lamp
-## sitting at the threshold never blinks.
-@export_range(-18.0, 10.0, 0.5) var off_above_deg: float = 4.0:
+## Daylight above which they go off at dawn: 0.031, the star at +4° over that village. Kept above
+## on_below_light, so a lamp sitting at the threshold never blinks.
+@export_range(0.0, 0.2, 0.0005) var off_above_light: float = 0.031:
 	set(value):
-		off_above_deg = value
+		off_above_light = value
 		update_configuration_warnings()
 ## Longest wait (s) between the star crossing the threshold and this lamp switching. Each lamp draws
 ## its own wait in that range, so a village comes on one lamp at a time over a couple of minutes.
@@ -77,20 +81,21 @@ func _process(delta: float) -> void:
 		return
 	var jumped := not is_nan(_last_read_s) and absf(now - _last_read_s) > JUMP_S
 	_last_read_s = now
-	update(planet.sun_elevation_at(global_position), jumped)
+	update(planet.daylight_at(global_position), jumped)
 
 
-## One reading of the star's height. [param at_once]: the clock jumped, switch without the wait.
-func update(elevation_deg: float, at_once: bool = false) -> void:
+## One reading of the daylight (Planet.daylight_at). [param at_once]: the clock jumped, switch
+## without the wait.
+func update(daylight: float, at_once: bool = false) -> void:
 	if not _known:
 		_known = true
 		# Between the two thresholds the history decides; with none, split the difference.
-		_switch(elevation_deg < (on_below_deg + off_above_deg) * 0.5, false)
+		_switch(daylight < (on_below_light + off_above_light) * 0.5, false)
 		return
 	var want := _lit
-	if elevation_deg < on_below_deg:
+	if daylight < on_below_light:
 		want = true
-	elif elevation_deg > off_above_deg:
+	elif daylight > off_above_light:
 		want = false
 	if want == _lit:
 		_wait_left = -1.0  # back over the threshold before the wait was up
@@ -168,8 +173,8 @@ func _altitude(planet: Planet) -> float:
 
 func _get_configuration_warnings() -> PackedStringArray:
 	var warnings: PackedStringArray = []
-	if on_below_deg >= off_above_deg:
-		warnings.append("on_below_deg must stay under off_above_deg, or a lamp at the threshold blinks.")
+	if on_below_light >= off_above_light:
+		warnings.append("on_below_light must stay under off_above_light, or a lamp at the threshold blinks.")
 	var parent := get_parent()
 	if targets.is_empty() and parent != null and not (parent is Light3D) and not parent.has_method("set_lit"):
 		warnings.append("Nothing to switch: list the lights in targets, or put the Photocell under a light.")

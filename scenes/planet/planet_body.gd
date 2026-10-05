@@ -20,6 +20,14 @@ const MASS_EARTH := 5.972e24
 ## distances); it used to be 3 (the system was shrunk to a third). We divide the raw AU by it so our local
 ## orbit lands where the network placed the body. Flip in lockstep with the service (services PR #25).
 const DISTANCE_FACTOR := 1.0
+## daylight_at's rounding, so the lamps of a village share their integrals. Measured on Tarsis 3, near
+## the Photocell's thresholds: half a step moves the value by 2 % of on_below_light at worst (3830 m,
+## just under the top of the veil, where the light changes fastest with height), 1.2 % elsewhere; the
+## star climbs 0.02° in about 5 s. 25 m steps were 14 % off there.
+const DAYLIGHT_ALT_STEP_M := 2.0
+const DAYLIGHT_ELEV_STEP_DEG := 0.02
+## Entries daylight_at keeps before starting over: a day's worth of star heights over a few villages.
+const DAYLIGHT_MEMO_MAX := 4096
 
 ## Configuration of this body (radius, elevation data, LOD, biomes, atmosphere…). Assigning another
 ## one in the editor rebuilds the planet.
@@ -159,6 +167,9 @@ var _water_sphere: MeshInstance3D
 
 ## Runtime-created gravity area (point gravity toward planet center).
 var _gravity_area: Area3D
+
+## daylight_at's memo: Vector2i(rounded altitude, rounded star height) -> daylight.
+var _daylight_memo: Dictionary = {}
 
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain if has_node("PlanetTerrain") else null
 
@@ -799,6 +810,48 @@ func sun_elevation_at(world_pos: Vector3) -> float:
 		return -90.0
 	var up: Vector3 = (world_pos - global_position).normalized()
 	return rad_to_deg(asin(clampf(up.dot((sun.global_position - world_pos).normalized()), -1.0, 1.0)))
+
+
+## Share of the star's full overhead light that reaches flat ground at `world_pos`, 0..1: the sine
+## of its height (the slant it falls at) times the air it crossed (AtmosphereProfile
+## .transmittance_to_star, the integral the star's light is dimmed by on screen). One place for "how
+## bright is it here", read by the Photocell; weather, when there is some, multiplies in here.
+##
+## The DIRECT beam only: the light the haze scatters down from the rest of the sky is left out, the
+## sky shader alone integrates it. That reads darker than the screen under a thick haze, and the
+## Photocell thresholds are tuned on this very value, so the two errors do not add up.
+##
+## Pure geometry of the shared clock like sun_elevation_at, so every client finds the same value.
+## Rounded to DAYLIGHT_ALT_STEP_M and DAYLIGHT_ELEV_STEP_DEG and memoised: one integral costs ~36 µs,
+## and every lamp of a village reads it on the same tick.
+func daylight_at(world_pos: Vector3) -> float:
+	var elevation := sun_elevation_at(world_pos)
+	if elevation <= 0.0:
+		return 0.0
+	var profile: AtmosphereProfile = planet_data.atmosphere_profile if planet_data != null else null
+	if profile == null or not profile.has_atmosphere():
+		return daylight(null, 0.0, elevation)
+	var key := Vector2i(roundi(elevation_of(world_pos) / DAYLIGHT_ALT_STEP_M),
+			roundi(elevation / DAYLIGHT_ELEV_STEP_DEG))
+	if _daylight_memo.has(key):
+		return _daylight_memo[key]
+	if _daylight_memo.size() >= DAYLIGHT_MEMO_MAX:
+		_daylight_memo.clear()
+	# From the rounded values, so the answer does not depend on which lamp asked first.
+	var light := daylight(profile, key.x * DAYLIGHT_ALT_STEP_M, key.y * DAYLIGHT_ELEV_STEP_DEG)
+	_daylight_memo[key] = light
+	return light
+
+
+## daylight_at's formula, from an [param altitude_m] over the reference sphere and the star's
+## [param elevation_deg]; [param profile] null = no air.
+static func daylight(profile: AtmosphereProfile, altitude_m: float, elevation_deg: float) -> float:
+	var s := sin(deg_to_rad(elevation_deg))
+	if s <= 0.0:
+		return 0.0
+	if profile == null or not profile.has_atmosphere():
+		return s
+	return s * profile.transmittance_to_star(altitude_m, s).get_luminance()
 
 
 func _find_sun() -> Node3D:
