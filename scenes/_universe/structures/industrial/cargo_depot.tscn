@@ -14,6 +14,7 @@
 [ext_resource type="Shape3D" uid="uid://pvhvwot5l0jv" path="res://scenes/_universe/structures/industrial/reception_desk_collider_shape.tres" id="14_kay3c"]
 [ext_resource type="Shape3D" uid="uid://dhjivf00xarfy" path="res://scenes/_universe/structures/industrial/reception_desk_fence_collider_shape.tres" id="15_bfkre"]
 [ext_resource type="Shape3D" uid="uid://7gu1abixw0uu" path="res://scenes/_universe/structures/industrial/stairs_collider_shape.tres" id="17_2hcbk"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="18_bfkre"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="terrain_pad_1"]
@@ -501,6 +502,17 @@ surface_material_override/0 = ExtResource("3_gm21b")
 
 [node name="Collider" type="CollisionShape3D" parent="Stairs" unique_id=254567093]
 shape = ExtResource("17_2hcbk")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1434562137]
+transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, 0, 5.88810804893721, 9.900351574904471)
+script = ExtResource("18_bfkre")
+text_key = "%%SIGN_CARGO_DEPOT"
+letter_height = 0.8300000000000001
+depth = 0.2
+light_range = 5.5
+light_attenuation = 2.7
+light_offset = 5.0
+metadata/_custom_type_script = "uid://co37kjdlg6xqk"
 
 [connection signal="body_entered" from="reception_area" to="." method="_on_reception_area_body_entered"]
 [connection signal="body_exited" from="reception_area" to="." method="_on_reception_area_body_exited"]

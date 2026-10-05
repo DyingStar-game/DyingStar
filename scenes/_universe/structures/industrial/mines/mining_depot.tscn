@@ -12,6 +12,8 @@
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="7_l8wts"]
 [ext_resource type="PackedScene" uid="uid://cynv06ddhi8kr" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="8_cywas"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="14_8icya"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="15_x2sd0"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="16_uyqk1"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 [ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="screenzone_ds"]
 
@@ -258,61 +260,61 @@ debug_fill = false
 
 [node name="miningdepot" parent="." unique_id=2001283544 instance=ExtResource("1_x63ok")]
 
-[node name="platform" parent="miningdepot" index="0" unique_id=1003464905]
+[node name="platform" parent="miningdepot" index="0" unique_id=314715664]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9539688, -0.48168185, 0.0100966267457414)
 material_override = ExtResource("4_l0nxu")
 
-[node name="ramps" parent="miningdepot" index="1" unique_id=1283294264]
+[node name="ramps" parent="miningdepot" index="1" unique_id=1414579629]
 material_override = ExtResource("4_l0nxu")
 
-[node name="platform_001" parent="miningdepot" index="2" unique_id=270504386]
+[node name="platform_001" parent="miningdepot" index="2" unique_id=1137766412]
 material_override = ExtResource("2_8a0gq")
 
-[node name="depot_body" parent="miningdepot" index="3" unique_id=356164731]
+[node name="depot_body" parent="miningdepot" index="3" unique_id=1904203158]
 material_override = ExtResource("6_8icya")
 
-[node name="tunnel" parent="miningdepot" index="4" unique_id=2287046]
+[node name="tunnel" parent="miningdepot" index="4" unique_id=1409592733]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.7469350385747564, 1.6120414183236524, 2.6484101392328268)
 material_override = ExtResource("2_8a0gq")
 
-[node name="trim_panel_seam_small" parent="miningdepot" index="5" unique_id=1191921101]
+[node name="trim_panel_seam_small" parent="miningdepot" index="5" unique_id=365256890]
 material_override = ExtResource("2_8a0gq")
 
-[node name="trim_panel_seam_small_001" parent="miningdepot" index="6" unique_id=835370431]
+[node name="trim_panel_seam_small_001" parent="miningdepot" index="6" unique_id=1279024617]
 material_override = ExtResource("2_8a0gq")
 
-[node name="windbreaks" parent="miningdepot" index="7" unique_id=1650085630]
+[node name="windbreaks" parent="miningdepot" index="7" unique_id=247183446]
 material_override = SubResource("StandardMaterial3D_8a0gq")
 
-[node name="screen" parent="miningdepot" index="8" unique_id=917703800]
+[node name="screen" parent="miningdepot" index="8" unique_id=219574188]
 material_override = ExtResource("2_8a0gq")
 
-[node name="conveyorbelt_002" parent="miningdepot" index="9" unique_id=396518185]
+[node name="conveyorbelt_002" parent="miningdepot" index="9" unique_id=1535854786]
 material_override = ExtResource("2_8a0gq")
 material_overlay = SubResource("ShaderMaterial_7mukx")
 
-[node name="conveyorbelt_003" parent="miningdepot" index="10" unique_id=656141707]
+[node name="conveyorbelt_003" parent="miningdepot" index="10" unique_id=424469146]
 material_override = ExtResource("3_vptbq")
 instance_shader_parameters/animation_speed = 0.0
 
-[node name="tunnel_001" parent="miningdepot" index="11" unique_id=1759279318]
+[node name="tunnel_001" parent="miningdepot" index="11" unique_id=1508401700]
 material_override = ExtResource("2_8a0gq")
 
-[node name="trim_panel_seam_small_002" parent="miningdepot" index="12" unique_id=1193361710]
+[node name="trim_panel_seam_small_002" parent="miningdepot" index="12" unique_id=1785484130]
 material_override = ExtResource("2_8a0gq")
 
-[node name="conveyorbelt" parent="miningdepot" index="13" unique_id=624085365]
+[node name="conveyorbelt" parent="miningdepot" index="13" unique_id=638531053]
 material_override = ExtResource("2_8a0gq")
 
-[node name="conveyorbelt_001" parent="miningdepot" index="14" unique_id=729764852]
+[node name="conveyorbelt_001" parent="miningdepot" index="14" unique_id=242254191]
 material_override = ExtResource("3_vptbq")
 instance_shader_parameters/animation_speed = 0.0
 
-[node name="door" parent="miningdepot" index="15" unique_id=1472849018]
+[node name="door" parent="miningdepot" index="15" unique_id=2139455478]
 transform = Transform3D(1.1779184, 0, 0, 0, 1.1779184, 0, 0, 0, 1.1779184, 3.2296023, 3.2643256, -2.5604084)
 material_override = SubResource("StandardMaterial3D_8a0gq")
 
-[node name="screen_001" parent="miningdepot" index="16" unique_id=922672740]
+[node name="screen_001" parent="miningdepot" index="16" unique_id=1716016259]
 visible = false
 
 [node name="Gui3D" parent="miningdepot" unique_id=1427860791 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area") instance=ExtResource("7_l8wts")]
@@ -403,6 +405,22 @@ metadata/_custom_type_script = "uid://custckqbhkkow"
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=827244463]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6334245, -0.9034751589596324, 0)
 size = Vector3(16, 1, 16)
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=2097194347]
+transform = Transform3D(5.983101295944607e-17, -0.2125652951723511, -0.9771468647487396, 1.3015440553509511e-17, 0.9771468647487396, -0.2125652951723511, 1, 0, 6.123032e-17, 0.8074256255904775, 2.497089331236124, 0)
+script = ExtResource("15_x2sd0")
+text_key = "%%SIGN_MINING_DEPOT"
+glow = 2.0
+letter_height = 0.14
+light_energy = 0.7
+light_range = 3.0
+light_attenuation = null
+light_offset = 2.7
+metadata/_custom_type_script = "uid://co37kjdlg6xqk"
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=295767569]
+script = ExtResource("16_uyqk1")
+metadata/_custom_type_script = "uid://ivchuymhmqm0"
 
 [connection signal="action_triggered" from="miningdepot/Gui3D/SubViewport/RockDepotUI" to="." method="_on_rock_depot_ui_action_triggered"]
 
