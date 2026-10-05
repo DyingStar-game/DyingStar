@@ -138,6 +138,18 @@ func _mount_torch() -> void:
 	player.flashlight.transform = Transform3D(Basis(), player.torch_head_offset)
 
 
+## Our own torch leaves our own body out of its shadows: worn on the head, it sits behind the
+## shoulders, which cut the bottom of the beam. The body moves to its own render layer (see
+## Globals.RENDER_MASK_OWN_BODY) and the torch drops that layer from its shadow casters. It still lights
+## the body, and every other light (the sun, the lamps, another player's torch) still casts its shadow.
+static func keep_out_of_torch_shadow(body: Node, torch: Light3D) -> void:
+	if body == null or torch == null:
+		return
+	for mesh: Node in body.find_children("*", "GeometryInstance3D", true, false):
+		(mesh as GeometryInstance3D).layers = Globals.RENDER_MASK_OWN_BODY
+	torch.shadow_caster_mask &= ~Globals.RENDER_MASK_OWN_BODY
+
+
 func setup() -> void:
 	# The animated puppet is the visible body now — for the owner (first person) and remotes alike.
 	player.astronaut.visible = false
@@ -155,6 +167,7 @@ func setup() -> void:
 			_setup_animation_dormancy(animator)
 		_puppet_meshes.assign(player.puppet.find_children("*", "MeshInstance3D", true, false))
 		return
+	keep_out_of_torch_shadow(player.puppet, player.flashlight)
 
 	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
 	# set" marker, so the HUD read 0.0 m/s while the body actually walked at walk_speed.

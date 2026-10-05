@@ -35,6 +35,13 @@ const VEHICLE_ZONE_LAYER := 16
 ## lit solely by the per-player day/night sun (PlayerSunLight).
 const RENDER_MASK_LOCAL := 1  # layer 1: terrain, props, players, vehicles, vegetation
 const RENDER_MASK_CELESTIAL := 1 << 19  # layer 20 (value 524288): distant-body far-LOD spheres
+## Layer 19: the LOCAL player's own body, alone, so that their torch can leave it out of its shadows
+## (Light3D.shadow_caster_mask): worn on the head, the torch sits behind the shoulders, which cut the
+## bottom of its beam. Only that layer, because a mesh casts for a light as soon as ONE of its layers is
+## in the light's shadow mask. Every other light still sees it, so it still throws its own shadow.
+const RENDER_MASK_OWN_BODY := 1 << 18
+## What the per-player sun and moon lights reach: the local layer plus the local player's own body.
+const RENDER_MASK_LOCAL_LIT := RENDER_MASK_LOCAL | RENDER_MASK_OWN_BODY
 
 ## Dev/test tools, keyed by their InputMap action: `true` = switched ON, `false` = switched OFF.
 ## A tool that is switched off keeps its code and its binding ON PURPOSE — we will need it again —
