@@ -71,7 +71,7 @@ func test_the_set_covers_every_distance_band() -> void:
 	var world := _world()
 	var outpost : StageOutpost = world.get_node("Tarsis3/Outpost")
 	var anchor : Vector3 = outpost.anchor_local()
-	assert_ne(anchor, Vector3.ZERO, "the anchor (Teleporter) is found")
+	assert_ne(anchor, Vector3.ZERO, "the anchor (StageAnchor) is found")
 	var bands : Array = [false, false, false, false, false, false]  # <50, 200, 1k, 3k, 8k, >=15k
 	for piece in outpost.get_children():
 		if not piece is Node3D or piece.name == &"Stations":

@@ -12,8 +12,9 @@ extends Node3D
 
 ## Put the pieces back on the ground at run time.
 @export var snap_to_ground : bool = true
-## The point the stage's clock and bearings are taken from.
-@export var anchor_path : NodePath = ^"../Teleporter"
+## The point the stage's clock and bearings are taken from: a marker where the stage was built, beside
+## it under the planet (where a test teleporter cabin stood until the cabins became networked props).
+@export var anchor_path : NodePath = ^"../StageAnchor"
 
 var _ground : Callable
 var _radius : float = 0.0
