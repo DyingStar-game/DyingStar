@@ -225,7 +225,7 @@ func _light_for(moon: Node3D) -> DirectionalLight3D:
 	light.name = "MoonLight_%s" % moon.name
 	# Local surfaces only, for the same reason as the sun: a distant body is lit by the system star's
 	# OmniLight from the real direction, and this light is aimed moon->PLAYER.
-	light.light_cull_mask = Globals.RENDER_MASK_LOCAL
+	light.light_cull_mask = Globals.RENDER_MASK_LOCAL_LIT
 	light.light_volumetric_fog_energy = 0.0
 	light.shadow_opacity = 0.69
 	light.shadow_blur = 1.649

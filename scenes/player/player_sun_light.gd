@@ -60,7 +60,7 @@ func _ready() -> void:
 	# Light ONLY the local render layer. Distant bodies rendered on the celestial layer (far-LOD spheres
 	# and, when far, terrain chunks) are lit by the system star's OmniLight from the REAL star direction;
 	# this per-player sun is aimed star->PLAYER, wrong for a distant body, so it must not touch them.
-	light_cull_mask = Globals.RENDER_MASK_LOCAL
+	light_cull_mask = Globals.RENDER_MASK_LOCAL_LIT  # the local layer, our own body included
 	shadow_opacity = 0.69  # softened shadow look carried over from the temporary day/night sun
 	shadow_blur = 1.649
 	# Real-time shadows gated by the graphics settings (default on), reacting live to menu changes.
