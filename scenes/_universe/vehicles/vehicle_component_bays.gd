@@ -106,11 +106,12 @@ func refuse_reason(spec: VehicleComponentSpec) -> String:
 
 
 ## Why the part in [param slot] cannot be taken out right now, or "" when it can. One gate for every
-## kind of part: the battery in use stays in while the engine runs (GDD 6.1), the others come out.
+## kind of part: while the engine runs, nothing comes out — motor, battery in use or spare alike (team
+## decision, 2026-10-04); switched off, everything does.
 func removal_refused(slot: Node) -> String:
 	if slot == null or slot.occupant == null or vehicle == null:
 		return ""
-	if slot.occupant is VehicleBattery and vehicle.is_engine_on() and vehicle.energy.active() == slot.occupant:
+	if vehicle.is_engine_on():
 		return "Switch the engine off first"
 	return ""
 

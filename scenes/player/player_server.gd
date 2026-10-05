@@ -515,7 +515,7 @@ func server_action_received(data: Dictionary) -> void:
 		"vehicle_ignition":
 			var veh_i = _piloted_vehicle(data)
 			if veh_i != null and veh_i.has_method("toggle_engine"):
-				veh_i.toggle_engine()  # refused by the vehicle itself if it is still rolling
+				veh_i.toggle_engine()  # at any speed; the vehicle refuses a start with no motor or no charge
 		"vehicle_horn":
 			var veh_n = _piloted_vehicle(data)
 			if veh_n != null and veh_n.has_method("set_horn"):
@@ -854,8 +854,8 @@ func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 			return found
 	return null
 
-## A part its bay will not give back right now (VehicleComponentBays.removal_refused): the battery in
-## use, while the engine runs. Checked before interact(), which would mark it carried.
+## A part its bay will not give back right now (VehicleComponentBays.removal_refused): any part, while
+## the engine runs. Checked before interact(), which would mark it carried.
 func _component_locked(part: Node) -> bool:
 	if not part.has_meta("component_slot_ref"):
 		return false
@@ -1356,7 +1356,15 @@ func _try_start_step_up(move_dir: Vector3) -> bool:
 	_step_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
 	_step_time = 0.0
 	_stepping = true
+	_drop_vertical_speed()  # the glide owns the height now
 	return true
+
+
+## The speed along up goes: a step glide moves the body itself, so no collision ever cancels the gravity
+## added on the ticks between two steps. Walking up a slope that reads as steps, it piled up to 20 m/s
+## (measured) and was waiting to fling the body as soon as a tick moved it again.
+func _drop_vertical_speed() -> void:
+	player.velocity = player.velocity.slide(player.up_direction)
 
 ## One `[Move]` line per 200 ms while the body moves or is in the air: floor state, vertical speed
 ## along up, and every slide collision of the last move (collider name, its normal's tilt from up,
@@ -1441,6 +1449,7 @@ func _server_update_step(delta: float) -> void:
 	_emit_move()
 	if s >= 1.0:
 		_stepping = false
+		_drop_vertical_speed()
 
 ## Network parent to attach to every replicated move while the origin rebase has this player
 ## parented DIRECTLY to a Planet (server.gd create_player routes unparented spawns there; every
@@ -1463,8 +1472,12 @@ func _net_parent_uuid():
 
 ## Replicate the body's current pose to clients (server-authoritative move). Shared by the scripted glides
 ## (vault, step-up) so they emit exactly like the normal tick.
+##
+## It leaves new_input_from_server alone: those glides return before the input is read, so a "stop" that
+## came in during one was marked read without ever being applied — a key released mid-step kept the
+## player walking (on a slope, climbing it step after step) with nobody on the keys (measured
+## 2026-10-04). The flag is cleared where the input is taken, at the end of the normal tick.
 func _emit_move() -> void:
-	player.new_input_from_server = false
 	# NOTE: this used to send global_rotation while every other sender sent the LOCAL rotation the
 	# client contract expects (see Player.net_set_target) — identical only while the parent's basis is
 	# identity, wrong the moment it is not. Going through Player.emit_move() removes the divergence.
@@ -2734,6 +2747,8 @@ func _compute_carry_prompt() -> String:
 		return ""  # standing only: no "pick up" prompt while crouched or prone
 	player.interact_ray.force_raycast_update()
 	var prop = player._aimed_carriable()
+	if prop != null and _component_locked(prop) and not _is_blocked_by_geometry(prop):
+		return "locked"  # a part of a running vehicle: the HUD says why it stays in
 	if prop != null and prop.has_method("interact") and prop.interact(player) \
 			and not _is_blocked_by_geometry(prop):
 		return "carry"

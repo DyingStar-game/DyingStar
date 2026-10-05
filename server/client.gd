@@ -27,6 +27,8 @@ const STALE_EXIT_RANGE: float = 500.0
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
 var client_peer: ENetMultiplayerPeer = null
+## Move packets sent so far: numbers them in order (MoveOrder), so the server can drop one that arrives late.
+var _move_counter: int = 0
 var peer_id: int = -1
 
 var universe_scene: Node = null
@@ -737,9 +739,11 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 				"y": move_rotation[1],
 				"z": move_rotation[2]
 			},
-			"uuid": player_entity.client_uuid
+			"uuid": player_entity.client_uuid,
+			"seq": MoveOrder.number(Time.get_unix_time_from_system(), _move_counter),
 		},
 	})
+	_move_counter += 1
 	# print("Client action move to server: %s" % message)
 
 	socket.send_text(message)

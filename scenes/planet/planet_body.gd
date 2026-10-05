@@ -272,6 +272,19 @@ func _physics_process(delta: float) -> void:
 	_spin_accum += delta
 	if _spin_accum < 1.0 / maxf(rotation_update_hz, 0.001):
 		return
+	_refresh_spin()
+
+
+## Turn the body to the current simulation time NOW, the bodies it carries along with it, rather than
+## at the next few-Hz refresh: the dev clock (+ / -) jumped hours and the sky waited up to 4 s to show
+## it. Restarts the refresh's count, so the next one is a full interval away.
+func turn_now() -> void:
+	if Engine.is_editor_hint() or OS.has_feature("dedicated_server") or ClientPerf.ablate_planet_spin:
+		return  # the same guards as the refresh: the server's frame never turns
+	_refresh_spin()
+
+
+func _refresh_spin() -> void:
 	_spin_accum = 0.0
 	# Timed, because this refresh is the prime suspect in the client FPS collapse and no player log
 	# could ever say how much it actually cost. ClientPerf reports it as ms-per-second of wall clock

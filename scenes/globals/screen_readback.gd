@@ -38,6 +38,11 @@ func _init() -> void:
 	_rect.material = material
 	_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # 1:1, no resampling
 	_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	# Exactly the size capture() gives it. Left to its default, a TextureRect never shrinks below its
+	# texture's size — and the window texture reports the canvas_items-scaled size, which after the
+	# window is resized can exceed the real one (3490 x 1389 for a 3440 x 1369 maximised window): the
+	# frame was drawn that much larger and its right and bottom edges fell outside the capture.
+	_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	add_child(_rect)
 
 

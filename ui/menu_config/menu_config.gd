@@ -21,6 +21,7 @@ static var is_shown: bool = false
 const ACTION_GROUPS : Dictionary = {
 	"%%KM_GROUP_GENERAL": {
 		"pause": "%%ACT_PAUSE",
+		"controls_help": "%%ACT_CONTROLS_HELP",
 		"%%KM_SECTION_STAR_MAP": {
 			"star_map": "%%ACT_STAR_MAP",
 			"star_map_select": "%%ACT_STAR_MAP_SELECT",

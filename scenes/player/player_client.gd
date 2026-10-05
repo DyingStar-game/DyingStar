@@ -113,6 +113,15 @@ var _air_time: float = 0.0         # seconds spent in the air since that jump
 ## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
 ## it is a client-side view, and no remote avatar has any use for one.
 var _star_map: StarMap = null
+## The controls help (F1, or a long press of the chart's pad button), open until closed like the chart.
+## Local player only.
+var _help: ControlsHelp = null
+## The chart's pad button is down: a short press opens the chart when it comes up, a long one opens the
+## controls help instead — the pad has no free button to give the help its own.
+var _map_pad_down: bool = false
+var _map_pad_held_s: float = 0.0
+## How long the chart's pad button is held before the controls help opens instead of the chart (s).
+const HELP_HOLD_S: float = 0.35
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -193,6 +202,8 @@ func setup() -> void:
 	_star_map = StarMap.new()
 	player.get_node("UserInterface").add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
+	_help = ControlsHelp.new()
+	player.add_child(_help)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -279,6 +290,7 @@ func _process(_delta: float) -> void:
 		player._interp.update(player, dt)  # entity interpolation: glide between server updates
 		_update_name_tag()
 		return
+	_update_controls_help(_delta)
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
@@ -336,6 +348,7 @@ func _process(_delta: float) -> void:
 
 
 	player.interact_label.hide()
+	player.interact_label.modulate = Color.WHITE  # only a refusal ("locked" below) is drawn in red
 	player.can_interact = false
 	# An Interactable under the crosshair (a console) says what `action` will do to it. The press itself is
 	# handled with every other use of `action` (_unhandled_input), where it takes priority.
@@ -398,6 +411,11 @@ func _process(_delta: float) -> void:
 				what = str(aimed.part_name())
 			player.interact_label.text = _prompt(&"action",
 					tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
+			player.interact_label.show()
+		elif player._carry_prompt == "locked":
+			# A part of a running vehicle: no key to press, only why — in red, it is a refusal.
+			player.interact_label.text = tr("%%HUD_PART_ENGINE_RUNNING")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
 
 	var dir_vect = Vector3.ZERO
@@ -744,8 +762,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if InputCombo.pressed(event, "star_map") and _star_map != null:
 		if _star_map.is_open():
 			_star_map.close()
+		elif event is InputEventJoypadButton:
+			# On the pad the press is only noted: let go soon, it opens the chart; held, the help shows.
+			_map_pad_down = true
+			_map_pad_held_s = 0.0
 		else:
 			_star_map.open()
+		return
+	if _map_pad_down and event is InputEventJoypadButton and event.is_action_released(&"star_map"):
+		_map_pad_down = false  # let go before HELP_HOLD_S (past it, _update_controls_help took the press)
+		if _star_map != null:
+			_star_map.open()
+		return
+	if InputCombo.pressed(event, "controls_help"):
+		_open_controls_help(InputDevice.Kind.KEYBOARD_MOUSE)
 		return
 	if _star_map_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
@@ -770,7 +800,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_send_vehicle_action("reset_vehicle")  # put the vehicle back upright
 		_send_horn_input(event)
 		if InputCombo.pressed(event, "vehicle_ignition"):
-			_send_vehicle_action("vehicle_ignition")  # refused by the vehicle while it rolls
+			_send_vehicle_action("vehicle_ignition")  # on or off at any speed; refused with no motor or no charge
 		if InputCombo.pressed(event, "vehicle_lights"):
 			_send_vehicle_action("vehicle_lights")
 		if _handle_limiter_input(event):
@@ -1073,6 +1103,11 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			step = -Globals.DEBUG_TIME_STEP
 		if step != 0.0:
 			Globals.debug_time_offset += step
+			# The planet only turns every few seconds (Planet.rotation_update_hz): show the new hour at
+			# once, as before that refresh was slowed, rather than up to 4 s later.
+			var body : Planet = Planet.of(player)
+			if body != null:
+				body.turn_now()
 
 	# Moon lights on/off, so their contribution can be told apart from the city's own lamps.
 	if (InputCombo.pressed(event, "debug_toggle_moon_lights")
@@ -1195,11 +1230,33 @@ func _input_locked() -> bool:
 	return _modal_open() or _screen_typing()
 
 
+## On the pad, the chart's button held past HELP_HOLD_S opens the controls help instead of the chart (F1
+## opens it on the keyboard, see _unhandled_input). Open, it closes itself (ControlsHelp._input).
+func _update_controls_help(delta: float) -> void:
+	if not _map_pad_down:
+		return
+	_map_pad_held_s += delta
+	if _map_pad_held_s >= HELP_HOLD_S:
+		_map_pad_down = false  # spent: its release opens no chart
+		_open_controls_help(InputDevice.Kind.GAMEPAD)
+
+
+## The controls help on [param kind], in game only: not over a menu, the chat or the chart.
+func _open_controls_help(kind: InputDevice.Kind) -> void:
+	if _help != null and not _input_locked():
+		_help.show_for(kind)
+
+
+## The controls help is open: it owns the input like the chart does.
+func _help_open() -> bool:
+	return _help != null and _help.visible
+
+
 ## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart. A 3D
 ## screen is deliberately NOT in this list — it takes the pointer, never the game — which is what
 ## lets the view still pan across a console while its filter box has the keyboard.
 func _modal_open() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open()
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.

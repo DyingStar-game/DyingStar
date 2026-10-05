@@ -329,6 +329,8 @@ var input_from_server: Dictionary = {
 	"rotation": Vector3.ZERO
 }
 var new_input_from_server: bool = false
+## SERVER: the number of the last move packet applied (MoveOrder): an older one arriving late is dropped.
+var last_move_seq: int = -1
 
 var client_last_input_direction = Vector2.ZERO
 var client_last_global_rotation = Vector3.ZERO
