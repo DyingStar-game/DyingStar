@@ -123,6 +123,17 @@ func initialize_settings():
 	# HUD mic toggle, remembered between sessions like every other audio setting.
 	config.set_value("audio", "microphone_muted", false)
 
+## Settings > General > Play hints: the keys of the moment on the left of the screen (PlayHintsPanel).
+## On by default: they are for the player who does not know the keys yet, and go away once learnt.
+func is_play_hints_enabled() -> bool:
+	return bool(config.get_value("general", "play_hints", true))
+
+
+func set_play_hints_enabled(on: bool) -> void:
+	config.set_value("general", "play_hints", on)
+	save_settings()
+
+
 func save_settings():
 	config.save(CONFIG_FILEPATH)
 

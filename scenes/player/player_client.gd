@@ -221,10 +221,17 @@ func setup() -> void:
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
 	var can_take_pointer := func() -> bool: return not _input_locked()
-	for panel: OverlayPanel in [GraphicsOverlay.in_game(), DevOverlay.create(player,
+	var graphics : OverlayPanel = GraphicsOverlay.in_game()
+	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
 		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
+	# Play hints (left): the keys of the moment, each gone once learnt. Steps aside for the graphics panel.
+	var hints := PlayHintsPanel.new()
+	hints.hidden_rule = _modal_open
+	player.get_node("UserInterface").add_child(hints)
+	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	_offer_play_hints()
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -1270,6 +1277,35 @@ func _help_open() -> bool:
 ## lets the view still pan across a console while its filter box has the keyboard.
 func _modal_open() -> bool:
 	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open()
+
+## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
+## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.
+func _offer_play_hints() -> void:
+	var move : Array = [&"move_forward", &"move_left", &"move_back", &"move_right"]
+	var seated := func() -> bool: return is_instance_valid(player._seat_node)
+	PlayHints.provide(self, &"on_foot", [
+		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"jump"), PlayHints.row(&"sprint"),
+		PlayHints.row(&"crouch"), PlayHints.row(&"toggle_flashlight"), PlayHints.row(&"star_map"),
+		PlayHints.row(&"controls_help"),
+	], func() -> bool: return not seated.call() and not player.floating)
+	PlayHints.provide(self, &"floating", [
+		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"strafe_up"), PlayHints.row(&"strafe_down"),
+		PlayHints.row(&"eva_stabilize"),
+	], func() -> bool: return not seated.call() and player.floating, 5)
+	PlayHints.provide(self, &"driving", [
+		PlayHints.row(move, "%%HINT_DRIVE"), PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
+		PlayHints.row(&"vehicle_lights"), PlayHints.row(&"vehicle_horn"), PlayHints.row(&"exit"),
+	], _is_driving, 10)
+	PlayHints.provide(self, &"passenger", [PlayHints.row(&"exit")],
+			func() -> bool: return seated.call() and not _is_driving(), 10)
+	PlayHints.provide(self, &"carrying", [
+		PlayHints.row(&"action", "%%HUD_DROP"), PlayHints.row(&"carry_rotate_cw"),
+		PlayHints.row(&"carry_free_rotate"),
+	], func() -> bool: return player._owner_carrying, 20)
+	PlayHints.provide(self, &"mining_tool", [
+		PlayHints.row(&"aim"), PlayHints.row(&"perforate"), PlayHints.row(&"toggle_tool"),
+	], func() -> bool: return player.mining_tool != null and player.mining_tool.is_equipped(), 20)
+
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.

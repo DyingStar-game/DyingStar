@@ -118,3 +118,36 @@ size_flags_horizontal = 10
 theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_ON"
+
+[node name="PlayHints" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000007]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/PlayHints" unique_id=1700000008]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_PLAY_HINTS_TOGGLE"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/PlayHints" unique_id=1700000009]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"
+
+[node name="PlayHintsReset" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000010]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/PlayHintsReset" unique_id=1700000011]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_PLAY_HINTS_RESET"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/PlayHintsReset" unique_id=1700000012]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+text = "%%MENU_PLAY_HINTS_SHOW_AGAIN"
