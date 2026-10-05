@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="SurfaceDust" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/common/surface_dust.gd" id="1_dust"]
+
+[resource]
+script = ExtResource("1_dust")
+amount_by_family = {
+&"brick": 0.08,
+&"ceramic": 0.0,
+&"composite": 0.0,
+&"concrete": 0.06,
+&"dirt": 0.8,
+&"energy": 0.0,
+&"glass": 0.0,
+&"grate": 0.0,
+&"gravel": 0.45,
+&"ground": 0.7,
+&"ice": 0.05,
+&"liquid": 0.0,
+&"metal": 0.0,
+&"mineral": 0.4,
+&"mud": 0.05,
+&"organic": 0.3,
+&"plastic": 0.0,
+&"rock": 0.15,
+&"rubber": 0.0,
+&"sand": 1.0,
+&"snow": 0.6,
+&"stone": 0.1,
+&"vegetation": 0.1,
+&"wood": 0.02
+}
+default_amount = 0.2
+color_by_family = {
+&"concrete": Color(0.62, 0.61, 0.58, 1),
+&"gravel": Color(0.5, 0.48, 0.45, 1),
+&"snow": Color(0.95, 0.96, 1, 1)
+}

@@ -42,6 +42,9 @@ const SURFACE_SAMPLE_S: float = 0.2
 ## Below this ground speed (m/s) the player is standing, not walking: no footsteps (see _update_footsteps).
 ## Well under the slowest gait (crouch/back ~1.5 m/s), well over the network + physics jitter.
 const MIN_WALK_SPEED: float = 0.6
+## Dust grains a footstep / a landing raises on the dustiest ground (fewer on harder ground).
+const STEP_DUST_GRAINS: int = 2
+const LAND_DUST_GRAINS: int = 6
 ## Above this vertical speed (m/s) the player is jumping / falling / riding, not walking: no footsteps.
 ## Generous, because a body walking on the terrain trimesh is always bobbing a little.
 const MAX_STEP_CLIMB_SPEED: float = 2.5
@@ -101,6 +104,7 @@ var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from playe
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
+var _dust: DustEmitter = null              # the dust our feet kick up, built on the first step
 ## The same sample with its reasoning ({family, source, detail}), for the debug panel's Ground section.
 var _surface_info: Dictionary = {}
 var _surface_age: float = 0.0              # seconds since that sample
@@ -1535,6 +1539,8 @@ func _refresh_dormancy_later(refresh: Callable) -> void:
 ## longer free with it: do it here, when this role dies with its player.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
+		if _dust != null:
+			_dust.release()  # the cloud lives in the parent's frame, not under the body
 		if is_instance_valid(_name_tag):
 			_name_tag.queue_free()
 		if is_instance_valid(_conversation_text):
@@ -1632,6 +1638,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_jump_sfx()
 		elif action.begins_with("land") and action != _last_land_action:
 			_last_land_action = action
+			if _airborne and _sfx_live:
+				_kick_dust(1.0, LAND_DUST_GRAINS)  # the landing raises more than a step
 			_airborne = false  # crisp: the server just touched ground -> end the jump loop now
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
@@ -1808,6 +1816,7 @@ func _update_footsteps(delta: float) -> void:
 		_air_time += delta
 		if _air_time > MIN_AIR_TIME and climb_speed < MAX_LANDED_CLIMB_SPEED:
 			_airborne = false
+			_kick_dust(1.0, LAND_DUST_GRAINS)
 		else:
 			_step_distance = 0.0
 			return
@@ -1834,6 +1843,20 @@ func _play_footstep() -> void:
 	Sfx3D.play_pitched(player, sample, player.sfx_footstep_db, player.sfx_footstep_falloff,
 			player.sfx_footstep_distance, player.sfx_footstep_attenuation,
 			player.sfx_footsteps.random_pitch())
+	# The foot scuffs harder at a run: from a light puff at a walk to a full one at sprint speed.
+	var pace: float = float(player.locomotion_sample.get("planar_speed", 0.0)) / maxf(player.sprint_speed, 0.1)
+	_kick_dust(lerpf(0.35, 1.0, clampf(pace, 0.0, 1.0)), STEP_DUST_GRAINS)
+
+## A puff of the ground under the feet (see DustEmitter): the step's and the landing's, on the surface
+## the footsteps already sampled. Nothing while floating: there is no ground to stir.
+func _kick_dust(strength: float, grains: int) -> void:
+	if player.dust == null or player.floating:
+		return
+	if _dust == null:
+		_dust = DustEmitter.new(player, player.dust, 48, 1.8)
+	var up: Vector3 = player.global_basis.y.normalized()
+	_dust.puff(player.global_position, _surface_family, strength, up * 0.4, grains,
+			0.12 * grains, 0.35)
 
 ## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,
 ## since direct_space_state is null everywhere else — and throttled, because a step happens every metre
