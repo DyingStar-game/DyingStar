@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="3_limx2"]
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="4_hnyaj"]
 [ext_resource type="PackedScene" uid="uid://dk07ej5iwa2mg" path="res://scenes/_universe/structures/industrial/garage.tscn" id="4_n6sqd"]
+[ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="5_tele"]
 
 [node name="AresVillageMining" type="Node3D" unique_id=1311035986]
 
@@ -66,3 +67,6 @@ transform = Transform3D(-1.0000000000000002, 0, 1.2246467991473532e-16, 0, 1, 0,
 
 [node name="Garage" parent="." unique_id=1534038917 instance=ExtResource("4_n6sqd")]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 52.04122373947572, 0, -118.95151438820612)
+
+[node name="Teleporter" parent="." instance=ExtResource("5_tele")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 48)

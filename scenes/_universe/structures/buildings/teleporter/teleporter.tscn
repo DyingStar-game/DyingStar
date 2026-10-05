@@ -5,6 +5,8 @@
 [ext_resource type="Script" uid="uid://d0di0eip2q2wk" path="res://scenes/_universe/structures/buildings/teleporter/teleporter_ui.gd" id="3_teleui"]
 [ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="4_screenzone"]
 [ext_resource type="Script" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="5_propsync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="6_terrainpad"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(2.8, 1.44)
@@ -24,6 +26,21 @@ script = ExtResource("1_tele")
 
 [node name="TerrainBlend" type="Node" parent="."]
 script = ExtResource("tblend_ds")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("5_propsync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("6_terrainpad")
+apron_m = 6.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(8, 1, 12)
+
 [node name="Blockout" type="CSGBox3D" parent="." unique_id=134378902]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
 use_collision = true
