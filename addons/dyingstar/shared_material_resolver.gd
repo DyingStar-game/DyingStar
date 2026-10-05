@@ -81,11 +81,8 @@ func _apply_to_mesh_instance(mesh_instance: MeshInstance3D, report: Report) -> v
 
 	for surface_index in mesh.get_surface_count():
 		var source_material := mesh.surface_get_material(surface_index)
-		if source_material == null:
-			continue
-
-		var material_name := source_material.resource_name.strip_edges()
-		if not material_name.begins_with(SHARED_PREFIX):
+		var material_name := _shared_name(source_material)
+		if material_name.is_empty():
 			continue
 
 		_warn_if_textures_embedded(source_material, material_name, report)
@@ -100,6 +97,37 @@ func _apply_to_mesh_instance(mesh_instance: MeshInstance3D, report: Report) -> v
 		report.resolved += 1
 		if not report.applied.has(material_name):
 			report.applied.append(material_name)
+
+
+## Library materials a scene still shows with the glTF's own material instead of the shared resource.
+## The import script links only what exists at import time, so a model imported before one of its
+## materials was added to the library keeps the glTF's material until it is reimported. A name the
+## library does not hold is left out: a reimport would not link it either.
+func unlinked(scene: Node) -> PackedStringArray:
+	var names := PackedStringArray()
+	for mesh_instance in _collect_mesh_instances(scene):
+		var mesh := mesh_instance.mesh
+		if mesh == null:
+			continue
+		for surface_index in mesh.get_surface_count():
+			var material_name := _shared_name(mesh.surface_get_material(surface_index))
+			if material_name.is_empty() or names.has(material_name):
+				continue
+			var shared_path := resource_path(material_name)
+			if not ResourceLoader.exists(shared_path):
+				continue
+			var linked := mesh_instance.get_surface_override_material(surface_index)
+			if linked == null or linked.resource_path != shared_path:
+				names.append(material_name)
+	return names
+
+
+## The library name a glTF material carries ("mat_..."), or "" for a model's own material.
+func _shared_name(material: Material) -> String:
+	if material == null:
+		return ""
+	var material_name := material.resource_name.strip_edges()
+	return material_name if material_name.begins_with(SHARED_PREFIX) else ""
 
 
 ## A shared material arriving with its textures means the glTF was exported with
