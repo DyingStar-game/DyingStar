@@ -1,0 +1,70 @@
+[gd_scene format=3 uid="uid://b5xfna23cscve"]
+
+[ext_resource type="PackedScene" uid="uid://behvrxyuj8wek" path="res://assets/_universe/props/furniture/furn_floodlight_outdoor_lg.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_propsync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_terrainpad"]
+[ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="4_hum"]
+[ext_resource type="AudioStream" uid="uid://c0k0knpfpojnu" path="res://assets/_universe/audio/sfx/machine/generator-loop.ogg" id="5_generator"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_plate"]
+size = Vector3(0.8, 0.14, 1.1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_box"]
+size = Vector3(0.43, 0.6, 0.77)
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_pole"]
+height = 4.0
+radius = 0.06
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_head"]
+size = Vector3(0.7, 0.67, 0.17)
+
+[node name="FloodlightOutdoor" type="StaticBody3D" unique_id=714726914]
+
+[node name="PropSync" type="Node" parent="." unique_id=336180362]
+script = ExtResource("2_propsync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=963211490]
+script = ExtResource("3_terrainpad")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1822585381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, -0.55, -0.39)
+size = Vector3(1.2, 1, 1.5)
+
+[node name="Model" parent="." unique_id=1597567296 instance=ExtResource("1_model")]
+
+[node name="CollisionPlate" type="CollisionShape3D" parent="." unique_id=503376433]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.105, 0.07, -0.39)
+shape = SubResource("BoxShape3D_plate")
+
+[node name="CollisionBox" type="CollisionShape3D" parent="." unique_id=2097668366]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.105, 0.37, -0.445)
+shape = SubResource("BoxShape3D_box")
+
+[node name="CollisionPole" type="CollisionShape3D" parent="." unique_id=40645659]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.03, 2.1, 0.03)
+shape = SubResource("CylinderShape3D_pole")
+
+[node name="CollisionHead" type="CollisionShape3D" parent="." unique_id=1284985987]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.375, 0.085)
+shape = SubResource("BoxShape3D_head")
+
+[node name="GeneratorHum" type="Node3D" parent="." unique_id=1932504718]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.105, 0.37, -0.445)
+script = ExtResource("4_hum")
+stream = ExtResource("5_generator")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=310351402]
+transform = Transform3D(1, 0, 0, 0, -0.9854532445146164, 0.16994676482832977, 0, -0.16994676482832977, -0.9854532445146164, 0, 4.403532448902638, 0.23604006380648213)
+light_color = Color(0.8666667, 0.7921569, 0.69803923, 1)
+light_energy = 2.0
+spot_range = 30.0
+spot_angle = 30.94
+
+[node name="Photocell" type="Node3D" parent="SpotLight3D" unique_id=433228206]
+script = ExtResource("pc_photocell")

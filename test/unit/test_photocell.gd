@@ -6,6 +6,7 @@ extends GutTest
 const PHOTOCELL := "res://scenes/common/photocell.gd"
 ## The scenes whose lights follow the daylight, and the node each one's Photocell sits under.
 const WIRED := {
+	"res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn": "SpotLight3D",
 	"res://scenes/_universe/structures/industrial/garage.tscn": "NeonSign",
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": "NeonSign",
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": "NeonSign",
