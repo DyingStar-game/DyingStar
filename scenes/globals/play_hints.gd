@@ -17,6 +17,8 @@ extends RefCounted
 ##   - `priority`: higher is listed first. An action several contexts offer is listed once, by the
 ##     highest.
 ##   - A row may group actions that are ONE thing to a player (the four move keys): PlayHints.row([...]).
+##   - A row has a `level`: the level-1 lines of a context (the speed limiter, after the wheel's
+##     basics) only show once every level-0 line of that context is learnt, and so on up.
 ##   - An action with no key on the device in hand is simply not listed (PlayHintsPanel).
 ##   - A label is a translation key written out in full (test_localisation_keys looks for it).
 ##
@@ -31,15 +33,16 @@ static var _labels : Dictionary = {}
 
 
 ## One line of hints: the action(s) and what they do. `actions` is a StringName or an Array of them;
-## `label` a translation key, or empty for the controls page's own label of the first action.
-static func row(actions: Variant, label: String = "") -> Dictionary:
+## `label` a translation key, or empty for the controls page's own label of the first action; `level`
+## 0 for the basics, higher for what comes once they are learnt.
+static func row(actions: Variant, label: String = "", level: int = 0) -> Dictionary:
 	var list : Array[StringName] = []
 	if actions is Array:
 		for a: Variant in actions:
 			list.append(StringName(a))
 	else:
 		list.append(StringName(actions))
-	return {"actions": list, "label": label if not label.is_empty() else label_of(list[0])}
+	return {"actions": list, "label": label if not label.is_empty() else label_of(list[0]), "level": level}
 
 
 ## Offer `rows` under `context` for as long as `owner` lives and `when` answers true. Offering the same
@@ -57,7 +60,7 @@ static func withdraw(owner: Object, context: StringName = &"") -> void:
 		return not ((e["owner"] as WeakRef).get_ref() == owner and (context == &"" or e["context"] == context)))
 
 
-## The lines to show now, highest priority first, each action once: [{actions, label, context}].
+## The lines to show now, highest priority first, each action once: [{actions, label, level, context}].
 ## Entries whose owner was freed are dropped on the way.
 static func active() -> Array[Dictionary]:
 	_entries = _entries.filter(func(e: Dictionary) -> bool: return (e["owner"] as WeakRef).get_ref() != null)
@@ -79,7 +82,8 @@ static func active() -> Array[Dictionary]:
 				continue
 			for a: StringName in fresh:
 				seen[a] = true
-			out.append({"actions": fresh, "label": r["label"], "context": e["context"]})
+			out.append({"actions": fresh, "label": r["label"], "level": int(r.get("level", 0)),
+					"context": e["context"]})
 	return out
 
 
@@ -91,21 +95,48 @@ static func label_of(action: StringName) -> String:
 	return str(_labels.get(String(action), String(action)))
 
 
-## What to press for `actions` on `kind`, as the controls help writes it ("Z Q S D", "LS"): every
-## binding once. Falls back to the other device for an action the one in hand does not have, like
+## What to press for `actions` on `kind`, as the controls help writes it ("Z Q S D", "LS"): the first
+## binding of each action, once. Only the device in hand's while it has any of them: a line that groups
+## alternatives (the wheel's zoom steps and the pad's held triggers) must not name the mouse to a pad
+## player. Falls back to the other device when the one in hand has none of them at all, like
 ## InputLabel.for_action. Empty when none of the actions is bound at all.
 static func keys_of(actions: Array, kind: InputDevice.Kind) -> String:
+	var names := _first_names(actions, func(action: StringName) -> Array:
+		return InputDevice.bindings(action, kind))
+	if names.is_empty():
+		names = _first_names(actions, func(action: StringName) -> Array:
+			return InputMap.action_get_events(action) if InputMap.has_action(action) else [])
+	return compact(names)
+
+
+## The key names of one line, the words they share said once: "Alt + Molette haut", "Alt + Molette bas"
+## -> "Alt + Molette haut/bas"; "Num +", "Num -" -> "Num +/-". Names with nothing in common stay apart,
+## as the four move keys do ("Z Q S D").
+static func compact(names: PackedStringArray) -> String:
+	var out := PackedStringArray()
+	var stem : String = ""
+	for name: String in names:
+		var cut : int = name.rfind(" ")
+		var head : String = name.substr(0, cut + 1) if cut > 0 else ""
+		if not head.is_empty() and head == stem:
+			out[out.size() - 1] += "/" + name.substr(cut + 1)
+		else:
+			out.append(name)
+			stem = head
+	return " ".join(out)
+
+
+## The name of the first event `events_of` gives for each of `actions`, each name once.
+static func _first_names(actions: Array, events_of: Callable) -> PackedStringArray:
 	var names := PackedStringArray()
 	for action: StringName in actions:
-		var events : Array[InputEvent] = InputDevice.bindings(action, kind)
-		if events.is_empty() and InputMap.has_action(action):
-			events = InputMap.action_get_events(action)
+		var events : Array = events_of.call(action)
 		if events.is_empty():
 			continue
 		var name : String = ControlsHelpRows.name_of(events[0])
 		if not name.is_empty() and not name in names:
 			names.append(name)
-	return " ".join(names)
+	return names
 
 
 ## Forget every entry. For tests.

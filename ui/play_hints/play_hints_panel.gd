@@ -32,6 +32,8 @@ var enabled_rule : Callable = func() -> bool: return SettingsManager.is_play_hin
 var hidden_rule : Callable = func() -> bool: return false
 ## What the player has learnt. The game's own unless a test hands one in.
 var memory : PlayHintsMemory = null
+## Only the lines of these contexts (the star map's own panel); empty = every context.
+var contexts : Array[StringName] = []
 
 var _list : GridContainer  # two columns, keys | what they do: the texts line up whatever the key's width
 var _shown : Array[Dictionary] = []
@@ -76,13 +78,25 @@ func refresh() -> void:
 	_device = InputDevice.last
 	var rows : Array[Dictionary] = []
 	if bool(enabled_rule.call()) and not bool(hidden_rule.call()):
+		# Each context shows its lowest level still to learn: the speed limiter waits for the wheel.
+		var candidates : Array[Dictionary] = []
+		var lowest : Dictionary = {}  # context -> lowest level with a line still to learn
 		for r: Dictionary in PlayHints.active():
+			if not contexts.is_empty() and not StringName(r["context"]) in contexts:
+				continue
 			if _memory().is_learned(r["actions"]):
 				continue
 			var keys : String = PlayHints.keys_of(r["actions"], InputDevice.last)
 			if keys.is_empty():
 				continue  # nothing to press on this device: not a hint
-			rows.append({"actions": r["actions"], "label": r["label"], "keys": keys})
+			var level : int = int(r.get("level", 0))
+			candidates.append({"actions": r["actions"], "label": r["label"], "keys": keys,
+					"level": level, "context": r["context"]})
+			lowest[r["context"]] = mini(int(lowest.get(r["context"], level)), level)
+		for c: Dictionary in candidates:
+			if int(c["level"]) != int(lowest[c["context"]]):
+				continue
+			rows.append({"actions": c["actions"], "label": c["label"], "keys": c["keys"]})
 			if rows.size() >= MAX_ROWS:
 				break
 	_target_alpha = 1.0 if not rows.is_empty() else 0.0

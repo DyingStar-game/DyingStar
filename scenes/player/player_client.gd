@@ -1280,6 +1280,7 @@ func _modal_open() -> bool:
 
 ## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
 ## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.
+## Level 1 lines come once the basics of their situation are learnt: the speed limiter after the wheel.
 func _offer_play_hints() -> void:
 	var move : Array = [&"move_forward", &"move_left", &"move_back", &"move_right"]
 	var seated := func() -> bool: return is_instance_valid(player._seat_node)
@@ -1287,14 +1288,22 @@ func _offer_play_hints() -> void:
 		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"jump"), PlayHints.row(&"sprint"),
 		PlayHints.row(&"crouch"), PlayHints.row(&"toggle_flashlight"), PlayHints.row(&"star_map"),
 		PlayHints.row(&"controls_help"),
+		PlayHints.row(&"prone", "", 1),
+		PlayHints.row([&"walk_speed_up", &"walk_speed_down"], "%%HINT_WALK_PACE", 1),
+		PlayHints.row(&"emote_wheel", "", 1), PlayHints.row(&"write_in_chat", "", 1),
+		PlayHints.row(&"screenshot", "", 1),
 	], func() -> bool: return not seated.call() and not player.floating)
 	PlayHints.provide(self, &"floating", [
 		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"strafe_up"), PlayHints.row(&"strafe_down"),
 		PlayHints.row(&"eva_stabilize"),
+		PlayHints.row([&"roll_left", &"roll_right"], "%%HINT_ROLL", 1),
 	], func() -> bool: return not seated.call() and player.floating, 5)
 	PlayHints.provide(self, &"driving", [
 		PlayHints.row(move, "%%HINT_DRIVE"), PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
 		PlayHints.row(&"vehicle_lights"), PlayHints.row(&"vehicle_horn"), PlayHints.row(&"exit"),
+		PlayHints.row(&"vehicle_speed_limiter", "", 1),
+		PlayHints.row([&"vehicle_limiter_up", &"vehicle_limiter_down"], "%%HELP_LIMITER_SET", 1),
+		PlayHints.row(&"vehicle_horn_special", "", 1), PlayHints.row(&"vehicle_reset", "", 1),
 	], _is_driving, 10)
 	PlayHints.provide(self, &"passenger", [PlayHints.row(&"exit")],
 			func() -> bool: return seated.call() and not _is_driving(), 10)

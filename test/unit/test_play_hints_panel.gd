@@ -16,6 +16,10 @@ func before_each() -> void:
 	k.physical_keycode = KEY_SPACE
 	InputMap.action_add_event(&"test_hint_jump", k)
 	InputMap.add_action(&"test_hint_unbound")
+	InputMap.add_action(&"test_hint_more")
+	var m := InputEventKey.new()
+	m.physical_keycode = KEY_M
+	InputMap.action_add_event(&"test_hint_more", m)
 	_owner = autofree(Node.new())
 	_panel = PlayHintsPanel.new()
 	_panel.enabled_rule = func() -> bool: return true
@@ -26,6 +30,7 @@ func before_each() -> void:
 func after_each() -> void:
 	InputMap.erase_action(&"test_hint_jump")
 	InputMap.erase_action(&"test_hint_unbound")
+	InputMap.erase_action(&"test_hint_more")
 	PlayHints.clear()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 
@@ -98,3 +103,44 @@ func test_pressing_a_shown_key_counts_towards_learning_it() -> void:
 	_panel._input(press)  # within the debounce: one push is one use
 	var entry : Array = _panel.memory._config.get_value(PlayHintsMemory.SECTION, "test_hint_jump", [0, 0.0])
 	assert_eq(int(entry[0]), 1)
+
+
+## The speed limiter waits for the wheel: a context shows its level-1 lines once its level-0 ones are learnt.
+func test_the_next_level_shows_once_the_basics_are_learnt() -> void:
+	PlayHints.provide(_owner, &"test", [PlayHints.row(&"test_hint_jump", "%%ACT_JUMP"),
+			PlayHints.row(&"test_hint_more", "%%ACT_SPRINT", 1)])
+	_panel.refresh()
+	assert_eq(_labels(), ["%%ACT_JUMP"], "the basics first")
+	for i in PlayHintsMemory.LEARNED_AFTER:
+		_panel.memory.note_used(&"test_hint_jump")
+	_panel.refresh()
+	assert_eq(_labels(), ["%%ACT_SPRINT"], "then what comes next")
+
+
+## A basic with nothing to press on this device holds nothing back: it cannot be learnt here.
+func test_an_unbound_basic_does_not_hold_the_next_level_back() -> void:
+	PlayHints.provide(_owner, &"test", [PlayHints.row(&"test_hint_unbound", "%%ACT_JUMP"),
+			PlayHints.row(&"test_hint_more", "%%ACT_SPRINT", 1)])
+	_panel.refresh()
+	assert_eq(_labels(), ["%%ACT_SPRINT"])
+
+
+## Levels count per context: learning the wheel says nothing about the drill.
+func test_each_context_has_its_own_levels() -> void:
+	PlayHints.provide(_owner, &"a", [PlayHints.row(&"test_hint_jump", "%%ACT_JUMP")])
+	PlayHints.provide(_owner, &"b", [PlayHints.row(&"test_hint_more", "%%ACT_SPRINT", 1)])
+	_panel.refresh()
+	assert_eq(_labels(), ["%%ACT_JUMP", "%%ACT_SPRINT"])
+
+
+## The star map's own panel shows the chart's lines only.
+func test_a_panel_can_keep_to_some_contexts() -> void:
+	PlayHints.provide(_owner, &"star_map", [PlayHints.row(&"test_hint_jump", "%%ACT_JUMP")])
+	PlayHints.provide(_owner, &"on_foot", [PlayHints.row(&"test_hint_more", "%%ACT_SPRINT")])
+	_panel.contexts = [&"star_map"]
+	_panel.refresh()
+	assert_eq(_labels(), ["%%ACT_JUMP"])
+
+
+func _labels() -> Array:
+	return _panel.shown().map(func(r: Dictionary) -> String: return str(r["label"]))

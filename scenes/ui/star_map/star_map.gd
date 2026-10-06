@@ -122,8 +122,6 @@ const DOUBLE_PRESS_MS: int = 400
 const LAYER: int = 10
 ## The info panel's place from the right edge, before any inset (set_right_inset).
 const INFO_PANEL_X: float = -360.0
-## The help line's distance from the bottom of the screen.
-const HELP_MARGIN_PX: float = 16.0
 ## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
 ## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
 ## following keeps it there; this only tells that apart from a station selected from elsewhere.
@@ -274,10 +272,9 @@ var _sunlight: OmniLight3D = null
 ## The chart's own environment, kept because its ambient is DIMMED on approach — see
 ## [method _refresh_lighting].
 var _env: Environment = null
-## The controls, centred at the foot of the chart, named with the player's own keys (StarMapHelp).
-var _help: Label
-## The device the help line was last written for (InputDevice.Kind), -1 before the first time.
-var _help_kind: int = -1
+## How to drive the chart: the play hints of the "star_map" context, on the left, in the chart's own
+## layer (the player's panel would be under it). Each line goes once learnt, like everywhere else.
+var _hints: PlayHintsPanel
 ## One entry per body: {sphere, orbit, live, radius_m, spin_hours, tilt_deg}. `orbit` places it when
 ## it has elements; `live` when it does not (a moon, positioned by the network).
 var _bodies: Array[Dictionary] = []
@@ -411,6 +408,21 @@ func _ready() -> void:
 	layer = LAYER
 	hide()
 	_build_ui()
+	_offer_play_hints()
+
+
+## The chart's keys, for its own hints panel (_hints) while it is open. Select carries "twice: go
+## there"; the zoom lists the wheel's steps and the held keys or triggers, whichever the device has.
+func _offer_play_hints() -> void:
+	PlayHints.provide(self, &"star_map", [
+		PlayHints.row(&"star_map_select", "%%HINT_MAP_SELECT"),
+		PlayHints.row([&"star_map_zoom_step_in", &"star_map_zoom_step_out", &"star_map_zoom_in",
+				&"star_map_zoom_out"], "%%HINT_MAP_ZOOM"),
+		PlayHints.row([&"star_map_orbit", &"star_map_orbit_left", &"star_map_orbit_right",
+				&"star_map_orbit_up", &"star_map_orbit_down"], "%%HINT_MAP_TURN"),
+		PlayHints.row(&"star_map_reset", "%%HINT_MAP_RESET"),
+		PlayHints.row(&"star_map", "%%HINT_MAP_CLOSE"),
+	], is_open, 50)
 
 
 ## Tell the chart which body is the local player, so it can show where you are.
@@ -420,7 +432,6 @@ func setup(player: Node3D) -> void:
 
 func open() -> void:
 	_rebuild()
-	_refresh_help()  # the keys may have been rebound since the last time
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	show()
 	if not _opened_before or _moved_since_closed():
@@ -591,16 +602,11 @@ func _build_ui() -> void:
 	_cursor_readout = StarMapCursorReadout.new()
 	add_child(_cursor_readout)
 	# The chart's own numbers (bodies, zoom, relief tiles) are debug: they go to the debug panel
-	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it.
-	_help = Label.new()
-	_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_help.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_help.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_help.offset_top = -HELP_MARGIN_PX
-	_help.offset_bottom = -HELP_MARGIN_PX
-	_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_help)
+	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it, as play
+	# hints (left, under the two buttons), gone once learnt.
+	_hints = PlayHintsPanel.new()
+	_hints.contexts = [&"star_map"]
+	add_child(_hints)
 
 	# Two shortcuts, in the top left corner. Buttons rather than keys: rare, deliberate actions — and a
 	# Control consumes its own click, so picking a body is never triggered underneath.
@@ -1172,14 +1178,6 @@ func _process(delta: float) -> void:
 	if _pad_points() and not is_typing():
 		_hover_at(_pointer())
 	_refresh_cursor_readout()
-	if InputDevice.last != _help_kind:
-		_refresh_help()
-
-
-## The help line, for the device in the player's hands: the mouse's buttons, or the pad's.
-func _refresh_help() -> void:
-	_help_kind = InputDevice.last
-	_help.text = StarMapHelp.text(InputDevice.last)
 
 
 ## Where every body IS this frame — true positions only, nothing drawn yet. Runs before the origin is

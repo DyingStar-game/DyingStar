@@ -8,8 +8,10 @@ extends Resource
 ## What the line says, as a translation key written out in full (%%ACT_JUMP, or one of your own added
 ## to tools/localization/localisation.csv). Empty = the controls page's label of the first action.
 @export var label : String = ""
+## 0 = a basic of this source; 1 = shown once every level-0 line of the same source is learnt, and so on.
+@export_range(0, 3) var level : int = 0
 
 
 ## The same line as PlayHints.row() builds it.
 func to_row() -> Dictionary:
-	return PlayHints.row(actions, label)
+	return PlayHints.row(actions, label, level)
