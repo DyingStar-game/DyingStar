@@ -152,6 +152,12 @@ static func _material_detail(mat: Material) -> String:
 	return named + " dans " + where
 
 
+## The Planet a body stands on, or null — for the other consumers of the probe (the dust reads its
+## ground colour and its air there). See _planet_of.
+static func planet_of(node: Node) -> Planet:
+	return _planet_of(node)
+
+
 ## The Planet a body stands on, or null.
 ##
 ## Two ways, because neither alone is dependable. Walking UP the tree is the general one — a body is

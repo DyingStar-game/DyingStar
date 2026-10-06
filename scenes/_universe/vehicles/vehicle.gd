@@ -608,6 +608,13 @@ const ADOPTED_VELOCITY_MS: int = 1500
 ## it only bites when the speed jumps rather than climbs -- a vehicle spawning mid-drive, or landing.
 @export_range(0.0, 2.0, 0.01) var sfx_wheel_roll_attack_secs: float = 0.25
 
+@export_group("Ground dust")
+## How much dust each kind of ground gives up under the tyres (see SurfaceDust). Null = no dust.
+@export var dust: SurfaceDust = preload("res://scenes/common/ground_dust.tres")
+## Speed (km/h) at which the tyres throw their full share of dust. A ramp, not a switch: the dust
+## grows with the speed from standstill to here, then holds. A spinning wheel throws more on top.
+@export_range(1.0, 150.0, 1.0) var dust_full_kmh: float = 40.0
+
 @export_group("Registration plate")
 ## The plate's "company-type" prefix (see PropSerial): the same serial as a crate's, on the vehicle's
 ## plates — the Label3D nodes in the group PropSerial.LABEL_GROUP. Set per vehicle scene.
@@ -645,6 +652,7 @@ var _roll_player: AudioStreamPlayer3D = null         # rolling noise (constant l
 var _roll_level: float = 0.0
 var _scrub_family: StringName = &""
 var _scrub_family_age: float = 999.0
+var _dust: VehicleDust = null  # client: the tyres' dust, built on first use (see VehicleDust)
 var _scrub_last_sample: AudioStream = null
 var _wheels: Array[VehicleWheel3D] = []
 ## Tick counter for the grip diagnostic (see _log_wheel_contacts).
@@ -2234,6 +2242,7 @@ func _process(delta: float) -> void:
 	# rides the smoothly-interpolated body (no per-frame world jitter). Server stays authoritative.
 	_interp.update(self, delta)
 	_update_wheels_visual(delta)
+	_update_dust(delta)
 	# A part named in the bay table may not have been created yet — props and their vehicle are
 	# recreated independently and in no order. Re-apply until every one has turned up, or a late
 	# part stays a loose dynamic body and drops out of the truck while the server holds it pinned.
@@ -2261,6 +2270,10 @@ func _physics_process(delta: float) -> void:
 func _physics_process_impl(delta: float) -> void:
 	# Before the replica guard below: a client has physics off but still hears its own tyres.
 	_update_tyre_audio(delta)
+	# And sees their dust: keep the cached ground family fresh from HERE, the only place a probe works
+	# (the dust itself is raised from _process, on the smoothed pose).
+	if dust != null and DustEmitter.enabled():
+		_scrub_surface_family()
 	if _is_networked():
 		# Server-authoritative: only the game server simulates + replicates. The client replica
 		# has physics off; its smoothing + wheels are done in _process.
@@ -2407,6 +2420,29 @@ func _update_wheels_visual(delta: float) -> void:
 			_spin_wheel_visual(wheel, -spin)
 		index += 1
 	_update_steering_wheel(_net_steering)  # turn the volant on the replica too (no-op if absent)
+
+## Client: raise the tyres' dust for this frame (see VehicleDust).
+func _update_dust(delta: float) -> void:
+	if dust == null:
+		return
+	if _dust == null:
+		_dust = VehicleDust.new(self)
+	_dust.update(delta, _scrub_family)
+
+
+## Where each DRIVEN tyre touches the ground, in world space: the bottom of its visible wheel (posed
+## from the replicated suspension on a client). Only the driven wheels: they are the ones that dig.
+func dust_contacts() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var down: Vector3 = -global_basis.y.normalized()
+	for wheel in _wheels:
+		if not wheel.use_as_traction:
+			continue
+		var visual: Node3D = _wheel_visual(wheel)
+		var centre: Vector3 = visual.global_position if visual != null else wheel.global_position
+		out.append(centre + down * wheel_radius)
+	return out
+
 
 ## The steer angle (rad) this vehicle is actually showing, whichever side we are on. The server and
 ## the bench have the real physics value; a replica has physics off and only knows what was sent.
@@ -2771,6 +2807,8 @@ func _enter_tree() -> void:
 func _exit_tree() -> void:
 	if Engine.is_editor_hint():
 		return
+	if _dust != null:
+		_dust.release()  # its cloud lives in the parent's frame, not under us
 	if _is_networked() and GameOrchestrator.is_server() and _nav_parked:
 		_nav_parked = false
 		_nav_obstacle_set_parked(false)
