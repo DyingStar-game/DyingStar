@@ -251,9 +251,17 @@ vec3 scatter(
 	// colour — a green-cyan ambient under an orange sky, because the light and the dome were being
 	// integrated differently. Spacing the samples by i^2 puts them where the extinction is.
 	//
-	// Only when the camera is INSIDE the shell: from orbit the density peaks at the ray's closest
-	// approach, not at its start, and quadratic spacing would then sample the wrong end.
+	// Where the extinction is depends on where the camera is:
+	//   - INSIDE the shell: at the near end, around the camera — samples bunched there;
+	//   - outside, the ray stopped by the ground or by geometry (the ground seen from orbit): at the
+	//     FAR end, at the bottom of the air — the same spacing, mirrored. Even steps put a sample in
+	//     the veil or beside it depending on the exact length of each pixel's ray, and that length
+	//     follows the relief and the mesh: Sandbox seen from orbit came out in a regular pattern of
+	//     light and dark discs (2026-10-06);
+	//   - outside, the ray passing through (the limb): the density peaks at its closest approach, in
+	//     the middle, and even steps do best.
 	bool inside = shell.x <= 0.0;
+	bool ends_low = !inside && t_exit < shell.y;
 	float span = t_exit - t_enter;
 	float near = 0.0;
 	float cos_theta = dot(dir, to_star);
@@ -272,6 +280,14 @@ vec3 scatter(
 			t = t_enter + (near + far) * 0.5;
 			step_width = far - near;
 			near = far;
+		} else if (ends_low) {
+			// Mirrored: k counts the steps back from the far end, so they still run camera-first and
+			// depth_view keeps accumulating in order.
+			float k = float(steps_view - 1 - i);
+			float from_end_near = span * pow(k / float(steps_view), 2.0);
+			float from_end_far = span * pow((k + 1.0) / float(steps_view), 2.0);
+			t = t_exit - (from_end_near + from_end_far) * 0.5;
+			step_width = from_end_far - from_end_near;
 		}
 		vec3 p = origin + dir * t;
 		float h = atmo_altitude(p);

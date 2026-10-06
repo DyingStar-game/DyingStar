@@ -144,7 +144,7 @@ func _export_mesh_obj(mi: MeshInstance3D, key: String, info: Dictionary) -> void
 	var lod: int = info.get("lod", 0)
 	var res: int = 32  # LOD 0 default
 	if terrain and terrain.planet_data:
-		res = terrain.planet_data.get_resolution_for_lod(lod)
+		res = terrain.planet_data.get_resolution_for_lod(lod, info.get("nside", 0))
 	var grid_vert_count := (res + 1) * (res + 1)
 
 	fa.store_line("# DebugChunkExporter — %s" % key)
