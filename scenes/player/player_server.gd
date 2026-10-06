@@ -453,7 +453,12 @@ func server_action_received(data: Dictionary) -> void:
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
-				veh.server_enter(player, str(data.get("seat", "")))
+				# The client boards the seat it LOOKS at: within reach and in sight, checked here again —
+				# the seat boxes beside the cab used to be a client-side courtesy the server never asked
+				# about, so any client could sit in any truck from anywhere.
+				var seat_in: Node = veh.find_seat(str(data.get("seat", ""))) if veh.has_method("find_seat") else null
+				if seat_in is VehicleSeat and _can_board(seat_in as VehicleSeat):
+					veh.server_enter(player, str(data.get("seat", "")))
 				if is_instance_valid(player._seat_node):  # enter succeeded (seat free, door open)
 					_seat_count += 1
 					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
@@ -2528,6 +2533,11 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 ## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
 ## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
 ## has no collisions, so its answer would always be "clear" and be trivially cheatable.
+## May this player sit in [param seat] now: within the seat's reach of the eye, and in sight of it.
+func _can_board(seat: VehicleSeat) -> bool:
+	return seat.within_reach(player.interact_ray.global_position) and _can_see(seat)
+
+
 func _can_see(target: Node) -> bool:
 	if not (target is Node3D):
 		return false
@@ -2544,6 +2554,11 @@ func _can_see(target: Node) -> bool:
 		# Exclude the vehicle's coarse convex self-hull (it encloses the boxes, can't self-block); FOREIGN
 		# walls still block.
 		return not _line_of_sight_blocked(box.global_position, [veh])
+	# A seat sits inside the vehicle's coarse convex hull, which would always hide it: excluded, as for a
+	# handle. FOREIGN walls still block; the shut door is the door_id rule's (Vehicle._seat_door_blocked).
+	if target is VehicleSeat:
+		var seat_veh: Node = (target as VehicleSeat).vehicle()
+		return not _line_of_sight_blocked((target as VehicleSeat).aim_point(), [seat_veh])
 	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
 	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
 	return _first_solid_hit_is(target)

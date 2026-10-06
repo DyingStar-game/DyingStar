@@ -22,6 +22,22 @@ extends Area3D
 ## use the vehicle's door_hinge_axis. A cab door turns about the vertical, a bay hatch usually does
 ## not, and one axis for the whole vehicle cannot serve both.
 @export var hinge_axis: Vector3 = Vector3.ZERO
+@export_group("Wind")
+## Area of the door leaf (m2) the relative wind presses on once it is open. -1 = measured from the
+## door's own mesh when its door_id ends with "_door" (a cab door), none otherwise (a hatch: hatch_fl);
+## 0 = the wind never shuts this door; a value = that area. See DoorWind.
+@export_range(-1.0, 5.0, 0.05) var wind_area_m2: float = -1.0
+## The direction of travel, in the vehicle's frame, whose airflow pushes this door SHUT: a cab door
+## hinged at its front edge is shut by driving forward, Vector3(0, 0, -1).
+@export var wind_shut_travel: Vector3 = Vector3.FORWARD
+## Width of the leaf (m), hinge to free edge: the wind's push acts at half of it. -1 = measured from
+## the door's mesh, like the area.
+@export_range(-1.0, 3.0, 0.05) var wind_width_m: float = -1.0
+## Torque (N.m) the door check — the strap that holds a door open — takes before it gives way. Higher
+## = the door stays open to a higher speed (twice the hold, 1.41 times the speed).
+@export_range(0.0, 500.0, 1.0) var wind_hold_nm: float = 25.0
+@export_group("")
+
 ## The collision box (a child CollisionShape3D) looked at from OUTSIDE, on foot — placed proud of the
 ## exterior door surface. Assigned in the inspector; used for the server line-of-sight check. Optional:
 ## unassigned = no sightline gate (the door just opens when looked at).

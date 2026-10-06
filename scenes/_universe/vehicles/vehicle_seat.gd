@@ -2,15 +2,25 @@
 class_name VehicleSeat
 extends Area3D
 
-## A seat zone on a vehicle — designer-placed and editor-adjustable, like the mining depot's
-## detection box. Drop one VehicleSeat per place on a vehicle scene, size its CollisionShape3D
-## (the "press E here" box, e.g. left of the cab for the driver, right for a passenger) and
+## A seat on a vehicle: LOOK at it and press E to sit there. Drop one VehicleSeat per place on a
+## vehicle scene, fit its CollisionShape3D to the seat itself (cushion and back, inside the cab) and
 ## position its SitPoint marker (where the occupant sits; for the driver, the eye point too).
+##
+## A look-at target like a door handle, on the `interactable` layer the player's InteractRay scans —
+## not a zone you walk into. It used to be a box beside the cab: whoever stood in it boarded, the
+## seat they were looking at or not, two overlapping boxes picked one at random, and the server took
+## the client's word for it. Now you board the seat you see, through its open door (a shut door's
+## handle box covers it and takes the aim first), and the server re-checks reach and sight
+## (PlayerServer "enter_vehicle", REACH_M and aim_point).
 ##
 ## The Vehicle discovers its seats automatically (group "vehicle_seat") — no signal wiring and
 ## no per-vehicle code: future vehicles just add VehicleSeat nodes matching their layout.
 
 enum Role {DRIVER, PASSENGER}
+
+## Farthest the eye may be from the seat (m) for the server to let a player sit: the InteractRay's
+## 3 m, plus a metre for the client being a step ahead of the server.
+const REACH_M := 4.0
 
 ## DRIVER controls the vehicle (drive input + HUD). PASSENGER just rides along.
 @export var role: Role = Role.PASSENGER
@@ -30,15 +40,13 @@ var occupant_mass: float = 0.0
 
 func _ready() -> void:
 	add_to_group("vehicle_seat")
-	# PASSIVE zone: the seat no longer MONITORS. A monitoring Area3D runs a full broad-phase
-	# overlap pass every physics frame for whatever falls inside it — wasted CPU, and on the
-	# server it ran for EVERY seat of EVERY vehicle even though nothing was wired there. Instead
-	# the seat is only MONITORABLE, on the dedicated vehicle-zone layer, and the player's own
-	# AreaDetector (the single monitor) reports when it walks in. One monitor per player, not one
-	# per seat. This makes the detection work identically on client and server.
+	add_to_group("interactable")  # look-at + E target via the InteractRay, like a door handle
+	# PASSIVE look-at target: it never runs an overlap pass of its own (monitoring off), it is only
+	# found by the player's InteractRay, which scans the `interactable` layer. Not the zone layer any
+	# more: the player's AreaDetector must not take it for a box to stand in.
 	monitoring = false
 	monitorable = true
-	collision_layer = Globals.VEHICLE_ZONE_LAYER
+	collision_layer = 1 << (Globals.LAYER_INTERACTABLE - 1)
 	collision_mask = 0
 
 func is_free() -> bool:
@@ -61,3 +69,16 @@ func sit_transform() -> Transform3D:
 ## The Vehicle that owns this seat (the seat is placed under the vehicle in the scene).
 func vehicle() -> Node:
 	return get_parent()
+
+
+## The point the server checks reach and sight to: the middle of the seat's box, else the seat node.
+func aim_point() -> Vector3:
+	for child in get_children():
+		if child is CollisionShape3D:
+			return (child as Node3D).global_position
+	return global_position
+
+
+## May an eye at [param eye] sit here: within REACH_M of the seat's aim point.
+func within_reach(eye: Vector3) -> bool:
+	return eye.distance_to(aim_point()) <= REACH_M

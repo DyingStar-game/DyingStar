@@ -23,6 +23,10 @@ const EXTINCTION_STEPS := 64
 @export var atmosphere_top: float = 0.0
 ## Surface gravity (m/s^2). Used at import to derive rayleigh_scale_height.
 @export var gravity: float = 0.0
+## Air pressure at the reference sphere (Pa), from the system JSON's pressure_bar. With the scale
+## height and the gravity it gives the air's density at any altitude (air_density). 0 = not imported
+## yet: regenerate the profiles (build_atmosphere_profiles.gd).
+@export var surface_pressure_pa: float = 0.0
 
 @export_group("Rayleigh")
 ## Scattering coefficient at ground level, 1/m, at 680 / 550 / 440 nm.
@@ -149,6 +153,16 @@ func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) 
 		) * (far - near)
 		near = far
 	return depth
+
+
+## Mass density of the air (kg/m3) at [param altitude] (m) above the reference sphere; 0 when the
+## pressure was never imported or the body has no air. Hydrostatic and isothermal, the same air the
+## scattering uses: rho0 = P0 / (g H) since H = R T / (M g), falling by e every scale height. On
+## Tarsis 3: 1.27 at the reference sphere, 0.77 at the villages' 5130 m.
+func air_density(altitude: float) -> float:
+	if surface_pressure_pa <= 0.0 or gravity <= 0.0 or rayleigh_scale_height <= 0.0:
+		return 0.0
+	return surface_pressure_pa / (gravity * rayleigh_scale_height) * rayleigh_density(altitude)
 
 
 ## Density profiles, normalised to 1 at ground level. Twins of the shader's.

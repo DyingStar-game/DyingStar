@@ -14,15 +14,15 @@ const LAYER_WORLD := 1
 const LAYER_PLAYER := 2
 const LAYER_VEHICLE := 3
 const LAYER_PROP := 4
-const LAYER_ZONE := 5         # passive proximity zones: seats, cargo, gravity, spawn (probe scans this)
-const LAYER_INTERACTABLE := 6  # look-at targets: door handles, consoles, carriables (InteractRay scans this)
+const LAYER_ZONE := 5         # passive proximity zones: cargo, gravity, spawn (probe scans this)
+const LAYER_INTERACTABLE := 6  # look-at targets: door handles, seats, consoles, carriables (InteractRay scans this)
 
 ## Precomputed bitmasks (bit = 1 << (index - 1)).
 const MASK_SOLID := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3)  # world | player | vehicle | prop
 const MASK_PROBE := (1 << 4)  # zone
 const MASK_OBSTACLE := (1 << 0) | (1 << 2) | (1 << 3)  # world | vehicle | prop — line-of-sight / tool rays
 
-## Back-compat alias: vehicle interaction zones (seats, cargo) sit on the `zone` layer (value 16).
+## Back-compat alias: vehicle interaction zones (the cargo bed) sit on the `zone` layer (value 16).
 ## These zones are MONITORABLE-only; the player's AreaDetector is the single monitor scanning `zone`.
 const VEHICLE_ZONE_LAYER := 16
 

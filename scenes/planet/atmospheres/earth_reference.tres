@@ -7,6 +7,7 @@ script = ExtResource("1_m3vse")
 planet_radius = 6371000.0
 atmosphere_top = 100000.0
 gravity = 9.80665
+surface_pressure_pa = 101325.0
 rayleigh_beta = Vector3(4.853790969408283e-06, 1.1494585181950692e-05, 2.8701883273808605e-05)
 rayleigh_scale_height = 8434.366304510038
 mie_beta = Vector3(2.1e-05, 2.1e-05, 2.1e-05)

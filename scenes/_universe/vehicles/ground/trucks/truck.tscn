@@ -27,7 +27,7 @@
 [ext_resource type="Script" uid="uid://fd76vdxmrck4" path="res://scenes/_universe/vehicles/vehicle_component_spec.gd" id="92_component_spec"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
-size = Vector3(0.7717459236309878, 1.889733397892087, 1.1162902846483576)
+size = Vector3(0.6, 0.9, 0.6)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_nd433"]
 size = Vector3(2.185217537648896, 0.851504158613352, 2.1983872583680295)
@@ -119,7 +119,7 @@ visible = false
 
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.1050032463626582)
-collision_layer = 16
+collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("3_seat")
@@ -128,7 +128,7 @@ sit_point = NodePath("SitPoint")
 door_id = "front_l_door"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatDriver" unique_id=1010304140]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1999999999970896, 0, 0.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.966, 0.079, 0.485)
 shape = SubResource("BoxShape3D_seat")
 
 [node name="SitPoint" type="Marker3D" parent="SeatDriver" unique_id=1846020284]
@@ -136,7 +136,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9660000000003492, 0.4290000
 
 [node name="SeatPassenger" type="Area3D" parent="." unique_id=418211017 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, -1.1050032463626582)
-collision_layer = 16
+collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("3_seat")
@@ -144,7 +144,7 @@ sit_point = NodePath("SitPoint")
 door_id = "front_r_door"
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPassenger" unique_id=1477251655]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1999999999970896, 0, 0.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.987, 0.079, 0.485)
 shape = SubResource("BoxShape3D_seat")
 
 [node name="SitPoint" type="Marker3D" parent="SeatPassenger" unique_id=1273635299]
@@ -192,6 +192,7 @@ spot_angle = 37.0
 
 [node name="SpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=331479837 groups=["vehicle_light"]]
 transform = Transform3D(1, 0, 0, 0, -0.6741734925434366, 0.7385730173461422, 0, -0.7385730173461422, -0.6741734925434367, -0.01612382468180939, 0.9271067390711144, -0.3518031843022533)
+light_energy = 0.5
 spot_range = 4.0
 spot_angle = 33.29
 

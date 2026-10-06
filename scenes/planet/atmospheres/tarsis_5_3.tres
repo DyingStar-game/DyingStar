@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AtmosphereProfile" format=3 uid="uid://dd4bcsm2qw4bl"]
+
+[ext_resource type="Script" uid="uid://bn505iggrkh12" path="res://scenes/planet/atmosphere_profile.gd" id="1_1osno"]
+
+[resource]
+script = ExtResource("1_1osno")
+planet_radius = 3632000.0
+atmosphere_top = 34300.0
+gravity = 3.5654623130906864
+surface_pressure_pa = 186000.0
+rayleigh_beta = Vector3(2.9682272149638547e-05, 6.947862207837944e-05, 0.0001701285217372281)
+rayleigh_scale_height = 11045.865960668989
+star_irradiance = 366.3008573650064
+star_angular_diameter = 0.3945749151803365
+star_temperature = 4831.333436607605
+star_color = Color(1, 0.77474326, 0.58699775, 1)

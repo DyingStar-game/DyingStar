@@ -5,6 +5,7 @@ const MainPanel = preload("res://addons/dyingstar/main_panel.tscn")
 const ServerPropsIO = preload("res://addons/dyingstar/server_props_io.gd")
 const PropSyncInspector = preload("res://addons/dyingstar/prop_sync_inspector.gd")
 const SharedMaterialRebuild = preload("res://addons/dyingstar/shared_material_rebuild.gd")
+const AtmosphereProfiles = preload("res://addons/dyingstar/build_atmosphere_profiles.gd")
 
 const ITEM_IMPORT := 0
 const ITEM_EXPORT := 1
@@ -13,6 +14,7 @@ const ITEM_UPDATE_DEFS := 3
 const ITEM_VIEW_DEFS := 4
 const ITEM_UPDATE_DEFS_LOCAL := 5
 const ITEM_REBUILD_MATERIALS := 6
+const ITEM_REBUILD_ATMOSPHERES := 7
 
 ## Local horizonserver checkout, next to this project: the PRIMARY source of the network definitions
 ## (no network, same branch as the server you run). GitHub is the fallback when it is absent.
@@ -129,6 +131,7 @@ func _install_menu() -> void:
 	add_tool_menu_item("DyingStar — Update network definitions (GitHub)", _on_update_defs)
 	add_tool_menu_item("DyingStar — View network definitions…", _on_view_defs)
 	add_tool_menu_item("DyingStar — Rebuild shared materials", _rebuild_shared_materials)
+	add_tool_menu_item("DyingStar — Rebuild atmosphere profiles", _rebuild_atmosphere_profiles)
 	_tool_menu_added = true
 
 
@@ -145,10 +148,14 @@ func _fill_popup(pm: PopupMenu) -> void:
 	pm.add_item("Update network definitions from GitHub", ITEM_UPDATE_DEFS)
 	pm.add_item("View network definitions…", ITEM_VIEW_DEFS)
 	pm.add_separator()
-	pm.add_item("Rebuild shared materials", ITEM_REBUILD_MATERIALS)
+	_add_item_with_icon(pm, &"StandardMaterial3D", "Rebuild shared materials", ITEM_REBUILD_MATERIALS)
 	pm.set_item_tooltip(pm.get_item_index(ITEM_REBUILD_MATERIALS),
 		"After adding or changing a material.json: regenerate the shared material library, then reimport\n"
 		+ "the models that still show one of its materials unlinked. A pull request checks it was done.")
+	_add_item_with_icon(pm, &"Environment", "Rebuild atmosphere profiles", ITEM_REBUILD_ATMOSPHERES)
+	pm.set_item_tooltip(pm.get_item_index(ITEM_REBUILD_ATMOSPHERES),
+		"After the system data changes (services/resourcesDynamic/data/system/tarsis.json): regenerate every\n"
+		+ "body's AtmosphereProfile — scattering, pressure, scale height — in scenes/planet/atmospheres/.")
 	pm.id_pressed.connect(_on_menu_id)
 	_refresh_menu_state()
 
@@ -201,6 +208,16 @@ func _find_menu_label(node: Node, labels: Array) -> Control:
 	return null
 
 
+## A menu line led by one of the editor's own icons ([param icon], e.g. the material sphere), or a plain
+## line if this editor does not have that icon.
+func _add_item_with_icon(pm: PopupMenu, icon: StringName, label: String, id: int) -> void:
+	var theme := EditorInterface.get_editor_theme()
+	if theme != null and theme.has_icon(icon, &"EditorIcons"):
+		pm.add_icon_item(theme.get_icon(icon, &"EditorIcons"), label, id)
+	else:
+		pm.add_item(label, id)
+
+
 func _on_menu_id(id: int) -> void:
 	match id:
 		ITEM_IMPORT:
@@ -217,12 +234,19 @@ func _on_menu_id(id: int) -> void:
 			_on_view_defs()
 		ITEM_REBUILD_MATERIALS:
 			_rebuild_shared_materials()
+		ITEM_REBUILD_ATMOSPHERES:
+			_rebuild_atmosphere_profiles()
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────
 
 func _rebuild_shared_materials() -> void:
 	SharedMaterialRebuild.new().run()
+
+
+## The same as File > Run on build_atmosphere_profiles.gd, one click away.
+func _rebuild_atmosphere_profiles() -> void:
+	AtmosphereProfiles.new()._run()
 
 
 func _on_import() -> void:
