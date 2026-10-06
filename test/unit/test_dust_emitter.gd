@@ -53,3 +53,9 @@ func test_a_dustless_ground_lays_nothing() -> void:
 	var emitter := DustEmitter.new(actor, dust)
 	emitter.puff(actor.global_position, &"metal", 1.0, Vector3.ZERO)
 	assert_eq(frame.get_child_count(), 1, "only the actor: no anchor for no dust")
+
+
+## In air the dust sinks with the body's gravity, not with its air's density: held up by the viscosity.
+func test_dust_settles_with_the_bodys_gravity() -> void:
+	assert_almost_eq(DustEmitter.settle_in_air(0.6, 9.81), 0.6, 1e-6, "Earth: as written")
+	assert_almost_eq(DustEmitter.settle_in_air(0.6, 3.14), 0.6 * 3.14 / 9.81, 1e-6, "a light moon: slower")

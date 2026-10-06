@@ -653,6 +653,10 @@ var _roll_level: float = 0.0
 var _scrub_family: StringName = &""
 var _scrub_family_age: float = 999.0
 var _dust: VehicleDust = null  # client: the tyres' dust, built on first use (see VehicleDust)
+## Client: the speed (km/h, forward positive) the wheels are SHOWN rolling at, from the replica's own
+## motion (see _update_wheels_visual) — what the tyres' dust follows. It is the only speed a set piece
+## has: the menu's trucks are frozen and carried (StageDriver), their physics speed stays at zero.
+var shown_speed_kmh: float = 0.0
 var _scrub_last_sample: AudioStream = null
 var _wheels: Array[VehicleWheel3D] = []
 ## Tick counter for the grip diagnostic (see _log_wheel_contacts).
@@ -2235,6 +2239,7 @@ func _process(delta: float) -> void:
 	# Drawn as a replica that has not heard yet: the rest pose, rolling with the moves it is given.
 	if freeze and not _is_networked() and not GameOrchestrator.is_server():
 		_update_wheels_visual(delta)
+		_update_dust(delta)  # a carried truck still raises its dust: it is seen driving
 		return
 	if not _is_networked() or GameOrchestrator.is_server():
 		return
@@ -2409,6 +2414,7 @@ func _update_wheels_visual(delta: float) -> void:
 	var vel: Vector3 = position - _wheel_last_pos
 	_wheel_last_pos = position
 	var fwd_speed: float = vel.dot(-transform.basis.z) / maxf(delta, 0.0001)
+	shown_speed_kmh = fwd_speed * 3.6
 	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
 	var index: int = 0
 	for wheel in _wheels:

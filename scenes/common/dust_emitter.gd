@@ -30,6 +30,8 @@ const ANCHOR_RADIUS_M: float = 1000.0
 const CULL_DISTANCE_M: float = 90.0
 ## How often (s) the ground colour and the body's air are read again: both change over metres, not frames.
 const GROUND_REFRESH_S: float = 0.5
+## The gravity SurfaceDust's air_settle is written for (m/s²).
+const EARTH_GRAVITY: float = 9.81
 
 static var _shader: Shader = null
 static var _process_shader: Shader = null
@@ -43,6 +45,7 @@ var _ground_color: Color = Color(0.55, 0.48, 0.4)
 var _airless: bool = false
 var _gravity: float = 9.8
 var _ground_read_at: float = -INF  # seconds (ticks); -INF = read at the next puff
+
 
 
 ## `capacity`: particles alive at once (debit × lifetime must fit, or the oldest are recycled early).
@@ -196,6 +199,13 @@ func _refresh_ground(global_pos: Vector3) -> void:
 	_configure()
 
 
+## The settling of dust in air on a body of surface gravity [param gravity]: [param earth_settle] is
+## SurfaceDust.air_settle, written for the Earth's 9.81 m/s². Held up by the air's viscosity, a grain
+## sinks at a speed proportional to g, and the viscosity of a gas barely depends on its pressure.
+static func settle_in_air(earth_settle: float, gravity: float) -> float:
+	return earth_settle * maxf(gravity, 0.0) / EARTH_GRAVITY
+
+
 ## Push the air of the current body into the process shader.
 func _configure() -> void:
 	if not is_instance_valid(_particles):
@@ -208,6 +218,6 @@ func _configure() -> void:
 		process.set_shader_parameter(&"drag", 0.0)
 		process.set_shader_parameter(&"growth", 1.0)
 	else:
-		process.set_shader_parameter(&"settle", _dust.air_settle)
+		process.set_shader_parameter(&"settle", settle_in_air(_dust.air_settle, _gravity))
 		process.set_shader_parameter(&"drag", _dust.air_drag)
 		process.set_shader_parameter(&"growth", _dust.air_growth)
