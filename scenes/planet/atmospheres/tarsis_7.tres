@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AtmosphereProfile" format=3 uid="uid://b8j0750n4nmfr"]
+
+[ext_resource type="Script" uid="uid://bn505iggrkh12" path="res://scenes/planet/atmosphere_profile.gd" id="1_ahp83"]
+
+[resource]
+script = ExtResource("1_ahp83")
+planet_radius = 3515096.8133196603
+atmosphere_top = 45090.4402809602
+gravity = 3.5652847517833637
+surface_pressure_pa = 1866.3157427424098
+rayleigh_beta = Vector3(5.06165431505915e-07, 1.1904103008848781e-06, 2.9377885732897365e-06)
+rayleigh_scale_height = 5905.202789519216
+star_irradiance = 6.896071233821686
+star_angular_diameter = 0.054139352554733386
+star_temperature = 4831.333436607605
+star_color = Color(1, 0.77474326, 0.58699775, 1)

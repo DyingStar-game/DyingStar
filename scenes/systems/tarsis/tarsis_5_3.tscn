@@ -5,10 +5,12 @@
 [ext_resource type="Material" uid="uid://dnuxm1icjla6l" path="res://assets/_universe/environment/terrain/terrain_biome.tres" id="3_r7ecc"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="4_318nv"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="5_u2khg"]
+[ext_resource type="Resource" path="res://scenes/planet/atmospheres/tarsis_5_3.tres" id="atmosphere"]
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("2_4gew4")
 planet_name = "tarsis_5_3"
+atmosphere_profile = ExtResource("atmosphere")
 surface_gravity = 3.57
 chunk_export_depth = 6
 terrain_material = ExtResource("3_r7ecc")

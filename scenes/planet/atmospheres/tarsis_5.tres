@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AtmosphereProfile" format=3 uid="uid://bndt5nkuwjjuc"]
+
+[ext_resource type="Script" uid="uid://bn505iggrkh12" path="res://scenes/planet/atmosphere_profile.gd" id="1_huayo"]
+
+[resource]
+script = ExtResource("1_huayo")
+planet_radius = 69291708.0302848
+atmosphere_top = 530605.6844439841
+gravity = 11.106076443163042
+surface_pressure_pa = 9672393.49660605
+rayleigh_beta = Vector3(0.00016943140149061639, 0.00039589388719107497, 0.0009665378105250856)
+rayleigh_scale_height = 43461.72308309973
+star_irradiance = 366.3008573650064
+star_angular_diameter = 0.3945749151803365
+star_temperature = 4831.333436607605
+star_color = Color(1, 0.77474326, 0.58699775, 1)

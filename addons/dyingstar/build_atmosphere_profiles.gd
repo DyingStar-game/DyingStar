@@ -10,8 +10,8 @@ extends EditorScript
 ## never integrates anything at runtime. The written .tres files are derived --
 ## never hand-edit them, regenerate them (same rule as build_shared_materials).
 ##
-## Run it from the script editor (File > Run, or Ctrl+Shift+X) after the system
-## data changes.
+## Run it after the system data changes: the editor menu DyingStar > Rebuild atmosphere profiles, or
+## from the script editor (File > Run, or Ctrl+Shift+X).
 ##
 ## The Mie/haze parameters cannot be derived from a gas mix: they come from an
 ## offline Mie-scattering computation on the suspended dust, and are pinned in
@@ -151,6 +151,8 @@ func _build_system(system: Dictionary, report: Report) -> void:
 	var planets: Array = structured.get("planets", [])
 	for index in planets.size():
 		_build_planet(planets[index], index, flat, star, report)
+		for moon: Dictionary in planets[index].get("moons", []):
+			_build_moon(moon, index, planets[index], star, report)
 
 
 ## Star constants shared by every body. temp_K is RE-DERIVED from luminosity and
@@ -186,41 +188,99 @@ func _read_star(structured: Dictionary, report: Report) -> Dictionary:
 
 func _build_planet(planet: Dictionary, index: int, flat: Dictionary, star: Dictionary, report: Report) -> void:
 	var planet_name := "tarsis_%d" % (index + 1)
-	var display_name := str(flat.get("P%d_Name" % (index + 1), planet_name))
 	var atmosphere: Dictionary = planet.get("atmosphere", {})
-	var gases: Dictionary = atmosphere.get("gases_pct", {})
-	var thickness_km: float = float(atmosphere.get("thickness_km", 0.0))
-	if gases.is_empty() or thickness_km <= 0.0:
-		report.skipped.append("%s (%s): airless" % [planet_name, display_name])
-		return
+	var radius: float = float(planet.get("radius_km", 0.0)) * 1000.0
+	_build_body({
+		"name": planet_name,
+		"display": str(flat.get("P%d_Name" % (index + 1), planet_name)),
+		"gases": atmosphere.get("gases_pct", {}),
+		"pressure_bar": float(atmosphere.get("pressure_bar", 0.0)),
+		"thickness_km": float(atmosphere.get("thickness_km", 0.0)),
+		"temperature": float(flat.get("P%d_T_Surface_K" % (index + 1), 0.0)),
+		"radius": radius,
+		"gravity": G_CONST * float(planet.get("mass_Me", 0.0)) * M_EARTH / (radius * radius) if radius > 0.0 else 0.0,
+		"distance": float(planet.get("semi_major_AU", 0.0)) * AU,
+	}, star, report)
+
+
+## A moon's air, by the same physics as a planet's: written as tarsis_<planet>_<moon>, the name of its
+## scene. The JSON nests it under atmosphere.meta and gives no surface temperature: the mean of its day
+## and night ones stands for it (its equilibrium one when they are missing). The JSON also publishes a
+## scale height, which the moon's own mass, radius and gases contradict (P5_M2: 7.6 km published,
+## R T / (M g) = 17.8 km): the derived one is used, as for a planet, and the gap reported.
+func _build_moon(moon: Dictionary, planet_index: int, planet: Dictionary, star: Dictionary,
+		report: Report) -> void:
+	var atmosphere: Dictionary = moon.get("atmosphere", {})
+	var meta: Dictionary = atmosphere.get("meta", {})
+	var temps: Dictionary = moon.get("temperatures", {})
+	var temperature: float = float(temps.get("Teq_K", 0.0))
+	if temps.has("T_day_K") and temps.has("T_night_K"):
+		temperature = 0.5 * (float(temps["T_day_K"]) + float(temps["T_night_K"]))
+	var radius: float = float(moon.get("radius_km", 0.0)) * 1000.0
+	var mass: float = float(moon.get("mass_kg", 0.0))
+	if mass <= 0.0:
+		mass = float(moon.get("mass_Me", 0.0)) * M_EARTH
+	var body_name := "tarsis_%d_%d" % [planet_index + 1, int(moon.get("index", 0))]
+	var profile := _build_body({
+		"name": body_name,
+		"display": str(moon.get("name", body_name)),
+		"gases": atmosphere.get("gases_pct", {}),
+		"pressure_bar": float(meta.get("pressure_bar", 0.0)),
+		"thickness_km": float(meta.get("thickness_km", 0.0)),
+		"temperature": temperature,
+		"radius": radius,
+		"gravity": G_CONST * mass / (radius * radius) if radius > 0.0 else 0.0,
+		"distance": float(planet.get("semi_major_AU", 0.0)) * AU,  # the star sees the moon where its planet is
+	}, star, report)
+	var published_km: float = float(meta.get("scale_height_km", 0.0))
+	if profile != null and published_km > 0.0:
+		var derived_km: float = profile.rayleigh_scale_height / 1000.0
+		if absf(derived_km - published_km) > 0.2 * published_km:
+			report.warnings.append("%s (%s): the JSON's scale height %.1f km contradicts its mass, radius and gases "
+					% [body_name, moon.get("name", ""), published_km]
+					+ "(R T / (M g) = %.1f km). The derived one is used." % derived_km)
+
+
+## One body's profile from [param body] {name, display, gases, pressure_bar, thickness_km, temperature,
+## radius, gravity, distance}, written to OUTPUT_DIR; null when it was skipped (and why is reported).
+func _build_body(body: Dictionary, star: Dictionary, report: Report) -> AtmosphereProfile:
+	var body_name: String = body["name"]
+	var display_name: String = body["display"]
+	var gases: Dictionary = body["gases"]
+	var thickness_km: float = body["thickness_km"]
+	var pressure_bar: float = body["pressure_bar"]
+	if gases.is_empty() or thickness_km <= 0.0 or pressure_bar <= 0.0:
+		report.skipped.append("%s (%s): airless" % [body_name, display_name])
+		return null
 	var unknown := _unknown_gases(gases)
 	if not unknown.is_empty():
 		report.skipped.append(
-			"%s (%s): no sourced refractivity for %s" % [planet_name, display_name, ", ".join(unknown)]
+			"%s (%s): no sourced refractivity for %s" % [body_name, display_name, ", ".join(unknown)]
 		)
-		return
-	var temperature: float = float(flat.get("P%d_T_Surface_K" % (index + 1), 0.0))
+		return null
+	var temperature: float = body["temperature"]
 	if temperature <= 0.0:
-		report.skipped.append("%s (%s): no surface temperature" % [planet_name, display_name])
-		return
+		report.skipped.append("%s (%s): no surface temperature" % [body_name, display_name])
+		return null
 
-	var mix := _normalised_mix(gases, planet_name, display_name, report)
-	var radius: float = float(planet.get("radius_km", 0.0)) * 1000.0
-	var gravity: float = G_CONST * float(planet.get("mass_Me", 0.0)) * M_EARTH / (radius * radius)
-	var distance: float = float(planet.get("semi_major_AU", 0.0)) * AU
+	var mix := _normalised_mix(gases, body_name, display_name, report)
+	var gravity: float = body["gravity"]
+	var distance: float = body["distance"]
 
 	var profile := AtmosphereProfile.new()
-	profile.planet_radius = radius
+	profile.planet_radius = body["radius"]
 	profile.atmosphere_top = thickness_km * 1000.0
 	profile.gravity = gravity
 	profile.rayleigh_scale_height = _scale_height(mix, temperature, gravity)
-	profile.rayleigh_beta = _rayleigh_beta(mix, float(atmosphere.get("pressure_bar", 0.0)), temperature)
+	profile.rayleigh_beta = _rayleigh_beta(mix, pressure_bar, temperature)
+	profile.surface_pressure_pa = pressure_bar * 1e5  # air_density: the doors' wind
 	profile.star_temperature = star["temperature"]
 	profile.star_color = star["color"]
 	profile.star_irradiance = star["luminosity_w"] / (4.0 * PI * distance * distance)
 	profile.star_angular_diameter = rad_to_deg(2.0 * atan(star["radius_m"] / distance))
-	_apply_haze(profile, planet_name, display_name, report)
-	_write_profile(profile, planet_name, report)
+	_apply_haze(profile, body_name, display_name, report)
+	_write_profile(profile, body_name, report)
+	return profile
 
 
 ## Gas fractions, renormalised to 1. The JSON publishes percentages that do not
@@ -394,6 +454,7 @@ func _build_earth_reference(report: Report) -> void:
 	profile.gravity = EARTH_GRAVITY
 	profile.rayleigh_scale_height = _scale_height(EARTH_MIX, EARTH_TEMPERATURE, EARTH_GRAVITY)
 	profile.rayleigh_beta = _rayleigh_beta(EARTH_MIX, EARTH_PRESSURE_BAR, EARTH_TEMPERATURE)
+	profile.surface_pressure_pa = EARTH_PRESSURE_BAR * 1e5
 	# Haze and ozone are measured, not derived from a gas mix.
 	profile.mie_beta = Vector3(2.1e-05, 2.1e-05, 2.1e-05)
 	profile.mie_g = 0.76
