@@ -218,7 +218,7 @@ static func weather_here(body: Node3D) -> Dictionary:
 	var planet : Planet = Planet.of(body)
 	if planet == null:
 		return {}
-	return planet.weather_at(body.global_position)
+	return planet.weather_local_at(body.global_position)
 
 
 ## What the Weather section says, from a WeatherSampler sample: wind (speed, where it comes from),
@@ -251,6 +251,11 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 		ReadoutFormat.escape("where: lon %.2f  lat %.2f  alt %.0f m" % [float(sample.get("lon_deg", 0.0)),
 			float(sample.get("lat_deg", 0.0)), float(sample.get("altitude_m", 0.0))]),
 	]
+	if sample.has("gust_factor"):
+		var axis: Vector2 = sample.get("canyon_axis", Vector2.ZERO)
+		out.insert(1, ReadoutFormat.escape("local: regional %.0f km/h   gust x%.2f   canyon depth %.0f%% axis (%.2f, %.2f)" % [
+			float(sample.get("wind_mean_speed_m_s", 0.0)) * 3.6, float(sample.get("gust_factor", 1.0)),
+			float(sample.get("canyon_depth", 0.0)) * 100.0, axis.x, axis.y]))
 	return out
 
 

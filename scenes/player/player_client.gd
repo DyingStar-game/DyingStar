@@ -1942,7 +1942,7 @@ func _update_weather_audio(delta: float) -> void:
 		return
 	_weather_audio_age = 0.0
 	var planet: Planet = Planet.of(player)
-	var sample: Dictionary = planet.weather_at(player.global_position) if planet != null else {}
+	var sample: Dictionary = planet.weather_local_at(player.global_position) if planet != null else {}
 	_weather_audio.update(sample, is_instance_valid(player._seat_node))
 
 ## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,

@@ -1036,13 +1036,55 @@ var _climate_profile_looked_up: bool = false
 var _climate_profile_by_name: ClimateProfile = null
 
 
-## The wind at a world position as a WORLD vector (m/s): the sample's (east, north) carried onto the
-## ground's axes in the body frame, then through this body's basis (which spins on a client). Zero
-## without weather. What the dust, the vegetation and the physics push with.
+## The wind at a world position as a WORLD vector (m/s) — the LOCAL wind (canyon, gust: weather_local_at):
+## the sample's (east, north) carried onto the ground's axes in the body frame, then through this
+## body's basis (which spins on a client). Zero without weather. What the dust, the vegetation and
+## the physics push with.
 func wind_world_at(world_pos: Vector3) -> Vector3:
-	var sample: Dictionary = weather_at(world_pos)
+	var sample: Dictionary = weather_local_at(world_pos)
 	if sample.is_empty():
 		return Vector3.ZERO
 	var axes: Array = WeatherSampler.local_axes(sample["lon_deg"], sample["lat_deg"])
 	var local: Vector3 = axes[0] * float(sample["wind_east_m_s"]) + axes[1] * float(sample["wind_north_m_s"])
 	return global_basis.orthonormalized() * local
+
+
+## The weather at a world position with the wind WHERE YOU STAND (WeatherLocal): the canyon's channelling
+## and shelter under the point, the gust of the moment on the shared clock. The regional wind stays
+## under wind_mean_*. {} without a climate profile.
+func weather_local_at(world_pos: Vector3) -> Dictionary:
+	var sample: Dictionary = weather_at(world_pos)
+	if sample.is_empty():
+		return sample
+	var profile: ClimateProfile = climate_profile()
+	var gust: float = WeatherLocal.gust_factor(profile.weather_seed, float(sample["lon_deg"]), float(sample["lat_deg"]),
+			Globals.sim_time())
+	return WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms)
+
+
+## The trench of the corundum crack network under a world position: {"depth": 0..1 (1 on the floor of a
+## trench, fading to 0 one trench-depth above it; 0 on the plateau, off corundum, in a POI's sphere or
+## on a massif), "axis": unit (east, north) along the trench}. {} on a body without the network.
+func canyon_at(world_pos: Vector3) -> Dictionary:
+	if planet_data == null or not planet_data.corundum_default_biome:
+		return {}
+	if planet_data.crack_width_m <= 0.0 or planet_data.crack_spacing_m <= 0.0:
+		return {}
+	var dir: Vector3 = local_dir_of(world_pos)
+	if dir.is_zero_approx():
+		return {}
+	var edge: float = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(dir, planet_data.radius,
+			planet_data.crack_spacing_m, planet_data.crack_width_m, 0.0, planet_data.crack_noise())
+	if edge >= planet_data.crack_width_m * 0.5:
+		return {"depth": 0.0, "axis": Vector2.ZERO}
+	var depth: float = CrackCarve.depth_factor(planet_data, dir, null)
+	if depth <= 0.0:
+		return {"depth": 0.0, "axis": Vector2.ZERO}
+	# Above the floor the trench's wind fades out over the trench's own depth: a flyer feels the plateau's.
+	var above: float = (world_pos - global_position).length() - planet_data.crack_aware_surface_dist(dir)
+	depth *= clampf(1.0 - above / maxf(planet_data.crack_depth_m, 1.0), 0.0, 1.0)
+	var axis: Vector3 = ArideDesertCorundumPlateauTerrain.crack_axis(dir, planet_data.radius,
+			planet_data.crack_spacing_m, planet_data.crack_noise())
+	var ll: Vector2 = HEALPix.vec2lonlat(dir)
+	var axes: Array = WeatherSampler.local_axes(ll.x, ll.y)
+	return {"depth": depth, "axis": Vector2(axis.dot(axes[0]), axis.dot(axes[1])).normalized()}

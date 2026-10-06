@@ -125,6 +125,21 @@ static func crack_cell(dir: Vector3, radius: float, spacing_m: float,
 	return [q, _voronoi_site(q, nz)]
 
 
+## The direction of the nearest crack at [param dir]: a unit vector in the body's frame, tangent to
+## the surface, along the trench — the edge plane's normal (across the crack) crossed with the
+## radial. Whoever reads the wind in a canyon needs it (WeatherLocal: what is channelled is the part
+## along this). Read at the same warped point as [method crack_cell]. Zero where the edge plane
+## stands radial (no trench to speak of).
+static func crack_axis(dir: Vector3, radius: float, spacing_m: float, noise: CrackNoise = null) -> Vector3:
+	var nz := noise if noise != null else CrackNoise.plain()
+	var q := nz.warp(dir * radius, dir, radius, nz.finest_m) / spacing_m
+	var dn: Vector4 = _voronoi_edge_dn(q, nz)
+	var axis: Vector3 = Vector3(dn.x, dn.y, dn.z).cross(dir)
+	if axis.length_squared() < 1e-12:
+		return Vector3.ZERO
+	return axis.normalized()
+
+
 ## The feature point of the cell holding [param x]: the first pass of
 ## [method _voronoi_gd], answered as an absolute position so it names the cell.
 static func _voronoi_site(x: Vector3, nz: CrackNoise) -> Vector3:
