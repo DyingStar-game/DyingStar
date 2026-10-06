@@ -2,6 +2,9 @@ class_name PlayerClient
 extends Node
 
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
+## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
+## before the editor has registered a new class_name must still compile the player.
+const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## Gap (m) between the HEAD BONE and the label. Measured from the crown of the animated skull, not
@@ -232,6 +235,12 @@ func setup() -> void:
 	player.get_node("UserInterface").add_child(hints)
 	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
 	_offer_play_hints()
+	# A dark patch behind the interaction prompt, fitted to its width, so it reads over a bright ground.
+	var shade : ColorRect = PROMPT_SHADE.new()
+	var hud : Control = player.interact_label.get_parent()
+	hud.add_child(shade)
+	hud.move_child(shade, 0)  # under the rest of the HUD
+	shade.follow(player.interact_label)
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -326,6 +335,7 @@ func _process(_delta: float) -> void:
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
 		# LOOKING at its handle — the handle rides the door now, so aiming works open or closed.
 		player.interact_label.hide()
+		player.interact_label.modulate = Color.WHITE  # no fit / remove / refusal tint carried from on foot
 		var seated_handle = _aimed_door_handle()
 		if seated_handle != null:
 			player.interact_label.text = _door_prompt(seated_handle)
@@ -368,7 +378,8 @@ func _process(_delta: float) -> void:
 
 
 	player.interact_label.hide()
-	player.interact_label.modulate = Color.WHITE  # only a refusal ("locked" below) is drawn in red
+	# White, but for a vehicle part: fitting it in green, taking it off in yellow, a refusal in red.
+	player.interact_label.modulate = Color.WHITE
 	player.can_interact = false
 	# An Interactable under the crosshair (a console) says what `action` will do to it. The press itself is
 	# handled with every other use of `action` (_unhandled_input), where it takes priority.
@@ -416,6 +427,7 @@ func _process(_delta: float) -> void:
 		elif player._carry_prompt == "install":
 			# dropping here bolts the part into a vehicle bay
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_FIT"))
+			player.interact_label.modulate = SettingsStyle.GOOD_COLOR
 			player.interact_label.show()
 		elif player._carry_prompt == "cargo":
 			# dropping here loads it onto the truck (sticks)
@@ -429,8 +441,13 @@ func _process(_delta: float) -> void:
 			var what: String = ""
 			if aimed != null and aimed.has_method("part_name"):
 				what = str(aimed.part_name())
-			player.interact_label.text = _prompt(&"action",
-					tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
+			if aimed is VehicleComponent and (aimed as VehicleComponent).is_fitted():
+				# Bolted into a vehicle: carrying it takes it OFF the vehicle — said so, in yellow.
+				player.interact_label.text = _prompt(&"action", tr("%%HUD_REMOVE_NAMED") % what)
+				player.interact_label.modulate = SettingsStyle.FAIR_COLOR
+			else:
+				player.interact_label.text = _prompt(&"action",
+						tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
 			player.interact_label.show()
 		elif player._carry_prompt == "locked":
 			# A part of a running vehicle: no key to press, only why — in red, it is a refusal.
