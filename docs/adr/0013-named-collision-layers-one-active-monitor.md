@@ -19,9 +19,11 @@ terrain shapes): measured on a client (2026-09-06), 150 such areas cost ~930 ms 
   Variants of one category are told apart by group, not by a new layer.
 - Movers scan the solids; statics scan nothing (mask 0), except the terrain chunk bodies, which
   still carry `MASK_SOLID` (deliberate or left over: not recorded).
-- An Area3D does not monitor. Detection zones (seats, cargo bays, spawn, screens) are monitorable
+- An Area3D does not monitor. Detection zones (cargo bays, spawn, screens) are monitorable
   only, on `zone`; the player's own `AreaDetector`, scanning `zone` only, is the single active
-  monitor. An area that must detect joins the `active_monitor` group, like a gravity area, which
+  monitor. Look-at targets (door handles, vehicle seats, consoles) are monitorable only, on
+  `interactable`, found by the player's InteractRay: you board the seat you look at, and the server
+  re-checks reach and sight (#366). An area that must detect joins the `active_monitor` group, like a gravity area, which
   pulls only what it detects ([0012](0012-jolt-at-60-hz-gravity-from-areas.md)).
 - On a client, a remote avatar has no collision layer or mask and its `AreaDetector` is off: the
   server owns every collision it takes part in.
