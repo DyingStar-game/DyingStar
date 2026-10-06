@@ -46,11 +46,11 @@ const MIN_AIR_KG_M3: float = 0.05
 
 ## The low haze: sheets this big (m), born this far around the camera (upwind-biased), this high over
 ## the ground, at most this many a second once the wind lifts the ground fully (twice its threshold).
-const HAZE_SIZE_M: float = 6.0
+const HAZE_SIZE_M: float = 9.0
 const HAZE_RING_M: float = 24.0
 const HAZE_HEIGHT_M: float = 1.2
 const HAZE_RATE_FULL: float = 7.0
-const HAZE_OPACITY: float = 0.2
+const HAZE_OPACITY: float = 0.12
 
 ## The saltation streaks: this big across (m), stretched along their motion by the process shader
 ## (STREAK_STRETCH_PER_MS: at 20 m/s 2.6 times longer than wide), hopping this high (m), at this share
@@ -60,7 +60,7 @@ const STREAK_STRETCH_PER_MS: float = 0.08
 const STREAK_HOP_M: float = 0.35
 const STREAK_SPEED_SHARE: float = 0.85
 const STREAK_UPWIND_M: float = 9.0
-const STREAK_SPREAD_M: float = 7.0
+const STREAK_SPREAD_M: float = 10.0
 const STREAK_LIFETIME_S: float = 0.8
 const STREAK_RATE_FULL: float = 80.0
 const STREAK_CAPACITY: int = 320
@@ -73,11 +73,11 @@ const CLOUD_STRETCH_PER_MS: float = 0.03
 const WISP_SIZE_M: float = 1.8
 const WISP_STRETCH_PER_MS: float = 0.12
 const WISP_UPWIND_M: float = 10.0
-const WISP_SPREAD_M: float = 12.0
+const WISP_SPREAD_M: float = 14.0
 const WISP_RISE_MS: float = 0.9
 const WISP_SPEED_SHARE: float = 0.7
 const WISP_LIFETIME_S: float = 3.5
-const WISP_OPACITY: float = 0.3
+const WISP_OPACITY: float = 0.22
 const WISP_RATE_FULL: float = 14.0
 const WISP_CAPACITY: int = 256
 
@@ -141,21 +141,22 @@ func update(delta: float, family: StringName) -> void:
 	_haze_owed += _haze_rate * delta
 	for _i in _take(_haze_owed):
 		_haze_owed -= 1.0
-		var around: Vector3 = birth_point(eye, _wind, up, _jitter(), HAZE_RING_M * 0.5, HAZE_RING_M, 0.0)
+		# All around the camera (a third of the ring upwind), not only ahead of the wind.
+		var around: Vector3 = birth_point(eye, _wind, up, _jitter(), HAZE_RING_M * 0.3, HAZE_RING_M, 0.0)
 		# Through the stretched emitter: a sheet is a veil laid along the wind, never a ball.
 		_wisps.puff(on_the_ground(planet, around, up, HAZE_HEIGHT_M * randf_range(0.4, 1.2)), family,
 				HAZE_OPACITY, _wind * 0.9, 1, 1.5, HAZE_SIZE_M)
 	_streak_owed += _streak_rate * delta
 	for _i in _take(_streak_owed):
 		_streak_owed -= 1.0
-		var at: Vector3 = birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M, STREAK_SPREAD_M, 0.0)
+		var at: Vector3 = birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M * 0.35, STREAK_SPREAD_M, 0.0)
 		var hop: Vector3 = up * STREAK_HOP_M * randf_range(0.4, 1.0)
 		_streaks.puff(on_the_ground(planet, at, up, randf_range(0.03, 0.25)), family, 1.0,
 				_wind * STREAK_SPEED_SHARE + hop, 1, 0.4, STREAK_SIZE_M)
 	_wisp_owed += _wisp_rate * delta
 	for _i in _take(_wisp_owed):
 		_wisp_owed -= 1.0
-		var foot: Vector3 = birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M, WISP_SPREAD_M, 0.0)
+		var foot: Vector3 = birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M * 0.35, WISP_SPREAD_M, 0.0)
 		var rise: Vector3 = up * WISP_RISE_MS * randf_range(0.5, 1.2)
 		_wisps.puff(on_the_ground(planet, foot, up, randf_range(0.0, 0.3)), family, WISP_OPACITY,
 				_wind * WISP_SPEED_SHARE + rise, 1, 0.8, WISP_SIZE_M)

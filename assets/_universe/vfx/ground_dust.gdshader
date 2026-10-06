@@ -19,7 +19,7 @@ render_mode blend_mix, depth_draw_never, cull_disabled, specular_disabled;
 // INSTANCE_CUSTOM: x = spin angle, y = age (s), w = lifetime (s) — see ground_dust_process.gdshader.
 
 // Overall opacity at full density.
-uniform float opacity : hint_range(0.0, 1.0, 0.01) = 0.55;
+uniform float opacity : hint_range(0.0, 1.0, 0.01) = 0.32;
 // Width (0..1 of the radius) of the blob's soft edge.
 uniform float edge_softness : hint_range(0.0, 1.0, 0.01) = 0.6;
 // Distance (m) over which the dust fades out as it meets the ground or a wall.
@@ -96,14 +96,14 @@ void fragment() {
 	// noise pushes in and out so no two puffs share a shape. The quad's own edge stays clean.
 	float outline = noise(centered * 1.6 + vec2(spin * 2.3, 0.7)) - 0.5;
 	float r = length(centered) * (1.0 + edge_ragged * outline);
-	float blob = exp(-r * r * (2.0 + 2.0 * edge_softness)) * (1.0 - smoothstep(0.8, 1.0, length(centered)));
+	float blob = exp(-r * r * (1.4 + 1.2 * edge_softness)) * (1.0 - smoothstep(0.8, 1.0, length(centered)));
 	// Ragged and drifting: the noise is offset by the spin (each puff its own pattern), warped into
 	// wisps by a coarser noise, and eaten away as the puff ages, so it frays rather than fades as a disc.
 	// A streak reads the noise along its length, so the grain is streaked, not blotched.
 	vec2 p = vec2(centered.x * max(stretch, 1.0), centered.y) * 2.5 + vec2(spin * 3.1, age * 1.5);
 	p += wisp * 1.2 * vec2(noise(p * 0.7 + 11.3) - 0.5, noise(p * 0.7 - 4.9) - 0.5);
 	float n = fbm3(p);
-	blob *= smoothstep(0.1, 0.6, n + 0.35 - age * 0.3);
+	blob *= smoothstep(0.22, 0.72, n + 0.35 - age * 0.3);
 	float life = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(0.3, 1.0, age));
 	ALBEDO = COLOR.rgb;
 	ALPHA = blob * life * COLOR.a * opacity;
@@ -122,6 +122,8 @@ void light() {
 	float g = scatter_g;
 	float hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5);
 	float hg_side = (1.0 - g * g) / pow(1.0 + g * g, 1.5);  // the phase seen from the side: the reference
-	float glow = forward_glow * max(hg / hg_side - 1.0, 0.0);
+	// Compressed: the raw phase is ×40 straight into the sun, which no exposure survives; the log keeps
+	// the glow a few times the side-lit puff at most (×3.7 at forward_glow 1).
+	float glow = forward_glow * log(1.0 + max(hg / hg_side - 1.0, 0.0));
 	DIFFUSE_LIGHT += (wrap + glow) * ATTENUATION * LIGHT_COLOR;
 }
