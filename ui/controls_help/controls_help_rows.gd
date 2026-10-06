@@ -24,6 +24,8 @@ const SECTIONS : Array = [
 		{"label": "%%ACT_PERFORATE", "actions": [&"perforate"]},
 	]],
 	["%%KM_GROUP_VEHICLE", [
+		{"label": "%%ACT_VEHICLE_ACCELERATE", "actions": [&"vehicle_accelerate"]},
+		{"label": "%%ACT_VEHICLE_DECELERATE", "actions": [&"vehicle_decelerate"]},
 		{"label": "%%ACT_VEHICLE_IGNITION", "actions": [&"vehicle_ignition"]},
 		{"label": "%%ACT_BRAKE", "actions": [&"brake"]},
 		{"label": "%%ACT_VEHICLE_LIGHTS", "actions": [&"vehicle_lights"]},

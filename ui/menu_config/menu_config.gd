@@ -76,7 +76,11 @@ const ACTION_GROUPS : Dictionary = {
 		"carry_rotate_ccw": "%%ACT_CARRY_ROTATE_CCW",
 		"carry_free_rotate": "%%ACT_CARRY_FREE_ROTATE",
 	},
+	# Accelerate and slow down are the vehicle's own, not the walk's: on the same keys by default, but a
+	# pad player can put them on the triggers without moving the walk off the stick.
 	"%%KM_GROUP_VEHICLE": {
+		"vehicle_accelerate": "%%ACT_VEHICLE_ACCELERATE",
+		"vehicle_decelerate": "%%ACT_VEHICLE_DECELERATE",
 		"vehicle_ignition": "%%ACT_VEHICLE_IGNITION",
 		"brake": "%%ACT_BRAKE",
 		"vehicle_lights": "%%ACT_VEHICLE_LIGHTS",

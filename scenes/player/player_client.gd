@@ -547,7 +547,8 @@ func _physics_process(delta: float) -> void:
 ## Owner: send our driving input to the server (only when it changes; the server holds it).
 ## `locked` means a panel owns the keyboard: we then send neutral, so nothing typed under it drives.
 func _send_drive_input(locked: bool) -> void:
-	var throttle: float = 0.0 if locked else Input.get_axis("move_back", "move_forward")
+	# The vehicle's own actions, not the walk's: a pad player rebinds them to the triggers alone.
+	var throttle: float = 0.0 if locked else Input.get_axis("vehicle_decelerate", "vehicle_accelerate")
 	var steer: float = 0.0 if locked else Input.get_axis("move_right", "move_left")
 	var braking: bool = false if locked else Input.is_action_pressed("brake")
 	if throttle == player._last_throttle and steer == player._last_steer and braking == player._last_brake:
@@ -1316,7 +1317,8 @@ func _offer_play_hints() -> void:
 		PlayHints.row([&"roll_left", &"roll_right"], "%%HINT_ROLL", 1),
 	], func() -> bool: return not seated.call() and player.floating, 5)
 	PlayHints.provide(self, &"driving", [
-		PlayHints.row(move, "%%HINT_DRIVE"), PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
+		PlayHints.row([&"vehicle_accelerate", &"move_left", &"vehicle_decelerate", &"move_right"], "%%HINT_DRIVE"),
+		PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
 		PlayHints.row(&"vehicle_lights"), PlayHints.row(&"vehicle_horn"), PlayHints.row(&"exit"),
 		PlayHints.row(&"vehicle_speed_limiter", "", 1),
 		PlayHints.row([&"vehicle_limiter_up", &"vehicle_limiter_down"], "%%HELP_LIMITER_SET", 1),
