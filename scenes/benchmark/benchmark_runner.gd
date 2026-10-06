@@ -59,7 +59,7 @@ static func availability() -> String:
 		return WHY_UNAVAILABLE
 	if player._seat_vehicle_uuid != "" or is_instance_valid(player._seat_node):
 		return WHY_UNAVAILABLE
-	if player.eva_mode or player.floating or player._owner_carrying or player.get_current_gravity_parent() == null:
+	if player.god_mode or player.floating or player._owner_carrying or player.get_current_gravity_parent() == null:
 		return WHY_UNAVAILABLE
 	return ""
 
