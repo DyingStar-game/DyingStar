@@ -7,9 +7,21 @@ extends RefCounted
 ## same point WITHOUT any network traffic — the same design as Planet._apply_spin for rotation. Feeding
 ## the elements from the network later stays a drop-in (same columns as the DB).
 ##
-## Verified numerically against the service for all 8 Tarsis planets: identical positions. The orbital
-## plane is XZ (y = 0, Godot Y-up), and the basis order Rz(argPeri)·Rx(inc)·Rz(node) mirrors the
-## service's Basis3D pre-multiplied accumulation exactly.
+## Conventions, shared with the service (its kepler-orbit.ts is the twin of this file, pinned by the
+## same closed-form test on both sides, test_kepler_orbit.gd / kepler-orbit.test.ts):
+## - the reference plane (the ecliptic for a planet, the planet's own plane for a moon) is XZ, with
+##   +Y as its north — the same axis every body spins about (Planet.spin_basis_at), so an axial tilt
+##   below 90° IS a prograde rotation, as it reads in the data, and a retrograde one is written like
+##   Venus's, as a tilt above 90°;
+## - the orbit runs COUNTER-CLOCKWISE seen from +Y, the sense of a positive turn about +Y and so the
+##   sense a body spins in: angular momentum along +Y;
+## - the perifocal frame reaches the reference frame through Ry(node)·Rx(inclination)·Ry(argPeri),
+##   the textbook Rz(Ω)·Rx(i)·Rz(ω) with the up axis renamed.
+##
+## ⚠️ Until 2026-10-06 the node and the periapsis were turned about Z — an axis lying IN the XZ
+## plane — which tipped every orbit out of the ecliptic by its node + periapsis (Tarsis 1 orbited in
+## a vertical plane) and ran them clockwise: the angle between a body's spin axis and its orbit was
+## never its tilt (SandBox 40° instead of 15°, six planets retrograde). Both sides changed together.
 
 const AU_M := 1.495978707e11
 const G := 6.6743e-11
@@ -41,11 +53,12 @@ func _init(periapsis_au: float, apoapsis_au: float, inc_rad: float, node_rad: fl
 	# system orbits faster than reality — reproduced here by passing the same scaled a and raw mass.
 	var mu: float = G * ((primary_mass_kg if primary_mass_kg > 0.0 else SOLAR_MASS_KG) + object_mass_kg)
 	_mean_motion = sqrt(mu / pow(_semi_major_axis_m, 3.0))
-	# Rz(argPeri)·Rx(inc)·Rz(node): outermost is the argument of periapsis, matching the service's
-	# identity.rotated(z,node).rotated(x,inc).rotated(z,argPeri) (rotated() pre-multiplies).
-	_basis = Basis(Vector3(0.0, 0.0, 1.0), arg_peri_rad) \
-			* Basis(Vector3(1.0, 0.0, 0.0), inc_rad) \
-			* Basis(Vector3(0.0, 0.0, 1.0), node_rad)
+	# Ry(node)·Rx(inc)·Ry(argPeri), outermost first: the periapsis is set within the orbital plane, the
+	# plane is tipped about the line of nodes (X), and the node is turned to its longitude about +Y.
+	# The service accumulates the same product with its pre-multiplying rotated(): argPeri, inc, node.
+	_basis = Basis(Vector3.UP, node_rad) \
+			* Basis(Vector3.RIGHT, inc_rad) \
+			* Basis(Vector3.UP, arg_peri_rad)
 	_mean_anomaly_epoch = mean_anomaly_rad
 
 
@@ -56,7 +69,8 @@ func position_at(t: float) -> Vector3:
 	var ecc_anomaly: float = _solve_kepler(mean_anomaly, _eccentricity)
 	var a: float = _semi_major_axis_m
 	var xp: float = a * (cos(ecc_anomaly) - _eccentricity)
-	var zp: float = a * sqrt(maxf(1.0 - _eccentricity * _eccentricity, 0.0)) * sin(ecc_anomaly)
+	# -sin: from +X toward -Z is the positive turn about +Y, so the orbit runs the way the body spins.
+	var zp: float = -a * sqrt(maxf(1.0 - _eccentricity * _eccentricity, 0.0)) * sin(ecc_anomaly)
 	return _basis * Vector3(xp, 0.0, zp)
 
 

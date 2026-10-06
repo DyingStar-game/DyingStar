@@ -11,19 +11,16 @@ extends KeplerOrbit
 ## only described against another plane, and everything written for moons (the client placement that
 ## cancels the spinning parent, the star map's orbit ring and panel) takes it as one.
 ##
-## ⚠️ KeplerOrbit turns its ascending node about Z, the service's convention for planets. About an
-## XZ orbital plane that is not a node at all, so it is given 0 here and the node is applied about the
-## body's spin axis instead.
-##
-## ⚠️ KeplerOrbit also runs its orbits CLOCKWISE seen from +Y (from +X toward +Z: angular momentum
-## along -Y), while a body spins counter-clockwise about +Y (Planet._place_at_time). Fed a plain
-## inclination, a station "like the ISS" came out RETROGRADE, at 128.4° instead of 51.6°: the solver
-## is given the supplement, so an inclination below 90° is prograde, as it is for a real station.
+## KeplerOrbit turns the ascending node about +Y and runs its orbits counter-clockwise seen from +Y,
+## the way a body spins (Planet.spin_basis_at): the inclination and the node are handed to it as they
+## are, and only the body's axial tilt remains to apply here, to carry the equator's +Y onto the spin
+## axis. (Until 2026-10-06 the solver turned the node about Z and ran clockwise, and this class had
+## to pass the supplement of the inclination and apply the node itself.)
 
 ## Metres. The orbit is circular: a station keeps its altitude.
 var radius_m: float = 0.0
 
-## Body equator (axial tilt) and ascending node, from the orbital plane to the parent frame.
+## Body equator (axial tilt), from the equatorial frame to the parent frame.
 var _to_parent: Basis = Basis.IDENTITY
 
 
@@ -32,9 +29,9 @@ var _to_parent: Basis = Basis.IDENTITY
 func _init(orbit_radius_m: float, inclination_rad: float, ascending_node_rad: float, phase_rad: float,
 		primary_mass_kg: float, axial_tilt_rad: float) -> void:
 	var r_au: float = orbit_radius_m / AU_M
-	super(r_au, r_au, PI - inclination_rad, 0.0, 0.0, phase_rad, primary_mass_kg, 0.0)
+	super(r_au, r_au, inclination_rad, ascending_node_rad, 0.0, phase_rad, primary_mass_kg, 0.0)
 	radius_m = orbit_radius_m
-	_to_parent = Basis(Vector3.BACK, axial_tilt_rad) * Basis(Vector3.UP, ascending_node_rad)
+	_to_parent = Basis(Vector3.BACK, axial_tilt_rad)
 
 
 ## The radius at which an orbit lasts [param period_s]: Kepler's third law, r³ = GM·T²/4π². With the
