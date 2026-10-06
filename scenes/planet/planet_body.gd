@@ -830,18 +830,50 @@ func daylight_at(world_pos: Vector3) -> float:
 		return 0.0
 	var profile: AtmosphereProfile = planet_data.atmosphere_profile if planet_data != null else null
 	if profile == null or not profile.has_atmosphere():
-		return daylight(null, 0.0, elevation)
+		return daylight(null, 0.0, elevation) * storm_transmittance_at(world_pos, elevation)
 	var key := Vector2i(roundi(elevation_of(world_pos) / DAYLIGHT_ALT_STEP_M),
 			roundi(elevation / DAYLIGHT_ELEV_STEP_DEG))
 	if _daylight_memo.has(key):
-		return _daylight_memo[key]
+		return _daylight_memo[key] * storm_transmittance_at(world_pos, elevation)
 	if _daylight_memo.size() >= DAYLIGHT_MEMO_MAX:
 		_daylight_memo.clear()
 	# From the rounded values, so the answer does not depend on which lamp asked first.
 	var light := daylight(profile, key.x * DAYLIGHT_ALT_STEP_M, key.y * DAYLIGHT_ELEV_STEP_DEG)
 	_daylight_memo[key] = light
-	return light
+	return light * storm_transmittance_at(world_pos, elevation)
 
+
+## The share of the direct beam a storm's dust lets through at [param world_pos] for a star
+## [param elevation_deg] high: Beer's law along the slant, exp(-τ / sin e), with τ the sampler's storm
+## dust over the point (the permanent veil is the atmosphere profile's, already in daylight()). 1
+## without weather. Memoised per half degree of ground and STORM_MEMO_S of the shared clock: a storm
+## moves over minutes, and every lamp of a village asks on the same tick.
+func storm_transmittance_at(world_pos: Vector3, elevation_deg: float) -> float:
+	if climate_profile() == null:
+		return 1.0
+	var ll: Vector2 = lonlat_of(world_pos)
+	var key := Vector3i(roundi(ll.x * 2.0), roundi(ll.y * 2.0), int(Globals.sim_time() / STORM_MEMO_S))
+	var tau: float
+	if _storm_tau_memo.has(key):
+		tau = _storm_tau_memo[key]
+	else:
+		if _storm_tau_memo.size() >= DAYLIGHT_MEMO_MAX:
+			_storm_tau_memo.clear()
+		tau = float(weather_at(world_pos).get("dust_tau", 0.0))
+		_storm_tau_memo[key] = tau
+	return storm_transmittance(tau, elevation_deg)
+
+
+## storm_transmittance_at's formula: exp(-[param dust_tau] / sin [param elevation_deg]), the slant floored
+## so a star on the horizon gives a number, not a division by zero.
+static func storm_transmittance(dust_tau: float, elevation_deg: float) -> float:
+	if dust_tau <= 0.0:
+		return 1.0
+	return exp(-dust_tau / maxf(sin(deg_to_rad(elevation_deg)), 0.01))
+
+
+const STORM_MEMO_S: float = 10.0
+var _storm_tau_memo: Dictionary = {}
 
 ## daylight_at's formula, from an [param altitude_m] over the reference sphere and the star's
 ## [param elevation_deg]; [param profile] null = no air.

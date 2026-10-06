@@ -1744,7 +1744,7 @@ func _view_half_angle(index: int) -> float:
 ## spheres. The ground keeps its tiles, its queue and its builds in flight; [method _refresh_ground]
 ## hangs it back on the new sphere of the same body.
 func _park_ground() -> void:
-	for node: Node in [_ground, _roads, _canyons]:
+	for node: Node in [_ground, _roads, _canyons, _weather]:
 		if node != null and is_instance_valid(node) and node.get_parent() != null:
 			node.get_parent().remove_child(node)
 	_ground_body = -1
