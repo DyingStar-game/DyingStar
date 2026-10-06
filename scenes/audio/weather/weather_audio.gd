@@ -16,6 +16,10 @@ extends AudioStreamPlayer
 
 const WIND_FULL_MS: float = 25.0
 const TAU_FULL: float = 2.0
+## The air the loops are written for (kg/m³): thinner air carries less (the noise of a wind is a dynamic
+## pressure, ½ρv², so the gain goes as the square root of the density), none carries nothing — the
+## wind of the ground is not heard from orbit, nor on a body without air.
+const REFERENCE_AIR_KG_M3: float = 1.0
 ## Seconds a gain takes to ramp to a new target (the weather is read every half second).
 const SMOOTH_S: float = 0.6
 ## Silence, in dB, for a layer out of its window.
@@ -69,9 +73,10 @@ func _ready() -> void:
 ## vehicle. Sets the targets; _process ramps the gains.
 func update(sample: Dictionary, inside: bool) -> void:
 	_inside = inside
+	var air: float = air_factor(sample)
 	for i in layers.size():
 		var layer: WeatherAudioLayer = layers[i]
-		_targets[i] = 0.0 if layer == null else gain_for(parameter_of(sample, layer.parameter), layer.from,
+		_targets[i] = 0.0 if layer == null else air * gain_for(parameter_of(sample, layer.parameter), layer.from,
 				layer.to, layer.fade_in, layer.fade_out)
 
 
@@ -88,6 +93,15 @@ func _process(delta: float) -> void:
 		if _inside:
 			db += inside_db
 		_sync.set_sync_stream_volume(i, maxf(db, SILENT_DB))
+
+
+## How much of the loops the air here carries, 0..1: the square root of the density over
+## REFERENCE_AIR_KG_M3, capped at 1. 0 for an empty sample (no weather: no air known).
+static func air_factor(sample: Dictionary) -> float:
+	if sample.is_empty():
+		return 0.0
+	var density: float = float(sample.get("air_density_kg_m3", 0.0))
+	return sqrt(clampf(density / REFERENCE_AIR_KG_M3, 0.0, 1.0))
 
 
 ## The value of [param parameter] in a sample: the wind, the dust, or the storm index (0..1, the

@@ -23,6 +23,14 @@ func test_the_storm_index_is_the_larger_of_wind_and_dust() -> void:
 	assert_eq(WeatherAudio.storm_index({"wind_speed_m_s": 60.0, "dust_tau": 9.0}), 1.0, "no more than a full storm")
 
 
+func test_thin_air_carries_less_and_none_carries_nothing() -> void:
+	assert_eq(WeatherAudio.air_factor({}), 0.0, "no weather, no air known: silence")
+	assert_eq(WeatherAudio.air_factor({"air_density_kg_m3": 0.0}), 0.0, "vacuum")
+	assert_almost_eq(WeatherAudio.air_factor({"air_density_kg_m3": 1.265}), 1.0, 1e-9, "Tarsis III at the ground")
+	assert_almost_eq(WeatherAudio.air_factor({"air_density_kg_m3": 0.25}), 0.5, 1e-9, "a quarter of the air: half the gain")
+	assert_almost_eq(WeatherAudio.air_factor({"air_density_kg_m3": 0.0125}), 0.112, 0.001, "50 km up on Tarsis III: -19 dB")
+
+
 func test_a_layer_reads_its_own_parameter() -> void:
 	var sample := {"wind_speed_m_s": 7.0, "dust_tau": 0.4}
 	assert_eq(WeatherAudio.parameter_of(sample, &"wind_speed_m_s"), 7.0)

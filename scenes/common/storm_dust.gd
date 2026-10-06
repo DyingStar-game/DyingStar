@@ -33,6 +33,8 @@ const GRAINS_PER_PUFF: int = 2
 const MAX_PUFFS_PER_FRAME: int = 8
 const CAPACITY: int = 256
 const LIFETIME_S: float = 3.0
+## Under this air density (kg/m³) nothing flies: a storm's grains are not met in orbit.
+const MIN_AIR_KG_M3: float = 0.05
 
 var _player: Player = null
 var _emitter: DustEmitter = null
@@ -120,6 +122,8 @@ func _resample() -> void:
 		return
 	var sample: Dictionary = planet.weather_at(_player.global_position)
 	if sample.is_empty():
+		return
+	if float(sample.get("air_density_kg_m3", 0.0)) < MIN_AIR_KG_M3:
 		return
 	_rate = rate_for(float(sample.get("dust_tau", 0.0)))
 	if _rate > 0.0:
