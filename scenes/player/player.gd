@@ -421,8 +421,6 @@ var _seat_vehicle_node: Node3D = null
 var _seat_node: Node3D = null
 # True when our seat is the driver seat (drive input + HUD + R). Passenger = just rides.
 var _seat_is_driver: bool = false
-# The VehicleSeat box the player stands in (set by our own AreaDetector); E takes that seat.
-var _nearby_seat: Node = null
 # The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
 # for the bed-walker weight (server) and to load a crate we drop while standing in it.
 var _in_vehicle_bed: Node = null
@@ -731,9 +729,6 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		# influence, hundreds of thousands of km out, not by this area — see
 		# PlayerServer._server_update_frame. (On the server each planet has its own physics world, so a
 		# body out in the world frame could never have overlapped this area anyway.)
-	elif area.is_in_group("vehicle_seat"):
-		# Our own monitor walked into a seat box: remember it so E takes that seat (client prompt).
-		_nearby_seat = area
 	elif area.is_in_group("vehicle_cargo"):
 		# We stepped into a bed on foot: add our weight to the load (server-authoritative), remember
 		# the bed so a dropped crate loads onto this truck, and RIDE it (become a child of the truck
@@ -756,9 +751,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 	if area.is_in_group("gravity"):
 		if gravity_parents.has(area):
 			gravity_parents.erase(area)
-	elif area.is_in_group("vehicle_seat"):
-		if _nearby_seat == area:
-			_nearby_seat = null
 	elif area.is_in_group("vehicle_cargo"):
 		var veh := area.get_parent()
 		if veh is Vehicle:

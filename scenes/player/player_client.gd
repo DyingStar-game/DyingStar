@@ -384,20 +384,22 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = _door_prompt(aimed_handle)
 			player.interact_label.show()
 
-	# Standing in a seat box (on foot): board, or say it's taken / that the door must be opened first.
-	if not player.interact_label.visible and is_instance_valid(player._nearby_seat) and player._seat_vehicle_uuid == "":
-		if _seat_is_taken(player._nearby_seat):
+	# Looking at a seat (on foot): board, or say it's taken / that the door must be opened first. A shut
+	# door's handle box covers the seat behind it and was answered above.
+	var aimed_seat: VehicleSeat = _aimed_seat() if not player.interact_label.visible else null
+	if aimed_seat != null:
+		if _seat_is_taken(aimed_seat):
 			player.interact_label.text = tr("%%HUD_SEAT_TAKEN")
 		elif player._owner_carrying:
 			# Before the door check on purpose: telling someone to open a door and then refusing
 			# them the seat for a reason we already knew would be a wasted trip.
 			player.interact_label.text = (tr("%%HUD_HANDS_FULL")
 					% ("[%s]" % InputLabel.for_action(&"action")))
-		elif not _seat_door_open(player._nearby_seat):
+		elif not _seat_door_open(aimed_seat):
 			player.interact_label.text = tr("%%HUD_DOOR_FIRST")
 		else:
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_SEAT_DRIVER"
-					if player._nearby_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
+					if aimed_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
 		player.interact_label.show()
 
 	# Carry/drop prompt (no other prompt showing). The SERVER decides it (it owns the collisions
@@ -907,14 +909,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		if handle != null and not player._owner_carrying:
 			_toggle_door(handle)
 			return
-		# Standing in a seat box: E boards — but only once the seat's gating door is open (open it
-		# first by looking at the handle). A seat with no door_id boards directly.
+		# Looking at a seat: E boards — but only once the seat's gating door is open (open it first by
+		# looking at the handle). A seat with no door_id boards directly. The server checks reach and
+		# sight again before it seats anyone.
 		# Carrying: fall through to the carry/drop handling below instead of boarding. Not merely
 		# refused here -- this branch ends in a `return`, which would swallow E and leave you unable to
-		# put the crate down while standing in the seat box.
-		if is_instance_valid(player._nearby_seat) and not player._owner_carrying:
-			if _seat_door_open(player._nearby_seat):
-				_enter_seat(player._nearby_seat)
+		# put the crate down while looking at a seat.
+		var seat: VehicleSeat = _aimed_seat()
+		if seat != null and not player._owner_carrying:
+			if _seat_door_open(seat):
+				_enter_seat(seat)
 			return
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
@@ -948,6 +952,7 @@ func _enter_seat(seat: Node) -> void:
 	player._seat_vehicle_uuid = str(veh.uuid)
 	player._seat_is_driver = seat.is_driver_seat()
 	player.seated_role = "driver" if seat.is_driver_seat() else "passenger"  # drives the sit/drive pose
+	_aim_past_seats(veh, true)
 	player.client_send_action_to_server({
 		"action": "enter_vehicle",
 		"target_uuid": player._seat_vehicle_uuid,
@@ -978,11 +983,33 @@ func _leave_vehicle() -> void:
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
 	# No un-parenting here either: server_exit puts us back in the vehicle's own frame and
 	# says so. Doing it locally would re-open the same race, in the other direction.
+	_aim_past_seats(player._seat_vehicle_node, false)
 	player._seat_vehicle_uuid = ""
 	player._seat_vehicle_node = null
 	player._seat_node = null
 	player._seat_is_driver = false
 	player.seated_role = ""  # back on foot -> normal locomotion pose
+
+## The seat under the crosshair, on foot, or null. Seated, the seats are the cab around you, not
+## something to board.
+func _aimed_seat() -> VehicleSeat:
+	if player._seat_vehicle_uuid != "" or not player.interact_ray.is_colliding():
+		return null
+	return player.interact_ray.get_collider() as VehicleSeat
+
+
+## Seated in [param veh], the InteractRay passes through its seats ([param past]), or stops at them
+## again. From the driver's eye the passenger door's inner handle lies BEHIND the passenger seat, which
+## is a look-at target now: without this, the seat took the aim and that door could not be shut.
+func _aim_past_seats(veh: Node, past: bool) -> void:
+	if not (veh is Vehicle):
+		return
+	for seat in (veh as Vehicle).find_children("*", "VehicleSeat", false, false):
+		if past:
+			player.interact_ray.add_exception(seat)
+		else:
+			player.interact_ray.remove_exception(seat)
+
 
 ## The vehicle door handle under the crosshair (a VehicleDoorHandle Area3D on the interact layer),
 ## or null. Look-at detection; the actual open/close is server-authoritative (sent on E).

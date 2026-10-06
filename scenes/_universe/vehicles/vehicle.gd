@@ -3096,6 +3096,11 @@ func _seats() -> Array:
 
 ## Find a seat by its key (VehicleNetKey; the client sends which box it used, the hand-over the key
 ## it replicated — either spelling, normalized).
+## The seat a request names (its network key, or an older save's node name), or null.
+func find_seat(seat_name: String) -> Node:
+	return _find_seat(seat_name)
+
+
 func _find_seat(seat_name: String) -> Node:
 	var key: String = VehicleNetKey.normalize(seat_name)
 	for seat in _seats():
