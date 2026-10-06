@@ -46,6 +46,13 @@ it. Never work around one silently.
   `InputLabel` / `InputDevice` / `InputCombo` (key names and presses), `ClientPerf` (timings),
   `PropSpawn.stable_uuid` (ids). Smallest change that works; no speculative options.
 - **English** for code, comments, `##` docs, commit messages and pull requests.
+- **Every text a player sees is translated, in the same change — no exception.** It is a `%%KEY` of
+  `tools/localization/localisation.csv` with its `en` AND `fr` columns filled (`es` may stay empty); never a
+  literal string on screen, and never a key name typed in a text (`InputLabel.for_action`). A `Control` gets
+  the key itself (`text = "%%HUD_DROP"`, re-translated on a language change); a script assembles with
+  `tr("%%HUD_RPM") % value`. Reuse a key that already says it before adding one. Enforced by
+  `test/unit/test_localisation_keys.gd` (every key used exists, every key declared is used, both languages
+  filled, placeholders agree). Then reimport: until then the screen shows the raw `%%KEY`.
 - **Every `@export` has a tooltip**: a `##` doc comment on the line(s) directly above it, saying what it
   does, its unit (m, s, deg, dB, px, 0..1…) and what raising or lowering it changes. An `@export_group`
   goes above the doc comment, never between it and the variable. Enforced by
