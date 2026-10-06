@@ -8,7 +8,8 @@ extends RefCounted
 ## middle of the leaf, half its width from the hinge. When its torque beats what the door check (the
 ## strap that holds a door open) can take, the door goes.
 ##
-## Simplifications, named: still air (the only wind is the vehicle's own speed); the plate's
+## Simplifications, named: the air the door meets is the vehicle's own speed less the weather's wind
+## (Vehicle._wind_on_doors, since the weather came; still air before that); the plate's
 ## coefficient taken constant whatever the angle; no gust, no lee of the cab. Static so the numbers
 ## can be checked without a vehicle.
 

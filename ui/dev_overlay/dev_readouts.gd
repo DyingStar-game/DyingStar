@@ -239,7 +239,7 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 	var visibility_text : String = "clear" if dust <= 1e-6 else "%d m" % roundi(visibility)
 	var hours : float = float(sample.get("local_solar_hours", 0.0))
 	var out : PackedStringArray = [
-		ReadoutFormat.escape("wind: %.1f m/s (%.0f km/h) from %s %.0f°" % [speed, speed * 3.6, compass(from_deg), from_deg]),
+		ReadoutFormat.escape("wind: %.0f km/h (%.1f m/s) from %s %.0f°" % [speed * 3.6, speed, compass(from_deg), from_deg]),
 		ReadoutFormat.escape("band: %s   systems: %s" % [String(sample.get("band", "?")), ", ".join(names) if not names.is_empty() else "none"]),
 		ReadoutFormat.escape("T %.1f K (%.1f °C)   p %.1f hPa   air %.3f kg/m³" % [float(sample.get("temperature_k", 0.0)),
 			float(sample.get("temperature_k", 0.0)) - 273.15, float(sample.get("pressure_pa", 0.0)) / 100.0,

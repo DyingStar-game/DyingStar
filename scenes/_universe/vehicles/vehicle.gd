@@ -799,6 +799,8 @@ var _horn_fade_left: float = 0.0            # client: seconds left of the horn's
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
 var _door_leaves: Dictionary = {}           # SERVER: door_id -> Vector2(area, width) the wind meets (door_leaf)
 var _wind_handles: Array[Node] = []         # SERVER: this vehicle's door handles, listed once for the wind
+var _wind_world: Vector3 = Vector3.ZERO      # SERVER: the weather's wind here, world frame (WeatherForces)
+var _wind_rho: float = 0.0                   # SERVER: the air's density here, refreshed with the wind
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 ## door_id -> the Tween swinging it right now, so a second toggle can cancel the first one
 ## instead of stacking on top of it. Server and client both run these (see _swing_door).
@@ -1817,7 +1819,8 @@ func _wind_on_doors() -> void:
 		return
 	if _wind_handles.is_empty():
 		_wind_handles = find_children("*", "VehicleDoorHandle", true, false)
-	var velocity_local : Vector3 = global_basis.inverse() * linear_velocity
+	# The air as the door meets it: the vehicle's own speed, and the weather's wind since it came.
+	var velocity_local : Vector3 = global_basis.inverse() * (linear_velocity - _wind_world)
 	var rho : float = air_density_now()
 	for handle: VehicleDoorHandle in _wind_handles:
 		if not is_door_open(handle.door_id):
@@ -1854,6 +1857,20 @@ func door_leaf(handle: VehicleDoorHandle) -> Vector2:
 
 ## The air's density (kg/m3) where the vehicle is: its planet's atmosphere at its altitude, else the
 ## air_density export.
+## SERVER: the weather's wind and the air's density at the vehicle, every WIND_CHECK_EVERY_FRAMES
+## physics frames (the doors' cadence): what _integrate_forces pushes with and what the doors feel.
+func _update_wind() -> void:
+	if Engine.get_physics_frames() % WIND_CHECK_EVERY_FRAMES != 0:
+		return
+	if not WeatherForces.enabled:
+		_wind_world = Vector3.ZERO
+		_wind_rho = 0.0
+		return
+	var planet := Planet.of(self)
+	_wind_world = planet.wind_world_at(global_position) if planet != null else Vector3.ZERO
+	_wind_rho = WeatherForces.air_density_at(planet, global_position)
+
+
 func air_density_now() -> float:
 	var planet := Planet.of(self)
 	if planet != null and planet.planet_data != null and planet.planet_data.atmosphere_profile != null:
@@ -2335,6 +2352,7 @@ func _physics_process_impl(delta: float) -> void:
 			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
 		# Safety net: a truck that tunneled under the planet surface (the same net the player has).
 		_catch_if_below_surface()
+		_update_wind()  # the weather's wind and air here, ten times a second (WeatherForces)
 		_wind_on_doors()  # an open door the airflow presses shut slams (replicated with the doors)
 		_replicate_transform()
 		return
@@ -3360,6 +3378,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if g.length_squared() > 0.001:
 		_gravity_up = -g.normalized()
 		gravity_magnitude = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
+	# The weather's push (server): the wind's own share of the drag, over the drive's still-air model.
+	if WeatherForces.enabled and _wind_rho > 0.0:
+		state.apply_central_force(WeatherForces.wind_push(_wind_rho, drag_coefficient, frontal_area_m2,
+				state.linear_velocity, _wind_world))
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y

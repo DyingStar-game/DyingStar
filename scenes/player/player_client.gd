@@ -112,6 +112,11 @@ var _step_last_sample: AudioStream = null  # last footstep played, so the librar
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
 var _dust: DustEmitter = null              # the dust our feet kick up, built on the first step
+var _storm_dust: StormDust = null          # the storm's grains past the camera, built on the first frame on a body
+var _weather_audio: WeatherAudio = null     # the weather's loops at the listener, built with the first frame
+var _weather_audio_age: float = INF        # since the loops last read the weather; INF = read now
+## How often the loops read the weather (s): it changes over minutes.
+const WEATHER_AUDIO_SAMPLE_S: float = 0.5
 ## The same sample with its reasoning ({family, source, detail}), for the debug panel's Ground section.
 var _surface_info: Dictionary = {}
 var _surface_age: float = 0.0              # seconds since that sample
@@ -336,6 +341,8 @@ func _process(_delta: float) -> void:
 	_update_god_mode_label()
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
+	_update_storm_dust(_delta)
+	_update_weather_audio(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
@@ -1596,6 +1603,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		if _dust != null:
 			_dust.release()  # the cloud lives in the parent's frame, not under the body
+		if _storm_dust != null:
+			_storm_dust.release()
 		if is_instance_valid(_name_tag):
 			_name_tag.queue_free()
 		if is_instance_valid(_conversation_text):
@@ -1912,6 +1921,29 @@ func _kick_dust(strength: float, grains: int) -> void:
 	var up: Vector3 = player.global_basis.y.normalized()
 	_dust.puff(player.global_position, _surface_family, strength, up * 0.4, grains,
 			0.12 * grains, 0.35)
+
+## The storm's grains past the camera (StormDust), from the weather here: built on the first frame on a
+## body whose ground has dust to give, released with the body.
+func _update_storm_dust(delta: float) -> void:
+	if _storm_dust == null:
+		if player.dust == null:
+			return
+		_storm_dust = StormDust.new(player, player.dust)
+	_storm_dust.update(delta, _surface_family)
+
+## The weather's loops at the listener (WeatherAudio), fed the weather here twice a second and muffled
+## at the wheel. Built once, under the body, so it frees with it.
+func _update_weather_audio(delta: float) -> void:
+	if _weather_audio == null:
+		_weather_audio = WeatherAudio.new()
+		player.add_child(_weather_audio, false, Node.INTERNAL_MODE_BACK)
+	_weather_audio_age += delta
+	if _weather_audio_age < WEATHER_AUDIO_SAMPLE_S:
+		return
+	_weather_audio_age = 0.0
+	var planet: Planet = Planet.of(player)
+	var sample: Dictionary = planet.weather_at(player.global_position) if planet != null else {}
+	_weather_audio.update(sample, is_instance_valid(player._seat_node))
 
 ## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,
 ## since direct_space_state is null everywhere else — and throttled, because a step happens every metre

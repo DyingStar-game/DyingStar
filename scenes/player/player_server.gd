@@ -923,6 +923,36 @@ func _reparent_children_of_prop(prop: Node) -> void:
 ## replicates the position. Runs on THIS role's own child node, so the engine calls it only on the
 ## dedicated server. Reads/writes the shared body through `player`; carry/LOS helpers still live on the
 ## Player facade for now (2d) and are reached via `player.`.
+## SERVER: the weather's push on this body (WeatherForces), refreshed ten times a second: the ground
+## speed it costs on foot, and the acceleration it gives in the air. Zero without weather or air.
+var _wind_drift: Vector3 = Vector3.ZERO
+var _wind_accel: Vector3 = Vector3.ZERO
+
+
+## The wind at the body, as what it does: a drift on foot (the legs slip at a speed the push buys,
+## see WeatherForces.drift_velocity) and an acceleration in the air. Lying down shows a quarter of
+## the area, crouching half: the way out of a storm is down.
+func _server_update_wind() -> void:
+	if Engine.get_physics_frames() % WeatherForces.REFRESH_EVERY_FRAMES != 0:
+		return
+	_wind_drift = Vector3.ZERO
+	_wind_accel = Vector3.ZERO
+	if not WeatherForces.enabled:
+		return
+	var planet: Planet = Planet.of(player)
+	if planet == null:
+		return
+	var rho: float = WeatherForces.air_density_at(planet, player.global_position)
+	if rho <= 0.0:
+		return
+	var area: float = WeatherForces.PLAYER_AREA_M2 * (0.25 if _stance == 2 else 0.5 if _stance == 1 else 1.0)
+	var wind: Vector3 = WeatherForces.along_ground(planet.wind_world_at(player.global_position), player.up_direction)
+	var push: Vector3 = WeatherForces.drag_force(rho, WeatherForces.PLAYER_DRAG, area, wind)
+	_wind_drift = WeatherForces.drift_velocity(push, player.mass, WeatherForces.hold_force(player.mass, player.gravity))
+	var in_flight: Vector3 = WeatherForces.drag_force(rho, WeatherForces.PLAYER_DRAG, area, wind - player.velocity)
+	_wind_accel = WeatherForces.acceleration(in_flight, player.mass)
+
+
 func _physics_process(delta: float) -> void:
 	if not PropNet.prof_on:
 		_physics_process_impl(delta)
@@ -1069,6 +1099,7 @@ func _physics_process_impl(delta: float) -> void:
 	if player.hands_item != null:
 		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
 
+	_server_update_wind()
 	# GDD: no air control. Only the grounded branch below steers the horizontal velocity; once airborne
 	# we leave it alone, so a jump carries the run-up momentum and its distance follows the take-off
 	# speed. The airborne case used to ADD move_direction * speed * delta every frame with no target and
@@ -1081,6 +1112,7 @@ func _physics_process_impl(delta: float) -> void:
 		var up: Vector3 = player.up_direction
 		var vertical: Vector3 = up * player.velocity.dot(up)
 		var target: Vector3 = move_direction * speed if player.input_direction else Vector3.ZERO
+		target += _wind_drift  # the wind's push, as the ground speed it costs (WeatherForces)
 		var horizontal: Vector3 = (player.velocity - vertical).move_toward(target, player.acceleration * delta)
 		player.velocity = horizontal + vertical
 
@@ -1099,6 +1131,9 @@ func _physics_process_impl(delta: float) -> void:
 	else:
 		player.velocity -= player.up_direction * player.gravity * 2.0 * delta
 		player.is_jumping = false
+
+	if not player.is_on_floor() and _wind_accel != Vector3.ZERO:
+		player.velocity += _wind_accel * delta  # in the air the wind carries the body freely
 
 	# Cap fall speed to avoid tunneling through the thin trimesh terrain (move_and_slide has no CCD).
 	var _terminal_velocity: float = 60.0

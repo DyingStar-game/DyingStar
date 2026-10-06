@@ -158,7 +158,7 @@ func cursor_line(local: Vector3) -> String:
 	var ll: Vector2 = HEALPix.vec2lonlat(local)
 	var s: Dictionary = WeatherSampler.sample(_profile, _systems, ll.x, ll.y, 0.0,
 			local_hours(_sub_lon, ll.x), _decl)
-	return tr("%%HUD_MAP_CURSOR_WEATHER") % ["%.0f" % float(s["wind_speed_m_s"]),
+	return tr("%%HUD_MAP_CURSOR_WEATHER") % ["%.0f" % (float(s["wind_speed_m_s"]) * 3.6),
 			DevReadouts.compass(float(s["wind_from_deg"])), "%.0f" % (float(s["pressure_pa"]) / 100.0),
 			"%+.0f" % (float(s["pressure_anomaly_pa"]) / 100.0), "%.0f" % (float(s["temperature_k"]) - 273.15),
 			"%.2f" % float(s["dust_tau"])]
