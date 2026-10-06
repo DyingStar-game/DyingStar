@@ -4,6 +4,11 @@
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_pad"]
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_area"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.5, 0.05, 0.35)
+
 [node name="PadStorageArea" type="Node3D"]
 script = ExtResource("1_area")
 
@@ -20,3 +25,4 @@ metadata/_custom_type_script = "uid://custckqbhkkow"
 [node name="Ground" type="CSGBox3D" parent="TerrainPad"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 size = Vector3(20, 1, 12)
+material = SubResource("StandardMaterial3D_area")
