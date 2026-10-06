@@ -8,11 +8,14 @@ extends RefCounted
 ##
 ## - CLOUDS past the visor, born upwind and carried by the wind: from the sampler's dust optical depth
 ##   τ (0 = clear air, 2 = a storm with 100 m of visibility); puffs per second from TAU_MIN to TAU_FULL.
-## - A low HAZE of dust sheets drifting with the wind just over the ground, all around: from the WIND
-##   alone, once it lifts grains off this ground (saltation_rate), on the plains as in a storm.
+## - A low HAZE of veils laid along the wind just over the ground, all around: from the WIND alone,
+##   once it lifts grains off this ground (saltation_rate), on the plains as in a storm.
 ## - SALTATION streaks: grains hopping along the ground at the wind's speed, drawn as streaks (the
 ##   process shader stretches them along their motion), born upwind at ground height, from the same
 ##   wind — the sand that flies at your boots in any good blow.
+## - WISPS: the sand that SMOKES off the ground — veils born on the surface, carried by the wind and
+##   rising with it, stretched along their motion, swelling as they climb then flattening into the
+##   wind (the drag relaxes their rise); the long tilted plumes a blow lifts off every crest.
 ##
 ## The ground's own family sizes every puff (SurfaceDust.amount): over rock little flies, over sand a
 ## lot. Grains and sheets stand on the REAL ground (PlanetData.crack_aware_surface_dist: relief and
@@ -43,44 +46,66 @@ const MIN_AIR_KG_M3: float = 0.05
 
 ## The low haze: sheets this big (m), born this far around the camera (upwind-biased), this high over
 ## the ground, at most this many a second once the wind lifts the ground fully (twice its threshold).
-const HAZE_SIZE_M: float = 7.0
+const HAZE_SIZE_M: float = 6.0
 const HAZE_RING_M: float = 24.0
 const HAZE_HEIGHT_M: float = 1.2
 const HAZE_RATE_FULL: float = 7.0
-const HAZE_OPACITY: float = 0.35
+const HAZE_OPACITY: float = 0.2
 
 ## The saltation streaks: this big across (m), stretched along their motion by the process shader
 ## (STREAK_STRETCH_PER_MS: at 20 m/s 2.6 times longer than wide), hopping this high (m), at this share
 ## of the wind's speed, born this far upwind, living this long; at most this many a second.
-const STREAK_SIZE_M: float = 0.45
+const STREAK_SIZE_M: float = 0.35
 const STREAK_STRETCH_PER_MS: float = 0.08
-const STREAK_HOP_M: float = 0.5
+const STREAK_HOP_M: float = 0.35
 const STREAK_SPEED_SHARE: float = 0.85
 const STREAK_UPWIND_M: float = 9.0
 const STREAK_SPREAD_M: float = 7.0
 const STREAK_LIFETIME_S: float = 0.8
-const STREAK_RATE_FULL: float = 60.0
-const STREAK_CAPACITY: int = 256
+const STREAK_RATE_FULL: float = 80.0
+const STREAK_CAPACITY: int = 320
+## The clouds past the visor stretch a little with the wind too: streams, not balls.
+const CLOUD_STRETCH_PER_MS: float = 0.03
+
+## The wisps: veils this big at birth (m), stretched this much per m/s, born on the ground this far
+## upwind over this spread, rising at this speed (m/s) while carried at this share of the wind, living
+## this long (they swell meanwhile: SurfaceDust.air_growth), this faint; at most this many a second.
+const WISP_SIZE_M: float = 1.8
+const WISP_STRETCH_PER_MS: float = 0.12
+const WISP_UPWIND_M: float = 10.0
+const WISP_SPREAD_M: float = 12.0
+const WISP_RISE_MS: float = 0.9
+const WISP_SPEED_SHARE: float = 0.7
+const WISP_LIFETIME_S: float = 3.5
+const WISP_OPACITY: float = 0.3
+const WISP_RATE_FULL: float = 14.0
+const WISP_CAPACITY: int = 256
 
 var _player: Player = null
 var _emitter: DustEmitter = null
 var _streaks: DustEmitter = null
+var _wisps: DustEmitter = null
 var _age: float = INF  # since the last weather reading: INF = read now
 var _rate: float = 0.0
 var _haze_rate: float = 0.0
 var _streak_rate: float = 0.0
+var _wisp_rate: float = 0.0
 var _wind: Vector3 = Vector3.ZERO
 var _owed: float = 0.0  # puffs owed, fractional, per population
 var _haze_owed: float = 0.0
 var _streak_owed: float = 0.0
+var _wisp_owed: float = 0.0
 
 
 func _init(player: Player, dust: SurfaceDust) -> void:
 	_player = player
 	if dust != null:
 		_emitter = DustEmitter.new(player, dust, CAPACITY, LIFETIME_S)
+		_emitter.set_stretch(CLOUD_STRETCH_PER_MS)
 		_streaks = DustEmitter.new(player, dust, STREAK_CAPACITY, STREAK_LIFETIME_S)
 		_streaks.set_stretch(STREAK_STRETCH_PER_MS)
+		_wisps = DustEmitter.new(player, dust, WISP_CAPACITY, WISP_LIFETIME_S)
+		_wisps.set_stretch(WISP_STRETCH_PER_MS)
 
 
 ## Once a frame on the client. [param family] is the ground under the player (the footsteps' probe).
@@ -92,10 +117,11 @@ func update(delta: float, family: StringName) -> void:
 	if _age >= SAMPLE_S:
 		_age = 0.0
 		_resample()
-	if _rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0:
+	if _rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0:
 		_owed = 0.0
 		_haze_owed = 0.0
 		_streak_owed = 0.0
+		_wisp_owed = 0.0
 		return
 	var camera: Camera3D = _player.get_viewport().get_camera_3d()
 	if camera == null:
@@ -107,7 +133,7 @@ func update(delta: float, family: StringName) -> void:
 		_owed -= 1.0
 		_emitter.puff(birth_point(eye, _wind, up, _jitter()), family, 1.0, _wind, GRAINS_PER_PUFF, 0.5,
 				GRAIN_SIZE_M)
-	if _haze_rate <= 0.0 and _streak_rate <= 0.0:
+	if _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0:
 		return
 	var planet: Planet = Planet.of(_player)
 	if planet == null:
@@ -116,15 +142,23 @@ func update(delta: float, family: StringName) -> void:
 	for _i in _take(_haze_owed):
 		_haze_owed -= 1.0
 		var around: Vector3 = birth_point(eye, _wind, up, _jitter(), HAZE_RING_M * 0.5, HAZE_RING_M, 0.0)
-		_emitter.puff(on_the_ground(planet, around, up, HAZE_HEIGHT_M * randf_range(0.3, 1.0)), family,
-				HAZE_OPACITY, _wind, 1, 1.5, HAZE_SIZE_M)
+		# Through the stretched emitter: a sheet is a veil laid along the wind, never a ball.
+		_wisps.puff(on_the_ground(planet, around, up, HAZE_HEIGHT_M * randf_range(0.4, 1.2)), family,
+				HAZE_OPACITY, _wind * 0.9, 1, 1.5, HAZE_SIZE_M)
 	_streak_owed += _streak_rate * delta
 	for _i in _take(_streak_owed):
 		_streak_owed -= 1.0
 		var at: Vector3 = birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M, STREAK_SPREAD_M, 0.0)
 		var hop: Vector3 = up * STREAK_HOP_M * randf_range(0.4, 1.0)
-		_streaks.puff(on_the_ground(planet, at, up, randf_range(0.05, 0.4)), family, 1.0,
+		_streaks.puff(on_the_ground(planet, at, up, randf_range(0.03, 0.25)), family, 1.0,
 				_wind * STREAK_SPEED_SHARE + hop, 1, 0.4, STREAK_SIZE_M)
+	_wisp_owed += _wisp_rate * delta
+	for _i in _take(_wisp_owed):
+		_wisp_owed -= 1.0
+		var foot: Vector3 = birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M, WISP_SPREAD_M, 0.0)
+		var rise: Vector3 = up * WISP_RISE_MS * randf_range(0.5, 1.2)
+		_wisps.puff(on_the_ground(planet, foot, up, randf_range(0.0, 0.3)), family, WISP_OPACITY,
+				_wind * WISP_SPEED_SHARE + rise, 1, 0.8, WISP_SIZE_M)
 
 
 ## Free the clouds. Called by the owner when the body goes.
@@ -133,6 +167,8 @@ func release() -> void:
 		_emitter.release()
 	if _streaks != null:
 		_streaks.release()
+	if _wisps != null:
+		_wisps.release()
 
 
 ## Puffs per second for a dust optical depth [param dust_tau]: none under TAU_MIN, RATE_FULL from
@@ -203,6 +239,7 @@ func _resample() -> void:
 	_rate = 0.0
 	_haze_rate = 0.0
 	_streak_rate = 0.0
+	_wisp_rate = 0.0
 	_wind = Vector3.ZERO
 	if _player.floating:
 		return  # in free flight there is no ground to lift
@@ -220,3 +257,4 @@ func _resample() -> void:
 	var lifted: float = saltation_rate(_wind.length(), profile.v10_threshold_m_s if profile != null else 0.0)
 	_haze_rate = HAZE_RATE_FULL * lifted
 	_streak_rate = STREAK_RATE_FULL * lifted
+	_wisp_rate = WISP_RATE_FULL * lifted

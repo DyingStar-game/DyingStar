@@ -31,6 +31,9 @@ uniform float forward_glow : hint_range(0.0, 2.0, 0.01) = 0.6;
 uniform float scatter_g : hint_range(0.0, 0.95, 0.01) = 0.65;
 // How much the noise is warped into wisps (0 = the plain fractal of before).
 uniform float wisp : hint_range(0.0, 1.0, 0.01) = 0.45;
+// How ragged the outline is (0 = a round blob): the noise pushes the edge in and out by this much
+// of the radius, so a puff never reads as a disc.
+uniform float edge_ragged : hint_range(0.0, 1.5, 0.01) = 0.8;
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
 
 varying float age;
@@ -89,7 +92,11 @@ void vertex() {
 
 void fragment() {
 	vec2 centered = UV * 2.0 - 1.0;
-	float blob = 1.0 - smoothstep(1.0 - edge_softness, 1.0, length(centered));
+	// A gaussian core, not a disc: dense in the middle, thinning out with no rim, and an outline the
+	// noise pushes in and out so no two puffs share a shape. The quad's own edge stays clean.
+	float outline = noise(centered * 1.6 + vec2(spin * 2.3, 0.7)) - 0.5;
+	float r = length(centered) * (1.0 + edge_ragged * outline);
+	float blob = exp(-r * r * (2.0 + 2.0 * edge_softness)) * (1.0 - smoothstep(0.8, 1.0, length(centered)));
 	// Ragged and drifting: the noise is offset by the spin (each puff its own pattern), warped into
 	// wisps by a coarser noise, and eaten away as the puff ages, so it frays rather than fades as a disc.
 	// A streak reads the noise along its length, so the grain is streaked, not blotched.
