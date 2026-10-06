@@ -30,6 +30,11 @@ enum DriveMode {FRONT, REAR, ALL}
 
 # Meta marker put on every node we generate, so a rebuild can clear the old ones.
 const GENERATED := "vehicle_generated"
+## The wind on open doors. Preloaded rather than named by its class: a server started before the
+## editor has registered a new class_name must still compile the vehicle.
+const DOOR_WIND := preload("res://scenes/_universe/vehicles/door_wind.gd")
+## How often the wind on open doors is checked, in physics frames: 6 = ten times a second.
+const WIND_CHECK_EVERY_FRAMES := 6
 ## Metadata a static body may carry to state its own grip (see
 ## [member wheel_friction_slip_default]). BridgeSpawner sets it on every deck.
 const GRIP_META := "grip_slip"
@@ -154,9 +159,9 @@ const ADOPTED_VELOCITY_MS: int = 1500
 ## wall is the ONLY thing holding the speed down, and pointing downhill at full throttle there is
 ## nothing left to limit it. A short band gives the truck somewhere to run out of breath.
 @export_range(0.0, 30.0, 0.5) var speed_taper_kmh: float = 10.0
-## Air density (kg/m3) where the vehicle drives. Sandbox is 1.26 at sea level. Could later be read
-## from the planet's atmosphere; it only matters once a chassis is drag-limited rather than
-## engine-limited, which the MVP truck is not.
+## Air density (kg/m3) used when the planet's atmosphere cannot say (a profile imported before it
+## carried its pressure, or no planet): Tarsis 3's 1.26 at its reference sphere. air_density_now()
+## reads the real one at the vehicle's altitude — 0.77 at the villages' 5130 m.
 @export var air_density: float = 1.26
 
 @export_group("Steering")
@@ -784,6 +789,8 @@ var _engine_sound_wait: float = 0.0         # client: seconds left of the start-
 var _horn_held_secs: float = 0.0            # client: how long the current honk has been sounding
 var _horn_fade_left: float = 0.0            # client: seconds left of the horn's fade-out (0 = not fading)
 var _door_state: Dictionary = {}            # SERVER: door_id (String) -> open (bool)
+var _door_leaves: Dictionary = {}           # SERVER: door_id -> Vector2(area, width) the wind meets (door_leaf)
+var _wind_handles: Array[Node] = []         # SERVER: this vehicle's door handles, listed once for the wind
 var _net_doors: Dictionary = {}             # CLIENT: replicated door state
 ## door_id -> the Tween swinging it right now, so a second toggle can cancel the first one
 ## instead of stacking on top of it. Server and client both run these (see _swing_door).
@@ -1793,6 +1800,61 @@ func server_toggle_door(door_id: String) -> void:
 	_door_state[door_id] = not is_door_open(door_id)
 	_apply_door(door_id, _door_state[door_id])
 
+## SERVER, ten times a second on a moving vehicle (a door does not need 60 Hz to feel the wind): shut
+## each open door the relative wind presses closed harder than its check holds (DoorWind). With every
+## door shut — most of the time — it costs a counter test; with one open, a few multiplications per
+## door. The leaf is measured once (door_leaf) and the handles listed once.
+func _wind_on_doors() -> void:
+	if Engine.get_physics_frames() % WIND_CHECK_EVERY_FRAMES != 0 or not _door_state.values().has(true):
+		return
+	if _wind_handles.is_empty():
+		_wind_handles = find_children("*", "VehicleDoorHandle", true, false)
+	var velocity_local : Vector3 = global_basis.inverse() * linear_velocity
+	var rho : float = air_density_now()
+	for handle: VehicleDoorHandle in _wind_handles:
+		if not is_door_open(handle.door_id):
+			continue
+		var leaf : Vector2 = door_leaf(handle)
+		if leaf.x <= 0.0:
+			continue
+		var speed : float = velocity_local.dot(handle.wind_shut_travel.normalized())
+		var torque : float = DOOR_WIND.torque_nm(rho, speed, leaf.x, leaf.y, handle.open_angle_deg)
+		if torque > handle.wind_hold_nm:
+			print("🚚 Vehicle %s: the wind shuts %s at %.0f km/h (%.0f N.m > %.0f, air %.2f kg/m3)"
+					% [uuid, handle.door_id, speed * 3.6, torque, handle.wind_hold_nm, rho])
+			server_toggle_door(handle.door_id)
+
+
+## The leaf the wind presses on, for [param handle]'s door: Vector2(area m2, width m), Vector2.ZERO
+## when the wind does not act on it. What the handle sets, else (-1) measured once from the door's
+## mesh if it is a "_door" (DoorWind.by_default), else nothing.
+func door_leaf(handle: VehicleDoorHandle) -> Vector2:
+	if _door_leaves.has(handle.door_id):
+		return _door_leaves[handle.door_id]
+	var leaf := Vector2(handle.wind_area_m2, handle.wind_width_m)
+	if leaf.x < 0.0 or leaf.y < 0.0:
+		var measured := Vector2.ZERO
+		var door := _door_mesh(handle.door_id)
+		if DOOR_WIND.by_default(handle.door_id) and door != null:
+			var hinge : Vector3 = handle.hinge_axis if handle.hinge_axis.length_squared() > 0.000001 \
+					else door_hinge_axis
+			measured = DOOR_WIND.leaf_of(DOOR_WIND.mesh_aabb(door), hinge)
+		leaf = Vector2(measured.x if leaf.x < 0.0 else leaf.x, measured.y if leaf.y < 0.0 else leaf.y)
+	_door_leaves[handle.door_id] = leaf
+	return leaf
+
+
+## The air's density (kg/m3) where the vehicle is: its planet's atmosphere at its altitude, else the
+## air_density export.
+func air_density_now() -> float:
+	var planet := Planet.of(self)
+	if planet != null and planet.planet_data != null and planet.planet_data.atmosphere_profile != null:
+		var rho : float = planet.planet_data.atmosphere_profile.air_density(planet.elevation_of(global_position))
+		if rho > 0.0:
+			return rho
+	return air_density
+
+
 ## The doors of this vehicle: the door_ids of its VehicleDoorHandle nodes (seats and bays name these
 ## too). The only keys the door state may hold.
 func door_ids() -> PackedStringArray:
@@ -2260,6 +2322,7 @@ func _physics_process_impl(delta: float) -> void:
 			_coast_no_driver()  # no driver: cut the drive (or it powers on forever) + bleed speed
 		# Safety net: a truck that tunneled under the planet surface (the same net the player has).
 		_catch_if_below_surface()
+		_wind_on_doors()  # an open door the airflow presses shut slams (replicated with the doors)
 		_replicate_transform()
 		return
 	# Standalone (a vehicle dropped straight into a scene, with no uuid): it still holds its load
