@@ -9,7 +9,15 @@ extends Node
 
 const TABLE_PATH: String = "res://scenes/audio/music/music_table.tres"
 const BUS: StringName = &"Music"
+## The menu's music plays here instead: it sends into Music, and has a slider of its own (Settings >
+## Audio > Menu music) — the menu's tracks can be turned down without the game's.
+const MENU_BUS: StringName = &"MenuMusic"
 const PROBE_INTERVAL_S: float = 0.5
+## Most a fade moves on in one frame, in seconds. Arriving in a town freezes the client for a few
+## hundred milliseconds at a time (its props, its levelled ground), and a Tween counts those frames in
+## full: the 4 s crossfade went by in a handful of frames and the wild's track cut off dead (preprod,
+## 2026-10-05). A long frame now only delays the fade.
+const FADE_MAX_STEP_S: float = 0.05
 
 ## Set by start(); tests hand their own.
 var table: MusicTable = null
@@ -27,6 +35,9 @@ var _voice: AudioStreamPlayer = null
 var _last_track: AudioStream = null
 ## Seconds of silence left before the next track; negative while a track plays or nothing is due.
 var _gap_left_s: float = -1.0
+
+## Volume ramps under way: {voice, from, to, elapsed, length, free_at_end}. Stepped by _step_fades.
+var _fades: Array[Dictionary] = []
 
 ## Plays instead of what the table would choose, while set (the Credits page's track): set_override.
 var _override: MusicPlaylist = null
@@ -97,6 +108,7 @@ func debug_state() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	_step_fades(delta)
 	_probe_in_s -= delta
 	if _probe_in_s <= 0.0:
 		_probe_in_s = PROBE_INTERVAL_S
@@ -197,14 +209,22 @@ func _play_next(fade_in: bool) -> void:
 	var level: float = db_to_linear(_current.volume_db)
 	var voice: AudioStreamPlayer = AudioStreamPlayer.new()
 	voice.stream = track
-	voice.bus = BUS  # so the Audio settings Music slider controls it
+	voice.bus = bus_for(_context)  # so the Audio settings sliders control it
 	voice.volume_linear = 0.0 if fade_in and table.crossfade_s > 0.0 else level
 	add_child(voice)
 	voice.finished.connect(_on_track_finished.bind(voice))
 	voice.play()
 	_voice = voice
 	if voice.volume_linear < level:
-		create_tween().tween_property(voice, "volume_linear", level, table.crossfade_s)
+		_fade(voice, level, false)
+
+
+## The bus a track plays on in [param context]: the menu's own while in the menu (no player yet),
+## Music everywhere else. Music when the layout has no menu bus, rather than a bus that does not exist.
+static func bus_for(context: MusicContext) -> StringName:
+	if context != null and context.in_menu and AudioServer.get_bus_index(MENU_BUS) >= 0:
+		return MENU_BUS
+	return BUS
 
 
 func _on_track_finished(voice: AudioStreamPlayer) -> void:
@@ -221,6 +241,34 @@ func _fade_out(voice: AudioStreamPlayer) -> void:
 	if table.crossfade_s <= 0.0:
 		voice.queue_free()
 		return
-	var tween: Tween = create_tween()
-	tween.tween_property(voice, "volume_linear", 0.0, table.crossfade_s)
-	tween.tween_callback(voice.queue_free)
+	_fade(voice, 0.0, true)
+
+
+## Ramp [param voice] from where it is now to [param to] over the table's crossfade, freed at the end
+## when [param free_at_end]. A ramp already running on it is replaced: a track faded in and out again
+## before the end starts down from where it got to.
+func _fade(voice: AudioStreamPlayer, to: float, free_at_end: bool) -> void:
+	_fades = _fades.filter(func(f: Dictionary) -> bool: return f["voice"] != voice)
+	_fades.append({"voice": voice, "from": voice.volume_linear, "to": to, "elapsed": 0.0,
+			"length": table.crossfade_s, "free_at_end": free_at_end})
+
+
+## Move every ramp on by [param delta], at most FADE_MAX_STEP_S of it: a frozen frame delays a
+## crossfade, it never skips it.
+func _step_fades(delta: float) -> void:
+	if _fades.is_empty():
+		return
+	var step: float = minf(delta, FADE_MAX_STEP_S)
+	var running: Array[Dictionary] = []
+	for f: Dictionary in _fades:
+		var voice: AudioStreamPlayer = f["voice"]
+		if not is_instance_valid(voice):
+			continue
+		f["elapsed"] = float(f["elapsed"]) + step
+		var t: float = clampf(float(f["elapsed"]) / maxf(float(f["length"]), 0.001), 0.0, 1.0)
+		voice.volume_linear = lerpf(float(f["from"]), float(f["to"]), t)
+		if t < 1.0:
+			running.append(f)
+		elif f["free_at_end"]:
+			voice.queue_free()
+	_fades = running

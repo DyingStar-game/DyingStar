@@ -2,6 +2,8 @@ extends GutTest
 ## MusicTable / MusicRule / MusicPlaylist / MusicPoi / MusicZone: which playlist goes with where the
 ## player is, decided from plain values — no world, no audio.
 
+const DIRECTOR := preload("res://scenes/audio/music/music_director.gd")
+
 var _menu: MusicPlaylist = null
 var _space: MusicPlaylist = null
 var _city: MusicPlaylist = null
@@ -201,16 +203,16 @@ func test_overlapping_zones_are_settled_by_priority() -> void:
 	assert_true(building.is_in_group(MusicZone.GROUP), "tagged for whoever lists them")
 
 
-func test_the_director_starts_on_the_menu_playlist_and_on_the_music_bus() -> void:
+func test_the_director_starts_on_the_menu_playlist_and_on_the_menu_music_bus() -> void:
 	_menu.tracks = [AudioStreamWAV.new()]
-	var director: Node = add_child_autofree(load("res://scenes/audio/music/music_director.gd").new())
+	var director: Node = add_child_autofree(DIRECTOR.new())
 	director.table = _table
 	director.start()
 	var voices: Array[Node] = director.get_children()
 	assert_eq(voices.size(), 1, "one voice")
 	var voice: AudioStreamPlayer = voices[0] as AudioStreamPlayer
 	assert_eq(voice.stream, _menu.tracks[0], "no player to follow: the menu")
-	assert_eq(voice.bus, &"Music", "the Music slider of the settings drives it")
+	assert_eq(voice.bus, &"MenuMusic", "the Menu music slider drives it, and the Music one through its send")
 
 
 func test_the_table_says_which_rule_won_and_the_context_what_it_saw() -> void:
@@ -233,3 +235,25 @@ func test_a_rule_names_itself_from_what_it_holds() -> void:
 	assert_eq(rule.resource_name, "POI village mining → silence", "and again at each change")
 	var shipped: MusicTable = _shipped()
 	assert_eq(shipped.rules[0].resource_name, "MENU → menu", "the playlist is named by its file")
+
+
+## Arriving in a town freezes the client a few hundred milliseconds at a time: a Tween counted those
+## frames in full, and the 4 s crossfade went by in a handful of them — the track cut off dead
+## (preprod, 2026-10-05). A long frame now only delays the fade.
+func test_a_frozen_frame_delays_the_crossfade_instead_of_skipping_it() -> void:
+	_menu.tracks = [AudioStreamWAV.new()]
+	_city.tracks = [AudioStreamWAV.new()]
+	var director: Node = add_child_autofree(DIRECTOR.new())
+	director.table = _table
+	director.start()
+	var old: AudioStreamPlayer = director.get_children()[0] as AudioStreamPlayer
+	for i in 200:
+		director._step_fades(0.05)  # the menu track fully faded in
+	assert_almost_eq(old.volume_linear, 1.0, 0.001)
+	director.set_override(_city)
+	director._step_fades(3.0)  # a three-second freeze
+	assert_gt(old.volume_linear, 0.95, "the old track barely moved: the freeze is not counted")
+	assert_false(old.is_queued_for_deletion(), "still fading out")
+	for i in 100:
+		director._step_fades(0.05)  # five seconds of normal frames
+	assert_true(old.is_queued_for_deletion(), "faded out to the end, then freed")

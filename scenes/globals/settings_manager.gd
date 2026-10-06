@@ -22,8 +22,10 @@ const CONFIG_FILEPATH : String = "user://settings.ini"
 ## above: loaded but never applied reads exactly like "it did not persist".
 const INPUT_MAP_FILEPATH : String = "user://inputs.map"
 ## Audio settings key -> the audio bus it drives. Sliders are 0..100 (linear), applied as dB.
+## MenuMusic sends into Music: the menu's music answers to its own slider AND to the Music one.
 const AUDIO_BUSES : Dictionary = {
-	"general": "Master", "music": "Music", "sfx": "SFX", "voip": "VoIP", "ui": "UI",
+	"general": "Master", "music": "Music", "menu_music": "MenuMusic", "sfx": "SFX", "voip": "VoIP",
+	"ui": "UI",
 }
 var config : ConfigFile = ConfigFile.new()
 ## The display language. Given our ConfigFile and our save call rather than a file of its own, so
