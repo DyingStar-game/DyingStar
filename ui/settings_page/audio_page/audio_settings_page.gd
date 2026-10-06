@@ -15,10 +15,16 @@ const TEST_GREEN : Color = Color(0.2, 0.7, 0.25)
 @onready var speaker_device : OptionButton = $MarginContainer/VBoxContainer/Speaker/OptionButton
 @onready var test_button : Button = $MarginContainer/VBoxContainer/Microphone_testing/Button
 @onready var mic_player : AudioStreamPlayer = $AudioStreamPlayer
+## The menu's music alone (MenuMusic, which sends into Music). Its line is a copy of the Music one,
+## made in _ready, under it.
+var menu_music : HSlider
 
 func _ready() -> void:
+	menu_music = _menu_music_row()
 	general.value = SettingsManager.get_audio_volume("general")
 	music.value = SettingsManager.get_audio_volume("music")
+	menu_music.value = SettingsManager.get_audio_volume("menu_music")
+	menu_music.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("menu_music", v))
 	sfx.value = SettingsManager.get_audio_volume("sfx")
 	voip.value = SettingsManager.get_audio_volume("voip")
 	interface.value = SettingsManager.get_audio_volume("ui")
@@ -38,6 +44,17 @@ func _ready() -> void:
 	_add_headers($MarginContainer/VBoxContainer)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows($MarginContainer/VBoxContainer)
+
+
+## The "Menu music" line, right under "Music": a copy of that line (same label style, same slider
+## range and size), made before anything is connected to it, so it carries no signal of the Music one.
+func _menu_music_row() -> HSlider:
+	var music_row : Node = music.get_parent()
+	var row : Node = music_row.duplicate()
+	row.name = "MenuMusic"
+	(row.get_node("Label") as Label).text = "%%MENU_AUDIO_MENU_MUSIC"
+	music_row.add_sibling(row)
+	return row.get_node("HSlider") as HSlider
 
 
 ## Section headings over the lines, as on the other pages: each before the row it names.

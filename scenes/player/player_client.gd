@@ -2,6 +2,9 @@ class_name PlayerClient
 extends Node
 
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
+## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
+## before the editor has registered a new class_name must still compile the player.
+const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## Gap (m) between the HEAD BONE and the label. Measured from the crown of the animated skull, not
@@ -221,10 +224,23 @@ func setup() -> void:
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
 	var can_take_pointer := func() -> bool: return not _input_locked()
-	for panel: OverlayPanel in [GraphicsOverlay.in_game(), DevOverlay.create(player,
+	var graphics : OverlayPanel = GraphicsOverlay.in_game()
+	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
 		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
+	# Play hints (left): the keys of the moment, each gone once learnt. Steps aside for the graphics panel.
+	var hints := PlayHintsPanel.new()
+	hints.hidden_rule = _modal_open
+	player.get_node("UserInterface").add_child(hints)
+	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	_offer_play_hints()
+	# A dark patch behind the interaction prompt, fitted to its width, so it reads over a bright ground.
+	var shade : ColorRect = PROMPT_SHADE.new()
+	var hud : Control = player.interact_label.get_parent()
+	hud.add_child(shade)
+	hud.move_child(shade, 0)  # under the rest of the HUD
+	shade.follow(player.interact_label)
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -319,6 +335,7 @@ func _process(_delta: float) -> void:
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
 		# LOOKING at its handle — the handle rides the door now, so aiming works open or closed.
 		player.interact_label.hide()
+		player.interact_label.modulate = Color.WHITE  # no fit / remove / refusal tint carried from on foot
 		var seated_handle = _aimed_door_handle()
 		if seated_handle != null:
 			player.interact_label.text = _door_prompt(seated_handle)
@@ -361,7 +378,8 @@ func _process(_delta: float) -> void:
 
 
 	player.interact_label.hide()
-	player.interact_label.modulate = Color.WHITE  # only a refusal ("locked" below) is drawn in red
+	# White, but for a vehicle part: fitting it in green, taking it off in yellow, a refusal in red.
+	player.interact_label.modulate = Color.WHITE
 	player.can_interact = false
 	# An Interactable under the crosshair (a console) says what `action` will do to it. The press itself is
 	# handled with every other use of `action` (_unhandled_input), where it takes priority.
@@ -411,6 +429,7 @@ func _process(_delta: float) -> void:
 		elif player._carry_prompt == "install":
 			# dropping here bolts the part into a vehicle bay
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_FIT"))
+			player.interact_label.modulate = SettingsStyle.GOOD_COLOR
 			player.interact_label.show()
 		elif player._carry_prompt == "cargo":
 			# dropping here loads it onto the truck (sticks)
@@ -424,8 +443,13 @@ func _process(_delta: float) -> void:
 			var what: String = ""
 			if aimed != null and aimed.has_method("part_name"):
 				what = str(aimed.part_name())
-			player.interact_label.text = _prompt(&"action",
-					tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
+			if aimed is VehicleComponent and (aimed as VehicleComponent).is_fitted():
+				# Bolted into a vehicle: carrying it takes it OFF the vehicle — said so, in yellow.
+				player.interact_label.text = _prompt(&"action", tr("%%HUD_REMOVE_NAMED") % what)
+				player.interact_label.modulate = SettingsStyle.FAIR_COLOR
+			else:
+				player.interact_label.text = _prompt(&"action",
+						tr("%%HUD_CARRY_NAMED") % what if what != "" else tr("%%HUD_CARRY"))
 			player.interact_label.show()
 		elif player._carry_prompt == "locked":
 			# A part of a running vehicle: no key to press, only why — in red, it is a refusal.
@@ -525,7 +549,8 @@ func _physics_process(delta: float) -> void:
 ## Owner: send our driving input to the server (only when it changes; the server holds it).
 ## `locked` means a panel owns the keyboard: we then send neutral, so nothing typed under it drives.
 func _send_drive_input(locked: bool) -> void:
-	var throttle: float = 0.0 if locked else Input.get_axis("move_back", "move_forward")
+	# The vehicle's own actions, not the walk's: a pad player rebinds them to the triggers alone.
+	var throttle: float = 0.0 if locked else Input.get_axis("vehicle_decelerate", "vehicle_accelerate")
 	var steer: float = 0.0 if locked else Input.get_axis("move_right", "move_left")
 	var braking: bool = false if locked else Input.is_action_pressed("brake")
 	if throttle == player._last_throttle and steer == player._last_steer and braking == player._last_brake:
@@ -1297,6 +1322,45 @@ func _help_open() -> bool:
 ## lets the view still pan across a console while its filter box has the keyboard.
 func _modal_open() -> bool:
 	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open()
+
+## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
+## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.
+## Level 1 lines come once the basics of their situation are learnt: the speed limiter after the wheel.
+func _offer_play_hints() -> void:
+	var move : Array = [&"move_forward", &"move_left", &"move_back", &"move_right"]
+	var seated := func() -> bool: return is_instance_valid(player._seat_node)
+	PlayHints.provide(self, &"on_foot", [
+		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"jump"), PlayHints.row(&"sprint"),
+		PlayHints.row(&"crouch"), PlayHints.row(&"toggle_flashlight"), PlayHints.row(&"star_map"),
+		PlayHints.row(&"controls_help"),
+		PlayHints.row(&"prone", "", 1),
+		PlayHints.row([&"walk_speed_up", &"walk_speed_down"], "%%HINT_WALK_PACE", 1),
+		PlayHints.row(&"emote_wheel", "", 1), PlayHints.row(&"write_in_chat", "", 1),
+		PlayHints.row(&"screenshot", "", 1),
+	], func() -> bool: return not seated.call() and not player.floating)
+	PlayHints.provide(self, &"floating", [
+		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"strafe_up"), PlayHints.row(&"strafe_down"),
+		PlayHints.row(&"eva_stabilize"),
+		PlayHints.row([&"roll_left", &"roll_right"], "%%HINT_ROLL", 1),
+	], func() -> bool: return not seated.call() and player.floating, 5)
+	PlayHints.provide(self, &"driving", [
+		PlayHints.row([&"vehicle_accelerate", &"move_left", &"vehicle_decelerate", &"move_right"], "%%HINT_DRIVE"),
+		PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
+		PlayHints.row(&"vehicle_lights"), PlayHints.row(&"vehicle_horn"), PlayHints.row(&"exit"),
+		PlayHints.row(&"vehicle_speed_limiter", "", 1),
+		PlayHints.row([&"vehicle_limiter_up", &"vehicle_limiter_down"], "%%HELP_LIMITER_SET", 1),
+		PlayHints.row(&"vehicle_horn_special", "", 1), PlayHints.row(&"vehicle_reset", "", 1),
+	], _is_driving, 10)
+	PlayHints.provide(self, &"passenger", [PlayHints.row(&"exit")],
+			func() -> bool: return seated.call() and not _is_driving(), 10)
+	PlayHints.provide(self, &"carrying", [
+		PlayHints.row(&"action", "%%HUD_DROP"), PlayHints.row(&"carry_rotate_cw"),
+		PlayHints.row(&"carry_free_rotate"),
+	], func() -> bool: return player._owner_carrying, 20)
+	PlayHints.provide(self, &"mining_tool", [
+		PlayHints.row(&"aim"), PlayHints.row(&"perforate"), PlayHints.row(&"toggle_tool"),
+	], func() -> bool: return player.mining_tool != null and player.mining_tool.is_equipped(), 20)
+
 
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.

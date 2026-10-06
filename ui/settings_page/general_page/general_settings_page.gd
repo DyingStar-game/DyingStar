@@ -6,6 +6,7 @@ extends Control
 const TOGGLES : Array[Dictionary] = [
 	{"node": "GraphicsOverlay", "owner": "render", "getter": "is_overlay_enabled", "setter": "set_overlay_enabled"},
 	{"node": "MenuStage", "owner": "render", "getter": "is_menu_stage_enabled", "setter": "set_menu_stage_enabled"},
+	{"node": "PlayHints", "getter": "is_play_hints_enabled", "setter": "set_play_hints_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
@@ -21,6 +22,9 @@ func _ready() -> void:
 	SettingsManager.language.changed.connect(_on_language_changed)
 	_wire_ui_scale()
 	SettingsToggles.wire(_rows, TOGGLES)
+	# Forget what the player learnt: every play hint shows again (see PlayHintsMemory).
+	(_rows.get_node("PlayHintsReset/Button") as Button).pressed.connect(func() -> void:
+		PlayHintsMemory.shared().reset())
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows(_rows)
 
