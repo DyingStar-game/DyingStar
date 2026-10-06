@@ -35,6 +35,7 @@ const ACTION_GROUPS : Dictionary = {
 			"star_map_zoom_step_out": "%%ACT_STAR_MAP_ZOOM_STEP_OUT",
 			"star_map_zoom_in": "%%ACT_STAR_MAP_ZOOM_IN",
 			"star_map_zoom_out": "%%ACT_STAR_MAP_ZOOM_OUT",
+			"star_map_layer_weather": "%%ACT_STAR_MAP_LAYER_WEATHER",
 		},
 		"%%KM_SECTION_CHAT": {
 			"toggle_chat": "%%ACT_TOGGLE_CHAT",

@@ -58,6 +58,10 @@ func _ready() -> void:
 		if connected:
 			_offer_pad())
 	is_ready = true
+	# Dev shortcut: debug_autojoin=true in client.ini enters the world without a click (a client the
+	# devpanel starts for a test). Deferred: the state change swaps the scene, not from inside _ready.
+	if ClientConfig.get_bool("debug_autojoin", false):
+		_on_entry_pressed.call_deferred(ENTER)
 
 
 ## The "Gamepad detected" window, when a pad is there and it has not come up yet this launch.

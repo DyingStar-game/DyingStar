@@ -206,3 +206,55 @@ static func music_lines(state: Dictionary) -> PackedStringArray:
 static func _minutes(seconds: float) -> String:
 	var whole : int = int(seconds)
 	return "%d:%02d" % [whole / 60, whole % 60]
+
+
+# ── Weather ─────────────────────────────────────────────────────────────────────────────────────
+
+## The weather at the body's position, from the planet it stands on: {} off a planet or without a
+## climate profile. Glue only; the numbers come from WeatherSampler through Planet.weather_at.
+static func weather_here(body: Node3D) -> Dictionary:
+	if not is_instance_valid(body):
+		return {}
+	var planet : Planet = Planet.of(body)
+	if planet == null:
+		return {}
+	return planet.weather_at(body.global_position)
+
+
+## What the Weather section says, from a WeatherSampler sample: wind (speed, where it comes from),
+## the latitude band and the systems that weigh here, temperature / pressure / air density, dust and
+## visibility, the local hour and the star's declination, and where we are.
+static func weather_lines(sample: Dictionary) -> PackedStringArray:
+	if sample.is_empty():
+		return ["weather --"]
+	var speed : float = float(sample.get("wind_speed_m_s", 0.0))
+	var from_deg : float = float(sample.get("wind_from_deg", 0.0))
+	var systems : Array = sample.get("systems", [])
+	var names : PackedStringArray = []
+	for s in systems:
+		if s is Array and s.size() >= 3:
+			names.append("%s %d%%" % [String(s[2]), roundi(float(s[0]) * 100.0)])
+	var dust : float = float(sample.get("dust_tau", 0.0))
+	var visibility : float = float(sample.get("visibility_m", 0.0))
+	var visibility_text : String = "clear" if dust <= 1e-6 else "%d m" % roundi(visibility)
+	var hours : float = float(sample.get("local_solar_hours", 0.0))
+	var out : PackedStringArray = [
+		ReadoutFormat.escape("wind: %.1f m/s (%.0f km/h) from %s %.0f°" % [speed, speed * 3.6, compass(from_deg), from_deg]),
+		ReadoutFormat.escape("band: %s   systems: %s" % [String(sample.get("band", "?")), ", ".join(names) if not names.is_empty() else "none"]),
+		ReadoutFormat.escape("T %.1f K (%.1f °C)   p %.1f hPa   air %.3f kg/m³" % [float(sample.get("temperature_k", 0.0)),
+			float(sample.get("temperature_k", 0.0)) - 273.15, float(sample.get("pressure_pa", 0.0)) / 100.0,
+			float(sample.get("air_density_kg_m3", 0.0))]),
+		ReadoutFormat.escape("dust τ %.2f   visibility %s   humidity %.0f%%" % [dust, visibility_text,
+			float(sample.get("humidity", 0.0)) * 100.0]),
+		ReadoutFormat.escape("hour %02d:%02d   declination %+.1f°" % [int(hours), int((hours - floorf(hours)) * 60.0),
+			float(sample.get("declination_deg", 0.0))]),
+		ReadoutFormat.escape("where: lon %.2f  lat %.2f  alt %.0f m" % [float(sample.get("lon_deg", 0.0)),
+			float(sample.get("lat_deg", 0.0)), float(sample.get("altitude_m", 0.0))]),
+	]
+	return out
+
+
+## Eight-point compass name of a "from" direction in degrees (0 = N, clockwise).
+static func compass(from_deg: float) -> String:
+	const NAMES : PackedStringArray = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+	return NAMES[int(roundf(fposmod(from_deg, 360.0) / 45.0)) % 8]

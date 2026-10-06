@@ -960,3 +960,89 @@ func _notification(what: int) -> void:
 		transform = _editor_authored
 	elif what == NOTIFICATION_EDITOR_POST_SAVE:
 		transform = _editor_flight if _editor_flight != Transform3D.IDENTITY else _editor_authored
+
+
+# ------------------------------------------------------------------
+# Weather
+
+## The weather systems Horizon parented to this body, as the Dictionaries WeatherSampler reads
+## (WeatherSystem.state()). Children of the planet node, like the villages.
+func weather_systems() -> Array:
+	var out: Array = []
+	if not is_inside_tree():
+		return out
+	for n: Node in get_tree().get_nodes_in_group(WeatherSystem.GROUP):
+		if n is WeatherSystem and n.get_parent() == self:
+			out.append(n.state())
+	return out
+
+
+## Declination of the star today, degrees: how far it stands north of this body's equator — the
+## angle between the spin axis (the tilted local Y, as get_local_solar_time uses it) and the
+## direction to the star. 0 when there is no star to look at.
+func star_declination_deg() -> float:
+	var star: Node3D = _find_sun()
+	if star == null:
+		return 0.0
+	var axis: Vector3 = global_basis.y.normalized()
+	var to_star: Vector3 = (star.global_position - global_position).normalized()
+	return rad_to_deg(asin(clampf(axis.dot(to_star), -1.0, 1.0)))
+
+
+## Longitude and latitude (degrees) of the point under the star on this body — the substellar point:
+## its latitude is the star's declination, its longitude says where noon stands. Vector2.ZERO without
+## a star. What a chart needs to put the local hour on every cell of the body at once.
+func substellar_lonlat() -> Vector2:
+	var star: Node3D = _find_sun()
+	if star == null:
+		return Vector2.ZERO
+	return lonlat_of(star.global_position)
+
+
+## The weather at a world position on this body: WeatherSampler.sample's Dictionary (wind,
+## temperature, pressure, dust, band, systems in reach), or {} when the body has no climate
+## profile. The same call on the server and on every client gives the same numbers: the inputs
+## (profile, systems, shared clock) are the same.
+func weather_at(world_pos: Vector3) -> Dictionary:
+	var profile: ClimateProfile = climate_profile()
+	if profile == null:
+		return {}
+	var ll: Vector2 = lonlat_of(world_pos)
+	var hours: float = get_local_solar_time(world_pos)
+	if hours < 0.0:
+		hours = 12.0
+	return WeatherSampler.sample(profile, weather_systems(), ll.x, ll.y, elevation_of(world_pos), hours,
+		star_declination_deg())
+
+
+## The climate profile of this body: the one set on its PlanetData, else the generated one named
+## after the body (`scenes/planet/climates/<planet_name>.tres`, the convention of
+## build_climate_profiles.gd), else null (no weather). Looked up once.
+func climate_profile() -> ClimateProfile:
+	if planet_data == null:
+		return null
+	if planet_data.climate_profile != null:
+		return planet_data.climate_profile
+	if _climate_profile_looked_up:
+		return _climate_profile_by_name
+	_climate_profile_looked_up = true
+	var path: String = "res://scenes/planet/climates/%s.tres" % planet_data.planet_name
+	if ResourceLoader.exists(path):
+		_climate_profile_by_name = load(path)
+	return _climate_profile_by_name
+
+
+var _climate_profile_looked_up: bool = false
+var _climate_profile_by_name: ClimateProfile = null
+
+
+## The wind at a world position as a WORLD vector (m/s): the sample's (east, north) carried onto the
+## ground's axes in the body frame, then through this body's basis (which spins on a client). Zero
+## without weather. What the dust, the vegetation and the physics push with.
+func wind_world_at(world_pos: Vector3) -> Vector3:
+	var sample: Dictionary = weather_at(world_pos)
+	if sample.is_empty():
+		return Vector3.ZERO
+	var axes: Array = WeatherSampler.local_axes(sample["lon_deg"], sample["lat_deg"])
+	var local: Vector3 = axes[0] * float(sample["wind_east_m_s"]) + axes[1] * float(sample["wind_north_m_s"])
+	return global_basis.orthonormalized() * local

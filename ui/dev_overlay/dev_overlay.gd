@@ -56,6 +56,9 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_MUSIC",
 		func() -> PackedStringArray: return DevReadouts.music_lines(MusicDirector.debug_state()), 0.5,
 		func() -> bool: return toggles.is_on(&"music_debug")))
+	panel.add_section(ReadoutSection.new("%%HUD_DEV_WEATHER",
+		func() -> PackedStringArray: return DevReadouts.weather_lines(DevReadouts.weather_here(body)), 0.5,
+		func() -> bool: return toggles.is_on(&"weather_debug")))
 	if star_map != null:
 		panel.add_section(ReadoutSection.new("%%HUD_DEV_STAR_MAP", star_map.debug_lines, 0.25,
 			func() -> bool: return toggles.is_on(&"star_map_debug") and star_map.is_open()))

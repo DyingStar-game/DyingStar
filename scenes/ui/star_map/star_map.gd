@@ -331,6 +331,9 @@ var _ground: StarMapGround = null
 var _roads: StarMapRoads = null
 ## The canyons, drawn the same way from the heights where the ground is too coarse to carry them.
 var _canyons: StarMapCanyons = null
+## The weather over that ground — the chart's synoptic layer (pressure, isobars, wind, dust), from the
+## systems Horizon delivered for the body you are near. A dev tool for now (ENABLED_DEV_TOOLS weather_map).
+var _weather: StarMapWeather = null
 ## And what asks the service for the ground neither of them has yet. Not a node: it owns a worker
 ## thread and a queue, nothing in the scene.
 var _stream: StarMapStream = StarMapStream.new()
@@ -414,7 +417,7 @@ func _ready() -> void:
 ## The chart's keys, for its own hints panel (_hints) while it is open. Select carries "twice: go
 ## there"; the zoom lists the wheel's steps and the held keys or triggers, whichever the device has.
 func _offer_play_hints() -> void:
-	PlayHints.provide(self, &"star_map", [
+	var rows: Array = [
 		PlayHints.row(&"star_map_select", "%%HINT_MAP_SELECT"),
 		PlayHints.row([&"star_map_zoom_step_in", &"star_map_zoom_step_out", &"star_map_zoom_in",
 				&"star_map_zoom_out"], "%%HINT_MAP_ZOOM"),
@@ -422,7 +425,10 @@ func _offer_play_hints() -> void:
 				&"star_map_orbit_up", &"star_map_orbit_down"], "%%HINT_MAP_TURN"),
 		PlayHints.row(&"star_map_reset", "%%HINT_MAP_RESET"),
 		PlayHints.row(&"star_map", "%%HINT_MAP_CLOSE"),
-	], is_open, 50)
+	]
+	if Globals.is_dev_tool_enabled(&"weather_map"):
+		rows.insert(rows.size() - 1, PlayHints.row(&"star_map_layer_weather", "%%HINT_MAP_WEATHER"))
+	PlayHints.provide(self, &"star_map", rows, is_open, 50)
 
 
 ## Tell the chart which body is the local player, so it can show where you are.
@@ -1640,6 +1646,7 @@ func _refresh_ground() -> void:
 			_adopt(sphere, _ground)
 			_adopt(sphere, _roads)
 			_adopt(sphere, _canyons)
+			_adopt(sphere, _weather)
 	else:
 		_drop_ground()
 		_ground = StarMapGround.new()
@@ -1667,6 +1674,10 @@ func _refresh_ground() -> void:
 		_canyons = StarMapCanyons.new()
 		_canyons.body_key = key
 		sphere.add_child(_canyons)
+		if Globals.is_dev_tool_enabled(&"weather_map"):
+			_weather = StarMapWeather.new()
+			_weather.body_key = key
+			sphere.add_child(_weather)
 		_ground_body = index
 		_ground_key = key
 	# The real height above the ground, which is what makes the level follow the zoom. Safe to hand over
@@ -1684,6 +1695,9 @@ func _refresh_ground() -> void:
 	# needs no line over them, and only the ground's set says which those are.
 	if _canyons != null:
 		_canyons.show_over(_ground.wanted(), _ground_scale())
+	# The weather over it, from the live planet's systems: nothing for a body out of reach.
+	if _weather != null:
+		_weather.refresh(_live_planet(key), Globals.sim_time(), _ground_scale())
 	# And ask for what is wanted but has never been downloaded.
 	_stream.want(key, published)
 	# The answers land in the disk cache behind the ground's back, so it has to be told: a tile drawn
@@ -1761,6 +1775,11 @@ func _drop_ground() -> void:
 				lines.queue_free()
 	_roads = null
 	_canyons = null
+	if _weather != null:
+		_weather.clear()
+		if is_instance_valid(_weather):
+			_weather.queue_free()
+	_weather = null
 	if _ground != null:
 		_ground.clear()
 		if is_instance_valid(_ground):
@@ -2295,6 +2314,10 @@ func _refresh_cursor_readout() -> void:
 				sphere.basis.orthonormalized(), key)
 		if local != Vector3.ZERO:
 			text = cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"]))
+			if _weather != null and _ground_body == body:
+				var weather: String = _weather.cursor_line(local)
+				if weather != "":
+					text += "   " + weather
 	# On the pad the cross stays with nothing to write: it is what hovers and selects.
 	if text == "" and not on_pad:
 		_cursor_readout.hide_readout()
@@ -2915,6 +2938,8 @@ func debug_lines() -> PackedStringArray:
 	var relief: String = _relief_readout()
 	if relief != "":
 		lines.append(relief)
+	if _weather != null:
+		lines.append(_weather.readout())
 	for i in lines.size():
 		lines[i] = ReadoutFormat.escape(lines[i])
 	return lines
@@ -3036,6 +3061,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_reset_pressed()
 	elif event.is_action_pressed("star_map_orbit"):
 		_dragging = true  # until released, see _input
+	elif event.is_action_pressed("star_map_layer_weather") and _weather != null:
+		_weather.enabled = not _weather.enabled
 	elif event.is_action_pressed("star_map_zoom_step_in"):
 		_zoom_by(1.0 / StarMapCamera.ZOOM_STEP)
 	elif event.is_action_pressed("star_map_zoom_step_out"):

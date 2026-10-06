@@ -2517,7 +2517,9 @@ func update_generic_object(event: Dictionary) -> void:
 # An item no longer wanted for STREAM_DORMANT_MS goes back to data (never a delete for Horizon).
 
 ## Types that never sleep (tuning hook; empty = everything streams).
-const STREAM_ALWAYS_TYPES: Array[String] = []
+## weather_system: a storm 300 km across is DATA for the whole planet (Planet.weather_at reads every
+## system of the body), not a thing standing on one chunk; a dozen Node3D per planet, no physics.
+const STREAM_ALWAYS_TYPES: Array[String] = ["weather_system"]
 
 var prop_registry := PropRegistry.new()
 var _stream_load_factor: float = SettingsManager._server_ini_number("streaming", "load_factor", 1.2)

@@ -27,6 +27,8 @@ const DEFAULTS : Dictionary = {
 	&"surface_debug": false,
 	# Which track plays, from which playlist, and which line of the MusicTable decided it.
 	&"music_debug": false,
+	# The weather here: wind, band, systems in reach, temperature, dust, local hour.
+	&"weather_debug": false,
 	# What the star map draws: bodies, focus, zoom, simulated time, relief tiles.
 	&"star_map_debug": false,
 }

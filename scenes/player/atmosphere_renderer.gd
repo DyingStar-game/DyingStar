@@ -93,6 +93,15 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## Altitude (m) the observer pretends to stand at when debug_pretend_lowlands is on.
 @export var debug_pretend_altitude: float = 380.0
 
+## The WEATHER's hand on the veil, set by WeatherSky from Planet.weather_at: a factor on the Mie
+## (dust) coefficients (1 = the calibrated veil, 70 = a storm with 100 m of visibility) and a floor
+## the slab is lowered to (m over the reference sphere; < 0 = the profile's own bottom). Both are
+## quantised by WeatherSky, because both are keys of the transmittance table: a value that moved every
+## frame would refill the table every frame.
+var weather_haze_scale: float = 1.0
+var weather_haze_floor_m: float = -1.0
+var _weather_sky: WeatherSky = WeatherSky.new()
+
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
@@ -236,7 +245,8 @@ func _check_transmittance_lut(profile: AtmosphereProfile) -> void:
 	var worst := 0.0
 	for uv in [Vector2(0.9, 0.05), Vector2(0.5, 0.05), Vector2(0.2, 0.3), Vector2(0.05, 0.5), Vector2(0.6, 0.9)]:
 		var r_mu := _lut_r_mu(uv, profile)
-		var expected := profile.transmittance_to_star(r_mu.x - profile.planet_radius, r_mu.y)
+		var expected := profile.transmittance_to_star(r_mu.x - profile.planet_radius, r_mu.y,
+				weather_haze_scale, weather_haze_floor_m)
 		var got := image.get_pixelv(Vector2i(uv * TRANSMITTANCE_LUT_SIZE))
 		worst = maxf(worst, maxf(absf(got.r - expected.r), maxf(absf(got.g - expected.g), absf(got.b - expected.b))))
 	print("[Atmosphere] transmittance table filled for %s: worst gap to the CPU integral %.4f" % [
@@ -346,6 +356,9 @@ func _process(_delta: float) -> void:
 	if profile == null:
 		_push_airless(star_direction)
 		return
+	var body: Planet = current_body()
+	if body != null:
+		_weather_sky.update(self, body, player.global_position)
 	_push_profile(profile, star_direction)
 
 
@@ -425,7 +438,16 @@ func transmittance_at(sin_elevation: float) -> Color:
 	# The debug lift has to reach the LIGHT too, or the veil rises over your head while the star keeps
 	# shining at full plateau strength. Raising the ceiling for the shader and lowering the observer
 	# for the integral both mean the same thing: 3500 m of corundum overhead.
-	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation)
+	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation,
+			weather_haze_scale, weather_haze_floor_m)
+
+
+## The slab's bottom once the weather has had its say: the profile's own, or the storm's floor when
+## it is lower (a storm fills the valleys; it never lifts the veil).
+func _weather_haze_bottom(profile: AtmosphereProfile) -> float:
+	if weather_haze_floor_m < 0.0 or profile.haze_top <= 0.0:
+		return profile.haze_bottom
+	return minf(profile.haze_bottom, weather_haze_floor_m)
 
 
 ## Vector from the camera to the centre of the body the profile describes, or ZERO when it cannot be
@@ -448,11 +470,11 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"atmosphere_top": profile.atmosphere_top,
 		"rayleigh_beta": profile.rayleigh_beta,
 		"rayleigh_scale_height": profile.rayleigh_scale_height,
-		"mie_beta": profile.mie_beta,
+		"mie_beta": profile.mie_beta * weather_haze_scale,
 		"mie_g": profile.mie_g,
 		"mie_albedo": profile.mie_albedo,
 		"haze_top": profile.haze_top + _haze_lift(),
-		"haze_bottom": profile.haze_bottom + _haze_lift(),
+		"haze_bottom": _weather_haze_bottom(profile) + _haze_lift(),
 		"haze_falloff": maxf(profile.haze_falloff, 1.0),
 		"mie_scale_height": maxf(profile.mie_scale_height, 1.0),
 		"absorption_beta": profile.absorption_beta,

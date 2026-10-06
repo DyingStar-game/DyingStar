@@ -98,7 +98,12 @@ func has_atmosphere() -> bool:
 ## same profiles, the same coefficients. It cannot literally BE the same code —
 ## one is GLSL, the other GDScript — so the two are written to look alike, and
 ## the density functions below carry the same names as their shader twins.
-func transmittance_to_star(altitude: float, sin_elevation: float) -> Color:
+## [param mie_scale] multiplies the Mie (dust) coefficients and [param haze_bottom_override] (m, < 0
+## = the profile's own) lowers the slab: the WEATHER's hand on the veil, the same two knobs the sky
+## shader receives (AtmosphereRenderer.weather_haze_scale / weather_haze_floor_m), so the star's
+## dimming and the sky stay one physics.
+func transmittance_to_star(altitude: float, sin_elevation: float, mie_scale: float = 1.0,
+		haze_bottom_override: float = -1.0) -> Color:
 	if not has_atmosphere():
 		return Color.WHITE  # no air to cross
 	var top := planet_radius + atmosphere_top
@@ -113,7 +118,7 @@ func transmittance_to_star(altitude: float, sin_elevation: float) -> Color:
 	var exit := _ray_sphere(origin, dir, top).y
 	if exit <= 0.0:
 		return Color.WHITE
-	var depth := _optical_depth(origin, dir, exit, EXTINCTION_STEPS)
+	var depth := _optical_depth(origin, dir, exit, EXTINCTION_STEPS, mie_scale, haze_bottom_override)
 	return Color(exp(-depth.x), exp(-depth.y), exp(-depth.z))
 
 
@@ -137,7 +142,8 @@ func _ray_sphere(origin: Vector3, dir: Vector3, radius: float) -> Vector2:
 ## entirely depending on the observer's altitude — measured 126 % error on the vertical transmittance
 ## at 2000 m, which read 0.90 instead of 0.40. Since the density always falls off away from the
 ## observer on these rays, spacing the samples by i^2 puts them where the extinction actually is.
-func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) -> Vector3:
+func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int, mie_scale: float = 1.0,
+		haze_bottom_override: float = -1.0) -> Vector3:
 	var depth := Vector3.ZERO
 	var near := 0.0
 	for i in steps:
@@ -148,7 +154,7 @@ func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) 
 		var altitude: float = maxf(0.0, point.length() - planet_radius)
 		depth += (
 			rayleigh_beta * rayleigh_density(altitude)
-			+ mie_beta * mie_density(altitude)
+			+ mie_beta * mie_scale * mie_density(altitude, haze_bottom_override)
 			+ absorption_beta * absorption_density(altitude)
 		) * (far - near)
 		near = far
@@ -171,9 +177,10 @@ func rayleigh_density(altitude: float) -> float:
 	return exp(-altitude / rayleigh_scale_height)
 
 
-func mie_density(altitude: float) -> float:
+func mie_density(altitude: float, haze_bottom_override: float = -1.0) -> float:
 	if haze_top > 0.0:
-		var below := smoothstep(haze_bottom - haze_falloff, haze_bottom + haze_falloff, altitude)
+		var bottom: float = haze_bottom if haze_bottom_override < 0.0 else haze_bottom_override
+		var below := smoothstep(bottom - haze_falloff, bottom + haze_falloff, altitude)
 		var above := smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude)
 		return below * (1.0 - above)
 	return exp(-altitude / mie_scale_height)

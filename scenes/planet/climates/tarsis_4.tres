@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_n23nl"]
+
+[resource]
+script = ExtResource("1_n23nl")
+body_name = "Gaea"
+has_atmosphere = true
+weather_seed = 7719684759025951744
+radius_m = 5875000.0
+surface_gravity = 9.04214657761521
+tilt_deg = 23.5
+orbit_period_s = 18985235.79733981
+pressure_pa = 91000.0
+rho0_kg_m3 = 1.0977473170507324
+scale_height_m = 9167.84928517898
+irradiance_w_m2 = 1067.0387725250637
+t_eq_k = 239.55300777568343
+diurnal_amplitude_k = 10.0
+radiative_time_s = 1874903.559663421
+thermal_inertia_tiu = 2000.0
+delta_t_equator_pole_k = 26.762992144027816
+coriolis_45_s = 0.00010284451245736
+hadley_edge_deg = 34.81910824187595
+v10_scale_m_s = 10.36951793145333
+wind_scale_max_ms = 50.0
+v10_threshold_m_s = 6.029063819439364
+sound_speed_m_s = 340.53755133106023
+dust_tau_max = 3.0
