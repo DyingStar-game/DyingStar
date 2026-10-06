@@ -52,6 +52,7 @@ collision_mask = 15
 mass = 1425.0
 script = ExtResource("1_vehicle")
 torque_response = 1.0
+brake_deceleration = 10.0
 factory_components = Array[ExtResource("92_component_spec")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("91_battery")])
 steer_speed = 0.2
 steer_return_speed = 1.0
