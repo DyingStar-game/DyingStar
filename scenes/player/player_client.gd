@@ -315,6 +315,8 @@ func _process(_delta: float) -> void:
 		if not seated_focus:
 			player.mouse_motion += _stick_look(_delta)  # free look at the wheel, from the stick too
 		player._ride_seat(player._seat_node)
+		if not player.gravity_parents.is_empty():
+			_refresh_up_direction(player.gravity_parents.back())  # the sunlight follows the drive
 		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
 		# Seated: clear the on-foot prompts, but still let a driver/passenger close (or reopen) a door by
 		# LOOKING at its handle — the handle rides the door now, so aiming works open or closed.
@@ -677,6 +679,18 @@ func _surface_span(surface: MeshInstance3D) -> Rect2:
 	return span
 
 
+## The local vertical, from the gravity that holds the body: away from a planet's centre, or a
+## station's own up. Not only for walking: PlayerSunLight measures the star's height against it — the
+## colour and strength of the sunlight — so it must follow the body seated too. Left to the on-foot
+## path, it froze when the player sat down: the light kept the height the star had at boarding while
+## the truck drove on or the clock ran, and jumped to the real one at the exit.
+func _refresh_up_direction(parent_gravity_area: Area3D) -> void:
+	if parent_gravity_area.gravity_point:
+		player.up_direction = parent_gravity_area.global_position.direction_to(player.global_position)
+	else:
+		player.up_direction = parent_gravity_area.global_basis.y
+
+
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
 ## the transform ops (global_basis / rotate_object_local) go through player, not this role node.
@@ -700,10 +714,7 @@ func _handle_camera_motion() -> void:
 	if parent_gravity_area:
 		player._no_gravity_time = 0.0
 		_roll_rate = 0.0  # gravity holds the body upright again: a roll must not resume at the next EVA
-		if parent_gravity_area.gravity_point:
-			player.up_direction = parent_gravity_area.global_position.direction_to(player.global_position)
-		else:
-			player.up_direction = parent_gravity_area.global_basis.y
+		_refresh_up_direction(parent_gravity_area)
 
 		player.gravity = player._compute_gravity(parent_gravity_area)
 		player.orient_player()
