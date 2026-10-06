@@ -734,7 +734,9 @@ func _in_god_mode() -> bool:
 	return _god_mode and player.floating
 
 
-## The god mode speed, top centre of the HUD, built once and shown only in flight.
+## The god mode speed, top centre of the HUD, built once and shown only in flight. Our own body is
+## hidden meanwhile: flying is looking, and arms and a torch in front of the lens only get in the way.
+## On this client only — the others see the avatar as before.
 func _build_god_mode_label() -> void:
 	_god_mode_label = Label.new()
 	_god_mode_label.name = "GodModeSpeed"
@@ -752,7 +754,10 @@ func _build_god_mode_label() -> void:
 func _update_god_mode_label() -> void:
 	if _god_mode_label == null:
 		return
-	_god_mode_label.visible = _in_god_mode()
+	var flying := _in_god_mode()
+	if player.puppet.visible == flying:
+		player.puppet.visible = not flying
+	_god_mode_label.visible = flying
 	if _god_mode_label.visible:
 		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)
 				+ "\n" + _prompt(&"god_mode_land", tr("%%HUD_GOD_MODE_LAND")))
