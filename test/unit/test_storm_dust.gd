@@ -44,3 +44,28 @@ func test_the_frame_follows_the_local_up() -> void:
 	var at : Vector3 = StormDust.birth_point(camera, wind, up, Vector3(0.0, 1.0, 0.0))
 	assert_almost_eq(at.z, -StormDust.UPWIND_M, 1e-9, "upwind")
 	assert_almost_eq(at.y, -StormDust.HEIGHT_SPREAD_M, 1e-9, "'up' is down there")
+
+
+func test_the_plains_blow_sand_once_the_wind_lifts_the_ground() -> void:
+	assert_eq(StormDust.saltation_rate(5.0, 6.0), 0.0, "under the threshold: nothing")
+	assert_eq(StormDust.saltation_rate(6.0, 6.0), 0.0, "at it: nothing yet")
+	assert_almost_eq(StormDust.saltation_rate(12.0, 6.0), 1.0, 1e-9, "twice the threshold: full")
+	var some : float = StormDust.saltation_rate(8.0, 6.0)
+	assert_between(some, 0.1, 0.6, "between: some (8 m/s on Tarsis III)")
+	assert_lt(some, StormDust.saltation_rate(10.0, 6.0), "more wind, more sand")
+	assert_eq(StormDust.saltation_rate(30.0, 6.0), 1.0, "capped")
+	assert_eq(StormDust.saltation_rate(30.0, 0.0), 0.0, "no threshold known: nothing")
+
+
+func test_a_low_population_is_born_at_its_own_distance_and_height() -> void:
+	var camera := Vector3(100.0, 50.0, -20.0)
+	var wind := Vector3(10.0, 0.0, 0.0)
+	var at : Vector3 = StormDust.birth_point(camera, wind, Vector3.UP, Vector3.ZERO, 9.0, 7.0, 0.0)
+	assert_eq(at, camera - Vector3(9.0, 0.0, 0.0))
+	var side : Vector3 = StormDust.birth_point(camera, wind, Vector3.UP, Vector3(1.0, 1.0, 0.0), 9.0, 7.0, 0.0)
+	assert_almost_eq(side.y, camera.y, 1e-9, "no height spread: at eye level, the ground is set after")
+	assert_almost_eq(side.z, camera.z - 7.0, 1e-9)
+
+
+func test_on_the_ground_without_a_planet_stands_over_the_point() -> void:
+	assert_eq(StormDust.on_the_ground(null, Vector3(1.0, 2.0, 3.0), Vector3.UP, 0.5), Vector3(1.0, 2.5, 3.0))

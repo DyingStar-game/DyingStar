@@ -9,6 +9,10 @@ shader_type particles;
 //
 // CUSTOM: x = spin angle (rad), y = age (s), z = size at birth (m), w = this particle's lifetime (s).
 // ground_dust.gdshader reads the same layout through INSTANCE_CUSTOM.
+//
+// A grain that FLIES (stretch_per_ms > 0: the saltation streaks of a storm) carries its direction in
+// its transform: X along the velocity, longer the faster it goes; ground_dust.gdshader turns that
+// into a billboard laid along the motion. A puff that hangs keeps the plain uniform scale.
 
 // Downward pull (m/s²): the planet's gravity when airless, a slow settle in air.
 uniform float settle = 0.6;
@@ -21,6 +25,9 @@ uniform float lifetime_spread = 0.35;
 // Wind (m/s) in the emitter's frame: the air the drag relaxes a puff toward. Zero = still air,
 // which is the behaviour before the weather existed.
 uniform vec3 wind = vec3(0.0);
+// How much longer (× per m/s) a grain is drawn along its motion: 0 = a round puff whatever its
+// speed; 0.08 = a grain at 20 m/s drawn 2.6 times longer than wide (the storm's sand streaks).
+uniform float stretch_per_ms = 0.0;
 
 float hash(uint n) {
 	n = (n << 13u) ^ n;
@@ -58,8 +65,20 @@ void process() {
 	// Swells fast at first, then slower, the way a puff mixes into the air.
 	float t = clamp(CUSTOM.y / max(CUSTOM.w, 0.001), 0.0, 1.0);
 	float s = CUSTOM.z * mix(1.0, growth, sqrt(t));
-	TRANSFORM[0].xyz = vec3(s, 0.0, 0.0);
-	TRANSFORM[1].xyz = vec3(0.0, s, 0.0);
-	TRANSFORM[2].xyz = vec3(0.0, 0.0, s);
+	float speed = length(VELOCITY);
+	if (stretch_per_ms > 0.0 && speed > 0.5) {
+		// A flying grain: X along the motion and longer with the speed, Y and Z the plain size.
+		vec3 d = VELOCITY / speed;
+		vec3 ref = abs(d.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+		vec3 b = normalize(cross(ref, d));
+		vec3 c = cross(d, b);
+		TRANSFORM[0].xyz = d * s * (1.0 + stretch_per_ms * speed);
+		TRANSFORM[1].xyz = c * s;
+		TRANSFORM[2].xyz = b * s;
+	} else {
+		TRANSFORM[0].xyz = vec3(s, 0.0, 0.0);
+		TRANSFORM[1].xyz = vec3(0.0, s, 0.0);
+		TRANSFORM[2].xyz = vec3(0.0, 0.0, s);
+	}
 	CUSTOM.x += DELTA * 0.4;  // a slow turn, so the noise of a hanging puff does not look frozen
 }
