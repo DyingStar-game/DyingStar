@@ -100,6 +100,12 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## frame would refill the table every frame.
 var weather_haze_scale: float = 1.0
 var weather_haze_floor_m: float = -1.0
+## The dust the wind blows off the ground around the observer (WeatherSky.blow_*): a thin slab of Mie,
+## blow_density times the profile's coefficients between the two altitudes (m over the reference sphere,
+## laid about the observer's own ground). 0 = none. Not a key of the transmittance table.
+var weather_blow_density: float = 0.0
+var weather_blow_bottom_m: float = 0.0
+var weather_blow_top_m: float = 0.0
 var _weather_sky: WeatherSky = WeatherSky.new()
 
 var _sky_material: ShaderMaterial = null
@@ -487,6 +493,9 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"light_steps": light_steps,
 		"sky_exposure": _sky_exposure(profile),
 		"use_transmittance_lut": _use_lut,
+		"blow_density": weather_blow_density,
+		"blow_bottom": weather_blow_bottom_m + _haze_lift(),
+		"blow_top": weather_blow_top_m + _haze_lift(),
 	}
 	_refresh_transmittance_lut(values, profile)
 	_apply(values)

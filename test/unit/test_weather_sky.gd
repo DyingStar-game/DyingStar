@@ -60,3 +60,13 @@ func test_the_cpu_twin_honours_the_knobs() -> void:
 	var above : Color = _profile.transmittance_to_star(6000.0, 0.9)
 	var above_lowered : Color = _profile.transmittance_to_star(6000.0, 0.9, 1.0, 0.0)
 	assert_almost_eq(above.get_luminance(), above_lowered.get_luminance(), 1e-6, "above the veil the floor is unseen")
+
+
+func test_the_blown_slab_follows_the_lift_and_the_veils_coefficients() -> void:
+	assert_eq(WeatherSky.blow_density(0.0, _profile), 0.0, "no lift: no slab")
+	assert_eq(WeatherSky.blow_density(1.0, null), 0.0, "no profile: nothing to colour it")
+	var mie : float = maxf(_profile.mie_beta.x, maxf(_profile.mie_beta.y, _profile.mie_beta.z))
+	var full : float = WeatherSky.blow_density(1.0, _profile)
+	assert_almost_eq(full * mie, 3.912 / WeatherSky.BLOW_VISIBILITY_FULL_M, 1e-9, "a full blow: 400 m of visibility")
+	assert_almost_eq(WeatherSky.blow_density(0.5, _profile) / full, pow(0.5, WeatherSky.BLOW_POWER), 1e-9, "rises as lift^1.5")
+	assert_almost_eq(WeatherSky.blow_density(3.0, _profile), full, 1e-9, "capped at the full blow")

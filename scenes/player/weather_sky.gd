@@ -17,6 +17,13 @@ const FLOOR_STEP_M: float = 250.0
 const FLOOR_FULL_TAU: float = 1.0
 ## How often the weather is read, seconds.
 const REFRESH_S: float = 0.5
+## The blown-dust slab: the visibility (m) a full blow (twice the ground's lift threshold) brings the
+## plains down to — Koschmieder, β = 3.912 / V — and how the density rises to it with the lift
+## (StormDust.saltation_rate); the slab from this far under the observer's ground to this far over it.
+const BLOW_VISIBILITY_FULL_M: float = 400.0
+const BLOW_POWER: float = 1.5
+const BLOW_BELOW_M: float = 30.0
+const BLOW_ABOVE_M: float = 25.0
 
 var _last_read_at: float = -INF
 var _refills: int = 0
@@ -36,7 +43,27 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 		_refills += 1
 	renderer.weather_haze_scale = knobs[0]
 	renderer.weather_haze_floor_m = knobs[1]
+	# The dust the wind blows off this ground: a thin Mie slab about the observer's own elevation.
+	var climate: ClimateProfile = planet.climate_profile()
+	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
+			climate.v10_threshold_m_s if climate != null else 0.0)
+	renderer.weather_blow_density = blow_density(lifted, profile)
+	var ground: float = planet.elevation_of(observer_world_pos)
+	renderer.weather_blow_bottom_m = ground - BLOW_BELOW_M
+	renderer.weather_blow_top_m = ground + BLOW_ABOVE_M
 	return knobs
+
+
+## The blown slab's density in units of [param profile]'s Mie coefficients for a ground lifted
+## [param lifted] (0..1, StormDust.saltation_rate): β = 3.912 / BLOW_VISIBILITY_FULL_M × lifted^BLOW_POWER,
+## over the largest Mie coefficient. 0 without lift or without a Mie veil to colour it.
+static func blow_density(lifted: float, profile: AtmosphereProfile) -> float:
+	if profile == null or lifted <= 0.0:
+		return 0.0
+	var mie: float = maxf(profile.mie_beta.x, maxf(profile.mie_beta.y, profile.mie_beta.z))
+	if mie <= 1e-12:
+		return 0.0
+	return 3.912 / BLOW_VISIBILITY_FULL_M * pow(clampf(lifted, 0.0, 1.0), BLOW_POWER) / mie
 
 
 ## The two knobs for a storm dust optical depth [param dust_tau] over [param profile]'s veil,

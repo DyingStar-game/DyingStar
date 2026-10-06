@@ -33,6 +33,16 @@ uniform float haze_bottom = 0.0;
 uniform float haze_falloff = 1.0;
 uniform float mie_scale_height = 1200.0;
 
+// A second, thin slab of dust BLOWN off the ground by the wind, between blow_bottom and blow_top
+// (altitudes over the reference sphere, laid around the observer's own ground by WeatherSky), of
+// blow_density times the Mie coefficients: the haze of a blow on the plains, what whitens the far side
+// of a field in a 10 m/s wind. Zero = none. Not in the transmittance table (its vertical depth is a
+// few hundredths): it dims the horizon, never the sun.
+uniform float blow_density = 0.0;
+uniform float blow_bottom = 0.0;
+uniform float blow_top = 0.0;
+uniform float blow_falloff = 10.0;
+
 uniform vec3 absorption_beta = vec3(0.0);
 uniform float absorption_center = 25000.0;
 uniform float absorption_width = 15000.0;
@@ -113,12 +123,17 @@ float rayleigh_density(float altitude) {
 // contributes half of its own width: the optical depth that pins the planet's albedo depends on the
 // slab's THICKNESS alone, and moving it up or down leaves the calibration untouched.
 float mie_density(float altitude) {
+	float blow = 0.0;
+	if (blow_density > 0.0) {
+		blow = blow_density * smoothstep(blow_bottom - blow_falloff, blow_bottom + blow_falloff, altitude)
+				* (1.0 - smoothstep(blow_top - blow_falloff, blow_top + blow_falloff, altitude));
+	}
 	if (haze_top > 0.0) {
 		float below = smoothstep(haze_bottom - haze_falloff, haze_bottom + haze_falloff, altitude);
 		float above = smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude);
-		return below * (1.0 - above);
+		return below * (1.0 - above) + blow;
 	}
-	return exp(-altitude / mie_scale_height);
+	return exp(-altitude / mie_scale_height) + blow;
 }
 
 
