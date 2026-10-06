@@ -51,6 +51,12 @@ var _shut_down: bool = false
 # UUIDs requested by Horizon before participant_connected fired — retried on join.
 var _pending_subscriptions: Array = []
 
+# participant instance id -> identity, read from the KEYS of room.get_remote_participants(). Never
+# ask the participant itself: the extension's wrapper holds a raw pointer to the SDK participant, and
+# events are emitted later on the main thread, by which time a participant who left has been destroyed
+# — get_identity() on it then reads freed memory (client SIGSEGV 2026-10-05, in participant_disconnected).
+var _identity_by_participant: Dictionary = {}
+
 func _ready():
 	# print("[livekit] Starting connection to ", livekit_url, "...")
 	# SettingsManager owns the mute state, so it survives this node being destroyed and recreated
@@ -73,6 +79,7 @@ func _ready():
 
 func _on_connected():
 	# print("[livekit] Connected as: ", room.get_local_participant().get_identity())
+	_refresh_identities()  # those already in the room never fire participant_connected
 	_start_microphone_publish()
 
 func _on_connection_failed(reason: String) -> void:
@@ -84,7 +91,7 @@ func _on_disconnected(reason: String) -> void:
 
 func _on_participant_connected(participant):
 	# print("[livekit] Joined: ", participant.get_identity())
-	var identity: String = participant.get_identity()
+	var identity: String = _identity_of(participant)
 	if identity in _pending_subscriptions:
 		# print("[livekit] Retrying pending subscription for ", identity)
 		_pending_subscriptions.erase(identity)
@@ -92,15 +99,36 @@ func _on_participant_connected(participant):
 
 func _on_participant_disconnected(participant):
 	# print("[livekit] Left: ", participant.get_identity())
-	if participant == null or not participant.has_method("get_identity"):
+	var identity: String = _identity_of(participant)
+	if participant != null:
+		_identity_by_participant.erase(participant.get_instance_id())
+	if identity == "":
 		return
-	var identity: String = str(participant.get_identity())
 	# The SFU does not always send track_unsubscribed when someone leaves, so this is the ONLY thing
 	# that silences a departed player and frees their speaker. It used to be an empty handler, which
 	# is why a player who left was still heard.
 	_free_bridges_of(identity)
 	mapping_participant_player.erase(identity)
 	_pending_subscriptions.erase(identity)
+
+## Identity of a participant handed over by a room signal, WITHOUT calling into it (see
+## _identity_by_participant). "" when the room does not know it.
+func _identity_of(participant) -> String:
+	if participant == null:
+		return ""
+	var id: int = participant.get_instance_id()
+	if not _identity_by_participant.has(id):
+		_refresh_identities()
+	return _identity_by_participant.get(id, "")
+
+## Must run while a participant is still in the room: by the time participant_disconnected fires, the
+## extension has already dropped it from get_remote_participants().
+func _refresh_identities() -> void:
+	if room == null:
+		return
+	var remotes: Dictionary = room.get_remote_participants()
+	for identity in remotes:
+		_identity_by_participant[remotes[identity].get_instance_id()] = str(identity)
 
 func _on_track_published(_publication, _participant):
 	# print("[livekit] Track published by ", _participant.get_identity(), ": ", _publication.get_name())
@@ -184,9 +212,7 @@ func _bridge_key(track, participant) -> String:
 		if sid != "":
 			return sid
 	# Fallback when the SID is missing: identity + track name is still unique per participant.
-	var identity: String = ""
-	if participant != null and participant.has_method("get_identity"):
-		identity = str(participant.get_identity())
+	var identity: String = _identity_of(participant)
 	var track_name: String = str(track.get_name()) if track != null and track.has_method("get_name") else "track"
 	return "%s_%s" % [identity, track_name]
 
@@ -250,7 +276,7 @@ func _on_track_subscribed(track, _publication, participant):
 	# remote player node is not (yet) in the scene.
 	# When debug_force_2d_audio is true, always use non-spatial to bypass
 	# 3D attenuation/listener issues during debugging.
-	var participant_id: String = participant.get_identity()
+	var participant_id: String = _identity_of(participant)
 	var key: String = _bridge_key(track, participant)
 	# Re-subscribed with no unsubscribe in between: never leave two speakers on one track.
 	_free_bridge(key)
@@ -429,6 +455,7 @@ func shutdown() -> void:
 	_free_all_bridges()
 	mapping_participant_player.clear()
 	_pending_subscriptions.clear()
+	_identity_by_participant.clear()
 
 	# Leave the room. disconnect_from_room() is ASYNCHRONOUS (the extension does it on its own
 	# thread), so we drop our reference right after and let it finish on its own.
