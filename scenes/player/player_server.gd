@@ -8,6 +8,7 @@ extends Node
 ## they migrate too. (Filled in incrementally.)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## How long a body waits for the ground under it before being released anyway. Generous: a cold start
 ## regenerates every chunk on worker threads, and being released early is exactly the bug.
 const SPAWN_GROUND_TIMEOUT: float = 20.0
@@ -39,6 +40,8 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 	"delete_prop": &"zapette",
 	"spawn_prop": &"spawn_wheel",
 	"toggle_eva": &"toggle_eva",
+	"god_mode_speed": &"toggle_eva",
+	"god_mode_land": &"toggle_eva",
 }
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
@@ -364,14 +367,20 @@ func server_action_received(data: Dictionary) -> void:
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
 		"toggle_eva":
-			# EVA free-flight (dev test aid): flip the authoritative state; _physics_process then flies
+			# God mode (dev free-flight): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
 			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.
 			# Switched off with its dev tool by the gate at the top (DEV_TOOL_OF_ACTION): movement is
 			# server-authoritative, so that refusal, not the client's hidden key, is the check that counts.
-			player.eva_mode = not player.eva_mode
+			# The state the client asks for ("on"); a bare toggle from an older client flips it.
+			player.god_mode = bool(data.get("on", not player.god_mode))
 			player.velocity = Vector3.ZERO
-			player.server_send_properties_to_client({"eva": player.eva_mode})
+			player.server_send_properties_to_client({"god_mode": player.god_mode})
+		"god_mode_speed":
+			# The owner's mouse wheel in god mode: the speed it wants, clamped again here (GodMode).
+			player.god_mode_speed = GOD_MODE.clamp_speed(float(data.get("value", player.god_mode_speed)))
+		"god_mode_land":
+			_god_mode_land()
 		"screen_state":
 			# A 3D screen (mining depot, teleporter) button was pressed: route it to that screen.
 			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
@@ -979,11 +988,11 @@ func _physics_process_impl(delta: float) -> void:
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
-	if player.eva_mode:
-		# EVA free-flight (dev): fly the body where the camera looks, gravity off, collision off.
+	if player.god_mode:
+		# God mode (dev free-flight): fly the body where the camera looks, gravity off, collision off.
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_replicate_floating(true)
-		_server_eva_move(delta)
+		_server_god_mode_move(delta)
 		player.new_input_from_server = false
 		player.emit_move()
 		return
@@ -1515,17 +1524,17 @@ func _replicate_floating(now: bool) -> void:
 	player.server_send_properties_to_client({"floating": now})
 
 
-## EVA free-flight integration (dev test aid). Moves the body straight along the camera's look
-## direction at eva_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
+## God mode integration (dev free-flight). Moves the body straight along the camera's look
+## direction at god_mode_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
 ## can't tunnel the thin terrain trimesh or trip the below-surface catch, and no gravity is applied
 ## (this tick returns before the walk path). Same input mapping as walking, but in the CAMERA frame
 ## so looking up/down climbs/dives — the server holds the replicated camera pitch on camera_pivot.
 ## Stops crisply with no input, to line up a steady view of a body's day/night face.
-func _server_eva_move(delta: float) -> void:
+func _server_god_mode_move(delta: float) -> void:
 	var look: Basis = player.camera_pivot.global_transform.basis
 	var wish: Vector3 = look * Vector3(player.input_direction.x, _vertical_thrust, player.input_direction.y)
 	if wish.length_squared() > 0.0001:
-		player.velocity = wish.normalized() * player.eva_speed
+		player.velocity = wish.normalized() * player.god_mode_speed
 	else:
 		player.velocity = Vector3.ZERO
 	player.global_position += player.velocity * delta
@@ -2895,6 +2904,24 @@ func teleport_to(destination: Node, local_pos: Vector3) -> void:
 	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
 	# Going through the body's single emitter removes the whole class of mistake.
 	player.emit_move()
+
+
+## God mode's landing (the middle mouse button by default): ends the flight on the ground right under
+## the player, on GodMode.landing_body. The ground's height is the body's own relief (crack_aware_surface_dist, as
+## _catch_if_below_surface reads it), and teleport_to re-arms the spawn's wait-for-the-ground net: the
+## server has usually built no collision that far from where the player took off. Open space: nothing.
+func _god_mode_land() -> void:
+	var body: Planet = GOD_MODE.landing_body(player)
+	if not player.god_mode or body == null:
+		return
+	var local: Vector3 = body.global_basis.inverse() * (player.global_position - body.global_position)
+	if local.length_squared() < 1.0:
+		return
+	var up: Vector3 = local.normalized()
+	var ground: float = body.planet_data.crack_aware_surface_dist(up)
+	player.god_mode = false
+	player.server_send_properties_to_client({"god_mode": false})
+	teleport_to.call_deferred(body, up * (ground + GOD_MODE.LAND_CLEARANCE))
 
 
 ## Put the "wait for the ground to exist" net back on watch (see [method _hold_until_ground]).

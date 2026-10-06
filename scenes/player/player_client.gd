@@ -2,6 +2,7 @@ class_name PlayerClient
 extends Node
 
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
+const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
@@ -98,6 +99,12 @@ var _roll_rate: float = 0.0  # weightless roll, rad/s, with momentum (see _updat
 ## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
 var _camera_thief: String = ""
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
+## God mode (dev free-flight) as this client asked for it: flipped with each `toggle_eva` it sends. The
+## server never tells (its state is not replicated), and never refuses: both sides read the same dev-tool
+## switch (Globals.ENABLED_DEV_TOOLS). Trusted only while the server floats the body (see _in_god_mode).
+var _god_mode: bool = false
+var _god_mode_speed: float = 0.0  # the speed the wheel chose; seeded from player.god_mode_speed in setup()
+var _god_mode_label: Label = null  # top of the HUD while in god mode: its speed
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
@@ -176,6 +183,8 @@ func setup() -> void:
 	# set" marker, so the HUD read 0.0 m/s while the body actually walked at walk_speed.
 	_walk_speed_target = player.walk_speed
 	player.walk_speed_target = _walk_speed_target
+	_god_mode_speed = GOD_MODE.clamp_speed(player.god_mode_speed)
+	_build_god_mode_label()
 
 	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Currently switched off (see
 	# Globals.ENABLED_DEV_TOOLS) — the wheel is simply never built, and everything downstream
@@ -320,6 +329,7 @@ func _process(_delta: float) -> void:
 		_update_name_tag()
 		return
 	_update_controls_help(_delta)
+	_update_god_mode_label()
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
@@ -718,6 +728,36 @@ func _refresh_up_direction(parent_gravity_area: Area3D) -> void:
 		player.up_direction = parent_gravity_area.global_basis.y
 
 
+## In god mode right now: asked for, and the server floats the body (it does in god mode). The second
+## half keeps a lost toggle from leaving the wheel on the flight speed while walking.
+func _in_god_mode() -> bool:
+	return _god_mode and player.floating
+
+
+## The god mode speed, top centre of the HUD, built once and shown only in flight.
+func _build_god_mode_label() -> void:
+	_god_mode_label = Label.new()
+	_god_mode_label.name = "GodModeSpeed"
+	_god_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_god_mode_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_god_mode_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_god_mode_label.position.y = 24.0
+	_god_mode_label.add_theme_font_size_override("font_size", 22)
+	_god_mode_label.add_theme_constant_override("outline_size", 6)
+	_god_mode_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
+	_god_mode_label.visible = false
+	player.interact_label.get_parent().add_child(_god_mode_label)
+
+
+func _update_god_mode_label() -> void:
+	if _god_mode_label == null:
+		return
+	_god_mode_label.visible = _in_god_mode()
+	if _god_mode_label.visible:
+		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)
+				+ "\n" + _prompt(&"god_mode_land", tr("%%HUD_GOD_MODE_LAND")))
+
+
 ## Owner camera + body orientation per frame: align to gravity (planet or 0g), apply the mouse look,
 ## and replicate the camera pitch ("head") to the server. Called from _process. Acts on the BODY, so
 ## the transform ops (global_basis / rotate_object_local) go through player, not this role node.
@@ -865,9 +905,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
 	if InputCombo.pressed(event, "toggle_eva") and Globals.is_dev_tool_enabled("toggle_eva"):
-		# EVA (dev free-flight): just request the toggle; the server owns the state and flies the body
+		# God mode (dev free-flight): ask for the state we want — not a bare toggle, so a missed message
+		# cannot leave us flipping the wrong way for ever. The server applies it and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
-		player.client_send_action_to_server({"action": "toggle_eva"})
+		_god_mode = not _god_mode
+		player.client_send_action_to_server({"action": "toggle_eva", "on": _god_mode})
+
+	if _in_god_mode() and InputCombo.pressed(event, "god_mode_land") and GOD_MODE.landing_body(player) != null:
+		# Land on the ground right under us: the server finds it and ends the flight. Asked only where the
+		# server will land us too (the same GodMode.landing_body): in open space it would refuse, and we
+		# would believe the flight over while it went on.
+		player.client_send_action_to_server({"action": "god_mode_land"})
+		_god_mode = false
 
 	# Mouse wheel spins a CARRIED object around its vertical axis, so you can orient a crate before
 	# dropping it. Server-authoritative (it owns the held body): we only send the step. Gated on
@@ -877,6 +926,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": 1})
 		elif InputCombo.pressed(event, "carry_rotate_ccw"):
 			player.client_send_action_to_server({"action": "carry_rotate", "dir": -1})
+	elif _in_god_mode() and (
+			InputCombo.pressed(event, "walk_speed_up") or InputCombo.pressed(event, "walk_speed_down")):
+		# God mode: the wheel sets the flight speed instead, a notch doubling or halving it (GodMode). We
+		# send the speed we want; the server clamps it again and flies at it.
+		_god_mode_speed = GOD_MODE.next_speed(_god_mode_speed, 1 if event.is_action_pressed("walk_speed_up") else -1)
+		player.client_send_action_to_server({"action": "god_mode_speed", "value": _god_mode_speed})
 	elif player._seat_vehicle_uuid == "" and (
 			InputCombo.pressed(event, "walk_speed_up") or InputCombo.pressed(event, "walk_speed_down")):
 		# GDD: the mouse wheel sets the walk speed (0.5-3 m/s, 0.5 steps). Server-authoritative — we send
