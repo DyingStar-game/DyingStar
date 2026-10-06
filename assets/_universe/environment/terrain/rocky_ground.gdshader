@@ -28,14 +28,16 @@ uniform float tile_scale : hint_range(0.001, 1.0, 0.001) = 0.125;
 // Triplanar blending sharpness (higher = sharper axis selection).
 uniform float triplanar_sharpness : hint_range(1.0, 16.0, 0.1) = 4.0;
 
-// Per-chunk planet-space origin (modularly wrapped for float32 precision).
-// Set via MeshInstance3D.set_instance_shader_parameter() so that
-// adjacent chunks compute the same planet-space position at shared edges,
-// eliminating triplanar texture seams.
-instance uniform vec3 chunk_origin_mod;
+// The per-chunk instance uniforms — chunk_origin_mod among them: the planet-space origin, modularly
+// wrapped for float32 precision, so adjacent chunks compute the same position at shared edges (no
+// triplanar seam) — and the far lighting, shared with every ground material: without it this ground
+// was black from afar.
+#include "res://assets/_universe/environment/terrain/terrain_far_light.gdshaderinc"
 
 varying vec3 local_pos;
 varying vec3 obj_normal;
+varying vec3 far_radial;  // true smooth sphere normal, world space (terrain_far_light)
+varying float far_cam_dist;  // camera -> point distance, for the far lighting's fade
 
 void vertex() {
 	// Recover the surface position for triplanar UV.  For terrain vertices
@@ -47,6 +49,8 @@ void vertex() {
 	// NORMAL in vertex() is object-space; in fragment() it's view-space.
 	// Triplanar needs a stable frame independent of camera orientation.
 	obj_normal = NORMAL;
+	far_radial = far_light_radial(MODEL_MATRIX, VERTEX + CUSTOM0.xyz);
+	far_cam_dist = far_light_cam_dist(MODELVIEW_MATRIX, VERTEX + CUSTOM0.xyz);
 	// VERTEX already stores the final geometry position (dropped for
 	// skirt vertices, surface for terrain) — no displacement needed.
 }
@@ -73,6 +77,7 @@ void fragment() {
 	AO        = orm.r;
 	ROUGHNESS = orm.g * roughness;
 	METALLIC  = orm.b * metallic;
+	EMISSION += far_light_emission(ALBEDO, far_radial, far_cam_dist, VIEW_MATRIX, VERTEX);
 
 	// Normal mapping disabled — the mesh lacks tangent data, so
 	// NORMAL_MAP produces incorrect lighting on skirt geometry

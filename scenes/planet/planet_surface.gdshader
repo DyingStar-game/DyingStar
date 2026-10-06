@@ -110,10 +110,10 @@ uniform float contrast_adjust : hint_range(0.01, 0.99, 0.01) = 0.75;
 // Triplanar axis selection sharpness (higher = narrower blend at plane changes).
 uniform float triplanar_sharpness : hint_range(1.0, 16.0, 0.1) = 4.0;
 
-// Chunk origin wrapped to WRAP metres, set per chunk by planet_terrain.gd
-// (fposmod(chunk_center, 8192)).  tri_pos = chunk_origin_mod + VERTEX stays
-// below ~8300 m → sub-millimetre float32 precision at every tiling scale.
-instance uniform vec3 chunk_origin_mod;
+// The per-chunk instance uniforms — chunk_origin_mod among them: tri_pos = chunk_origin_mod + VERTEX
+// stays below ~8300 m, sub-millimetre float32 precision at every tiling scale — and the far lighting,
+// shared with every ground material: without it this ground was black from afar.
+#include "res://assets/_universe/environment/terrain/terrain_far_light.gdshaderinc"
 // Must match `_wrap` in planet_terrain.gd.
 const float WRAP = 8192.0;
 
@@ -138,6 +138,8 @@ const float SNAP = 4096.0;
 varying vec3 world_normal;
 varying vec3 tri_pos;    // chunk_origin_mod + chunk-local vertex (wrapped, precise)
 varying vec3 local_pos;  // chunk-local vertex only — for derivatives (smallest = most precise)
+varying vec3 far_radial;  // true smooth sphere normal, world space (terrain_far_light)
+varying float far_cam_dist;  // camera -> point distance, for the far lighting's fade
 
 // Tiling scale snapped so WRAP * s is an even integer (see above).
 float snap_scale(float raw) {
@@ -428,6 +430,8 @@ void vertex() {
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	tri_pos      = chunk_origin_mod + surface;
 	local_pos    = surface;
+	far_radial   = far_light_radial(MODEL_MATRIX, surface);
+	far_cam_dist = far_light_cam_dist(MODELVIEW_MATRIX, surface);
 }
 
 void fragment() {
@@ -494,4 +498,5 @@ void fragment() {
 	ROUGHNESS = clamp(rough * roughness, 0.0, 1.0);
 	METALLIC  = metallic;
 	NORMAL    = normalize((VIEW_MATRIX * vec4(shaded_normal, 0.0)).xyz);
+	EMISSION += far_light_emission(ALBEDO, far_radial, far_cam_dist, VIEW_MATRIX, VERTEX);
 }

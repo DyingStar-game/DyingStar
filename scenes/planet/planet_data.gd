@@ -4956,13 +4956,31 @@ func get_lod_level(surface_distance: float) -> int:
 
 
 ## Return the per-edge vertex count for a given LOD tier.
-func get_resolution_for_lod(lod: int) -> int:
+## Longest quad side of a far chunk, metres. A flat quad sags under the round planet by side^2 / 8R in
+## its middle: 50 km keeps that under 50 m on Sandbox.
+const FAR_QUAD_MAX_M := 50000.0
+## And the most quads a far chunk side gets (a gas giant's n1 chunk would otherwise ask for 1 400).
+const FAR_RES_MAX := 128
+
+
+## Quads per side of a chunk at [param lod], whose HEALPix level is [param nside] (0 = unknown).
+##
+## The far tiers are NOT the coarsest: their chunks are the biggest, so they are cut by SIZE. At a fixed
+## 4 quads an n8 chunk's 200 km quads sagged 0.8 km and an n2 chunk's 3 km — Sandbox's corundum veil is
+## a 3.5 km slab on the ground, so from orbit its air came out bright on every vertex and edge and dark
+## in every quad (2026-10-06); a fixed 16 still left the 100-200 km quads of the n2-n4 chunks seen from
+## 6 000 km. Visual chunks only: the server builds collision for LOD 0 and 1.
+func get_resolution_for_lod(lod: int, nside: int = 0) -> int:
 	match lod:
 		0: return chunk_resolution        # e.g. 32
 		1: return maxi(chunk_resolution / 2, 8)  # 16
 		2: return maxi(chunk_resolution / 4, 4)  # 8
-		3: return 4
-		_: return 4
+	var res := maxi(chunk_resolution / 2, 8)
+	if nside > 0:
+		var side := HEALPix.pixel_side_length(nside, radius)
+		while res < FAR_RES_MAX and side / float(res) > FAR_QUAD_MAX_M:
+			res *= 2
+	return res
 
 
 # ---------------------------------------------------------------------------

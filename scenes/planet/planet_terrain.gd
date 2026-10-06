@@ -99,6 +99,7 @@ const _CACHE_GEOM_TOLERANCE_M := 1500.0
 ## le script résout les constantes à la compilation, dans l'éditeur comme en jeu, sans
 ## dupliquer les valeurs.
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
+const FAR_GROUND := preload("res://scenes/planet/far_ground.gd")
 
 ## ── Editor ────────────────────────────────────────────────────────
 ## L'éditeur affiche EXACTEMENT les mêmes chunks que le jeu : même quadtree, mêmes LOD,
@@ -730,6 +731,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		if server_mode:
 			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
 			_cache_version += "_colrel1_colbf2_grid8k"
+		else:
+			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
+			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
+			# collision to re-bake.
+			_cache_version += "_far50km"
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
@@ -1821,6 +1827,7 @@ func _update_terrain() -> void:
 				var cmi: MeshInstance3D = _active_chunks[ck].get("mesh_instance")
 				if is_instance_valid(cmi):
 					cmi.layers = layer
+					FAR_GROUND.apply(cmi, want_celestial)  # every ground lights itself from afar
 
 	# Update camera history ring-buffer for look-ahead prefetch.
 	_cam_history.append(local_cam)
@@ -3317,7 +3324,7 @@ func _cached_mesh_valid(mesh: ArrayMesh, info: Dictionary) -> bool:
 	if v0 == null:
 		return false
 	var _ns: int = info.get("nside", 0)
-	var _res: int = planet_data.get_resolution_for_lod(info.get("lod", 0))
+	var _res: int = planet_data.get_resolution_for_lod(info.get("lod", 0), _ns)
 	var _pitch := 0.0
 	if _ns > 0 and _res > 0:
 		_pitch = HEALPix.pixel_side_length(_ns, planet_data.radius) / float(_res)
@@ -3602,7 +3609,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		return
 
 	var lod: int = info.lod
-	var res := planet_data.get_resolution_for_lod(lod)
+	var res := planet_data.get_resolution_for_lod(lod, info.nside)
 	var chunk_center: Vector3 = info.center
 	var pd := planet_data
 	var nside: int = info.nside
@@ -3986,13 +3993,15 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
 	# Born on the celestial layer when this planet is currently a distant body (star-lit), else local.
 	mi.layers = GlobalsDefs.RENDER_MASK_CELESTIAL if _chunks_on_celestial else GlobalsDefs.RENDER_MASK_LOCAL
+	if _chunks_on_celestial:
+		FAR_GROUND.apply(mi, true)  # every ground lights itself from afar (FarGround)
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
 	_perf_end("asm:mesh", _tk)
 	_tk = _perf_begin()
 
 	# ---------- Vegetation MultiMesh ----------
-	var res := planet_data.get_resolution_for_lod(lod)
+	var res := planet_data.get_resolution_for_lod(lod, info.get("nside", 0))
 	if not planet_data.vegetation_rules.is_empty():
 		var dominated_lods: Array[int] = []
 		for rule: VegetationRule in planet_data.vegetation_rules:
@@ -4243,7 +4252,7 @@ func _create_chunk(info: Dictionary) -> void:
 	var _t0 := Time.get_ticks_usec()
 	var key: String = info.key
 	var lod: int = info.lod
-	var res := planet_data.get_resolution_for_lod(lod)
+	var res := planet_data.get_resolution_for_lod(lod, info.get("nside", 0))
 
 	# ---------- Server: collision shape for LOD 0–1 ----------
 	if is_server and lod <= 1:
