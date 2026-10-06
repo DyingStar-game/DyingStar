@@ -192,6 +192,7 @@ spot_angle = 37.0
 
 [node name="SpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=331479837 groups=["vehicle_light"]]
 transform = Transform3D(1, 0, 0, 0, -0.6741734925434366, 0.7385730173461422, 0, -0.7385730173461422, -0.6741734925434367, -0.01612382468180939, 0.9271067390711144, -0.3518031843022533)
+light_energy = 0.5
 spot_range = 4.0
 spot_angle = 33.29
 
