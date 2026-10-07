@@ -20,6 +20,10 @@ const MIN_VOLUME_M3: float = 20.0
 const MIN_HEIGHT_M: float = 2.0
 const MASK_LAYERS: int = (1 << 0) | (1 << 3)
 const META: StringName = &"weather_mask_aabb"
+## A building once found stays masked until it is this far (m): the scan's hits vary from one pass to
+## the next (props streamed, a result list cut short), and a mask that came and went every few seconds
+## made the dust in that building pop in and out (DustProbe: "masks 4 -> 6" every 4 s).
+const FORGET_M: float = 400.0
 
 var _player: Node3D = null
 ## The prop roots in reach, with their box (root-local AABB).
@@ -80,6 +84,11 @@ func _scan() -> void:
 	params.collide_with_areas = false
 	var hits: Array[Dictionary] = space.intersect_shape(params, 256)
 	var found: Dictionary = {}
+	var here: Vector3 = _player.global_position
+	for root: Node3D in _roots:
+		if is_instance_valid(root) and root.is_inside_tree() \
+				and root.global_position.distance_to(here) < FORGET_M:
+			found[root] = true
 	for hit: Dictionary in hits:
 		var body := hit.get("collider") as StaticBody3D
 		if body == null:

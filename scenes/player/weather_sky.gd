@@ -45,6 +45,13 @@ var _dust_sent: bool = false
 var _scroll: Vector3 = Vector3.ZERO
 var _scroll_fine: Vector3 = Vector3.ZERO
 var _noise: NoiseTexture3D = null
+## The dust probe (client.ini debug_dust_probe=true): what was sent to the layer last frame, to log
+## every discontinuity of it. Off, it costs a bool test.
+var _probe_start: float = 0.0
+var _sheltered_start: bool = false
+var _probe_on: bool = ClientConfig.get_bool("debug_dust_probe", false)
+var _probe_last: Dictionary = {}
+var _probe_summary_at: int = 0
 var _refills: int = 0
 
 
@@ -80,11 +87,17 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var shelter_v: Variant = renderer.player.get("weather_shelter") if is_instance_valid(renderer.player) else null
 	# A room the masks know is kept clear by them; a shelter they do not (a cab, a building too small
 	# or not found) starts the march past its walls instead.
-	var start: float = 0.0
+	# With a hysteresis (on above 0.6, off under 0.4): a shelter hovering about one half made the march's
+	# start jump between 0 and 8 m, the near dust popping in and out (DustProbe "start 8 -> 0").
 	var boxed: bool = renderer.weather_masks != null and renderer.weather_masks.inside(observer_world_pos)
-	if not boxed and shelter_v is Dictionary and float((shelter_v as Dictionary).get("shelter", 0.0)) >= 0.5:
-		start = ShelterProbe.REACH_M
+	var shelter_now: float = float((shelter_v as Dictionary).get("shelter", 0.0)) if shelter_v is Dictionary else 0.0
+	if boxed or shelter_now < 0.4:
+		_sheltered_start = false
+	elif shelter_now > 0.6:
+		_sheltered_start = true
+	var start: float = ShelterProbe.REACH_M if _sheltered_start else 0.0
 	renderer.set_dust_param(&"dust_start", start)
+	_probe_start = start
 	renderer.set_dust_param(&"dust_density", _dust_density)
 	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
 	var ground: float = planet.elevation_of(observer_world_pos)
@@ -132,6 +145,8 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	renderer.set_dust_param(&"dust_mask_count", masks.size())
 	if not masks.is_empty():
 		renderer.set_dust_param(&"dust_mask", masks)
+	if _probe_on:
+		_probe(offset, wind_planet, masks.size(), height, delta)
 	if wind_planet.length() > 0.1:
 		renderer.set_dust_param(&"dust_wind_dir", wind_planet.normalized())
 	if is_instance_valid(renderer.sun):
@@ -139,6 +154,42 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
 		renderer.set_dust_param(&"dust_ambient", Vector3(c.r, c.g, c.b) * 0.22 + Vector3(0.03, 0.035, 0.045))
 		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+
+
+## The dust probe: logs, with the frame and the clock, each jump of what the layer is sent — the
+## density (> 5 % in a frame), the wind's direction (> 2°), the noise offset (off its expected travel
+## by > 0.5 m), the march's start, the number of masked buildings, the camera height (> 1 m) — and a
+## summary line every 5 s. A jump that matches the "jump" the eye sees names its cause.
+func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: float) -> void:
+	var now: Dictionary = {"density": _dust_density, "wind": wind, "offset": offset, "masks": masks,
+			"height": height, "start": _probe_start}
+	var why: PackedStringArray = []
+	if not _probe_last.is_empty():
+		var last: Dictionary = _probe_last
+		var d0: float = float(last["density"])
+		if absf(_dust_density - d0) > 0.05 * maxf(d0, 1e-5):
+			why.append("density %.5f -> %.5f" % [d0, _dust_density])
+		var w0: Vector3 = last["wind"]
+		if w0.length() > 0.1 and wind.length() > 0.1 and rad_to_deg(w0.angle_to(wind)) > 2.0:
+			why.append("wind dir %.1f deg" % rad_to_deg(w0.angle_to(wind)))
+		var travel: Vector3 = offset - (last["offset"] as Vector3)
+		var expected: Vector3 = -wind * delta
+		if (travel - expected).length() > 0.5:
+			why.append("offset jumped %.2f m (moved %s, wind expects %s)" % [(travel - expected).length(), travel, expected])
+		if int(last["masks"]) != masks:
+			why.append("masks %d -> %d" % [int(last["masks"]), masks])
+		if absf(float(last["height"]) - height) > 1.0:
+			why.append("camera height %.1f -> %.1f m" % [float(last["height"]), height])
+		if float(last["start"]) != _probe_start:
+			why.append("start %.0f -> %.0f m" % [float(last["start"]), _probe_start])
+	if not why.is_empty():
+		print("[DustProbe] f%d t%.2f %s" % [Engine.get_frames_drawn(), Time.get_ticks_msec() * 0.001, " | ".join(why)])
+	var ms: int = Time.get_ticks_msec()
+	if ms - _probe_summary_at > 5000:
+		_probe_summary_at = ms
+		print("[DustProbe] summary density %.5f (vis %.0f m) wind %.1f m/s masks %d height %.1f m start %.0f m" % [
+			_dust_density, 3.912 / maxf(_dust_density, 1e-6), wind.length(), masks, height, _probe_start])
+	_probe_last = now
 
 
 ## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three
