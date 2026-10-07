@@ -1,7 +1,5 @@
 shader_type spatial;
-// shadows_disabled: a grain does not receive the shadow map. On a puff metres across, half see-through,
-// its cascades and texels drew straight-edged squares across every sunlit cloud.
-render_mode blend_mix, depth_draw_never, cull_disabled, specular_disabled, shadows_disabled;
+render_mode blend_mix, depth_draw_never, cull_disabled, specular_disabled;
 // Look of one ground-dust particle (DustEmitter): a soft, ragged blob facing the camera, the colour of
 // the ground it came from (COLOR, set at emission), thinning out as it ages.
 //
@@ -31,6 +29,9 @@ uniform float proximity_fade : hint_range(0.0, 4.0, 0.01) = 0.6;
 // forward; fine mineral dust sits around 0.6–0.7).
 uniform float forward_glow : hint_range(0.0, 2.0, 0.01) = 0.35;
 uniform float scatter_g : hint_range(0.0, 0.95, 0.01) = 0.65;
+// How much of the shadow map a grain takes (0 = none: lit in the shade of a building; 1 = all: a puff
+// metres across, half see-through, shows the map's cascades and texels as straight-edged squares).
+uniform float shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.75;
 // How much the noise is warped into wisps (0 = the plain fractal of before).
 uniform float wisp : hint_range(0.0, 1.0, 0.01) = 0.45;
 // How ragged the outline is (0 = a round blob): the noise pushes the edge in and out by this much
@@ -127,5 +128,6 @@ void light() {
 	// Compressed: the raw phase is ×40 straight into the sun, which no exposure survives; the log keeps
 	// the glow a few times the side-lit puff at most (×3.7 at forward_glow 1).
 	float glow = forward_glow * log(1.0 + max(hg / hg_side - 1.0, 0.0));
-	DIFFUSE_LIGHT += (wrap + glow) * ATTENUATION * LIGHT_COLOR;
+	float shade = mix(1.0, ATTENUATION, shadow_strength);
+	DIFFUSE_LIGHT += (wrap + glow) * shade * LIGHT_COLOR;
 }

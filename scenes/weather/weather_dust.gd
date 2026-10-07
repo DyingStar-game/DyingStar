@@ -21,6 +21,9 @@ extends Node
 @export_range(0.0, 1.0, 0.01) var opacity: float = 0.32
 ## How much a puff between the eye and the sun brightens at its edges (0 = no glow).
 @export_range(0.0, 2.0, 0.01) var forward_glow: float = 0.35
+## How much of the shadow map a grain takes: 1 = puffs in a building's shade go dark (but big sunlit
+## puffs may show the map's squares), 0 = no squares (but puffs in the shade glow as in the sun).
+@export_range(0.0, 1.0, 0.01) var shadow_strength: float = 0.75
 ## Asymmetry of that forward scattering (fine mineral dust: 0.6 to 0.7).
 @export_range(0.0, 0.95, 0.01) var scatter_g: float = 0.65
 ## How much the noise is warped into wisps (0 = the plain fractal).
@@ -53,5 +56,6 @@ func fill_defaults() -> void:
 func look() -> Dictionary:
 	return {
 		"opacity": opacity, "forward_glow": forward_glow, "scatter_g": scatter_g, "wisp": wisp,
+		"shadow_strength": shadow_strength,
 		"edge_ragged": edge_ragged, "edge_softness": edge_softness, "proximity_fade": proximity_fade,
 	}

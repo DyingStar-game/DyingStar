@@ -102,6 +102,7 @@ streaks = SubResource("Pop_streaks")
 wisps = SubResource("Pop_wisps")
 opacity = 0.32
 forward_glow = 0.35
+shadow_strength = 0.75
 scatter_g = 0.65
 wisp = 0.45
 edge_ragged = 0.8
