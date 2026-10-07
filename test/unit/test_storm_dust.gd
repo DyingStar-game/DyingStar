@@ -69,3 +69,13 @@ func test_a_low_population_is_born_at_its_own_distance_and_height() -> void:
 
 func test_on_the_ground_without_a_planet_stands_over_the_point() -> void:
 	assert_eq(StormDust.on_the_ground(null, Vector3(1.0, 2.0, 3.0), Vector3.UP, 0.5), Vector3(1.0, 2.5, 3.0))
+
+
+func test_sheltered_births_are_pushed_past_the_walls() -> void:
+	var eye := Vector3(0.0, 2.0, 0.0)
+	assert_eq(StormDust.beyond(Vector3(3.0, 0.0, 4.0), eye, Vector3.UP, 0.0), Vector3(3.0, 0.0, 4.0), "open: untouched")
+	var out : Vector3 = StormDust.beyond(Vector3(3.0, 0.0, 4.0), eye, Vector3.UP, 12.0)
+	assert_almost_eq(Vector2(out.x, out.z).length(), 12.0, 1e-6, "pushed to the clear distance along the ground")
+	assert_almost_eq(out.y, 0.0, 1e-9, "height kept")
+	assert_almost_eq(Vector2(out.x, out.z).normalized().dot(Vector2(0.6, 0.8)), 1.0, 1e-6, "same direction")
+	assert_eq(StormDust.beyond(Vector3(20.0, 0.0, 0.0), eye, Vector3.UP, 12.0), Vector3(20.0, 0.0, 0.0), "already outside")

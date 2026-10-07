@@ -43,6 +43,9 @@ const CAPACITY: int = 256
 const LIFETIME_S: float = 3.0
 ## Under this air density (kg/m³) nothing flies: a storm's grains are not met in orbit.
 const MIN_AIR_KG_M3: float = 0.05
+## Sheltered (half a shelter or more), the ground populations are born at least this far (m) from the
+## camera along the ground: past the walls of a room or a cab.
+const SHELTER_CLEAR_M: float = 12.0
 
 ## The low haze: sheets this big (m), born this far around the camera (upwind-biased), this high over
 ## the ground, at most this many a second once the wind lifts the ground fully (twice its threshold).
@@ -109,7 +112,9 @@ func _init(actor: Node3D, dust: SurfaceDust) -> void:
 
 
 ## Once a frame on the client. [param family] is the ground under the actor (the footsteps' probe);
-## [param shelter] (0 open, 1 walled in: ShelterProbe) thins every population: no sand flies indoors.
+## [param shelter] (0 open, 1 walled in: ShelterProbe) stops the clouds past the visor, and pushes the
+## births of the ground populations out beyond SHELTER_CLEAR_M: what blows outside is still seen
+## through a window or a door, nothing is born in the room.
 func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 	if _emitter == null or not DustEmitter.enabled() or not is_instance_valid(_actor) \
 			or not _actor.is_inside_tree():
@@ -119,7 +124,8 @@ func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 		_age = 0.0
 		_resample()
 	var exposed: float = 1.0 - clampf(shelter, 0.0, 1.0)
-	if exposed <= 0.0 or (_rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0):
+	var clear_m: float = SHELTER_CLEAR_M if shelter >= 0.5 else 0.0
+	if _rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0:
 		_owed = 0.0
 		_haze_owed = 0.0
 		_streak_owed = 0.0
@@ -142,25 +148,28 @@ func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 		return
 	if planet == null:
 		return
-	_haze_owed += _haze_rate * delta * exposed
+	_haze_owed += _haze_rate * delta
 	for _i in _take(_haze_owed):
 		_haze_owed -= 1.0
 		# All around the camera (a third of the ring upwind), not only ahead of the wind.
-		var around: Vector3 = birth_point(eye, _wind, up, _jitter(), HAZE_RING_M * 0.3, HAZE_RING_M, 0.0)
+		var around: Vector3 = beyond(birth_point(eye, _wind, up, _jitter(), HAZE_RING_M * 0.3, HAZE_RING_M, 0.0),
+				eye, up, clear_m)
 		# Through the stretched emitter: a sheet is a veil laid along the wind, never a ball.
 		_wisps.puff(on_the_ground(planet, around, up, HAZE_HEIGHT_M * randf_range(0.4, 1.2)), family,
 				HAZE_OPACITY, _wind * 0.9, 1, 1.5, HAZE_SIZE_M)
-	_streak_owed += _streak_rate * delta * exposed
+	_streak_owed += _streak_rate * delta
 	for _i in _take(_streak_owed):
 		_streak_owed -= 1.0
-		var at: Vector3 = birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M * 0.35, STREAK_SPREAD_M, 0.0)
+		var at: Vector3 = beyond(birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M * 0.35, STREAK_SPREAD_M, 0.0),
+				eye, up, clear_m)
 		var hop: Vector3 = up * STREAK_HOP_M * randf_range(0.4, 1.0)
 		_streaks.puff(on_the_ground(planet, at, up, randf_range(0.03, 0.25)), family, 1.0,
 				_wind * STREAK_SPEED_SHARE + hop, 1, 0.4, STREAK_SIZE_M)
-	_wisp_owed += _wisp_rate * delta * exposed
+	_wisp_owed += _wisp_rate * delta
 	for _i in _take(_wisp_owed):
 		_wisp_owed -= 1.0
-		var foot: Vector3 = birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M * 0.35, WISP_SPREAD_M, 0.0)
+		var foot: Vector3 = beyond(birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M * 0.35, WISP_SPREAD_M, 0.0),
+				eye, up, clear_m)
 		var rise: Vector3 = up * WISP_RISE_MS * randf_range(0.5, 1.2)
 		_wisps.puff(on_the_ground(planet, foot, up, randf_range(0.0, 0.3)), family, WISP_OPACITY,
 				_wind * WISP_SPEED_SHARE + rise, 1, 0.8, WISP_SIZE_M)
@@ -216,6 +225,21 @@ static func birth_point(camera_pos: Vector3, wind: Vector3, up: Vector3, jitter:
 	var side: Vector3 = n.cross(dir)
 	return camera_pos - dir * upwind_m + side * jitter.x * spread_m + dir * jitter.z * spread_m * 0.5 \
 			+ n * jitter.y * height_spread_m
+
+
+## [param point] pushed out along the ground, away from [param eye], to at least [param min_m] from it:
+## the births kept outside the room a sheltered player stands in. 0 = untouched.
+static func beyond(point: Vector3, eye: Vector3, up: Vector3, min_m: float) -> Vector3:
+	if min_m <= 0.0:
+		return point
+	var n: Vector3 = up.normalized() if not up.is_zero_approx() else Vector3.UP
+	var flat: Vector3 = point - eye
+	flat -= n * flat.dot(n)
+	var d: float = flat.length()
+	if d >= min_m:
+		return point
+	var dir: Vector3 = flat / d if d > 1e-3 else n.cross(Vector3.RIGHT if absf(n.x) < 0.9 else Vector3.FORWARD).normalized()
+	return point + dir * (min_m - d)
 
 
 ## [param near] put on the real ground of [param planet] along the radial through it, [param height_m]
