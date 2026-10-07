@@ -1869,6 +1869,11 @@ func _update_wind() -> void:
 	var planet := Planet.of(self)
 	_wind_world = planet.wind_world_at(global_position) if planet != null else Vector3.ZERO
 	_wind_rho = WeatherForces.air_density_at(planet, global_position)
+	if planet != null and not _wind_world.is_zero_approx():
+		# The lee of what stands upwind (a building, another truck), not a trench's: the local layer has that.
+		var in_trench: bool = float(planet.canyon_at(global_position).get("depth", 0.0)) > 0.01
+		_wind_world *= float(ShelterProbe.probe(self, global_position + global_basis.y * 1.5, global_basis.y,
+				_wind_world, Globals.MASK_OBSTACLE, not in_trench)["wind_factor"])
 
 
 func air_density_now() -> float:

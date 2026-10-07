@@ -947,6 +947,11 @@ func _server_update_wind() -> void:
 		return
 	var area: float = WeatherForces.PLAYER_AREA_M2 * (0.25 if _stance == 2 else 0.5 if _stance == 1 else 1.0)
 	var wind: Vector3 = WeatherForces.along_ground(planet.wind_world_at(player.global_position), player.up_direction)
+	# Walls and roofs (ShelterProbe): in a building the wind is gone, in a wall's lee most of it; a
+	# trench's shelter is the local layer's already, so the lee is left out there.
+	var in_trench: bool = float(planet.canyon_at(player.global_position).get("depth", 0.0)) > 0.01
+	wind *= float(ShelterProbe.probe(player, player.global_position + player.up_direction * 1.6,
+			player.up_direction, wind, Globals.MASK_OBSTACLE, not in_trench)["wind_factor"])
 	var push: Vector3 = WeatherForces.drag_force(rho, WeatherForces.PLAYER_DRAG, area, wind)
 	_wind_drift = WeatherForces.drift_velocity(push, player.mass, WeatherForces.hold_force(player.mass, player.gravity))
 	var in_flight: Vector3 = WeatherForces.drag_force(rho, WeatherForces.PLAYER_DRAG, area, wind - player.velocity)

@@ -331,6 +331,10 @@ var gravity_parents: Array[Area3D]
 
 var last_basis: Basis
 var remote_player: bool = false
+## How sheltered this body is from the weather (ShelterProbe.combine's numbers), set by its
+## PlayerClient four times a second; {} = unknown. What the dev overlay reads.
+var weather_shelter: Dictionary = {}
+
 var input_from_server: Dictionary = {
 	"input_direction": Vector2.ZERO,
 	"rotation": Vector3.ZERO

@@ -8,7 +8,8 @@ extends AudioStreamPlayer
 ##
 ## Fed by WeatherSampler through Planet.weather_at (update), the same numbers the dust and the sky
 ## read; the gains ramp toward their targets over SMOOTH_S so a reading every half second never
-## steps. Inside a vehicle the whole mix drops by [member inside_db]: the cab muffles the storm.
+## steps. A shelter (ShelterProbe: a cab, a room, the lee of a wall) drops the mix by [member sheltered_db]
+## and closes a low-pass on the mix's own bus: the storm heard through a wall.
 ##
 ## The parameters a layer can follow (WeatherAudioLayer.parameter): &"wind_speed_m_s", &"dust_tau",
 ## and &"storm" — 0..1, the larger of the wind over WIND_FULL_MS and the dust over TAU_FULL, so one
@@ -24,15 +25,23 @@ const REFERENCE_AIR_KG_M3: float = 1.0
 const SMOOTH_S: float = 0.6
 ## Silence, in dB, for a layer out of its window.
 const SILENT_DB: float = -80.0
+## The mix's own bus, made on first use under the SFX bus (the Audio slider still holds it), with the
+## low-pass a shelter closes: from the open air's cut-off (the filter is transparent) to a wall's.
+const BUS: StringName = &"WeatherAmbience"
+const OPEN_CUTOFF_HZ: float = 20000.0
+const SHELTERED_CUTOFF_HZ: float = 600.0
 
 ## The loops and their windows. Empty = the one loop the library has today (default_layers).
 @export var layers: Array[WeatherAudioLayer] = []
-## What the cab of a vehicle takes off the mix, in dB.
-@export_range(-40.0, 0.0, 0.5) var inside_db: float = -12.0
+## What a full shelter (a cab, a sealed room) takes off the mix, in dB; a lesser shelter, its share.
+@export_range(-40.0, 0.0, 0.5) var sheltered_db: float = -18.0
 
 var _targets: PackedFloat32Array = PackedFloat32Array()
 var _gains: PackedFloat32Array = PackedFloat32Array()
-var _inside: bool = false
+var _shelter: float = 0.0
+var _shelter_now: float = 0.0
+var _lowpass: AudioEffectLowPassFilter = null
+var _cutoff_hz: float = -1.0
 var _sync: AudioStreamSynchronized = null
 
 
@@ -47,13 +56,23 @@ static func default_layers() -> Array[WeatherAudioLayer]:
 	storm.fade_in = 0.35
 	storm.fade_out = 0.0
 	storm.volume_db = -3.0
-	return [storm]
+	# A strong wind (CC0, Nox_Sound), from a fresh breeze up: fades in from 6 to 19 m/s, then full.
+	var wind := WeatherAudioLayer.new()
+	wind.stream = load("res://assets/_universe/audio/ambience/wind_strong_001.ogg")
+	wind.parameter = &"wind_speed_m_s"
+	wind.from = 6.0
+	wind.to = 80.0
+	wind.fade_in = 0.18
+	wind.fade_out = 0.0
+	wind.volume_db = -6.0
+	return [wind, storm]
 
 
 func _ready() -> void:
-	bus = Sfx3D.SFX_BUS
 	if Sfx3D.muted():
 		return
+	_lowpass = _ensure_bus()
+	bus = BUS
 	if layers.is_empty():
 		layers = default_layers()
 	_sync = AudioStreamSynchronized.new()
@@ -69,10 +88,10 @@ func _ready() -> void:
 	play()
 
 
-## The weather at the listener (a WeatherSampler sample, {} for none) and whether they sit in a
-## vehicle. Sets the targets; _process ramps the gains.
-func update(sample: Dictionary, inside: bool) -> void:
-	_inside = inside
+## The weather at the listener (a WeatherSampler sample, {} for none) and how sheltered they are
+## (0 open, 1 walled in: ShelterProbe). Sets the targets; _process ramps the gains.
+func update(sample: Dictionary, shelter: float) -> void:
+	_shelter = clampf(shelter, 0.0, 1.0)
 	var air: float = air_factor(sample)
 	for i in layers.size():
 		var layer: WeatherAudioLayer = layers[i]
@@ -84,14 +103,16 @@ func _process(delta: float) -> void:
 	if _sync == null:
 		return
 	var step: float = clampf(delta / SMOOTH_S, 0.0, 1.0)
+	_shelter_now = lerpf(_shelter_now, _shelter, step)
+	var cutoff: float = cutoff_for(_shelter_now)
+	if _lowpass != null and absf(cutoff - _cutoff_hz) > 1.0:
+		_cutoff_hz = cutoff
+		_lowpass.cutoff_hz = cutoff
 	for i in layers.size():
 		var gain: float = lerpf(_gains[i], _targets[i], step)
-		if absf(gain - _gains[i]) < 1e-4 and gain == _targets[i]:
-			continue
 		_gains[i] = gain
 		var db: float = SILENT_DB if gain <= 1e-4 else linear_to_db(gain) + layers[i].volume_db
-		if _inside:
-			db += inside_db
+		db += sheltered_db * _shelter_now
 		_sync.set_sync_stream_volume(i, maxf(db, SILENT_DB))
 
 
@@ -102,6 +123,26 @@ static func air_factor(sample: Dictionary) -> float:
 		return 0.0
 	var density: float = float(sample.get("air_density_kg_m3", 0.0))
 	return sqrt(clampf(density / REFERENCE_AIR_KG_M3, 0.0, 1.0))
+
+
+## The low-pass cut-off (Hz) for a shelter of [param shelter] (0..1): from OPEN_CUTOFF_HZ to
+## SHELTERED_CUTOFF_HZ in octaves, the way the ear hears a wall close.
+static func cutoff_for(shelter: float) -> float:
+	return exp(lerpf(log(OPEN_CUTOFF_HZ), log(SHELTERED_CUTOFF_HZ), clampf(shelter, 0.0, 1.0)))
+
+
+## The mix's bus with its low-pass, made once for the whole game and sent to the SFX bus.
+static func _ensure_bus() -> AudioEffectLowPassFilter:
+	var idx: int = AudioServer.get_bus_index(BUS)
+	if idx < 0:
+		idx = AudioServer.bus_count
+		AudioServer.add_bus(idx)
+		AudioServer.set_bus_name(idx, BUS)
+		AudioServer.set_bus_send(idx, Sfx3D.SFX_BUS)
+		var filter := AudioEffectLowPassFilter.new()
+		filter.cutoff_hz = OPEN_CUTOFF_HZ
+		AudioServer.add_bus_effect(idx, filter)
+	return AudioServer.get_bus_effect(idx, 0) as AudioEffectLowPassFilter
 
 
 ## The value of [param parameter] in a sample: the wind, the dust, or the storm index (0..1, the

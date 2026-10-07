@@ -30,13 +30,12 @@ var _audio: WeatherAudio = null
 var _age: float = INF
 
 
-func _init(planet: Planet, rig: Node3D) -> void:
+## Placed in the menu world scene under its planet (its knobs in the Inspector), bound to the rig by
+## MenuStage once the stage is live; nothing blows before that.
+func bind(planet: Planet, rig: Node3D) -> void:
 	_planet = planet
 	_rig = rig
-
-
-func _ready() -> void:
-	if not is_instance_valid(_planet) or not is_instance_valid(_rig):
+	if not is_inside_tree() or not is_instance_valid(_planet) or not is_instance_valid(_rig):
 		return
 	_dust = StormDust.new(_rig, DUST)
 	_audio = WeatherAudio.new()

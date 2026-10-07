@@ -224,6 +224,9 @@ static func weather_here(body: Node3D) -> Dictionary:
 		var forward : Vector3 = planet.global_basis.orthonormalized().inverse() * (-body.global_basis.z)
 		var axes : Array = WeatherSampler.local_axes(float(sample["lon_deg"]), float(sample["lat_deg"]))
 		sample["facing_deg"] = bearing_of(forward.dot(axes[0]), forward.dot(axes[1]))
+		var shelter : Variant = body.get("weather_shelter")
+		if shelter is Dictionary and not (shelter as Dictionary).is_empty():
+			sample["shelter"] = shelter
 	return sample
 
 
@@ -261,6 +264,11 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 		var toward : float = fposmod(from_deg + 180.0, 360.0)
 		out.insert(1, ReadoutFormat.escape("facing %s %.0f°   wind pushes toward %s %.0f°" % [compass(float(sample["facing_deg"])),
 			float(sample["facing_deg"]), compass(toward), toward]))
+	if sample.has("shelter"):
+		var sh : Dictionary = sample["shelter"]
+		out.insert(2, ReadoutFormat.escape("shelter %.0f%% (around %.0f%%, lee %.0f%%)   wind on body x%.2f" % [
+			float(sh.get("shelter", 0.0)) * 100.0, float(sh.get("enclosed", 0.0)) * 100.0,
+			float(sh.get("lee", 0.0)) * 100.0, float(sh.get("wind_factor", 1.0))]))
 	if sample.has("gust_factor"):
 		var axis: Vector2 = sample.get("canyon_axis", Vector2.ZERO)
 		out.insert(1, ReadoutFormat.escape("local: regional %.0f km/h   gust x%.2f   canyon depth %.0f%% axis (%.2f, %.2f)" % [

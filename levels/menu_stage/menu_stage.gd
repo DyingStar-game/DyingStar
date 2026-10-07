@@ -133,8 +133,14 @@ func _build() -> void:
 	if home != null:
 		_rig.frame_view(home.transform)
 	ClientSky.attach(_rig)
-	# The stage's wind: the blown dust in the sky, the sand streaks and veils, the loops, on a steady breeze.
-	_planet.add_child(StageWind.new(_planet, _rig))
+	# The stage's wind (StageWind, a node of the world scene with its knobs in the Inspector): the blown
+	# dust in the sky, the sand streaks and veils, the loops, on a steady breeze.
+	var wind: StageWind = _planet.get_node_or_null("StageWind") as StageWind
+	if wind == null:
+		wind = StageWind.new()
+		wind.name = "StageWind"
+		_planet.add_child(wind)
+	wind.bind(_planet, _rig)
 	_sunrise()
 	var waited : float = 0.0
 	# Only the ground: the sun's `settled` waits for a player's BODY to align with the vertical, which

@@ -19,6 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://bmk1yx4q5cewg" path="res://assets/_universe/props/furniture/CommemorativeBust/commemorativebust.res" id="17_s6f0h"]
 [ext_resource type="PackedScene" uid="uid://vsepjo7bgp7v" path="res://scenes/_universe/environment/space/star.tscn" id="17_star"]
 [ext_resource type="PackedScene" uid="uid://dvwggfmy7o52p" path="res://scenes/systems/tarsis/tarsis_3.tscn" id="18_tarsis_3"]
+[ext_resource type="Script" uid="197610" path="res://levels/menu_stage/stage_wind.gd" id="19_stage_wind"]
 [ext_resource type="PackedScene" uid="uid://dxajkuw7y5byw" path="res://scenes/_universe/props/containers/test_containers_6x2.6.tscn" id="20_xq23n"]
 
 [node name="MenuStageWorld" type="Node3D" unique_id=1917159811]
@@ -205,3 +206,10 @@ transform = Transform3D(0.17132986257789196, 0.6996051489790728, -0.693684880699
 
 [node name="furn_lamppost_outdoor_2_2m_3" parent="Tarsis3/Outpost" unique_id=1239394709 instance=ExtResource("1_furn_lamppos")]
 transform = Transform3D(-0.686265860873023, 0.6996070733976025, 0.19897012602964248, 0.17012102336084672, 0.4203560504921397, -0.8912685500034825, -0.7071760782230045, -0.5777981772787905, -0.4074938781410593, 4450643.07826687, 2674150.702114459, -3675739.648903721)
+
+[node name="StageWind" type="Node" parent="Tarsis3"]
+script = ExtResource("19_stage_wind")
+wind_speed_ms = 11.0
+wind_from_deg = 60.0
+dust_tau = 0.25
+gusts = true

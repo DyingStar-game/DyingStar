@@ -42,10 +42,20 @@ func test_a_layer_reads_its_own_parameter() -> void:
 
 func test_the_default_layer_is_the_sandstorm_loop_on_the_storm_index() -> void:
 	var layers : Array[WeatherAudioLayer] = WeatherAudio.default_layers()
-	assert_eq(layers.size(), 1)
-	assert_not_null(layers[0].stream, "the CC0 sandstorm loop")
-	assert_eq(layers[0].parameter, &"storm")
-	assert_eq(WeatherAudio.gain_for(0.05, layers[0].from, layers[0].to, layers[0].fade_in, layers[0].fade_out), 0.0,
+	assert_eq(layers.size(), 2, "the wind loop and the sandstorm loop")
+	assert_not_null(layers[0].stream, "the CC0 wind loop")
+	assert_eq(layers[0].parameter, &"wind_speed_m_s")
+	assert_not_null(layers[1].stream, "the CC0 sandstorm loop")
+	assert_eq(layers[1].parameter, &"storm")
+	assert_eq(WeatherAudio.gain_for(0.05, layers[1].from, layers[1].to, layers[1].fade_in, layers[1].fade_out), 0.0,
 			"clear weather: silent")
-	assert_eq(WeatherAudio.gain_for(1.0, layers[0].from, layers[0].to, layers[0].fade_in, layers[0].fade_out), 1.0,
+	assert_eq(WeatherAudio.gain_for(1.0, layers[1].from, layers[1].to, layers[1].fade_in, layers[1].fade_out), 1.0,
 			"a full storm: full")
+
+
+func test_a_shelter_closes_the_low_pass_in_octaves() -> void:
+	assert_almost_eq(WeatherAudio.cutoff_for(0.0), WeatherAudio.OPEN_CUTOFF_HZ, 1e-6, "open: transparent")
+	assert_almost_eq(WeatherAudio.cutoff_for(1.0), WeatherAudio.SHELTERED_CUTOFF_HZ, 1e-6, "walled in: a wall's muffle")
+	assert_almost_eq(WeatherAudio.cutoff_for(0.5), sqrt(WeatherAudio.OPEN_CUTOFF_HZ * WeatherAudio.SHELTERED_CUTOFF_HZ),
+			1e-3, "halfway, in octaves")
+	assert_almost_eq(WeatherAudio.cutoff_for(7.0), WeatherAudio.SHELTERED_CUTOFF_HZ, 1e-6, "clamped")

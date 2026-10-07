@@ -115,8 +115,14 @@ var _dust: DustEmitter = null              # the dust our feet kick up, built on
 var _storm_dust: StormDust = null          # the storm's grains past the camera, built on the first frame on a body
 var _weather_audio: WeatherAudio = null     # the weather's loops at the listener, built with the first frame
 var _weather_audio_age: float = INF        # since the loops last read the weather; INF = read now
+var _shelter: Dictionary = ShelterProbe.open()  # how sheltered we are (ShelterProbe), four times a second
+var _shelter_age: float = INF
 ## How often the loops read the weather (s): it changes over minutes.
 const WEATHER_AUDIO_SAMPLE_S: float = 0.5
+## How often the shelter is probed (s), from the physics frame (its rays need one), and the eye's
+## height (m) the rays start from.
+const SHELTER_SAMPLE_S: float = 0.25
+const EYE_HEIGHT_M: float = 1.6
 ## The same sample with its reasoning ({family, source, detail}), for the debug panel's Ground section.
 var _surface_info: Dictionary = {}
 var _surface_age: float = 0.0              # seconds since that sample
@@ -507,6 +513,7 @@ func _physics_process(delta: float) -> void:
 	# probe silently answered "unknown". And remote avatars need it too: everyone hears everyone walk.
 	_sample_surface(delta)
 	if player.remote_player: return
+	_sample_shelter(delta)
 	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
 	if is_instance_valid(player._seat_node):
 		# Seated: relay drive input (driver only) and skip walking. When input is locked (pause menu,
@@ -1929,7 +1936,7 @@ func _update_storm_dust(delta: float) -> void:
 		if player.dust == null:
 			return
 		_storm_dust = StormDust.new(player, player.dust)
-	_storm_dust.update(delta, _surface_family)
+	_storm_dust.update(delta, _surface_family, float(_shelter.get("shelter", 0.0)))
 
 ## The weather's loops at the listener (WeatherAudio), fed the weather here twice a second and muffled
 ## at the wheel. Built once, under the body, so it frees with it.
@@ -1943,7 +1950,27 @@ func _update_weather_audio(delta: float) -> void:
 	_weather_audio_age = 0.0
 	var planet: Planet = Planet.of(player)
 	var sample: Dictionary = planet.weather_local_at(player.global_position) if planet != null else {}
-	_weather_audio.update(sample, is_instance_valid(player._seat_node))
+	_weather_audio.update(sample, float(_shelter.get("shelter", 0.0)))
+
+## How sheltered we are (ShelterProbe), four times a second, from the physics frame (the rays need
+## it): a cab is a full shelter; on foot, six rays from the eye. Fed to the dust and the loops, and
+## left on the body for the dev overlay.
+func _sample_shelter(delta: float) -> void:
+	_shelter_age += delta
+	if _shelter_age < SHELTER_SAMPLE_S:
+		return
+	_shelter_age = 0.0
+	if is_instance_valid(player._seat_node):
+		_shelter = ShelterProbe.enclosed()
+	else:
+		var planet: Planet = Planet.of(player)
+		var wind: Vector3 = planet.wind_world_at(player.global_position) if planet != null else Vector3.ZERO
+		var up: Vector3 = player.up_direction if not player.up_direction.is_zero_approx() else player.global_basis.y
+		var in_trench: bool = planet != null and float(planet.canyon_at(player.global_position).get("depth", 0.0)) > 0.01
+		_shelter = ShelterProbe.probe(player, player.global_position + up * EYE_HEIGHT_M, up, wind,
+				Globals.MASK_OBSTACLE, not in_trench)
+	player.weather_shelter = _shelter
+
 
 ## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,
 ## since direct_space_state is null everywhere else — and throttled, because a step happens every metre

@@ -108,8 +108,9 @@ func _init(actor: Node3D, dust: SurfaceDust) -> void:
 		_wisps.set_stretch(WISP_STRETCH_PER_MS)
 
 
-## Once a frame on the client. [param family] is the ground under the player (the footsteps' probe).
-func update(delta: float, family: StringName) -> void:
+## Once a frame on the client. [param family] is the ground under the actor (the footsteps' probe);
+## [param shelter] (0 open, 1 walled in: ShelterProbe) thins every population: no sand flies indoors.
+func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 	if _emitter == null or not DustEmitter.enabled() or not is_instance_valid(_actor) \
 			or not _actor.is_inside_tree():
 		return
@@ -117,7 +118,8 @@ func update(delta: float, family: StringName) -> void:
 	if _age >= SAMPLE_S:
 		_age = 0.0
 		_resample()
-	if _rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0:
+	var exposed: float = 1.0 - clampf(shelter, 0.0, 1.0)
+	if exposed <= 0.0 or (_rate <= 0.0 and _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0):
 		_owed = 0.0
 		_haze_owed = 0.0
 		_streak_owed = 0.0
@@ -131,7 +133,7 @@ func update(delta: float, family: StringName) -> void:
 	var up: Vector3 = (_actor.global_position - planet.global_position).normalized() if planet != null \
 			else _actor.global_basis.y.normalized()
 	var eye: Vector3 = camera.global_position
-	_owed += _rate * delta
+	_owed += _rate * delta * exposed
 	for _i in _take(_owed):
 		_owed -= 1.0
 		_emitter.puff(birth_point(eye, _wind, up, _jitter()), family, 1.0, _wind, GRAINS_PER_PUFF, 0.5,
@@ -140,7 +142,7 @@ func update(delta: float, family: StringName) -> void:
 		return
 	if planet == null:
 		return
-	_haze_owed += _haze_rate * delta
+	_haze_owed += _haze_rate * delta * exposed
 	for _i in _take(_haze_owed):
 		_haze_owed -= 1.0
 		# All around the camera (a third of the ring upwind), not only ahead of the wind.
@@ -148,14 +150,14 @@ func update(delta: float, family: StringName) -> void:
 		# Through the stretched emitter: a sheet is a veil laid along the wind, never a ball.
 		_wisps.puff(on_the_ground(planet, around, up, HAZE_HEIGHT_M * randf_range(0.4, 1.2)), family,
 				HAZE_OPACITY, _wind * 0.9, 1, 1.5, HAZE_SIZE_M)
-	_streak_owed += _streak_rate * delta
+	_streak_owed += _streak_rate * delta * exposed
 	for _i in _take(_streak_owed):
 		_streak_owed -= 1.0
 		var at: Vector3 = birth_point(eye, _wind, up, _jitter(), STREAK_UPWIND_M * 0.35, STREAK_SPREAD_M, 0.0)
 		var hop: Vector3 = up * STREAK_HOP_M * randf_range(0.4, 1.0)
 		_streaks.puff(on_the_ground(planet, at, up, randf_range(0.03, 0.25)), family, 1.0,
 				_wind * STREAK_SPEED_SHARE + hop, 1, 0.4, STREAK_SIZE_M)
-	_wisp_owed += _wisp_rate * delta
+	_wisp_owed += _wisp_rate * delta * exposed
 	for _i in _take(_wisp_owed):
 		_wisp_owed -= 1.0
 		var foot: Vector3 = birth_point(eye, _wind, up, _jitter(), WISP_UPWIND_M * 0.35, WISP_SPREAD_M, 0.0)
