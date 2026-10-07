@@ -110,6 +110,12 @@ var weather_blow_bottom_m: float = 0.0
 var weather_blow_top_m: float = 0.0
 var _weather_sky: WeatherSky = WeatherSky.new()
 
+## Set a uniform of the wind's dust layer (aerial_perspective.gdshader: dust_*) — WeatherSky's hand.
+func set_dust_param(param: StringName, value: Variant) -> void:
+	if _aerial_material != null:
+		_aerial_material.set_shader_parameter(param, value)
+
+
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
@@ -367,6 +373,7 @@ func _process(_delta: float) -> void:
 	var body: Planet = current_body()
 	if body != null:
 		_weather_sky.update(self, body, player.global_position)
+		_weather_sky.animate_dust(self, body, player.camera, _delta)
 	_push_profile(profile, star_direction)
 
 

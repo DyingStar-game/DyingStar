@@ -27,9 +27,18 @@ const BLOW_ABOVE_M: float = 25.0
 ## What the blown dust reflects at most (its brightest channel), and the colour it takes when the
 ## ground under the observer has none to give (a pale ochre, the corundum plains).
 const BLOW_ALBEDO_MAX: float = 0.92
+## The dust layer near the eye against the model's extinction (1 = the model's visibility at the
+## ground), and the period (m) its noise offset is wrapped at.
+const DUST_LAYER_STRENGTH: float = 1.0
+const DUST_WRAP_M: float = 100000.0
 const BLOW_FALLBACK_COLOUR: Color = Color(0.86, 0.74, 0.56)
 
 var _last_read_at: float = -INF
+var _dust_density: float = 0.0
+var _dust_wind: Vector3 = Vector3.ZERO
+var _dust_sent: bool = false
+var _scroll: Vector3 = Vector3.ZERO
+var _noise: NoiseTexture3D = null
 var _refills: int = 0
 
 
@@ -56,10 +65,71 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
 	renderer.weather_blow_albedo = blow_albedo_of(ground_colour)
+	# The wind's dust layer near the eye: the same extinction as the slab (the lift) plus the storm's.
+	_dust_density = (blow_extinction(lifted) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
+			* DUST_LAYER_STRENGTH
+	_dust_wind = planet.wind_world_at(observer_world_pos)
+	renderer.set_dust_param(&"dust_density", _dust_density)
+	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
 	var ground: float = planet.elevation_of(observer_world_pos)
 	renderer.weather_blow_bottom_m = ground - BLOW_BELOW_M
 	renderer.weather_blow_top_m = ground + BLOW_ABOVE_M
 	return knobs
+
+
+## Every frame: carry the noise with the wind, keep its frame the planet's, and hand the layer the
+## camera's height, the local up and the light. The offset is the camera's position in the planet's
+## frame plus the air's travel, wrapped in double precision so the float32 shader never sees more than
+## DUST_WRAP_M.
+func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D, delta: float) -> void:
+	if _dust_density <= 0.0 or camera == null:
+		if _dust_sent:
+			renderer.set_dust_param(&"dust_density", 0.0)
+			_dust_sent = false
+		return
+	_dust_sent = true
+	if _noise == null:
+		_noise = _make_noise()
+		renderer.set_dust_param(&"dust_noise", _noise)
+	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
+	var wind_planet: Vector3 = to_planet * _dust_wind
+	_scroll -= wind_planet * delta
+	var cam_planet: Vector3 = to_planet * (camera.global_position - planet.global_position)
+	var offset: Vector3 = Vector3(fposmod(cam_planet.x + _scroll.x, DUST_WRAP_M),
+			fposmod(cam_planet.y + _scroll.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll.z, DUST_WRAP_M))
+	var up: Vector3 = (camera.global_position - planet.global_position).normalized()
+	var height: float = 1.7
+	if planet.planet_data != null:
+		var dir: Vector3 = planet.local_dir_of(camera.global_position)
+		if not dir.is_zero_approx():
+			height = camera.global_position.distance_to(planet.global_position) \
+					- planet.planet_data.crack_aware_surface_dist(dir)
+	renderer.set_dust_param(&"dust_frame", to_planet)
+	renderer.set_dust_param(&"dust_offset", offset)
+	renderer.set_dust_param(&"dust_up", up)
+	renderer.set_dust_param(&"dust_cam_height", height)
+	if wind_planet.length() > 0.1:
+		renderer.set_dust_param(&"dust_wind_dir", wind_planet.normalized())
+	if is_instance_valid(renderer.sun):
+		var c: Color = renderer.sun.light_color * renderer.sun.light_energy
+		renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
+		renderer.set_dust_param(&"dust_ambient", Vector3(c.r, c.g, c.b) * 0.22 + Vector3(0.03, 0.035, 0.045))
+		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+
+
+## A seamless 3D noise for the layer's gusts (64 texels a side, simplex, three octaves).
+static func _make_noise() -> NoiseTexture3D:
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 4.0 / 64.0
+	noise.fractal_octaves = 3
+	var tex := NoiseTexture3D.new()
+	tex.width = 64
+	tex.height = 64
+	tex.depth = 64
+	tex.seamless = true
+	tex.noise = noise
+	return tex
 
 
 ## The blown slab's grey extinction (1/m) for a ground lifted [param lifted] (0..1,
