@@ -88,7 +88,7 @@ func _init(actor: Node3D, dust: SurfaceDust, config: WeatherDust = null) -> void
 ## through a window or a door, nothing is born in the room.
 func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 	if _clouds == null or not DustEmitter.enabled() or not is_instance_valid(_actor) \
-			or not _actor.is_inside_tree():
+			or not _actor.is_inside_tree() or WeatherBench.no_particles:
 		return
 	_age += delta
 	if _age >= SAMPLE_S:

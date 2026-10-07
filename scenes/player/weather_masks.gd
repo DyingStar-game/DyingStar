@@ -137,7 +137,18 @@ static func _box(root: Node3D) -> void:
 	collider.name = "WeatherMaskCollider"
 	collider.position = box.get_center()
 	collider.size = box.size
+	collider.visible = not WeatherBench.no_colliders
 	root.add_child(collider, false, Node.INTERNAL_MODE_BACK)
+
+
+## Show or hide the particle colliders of the buildings in reach (the GPU bench, WeatherBench).
+func show_colliders(on: bool) -> void:
+	for root: Node3D in _roots:
+		if not is_instance_valid(root):
+			continue
+		var collider := root.get_node_or_null(^"WeatherMaskCollider") as GPUParticlesCollisionBox3D
+		if collider != null:
+			collider.visible = on
 
 
 ## A shape's bounding box in its own frame.

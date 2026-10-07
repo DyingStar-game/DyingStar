@@ -1281,6 +1281,17 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			]
 			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
 
+	# What the weather's effects cost the GPU, one taken away at a time (WeatherBench); again to abort.
+	if (InputCombo.pressed(event, "debug_weather_bench")
+			and Globals.is_dev_tool_enabled("debug_weather_bench")):
+		var atmosphere := player.get_node_or_null("AtmosphereRenderer") as AtmosphereRenderer
+		if atmosphere != null:
+			var running := atmosphere.get_node_or_null("WeatherBench") as WeatherBench
+			if running != null:
+				running.abort()
+			else:
+				atmosphere.add_child(WeatherBench.new(atmosphere))
+
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
 	if InputCombo.pressed(event, "toggle_debug"):

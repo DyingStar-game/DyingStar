@@ -86,7 +86,7 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var climate: ClimateProfile = planet.climate_profile()
 	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
 			climate.v10_threshold_m_s if climate != null else 0.0)
-	renderer.weather_blow_beta = blow_extinction(lifted)
+	renderer.weather_blow_beta = 0.0 if WeatherBench.no_blow else blow_extinction(lifted)
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
@@ -94,8 +94,8 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	# The wind's dust layer near the eye: the same extinction as the slab (the lift) plus the storm's.
 	_dust_density = (blow_extinction(lifted) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
 			* DUST_LAYER_STRENGTH
-	if _no_dust_layer:
-		_dust_density = 0.0  # client.ini debug_no_dust_layer: an A/B switch for the layer's cost and look
+	if _no_dust_layer or WeatherBench.no_layer:
+		_dust_density = 0.0  # client.ini debug_no_dust_layer / the GPU bench: the layer's cost and look
 	_dust_wind = planet.wind_world_at(observer_world_pos)
 	# Under a roof and between walls the layer starts past the room (ShelterProbe.REACH_M): it is drawn
 	# over the whole screen, so the room is kept clear by depth, and the windows still show the outside.
@@ -174,7 +174,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	renderer.set_dust_param(&"dust_up", up)
 	renderer.set_dust_param(&"dust_cam_height", height)
 	var masks: Array[Projection] = renderer.weather_masks.masks_for(camera.global_position) \
-			if renderer.weather_masks != null else ([] as Array[Projection])
+			if renderer.weather_masks != null and not WeatherBench.no_masks else ([] as Array[Projection])
 	renderer.set_dust_param(&"dust_mask_count", masks.size())
 	if not masks.is_empty():
 		renderer.set_dust_param(&"dust_mask", masks)
