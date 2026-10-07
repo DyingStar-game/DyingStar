@@ -81,7 +81,7 @@ const WISP_OPACITY: float = 0.22
 const WISP_RATE_FULL: float = 14.0
 const WISP_CAPACITY: int = 256
 
-var _player: Player = null
+var _actor: Node3D = null
 var _emitter: DustEmitter = null
 var _streaks: DustEmitter = null
 var _wisps: DustEmitter = null
@@ -97,21 +97,21 @@ var _streak_owed: float = 0.0
 var _wisp_owed: float = 0.0
 
 
-func _init(player: Player, dust: SurfaceDust) -> void:
-	_player = player
+func _init(actor: Node3D, dust: SurfaceDust) -> void:
+	_actor = actor
 	if dust != null:
-		_emitter = DustEmitter.new(player, dust, CAPACITY, LIFETIME_S)
+		_emitter = DustEmitter.new(actor, dust, CAPACITY, LIFETIME_S)
 		_emitter.set_stretch(CLOUD_STRETCH_PER_MS)
-		_streaks = DustEmitter.new(player, dust, STREAK_CAPACITY, STREAK_LIFETIME_S)
+		_streaks = DustEmitter.new(actor, dust, STREAK_CAPACITY, STREAK_LIFETIME_S)
 		_streaks.set_stretch(STREAK_STRETCH_PER_MS)
-		_wisps = DustEmitter.new(player, dust, WISP_CAPACITY, WISP_LIFETIME_S)
+		_wisps = DustEmitter.new(actor, dust, WISP_CAPACITY, WISP_LIFETIME_S)
 		_wisps.set_stretch(WISP_STRETCH_PER_MS)
 
 
 ## Once a frame on the client. [param family] is the ground under the player (the footsteps' probe).
 func update(delta: float, family: StringName) -> void:
-	if _emitter == null or not DustEmitter.enabled() or not is_instance_valid(_player) \
-			or not _player.is_inside_tree():
+	if _emitter == null or not DustEmitter.enabled() or not is_instance_valid(_actor) \
+			or not _actor.is_inside_tree():
 		return
 	_age += delta
 	if _age >= SAMPLE_S:
@@ -123,10 +123,13 @@ func update(delta: float, family: StringName) -> void:
 		_streak_owed = 0.0
 		_wisp_owed = 0.0
 		return
-	var camera: Camera3D = _player.get_viewport().get_camera_3d()
+	var camera: Camera3D = _actor.get_viewport().get_camera_3d()
 	if camera == null:
 		return
-	var up: Vector3 = _player.global_basis.y.normalized()
+	var planet: Planet = Planet.of(_actor)
+	# Up is the planet's radial where there is one (a stage rig does not stand upright), else the body's.
+	var up: Vector3 = (_actor.global_position - planet.global_position).normalized() if planet != null \
+			else _actor.global_basis.y.normalized()
 	var eye: Vector3 = camera.global_position
 	_owed += _rate * delta
 	for _i in _take(_owed):
@@ -135,7 +138,6 @@ func update(delta: float, family: StringName) -> void:
 				GRAIN_SIZE_M)
 	if _haze_rate <= 0.0 and _streak_rate <= 0.0 and _wisp_rate <= 0.0:
 		return
-	var planet: Planet = Planet.of(_player)
 	if planet == null:
 		return
 	_haze_owed += _haze_rate * delta
@@ -242,18 +244,18 @@ func _resample() -> void:
 	_streak_rate = 0.0
 	_wisp_rate = 0.0
 	_wind = Vector3.ZERO
-	if _player.floating:
+	if _actor.get("floating") == true:
 		return  # in free flight there is no ground to lift
-	var planet: Planet = Planet.of(_player)
+	var planet: Planet = Planet.of(_actor)
 	if planet == null:
 		return
-	var sample: Dictionary = planet.weather_at(_player.global_position)
+	var sample: Dictionary = planet.weather_at(_actor.global_position)
 	if sample.is_empty():
 		return
 	if float(sample.get("air_density_kg_m3", 0.0)) < MIN_AIR_KG_M3:
 		return
 	_rate = rate_for(float(sample.get("dust_tau", 0.0)))
-	_wind = planet.wind_world_at(_player.global_position)
+	_wind = planet.wind_world_at(_actor.global_position)
 	var profile: ClimateProfile = planet.climate_profile()
 	var lifted: float = saltation_rate(_wind.length(), profile.v10_threshold_m_s if profile != null else 0.0)
 	_haze_rate = HAZE_RATE_FULL * lifted

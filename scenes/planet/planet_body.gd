@@ -1031,6 +1031,12 @@ func substellar_lonlat() -> Vector2:
 	return lonlat_of(star.global_position)
 
 
+## A stage's say on the weather here — the menu stage's wind (StageWind), a test: keys of a sample
+## that replace the model's (wind_east_m_s, wind_north_m_s, dust_tau, gust_factor…), carried to every
+## presenter by weather_at. {} = the model alone, which is the rule in the game.
+var weather_override: Dictionary = {}
+
+
 ## The weather at a world position on this body: WeatherSampler.sample's Dictionary (wind,
 ## temperature, pressure, dust, band, systems in reach), or {} when the body has no climate
 ## profile. The same call on the server and on every client gives the same numbers: the inputs
@@ -1043,8 +1049,9 @@ func weather_at(world_pos: Vector3) -> Dictionary:
 	var hours: float = get_local_solar_time(world_pos)
 	if hours < 0.0:
 		hours = 12.0
-	return WeatherSampler.sample(profile, weather_systems(), ll.x, ll.y, elevation_of(world_pos), hours,
-		star_declination_deg())
+	var sample: Dictionary = WeatherSampler.sample(profile, weather_systems(), ll.x, ll.y, elevation_of(world_pos),
+		hours, star_declination_deg())
+	return WeatherSampler.with_override(sample, weather_override)
 
 
 ## The climate profile of this body: the one set on its PlanetData, else the generated one named
@@ -1089,7 +1096,9 @@ func weather_local_at(world_pos: Vector3) -> Dictionary:
 	if sample.is_empty():
 		return sample
 	var profile: ClimateProfile = climate_profile()
-	var gust: float = WeatherLocal.gust_factor(profile.weather_seed, float(sample["lon_deg"]), float(sample["lat_deg"]),
+	# A stage breathes its gusts on its own clock (the shared one stands still there): its say wins.
+	var gust: float = float(weather_override["gust_factor"]) if weather_override.has("gust_factor") \
+			else WeatherLocal.gust_factor(profile.weather_seed, float(sample["lon_deg"]), float(sample["lat_deg"]),
 			Globals.sim_time())
 	return WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms)
 

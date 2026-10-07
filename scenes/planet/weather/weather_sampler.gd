@@ -267,3 +267,22 @@ static func local_axes(lon_deg: float, lat_deg: float) -> Array:
 	var east := Vector3(sin(lon), 0.0, -cos(lon))
 	var north := Vector3(-sin(lat) * cos(lon), cos(lat), -sin(lat) * sin(lon))
 	return [east, north]
+
+
+## [param sample] with [param override]'s keys in place of its own — a stage dictating the wind
+## (Planet.weather_override) — the wind's speed and direction, and the visibility, recomputed when their
+## parts were replaced. {} leaves the sample as it is; the input is never written to.
+static func with_override(sample: Dictionary, override: Dictionary) -> Dictionary:
+	if override.is_empty():
+		return sample
+	var out: Dictionary = sample.duplicate()
+	out.merge(override, true)
+	if override.has("wind_east_m_s") or override.has("wind_north_m_s"):
+		var east: float = float(out.get("wind_east_m_s", 0.0))
+		var north: float = float(out.get("wind_north_m_s", 0.0))
+		out["wind_speed_m_s"] = sqrt(east * east + north * north)
+		out["wind_from_deg"] = wind_from_deg(east, north)
+	if override.has("dust_tau"):
+		var tau: float = float(out["dust_tau"])
+		out["visibility_m"] = 3.912 / (tau / DUST_LAYER_M) if tau > 1e-6 else NO_DUST_VISIBILITY_M
+	return out

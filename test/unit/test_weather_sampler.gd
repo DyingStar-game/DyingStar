@@ -94,3 +94,16 @@ func test_a_low_turns_counter_clockwise_north_of_the_equator() -> void:
 	assert_almost_eq(k["weight"], exp(-0.5), 1e-3, "about one sigma away (great circle vs flat offset)")
 	var centre : Dictionary = WeatherSampler.contribution(_profile, low, 10.0, 45.0)
 	assert_almost_eq(centre["east"], 0.0, 1e-9, "calm eye")
+
+
+func test_a_stage_may_dictate_the_wind_and_the_rest_follows() -> void:
+	var sample : Dictionary = WeatherSampler.sample(_profile, [], 10.0, 20.0, 0.0, 12.0, 0.0)
+	assert_eq(WeatherSampler.with_override(sample, {}), sample, "no override: untouched")
+	var forced : Dictionary = WeatherSampler.with_override(sample,
+			{"wind_east_m_s": 0.0, "wind_north_m_s": -10.0, "dust_tau": 0.5})
+	assert_almost_eq(float(forced["wind_speed_m_s"]), 10.0, 1e-9, "the speed recomputed")
+	assert_almost_eq(float(forced["wind_from_deg"]), 0.0, 1e-9, "blowing south: from the north")
+	assert_almost_eq(float(forced["visibility_m"]), 3.912 / (0.5 / WeatherSampler.DUST_LAYER_M), 1e-6,
+			"the visibility recomputed")
+	assert_eq(forced["temperature_k"], sample["temperature_k"], "the rest untouched")
+	assert_eq(float(sample["dust_tau"]), 0.0, "the input not written to")
