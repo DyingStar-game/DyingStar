@@ -18,7 +18,7 @@ extends Node
 
 @export_group("Look")
 ## Overall opacity of a grain at full density (the shader's own, before a population's).
-@export_range(0.0, 1.0, 0.01) var opacity: float = 0.55
+@export_range(0.0, 1.0, 0.01) var opacity: float = 0.32
 ## Width of a puff's soft edge, as a share of its radius.
 @export_range(0.0, 1.0, 0.01) var edge_softness: float = 0.6
 ## Distance (m) over which a puff fades where it meets the ground or a wall.
