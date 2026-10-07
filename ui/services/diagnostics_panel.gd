@@ -12,7 +12,7 @@ var _token: Label
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_DIAGNOSTICS"), ServiceAppIcon.Kind.DIAGNOSTICS)
 	_action_button(bar, tr("%%SVC_ACT_TEST"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	_urls = _label("", DIM)
 	_urls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -26,7 +26,7 @@ func _build() -> void:
 	_token.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_titled(tr("%%SVC_LBL_PLAYER_TOKEN"), _token))
 
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 func refresh() -> void:

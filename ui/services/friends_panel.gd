@@ -32,7 +32,7 @@ var _selected_id: String = ""
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_CONTACTS"), ServiceAppIcon.Kind.CONTACTS)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_CONTACTS"), tr("%%SVC_TAB_REQUESTS"),
@@ -41,7 +41,7 @@ func _build() -> void:
 	_build_requests_page(pages[1])
 	_build_add_page(pages[2])
 	_build_blocks_page(pages[3])
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -63,7 +63,8 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	# Colonne gauche : filtre + liste des contacts.
+	# Colonne gauche : liste des contacts. The filter that narrows it is the segment's control, so
+	# it sits in the column beside the detail column the tablet draws next to the card.
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 10)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -72,7 +73,7 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 	left.custom_minimum_size = Vector2(300, 0)
 	_filter = _field(tr("%%SVC_PH_FILTER_CONTACTS"), 0.0)
 	_filter.text_changed.connect(func(_text: String) -> void: _render_roster())
-	left.add_child(_filter)
+	_side_page(0).add_child(_filter)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -126,12 +127,14 @@ func _build_requests_page(page: VBoxContainer) -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_add_page(page: VBoxContainer) -> void:
+	# The query is the segment's control: it runs from the column, the hits land in the card.
+	var side := _side_page(2)
 	var search_row := _row()
 	_search = _field(tr("%%SVC_PH_PLAYER_NAME"), 240.0)
 	_search.text_submitted.connect(func(_text: String) -> void: _run_search())
 	search_row.add_child(_search)
 	_action_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _run_search())
-	page.add_child(_titled(tr("%%SVC_LBL_SEARCH_PLAYER"), search_row))
+	side.add_child(_titled(tr("%%SVC_LBL_SEARCH_PLAYER"), search_row))
 	_page_search = ServicePage.new()
 	_page_search.load_requested.connect(_load_search)
 	_results = VBoxContainer.new()

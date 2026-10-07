@@ -67,7 +67,7 @@ var _trade_status: OptionButton
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_MARKET"), ServiceAppIcon.Kind.MARKET)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_CATALOG"), tr("%%SVC_TAB_ORDERS"),
@@ -76,7 +76,7 @@ func _build() -> void:
 	_build_orders_page(pages[1])
 	_build_demands_page(pages[2])
 	_build_trades_page(pages[3])
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 func _build_catalog_page(page: VBoxContainer) -> void:
@@ -89,6 +89,9 @@ func _build_catalog_page(page: VBoxContainer) -> void:
 
 
 func _build_orders_page(page: VBoxContainer) -> void:
+	# The filters and everything that acts on the list run from the column; the book stays in the
+	# card beside them.
+	var side := _side_page(1)
 	var filters := _row()
 	_order_good = _field(tr("%%SVC_PH_GOOD_TYPE"), 180.0)
 	_order_side = _option_enum(_with_all(SIDE_ENTRIES), 130.0)
@@ -98,11 +101,13 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	filters.add_child(_order_side)
 	filters.add_child(_order_status)
 	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_orders())
-	page.add_child(filters)
+	side.add_child(filters)
 	_page_orders = ServicePage.new()
 	_page_orders.load_requested.connect(_load_orders)
 	_orders = _paged_list(page, tr("%%SVC_TAB_ORDERS"), _page_orders, 240.0)
-	_action_button(page, tr("%%SVC_ACT_CANCEL_ORDER"), func() -> void: _cancel_order())
+	var cancel := _row()
+	_action_button(cancel, tr("%%SVC_ACT_CANCEL_ORDER"), func() -> void: _cancel_order())
+	side.add_child(cancel)
 
 	var form := VBoxContainer.new()
 	form.add_theme_constant_override("separation", 10)
@@ -131,10 +136,11 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	form.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
 	form.add_child(_order_corp_picker)
 	_action_button(form, tr("%%SVC_ACT_PLACE_ORDER"), func() -> void: _place_order())
-	page.add_child(_card(tr("%%SVC_ACT_PLACE_ORDER"), form))
+	side.add_child(_card(tr("%%SVC_ACT_PLACE_ORDER"), form))
 
 
 func _build_demands_page(page: VBoxContainer) -> void:
+	var side := _side_page(2)
 	var filters := _row()
 	_demand_good = _field(tr("%%SVC_PH_GOOD_TYPE"), 180.0)
 	_demand_status = _option_enum(DEMAND_STATUS_ENTRIES, 150.0)
@@ -142,7 +148,7 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	filters.add_child(_demand_good)
 	filters.add_child(_demand_status)
 	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_demands())
-	page.add_child(filters)
+	side.add_child(filters)
 	_page_demands = ServicePage.new()
 	_page_demands.load_requested.connect(_load_demands)
 	_demands = _paged_list(page, tr("%%SVC_TAB_DEMANDS"), _page_demands, 220.0)
@@ -151,7 +157,7 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	_fulfill_price = _number_field(tr("%%SVC_PH_UNIT_PRICE"), 150.0)
 	actions.add_child(_fulfill_price)
 	_action_button(actions, tr("%%SVC_ACT_FULFILL"), func() -> void: _fulfill_demand())
-	page.add_child(actions)
+	side.add_child(actions)
 
 	var form := VBoxContainer.new()
 	form.add_theme_constant_override("separation", 10)
@@ -180,7 +186,7 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	form.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
 	form.add_child(_demand_corp_picker)
 	_action_button(form, tr("%%SVC_ACT_CREATE_DEMAND"), func() -> void: _create_demand())
-	page.add_child(_card(tr("%%SVC_ACT_CREATE_DEMAND"), form))
+	side.add_child(_card(tr("%%SVC_ACT_CREATE_DEMAND"), form))
 
 
 func _build_trades_page(page: VBoxContainer) -> void:
@@ -188,7 +194,7 @@ func _build_trades_page(page: VBoxContainer) -> void:
 	_trade_status = _option_enum(TRADE_STATUS_ENTRIES, 150.0)
 	filters.add_child(_trade_status)
 	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_trades())
-	page.add_child(filters)
+	_side_page(3).add_child(filters)
 	_page_trades = ServicePage.new()
 	_page_trades.load_requested.connect(_load_trades)
 	_trades = _paged_list(page, tr("%%SVC_TAB_TRADES"), _page_trades, 320.0)

@@ -19,7 +19,7 @@ var _page_corp_stacks: ServicePage
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_INVENTORY"), ServiceAppIcon.Kind.INVENTORY)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_INVENTORY"), tr("%%SVC_TAB_CORP_INVENTORY")]))
@@ -39,14 +39,16 @@ func _build() -> void:
 	columns.add_child(_titled(tr("%%SVC_LBL_STACK_DETAIL"), _stack_detail, true))
 	pages[0].add_child(columns)
 
-	# Corporation — the corporation is picked, not typed, then its stacks and instances load.
+	# Corporation — the pick that drives everything below it is the segment's action, so it lives in
+	# the column; the inventory it loads stays in the card.
+	var side := _side_page(1)
 	var corp_row := _row()
 	_corp_picker = ServiceTargetPicker.new()
 	_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
 	adopt_field(_corp_picker.search_field())
 	corp_row.add_child(_corp_picker)
 	_action_button(corp_row, tr("%%SVC_ACT_LOAD"), func() -> void: _load_corp())
-	pages[1].add_child(corp_row)
+	side.add_child(corp_row)
 	var corp_columns := _row(18)
 	_page_corp_stacks = ServicePage.new()
 	_page_corp_stacks.rows_key = "stacks"
@@ -57,7 +59,7 @@ func _build() -> void:
 	corp_columns.add_child(_titled(tr("%%SVC_LBL_INSTANCES"), _corp_instances, true))
 	pages[1].add_child(corp_columns)
 
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 func refresh() -> void:

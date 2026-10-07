@@ -37,14 +37,16 @@ var _is_owner: bool = false
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_SQUAD"), ServiceAppIcon.Kind.SQUAD)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_SQUAD"), tr("%%SVC_TAB_INVITATIONS"), tr("%%SVC_TAB_CREATE")]))
 	_build_squad_page(pages[0])
 	_build_invitations_page(pages[1])
-	_build_create_page(pages[2])
-	add_child(_status_line())
+	# The create form is the whole of the third segment: it goes to the column, which then takes
+	# the card.
+	_build_create_page(_side_page(2))
+	add_chrome(_status_line())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -52,19 +54,21 @@ func _build() -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_squad_page(page: VBoxContainer) -> void:
+	var side := _side_page(0)
 	_summary = _label(tr("%%SVC_MSG_NO_GROUP"), DIM)
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	page.add_child(_titled(tr("%%SVC_LBL_GROUP"), _summary))
 
-	# No group: the straight path to creation.
+	# No group: the straight path to creation. What you CAN do with the group — create, leave,
+	# disband, edit it — is the column's half; the members and the contacts it can invite stay.
 	_create_shortcut = _row()
 	_action_button(_create_shortcut, tr("%%SVC_ACT_CREATE_GROUP"), func() -> void: goto_segment(2))
-	page.add_child(_create_shortcut)
+	side.add_child(_create_shortcut)
 
 	_actions = _row()
 	_action_button(_actions, tr("%%SVC_ACT_LEAVE"), func() -> void: _leave())
 	_disband_button = _action_button(_actions, tr("%%SVC_ACT_DISBAND"), func() -> void: _disband())
-	page.add_child(_actions)
+	side.add_child(_actions)
 
 	# Members as contact cards — same face as the Contacts app, with the kick on each row.
 	var members_scroll := _card_list(160.0)
@@ -87,7 +91,7 @@ func _build_squad_page(page: VBoxContainer) -> void:
 	edit.add_child(_edit_max)
 	_action_button(edit, tr("%%SVC_ACT_SAVE"), func() -> void: _save_group())
 	_edit_box = _titled(tr("%%SVC_TAB_EDIT"), edit)
-	page.add_child(_edit_box)
+	side.add_child(_edit_box)
 
 	# Invite (owner, while there is room): the contact list, one tap per invite.
 	var invitees_scroll := _card_list(160.0)
@@ -116,7 +120,7 @@ func _build_invitations_page(page: VBoxContainer) -> void:
 # Tab 2 — create
 # ---------------------------------------------------------------------------------------------
 
-func _build_create_page(page: VBoxContainer) -> void:
+func _build_create_page(side: VBoxContainer) -> void:
 	var create := VBoxContainer.new()
 	create.add_theme_constant_override("separation", 8)
 	_create_name = _field(tr("%%SVC_PH_GROUP_NAME"), 260.0)
@@ -129,7 +133,7 @@ func _build_create_page(page: VBoxContainer) -> void:
 	create.add_child(_label(tr("%%SVC_LBL_MAX_MEMBERS"), DIM))
 	create.add_child(_create_max)
 	_action_button(create, tr("%%SVC_ACT_CREATE_GROUP"), func() -> void: _create_group())
-	page.add_child(_titled(tr("%%SVC_TAB_CREATE"), create))
+	side.add_child(_titled(tr("%%SVC_TAB_CREATE"), create))
 
 
 # ---------------------------------------------------------------------------------------------

@@ -81,6 +81,39 @@ static func apply_window(panel: Panel) -> void:
 	panel.add_theme_stylebox_override("panel", box)
 
 
+## One of the tablet's two content cards (the mockup's amber-outlined panels): a near-black slab
+## inside a hairline of amber, glowing faintly so it floats over the window.
+static func apply_frame(panel: PanelContainer, glow: float = 12.0) -> void:
+	var box := flat(Color(0.032, 0.034, 0.042, 1.0), 16, Color(ACCENT, 0.7), 2, 20.0, 18.0)
+	box.shadow_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.20)
+	box.shadow_size = int(glow)
+	box.shadow_offset = Vector2.ZERO
+	panel.add_theme_stylebox_override("panel", box)
+
+
+## A bottom-bar tab: a wide tile, muted while another app is open, amber-edged and amber-lettered
+## while it is the one on show.
+static func apply_nav(button: Button, active: bool) -> void:
+	var border: Color = ACCENT if active else BORDER_STRONG
+	button.add_theme_stylebox_override("normal",
+			flat(ACCENT_SOFT if active else PANEL_ALT, RADIUS_SMALL, border,
+					2 if active else 1, 18.0, 16.0))
+	button.add_theme_stylebox_override("hover",
+			flat(SURFACE_HOVER, RADIUS_SMALL, border, 1, 18.0, 16.0))
+	button.add_theme_stylebox_override("pressed",
+			flat(SURFACE_PRESSED, RADIUS_SMALL, ACCENT, 2, 18.0, 16.0))
+	button.add_theme_stylebox_override("focus", flat(Color.TRANSPARENT, RADIUS_SMALL, ACCENT, 1))
+	button.add_theme_stylebox_override("disabled",
+			flat(PANEL, RADIUS_SMALL, BORDER, 1, 18.0, 16.0))
+	var text: Color = ACCENT if active else MUTED
+	button.add_theme_color_override("font_color", text)
+	button.add_theme_color_override("font_hover_color", ACCENT_HOVER if active else TEXT)
+	button.add_theme_color_override("font_pressed_color", ACCENT)
+	button.add_theme_color_override("font_disabled_color", MUTED)
+	button.add_theme_color_override("font_focus_color", text)
+	font_of(button, 15, active)
+
+
 static func apply_button(button: Button, primary: bool = false) -> void:
 	var font_color: Color = ON_ACCENT if primary else TEXT
 	var normal_bg: Color = ACCENT if primary else PANEL_ALT
@@ -98,25 +131,6 @@ static func apply_button(button: Button, primary: bool = false) -> void:
 	button.add_theme_color_override("font_disabled_color", MUTED)
 	button.add_theme_color_override("font_focus_color", font_color)
 	font_of(button, 15)
-
-
-## A sidebar entry: flat by default, amber left bar + soft fill when it is the open one.
-static func apply_tab(button: Button, active: bool) -> void:
-	var base := flat(ACCENT_SOFT if active else Color.TRANSPARENT, RADIUS_SMALL,
-			ACCENT_LINE if active else Color.TRANSPARENT, 2 if active else 0, 14.0, 11.0)
-	if active:
-		# Only the left edge keeps the amber bar; the other three sides are dropped.
-		base.border_width_top = 0
-		base.border_width_bottom = 0
-		base.border_width_right = 0
-	button.add_theme_stylebox_override("normal", base)
-	button.add_theme_stylebox_override("hover", flat(SURFACE_HOVER, RADIUS_SMALL, Color.TRANSPARENT, 0, 14.0, 11.0))
-	button.add_theme_stylebox_override("pressed", flat(SURFACE_PRESSED, RADIUS_SMALL, Color.TRANSPARENT, 0, 14.0, 11.0))
-	button.add_theme_stylebox_override("focus", flat(Color.TRANSPARENT, RADIUS_SMALL, ACCENT_LINE, 1))
-	button.add_theme_color_override("font_color", ACCENT if active else TEXT)
-	button.add_theme_color_override("font_hover_color", ACCENT if active else TEXT)
-	button.add_theme_color_override("font_pressed_color", ACCENT if active else TEXT)
-	font_of(button, 16, active)
 
 
 static func apply_field(field: LineEdit) -> void:

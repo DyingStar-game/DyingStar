@@ -226,6 +226,9 @@ func setup() -> void:
 	# Services terminal (F3): social / mission / economie, opened as a full-screen modal like the chart.
 	_services = TerminalUI.new()
 	player.get_node("UserInterface").add_child(_services)
+	# Its NAVIGATION tab hands the screen over to the chart, the way F2 would: the tablet closes
+	# itself and asks, it never reaches for the chart on its own.
+	_services.navigation_requested.connect(_open_navigation)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -838,6 +841,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _services.is_open():
 			_services.close()
 		else:
+			# One full-screen modal at a time: the chart yields the screen to the tablet, as the
+			# tablet yields it to the chart (see _open_navigation).
+			if _star_map != null and _star_map.is_open():
+				_star_map.close()
 			_services.open()
 		return
 	if _star_map_open() or _services_open(): return
@@ -1394,6 +1401,15 @@ func _star_map_open() -> bool:
 ## The services terminal is modal in the same way (F3).
 func _services_open() -> bool:
 	return _services != null and _services.is_open()
+
+
+## The tablet's NAVIGATION tab: it closes itself and asks for the chart, which is exactly what F2
+## does — one full-screen modal hands over to the other, they never stand side by side.
+func _open_navigation() -> void:
+	if _services != null:
+		_services.close()
+	if _star_map != null and not _star_map.is_open():
+		_star_map.open()
 
 
 ## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR

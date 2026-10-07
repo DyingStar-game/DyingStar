@@ -14,6 +14,11 @@ extends VBoxContainer
 ## button emits this; TerminalUI routes it).
 signal home_requested
 
+## How the tablet should split the screen for the segment now on show: data on the left, this
+## segment's actions in the right-hand column. Emitted when a segment is switched to, and once more
+## after [method _build] has filled both halves.
+signal pane_layout(has_main: bool, has_side: bool)
+
 ## Kept as the sections' unqualified vocabulary; all sourced from [ServiceStyle].
 const ACCENT: Color = ServiceStyle.ACCENT
 const DIM: Color = ServiceStyle.MUTED
@@ -21,6 +26,15 @@ const WARN: Color = ServiceStyle.WARN
 const GOOD: Color = ServiceStyle.GOOD
 const BG_COLOR: Color = ServiceStyle.BG
 const FONT_PATH: String = "res://ui/Poppins-Regular.ttf"
+
+## The app's right-hand action column, handed over by [TerminalUI] before the panel enters the tree
+## (one column per app, so nothing is ever reparented). Panels build their action forms into it —
+## one page per segment, through [method _side_page] — instead of stacking them under the lists.
+var side_slot: VBoxContainer = null
+
+## The tablet's chrome strip, above the two cards: the app bar and the segment tabs live there, so
+## they stay on screen even when a form-only segment hands the whole content card to the column.
+var tab_slot: VBoxContainer = null
 
 ## Focusable inputs registered here, so the screen contract can answer for all of them.
 var _fields: Array[LineEdit] = []
@@ -31,6 +45,11 @@ var _status_timer: Timer = null
 ## The last segmented control built, so [method goto_segment] can switch it in code.
 var _seg_bar: HBoxContainer = null
 var _seg_holders: Array[ScrollContainer] = []
+## The action-column page of each segment, index-aligned with the pages [method _segments_pages]
+## returned — the half the tablet shows in its right-hand column.
+var _side_pages: Array[VBoxContainer] = []
+## Which segment is on show, so the layout can be re-read once the build filled both halves.
+var _seg_index: int = 0
 ## Guards against overlapping refreshes (rapid section switches): a second refresh is skipped while
 ## one is in flight.
 var _loading: bool = false
@@ -46,7 +65,29 @@ func _ready() -> void:
 	_status_timer.wait_time = 5.0
 	_status_timer.timeout.connect(_clear_status)
 	add_child(_status_timer)
+	if side_slot == null:
+		# Stood up outside the tablet (a test, a smoke scene): keep the column inside the panel so
+		# it is neither parentless nor lost.
+		side_slot = VBoxContainer.new()
+		side_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		side_slot.visible = false
+		add_child(side_slot)
+	if tab_slot == null:
+		tab_slot = VBoxContainer.new()
+		tab_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		add_child(tab_slot)
 	_build()
+	# Both halves exist now: tell the tablet how to draw them (a form-only segment fills the width).
+	pane_layout.emit(has_main_content(), has_side_content())
+
+
+## Put a piece of chrome (the app bar, the segment tabs) in the tablet's strip above the cards, or
+## in the panel itself when it is standing alone.
+func add_chrome(child: Control) -> void:
+	if tab_slot != null:
+		tab_slot.add_child(child)
+	else:
+		add_child(child)
 
 
 ## Sections override this to lay themselves out. Called once, from _ready.
@@ -434,14 +475,19 @@ func _app_bar(title: String, icon_kind: ServiceAppIcon.Kind) -> HBoxContainer:
 ## A segmented control + one scrollable page per segment. Adds the bar and the pages to [code]self[/code]
 ## and returns the page boxes, in order, for the caller to fill. Pages other than the first start
 ## hidden. The last built set is remembered so [method goto_segment] can switch to a page in code.
+##
+## Every segment gets a second, parallel page in [member side_slot] — its action half (see
+## [method _side_page]) — and switching a segment switches both halves and tells the tablet how to
+## split the screen between them.
 func _segments_pages(labels: PackedStringArray) -> Array[VBoxContainer]:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 6)
 	bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages: Array[VBoxContainer] = []
 	var holders: Array[ScrollContainer] = []
+	_side_pages.clear()
 	for _i: int in range(labels.size()):
 		var page := VBoxContainer.new()
 		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -454,6 +500,13 @@ func _segments_pages(labels: PackedStringArray) -> Array[VBoxContainer]:
 		add_child(scroll)
 		pages.append(page)
 		holders.append(scroll)
+
+		var side := VBoxContainer.new()
+		side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		side.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		side.add_theme_constant_override("separation", 12)
+		side_slot.add_child(side)
+		_side_pages.append(side)
 
 	for i: int in range(labels.size()):
 		var tab := Button.new()
@@ -469,6 +522,14 @@ func _segments_pages(labels: PackedStringArray) -> Array[VBoxContainer]:
 	return pages
 
 
+## The action-column page of the [param index]-th segment: forms, filters and the buttons that act
+## on what the left half is showing. Callers fill it right after [method _segments_pages] returns.
+func _side_page(index: int) -> VBoxContainer:
+	if index < 0 or index >= _side_pages.size():
+		return null
+	return _side_pages[index]
+
+
 ## Switch to the [param index]-th segment built by the last [method _segments_pages] call.
 func goto_segment(index: int) -> void:
 	if _seg_bar != null and index >= 0 and index < _seg_holders.size():
@@ -480,6 +541,28 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 		ServiceStyle.apply_segment(bar.get_child(i) as Button, i == index)
 	for i: int in range(holders.size()):
 		holders[i].visible = i == index
+	for i: int in range(_side_pages.size()):
+		(_side_pages[i] as VBoxContainer).visible = i == index
+	_seg_index = index
+	pane_layout.emit(has_main_content(), has_side_content())
+
+
+## Whether the segment on show has anything to draw on the left. A segment that is nothing but a
+## form has moved entirely into the column, and the tablet gives the column the whole width.
+func has_main_content() -> bool:
+	if _seg_index < 0 or _seg_index >= _seg_holders.size():
+		return true
+	var holder: ScrollContainer = _seg_holders[_seg_index]
+	if holder.get_child_count() == 0:
+		return true
+	return (holder.get_child(0) as Node).get_child_count() > 0
+
+
+## Whether the segment on show put anything in the right-hand column.
+func has_side_content() -> bool:
+	if _seg_index < 0 or _seg_index >= _side_pages.size():
+		return false
+	return not (_side_pages[_seg_index] as VBoxContainer).get_children().is_empty()
 
 
 ## The status footer every section shows the outcome of an action on. Hidden until something is said,

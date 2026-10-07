@@ -118,7 +118,7 @@ var _catalog: Dictionary = {}
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_MISSIONS"), ServiceAppIcon.Kind.MISSIONS)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_AVAILABLE"), tr("%%SVC_TAB_MY_MISSIONS"),
@@ -126,8 +126,10 @@ func _build() -> void:
 	_build_browse_page(pages[0])
 	_build_mine_page(pages[1])
 	_build_created_page(pages[2])
-	_build_create_page(pages[3])
-	add_child(_status_line())
+	# The builder is the whole of the fourth segment: it goes to the column, which then takes
+	# the card — the document needs every pixel it can get.
+	_build_create_page(_side_page(3))
+	add_chrome(_status_line())
 
 	# One clause up front: the contract is never empty.
 	_add_objective_row()
@@ -220,6 +222,8 @@ func _build_browse_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
 	var contract: VBoxContainer = parts[1]
+	# The filters are the segment's controls: they run from the column, beside the contract.
+	var side := _side_page(0)
 	var filters := _row()
 	_filter_status = _option_enum(STATUS_ENTRIES, 140.0)
 	_kind = _option_enum(KIND_ENTRIES, 140.0)
@@ -234,7 +238,7 @@ func _build_browse_page(page: VBoxContainer) -> void:
 	filters.add_child(_label(tr("%%SVC_LBL_VISIBILITY"), DIM))
 	filters.add_child(_visibility)
 	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _browse_missions())
-	left.add_child(filters)
+	side.add_child(filters)
 	_page_browse = ServicePage.new()
 	_page_browse.rows_key = "missions"
 	_page_browse.load_requested.connect(_load_browse)
@@ -265,12 +269,13 @@ func _build_created_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
 	var contract: VBoxContainer = parts[1]
+	var side := _side_page(2)
 	var filters := _row()
 	_created_status = _option_enum(STATUS_ENTRIES, 140.0)
 	filters.add_child(_label(tr("%%SVC_LBL_STATUS"), DIM))
 	filters.add_child(_created_status)
 	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _created_missions())
-	left.add_child(filters)
+	side.add_child(filters)
 	_page_created = ServicePage.new()
 	_page_created.rows_key = "missions"
 	_page_created.load_requested.connect(_load_created)
@@ -282,7 +287,7 @@ func _build_created_page(page: VBoxContainer) -> void:
 # Tab 3 — new contract (edit mode, same document shell)
 # ---------------------------------------------------------------------------------------------
 
-func _build_create_page(page: VBoxContainer) -> void:
+func _build_create_page(side: VBoxContainer) -> void:
 	var card := _document_card()
 	var create := VBoxContainer.new()
 	create.add_theme_constant_override("separation", 12)
@@ -366,7 +371,7 @@ func _build_create_page(page: VBoxContainer) -> void:
 	create.add_child(submit)
 
 	card.add_child(create)
-	page.add_child(card)
+	side.add_child(card)
 
 
 # ---------------------------------------------------------------------------------------------

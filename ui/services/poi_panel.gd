@@ -49,14 +49,16 @@ var _corp_detail: Label
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_POIS"), ServiceAppIcon.Kind.POIS)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_POIS"), tr("%%SVC_TAB_CREATE"), tr("%%SVC_TAB_CORP_POIS")]))
 	_build_mine(pages[0])
-	_build_form(pages[1])
+	# The create/edit form is the whole of the second segment: it goes to the column,
+	# which then takes the card.
+	_build_form(_side_page(1))
 	_build_corp(pages[2])
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 func refresh() -> void:
@@ -101,21 +103,23 @@ func _build_mine(page: VBoxContainer) -> void:
 	page.add_child(columns)
 
 	# These act on the selected POI: the grant list feeds the revoke, the picker the other two.
+	# Acting on what the card shows is the column's half.
+	var actions := _side_page(0)
 	var selection := _row()
 	_action_button(selection, tr("%%SVC_ACT_EDIT"), _edit_selected)
 	_action_button(selection, tr("%%SVC_ACT_DELETE_POI"), _delete_selected)
-	page.add_child(selection)
+	actions.add_child(selection)
 
 	_target = ServiceTargetPicker.new()
 	_target.setup(ServiceTargetPicker.Mask.EITHER, true)
 	adopt_field(_target.search_field())
-	page.add_child(_titled(tr("%%SVC_LBL_RECIPIENT"), _target))
+	actions.add_child(_titled(tr("%%SVC_LBL_RECIPIENT"), _target))
 
 	var grants := _row()
 	_action_button(grants, tr("%%SVC_ACT_GRANT"), _grant)
 	_action_button(grants, tr("%%SVC_ACT_REVOKE"), _revoke)
 	_action_button(grants, tr("%%SVC_ACT_TRANSFER"), _transfer)
-	page.add_child(grants)
+	actions.add_child(grants)
 
 
 ## Open the detail and the grants of the row the player picked.
@@ -225,7 +229,7 @@ func _transfer() -> void:
 # Create / edit form
 # ---------------------------------------------------------------------------------------------
 
-func _build_form(page: VBoxContainer) -> void:
+func _build_form(side: VBoxContainer) -> void:
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 10)
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -282,7 +286,7 @@ func _build_form(page: VBoxContainer) -> void:
 	_action_button(buttons, tr("%%SVC_ACT_SAVE"), _save)
 	rows.add_child(buttons)
 
-	page.add_child(rows)
+	side.add_child(rows)
 	_blank_form()
 
 
@@ -395,13 +399,14 @@ func _form_body() -> Dictionary:
 # ---------------------------------------------------------------------------------------------
 
 func _build_corp(page: VBoxContainer) -> void:
+	# The pick that loads the list is the segment's control: it runs from the column.
 	var picker_row := _row()
 	_corp_picker = ServiceTargetPicker.new()
 	_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
 	adopt_field(_corp_picker.search_field())
 	picker_row.add_child(_corp_picker)
 	_action_button(picker_row, tr("%%SVC_ACT_LOAD"), _load_corp)
-	page.add_child(picker_row)
+	_side_page(2).add_child(picker_row)
 
 	var columns := _row(18)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL

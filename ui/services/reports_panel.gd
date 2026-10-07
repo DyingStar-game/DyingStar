@@ -27,16 +27,18 @@ var _message: LineEdit
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_REPORTS"), ServiceAppIcon.Kind.REPORTS)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_REPORT"), tr("%%SVC_TAB_MY_REPORTS")]))
-	_build_report_page(pages[0])
+	# The form is the whole of the first segment: it belongs to the action column, which then takes
+	# the card (there is nothing left beside it to show).
+	_build_report_page(_side_page(0))
 	_build_history_page(pages[1])
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
-func _build_report_page(page: VBoxContainer) -> void:
+func _build_report_page(side: VBoxContainer) -> void:
 	var form := VBoxContainer.new()
 	form.add_theme_constant_override("separation", 10)
 	_target_type = _option_enum(TARGET_TYPE_ENTRIES)
@@ -56,7 +58,7 @@ func _build_report_page(page: VBoxContainer) -> void:
 	form.add_child(_label(tr("%%SVC_LBL_MESSAGE"), DIM))
 	form.add_child(_message)
 	_action_button(form, tr("%%SVC_ACT_SEND_REPORT"), func() -> void: _create_report())
-	page.add_child(_titled(tr("%%SVC_LBL_NEW_REPORT"), form))
+	side.add_child(_titled(tr("%%SVC_LBL_NEW_REPORT"), form))
 
 
 func _build_history_page(page: VBoxContainer) -> void:

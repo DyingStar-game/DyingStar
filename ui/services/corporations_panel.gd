@@ -66,11 +66,19 @@ var _prime_amount: LineEdit
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_CORPORATIONS"), ServiceAppIcon.Kind.CORPORATIONS)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_CORPS"), tr("%%SVC_TAB_DIRECTORY"), tr("%%SVC_TAB_MANAGE"),
 			tr("%%SVC_TAB_CREATE"), tr("%%SVC_TAB_TREASURY")]))
+
+	# Each segment's half in the right-hand column: what you can DO with it (search, invite,
+	# manage, create, run the treasury). The lists those actions act on stay in the card.
+	var side0 := _side_page(0)
+	var side1 := _side_page(1)
+	var side2 := _side_page(2)
+	var side3 := _side_page(3)
+	var side4 := _side_page(4)
 
 	# My corporations — one sub-tile per corporation, then the two entries (join / create), then
 	# the invitations.
@@ -85,14 +93,14 @@ func _build() -> void:
 	var entries := _row()
 	_action_button(entries, tr("%%SVC_ACT_JOIN_CORP"), func() -> void: goto_segment(1))
 	_action_button(entries, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: goto_segment(3))
-	pages[0].add_child(entries)
+	side0.add_child(entries)
 	_page_my_requests = ServicePage.new()
 	_page_my_requests.load_requested.connect(_load_my_requests)
 	_my_requests = _paged_list(pages[0], tr("%%SVC_LBL_PENDING_REQUESTS"), _page_my_requests, 150.0)
 	var my_req_row := _row()
 	_action_button(my_req_row, tr("%%SVC_ACT_ACCEPT"), func() -> void: _my_request(true))
 	_action_button(my_req_row, tr("%%SVC_ACT_DECLINE"), func() -> void: _my_request(false))
-	pages[0].add_child(my_req_row)
+	side0.add_child(my_req_row)
 
 	# Directory
 	var search_row := _row()
@@ -101,7 +109,7 @@ func _build() -> void:
 	search_row.add_child(_search)
 	_action_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_directory())
 	_action_button(search_row, tr("%%SVC_ACT_JOIN"), func() -> void: _join_selected())
-	pages[1].add_child(search_row)
+	side1.add_child(search_row)
 	_page_directory = ServicePage.new()
 	_page_directory.load_requested.connect(_load_directory)
 	_directory = _paged_list(pages[1], tr("%%SVC_LBL_DIRECTORY"), _page_directory, 320.0)
@@ -112,7 +120,7 @@ func _build() -> void:
 	adopt_field(_invite_picker.search_field())
 	invite_row.add_child(_invite_picker)
 	_action_button(invite_row, tr("%%SVC_ACT_INVITE"), func() -> void: _invite_selected())
-	pages[1].add_child(invite_row)
+	side1.add_child(invite_row)
 
 	# Manage (detail + membership actions)
 	_detail = _label(tr("%%SVC_MSG_SELECT_CORP"), DIM)
@@ -121,7 +129,7 @@ func _build() -> void:
 	var membership_row := _row()
 	_action_button(membership_row, tr("%%SVC_ACT_LEAVE"), func() -> void: _leave_selected())
 	_action_button(membership_row, tr("%%SVC_ACT_DISBAND"), func() -> void: _disband_selected())
-	pages[2].add_child(membership_row)
+	side2.add_child(membership_row)
 	var detail_columns := _row(18)
 	_page_members = ServicePage.new()
 	_page_members.load_requested.connect(_load_members)
@@ -142,7 +150,7 @@ func _build() -> void:
 	_action_button(manage_row, tr("%%SVC_ACT_REMOVE_MEMBER"), func() -> void: _remove_member())
 	_action_button(manage_row, tr("%%SVC_ACT_ACCEPT_REQUEST"), func() -> void: _request_action(true))
 	_action_button(manage_row, tr("%%SVC_ACT_DECLINE_REQUEST"), func() -> void: _request_action(false))
-	pages[2].add_child(manage_row)
+	side2.add_child(manage_row)
 
 	var rank_row := _row()
 	_rank_name = _field(tr("%%SVC_PH_RANK_NAME"), 170.0)
@@ -154,7 +162,7 @@ func _build() -> void:
 	rank_row.add_child(_rank_default)
 	_action_button(rank_row, tr("%%SVC_ACT_CREATE_RANK"), func() -> void: _create_rank())
 	_action_button(rank_row, tr("%%SVC_ACT_DELETE_RANK"), func() -> void: _delete_rank())
-	pages[2].add_child(rank_row)
+	side2.add_child(rank_row)
 
 	# The rights themselves: one checkbox per action of the catalogue, ticked from the selected
 	# rank. Creating a rank sends whatever is ticked; « apply » writes the ticks onto the rank the
@@ -169,7 +177,7 @@ func _build() -> void:
 	pages[2].add_child(_titled(tr("%%SVC_LBL_PERMISSIONS"), _perm_grid, true))
 	var perm_row := _row()
 	_action_button(perm_row, tr("%%SVC_ACT_APPLY_PERMISSIONS"), func() -> void: _apply_rank_permissions())
-	pages[2].add_child(perm_row)
+	side2.add_child(perm_row)
 
 	var transfer_row := _row()
 	_transfer_picker = ServiceTargetPicker.new()
@@ -177,7 +185,7 @@ func _build() -> void:
 	adopt_field(_transfer_picker.search_field())
 	transfer_row.add_child(_transfer_picker)
 	_action_button(transfer_row, tr("%%SVC_ACT_TRANSFER"), func() -> void: _transfer())
-	pages[2].add_child(transfer_row)
+	side2.add_child(transfer_row)
 
 	var parent_row := _row()
 	_parent_picker = ServiceTargetPicker.new()
@@ -186,7 +194,7 @@ func _build() -> void:
 	parent_row.add_child(_parent_picker)
 	_action_button(parent_row, tr("%%SVC_ACT_ATTACH"), func() -> void: _set_parent())
 	_action_button(parent_row, tr("%%SVC_ACT_DETACH"), func() -> void: _detach_parent())
-	pages[2].add_child(parent_row)
+	side2.add_child(parent_row)
 
 	# Create
 	var create := VBoxContainer.new()
@@ -201,7 +209,9 @@ func _build() -> void:
 	create.add_child(_label(tr("%%SVC_LBL_RECRUITMENT"), DIM))
 	create.add_child(_create_recruitment)
 	_action_button(create, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: _create_corporation())
-	pages[3].add_child(_titled(tr("%%SVC_ACT_CREATE_CORP"), create))
+	# The create form is the whole of the fourth segment: it goes to the column, which then
+	# takes the card.
+	side3.add_child(_titled(tr("%%SVC_ACT_CREATE_CORP"), create))
 
 	# Treasury
 	var corp := VBoxContainer.new()
@@ -222,7 +232,9 @@ func _build() -> void:
 	period.add_child(_corp_from)
 	period.add_child(_corp_to)
 	corp.add_child(period)
-	pages[4].add_child(_titled(tr("%%SVC_TAB_TREASURY"), corp))
+	# The treasury pick drives every list below it: the pick, its buttons and the period are the
+	# column, the accounts and the movements they load are the card.
+	side4.add_child(_titled(tr("%%SVC_TAB_TREASURY"), corp))
 	_corp_wallet = _list(120.0)
 	pages[4].add_child(_titled(tr("%%SVC_LBL_CORP_ACCOUNTS"), _corp_wallet, true))
 	_page_corp_ledger = ServicePage.new()
@@ -235,13 +247,13 @@ func _build() -> void:
 	donation.add_child(_label(tr("%%SVC_LBL_DONATION"), DIM))
 	donation.add_child(_donation_amount)
 	_action_button(donation, tr("%%SVC_ACT_DONATE"), func() -> void: _donate())
-	pages[4].add_child(donation)
+	side4.add_child(donation)
 
 	# The corporation's own tax debts, settled from the same pick as the treasury.
 	_page_corp_taxes = ServicePage.new()
 	_page_corp_taxes.load_requested.connect(_load_corp_taxes)
 	_corp_taxes = _paged_list(pages[4], tr("%%SVC_LBL_TAX_DEBTS"), _page_corp_taxes, 110.0)
-	_action_button(pages[4], tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
+	_action_button(side4, tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
 
 	# Salaries / prime / payroll — the same corporation pick as the treasury. The role defaults are
 	# a fixed table; the per-member overrides are the window the footer walks.
@@ -255,7 +267,7 @@ func _build() -> void:
 	_salary_members = _paged_list(salary_columns, tr("%%SVC_LBL_MEMBER_OVERRIDES"),
 			_page_salary_members, 120.0)
 	pages[4].add_child(salary_columns)
-	_action_button(pages[4], tr("%%SVC_ACT_LOAD_SALARIES"), func() -> void: _load_salaries())
+	_action_button(side4, tr("%%SVC_ACT_LOAD_SALARIES"), func() -> void: _load_salaries())
 
 	var role_salary := _row()
 	_salary_role = _field(tr("%%SVC_PH_ROLE"), 140.0)
@@ -264,7 +276,7 @@ func _build() -> void:
 	role_salary.add_child(_salary_role)
 	role_salary.add_child(_salary_role_amount)
 	_action_button(role_salary, tr("%%SVC_ACT_SET_ROLE_SALARY"), func() -> void: _set_role_salary())
-	pages[4].add_child(role_salary)
+	side4.add_child(role_salary)
 
 	var member_salary := _row()
 	_salary_member_picker = ServiceTargetPicker.new()
@@ -276,7 +288,7 @@ func _build() -> void:
 	member_salary.add_child(_salary_member_amount)
 	_action_button(member_salary, tr("%%SVC_ACT_SET_MEMBER_SALARY"), func() -> void: _set_member_salary())
 	_action_button(member_salary, tr("%%SVC_ACT_REMOVE_SALARY"), func() -> void: _remove_member_salary())
-	pages[4].add_child(member_salary)
+	side4.add_child(member_salary)
 
 	var prime_row := _row()
 	_prime_picker = ServiceTargetPicker.new()
@@ -287,11 +299,11 @@ func _build() -> void:
 	prime_row.add_child(_prime_picker)
 	prime_row.add_child(_prime_amount)
 	_action_button(prime_row, tr("%%SVC_ACT_PRIME"), func() -> void: _prime())
-	pages[4].add_child(prime_row)
+	side4.add_child(prime_row)
 
-	_action_button(pages[4], tr("%%SVC_ACT_PAYROLL"), func() -> void: _payroll())
+	_action_button(side4, tr("%%SVC_ACT_PAYROLL"), func() -> void: _payroll())
 
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 func refresh() -> void:

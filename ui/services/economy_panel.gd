@@ -20,7 +20,7 @@ var _tax_currency: LineEdit
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_BANK"), ServiceAppIcon.Kind.BANK)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_ACCOUNTS"), tr("%%SVC_TAB_TRANSACTIONS"), tr("%%SVC_TAB_TRANSFER"),
@@ -68,20 +68,23 @@ func _build() -> void:
 	transfer.add_child(_label(tr("%%SVC_LBL_MEMO"), ServiceStyle.MUTED))
 	transfer.add_child(_memo)
 	_action_button(transfer, tr("%%SVC_ACT_SEND_TRANSFER"), func() -> void: _transfer())
-	pages[2].add_child(_card(tr("%%SVC_TAB_TRANSFER"), transfer))
+	# The transfer form IS the segment (the mockup's right-hand card): it goes to the column, which
+	# then takes the whole width — there is no accounts list beside it to keep company.
+	_side_page(2).add_child(_card(tr("%%SVC_TAB_TRANSFER"), transfer))
 
 	# Taxes — every debt the caller owes, and one payment that settles all it can afford (an empty
 	# currency pays in all of them, which is the service's own default).
 	_page_taxes = ServicePage.new()
 	_page_taxes.load_requested.connect(_load_taxes)
 	_taxes = _paged_list(pages[3], tr("%%SVC_LBL_TAX_DEBTS"), _page_taxes, 260.0)
+	# What is owed is on show; how to pay it is the column's business.
 	var tax_row := _row()
 	_tax_currency = _field(tr("%%SVC_PH_CURRENCY"), 150.0)
 	tax_row.add_child(_tax_currency)
 	_action_button(tax_row, tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_taxes())
-	pages[3].add_child(tax_row)
+	_side_page(3).add_child(tax_row)
 
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 ## A card with a small caption header over its body.

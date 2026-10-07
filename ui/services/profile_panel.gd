@@ -28,16 +28,18 @@ var _page_activity: ServicePage
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_IDENTITY"), ServiceAppIcon.Kind.IDENTITY)
 	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
-	add_child(bar)
+	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_PROFILE"), tr("%%SVC_TAB_EDIT"),
 			tr("%%SVC_TAB_REPUTATION"), tr("%%SVC_TAB_ACTIVITY")]))
 	_build_profil_page(pages[0])
-	_build_edit_page(pages[1])
+	# The edit form is the whole of the second segment: it lives in the column, which then takes the
+	# card. The reading pages (profile, reputation, activity) keep the card to themselves.
+	_build_edit_page(_side_page(1))
 	_build_reputation_page(pages[2])
 	_build_activity_page(pages[3])
-	add_child(_status_line())
+	add_chrome(_status_line())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -142,7 +144,7 @@ func _info_row(caption: String, key: String) -> Control:
 # Modifier
 # ---------------------------------------------------------------------------------------------
 
-func _build_edit_page(page: VBoxContainer) -> void:
+func _build_edit_page(side: VBoxContainer) -> void:
 	var form := VBoxContainer.new()
 	form.add_theme_constant_override("separation", 10)
 	_name_field = _field(tr("%%SVC_PH_DISPLAY_NAME"), 320.0)
@@ -169,7 +171,7 @@ func _build_edit_page(page: VBoxContainer) -> void:
 	form.add_child(_label(tr("%%SVC_LBL_STORY"), ServiceStyle.MUTED))
 	form.add_child(_rp_story_field)
 	_action_button(form, tr("%%SVC_ACT_SAVE"), func() -> void: _save())
-	page.add_child(_card(tr("%%SVC_LBL_EDIT_PROFILE"), form))
+	side.add_child(_card(tr("%%SVC_LBL_EDIT_PROFILE"), form))
 
 
 # ---------------------------------------------------------------------------------------------
