@@ -38,7 +38,7 @@ func bind(planet: Planet, rig: Node3D) -> void:
 	if not is_inside_tree() or not is_instance_valid(_planet) or not is_instance_valid(_rig):
 		return
 	_dust = StormDust.new(_rig, DUST)
-	_audio = WeatherAudio.new()
+	_audio = WeatherAudio.make()
 	_audio.name = "StageWeatherAudio"
 	_rig.add_child(_audio)
 	_apply()

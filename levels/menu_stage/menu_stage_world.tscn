@@ -19,7 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://bmk1yx4q5cewg" path="res://assets/_universe/props/furniture/CommemorativeBust/commemorativebust.res" id="17_s6f0h"]
 [ext_resource type="PackedScene" uid="uid://vsepjo7bgp7v" path="res://scenes/_universe/environment/space/star.tscn" id="17_star"]
 [ext_resource type="PackedScene" uid="uid://dvwggfmy7o52p" path="res://scenes/systems/tarsis/tarsis_3.tscn" id="18_tarsis_3"]
-[ext_resource type="Script" uid="197610" path="res://levels/menu_stage/stage_wind.gd" id="19_stage_wind"]
+[ext_resource type="Script" uid="uid://cgj55sqndiljo" path="res://levels/menu_stage/stage_wind.gd" id="19_stage_wind"]
 [ext_resource type="PackedScene" uid="uid://dxajkuw7y5byw" path="res://scenes/_universe/props/containers/test_containers_6x2.6.tscn" id="20_xq23n"]
 
 [node name="MenuStageWorld" type="Node3D" unique_id=1917159811]

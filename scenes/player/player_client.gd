@@ -1942,7 +1942,7 @@ func _update_storm_dust(delta: float) -> void:
 ## at the wheel. Built once, under the body, so it frees with it.
 func _update_weather_audio(delta: float) -> void:
 	if _weather_audio == null:
-		_weather_audio = WeatherAudio.new()
+		_weather_audio = WeatherAudio.make()
 		player.add_child(_weather_audio, false, Node.INTERNAL_MODE_BACK)
 	_weather_audio_age += delta
 	if _weather_audio_age < WEATHER_AUDIO_SAMPLE_S:
