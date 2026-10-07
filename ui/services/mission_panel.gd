@@ -53,6 +53,13 @@ const ESCROW_ENTRIES: Array = [
 	["creator", "%%SVC_ENUM_ESCROW_CREATOR"],
 	["issuer", "%%SVC_ENUM_ESCROW_ISSUER"],
 ]
+## The create form's zone kinds — exactly the MissionZone discriminator the service validates
+## (a `.strict()` union: system / scene / area). A mission with no zone is global.
+const ZONE_ENTRIES: Array = [
+	["system", "%%SVC_ENUM_ZONE_SYSTEM"],
+	["scene", "%%SVC_ENUM_ZONE_SCENE"],
+	["area", "%%SVC_ENUM_ZONE_AREA"],
+]
 ## The create form's fallback objective kinds when the catalogue is unreachable.
 const OBJECTIVE_TYPE_ENTRIES: Array = [
 	["deliver_material", "%%SVC_ENUM_OBJECTIVE_DELIVER_MATERIAL"],
@@ -91,6 +98,10 @@ var _escrow_caption: Label
 var _create_escrow: OptionButton
 var _create_amount: LineEdit
 var _create_max: LineEdit
+## Zone block — the availability zones (no row = the service's "global" mission): a titled box of
+## repeatable rows, each {panel, index, kind, fields: Array[LineEdit]}.
+var _create_zones: VBoxContainer
+var _zone_rows: Array = []
 var _create_objectives: VBoxContainer
 var _create_prereqs: VBoxContainer
 ## Editable clauses, each {panel, index, kind, badge, qty?, flow, fallback_box, with_title,
@@ -313,6 +324,19 @@ func _build_create_page(page: VBoxContainer) -> void:
 	adopt_field(_create_corp_picker.search_field())
 	_create_corp_row.add_child(_create_corp_picker)
 	create.add_child(_create_corp_row)
+
+	# Zones: the availability list — no row means the mission is global. Every row owns the
+	# fields its kind needs; "my position" prefills the first one from the presence location.
+	var zones := VBoxContainer.new()
+	zones.add_theme_constant_override("separation", 8)
+	_create_zones = VBoxContainer.new()
+	_create_zones.add_theme_constant_override("separation", 8)
+	zones.add_child(_create_zones)
+	var zone_actions := _row()
+	_action_button(zone_actions, tr("%%SVC_ACT_ADD_ZONE"), func() -> void: _new_zone_row())
+	_action_button(zone_actions, tr("%%SVC_ACT_ZONE_MINE"), func() -> void: _use_my_position())
+	zones.add_child(zone_actions)
+	create.add_child(_titled(tr("%%SVC_LBL_ZONES"), zones))
 	create.add_child(_rule())
 
 	# Clauses: objectives then prerequisites, each with its decomposed sentence.
@@ -503,6 +527,12 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ESCROW") % payer, ServiceStyle.TEXT))
 	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_SLOTS") %
 			ServiceTypes.num(mission.get("maxAssignees")), ServiceStyle.TEXT))
+	# Availability zones — an empty list is the service's "global" mission. The field is absent
+	# on payloads from before zones existed, so those contracts simply show no line.
+	var zones: Variant = mission.get("zones")
+	if zones is Array:
+		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ZONES") %
+				ServiceTypes.zones_text(zones), ServiceStyle.TEXT))
 	if not assignment.is_empty():
 		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
 				ServiceTypes.assignment_line(assignment), ServiceStyle.TEXT))
@@ -749,6 +779,169 @@ func _renumber_clauses() -> void:
 	for row: Dictionary in _prereq_rows:
 		(row["index"] as Label).text = "%d." % index
 		index += 1
+
+
+# ---------------------------------------------------------------------------------------------
+# Tab 3 — zone rows (the availability list)
+# ---------------------------------------------------------------------------------------------
+
+## One zone card: numbered head (N. kind ▾ · ×) over the fields its kind owns. The kind is the
+## service's strict MissionZone discriminator; picking another one tears the fields down and
+## rebuilds them, the way a clause rebuilds when its kind changes. [param kind_value] preselects
+## a kind (the position prefill starts the row on the richest thing the location carries).
+func _new_zone_row(kind_value: String = "") -> PanelContainer:
+	var row := {}
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel",
+			ServiceStyle.flat(ServiceStyle.PANEL_ALT, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 14.0, 10.0))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+
+	var head := _row(8)
+	var index := _label("1.", ACCENT)
+	ServiceStyle.font_of(index, 14, true)
+	index.custom_minimum_size = Vector2(26, 0)
+	head.add_child(index)
+	var kind := _option_enum(ZONE_ENTRIES, 140.0)
+	if kind.selected < 0 and kind.item_count > 0:
+		kind.select(0)
+	var entry_index := 0
+	for entry: Array in ZONE_ENTRIES:
+		if str(entry[0]) == kind_value:
+			kind.select(entry_index)
+			break
+		entry_index += 1
+	head.add_child(kind)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	_action_button(head, "×", func() -> void: _remove_zone_row(row))
+	box.add_child(head)
+
+	var flow := FlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 8)
+	flow.add_theme_constant_override("v_separation", 6)
+	flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(flow)
+
+	# Fill the SAME dictionary the × lambda captured above — rebinding `row` would leave that
+	# closure holding an empty dict.
+	row["panel"] = panel
+	row["index"] = index
+	row["kind"] = kind
+	row["flow"] = flow
+	row["fields"] = []
+	_create_zones.add_child(panel)
+	_zone_rows.append(row)
+	_renumber_zones()
+	_rebuild_zone_fields(row)
+	kind.item_selected.connect(func(_i: int) -> void: _rebuild_zone_fields(row))
+	return panel
+
+
+func _remove_zone_row(row: Dictionary) -> void:
+	_zone_rows.erase(row)
+	for field: LineEdit in row.get("fields", []):
+		_forget_field(field)
+	var panel: Variant = row.get("panel")
+	if panel is Node and is_instance_valid(panel):
+		(panel as Node).queue_free()
+	_renumber_zones()
+
+
+## Zone rows number "1. 2. 3." the way the clauses do.
+func _renumber_zones() -> void:
+	var index := 1
+	for row: Dictionary in _zone_rows:
+		(row["index"] as Label).text = "%d." % index
+		index += 1
+
+
+## Drop a zone row's current fields (they belonged to the previous kind) and build the ones the
+## chosen kind owns: `system` alone, `scene` (optionally narrowed to a system), or `area`
+## (optional system + centre x/y/z + radius in metres).
+func _rebuild_zone_fields(row: Dictionary) -> void:
+	# `system` is the one field every kind carries, so a kind switch keeps what was typed there.
+	var system := _zone_text(row.get("system"))
+	for field: LineEdit in row.get("fields", []):
+		_forget_field(field)
+	var flow: FlowContainer = row["flow"]
+	_clear(flow)
+	for key: String in ["system", "scene", "cx", "cy", "cz", "radius"]:
+		row[key] = null
+	row["fields"] = []
+	var kind := _enum_value(row["kind"] as OptionButton)
+	_zone_edit(row, flow, "system", tr("%%SVC_PH_ZONE_SYSTEM"), 150.0, false)
+	if system != "":
+		(row["system"] as LineEdit).text = system
+	if kind == "system":
+		return
+	if kind == "scene":
+		_zone_edit(row, flow, "scene", tr("%%SVC_PH_ZONE_SCENE"), 200.0, false)
+		return
+	_zone_edit(row, flow, "cx", tr("%%SVC_PH_ZONE_X"), 70.0, false)
+	_zone_edit(row, flow, "cy", tr("%%SVC_PH_ZONE_Y"), 70.0, false)
+	_zone_edit(row, flow, "cz", tr("%%SVC_PH_ZONE_Z"), 70.0, false)
+	_zone_edit(row, flow, "radius", tr("%%SVC_PH_ZONE_RADIUS"), 90.0, true)
+
+
+## One zone field: registered with the keyboard contract, named on the row, and listed in the
+## row's field registry so a kind change or a removal can drop it again.
+func _zone_edit(row: Dictionary, flow: FlowContainer, key: String, placeholder: String,
+		width: float, integer: bool) -> void:
+	var field: LineEdit = _number_field(placeholder, width) if integer \
+			else _field(placeholder, width)
+	row[key] = field
+	(row["fields"] as Array).append(field)
+	flow.add_child(field)
+
+
+## Prefill the first zone row from the player's own presence location (`/api/me` →
+## `presence.location` = {system, scene, position}), whatever the chosen kind can carry: empty
+## fields only, so a value already typed stays put.
+func _use_my_position() -> void:
+	var result: Dictionary = await PlayerServices.profile_get()
+	if not bool(result.get("ok", false)):
+		_say(HttpClient.describe_error(result), WARN)
+		return
+	var data: Variant = result.get("data")
+	var presence: Variant = (data as Dictionary).get("presence") if data is Dictionary else null
+	var location: Variant = (presence as Dictionary).get("location") if presence is Dictionary \
+			else null
+	if not (location is Dictionary):
+		_say(tr("%%SVC_MSG_NO_POSITION"), WARN)
+		return
+	var loc: Dictionary = location
+	var position: Variant = loc.get("position")
+	var system := str(loc.get("system", "")).strip_edges()
+	var scene := str(loc.get("scene", "")).strip_edges()
+	if system == "" and scene == "" and not (position is Dictionary):
+		_say(tr("%%SVC_MSG_NO_POSITION"), WARN)
+		return
+	if _zone_rows.is_empty():
+		_new_zone_row(_prefill_zone_kind(system, scene))
+	var row: Dictionary = _zone_rows[0]
+	_prefill_zone_field(row.get("system"), system)
+	_prefill_zone_field(row.get("scene"), scene)
+	if position is Dictionary:
+		_prefill_zone_field(row.get("cx"), str((position as Dictionary).get("x", "")))
+		_prefill_zone_field(row.get("cy"), str((position as Dictionary).get("y", "")))
+		_prefill_zone_field(row.get("cz"), str((position as Dictionary).get("z", "")))
+		var radius: Variant = row.get("radius")
+		if radius is LineEdit and (radius as LineEdit).text.strip_edges() == "":
+			(radius as LineEdit).text = "1000"
+	var location_text := ServiceTypes.location_text(loc)
+	if location_text != "":
+		_say(location_text, GOOD)
+
+
+## The kind a prefilled row starts on — the richest thing the location actually carries: a scene
+## path narrows the most, a bare system next, and only a position with neither needs an area.
+static func _prefill_zone_kind(system: String, scene: String) -> String:
+	if scene != "":
+		return "scene"
+	return "system" if system != "" else "area"
 
 
 ## One clause card: numbered head (N. kind ▾ · evaluation badge · quantity · ×) over the sentence
@@ -1157,6 +1350,11 @@ func _build_body() -> Dictionary:
 		return {}  # an incomplete required variable was reported by the collector
 	if not (prereqs as Array).is_empty():
 		body["prerequisites"] = prereqs
+	var zones: Variant = _collect_zones()
+	if zones == null:
+		return {}  # an incomplete zone was reported by the collector
+	if not (zones as Array).is_empty():
+		body["zones"] = zones
 	return body
 
 
@@ -1212,6 +1410,54 @@ func _collect_prereqs() -> Variant:
 				prereq["params"] = stacked
 		out.append(prereq)
 	return out
+
+
+## Zones: [] when no row is left (the service's "global" mission), null after the first
+## incomplete row has been reported — the same contract as the objective/prereq collectors.
+func _collect_zones() -> Variant:
+	var out: Array = []
+	for row: Dictionary in _zone_rows:
+		var zone: Variant = _collect_zone(row)
+		if zone == null:
+			return null
+		out.append(zone)
+	return out
+
+
+## One row's MissionZone payload, carrying only the keys the service's strict schema accepts for
+## its kind — a `.strict()` union, so an extra key is a validation error, not an ignored field.
+func _collect_zone(row: Dictionary) -> Variant:
+	var kind := _enum_value(row["kind"] as OptionButton)
+	var system := _zone_text(row.get("system"))
+	if kind == "system":
+		if system == "":
+			_say(tr("%%SVC_MSG_ZONE_SYSTEM_REQUIRED"), WARN)
+			return null
+		return {"kind": "system", "system": system}
+	if kind == "scene":
+		var scene := _zone_text(row.get("scene"))
+		if scene == "":
+			_say(tr("%%SVC_MSG_ZONE_SCENE_REQUIRED"), WARN)
+			return null
+		var scene_zone := {"kind": "scene", "scene": scene}
+		if system != "":
+			scene_zone["system"] = system
+		return scene_zone
+	var point := {}
+	for axis: Array in [["cx", "x"], ["cy", "y"], ["cz", "z"]]:
+		var raw := _zone_text(row.get(axis[0]))
+		if not raw.is_valid_float():
+			_say(tr("%%SVC_MSG_ZONE_AREA_INVALID"), WARN)
+			return null
+		point[str(axis[1])] = float(raw)
+	var radius := _zone_text(row.get("radius"))
+	if not radius.is_valid_int() or int(radius) < 1 or int(radius) > 1000000:
+		_say(tr("%%SVC_MSG_ZONE_AREA_INVALID"), WARN)
+		return null
+	var area_zone := {"kind": "area", "center": point, "radiusM": int(radius)}
+	if system != "":
+		area_zone["system"] = system
+	return area_zone
 
 
 ## The inline variables of one sentence: display values for the title substitution plus their typed
@@ -1334,8 +1580,13 @@ func _reset_create() -> void:
 			_forget_field(field)
 	_objective_rows.clear()
 	_prereq_rows.clear()
+	for row: Dictionary in _zone_rows:
+		for field: LineEdit in row.get("fields", []):
+			_forget_field(field)
+	_zone_rows.clear()
 	_clear(_create_objectives)
 	_clear(_create_prereqs)
+	_clear(_create_zones)
 	_add_objective_row()
 
 
@@ -1480,3 +1731,16 @@ func _forget_field(field: LineEdit) -> void:
 	var index := _fields.find(field)
 	if index >= 0:
 		_fields.remove_at(index)
+
+
+## A zone row's field text — a key the current kind does not own reads as "".
+static func _zone_text(field: Variant) -> String:
+	if field is LineEdit:
+		return (field as LineEdit).text.strip_edges()
+	return ""
+
+
+## Prefill one zone field, leaving a value the player already typed alone.
+static func _prefill_zone_field(field: Variant, value: String) -> void:
+	if field is LineEdit and (field as LineEdit).text.strip_edges() == "":
+		(field as LineEdit).text = value.strip_edges()

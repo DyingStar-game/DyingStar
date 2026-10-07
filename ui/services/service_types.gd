@@ -109,6 +109,12 @@ const VISIBILITY_KEYS: Dictionary = {
 	"public": "%%SVC_ENUM_VISIBILITY_PUBLIC",
 	"corporation": "%%SVC_ENUM_VISIBILITY_CORPORATION",
 }
+## Availability zone kinds — the `MissionZone` discriminator, as the service validates them.
+const ZONE_KIND_KEYS: Dictionary = {
+	"system": "%%SVC_ENUM_ZONE_SYSTEM",
+	"scene": "%%SVC_ENUM_ZONE_SCENE",
+	"area": "%%SVC_ENUM_ZONE_AREA",
+}
 ## Holder kind of a mission's escrow payer (who funded it — and who gets the refund).
 const ESCROW_PAYER_KEYS: Dictionary = {
 	"player": "%%SVC_ENUM_PAYER_PLAYER",
@@ -165,12 +171,46 @@ const ACTIVITY_TYPE_KEYS: Dictionary = {
 	"player_blocked": "%%SVC_ENUM_ACTIVITY_PLAYER_BLOCKED",
 	"corporation_application_sent": "%%SVC_ENUM_ACTIVITY_CORP_APPLICATION_SENT",
 }
+## Legacy corporation permissions (pre-ACL). They remain valid rank permissions, and they are the
+## labels a list line uses; the full catalogue — localized descriptions, `satisfiedBy`,
+## `defaultMember` — comes from GET /api/me/permissions/catalog (see [member action_catalog]).
 const PERMISSION_KEYS: Dictionary = {
 	"manage_corporation": "%%SVC_ENUM_PERM_MANAGE_CORPORATION",
 	"manage_ranks": "%%SVC_ENUM_PERM_MANAGE_RANKS",
 	"manage_members": "%%SVC_ENUM_PERM_MANAGE_MEMBERS",
 	"invite": "%%SVC_ENUM_PERM_INVITE",
 	"recruit": "%%SVC_ENUM_PERM_RECRUIT",
+}
+## POI visibility (`inventory_PoiVisibility`): private to its owner and grantees, or readable by
+## every player.
+const POI_VISIBILITY_KEYS: Dictionary = {
+	"private": "%%SVC_ENUM_POI_PRIVATE",
+	"public": "%%SVC_ENUM_POI_PUBLIC",
+}
+## Who owns a POI, or holds a grant on one (`inventory_PoiOwnerType` / `inventory_PoiGranteeType`):
+## the generic entity words, from the tables that already translate them.
+const POI_GRANTEE_KEYS: Dictionary = {
+	"player": "%%SVC_ENUM_ENTITY_PLAYER",
+	"npc": "%%SVC_ENUM_ENTITY_NPC",
+	"corporation": "%%SVC_ENUM_HOLDER_CORPORATION",
+	"political": "%%SVC_ENUM_PAYER_POLITICS",
+	"system": "%%SVC_ENUM_HOLDER_SYSTEM",
+}
+## What a tax debt is levied on (`economie_TaxType`), and where it stands (`economie_TaxDebtStatus`).
+const TAX_TYPE_KEYS: Dictionary = {
+	"corporate_tax": "%%SVC_ENUM_TAX_CORPORATE",
+	"income_tax": "%%SVC_ENUM_TAX_INCOME",
+}
+const TAX_STATUS_KEYS: Dictionary = {
+	"due": "%%SVC_ENUM_TAX_DUE",
+	"paid": "%%SVC_ENUM_TAX_PAID",
+	"cancelled": "%%SVC_ENUM_TAX_CANCELLED",
+}
+## Who owes a tax (`economie_TaxDebtorType`).
+const TAX_DEBTOR_KEYS: Dictionary = {
+	"player": "%%SVC_ENUM_ENTITY_PLAYER",
+	"npc": "%%SVC_ENUM_ENTITY_NPC",
+	"corporation": "%%SVC_ENUM_HOLDER_CORPORATION",
 }
 const ORDER_SIDE_KEYS: Dictionary = {
 	"buy": "%%SVC_ENUM_ORDER_BUY",
@@ -299,8 +339,58 @@ static func activity_type_label(value: Variant) -> String:
 	return _enum(value, ACTIVITY_TYPE_KEYS)
 
 
+## The permission catalogue fetched once from GET /api/me/permissions/catalog:
+## action -> row {action, holder, legacy, defaultMember?, satisfiedBy?, description}. Shared by every
+## panel (it is static), empty until a panel has asked for it — and then the descriptions localized
+## by the SERVICE win over [member PERMISSION_KEYS].
+static var action_catalog: Dictionary = {}
+
+
+## Store a `{actions: [...]}` payload (nothing to reset) for [method action_description] and the
+## permission picker.
+static func set_action_catalog(data: Variant) -> void:
+	action_catalog = {}
+	if not (data is Dictionary) or not ((data as Dictionary).get("actions") is Array):
+		return
+	for row: Variant in (data as Dictionary)["actions"]:
+		if row is Dictionary and str((row as Dictionary).get("action", "")) != "":
+			action_catalog[str((row as Dictionary).get("action"))] = row
+
+
+## Catalogue rows for one holder (`corporation`, `political`), in catalogue order: the actions the
+## permission picker offers. Empty means the catalogue has not been fetched (yet).
+static func catalog_for(holder: String) -> Array:
+	var rows: Array = []
+	for action: String in action_catalog:
+		if str((action_catalog[action] as Dictionary).get("holder", "")) == holder:
+			rows.append(action_catalog[action])
+	return rows
+
+
+## A rank's permissions, in list lines: the legacy table for what it still knows, the raw action
+## otherwise — an unknown right still shows up.
 static func permission_label(value: Variant) -> String:
 	return _enum(value, PERMISSION_KEYS)
+
+
+static func poi_visibility_label(value: Variant) -> String:
+	return _enum(value, POI_VISIBILITY_KEYS)
+
+
+static func poi_grantee_label(value: Variant) -> String:
+	return _enum(value, POI_GRANTEE_KEYS)
+
+
+static func tax_type_label(value: Variant) -> String:
+	return _enum(value, TAX_TYPE_KEYS)
+
+
+static func tax_status_label(value: Variant) -> String:
+	return _enum(value, TAX_STATUS_KEYS)
+
+
+static func tax_debtor_label(value: Variant) -> String:
+	return _enum(value, TAX_DEBTOR_KEYS)
 
 
 static func order_side_label(value: Variant) -> String:
@@ -543,6 +633,45 @@ static func prerequisite_line(prerequisite: Dictionary) -> String:
 	return text("%%SVC_FMT_PREREQ_LINE") % [dash(prerequisite.get("kind")), compact]
 
 
+static func zone_kind_label(value: Variant) -> String:
+	return _enum(value, ZONE_KIND_KEYS)
+
+
+## One availability zone as a human line — its own kind's sentence, prefixed by the system it
+## narrows to when it carries one (a `system` zone already IS that system).
+static func zone_line(zone: Variant) -> String:
+	if not (zone is Dictionary):
+		return "—"
+	var z: Dictionary = zone
+	var kind := str(z.get("kind", ""))
+	var system := str(z.get("system", "")).strip_edges()
+	var prefix: String = "%s / " % system if kind != "system" and system != "" else ""
+	match kind:
+		"system":
+			return text("%%SVC_FMT_ZONE_SYSTEM") % dash(z.get("system"))
+		"scene":
+			return prefix + (text("%%SVC_FMT_ZONE_SCENE") % dash(z.get("scene")))
+		"area":
+			var center: Variant = z.get("center")
+			var at: String = "—"
+			if center is Dictionary:
+				at = "%s, %s, %s" % [dash((center as Dictionary).get("x")),
+						dash((center as Dictionary).get("y")), dash((center as Dictionary).get("z"))]
+			return prefix + (text("%%SVC_FMT_ZONE_AREA") % [at, num(z.get("radiusM"))])
+	return zone_kind_label(kind)
+
+
+## The mission's zone list as a single line: every zone, or the "global" label when the list is
+## empty — which is exactly the service's "available everywhere" case.
+static func zones_text(zones: Variant) -> String:
+	if not (zones is Array) or (zones as Array).is_empty():
+		return text("%%SVC_ENUM_ZONE_GLOBAL")
+	var parts: Array[String] = []
+	for zone: Variant in zones:
+		parts.append(zone_line(zone))
+	return "  ·  ".join(parts)
+
+
 static func mission_line(mission: Dictionary) -> String:
 	var rewards: Variant = mission.get("rewards")
 	if rewards == null:
@@ -648,6 +777,59 @@ static func salary_role_line(entry: Dictionary) -> String:
 static func salary_member_line(entry: Dictionary) -> String:
 	return text("%%SVC_FMT_SALARY_MEMBER") % [dash(entry.get("playerId")), num(entry.get("amount")),
 			dash(entry.get("currency")), _yes_no(entry.get("enabled"))]
+
+
+# ---------------------------------------------------------------------------------------------
+# Points of interest
+# ---------------------------------------------------------------------------------------------
+
+## One POI in a list: its name, who owns it, where it sits and who may read it.
+static func poi_line(poi: Dictionary) -> String:
+	return "%s  %s  %s  %s" % [dash(poi.get("name")), poi_grantee_label(poi.get("ownerType")),
+			poi_location(poi), poi_visibility_label(poi.get("visibility"))]
+
+
+## Where a POI sits: its scene path, else its star system, else a dash; a zone adds its radius.
+static func poi_location(poi: Dictionary) -> String:
+	var place: String = str(poi.get("scene", "")).strip_edges()
+	if place == "":
+		place = str(poi.get("system", "")).strip_edges()
+	if place == "":
+		return "—"
+	var radius: Variant = poi.get("radiusM")
+	if radius == null:
+		return place
+	return "%s  ·  %d m" % [place, num(radius)]
+
+
+## The detail read of a POI: its line, and the description underneath when it carries one.
+static func poi_detail(poi: Dictionary) -> String:
+	var description: String = str(poi.get("description", "")).strip_edges()
+	return poi_line(poi) if description == "" else "%s\n%s" % [poi_line(poi), description]
+
+
+## One read-only grant: who holds it, and since when.
+static func poi_share_line(share: Dictionary) -> String:
+	return "%s  %s  %s" % [poi_grantee_label(share.get("granteeType")),
+			dash(share.get("granteeId")), dash(share.get("createdAt"))]
+
+
+# ---------------------------------------------------------------------------------------------
+# Taxes
+# ---------------------------------------------------------------------------------------------
+
+## One tax debt: what it levies, how much, who owes it, where it stands, when it was booked.
+static func tax_debt_line(debt: Dictionary) -> String:
+	return "%s  %d %s  %s  %s  %s" % [tax_type_label(debt.get("taxType")), num(debt.get("amount")),
+			dash(debt.get("currency")), tax_debtor_label(debt.get("debtorType")),
+			tax_status_label(debt.get("status")), dash(debt.get("createdAt"))]
+
+
+## The outcome of a payment run: what the run settled, and what is still due (a partial run when
+## the balance falls short).
+static func tax_payment_line(result: Dictionary) -> String:
+	return text("%%SVC_FMT_TAX_PAYMENT") % [num(result.get("paidTotal")),
+			num(result.get("remaining"))]
 
 
 static func _yes_no(value: Variant) -> String:

@@ -7,7 +7,7 @@ extends VBoxContainer
 signal app_selected(id: String)
 
 ## The lore's manufacturer mark (a white wordmark on transparent, see the ARES decal assets). Cropped
-## to its own bounds and tinted with the accent, so it reads as the tablet's brand at any size.
+## to its own bounds and left white, so it reads as the tablet's brand at any size.
 const ARES_LOGO := preload("res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png")
 const ARES_LOGO_REGION := Rect2(51, 67, 416, 131)
 
@@ -67,7 +67,7 @@ func _system_bar() -> Control:
 	return bar
 
 
-## The ARES wordmark, cropped to the mark inside the decal texture and tinted with the accent.
+## The ARES wordmark, cropped to the mark inside the decal texture and shown white.
 func _brand_logo() -> Control:
 	var atlas := AtlasTexture.new()
 	atlas.atlas = ARES_LOGO
@@ -76,7 +76,7 @@ func _brand_logo() -> Control:
 	logo.texture = atlas
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo.modulate = ServiceStyle.ACCENT
+	logo.modulate = Color.WHITE
 	logo.custom_minimum_size = Vector2(72, 26)
 	logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return logo

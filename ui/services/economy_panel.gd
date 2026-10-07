@@ -11,6 +11,8 @@ var _my_account_ids: Dictionary = {}
 var _recipient: ServiceTargetPicker
 var _amount: LineEdit
 var _memo: LineEdit
+var _taxes: ItemList
+var _tax_currency: LineEdit
 
 
 func _build() -> void:
@@ -19,7 +21,8 @@ func _build() -> void:
 	add_child(bar)
 
 	var pages := _segments_pages(PackedStringArray([
-			tr("%%SVC_TAB_ACCOUNTS"), tr("%%SVC_TAB_TRANSACTIONS"), tr("%%SVC_TAB_TRANSFER")]))
+			tr("%%SVC_TAB_ACCOUNTS"), tr("%%SVC_TAB_TRANSACTIONS"), tr("%%SVC_TAB_TRANSFER"),
+			tr("%%SVC_TAB_TAXES")]))
 
 	# Comptes — a big balance header, then every account.
 	_balance_label = _label("—", ServiceStyle.ACCENT)
@@ -64,6 +67,16 @@ func _build() -> void:
 	_action_button(transfer, tr("%%SVC_ACT_SEND_TRANSFER"), func() -> void: _transfer())
 	pages[2].add_child(_card(tr("%%SVC_TAB_TRANSFER"), transfer))
 
+	# Taxes — every debt the caller owes, and one payment that settles all it can afford (an empty
+	# currency pays in all of them, which is the service's own default).
+	_taxes = _list(260.0)
+	pages[3].add_child(_titled(tr("%%SVC_LBL_TAX_DEBTS"), _taxes, true))
+	var tax_row := _row()
+	_tax_currency = _field(tr("%%SVC_PH_CURRENCY"), 150.0)
+	tax_row.add_child(_tax_currency)
+	_action_button(tax_row, tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_taxes())
+	pages[3].add_child(tax_row)
+
 	add_child(_status_line())
 
 
@@ -87,10 +100,12 @@ func refresh() -> void:
 		return
 	var wallet: Dictionary = await PlayerServices.wallet()
 	var transactions: Dictionary = await PlayerServices.wallet_transactions()
+	var taxes: Dictionary = await PlayerServices.my_taxes()
 	var my_ids: Dictionary = _account_ids(wallet)
 	_my_account_ids = my_ids
 	_apply_accounts(wallet, my_ids)
 	_apply_transactions(transactions, my_ids)
+	_apply_taxes(taxes)
 	_end_refresh()
 
 
@@ -158,6 +173,39 @@ func _apply_transactions(result: Dictionary, my_ids: Dictionary) -> void:
 	_fill_list(_transactions, lines, metadata)
 	for i: int in range(mini(colours.size(), _transactions.item_count)):
 		_transactions.set_item_custom_fg_color(i, colours[i])
+
+
+## What the caller owes, settled debts included — the list is the whole history, colour is the
+## status column's job.
+func _apply_taxes(result: Dictionary) -> void:
+	if not bool(result.get("ok", false)):
+		_fill_list(_taxes, PackedStringArray([
+				tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
+		return
+	var lines := PackedStringArray()
+	var metadata: Array = []
+	for debt: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+		lines.append(ServiceTypes.tax_debt_line(debt))
+		metadata.append(debt)
+	if lines.is_empty():
+		lines.append(tr("%%SVC_MSG_NO_TAXES"))
+	_fill_list(_taxes, lines, metadata)
+
+
+## Settle everything affordable. The service answers with what it paid and what is still due, and
+## that summary is what the player needs to read — not a generic « done ».
+func _pay_taxes() -> void:
+	release_fields()
+	var result: Dictionary = await PlayerServices.my_taxes_pay(_tax_currency.text.strip_edges())
+	if not bool(result.get("ok", false)):
+		_say(HttpClient.describe_error(result), WARN)
+		return
+	var data: Variant = result.get("data")
+	var summary := tr("%%SVC_MSG_TAXES_PAID")
+	if data is Dictionary:
+		summary = ServiceTypes.tax_payment_line(data as Dictionary)
+	_say(summary, GOOD)
+	refresh()
 
 
 ## The player's credits balance, or the first account when there is no `credits` one.

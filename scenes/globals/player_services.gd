@@ -16,7 +16,8 @@ extends Node
 ## itself without every caller remembering to.
 
 ## A mutating call succeeded. [param area] is one of: profile, friends, groups, corporations,
-## missions, economy. The terminal refreshes the matching section when it is the one on screen.
+## missions, economy, market, reports, pois. The terminal refreshes the matching section when it is
+## the one on screen.
 signal changed(area: String)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
@@ -173,6 +174,12 @@ func my_reputation(limit: int = 20) -> Dictionary:
 
 func my_sanctions() -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/me/sanctions")
+
+## Every catalogued organisation action with its evaluation rules, localized through
+## Accept-Language: what a rank or office permission means (legacy flag, `satisfiedBy`,
+## `defaultMember`). Readable by any authenticated player.
+func permission_catalog() -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/permissions/catalog")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -616,8 +623,46 @@ func corporation_payroll(corporation_id: String, currency: String = "credits") -
 	if _ok(r): changed.emit("economy")
 	return r
 
+## My tax debts, due and settled, newest first.
+func my_taxes() -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/me/taxes")
+
+## Settle every affordable due tax debt. An empty currency settles in every currency, an empty
+## entity id to every entity the caller owes — both fields are optional on the wire.
+func my_taxes_pay(currency: String = "", entity_id: String = "") -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_ECONOMIE, "/api/me/taxes/pay",
+			_tax_pay_body(currency, entity_id))
+	if _ok(r): changed.emit("economy")
+	return r
+
+## Tax debts of a corporation (member only).
+func corporation_taxes(corporation_id: String) -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/taxes" % corporation_id)
+
+## Settle a corporation's affordable due taxes (`economie:treasury:manage`). The treasury moves, so
+## both the corporation section and the wallet balance behind it are told.
+func corporation_taxes_pay(corporation_id: String, currency: String = "",
+		entity_id: String = "") -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_ECONOMIE,
+			"/api/corporations/%s/taxes/pay" % corporation_id, _tax_pay_body(currency, entity_id))
+	if _ok(r):
+		changed.emit("corporations")
+		changed.emit("economy")
+	return r
+
 static func _salary_body(amount: int, currency: String, enabled: bool) -> Dictionary:
 	return {"amount": amount, "currency": currency, "enabled": enabled}
+
+
+## The `{currency?, entityId?}` body the two tax-payment endpoints share: fields the caller leaves
+## empty are absent rather than blank, so the service keeps its own "every currency" default.
+static func _tax_pay_body(currency: String, entity_id: String) -> Dictionary:
+	var body: Dictionary = {}
+	if currency.strip_edges() != "":
+		body["currency"] = currency.strip_edges()
+	if entity_id.strip_edges() != "":
+		body["entityId"] = entity_id.strip_edges()
+	return body
 
 
 # ---------------------------------------------------------------------------------------------
@@ -639,6 +684,68 @@ func corporation_inventory(corporation_id: String) -> Dictionary:
 func corporation_inventory_stack(corporation_id: String, good_type: String) -> Dictionary:
 	return await _http_get(SERVICE_INVENTORY,
 			"/api/corporations/%s/inventory/stacks/%s" % [corporation_id, good_type])
+
+
+# ---------------------------------------------------------------------------------------------
+# Points of interest
+# ---------------------------------------------------------------------------------------------
+
+## The POIs of the caller's scope: owned ones, read-only grants, and every POI published `public`.
+func poi_list() -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/me/pois")
+
+## Create a POI for the caller — or, with `owner` = `{"type": "corporation"|"political", "id": ...}`
+## in the body, for an organisation the caller manages (which needs `inventory:poi:manage` there).
+func poi_create(body: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_INVENTORY, "/api/me/pois", body)
+	if _ok(r): changed.emit("pois")
+	return r
+
+## One POI with its shares (owned, granted or public).
+func poi_get(poi_id: String) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/me/pois/%s" % poi_id)
+
+## Edit a POI the caller manages: name, description, location, visibility. Ownership is unchanged.
+func poi_update(poi_id: String, patch: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_patch(SERVICE_INVENTORY, "/api/me/pois/%s" % poi_id, patch)
+	if _ok(r): changed.emit("pois")
+	return r
+
+## Delete a POI the caller manages; its shares cascade away.
+func poi_delete(poi_id: String) -> Dictionary:
+	var r: Dictionary = await _http_delete(SERVICE_INVENTORY, "/api/me/pois/%s" % poi_id)
+	if _ok(r): changed.emit("pois")
+	return r
+
+## Grant read-only access to a player, an NPC, a corporation or a political entity.
+func poi_share(poi_id: String, grantee_type: String, grantee_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_INVENTORY, "/api/me/pois/%s/shares" % poi_id,
+			{"granteeType": grantee_type, "granteeId": grantee_id})
+	if _ok(r): changed.emit("pois")
+	return r
+
+## Revoke one read-only grant (a share the caller created).
+func poi_unshare(poi_id: String, grantee_type: String, grantee_id: String) -> Dictionary:
+	var r: Dictionary = await _http_delete(SERVICE_INVENTORY,
+			"/api/me/pois/%s/shares/%s/%s" % [poi_id, grantee_type, grantee_id])
+	if _ok(r): changed.emit("pois")
+	return r
+
+## Hand the POI's ownership over; the previous owner keeps no implicit grant.
+func poi_transfer(poi_id: String, to_type: String, to_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_INVENTORY, "/api/me/pois/%s/transfer" % poi_id,
+			{"toType": to_type, "toId": to_id})
+	if _ok(r): changed.emit("pois")
+	return r
+
+## POIs owned by or granted to a corporation (member only, membership checked in Social).
+func corporation_pois(corporation_id: String) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/corporations/%s/pois" % corporation_id)
+
+## One POI of a corporation's scope (member only).
+func corporation_poi(corporation_id: String, poi_id: String) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY,
+			"/api/corporations/%s/pois/%s" % [corporation_id, poi_id])
 
 
 # ---------------------------------------------------------------------------------------------

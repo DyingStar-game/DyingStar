@@ -6,7 +6,7 @@ extends Control
 ## kept to the same visual family (rounded corners, even stroke, generous margins) so the app grid
 ## reads as one system.
 
-enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD }
+enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD, POIS }
 
 @export var kind: Kind = Kind.IDENTITY
 @export var colour: Color = Color(1, 1, 1, 1)
@@ -44,6 +44,8 @@ func _draw() -> void:
 			_market(origin, side, stroke)
 		Kind.SQUAD:
 			_squad(origin, side, stroke)
+		Kind.POIS:
+			_pois(origin, side, stroke)
 
 
 func _p(origin: Vector2, side: float, x: float, y: float) -> Vector2:
@@ -147,3 +149,10 @@ func _squad(o: Vector2, s: float, w: float) -> void:
 	draw_circle(top, 0.10 * s, colour)
 	draw_circle(left, 0.10 * s, colour)
 	draw_circle(right, 0.10 * s, colour)
+
+
+## Points of interest: a map pin — a ring around a point, over a stem.
+func _pois(o: Vector2, s: float, w: float) -> void:
+	draw_circle(_p(o, s, 0.50, 0.38), 0.26 * s, colour, false, w, true)
+	draw_circle(_p(o, s, 0.50, 0.38), 0.08 * s, colour)
+	draw_line(_p(o, s, 0.50, 0.64), _p(o, s, 0.50, 0.88), colour, w, true)

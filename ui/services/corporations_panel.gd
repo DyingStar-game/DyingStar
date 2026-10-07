@@ -23,6 +23,12 @@ var _rank_id: LineEdit
 var _rank_name: LineEdit
 var _rank_priority: LineEdit
 var _rank_default: CheckBox
+## What a rank may do: one checkbox per organization action (see [method _permission_rows]), and
+## which rank those ticks currently belong to (`-1` = none, so the grid would only mislead).
+var _perm_grid: GridContainer
+var _perm_rank: Label
+var _perm_checks: Dictionary = {}
+var _perm_rank_id: int = -1
 var _transfer_picker: ServiceTargetPicker
 var _parent_picker: ServiceTargetPicker
 var _create_name: LineEdit
@@ -33,6 +39,7 @@ var _corp_picker: ServiceTargetPicker
 var _corp_wallet: ItemList
 var _corp_ledger: ItemList
 var _corp_report: ItemList
+var _corp_taxes: ItemList
 var _corp_from: LineEdit
 var _corp_to: LineEdit
 var _donation_amount: LineEdit
@@ -107,6 +114,7 @@ func _build() -> void:
 	_members = _list(150.0)
 	detail_columns.add_child(_titled(tr("%%SVC_LBL_MEMBERS"), _members, true))
 	_ranks = _list(150.0)
+	_ranks.item_selected.connect(func(_i: int) -> void: _load_rank_permissions())
 	detail_columns.add_child(_titled(tr("%%SVC_LBL_RANKS"), _ranks, true))
 	_requests = _list(150.0)
 	detail_columns.add_child(_titled(tr("%%SVC_LBL_REQUESTS"), _requests, true))
@@ -133,6 +141,21 @@ func _build() -> void:
 	_action_button(rank_row, tr("%%SVC_ACT_CREATE_RANK"), func() -> void: _create_rank())
 	_action_button(rank_row, tr("%%SVC_ACT_DELETE_RANK"), func() -> void: _delete_rank())
 	pages[2].add_child(rank_row)
+
+	# The rights themselves: one checkbox per action of the catalogue, ticked from the selected
+	# rank. Creating a rank sends whatever is ticked; « apply » writes the ticks onto the rank the
+	# grid is showing, which is why a rank must be selected first.
+	_perm_rank = _label(tr("%%SVC_MSG_SELECT_RANK"), DIM)
+	pages[2].add_child(_perm_rank)
+	_perm_grid = GridContainer.new()
+	_perm_grid.columns = 2
+	_perm_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_perm_grid.add_theme_constant_override("h_separation", 20)
+	_perm_grid.add_theme_constant_override("v_separation", 6)
+	pages[2].add_child(_titled(tr("%%SVC_LBL_PERMISSIONS"), _perm_grid, true))
+	var perm_row := _row()
+	_action_button(perm_row, tr("%%SVC_ACT_APPLY_PERMISSIONS"), func() -> void: _apply_rank_permissions())
+	pages[2].add_child(perm_row)
 
 	var transfer_row := _row()
 	_transfer_picker = ServiceTargetPicker.new()
@@ -198,6 +221,11 @@ func _build() -> void:
 	donation.add_child(_donation_amount)
 	_action_button(donation, tr("%%SVC_ACT_DONATE"), func() -> void: _donate())
 	pages[4].add_child(donation)
+
+	# The corporation's own tax debts, settled from the same pick as the treasury.
+	_corp_taxes = _list(110.0)
+	pages[4].add_child(_titled(tr("%%SVC_LBL_TAX_DEBTS"), _corp_taxes, true))
+	_action_button(pages[4], tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
 
 	# Salaries / prime / payroll — the same corporation pick as the treasury.
 	var salary_columns := _row(18)
@@ -423,6 +451,10 @@ func _open_detail(corporation_id: String) -> void:
 	_fill_simple(_members, members, ServiceTypes.member_line, tr("%%SVC_MSG_NO_MEMBERS"))
 	_fill_simple(_ranks, ranks, ServiceTypes.rank_line, tr("%%SVC_MSG_NO_RANKS"))
 	_fill_requests(_requests, requests, tr("%%SVC_MSG_NO_REQUESTS"))
+	# The permission grid below is built once per session, and always re-read: the rank list it
+	# describes has just been replaced, so its ticks point at a rank that no longer exists.
+	await _prepare_permission_grid()
+	_load_rank_permissions()
 	goto_segment(2)
 
 
@@ -494,8 +526,11 @@ func _create_rank() -> void:
 		return
 	release_fields()
 	var priority: int = int(_rank_priority.text) if _rank_priority.text.strip_edges().is_valid_int() else 0
+	# The new rank starts with whatever the grid has ticked — the same ticks the « apply » button
+	# would write onto an existing rank.
 	var result: Dictionary = await PlayerServices.corporation_rank_create(_selected_id,
-			_rank_name.text.strip_edges(), priority, [], _rank_default.button_pressed)
+			_rank_name.text.strip_edges(), priority, _checked_actions(),
+			_rank_default.button_pressed)
 	if _report(result, tr("%%SVC_MSG_RANK_CREATED")):
 		_open_detail(_selected_id)
 
@@ -511,6 +546,122 @@ func _delete_rank() -> void:
 			ServiceTypes.num((rank as Dictionary).get("id")))
 	if _report(result, tr("%%SVC_MSG_RANK_DELETED")):
 		_open_detail(_selected_id)
+
+
+# ---------------------------------------------------------------------------------------------
+# Rank permissions — the catalogue is the vocabulary, the grid is the editor
+# ---------------------------------------------------------------------------------------------
+
+## Build the permission grid, fetching the catalogue the first time it is missing: it is what says
+## what an action MEANS (localized by the service, with its `satisfiedBy` and `defaultMember`
+## flags). A failed fetch is not fatal — the grid then falls back to the five legacy permissions
+## the API has always accepted.
+func _prepare_permission_grid() -> void:
+	if ServiceTypes.action_catalog.is_empty():
+		var result: Dictionary = await PlayerServices.permission_catalog()
+		if bool(result.get("ok", false)):
+			ServiceTypes.set_action_catalog(result.get("data"))
+		else:
+			_say(HttpClient.describe_error(result), WARN)
+	_build_perm_grid()
+
+
+## The actions the grid offers: the service's catalogue when it answers, the legacy table when it
+## does not — a player who never reached the service still sees the rights the API has always had.
+func _permission_rows() -> Array:
+	var rows: Array = ServiceTypes.catalog_for("corporation")
+	if not rows.is_empty():
+		return rows
+	for action: String in ServiceTypes.PERMISSION_KEYS:
+		rows.append({"action": action, "holder": "corporation", "legacy": true,
+				"description": tr(ServiceTypes.PERMISSION_KEYS[action])})
+	return rows
+
+
+## One checkbox per action, in catalogue order. A `defaultMember` row starts ticked and locked:
+## every member holds it whether the rank says so or not, so a tick there would only be decoration.
+func _build_perm_grid() -> void:
+	_clear(_perm_grid)
+	_perm_checks.clear()
+	var rows := _permission_rows()
+	if rows.is_empty():
+		_perm_grid.add_child(_label(tr("%%SVC_MSG_NO_PERMISSIONS"), DIM))
+		return
+	for row: Dictionary in rows:
+		var action := str(row.get("action", ""))
+		if action == "":
+			continue
+		var check := CheckBox.new()
+		check.text = _permission_text(row)
+		check.tooltip_text = action
+		check.button_pressed = bool(row.get("defaultMember", false))
+		check.disabled = check.button_pressed
+		ServiceStyle.apply_check(check)
+		_perm_grid.add_child(check)
+		_perm_checks[action] = check
+
+
+## Tick exactly [param permissions] — a rank's current rights, or nothing for a fresh grid. A
+## locked (`defaultMember`) action stays ticked: the service grants it regardless.
+func _sync_perm_grid(permissions: Array) -> void:
+	var wanted: Dictionary = {}
+	for permission: Variant in permissions:
+		wanted[str(permission)] = true
+	for action: String in _perm_checks:
+		var check := _perm_checks[action] as CheckBox
+		check.set_pressed_no_signal(wanted.has(action) or check.disabled)
+
+
+## Show the selected rank's rights. Nothing selected means the grid belongs to nobody — which is
+## exactly the state a rank about to be created starts from.
+func _load_rank_permissions() -> void:
+	var rank: Variant = _selected_meta(_ranks)
+	if not (rank is Dictionary):
+		_perm_rank_id = -1
+		_perm_rank.text = tr("%%SVC_MSG_SELECT_RANK")
+		_sync_perm_grid([])
+		return
+	_perm_rank_id = ServiceTypes.num((rank as Dictionary).get("id"))
+	_perm_rank.text = "%s : %s (#%d)" % [tr("%%SVC_LBL_RANK"),
+			ServiceTypes.dash((rank as Dictionary).get("name")), _perm_rank_id]
+	var value: Variant = (rank as Dictionary).get("permissions")
+	if value is Array:
+		_sync_perm_grid(value as Array)
+	else:
+		_sync_perm_grid([])
+
+
+## Write the ticked actions onto the rank the grid is showing (`manage_ranks`).
+func _apply_rank_permissions() -> void:
+	if _selected_id == "":
+		_say(tr("%%SVC_MSG_SELECT_CORP_SHORT"), WARN)
+		return
+	if _perm_rank_id < 0:
+		_say(tr("%%SVC_MSG_SELECT_RANK"), WARN)
+		return
+	release_fields()
+	var result: Dictionary = await PlayerServices.corporation_rank_update(_selected_id,
+			_perm_rank_id, {"permissions": _checked_actions()})
+	if _report(result, tr("%%SVC_MSG_PERMISSIONS_SAVED")):
+		_open_detail(_selected_id)
+
+
+## The ticked actions as the API stores them. Locked rows are left out: the service grants those
+## anyway, and a rank's list should read as what the rank was actually granted.
+func _checked_actions() -> Array:
+	var actions: Array = []
+	for action: String in _perm_checks:
+		var check := _perm_checks[action] as CheckBox
+		if check.button_pressed and not check.disabled:
+			actions.append(action)
+	return actions
+
+
+## The checkbox caption: the catalogue's description when there is one, the legacy label otherwise.
+## The action id rides in the tooltip — that is what the API stores, and what a rank line shows.
+func _permission_text(row: Dictionary) -> String:
+	var description := str(row.get("description", "")).strip_edges()
+	return description if description != "" else ServiceTypes.permission_label(row.get("action"))
 
 
 func _transfer() -> void:
@@ -623,8 +774,30 @@ func _load_corp() -> void:
 		return
 	var wallet: Dictionary = await PlayerServices.corporation_wallet(corporation_id)
 	var ledger: Dictionary = await PlayerServices.corporation_wallet_transactions(corporation_id)
+	var taxes: Dictionary = await PlayerServices.corporation_taxes(corporation_id)
 	_apply_corp_accounts(wallet)
 	_apply_corp_ledger(ledger)
+	_apply_taxes(_corp_taxes, taxes)
+
+
+## Settle everything the corporation can afford, right where the treasury sits — the balance the
+## payment moves is the list just above it.
+func _pay_corp_taxes() -> void:
+	release_fields()
+	var corporation_id: String = _picked_corp()
+	if corporation_id == "":
+		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
+		return
+	var result: Dictionary = await PlayerServices.corporation_taxes_pay(corporation_id)
+	if not bool(result.get("ok", false)):
+		_say(HttpClient.describe_error(result), WARN)
+		return
+	var data: Variant = result.get("data")
+	var summary := tr("%%SVC_MSG_TAXES_PAID")
+	if data is Dictionary:
+		summary = ServiceTypes.tax_payment_line(data as Dictionary)
+	_say(summary, GOOD)
+	_load_corp()
 
 
 func _apply_corp_accounts(result: Dictionary) -> void:
@@ -655,6 +828,22 @@ func _apply_corp_ledger(result: Dictionary) -> void:
 	if lines.is_empty():
 		lines.append(tr("%%SVC_MSG_NO_TRANSACTIONS"))
 	_fill_list(_corp_ledger, lines, metadata)
+
+
+## Tax debts into a list: what is owed, and what has already been settled.
+func _apply_taxes(list: ItemList, result: Dictionary) -> void:
+	if not bool(result.get("ok", false)):
+		_fill_list(list, PackedStringArray([
+				tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
+		return
+	var lines := PackedStringArray()
+	var metadata: Array = []
+	for debt: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+		lines.append(ServiceTypes.tax_debt_line(debt))
+		metadata.append(debt)
+	if lines.is_empty():
+		lines.append(tr("%%SVC_MSG_NO_TAXES"))
+	_fill_list(list, lines, metadata)
 
 
 func _load_report() -> void:

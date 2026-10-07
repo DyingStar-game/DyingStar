@@ -25,6 +25,8 @@ const APPS: Array = [
 		"icon": ServiceAppIcon.Kind.BANK, "path": "res://ui/services/economy_panel.gd"},
 	{"id": "inventory", "title": "%%SVC_APP_INVENTORY", "area": "inventory",
 		"icon": ServiceAppIcon.Kind.INVENTORY, "path": "res://ui/services/inventory_panel.gd"},
+	{"id": "pois", "title": "%%SVC_APP_POIS", "area": "pois",
+		"icon": ServiceAppIcon.Kind.POIS, "path": "res://ui/services/poi_panel.gd"},
 	{"id": "market", "title": "%%SVC_APP_MARKET", "area": "market",
 		"icon": ServiceAppIcon.Kind.MARKET, "path": "res://ui/services/market_panel.gd"},
 	{"id": "reports", "title": "%%SVC_APP_REPORTS", "area": "reports",
