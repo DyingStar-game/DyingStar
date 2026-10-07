@@ -59,11 +59,22 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	trans = 1.0;
 	vec3 light = vec3(0.0);
 	float range = min(limit, dust_range);
-	if (dust_density <= 0.0 || range <= 0.0) {
+	// Only the part of the ray inside the layer (6 e-folding heights over the ground): looking up, the
+	// ray leaves it within metres; above it looking down, it enters late. Rays that never meet it cost
+	// nothing.
+	float top = dust_height * 6.0;
+	float rise = dot(dir, dust_up);
+	float t0 = 0.0;
+	if (dust_cam_height > top) {
+		t0 = rise < -1e-4 ? (top - dust_cam_height) / rise : range;
+	} else if (rise > 1e-4) {
+		range = min(range, (top - dust_cam_height) / rise);
+	}
+	if (dust_density <= 0.0 || range <= t0) {
 		return light;
 	}
 	int steps = max(dust_steps, 4);
-	float dt = range / float(steps);
+	float dt = (range - t0) / float(steps);
 	float jitter = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 	float cos_sun = dot(dir, dust_sun_dir);
 	float forward = 1.0 + 1.6 * pow(max(cos_sun, 0.0), 6.0);
@@ -71,12 +82,9 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	vec3 w = normalize(dust_wind_dir);
 	float squeeze = 1.0 - 1.0 / max(dust_stretch, 1.0);
 	for (int i = 0; i < steps; i++) {
-		float t = (float(i) + jitter) * dt;
+		float t = t0 + (float(i) + jitter) * dt;
 		vec3 p = dir * t;
 		float h = dust_cam_height + dot(p, dust_up);
-		if (h > dust_height * 6.0) {
-			continue;
-		}
 		vec3 rel = dust_frame * p;
 		vec3 air = rel + dust_offset;
 		vec3 q = air - w * dot(air, w) * squeeze;

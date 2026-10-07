@@ -105,6 +105,18 @@ void fragment() {
 	float n = fbm3(p);
 	blob *= smoothstep(0.22, 0.72, n + 0.35 - age * 0.3);
 	float life = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(0.3, 1.0, age));
+	// A grain that flies (stretched along its motion) is a STREAK, not a puff: dense at its head (the
+	// way it goes, +x), a long tail thinning behind, thin across, its noise read along its length and
+	// running back down the tail as it ages, so the streak frays from the back.
+	if (stretch > 1.05) {
+		float u = centered.x;
+		float v = centered.y;
+		float head = 1.0 - smoothstep(0.55, 1.0, u);
+		float tail = smoothstep(-1.0, 0.1, u);
+		float across = 1.0 - smoothstep(0.25, 0.95, abs(v) * (1.0 + 0.6 * (1.0 - tail)));
+		float frays = fbm3(vec2(u * 1.8 - age * 2.5 + spin, v * 5.0));
+		blob = head * tail * across * smoothstep(0.2, 0.6, frays + 0.35 - age * 0.35);
+	}
 	ALBEDO = COLOR.rgb;
 	ALPHA = blob * life * COLOR.a * opacity;
 	float depth = textureLod(depth_texture, SCREEN_UV, 0.0).r;

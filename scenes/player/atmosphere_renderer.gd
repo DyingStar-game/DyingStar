@@ -299,6 +299,8 @@ func _apply_quality() -> void:
 	var steps : Vector2i = GraphicsOptions.ATMOSPHERE_STEPS[SettingsManager.render.effective("atmosphere_quality")]
 	view_steps = maxi(1, ClientConfig.get_int("debug_atmo_view_steps", steps.x))
 	light_steps = maxi(1, ClientConfig.get_int("debug_atmo_light_steps", steps.y))
+	# The wind's dust layer follows the same quality: as many steps as the sky's view march, 8 to 20.
+	set_dust_param(&"dust_steps", clampi(view_steps, 8, 20))
 
 
 func _on_render_changed(keys: PackedStringArray) -> void:

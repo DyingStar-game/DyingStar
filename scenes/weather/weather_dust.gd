@@ -8,6 +8,7 @@ extends Node
 
 @export_group("Populations")
 ## The clouds past the visor: from the storm's dust (τ), born upwind around the eye.
+## Off by default (rate 0): round puffs that settled on the ground; the dust layer carries the storm.
 @export var clouds: DustPopulation = null
 ## The low veils laid along the wind just over the ground, all around: from the wind's lift.
 ## Off by default (rate 0): the ray-marched dust layer (aerial_perspective.gdshader) carries that body now.
@@ -33,7 +34,7 @@ func _init() -> void:
 ## Give every population left empty the code's defaults: a scene without them still has dust.
 func fill_defaults() -> void:
 	if clouds == null:
-		clouds = DustPopulation.make(40.0, 2.2, 1.0, 0.03, 3.0, 256, 12.0, 8.0, 2.5, 1.0, 0.0, 2, 0.5)
+		clouds = DustPopulation.make(0.0, 2.2, 1.0, 0.03, 3.0, 256, 12.0, 8.0, 2.5, 1.0, 0.0, 2, 0.5)
 	if veils == null:
 		veils = DustPopulation.make(0.0, 9.0, 0.12, 0.12, 3.5, 256, 7.2, 24.0, 1.2, 0.9, 0.0, 1, 1.5)
 	if streaks == null:

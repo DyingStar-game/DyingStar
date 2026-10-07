@@ -43,6 +43,9 @@ const CAPACITY: int = 256
 const LIFETIME_S: float = 3.0
 ## Under this air density (kg/m³) nothing flies: a storm's grains are not met in orbit.
 const MIN_AIR_KG_M3: float = 0.05
+## The ground cache's cell (m) and size.
+const GROUND_CELL_M: float = 2.0
+const GROUND_CACHE_MAX: int = 2048
 ## Sheltered (half a shelter or more), the ground populations are born at least this far (m) from the
 ## camera along the ground: past the walls of a room or a cab.
 const SHELTER_CLEAR_M: float = 12.0
@@ -60,6 +63,10 @@ var _rate: float = 0.0  # the clouds' strength, 0..1
 var _lifted: float = 0.0  # the ground's lift, 0..1 (the veils, streaks and wisps)
 var _wind: Vector3 = Vector3.ZERO
 var _owed: Array[float] = [0.0, 0.0, 0.0, 0.0]  # puffs owed per population, fractional
+## Ground radius (m from the planet's centre) per GROUND_CELL_M cell of the planet's frame: the exact
+## ground (relief + canyons) is the dearest query on a client; a cell is asked once, the cache is
+## dropped when it grows past GROUND_CACHE_MAX (the player has moved on).
+var _ground_cache: Dictionary = {}
 
 
 ## [param config] is the WeatherDust node of the weather effects scene (null = the code's defaults).
@@ -121,7 +128,7 @@ func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 			# All around the camera (biased upwind by upwind_m), past the walls when sheltered.
 			var at: Vector3 = beyond(birth_point(eye, _wind, up, _jitter(), p.upwind_m, p.spread_m, 0.0),
 					eye, up, clear_m)
-			emitter.puff(on_the_ground(planet, at, up, p.height_m * randf_range(0.2, 1.2)), family, p.opacity,
+			emitter.puff(_on_ground_cached(planet, at, up, p.height_m * randf_range(0.2, 1.2)), family, p.opacity,
 					_wind * p.speed_share + up * p.rise_ms * randf_range(0.5, 1.2), p.grains, p.patch_m, p.size_m)
 
 
@@ -212,6 +219,26 @@ static func on_the_ground(planet: Planet, near: Vector3, up: Vector3, height_m: 
 	if dir.is_zero_approx():
 		return near + up * height_m
 	var ground: float = planet.planet_data.crack_aware_surface_dist(dir)
+	return planet.to_global(dir * (ground + height_m))
+
+
+## on_the_ground with the ground radius cached per cell (see _ground_cache).
+func _on_ground_cached(planet: Planet, near: Vector3, up: Vector3, height_m: float) -> Vector3:
+	if planet == null or planet.planet_data == null:
+		return near + up * height_m
+	var dir: Vector3 = planet.local_dir_of(near)
+	if dir.is_zero_approx():
+		return near + up * height_m
+	var cell_v: Vector3 = dir * planet.planet_data.radius / GROUND_CELL_M
+	var cell := Vector3i(roundi(cell_v.x), roundi(cell_v.y), roundi(cell_v.z))
+	var ground: float
+	if _ground_cache.has(cell):
+		ground = _ground_cache[cell]
+	else:
+		if _ground_cache.size() >= GROUND_CACHE_MAX:
+			_ground_cache.clear()
+		ground = planet.planet_data.crack_aware_surface_dist(dir)
+		_ground_cache[cell] = ground
 	return planet.to_global(dir * (ground + height_m))
 
 

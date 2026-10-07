@@ -174,6 +174,34 @@ var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
 	set_physics_process(false)
+	if not OS.has_feature("dedicated_server"):
+		make_opaque(get_parent())
+
+
+## The character model's materials arrive alpha-BLENDED (man_ddurieux.glb: body, suit, shoes, all of
+## them), which puts the whole body in the transparent pass, drawn AFTER the aerial perspective: the
+## haze and the wind's dust never veiled a character. Alpha-scissored instead (opaque pass, the
+## eyebrows' cut-outs kept), per material once, shared by every avatar.
+static func make_opaque(root: Node) -> void:
+	if root == null:
+		return
+	for node: Node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		for i in mesh_node.mesh.get_surface_count():
+			var mat := mesh_node.get_active_material(i) as BaseMaterial3D
+			if mat == null or mat.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
+				continue
+			if not _opaque_copies.has(mat):
+				var copy := mat.duplicate() as BaseMaterial3D
+				copy.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				copy.alpha_scissor_threshold = 0.5
+				_opaque_copies[mat] = copy
+			mesh_node.set_surface_override_material(i, _opaque_copies[mat])
+
+
+static var _opaque_copies: Dictionary = {}
 
 ## Freeze or resume the whole animation of this avatar: the AnimationPlayer stops posing the skeleton
 ## and this state machine stops running. For a REMOTE avatar that is off-screen or hidden — the pose

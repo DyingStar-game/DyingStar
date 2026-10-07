@@ -25,7 +25,7 @@ volume_db = -1.0
 
 [sub_resource type="Resource" id="Pop_clouds"]
 script = ExtResource("6_pop")
-rate_full = 40.0
+rate_full = 0.0
 size_m = 2.2
 stretch_per_ms = 0.03
 lifetime_s = 3.0

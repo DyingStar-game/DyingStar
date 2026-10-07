@@ -1034,7 +1034,35 @@ func substellar_lonlat() -> Vector2:
 ## A stage's say on the weather here — the menu stage's wind (StageWind), a test: keys of a sample
 ## that replace the model's (wind_east_m_s, wind_north_m_s, dust_tau, gust_factor…), carried to every
 ## presenter by weather_at. {} = the model alone, which is the rule in the game.
-var weather_override: Dictionary = {}
+var weather_override: Dictionary = {}:
+	set(value):
+		weather_override = value
+		_weather_memo.clear()
+		_weather_local_memo.clear()
+
+## Memos of the weather (WEATHER_MEMO_M cells of the body's frame, WEATHER_MEMO_S of the shared clock)
+## and of the canyons (static: cells only). A dozen presenters and forces ask about the same spot
+## every half second; the sampler and the crack Voronoi then run once.
+const WEATHER_MEMO_M: float = 4.0
+const WEATHER_MEMO_S: float = 0.25
+const CANYON_MEMO_M: float = 2.0
+const WEATHER_MEMO_MAX: int = 256
+var _weather_memo: Dictionary = {}
+var _weather_local_memo: Dictionary = {}
+var _canyon_memo: Dictionary = {}
+
+
+## The memo key of [param world_pos]: its cell in this body's frame, and the clock's bucket.
+func _weather_key(world_pos: Vector3, with_time: bool, cell_m: float) -> Vector4i:
+	var local: Vector3 = to_local(world_pos) / cell_m
+	var bucket: int = int(floor(Globals.sim_time() / WEATHER_MEMO_S)) if with_time else 0
+	return Vector4i(roundi(local.x), roundi(local.y), roundi(local.z), bucket)
+
+
+static func _memo_put(memo: Dictionary, key: Vector4i, value: Dictionary) -> void:
+	if memo.size() >= WEATHER_MEMO_MAX:
+		memo.clear()
+	memo[key] = value
 
 
 ## The weather at a world position on this body: WeatherSampler.sample's Dictionary (wind,
@@ -1045,6 +1073,15 @@ func weather_at(world_pos: Vector3) -> Dictionary:
 	var profile: ClimateProfile = climate_profile()
 	if profile == null:
 		return {}
+	var key: Vector4i = _weather_key(world_pos, true, WEATHER_MEMO_M)
+	if _weather_memo.has(key):
+		return _weather_memo[key]
+	var out: Dictionary = _weather_at_uncached(world_pos, profile)
+	_memo_put(_weather_memo, key, out)
+	return out
+
+
+func _weather_at_uncached(world_pos: Vector3, profile: ClimateProfile) -> Dictionary:
 	var ll: Vector2 = lonlat_of(world_pos)
 	var hours: float = get_local_solar_time(world_pos)
 	if hours < 0.0:
@@ -1092,6 +1129,9 @@ func wind_world_at(world_pos: Vector3) -> Vector3:
 ## and shelter under the point, the gust of the moment on the shared clock. The regional wind stays
 ## under wind_mean_*. {} without a climate profile.
 func weather_local_at(world_pos: Vector3) -> Dictionary:
+	var key: Vector4i = _weather_key(world_pos, true, WEATHER_MEMO_M)
+	if _weather_local_memo.has(key):
+		return _weather_local_memo[key]
 	var sample: Dictionary = weather_at(world_pos)
 	if sample.is_empty():
 		return sample
@@ -1100,13 +1140,24 @@ func weather_local_at(world_pos: Vector3) -> Dictionary:
 	var gust: float = float(weather_override["gust_factor"]) if weather_override.has("gust_factor") \
 			else WeatherLocal.gust_factor(profile.weather_seed, float(sample["lon_deg"]), float(sample["lat_deg"]),
 			Globals.sim_time())
-	return WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms)
+	var out: Dictionary = WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms)
+	_memo_put(_weather_local_memo, key, out)
+	return out
 
 
 ## The trench of the corundum crack network under a world position: {"depth": 0..1 (1 on the floor of a
 ## trench, fading to 0 one trench-depth above it; 0 on the plateau, off corundum, in a POI's sphere or
 ## on a massif), "axis": unit (east, north) along the trench}. {} on a body without the network.
 func canyon_at(world_pos: Vector3) -> Dictionary:
+	var key: Vector4i = _weather_key(world_pos, false, CANYON_MEMO_M)
+	if _canyon_memo.has(key):
+		return _canyon_memo[key]
+	var out: Dictionary = _canyon_at_uncached(world_pos)
+	_memo_put(_canyon_memo, key, out)
+	return out
+
+
+func _canyon_at_uncached(world_pos: Vector3) -> Dictionary:
 	if planet_data == null or not planet_data.corundum_default_biome:
 		return {}
 	if planet_data.crack_width_m <= 0.0 or planet_data.crack_spacing_m <= 0.0:
