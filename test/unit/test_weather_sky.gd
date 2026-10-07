@@ -62,11 +62,14 @@ func test_the_cpu_twin_honours_the_knobs() -> void:
 	assert_almost_eq(above.get_luminance(), above_lowered.get_luminance(), 1e-6, "above the veil the floor is unseen")
 
 
-func test_the_blown_slab_follows_the_lift_and_the_veils_coefficients() -> void:
-	assert_eq(WeatherSky.blow_density(0.0, _profile), 0.0, "no lift: no slab")
-	assert_eq(WeatherSky.blow_density(1.0, null), 0.0, "no profile: nothing to colour it")
-	var mie : float = maxf(_profile.mie_beta.x, maxf(_profile.mie_beta.y, _profile.mie_beta.z))
-	var full : float = WeatherSky.blow_density(1.0, _profile)
-	assert_almost_eq(full * mie, 3.912 / WeatherSky.BLOW_VISIBILITY_FULL_M, 1e-9, "a full blow: 400 m of visibility")
-	assert_almost_eq(WeatherSky.blow_density(0.5, _profile) / full, pow(0.5, WeatherSky.BLOW_POWER), 1e-9, "rises as lift^1.5")
-	assert_almost_eq(WeatherSky.blow_density(3.0, _profile), full, 1e-9, "capped at the full blow")
+func test_the_blown_slab_follows_the_lift_and_takes_the_grounds_colour() -> void:
+	assert_eq(WeatherSky.blow_extinction(0.0), 0.0, "no lift: no slab")
+	var full : float = WeatherSky.blow_extinction(1.0)
+	assert_almost_eq(full, 3.912 / WeatherSky.BLOW_VISIBILITY_FULL_M, 1e-9, "a full blow: 400 m of visibility")
+	assert_almost_eq(WeatherSky.blow_extinction(0.5) / full, pow(0.5, WeatherSky.BLOW_POWER), 1e-9, "rises as lift^1.5")
+	assert_almost_eq(WeatherSky.blow_extinction(3.0), full, 1e-9, "capped at the full blow")
+	var ochre : Vector3 = WeatherSky.blow_albedo_of(Color(0.8, 0.6, 0.4))
+	assert_almost_eq(ochre.x, WeatherSky.BLOW_ALBEDO_MAX, 1e-9, "the brightest channel at the cap")
+	assert_almost_eq(ochre.y / ochre.x, 0.75, 1e-6, "the ground's own hue kept (Color is float32)")
+	assert_almost_eq(ochre.z / ochre.x, 0.5, 1e-6)
+	assert_eq(WeatherSky.blow_albedo_of(Color.BLACK), WeatherSky.blow_albedo_of(WeatherSky.BLOW_FALLBACK_COLOUR), "no colour: the plains' ochre")

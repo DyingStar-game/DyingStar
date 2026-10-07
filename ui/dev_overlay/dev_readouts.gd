@@ -218,7 +218,13 @@ static func weather_here(body: Node3D) -> Dictionary:
 	var planet : Planet = Planet.of(body)
 	if planet == null:
 		return {}
-	return planet.weather_local_at(body.global_position)
+	var sample : Dictionary = planet.weather_local_at(body.global_position)
+	if not sample.is_empty():
+		# Where the body faces, as a compass bearing on this ground: to check a push against the wind.
+		var forward : Vector3 = planet.global_basis.orthonormalized().inverse() * (-body.global_basis.z)
+		var axes : Array = WeatherSampler.local_axes(float(sample["lon_deg"]), float(sample["lat_deg"]))
+		sample["facing_deg"] = bearing_of(forward.dot(axes[0]), forward.dot(axes[1]))
+	return sample
 
 
 ## What the Weather section says, from a WeatherSampler sample: wind (speed, where it comes from),
@@ -251,12 +257,23 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 		ReadoutFormat.escape("where: lon %.2f  lat %.2f  alt %.0f m" % [float(sample.get("lon_deg", 0.0)),
 			float(sample.get("lat_deg", 0.0)), float(sample.get("altitude_m", 0.0))]),
 	]
+	if sample.has("facing_deg"):
+		var toward : float = fposmod(from_deg + 180.0, 360.0)
+		out.insert(1, ReadoutFormat.escape("facing %s %.0f°   wind pushes toward %s %.0f°" % [compass(float(sample["facing_deg"])),
+			float(sample["facing_deg"]), compass(toward), toward]))
 	if sample.has("gust_factor"):
 		var axis: Vector2 = sample.get("canyon_axis", Vector2.ZERO)
 		out.insert(1, ReadoutFormat.escape("local: regional %.0f km/h   gust x%.2f   canyon depth %.0f%% axis (%.2f, %.2f)" % [
 			float(sample.get("wind_mean_speed_m_s", 0.0)) * 3.6, float(sample.get("gust_factor", 1.0)),
 			float(sample.get("canyon_depth", 0.0)) * 100.0, axis.x, axis.y]))
 	return out
+
+
+## The compass bearing (degrees, 0 = N, clockwise) of a ground direction given by its east and north parts.
+static func bearing_of(east: float, north: float) -> float:
+	if absf(east) < 1e-9 and absf(north) < 1e-9:
+		return 0.0
+	return fposmod(rad_to_deg(atan2(east, north)), 360.0)
 
 
 ## Eight-point compass name of a "from" direction in degrees (0 = N, clockwise).

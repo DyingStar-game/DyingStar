@@ -24,6 +24,10 @@ const BLOW_VISIBILITY_FULL_M: float = 400.0
 const BLOW_POWER: float = 1.5
 const BLOW_BELOW_M: float = 30.0
 const BLOW_ABOVE_M: float = 25.0
+## What the blown dust reflects at most (its brightest channel), and the colour it takes when the
+## ground under the observer has none to give (a pale ochre, the corundum plains).
+const BLOW_ALBEDO_MAX: float = 0.92
+const BLOW_FALLBACK_COLOUR: Color = Color(0.86, 0.74, 0.56)
 
 var _last_read_at: float = -INF
 var _refills: int = 0
@@ -47,23 +51,33 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var climate: ClimateProfile = planet.climate_profile()
 	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
 			climate.v10_threshold_m_s if climate != null else 0.0)
-	renderer.weather_blow_density = blow_density(lifted, profile)
+	renderer.weather_blow_beta = blow_extinction(lifted)
+	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
+	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
+			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
+	renderer.weather_blow_albedo = blow_albedo_of(ground_colour)
 	var ground: float = planet.elevation_of(observer_world_pos)
 	renderer.weather_blow_bottom_m = ground - BLOW_BELOW_M
 	renderer.weather_blow_top_m = ground + BLOW_ABOVE_M
 	return knobs
 
 
-## The blown slab's density in units of [param profile]'s Mie coefficients for a ground lifted
-## [param lifted] (0..1, StormDust.saltation_rate): β = 3.912 / BLOW_VISIBILITY_FULL_M × lifted^BLOW_POWER,
-## over the largest Mie coefficient. 0 without lift or without a Mie veil to colour it.
-static func blow_density(lifted: float, profile: AtmosphereProfile) -> float:
-	if profile == null or lifted <= 0.0:
+## The blown slab's grey extinction (1/m) for a ground lifted [param lifted] (0..1,
+## StormDust.saltation_rate): β = 3.912 / BLOW_VISIBILITY_FULL_M × lifted^BLOW_POWER (Koschmieder). 0 without lift.
+static func blow_extinction(lifted: float) -> float:
+	if lifted <= 0.0:
 		return 0.0
-	var mie: float = maxf(profile.mie_beta.x, maxf(profile.mie_beta.y, profile.mie_beta.z))
-	if mie <= 1e-12:
-		return 0.0
-	return 3.912 / BLOW_VISIBILITY_FULL_M * pow(clampf(lifted, 0.0, 1.0), BLOW_POWER) / mie
+	return 3.912 / BLOW_VISIBILITY_FULL_M * pow(clampf(lifted, 0.0, 1.0), BLOW_POWER)
+
+
+## The slab's single-scattering albedo from the colour of the ground it is made of: the colour scaled
+## so its brightest channel is BLOW_ALBEDO_MAX (mineral dust absorbs a little of everything, and more of
+## what the ground does not reflect). A black or unknown ground gives the fallback.
+static func blow_albedo_of(ground: Color) -> Vector3:
+	var top: float = maxf(ground.r, maxf(ground.g, ground.b))
+	if top <= 1e-6:
+		return blow_albedo_of(BLOW_FALLBACK_COLOUR)
+	return Vector3(ground.r, ground.g, ground.b) / top * BLOW_ALBEDO_MAX
 
 
 ## The two knobs for a storm dust optical depth [param dust_tau] over [param profile]'s veil,

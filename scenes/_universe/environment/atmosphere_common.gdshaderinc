@@ -34,11 +34,15 @@ uniform float haze_falloff = 1.0;
 uniform float mie_scale_height = 1200.0;
 
 // A second, thin slab of dust BLOWN off the ground by the wind, between blow_bottom and blow_top
-// (altitudes over the reference sphere, laid around the observer's own ground by WeatherSky), of
-// blow_density times the Mie coefficients: the haze of a blow on the plains, what whitens the far side
-// of a field in a 10 m/s wind. Zero = none. Not in the transmittance table (its vertical depth is a
-// few hundredths): it dims the horizon, never the sun.
-uniform float blow_density = 0.0;
+// (altitudes over the reference sphere, laid around the observer's own ground by WeatherSky): the
+// haze of a blow on the plains, what whitens the far side of a field in a 10 m/s wind. Its own
+// coefficients, not the veil's: grains far larger than the wavelength extinguish GREY (blow_beta, 1/m,
+// the same in every channel, so what stands behind the haze dims without changing hue), and the dust
+// itself is coloured by what it absorbs (blow_albedo, the ground's own colour: the light it scatters
+// toward the eye is ochre where the ground is). Zero = none. Not in the transmittance table (its
+// vertical depth is a few hundredths): it dims the horizon, never the sun.
+uniform vec3 blow_beta = vec3(0.0);
+uniform vec3 blow_albedo = vec3(1.0);
 uniform float blow_bottom = 0.0;
 uniform float blow_top = 0.0;
 uniform float blow_falloff = 10.0;
@@ -123,17 +127,22 @@ float rayleigh_density(float altitude) {
 // contributes half of its own width: the optical depth that pins the planet's albedo depends on the
 // slab's THICKNESS alone, and moving it up or down leaves the calibration untouched.
 float mie_density(float altitude) {
-	float blow = 0.0;
-	if (blow_density > 0.0) {
-		blow = blow_density * smoothstep(blow_bottom - blow_falloff, blow_bottom + blow_falloff, altitude)
-				* (1.0 - smoothstep(blow_top - blow_falloff, blow_top + blow_falloff, altitude));
-	}
 	if (haze_top > 0.0) {
 		float below = smoothstep(haze_bottom - haze_falloff, haze_bottom + haze_falloff, altitude);
 		float above = smoothstep(haze_top - haze_falloff, haze_top + haze_falloff, altitude);
-		return below * (1.0 - above) + blow;
+		return below * (1.0 - above);
 	}
-	return exp(-altitude / mie_scale_height) + blow;
+	return exp(-altitude / mie_scale_height);
+}
+
+
+// The blown slab's profile, 0..1: a soft-edged band between blow_bottom and blow_top.
+float blow_profile(float altitude) {
+	if (blow_top <= blow_bottom) {
+		return 0.0;
+	}
+	return smoothstep(blow_bottom - blow_falloff, blow_bottom + blow_falloff, altitude)
+			* (1.0 - smoothstep(blow_top - blow_falloff, blow_top + blow_falloff, altitude));
 }
 
 
@@ -147,6 +156,7 @@ float absorption_density(float altitude) {
 vec3 atmo_extinction(float altitude) {
 	return rayleigh_beta * rayleigh_density(altitude)
 		+ mie_beta * mie_density(altitude)
+		+ blow_beta * blow_profile(altitude)
 		+ absorption_beta * absorption_density(altitude);
 }
 
@@ -286,6 +296,7 @@ vec3 scatter(
 	vec3 depth_view = vec3(0.0);
 	vec3 sum_rayleigh = vec3(0.0);
 	vec3 sum_mie = vec3(0.0);
+	vec3 sum_blow = vec3(0.0);
 
 	for (int i = 0; i < steps_view; i++) {
 		float step_width = span / float(steps_view);
@@ -308,6 +319,7 @@ vec3 scatter(
 		float h = atmo_altitude(p);
 		float density_r = rayleigh_density(h);
 		float density_m = mie_density(h);
+		float density_b = blow_profile(h);
 		depth_view += atmo_extinction(h) * step_width;
 
 		// Is this sample in the planet's own shadow? A star ray that enters the ground never gets
@@ -330,12 +342,14 @@ vec3 scatter(
 		}
 		sum_rayleigh += density_r * transmittance * step_width;
 		sum_mie += density_m * transmittance * step_width;
+		sum_blow += density_b * transmittance * step_width;
 	}
 
 	view_transmittance = exp(-depth_view);
 	return star_irradiance * star_color * (
 		rayleigh_beta * phase_r * sum_rayleigh
 		+ mie_beta * mie_albedo * phase_m * sum_mie
+		+ blow_beta * blow_albedo * phase_m * sum_blow
 	) * sky_exposure;
 }
 
