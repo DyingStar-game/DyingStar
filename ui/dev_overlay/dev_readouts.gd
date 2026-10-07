@@ -227,6 +227,7 @@ static func weather_here(body: Node3D) -> Dictionary:
 		var shelter : Variant = body.get("weather_shelter")
 		if shelter is Dictionary and not (shelter as Dictionary).is_empty():
 			sample["shelter"] = shelter
+		_add_effects(sample, planet, body)
 	return sample
 
 
@@ -269,12 +270,48 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 		out.insert(2, ReadoutFormat.escape("shelter %.0f%% (around %.0f%%, lee %.0f%%)   wind on body x%.2f" % [
 			float(sh.get("shelter", 0.0)) * 100.0, float(sh.get("enclosed", 0.0)) * 100.0,
 			float(sh.get("lee", 0.0)) * 100.0, float(sh.get("wind_factor", 1.0))]))
+	if sample.has("fx"):
+		var fx : Dictionary = sample["fx"]
+		var ext : float = float(fx["ext"])
+		out.append(ReadoutFormat.escape("sand: threshold %.0f km/h   lift %.0f%%   dust layer %.4f /m (visibility %s)" % [
+			float(fx["threshold"]) * 3.6, float(fx["lift"]) * 100.0, ext, "clear" if ext <= 1e-6 else "%d m" % roundi(3.912 / ext)]))
+		out.append(ReadoutFormat.escape("push on body %.0f N (feet hold %.0f N: %s)   rain %.1f mm/h" % [float(fx["push"]),
+			float(fx["hold"]), "pushed" if float(fx["push"]) > float(fx["hold"]) else "holds", float(sample.get("precipitation_mm_h", 0.0))]))
+		out.append(ReadoutFormat.escape("light: daylight %.0f%% (storm lets %.0f%%)   sound: storm %.0f%% x air %.0f%%%s" % [
+			float(fx["daylight"]) * 100.0, float(fx["storm_light"]) * 100.0, float(fx["storm_index"]) * 100.0,
+			float(fx["air_sound"]) * 100.0, "   [stage override]" if bool(fx["override"]) else ""]))
 	if sample.has("gust_factor"):
 		var axis: Vector2 = sample.get("canyon_axis", Vector2.ZERO)
 		out.insert(1, ReadoutFormat.escape("local: regional %.0f km/h   gust x%.2f   canyon depth %.0f%% axis (%.2f, %.2f)" % [
 			float(sample.get("wind_mean_speed_m_s", 0.0)) * 3.6, float(sample.get("gust_factor", 1.0)),
 			float(sample.get("canyon_depth", 0.0)) * 100.0, axis.x, axis.y]))
 	return out
+
+
+## What the effects make of the sample here, for the readout: the sand's lift, the dust layer's
+## extinction and visibility (as WeatherSky sets it), the push on a standing body and what the feet
+## hold, the daylight and a storm's share of it, the loops' storm index and the air's share of sound.
+static func _add_effects(sample: Dictionary, planet: Planet, body: Node3D) -> void:
+	var profile : ClimateProfile = planet.climate_profile()
+	var speed : float = float(sample.get("wind_speed_m_s", 0.0))
+	var lift : float = StormDust.saltation_rate(speed, profile.v10_threshold_m_s if profile != null else 0.0)
+	var shelter : float = float((sample.get("shelter", {}) as Dictionary).get("shelter", 0.0))
+	var ext : float = (WeatherSky.blow_extinction(lift) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
+			* WeatherSky.DUST_LAYER_STRENGTH * (1.0 - 0.9 * shelter)
+	var rho : float = float(sample.get("air_density_kg_m3", 0.0))
+	var wind_factor : float = float((sample.get("shelter", {}) as Dictionary).get("wind_factor", 1.0))
+	var push : float = WeatherForces.drag_force(rho, WeatherForces.PLAYER_DRAG, WeatherForces.PLAYER_AREA_M2,
+			Vector3(speed * wind_factor, 0.0, 0.0)).length()
+	var mass : float = float(body.get("mass")) if body.get("mass") != null else 80.0
+	var gravity : float = float(body.get("gravity")) if body.get("gravity") != null else 9.8
+	sample["fx"] = {
+		"threshold": profile.v10_threshold_m_s if profile != null else 0.0, "lift": lift, "ext": ext,
+		"push": push, "hold": WeatherForces.hold_force(mass, gravity),
+		"daylight": planet.daylight_at(body.global_position),
+		"storm_light": planet.storm_transmittance_at(body.global_position, planet.sun_elevation_at(body.global_position)),
+		"storm_index": WeatherAudio.storm_index(sample), "air_sound": WeatherAudio.air_factor(sample),
+		"override": not planet.weather_override.is_empty(),
+	}
 
 
 ## The compass bearing (degrees, 0 = N, clockwise) of a ground direction given by its east and north parts.
