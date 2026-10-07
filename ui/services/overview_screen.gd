@@ -116,8 +116,10 @@ func refresh() -> void:
 	_busy = true
 	var profile: Dictionary = await PlayerServices.profile_get()
 	var wallet: Dictionary = await PlayerServices.wallet()
-	var requests: Dictionary = await PlayerServices.friend_requests()
-	var missions: Dictionary = await PlayerServices.my_missions("active")
+	# The two cards only read counts, and the window they ride in says how many there are in all:
+	# one row is as good as twenty, and costs less to carry.
+	var requests: Dictionary = await PlayerServices.friend_requests(1)
+	var missions: Dictionary = await PlayerServices.my_missions("active", 1)
 	_apply(profile, wallet, requests, missions)
 	_busy = false
 
@@ -153,14 +155,13 @@ func _apply(profile: Dictionary, wallet: Dictionary, requests: Dictionary, missi
 		_balance_label.text = "—"
 
 	if bool(requests.get("ok", false)) and requests.get("data") is Dictionary:
-		var incoming: Variant = (requests.get("data") as Dictionary).get("incoming", [])
-		_requests_value.text = "%d" % ((incoming as Array).size() if incoming is Array else 0)
+		# The incoming badge counts them all, not just the window the response carried.
+		_requests_value.text = "%d" % ServicePage.total_of(requests,
+				PackedStringArray(["incomingTotal"]))
 	else:
 		_requests_value.text = "?"
 	if bool(missions.get("ok", false)):
-		var data: Variant = missions.get("data")
-		var list: Variant = (data as Dictionary).get("missions") if data is Dictionary else data
-		_missions_value.text = "%d" % ((list as Array).size() if list is Array else 0)
+		_missions_value.text = "%d" % ServicePage.total_of(missions, PackedStringArray(["total"]))
 	else:
 		_missions_value.text = "?"
 

@@ -4,12 +4,16 @@ extends ServicePanel
 ## reserved), and a corporation's inventory. Covers /api/me/inventory* and
 ## /api/corporations/{id}/inventory*.
 
+## One window carries both lists of a scope: the stacks and the instances are fetched together, so
+## the footer under the stacks drives them both.
 var _stacks: ItemList
 var _instances: ItemList
+var _page_stacks: ServicePage
 var _stack_detail: Label
 var _corp_picker: ServiceTargetPicker
 var _corp_stacks: ItemList
 var _corp_instances: ItemList
+var _page_corp_stacks: ServicePage
 
 
 func _build() -> void:
@@ -21,9 +25,12 @@ func _build() -> void:
 			tr("%%SVC_TAB_MY_INVENTORY"), tr("%%SVC_TAB_CORP_INVENTORY")]))
 
 	# My inventory — stacks, instances, and the detail of the selected stack.
-	_stacks = _list(220.0)
+	_page_stacks = ServicePage.new()
+	_page_stacks.rows_key = "stacks"
+	_page_stacks.total_keys = PackedStringArray(["total", "instancesTotal"])
+	_page_stacks.load_requested.connect(_load_inventory)
+	_stacks = _paged_list(pages[0], tr("%%SVC_LBL_STACKS"), _page_stacks, 220.0)
 	_stacks.item_selected.connect(func(_i: int) -> void: _load_stack_detail())
-	pages[0].add_child(_titled(tr("%%SVC_LBL_STACKS"), _stacks, true))
 	var columns := _row(18)
 	_instances = _list(160.0)
 	columns.add_child(_titled(tr("%%SVC_LBL_INSTANCES"), _instances, true))
@@ -41,8 +48,11 @@ func _build() -> void:
 	_action_button(corp_row, tr("%%SVC_ACT_LOAD"), func() -> void: _load_corp())
 	pages[1].add_child(corp_row)
 	var corp_columns := _row(18)
-	_corp_stacks = _list(220.0)
-	corp_columns.add_child(_titled(tr("%%SVC_LBL_STACKS"), _corp_stacks, true))
+	_page_corp_stacks = ServicePage.new()
+	_page_corp_stacks.rows_key = "stacks"
+	_page_corp_stacks.total_keys = PackedStringArray(["total", "instancesTotal"])
+	_page_corp_stacks.load_requested.connect(_load_corp_inventory)
+	_corp_stacks = _paged_list(corp_columns, tr("%%SVC_LBL_STACKS"), _page_corp_stacks, 220.0)
 	_corp_instances = _list(220.0)
 	corp_columns.add_child(_titled(tr("%%SVC_LBL_INSTANCES"), _corp_instances, true))
 	pages[1].add_child(corp_columns)
@@ -53,9 +63,15 @@ func _build() -> void:
 func refresh() -> void:
 	if not _begin_refresh():
 		return
-	var result: Dictionary = await PlayerServices.inventory_me()
-	_apply_inventory(result, _stacks, _instances)
+	await _load_inventory()
 	_end_refresh()
+
+
+func _load_inventory() -> void:
+	var at: int = _page_stacks.offset
+	var result: Dictionary = await PlayerServices.inventory_me(_page_stacks.limit, at)
+	if _land(_page_stacks, at, result):
+		_apply_inventory(_page_stacks, result, _stacks, _instances)
 
 
 func _load_stack_detail() -> void:
@@ -81,24 +97,31 @@ func _load_corp() -> void:
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
-	var result: Dictionary = await PlayerServices.corporation_inventory(corporation_id)
-	_apply_inventory(result, _corp_stacks, _corp_instances)
+	# Another corporation is another inventory: back to its first window, which loads it.
+	_page_corp_stacks.reset()
 
 
-func _apply_inventory(result: Dictionary, stacks: ItemList, instances: ItemList) -> void:
+func _load_corp_inventory() -> void:
+	var corporation_id: String = _corp_picker.picked_id()
+	if corporation_id == "":
+		return
+	var at: int = _page_corp_stacks.offset
+	var result: Dictionary = await PlayerServices.corporation_inventory(corporation_id,
+			_page_corp_stacks.limit, at)
+	if _land(_page_corp_stacks, at, result):
+		_apply_inventory(_page_corp_stacks, result, _corp_stacks, _corp_instances)
+
+
+func _apply_inventory(page: ServicePage, result: Dictionary, stacks: ItemList,
+		instances: ItemList) -> void:
 	if not bool(result.get("ok", false)):
 		var error: String = tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))
 		_fill_list(stacks, PackedStringArray([error]))
 		_fill_list(instances, PackedStringArray([error]))
 		return
-	var data: Dictionary = result.get("data", {}) if result.get("data") is Dictionary else {}
-	_fill_simple(stacks, _array(data.get("stacks")), ServiceTypes.stack_line, tr("%%SVC_MSG_NO_STACKS"))
-	_fill_simple(instances, _array(data.get("instances")), ServiceTypes.instance_line,
+	_fill_simple(stacks, page.rows(result), ServiceTypes.stack_line, tr("%%SVC_MSG_NO_STACKS"))
+	_fill_simple(instances, ServicePage.items_of(result, "instances"), ServiceTypes.instance_line,
 			tr("%%SVC_MSG_NO_INSTANCES"))
-
-
-static func _array(value: Variant) -> Array:
-	return value if value is Array else []
 
 
 func _fill_simple(list: ItemList, items: Array, formatter: Callable, empty: String) -> void:

@@ -556,3 +556,72 @@ static func _selected_meta(list: ItemList) -> Variant:
 	if selected.is_empty():
 		return null
 	return list.get_item_metadata(selected[0])
+
+
+# ---------------------------------------------------------------------------------------------
+# Pagination kit: paged windows, list + footer
+# ---------------------------------------------------------------------------------------------
+
+## Adopt [param result] as [param page]'s window — but only while it is still the window being
+## asked for. Returns false when a newer jump moved the page on while this fetch was in flight:
+## those rows belong to a page nobody is looking at any more, so they are dropped and the list keeps
+## what it has. Paged fetches read their window into [param at] before awaiting, then check here.
+func _land(page: ServicePage, at: int, result: Dictionary) -> bool:
+	if page.offset != at:
+		return false
+	page.adopt(result)
+	return true
+
+
+## A paged list under [param title]: the list, then its footer, in one titled box added to [param
+## parent]. The caller wires [param page]'s [signal ServicePage.load_requested] to the fetch that
+## fills it.
+func _paged_list(parent: Node, title: String, page: ServicePage, min_height: float = 160.0) -> ItemList:
+	var list := _list(min_height)
+	_paged_box(parent, title, page, list)
+	return list
+
+
+## [param body] under [param title] with its footer — the same box, for a list that is not an
+## ItemList (a grid of tiles, a column of cards). Returns the box, so a caller that shows and hides
+## it can keep hold of it.
+func _paged_box(parent: Node, title: String, page: ServicePage, body: Control) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(body)
+	box.add_child(_pager(page))
+	var titled := _titled(title, box, true)
+	parent.add_child(titled)
+	return titled
+
+
+## The footer under a paged list: first, previous, the window sentence, next, last. The buttons
+## move the page — the panel has already wired [signal ServicePage.load_requested] to the fetch that
+## fills the list — and the bar redraws itself whenever the page moves or a response lands. It stays
+## hidden while there is only one window to stand on.
+func _pager(page: ServicePage) -> Control:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	var first := _action_button(bar, tr("%%PG_FIRST"), func() -> void: page.first(), 46.0)
+	var prev := _action_button(bar, tr("%%PG_PREV"), func() -> void: page.prev(), 46.0)
+	var status := _label("", ServiceStyle.MUTED)
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(status)
+	var next := _action_button(bar, tr("%%PG_NEXT"), func() -> void: page.next(), 46.0)
+	var last := _action_button(bar, tr("%%PG_LAST"), func() -> void: page.last(), 46.0)
+	var sync := func() -> void:
+		status.text = page.status_text()
+		var back: bool = page.can_prev()
+		var forward: bool = page.can_next()
+		first.disabled = not back
+		prev.disabled = not back
+		next.disabled = not forward
+		last.disabled = not forward
+		bar.visible = page.pages() > 1
+	page.load_requested.connect(sync)
+	page.windowed.connect(sync)
+	sync.call()
+	return bar

@@ -28,6 +28,10 @@ const SRC_PLAYERS := "players"
 const SRC_MY_CORPS := "my_corps"
 const SRC_CORPS := "corps"
 
+## Rows a source shows at once: the API's own maximum, so the picker never needs a footer of its
+## own — and the note below the rows says when even that is not all of them.
+const PICK_LIMIT: int = 100
+
 var _mask: int = Mask.EITHER
 var _source: String = SRC_CONTACTS
 var _source_row: HBoxContainer
@@ -234,10 +238,10 @@ func _load_source() -> void:
 	_clear_results()
 	match _source:
 		SRC_CONTACTS:
-			var contacts: Dictionary = await PlayerServices.friends_list()
+			var contacts: Dictionary = await PlayerServices.friends_list(PICK_LIMIT)
 			_fill_rows(contacts, tr("%%SVC_MSG_NO_CONTACTS"), KIND_PLAYER, true)
 		SRC_MY_CORPS:
-			var mine: Dictionary = await PlayerServices.my_corporations()
+			var mine: Dictionary = await PlayerServices.my_corporations(PICK_LIMIT)
 			_fill_rows(mine, tr("%%SVC_MSG_NO_CORPS"), KIND_CORPORATION, false)
 		_:
 			_run_search()
@@ -247,10 +251,10 @@ func _run_search() -> void:
 	_clear_results()
 	var query := _search.text.strip_edges()
 	if _source == SRC_PLAYERS:
-		var players: Dictionary = await PlayerServices.profiles_search(query)
+		var players: Dictionary = await PlayerServices.profiles_search(query, PICK_LIMIT)
 		_fill_rows(players, tr("%%SVC_MSG_NO_RESULTS"), KIND_PLAYER, false)
 	else:
-		var corps: Dictionary = await PlayerServices.corporations_list(query)
+		var corps: Dictionary = await PlayerServices.corporations_list(query, PICK_LIMIT)
 		_fill_rows(corps, tr("%%SVC_MSG_NO_RESULTS"), KIND_CORPORATION, false)
 
 
@@ -266,7 +270,7 @@ func _fill_rows(result: Dictionary, empty_text: String, kind: String, with_prese
 		_results.add_child(error)
 		return
 	var count := 0
-	for entry: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for entry: Dictionary in ServicePage.items_of(result):
 		_results.add_child(_row_button(entry, kind, with_presence))
 		count += 1
 	if count == 0:
@@ -276,6 +280,15 @@ func _fill_rows(result: Dictionary, empty_text: String, kind: String, with_prese
 		empty.add_theme_color_override("font_color", ServiceStyle.MUTED)
 		ServiceStyle.font_of(empty, 14)
 		_results.add_child(empty)
+		return
+	# The window is wide, but it is still a window: say so when the source does not fit in it.
+	var total: int = ServicePage.total_of(result, PackedStringArray(["total"]))
+	if total > count:
+		var more := Label.new()
+		more.text = tr("%%SVC_MSG_MORE_RESULTS") % (total - count)
+		more.add_theme_color_override("font_color", ServiceStyle.MUTED)
+		ServiceStyle.font_of(more, 13)
+		_results.add_child(more)
 
 
 func _row_button(entry: Dictionary, kind: String, with_presence: bool) -> Button:

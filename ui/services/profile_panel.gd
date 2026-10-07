@@ -19,8 +19,10 @@ var _rp_story_field: TextEdit
 var _rp_original: Dictionary = {}  # last loaded rpSheet, to patch only when edited
 var _reputation_label: Label
 var _events: ItemList
+var _page_events: ServicePage
 var _sanctions: ItemList
 var _activity: ItemList
+var _page_activity: ServicePage
 
 
 func _build() -> void:
@@ -178,15 +180,20 @@ func _build_reputation_page(page: VBoxContainer) -> void:
 	_reputation_label = _label("—", ServiceStyle.ACCENT)
 	ServiceStyle.font_of(_reputation_label, 22, true)
 	page.add_child(_card(tr("%%SVC_LBL_SCORE"), _reputation_label))
-	_events = _list(180.0)
-	page.add_child(_titled(tr("%%SVC_LBL_HISTORY"), _events, true))
+	# The history is the paginated half of the reputation payload; the score rides every window.
+	_page_events = ServicePage.new()
+	_page_events.rows_key = "events"
+	_page_events.total_keys = PackedStringArray(["eventsTotal"])
+	_page_events.load_requested.connect(_load_reputation)
+	_events = _paged_list(page, tr("%%SVC_LBL_HISTORY"), _page_events, 180.0)
 	_sanctions = _list(180.0)
 	page.add_child(_titled(tr("%%SVC_LBL_ACTIVE_SANCTIONS"), _sanctions, true))
 
 
 func _build_activity_page(page: VBoxContainer) -> void:
-	_activity = _list(320.0)
-	page.add_child(_titled(tr("%%SVC_LBL_RECENT_ACTIVITY"), _activity, true))
+	_page_activity = ServicePage.new()
+	_page_activity.load_requested.connect(_load_activity)
+	_activity = _paged_list(page, tr("%%SVC_LBL_RECENT_ACTIVITY"), _page_activity, 320.0)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -197,14 +204,26 @@ func refresh() -> void:
 	if not _begin_refresh():
 		return
 	var profile: Dictionary = await PlayerServices.profile_get()
-	var reputation: Dictionary = await PlayerServices.my_reputation()
 	var sanctions: Dictionary = await PlayerServices.my_sanctions()
-	var activity: Dictionary = await PlayerServices.my_activity()
 	_apply_profile(profile)
-	_apply_reputation(reputation)
 	_apply_sanctions(sanctions)
-	_apply_activity(activity)
+	await _load_reputation()
+	await _load_activity()
 	_end_refresh()
+
+
+func _load_reputation() -> void:
+	var at: int = _page_events.offset
+	var result: Dictionary = await PlayerServices.my_reputation(_page_events.limit, at)
+	if _land(_page_events, at, result):
+		_apply_reputation(result)
+
+
+func _load_activity() -> void:
+	var at: int = _page_activity.offset
+	var result: Dictionary = await PlayerServices.my_activity(_page_activity.limit, at)
+	if _land(_page_activity, at, result):
+		_apply_activity(result)
 
 
 func _apply_profile(result: Dictionary) -> void:
@@ -267,7 +286,7 @@ func _apply_reputation(result: Dictionary) -> void:
 	_reputation_label.text = "%d" % ServiceTypes.num(data.get("reputation"))
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for event: Dictionary in (data.get("events", []) if data.get("events") is Array else []):
+	for event: Dictionary in _page_events.rows(result):
 		lines.append(ServiceTypes.reputation_event_line(event))
 		metadata.append(event)
 	_fill_list(_events, lines, metadata)
@@ -293,7 +312,7 @@ func _apply_activity(result: Dictionary) -> void:
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for entry: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for entry: Dictionary in _page_activity.rows(result):
 		lines.append(ServiceTypes.activity_line(entry))
 		metadata.append(entry)
 	_fill_list(_activity, lines, metadata)

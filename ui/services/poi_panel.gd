@@ -19,6 +19,7 @@ const OWNER_ENTRIES: Array = [
 
 ## My POIs, the detail of the selected one, its grants, and the picker that names a grantee.
 var _pois: ItemList
+var _page_pois: ServicePage
 var _detail: Label
 var _shares: ItemList
 var _target: ServiceTargetPicker
@@ -41,6 +42,7 @@ var _edit_id: String = ""
 ## The corporation tab.
 var _corp_picker: ServiceTargetPicker
 var _corp_pois: ItemList
+var _page_corp_pois: ServicePage
 var _corp_detail: Label
 
 
@@ -61,11 +63,17 @@ func refresh() -> void:
 	if not _begin_refresh():
 		return
 	var open_id := _detail_id
-	var result: Dictionary = await PlayerServices.poi_list()
-	_apply_pois(result, _pois, tr("%%SVC_MSG_NO_POIS"))
+	await _load_pois()
 	if _select_poi(_pois, open_id):
 		await _load_detail()
 	_end_refresh()
+
+
+func _load_pois() -> void:
+	var at: int = _page_pois.offset
+	var result: Dictionary = await PlayerServices.poi_list(_page_pois.limit, at)
+	if _land(_page_pois, at, result):
+		_apply_pois(_page_pois, result, _pois, tr("%%SVC_MSG_NO_POIS"))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -75,9 +83,10 @@ func refresh() -> void:
 func _build_mine(page: VBoxContainer) -> void:
 	var columns := _row(18)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_pois = _list(240.0)
+	_page_pois = ServicePage.new()
+	_page_pois.load_requested.connect(_load_pois)
+	_pois = _paged_list(columns, tr("%%SVC_APP_POIS"), _page_pois, 240.0)
 	_pois.item_selected.connect(func(_i: int) -> void: _load_detail())
-	columns.add_child(_titled(tr("%%SVC_APP_POIS"), _pois, true))
 
 	var side := VBoxContainer.new()
 	side.add_theme_constant_override("separation", 12)
@@ -396,9 +405,10 @@ func _build_corp(page: VBoxContainer) -> void:
 
 	var columns := _row(18)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_corp_pois = _list(240.0)
+	_page_corp_pois = ServicePage.new()
+	_page_corp_pois.load_requested.connect(_load_corp_pois)
+	_corp_pois = _paged_list(columns, tr("%%SVC_APP_POIS"), _page_corp_pois, 240.0)
 	_corp_pois.item_selected.connect(func(_i: int) -> void: _load_corp_detail())
-	columns.add_child(_titled(tr("%%SVC_APP_POIS"), _corp_pois, true))
 	_corp_detail = _label(tr("%%SVC_MSG_SELECT_POI"), DIM)
 	_corp_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	columns.add_child(_titled(tr("%%SVC_LBL_DETAIL"), _corp_detail, true))
@@ -411,8 +421,19 @@ func _load_corp() -> void:
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
-	var result: Dictionary = await PlayerServices.corporation_pois(corporation_id)
-	_apply_pois(result, _corp_pois, tr("%%SVC_MSG_NO_POIS"))
+	# Another corporation is another list: back to its first window, which loads it.
+	_page_corp_pois.reset()
+
+
+func _load_corp_pois() -> void:
+	var corporation_id := _corp_picker.picked_id()
+	if corporation_id == "":
+		return
+	var at: int = _page_corp_pois.offset
+	var result: Dictionary = await PlayerServices.corporation_pois(corporation_id,
+			_page_corp_pois.limit, at)
+	if _land(_page_corp_pois, at, result):
+		_apply_pois(_page_corp_pois, result, _corp_pois, tr("%%SVC_MSG_NO_POIS"))
 
 
 func _load_corp_detail() -> void:
@@ -434,14 +455,14 @@ func _load_corp_detail() -> void:
 # ---------------------------------------------------------------------------------------------
 
 ## Fill a POI list from a list response — the caller's scope and a corporation's scope share it.
-func _apply_pois(result: Dictionary, list: ItemList, empty: String) -> void:
+func _apply_pois(page: ServicePage, result: Dictionary, list: ItemList, empty: String) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([
 				tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for poi: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for poi: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.poi_line(poi))
 		metadata.append(poi)
 	if lines.is_empty():

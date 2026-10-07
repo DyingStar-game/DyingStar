@@ -11,13 +11,18 @@ const RECRUITMENT_ENTRIES: Array = [
 ]
 
 var _my_corps_grid: GridContainer
+var _page_mine: ServicePage
 var _my_requests: ItemList
+var _page_my_requests: ServicePage
 var _directory: ItemList
+var _page_directory: ServicePage
 var _search: LineEdit
 var _detail: Label
 var _members: ItemList
+var _page_members: ServicePage
 var _ranks: ItemList
 var _requests: ItemList
+var _page_requests: ServicePage
 var _invite_picker: ServiceTargetPicker
 var _rank_id: LineEdit
 var _rank_name: LineEdit
@@ -38,8 +43,10 @@ var _create_recruitment: OptionButton
 var _corp_picker: ServiceTargetPicker
 var _corp_wallet: ItemList
 var _corp_ledger: ItemList
+var _page_corp_ledger: ServicePage
 var _corp_report: ItemList
 var _corp_taxes: ItemList
+var _page_corp_taxes: ServicePage
 var _corp_from: LineEdit
 var _corp_to: LineEdit
 var _donation_amount: LineEdit
@@ -47,6 +54,7 @@ var _selected_id: String = ""
 # Salaries / prime / payroll (economy endpoints).
 var _salary_roles: ItemList
 var _salary_members: ItemList
+var _page_salary_members: ServicePage
 var _salary_role: LineEdit
 var _salary_role_amount: LineEdit
 var _salary_member_picker: ServiceTargetPicker
@@ -71,13 +79,16 @@ func _build() -> void:
 	_my_corps_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_my_corps_grid.add_theme_constant_override("h_separation", 12)
 	_my_corps_grid.add_theme_constant_override("v_separation", 12)
-	pages[0].add_child(_titled(tr("%%SVC_LBL_MY_CORPORATIONS"), _my_corps_grid))
+	_page_mine = ServicePage.new()
+	_page_mine.load_requested.connect(_load_mine)
+	_paged_box(pages[0], tr("%%SVC_LBL_MY_CORPORATIONS"), _page_mine, _my_corps_grid)
 	var entries := _row()
 	_action_button(entries, tr("%%SVC_ACT_JOIN_CORP"), func() -> void: goto_segment(1))
 	_action_button(entries, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: goto_segment(3))
 	pages[0].add_child(entries)
-	_my_requests = _list(150.0)
-	pages[0].add_child(_titled(tr("%%SVC_LBL_PENDING_REQUESTS"), _my_requests, true))
+	_page_my_requests = ServicePage.new()
+	_page_my_requests.load_requested.connect(_load_my_requests)
+	_my_requests = _paged_list(pages[0], tr("%%SVC_LBL_PENDING_REQUESTS"), _page_my_requests, 150.0)
 	var my_req_row := _row()
 	_action_button(my_req_row, tr("%%SVC_ACT_ACCEPT"), func() -> void: _my_request(true))
 	_action_button(my_req_row, tr("%%SVC_ACT_DECLINE"), func() -> void: _my_request(false))
@@ -91,9 +102,10 @@ func _build() -> void:
 	_action_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_directory())
 	_action_button(search_row, tr("%%SVC_ACT_JOIN"), func() -> void: _join_selected())
 	pages[1].add_child(search_row)
-	_directory = _list(320.0)
+	_page_directory = ServicePage.new()
+	_page_directory.load_requested.connect(_load_directory)
+	_directory = _paged_list(pages[1], tr("%%SVC_LBL_DIRECTORY"), _page_directory, 320.0)
 	_directory.item_selected.connect(func(_i: int) -> void: _load_detail())
-	pages[1].add_child(_titled(tr("%%SVC_LBL_DIRECTORY"), _directory, true))
 	var invite_row := _row()
 	_invite_picker = ServiceTargetPicker.new()
 	_invite_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
@@ -111,13 +123,15 @@ func _build() -> void:
 	_action_button(membership_row, tr("%%SVC_ACT_DISBAND"), func() -> void: _disband_selected())
 	pages[2].add_child(membership_row)
 	var detail_columns := _row(18)
-	_members = _list(150.0)
-	detail_columns.add_child(_titled(tr("%%SVC_LBL_MEMBERS"), _members, true))
+	_page_members = ServicePage.new()
+	_page_members.load_requested.connect(_load_members)
+	_members = _paged_list(detail_columns, tr("%%SVC_LBL_MEMBERS"), _page_members, 150.0)
 	_ranks = _list(150.0)
 	_ranks.item_selected.connect(func(_i: int) -> void: _load_rank_permissions())
 	detail_columns.add_child(_titled(tr("%%SVC_LBL_RANKS"), _ranks, true))
-	_requests = _list(150.0)
-	detail_columns.add_child(_titled(tr("%%SVC_LBL_REQUESTS"), _requests, true))
+	_page_requests = ServicePage.new()
+	_page_requests.load_requested.connect(_load_requests)
+	_requests = _paged_list(detail_columns, tr("%%SVC_LBL_REQUESTS"), _page_requests, 150.0)
 	pages[2].add_child(detail_columns)
 
 	var manage_row := _row()
@@ -211,8 +225,9 @@ func _build() -> void:
 	pages[4].add_child(_titled(tr("%%SVC_TAB_TREASURY"), corp))
 	_corp_wallet = _list(120.0)
 	pages[4].add_child(_titled(tr("%%SVC_LBL_CORP_ACCOUNTS"), _corp_wallet, true))
-	_corp_ledger = _list(120.0)
-	pages[4].add_child(_titled(tr("%%SVC_LBL_LEDGER"), _corp_ledger, true))
+	_page_corp_ledger = ServicePage.new()
+	_page_corp_ledger.load_requested.connect(_load_corp_ledger)
+	_corp_ledger = _paged_list(pages[4], tr("%%SVC_LBL_LEDGER"), _page_corp_ledger, 120.0)
 	_corp_report = _list(120.0)
 	pages[4].add_child(_titled(tr("%%SVC_LBL_FINANCIAL_REPORT"), _corp_report, true))
 	var donation := _row()
@@ -223,16 +238,22 @@ func _build() -> void:
 	pages[4].add_child(donation)
 
 	# The corporation's own tax debts, settled from the same pick as the treasury.
-	_corp_taxes = _list(110.0)
-	pages[4].add_child(_titled(tr("%%SVC_LBL_TAX_DEBTS"), _corp_taxes, true))
+	_page_corp_taxes = ServicePage.new()
+	_page_corp_taxes.load_requested.connect(_load_corp_taxes)
+	_corp_taxes = _paged_list(pages[4], tr("%%SVC_LBL_TAX_DEBTS"), _page_corp_taxes, 110.0)
 	_action_button(pages[4], tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
 
-	# Salaries / prime / payroll — the same corporation pick as the treasury.
+	# Salaries / prime / payroll — the same corporation pick as the treasury. The role defaults are
+	# a fixed table; the per-member overrides are the window the footer walks.
 	var salary_columns := _row(18)
 	_salary_roles = _list(120.0)
 	salary_columns.add_child(_titled(tr("%%SVC_LBL_ROLE_DEFAULTS"), _salary_roles, true))
-	_salary_members = _list(120.0)
-	salary_columns.add_child(_titled(tr("%%SVC_LBL_MEMBER_OVERRIDES"), _salary_members, true))
+	_page_salary_members = ServicePage.new()
+	_page_salary_members.rows_key = "memberOverrides"
+	_page_salary_members.total_keys = PackedStringArray(["memberOverridesTotal"])
+	_page_salary_members.load_requested.connect(_load_salary_members)
+	_salary_members = _paged_list(salary_columns, tr("%%SVC_LBL_MEMBER_OVERRIDES"),
+			_page_salary_members, 120.0)
 	pages[4].add_child(salary_columns)
 	_action_button(pages[4], tr("%%SVC_ACT_LOAD_SALARIES"), func() -> void: _load_salaries())
 
@@ -276,16 +297,58 @@ func _build() -> void:
 func refresh() -> void:
 	if not _begin_refresh():
 		return
-	var mine: Dictionary = await PlayerServices.my_corporations()
-	var my_requests: Dictionary = await PlayerServices.my_corporation_requests()
-	var directory: Dictionary = await PlayerServices.corporations_list()
-	_apply_mine(mine)
-	_apply_my_requests(my_requests)
-	_apply_directory(directory)
+	await _load_mine()
+	await _load_my_requests()
+	await _load_directory()
 	_end_refresh()
 
 
-func _apply_mine(result: Dictionary) -> void:
+func _load_mine() -> void:
+	var at: int = _page_mine.offset
+	var result: Dictionary = await PlayerServices.my_corporations(_page_mine.limit, at)
+	if _land(_page_mine, at, result):
+		_apply_mine(_page_mine, result)
+
+
+func _load_my_requests() -> void:
+	var at: int = _page_my_requests.offset
+	var result: Dictionary = await PlayerServices.my_corporation_requests(
+			_page_my_requests.limit, at)
+	if _land(_page_my_requests, at, result):
+		_fill_requests(_page_my_requests, _my_requests, result, tr("%%SVC_MSG_NO_PENDING"))
+
+
+func _load_directory() -> void:
+	var at: int = _page_directory.offset
+	var result: Dictionary = await PlayerServices.corporations_list(_search.text.strip_edges(),
+			_page_directory.limit, at)
+	if _land(_page_directory, at, result):
+		_apply_directory(_page_directory, result)
+
+
+## The members of the corporation being managed. The window belongs to whichever corporation is
+## selected, so opening one starts it again at the first page.
+func _load_members() -> void:
+	if _selected_id == "":
+		return
+	var at: int = _page_members.offset
+	var result: Dictionary = await PlayerServices.corporation_members(_selected_id,
+			PlayerServices.SERVICE_SOCIAL, _page_members.limit, at)
+	if _land(_page_members, at, result):
+		_fill_simple(_members, result, ServiceTypes.member_line, tr("%%SVC_MSG_NO_MEMBERS"))
+
+
+func _load_requests() -> void:
+	if _selected_id == "":
+		return
+	var at: int = _page_requests.offset
+	var result: Dictionary = await PlayerServices.corporation_requests(_selected_id,
+			_page_requests.limit, at)
+	if _land(_page_requests, at, result):
+		_fill_requests(_page_requests, _requests, result, tr("%%SVC_MSG_NO_REQUESTS"))
+
+
+func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 	for child: Node in _my_corps_grid.get_children():
 		_my_corps_grid.remove_child(child)
 		child.queue_free()
@@ -299,8 +362,8 @@ func _apply_mine(result: Dictionary) -> void:
 		_my_corps_grid.columns = 1
 		_my_corps_grid.add_child(error)
 		return
-	var memberships: Variant = result.get("data")
-	if not (memberships is Array) or (memberships as Array).is_empty():
+	var memberships: Array = page.rows(result)
+	if memberships.is_empty():
 		var empty := _label(tr("%%SVC_MSG_NO_CORPS"), ServiceStyle.MUTED)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -344,17 +407,13 @@ func _corp_tile(membership: Dictionary) -> Button:
 	return tile
 
 
-func _apply_my_requests(result: Dictionary) -> void:
-	_fill_requests(_my_requests, result, tr("%%SVC_MSG_NO_PENDING"))
-
-
-func _apply_directory(result: Dictionary) -> void:
+func _apply_directory(page: ServicePage, result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(_directory, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for corp: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for corp: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.corporation_line(corp))
 		metadata.append(corp)
 	if lines.is_empty():
@@ -362,13 +421,13 @@ func _apply_directory(result: Dictionary) -> void:
 	_fill_list(_directory, lines, metadata)
 
 
-func _fill_requests(list: ItemList, result: Dictionary, empty: String) -> void:
+func _fill_requests(page: ServicePage, list: ItemList, result: Dictionary, empty: String) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for request: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for request: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.request_line(request))
 		metadata.append(request)
 	if lines.is_empty():
@@ -378,8 +437,8 @@ func _fill_requests(list: ItemList, result: Dictionary, empty: String) -> void:
 
 func _search_directory() -> void:
 	release_fields()
-	var result: Dictionary = await PlayerServices.corporations_list(_search.text.strip_edges())
-	_apply_directory(result)
+	# A new question: back to the first window, which loads it with the new query.
+	_page_directory.reset()
 
 
 func _select_corp(id: String) -> void:
@@ -434,8 +493,8 @@ func _open_detail(corporation_id: String) -> void:
 				str(corp.get("name", "")))
 		var parent_text: String = ServiceTypes.dash(corp.get("parentId"))
 		var subsidiary_text := PackedStringArray()
-		if bool(subsidiaries.get("ok", false)) and subsidiaries.get("data") is Array:
-			for subsidiary: Dictionary in subsidiaries.get("data"):
+		if bool(subsidiaries.get("ok", false)):
+			for subsidiary: Dictionary in ServicePage.items_of(subsidiaries):
 				subsidiary_text.append(ServiceTypes.corporation_line(subsidiary))
 		_detail.text = "\n".join([
 			ServiceTypes.corporation_line(corp),
@@ -445,12 +504,11 @@ func _open_detail(corporation_id: String) -> void:
 		])
 	elif not bool(detail.get("ok", false)):
 		_detail.text = HttpClient.describe_error(detail)
-	var members: Dictionary = await PlayerServices.corporation_members(_selected_id)
 	var ranks: Dictionary = await PlayerServices.corporation_ranks(_selected_id)
-	var requests: Dictionary = await PlayerServices.corporation_requests(_selected_id)
-	_fill_simple(_members, members, ServiceTypes.member_line, tr("%%SVC_MSG_NO_MEMBERS"))
 	_fill_simple(_ranks, ranks, ServiceTypes.rank_line, tr("%%SVC_MSG_NO_RANKS"))
-	_fill_requests(_requests, requests, tr("%%SVC_MSG_NO_REQUESTS"))
+	# The two paged lists below are scoped to this corporation: start them at its first window.
+	_page_members.reset()
+	_page_requests.reset()
 	# The permission grid below is built once per session, and always re-read: the rank list it
 	# describes has just been replaced, so its ticks point at a rank that no longer exists.
 	await _prepare_permission_grid()
@@ -458,13 +516,15 @@ func _open_detail(corporation_id: String) -> void:
 	goto_segment(2)
 
 
+## Fill a plain list from a response whose rows are not behind a window of their own (the ranks
+## are a bare array, a corporation's members a page object) — the service's error wins over rows.
 func _fill_simple(list: ItemList, result: Dictionary, formatter: Callable, empty: String) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for item: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for item: Dictionary in ServicePage.items_of(result):
 		lines.append(formatter.call(item))
 		metadata.append(item)
 	if lines.is_empty():
@@ -772,12 +832,34 @@ func _load_corp() -> void:
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
+	# The pick (or the movement just made) is what this page now shows: both windows start again
+	# at their first page — which is also where a brand-new transaction lands.
+	_page_corp_ledger.reset()
+	_page_corp_taxes.reset()
 	var wallet: Dictionary = await PlayerServices.corporation_wallet(corporation_id)
-	var ledger: Dictionary = await PlayerServices.corporation_wallet_transactions(corporation_id)
-	var taxes: Dictionary = await PlayerServices.corporation_taxes(corporation_id)
 	_apply_corp_accounts(wallet)
-	_apply_corp_ledger(ledger)
-	_apply_taxes(_corp_taxes, taxes)
+
+
+func _load_corp_ledger() -> void:
+	var corporation_id: String = _picked_corp()
+	if corporation_id == "":
+		return
+	var at: int = _page_corp_ledger.offset
+	var result: Dictionary = await PlayerServices.corporation_wallet_transactions(corporation_id,
+			_page_corp_ledger.limit, at)
+	if _land(_page_corp_ledger, at, result):
+		_apply_corp_ledger(_page_corp_ledger, result)
+
+
+func _load_corp_taxes() -> void:
+	var corporation_id: String = _picked_corp()
+	if corporation_id == "":
+		return
+	var at: int = _page_corp_taxes.offset
+	var result: Dictionary = await PlayerServices.corporation_taxes(corporation_id,
+			_page_corp_taxes.limit, at)
+	if _land(_page_corp_taxes, at, result):
+		_apply_taxes(_page_corp_taxes, _corp_taxes, result)
 
 
 ## Settle everything the corporation can afford, right where the treasury sits — the balance the
@@ -816,13 +898,13 @@ func _apply_corp_accounts(result: Dictionary) -> void:
 	_fill_list(_corp_wallet, lines, metadata)
 
 
-func _apply_corp_ledger(result: Dictionary) -> void:
+func _apply_corp_ledger(page: ServicePage, result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(_corp_ledger, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for transaction: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for transaction: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.transaction_line(transaction))
 		metadata.append(transaction)
 	if lines.is_empty():
@@ -831,14 +913,14 @@ func _apply_corp_ledger(result: Dictionary) -> void:
 
 
 ## Tax debts into a list: what is owed, and what has already been settled.
-func _apply_taxes(list: ItemList, result: Dictionary) -> void:
+func _apply_taxes(page: ServicePage, list: ItemList, result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([
 				tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for debt: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for debt: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.tax_debt_line(debt))
 		metadata.append(debt)
 	if lines.is_empty():
@@ -896,7 +978,20 @@ func _load_salaries() -> void:
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
 		return
-	var result: Dictionary = await PlayerServices.corporation_salaries(corporation_id)
+	# Overrides changed (or another corporation was picked): back to its first window, which
+	# fetches the role defaults and the overrides together.
+	_page_salary_members.reset()
+
+
+func _load_salary_members() -> void:
+	var corporation_id: String = _picked_corp()
+	if corporation_id == "":
+		return
+	var at: int = _page_salary_members.offset
+	var result: Dictionary = await PlayerServices.corporation_salaries(corporation_id,
+			_page_salary_members.limit, at)
+	if not _land(_page_salary_members, at, result):
+		return
 	if not bool(result.get("ok", false)):
 		var error: String = tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))
 		_fill_list(_salary_roles, PackedStringArray([error]))
@@ -905,8 +1000,8 @@ func _load_salaries() -> void:
 	var data: Dictionary = result.get("data", {}) if result.get("data") is Dictionary else {}
 	_apply_salary_list(_salary_roles, data.get("roleDefaults"), ServiceTypes.salary_role_line,
 			tr("%%SVC_MSG_NO_SALARIES"))
-	_apply_salary_list(_salary_members, data.get("memberOverrides"), ServiceTypes.salary_member_line,
-			tr("%%SVC_MSG_NO_SALARIES"))
+	_apply_salary_list(_salary_members, _page_salary_members.rows(result),
+			ServiceTypes.salary_member_line, tr("%%SVC_MSG_NO_SALARIES"))
 
 
 func _apply_salary_list(list: ItemList, value: Variant, formatter: Callable, empty: String) -> void:

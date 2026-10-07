@@ -13,13 +13,16 @@ var _create_shortcut: HBoxContainer
 var _actions: HBoxContainer
 var _disband_button: Button
 var _members: VBoxContainer
+var _page_members: ServicePage
 var _edit_box: VBoxContainer
 var _edit_name: LineEdit
 var _edit_description: LineEdit
 var _edit_max: LineEdit
 var _invite_box: VBoxContainer
 var _invitees: VBoxContainer
+var _page_invitees: ServicePage
 var _invitations: VBoxContainer
+var _page_invitations: ServicePage
 var _create_name: LineEdit
 var _create_description: LineEdit
 var _create_max: LineEdit
@@ -66,7 +69,9 @@ func _build_squad_page(page: VBoxContainer) -> void:
 	# Members as contact cards — same face as the Contacts app, with the kick on each row.
 	var members_scroll := _card_list(160.0)
 	_members = members_scroll[1]
-	page.add_child(_titled(tr("%%SVC_LBL_MEMBERS"), members_scroll[0], true))
+	_page_members = ServicePage.new()
+	_page_members.load_requested.connect(_load_members)
+	_paged_box(page, tr("%%SVC_LBL_MEMBERS"), _page_members, members_scroll[0])
 
 	# Edit (owner): refilled on every refresh, PATCH only sends what is filled in.
 	var edit := VBoxContainer.new()
@@ -87,8 +92,11 @@ func _build_squad_page(page: VBoxContainer) -> void:
 	# Invite (owner, while there is room): the contact list, one tap per invite.
 	var invitees_scroll := _card_list(160.0)
 	_invitees = invitees_scroll[1]
-	_invite_box = _titled(tr("%%SVC_LBL_INVITE_CONTACTS"), invitees_scroll[0], true)
-	page.add_child(_invite_box)
+	_page_invitees = ServicePage.new()
+	_page_invitees.limit = 100
+	_page_invitees.load_requested.connect(_load_invitees)
+	_invite_box = _paged_box(page, tr("%%SVC_LBL_INVITE_CONTACTS"), _page_invitees,
+			invitees_scroll[0])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -99,7 +107,9 @@ func _build_squad_page(page: VBoxContainer) -> void:
 func _build_invitations_page(page: VBoxContainer) -> void:
 	var scroll := _card_list(260.0)
 	_invitations = scroll[1]
-	page.add_child(_titled(tr("%%SVC_LBL_PENDING_REQUESTS"), scroll[0], true))
+	_page_invitations = ServicePage.new()
+	_page_invitations.load_requested.connect(_load_invitations)
+	_paged_box(page, tr("%%SVC_LBL_PENDING_REQUESTS"), _page_invitations, scroll[0])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -130,15 +140,35 @@ func refresh() -> void:
 	if not _begin_refresh():
 		return
 	var my: Dictionary = await PlayerServices.my_group()
-	var invitations: Dictionary = await PlayerServices.group_invitations()
 	_apply_group(my)
-	_apply_invitations(invitations)
+	await _load_invitations()
 	if _group_id != "":
-		var members: Dictionary = await PlayerServices.group_members(_group_id)
-		var friends: Dictionary = await PlayerServices.friends_list()
-		_apply_members(members)
-		_apply_invitees(friends)
+		await _load_members()
+		await _load_invitees()
 	_end_refresh()
+
+
+func _load_members() -> void:
+	if _group_id == "":
+		return
+	var at: int = _page_members.offset
+	var result: Dictionary = await PlayerServices.group_members(_group_id, _page_members.limit, at)
+	if _land(_page_members, at, result):
+		_apply_members(result)
+
+
+func _load_invitees() -> void:
+	var at: int = _page_invitees.offset
+	var result: Dictionary = await PlayerServices.friends_list(_page_invitees.limit, at)
+	if _land(_page_invitees, at, result):
+		_apply_invitees(result)
+
+
+func _load_invitations() -> void:
+	var at: int = _page_invitations.offset
+	var result: Dictionary = await PlayerServices.group_invitations(_page_invitations.limit, at)
+	if _land(_page_invitations, at, result):
+		_apply_invitations(result)
 
 
 ## /api/me/groups answers Group + joinedAt, or null when the player has no group.
@@ -177,6 +207,8 @@ func _set_group_ui(in_group: bool, owner: bool) -> void:
 	if not in_group:
 		_clear(_members)
 		_clear(_invitees)
+		# Nothing to walk through any more: the members footer goes with the list it fed.
+		_page_members.clear()
 
 
 ## The group line: name alone while the payload has no memberCount, name + head count once
@@ -193,17 +225,15 @@ func _apply_members(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_members.add_child(_note_label(HttpClient.describe_error(result), WARN))
 		return
-	var items: Variant = result.get("data")
 	var count := 0
-	for member: Dictionary in (items if items is Array else []):
+	for member: Dictionary in _page_members.rows(result):
 		_members.add_child(_member_card(member))
 		count += 1
 	if count == 0:
 		_members.add_child(_note_label(tr("%%SVC_MSG_NO_MEMBERS"), DIM))
-	# /api/me/groups has no memberCount: the list we just received IS the count.
-	if items is Array:
-		_group["memberCount"] = (items as Array).size()
-		_render_summary()
+	# /api/me/groups has no memberCount: the total of the list we just received IS the count.
+	_group["memberCount"] = _page_members.total
+	_render_summary()
 
 
 func _apply_invitees(result: Dictionary) -> void:
@@ -211,9 +241,8 @@ func _apply_invitees(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_invitees.add_child(_note_label(HttpClient.describe_error(result), WARN))
 		return
-	var items: Variant = result.get("data")
 	var count := 0
-	for friend: Dictionary in (items if items is Array else []):
+	for friend: Dictionary in _page_invitees.rows(result):
 		_invitees.add_child(_invitee_card(friend))
 		count += 1
 	if count == 0:
@@ -225,9 +254,8 @@ func _apply_invitations(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_invitations.add_child(_note_label(HttpClient.describe_error(result), WARN))
 		return
-	var items: Variant = result.get("data")
 	var count := 0
-	for invitation: Dictionary in (items if items is Array else []):
+	for invitation: Dictionary in _page_invitations.rows(result):
 		_invitations.add_child(_invitation_card(invitation))
 		count += 1
 	if count == 0:

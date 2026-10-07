@@ -36,6 +36,7 @@ const KIND_ENTRIES: Array = [
 var _catalog: ItemList
 var _book: Label
 var _orders: ItemList
+var _page_orders: ServicePage
 var _order_good: LineEdit
 var _order_side: OptionButton
 var _order_status: OptionButton
@@ -47,6 +48,7 @@ var _order_currency: LineEdit
 var _order_instance: LineEdit
 var _order_corp_picker: ServiceTargetPicker
 var _demands: ItemList
+var _page_demands: ServicePage
 var _demand_good: LineEdit
 var _demand_status: OptionButton
 var _demand_kind: OptionButton
@@ -58,6 +60,7 @@ var _demand_message: LineEdit
 var _demand_corp_picker: ServiceTargetPicker
 var _fulfill_price: LineEdit
 var _trades: ItemList
+var _page_trades: ServicePage
 var _trade_status: OptionButton
 
 
@@ -94,10 +97,11 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	filters.add_child(_order_good)
 	filters.add_child(_order_side)
 	filters.add_child(_order_status)
-	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _load_orders())
+	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_orders())
 	page.add_child(filters)
-	_orders = _list(240.0)
-	page.add_child(_titled(tr("%%SVC_TAB_ORDERS"), _orders, true))
+	_page_orders = ServicePage.new()
+	_page_orders.load_requested.connect(_load_orders)
+	_orders = _paged_list(page, tr("%%SVC_TAB_ORDERS"), _page_orders, 240.0)
 	_action_button(page, tr("%%SVC_ACT_CANCEL_ORDER"), func() -> void: _cancel_order())
 
 	var form := VBoxContainer.new()
@@ -137,10 +141,11 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	filters.add_child(_label(tr("%%SVC_LBL_GOOD_TYPE"), DIM))
 	filters.add_child(_demand_good)
 	filters.add_child(_demand_status)
-	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _load_demands())
+	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_demands())
 	page.add_child(filters)
-	_demands = _list(220.0)
-	page.add_child(_titled(tr("%%SVC_TAB_DEMANDS"), _demands, true))
+	_page_demands = ServicePage.new()
+	_page_demands.load_requested.connect(_load_demands)
+	_demands = _paged_list(page, tr("%%SVC_TAB_DEMANDS"), _page_demands, 220.0)
 	var actions := _row()
 	_action_button(actions, tr("%%SVC_ACT_CANCEL_DEMAND"), func() -> void: _cancel_demand())
 	_fulfill_price = _number_field(tr("%%SVC_PH_UNIT_PRICE"), 150.0)
@@ -182,23 +187,21 @@ func _build_trades_page(page: VBoxContainer) -> void:
 	var filters := _row()
 	_trade_status = _option_enum(TRADE_STATUS_ENTRIES, 150.0)
 	filters.add_child(_trade_status)
-	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _load_trades())
+	_action_button(filters, tr("%%SVC_ACT_SEARCH"), func() -> void: _search_trades())
 	page.add_child(filters)
-	_trades = _list(320.0)
-	page.add_child(_titled(tr("%%SVC_TAB_TRADES"), _trades, true))
+	_page_trades = ServicePage.new()
+	_page_trades.load_requested.connect(_load_trades)
+	_trades = _paged_list(page, tr("%%SVC_TAB_TRADES"), _page_trades, 320.0)
 
 
 func refresh() -> void:
 	if not _begin_refresh():
 		return
 	var catalog: Dictionary = await PlayerServices.market_catalog()
-	var orders: Dictionary = await PlayerServices.market_orders()
-	var demands: Dictionary = await PlayerServices.market_demands()
-	var trades: Dictionary = await PlayerServices.market_trades()
 	_apply_catalog(catalog)
-	_apply(orders, _orders, ServiceTypes.order_line, tr("%%SVC_MSG_NO_ORDERS"))
-	_apply(demands, _demands, ServiceTypes.demand_line, tr("%%SVC_MSG_NO_DEMANDS"))
-	_apply(trades, _trades, ServiceTypes.trade_line, tr("%%SVC_MSG_NO_TRADES"))
+	await _load_orders()
+	await _load_demands()
+	await _load_trades()
 	_end_refresh()
 
 
@@ -233,32 +236,54 @@ func _load_book() -> void:
 	_book.text = "%s — %s" % [good_type, ServiceTypes.book_line(result.get("data"))]
 
 
-func _load_orders() -> void:
+## A new filter answers a new question: back to the first window, which loads it.
+func _search_orders() -> void:
 	release_fields()
+	_page_orders.reset()
+
+
+func _load_orders() -> void:
+	var at: int = _page_orders.offset
 	var result: Dictionary = await PlayerServices.market_orders(_order_good.text.strip_edges(),
-			_enum_value(_order_side), _enum_value(_order_status))
-	_apply(result, _orders, ServiceTypes.order_line, tr("%%SVC_MSG_NO_ORDERS"))
+			_enum_value(_order_side), _enum_value(_order_status), _page_orders.limit, at)
+	if _land(_page_orders, at, result):
+		_apply(_page_orders, result, _orders, ServiceTypes.order_line, tr("%%SVC_MSG_NO_ORDERS"))
+
+
+func _search_demands() -> void:
+	release_fields()
+	_page_demands.reset()
 
 
 func _load_demands() -> void:
-	release_fields()
+	var at: int = _page_demands.offset
 	var result: Dictionary = await PlayerServices.market_demands(_demand_good.text.strip_edges(),
-			_enum_value(_demand_status))
-	_apply(result, _demands, ServiceTypes.demand_line, tr("%%SVC_MSG_NO_DEMANDS"))
+			_enum_value(_demand_status), _page_demands.limit, at)
+	if _land(_page_demands, at, result):
+		_apply(_page_demands, result, _demands, ServiceTypes.demand_line, tr("%%SVC_MSG_NO_DEMANDS"))
+
+
+func _search_trades() -> void:
+	release_fields()
+	_page_trades.reset()
 
 
 func _load_trades() -> void:
-	var result: Dictionary = await PlayerServices.market_trades(_enum_value(_trade_status))
-	_apply(result, _trades, ServiceTypes.trade_line, tr("%%SVC_MSG_NO_TRADES"))
+	var at: int = _page_trades.offset
+	var result: Dictionary = await PlayerServices.market_trades(_enum_value(_trade_status),
+			_page_trades.limit, at)
+	if _land(_page_trades, at, result):
+		_apply(_page_trades, result, _trades, ServiceTypes.trade_line, tr("%%SVC_MSG_NO_TRADES"))
 
 
-func _apply(result: Dictionary, list: ItemList, formatter: Callable, empty: String) -> void:
+func _apply(page: ServicePage, result: Dictionary, list: ItemList, formatter: Callable,
+		empty: String) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for item: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for item: Dictionary in page.rows(result):
 		lines.append(formatter.call(item))
 		metadata.append(item)
 	if lines.is_empty():

@@ -9,13 +9,18 @@ extends ServicePanel
 ## Onglets : 0 = carnet, 1 = demandes, 2 = ajouter, 3 = bloqués. Les conteneurs de chaque liste sont
 ## gardés pour qu'« Actualiser » puisse toutes les reconstruire.
 var _roster: VBoxContainer
+var _page_roster: ServicePage
 var _filter: LineEdit
 var _detail_box: VBoxContainer
 var _incoming: VBoxContainer
 var _outgoing: VBoxContainer
+var _page_requests: ServicePage
 var _suggestions: VBoxContainer
+var _page_suggestions: ServicePage
 var _results: VBoxContainer
+var _page_search: ServicePage
 var _blocks: VBoxContainer
+var _page_blocks: ServicePage
 var _search: LineEdit
 
 ## Le dernier payload d'amis, gardé pour que le filtre local re-rende sans refaire un appel réseau.
@@ -47,6 +52,13 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 	# La page doit remplir la hauteur pour que les deux colonnes prennent toute la tablette.
 	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
+	# The roster is one big window rather than the API's default: its filter and its alphabetical
+	# order are local, so the fewer pages the list is cut into, the more of the phone-book feeling
+	# survives. Beyond a hundred contacts the footer takes over.
+	_page_roster = ServicePage.new()
+	_page_roster.limit = 100
+	_page_roster.load_requested.connect(_load_roster)
+
 	var columns := _row(18)
 	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -70,6 +82,7 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 	_roster.add_theme_constant_override("separation", 8)
 	scroll.add_child(_roster)
 	left.add_child(scroll)
+	left.add_child(_pager(_page_roster))
 	columns.add_child(left)
 
 	# Colonne droite : la fiche du contact sélectionné.
@@ -93,10 +106,15 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_requests_page(page: VBoxContainer) -> void:
+	# One window carries both halves of the tab, so the footer sits under the first of them.
+	_page_requests = ServicePage.new()
+	_page_requests.rows_key = "incoming"
+	_page_requests.total_keys = PackedStringArray(["incomingTotal", "outgoingTotal"])
+	_page_requests.load_requested.connect(_load_requests)
 	_incoming = VBoxContainer.new()
 	_incoming.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_incoming.add_theme_constant_override("separation", 8)
-	page.add_child(_titled(tr("%%SVC_LBL_INCOMING_REQUESTS"), _incoming, true))
+	_paged_box(page, tr("%%SVC_LBL_INCOMING_REQUESTS"), _page_requests, _incoming)
 	_outgoing = VBoxContainer.new()
 	_outgoing.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_outgoing.add_theme_constant_override("separation", 8)
@@ -114,14 +132,18 @@ func _build_add_page(page: VBoxContainer) -> void:
 	search_row.add_child(_search)
 	_action_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _run_search())
 	page.add_child(_titled(tr("%%SVC_LBL_SEARCH_PLAYER"), search_row))
+	_page_search = ServicePage.new()
+	_page_search.load_requested.connect(_load_search)
 	_results = VBoxContainer.new()
 	_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_results.add_theme_constant_override("separation", 8)
-	page.add_child(_titled(tr("%%SVC_LBL_RESULTS"), _results, true))
+	_paged_box(page, tr("%%SVC_LBL_RESULTS"), _page_search, _results)
+	_page_suggestions = ServicePage.new()
+	_page_suggestions.load_requested.connect(_load_suggestions)
 	_suggestions = VBoxContainer.new()
 	_suggestions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_suggestions.add_theme_constant_override("separation", 8)
-	page.add_child(_titled(tr("%%SVC_LBL_RECENTLY_MET"), _suggestions, true))
+	_paged_box(page, tr("%%SVC_LBL_RECENTLY_MET"), _page_suggestions, _suggestions)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -129,10 +151,12 @@ func _build_add_page(page: VBoxContainer) -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_blocks_page(page: VBoxContainer) -> void:
+	_page_blocks = ServicePage.new()
+	_page_blocks.load_requested.connect(_load_blocks)
 	_blocks = VBoxContainer.new()
 	_blocks.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_blocks.add_theme_constant_override("separation", 8)
-	page.add_child(_titled(tr("%%SVC_LBL_BLOCKED_PLAYERS"), _blocks, true))
+	_paged_box(page, tr("%%SVC_LBL_BLOCKED_PLAYERS"), _page_blocks, _blocks)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -142,21 +166,45 @@ func _build_blocks_page(page: VBoxContainer) -> void:
 func refresh() -> void:
 	if not _begin_refresh():
 		return
-	var friends: Dictionary = await PlayerServices.friends_list()
-	var requests: Dictionary = await PlayerServices.friend_requests()
-	var suggestions: Dictionary = await PlayerServices.friend_suggestions()
-	var blocks: Dictionary = await PlayerServices.blocks_list()
-	_apply_friends(friends)
-	_apply_requests(requests)
-	_apply_suggestions(suggestions)
-	_apply_blocks(blocks)
+	await _load_roster()
+	await _load_requests()
+	await _load_suggestions()
+	await _load_blocks()
 	_end_refresh()
+
+
+func _load_roster() -> void:
+	var at: int = _page_roster.offset
+	var result: Dictionary = await PlayerServices.friends_list(_page_roster.limit, at)
+	if _land(_page_roster, at, result):
+		_apply_friends(result)
+
+
+func _load_requests() -> void:
+	var at: int = _page_requests.offset
+	var result: Dictionary = await PlayerServices.friend_requests(_page_requests.limit, at)
+	if _land(_page_requests, at, result):
+		_apply_requests(result)
+
+
+func _load_suggestions() -> void:
+	var at: int = _page_suggestions.offset
+	var result: Dictionary = await PlayerServices.friend_suggestions(_page_suggestions.limit, at)
+	if _land(_page_suggestions, at, result):
+		_apply_suggestions(result)
+
+
+func _load_blocks() -> void:
+	var at: int = _page_blocks.offset
+	var result: Dictionary = await PlayerServices.blocks_list(_page_blocks.limit, at)
+	if _land(_page_blocks, at, result):
+		_apply_blocks(result)
 
 
 func _apply_friends(result: Dictionary) -> void:
 	_friends_cache.clear()
-	if bool(result.get("ok", false)) and result.get("data") is Array:
-		for friend: Dictionary in result.get("data"):
+	if bool(result.get("ok", false)):
+		for friend: Dictionary in _page_roster.rows(result):
 			_friends_cache.append(friend)
 	var error: String = "" if bool(result.get("ok", false)) else HttpClient.describe_error(result)
 	_render_roster(error)
@@ -309,9 +357,8 @@ func _apply_requests(result: Dictionary) -> void:
 		_incoming.add_child(_empty_label(error))
 		_outgoing.add_child(_empty_label(error))
 		return
-	var data: Dictionary = result.get("data", {}) if result.get("data") is Dictionary else {}
-	_fill_requests(_incoming, data.get("incoming"), true)
-	_fill_requests(_outgoing, data.get("outgoing"), false)
+	_fill_requests(_incoming, _page_requests.rows(result), true)
+	_fill_requests(_outgoing, ServicePage.items_of(result, "outgoing"), false)
 
 
 func _fill_requests(box: VBoxContainer, source: Variant, incoming: bool) -> void:
@@ -346,14 +393,25 @@ func _decline_request(request_id: int) -> void:
 
 func _run_search() -> void:
 	release_fields()
+	# A new question: back to the first window, which runs it with whatever is typed now.
+	_page_search.reset()
+
+
+func _load_search() -> void:
+	var at: int = _page_search.offset
+	var result: Dictionary = await PlayerServices.profiles_search(_search.text.strip_edges(),
+			_page_search.limit, "", at)
+	if _land(_page_search, at, result):
+		_fill_search(result)
+
+
+func _fill_search(result: Dictionary) -> void:
 	_clear(_results)
-	var result: Dictionary = await PlayerServices.profiles_search(_search.text.strip_edges())
 	if not bool(result.get("ok", false)):
 		_results.add_child(_empty_label(HttpClient.describe_error(result)))
 		return
-	var profiles: Variant = result.get("data")
 	var count: int = 0
-	for profile: Dictionary in (profiles if profiles is Array else []):
+	for profile: Dictionary in _page_search.rows(result):
 		_results.add_child(_add_contact_card(profile))
 		count += 1
 	if count == 0:
@@ -365,9 +423,8 @@ func _apply_suggestions(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_suggestions.add_child(_empty_label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))))
 		return
-	var items: Variant = result.get("data")
 	var count: int = 0
-	for suggestion: Dictionary in (items if items is Array else []):
+	for suggestion: Dictionary in _page_suggestions.rows(result):
 		var encounters: int = ServiceTypes.num(suggestion.get("encounters"))
 		_suggestions.add_child(_add_contact_card(suggestion, tr("%%SVC_FMT_MET_TIMES") % encounters))
 		count += 1
@@ -399,9 +456,8 @@ func _apply_blocks(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_blocks.add_child(_empty_label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))))
 		return
-	var items: Variant = result.get("data")
 	var count: int = 0
-	for block: Dictionary in (items if items is Array else []):
+	for block: Dictionary in _page_blocks.rows(result):
 		var player_id: String = str(block.get("playerId", ""))
 		_blocks.add_child(_contact_card(block,
 				tr("%%SVC_FMT_BLOCKED_ON") % ServiceTypes.dash(block.get("blockedAt")),

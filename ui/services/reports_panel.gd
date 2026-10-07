@@ -17,6 +17,7 @@ const REASON_ENTRIES: Array = [
 ]
 
 var _reports: ItemList
+var _page_reports: ServicePage
 var _target_type: OptionButton
 var _target_picker: ServiceTargetPicker
 var _reason: OptionButton
@@ -59,16 +60,23 @@ func _build_report_page(page: VBoxContainer) -> void:
 
 
 func _build_history_page(page: VBoxContainer) -> void:
-	_reports = _list(280.0)
-	page.add_child(_titled(tr("%%SVC_LBL_MY_REPORTS"), _reports, true))
+	_page_reports = ServicePage.new()
+	_page_reports.load_requested.connect(_load_reports)
+	_reports = _paged_list(page, tr("%%SVC_LBL_MY_REPORTS"), _page_reports, 280.0)
 
 
 func refresh() -> void:
 	if not _begin_refresh():
 		return
-	var reports: Dictionary = await PlayerServices.reports_list()
-	_apply_reports(reports)
+	await _load_reports()
 	_end_refresh()
+
+
+func _load_reports() -> void:
+	var at: int = _page_reports.offset
+	var result: Dictionary = await PlayerServices.reports_list(_page_reports.limit, at)
+	if _land(_page_reports, at, result):
+		_apply_reports(result)
 
 
 func _apply_reports(result: Dictionary) -> void:
@@ -77,7 +85,7 @@ func _apply_reports(result: Dictionary) -> void:
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for report: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for report: Dictionary in _page_reports.rows(result):
 		lines.append(ServiceTypes.report_line(report))
 		metadata.append(report)
 	if lines.is_empty():

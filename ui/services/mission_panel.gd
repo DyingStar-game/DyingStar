@@ -81,9 +81,12 @@ var _kind: OptionButton
 var _category: OptionButton
 var _visibility: OptionButton
 var _browse: ItemList
+var _page_browse: ServicePage
 var _mine: ItemList
+var _page_mine: ServicePage
 var _created_status: OptionButton
 var _created: ItemList
+var _page_created: ServicePage
 ## Segment 3 — the creation document.
 var _create_title: LineEdit
 var _create_description: TextEdit
@@ -232,9 +235,11 @@ func _build_browse_page(page: VBoxContainer) -> void:
 	filters.add_child(_visibility)
 	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _browse_missions())
 	left.add_child(filters)
-	_browse = _list(240.0)
+	_page_browse = ServicePage.new()
+	_page_browse.rows_key = "missions"
+	_page_browse.load_requested.connect(_load_browse)
+	_browse = _paged_list(left, tr("%%SVC_LBL_AVAILABLE_MISSIONS"), _page_browse, 240.0)
 	_browse.item_selected.connect(func(_i: int) -> void: _open_selected(_browse, contract))
-	left.add_child(_titled(tr("%%SVC_LBL_AVAILABLE_MISSIONS"), _browse, true))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -245,9 +250,11 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
 	var contract: VBoxContainer = parts[1]
-	_mine = _list(320.0)
+	_page_mine = ServicePage.new()
+	_page_mine.rows_key = "missions"
+	_page_mine.load_requested.connect(_load_mine)
+	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
-	left.add_child(_titled(tr("%%SVC_LBL_MY_MISSIONS"), _mine, true))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -264,9 +271,11 @@ func _build_created_page(page: VBoxContainer) -> void:
 	filters.add_child(_created_status)
 	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _created_missions())
 	left.add_child(filters)
-	_created = _list(240.0)
+	_page_created = ServicePage.new()
+	_page_created.rows_key = "missions"
+	_page_created.load_requested.connect(_load_created)
+	_created = _paged_list(left, tr("%%SVC_TAB_MY_CREATIONS"), _page_created, 240.0)
 	_created.item_selected.connect(func(_i: int) -> void: _open_selected(_created, contract))
-	left.add_child(_titled(tr("%%SVC_TAB_MY_CREATIONS"), _created, true))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -369,10 +378,9 @@ func refresh() -> void:
 		return
 	if _catalog.is_empty():
 		await _load_catalog()
-	var mine: Dictionary = await PlayerServices.my_missions()
-	_apply_mine(mine)
-	await _browse_missions()
-	await _created_missions()
+	await _load_mine()
+	await _load_browse()
+	await _load_created()
 	_end_refresh()
 
 
@@ -390,47 +398,65 @@ func _load_catalog() -> void:
 		_say(tr("%%SVC_MSG_NO_CATALOG") + " " + HttpClient.describe_error(result), WARN)
 
 
+## New filters ask a new question: back to the first window, which loads it.
 func _browse_missions() -> void:
+	_page_browse.reset()
+
+
+func _load_browse() -> void:
+	var at: int = _page_browse.offset
 	var result: Dictionary = await PlayerServices.missions_list(
 			_enum_value(_filter_status), _enum_value(_kind), _enum_value(_category),
-			"", "", _enum_value(_visibility))
-	_fill_missions_list(_browse, result, tr("%%SVC_MSG_NO_MISSIONS"))
+			"", "", _enum_value(_visibility), _page_browse.limit, at)
+	if _land(_page_browse, at, result):
+		_fill_missions_list(_page_browse, _browse, result, tr("%%SVC_MSG_NO_MISSIONS"))
+
+
+func _created_missions() -> void:
+	_page_created.reset()
 
 
 ## My own contracts: the issuer filters the catalogue by my player id.
-func _created_missions() -> void:
+func _load_created() -> void:
+	var at: int = _page_created.offset
 	var result: Dictionary = await PlayerServices.missions_list(
-			_enum_value(_created_status), "", "", "player", PlayerServices.player_id(), "", 50)
-	_fill_missions_list(_created, result, tr("%%SVC_MSG_NO_CREATED"))
+			_enum_value(_created_status), "", "", "player", PlayerServices.player_id(), "",
+			_page_created.limit, at)
+	if _land(_page_created, at, result):
+		_fill_missions_list(_page_created, _created, result, tr("%%SVC_MSG_NO_CREATED"))
+
+
+func _load_mine() -> void:
+	var at: int = _page_mine.offset
+	var result: Dictionary = await PlayerServices.my_missions("", _page_mine.limit, at)
+	if _land(_page_mine, at, result):
+		_apply_mine(_page_mine, result)
 
 
 ## Shared loader for the two mission-dict lists (browse + created).
-func _fill_missions_list(list: ItemList, result: Dictionary, empty_text: String) -> void:
+func _fill_missions_list(page: ServicePage, list: ItemList, result: Dictionary,
+		empty_text: String) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	var data: Variant = result.get("data")
-	var missions: Variant = (data as Dictionary).get("missions") if data is Dictionary else data
-	for mission: Dictionary in (missions if missions is Array else []):
+	for mission: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.mission_line(mission))
 		metadata.append(mission)
 	if lines.is_empty():
 		lines.append(empty_text)
 	_fill_list(list, lines, metadata)
-	_say(tr("%%SVC_FMT_MISSION_COUNT") % metadata.size(), DIM)
+	_say(tr("%%SVC_FMT_MISSION_COUNT") % page.total, DIM)
 
 
-func _apply_mine(result: Dictionary) -> void:
+func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(_mine, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	var data: Variant = result.get("data")
-	var missions: Variant = (data as Dictionary).get("missions") if data is Dictionary else data
-	for entry: Dictionary in (missions if missions is Array else []):
+	for entry: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.player_mission_line(entry))
 		metadata.append(entry)
 	if lines.is_empty():

@@ -166,11 +166,11 @@ func profile_update(patch: Dictionary) -> Dictionary:
 	if _ok(r): changed.emit("profile")
 	return r
 
-func my_activity(limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/me/activity", {"limit": limit})
+func my_activity(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/activity", {"limit": limit, "offset": offset})
 
-func my_reputation(limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/me/reputation", {"limit": limit})
+func my_reputation(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/reputation", {"limit": limit, "offset": offset})
 
 func my_sanctions() -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/me/sanctions")
@@ -186,14 +186,16 @@ func permission_catalog() -> Dictionary:
 # Friends
 # ---------------------------------------------------------------------------------------------
 
-func friends_list() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/friends")
+func friends_list(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/friends", {"limit": limit, "offset": offset})
 
-func friends_online() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/friends/online")
+func friends_online(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/friends/online", {"limit": limit, "offset": offset})
 
-func friend_requests() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/friends/requests")
+## Pending friend requests: one window carries both halves, each with its own total.
+func friend_requests(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/friends/requests",
+			{"limit": limit, "offset": offset})
 
 func friend_send(player_id: String) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/friends/requests", {"playerId": player_id})
@@ -210,8 +212,9 @@ func friend_decline(request_id: int) -> Dictionary:
 	if _ok(r): changed.emit("friends")
 	return r
 
-func friend_suggestions(limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/friends/suggestions", {"limit": limit})
+func friend_suggestions(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/friends/suggestions",
+			{"limit": limit, "offset": offset})
 
 func friend_remove(player_id: String) -> Dictionary:
 	var r: Dictionary = await _http_delete(SERVICE_SOCIAL, "/api/friends/%s" % player_id)
@@ -227,8 +230,9 @@ func friend_remove(player_id: String) -> Dictionary:
 func my_group() -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/me/groups")
 
-func group_invitations() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/me/group/invitations")
+func group_invitations(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/group/invitations",
+			{"limit": limit, "offset": offset})
 
 func group_invitation_accept(invitation_id: int) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
@@ -260,8 +264,9 @@ func group_disband(group_id: String) -> Dictionary:
 	if _ok(r): changed.emit("groups")
 	return r
 
-func group_members(group_id: String) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/groups/%s/members" % group_id)
+func group_members(group_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/groups/%s/members" % group_id,
+			{"limit": limit, "offset": offset})
 
 func group_invite(group_id: String, player_id: String) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
@@ -285,9 +290,10 @@ func group_member_remove(group_id: String, player_id: String) -> Dictionary:
 # Profiles
 # ---------------------------------------------------------------------------------------------
 
-func profiles_search(search: String = "", limit: int = 20, entity_type: String = "") -> Dictionary:
+func profiles_search(search: String = "", limit: int = 20, entity_type: String = "",
+		offset: int = 0) -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/profiles",
-			{"search": search, "limit": limit, "entityType": entity_type})
+			{"search": search, "limit": limit, "entityType": entity_type, "offset": offset})
 
 func profile_get_by_id(player_id: String) -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/profiles/%s" % player_id)
@@ -297,8 +303,8 @@ func profile_get_by_id(player_id: String) -> Dictionary:
 # Blocks
 # ---------------------------------------------------------------------------------------------
 
-func blocks_list() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/blocks")
+func blocks_list(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/blocks", {"limit": limit, "offset": offset})
 
 func block_add(player_id: String) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/blocks", {"playerId": player_id})
@@ -315,8 +321,8 @@ func block_remove(player_id: String) -> Dictionary:
 # Reports
 # ---------------------------------------------------------------------------------------------
 
-func reports_list(limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/reports", {"limit": limit})
+func reports_list(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/reports", {"limit": limit, "offset": offset})
 
 func report_create(target_type: String, target_id: String, reason: String, message: String = "") -> Dictionary:
 	var body := {"targetType": target_type, "targetId": target_id, "reason": reason}
@@ -331,8 +337,9 @@ func report_create(target_type: String, target_id: String, reason: String, messa
 # Corporations
 # ---------------------------------------------------------------------------------------------
 
-func corporations_list(search: String = "", limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/corporations", {"search": search, "limit": limit})
+func corporations_list(search: String = "", limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/corporations",
+			{"search": search, "limit": limit, "offset": offset})
 
 func corporation_create(name: String, ticker: String, description: String = "",
 		recruitment: String = "apply") -> Dictionary:
@@ -356,13 +363,16 @@ func corporation_disband(corporation_id: String) -> Dictionary:
 	if _ok(r): changed.emit("corporations")
 	return r
 
-func corporation_activity(corporation_id: String, limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/activity" % corporation_id, {"limit": limit})
+func corporation_activity(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/activity" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 ## Members are served on the same path by BOTH social and economie (different shapes). [param service]
 ## picks which one answers.
-func corporation_members(corporation_id: String, service: String = SERVICE_SOCIAL) -> Dictionary:
-	return await _http_get(service, "/api/corporations/%s/members" % corporation_id)
+func corporation_members(corporation_id: String, service: String = SERVICE_SOCIAL,
+		limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(service, "/api/corporations/%s/members" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 func corporation_member_rank(corporation_id: String, player_id: String, rank_id: int) -> Dictionary:
 	var r: Dictionary = await _http_patch(SERVICE_SOCIAL,
@@ -398,8 +408,9 @@ func corporation_rank_delete(corporation_id: String, rank_id: int) -> Dictionary
 	if _ok(r): changed.emit("corporations")
 	return r
 
-func corporation_requests(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/requests" % corporation_id)
+func corporation_requests(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/requests" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 func corporation_request_accept(corporation_id: String, request_id: int) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL,
@@ -443,15 +454,18 @@ func corporation_set_parent(corporation_id: String, parent_id: String) -> Dictio
 	return r
 
 ## Direct subsidiaries of a corporation (holding companies own others).
-func corporation_subsidiaries(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/subsidiaries" % corporation_id)
+func corporation_subsidiaries(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/corporations/%s/subsidiaries" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 ## Every corporation the caller belongs to, with rank (empty array when none).
-func my_corporations() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/me/corporations")
+func my_corporations(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/corporations",
+			{"limit": limit, "offset": offset})
 
-func my_corporation_requests() -> Dictionary:
-	return await _http_get(SERVICE_SOCIAL, "/api/me/corporation/requests")
+func my_corporation_requests(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/me/corporation/requests",
+			{"limit": limit, "offset": offset})
 
 func my_corporation_request_accept(request_id: int) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/me/corporation/requests/%d/accept" % request_id)
@@ -470,10 +484,11 @@ func my_corporation_request_decline(request_id: int) -> Dictionary:
 
 func missions_list(status: String = "", kind: String = "", category: String = "",
 		issuer_type: String = "", issuer_id: String = "", visibility: String = "",
-		limit: int = 20) -> Dictionary:
+		limit: int = 20, offset: int = 0) -> Dictionary:
 	return await _http_get(SERVICE_MISSION, "/api/missions", {
 		"status": status, "kind": kind, "category": category,
-		"issuerType": issuer_type, "issuerId": issuer_id, "visibility": visibility, "limit": limit,
+		"issuerType": issuer_type, "issuerId": issuer_id, "visibility": visibility,
+		"limit": limit, "offset": offset,
 	})
 
 ## The mission builder's discovery catalogue: categories, objective kinds (evaluation, quantity
@@ -537,8 +552,9 @@ func mission_confirm(mission_id: String, objective_id: String) -> Dictionary:
 	if _ok(r): changed.emit("missions")
 	return r
 
-func my_missions(status: String = "", limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_MISSION, "/api/me/missions", {"status": status, "limit": limit})
+func my_missions(status: String = "", limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_MISSION, "/api/me/missions",
+			{"status": status, "limit": limit, "offset": offset})
 
 
 # ---------------------------------------------------------------------------------------------
@@ -548,8 +564,9 @@ func my_missions(status: String = "", limit: int = 20) -> Dictionary:
 func wallet() -> Dictionary:
 	return await _http_get(SERVICE_ECONOMIE, "/api/me/wallet")
 
-func wallet_transactions(limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_ECONOMIE, "/api/me/wallet/transactions", {"limit": limit})
+func wallet_transactions(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/me/wallet/transactions",
+			{"limit": limit, "offset": offset})
 
 func transfer(to_player_id: String, amount: int, memo: String = "") -> Dictionary:
 	var body := {"toPlayerId": to_player_id, "amount": amount}
@@ -562,9 +579,11 @@ func transfer(to_player_id: String, amount: int, memo: String = "") -> Dictionar
 func corporation_wallet(corporation_id: String) -> Dictionary:
 	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/wallet" % corporation_id)
 
-func corporation_wallet_transactions(corporation_id: String, limit: int = 20) -> Dictionary:
+func corporation_wallet_transactions(corporation_id: String, limit: int = 20,
+		offset: int = 0) -> Dictionary:
 	return await _http_get(SERVICE_ECONOMIE,
-			"/api/corporations/%s/wallet/transactions" % corporation_id, {"limit": limit})
+			"/api/corporations/%s/wallet/transactions" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 func corporation_donation(corporation_id: String, amount: int, memo: String = "") -> Dictionary:
 	var body := {"amount": amount}
@@ -579,9 +598,11 @@ func corporation_report(corporation_id: String, from: String = "", to: String = 
 	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/report" % corporation_id,
 			{"from": from, "to": to})
 
-## Role salary defaults and per-member overrides (leader/treasurer only).
-func corporation_salaries(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/salaries" % corporation_id)
+## Role salary defaults and per-member overrides (leader/treasurer only). The overrides window is
+## the paginated part (`memberOverridesTotal` counts them all).
+func corporation_salaries(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/salaries" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 func corporation_salary_set_member(corporation_id: String, player_id: String, amount: int,
 		currency: String = "credits", enabled: bool = true) -> Dictionary:
@@ -624,8 +645,8 @@ func corporation_payroll(corporation_id: String, currency: String = "credits") -
 	return r
 
 ## My tax debts, due and settled, newest first.
-func my_taxes() -> Dictionary:
-	return await _http_get(SERVICE_ECONOMIE, "/api/me/taxes")
+func my_taxes(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/me/taxes", {"limit": limit, "offset": offset})
 
 ## Settle every affordable due tax debt. An empty currency settles in every currency, an empty
 ## entity id to every entity the caller owes — both fields are optional on the wire.
@@ -636,8 +657,9 @@ func my_taxes_pay(currency: String = "", entity_id: String = "") -> Dictionary:
 	return r
 
 ## Tax debts of a corporation (member only).
-func corporation_taxes(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/taxes" % corporation_id)
+func corporation_taxes(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_ECONOMIE, "/api/corporations/%s/taxes" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 ## Settle a corporation's affordable due taxes (`economie:treasury:manage`). The treasury moves, so
 ## both the corporation section and the wallet balance behind it are told.
@@ -669,17 +691,20 @@ static func _tax_pay_body(currency: String, entity_id: String) -> Dictionary:
 # Inventory
 # ---------------------------------------------------------------------------------------------
 
-## The caller's inventory: stacks (with held/available) and owned instances.
-func inventory_me() -> Dictionary:
-	return await _http_get(SERVICE_INVENTORY, "/api/me/inventory")
+## The caller's inventory: stacks (with held/available) and owned instances. One window paginates
+## both lists (`total` counts the stacks, `instancesTotal` the instances).
+func inventory_me(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/me/inventory",
+			{"limit": limit, "offset": offset})
 
 ## One of the caller's stacks, with its held and available quantities.
 func inventory_me_stack(good_type: String) -> Dictionary:
 	return await _http_get(SERVICE_INVENTORY, "/api/me/inventory/stacks/%s" % good_type)
 
 ## A corporation's inventory (member only, membership checked by Social).
-func corporation_inventory(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_INVENTORY, "/api/corporations/%s/inventory" % corporation_id)
+func corporation_inventory(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/corporations/%s/inventory" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 func corporation_inventory_stack(corporation_id: String, good_type: String) -> Dictionary:
 	return await _http_get(SERVICE_INVENTORY,
@@ -691,8 +716,8 @@ func corporation_inventory_stack(corporation_id: String, good_type: String) -> D
 # ---------------------------------------------------------------------------------------------
 
 ## The POIs of the caller's scope: owned ones, read-only grants, and every POI published `public`.
-func poi_list() -> Dictionary:
-	return await _http_get(SERVICE_INVENTORY, "/api/me/pois")
+func poi_list(limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/me/pois", {"limit": limit, "offset": offset})
 
 ## Create a POI for the caller — or, with `owner` = `{"type": "corporation"|"political", "id": ...}`
 ## in the body, for an organisation the caller manages (which needs `inventory:poi:manage` there).
@@ -739,8 +764,9 @@ func poi_transfer(poi_id: String, to_type: String, to_id: String) -> Dictionary:
 	return r
 
 ## POIs owned by or granted to a corporation (member only, membership checked in Social).
-func corporation_pois(corporation_id: String) -> Dictionary:
-	return await _http_get(SERVICE_INVENTORY, "/api/corporations/%s/pois" % corporation_id)
+func corporation_pois(corporation_id: String, limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_INVENTORY, "/api/corporations/%s/pois" % corporation_id,
+			{"limit": limit, "offset": offset})
 
 ## One POI of a corporation's scope (member only).
 func corporation_poi(corporation_id: String, poi_id: String) -> Dictionary:
@@ -761,9 +787,10 @@ func market_book(good_type: String) -> Dictionary:
 	return await _http_get(SERVICE_MARKET, "/api/market/book", {"goodType": good_type})
 
 func market_orders(good_type: String = "", side: String = "", status: String = "",
-		limit: int = 20) -> Dictionary:
+		limit: int = 20, offset: int = 0) -> Dictionary:
 	return await _http_get(SERVICE_MARKET, "/api/market/orders",
-			{"goodType": good_type, "side": side, "status": status, "limit": limit})
+			{"goodType": good_type, "side": side, "status": status,
+					"limit": limit, "offset": offset})
 
 func market_order(order_id: String) -> Dictionary:
 	return await _http_get(SERVICE_MARKET, "/api/market/orders/%s" % order_id)
@@ -778,9 +805,10 @@ func market_order_cancel(order_id: String) -> Dictionary:
 	if _ok(r): changed.emit("market")
 	return r
 
-func market_demands(good_type: String = "", status: String = "", limit: int = 20) -> Dictionary:
+func market_demands(good_type: String = "", status: String = "", limit: int = 20,
+		offset: int = 0) -> Dictionary:
 	return await _http_get(SERVICE_MARKET, "/api/market/demands",
-			{"goodType": good_type, "status": status, "limit": limit})
+			{"goodType": good_type, "status": status, "limit": limit, "offset": offset})
 
 func market_demand(demand_id: String) -> Dictionary:
 	return await _http_get(SERVICE_MARKET, "/api/market/demands/%s" % demand_id)
@@ -804,8 +832,9 @@ func market_demand_fulfill(demand_id: String, unit_price: int, corporation_id: S
 	if _ok(r): changed.emit("market")
 	return r
 
-func market_trades(status: String = "", limit: int = 20) -> Dictionary:
-	return await _http_get(SERVICE_MARKET, "/api/market/trades", {"status": status, "limit": limit})
+func market_trades(status: String = "", limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_MARKET, "/api/market/trades",
+			{"status": status, "limit": limit, "offset": offset})
 
 
 # ---------------------------------------------------------------------------------------------

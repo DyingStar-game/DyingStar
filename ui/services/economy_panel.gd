@@ -6,12 +6,14 @@ extends ServicePanel
 var _balance_label: Label
 var _accounts: ItemList
 var _transactions: ItemList
+var _page_transactions: ServicePage
 var _txn_detail: VBoxContainer
 var _my_account_ids: Dictionary = {}
 var _recipient: ServiceTargetPicker
 var _amount: LineEdit
 var _memo: LineEdit
 var _taxes: ItemList
+var _page_taxes: ServicePage
 var _tax_currency: LineEdit
 
 
@@ -40,9 +42,10 @@ func _build() -> void:
 	pages[0].add_child(_titled(tr("%%SVC_LBL_MY_ACCOUNTS"), _accounts, true))
 
 	# Transactions — the list, then the detail of the picked one (all fields already in the payload).
-	_transactions = _list(340.0)
+	_page_transactions = ServicePage.new()
+	_page_transactions.load_requested.connect(_load_transactions)
+	_transactions = _paged_list(pages[1], tr("%%SVC_LBL_HISTORY"), _page_transactions, 340.0)
 	_transactions.item_selected.connect(func(_i: int) -> void: _open_txn_detail())
-	pages[1].add_child(_titled(tr("%%SVC_LBL_HISTORY"), _transactions, true))
 	_txn_detail = VBoxContainer.new()
 	_txn_detail.add_theme_constant_override("separation", 4)
 	_txn_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -69,8 +72,9 @@ func _build() -> void:
 
 	# Taxes — every debt the caller owes, and one payment that settles all it can afford (an empty
 	# currency pays in all of them, which is the service's own default).
-	_taxes = _list(260.0)
-	pages[3].add_child(_titled(tr("%%SVC_LBL_TAX_DEBTS"), _taxes, true))
+	_page_taxes = ServicePage.new()
+	_page_taxes.load_requested.connect(_load_taxes)
+	_taxes = _paged_list(pages[3], tr("%%SVC_LBL_TAX_DEBTS"), _page_taxes, 260.0)
 	var tax_row := _row()
 	_tax_currency = _field(tr("%%SVC_PH_CURRENCY"), 150.0)
 	tax_row.add_child(_tax_currency)
@@ -99,14 +103,28 @@ func refresh() -> void:
 	if not _begin_refresh():
 		return
 	var wallet: Dictionary = await PlayerServices.wallet()
-	var transactions: Dictionary = await PlayerServices.wallet_transactions()
-	var taxes: Dictionary = await PlayerServices.my_taxes()
 	var my_ids: Dictionary = _account_ids(wallet)
 	_my_account_ids = my_ids
 	_apply_accounts(wallet, my_ids)
-	_apply_transactions(transactions, my_ids)
-	_apply_taxes(taxes)
+	await _load_transactions()
+	await _load_taxes()
 	_end_refresh()
+
+
+## One window of the ledger. The wallet that colours the rows comes from the accounts page, so the
+## first load always rides refresh(); later loads are the footer's.
+func _load_transactions() -> void:
+	var at: int = _page_transactions.offset
+	var result: Dictionary = await PlayerServices.wallet_transactions(_page_transactions.limit, at)
+	if _land(_page_transactions, at, result):
+		_apply_transactions(result)
+
+
+func _load_taxes() -> void:
+	var at: int = _page_taxes.offset
+	var result: Dictionary = await PlayerServices.my_taxes(_page_taxes.limit, at)
+	if _land(_page_taxes, at, result):
+		_apply_taxes(result)
 
 
 ## The set of the caller's account ids, used to tell an incoming movement from an outgoing one.
@@ -144,17 +162,17 @@ func _apply_accounts(result: Dictionary, _my_ids: Dictionary) -> void:
 	_fill_list(_accounts, lines, metadata)
 
 
-func _apply_transactions(result: Dictionary, my_ids: Dictionary) -> void:
+func _apply_transactions(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(_transactions, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
 	var colours: Array = []
-	for transaction: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for transaction: Dictionary in _page_transactions.rows(result):
 		var amount: int = ServiceTypes.num(transaction.get("amount"))
-		var incoming: bool = my_ids.has(str(transaction.get("toAccountId", "")))
-		var outgoing: bool = my_ids.has(str(transaction.get("fromAccountId", "")))
+		var incoming: bool = _my_account_ids.has(str(transaction.get("toAccountId", "")))
+		var outgoing: bool = _my_account_ids.has(str(transaction.get("fromAccountId", "")))
 		var sign: String = ""
 		var colour: Color = ServiceStyle.MUTED
 		if incoming and not outgoing:
@@ -184,7 +202,7 @@ func _apply_taxes(result: Dictionary) -> void:
 		return
 	var lines := PackedStringArray()
 	var metadata: Array = []
-	for debt: Dictionary in (result.get("data", []) if result.get("data") is Array else []):
+	for debt: Dictionary in _page_taxes.rows(result):
 		lines.append(ServiceTypes.tax_debt_line(debt))
 		metadata.append(debt)
 	if lines.is_empty():
