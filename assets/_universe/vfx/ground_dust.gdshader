@@ -31,7 +31,7 @@ uniform float forward_glow : hint_range(0.0, 2.0, 0.01) = 0.35;
 uniform float scatter_g : hint_range(0.0, 0.95, 0.01) = 0.65;
 // How much of the shadow map a grain takes (0 = none: lit in the shade of a building; 1 = all: a puff
 // metres across, half see-through, shows the map's cascades and texels as straight-edged squares).
-uniform float shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.75;
+uniform float shadow_strength : hint_range(0.0, 1.0, 0.01) = 0.0;
 // How much the noise is warped into wisps (0 = the plain fractal of before).
 uniform float wisp : hint_range(0.0, 1.0, 0.01) = 0.45;
 // How ragged the outline is (0 = a round blob): the noise pushes the edge in and out by this much
