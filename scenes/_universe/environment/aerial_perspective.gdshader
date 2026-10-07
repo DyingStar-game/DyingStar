@@ -30,6 +30,10 @@ uniform vec3 dust_up = vec3(0.0, 1.0, 0.0);
 // Where the march starts (m from the eye): 0 in the open; sheltered, past the room's walls, so a wall
 // near the eye gets no dust (its depth is shorter) while a window or a door shows the dust outside.
 uniform float dust_start = 0.0;
+// The buildings around (WeatherMasks): inverse unit boxes in camera-relative world space; a step
+// inside one adds no dust, so a building is clear inside, seen from outside or from within.
+uniform mat4 dust_mask[16];
+uniform int dust_mask_count = 0;
 // How far the layer is marched (m) and in how many steps.
 uniform float dust_range = 300.0;
 uniform int dust_steps = 20;
@@ -88,6 +92,17 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 		float t = t0 + (float(i) + jitter) * dt;
 		vec3 p = dir * t;
 		float h = dust_cam_height + dot(p, dust_up);
+		bool masked = false;
+		for (int m = 0; m < dust_mask_count; m++) {
+			vec3 l = (dust_mask[m] * vec4(p, 1.0)).xyz;
+			if (all(lessThan(abs(l), vec3(0.5)))) {
+				masked = true;
+				break;
+			}
+		}
+		if (masked) {
+			continue;
+		}
 		vec3 rel = dust_frame * p;
 		vec3 air = rel + dust_offset;
 		vec3 q = air - w * dot(air, w) * squeeze;

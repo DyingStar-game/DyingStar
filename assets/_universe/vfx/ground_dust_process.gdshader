@@ -55,6 +55,11 @@ void start() {
 
 void process() {
 	CUSTOM.y += DELTA;
+	// A grain that meets a building's mask (WeatherMasks: its GPUParticlesCollisionBox3D) is gone: dust
+	// stays out of the room, and a streak blown at a wall ends on it.
+	if (COLLIDED) {
+		ACTIVE = false;
+	}
 	if (CUSTOM.y >= CUSTOM.w) {
 		ACTIVE = false;
 	}

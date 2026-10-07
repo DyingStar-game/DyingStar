@@ -115,8 +115,7 @@ func update(delta: float, family: StringName, shelter: float = 0.0) -> void:
 		_owed[0] -= 1.0
 		_clouds.puff(birth_point(eye, _wind, up, _jitter(), c.upwind_m, c.spread_m, c.height_m), family,
 				c.opacity, _wind * c.speed_share + up * c.rise_ms, c.grains, c.patch_m, c.size_m)
-	# Sheltered, no ground population at all: born outside, the wind carried them through the walls.
-	if _lifted <= 0.0 or planet == null or clear_m > 0.0:
+	if _lifted <= 0.0 or planet == null:
 		return
 	var pops: Array = [[_cfg.veils, _veils, 1], [_cfg.streaks, _streaks, 2], [_cfg.wisps, _wisps, 3]]
 	for entry: Array in pops:

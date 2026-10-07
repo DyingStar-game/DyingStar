@@ -109,6 +109,8 @@ var weather_blow_albedo: Vector3 = Vector3.ONE
 var weather_blow_bottom_m: float = 0.0
 var weather_blow_top_m: float = 0.0
 var _weather_sky: WeatherSky = WeatherSky.new()
+## The buildings the weather stays out of (WeatherMasks), made with the renderer.
+var weather_masks: WeatherMasks = null
 
 ## Set a uniform of the wind's dust layer (aerial_perspective.gdshader: dust_*) — WeatherSky's hand.
 func set_dust_param(param: StringName, value: Variant) -> void:
@@ -359,7 +361,14 @@ func _build_aerial_quad() -> void:
 	player.camera.add_child(_aerial_quad)
 
 
+func _ready_masks() -> void:
+	if weather_masks == null and is_instance_valid(player):
+		weather_masks = WeatherMasks.new(player)
+		add_child(weather_masks)
+
+
 func _process(_delta: float) -> void:
+	_ready_masks()
 	if not is_instance_valid(player) or player.camera == null or not is_instance_valid(sun):
 		return
 	if _sky_material == null:

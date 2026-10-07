@@ -210,6 +210,8 @@ func _make_particles() -> GPUParticles3D:
 	p.lifetime = _lifetime
 	p.local_coords = true
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Grains die on the buildings' mask boxes (WeatherMasks): a custom process shader gets COLLIDED.
+	p.collision_base_size = 0.05
 	var reach := ANCHOR_RADIUS_M + 50.0
 	p.visibility_aabb = AABB(Vector3.ONE * -reach, Vector3.ONE * reach * 2.0)
 	var process := ShaderMaterial.new()

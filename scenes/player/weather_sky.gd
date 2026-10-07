@@ -78,8 +78,11 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	# Under a roof and between walls the layer starts past the room (ShelterProbe.REACH_M): it is drawn
 	# over the whole screen, so the room is kept clear by depth, and the windows still show the outside.
 	var shelter_v: Variant = renderer.player.get("weather_shelter") if is_instance_valid(renderer.player) else null
+	# A room the masks know is kept clear by them; a shelter they do not (a cab, a building too small
+	# or not found) starts the march past its walls instead.
 	var start: float = 0.0
-	if shelter_v is Dictionary and float((shelter_v as Dictionary).get("shelter", 0.0)) >= 0.5:
+	var boxed: bool = renderer.weather_masks != null and renderer.weather_masks.inside(observer_world_pos)
+	if not boxed and shelter_v is Dictionary and float((shelter_v as Dictionary).get("shelter", 0.0)) >= 0.5:
 		start = ShelterProbe.REACH_M
 	renderer.set_dust_param(&"dust_start", start)
 	renderer.set_dust_param(&"dust_density", _dust_density)
@@ -124,6 +127,11 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 			fposmod(cam_planet.y + _scroll_fine.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll_fine.z, DUST_WRAP_M)))
 	renderer.set_dust_param(&"dust_up", up)
 	renderer.set_dust_param(&"dust_cam_height", height)
+	var masks: Array[Projection] = renderer.weather_masks.masks_for(camera.global_position) \
+			if renderer.weather_masks != null else ([] as Array[Projection])
+	renderer.set_dust_param(&"dust_mask_count", masks.size())
+	if not masks.is_empty():
+		renderer.set_dust_param(&"dust_mask", masks)
 	if wind_planet.length() > 0.1:
 		renderer.set_dust_param(&"dust_wind_dir", wind_planet.normalized())
 	if is_instance_valid(renderer.sun):
