@@ -35,7 +35,7 @@ grains = 2
 
 [sub_resource type="Resource" id="Pop_veils"]
 script = ExtResource("6_pop")
-rate_full = 7.0
+rate_full = 0.0
 size_m = 9.0
 opacity = 0.12
 stretch_per_ms = 0.12
@@ -62,7 +62,7 @@ patch_m = 0.4
 
 [sub_resource type="Resource" id="Pop_wisps"]
 script = ExtResource("6_pop")
-rate_full = 14.0
+rate_full = 0.0
 size_m = 1.8
 opacity = 0.22
 stretch_per_ms = 0.12
