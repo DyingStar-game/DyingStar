@@ -65,7 +65,7 @@ def level_policy(export_nside, max_quadtree_nside, min_nside=1):
     """{kind: {"min": nside, "max": nside}} for this planet."""
     out = {}
     for kind in ("crater", "linear", "radial", "populate", "road", "mountain", "ridge",
-                 "volcano", "lava", "fumarole"):
+                 "volcano", "lava", "fumarole", "rocky"):
         deep = kind in _DEEP_KINDS
         out[kind] = {
             "min": min_nside,

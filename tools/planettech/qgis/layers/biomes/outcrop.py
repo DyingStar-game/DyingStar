@@ -6,10 +6,11 @@ Unlike regolith there is nothing loose here: the terrain surface IS the rock
 named by ``rock_type``.
 """
 
-from ..model import BiomeCategory
+from ..model import BiomeCategory, STAGE_OUTCROP
 from ..rocks import rock_fields
 
-CATEGORY = BiomeCategory('outcrop', description="Exposed bedrock", priority=100)
+CATEGORY = BiomeCategory('outcrop', description="Exposed bedrock", priority=100,
+                         stage=STAGE_OUTCROP, flat=True)
 
 CATEGORY.biome(
     105, 'plateau', '#8a7080',

@@ -1733,6 +1733,32 @@ static func generate_mesh(
 		var _now := Time.get_ticks_usec()
 		prof["overlay"] = _now - _t_phase
 		_t_phase = _now
+	# --- rocky terrain mask (CUSTOM1) ---------------------------------------
+	# What the terrain shaders draw of a rocky_terrain field below the mesh
+	# pitch (RockFieldRelief.surface, rock_blocks.gdshaderinc): x = intensity ×
+	# envelope, y = the small blocks' size (m), z = level + 8 × type, w = the
+	# vertex's altitude (m, from doubles: the flint bands of a chalk wall need
+	# centimetres, which a float32 planet radius cannot give the shader). Only
+	# in a chunk a field reaches: a mesh without CUSTOM1 reads zero there, i.e.
+	# no rock. Every final vertex (skirt, patch, wall copies too) from its own
+	# surface position.
+	var rock_custom := PackedFloat32Array()
+	if _frame != null and not _frame.rck.is_empty():
+		rock_custom.resize(vertices.size() * 4)
+		var _rock_any := false
+		for _ri in vertices.size():
+			var _sp := cc_f32 + vertices[_ri] + Vector3(skirt_offsets[_ri * 3],
+					skirt_offsets[_ri * 3 + 1], skirt_offsets[_ri * 3 + 2])
+			var _rs := data.rock_surface(_sp.normalized(), _frame)
+			if _rs.x > 0.0:
+				_rock_any = true
+			rock_custom[_ri * 4] = _rs.x
+			rock_custom[_ri * 4 + 1] = _rs.y
+			rock_custom[_ri * 4 + 2] = _rs.z
+			rock_custom[_ri * 4 + 3] = _sp.length() - data.radius
+		if not _rock_any:
+			rock_custom = PackedFloat32Array()
+
 	# --- build mesh ---------------------------------------------------------
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -1747,6 +1773,15 @@ static func generate_mesh(
 
 	var mesh := ArrayMesh.new()
 	var _c0_fmt := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	if not rock_custom.is_empty():
+		arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
+		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
+		# The field's loose rocks, placed here in the worker and kept with the
+		# mesh (disk cache included); PlanetTerrain shows them on the finest LOD.
+		if hp_mode and HEALPix.pixel_side_length(hp_nside, data.radius) / float(res) \
+				<= RockFieldScree.MAX_PITCH_M:
+			mesh.set_meta("rock_scree", RockFieldScree.pack(RockFieldScree.place(vertices, normals,
+					colors, rock_custom, res, hp_ipix + hp_nside, cc_f32.normalized())))
 	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
 	# covering it whole) and that bakes without skirts has NO base triangle:
 	# an empty index array is refused by the renderer (five errors per
@@ -1779,6 +1814,8 @@ static func generate_mesh(
 		_so_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 		_so_arrays[Mesh.ARRAY_COLOR]   = colors
 		_so_arrays[Mesh.ARRAY_CUSTOM0] = skirt_offsets
+		if not rock_custom.is_empty():
+			_so_arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
 		_so_arrays[Mesh.ARRAY_INDEX]   = _so_idx
 		var _so_surface := mesh.get_surface_count()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _so_arrays,

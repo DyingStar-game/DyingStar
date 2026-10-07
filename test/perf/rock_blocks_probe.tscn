@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://test/perf/rock_blocks_probe.gd" id="1"]
+
+[node name="RockBlocksProbe" type="Node3D"]
+script = ExtResource("1")

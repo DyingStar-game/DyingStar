@@ -53,7 +53,8 @@ static func native_available() -> bool:
 		_ridge_script = NativeScript.load_usable("res://scenes/planet/native/MountainRidgeNative.cs",
 				["Configure"])
 		_set_script = NativeScript.load_usable("res://scenes/planet/native/MountainSetNative.cs",
-				["AddZone", "AddRidge", "AddVolcano", "Offset", "Core", "Mask"])
+				["AddZone", "AddRidge", "AddVolcano", "AddRockField", "Offset", "Rock", "Core",
+				"Mask"])
 		if _zone_script == null or _ridge_script == null or _set_script == null:
 			_zone_script = null
 			_ridge_script = null
@@ -175,11 +176,14 @@ static func prepare_ridge(z: Dictionary, m_per_deg: float) -> Ridge:
 
 ## A MountainSetNative summing [param zones], [param ridges] and
 ## [param volcanoes] (VolcanoRelief.Volcano) in one call per sample (see
-## PlanetData._mountain_offset); null without the assembly, when use_native is
-## off, or when there is nothing to sum.
-static func build_set(zones: Array, ridges: Array, volcanoes: Array = []) -> RefCounted:
+## PlanetData._mountain_offset), and holding the [param rocks]
+## (RockFieldRelief.Field) its Rock() lays over them; null without the
+## assembly, when use_native is off, or when there is nothing to sum.
+static func build_set(zones: Array, ridges: Array, volcanoes: Array = [],
+		rocks: Array = []) -> RefCounted:
 	if not use_native or not native_available() \
-			or (zones.is_empty() and ridges.is_empty() and volcanoes.is_empty()):
+			or (zones.is_empty() and ridges.is_empty() and volcanoes.is_empty() \
+			and rocks.is_empty()):
 		return null
 	var s: RefCounted = _set_script.new()
 	for z in zones:
@@ -194,6 +198,10 @@ static func build_set(zones: Array, ridges: Array, volcanoes: Array = []) -> Ref
 		if (v as VolcanoRelief.Volcano).native == null:
 			return null
 		s.AddVolcano((v as VolcanoRelief.Volcano).native)
+	for f in rocks:
+		if (f as RockFieldRelief.Field).native == null:
+			return null
+		s.AddRockField((f as RockFieldRelief.Field).native)
 	return s
 
 

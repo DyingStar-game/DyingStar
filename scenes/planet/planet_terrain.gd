@@ -585,7 +585,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _mt_fp := data.mountain_fingerprint()
 		if _mt_fp != "":
 			_mt = "_mt%s" % _mt_fp
-		elif data.debug_mountain_enabled or data.debug_volcano_enabled:
+		elif data.debug_mountain_enabled or data.debug_volcano_enabled or data.debug_rock_enabled:
 			var _dbg: Array = [data.debug_mountain_lonlat,
 					data.debug_mountain_radius_km, data.debug_mountain_style,
 					data.debug_ridge_points, data.debug_ridge_style]
@@ -594,11 +594,17 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			if data.debug_volcano_enabled:
 				_dbg.append_array([data.debug_volcano_lonlat, data.debug_volcano_type,
 						data.debug_volcano_style])
+			if data.debug_rock_enabled:
+				_dbg.append_array([data.debug_rock_lonlat, data.debug_rock_radius_km,
+						data.debug_rock_style, data.debug_rock_overrides])
 			_mt = "_mtdbg%08x" % (hash(str(_dbg)) & 0xFFFFFFFF)
 		# Volcanoes: their fingerprint is in _mt; the relief ALGORITHM is keyed
 		# here, only when the planet has one (byte-identical key otherwise).
 		if data.volcano_fingerprint() != "" or data.debug_volcano_enabled:
 			_mt += "_vr%d" % VolcanoRelief.ALGO_VERSION
+		# Rocky terrain: same rule, its algorithm keyed only where it is.
+		if data.rocky_fingerprint() != "" or data.debug_rock_enabled:
+			_mt += "_rk%d" % RockFieldRelief.ALGO_VERSION
 		# Lava flows: their records and the constants of their crust and
 		# channel (LavaSettings), only when the planet has one.
 		if data.has_lava():
@@ -4178,6 +4184,13 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		if fum:
 			_chunks_node.add_child(fum)
 			info["fumaroles"] = fum
+	# Rocky terrain scree: decoration of the finest LOD (RockFieldScree), placed
+	# by the chunk worker into the mesh's "rock_scree" meta.
+	if lod == 0 and not is_server and info.has("mesh_instance") and info.mesh_instance:
+		var _scree := RockFieldScree.build(info.mesh_instance.mesh, chunk_center)
+		if _scree:
+			_chunks_node.add_child(_scree)
+			info["rock_scree"] = _scree
 	_perf_end("asm:zones", _tk)
 	# Its own scope: road bridges AND railway viaducts are built here, on the
 	# main thread, and asm:zones alone could not tell them from the point-biome
@@ -4909,6 +4922,8 @@ func _remove_chunk(key: String) -> void:
 		info.cave.queue_free()
 	if info.has("fumaroles") and is_instance_valid(info.fumaroles):
 		info.fumaroles.queue_free()
+	if info.has("rock_scree") and is_instance_valid(info.rock_scree):
+		info.rock_scree.queue_free()
 	if info.has("meadow") and info.meadow:
 		info.meadow.queue_free()
 	if info.has("forest") and info.forest:

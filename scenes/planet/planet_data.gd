@@ -205,6 +205,24 @@ var chunk_data_version: String = ""
 ## seed, impurity_intensity.
 @export var debug_volcano_style: Dictionary = {"has_lava_lake": 1, "activity": "active"}
 
+@export_group("Debug rocky terrain")
+## DEV: five synthetic rocky_terrain discs (RockFieldRelief), one per
+## ruggedness level from flat to very rugged, laid eastward from
+## debug_rock_lonlat — as if the pack's rocky part carried them. Ignored once
+## the pack has a rocky part. Baked into the chunk cache key.
+@export var debug_rock_enabled: bool = false
+## Centre (lon, lat in degrees) of the first (flat) disc; the next ones follow eastward.
+@export var debug_rock_lonlat: Vector2 = Vector2.ZERO
+## Radius (km) of each disc; the discs are 2.5 radii apart.
+@export var debug_rock_radius_km: float = 1.5
+## Rock form of the five discs (layers/rocky_terrain.py styles).
+@export_enum("slabs", "columnar", "yardang", "strata", "chalk") var debug_rock_style: String = "slabs"
+## Keys overriding every disc's preset (cell_m, step_m, riser, joint_depth_m,
+## joint_width_m, butte_rate, butte_height_m, butte_cell_m, butte_wall_m,
+## dip_deg, dip_azimuth_deg, wind_azimuth_deg, elongation, detail_m,
+## feather_m, seed).
+@export var debug_rock_overrides: Dictionary = {}
+
 @export_group("Debug lava")
 ## DEV: a synthetic lava flow (LavaSettings), as if the pack's lava part
 ## carried it. Points (lon, lat) FROM THE SOURCE DOWNHILL. Ignored once the
@@ -553,6 +571,8 @@ var _mtn_override_zones: Array = []
 var _mtn_override_ridges: Array = []
 ## Prepared VolcanoRelief.Volcano list, same rule.
 var _mtn_override_volcanoes: Array = []
+## Prepared RockFieldRelief.Field list, same rule.
+var _mtn_override_rocks: Array = []
 var _mtn_override_set: RefCounted = null
 ## Budget of the blocking tile prefetch under the profiled lines, in milliseconds.
 const GRADE_PREFETCH_BUDGET_MS := 5000
@@ -1004,7 +1024,9 @@ class TileFrame:
 	var rdg: Array = []
 	## VolcanoRelief.Volcano list, summed after the zones and ridges.
 	var vol: Array = []
-	## MountainSetNative of the three lists (null → GDScript path).
+	## RockFieldRelief.Field list, laid over the three above (Rock()).
+	var rck: Array = []
+	## MountainSetNative of the lists (null → GDScript path).
 	var mtn_set: RefCounted = null
 	var mtn_ready := false
 	## TileFrameNative (the sampler's hot path in C#), null without a usable assembly or with use_native
@@ -1090,7 +1112,8 @@ func _native_frame_ok(frame: TileFrame) -> bool:
 	if _has_mountains != 1:
 		return true
 	return frame.mtn_ready and (frame.mtn_set != null
-			or (frame.mtn.is_empty() and frame.rdg.is_empty() and frame.vol.is_empty()))
+			or (frame.mtn.is_empty() and frame.rdg.is_empty() and frame.vol.is_empty()
+			and frame.rck.is_empty()))
 
 
 ## Identifiant de tuile, pour les dictionnaires du cache.
@@ -2903,9 +2926,10 @@ func populate_fingerprint() -> String:
 	return str((parts.get("populate", {}) as Dictionary).get("fingerprint", ""))
 
 
-## Does this planet carry procedural relief — a mountain, ridge or volcano
-## part in the pack, or the debug / test injection? (Volcanoes ride the
-## mountain machinery: "mountains" below means all three.) Gates the fine server collision
+## Does this planet carry procedural relief — a mountain, ridge, volcano or
+## rocky terrain part in the pack, or the debug / test injection? (Volcanoes
+## and rock fields ride the mountain machinery: "mountains" below means all
+## four.) Gates the fine server collision
 ## like the relief biomes: the mountains exist in the mesh only where the
 ## grid carries their octaves, and the collision must be on that same grid.
 func has_mountains() -> bool:
@@ -2937,17 +2961,18 @@ func warm_mountains() -> void:
 	TileFrame.native_available()
 	MountainRelief.native_available()
 	VolcanoRelief.native_available()
+	RockFieldRelief.native_available()
 	GradeBed.native_available()
 	HEALPix._build_tables()
 	var found := false
 	var pack = _ensure_modifier_pack()
 	if pack != null:
 		var parts: Dictionary = pack.get_manifest().get("parts", {})
-		for kind in ["mountain", "ridge", "volcano"]:
+		for kind in ["mountain", "ridge", "volcano", "rocky"]:
 			var counts: Dictionary = (parts.get(kind, {}) as Dictionary).get("counts", {})
 			if int(counts.get("features", 0)) > 0:
 				found = true
-	if not found and (debug_mountain_enabled or debug_volcano_enabled) \
+	if not found and (debug_mountain_enabled or debug_volcano_enabled or debug_rock_enabled) \
 			and not _has_mtn_overrides():
 		_build_debug_mountains()
 	if _has_mtn_overrides():
@@ -2956,14 +2981,17 @@ func warm_mountains() -> void:
 
 
 ## Tests / tools: stand-in features for the whole planet (every tile returns
-## them). [param zones] / [param ridges] / [param volcanoes] are record
-## Dictionaries in the pack's decoded shape (see ModifierPack._decode_populate
-## + MountainRelief.prepare_* / VolcanoRelief.prepare).
+## them). [param zones] / [param ridges] / [param volcanoes] / [param rocks] are
+## record Dictionaries in the pack's decoded shape (see
+## ModifierPack._decode_populate + MountainRelief.prepare_* /
+## VolcanoRelief.prepare / RockFieldRelief.prepare).
 ## Main thread only; call before any chunk is built.
-func set_mountain_overrides(zones: Array, ridges: Array, volcanoes: Array = []) -> void:
+func set_mountain_overrides(zones: Array, ridges: Array, volcanoes: Array = [],
+		rocks: Array = []) -> void:
 	_mtn_override_zones.clear()
 	_mtn_override_ridges.clear()
 	_mtn_override_volcanoes.clear()
+	_mtn_override_rocks.clear()
 	var mpd := radius * PI / 180.0
 	for z in zones:
 		_mtn_override_zones.append(MountainRelief.prepare_zone(z))
@@ -2971,15 +2999,17 @@ func set_mountain_overrides(zones: Array, ridges: Array, volcanoes: Array = []) 
 		_mtn_override_ridges.append(MountainRelief.prepare_ridge(r, mpd))
 	for v in volcanoes:
 		_mtn_override_volcanoes.append(VolcanoRelief.prepare(v))
+	for r in rocks:
+		_mtn_override_rocks.append(RockFieldRelief.prepare(r))
 	_mtn_override_set = MountainRelief.build_set(_mtn_override_zones, _mtn_override_ridges,
-			_mtn_override_volcanoes)
+			_mtn_override_volcanoes, _mtn_override_rocks)
 	_has_mountains = -1
 	warm_mountains()
 
 
 func _has_mtn_overrides() -> bool:
 	return not _mtn_override_zones.is_empty() or not _mtn_override_ridges.is_empty() \
-			or not _mtn_override_volcanoes.is_empty()
+			or not _mtn_override_volcanoes.is_empty() or not _mtn_override_rocks.is_empty()
 
 
 func _build_debug_mountains() -> void:
@@ -2993,8 +3023,9 @@ func _build_debug_mountains() -> void:
 		if debug_lava_enabled:
 			rec.merge(VolcanoRelief.lake_breach(rec, [debug_lava_points], radius), true)
 		volcanoes.append(rec)
+	var rocks: Array = _debug_rock_records() if debug_rock_enabled else []
 	if not debug_mountain_enabled:
-		set_mountain_overrides(zones, ridges, volcanoes)
+		set_mountain_overrides(zones, ridges, volcanoes, rocks)
 		return
 	if debug_mountain_radius_km > 0.0:
 		var mpd := radius * PI / 180.0
@@ -3014,7 +3045,28 @@ func _build_debug_mountains() -> void:
 		rd["polygon"] = debug_ridge_points
 		rd["name"] = "debug"
 		ridges.append(rd)
-	set_mountain_overrides(zones, ridges, volcanoes)
+	set_mountain_overrides(zones, ridges, volcanoes, rocks)
+
+
+## The five debug rocky_terrain records (see debug_rock_enabled): one disc
+## per ruggedness level, eastward, each with its joint / butte means measured
+## the way the exporter does.
+func _debug_rock_records() -> Array:
+	var out: Array = []
+	var mpd := radius * PI / 180.0
+	var lat_c := maxf(cos(deg_to_rad(clampf(debug_rock_lonlat.y, -89.5, 89.5))), 0.05)
+	var step_deg := 2.5 * debug_rock_radius_km * 1000.0 / mpd / lat_c
+	for i in RockFieldRelief.LEVELS.size():
+		var props := RockFieldRelief.resolve_debug(RockFieldRelief.LEVELS[i], debug_rock_style,
+				debug_rock_overrides)
+		var rec := RockFieldRelief.debug_record(debug_rock_lonlat + Vector2(step_deg * i, 0.0),
+				debug_rock_radius_km, radius, props)
+		rec["name"] = "debug_" + RockFieldRelief.LEVELS[i]
+		var means := RockFieldRelief.term_means(RockFieldRelief.prepare(rec), radius)
+		rec["joint_mean_m"] = means.x
+		rec["butte_mean_m"] = means.y
+		out.append(rec)
+	return out
 
 
 ## Fingerprint of the mountain and ridge parts as echoed into the pack
@@ -3027,13 +3079,25 @@ func mountain_fingerprint() -> String:
 	var a := str((parts.get("mountain", {}) as Dictionary).get("fingerprint", ""))
 	var b := str((parts.get("ridge", {}) as Dictionary).get("fingerprint", ""))
 	var c := str((parts.get("volcano", {}) as Dictionary).get("fingerprint", ""))
-	if a == "" and b == "" and c == "":
+	var d := str((parts.get("rocky", {}) as Dictionary).get("fingerprint", ""))
+	if a == "" and b == "" and c == "" and d == "":
 		return ""
-	# Without a volcano part the key is the one planets had before volcanoes
-	# existed — their chunk caches stay valid.
+	# Without a volcano / rocky part the key is the one planets had before
+	# those existed — their chunk caches stay valid.
+	if d != "":
+		return (a + "-" + b + "-" + c + "-rk" + d).sha1_text().substr(0, 12)
 	if c == "":
 		return (a + "-" + b).sha1_text().substr(0, 12)
 	return (a + "-" + b + "-" + c).sha1_text().substr(0, 12)
+
+
+## Fingerprint of the pack's rocky terrain part ("" without one).
+func rocky_fingerprint() -> String:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	return str((parts.get("rocky", {}) as Dictionary).get("fingerprint", ""))
 
 
 ## Fingerprint of the pack's volcano part ("" without one).
@@ -3068,6 +3132,14 @@ func get_chunk_volcanoes(level: int, ipix: int) -> Array:
 	return get_chunk_modifiers(level, ipix).get("volcanoes", [])
 
 
+## Prepared rocky_terrain fields (RockFieldRelief.Field) of the pack tile —
+## same levels and override rule as the zones.
+func get_chunk_rock_fields(level: int, ipix: int) -> Array:
+	if _has_mtn_overrides():
+		return _mtn_override_rocks
+	return get_chunk_modifiers(level, ipix).get("rock_fields", [])
+
+
 ## The MountainSetNative of that tile (null → GDScript path over the lists).
 func get_chunk_mountain_set(level: int, ipix: int) -> RefCounted:
 	if _has_mtn_overrides():
@@ -3093,6 +3165,7 @@ func prepare_mountain_frame(frame: TileFrame, hp_nside: int, hp_ipix: int) -> vo
 	frame.mtn = get_chunk_mountain_zones(level, ip)
 	frame.rdg = get_chunk_ridges(level, ip)
 	frame.vol = get_chunk_volcanoes(level, ip)
+	frame.rck = get_chunk_rock_fields(level, ip)
 	frame.mtn_set = get_chunk_mountain_set(level, ip)
 	frame.mtn_ready = true
 	if frame.native != null:
@@ -3128,6 +3201,50 @@ func _mountain_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float) -> f
 	if zones.is_empty() and ridges.is_empty() and volcanoes.is_empty():
 		return 0.0
 	return MountainRelief.offset(dir, radius, zones, ridges, eff, volcanoes)
+
+
+## The rocky terrain's offset (m) at [param dir] over a ground at
+## [param h_below] (heightmap + mountains) — see sample_height_for_direction.
+## Same frame / tile resolution and thread rules as [method _mountain_offset].
+func _rock_offset(dir: Vector3, frame: TileFrame, vtx_spacing_m: float, h_below: float) -> float:
+	var fields: Array
+	var mset: RefCounted
+	if frame != null and frame.mtn_ready:
+		fields = frame.rck
+		mset = frame.mtn_set
+	else:
+		var ip := HEALPix.vec2pix_nest(export_nside, dir)
+		fields = get_chunk_rock_fields(export_nside, ip)
+		mset = get_chunk_mountain_set(export_nside, ip)
+	if fields.is_empty():
+		return 0.0
+	var eff := maxf(vtx_spacing_m, _mtn_finest_spacing)
+	if mset != null:
+		return mset.Rock(dir, radius, eff, h_below)
+	return RockFieldRelief.offset(dir, radius, fields, eff, h_below)
+
+
+## What the terrain shader draws of the rocky terrain at [param dir]:
+## (intensity × envelope, small-block size in metres, level) of the strongest
+## field there — Vector3.ZERO outside every field (RockFieldRelief.surface).
+## Pitch-free; the chunk builders bake it into CUSTOM1.
+func rock_surface(dir: Vector3, frame: TileFrame = null) -> Vector3:
+	if _has_mountains != 1:
+		return Vector3.ZERO
+	var fields: Array
+	var mset: RefCounted
+	if frame != null and frame.mtn_ready:
+		fields = frame.rck
+		mset = frame.mtn_set
+	else:
+		var ip := HEALPix.vec2pix_nest(export_nside, dir)
+		fields = get_chunk_rock_fields(export_nside, ip)
+		mset = get_chunk_mountain_set(export_nside, ip)
+	if fields.is_empty():
+		return Vector3.ZERO
+	if mset != null:
+		return mset.RockSurface(dir, radius)
+	return RockFieldRelief.surface(dir, radius, fields)
 
 
 ## How deep inside a massif [param dir] is — MountainRelief.core over the
@@ -3587,18 +3704,24 @@ func _grade_submit(road: Dictionary, tiles: Dictionary) -> void:
 ## (grade_height_sampler) reads, plus the rules of GradeProfile: the elevation
 ## (its version — the streamed one when there is a service — and the manifest
 ## that scales it), the procedural relief laid on it (mountains, ridges,
-## volcanoes, relief biomes) and GradeSettings. The lines themselves are keyed
+## volcanoes, rocky terrain, relief biomes) and GradeSettings. The lines themselves are keyed
 ## one by one (grade_line_hash). A bake made under another key is ignored:
 ## the lines are then profiled at run time, as before the bake existed.
 func grade_bake_key() -> String:
 	var elev := chunk_data_version
 	if remote_source != null and str(remote_source.version) != "":
 		elev = str(remote_source.version)
-	return "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%d|pz%s|dbg%d|gs%s" % [
+	var key := "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%d|pz%s|dbg%d|gs%s" % [
 		GRADE_BAKE_VERSION, planet_name, export_nside, radius, max_height, height_offset,
 		terrain_exaggeration, chunk_heightmap_res, elev, mountain_fingerprint(),
 		VolcanoRelief.ALGO_VERSION, populate_fingerprint(),
-		int(debug_mountain_enabled or debug_volcano_enabled), GradeSettings.signature()]
+		int(debug_mountain_enabled or debug_volcano_enabled or debug_rock_enabled),
+		GradeSettings.signature()]
+	# Rocky terrain's algorithm, only where there is some: the bakes of the
+	# other planets keep their key.
+	if rocky_fingerprint() != "" or debug_rock_enabled:
+		key += "|rk%d" % RockFieldRelief.ALGO_VERSION
+	return key
 
 
 ## Identity of one whole profiled line: its geometry and every exported
@@ -4030,11 +4153,16 @@ func sample_height_for_direction(dir: Vector3, known_export_ipix: int = -1,
 	if _has_mountains == 1:
 		# Hot path of every mountain chunk (5 samples a vertex): the frame's C#
 		# set is answered right here, one call; everything else goes through
-		# _mountain_offset.
+		# _mountain_offset. The rocky terrain is laid over the result (it
+		# terraces the ground below it), in the order TileFrameNative.Sample keeps.
 		if frame != null and frame.mtn_ready and frame.mtn_set != null:
-			h = h + frame.mtn_set.Offset(dir, radius, maxf(vtx_spacing_m, _mtn_finest_spacing))
+			var eff := maxf(vtx_spacing_m, _mtn_finest_spacing)
+			h = h + frame.mtn_set.Offset(dir, radius, eff)
+			if not frame.rck.is_empty():
+				h = h + frame.mtn_set.Rock(dir, radius, eff, h)
 		else:
 			h = h + _mountain_offset(dir, frame, vtx_spacing_m)
+			h = h + _rock_offset(dir, frame, vtx_spacing_m, h)
 	if cracks != CrackCarve.NONE and corundum_default_biome:
 		h = h + CrackCarve.offset(self, dir, frame, vtx_spacing_m, cracks)
 	return h
