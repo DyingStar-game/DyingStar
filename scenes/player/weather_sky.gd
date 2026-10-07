@@ -31,6 +31,11 @@ const BLOW_ALBEDO_MAX: float = 0.92
 ## ground), and the period (m) its noise offset is wrapped at.
 const DUST_LAYER_STRENGTH: float = 1.0
 const DUST_WRAP_M: float = 100000.0
+## The fine gusts travel this much faster than the air (the coarse ones ride it).
+const FINE_GUST_SPEED: float = 1.37
+## The noise texture: texels a side, and cells across one period (a feature ≈ period / cells).
+const NOISE_TEXELS: int = 128
+const NOISE_CELLS: float = 14.0
 const BLOW_FALLBACK_COLOUR: Color = Color(0.86, 0.74, 0.56)
 
 var _last_read_at: float = -INF
@@ -38,6 +43,7 @@ var _dust_density: float = 0.0
 var _dust_wind: Vector3 = Vector3.ZERO
 var _dust_sent: bool = false
 var _scroll: Vector3 = Vector3.ZERO
+var _scroll_fine: Vector3 = Vector3.ZERO
 var _noise: NoiseTexture3D = null
 var _refills: int = 0
 
@@ -94,6 +100,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
 	var wind_planet: Vector3 = to_planet * _dust_wind
 	_scroll -= wind_planet * delta
+	_scroll_fine -= wind_planet * (delta * FINE_GUST_SPEED)
 	var cam_planet: Vector3 = to_planet * (camera.global_position - planet.global_position)
 	var offset: Vector3 = Vector3(fposmod(cam_planet.x + _scroll.x, DUST_WRAP_M),
 			fposmod(cam_planet.y + _scroll.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll.z, DUST_WRAP_M))
@@ -106,6 +113,8 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 					- planet.planet_data.crack_aware_surface_dist(dir)
 	renderer.set_dust_param(&"dust_frame", to_planet)
 	renderer.set_dust_param(&"dust_offset", offset)
+	renderer.set_dust_param(&"dust_offset_fine", Vector3(fposmod(cam_planet.x + _scroll_fine.x, DUST_WRAP_M),
+			fposmod(cam_planet.y + _scroll_fine.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll_fine.z, DUST_WRAP_M)))
 	renderer.set_dust_param(&"dust_up", up)
 	renderer.set_dust_param(&"dust_cam_height", height)
 	if wind_planet.length() > 0.1:
@@ -117,16 +126,17 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
 
 
-## A seamless 3D noise for the layer's gusts (64 texels a side, simplex, three octaves).
+## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three
+## octaves (generated on a worker by the engine; the layer shows once it is ready).
 static func _make_noise() -> NoiseTexture3D:
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	noise.frequency = 4.0 / 64.0
+	noise.frequency = NOISE_CELLS / float(NOISE_TEXELS)
 	noise.fractal_octaves = 3
 	var tex := NoiseTexture3D.new()
-	tex.width = 64
-	tex.height = 64
-	tex.depth = 64
+	tex.width = NOISE_TEXELS
+	tex.height = NOISE_TEXELS
+	tex.depth = NOISE_TEXELS
 	tex.seamless = true
 	tex.noise = noise
 	return tex

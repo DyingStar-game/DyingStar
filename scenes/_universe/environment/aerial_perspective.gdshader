@@ -34,10 +34,14 @@ uniform int dust_steps = 20;
 // the wind's direction in that frame, and how much longer the streaks run along it.
 uniform mat3 dust_frame = mat3(1.0);
 uniform vec3 dust_offset = vec3(0.0);
+// The fine gusts' own travel (m), a little faster than the air: the two scales slide past each other,
+// so the pattern evolves as it streams instead of looping with the texture's period.
+uniform vec3 dust_offset_fine = vec3(0.0);
 uniform vec3 dust_wind_dir = vec3(1.0, 0.0, 0.0);
 uniform float dust_stretch = 3.5;
-// Scale of the gusts (m) and how much of the air they empty (0 uniform, 1 in tatters).
-uniform float dust_noise_scale = 26.0;
+// Period of the noise texture (m): it repeats every this many metres, so it must be long (the streaks
+// are a few metres; a short period showed as the same gust coming back every few seconds).
+uniform float dust_noise_scale = 110.0;
 uniform float dust_breakup = 0.75;
 uniform sampler3D dust_noise : filter_linear_mipmap, repeat_enable;
 // The dust's colour (the ground's), and the light on it in scene units: the sun (colour × energy)
@@ -73,10 +77,13 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 		if (h > dust_height * 6.0) {
 			continue;
 		}
-		vec3 air = dust_frame * p + dust_offset;
+		vec3 rel = dust_frame * p;
+		vec3 air = rel + dust_offset;
 		vec3 q = air - w * dot(air, w) * squeeze;
+		vec3 air2 = rel + dust_offset_fine;
+		vec3 q2 = air2 - w * dot(air2, w) * squeeze;
 		float n1 = texture(dust_noise, q / dust_noise_scale).r;
-		float n2 = texture(dust_noise, q / (dust_noise_scale * 0.37) + vec3(0.31, 0.17, 0.73)).r;
+		float n2 = texture(dust_noise, q2 / (dust_noise_scale * 0.413) + vec3(0.31, 0.17, 0.73)).r;
 		float n = n1 * 0.68 + n2 * 0.32;
 		float body = mix(1.0, smoothstep(0.3, 0.72, n), dust_breakup);
 		float profile = exp(-max(h, 0.0) / max(dust_height, 0.1));
