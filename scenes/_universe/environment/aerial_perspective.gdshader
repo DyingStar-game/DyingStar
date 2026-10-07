@@ -103,11 +103,14 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 		if (masked) {
 			continue;
 		}
+		// Only the camera-relative part is stretched here (a few hundred metres): the rest, the camera's
+		// place and the air's travel, arrives already stretched and wrapped to the noise's period (the
+		// CPU, in double precision). Stretching an absolute position thousands of km long made the
+		// smallest turn of the wind's direction throw the whole pattern metres back: the "jumps".
 		vec3 rel = dust_frame * p;
-		vec3 air = rel + dust_offset;
-		vec3 q = air - w * dot(air, w) * squeeze;
-		vec3 air2 = rel + dust_offset_fine;
-		vec3 q2 = air2 - w * dot(air2, w) * squeeze;
+		vec3 sr = rel - w * dot(rel, w) * squeeze;
+		vec3 q = sr + dust_offset;
+		vec3 q2 = sr + dust_offset_fine;
 		float n1 = texture(dust_noise, q / dust_noise_scale).r;
 		float n2 = texture(dust_noise, q2 / (dust_noise_scale * 0.413) + vec3(0.31, 0.17, 0.73)).r;
 		float n = n1 * 0.68 + n2 * 0.32;

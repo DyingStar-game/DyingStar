@@ -33,6 +33,14 @@ const DUST_LAYER_STRENGTH: float = 1.0
 const DUST_WRAP_M: float = 100000.0
 ## The fine gusts travel this much faster than the air (the coarse ones ride it).
 const FINE_GUST_SPEED: float = 1.37
+## The noise's period (m, the shader's dust_noise_scale), the fine gusts' share of it, the streaks'
+## stretch along the wind, how fast their direction follows the wind (1/s), and how far the camera
+## goes (m) before the noise's anchor is laid again under it.
+const DUST_NOISE_SCALE: float = 110.0
+const FINE_SCALE: float = 0.413
+const DUST_STRETCH: float = 3.5
+const WIND_DIR_RATE: float = 0.3
+const ANCHOR_RESET_M: float = 4000.0
 ## The noise texture: texels a side, and cells across one period (a feature ≈ period / cells).
 const NOISE_TEXELS: int = 128
 const NOISE_CELLS: float = 14.0
@@ -44,13 +52,18 @@ var _dust_wind: Vector3 = Vector3.ZERO
 var _dust_sent: bool = false
 var _scroll: Vector3 = Vector3.ZERO
 var _scroll_fine: Vector3 = Vector3.ZERO
+var _wind_dir: Vector3 = Vector3.ZERO
+var _anchor: Vector3 = Vector3.ZERO
+var _anchor_set: bool = false
 var _noise: NoiseTexture3D = null
 ## The dust probe (client.ini debug_dust_probe=true): what was sent to the layer last frame, to log
 ## every discontinuity of it. Off, it costs a bool test.
 var _probe_start: float = 0.0
 var _sheltered_start: bool = false
+var _no_dust_layer: bool = ClientConfig.get_bool("debug_no_dust_layer", false)
 var _probe_on: bool = ClientConfig.get_bool("debug_dust_probe", false)
 var _probe_last: Dictionary = {}
+var _probe_light_last: Array = []
 var _probe_summary_at: int = 0
 var _refills: int = 0
 
@@ -81,6 +94,8 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	# The wind's dust layer near the eye: the same extinction as the slab (the lift) plus the storm's.
 	_dust_density = (blow_extinction(lifted) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
 			* DUST_LAYER_STRENGTH
+	if _no_dust_layer:
+		_dust_density = 0.0  # client.ini debug_no_dust_layer: an A/B switch for the layer's cost and look
 	_dust_wind = planet.wind_world_at(observer_world_pos)
 	# Under a roof and between walls the layer starts past the room (ShelterProbe.REACH_M): it is drawn
 	# over the whole screen, so the room is kept clear by depth, and the windows still show the outside.
@@ -122,11 +137,30 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		renderer.set_dust_param(&"dust_noise", _noise)
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
 	var wind_planet: Vector3 = to_planet * _dust_wind
-	_scroll -= wind_planet * delta
-	_scroll_fine -= wind_planet * (delta * FINE_GUST_SPEED)
+	# The streaks' direction, smoothed: it turns over seconds, never in a frame.
+	if wind_planet.length() > 0.1:
+		var target: Vector3 = wind_planet.normalized()
+		_wind_dir = target if _wind_dir.is_zero_approx() \
+				else _wind_dir.lerp(target, clampf(delta * WIND_DIR_RATE, 0.0, 1.0)).normalized()
+	var w: Vector3 = _wind_dir if not _wind_dir.is_zero_approx() else Vector3.RIGHT
 	var cam_planet: Vector3 = to_planet * (camera.global_position - planet.global_position)
-	var offset: Vector3 = Vector3(fposmod(cam_planet.x + _scroll.x, DUST_WRAP_M),
-			fposmod(cam_planet.y + _scroll.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll.z, DUST_WRAP_M))
+	# The noise is anchored near the player (re-anchored past ANCHOR_RESET_M, rarely): the stretched
+	# coordinates stay a few km long, and a turn of the wind moves the pattern by millimetres.
+	if _anchor_set == false or cam_planet.distance_to(_anchor) > ANCHOR_RESET_M:
+		_anchor = cam_planet
+		_anchor_set = true
+	var squeeze: float = 1.0 - 1.0 / DUST_STRETCH
+	var cam_q: Vector3 = _stretch(cam_planet - _anchor, w, squeeze)
+	# The air's travel, in the stretched space, wrapped to each scale's period as it goes.
+	var travel: Vector3 = _stretch(-wind_planet * delta, w, squeeze)
+	var period_c: float = DUST_NOISE_SCALE
+	var period_f: float = DUST_NOISE_SCALE * FINE_SCALE
+	_scroll = _wrap(_scroll + travel, period_c)
+	_scroll_fine = _wrap(_scroll_fine + travel * FINE_GUST_SPEED, period_f)
+	var offset: Vector3 = _wrap(cam_q + _scroll, period_c)
+	renderer.set_dust_param(&"dust_wind_dir", w)
+	renderer.set_dust_param(&"dust_stretch", DUST_STRETCH)
+	renderer.set_dust_param(&"dust_noise_scale", DUST_NOISE_SCALE)
 	var up: Vector3 = (camera.global_position - planet.global_position).normalized()
 	var height: float = 1.7
 	if planet.planet_data != null:
@@ -136,8 +170,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 					- planet.planet_data.crack_aware_surface_dist(dir)
 	renderer.set_dust_param(&"dust_frame", to_planet)
 	renderer.set_dust_param(&"dust_offset", offset)
-	renderer.set_dust_param(&"dust_offset_fine", Vector3(fposmod(cam_planet.x + _scroll_fine.x, DUST_WRAP_M),
-			fposmod(cam_planet.y + _scroll_fine.y, DUST_WRAP_M), fposmod(cam_planet.z + _scroll_fine.z, DUST_WRAP_M)))
+	renderer.set_dust_param(&"dust_offset_fine", _wrap(cam_q + _scroll_fine, period_f))
 	renderer.set_dust_param(&"dust_up", up)
 	renderer.set_dust_param(&"dust_cam_height", height)
 	var masks: Array[Projection] = renderer.weather_masks.masks_for(camera.global_position) \
@@ -146,14 +179,36 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	if not masks.is_empty():
 		renderer.set_dust_param(&"dust_mask", masks)
 	if _probe_on:
-		_probe(offset, wind_planet, masks.size(), height, delta)
-	if wind_planet.length() > 0.1:
-		renderer.set_dust_param(&"dust_wind_dir", wind_planet.normalized())
+		_probe_light(renderer)
+	if _probe_on:
+		_probe(_scroll, wind_planet, masks.size(), height, delta)
 	if is_instance_valid(renderer.sun):
 		var c: Color = renderer.sun.light_color * renderer.sun.light_energy
 		renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
 		renderer.set_dust_param(&"dust_ambient", Vector3(c.r, c.g, c.b) * 0.22 + Vector3(0.03, 0.035, 0.045))
 		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+
+
+## The probe's light side: the sun's energy and colour (> 2 %), the veil's two knobs, the blown slab.
+func _probe_light(renderer: AtmosphereRenderer) -> void:
+	var sun_e: float = renderer.sun.light_energy if is_instance_valid(renderer.sun) else 0.0
+	var sun_c: Color = renderer.sun.light_color if is_instance_valid(renderer.sun) else Color.BLACK
+	var now := [sun_e, sun_c, renderer.weather_haze_scale, renderer.weather_haze_floor_m, renderer.weather_blow_beta]
+	if not _probe_light_last.is_empty():
+		var why: PackedStringArray = []
+		var e0: float = _probe_light_last[0]
+		if absf(sun_e - e0) > 0.02 * maxf(e0, 1e-4):
+			why.append("sun energy %.4f -> %.4f" % [e0, sun_e])
+		var c0: Color = _probe_light_last[1]
+		if absf(c0.r - sun_c.r) + absf(c0.g - sun_c.g) + absf(c0.b - sun_c.b) > 0.02:
+			why.append("sun colour %s -> %s" % [c0, sun_c])
+		if _probe_light_last[2] != now[2] or _probe_light_last[3] != now[3]:
+			why.append("veil knobs %s,%s -> %s,%s" % [_probe_light_last[2], _probe_light_last[3], now[2], now[3]])
+		if absf(float(_probe_light_last[4]) - float(now[4])) > 1e-6:
+			why.append("blown slab %.5f -> %.5f" % [_probe_light_last[4], now[4]])
+		if not why.is_empty():
+			print("[DustProbe] f%d t%.2f LIGHT %s" % [Engine.get_frames_drawn(), Time.get_ticks_msec() * 0.001, " | ".join(why)])
+	_probe_light_last = now
 
 
 ## The dust probe: logs, with the frame and the clock, each jump of what the layer is sent — the
@@ -173,8 +228,10 @@ func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: fl
 		if w0.length() > 0.1 and wind.length() > 0.1 and rad_to_deg(w0.angle_to(wind)) > 2.0:
 			why.append("wind dir %.1f deg" % rad_to_deg(w0.angle_to(wind)))
 		var travel: Vector3 = offset - (last["offset"] as Vector3)
-		var expected: Vector3 = -wind * delta
-		if (travel - expected).length() > 0.5:
+		var expected: Vector3 = _stretch(-wind * delta, _wind_dir, 1.0 - 1.0 / DUST_STRETCH)
+		var wrapped: bool = absf(travel.x) > DUST_NOISE_SCALE * 0.5 or absf(travel.y) > DUST_NOISE_SCALE * 0.5 \
+				or absf(travel.z) > DUST_NOISE_SCALE * 0.5
+		if not wrapped and (travel - expected).length() > 0.5:
 			why.append("offset jumped %.2f m (moved %s, wind expects %s)" % [(travel - expected).length(), travel, expected])
 		if int(last["masks"]) != masks:
 			why.append("masks %d -> %d" % [int(last["masks"]), masks])
@@ -190,6 +247,17 @@ func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: fl
 		print("[DustProbe] summary density %.5f (vis %.0f m) wind %.1f m/s masks %d height %.1f m start %.0f m" % [
 			_dust_density, 3.912 / maxf(_dust_density, 1e-6), wind.length(), masks, height, _probe_start])
 	_probe_last = now
+
+
+## [param v] with its part along [param w] shrunk by [param squeeze]: the streaks' stretch.
+static func _stretch(v: Vector3, w: Vector3, squeeze: float) -> Vector3:
+	return v - w * v.dot(w) * squeeze
+
+
+## Each component of [param v] wrapped into [0, period): the noise repeats every period, so the
+## pattern is the same and the numbers stay small for the float32 shader.
+static func _wrap(v: Vector3, period: float) -> Vector3:
+	return Vector3(fposmod(v.x, period), fposmod(v.y, period), fposmod(v.z, period))
 
 
 ## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three
