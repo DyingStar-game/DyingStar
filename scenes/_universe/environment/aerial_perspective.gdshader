@@ -88,14 +88,36 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	vec3 lit = dust_albedo * (dust_sun * 0.3 * forward + dust_ambient);
 	vec3 w = normalize(dust_wind_dir);
 	float squeeze = 1.0 - 1.0 / max(dust_stretch, 1.0);
+	// The buildings this ray crosses, as [enter, leave] distances along it: the ray is a line from the
+	// camera, so in a box's unit frame it is one too, and the slab test gives the interval once per
+	// pixel. Each step then compares t with the few intervals kept, instead of transforming its point
+	// by every box (14 boxes x 20 steps cost 1.3 ms of GPU on a 3090, the layer itself 0.3).
+	vec2 crossed[16];
+	int crossed_count = 0;
+	for (int m = 0; m < dust_mask_count; m++) {
+		vec3 o = (dust_mask[m] * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+		vec3 d = (dust_mask[m] * vec4(dir, 0.0)).xyz;
+		// 1/d without a division by zero: a ray parallel to a face gets a huge, signed inverse.
+		vec3 s = vec3(greaterThanEqual(d, vec3(0.0))) * 2.0 - 1.0;
+		vec3 inv = s / max(abs(d), vec3(1e-8));
+		vec3 ta = (vec3(-0.5) - o) * inv;
+		vec3 tb = (vec3(0.5) - o) * inv;
+		vec3 near = min(ta, tb);
+		vec3 far = max(ta, tb);
+		float enter = max(max(near.x, near.y), near.z);
+		float leave = min(min(far.x, far.y), far.z);
+		if (leave > max(enter, t0) && enter < range) {
+			crossed[crossed_count] = vec2(enter, leave);
+			crossed_count++;
+		}
+	}
 	for (int i = 0; i < steps; i++) {
 		float t = t0 + (float(i) + jitter) * dt;
 		vec3 p = dir * t;
 		float h = dust_cam_height + dot(p, dust_up);
 		bool masked = false;
-		for (int m = 0; m < dust_mask_count; m++) {
-			vec3 l = (dust_mask[m] * vec4(p, 1.0)).xyz;
-			if (all(lessThan(abs(l), vec3(0.5)))) {
+		for (int m = 0; m < crossed_count; m++) {
+			if (t > crossed[m].x && t < crossed[m].y) {
 				masked = true;
 				break;
 			}
