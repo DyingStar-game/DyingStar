@@ -25,8 +25,8 @@ const REFERENCE_AIR_KG_M3: float = 1.0
 const SMOOTH_S: float = 0.6
 ## Silence, in dB, for a layer out of its window.
 const SILENT_DB: float = -80.0
-## The scene the layers are tuned in.
-const SCENE: String = "res://scenes/audio/weather/weather_audio.tscn"
+## The layers are tuned in the weather effects scene (res://scenes/weather/weather_effects.tscn, node
+## "Audio"); the code's default_layers are the fallback for a node without any.
 ## The mix's own bus, made on first use under the SFX bus (the Audio slider still holds it), with the
 ## low-pass a shelter closes: from the open air's cut-off (the filter is transparent) to a wall's.
 const BUS: StringName = &"WeatherAmbience"
@@ -45,15 +45,6 @@ var _shelter_now: float = 0.0
 var _lowpass: AudioEffectLowPassFilter = null
 var _cutoff_hz: float = -1.0
 var _sync: AudioStreamSynchronized = null
-
-
-## The player of the weather, from its scene (res://scenes/audio/weather/weather_audio.tscn), where the
-## layers are set in the Inspector: the loops, their parameter, window, fades and volume. The code's
-## default_layers are the fallback for a scene without any.
-static func make() -> WeatherAudio:
-	var scene: PackedScene = load(SCENE)
-	var node: WeatherAudio = scene.instantiate() as WeatherAudio if scene != null else null
-	return node if node != null else WeatherAudio.new()
 
 
 ## The library's one weather loop so far: a sandstorm (CC0, assets/_universe/audio/ambience), heard

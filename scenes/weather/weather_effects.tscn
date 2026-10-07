@@ -1,0 +1,109 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/weather/weather_effects.gd" id="1_fx"]
+[ext_resource type="Script" path="res://scenes/audio/weather/weather_audio.gd" id="2_audio"]
+[ext_resource type="Script" path="res://scenes/audio/weather/weather_audio_layer.gd" id="3_layer"]
+[ext_resource type="AudioStream" uid="uid://djex6wq28dp6i" path="res://assets/_universe/audio/ambience/wind_strong_001.ogg" id="4_wind"]
+[ext_resource type="Script" path="res://scenes/weather/weather_dust.gd" id="5_dust"]
+[ext_resource type="Script" path="res://scenes/weather/dust_population.gd" id="6_pop"]
+
+[sub_resource type="Resource" id="Resource_wind"]
+script = ExtResource("3_layer")
+stream = ExtResource("4_wind")
+parameter = &"wind_speed_m_s"
+from = 6.0
+to = 80.0
+fade_in = 0.18
+volume_db = -6.0
+
+[sub_resource type="Resource" id="Resource_storm"]
+script = ExtResource("3_layer")
+stream = ExtResource("4_wind")
+from = 0.1
+fade_in = 0.35
+volume_db = -1.0
+
+[sub_resource type="Resource" id="Pop_clouds"]
+script = ExtResource("6_pop")
+rate_full = 40.0
+size_m = 2.2
+opacity = 1.0
+stretch_per_ms = 0.03
+lifetime_s = 3.0
+capacity = 256
+upwind_m = 12.0
+spread_m = 8.0
+height_m = 2.5
+speed_share = 1.0
+rise_ms = 0.0
+grains = 2
+patch_m = 0.5
+
+[sub_resource type="Resource" id="Pop_veils"]
+script = ExtResource("6_pop")
+rate_full = 7.0
+size_m = 9.0
+opacity = 0.12
+stretch_per_ms = 0.12
+lifetime_s = 3.5
+capacity = 256
+upwind_m = 7.2
+spread_m = 24.0
+height_m = 1.2
+speed_share = 0.9
+rise_ms = 0.0
+grains = 1
+patch_m = 1.5
+
+[sub_resource type="Resource" id="Pop_streaks"]
+script = ExtResource("6_pop")
+rate_full = 80.0
+size_m = 0.35
+opacity = 1.0
+stretch_per_ms = 0.08
+lifetime_s = 0.8
+capacity = 320
+upwind_m = 3.15
+spread_m = 10.0
+height_m = 0.25
+speed_share = 0.85
+rise_ms = 0.35
+grains = 1
+patch_m = 0.4
+
+[sub_resource type="Resource" id="Pop_wisps"]
+script = ExtResource("6_pop")
+rate_full = 14.0
+size_m = 1.8
+opacity = 0.22
+stretch_per_ms = 0.12
+lifetime_s = 3.5
+capacity = 256
+upwind_m = 3.5
+spread_m = 14.0
+height_m = 0.3
+speed_share = 0.7
+rise_ms = 0.9
+grains = 1
+patch_m = 0.8
+
+[node name="WeatherEffects" type="Node"]
+script = ExtResource("1_fx")
+
+[node name="Audio" type="AudioStreamPlayer" parent="."]
+script = ExtResource("2_audio")
+layers = Array[ExtResource("3_layer")]([SubResource("Resource_wind"), SubResource("Resource_storm")])
+
+[node name="Dust" type="Node" parent="."]
+script = ExtResource("5_dust")
+clouds = SubResource("Pop_clouds")
+veils = SubResource("Pop_veils")
+streaks = SubResource("Pop_streaks")
+wisps = SubResource("Pop_wisps")
+opacity = 0.32
+forward_glow = 0.35
+scatter_g = 0.65
+wisp = 0.45
+edge_ragged = 0.8
+edge_softness = 0.6
+proximity_fade = 0.6

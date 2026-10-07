@@ -113,6 +113,7 @@ var _last_stow_action: String = ""         # last "stow:<n>" applied (events rep
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
 var _dust: DustEmitter = null              # the dust our feet kick up, built on the first step
 var _storm_dust: StormDust = null          # the storm's grains past the camera, built on the first frame on a body
+var _weather_fx: WeatherEffects = null       # the weather effects scene (loops + dust looks), tuned live
 var _weather_audio: WeatherAudio = null     # the weather's loops at the listener, built with the first frame
 var _weather_audio_age: float = INF        # since the loops last read the weather; INF = read now
 var _shelter: Dictionary = ShelterProbe.open()  # how sheltered we are (ShelterProbe), four times a second
@@ -1935,15 +1936,14 @@ func _update_storm_dust(delta: float) -> void:
 	if _storm_dust == null:
 		if player.dust == null:
 			return
-		_storm_dust = StormDust.new(player, player.dust)
+		_storm_dust = StormDust.new(player, player.dust, _effects().dust())
 	_storm_dust.update(delta, _surface_family, float(_shelter.get("shelter", 0.0)))
 
 ## The weather's loops at the listener (WeatherAudio), fed the weather here twice a second and muffled
 ## at the wheel. Built once, under the body, so it frees with it.
 func _update_weather_audio(delta: float) -> void:
 	if _weather_audio == null:
-		_weather_audio = WeatherAudio.make()
-		player.add_child(_weather_audio, false, Node.INTERNAL_MODE_BACK)
+		_weather_audio = _effects().audio()
 	_weather_audio_age += delta
 	if _weather_audio_age < WEATHER_AUDIO_SAMPLE_S:
 		return
@@ -1970,6 +1970,15 @@ func _sample_shelter(delta: float) -> void:
 		_shelter = ShelterProbe.probe(player, player.global_position + up * EYE_HEIGHT_M, up, wind,
 				Globals.MASK_OBSTACLE, not in_trench)
 	player.weather_shelter = _shelter
+
+
+## The weather effects scene (res://scenes/weather/weather_effects.tscn: the loops and the dust looks),
+## under the body so it frees with it; made on first use.
+func _effects() -> WeatherEffects:
+	if _weather_fx == null:
+		_weather_fx = WeatherEffects.make()
+		player.add_child(_weather_fx, false, Node.INTERNAL_MODE_BACK)
+	return _weather_fx
 
 
 ## Refresh the cached surface family. Called from _physics_process — the ONLY place a ray may be cast,

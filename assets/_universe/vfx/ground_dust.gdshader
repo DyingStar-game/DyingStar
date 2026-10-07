@@ -1,5 +1,7 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_never, cull_disabled, specular_disabled;
+// shadows_disabled: a grain does not receive the shadow map. On a puff metres across, half see-through,
+// its cascades and texels drew straight-edged squares across every sunlit cloud.
+render_mode blend_mix, depth_draw_never, cull_disabled, specular_disabled, shadows_disabled;
 // Look of one ground-dust particle (DustEmitter): a soft, ragged blob facing the camera, the colour of
 // the ground it came from (COLOR, set at emission), thinning out as it ages.
 //
@@ -27,7 +29,7 @@ uniform float proximity_fade : hint_range(0.0, 4.0, 0.01) = 0.6;
 // Forward scattering: how much a puff lit from behind brightens over one lit from the side (0 = the
 // plain wrapped lambert of before), and the asymmetry g of the phase function (0 = even, 1 = all
 // forward; fine mineral dust sits around 0.6–0.7).
-uniform float forward_glow : hint_range(0.0, 2.0, 0.01) = 0.6;
+uniform float forward_glow : hint_range(0.0, 2.0, 0.01) = 0.35;
 uniform float scatter_g : hint_range(0.0, 0.95, 0.01) = 0.65;
 // How much the noise is warped into wisps (0 = the plain fractal of before).
 uniform float wisp : hint_range(0.0, 1.0, 0.01) = 0.45;

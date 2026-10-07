@@ -42,6 +42,12 @@ var _particles: GPUParticles3D = null
 var _ground_color: Color = Color(0.55, 0.48, 0.4)
 var _airless: bool = false
 var _gravity: float = 9.8
+## The wind at the actor, world frame (m/s), read with the ground; zero without weather.
+var _wind_world: Vector3 = Vector3.ZERO
+## Grains drawn as streaks along their motion, this much longer per m/s (0 = round puffs).
+var _stretch_per_ms: float = 0.0
+## The look of the grains: ground_dust.gdshader uniforms by name (WeatherDust), pushed with the air.
+var _look: Dictionary = {}
 var _ground_read_at: float = -INF  # seconds (ticks); -INF = read at the next puff
 
 
@@ -95,6 +101,45 @@ func puff(global_pos: Vector3, family: StringName, strength: float, velocity: Ve
 ## Static and pure so the rule is testable without a scene.
 static func anchor_holds(anchor_parent: Node, parent: Node, local_offset: Vector3) -> bool:
 	return anchor_parent == parent and local_offset.length() <= ANCHOR_RADIUS_M
+
+
+## Draw the grains as streaks along their motion, [param per_ms] longer per m/s of speed (0 = round
+## puffs): the saltation of a blow (StormDust). Applies to the whole cloud of this emitter.
+func set_stretch(per_ms: float) -> void:
+	_stretch_per_ms = per_ms
+	_configure()
+
+
+## The look of the grains, as ground_dust.gdshader uniforms by name (opacity, forward_glow, wisp…):
+## applied at once and to every anchor laid later. Read live from the weather effects scene.
+func set_look(uniforms: Dictionary) -> void:
+	if uniforms == _look:
+		return
+	_look = uniforms.duplicate()
+	_apply_look()
+
+
+## How many grains live at once and how long, for an emitter whose population was retuned live: the
+## anchor in use finishes its puffs and the next puff lays a new one of the new shape.
+func set_shape(capacity: int, lifetime: float) -> void:
+	if capacity == _capacity and is_equal_approx(lifetime, _lifetime):
+		return
+	_capacity = maxi(capacity, 1)
+	_lifetime = maxf(lifetime, 0.05)
+	if is_instance_valid(_particles):
+		_retire(_particles)
+	_particles = null
+
+
+func _apply_look() -> void:
+	if not is_instance_valid(_particles) or _look.is_empty():
+		return
+	var quad := _particles.draw_pass_1 as QuadMesh
+	var look := quad.material as ShaderMaterial if quad != null else null
+	if look == null:
+		return
+	for key: String in _look:
+		look.set_shader_parameter(StringName(key), _look[key])
 
 
 ## Free the anchor now. Called by the owner when it goes away for good.
@@ -193,6 +238,7 @@ func _refresh_ground(global_pos: Vector3) -> void:
 			_ground_color = GroundLook.at(data, radial.normalized(), _dust.fallback_color).color
 		_airless = data.atmosphere_profile == null
 		_gravity = data.surface_gravity
+		_wind_world = planet.wind_world_at(global_pos)
 	_configure()
 
 
@@ -211,3 +257,8 @@ func _configure() -> void:
 		process.set_shader_parameter(&"settle", _dust.air_settle)
 		process.set_shader_parameter(&"drag", _dust.air_drag)
 		process.set_shader_parameter(&"growth", _dust.air_growth)
+	# The wind in the particles' own frame (the anchor's, +Y up): a direction, small and safe in float.
+	process.set_shader_parameter(&"wind",
+			Vector3.ZERO if _airless else _particles.global_basis.inverse() * _wind_world)
+	process.set_shader_parameter(&"stretch_per_ms", _stretch_per_ms)
+	_apply_look()
