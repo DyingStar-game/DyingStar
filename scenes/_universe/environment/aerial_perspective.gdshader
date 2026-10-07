@@ -27,6 +27,9 @@ uniform float dust_density = 0.0;
 uniform float dust_height = 6.0;
 uniform float dust_cam_height = 1.7;
 uniform vec3 dust_up = vec3(0.0, 1.0, 0.0);
+// Where the march starts (m from the eye): 0 in the open; sheltered, past the room's walls, so a wall
+// near the eye gets no dust (its depth is shorter) while a window or a door shows the dust outside.
+uniform float dust_start = 0.0;
 // How far the layer is marched (m) and in how many steps.
 uniform float dust_range = 300.0;
 uniform int dust_steps = 20;
@@ -64,7 +67,7 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	// nothing.
 	float top = dust_height * 6.0;
 	float rise = dot(dir, dust_up);
-	float t0 = 0.0;
+	float t0 = dust_start;
 	if (dust_cam_height > top) {
 		t0 = rise < -1e-4 ? (top - dust_cam_height) / rise : range;
 	} else if (rise > 1e-4) {
@@ -96,7 +99,7 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 		float body = mix(1.0, smoothstep(0.3, 0.72, n), dust_breakup);
 		float profile = exp(-max(h, 0.0) / max(dust_height, 0.1));
 		// Fades in from the camera (no wall of dust in the lens) and out toward the range's end.
-		float fade = smoothstep(0.0, 6.0, t) * (1.0 - smoothstep(range * 0.7, range, t));
+		float fade = smoothstep(dust_start, dust_start + 6.0, t) * (1.0 - smoothstep(range * 0.7, range, t));
 		float sigma = dust_density * body * profile * fade;
 		float step_t = exp(-sigma * dt);
 		light += trans * (1.0 - step_t) * lit;

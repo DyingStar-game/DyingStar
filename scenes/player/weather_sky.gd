@@ -75,11 +75,13 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	_dust_density = (blow_extinction(lifted) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
 			* DUST_LAYER_STRENGTH
 	_dust_wind = planet.wind_world_at(observer_world_pos)
-	# Under a roof and between walls the layer fades out: it is drawn over the whole screen and cannot
-	# tell the room from the field outside, so a shelter (the player's ShelterProbe) dims it.
+	# Under a roof and between walls the layer starts past the room (ShelterProbe.REACH_M): it is drawn
+	# over the whole screen, so the room is kept clear by depth, and the windows still show the outside.
 	var shelter_v: Variant = renderer.player.get("weather_shelter") if is_instance_valid(renderer.player) else null
-	if shelter_v is Dictionary:
-		_dust_density *= 1.0 - 0.9 * clampf(float((shelter_v as Dictionary).get("shelter", 0.0)), 0.0, 1.0)
+	var start: float = 0.0
+	if shelter_v is Dictionary and float((shelter_v as Dictionary).get("shelter", 0.0)) >= 0.5:
+		start = ShelterProbe.REACH_M
+	renderer.set_dust_param(&"dust_start", start)
 	renderer.set_dust_param(&"dust_density", _dust_density)
 	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
 	var ground: float = planet.elevation_of(observer_world_pos)
