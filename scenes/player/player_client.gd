@@ -125,6 +125,9 @@ var _map_pad_down: bool = false
 var _map_pad_held_s: float = 0.0
 ## How long the chart's pad button is held before the controls help opens instead of the chart (s).
 const HELP_HOLD_S: float = 0.35
+## Full-screen services terminal (F3): the same modal treatment, for the social/mission/economy REST
+## services. Local player only.
+var _services: TerminalUI = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -220,6 +223,12 @@ func setup() -> void:
 	_star_map.setup(player)  # so the chart can mark where you are
 	_help = ControlsHelp.new()
 	player.add_child(_help)
+	# Services terminal (F3): social / mission / economie, opened as a full-screen modal like the chart.
+	_services = TerminalUI.new()
+	player.get_node("UserInterface").add_child(_services)
+	# Its NAVIGATION tab hands the screen over to the chart, the way F2 would: the tablet closes
+	# itself and asks, it never reaches for the chart on its own.
+	_services.navigation_requested.connect(_open_navigation)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -828,7 +837,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if InputCombo.pressed(event, "controls_help"):
 		_open_controls_help(InputDevice.Kind.KEYBOARD_MOUSE)
 		return
-	if _star_map_open(): return
+	if InputCombo.pressed(event, "toggle_services") and _services != null:
+		if _services.is_open():
+			_services.close()
+		else:
+			# One full-screen modal at a time: the chart yields the screen to the tablet, as the
+			# tablet yields it to the chart (see _open_navigation).
+			if _star_map != null and _star_map.is_open():
+				_star_map.close()
+			_services.open()
+		return
+	if _star_map_open() or _services_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
 	# (the seat's door must be open — open it first by looking at its handle) and we stand up when it
 	# says so, in the `unseat` branch of _apply_replicated_action.
@@ -1328,11 +1347,12 @@ func _help_open() -> bool:
 	return _help != null and _help.visible
 
 
-## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart. A 3D
-## screen is deliberately NOT in this list — it takes the pointer, never the game — which is what
-## lets the view still pan across a console while its filter box has the keyboard.
+## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart, the
+## controls help, the services terminal. A 3D screen is deliberately NOT in this list — it takes the
+## pointer, never the game — which is what lets the view still pan across a console while its filter
+## box has the keyboard.
 func _modal_open() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open() or _services_open()
 
 ## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
 ## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.
@@ -1377,6 +1397,19 @@ func _offer_play_hints() -> void:
 ## same way a menu freezes it.
 func _star_map_open() -> bool:
 	return _star_map != null and _star_map.is_open()
+
+## The services terminal is modal in the same way (F3).
+func _services_open() -> bool:
+	return _services != null and _services.is_open()
+
+
+## The tablet's NAVIGATION tab: it closes itself and asks for the chart, which is exactly what F2
+## does — one full-screen modal hands over to the other, they never stand side by side.
+func _open_navigation() -> void:
+	if _services != null:
+		_services.close()
+	if _star_map != null and not _star_map.is_open():
+		_star_map.open()
 
 
 ## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR
