@@ -260,6 +260,11 @@ var stand_body_height: float = 1.8
 ## How the 2 m climb sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_climb_2m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_group("Ground dust")
+## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
+## bigger one on landing. Null = no dust.
+@export var dust: SurfaceDust = preload("res://scenes/common/ground_dust.tres")
+
 @export_group("")
 
 var client_uuid: String = ""
