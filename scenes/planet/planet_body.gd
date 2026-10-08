@@ -1006,7 +1006,14 @@ func weather_systems() -> Array:
 	for n: Node in get_tree().get_nodes_in_group(WeatherSystem.GROUP):
 		if n is WeatherSystem and n.get_parent() == self:
 			out.append(n.state())
+	out.append_array(debug_weather_systems)
 	return out
+
+
+## Systems this client adds on top of Horizon's, for development only (client.ini
+## debug_dust_storm_km: a test storm ahead of the camera). Same Dictionaries as WeatherSystem.state().
+## The server never sees them: they show, they do not push.
+var debug_weather_systems: Array = []
 
 
 ## Declination of the star today, degrees: how far it stands north of this body's equator — the

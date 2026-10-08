@@ -28,7 +28,8 @@ const STAGES: Array = [
 	["no_blow", [&"no_blow"]],
 	["layer_8_steps", [&"low_steps"]],
 	["no_layer", [&"no_layer"]],
-	["none", [&"no_masks", &"no_colliders", &"no_particles", &"no_blow", &"no_layer"]],
+	["no_storm", [&"no_storm"]],
+	["none", [&"no_masks", &"no_colliders", &"no_particles", &"no_blow", &"no_layer", &"no_storm"]],
 	["all_again", []],
 ]
 
@@ -42,6 +43,8 @@ static var no_colliders: bool = false
 static var no_particles: bool = false
 ## The blown slab in the sky (WeatherSky.blow_*): extinction 0.
 static var no_blow: bool = false
+## The far storm volume (StormField): off, the veil's old storm knob takes over.
+static var no_storm: bool = false
 
 var _renderer: AtmosphereRenderer = null
 var _stage: int = 0
@@ -120,6 +123,7 @@ func _apply(switches: Array) -> void:
 	_set_colliders(&"no_colliders" in switches)
 	no_particles = &"no_particles" in switches
 	no_blow = &"no_blow" in switches
+	no_storm = &"no_storm" in switches
 	if is_instance_valid(_renderer):
 		var steps: int = LOW_STEPS if &"low_steps" in switches else clampi(_renderer.view_steps, 8, 20)
 		_renderer.set_dust_param(&"dust_steps", steps)

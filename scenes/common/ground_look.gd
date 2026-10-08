@@ -85,6 +85,12 @@ static func is_ours(m: Material) -> bool:
 	return m != null and _materials.values().has(m)
 
 
+## The ground's colour alone along [param dir] (no material, no detail): what the storm field reads
+## for every cell of its grid, where at() would build a fringe material per call.
+static func colour_at(data: PlanetData, dir: Vector3, fallback: Color) -> Color:
+	return _colour_of(data, dir, fallback) if data != null else fallback
+
+
 static func _colour_of(data: PlanetData, dir: Vector3, fallback: Color) -> Color:
 	var biome: Color = data.ground_albedo_at(dir)
 	# What the terrain renders is the biome colour scaled by albedo_multiplier -- see

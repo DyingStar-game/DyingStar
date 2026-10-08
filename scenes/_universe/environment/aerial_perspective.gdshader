@@ -74,6 +74,118 @@ uniform vec3 dust_ground_up = vec3(0.0, 1.0, 0.0);
 uniform float dust_ground_half = 352.0;
 uniform float dust_ground_lift = 0.0;
 
+// The storms, near and far (StormField): a regional grid of the storm dust's extinction (1/m) and of
+// the ground (m over the sphere through the grid's anchor), on the tangent frame at the anchor, all in
+// the planet's frame. The dust fills DUST_LAYER_M (storm_depth) of air over the ground, the sampler's
+// own convention, so the visibility inside is the one the weather debug prints. storm_cam: the camera
+// relative to the anchor; storm_ground_top: the grid's highest ground; storm_far: how far a ray looks.
+uniform int storm_on = 0;
+uniform sampler2D storm_dust : filter_linear, repeat_disable;
+uniform sampler2D storm_ground : filter_linear, repeat_disable;
+uniform mat3 storm_frame = mat3(1.0);
+uniform vec3 storm_cam = vec3(0.0);
+uniform vec3 storm_east = vec3(1.0, 0.0, 0.0);
+uniform vec3 storm_north = vec3(0.0, 0.0, 1.0);
+uniform vec3 storm_up = vec3(0.0, 1.0, 0.0);
+uniform float storm_half = 256000.0;
+uniform float storm_radius = 6356000.0;
+uniform float storm_ground_top = 0.0;
+uniform float storm_beta_max = 0.0;
+uniform float storm_depth = 1000.0;
+uniform float storm_far = 120000.0;
+uniform int storm_steps = 24;
+// The storm dust's colour per cell (StormField: the ground it stands on, mixed over ~44 km), read
+// through a turbulent warp of the shared dust noise at storm_colour_noise_m (a few km), so where an
+// ochre storm meets a white one the line twists instead of following the grid. storm_noise_offset:
+// the anchor in noise periods, wrapped on the CPU, so the pattern is the planet's and does not jump
+// when the grid is laid again.
+uniform sampler2D storm_albedo : filter_linear, repeat_disable;
+uniform float storm_colour_noise_m = 9000.0;
+uniform float storm_colour_warp_m = 6000.0;
+uniform vec3 storm_noise_offset = vec3(0.0);
+
+// The height (m) of [param q] (planet frame, relative to the anchor) over the sphere through the
+// anchor, without subtracting two radii of millions of metres in float32.
+float storm_altitude(vec3 q) {
+	float w = dot(q, storm_up);
+	float s2 = max(dot(q, q) - w * w, 0.0);
+	return (2.0 * storm_radius * w + w * w + s2) / (sqrt((storm_radius + w) * (storm_radius + w) + s2) + storm_radius);
+}
+
+// The storm dust between the camera and [param limit] metres along [param dir] (world): what it
+// scatters toward the eye, its transmittance in [param trans]. Only the part of the ray under the
+// layer's top (the grid's highest ground plus storm_depth, the planet curving away included) is
+// marched, in steps that tighten toward the eye: inside a storm the first metres decide what you see.
+vec3 march_storm(vec3 dir, float limit, vec2 pixel, out float trans) {
+	trans = 1.0;
+	vec3 light = vec3(0.0);
+	if (storm_on == 0 || storm_beta_max <= 0.0) {
+		return light;
+	}
+	vec3 d = storm_frame * dir;
+	float rise = dot(d, storm_up);
+	// Altitude along the ray over the anchor's sphere: cam + rise t + k t². Where it crosses the top.
+	float k = max((1.0 - rise * rise) / (2.0 * storm_radius), 1e-12);
+	float c = storm_altitude(storm_cam) - (storm_ground_top + storm_depth * 1.3);
+	float disc = rise * rise - 4.0 * k * c;
+	float t_a = 0.0;
+	float t_b = 0.0;
+	if (c > 0.0) {
+		// Over the layer: only a ray going down into it meets it, between its two crossings.
+		if (rise < 0.0 && disc >= 0.0) {
+			float qq = 0.5 * (sqrt(disc) - rise);
+			t_a = c / qq;
+			t_b = qq / k;
+		}
+	} else {
+		float sq = sqrt(max(disc, 0.0));
+		float qq = rise >= 0.0 ? -0.5 * (rise + sq) : 0.5 * (sq - rise);
+		qq = abs(qq) < 1e-9 ? -1e-9 : qq;  // a level ray exactly at the top: 0/0 otherwise
+		t_b = max(qq / k, c / qq);
+	}
+	t_b = min(t_b, min(limit, storm_far));
+	if (t_b <= t_a) {
+		return light;
+	}
+	float span = t_b - t_a;
+	int steps = max(storm_steps, 4);
+	float n = float(steps);
+	float jitter = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))) + 0.5);
+	float cos_sun = dot(dir, dust_sun_dir);
+	float forward = 1.0 + 1.6 * pow(max(cos_sun, 0.0), 6.0);
+	float sun_up = max(dot(dust_sun_dir, dust_up), 0.05);
+	for (int i = 0; i < steps; i++) {
+		float f = (float(i) + jitter) / n;
+		float t = t_a + span * f * f;
+		float dt = span * (2.0 * float(i) + 1.0) / (n * n);
+		vec3 q = storm_cam + d * t;
+		vec2 uv = vec2(dot(q, storm_east), dot(q, storm_north)) / storm_half;
+		// Past the grid's edge the clamped texels would carry the last storm on forever: fade it.
+		float inside = 1.0 - smoothstep(0.9, 1.0, max(abs(uv.x), abs(uv.y)));
+		vec2 st = uv * 0.5 + 0.5;
+		float beta = texture(storm_dust, st).r * inside;
+		// The lid: storm_depth over the ground smoothed over tens of km (the stirred air's top is far
+		// smoother than the relief): valleys fill deeper, hills drown, only real peaks rise out of it.
+		float over_lid = storm_altitude(q) - texture(storm_ground, st).g;
+		float sigma = beta * (1.0 - smoothstep(storm_depth * 0.7, storm_depth * 1.3, over_lid));
+		if (sigma <= 0.0) {
+			continue;
+		}
+		// The sun through the dust over this point: a storm's foot is dark, its top lit.
+		float sun_t = exp(-beta * max(storm_depth - over_lid, 0.0) / sun_up);
+		vec3 nq = q / storm_colour_noise_m + storm_noise_offset;
+		vec2 warp = vec2(texture(dust_noise, nq).r, texture(dust_noise, nq + vec3(0.37, 0.11, 0.53)).r) - 0.5;
+		vec2 st_c = st + warp * (storm_colour_warp_m / storm_half);
+		float shade = mix(0.9, 1.08, texture(dust_noise, nq * 2.3 + vec3(0.71, 0.29, 0.13)).r);
+		vec3 albedo = texture(storm_albedo, st_c).rgb * shade;
+		vec3 lit = albedo * (dust_sun * 0.3 * forward * sun_t + dust_ambient);
+		float step_t = exp(-sigma * dt);
+		light += trans * (1.0 - step_t) * lit;
+		trans *= step_t;
+	}
+	return light;
+}
+
 // The height (m) over the real ground of the camera-relative point [param p] whose height over the
 // flat plane through the ground under the camera is [param flat_h].
 float dust_height_over_ground(vec3 p, float flat_h) {
@@ -192,11 +304,15 @@ void fragment() {
 	// (Godot forbids an early `return` in a processor function, hence the branch.)
 	if (depth <= 0.0) {
 		// The sky behind is already drawn; only the wind's dust in front of it is added here.
+		// The storms in front of it too: a dust wall standing on the horizon is drawn over the sky.
+		vec3 sky_dir = normalize((INV_VIEW_MATRIX * vec4((INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, 0.0, 1.0)).xyz, 0.0)).xyz);
 		float dust_t;
-		vec3 dust = march_dust(normalize((INV_VIEW_MATRIX * vec4((INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, 0.0, 1.0)).xyz, 0.0)).xyz),
-				dust_range, FRAGCOORD.xy, dust_t);
-		ALPHA = 1.0 - dust_t;
-		ALBEDO = ALPHA > 1e-4 ? dust / ALPHA : vec3(0.0);
+		vec3 dust = march_dust(sky_dir, dust_range, FRAGCOORD.xy, dust_t);
+		float storm_t;
+		vec3 storm = march_storm(sky_dir, storm_far, FRAGCOORD.xy, storm_t);
+		vec3 front = dust + dust_t * storm;
+		ALPHA = 1.0 - dust_t * storm_t;
+		ALBEDO = ALPHA > 1e-4 ? front / ALPHA : vec3(0.0);
 	} else {
 		// View-space position of the drawn surface, then its distance and its world direction. The
 		// camera is the origin of the atmosphere frame, so this direction and distance are all
@@ -212,9 +328,12 @@ void fragment() {
 
 		// What the surface sent us, dimmed by the air it crossed, plus what that air scattered in.
 		// The wind's dust, nearest the eye, over all of it.
+		// The storms between the eye and the surface over that, and the wind's dust nearest the eye.
+		float storm_t;
+		vec3 storm = march_storm(world_dir, distance_to_surface, FRAGCOORD.xy, storm_t);
 		float dust_t;
 		vec3 dust = march_dust(world_dir, distance_to_surface, FRAGCOORD.xy, dust_t);
-		ALBEDO = (texture(screen_tex, SCREEN_UV).rgb * transmittance + air) * dust_t + dust;
+		ALBEDO = ((texture(screen_tex, SCREEN_UV).rgb * transmittance + air) * storm_t + storm) * dust_t + dust;
 		ALPHA = 1.0;
 	}
 }

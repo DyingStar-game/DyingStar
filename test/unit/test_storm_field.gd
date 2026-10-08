@@ -1,0 +1,85 @@
+extends GutTest
+## StormField: the regional storm grid the far dust volume reads. Its altitude over the anchor's
+## sphere agrees with the plain difference of radii (curvature included, no big-number cancellation);
+## the dust is the sampler's τ over DUST_LAYER_M, a debug override included; a grid becomes ready only
+## once its ground (main thread) and its dust (worker) are both done, and a refresh keeps its anchor.
+
+const R: float = 6356000.0
+const ANCHOR := Vector3(0.0, R, 0.0)
+
+
+func _smooth(_dir: Vector3) -> float:
+	return R
+
+
+func _until_ready(f: StormField, at: Vector3, job: Callable) -> void:
+	var guard := 0
+	while not f.ready and guard < 2000:
+		f.update(at, _smooth, job, 0.0, 1000.0)
+		OS.delay_msec(1)
+		guard += 1
+
+
+func test_the_altitude_over_the_anchor_sphere_includes_the_curvature() -> void:
+	var u := Vector3.UP
+	var q := Vector3(100000.0, 2000.0, 0.0)
+	var exact: float = (ANCHOR + q).length() - R
+	assert_almost_eq(StormField.altitude_over_anchor(q, u, R), exact, 0.01)
+	assert_almost_eq(StormField.altitude_over_anchor(Vector3(100000.0, 0.0, 0.0), u, R), 786.7, 1.0,
+			"100 km out on the tangent plane: 787 m over the sphere")
+
+
+func test_the_dust_is_the_sampler_depth_over_its_layer() -> void:
+	var profile: ClimateProfile = load("res://scenes/planet/climates/tarsis_3.tres")
+	var job: Callable = StormField.dust_sampler(profile, [], {"dust_tau": 2.0})
+	assert_almost_eq(float(job.call(Vector3.UP)), 2.0 / WeatherSampler.DUST_LAYER_M, 1e-9,
+			"an override of τ 2 everywhere: 0.002 /m, a visibility of ~2 km")
+	var calm: Callable = StormField.dust_sampler(profile, [], {})
+	assert_eq(float(calm.call(Vector3.UP)), 0.0, "no system, no storm")
+
+
+func test_a_grid_is_ready_once_its_ground_and_dust_are_both_done() -> void:
+	var f := StormField.new()
+	var job: Callable = func(_dir: Vector3) -> float: return 0.004
+	assert_false(f.update(ANCHOR, _smooth, job, 0.0, 0.0), "no budget: a ground row only")
+	assert_false(f.ready)
+	_until_ready(f, ANCHOR, job)
+	assert_true(f.ready)
+	assert_almost_eq(f.beta_max, 0.004, 1e-6)
+	assert_almost_eq(f.ground_top_m, 0.0, 0.01, "a smooth planet: the ground on the anchor's sphere")
+	assert_not_null(f.dust_texture)
+	assert_not_null(f.ground_texture)
+
+
+func test_a_small_move_keeps_the_anchor() -> void:
+	var f := StormField.new()
+	var job: Callable = func(_dir: Vector3) -> float: return 0.0
+	_until_ready(f, ANCHOR, job)
+	var first: Vector3 = f.anchor
+	f.update(ANCHOR + Vector3(StormField.REBUILD_M * 0.5, 0.0, 0.0), _smooth, job, 1.0)
+	assert_eq(f.anchor, first)
+
+
+func test_the_lid_smooths_the_relief_away() -> void:
+	var flat := PackedFloat32Array()
+	flat.resize(StormField.SIZE * StormField.SIZE)
+	flat.fill(120.0)
+	assert_almost_eq(StormField.smoothed(flat, StormField.LID_CELLS)[500], 120.0, 1e-4, "flat stays flat")
+	var peak := PackedFloat32Array()
+	peak.resize(StormField.SIZE * StormField.SIZE)
+	var mid: int = 64 * StormField.SIZE + 64
+	peak[mid] = 1210.0
+	var lid: PackedFloat32Array = StormField.smoothed(peak, StormField.LID_CELLS)
+	assert_almost_eq(lid[mid], 1210.0 / 121.0, 1e-3, "a lone 1210 m peak: a 10 m swell under the lid")
+	assert_almost_eq(lid[mid + 5], 10.0, 1e-3, "spread over the box")
+	assert_eq(lid[mid + 6], 0.0, "and no further")
+
+
+func test_the_storm_takes_the_colour_of_its_own_ground() -> void:
+	var colours := PackedColorArray()
+	colours.resize(StormField.SIZE * StormField.SIZE)
+	colours.fill(Color(0.6, 0.45, 0.3))
+	var albedo: PackedFloat32Array = StormField.dust_albedo(colours)
+	assert_almost_eq(albedo[0], 0.92, 1e-4, "the brightest channel at the dust's ceiling")
+	assert_almost_eq(albedo[1], 0.92 * 0.45 / 0.6, 1e-4, "the ground's hue kept")
+	assert_almost_eq(albedo[2], 0.92 * 0.3 / 0.6, 1e-4)

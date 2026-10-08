@@ -100,6 +100,9 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## frame would refill the table every frame.
 var weather_haze_scale: float = 1.0
 var weather_haze_floor_m: float = -1.0
+## The storm dust's optical depth over the eye (WeatherSky, with the storm volume on): it dims the
+## star's light through the column overhead, the light side of the storm the volume draws.
+var weather_storm_tau_above: float = 0.0
 ## The dust the wind blows off the ground around the observer (WeatherSky.blow_*): a thin slab between
 ## the two altitudes (m over the reference sphere, laid about the observer's own ground) of grey
 ## extinction weather_blow_beta (1/m) and of the ground's colour as its albedo. 0 = none. Not a key of
@@ -385,6 +388,7 @@ func _process(_delta: float) -> void:
 	if body != null:
 		_weather_sky.update(self, body, player.global_position)
 		_weather_sky.animate_dust(self, body, player.camera, _delta)
+		_weather_sky.animate_storm(self, body, player.camera)
 	_push_profile(profile, star_direction)
 
 
@@ -464,8 +468,9 @@ func transmittance_at(sin_elevation: float) -> Color:
 	# The debug lift has to reach the LIGHT too, or the veil rises over your head while the star keeps
 	# shining at full plateau strength. Raising the ceiling for the shader and lowering the observer
 	# for the integral both mean the same thing: 3500 m of corundum overhead.
+	var storm: float = exp(-weather_storm_tau_above / maxf(sin_elevation, 0.02)) if weather_storm_tau_above > 0.0 else 1.0
 	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation,
-			weather_haze_scale, weather_haze_floor_m)
+			weather_haze_scale, weather_haze_floor_m) * Color(storm, storm, storm, 1.0)
 
 
 ## The slab's bottom once the weather has had its say: the profile's own, or the storm's floor when
