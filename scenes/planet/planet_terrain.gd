@@ -351,6 +351,9 @@ var _chunks_on_celestial: bool = false
 ## terrain update; ~static while the planet does not orbit.
 var _star_dir_world: Vector3 = Vector3.UP
 
+## How much of this body's air the client draws, from how big it looks (client only, null without air).
+var _atmosphere_lod: AtmosphereLod = null
+
 ## ── Look-ahead prefetch ───────────────────────────────────────────
 ## Ring-buffer of recent camera positions (planet-local) for velocity estimation.
 var _cam_history: PackedVector3Array = PackedVector3Array()
@@ -764,6 +767,8 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_print_biome_locations()
 		if editor_auto_tune_camera:
 			_auto_tune_editor_camera()
+	elif not server_mode:
+		_setup_atmosphere_lod()
 
 	# Server FALLBACK collision body (BaseSphere + SafetyNet only).
 	# Terrain chunks each get their OWN small StaticBody3D at the chunk origin
@@ -1590,6 +1595,9 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 func _exit_tree() -> void:
 	_join_lod_task()
 	_join_worker_tasks()
+	if _atmosphere_lod != null:
+		_atmosphere_lod.release()
+		_atmosphere_lod = null
 	# Joindre le fil de téléchargement avant que la planète disparaisse.
 	if planet_data != null and planet_data.remote_source != null:
 		planet_data.remote_source.stop()
@@ -1694,6 +1702,8 @@ func _physics_process(_delta: float) -> void:
 		initial_chunks_ready.emit()
 		print("[PlanetTerrain] initial_chunks_ready emitted (active=%d)" % _active_chunks.size())
 
+	_update_atmosphere_lod()
+
 	# ── Rate-limited LOD update, on the wall clock ───────────────────
 	var now_msec := Time.get_ticks_msec()
 	if now_msec - _last_update_msec < int(UPDATE_INTERVAL * 1000.0):
@@ -1716,6 +1726,48 @@ func _perf_begin() -> int:
 func _perf_end(scope_name: String, token: int) -> void:
 	if token != 0:
 		ClientPerf.scope_end(scope_name, token)
+
+
+## Client: give this body's air its levels of detail, if it has air. The shell is lit with the terrain
+## material's own star light, so the limb and the ground under it agree.
+func _setup_atmosphere_lod() -> void:
+	var profile: AtmosphereProfile = planet_data.atmosphere_profile
+	if not AtmosphereLod.has_air(profile):
+		return
+	var light_color := Color(1.0, 0.95, 0.85)
+	var light_energy := 2.0
+	var material := planet_data.terrain_material as ShaderMaterial
+	if material != null:
+		var color: Variant = material.get_shader_parameter("star_light_color")
+		var energy: Variant = material.get_shader_parameter("star_light_energy")
+		if color is Color:
+			light_color = color
+		if energy is float:
+			light_energy = energy
+	_atmosphere_lod = AtmosphereLod.new(profile, self, light_color, light_energy)
+
+
+## Client, every rendered frame: this body's air level for the current camera, the shell in step, and
+## the chunks told when the level changes. The player's own body is the one their camera belongs to:
+## its air is AtmosphereRenderer's (the sky), never drawn twice.
+func _update_atmosphere_lod() -> void:
+	if _atmosphere_lod == null:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var own_body: bool = Planet.of(camera) == Planet.of(self)
+	if _atmosphere_lod.update(global_position, camera, own_body, _compute_star_dir()):
+		var params := AtmosphereLod.chunk_params(planet_data.atmosphere_profile, _atmosphere_lod.level)
+		for key: String in _active_chunks:
+			var mi: MeshInstance3D = _active_chunks[key].get("mesh_instance")
+			if is_instance_valid(mi):
+				_set_far_air(mi, params)
+
+
+func _set_far_air(mi: MeshInstance3D, params: Dictionary) -> void:
+	for param: String in params:
+		mi.set_instance_shader_parameter(param, params[param])
 
 
 ## World-space unit direction from this planet's centre to the system star, in DOUBLE precision (exact
@@ -3995,6 +4047,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	mi.layers = GlobalsDefs.RENDER_MASK_CELESTIAL if _chunks_on_celestial else GlobalsDefs.RENDER_MASK_LOCAL
 	if _chunks_on_celestial:
 		FAR_GROUND.apply(mi, true)  # every ground lights itself from afar (FarGround)
+	# Its air, at the body's current level of detail (see AtmosphereLod).
+	if _atmosphere_lod != null:
+		_set_far_air(mi, AtmosphereLod.chunk_params(planet_data.atmosphere_profile, _atmosphere_lod.level))
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
 	_perf_end("asm:mesh", _tk)

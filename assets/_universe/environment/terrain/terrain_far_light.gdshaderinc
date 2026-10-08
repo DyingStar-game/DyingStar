@@ -23,6 +23,12 @@ instance uniform vec3 star_dir_world : instance_index(1);
 // Full planet-LOCAL chunk centre (the chunk's position under the planet): chunk_center_local + VERTEX is
 // the planet-local vertex, ~4.5e6 m and float32-precise, so its direction is the TRUE radial 'up'.
 instance uniform vec3 chunk_center_local : instance_index(2);
+// The air of a far body, seen through (AtmosphereLod, level DISC): xyz the column's scattering,
+// Eddington's gamma x vertical optical depth per channel; w 1 = on. 0 = no air, or the player's own
+// body, whose air AtmosphereRenderer draws.
+instance uniform vec4 far_air_scattering : instance_index(3);
+// The column's vertical absorption optical depth, per channel.
+instance uniform vec3 far_air_absorption : instance_index(4);
 
 group_uniforms far_lighting;
 // Past radial_blend_far the shading is on the smooth planet radial — a clean great-circle terminator
@@ -55,11 +61,27 @@ float far_light_blend(float cam_dist) {
 }
 
 
+// A far body's ground of albedo [param ground] seen through its air: the column's albedo (Eddington,
+// conservative: AtmosphereLod.column_albedo is its twin), lit at [param mu_star] (cosine of the star's
+// height), dimmed by what the column absorbs on the way down and back up to [param mu_view].
+vec3 far_air(vec3 ground, float mu_star, float mu_view) {
+	vec3 scattered = (1.0 - ground) * far_air_scattering.xyz;
+	vec3 albedo = (ground + scattered) / (1.0 + scattered);
+	float air_masses = 1.0 / max(mu_star, 0.05) + 1.0 / max(mu_view, 0.05);
+	return albedo * exp(-far_air_absorption * air_masses);
+}
+
+
 // The light this ground EMITS from afar: [param albedo] lit by the star on the smooth [param radial]
-// (world space), faded in by [param cam_dist]. [param view] is VIEW_MATRIX and [param vertex_view] the
-// fragment's VERTEX (view space): unused here, they are what the ground's air will need.
+// (world space), through the body's air when it has some, faded in by [param cam_dist].
+// [param view] is VIEW_MATRIX and [param vertex_view] the fragment's VERTEX (view space).
 vec3 far_light_emission(vec3 albedo, vec3 radial, float cam_dist, mat4 view, vec3 vertex_view) {
 	float blend = far_light_blend(cam_dist);
 	float mu_star = max(dot(radial, star_dir_world), 0.0);
-	return albedo * star_light_color * (mu_star * star_light_energy * blend);
+	vec3 seen = albedo;
+	if (far_air_scattering.w > 0.0 && blend > 0.0) {
+		float mu_view = dot((view * vec4(radial, 0.0)).xyz, -normalize(vertex_view));
+		seen = far_air(albedo, mu_star, mu_view);
+	}
+	return seen * star_light_color * (mu_star * star_light_energy * blend);
 }
