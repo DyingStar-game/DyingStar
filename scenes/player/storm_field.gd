@@ -43,6 +43,8 @@ var ground_top_m: float = 0.0
 ## The lid ground of the grid in use (m over the anchor's sphere, SIZE x SIZE): what the volume's
 ## storm top stands on, read back by lid_at so the light around the eye agrees with what is drawn.
 var lid_heights: PackedFloat32Array = PackedFloat32Array()
+## The real ground of the grid in use (m over the anchor's sphere, SIZE x SIZE), for the probe.
+var ground_heights: PackedFloat32Array = PackedFloat32Array()
 var beta_max: float = 0.0
 var ground_texture: ImageTexture = null
 var dust_texture: ImageTexture = null
@@ -223,6 +225,7 @@ func _collect(now_s: float) -> bool:
 		up = _next["up"]
 		ground_top_m = _max_of(lid)
 		lid_heights = lid
+		ground_heights = ground
 		if _job.albedo.size() == SIZE * SIZE * 3:
 			var image := Image.create_from_data(SIZE, SIZE, false, Image.FORMAT_RGBF, _job.albedo.to_byte_array())
 			if albedo_texture == null:
