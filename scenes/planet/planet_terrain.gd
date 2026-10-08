@@ -710,6 +710,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v57 → v58: a chunk border reads the tile across it even when that tile
 		# is pruned (it climbs to its ancestor): both sides used to fall back to
 		# their own tile and met with a step (PlanetData._pruned_tile_climbs).
+		# v58 → v59: longitude runs the other way round the Y axis
+		# (dir.z = -cos lat·sin lon): the planet was the QGIS map's mirror
+		# image, every baked vertex moves to its east-west mirror.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -718,13 +721,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
-		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s" % [
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)
@@ -2073,7 +2076,7 @@ func _print_biome_locations() -> void:
 		var dir := Vector3(
 			cos(lat_rad) * cos(lon_rad),
 			sin(lat_rad),
-			cos(lat_rad) * sin(lon_rad)).normalized()
+			-cos(lat_rad) * sin(lon_rad)).normalized()
 		var world_pos := dir * (planet_data.radius + 50.0)
 		var lonlat := HEALPix.vec2lonlat(dir)
 		print("  %-25s  lon=%.4f  lat=%.4f  world_pos=(%d, %d, %d)" % [
@@ -2114,7 +2117,7 @@ func _populate_biome_entries() -> void:
 		var dir := Vector3(
 			cos(lat_rad) * cos(lon_rad),
 			sin(lat_rad),
-			cos(lat_rad) * sin(lon_rad)).normalized()
+			-cos(lat_rad) * sin(lon_rad)).normalized()
 		_editor_biome_entries.append({
 			"label": label,
 			"dir": dir,
@@ -5077,7 +5080,7 @@ static func _zone_centroid_dir(zone: Dictionary) -> Vector3:
 	return Vector3(
 		cos(lat_rad) * cos(lon_rad),
 		sin(lat_rad),
-		cos(lat_rad) * sin(lon_rad)
+		-cos(lat_rad) * sin(lon_rad)
 	).normalized()
 
 

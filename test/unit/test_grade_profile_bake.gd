@@ -29,7 +29,7 @@ func _line(length_m: float, fid: int) -> Dictionary:
 
 
 static func _terrain(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var s := (lon - LON0) * (RADIUS * PI / 180.0) * cos(deg_to_rad(LAT))
 	return 800.0 + 120.0 * sin(s / 900.0) + 25.0 * sin(s / 97.0)
 

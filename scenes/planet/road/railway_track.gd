@@ -192,11 +192,12 @@ static func piece_module_transforms(r: Dictionary, prof: Dictionary, radius: flo
 		for k in tracks:
 			var c: float = (float(k) - 0.5 * float(tracks - 1)) * RailwaySettings.TRACK_PITCH_M
 			var centre := p + n * c
-			# Half A: module +X to the left (+n), +Z backwards (-t).
-			out.append({"xform": Transform3D(Basis(n, up, -t), centre),
+			# Half A: module +Z backwards (-t), so +X to the right (-n, n
+			# being the left of travel) for a right-handed basis.
+			out.append({"xform": Transform3D(Basis(-n, up, -t), centre),
 					"along": s, "track": k})
 			# Half B: the same module turned 180° about up.
-			out.append({"xform": Transform3D(Basis(-n, up, t), centre),
+			out.append({"xform": Transform3D(Basis(n, up, t), centre),
 					"along": s, "track": k})
 	return out
 
@@ -302,7 +303,7 @@ static func piece_collision_boxes(r: Dictionary, prof: Dictionary, radius: float
 					+ up * (RoadTerrain.SURFACE_THICKNESS_M - RailwaySettings.MODULE_BELOW_M + 0.5 * h)
 			for k in tracks:
 				var c: float = (float(k) - 0.5 * float(tracks - 1)) * RailwaySettings.TRACK_PITCH_M
-				out.append({"xform": Transform3D(Basis(n, up, -t), base + n * c),
+				out.append({"xform": Transform3D(Basis(-n, up, -t), base + n * c),
 						"size": Vector3(w, h, len_m), "along_lo": lo, "along_hi": hi,
 						"track": k})
 	return out

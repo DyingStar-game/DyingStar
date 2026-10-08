@@ -27,7 +27,7 @@ func _road(length_m: float) -> Dictionary:
 
 
 static func _east_m(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	return (lon - LON0) * MPD * cos(deg_to_rad(LAT))
 
 

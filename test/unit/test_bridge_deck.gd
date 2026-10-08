@@ -39,7 +39,7 @@ func _flat(_dir: Vector3) -> float:
 ## Ground rising 2 % eastward, so the two rims of an east-west span differ and
 ## the deck has a gradient to follow.
 func _east_slope(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var mpd := RADIUS * PI / 180.0
 	return GROUND_ALT + 0.02 * (lon - LON0) * mpd * cos(deg_to_rad(LAT))
 

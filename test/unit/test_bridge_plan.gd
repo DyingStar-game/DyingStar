@@ -77,7 +77,7 @@ func _flat(_dir: Vector3) -> float:
 ## Ground that rises 2 % eastward, so the two rims of an east-west span differ.
 ## Longitude east of LON0, in metres, times the gradient.
 func _east_slope(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var mpd := RADIUS * PI / 180.0
 	return 100.0 + 0.02 * (lon - LON0) * mpd * cos(deg_to_rad(LAT))
 
@@ -85,7 +85,7 @@ func _east_slope(dir: Vector3) -> float:
 ## Ground climbing 10 % eastward — steeper than the 5° ramp, so the east ramp
 ## can only meet it by being extended a long way.
 func _steep_east(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var mpd := RADIUS * PI / 180.0
 	return 100.0 + 0.10 * (lon - LON0) * mpd * cos(deg_to_rad(LAT))
 

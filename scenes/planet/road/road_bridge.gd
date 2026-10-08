@@ -64,7 +64,7 @@ const ABUTMENT_MARGIN_M := 12.0
 static func lonlat_to_dir(lon: float, lat: float) -> Vector3:
 	var lo := deg_to_rad(lon)
 	var la := deg_to_rad(lat)
-	return Vector3(cos(la) * cos(lo), sin(la), cos(la) * sin(lo))
+	return Vector3(cos(la) * cos(lo), sin(la), -cos(la) * sin(lo))
 
 
 ## Depth of the crack at a lon/lat, in metres (0 outside a crack).

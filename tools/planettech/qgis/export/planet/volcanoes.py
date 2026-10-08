@@ -113,11 +113,11 @@ def resolve_volcano(fields):
 
 
 def unit_centre(lon, lat):
-    """HEALPix.lonlat2vec: (cos lat·cos lon, sin lat, cos lat·sin lon)."""
+    """HEALPix.lonlat2vec: (cos lat·cos lon, sin lat, -cos lat·sin lon)."""
     lo = math.radians(lon)
     la = math.radians(lat)
     cl = math.cos(la)
-    return (cl * math.cos(lo), math.sin(la), cl * math.sin(lo))
+    return (cl * math.cos(lo), math.sin(la), -cl * math.sin(lo))
 
 
 def volcano_warnings(volcanoes, radius_m):
@@ -310,7 +310,7 @@ def _unit(v):
 
 def _lonlat_of(v):
     x, y, z = _unit(v)
-    return (math.degrees(math.atan2(z, x)), math.degrees(math.asin(max(-1.0, min(1.0, y)))))
+    return (math.degrees(math.atan2(-z, x)), math.degrees(math.asin(max(-1.0, min(1.0, y)))))
 
 
 def _chord_m(a, b, radius_m):

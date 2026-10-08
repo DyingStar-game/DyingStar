@@ -201,7 +201,7 @@ def pix_of(nside, lon, lat):
     lon_r = math.radians(lon)
     clat = math.cos(lat_r)
     return int(hpx.vec2pix_nest(
-        nside, clat * math.cos(lon_r), math.sin(lat_r), clat * math.sin(lon_r)))
+        nside, clat * math.cos(lon_r), math.sin(lat_r), -clat * math.sin(lon_r)))
 
 
 def dilate(nside, pixels, rings=1):

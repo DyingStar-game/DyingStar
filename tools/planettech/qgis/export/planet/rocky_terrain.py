@@ -107,18 +107,18 @@ def _hash_u(points, planet_name, salt):
 
 
 def unit_vec(lon, lat):
-    """HEALPix.lonlat2vec: (cos lat·cos lon, sin lat, cos lat·sin lon)."""
+    """HEALPix.lonlat2vec: (cos lat·cos lon, sin lat, -cos lat·sin lon)."""
     lo, la = math.radians(lon), math.radians(lat)
     cl = math.cos(la)
-    return (cl * math.cos(lo), math.sin(la), cl * math.sin(lo))
+    return (cl * math.cos(lo), math.sin(la), -cl * math.sin(lo))
 
 
 def tangent_dir(lon, lat, azimuth_deg):
     """Unit tangent at (lon, lat) pointing azimuth_deg clockwise from north."""
     lo, la = math.radians(lon), math.radians(lat)
     a = math.radians(azimuth_deg)
-    east = (-math.sin(lo), 0.0, math.cos(lo))
-    north = (-math.sin(la) * math.cos(lo), math.cos(la), -math.sin(la) * math.sin(lo))
+    east = (-math.sin(lo), 0.0, -math.cos(lo))
+    north = (-math.sin(la) * math.cos(lo), math.cos(la), math.sin(la) * math.sin(lo))
     v = tuple(north[i] * math.cos(a) + east[i] * math.sin(a) for i in range(3))
     n = math.sqrt(sum(c * c for c in v)) or 1.0
     return tuple(c / n for c in v)

@@ -891,7 +891,7 @@ Planet (Node3D)  ← planet_body.gd, holds PlanetData resource
    ```
    x = radius × cos(lat_rad) × cos(lon_rad)
    y = radius × sin(lat_rad)
-   z = radius × cos(lat_rad) × sin(lon_rad)
+   z = −radius × cos(lat_rad) × sin(lon_rad)   (minus: east on the right seen from outside)
    ```
 
 6. **(Optional) Add an atmosphere** — instance

@@ -97,5 +97,7 @@
  "columnar",
  "yardang",
  "strata",
- "flat"
+ "flat",
+ "lump_m",
+ "lump_wavelength_m"
 ]

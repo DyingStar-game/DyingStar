@@ -26,7 +26,7 @@ func _road(length_m: float, tracks: int) -> Dictionary:
 
 
 static func _east_m(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	return (lon - LON0) * MPD * cos(deg_to_rad(LAT))
 
 
@@ -36,7 +36,7 @@ func _flat(_dir: Vector3) -> float:
 
 func _north() -> Vector3:
 	return Vector3(-sin(deg_to_rad(LAT)) * cos(deg_to_rad(LON0)),
-			cos(deg_to_rad(LAT)), -sin(deg_to_rad(LAT)) * sin(deg_to_rad(LON0)))
+			cos(deg_to_rad(LAT)), sin(deg_to_rad(LAT)) * sin(deg_to_rad(LON0)))
 
 
 func test_modules_every_pitch_two_halves_per_track() -> void:
@@ -72,8 +72,8 @@ func test_rail_head_lands_on_standard_gauge() -> void:
 	var rail_a: Vector3 = a * Vector3(RailwaySettings.RAIL_CENTRE_M, 0.0, 0.0)
 	var rail_b: Vector3 = b * Vector3(RailwaySettings.RAIL_CENTRE_M, 0.0, 0.0)
 	assert_almost_eq(rail_a.distance_to(rail_b), 2.0 * RailwaySettings.RAIL_CENTRE_M, 1e-6)
-	# Half A's rail is on the left (north) of an eastbound track.
-	assert_gt((rail_a - a.origin).dot(_north()), 0.7)
+	# Half A's rail is on the right (south) of an eastbound track.
+	assert_lt((rail_a - a.origin).dot(_north()), -0.7)
 	# The module's +Z runs along the track (backwards for half A).
 	assert_almost_eq(absf(a.basis.z.dot(_north())), 0.0, 1e-3)
 

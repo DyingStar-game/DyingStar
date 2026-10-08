@@ -86,14 +86,14 @@ internal static class MountainNoiseCore
     }
 
     /// <summary>HEALPix.vec2lonlat: degrees, lon in (-180, 180], lat in [-90, 90].
-    /// Same formula (asin of y, atan2(z, x) of the NORMALISED vector).</summary>
+    /// Same formula (asin of y, atan2(-z, x) of the NORMALISED vector).</summary>
     public static void ToLonLat(double x, double y, double z, out double lon, out double lat)
     {
         double len = Math.Sqrt(x * x + y * y + z * z);
         double nx = x / len, ny = y / len, nz = z / len;
         if (ny < -1.0) ny = -1.0; else if (ny > 1.0) ny = 1.0;
         lat = Math.Asin(ny) * (180.0 / Math.PI);
-        lon = Math.Atan2(nz, nx) * (180.0 / Math.PI);
+        lon = Math.Atan2(-nz, nx) * (180.0 / Math.PI);
     }
 
     public static double DegToRad(double d) => d * (Math.PI / 180.0);

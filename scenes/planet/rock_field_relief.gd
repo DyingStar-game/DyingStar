@@ -539,8 +539,8 @@ static func debug_record(lonlat: Vector2, radius_km: float, radius: float,
 	z["cz"] = c.z
 	var lo := deg_to_rad(lonlat.x)
 	var la := deg_to_rad(lonlat.y)
-	var east := Vector3(-sin(lo), 0.0, cos(lo))
-	var north := Vector3(-sin(la) * cos(lo), cos(la), -sin(la) * sin(lo))
+	var east := Vector3(-sin(lo), 0.0, -cos(lo))
+	var north := Vector3(-sin(la) * cos(lo), cos(la), sin(la) * sin(lo))
 	var wa := deg_to_rad(float(props.get("wind_azimuth_deg", 0.0)))
 	var w := (north * cos(wa) + east * sin(wa)).normalized()
 	z["wx"] = w.x

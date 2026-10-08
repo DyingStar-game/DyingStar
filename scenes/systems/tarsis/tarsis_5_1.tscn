@@ -43,7 +43,7 @@ editor_goto_lon = -39.55558187662332
 editor_goto_lat = 24.85200755796846
 editor_goto_x = 4450891.0
 editor_goto_y = 2673782.0
-editor_goto_z = -3676289.0
+editor_goto_z = 3676289
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("5_c77ix")

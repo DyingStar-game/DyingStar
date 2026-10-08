@@ -4586,7 +4586,7 @@ func _get_pixel_healpix(floats: PackedFloat32Array, px: int, py: int,
 ##   v  →  latitude   (0 = +90° north pole, 1 = -90° south pole)
 static func direction_to_uv(dir: Vector3) -> Vector2:
 	var d := dir.normalized()
-	var u := 0.5 + atan2(d.z, d.x) / TAU
+	var u := 0.5 + atan2(-d.z, d.x) / TAU
 	var v := 0.5 - asin(clampf(d.y, -1.0, 1.0)) / PI
 	return Vector2(u, v)
 
