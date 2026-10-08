@@ -3989,12 +3989,14 @@ func retry_starved_grade_profiles(block: bool = false) -> PackedInt32Array:
 	if _grade_starved.is_empty() and _grade_pending.is_empty():
 		return born
 	_grade_mutex.lock()
+	var settled := false
 	for fid: int in _grade_pending.keys():
 		var entry: Dictionary = _grade_pending[fid]
 		if not block and not WorkerThreadPool.is_task_completed(int(entry["task_id"])):
 			continue
 		WorkerThreadPool.wait_for_task_completion(int(entry["task_id"]))
 		_grade_pending.erase(fid)
+		settled = true
 		var profile: Dictionary = entry["result_ref"][0] if entry["result_ref"][0] != null else {}
 		var tr := Time.get_ticks_msec()
 		if _grade_register(entry["road"], profile):
@@ -4013,14 +4015,19 @@ func retry_starved_grade_profiles(block: bool = false) -> PackedInt32Array:
 		if int(state["missing"]) > 0:
 			if not bool(state["hopeless"]):
 				_grade_starved.append(entry)
+			else:
+				settled = true
 			continue
 		_grade_submit(entry["road"], tiles)
-	# The provisional set shrinks to what is still waiting or computing.
-	_grade_starved_tiles.clear()
-	for entry: Dictionary in _grade_starved:
-		_grade_starve_tiles_only(entry["tiles"])
-	for fid: int in _grade_pending:
-		_grade_starve_tiles_only((_grade_pending[fid] as Dictionary)["tiles"])
+	# The provisional set shrinks to what is still waiting or computing — only when a line left
+	# both queues: the rebuild walks 8 neighbours of every tile of every waiting line, ~400 ms on
+	# the client for a line round the planet, and it ran on every 2 s retry while one computed.
+	if settled:
+		_grade_starved_tiles.clear()
+		for entry: Dictionary in _grade_starved:
+			_grade_starve_tiles_only(entry["tiles"])
+		for fid: int in _grade_pending:
+			_grade_starve_tiles_only((_grade_pending[fid] as Dictionary)["tiles"])
 	_grade_mutex.unlock()
 	if not born.is_empty():
 		print("[PlanetData] %d profil(s) de ligne né(s) sur '%s' — %s — %d ligne(s) en attente de tuile, %d en calcul"

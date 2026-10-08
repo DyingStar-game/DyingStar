@@ -105,10 +105,9 @@ func _planet_data(planet: String) -> PlanetData:
 
 
 ## The crack exclusion spheres PlanetTerrain hands the sampler, read from the
-## planet's scene file (PlanetTerrain.crack_exclusion_pois_of_scene).
+## planet's <planet>_poi.json (PlanetTerrain.poi_crack_exclusions).
 func _scene_crack_pois(planet: String) -> Array:
-	var path: String = _planet_scenes().get(planet, "")
-	return PlanetTerrain.crack_exclusion_pois_of_scene(load(path) as PackedScene if path != "" else null)
+	return PlanetTerrain.poi_crack_exclusions(planet)
 
 
 func _bake(planet: String) -> bool:
