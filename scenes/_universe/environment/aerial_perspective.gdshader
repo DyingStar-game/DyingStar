@@ -57,6 +57,9 @@ uniform vec3 dust_albedo = vec3(0.86, 0.74, 0.56);
 uniform vec3 dust_sun = vec3(1.0);
 uniform vec3 dust_ambient = vec3(0.2);
 uniform vec3 dust_sun_dir = vec3(0.0, 1.0, 0.0);
+// The sun's beam before the storm overhead dimmed it (scene units): the multiple scattering inside a
+// storm volume is computed from it.
+uniform vec3 dust_sun_free = vec3(1.0);
 // The real ground around the camera (DustGround): a height grid over a tangent plane anchored near
 // it, all in the planet's frame. dust_ground_cam is the camera relative to that anchor, the texels the
 // ground's height over the plane. The grid reaches past the march's range; off it (a fast camera
@@ -103,6 +106,21 @@ uniform sampler2D storm_albedo : filter_linear, repeat_disable;
 uniform float storm_colour_noise_m = 9000.0;
 uniform float storm_colour_warp_m = 6000.0;
 uniform vec3 storm_noise_offset = vec3(0.0);
+// The storm's top billows: the lid rises and sinks by up to storm_lid_noise_m on two scales of the
+// same noise (storm_lid_noise_a_m, storm_lid_noise_b_m: domes with smaller ones on them), and the
+// dust inside is a little uneven. Offsets: the anchor in each scale's periods, wrapped on the CPU.
+uniform float storm_lid_noise_m = 650.0;
+uniform float storm_lid_noise_a_m = 40000.0;
+uniform float storm_lid_noise_b_m = 12000.0;
+uniform float storm_lid_noise_c_m = 3500.0;
+uniform vec3 storm_lid_offset_a = vec3(0.0);
+uniform vec3 storm_lid_offset_b = vec3(0.0);
+uniform vec3 storm_lid_offset_c = vec3(0.0);
+// Half the thickness (m) over which the dust goes from full to none at its billowed top: a crisp top,
+// so the domes read as shapes (it was 300 m and the sea read flat).
+uniform float storm_lid_edge_m = 60.0;
+// The sun's light into the storm is shadowed by the billows themselves: STORM_SHADOW_* steps toward
+// the sun over the billowed top, so a dome shades its lee side and its neighbours.
 
 // The height (m) of [param q] (planet frame, relative to the anchor) over the sphere through the
 // anchor, without subtracting two radii of millions of metres in float32.
@@ -111,6 +129,29 @@ float storm_altitude(vec3 q) {
 	float s2 = max(dot(q, q) - w * w, 0.0);
 	return (2.0 * storm_radius * w + w * w + s2) / (sqrt((storm_radius + w) * (storm_radius + w) + s2) + storm_radius);
 }
+
+// The billows' height offset (m) at [param q] (planet frame, relative to the anchor): up to three
+// scales of rounded bumps (|2n - 1| of the shared noise: domes with creases between, the cauliflower
+// top of a dust storm), [param octaves] of them (the shadow steps take the two big ones).
+float storm_top_offset(vec3 q, int octaves) {
+	float a = abs(2.0 * texture(dust_noise, q / storm_lid_noise_a_m + storm_lid_offset_a).r - 1.0);
+	float b = abs(2.0 * texture(dust_noise, q / storm_lid_noise_b_m + storm_lid_offset_b).r - 1.0);
+	float sum = a * 0.5 + b * 0.3;
+	float weight = 0.8;
+	if (octaves > 2) {
+		sum += abs(2.0 * texture(dust_noise, q / storm_lid_noise_c_m + storm_lid_offset_c).r - 1.0) * 0.2;
+		weight = 1.0;
+	}
+	return (sum / weight - 0.5) * 2.0 * storm_lid_noise_m;
+}
+
+
+// How far (m) [param q] stands over the storm's billowed top (< 0: inside the storm).
+float storm_over_top(vec3 q, int octaves) {
+	vec2 st = vec2(dot(q, storm_east), dot(q, storm_north)) / storm_half * 0.5 + 0.5;
+	return storm_altitude(q) - texture(storm_ground, st).g - storm_depth - storm_top_offset(q, octaves);
+}
+
 
 // The storm dust between the camera and [param limit] metres along [param dir] (world): what it
 // scatters toward the eye, its transmittance in [param trans]. Only the part of the ray under the
@@ -126,7 +167,7 @@ vec3 march_storm(vec3 dir, float limit, vec2 pixel, out float trans) {
 	float rise = dot(d, storm_up);
 	// Altitude along the ray over the anchor's sphere: cam + rise t + k t². Where it crosses the top.
 	float k = max((1.0 - rise * rise) / (2.0 * storm_radius), 1e-12);
-	float c = storm_altitude(storm_cam) - (storm_ground_top + storm_depth * 1.3);
+	float c = storm_altitude(storm_cam) - (storm_ground_top + storm_depth + storm_lid_noise_m + storm_lid_edge_m);
 	float disc = rise * rise - 4.0 * k * c;
 	float t_a = 0.0;
 	float t_b = 0.0;
@@ -154,6 +195,7 @@ vec3 march_storm(vec3 dir, float limit, vec2 pixel, out float trans) {
 	float cos_sun = dot(dir, dust_sun_dir);
 	float forward = 1.0 + 1.6 * pow(max(cos_sun, 0.0), 6.0);
 	float sun_up = max(dot(dust_sun_dir, dust_up), 0.05);
+	vec3 sun_q = storm_frame * dust_sun_dir;
 	for (int i = 0; i < steps; i++) {
 		float f = (float(i) + jitter) / n;
 		float t = t_a + span * f * f;
@@ -166,19 +208,41 @@ vec3 march_storm(vec3 dir, float limit, vec2 pixel, out float trans) {
 		float beta = texture(storm_dust, st).r * inside;
 		// The lid: storm_depth over the ground smoothed over tens of km (the stirred air's top is far
 		// smoother than the relief): valleys fill deeper, hills drown, only real peaks rise out of it.
-		float over_lid = storm_altitude(q) - texture(storm_ground, st).g;
-		float sigma = beta * (1.0 - smoothstep(storm_depth * 0.7, storm_depth * 1.3, over_lid));
+		float over_top = storm_over_top(q, 3);
+		// The top's edge never sharper than the step can see: crisp near the eye, softer far away. A
+		// 60 m edge under steps hundreds of metres apart left each pixel in or out of the dust at the
+		// whim of its jitter: a black speckle over the whole storm.
+		float edge = max(storm_lid_edge_m, dt * 0.6);
+		float sigma = beta * (1.0 - smoothstep(-edge, edge, over_top));
 		if (sigma <= 0.0) {
 			continue;
 		}
-		// The sun through the dust over this point: a storm's foot is dark, its top lit.
-		float sun_t = exp(-beta * max(storm_depth - over_lid, 0.0) / sun_up);
+		// The sun through the dust toward it: three steps over the billowed top (a dome shades its
+		// lee and its neighbours), and the column over the point for what lies deeper; the larger.
+		float shadow = 0.0;
+		float walked = 0.0;
+		for (int k = 0; k < 3; k++) {
+			float reach = k == 0 ? 150.0 : (k == 1 ? 450.0 : 1200.0);
+			float over_k = storm_over_top(q + sun_q * reach, 2);
+			shadow += beta * (1.0 - smoothstep(-storm_lid_edge_m, storm_lid_edge_m, over_k)) * (reach - walked);
+			walked = reach;
+		}
+		float column = beta * max(-over_top, 0.0) / sun_up;
+		float sun_t = exp(-max(shadow, column));
+		// The creases between the domes see less sky.
+		float crease = mix(0.55, 1.0, smoothstep(-450.0, 0.0, over_top));
+		float over_lid = over_top + storm_depth;
 		vec3 nq = q / storm_colour_noise_m + storm_noise_offset;
 		vec2 warp = vec2(texture(dust_noise, nq).r, texture(dust_noise, nq + vec3(0.37, 0.11, 0.53)).r) - 0.5;
 		vec2 st_c = st + warp * (storm_colour_warp_m / storm_half);
 		float shade = mix(0.9, 1.08, texture(dust_noise, nq * 2.3 + vec3(0.71, 0.29, 0.13)).r);
 		vec3 albedo = texture(storm_albedo, st_c).rgb * shade;
-		vec3 lit = albedo * (dust_sun * 0.3 * forward * sun_t + dust_ambient);
+		// Multiple scattering: what the column over this point lets through diffuse (two-stream,
+		// 1 / (1 + 3/4 (1 - g) tau)) beyond the direct beam. Single scattering alone left a storm's
+		// inside and underside dark grey, while its top, in the sun, read white.
+		float tau_over = beta * max(storm_depth - over_lid, 0.0);
+		float diffuse = max(1.0 / (1.0 + 0.225 * tau_over) - sun_t, 0.0);
+		vec3 lit = albedo * (dust_sun * 0.3 * forward * sun_t + (dust_sun_free * 0.3 * diffuse + dust_ambient) * crease);
 		float step_t = exp(-sigma * dt);
 		light += trans * (1.0 - step_t) * lit;
 		trans *= step_t;

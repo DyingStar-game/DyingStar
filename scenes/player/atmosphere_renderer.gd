@@ -103,6 +103,15 @@ var weather_haze_floor_m: float = -1.0
 ## The storm dust's optical depth over the eye (WeatherSky, with the storm volume on): it dims the
 ## star's light through the column overhead, the light side of the storm the volume draws.
 var weather_storm_tau_above: float = 0.0
+## The storm the observer stands in, for the sky dome alone (WeatherSky.storm_slab_*): a local slab of
+## its extinction (1/m) and colour between two heights over the reference sphere (m). The dome lights
+## the world, so this is the storm's diffuse light; the aerial pass draws the storm as a volume.
+var weather_storm_slab_beta: float = 0.0
+var weather_storm_slab_albedo: Vector3 = Vector3(0.9, 0.8, 0.65)
+var weather_storm_slab_bottom_m: float = 0.0
+var weather_storm_slab_top_m: float = 0.0
+## Its multiple scattering, as an isotropic phase added to the single one (WeatherSky.storm_slab_ms).
+var weather_storm_slab_ms: float = 0.0
 ## The dust the wind blows off the ground around the observer (WeatherSky.blow_*): a thin slab between
 ## the two altitudes (m over the reference sphere, laid about the observer's own ground) of grey
 ## extinction weather_blow_beta (1/m) and of the ground's colour as its albedo. 0 = none. Not a key of
@@ -389,6 +398,7 @@ func _process(_delta: float) -> void:
 		_weather_sky.update(self, body, player.global_position)
 		_weather_sky.animate_dust(self, body, player.camera, _delta)
 		_weather_sky.animate_storm(self, body, player.camera)
+		_weather_sky.smooth_blow(self, _delta)
 	_push_profile(profile, star_direction)
 
 
@@ -525,6 +535,12 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 	}
 	_refresh_transmittance_lut(values, profile)
 	_apply(values)
+	# The sky dome only: the aerial pass leaves its own storm slab at zero (it draws the volume).
+	_sky_material.set_shader_parameter("storm_slab_beta", Vector3.ONE * weather_storm_slab_beta)
+	_sky_material.set_shader_parameter("storm_slab_albedo", weather_storm_slab_albedo)
+	_sky_material.set_shader_parameter("storm_slab_bottom", weather_storm_slab_bottom_m + _haze_lift())
+	_sky_material.set_shader_parameter("storm_slab_top", weather_storm_slab_top_m + _haze_lift())
+	_sky_material.set_shader_parameter("storm_slab_ms", weather_storm_slab_ms)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
 	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)

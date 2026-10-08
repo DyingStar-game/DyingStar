@@ -40,6 +40,9 @@ var east: Vector3 = Vector3.RIGHT
 var north: Vector3 = Vector3.FORWARD
 var up: Vector3 = Vector3.UP
 var ground_top_m: float = 0.0
+## The lid ground of the grid in use (m over the anchor's sphere, SIZE x SIZE): what the volume's
+## storm top stands on, read back by lid_at so the light around the eye agrees with what is drawn.
+var lid_heights: PackedFloat32Array = PackedFloat32Array()
 var beta_max: float = 0.0
 var ground_texture: ImageTexture = null
 var dust_texture: ImageTexture = null
@@ -50,9 +53,21 @@ var last_ground_ms: float = 0.0
 
 var _next: Dictionary = {}  # the anchor being built: {anchor, east, north, up, ground, row, us}
 var _task: int = -1
-var _task_result: PackedFloat32Array = PackedFloat32Array()
-var _task_lid: PackedFloat32Array = PackedFloat32Array()
-var _task_albedo: PackedFloat32Array = PackedFloat32Array()
+## What the running worker job hands back. Its own object, held by the job's closure: the worker
+## never writes into this StormField, which may be freed while the job runs (the game quitting
+## mid-job crashed the client in ntdll, 2026-10-08). And a StormField waits for its job before going.
+var _job: JobResult = null
+
+
+class JobResult extends RefCounted:
+	var dust: PackedFloat32Array = PackedFloat32Array()
+	var lid: PackedFloat32Array = PackedFloat32Array()
+	var albedo: PackedFloat32Array = PackedFloat32Array()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
 var _task_for_next: bool = false
 var _refresh_at: float = 0.0
 
@@ -106,6 +121,22 @@ static func cell_point(at: Vector3, e: Vector3, n: Vector3, i: int, j: int) -> V
 
 ## The height (m) of [param q] (planet-local, relative to the anchor at radius [param r]) over the
 ## sphere through the anchor, in the form the shader uses: no difference of two big radii.
+## The lid ground (m over the anchor's sphere) under [param q] (planet-local, relative to the anchor),
+## bilinear like the shader reads it, edges clamped; NAN before the first grid.
+func lid_at(q: Vector3) -> float:
+	if lid_heights.size() != SIZE * SIZE:
+		return NAN
+	var x: float = clampf((q.dot(east) + half_m()) / CELL_M - 0.5, 0.0, SIZE - 1.001)
+	var y: float = clampf((q.dot(north) + half_m()) / CELL_M - 0.5, 0.0, SIZE - 1.001)
+	var i: int = int(x)
+	var j: int = int(y)
+	var fx: float = x - i
+	var fy: float = y - j
+	var a: float = lerpf(lid_heights[j * SIZE + i], lid_heights[j * SIZE + i + 1], fx)
+	var b: float = lerpf(lid_heights[(j + 1) * SIZE + i], lid_heights[(j + 1) * SIZE + i + 1], fx)
+	return lerpf(a, b, fy)
+
+
 static func altitude_over_anchor(q: Vector3, u: Vector3, r: float) -> float:
 	var w: float = q.dot(u)
 	var s2: float = q.length_squared() - w * w
@@ -148,9 +179,8 @@ func _launch(dust_job: Callable, frame: Dictionary, for_next: bool) -> void:
 	var e: Vector3 = frame["east"]
 	var n: Vector3 = frame["north"]
 	_task_for_next = for_next
-	_task_result = PackedFloat32Array()
-	_task_lid = PackedFloat32Array()
-	_task_albedo = PackedFloat32Array()
+	var result := JobResult.new()
+	_job = result
 	var colours: PackedColorArray = (frame["colour"] as PackedColorArray).duplicate() if for_next \
 			else PackedColorArray()
 	# A new anchor's lid (the smoothed ground) is worked out here too: a few hundred thousand sums,
@@ -162,12 +192,12 @@ func _launch(dust_job: Callable, frame: Dictionary, for_next: bool) -> void:
 		out.resize(SIZE * SIZE)
 		for j in SIZE:
 			for i in SIZE:
-				out[j * SIZE + i] = float(dust_job.call(cell_point(a, e, n, i, j).normalized()))
+				out[j * SIZE + i] = float(dust_job.call(StormField.cell_point(a, e, n, i, j).normalized()))
 		if not ground.is_empty():
-			_task_lid = smoothed(ground, LID_CELLS)
+			result.lid = StormField.smoothed(ground, LID_CELLS)
 		if not colours.is_empty():
-			_task_albedo = dust_albedo(colours)
-		_task_result = out)
+			result.albedo = StormField.dust_albedo(colours)
+		result.dust = out)
 
 
 ## Take a finished dust job: either the last piece of a new anchor (swap everything) or a refresh of
@@ -178,22 +208,23 @@ func _collect(now_s: float) -> bool:
 	WorkerThreadPool.wait_for_task_completion(_task)
 	_task = -1
 	_refresh_at = now_s + REFRESH_S
-	var dust: PackedFloat32Array = _task_result
+	var dust: PackedFloat32Array = _job.dust
 	if dust.size() != SIZE * SIZE:
 		return false
 	if _task_for_next:
 		if _next.is_empty():
 			return false
 		var ground: PackedFloat32Array = _next["ground"]
-		var lid: PackedFloat32Array = _task_lid if _task_lid.size() == SIZE * SIZE else ground
+		var lid: PackedFloat32Array = _job.lid if _job.lid.size() == SIZE * SIZE else ground
 		ground_texture = _texture2(ground_texture, ground, lid)
 		anchor = _next["anchor"]
 		east = _next["east"]
 		north = _next["north"]
 		up = _next["up"]
 		ground_top_m = _max_of(lid)
-		if _task_albedo.size() == SIZE * SIZE * 3:
-			var image := Image.create_from_data(SIZE, SIZE, false, Image.FORMAT_RGBF, _task_albedo.to_byte_array())
+		lid_heights = lid
+		if _job.albedo.size() == SIZE * SIZE * 3:
+			var image := Image.create_from_data(SIZE, SIZE, false, Image.FORMAT_RGBF, _job.albedo.to_byte_array())
 			if albedo_texture == null:
 				albedo_texture = ImageTexture.create_from_image(image)
 			else:

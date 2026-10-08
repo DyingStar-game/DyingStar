@@ -1292,6 +1292,15 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			else:
 				atmosphere.add_child(WeatherBench.new(atmosphere))
 
+	# Which weather layer draws an artefact: one taken away per press, named on screen (WeatherIsolate).
+	if (InputCombo.pressed(event, "debug_weather_isolate")
+			and Globals.is_dev_tool_enabled("debug_weather_isolate")):
+		var isolate := player.get_node_or_null("WeatherIsolate") as WeatherIsolate
+		if isolate == null:
+			isolate = WeatherIsolate.new()
+			player.add_child(isolate)
+		print("[WeatherIsolate] %s" % isolate.next())
+
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
 	if InputCombo.pressed(event, "toggle_debug"):

@@ -45,6 +45,8 @@ static var no_particles: bool = false
 static var no_blow: bool = false
 ## The far storm volume (StormField): off, the veil's old storm knob takes over.
 static var no_storm: bool = false
+## The profile's Mie veil (Sandbox's corundum): at zero (WeatherIsolate; the bench leaves it on).
+static var no_veil: bool = false
 
 var _renderer: AtmosphereRenderer = null
 var _stage: int = 0

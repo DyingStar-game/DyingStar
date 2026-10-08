@@ -23,7 +23,7 @@ const REFRESH_S: float = 0.5
 const BLOW_VISIBILITY_FULL_M: float = 400.0
 const BLOW_POWER: float = 1.5
 const BLOW_BELOW_M: float = 30.0
-const BLOW_ABOVE_M: float = 25.0
+const BLOW_ABOVE_M: float = 80.0
 ## What the blown dust reflects at most (its brightest channel), and the colour it takes when the
 ## ground under the observer has none to give (a pale ochre, the corundum plains).
 const BLOW_ALBEDO_MAX: float = 0.92
@@ -65,6 +65,12 @@ var _storm: StormField = StormField.new()
 var _storm_planet: int = 0
 var _cam_height: float = 1.7
 var _tau_above: float = 0.0
+## The storm column over the eye (m, < 0 = over the lid), the lid's top and the ground under the
+## camera (m over the planet's reference sphere), from the storm grid (StormField.lid_at).
+var _column_m: float = 0.0
+var _lid_top_elev_m: float = 0.0
+var _ground_elev_m: float = 0.0
+var _lid_known: bool = false
 var _no_storm_volume: bool = ClientConfig.get_bool("debug_no_storm_volume", false)
 ## client.ini debug_no_veil: the profile's Mie veil (Sandbox's corundum) at zero, everything else kept.
 var _no_veil: bool = ClientConfig.get_bool("debug_no_veil", false)
@@ -72,8 +78,35 @@ var _no_veil: bool = ClientConfig.get_bool("debug_no_veil", false)
 ## frame (0 = none), to see the far volume without waiting for a real one to come by.
 var _test_storm_km: float = ClientConfig.get_float("debug_dust_storm_km", 0.0)
 var _test_storm_laid: bool = false
+## The blown slab: faded out between these heights of the eye over the ground (m), and glided toward
+## each reading at this rate (1/s) instead of laid at once.
+const BLOW_FADE_FROM_M: float = 50.0
+const BLOW_FADE_TO_M: float = 300.0
+const BLOW_GLIDE_RATE: float = 4.0
+var _blow_target_beta: float = 0.0
+var _blow_target_bottom: float = 0.0
+var _blow_target_top: float = 0.0
+var _blow_laid: bool = false
+var _slab_target_beta: float = 0.0
+var _slab_target_bottom: float = 0.0
+var _slab_target_top: float = 0.0
+## The dust's asymmetry (corundum's forward scattering, the veil's mie_g) for the two-stream diffuse
+## light under a storm, and the share of that diffuse light the dust's ambient term takes.
+const DUST_G: float = 0.7
+const DUST_DIFFUSE_SHARE: float = 0.55
 ## The period (m) of the noise that twists the storm dust's colour boundaries.
 const STORM_COLOUR_NOISE_M: float = 9000.0
+## The periods (m) of the two noises that make a storm's top billow: the noise texture holds ~14
+## features a period (NOISE_CELLS), so domes of ~3 km, smaller ones of ~0.8 km and puffs of ~250 m.
+const STORM_LID_NOISE_A_M: float = 40000.0
+const STORM_LID_NOISE_B_M: float = 12000.0
+const STORM_LID_NOISE_C_M: float = 3500.0
+## How the billows move: this share of the ground wind carries them, and the noise slides along the
+## local up at this speed (m/s) so the domes swell and sink. Their travel so far (planet frame, m).
+const STORM_DRIFT_SHARE: float = 0.6
+const STORM_CHURN_M_S: float = 4.0
+var _storm_drift: Vector3 = Vector3.ZERO
+var _storm_churn: float = 0.0
 ## The test storm: 60 km across, the τ of a strong real one.
 const TEST_STORM_RADIUS_M: float = 60000.0
 const TEST_STORM_TAU: float = 6.0
@@ -103,22 +136,28 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	# thickening it around the observer as well counted the storm twice. Its light side, the star
 	# dimmed through the dust overhead, goes to the renderer as the column's depth over the eye.
 	var storm_volume: bool = storm_volume_on(planet)
-	_tau_above = tau_here * clampf(1.0 - _cam_height / WeatherSampler.DUST_LAYER_M, 0.0, 1.0) \
-			if storm_volume else 0.0
+	var column: float = maxf(_column_m, 0.0) if _lid_known \
+			else clampf(WeatherSampler.DUST_LAYER_M - _cam_height, 0.0, WeatherSampler.DUST_LAYER_M)
+	_tau_above = tau_here * column / WeatherSampler.DUST_LAYER_M if storm_volume else 0.0
 	renderer.weather_storm_tau_above = _tau_above
 	var knobs: Array = knobs_for(profile, 0.0 if storm_volume else tau_here)
 	if knobs[0] != renderer.weather_haze_scale or knobs[1] != renderer.weather_haze_floor_m:
 		_refills += 1
 	renderer.weather_haze_scale = knobs[0]
 	renderer.weather_haze_floor_m = knobs[1]
-	if _no_veil:
+	if _no_veil or WeatherBench.no_veil:
 		renderer.weather_haze_scale = 0.0  # client.ini debug_no_veil: the corundum veil gone, sky and light
 		renderer.weather_haze_floor_m = -1.0
 	# The dust the wind blows off this ground: a thin Mie slab about the observer's own elevation.
 	var climate: ClimateProfile = planet.climate_profile()
 	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
 			climate.v10_threshold_m_s if climate != null else 0.0)
-	renderer.weather_blow_beta = 0.0 if WeatherBench.no_blow else blow_extinction(lifted)
+	# Targets only: smooth_blow glides the renderer's values to them every frame. Laid at once every
+	# REFRESH_S, the slab's height jumped by hundreds of metres under a fast camera and the horizon
+	# blinked. Faded out as the eye leaves the ground: the lift is a ground thing, and kept at 47 km
+	# up it drew a shell round the planet, a dark band over the horizon.
+	_blow_target_beta = 0.0 if WeatherBench.no_blow \
+			else blow_extinction(lifted) * (1.0 - smoothstep(BLOW_FADE_FROM_M, BLOW_FADE_TO_M, _cam_height))
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
@@ -148,10 +187,45 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	_probe_start = start
 	renderer.set_dust_param(&"dust_density", _dust_density)
 	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
+	# The GROUND's elevation under the observer, not the observer's: elevation_of(observer) followed the
+	# body up, and in god mode or EVA the slab floated at eye level, the line of sight running along it
+	# to the horizon: the dark band that went with the blown slab (Alt+U stage 1, 2026-10-08).
 	var ground: float = planet.elevation_of(observer_world_pos)
-	renderer.weather_blow_bottom_m = ground - BLOW_BELOW_M
-	renderer.weather_blow_top_m = ground + BLOW_ABOVE_M
+	if planet.planet_data != null and not ground_dir.is_zero_approx():
+		ground = planet.planet_data.crack_aware_surface_dist(ground_dir) - planet.planet_data.radius
+	_blow_target_bottom = ground - BLOW_BELOW_M
+	_blow_target_top = ground + BLOW_ABOVE_M
+	# The storm the observer stands in, for the sky dome (its diffuse light): the sampler's τ here over
+	# DUST_LAYER_M from the ground, the ground's colour; gone once the eye rises out of the column (the
+	# volume shows it from outside).
+	var over_top: float = -_column_m if _lid_known else _cam_height - WeatherSampler.DUST_LAYER_M
+	_slab_target_beta = tau_here / WeatherSampler.DUST_LAYER_M * (1.0 - smoothstep(0.0, 300.0, over_top)) \
+			if storm_volume else 0.0
+	_slab_target_bottom = _ground_elev_m - BLOW_BELOW_M
+	_slab_target_top = _lid_top_elev_m if _lid_known else _ground_elev_m + WeatherSampler.DUST_LAYER_M
+	renderer.weather_storm_slab_albedo = renderer.weather_blow_albedo
+	if not _blow_laid:  # the first time, at once: no glide up from 0 m on arrival
+		_blow_laid = true
+		renderer.weather_blow_beta = _blow_target_beta
+		renderer.weather_blow_bottom_m = _blow_target_bottom
+		renderer.weather_blow_top_m = _blow_target_top
+		renderer.weather_storm_slab_beta = _slab_target_beta
+		renderer.weather_storm_slab_bottom_m = _slab_target_bottom
+		renderer.weather_storm_slab_top_m = _slab_target_top
 	return knobs
+
+
+## Every frame: glide the blown slab's extinction and height toward the last reading's targets.
+func smooth_blow(renderer: AtmosphereRenderer, delta: float) -> void:
+	if not _blow_laid:
+		return
+	var k: float = 1.0 - exp(-delta * BLOW_GLIDE_RATE)
+	renderer.weather_blow_beta = lerpf(renderer.weather_blow_beta, _blow_target_beta, k)
+	renderer.weather_blow_bottom_m = lerpf(renderer.weather_blow_bottom_m, _blow_target_bottom, k)
+	renderer.weather_blow_top_m = lerpf(renderer.weather_blow_top_m, _blow_target_top, k)
+	renderer.weather_storm_slab_beta = lerpf(renderer.weather_storm_slab_beta, _slab_target_beta, k)
+	renderer.weather_storm_slab_bottom_m = lerpf(renderer.weather_storm_slab_bottom_m, _slab_target_bottom, k)
+	renderer.weather_storm_slab_top_m = lerpf(renderer.weather_storm_slab_top_m, _slab_target_top, k)
 
 
 ## Every frame: carry the noise with the wind, keep its frame the planet's, and hand the layer the
@@ -216,11 +290,32 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		_probe_light(renderer)
 	if _probe_on:
 		_probe(_scroll, wind_planet, masks.size(), height, delta)
-	if is_instance_valid(renderer.sun):
-		var c: Color = renderer.sun.light_color * renderer.sun.light_energy
-		renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
-		renderer.set_dust_param(&"dust_ambient", Vector3(c.r, c.g, c.b) * 0.22 + Vector3(0.03, 0.035, 0.045))
-		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+	_push_dust_light(renderer, up)
+
+
+## The light on the dust, near layer and storm volume alike: the sun's beam as it arrives (dimmed by
+## the storm overhead, renderer.transmittance_at) and an ambient term. Under a storm the dust takes
+## the beam away but, corundum barely absorbing, gives it back diffuse: the two-stream estimate of
+## the light through a conservative layer, 1 / (1 + 3/4 (1 - g) τ) (60 % at τ 2.6), minus the
+## direct beam, is the diffuse part. Lit by the dimmed beam alone, a storm's inside read black.
+func _push_dust_light(renderer: AtmosphereRenderer, up: Vector3) -> void:
+	if not is_instance_valid(renderer.sun):
+		return
+	var c: Color = renderer.sun.light_color * renderer.sun.light_energy
+	var sin_e: float = maxf(renderer.sun.star_direction.dot(up), 0.02)
+	var direct: float = exp(-_tau_above / sin_e) if _tau_above > 0.0 else 1.0
+	var total: float = 1.0 / (1.0 + 0.75 * (1.0 - DUST_G) * _tau_above)
+	var diffuse: float = maxf(total - direct, 0.0)
+	var beam := Vector3(c.r, c.g, c.b)
+	var unstormed: Vector3 = beam / maxf(direct, 1e-3)  # the beam before the storm took its share
+	renderer.set_dust_param(&"dust_sun", beam)
+	renderer.set_dust_param(&"dust_sun_free", unstormed)
+	# The sky slab's multiple scattering: its saturated radiance becomes the diffuse light under the
+	# column over the eye, T / pi (a Lambertian sky), over the dust's albedo.
+	renderer.weather_storm_slab_ms = total / (PI * BLOW_ALBEDO_MAX)
+	renderer.set_dust_param(&"dust_ambient", unstormed * (0.22 * direct + DUST_DIFFUSE_SHARE * diffuse)
+			+ Vector3(0.03, 0.035, 0.045))
+	renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
 
 
 ## A dust storm (WeatherSystem.state() form) [param ahead_m] along the ground from [param dir]
@@ -284,6 +379,9 @@ func animate_storm(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3
 		# belongs to the planet, it does not jump when the grid is laid again 50 km on.
 		renderer.set_dust_param(&"storm_colour_noise_m", STORM_COLOUR_NOISE_M)
 		renderer.set_dust_param(&"storm_noise_offset", _wrap(_storm.anchor / STORM_COLOUR_NOISE_M, 1.0))
+		renderer.set_dust_param(&"storm_lid_noise_a_m", STORM_LID_NOISE_A_M)
+		renderer.set_dust_param(&"storm_lid_noise_b_m", STORM_LID_NOISE_B_M)
+		renderer.set_dust_param(&"storm_lid_noise_c_m", STORM_LID_NOISE_C_M)
 		renderer.set_dust_param(&"storm_dust", _storm.dust_texture)
 		renderer.set_dust_param(&"storm_ground", _storm.ground_texture)
 		renderer.set_dust_param(&"storm_east", _storm.east)
@@ -298,8 +396,32 @@ func animate_storm(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3
 		return
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
 	renderer.set_dust_param(&"storm_frame", to_planet)
-	renderer.set_dust_param(&"storm_cam", to_planet * (camera.global_position - planet.global_position) - _storm.anchor)
+	var cam_rel: Vector3 = to_planet * (camera.global_position - planet.global_position) - _storm.anchor
+	renderer.set_dust_param(&"storm_cam", cam_rel)
+	# The billows move: carried by the wind (a share of the ground wind, the storm's top drifting) and
+	# boiling in place (the noise slides slowly along the local up, domes swelling and sinking). Kept in
+	# double precision here and wrapped to each scale's period: no jump, ever.
+	var dt: float = renderer.get_process_delta_time()
+	_storm_drift += to_planet * planet.wind_world_at(camera.global_position) * dt * STORM_DRIFT_SHARE
+	_storm_churn += dt * STORM_CHURN_M_S
+	var moved: Vector3 = _storm.anchor - _storm_drift + _storm.up * _storm_churn
+	renderer.set_dust_param(&"storm_lid_offset_a", _wrap(moved / STORM_LID_NOISE_A_M, 1.0))
+	renderer.set_dust_param(&"storm_lid_offset_b", _wrap(moved / STORM_LID_NOISE_B_M, 1.0))
+	renderer.set_dust_param(&"storm_lid_offset_c", _wrap(moved / STORM_LID_NOISE_C_M, 1.0))
+	# The storm over the eye, measured like the volume draws it: up to its lid (the smoothed ground plus
+	# DUST_LAYER_M), not DUST_LAYER_M over the ground underfoot. On a peak that rises out of the storm
+	# there is none overhead, as seen from above; in a valley it fills deeper. Light, sky slab and the
+	# volume then agree (a peak clear from the air read dark once landed on, 2026-10-08).
+	var r_a: float = _storm.anchor.length()
+	var lid: float = _storm.lid_at(cam_rel)
+	_ground_elev_m = surface - planet.planet_data.radius
+	if not is_nan(lid):
+		_column_m = lid + WeatherSampler.DUST_LAYER_M - StormField.altitude_over_anchor(cam_rel, _storm.up, r_a)
+		_lid_top_elev_m = r_a + lid + WeatherSampler.DUST_LAYER_M - planet.planet_data.radius
+		_lid_known = true
 	renderer.set_dust_param(&"storm_on", 1 if _storm.beta_max > 1e-7 else 0)
+	# The volume's light, also in a calm here (the near layer, which sets it too, may be off).
+	_push_dust_light(renderer, (camera.global_position - planet.global_position).normalized())
 
 
 ## Keep the ground grid around [param ground_point] (planet-local, the ground under the camera) and

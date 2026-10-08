@@ -114,6 +114,7 @@ const ACTION_GROUPS : Dictionary = {
 		"debug_toggle_moon_lights": "%%ACT_DEBUG_TOGGLE_MOON_LIGHTS",
 		"debug_isolate_light": "%%ACT_DEBUG_ISOLATE_LIGHT",
 		"debug_weather_bench": "%%ACT_DEBUG_WEATHER_BENCH",
+		"debug_weather_isolate": "%%ACT_DEBUG_WEATHER_ISOLATE",
 	},
 }
 ## Anything the table above never classified lands here rather than disappearing from the page. A

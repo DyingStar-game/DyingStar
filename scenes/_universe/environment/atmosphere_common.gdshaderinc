@@ -46,6 +46,36 @@ uniform vec3 blow_albedo = vec3(1.0);
 uniform float blow_bottom = 0.0;
 uniform float blow_top = 0.0;
 uniform float blow_falloff = 10.0;
+// How far from the eye (m) the blown slab reaches: full to half of it, gone at it. The blow is the
+// wind's lift HERE (WeatherSky reads it at the observer), not a shell around the planet: unbounded,
+// seen from altitude it closed the horizon with a dark band, and it blinked every half second as its
+// height was laid again under a fast camera (2026-10-08).
+uniform float blow_reach = 3000.0;
+// The lifted sand thins with height: full at the ground (blow_bottom + blow_ground_offset), divided by
+// e every blow_scale metres above it (blown dust concentration falls roughly exponentially). A slab
+// with a hard top drew a sharp band at the horizon to an eye inside it.
+uniform float blow_ground_offset = 30.0;
+uniform float blow_scale = 12.0;
+// The blown sand lit by the whole sky as well as by the sun, as an isotropic phase added to the single
+// one: with the sand's forward phase alone the band read black away from the sun.
+uniform float blow_ms = 0.12;
+// The storm the observer stands in, for the SKY DOME only (AtmosphereRenderer pushes it to the sky
+// material alone; the aerial pass draws storms as a volume): a local grey slab of the storm's own
+// extinction (storm_slab_beta, 1/m) and colour from storm_slab_bottom to storm_slab_top (m over the
+// reference sphere: the ground to DUST_LAYER_M over it), faded out by storm_slab_reach from the eye.
+// The engine lights the world with the sky dome (AMBIENT_SOURCE_SKY): with the storm out of the dome,
+// the light it takes from the sun never came back as diffuse light, and the ground went black under
+// a storm that read bright from above (2026-10-08). 0 = none.
+uniform vec3 storm_slab_beta = vec3(0.0);
+uniform vec3 storm_slab_albedo = vec3(0.9);
+uniform float storm_slab_bottom = 0.0;
+uniform float storm_slab_top = 0.0;
+uniform float storm_slab_reach = 8000.0;
+// The storm slab's MULTIPLE scattering, as an isotropic phase added to the single one: in a thick,
+// near-white layer the light bounces dozens of times and comes out evenly, which single scattering
+// alone cannot give (inside, the dome read dark brown away from the sun). WeatherSky sets it so the
+// saturated slab's radiance is the two-stream diffuse light, T / pi (Lambert), over the albedo.
+uniform float storm_slab_ms = 0.0;
 
 uniform vec3 absorption_beta = vec3(0.0);
 uniform float absorption_center = 25000.0;
@@ -136,12 +166,15 @@ float mie_density(float altitude) {
 }
 
 
-// The blown slab's profile, 0..1: a soft-edged band between blow_bottom and blow_top.
+// The blown sand's profile, 0..1: from blow_bottom (under the ground, for the relief's dips), full at
+// the ground and thinning exponentially above it, cut off softly at blow_top.
 float blow_profile(float altitude) {
 	if (blow_top <= blow_bottom) {
 		return 0.0;
 	}
+	float ground = blow_bottom + blow_ground_offset;
 	return smoothstep(blow_bottom - blow_falloff, blow_bottom + blow_falloff, altitude)
+			* exp(-max(altitude - ground, 0.0) / max(blow_scale, 1.0))
 			* (1.0 - smoothstep(blow_top - blow_falloff, blow_top + blow_falloff, altitude));
 }
 
@@ -297,6 +330,7 @@ vec3 scatter(
 	vec3 sum_rayleigh = vec3(0.0);
 	vec3 sum_mie = vec3(0.0);
 	vec3 sum_blow = vec3(0.0);
+	vec3 sum_storm = vec3(0.0);
 
 	for (int i = 0; i < steps_view; i++) {
 		float step_width = span / float(steps_view);
@@ -319,8 +353,14 @@ vec3 scatter(
 		float h = atmo_altitude(p);
 		float density_r = rayleigh_density(h);
 		float density_m = mie_density(h);
-		float density_b = blow_profile(h);
-		depth_view += atmo_extinction(h) * step_width;
+		float density_b = blow_profile(h) * (1.0 - smoothstep(blow_reach * 0.5, blow_reach, t));
+		float density_s = (storm_slab_top > storm_slab_bottom)
+				? smoothstep(storm_slab_bottom - 50.0, storm_slab_bottom + 50.0, h)
+					* (1.0 - smoothstep(storm_slab_top - 150.0, storm_slab_top + 150.0, h))
+					* (1.0 - smoothstep(storm_slab_reach * 0.5, storm_slab_reach, t))
+				: 0.0;
+		depth_view += (atmo_extinction(h) + blow_beta * (density_b - blow_profile(h)) + storm_slab_beta * density_s)
+				* step_width;
 
 		// Is this sample in the planet's own shadow? A star ray that enters the ground never gets
 		// here, and testing it is what draws the terminator and the shadow of the planet climbing
@@ -343,13 +383,15 @@ vec3 scatter(
 		sum_rayleigh += density_r * transmittance * step_width;
 		sum_mie += density_m * transmittance * step_width;
 		sum_blow += density_b * transmittance * step_width;
+		sum_storm += density_s * transmittance * step_width;
 	}
 
 	view_transmittance = exp(-depth_view);
 	return star_irradiance * star_color * (
 		rayleigh_beta * phase_r * sum_rayleigh
 		+ mie_beta * mie_albedo * phase_m * sum_mie
-		+ blow_beta * blow_albedo * phase_m * sum_blow
+		+ blow_beta * blow_albedo * (phase_m + blow_ms) * sum_blow
+		+ storm_slab_beta * storm_slab_albedo * (phase_m + storm_slab_ms) * sum_storm
 	) * sky_exposure;
 }
 

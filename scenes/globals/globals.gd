@@ -63,6 +63,7 @@ const ENABLED_DEV_TOOLS: Dictionary = {
 	"debug_toggle_moon_lights": true,  # moon lights on/off (Alt+key)
 	"debug_isolate_light": true,       # remove one light contributor at a time (Alt+key)
 	"debug_weather_bench": true,       # the weather's GPU cost, effect by effect (Alt+B, WeatherBench)
+	"debug_weather_isolate": true,     # one weather layer taken away per press, named on screen (Alt+U)
 	"weather_map": true,  # the star map's weather layer (pressure, isobars, wind, dust) and its key
 	# Not an InputMap action: a build switch. The chunk mesh gets its edge skirts (the curtains
 	# dropped under every chunk border that hide LOD seams) only when ON — OFF bakes bare grids,

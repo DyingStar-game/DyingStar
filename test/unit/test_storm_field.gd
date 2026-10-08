@@ -83,3 +83,23 @@ func test_the_storm_takes_the_colour_of_its_own_ground() -> void:
 	assert_almost_eq(albedo[0], 0.92, 1e-4, "the brightest channel at the dust's ceiling")
 	assert_almost_eq(albedo[1], 0.92 * 0.45 / 0.6, 1e-4, "the ground's hue kept")
 	assert_almost_eq(albedo[2], 0.92 * 0.3 / 0.6, 1e-4)
+
+
+func test_a_field_freed_mid_job_waits_for_it() -> void:
+	var f := StormField.new()
+	var slow: Callable = func(_dir: Vector3) -> float:
+		OS.delay_usec(20)
+		return 0.001
+	f.update(ANCHOR, _smooth, slow, 0.0, 1000.0)  # the ground in one go, then the dust job starts
+	assert_true(f._task >= 0, "a job is running")
+	f = null  # freed mid-job: it must wait, not leave the worker writing into freed memory
+	assert_null(f, "still standing")
+
+
+func test_the_lid_is_read_back_where_the_eye_stands() -> void:
+	var f := StormField.new()
+	assert_true(is_nan(f.lid_at(Vector3.ZERO)), "no grid yet: unknown")
+	var job: Callable = func(_dir: Vector3) -> float: return 0.0
+	_until_ready(f, ANCHOR, job)
+	assert_almost_eq(f.lid_at(Vector3.ZERO), 0.0, 0.01, "a smooth planet: the lid on the anchor's sphere")
+	assert_false(is_nan(f.lid_at(f.east * 400000.0)), "off the grid: the edge carries on, as in the shader")
