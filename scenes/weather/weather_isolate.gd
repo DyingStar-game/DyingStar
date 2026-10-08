@@ -12,11 +12,10 @@ extends CanvasLayer
 ## The stages: [what the screen says, the switches it turns on].
 const STAGES: Array = [
 	["weather: everything on", []],
-	["weather: no blown sand slab in the sky", [&"no_blow"]],
 	["weather: no storm volume", [&"no_storm"]],
 	["weather: no near dust layer", [&"no_layer"]],
 	["weather: no corundum veil", [&"no_veil"]],
-	["weather: none of them", [&"no_blow", &"no_storm", &"no_layer", &"no_veil"]],
+	["weather: none of them", [&"no_storm", &"no_layer", &"no_veil"]],
 ]
 
 var _stage: int = 0
@@ -54,7 +53,6 @@ func _exit_tree() -> void:
 
 ## Turn on exactly [param switches], every other one off.
 static func apply(switches: Array) -> void:
-	WeatherBench.no_blow = &"no_blow" in switches
 	WeatherBench.no_storm = &"no_storm" in switches
 	WeatherBench.no_layer = &"no_layer" in switches
 	WeatherBench.no_veil = &"no_veil" in switches

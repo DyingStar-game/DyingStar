@@ -3,7 +3,7 @@ extends GutTest
 ## turned on one stage at a time and all back off when the bench leaves, and a building laid during a
 ## run without colliders gets a hidden one.
 
-const KNOWN: Array = [&"no_layer", &"no_masks", &"no_colliders", &"no_particles", &"no_blow", &"no_storm", &"low_steps"]
+const KNOWN: Array = [&"no_layer", &"no_masks", &"no_colliders", &"no_particles", &"no_storm", &"low_steps"]
 
 
 func after_each() -> void:
@@ -11,7 +11,6 @@ func after_each() -> void:
 	WeatherBench.no_masks = false
 	WeatherBench.no_colliders = false
 	WeatherBench.no_particles = false
-	WeatherBench.no_blow = false
 	WeatherBench.no_storm = false
 
 
@@ -47,9 +46,9 @@ func test_every_stage_names_known_switches_and_the_run_starts_and_ends_on_everyt
 
 func test_a_stage_turns_on_only_its_switches_and_leaving_turns_them_all_off() -> void:
 	var bench := WeatherBench.new(null)
-	bench._apply([&"no_layer", &"no_blow"])
+	bench._apply([&"no_layer", &"no_storm"])
 	assert_true(WeatherBench.no_layer)
-	assert_true(WeatherBench.no_blow)
+	assert_true(WeatherBench.no_storm)
 	assert_false(WeatherBench.no_masks)
 	assert_false(WeatherBench.no_particles)
 	bench._apply([&"no_particles"])

@@ -26,16 +26,16 @@ func test_a_star_on_the_horizon_gives_a_number() -> void:
 func test_the_slabs_are_laid_at_once_then_glide() -> void:
 	var renderer := AtmosphereRenderer.new()
 	var slabs := SkySlabs.new()
-	slabs.blow_beta = 0.01
-	slabs.blow_top = 8000.0
+	slabs.storm_beta = 0.01
+	slabs.storm_top = 8000.0
 	slabs.glide(renderer, 1.0)
-	assert_eq(renderer.weather_blow_beta, 0.0, "nothing glides before the first reading is laid")
+	assert_eq(renderer.weather_storm_slab_beta, 0.0, "nothing glides before the first reading is laid")
 	slabs.settle(renderer)
-	assert_eq(renderer.weather_blow_beta, 0.01, "the first reading: at once")
-	assert_eq(renderer.weather_blow_top_m, 8000.0)
-	slabs.blow_top = 9000.0
+	assert_eq(renderer.weather_storm_slab_beta, 0.01, "the first reading: at once")
+	assert_eq(renderer.weather_storm_slab_top_m, 8000.0)
+	slabs.storm_top = 9000.0
 	slabs.settle(renderer)
-	assert_eq(renderer.weather_blow_top_m, 8000.0, "later readings never jump")
+	assert_eq(renderer.weather_storm_slab_top_m, 8000.0, "later readings never jump")
 	slabs.glide(renderer, 0.25)
-	assert_almost_eq(renderer.weather_blow_top_m, 8000.0 + 1000.0 * (1.0 - exp(-1.0)), 0.01, "they glide")
+	assert_almost_eq(renderer.weather_storm_slab_top_m, 8000.0 + 1000.0 * (1.0 - exp(-1.0)), 0.01, "they glide")
 	renderer.free()

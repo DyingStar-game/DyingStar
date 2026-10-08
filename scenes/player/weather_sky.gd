@@ -23,7 +23,6 @@ const REFRESH_S: float = 0.5
 const BLOW_VISIBILITY_FULL_M: float = 400.0
 const BLOW_POWER: float = 1.5
 const BLOW_BELOW_M: float = 30.0
-const BLOW_ABOVE_M: float = 80.0
 ## What the blown dust reflects at most (its brightest channel), and the colour it takes when the
 ## ground under the observer has none to give (a pale ochre, the corundum plains).
 const BLOW_ALBEDO_MAX: float = 0.92
@@ -66,9 +65,6 @@ var _slabs: SkySlabs = SkySlabs.new()
 var _tau_above: float = 0.0
 ## client.ini debug_no_veil: the profile's Mie veil (Sandbox's corundum) at zero, everything else kept.
 var _no_veil: bool = ClientConfig.get_bool("debug_no_veil", false)
-## The lifted dust (the sky slab): faded out between these heights of the eye over the ground (m).
-const BLOW_FADE_FROM_M: float = 50.0
-const BLOW_FADE_TO_M: float = 300.0
 ## The dust probe (client.ini debug_dust_probe=true): what was sent to the layer last frame, to log
 ## every discontinuity of it. Off, it costs a bool test.
 var _probe_start: float = 0.0
@@ -107,16 +103,11 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	if _no_veil or WeatherBench.no_veil:
 		renderer.weather_haze_scale = 0.0  # client.ini debug_no_veil: the corundum veil gone, sky and light
 		renderer.weather_haze_floor_m = -1.0
-	# The dust the wind blows off this ground: a thin Mie slab about the observer's own elevation.
+	# The dust the wind lifts off this ground: the near layer's (the sky's slab of it is gone: drawn as
+	# a shell round the eye, it closed the horizon with a band; the near layer and the volume carry it).
 	var climate: ClimateProfile = planet.climate_profile()
 	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
 			climate.v10_threshold_m_s if climate != null else 0.0)
-	# Targets only: smooth_blow glides the renderer's values to them every frame. Laid at once every
-	# REFRESH_S, the slab's height jumped by hundreds of metres under a fast camera and the horizon
-	# blinked. Faded out as the eye leaves the ground: the lift is a ground thing, and kept at 47 km
-	# up it drew a shell round the planet, a dark band over the horizon.
-	_slabs.blow_beta = 0.0 if WeatherBench.no_blow \
-			else blow_extinction(lifted) * (1.0 - smoothstep(BLOW_FADE_FROM_M, BLOW_FADE_TO_M, _volume.cam_height))
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
@@ -146,14 +137,6 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	_probe_start = start
 	renderer.set_dust_param(&"dust_density", _dust_density)
 	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
-	# The GROUND's elevation under the observer, not the observer's: elevation_of(observer) followed the
-	# body up, and in god mode or EVA the slab floated at eye level, the line of sight running along it
-	# to the horizon: the dark band that went with the blown slab (Alt+U stage 1, 2026-10-08).
-	var ground: float = planet.elevation_of(observer_world_pos)
-	if planet.planet_data != null and not ground_dir.is_zero_approx():
-		ground = planet.planet_data.crack_aware_surface_dist(ground_dir) - planet.planet_data.radius
-	_slabs.blow_bottom = ground - BLOW_BELOW_M
-	_slabs.blow_top = ground + BLOW_ABOVE_M
 	# The storm the observer stands in, for the sky dome (its diffuse light): the sampler's τ here over
 	# DUST_LAYER_M from the ground, the ground's colour; gone once the eye rises out of the column (the
 	# volume shows it from outside).
