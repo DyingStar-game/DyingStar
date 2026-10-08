@@ -34,7 +34,7 @@ func _road(length_m: float, tracks: int = 2) -> Dictionary:
 
 ## Metres east of the road start for a direction.
 static func _east_m(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var mpd := RADIUS * PI / 180.0
 	return (lon - LON0) * mpd * cos(deg_to_rad(LAT))
 

@@ -42,10 +42,11 @@ fills the NULL fields from them, so Godot never needs the table.
     the reference.
 """
 
-from .model import Category, Layer, Field, Widget, ValueMap, Range
+from .model import Category, Layer, Field, Widget, ValueMap, Range, STAGE_MASSIFS
 
 CATEGORY = Category("mountains", "mountains",
-                    description="Procedural mountains (ranges and ridges)")
+                    description="Procedural mountains (ranges and ridges)",
+                    stage=STAGE_MASSIFS)
 
 STYLES = [
     ("Rolling — soft hills, no crest", "rolling"),

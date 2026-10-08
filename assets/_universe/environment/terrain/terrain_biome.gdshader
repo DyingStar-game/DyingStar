@@ -102,6 +102,10 @@ varying flat float detail_layer;
 varying float detail_scale;
 varying float cam_dist;  // camera -> fragment distance (m), for the far-distance radial normal blend
 varying vec3 planet_radial_world;  // true smooth sphere normal (world space): terminator + star NdotL
+varying vec4 rock;  // CUSTOM1: rocky terrain intensity × envelope, small-block size (m), level + 8 × type, altitude (m)
+
+// Rocky terrain blocks below the mesh pitch (CUSTOM1) — rock_blocks().
+#include "res://scenes/planet/rock_blocks.gdshaderinc"
 
 // Snap a tiling scale to the seamless 1/WRAP grid (minimum one repeat/WRAP).
 float snap_scale(float raw) {
@@ -173,6 +177,7 @@ void vertex() {
 	// origin.  Both terms are small (≤ ~8300 m), so float32 keeps
 	// sub-millimetre precision — unlike world_pos (~4.5e6 m → 0.5 m steps).
 	tri_pos      = chunk_origin_mod + VERTEX + CUSTOM0.xyz;
+	rock         = CUSTOM1;
 	// Camera->fragment distance for the far-distance radial normal blend (view space is camera-relative,
 	// so this stays float32-precise regardless of the astronomic world position).
 	cam_dist     = far_light_cam_dist(MODELVIEW_MATRIX, VERTEX + CUSTOM0.xyz);
@@ -315,6 +320,8 @@ void fragment() {
 	// Blend: detail 0.5 = no change, <0.5 darkens, >0.5 brightens.
 	// Using overlay-style blending for natural look.
 	float mod = mix(1.0, detail * 2.0, detail_strength);
+	// Rock blocks of a rocky_terrain field (CUSTOM1), faded with the distance.
+	mod *= rock_blocks(rock, tri_pos, world_normal, planet_up, cam_dist, shaded_normal);
 	ALBEDO = clamp(biome_color * mod * albedo_multiplier, vec3(0.0), vec3(1.0));
 
 	// Increase roughness on steep cliff faces for a more matte rock look.

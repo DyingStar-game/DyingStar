@@ -492,7 +492,7 @@ static func _point_to_segment_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 ## Convert unit direction vector to (longitude, latitude) in degrees.
 static func _dir_to_lonlat(dir: Vector3) -> Vector2:
 	var d := dir.normalized()
-	var lon := rad_to_deg(atan2(d.z, d.x))
+	var lon := rad_to_deg(atan2(-d.z, d.x))
 	var lat := rad_to_deg(asin(clampf(d.y, -1.0, 1.0)))
 	return Vector2(lon, lat)
 

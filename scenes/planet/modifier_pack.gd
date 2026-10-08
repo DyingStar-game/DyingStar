@@ -123,6 +123,9 @@ const KIND_VOLCANO := 8
 const KIND_LAVA := 9
 ## Fumarole fields / vents (FumaroleField): POPULATE polygon or point records.
 const KIND_FUMAROLE := 10
+## Rocky terrain (RockFieldRelief): POPULATE polygon records laid over the
+## mountains — they ride the tile's mountain_set.
+const KIND_ROCKY := 11
 
 ## Bit masks for decode_tile()'s kind_mask (1 << kind).
 const MASK_CRATER := 1 << KIND_CRATER
@@ -135,8 +138,9 @@ const MASK_RIDGE := 1 << KIND_RIDGE
 const MASK_VOLCANO := 1 << KIND_VOLCANO
 const MASK_LAVA := 1 << KIND_LAVA
 const MASK_FUMAROLE := 1 << KIND_FUMAROLE
+const MASK_ROCKY := 1 << KIND_ROCKY
 const MASK_ALL := MASK_CRATER | MASK_LINEAR | MASK_RADIAL | MASK_POPULATE | MASK_ROAD \
-		| MASK_MOUNTAIN | MASK_RIDGE | MASK_VOLCANO | MASK_LAVA | MASK_FUMAROLE
+		| MASK_MOUNTAIN | MASK_RIDGE | MASK_VOLCANO | MASK_LAVA | MASK_FUMAROLE | MASK_ROCKY
 
 ## LAVA record header size (layout 1).
 const LAVA_HEADER_SIZE := 32
@@ -328,6 +332,7 @@ static func kind_name(kind: int) -> String:
 		KIND_VOLCANO: return "volcano"
 		KIND_LAVA: return "lava"
 		KIND_FUMAROLE: return "fumarole"
+		KIND_ROCKY: return "rocky"
 	return ""
 
 
@@ -452,6 +457,7 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 		"mountain_set": null,
 		"lava_flows": [],
 		"fumaroles": [],
+		"rock_fields": [],
 		"_raw_bytes": bytes.size(),
 	}
 	if bytes.size() < 4:
@@ -511,10 +517,15 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 				for z in _decode_populate(bytes, start, record_count):
 					fl.append(FumaroleField.prepare(z))
 				out["fumaroles"] = fl
+			KIND_ROCKY:
+				var rf: Array = []
+				for z in _decode_populate(bytes, start, record_count):
+					rf.append(RockFieldRelief.prepare(z))
+				out["rock_fields"] = rf
 	if not out["mountain_zones"].is_empty() or not out["ridge_lines"].is_empty() \
-			or not out["volcanoes"].is_empty():
+			or not out["volcanoes"].is_empty() or not out["rock_fields"].is_empty():
 		out["mountain_set"] = MountainRelief.build_set(out["mountain_zones"], out["ridge_lines"],
-				out["volcanoes"])
+				out["volcanoes"], out["rock_fields"])
 	return out
 
 

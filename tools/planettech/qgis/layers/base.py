@@ -2,9 +2,10 @@
 Non-biome reference layers: world border, contours, region.
 """
 
-from .model import Category, Layer, Field
+from .model import Category, Layer, Field, STAGE_BASE
 
-CATEGORY = Category("base", None, description="Reference layers (no sub-group)")
+CATEGORY = Category("base", None, description="Reference layers (no sub-group)",
+                    stage=STAGE_BASE)
 
 
 def _seed_world_rect(layer):

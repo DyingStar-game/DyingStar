@@ -337,5 +337,5 @@ func _export_height_samples(info: Dictionary, key: String) -> void:
 ## Convert a unit direction vector to (longitude, latitude) degrees.
 static func _dir_to_lonlat(dir: Vector3) -> Vector2:
 	var lat := rad_to_deg(asin(clampf(dir.y, -1.0, 1.0)))
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	return Vector2(lon, lat)

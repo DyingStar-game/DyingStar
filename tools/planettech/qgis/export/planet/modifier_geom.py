@@ -65,7 +65,7 @@ def level_policy(export_nside, max_quadtree_nside, min_nside=1):
     """{kind: {"min": nside, "max": nside}} for this planet."""
     out = {}
     for kind in ("crater", "linear", "radial", "populate", "road", "mountain", "ridge",
-                 "volcano", "lava", "fumarole"):
+                 "volcano", "lava", "fumarole", "rocky"):
         deep = kind in _DEEP_KINDS
         out[kind] = {
             "min": min_nside,
@@ -201,7 +201,7 @@ def pix_of(nside, lon, lat):
     lon_r = math.radians(lon)
     clat = math.cos(lat_r)
     return int(hpx.vec2pix_nest(
-        nside, clat * math.cos(lon_r), math.sin(lat_r), clat * math.sin(lon_r)))
+        nside, clat * math.cos(lon_r), math.sin(lat_r), -clat * math.sin(lon_r)))
 
 
 def dilate(nside, pixels, rings=1):

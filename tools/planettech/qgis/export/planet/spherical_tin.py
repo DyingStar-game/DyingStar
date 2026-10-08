@@ -25,7 +25,7 @@ import numpy as np
 def lonlat_to_unit_vectors(lon_deg, lat_deg):
     """(lon, lat) in degrees -> unit vectors, in healpix_utils' axis convention.
 
-    healpix_utils.face_xy_to_vec returns (sin(theta)*cos(phi), z, sin(theta)*sin(phi))
+    healpix_utils.face_xy_to_vec returns (sin(theta)*cos(phi), z, -sin(theta)*sin(phi))
     and face_xy_to_lonlat reads lat = asin(z), lon = degrees(phi) — i.e. Y is the
     polar axis and longitude runs in the X-Z plane. Any direction produced by
     healpix_utils can therefore be fed straight to SphericalTIN.sample_vec().
@@ -33,7 +33,7 @@ def lonlat_to_unit_vectors(lon_deg, lat_deg):
     lon = np.radians(np.asarray(lon_deg, dtype=np.float64))
     lat = np.radians(np.asarray(lat_deg, dtype=np.float64))
     cos_lat = np.cos(lat)
-    return np.stack([cos_lat * np.cos(lon), np.sin(lat), cos_lat * np.sin(lon)], axis=-1)
+    return np.stack([cos_lat * np.cos(lon), np.sin(lat), -cos_lat * np.sin(lon)], axis=-1)
 
 
 class SphericalTIN:

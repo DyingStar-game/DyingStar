@@ -41,6 +41,8 @@ debug_fumarole_enabled = true
 debug_fumarole_lonlat = Vector2(-102.26, -23.03)
 debug_fumarole_radius_km = 1.5
 debug_fumarole_style = {"gas": "sulfur", "density": 25.0}
+debug_rock_enabled = true
+debug_rock_lonlat = Vector2(-103.247, -22.8)
 chunk_heightmaps_dir = "assets/qgis/export/tarsis_8_chunks"
 chunk_heightmap_res = 32
 mining_zone_minerals = PackedStringArray("iron", "gold", "cryptonite")
@@ -69,11 +71,11 @@ editor_goto_lon = -103.0
 editor_goto_lat = -22.8
 editor_goto_x = -718966.8396245812
 editor_goto_y = -1343518.1767591746
-editor_goto_z = -3114187.5202441984
+editor_goto_z = 3114187.5202441984
 editor_planet_flight = true
 
 [node name="DebugChunkExporter" type="Node" parent="PlanetTerrain" unique_id=2134744641]
 script = ExtResource("5_xpeml")
 
 [node name="CargoDepot" parent="." unique_id=693024100 instance=ExtResource("6_dyiev")]
-transform = Transform3D(0.9297877213987021, -0.20737311572445685, -0.30412363277282417, 0.2073743504594535, -0.38751645675979607, 0.8982354226548026, -0.3041227908390431, -0.8982357077154435, -0.3173041781590773, -718963.5069790384, -1343521.2649951787, -3114187.160938387)
+transform = Transform3D(0.9297877213987021, -0.20737311572445685, 0.30412363277282417, 0.2073743504594535, -0.38751645675979607, -0.8982354226548026, 0.3041227908390431, 0.8982357077154435, -0.3173041781590773, -718963.5069790384, -1343521.2649951787, 3114187.160938387)

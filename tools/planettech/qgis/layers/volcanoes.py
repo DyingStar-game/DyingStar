@@ -50,10 +50,11 @@ replace — never reuse them.  ``fumarole_field`` keeps its PostGIS table;
 migrate_volcanic_layers.py copies the others into the new tables.
 """
 
-from .model import Category, Layer, Field, Widget, ValueMap
+from .model import Category, Layer, Field, Widget, ValueMap, STAGE_MASSIFS, STAGE_FINAL
 
 CATEGORY = Category("volcanoes", "volcanoes",
-                    description="Procedural volcanoes, lava flows and fumaroles")
+                    description="Procedural volcanoes, lava flows and fumaroles",
+                    stage=STAGE_FINAL)
 
 TYPES = [
     ("Stratovolcano — steep cone, summit crater", "stratovolcano"),
@@ -103,6 +104,9 @@ CATEGORY.add(Layer(
     description="Volcano summit — Godot builds the cone and the crater (see layers/volcanoes.py)",
     terrain_modifier=True,
     properties={"ds_kind": "volcano"},
+    # The cone is summed with the mountains, the rest of the category (lava
+    # flows graded like roads, decorative fumaroles) applies last.
+    stage=STAGE_MASSIFS,
     fields=[
         Field("name", "string", "(Optional) Volcano name"),
         Field("type", "string", "Volcano preset — NULL fields below take its values",

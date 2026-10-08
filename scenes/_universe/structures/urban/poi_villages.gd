@@ -142,7 +142,10 @@ func _spawn_item(item: Node, xform: Transform3D, parent_uuid: String, key: Strin
 		# for Horizon's apartment assignment (parent_id is our parent, not the village).
 		var capacity: int = int(item.rows) * int(item.cols) * int(item.floors)
 		data.merge({"poi_uuid": village_uuid, "apartments": [], "total": capacity, "available": capacity}, true)
-	NetworkOrchestrator.spawn_prop_authoritative(data)
+	# Through the streaming, not built now: a village wakes for Horizon (spawn_requested) or a zone
+	# warm-up with nobody near, and after a new QGIS export all 89 of tarsis_3 did at once — every
+	# mining depot and hab of the planet built, then kept 5 min (costly types) before sleeping.
+	NetworkOrchestrator.spawn_prop_authoritative(data, false)
 	return item_uuid
 
 

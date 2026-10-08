@@ -98,14 +98,14 @@ func test_frame_is_right_handed_and_follows_the_grade() -> void:
 	assert_almost_eq(up.length(), 1.0, 1e-9)
 	assert_almost_eq(t.dot(up), 0.0, 1e-9)
 	assert_almost_eq(n.dot(t), 0.0, 1e-9)
-	assert_gt(Basis(n, up, -t).determinant(), 0.0, "module half A basis is right-handed")
-	assert_gt(Basis(-n, up, t).determinant(), 0.0, "module half B basis is right-handed")
+	assert_gt(Basis(-n, up, -t).determinant(), 0.0, "module half A basis is right-handed")
+	assert_gt(Basis(n, up, t).determinant(), 0.0, "module half B basis is right-handed")
 	# Eastbound: the tangent climbs 4 % against the radial.
 	var radial: Vector3 = (f["pos"] as Vector3).normalized()
 	assert_almost_eq(t.dot(radial), 0.04 / sqrt(1.0 + 0.04 * 0.04), 1e-4)
 	# n points north (left of eastward travel).
 	var north := Vector3(-sin(deg_to_rad(LAT)) * cos(deg_to_rad(LON0)),
-			cos(deg_to_rad(LAT)), -sin(deg_to_rad(LAT)) * sin(deg_to_rad(LON0)))
+			cos(deg_to_rad(LAT)), sin(deg_to_rad(LAT)) * sin(deg_to_rad(LON0)))
 	assert_gt(n.dot(north), 0.99)
 	assert_almost_eq((f["pos"] as Vector3).length(), RADIUS + 102.0, 1e-3)
 

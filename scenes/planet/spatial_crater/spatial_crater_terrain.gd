@@ -134,7 +134,7 @@ static func lonlat_to_dir(lon_deg: float, lat_deg: float) -> Vector3:
 	var lon := deg_to_rad(lon_deg)
 	var lat := deg_to_rad(lat_deg)
 	var cl := cos(lat)
-	return Vector3(cl * cos(lon), sin(lat), cl * sin(lon))
+	return Vector3(cl * cos(lon), sin(lat), -cl * sin(lon))
 
 
 # ── Baked crater pipeline (heightmap generation) ──────────────────

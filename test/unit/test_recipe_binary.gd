@@ -32,7 +32,7 @@ func after_each() -> void:
 func _make_full_recipe() -> Dictionary:
 	var ipix := 26965
 	var center_dir := HEALPix.pix2vec_nest(NSIDE, ipix)
-	var lon := rad_to_deg(atan2(center_dir.z, center_dir.x))
+	var lon := rad_to_deg(atan2(-center_dir.z, center_dir.x))
 	var lat := rad_to_deg(asin(clampf(center_dir.y, -1.0, 1.0)))
 
 	# Build a recipe that exercises every field type

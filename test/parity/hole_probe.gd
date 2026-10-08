@@ -41,15 +41,15 @@ const SEAM_TOLERANCE_M := 0.01
 ## Rays per side of the centre chunk.
 const RAY_GRID := 64
 
-var OUT: FileAccess = null
+var _out: FileAccess = null
 var _failures: PackedStringArray = []
 
 
 func say(t: String) -> void:
-	if OUT == null:
-		OUT = FileAccess.open("user://hole_probe.txt", FileAccess.WRITE)
-	OUT.store_line(t)
-	OUT.flush()
+	if _out == null:
+		_out = FileAccess.open("user://hole_probe.txt", FileAccess.WRITE)
+	_out.store_line(t)
+	_out.flush()
 	print(t)
 
 
@@ -68,7 +68,7 @@ func _ready() -> void:
 	data.apply_chunk_manifest()
 	# The POI spheres the game gives the crack network: without them the village
 	# would be cut by a 180 m canyon it does not have in game.
-	data.set_crack_exclusions(PlanetTerrain.crack_exclusion_pois_of_scene(scene))
+	data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(PLANET))
 	data.remote_source = RemoteTileSource.for_planet(PLANET)
 	say("PROBE %s : rayon %.0f m, export n%d, grille la plus fine n%d, %d POI"
 			% [PLANET, data.radius, data.export_nside, 1 << data.max_quadtree_depth,
