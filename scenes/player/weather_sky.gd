@@ -56,6 +56,9 @@ var _wind_dir: Vector3 = Vector3.ZERO
 var _anchor: Vector3 = Vector3.ZERO
 var _anchor_set: bool = false
 var _noise: NoiseTexture3D = null
+## The real ground around the camera the layer lies on (DustGround), and the planet it was laid on.
+var _ground: DustGround = DustGround.new()
+var _ground_planet: int = 0
 ## The dust probe (client.ini debug_dust_probe=true): what was sent to the layer last frame, to log
 ## every discontinuity of it. Off, it costs a bool test.
 var _probe_start: float = 0.0
@@ -166,8 +169,9 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	if planet.planet_data != null:
 		var dir: Vector3 = planet.local_dir_of(camera.global_position)
 		if not dir.is_zero_approx():
-			height = camera.global_position.distance_to(planet.global_position) \
-					- planet.planet_data.crack_aware_surface_dist(dir)
+			var surface: float = planet.planet_data.crack_aware_surface_dist(dir)
+			height = camera.global_position.distance_to(planet.global_position) - surface
+			_lay_ground(renderer, planet, dir * surface, cam_planet)
 	renderer.set_dust_param(&"dust_frame", to_planet)
 	renderer.set_dust_param(&"dust_offset", offset)
 	renderer.set_dust_param(&"dust_offset_fine", _wrap(cam_q + _scroll_fine, period_f))
@@ -187,6 +191,30 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
 		renderer.set_dust_param(&"dust_ambient", Vector3(c.r, c.g, c.b) * 0.22 + Vector3(0.03, 0.035, 0.045))
 		renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+
+
+## Keep the ground grid around [param ground_point] (planet-local, the ground under the camera) and
+## hand the layer the camera's place on it. A grid laid on another planet is dropped first.
+func _lay_ground(renderer: AtmosphereRenderer, planet: Planet, ground_point: Vector3, cam_planet: Vector3) -> void:
+	if planet.get_instance_id() != _ground_planet:
+		_ground = DustGround.new()
+		_ground_planet = planet.get_instance_id()
+		renderer.set_dust_param(&"dust_ground_on", 0)
+	if _ground.update(ground_point, planet.planet_data.crack_aware_surface_dist):
+		renderer.set_dust_param(&"dust_ground", _ground.texture)
+		renderer.set_dust_param(&"dust_ground_east", _ground.east)
+		renderer.set_dust_param(&"dust_ground_north", _ground.north)
+		renderer.set_dust_param(&"dust_ground_up", _ground.up)
+		renderer.set_dust_param(&"dust_ground_half", DustGround.half_m())
+		renderer.set_dust_param(&"dust_ground_on", 1)
+	if not _ground.ready:
+		return
+	# Both relative to the anchor, computed here in double precision: small numbers for the shader.
+	renderer.set_dust_param(&"dust_ground_cam", cam_planet - _ground.anchor)
+	# How far the grid's highest ground stands over the ground under the camera: the layer reaches
+	# that much higher than the flat test says (a hill ahead holds dust over the camera's own level).
+	var under_cam: float = (ground_point - _ground.anchor).dot(_ground.up)
+	renderer.set_dust_param(&"dust_ground_lift", maxf(0.0, _ground.top_m - under_cam))
 
 
 ## The probe's light side: the sun's energy and colour (> 2 %), the veil's two knobs, the blown slab.
@@ -244,6 +272,8 @@ func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: fl
 	var ms: int = Time.get_ticks_msec()
 	if ms - _probe_summary_at > 5000:
 		_probe_summary_at = ms
+		print("[DustProbe] ground grid %s, last build %.1f ms of queries for %d cells" % [
+			"ready" if _ground.ready else "building", _ground.last_build_ms, DustGround.SIZE * DustGround.SIZE])
 		print("[DustProbe] summary density %.5f (vis %.0f m) wind %.1f m/s masks %d height %.1f m start %.0f m" % [
 			_dust_density, 3.912 / maxf(_dust_density, 1e-6), wind.length(), masks, height, _probe_start])
 	_probe_last = now

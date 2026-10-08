@@ -57,6 +57,34 @@ uniform vec3 dust_albedo = vec3(0.86, 0.74, 0.56);
 uniform vec3 dust_sun = vec3(1.0);
 uniform vec3 dust_ambient = vec3(0.2);
 uniform vec3 dust_sun_dir = vec3(0.0, 1.0, 0.0);
+// The real ground around the camera (DustGround): a height grid over a tangent plane anchored near
+// it, all in the planet's frame. dust_ground_cam is the camera relative to that anchor, the texels the
+// ground's height over the plane. The grid reaches past the march's range; off it (a fast camera
+// outrunning the next grid) the edge's ground carries on, clamped by the sampler. Never the flat plane
+// once there is a grid: where the two met, a ring of dust stood at the grid's edge on any slope.
+// Before the first grid only, the flat plane through the ground under the camera. dust_ground_lift:
+// how far the grid's highest ground stands over the ground under the camera (the layer reaches that
+// much higher).
+uniform sampler2D dust_ground : filter_linear, repeat_disable;
+uniform int dust_ground_on = 0;
+uniform vec3 dust_ground_cam = vec3(0.0);
+uniform vec3 dust_ground_east = vec3(1.0, 0.0, 0.0);
+uniform vec3 dust_ground_north = vec3(0.0, 0.0, 1.0);
+uniform vec3 dust_ground_up = vec3(0.0, 1.0, 0.0);
+uniform float dust_ground_half = 352.0;
+uniform float dust_ground_lift = 0.0;
+
+// The height (m) over the real ground of the camera-relative point [param p] whose height over the
+// flat plane through the ground under the camera is [param flat_h].
+float dust_height_over_ground(vec3 p, float flat_h) {
+	if (dust_ground_on == 0) {
+		return flat_h;
+	}
+	vec3 q = dust_frame * p + dust_ground_cam;
+	vec2 uv = vec2(dot(q, dust_ground_east), dot(q, dust_ground_north)) / dust_ground_half;
+	float ground = texture(dust_ground, uv * 0.5 + 0.5).r;
+	return dot(q, dust_ground_up) - ground;
+}
 
 
 // The dust between the camera and [param limit] metres along [param dir]: its transmittance (out)
@@ -69,7 +97,8 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	// Only the part of the ray inside the layer (6 e-folding heights over the ground): looking up, the
 	// ray leaves it within metres; above it looking down, it enters late. Rays that never meet it cost
 	// nothing.
-	float top = dust_height * 6.0;
+	// Over the flat plane through the ground under the camera: the grid's highest ground lifts it.
+	float top = dust_height * 6.0 + (dust_ground_on == 1 ? dust_ground_lift : 0.0);
 	float rise = dot(dir, dust_up);
 	float t0 = dust_start;
 	if (dust_cam_height > top) {
@@ -114,7 +143,7 @@ vec3 march_dust(vec3 dir, float limit, vec2 pixel, out float trans) {
 	for (int i = 0; i < steps; i++) {
 		float t = t0 + (float(i) + jitter) * dt;
 		vec3 p = dir * t;
-		float h = dust_cam_height + dot(p, dust_up);
+		float h = dust_height_over_ground(p, dust_cam_height + dot(p, dust_up));
 		bool masked = false;
 		for (int m = 0; m < crossed_count; m++) {
 			if (t > crossed[m].x && t < crossed[m].y) {
