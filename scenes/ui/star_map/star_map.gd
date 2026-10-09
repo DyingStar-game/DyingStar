@@ -1,8 +1,9 @@
 class_name StarMap
 extends CanvasLayer
 
-## Full-screen chart of the system: every celestial body as a plain coloured sphere, its orbit as a
-## ring, and its current spin shown by a tilted axis with a meridian marker.
+## Chart of the system: every celestial body as a plain coloured sphere, its orbit as a ring, and its
+## current spin shown by a tilted axis with a meridian marker. Drawn on its own face (a Control): the
+## whole screen on this layer by itself, or the DataPad's NAVIGATION tab once hosted ([method host_in]).
 ##
 ## It renders its OWN world (the SubViewport owns a World3D), so none of the real terrain, chunks or
 ## atmospheres are drawn here — a body is a sphere and nothing else.
@@ -264,6 +265,9 @@ const NIGHT_LEVEL: float = 0.28
 const DAY_ENERGY: float = 1.35
 
 var _viewport: SubViewport
+## The chart's face: the 3D view and every panel over it. Hosted, it lives in the DataPad's tab.
+var _surface: Control = null
+var _hosted: bool = false
 var _world_root: Node3D
 var _camera: Camera3D
 ## The star's light. Held because _rebuild() empties the world and would otherwise destroy it: it is
@@ -406,8 +410,8 @@ var _max_body_units: float = 1.0
 
 func _ready() -> void:
 	layer = LAYER
-	hide()
-	_build_ui()
+	if _surface == null:
+		_build_ui()
 	_offer_play_hints()
 
 
@@ -433,7 +437,7 @@ func setup(player: Node3D) -> void:
 func open() -> void:
 	_rebuild()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
-	show()
+	_surface.show()
 	if not _opened_before or _moved_since_closed():
 		_opened_before = true
 		_open_on_player()
@@ -491,7 +495,7 @@ func close() -> void:
 	# round trip for a version that had not changed — to redraw exactly what was on screen a second ago.
 	# It is parked at the next rebuild and picked up again by key; see [method _park_ground]. Builds
 	# still in flight are harmless: a worker writes into its own slot and nothing else.
-	hide()
+	_surface.hide()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 
@@ -501,7 +505,19 @@ func _exit_tree() -> void:
 
 
 func is_open() -> bool:
-	return visible
+	return _surface != null and _surface.is_visible_in_tree()
+
+
+## Put the chart's face in [param slot] — the DataPad's NAVIGATION tab: the chart then draws in that
+## rectangle, under the tab, and leaves Escape to its host (the tab is the host's to leave). Without a
+## host the face fills this layer, the whole screen. The face is hidden until [method open].
+func host_in(slot: Control) -> void:
+	if _surface == null:
+		_build_ui()
+	_surface.get_parent().remove_child(_surface)
+	slot.add_child(_surface)
+	_surface.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hosted = true
 
 
 ## Is the player typing into the chart's search box?
@@ -514,12 +530,22 @@ func is_typing() -> bool:
 
 
 func _build_ui() -> void:
+	# The face STOPS the mouse: hosted in the DataPad, a click or a drag that fell through would be the
+	# tablet's panel's, never reaching the chart. What it stops it turns into the chart's gestures
+	# (_on_surface_input), in its own pixels, which are the pixels its camera unprojects into.
+	_surface = Control.new()
+	_surface.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_surface.mouse_filter = Control.MOUSE_FILTER_STOP
+	_surface.gui_input.connect(_on_surface_input)
+	_surface.visible = false
+	add_child(_surface)
+
 	var container := SubViewportContainer.new()
 	container.stretch = true
 	container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# Must not eat the mouse, or the SubViewport swallows the events _unhandled_input needs.
+	# Must not eat the mouse, or the SubViewport swallows the events the face turns into gestures.
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(container)
+	_surface.add_child(container)
 
 	_viewport = SubViewport.new()
 	# Its OWN world: the real planets, chunks and atmospheres are not in it.
@@ -598,15 +624,15 @@ func _build_ui() -> void:
 
 	# Over the 3D chart, under every panel: added here, after the viewport and before the rest.
 	_view_cone = StarMapViewCone.new()
-	add_child(_view_cone)
+	_surface.add_child(_view_cone)
 	_cursor_readout = StarMapCursorReadout.new()
-	add_child(_cursor_readout)
+	_surface.add_child(_cursor_readout)
 	# The chart's own numbers (bodies, zoom, relief tiles) are debug: they go to the debug panel
 	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it, as play
 	# hints (left, under the two buttons), gone once learnt.
 	_hints = PlayHintsPanel.new()
 	_hints.contexts = [&"star_map"]
-	add_child(_hints)
+	_surface.add_child(_hints)
 
 	# Two shortcuts, in the top left corner. Buttons rather than keys: rare, deliberate actions — and a
 	# Control consumes its own click, so picking a body is never triggered underneath.
@@ -616,7 +642,7 @@ func _build_ui() -> void:
 	buttons.add_theme_constant_override("separation", 8)
 	# The row itself must not eat the mouse; each Button still receives its own clicks.
 	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(buttons)
+	_surface.add_child(buttons)
 	var me_button := Button.new()
 	me_button.text = "%%HUD_MAP_ME"
 	me_button.tooltip_text = "%%HUD_MAP_ME_TIP"
@@ -642,7 +668,7 @@ func _build_ui() -> void:
 	search_box.custom_minimum_size = Vector2(300, 0)
 	search_box.add_theme_constant_override("separation", 2)
 	search_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(search_box)
+	_surface.add_child(search_box)
 	_search = LineEdit.new()
 	_search.placeholder_text = "%%HUD_MAP_SEARCH"
 	_search.custom_minimum_size = Vector2(300, 0)
@@ -661,7 +687,7 @@ func _build_ui() -> void:
 	_scale.position = Vector2(16, -56)
 	_scale.custom_minimum_size = Vector2(260, 40)
 	_scale.size = Vector2(260, 40)
-	add_child(_scale)
+	_surface.add_child(_scale)
 
 	# Info panel. Hidden until you pick a body, and filled from what the scene knows about it.
 	_info_panel = PanelContainer.new()
@@ -670,7 +696,7 @@ func _build_ui() -> void:
 	_info_panel.custom_minimum_size = Vector2(340, 0)
 	_info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_info_panel.hide()
-	add_child(_info_panel)
+	_surface.add_child(_info_panel)
 	var margin := MarginContainer.new()
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for side: String in ["left", "right", "top", "bottom"]:
@@ -1127,7 +1153,7 @@ func _flat_material(colour: Color) -> StandardMaterial3D:
 
 
 func _process(delta: float) -> void:
-	if not visible:
+	if not is_open():
 		return
 	_live_cache.clear()
 	# Held rather than tapped: zooming across four orders of magnitude one notch at a time is tedious.
@@ -2308,9 +2334,10 @@ func _pad_points() -> bool:
 	return InputDevice.last == InputDevice.Kind.GAMEPAD
 
 
-## Where the chart is pointed at: the cursor, or the centre of the screen on the gamepad.
+## Where the chart is pointed at, in the face's pixels: the cursor, or the centre of the face on the
+## gamepad.
 func _pointer() -> Vector2:
-	return get_viewport().get_visible_rect().size * 0.5 if _pad_points() else get_viewport().get_mouse_position()
+	return _surface.size * 0.5 if _pad_points() else _surface.get_local_mouse_position()
 
 
 ## What the cursor readout says for the ground along [param local] on [param body_key]: longitude and
@@ -2971,7 +2998,7 @@ func _relief_readout() -> String:
 ## A gesture that has begun owns the mouse until the button comes back up; that holds for every drag
 ## in every tool, and it is not something the widget under the cursor gets a say in.
 func _input(event: InputEvent) -> void:
-	if not visible:
+	if not is_open():
 		return
 	# Escape closes the chart, exactly as F2 does — but it gets you out of the search box FIRST.
 	#
@@ -2982,18 +3009,22 @@ func _input(event: InputEvent) -> void:
 	#
 	# Closed when the key comes back UP: closed on the press, the game woke with B still down, and B is
 	# crouch — the press that closed the chart crouched the player as well (as in the pause menu).
-	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
-		if is_typing():
-			_search.release_focus()
-		else:
-			_close_armed = true
-		get_viewport().set_input_as_handled()
-		return
-	if _close_armed and (event.is_action_released("ui_cancel") or event.is_action_released("pause")):
-		_close_armed = false
-		close()
-		get_viewport().set_input_as_handled()
-		return
+	#
+	# Hosted, Escape is the host's: the DataPad backs out of its NAVIGATION tab itself (and out of the
+	# search box first, the same two steps), so the chart must not close underneath it.
+	if not _hosted:
+		if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
+			if is_typing():
+				_search.release_focus()
+			else:
+				_close_armed = true
+			get_viewport().set_input_as_handled()
+			return
+		if _close_armed and (event.is_action_released("ui_cancel") or event.is_action_released("pause")):
+			_close_armed = false
+			close()
+			get_viewport().set_input_as_handled()
+			return
 	if not _dragging:
 		return
 	# The release too: the button may come back up over a panel, which would keep it from the chart.
@@ -3015,18 +3046,30 @@ func _turn_view(relative: Vector2) -> void:
 		_cam.orbit(relative, _guard_radius())
 
 
-## Every gesture is an action (Settings > Controls > Star map), so any of them can be moved to another
-## button, a key or the pad.
-func _unhandled_input(event: InputEvent) -> void:
-	if not visible:
+## The face's mouse, in its own pixels: hover, and the gestures bound to a button or the wheel. The
+## drag's motion lives in _input, so it survives passing over the GUI. A click is a click even while
+## the search box is typed into.
+func _on_surface_input(event: InputEvent) -> void:
+	if not is_open():
 		return
 	if event is InputEventMouseMotion:
-		# Hover only. The drag lives in _input, so it survives passing over the GUI.
 		_hover_at((event as InputEventMouseMotion).position)
+	elif event is InputEventMouseButton and _gesture(event):
+		_surface.accept_event()
+
+
+## The keys and the pad. The mouse never comes this way: the face stops it (_on_surface_input). A key
+## typed into the search box is a letter, not a gesture.
+func _unhandled_input(event: InputEvent) -> void:
+	if not is_open() or event is InputEventMouse or is_typing():
 		return
-	# A key typed into the search box is a letter, not a gesture; a click there is still a click.
-	if is_typing() and not event is InputEventMouseButton:
-		return
+	if _gesture(event):
+		get_viewport().set_input_as_handled()
+
+
+## One gesture of the chart from [param event], true when it was one. Every gesture is an action
+## (Settings > Controls > Star map), so any of them can be moved to another button, a key or the pad.
+func _gesture(event: InputEvent) -> bool:
 	if event.is_action_pressed("star_map_select"):
 		_select_pressed(event)
 	elif event.is_action_pressed("star_map_reset"):
@@ -3041,8 +3084,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("star_map_zoom_step_out"):
 		_zoom_by(StarMapCamera.ZOOM_STEP)
 	else:
-		return
-	get_viewport().set_input_as_handled()
+		return false
+	return true
 
 
 ## Select, from whatever it is bound to. A mouse button clicks where the cursor is and has its own
