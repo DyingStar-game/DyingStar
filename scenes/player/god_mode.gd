@@ -1,6 +1,6 @@
 class_name GodMode
 extends RefCounted
-## God mode: the dev free-flight (the `toggle_eva` key, '$' by default). Not the real EVA: the server
+## God mode: the dev free-flight (the `god_mode` key, '$' by default). Not the real EVA: the server
 ## flies the body where the camera looks, with no gravity and no collision, at a speed the mouse wheel
 ## sets — from a walk to crossing the system. The player's own weightlessness (no gravity area) is the
 ## real EVA, and keeps its thrusters.

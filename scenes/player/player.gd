@@ -127,7 +127,7 @@ var stand_body_height: float = 1.8
 
 @export_subgroup("God mode (dev)")
 ## God mode (dev free-flight) starting speed in m/s; the mouse wheel then doubles or halves it in flight
-## (GodMode). Toggled with the `toggle_eva` action ('$' by default, remappable in Settings > Controls).
+## (GodMode). Toggled with the `god_mode` action ('$' by default, remappable in Settings > Controls).
 ## A test aid to fly around a body and inspect its day/night faces: the server detaches the player from
 ## gravity and flies it where the camera looks, ignoring collision. Not the real EVA (below).
 @export var god_mode_speed: float = 2000.0
@@ -357,7 +357,7 @@ var active = false
 # never sets `active` true). Set by Vehicle.server_enter / server_exit.
 var piloting: bool = false
 
-# Server-authoritative: true while in god mode, the dev free-flight (toggled by the `toggle_eva`
+# Server-authoritative: true while in god mode, the dev free-flight (toggled by the `god_mode`
 # action). The server flies the body where the camera looks, no gravity, no collision. See GodMode.
 var god_mode: bool = false
 

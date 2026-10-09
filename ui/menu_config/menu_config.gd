@@ -105,7 +105,7 @@ const ACTION_GROUPS : Dictionary = {
 	"%%KM_GROUP_DEBUG": {
 		"toggle_debug": "%%ACT_TOGGLE_DEBUG",
 		"spawn_wheel": "%%ACT_SPAWN_WHEEL",
-		"toggle_eva": "%%ACT_TOGGLE_EVA",
+		"god_mode": "%%ACT_GOD_MODE",
 		"god_mode_land": "%%ACT_GOD_MODE_LAND",
 		"zapette": "%%ACT_ZAPETTE",
 		"debug_time_forward": "%%ACT_DEBUG_TIME_FORWARD",

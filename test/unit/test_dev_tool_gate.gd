@@ -3,7 +3,7 @@ extends GutTest
 ## whatever the client sends. The client only hides the key, so an old build, or a modified one, could
 ## otherwise still delete props from the database or spawn trucks on a production server.
 
-const GATED_ACTIONS: Array[String] = ["delete_prop", "spawn_prop", "toggle_eva", "god_mode_speed", "god_mode_land"]
+const GATED_ACTIONS: Array[String] = ["delete_prop", "spawn_prop", "god_mode", "god_mode_speed", "god_mode_land"]
 const SERVER_BUILDS: Array[String] = [
 	"res://.github/workflows/build-server-preprod.yaml",
 	"res://.github/workflows/build-server-prod.yaml",

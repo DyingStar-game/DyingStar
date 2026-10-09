@@ -99,7 +99,7 @@ var _roll_rate: float = 0.0  # weightless roll, rad/s, with momentum (see _updat
 ## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
 var _camera_thief: String = ""
 var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from player.walk_speed in setup()
-## God mode (dev free-flight) as this client asked for it: flipped with each `toggle_eva` it sends. The
+## God mode (dev free-flight) as this client asked for it: flipped with each `god_mode` it sends. The
 ## server never tells (its state is not replicated), and never refuses: both sides read the same dev-tool
 ## switch (Globals.ENABLED_DEV_TOOLS). Trusted only while the server floats the body (see _in_god_mode).
 var _god_mode: bool = false
@@ -909,12 +909,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Settings > Controls to control the torch independently.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
-	if InputCombo.pressed(event, "toggle_eva") and Globals.is_dev_tool_enabled("toggle_eva"):
+	if InputCombo.pressed(event, "god_mode") and Globals.is_dev_tool_enabled("god_mode"):
 		# God mode (dev free-flight): ask for the state we want — not a bare toggle, so a missed message
 		# cannot leave us flipping the wrong way for ever. The server applies it and flies the body
 		# (movement is server-authoritative). Sits before the walk guard so it works in any state.
 		_god_mode = not _god_mode
-		player.client_send_action_to_server({"action": "toggle_eva", "on": _god_mode})
+		player.client_send_action_to_server({"action": "god_mode", "on": _god_mode})
 
 	if _in_god_mode() and InputCombo.pressed(event, "god_mode_land") and GOD_MODE.landing_body(player) != null:
 		# Land on the ground right under us: the server finds it and ends the flight. Asked only where the

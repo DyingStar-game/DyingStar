@@ -39,9 +39,9 @@ const _SHELF_DROP_RANGE := 4.0
 const DEV_TOOL_OF_ACTION: Dictionary = {
 	"delete_prop": &"zapette",
 	"spawn_prop": &"spawn_wheel",
-	"toggle_eva": &"toggle_eva",
-	"god_mode_speed": &"toggle_eva",
-	"god_mode_land": &"toggle_eva",
+	"god_mode": &"god_mode",
+	"god_mode_speed": &"god_mode",
+	"god_mode_land": &"god_mode",
 }
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
@@ -366,7 +366,7 @@ func server_action_received(data: Dictionary) -> void:
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
-		"toggle_eva":
+		"god_mode":
 			# God mode (dev free-flight): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
 			# fling the player. State-replicated (not the event) so a dropped toggle can't desync it.

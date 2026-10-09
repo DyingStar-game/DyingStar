@@ -58,7 +58,7 @@ const ENABLED_DEV_TOOLS: Dictionary = {
 	"teleporter": true,   # test teleporter cabin — no binding: you walk into it
 	"spawn_wheel": true,  # dev spawn wheel (Alt+T) — testing phase over
 	"zapette": false,      # admin cleanup tool (key 2) — testing phase over
-	"toggle_eva": true,   # god mode, the dev free-flight ($), and its wheel speed — normal play only
+	"god_mode": true,   # god mode, the dev free-flight ($), and its wheel speed — normal play only
 	"debug_time": true,    # sky clock sweep (debug_time_forward / debug_time_back)
 	"debug_toggle_moon_lights": true,  # moon lights on/off (Alt+key)
 	"debug_isolate_light": true,       # remove one light contributor at a time (Alt+key)

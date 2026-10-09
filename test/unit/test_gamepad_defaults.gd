@@ -5,7 +5,7 @@ extends GutTest
 ## Bound on the keyboard only, on purpose: typing, filing captures, or tools for developers.
 const KEYBOARD_ONLY : Array[String] = [
 	"toggle_chat", "write_in_chat", "toggle_speaker", "toggle_microphone", "game_record", "screenshot",
-	"screenshot_debug", "spawn_wheel", "toggle_eva", "god_mode_land", "zapette", "debug_time_forward", "debug_time_back",
+	"screenshot_debug", "spawn_wheel", "god_mode", "god_mode_land", "zapette", "debug_time_forward", "debug_time_back",
 	"debug_toggle_moon_lights", "debug_isolate_light", "toggle_debug", "walk_speed_up", "walk_speed_down",
 	"vehicle_reset", "vehicle_horn_special", "vehicle_speed_limiter", "vehicle_limiter_up",
 	"vehicle_limiter_down", "eva_stabilize",

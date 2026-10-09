@@ -26,7 +26,7 @@ func test_the_hud_reads_metres_then_kilometres_per_second() -> void:
 
 func test_its_actions_are_gated_dev_tools() -> void:
 	for action: String in ["god_mode_speed", "god_mode_land"]:
-		assert_eq(PlayerServer.DEV_TOOL_OF_ACTION.get(action), &"toggle_eva", "%s: off with the flight" % action)
+		assert_eq(PlayerServer.DEV_TOOL_OF_ACTION.get(action), &"god_mode", "%s: off with the flight" % action)
 
 
 func test_landing_has_its_own_key() -> void:
