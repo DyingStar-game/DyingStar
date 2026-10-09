@@ -159,7 +159,7 @@ static func vec2pix_nest_from_zphi(nside: int, z: float, phi: float) -> int:
 static func vec2pix_nest(nside: int, dir: Vector3) -> int:
 	var d := dir.normalized()
 	var z := d.y  # y-up in Godot
-	var phi := atan2(d.z, d.x)
+	var phi := atan2(-d.z, d.x)
 	if phi < 0.0:
 		phi += TAU
 	return vec2pix_nest_from_zphi(nside, z, phi)
@@ -249,7 +249,7 @@ static func _face_xy_to_vec(face: int, fx: float, fy: float, nside: int) -> Vect
 		phi = kp * PI / (4.0 * ns)
 
 	var st := sqrt(maxf(1.0 - z * z, 0.0))
-	return Vector3(st * cos(phi), z, st * sin(phi))
+	return Vector3(st * cos(phi), z, -st * sin(phi))
 
 
 ## Analytical inverse of [method _face_xy_to_vec].
@@ -262,7 +262,7 @@ static func _face_xy_to_vec(face: int, fx: float, fy: float, nside: int) -> Vect
 static func _vec_to_face_xy(dir: Vector3, face: int, nside: int) -> Vector2:
 	var d := dir.normalized()
 	var z := d.y
-	var phi := atan2(d.z, d.x)
+	var phi := atan2(-d.z, d.x)
 	if phi < 0.0:
 		phi += TAU
 
@@ -583,7 +583,7 @@ static func pix2face_xy(nside: int, ipix: int) -> Dictionary:
 static func vec2lonlat(dir: Vector3) -> Vector2:
 	var d := dir.normalized()
 	var lat := rad_to_deg(asin(clampf(d.y, -1.0, 1.0)))
-	var lon := rad_to_deg(atan2(d.z, d.x))
+	var lon := rad_to_deg(atan2(-d.z, d.x))
 	return Vector2(lon, lat)
 
 
@@ -592,7 +592,7 @@ static func lonlat2vec(lon: float, lat: float) -> Vector3:
 	var lon_r := deg_to_rad(lon)
 	var lat_r := deg_to_rad(lat)
 	var cl := cos(lat_r)
-	return Vector3(cl * cos(lon_r), sin(lat_r), cl * sin(lon_r))
+	return Vector3(cl * cos(lon_r), sin(lat_r), -cl * sin(lon_r))
 
 
 # ---------------------------------------------------------------------------
@@ -605,7 +605,7 @@ static func lonlat2vec(lon: float, lat: float) -> Vector3:
 ## Matches the existing PlanetData.direction_to_uv() convention.
 static func direction_to_uv(dir: Vector3) -> Vector2:
 	var d := dir.normalized()
-	var u := 0.5 + atan2(d.z, d.x) / TAU
+	var u := 0.5 + atan2(-d.z, d.x) / TAU
 	var v := 0.5 - asin(clampf(d.y, -1.0, 1.0)) / PI
 	return Vector2(u, v)
 

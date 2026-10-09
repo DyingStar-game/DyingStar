@@ -1733,6 +1733,32 @@ static func generate_mesh(
 		var _now := Time.get_ticks_usec()
 		prof["overlay"] = _now - _t_phase
 		_t_phase = _now
+	# --- rocky terrain mask (CUSTOM1) ---------------------------------------
+	# What the terrain shaders draw of a rocky_terrain field below the mesh
+	# pitch (RockFieldRelief.surface, rock_blocks.gdshaderinc): x = intensity ×
+	# envelope, y = the small blocks' size (m), z = level + 8 × type, w = the
+	# vertex's altitude (m, from doubles: the flint bands of a chalk wall need
+	# centimetres, which a float32 planet radius cannot give the shader). Only
+	# in a chunk a field reaches: a mesh without CUSTOM1 reads zero there, i.e.
+	# no rock. Every final vertex (skirt, patch, wall copies too) from its own
+	# surface position.
+	var rock_custom := PackedFloat32Array()
+	if _frame != null and not _frame.rck.is_empty():
+		rock_custom.resize(vertices.size() * 4)
+		var _rock_any := false
+		for _ri in vertices.size():
+			var _sp := cc_f32 + vertices[_ri] + Vector3(skirt_offsets[_ri * 3],
+					skirt_offsets[_ri * 3 + 1], skirt_offsets[_ri * 3 + 2])
+			var _rs := data.rock_surface(_sp.normalized(), _frame)
+			if _rs.x > 0.0:
+				_rock_any = true
+			rock_custom[_ri * 4] = _rs.x
+			rock_custom[_ri * 4 + 1] = _rs.y
+			rock_custom[_ri * 4 + 2] = _rs.z
+			rock_custom[_ri * 4 + 3] = _sp.length() - data.radius
+		if not _rock_any:
+			rock_custom = PackedFloat32Array()
+
 	# --- build mesh ---------------------------------------------------------
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -1747,6 +1773,15 @@ static func generate_mesh(
 
 	var mesh := ArrayMesh.new()
 	var _c0_fmt := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	if not rock_custom.is_empty():
+		arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
+		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
+		# The field's loose rocks, placed here in the worker and kept with the
+		# mesh (disk cache included); PlanetTerrain shows them on the finest LOD.
+		if hp_mode and HEALPix.pixel_side_length(hp_nside, data.radius) / float(res) \
+				<= RockFieldScree.MAX_PITCH_M:
+			mesh.set_meta("rock_scree", RockFieldScree.pack(RockFieldScree.place(vertices, normals,
+					colors, rock_custom, res, hp_ipix + hp_nside, cc_f32.normalized())))
 	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
 	# covering it whole) and that bakes without skirts has NO base triangle:
 	# an empty index array is refused by the renderer (five errors per
@@ -1779,6 +1814,8 @@ static func generate_mesh(
 		_so_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 		_so_arrays[Mesh.ARRAY_COLOR]   = colors
 		_so_arrays[Mesh.ARRAY_CUSTOM0] = skirt_offsets
+		if not rock_custom.is_empty():
+			_so_arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
 		_so_arrays[Mesh.ARRAY_INDEX]   = _so_idx
 		var _so_surface := mesh.get_surface_count()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _so_arrays,
@@ -1803,7 +1840,7 @@ static func generate_mesh(
 			# near zero — prevents float32 precision loss on the GPU.
 			const LUNAR_GROUND_TILE_M := 8.0  # texture repeats every 8 metres
 			var _rg_cd := chunk_center.normalized()
-			var _rg_clon := atan2(_rg_cd.z, _rg_cd.x)
+			var _rg_clon := atan2(-_rg_cd.z, _rg_cd.x)
 			var _rg_clat := asin(clampf(_rg_cd.y, -1.0, 1.0))
 			var _rg_u_off := floorf(_rg_clon * data.radius / LUNAR_GROUND_TILE_M)
 			var _rg_v_off := floorf(_rg_clat * data.radius / LUNAR_GROUND_TILE_M)
@@ -1814,7 +1851,7 @@ static func generate_mesh(
 				var world_pos := vertices[vi] + chunk_center
 				var d := world_pos.normalized()
 				# Project onto tangent plane using lon/lat.
-				var lon := atan2(d.z, d.x)
+				var lon := atan2(-d.z, d.x)
 				var lat := asin(clampf(d.y, -1.0, 1.0))
 				# Arc-length in metres along surface.
 				var x_m := lon * data.radius
@@ -1845,7 +1882,7 @@ static func generate_mesh(
 				(gl_mat as BaseMaterial3D).heightmap_enabled = false
 			const GRASS_TILE_M := 4.0  # grass texture repeats every 4 metres
 			var _gl_cd := chunk_center.normalized()
-			var _gl_clon := atan2(_gl_cd.z, _gl_cd.x)
+			var _gl_clon := atan2(-_gl_cd.z, _gl_cd.x)
 			var _gl_clat := asin(clampf(_gl_cd.y, -1.0, 1.0))
 			var _gl_u_off := floorf(_gl_clon * data.radius / GRASS_TILE_M)
 			var _gl_v_off := floorf(_gl_clat * data.radius / GRASS_TILE_M)
@@ -1854,7 +1891,7 @@ static func generate_mesh(
 			for vi in vertices.size():
 				var world_pos := vertices[vi] + chunk_center
 				var d := world_pos.normalized()
-				var lon := atan2(d.z, d.x)
+				var lon := atan2(-d.z, d.x)
 				var lat := asin(clampf(d.y, -1.0, 1.0))
 				var x_m := lon * data.radius
 				var y_m := lat * data.radius
@@ -1881,7 +1918,7 @@ static func generate_mesh(
 				(fg_mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
 			var _fg_tile_m: float = ForestTemperateForestTerrain.TILE_M
 			var _fg_cd := chunk_center.normalized()
-			var _fg_clon := atan2(_fg_cd.z, _fg_cd.x)
+			var _fg_clon := atan2(-_fg_cd.z, _fg_cd.x)
 			var _fg_clat := asin(clampf(_fg_cd.y, -1.0, 1.0))
 			var _fg_u_off := floorf(_fg_clon * data.radius / _fg_tile_m)
 			var _fg_v_off := floorf(_fg_clat * data.radius / _fg_tile_m)
@@ -1890,7 +1927,7 @@ static func generate_mesh(
 			for vi in vertices.size():
 				var world_pos := vertices[vi] + chunk_center
 				var d := world_pos.normalized()
-				var lon := atan2(d.z, d.x)
+				var lon := atan2(-d.z, d.x)
 				var lat := asin(clampf(d.y, -1.0, 1.0))
 				var x_m := lon * data.radius
 				var y_m := lat * data.radius
@@ -1920,7 +1957,7 @@ static func generate_mesh(
 				(cl_mat as BaseMaterial3D).heightmap_enabled = false
 			var _cl_tile_m := RockyLandformCliffTerrain.TILE_M
 			var _cl_cd := chunk_center.normalized()
-			var _cl_clon := atan2(_cl_cd.z, _cl_cd.x)
+			var _cl_clon := atan2(-_cl_cd.z, _cl_cd.x)
 			var _cl_clat := asin(clampf(_cl_cd.y, -1.0, 1.0))
 			var _cl_u_off := floorf(_cl_clon * data.radius / _cl_tile_m)
 			var _cl_v_off := floorf(_cl_clat * data.radius / _cl_tile_m)
@@ -1929,7 +1966,7 @@ static func generate_mesh(
 			for vi in vertices.size():
 				var world_pos := vertices[vi] + chunk_center
 				var d := world_pos.normalized()
-				var lon := atan2(d.z, d.x)
+				var lon := atan2(-d.z, d.x)
 				var lat := asin(clampf(d.y, -1.0, 1.0))
 				var x_m := lon * data.radius
 				var y_m := lat * data.radius
@@ -2294,7 +2331,7 @@ static func generate_mesh(
 								# Boundary vertex — approximate with lon/lat projection.
 								var _planet_pos := vertices[orig_idx] + chunk_center
 								var _d := _planet_pos.normalized()
-								var _lon := atan2(_d.z, _d.x)
+								var _lon := atan2(-_d.z, _d.x)
 								var _lat := asin(clampf(_d.y, -1.0, 1.0))
 								fuv = Vector2(_lon * data.radius, _lat * data.radius)
 							drb_uvs.append(fuv / _drb_tile_m)
@@ -2610,7 +2647,7 @@ static func generate_mesh(
 					if tangent.length_squared() < 1e-20:
 						tangent = Vector2(1, 0)
 					tangent = tangent.normalized()
-					# Perpendicular (rotate 90° clockwise in lon/lat).
+					# Perpendicular (rotate 90° counter-clockwise in lon/lat: the left).
 					var perp := Vector2(-tangent.y, tangent.x)
 
 					var this_row_start: int = rw_verts.size()
@@ -2636,16 +2673,19 @@ static func generate_mesh(
 						rw_colors.append(Color(cross_t_val, along_t, 0.0, 1.0))
 
 					# Connect to previous row if it was in-bounds (no gap).
+					# Clockwise seen from above (Godot's front face): the row
+					# runs toward +perp, on the LEFT of +along in the
+					# planet's right-handed (east, north, up) frame.
 					if prev_row_start >= 0:
 						var r0 := prev_row_start
 						var r1 := this_row_start
 						for ci in N_ACROSS:
 							rw_indices.append(r0 + ci)
-							rw_indices.append(r1 + ci)
-							rw_indices.append(r0 + ci + 1)
 							rw_indices.append(r0 + ci + 1)
 							rw_indices.append(r1 + ci)
+							rw_indices.append(r0 + ci + 1)
 							rw_indices.append(r1 + ci + 1)
+							rw_indices.append(r1 + ci)
 					prev_row_start = this_row_start
 
 			if rw_verts.size() > 0:

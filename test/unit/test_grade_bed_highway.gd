@@ -91,7 +91,7 @@ func test_collision_is_one_slab_across_the_median() -> void:
 	assert_eq((bed["verts"] as PackedVector3Array).size(), 0)
 	assert_eq(faces.size() % 18, 0, "three quads per station pair")
 	# The top quad's two edges are the bed's own edges: 14.5 m apart.
-	assert_almost_eq(faces[0].distance_to(faces[2]), 14.5, 0.03, "no gap in the collision")
+	assert_almost_eq(faces[0].distance_to(faces[1]), 14.5, 0.03, "no gap in the collision")
 
 
 func test_a_road_bed_is_unchanged() -> void:
@@ -111,7 +111,7 @@ func test_corundum_surface_bakes_lane_uvs_and_tint() -> void:
 	var verts: PackedVector3Array = bed["verts"]
 	for k in verts.size() / 8:
 		var a := k * 8
-		# Strip 0 (-7.25, -0.25) heads -along: u grows toward -perp.
+		# Strip 0 (-7.25, -0.25) heads +along: u grows toward -perp.
 		assert_almost_eq(uvs[a].x, 0.0, 1e-5, "strip 0 hi edge: the tile's u = 0")
 		assert_almost_eq(uvs[a + 1].x, 2.0, 1e-5, "strip 0 lo edge: two lanes across")
 		assert_almost_eq(uvs[a + 2].x, 2.0, 1e-5, "strip 1 hi edge")

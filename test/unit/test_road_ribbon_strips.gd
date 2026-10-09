@@ -103,8 +103,9 @@ func test_highway_carriageways_leave_the_median_open() -> void:
 
 
 func test_lane_uvs_span_whole_lanes_across_and_metres_along() -> void:
-	# The +perp carriageway travels +along (right-hand traffic, left-handed
-	# frame): u grows toward +perp, the image's top is at larger along.
+	# The +perp carriageway travels -along (right-hand traffic, right-handed
+	# frame: +perp is the +along driver's left): u grows toward +perp, the
+	# image's top is at smaller along.
 	var strip := Vector2(0.25, 7.25)
 	var slab := _strip(strip, true, RoadRibbon.UvMode.LANE)
 	var uvs: PackedVector2Array = slab["uvs"]
@@ -114,18 +115,18 @@ func test_lane_uvs_span_whole_lanes_across_and_metres_along() -> void:
 		assert_almost_eq(uvs[k * 6 + 1].x, 0.0, 1e-6, "lo edge: the strip's own edge")
 		assert_almost_eq(uvs[k * 6].y, uvs[k * 6 + 1].y, 1e-6, "same along")
 	# Along: 500 m from the road's start at the first station, /3 m per tile.
-	assert_almost_eq(uvs[0].y, -500.0 / RoadTerrain.GAUFRAGE_ALONG_M, 1e-4)
-	assert_lt(uvs[uvs.size() - 6].y, uvs[0].y, "v decreases along the road")
-	# The -perp carriageway travels -along: u grows toward -perp, v with along.
+	assert_almost_eq(uvs[0].y, 500.0 / RoadTerrain.GAUFRAGE_ALONG_M, 1e-4)
+	assert_almost_eq(uvs[uvs.size() - 6].y - uvs[0].y, 500.0 / RoadTerrain.GAUFRAGE_ALONG_M,
+			1e-3, "v grows over 500 m of road")
+	# The -perp carriageway travels +along: u grows toward -perp, v against along.
 	var back := _strip(Vector2(-7.25, -0.25), true, RoadRibbon.UvMode.LANE)
 	var buv: PackedVector2Array = back["uvs"]
 	var bverts: PackedVector3Array = back["verts"]
 	for k in bverts.size() / 6:
 		assert_almost_eq(buv[k * 6].x, 0.0, 1e-6, "hi edge (-0.25) is the tile's u = 0")
 		assert_almost_eq(buv[k * 6 + 1].x, 2.0, 1e-6, "lo edge (-7.25) is two lanes")
-	assert_almost_eq(buv[0].y, 500.0 / RoadTerrain.GAUFRAGE_ALONG_M, 1e-4)
-	assert_almost_eq(buv[buv.size() - 6].y - buv[0].y, 500.0 / RoadTerrain.GAUFRAGE_ALONG_M,
-			1e-3, "v grows over 500 m of road")
+	assert_almost_eq(buv[0].y, -500.0 / RoadTerrain.GAUFRAGE_ALONG_M, 1e-4)
+	assert_lt(buv[buv.size() - 6].y, buv[0].y, "v decreases along the road")
 	var flow := _strip(strip, true, RoadRibbon.UvMode.FLOW)
 	var fuv: PackedVector2Array = flow["uvs"]
 	assert_almost_eq(fuv[0].x, 500.0 / 8.0, 1e-4, "FLOW: along over the tile")
@@ -149,7 +150,7 @@ func test_tint_is_baked_on_every_vertex() -> void:
 
 func test_slab_follows_the_ground() -> void:
 	var bumpy := func(dir: Vector3) -> float:
-		var lon := rad_to_deg(atan2(dir.z, dir.x))
+		var lon := rad_to_deg(atan2(-dir.z, dir.x))
 		return GROUND + 2.0 * sin((lon - LON0) * MPD / 40.0)
 	var slab := _strip(Vector2(-3.0, 3.0), true, RoadRibbon.UvMode.FLOW, Callable(), bumpy)
 	var verts: PackedVector3Array = slab["verts"]

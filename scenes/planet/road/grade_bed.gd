@@ -542,7 +542,7 @@ static func _stations(a0: float, a1: float, step: float, knots: PackedFloat64Arr
 
 
 ## Two triangles for the quad (a0→a1 along, b0→b1 the other edge), with the
-## geometric normal (a1-a0)×(b0-a0) when [param outward], reversed otherwise.
+## geometric normal (b0-a0)×(a1-a0) when [param outward], reversed otherwise.
 static func _quad(faces: PackedVector3Array, a0: Vector3, a1: Vector3,
 		b0: Vector3, b1: Vector3, outward: bool) -> void:
 	RoadRibbon.quad_faces(faces, a0, a1, b0, b1, outward)

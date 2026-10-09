@@ -398,6 +398,10 @@ func _whole_sphere() -> Array:
 	while dirs.size() < 300:
 		dirs.append(Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1))
 				.normalized())
+	# Mirrored in z since longitude became atan2(-z, x): each direction lands on the pixel and the face
+	# coordinates it had when tile_frame_linux.b64 was frozen, so the reference still holds bit for bit.
+	for i: int in range(dirs.size()):
+		dirs[i] = Vector3(dirs[i].x, dirs[i].y, -dirs[i].z)
 	var stored: Dictionary = {}
 	for d: Vector3 in dirs:
 		var ipix: int = HEALPix.vec2pix_nest(64, d)

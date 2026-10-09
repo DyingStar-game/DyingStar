@@ -51,7 +51,6 @@ var _crate_volume := -1.0
 @onready var box_conveyorbelt: MeshInstance3D = $miningdepot/conveyorbelt_003
 @onready var danger_light_box: Node3D = $DangerLightBox
 @onready var box_detector: Area3D = $BoxDetector
-@onready var box_detector_end: Area3D = $BoxDetectorEnd
 
 func _ready() -> void:
 	if placeholder:

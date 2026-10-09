@@ -76,7 +76,7 @@ def face_xy_to_vec(face, fx, fy, nside):
     # Godot coordinate system: Y is up, X and Z are horizontal
     x = st * math.cos(phi)
     y = z
-    zz = st * math.sin(phi)
+    zz = -st * math.sin(phi)
     return (x, y, zz)
 
 
@@ -93,7 +93,7 @@ def dir_to_lonlat(dx, dy, dz):
     """Convert unit direction to (lon_deg, lat_deg). Matches _dir_to_lonlat()."""
     length = math.sqrt(dx*dx + dy*dy + dz*dz)
     dx /= length; dy /= length; dz /= length
-    lon = math.degrees(math.atan2(dz, dx))
+    lon = math.degrees(math.atan2(-dz, dx))
     lat = math.degrees(math.asin(max(-1.0, min(1.0, dy))))
     return lon, lat
 
@@ -120,7 +120,7 @@ def lonlat_to_dir(lon_deg, lat_deg):
     lon = math.radians(lon_deg)
     lat = math.radians(lat_deg)
     cl = math.cos(lat)
-    return (cl * math.cos(lon), math.sin(lat), cl * math.sin(lon))
+    return (cl * math.cos(lon), math.sin(lat), -cl * math.sin(lon))
 
 
 def dot3(a, b):

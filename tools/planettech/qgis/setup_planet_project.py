@@ -203,7 +203,7 @@ def setup_planet():
 
     print("\n" + "=" * 60)
     print(f"  Done — {len(created)} layers in schema '{planet_name}'")
-    print("  Region = areas, POI = points, Lines = linear features.")
+    print("  Groups 'layer NN' = the order the layers apply on the ground.")
     print("  Line biomes (rivers…) are buffered by their width at export,")
     print("  point biomes (craters, geysers…) by their radius.")
     print("=" * 60)

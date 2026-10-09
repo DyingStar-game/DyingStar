@@ -47,6 +47,7 @@ public partial class TileFrameNative : RefCounted
     private double _radius;
     private double _finestSpacing;
     private MountainSetNative _mountains;
+    private bool _hasRock;
     /// <summary>A mountain planet's tile with no feature: the GDScript adds 0.0, and so must this.</summary>
     private bool _addZero;
 
@@ -128,6 +129,7 @@ public partial class TileFrameNative : RefCounted
     {
         _mountains = set as MountainSetNative;
         _addZero = _mountains == null;
+        _hasRock = _mountains != null && _mountains.HasRock();
         _finestSpacing = finestSpacing;
     }
 
@@ -174,7 +176,12 @@ public partial class TileFrameNative : RefCounted
         }
         else
         {
-            h = h + _mountains.Offset(dir, _radius, Math.Max(vtxSpacing, _finestSpacing));
+            double eff = Math.Max(vtxSpacing, _finestSpacing);
+            h = h + _mountains.Offset(dir, _radius, eff);
+            // The rocky terrain terraces the ground the mountains give (RockFieldRelief) —
+            // PlanetData.sample_height_for_direction's order.
+            if (_hasRock)
+                h = h + _mountains.Rock(dir, _radius, eff, h);
         }
         if (cracks == CracksNone || !_cracksOn)
             return h;

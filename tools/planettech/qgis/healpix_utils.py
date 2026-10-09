@@ -124,7 +124,7 @@ def face_xy_to_vec(face, fx, fy, nside):
     """Convert face-local fractional coordinates to (x, y, z) unit vector."""
     z, phi = face_xy_to_zphi(face, fx, fy, nside)
     st = math.sqrt(max(1.0 - z * z, 0.0))
-    return st * math.cos(phi), z, st * math.sin(phi)
+    return st * math.cos(phi), z, -st * math.sin(phi)
 
 
 def face_xy_to_lonlat(face, fx, fy, nside):
@@ -142,14 +142,14 @@ def vec2pix_nest(nside, x, y, z):
     if HAS_HEALPY:
         # healpy uses z-up convention: (theta, phi) where theta=colatitude
         theta = math.acos(max(-1.0, min(1.0, y)))  # y-up → colatitude
-        phi = math.atan2(z, x)
+        phi = math.atan2(-z, x)
         if phi < 0:
             phi += 2.0 * math.pi
         return int(hp.ang2pix(nside, theta, phi, nest=True))
 
     # Pure Python fallback
     za = abs(y)  # y-up
-    phi = math.atan2(z, x)
+    phi = math.atan2(-z, x)
     if phi < 0:
         phi += 2.0 * math.pi
     tt = phi / (math.pi * 0.5)
@@ -200,7 +200,7 @@ def pix2vec_nest(nside, ipix):
         theta, phi = hp.pix2ang(nside, ipix, nest=True)
         st = math.sin(theta)
         # healpy: theta=colatitude from z-axis; convert to y-up
-        return st * math.cos(phi), math.cos(theta), st * math.sin(phi)
+        return st * math.cos(phi), math.cos(theta), -st * math.sin(phi)
 
     npface = nside * nside
     face = ipix // npface
@@ -213,7 +213,7 @@ def pix2lonlat_nest(nside, ipix):
     """Convert nested pixel index to (lon, lat) in degrees."""
     x, y, z = pix2vec_nest(nside, ipix)
     lat = math.degrees(math.asin(max(-1.0, min(1.0, y))))
-    lon = math.degrees(math.atan2(z, x))
+    lon = math.degrees(math.atan2(-z, x))
     return lon, lat
 
 
@@ -284,7 +284,7 @@ def face_xy_to_vec_vectorized(face, fx_arr, fy_arr, nside):
     st = np.sqrt(np.maximum(1.0 - z * z, 0.0))
     x = st * np.cos(phi)
     y_out = z  # z = cos(theta) = y in Godot
-    z_out = st * np.sin(phi)
+    z_out = -st * np.sin(phi)
     return x, y_out, z_out
 
 
@@ -295,13 +295,13 @@ def vec2pix_nest_vectorized(nside, x_arr, y_arr, z_arr):
     """
     if HAS_HEALPY:
         theta = np.arccos(np.clip(y_arr, -1.0, 1.0))
-        phi = np.arctan2(z_arr, x_arr)
+        phi = np.arctan2(-z_arr, x_arr)
         phi = np.where(phi < 0, phi + 2.0 * math.pi, phi)
         return hp.ang2pix(nside, theta, phi, nest=True)
 
     # Pure Python vectorized fallback
     za = np.abs(y_arr)
-    phi = np.arctan2(z_arr, x_arr)
+    phi = np.arctan2(-z_arr, x_arr)
     phi = np.where(phi < 0, phi + 2.0 * math.pi, phi)
     tt = phi / (math.pi * 0.5)
     tt = np.clip(tt, 0.0, 3.9999)
@@ -356,13 +356,13 @@ def lonlat_to_vec_vectorized(lon_arr, lat_arr):
     cl = np.cos(lat_r)
     x = cl * np.cos(lon_r)
     y = np.sin(lat_r)
-    z = cl * np.sin(lon_r)
+    z = -cl * np.sin(lon_r)
     return x, y, z
 
 
 def direction_to_lonlat_vectorized(x, y, z):
     """Vectorized: convert (x, y, z) unit vectors to (lon, lat) in degrees. y-up."""
-    lon = np.degrees(np.arctan2(z, x))
+    lon = np.degrees(np.arctan2(-z, x))
     lat = np.degrees(np.arcsin(np.clip(y, -1.0, 1.0)))
     return lon, lat
 

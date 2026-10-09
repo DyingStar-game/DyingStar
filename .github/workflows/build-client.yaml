@@ -163,14 +163,26 @@ jobs:
             WS_URL="ws://server.dyingstar-game.space:80"
             CHAT_URL="ws://chat.dyingstar-game.space:80"
             CHANNEL="prod"
+            SERVICES_URL="https://services.dyingstar-game.space"
           else
             WS_URL="ws://server-preprod.dyingstar-game.space:80"
             CHAT_URL="ws://chat-preprod.dyingstar-game.space:80"
             CHANNEL="preprod"
+            SERVICES_URL="https://services-preprod.dyingstar-game.space"
           fi
-          sed -i "s|websocket_url=.*|websocket_url=\"${WS_URL}\"|" "${{ matrix.build_dir }}/client.ini"
-          sed -i "s|broker_url=.*|broker_url=\"${CHAT_URL}\"|" "${{ matrix.build_dir }}/client.ini"
-          sed -i "s|channel = \"dev\"|channel = \"${CHANNEL}\"|" "${{ matrix.build_dir }}/client.ini"
+          INI="${{ matrix.build_dir }}/client.ini"
+          # Anchored on the key so whatever value (and spacing) the committed
+          # client.ini holds gets replaced, and ';' comment lines are left alone.
+          set_key() {
+            sed -i -E "s|^[[:space:]]*$1[[:space:]]*=.*|$1=\"$2\"|" "$INI"
+            grep -qE "^$1=\"$2\"$" "$INI" || { echo "::error::client.ini: key '$1' not found"; exit 1; }
+          }
+          set_key websocket_url "$WS_URL"
+          set_key broker_url "$CHAT_URL"
+          set_key channel "$CHANNEL"
+          set_key scheme "https"
+          set_key url "$SERVICES_URL"
+          grep -vE '^[[:space:]]*(;|$)' "$INI"
 
       - name: Write version.json
         run: |

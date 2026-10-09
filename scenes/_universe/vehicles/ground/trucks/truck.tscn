@@ -52,6 +52,7 @@ collision_mask = 15
 mass = 1425.0
 script = ExtResource("1_vehicle")
 torque_response = 1.0
+brake_deceleration = 10.0
 factory_components = Array[ExtResource("92_component_spec")]([ExtResource("90_t1"), ExtResource("90_t1"), ExtResource("91_battery")])
 steer_speed = 0.2
 steer_return_speed = 1.0
@@ -169,12 +170,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0.5199
 [node name="SpotLight3DL" type="SpotLight3D" parent="Light" unique_id=850312889 groups=["vehicle_light"]]
 transform = Transform3D(1, 0, 0, 0, 0.936556004583576, 0.35051797425873765, 0, -0.35051797425873765, 0.936556004583576, -0.5162292259297776, 0.08516206603119336, -1.9202990869528531)
 light_energy = 2.0
+shadow_enabled = true
+distance_fade_enabled = true
 spot_range = 150.0
 spot_angle = 37.0
 
 [node name="SpotLight3DR" type="SpotLight3D" parent="Light" unique_id=889490272 groups=["vehicle_light"]]
 transform = Transform3D(1, 0, 0, 0, 0.9612616959383188, 0.2756373558169992, 0, -0.2756373558169992, 0.9612616959383188, 0.5184703329305984, 0.07619763802790991, -1.9202990869528531)
 light_energy = 2.0
+shadow_enabled = true
+distance_fade_enabled = true
 spot_range = 150.0
 spot_angle = 37.0
 

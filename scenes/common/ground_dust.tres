@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="SurfaceDust" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="SurfaceDust" format=3 uid="uid://d04jfwj022nt7"]
 
-[ext_resource type="Script" path="res://scenes/common/surface_dust.gd" id="1_dust"]
+[ext_resource type="Script" uid="uid://bp720mp0bkpae" path="res://scenes/common/surface_dust.gd" id="1_dust"]
 
 [resource]
 script = ExtResource("1_dust")
@@ -22,7 +22,7 @@ amount_by_family = {
 &"mud": 0.05,
 &"organic": 0.3,
 &"plastic": 0.0,
-&"rock": 0.15,
+&"rock": 0.3,
 &"rubber": 0.0,
 &"sand": 1.0,
 &"snow": 0.6,
@@ -30,7 +30,6 @@ amount_by_family = {
 &"vegetation": 0.1,
 &"wood": 0.02
 }
-default_amount = 0.2
 color_by_family = {
 &"concrete": Color(0.62, 0.61, 0.58, 1),
 &"gravel": Color(0.5, 0.48, 0.45, 1),

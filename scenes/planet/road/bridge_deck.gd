@@ -170,9 +170,9 @@ static func _stations(profile: BridgeProfile, plan: Dictionary,
 ## Per-station { up, tangent, normal } frame, built from the actual 3-D
 ## positions rather than from an east/north bearing.
 ##
-## That frame is a trap worth naming: longitude is atan2(z, x), so eastward runs
-## +X → +Z and the (east, north, up) triple is LEFT-handed in Godot's Y-up
-## world. Building a deck on it mirrors a north-east road into a south-east one.
+## Building the frame from the 3-D positions keeps the deck independent of the
+## longitude convention (atan2(-z, x), a right-handed (east, north, up) frame):
+## an east/north bearing frame would silently mirror the deck if it changed.
 static func _frames(cl: PackedVector2Array, cum: PackedFloat64Array,
 		stations: PackedFloat64Array) -> Array:
 	var ups: Array[Vector3] = []
@@ -194,7 +194,7 @@ static func _frames(cl: PackedVector2Array, cum: PackedFloat64Array,
 			if t.length_squared() < 1e-24:
 				t = u.cross(Vector3.RIGHT)
 		t = t.normalized()
-		out.append({"up": u, "t": t, "n": t.cross(u).normalized()})
+		out.append({"up": u, "t": t, "n": u.cross(t).normalized()})
 	return out
 
 
@@ -280,10 +280,12 @@ static func _prism(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 		var u: Vector3 = f["up"]
 		var nn: Vector3 = f["n"]
 		var c: Vector3 = nn * lateral
-		tl.append(_local(u * top_r[i] + c + nn * hw[i], origin))
-		tr.append(_local(u * top_r[i] + c - nn * hw[i], origin))
-		bl.append(_local(u * bot_r[i] + c + nn * hw[i], origin))
-		br.append(_local(u * bot_r[i] + c - nn * hw[i], origin))
+		# n is the LEFT of travel: the `l` row is the right-hand edge, which
+		# keeps every strip below in its CW-front order.
+		tl.append(_local(u * top_r[i] + c - nn * hw[i], origin))
+		tr.append(_local(u * top_r[i] + c + nn * hw[i], origin))
+		bl.append(_local(u * bot_r[i] + c - nn * hw[i], origin))
+		br.append(_local(u * bot_r[i] + c + nn * hw[i], origin))
 
 	for i in n - 1:
 		var f0: Dictionary = frames[i]
@@ -304,9 +306,9 @@ static func _prism(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 				-u0, -u1, stations, i, tile_m)
 		# Flanks.
 		_strip_plain(side_acc, faces, bl[i], tl[i], bl[i + 1], tl[i + 1],
-				n0, n1, stations, i, tile_m)
-		_strip_plain(side_acc, faces, tr[i], br[i], tr[i + 1], br[i + 1],
 				-n0, -n1, stations, i, tile_m)
+		_strip_plain(side_acc, faces, tr[i], br[i], tr[i + 1], br[i + 1],
+				n0, n1, stations, i, tile_m)
 
 	var last := n - 1
 	var ft: Dictionary = frames[0]
@@ -356,26 +358,27 @@ static func _road_top(frames: Array, origin: Vector3, hw: PackedFloat64Array,
 		var lo1: float = -hw[i + 1] if si == 0 else sv.x
 		var hi1: float = hw[i + 1] if si == last else sv.y
 		var uv_strip := sv if sv.x > -INF else Vector2(lo0, hi0)
+		# Right-hand (lo, n being the left) edge first: CW-front from above.
 		_strip(top_acc, faces,
-				_local(u0 * top_r[i] + n0 * hi0, origin),
 				_local(u0 * top_r[i] + n0 * lo0, origin),
-				_local(u1 * top_r[i + 1] + n1 * hi1, origin),
+				_local(u0 * top_r[i] + n0 * hi0, origin),
 				_local(u1 * top_r[i + 1] + n1 * lo1, origin),
+				_local(u1 * top_r[i + 1] + n1 * hi1, origin),
 				u0, u1,
-				RoadRibbon.surface_uv(uv_mode, s0, hi0, uv_strip, tile_m),
 				RoadRibbon.surface_uv(uv_mode, s0, lo0, uv_strip, tile_m),
-				RoadRibbon.surface_uv(uv_mode, s1, hi1, uv_strip, tile_m),
+				RoadRibbon.surface_uv(uv_mode, s0, hi0, uv_strip, tile_m),
 				RoadRibbon.surface_uv(uv_mode, s1, lo1, uv_strip, tile_m),
+				RoadRibbon.surface_uv(uv_mode, s1, hi1, uv_strip, tile_m),
 				c0, c1)
 	if median != Vector2.ZERO:
 		_strip(side_acc, faces,
-				_local(u0 * top_r[i] + n0 * median.y, origin),
 				_local(u0 * top_r[i] + n0 * median.x, origin),
-				_local(u1 * top_r[i + 1] + n1 * median.y, origin),
+				_local(u0 * top_r[i] + n0 * median.y, origin),
 				_local(u1 * top_r[i + 1] + n1 * median.x, origin),
+				_local(u1 * top_r[i + 1] + n1 * median.y, origin),
 				u0, u1,
-				Vector2(s0 / tile_m, 0.0), Vector2(s0 / tile_m, 1.0),
-				Vector2(s1 / tile_m, 0.0), Vector2(s1 / tile_m, 1.0))
+				Vector2(s0 / tile_m, 1.0), Vector2(s0 / tile_m, 0.0),
+				Vector2(s1 / tile_m, 1.0), Vector2(s1 / tile_m, 0.0))
 
 
 ## One quad of a strip, as two CW-front triangles. [param a]/[param b] are the

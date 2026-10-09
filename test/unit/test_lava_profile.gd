@@ -39,7 +39,7 @@ func _lava(length_m: float, over: Dictionary = {}) -> Dictionary:
 
 
 static func _east_m(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	var mpd := RADIUS * PI / 180.0
 	return (lon - LON0) * mpd * cos(deg_to_rad(LAT))
 

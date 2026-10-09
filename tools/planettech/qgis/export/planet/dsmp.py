@@ -137,6 +137,9 @@ KIND_VOLCANO = 8
 KIND_LAVA = 9
 #: Fumarole fields (polygons) and vents (points): POPULATE records.
 KIND_FUMAROLE = 10
+#: Rocky terrain (scenes/planet/rock_field_relief.gd): POPULATE polygons whose
+#: props are the resolved ruggedness preset + the centre / wind / dip vectors.
+KIND_ROCKY = 11
 
 KIND_NAMES = {
     KIND_CRATER: "crater",
@@ -149,6 +152,7 @@ KIND_NAMES = {
     KIND_VOLCANO: "volcano",
     KIND_LAVA: "lava",
     KIND_FUMAROLE: "fumarole",
+    KIND_ROCKY: "rocky",
 }
 KIND_BY_NAME = {v: k for k, v in KIND_NAMES.items()}
 

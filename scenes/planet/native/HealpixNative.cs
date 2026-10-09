@@ -41,7 +41,7 @@ internal static class HealpixNative
     {
         Normalize(x, y, z, out double dx, out double dy, out double dz);
         double zz = dy;
-        double phi = Math.Atan2(dz, dx);
+        double phi = Math.Atan2(-dz, dx);
         if (phi < 0.0)
             phi += Tau;
         return Vec2PixNestFromZPhi(nside, zz, phi);
@@ -111,7 +111,7 @@ internal static class HealpixNative
     {
         Normalize(x, y, z, out double dx, out double dy, out double dz);
         double zz = dy;
-        double phi = Math.Atan2(dz, dx);
+        double phi = Math.Atan2(-dz, dx);
         if (phi < 0.0)
             phi += Tau;
 

@@ -1253,7 +1253,7 @@ class TestVolcanoParts(unittest.TestCase):
         f = volcanoes_mod.resolve_volcano(volcano["props"])
         self.assertAlmostEqual(br["tilt_m"], f["crater_depth_m"] - f["lake_fill_m"]
                                - volcanoes_mod.RIM_FREEBOARD_M, places=6)
-        self.assertAlmostEqual(br["fz"], 1.0, places=6, msg="east at lon 0 = +z")
+        self.assertAlmostEqual(br["fz"], -1.0, places=6, msg="east at lon 0 = -z")
         f.update(br)
         lake = f["height_m"] - f["crater_depth_m"] + f["lake_fill_m"]
         self.assertAlmostEqual(volcanoes_mod.rim_height(f, 1.0), lake + volcanoes_mod.RIM_FREEBOARD_M,

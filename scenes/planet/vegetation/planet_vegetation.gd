@@ -49,7 +49,7 @@ static func scatter_chunk(
 			chunk_dir = PlanetData.cube_to_sphere(face,
 					(u_min + u_max) * 0.5, (v_min + v_max) * 0.5)
 		var lonlat := Vector2(
-				rad_to_deg(atan2(chunk_dir.z, chunk_dir.x)),
+				rad_to_deg(atan2(-chunk_dir.z, chunk_dir.x)),
 				rad_to_deg(asin(clampf(chunk_dir.y, -1.0, 1.0))))
 		print("[VEG_DIAG] use_geojson=%s  populate_zones=%d  biomemap=%s" % [
 			use_geojson, populate_zones.size(), planet_data.get_biomemap_image() != null])
@@ -244,7 +244,7 @@ static func _scatter_for_rule_geojson(
 		_mid_d = PlanetData.cube_to_sphere(face,
 				(u_min + u_max) * 0.5, (v_min + v_max) * 0.5)
 	var _ll := Vector2(
-			rad_to_deg(atan2(_mid_d.z, _mid_d.x)),
+			rad_to_deg(atan2(-_mid_d.z, _mid_d.x)),
 			rad_to_deg(asin(clampf(_mid_d.y, -1.0, 1.0))))
 	var _near_swamp := absf(_ll.x) < 0.5 and absf(_ll.y) < 0.5
 
@@ -283,7 +283,7 @@ static func _scatter_for_rule_geojson(
 				zone = biome_query.query_biome_type(dir, rule.biome_type)
 			if _near_swamp and _dbg_first_query_result.is_empty() and yi == 0 and xi == 0:
 				var lonlat_pt := Vector2(
-						rad_to_deg(atan2(dir.z, dir.x)),
+						rad_to_deg(atan2(-dir.z, dir.x)),
 						rad_to_deg(asin(clampf(dir.y, -1.0, 1.0))))
 				_dbg_first_query_result = {"ll": lonlat_pt, "match": not zone.is_empty()}
 			if not zone.is_empty():
@@ -305,7 +305,7 @@ static func _scatter_for_rule_geojson(
 		mid_dir = PlanetData.cube_to_sphere(face,
 				(u_min + u_max) * 0.5, (v_min + v_max) * 0.5)
 	var ll := Vector2(
-			rad_to_deg(atan2(mid_dir.z, mid_dir.x)),
+			rad_to_deg(atan2(-mid_dir.z, mid_dir.x)),
 			rad_to_deg(asin(clampf(mid_dir.y, -1.0, 1.0))))
 
 	# Always log chunks near the swamp zone (lon≈0, lat≈0) or with candidates.

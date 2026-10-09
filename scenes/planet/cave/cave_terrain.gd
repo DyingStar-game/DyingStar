@@ -43,5 +43,5 @@ static func lonlat_to_dir(lonlat: Vector2) -> Vector3:
 	return Vector3(
 		cos(lat_rad) * cos(lon_rad),
 		sin(lat_rad),
-		cos(lat_rad) * sin(lon_rad)
+		-cos(lat_rad) * sin(lon_rad)
 	).normalized()

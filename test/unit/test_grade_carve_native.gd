@@ -35,7 +35,7 @@ func _line(length_m: float, fid: int, north_m: float, over: Dictionary) -> Dicti
 
 
 static func _east_m(dir: Vector3) -> float:
-	var lon := rad_to_deg(atan2(dir.z, dir.x))
+	var lon := rad_to_deg(atan2(-dir.z, dir.x))
 	return (lon - LON0) * (RADIUS * PI / 180.0) * cos(deg_to_rad(LAT))
 
 

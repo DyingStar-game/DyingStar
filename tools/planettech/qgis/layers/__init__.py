@@ -6,28 +6,27 @@ Layer registry — every layer the planet setup can create, and how to create th
 
 Categories are discovered from:
     layers/base.py, layers/poi.py, layers/roads.py,
-    layers/mountains.py, layers/volcanoes.py          (non-biome, listed by hand)
+    layers/mountains.py, layers/volcanoes.py,
+    layers/rocky_terrain.py                           (non-biome, listed by hand)
     layers/biomes/*.py                                (one module per biome category)
 
 Adding a biome category = dropping a new module in ``layers/biomes/`` that
 defines ``CATEGORY = BiomeCategory(...)``.  Nothing else to register.
 
-QGIS layer tree produced::
+QGIS layer tree produced — one top-level group per stage (model.STAGES), in
+the order the layers apply on the ground::
 
-    Region/                 ← Polygon layers
-      world border, region
-      aride desert/  sandy desert, rocky desert, …
-      forest/        temperate forest, …
-    POI/                    ← Point layers
-      poi
-      spatial/       crater
-      volcanic geothermal/  ice geyser, mineral thermal source
-      volcanoes/     volcano, fumarole vent
-    Lines/                  ← LineString layers
-      contours
-      roads/         highway, road, path, trail, railway
-      maritime river/  river
-      volcanoes/     lava flow
+    layer 00 - base/        contours, region, world border
+    layer 01 - outcrop/     plateau, volcanic
+    layer 02 - massifs/     mountains/  mountain range, ridge
+                            volcanoes/  volcano
+    layer 03 - rocky terrain/  rocky terrain
+    layer 10 - final/       poi
+                            roads/      highway, road, path, trail, railway
+                            volcanoes/  lava flow, fumarole field, fumarole vent
+    uncategorized/          every other biome category (aride desert/, forest/, …)
+
+The Region / POI / Lines split (by geometry) only remains in the layer picker.
 """
 
 import dataclasses
@@ -36,7 +35,7 @@ import pkgutil
 
 from .model import (  # noqa: F401 — re-exported for convenience
     Category, BiomeCategory, Layer, Field, Widget,
-    Range, Color, ValueMap, KINDS, KIND_BY_GEOM,
+    Range, Color, ValueMap, KINDS, KIND_BY_GEOM, STAGES,
 )
 
 
@@ -45,10 +44,10 @@ from .model import (  # noqa: F401 — re-exported for convenience
 # ============================================================
 def all_categories():
     """Non-biome categories first, then ``layers/biomes/*`` in alphabetical order."""
-    from . import base, poi, roads, mountains, volcanoes
+    from . import base, poi, roads, mountains, volcanoes, rocky_terrain
     from . import biomes as biomes_pkg
     cats = [base.CATEGORY, poi.CATEGORY, roads.CATEGORY, mountains.CATEGORY,
-            volcanoes.CATEGORY]
+            volcanoes.CATEGORY, rocky_terrain.CATEGORY]
     for info in sorted(pkgutil.iter_modules(biomes_pkg.__path__), key=lambda m: m.name):
         if info.name.startswith("_"):
             continue
@@ -132,11 +131,11 @@ class Selection:
 # Creation
 # ============================================================
 def setup_all(planet_name, selection=None):
-    """Create/refresh every selected layer and place it in Region / POI / Lines.
+    """Create/refresh every selected layer and place it in its stage group.
 
     Returns ``{layer slug: QgsVectorLayer}``.  Layers already present in the
-    project (matched on the ``ds_layer`` custom property) are reconfigured in
-    place, so re-running the setup never duplicates tree entries.
+    project (matched on their PostGIS table) are reconfigured and moved to
+    their group, so re-running the setup never duplicates tree entries.
 
     Unselected layers are removed from the project; their table is dropped
     only when it holds no feature — drawn data is never deleted.
@@ -152,7 +151,7 @@ def setup_all(planet_name, selection=None):
     db = PlanetDb(planet_name)
 
     def _group(parent, name):
-        node = parent.findGroup(name)
+        node = _child_group(parent, name)
         return node if node is not None else parent.addGroup(name)
 
     cats = all_categories()
@@ -163,12 +162,18 @@ def setup_all(planet_name, selection=None):
     created = {}
     for step, (cat, layer_def) in enumerate(todo, 1):
         eff = selection.effective(layer_def)
-        print(f"\n[{step}/{len(todo)}] {layer_def.kind} / {cat.group or '-'} / {layer_def.name}")
+        stage = cat.stage_of(layer_def)
+        group = None if cat.flat else cat.group
+        print(f"\n[{step}/{len(todo)}] {stage} / {group or '-'} / {layer_def.name}")
         if layer_def.description:
             print(f"        {layer_def.description}")
+        parent = _group(root, stage)
+        if group:
+            parent = _group(parent, group)
         layer = existing.get(layer_def.slug)
         if layer is not None and _fits(layer, eff):
             configure_layer(layer, eff, cat)
+            _move_layer(root, layer, parent)
             print(f"  ✓ Refreshed {layer.name()} ({layer.featureCount()} features)")
         else:
             if layer is not None:
@@ -181,9 +186,6 @@ def setup_all(planet_name, selection=None):
             layer = create_layer(db, eff, cat)
             if layer is None:
                 continue
-            parent = _group(root, layer_def.kind)
-            if cat.group:
-                parent = _group(parent, cat.group)
             parent.addLayer(layer)
         created[layer_def.slug] = layer
 
@@ -195,6 +197,32 @@ def setup_all(planet_name, selection=None):
     n_groups = sum(1 for n in root.children() if isinstance(n, QgsLayerTreeGroup))
     print(f"\n  ✓ Layer tree organised: {n_groups} top-level groups, {len(created)} layers")
     return created
+
+
+def _child_group(parent, name):
+    """The direct sub-group *name* of *parent*, or None.  Not ``findGroup``,
+    which searches the whole sub-tree: a same-named group nested elsewhere
+    (an ``uncategorized`` of the user's) would be taken for the stage."""
+    from qgis.core import QgsLayerTreeGroup
+    for child in parent.children():
+        if isinstance(child, QgsLayerTreeGroup) and child.name() == name:
+            return child
+    return None
+
+
+def _move_layer(root, layer, parent):
+    """Put *layer*'s tree node under *parent* (a no-op when it already is) — the
+    node is cloned, so its visibility, expansion and styling travel with it."""
+    from qgis.core import QgsLayerTreeLayer
+    if any(isinstance(c, QgsLayerTreeLayer) and c.layerId() == layer.id()
+           for c in parent.children()):
+        return
+    node = root.findLayer(layer.id())
+    if node is None:
+        parent.addLayer(layer)
+        return
+    parent.addChildNode(node.clone())
+    node.parent().removeChildNode(node)
 
 
 def _fits(layer, layer_def):
@@ -265,15 +293,19 @@ def _prune_empty_groups(root):
                 if not child.children():
                     group.removeChildNode(child)
 
-    for kind in KINDS:
-        node = root.findGroup(kind)
+    # The stage groups, and the Region / POI / Lines groups of the old tree,
+    # which the move to the stages empties.
+    for name in (*STAGES, *KINDS):
+        node = _child_group(root, name)
         if node is not None:
             _prune(node)
+            if not node.children():
+                root.removeChildNode(node)
 
 
 def _sort_tree(root):
-    """Region, POI, Lines first (in that order), then anything else; inside a
-    group: sub-groups then layers, each alphabetically."""
+    """The stage groups first (in STAGES order), then anything else; inside a
+    stage: sub-groups then layers, each alphabetically."""
     from qgis.core import QgsLayerTreeGroup
 
     def _reorder(group, key):
@@ -291,10 +323,10 @@ def _sort_tree(root):
             if isinstance(child, QgsLayerTreeGroup):
                 _walk(child)
 
-    for kind in KINDS:
-        node = root.findGroup(kind)
+    for stage in STAGES:
+        node = _child_group(root, stage)
         if node is not None:
             _walk(node)
 
-    rank = {k: i for i, k in enumerate(KINDS)}
-    _reorder(root, lambda n: (rank.get(n.name(), len(KINDS)), n.name().lower()))
+    rank = {k: i for i, k in enumerate(STAGES)}
+    _reorder(root, lambda n: (rank.get(n.name(), len(STAGES)), n.name().lower()))

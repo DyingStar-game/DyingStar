@@ -16,9 +16,9 @@ at export (export/planet/roads.py railway_half_width_m) and again in Godot
 (RailwaySettings.railway_half_width_m).
 """
 
-from .model import Category, Layer, Field, Widget, ValueMap, Range
+from .model import Category, Layer, Field, Widget, ValueMap, Range, STAGE_FINAL
 
-CATEGORY = Category("roads", "roads", description="Roads and paths")
+CATEGORY = Category("roads", "roads", description="Roads and paths", stage=STAGE_FINAL)
 
 SURFACES = [
     ("Asphalt — paved, smooth", "asphalt"),

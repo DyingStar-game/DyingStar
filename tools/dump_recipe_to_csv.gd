@@ -99,7 +99,7 @@ func _init() -> void:
 				var fy := float(iy * grid_n + row - margin) + 0.5
 				var dir: Vector3 = HEALPix._face_xy_to_vec(face, fx, fy, nside * grid_n)
 				var lat := rad_to_deg(asin(clampf(dir.y, -1.0, 1.0)))
-				var lon := rad_to_deg(atan2(dir.z, dir.x))
+				var lon := rad_to_deg(atan2(-dir.z, dir.x))
 				out.store_line("%.6f,%.6f,%.4f" % [lon, lat, float(arr[row * total_n + col])])
 				written += 1
 
@@ -114,7 +114,7 @@ func _init() -> void:
 		var dir: Vector3 = HEALPix._face_xy_to_vec(
 			face, float(ix) + 0.5, float(iy) + 0.5, nside)
 		var lat := rad_to_deg(asin(clampf(dir.y, -1.0, 1.0)))
-		var lon := rad_to_deg(atan2(dir.z, dir.x))
+		var lon := rad_to_deg(atan2(-dir.z, dir.x))
 		out.store_line("%.6f,%.6f,%.4f" % [lon, lat, base_elev])
 		written = 1
 

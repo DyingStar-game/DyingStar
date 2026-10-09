@@ -192,6 +192,10 @@ def _apply_symbol(layer, layer_def):
     r, g, b = hex_to_rgb(layer_def.color)
     color = QColor(r, g, b, 180)
     geom = int(layer.geometryType())
+    if layer_def.symbol_factory is not None:
+        layer.renderer().setSymbol(layer_def.symbol_factory(color))
+        layer.triggerRepaint()
+        return
     sym = _library_symbol(layer_def, geom)
     if sym is not None:
         if geom == 1 and layer_def.direction_marker:
@@ -333,6 +337,8 @@ def configure_layer(layer, layer_def, category):
     _configure_last_updated(layer)
     _write_properties(layer, layer_def, category)
     _apply_symbol(layer, layer_def)
+    if layer_def.labeling is not None:
+        layer_def.labeling(layer)
 
 
 def create_layer(db, layer_def, category):

@@ -515,8 +515,8 @@ static func record_from(data, rel: Transform3D, box_size: Vector3, box_local: Tr
 	var lonlat := HEALPix.vec2lonlat(local_pos.normalized())
 	var lon_r := deg_to_rad(lonlat.x)
 	var lat_r := deg_to_rad(lonlat.y)
-	var east := Vector3(-sin(lon_r), 0.0, cos(lon_r))
-	var north := Vector3(-sin(lat_r) * cos(lon_r), cos(lat_r), -sin(lat_r) * sin(lon_r))
+	var east := Vector3(-sin(lon_r), 0.0, -cos(lon_r))
+	var north := Vector3(-sin(lat_r) * cos(lon_r), cos(lat_r), sin(lat_r) * sin(lon_r))
 	var x_axis := box_rel.basis.x.normalized()
 	var yaw := atan2(x_axis.dot(north), x_axis.dot(east))
 	# Half the footprint across the box's X and Z, the scale it stands under included.

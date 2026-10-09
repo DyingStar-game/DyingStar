@@ -140,6 +140,8 @@ varying vec3 tri_pos;    // chunk_origin_mod + chunk-local vertex (wrapped, prec
 varying vec3 local_pos;  // chunk-local vertex only — for derivatives (smallest = most precise)
 varying vec3 far_radial;  // true smooth sphere normal, world space (terrain_far_light)
 varying float far_cam_dist;  // camera -> point distance, for the far lighting's fade
+varying vec4 rock;       // CUSTOM1: rock intensity × envelope, small-block size (m), level + 8 × type, altitude (m)
+varying vec3 planet_up_w;  // the planet's up at the vertex (world) — the rock's flint bands
 
 // Tiling scale snapped so WRAP * s is an even integer (see above).
 float snap_scale(float raw) {
@@ -417,6 +419,9 @@ vec3 plain_plane(vec2 p, float s, out vec2 nxy, out float rough) {
 	return texture(albedo_texture, st).rgb;
 }
 
+// Rocky terrain blocks below the mesh pitch (CUSTOM1) — rock_blocks().
+#include "res://scenes/planet/rock_blocks.gdshaderinc"
+
 /*
 	-------------------------------------------------------------
 	PLANET SPATIAL IMPLEMENTATION
@@ -432,6 +437,8 @@ void vertex() {
 	local_pos    = surface;
 	far_radial   = far_light_radial(MODEL_MATRIX, surface);
 	far_cam_dist = far_light_cam_dist(MODELVIEW_MATRIX, surface);
+	rock         = CUSTOM1;
+	planet_up_w  = normalize((MODEL_MATRIX * vec4(chunk_center_local + surface, 0.0)).xyz);
 }
 
 void fragment() {
@@ -494,7 +501,15 @@ void fragment() {
 	// warps it toward the dominant axis — see terrain_biome.gdshader).
 	vec3 shaded_normal = normalize(world_normal + delta * normal_strength);
 
-	ALBEDO    = albedo * mix(vec3(1.0), COLOR.rgb, vertex_color_strength);
+	// Rock blocks of a rocky_terrain field (CUSTOM1), faded with the distance.
+	// Not at quality 0: that is the measurement floor.
+	float rock_mul = 1.0;
+	if (planet_hex_quality >= 1) {
+		rock_mul = rock_blocks(rock, tri_pos, world_normal, normalize(planet_up_w), length(VERTEX),
+				shaded_normal);
+	}
+
+	ALBEDO    = albedo * rock_mul * mix(vec3(1.0), COLOR.rgb, vertex_color_strength);
 	ROUGHNESS = clamp(rough * roughness, 0.0, 1.0);
 	METALLIC  = metallic;
 	NORMAL    = normalize((VIEW_MATRIX * vec4(shaded_normal, 0.0)).xyz);

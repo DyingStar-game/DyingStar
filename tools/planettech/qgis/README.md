@@ -18,11 +18,14 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
 | `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
 | `export_volcanoes.py` | QGIS Python Console | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
+| `export_rocky_terrain.py` | QGIS Python Console | **Rocky-terrain-only**: the `rocky_terrain` polygons → `parts/rocky_terrain.dsmpart` (ruggedness preset + style, resolved here; the relief is generated in Godot) and relinks the pack. See "Rocky terrain" below. |
 | `migrate_volcanic_layers.py` | QGIS Python Console | One-shot, per planet: creates the new volcanic tables and copies the old biome ones (`active_volcano`, `lava_dome`, `lava_river`, `fumarole`) into them. Drops nothing. |
 | `export_rocks.py` | QGIS console or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
 | `export/planet/biomes.py` | library | The POPULATE part builder: tiling, full / partial coverage, overlap order. |
 | `export/planet/mountains.py` | library | The MOUNTAIN / RIDGE part builders and the style presets (`PRESETS`, `RIDGE_PRESETS`). |
 | `export/planet/volcanoes.py` | library | The VOLCANO / LAVA / FUMAROLE part builders and their presets (`PRESETS`, `LAVA_PRESETS`, `GAS_PRESETS`). |
+| `export/planet/rocky_terrain.py` | library | The ROCKY part builder, the ruggedness presets (`PRESETS`), the styles and the export-time resolution (vectors, auto seed / azimuths, the joint and butte means). |
+| `export/planet/rock_field_noise.py` | library | Python twin of the runtime rock-field relief — golden values of the determinism test, and the term means the exporter measures. |
 | `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test, future preview raster. |
 | `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
@@ -60,7 +63,10 @@ lon/lat → X/Y/Z conversion described in §4.3 no longer has to be done by hand
 1. **Draw the POIs** in QGIS on the `poi` layer (see "Place Points of Interest"
    below), filling in `name`, `poi_type`, `population`, `radius` (metres) and
    `description`. Leave `elevation` empty unless you want to *override* the
-   terrain height at that spot.
+   terrain height at that spot. The layer draws each POI as a house icon
+   (offset north-east, so the centre stays visible) inside its `radius`
+   circle, measured on the planet's sphere (`@planet_radius_m`), so the
+   footprint widens east-west towards the poles.
 2. **Export** from the QGIS Python Console:
    ```python
    exec(open('…/tools/planettech/qgis/export_poi.py').read())
@@ -320,6 +326,51 @@ then `setup_planet_project.py`. Biome indices 26, 30, 86, 94 and 107 are
 reserved. To iterate without QGIS, `PlanetData` has **Debug volcano**, **Debug
 lava** and **Debug fumaroles** groups (tarsis_8 uses them), ignored once the
 pack carries the matching part.
+
+## Rocky terrain (`export_rocky_terrain.py`)
+
+Rock blocks, ledges, buttes and inclined strata, **generated in Godot** and
+described in QGIS by one layer, `rocky_terrain` (Region, `layers/rocky_terrain.py`).
+Unlike a biome region it does not replace what is below: draw it over a plain,
+a plateau or a `mountain_range` and its relief is **added** to theirs.
+
+| Field | What it does |
+|---|---|
+| `ruggedness` | `flat` · `low` · `medium` · `rugged` · `very_rugged` — the preset (block size, ledge height, joint depth, butte rate and height). `flat` is shader + scree only. |
+| `style` | `slabs` (default) · `columnar` (narrow walls, smaller blocks — cliffs) · `yardang` (buttes stretched along the wind) · `strata` (inclined ledges, dip 8-20°) · `chalk` (Seven Sisters: no ledges, soft knobs `lump_m`; the shader draws a lumpy surface, wandering cracks and flint bands on the walls). |
+| overrides | `lump_m`, `lump_wavelength_m`, `cell_m`, `step_m`, `riser`, `joint_depth_m`, `joint_width_m`, `butte_rate`, `butte_height_m`, `butte_cell_m`, `butte_wall_m`, `dip_deg`, `dip_azimuth_deg`, `wind_azimuth_deg`, `elongation`, `detail_m`, `feather_m`, `seed` — NULL takes the preset; NULL azimuths, dip and seed come from the polygon's position (stable across re-exports). |
+
+```python
+exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_rocky_terrain.py').read())
+```
+
+One formula makes the ground and the cliffs: every Voronoi cell is a block
+that **terraces** the ground under it with a phase of its own — slabs at
+staggered heights on the flat, ledges on a slope (a cliff of blocks), tilted by
+the dip (strata); rare raised cells of a coarser lattice are the buttes. So one
+polygon over a whole escarpment gives a block cliff on its face and slabs on its
+top and foot.
+
+The mesh pitch is 25 m at best, so the work is split by size:
+- **≥ 75 m** — geometry, in `PlanetData.sample_height_for_direction` right after
+  the mountains (`scenes/planet/rock_field_relief.gd`, C# twin
+  `RockFieldNative.cs`, summed in `MountainSetNative.Rock`): the mesh, the
+  collision, the roads and the server see the same rocks. Integer hash only;
+  bit-identical to `rock_field_noise.py` (`test/unit/test_rock_field_relief.gd`).
+  Every term is zero-mean and dropped, never faded, past its cell / 3, so a
+  coarser LOD loses the rocks, not the mean ground (the exporter measures the
+  joint and butte means and writes them in the record).
+- **1-20 m** — the terrain shaders (`scenes/planet/rock_blocks.gdshaderinc`,
+  included by `planet_surface.gdshader` and `terrain_biome.gdshader`) from a
+  per-vertex mask the chunk bakes into `CUSTOM1`.
+- **< 2 m** — client-only scree on the finest LOD
+  (`scenes/planet/rock_field/rock_field_scree.gd`), placed by the chunk worker.
+
+The corundum cracks keep cutting through a rocky zone. Pack kind
+`KIND_ROCKY = 11` (POPULATE layout, clip box expanded by the feather, never
+simplified). To iterate without QGIS, `PlanetData`'s **Debug rocky terrain**
+group lays five discs, flat to very rugged, eastward from `debug_rock_lonlat`
+(tarsis_8 uses it), ignored once the pack carries a rocky part.
 
 ## Terrain-modifier pack (`terrainmodifier.pack`)
 
@@ -602,13 +653,24 @@ to keep aligned instead of three.
      that field's dropdown. On a re-run, layers already in the database are
      pre-ticked. Unticking removes the layer from the project and drops its
      table **only if it is empty** — drawn data is never deleted.
-6. The layer tree is organised by **geometry**, then by category:
-   - **Region** — polygon layers: `world border`, `region`, then one sub-group per
-     biome category (`forest/temperate forest`, `aride desert/sandy desert`…)
-   - **POI** — point layers: `poi` (cities, stations, spawn points), `spatial/crater`,
-     `volcanic geothermal/ice geyser`…
-   - **Lines** — line layers: `contours`, `roads/highway|road|path|trail|railway`,
-     `maritime river/river`, `icy/ice crevasse`…
+6. The layer tree is organised by **stage** — the order the layers apply on the
+   ground — then by category (`STAGES` in `layers/model.py`, `stage=` on a
+   `Category` or a `Layer`):
+   - **layer 00 - base** — `contours` (the heightmap), `region`, `world border`
+   - **layer 01 - outcrop** — `plateau`, `volcanic` (the bedrock), directly in the
+     group (`flat=True` on the category)
+   - **layer 02 - massifs** — `mountains/mountain range|ridge`, `volcanoes/volcano`:
+     summed into the relief in one pass, so their order does not matter
+   - **layer 03 - rocky terrain** — `rocky terrain` (directly in the group), laid
+     over the ground below it
+   - **layer 10 - final** — `roads/highway|road|path|trail|railway`,
+     `volcanoes/lava flow|fumarole field|fumarole vent`, `poi`
+   - **uncategorized** — every other biome category (`forest/temperate forest`,
+     `maritime river/river`…), until we decide which ones stay
+
+   Re-running the setup moves every layer back to its group (an existing
+   `uncategorized` group is reused) and removes the emptied groups. The overlap
+   between biomes is NOT the tree order: it is the category's `priority`.
 
 Each layer is a PostGIS table named after its slug (`sandy_desert`, `river`,
 `highway`) in the schema `<planet_name>`. Re-running the script on an existing
@@ -647,7 +709,7 @@ CATEGORY.biome(
 
 `biome_type` becomes `<category>-<slug>` (`forest-temperate_forest`), the table
 `<slug>`, the QGIS name `<slug with spaces>`. `geom='LineString'` / `'Point'`
-moves the layer to **Lines** / **POI**; `terrain_modifier=True` flags biomes that
+makes it a line / point layer (**Lines** / **POI** in the layer picker); `terrain_modifier=True` flags biomes that
 alter the heightmap. `fields=[rock_field()]` adds the per-planet rock dropdown.
 Every biome layer carries `biome_type`, `biome_index`, `color_hex`,
 `terrain_modifier`, `planet_type`, `ds_category`, `ds_layer` as QGIS custom
@@ -669,7 +731,7 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 - **Y = Latitude**: −90° (south pole) to +90° (north pole)
 
 #### Draw Elevation Contours
-1. Select the **Lines → contours** layer in the Layers panel
+1. Select the **layer 00 - base → contours** layer in the Layers panel
 2. Click the **pencil icon** (Toggle Editing) in the toolbar
 3. Click **Add Line Feature** (the line drawing tool)
 4. Draw a contour line on the map — each click adds a vertex, double-click to finish
@@ -678,8 +740,8 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 7. Click the **floppy disk icon** to save edits
 
 #### Draw Biome Zones
-1. Select the biome's layer (e.g. **Region → forest → temperate forest**) → Toggle Editing
-2. Click **Add Polygon Feature** (or line / point for biomes living under **Lines** / **POI**)
+1. Select the biome's layer (e.g. **uncategorized → forest → temperate forest**) → Toggle Editing
+2. Click **Add Polygon Feature** (or line / point for line / point biomes)
 3. Draw the zone — double-click to close the polygon
 4. In the popup, fill in the biome-specific fields (`name`, `density`, `canopy_height`,
    `radius`, `width_start`…). The biome type and index are properties of the layer,
@@ -687,7 +749,7 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 5. Save edits
 
 #### Draw Roads
-1. Select the road type's layer (**Lines → roads → highway / road / path / trail / railway**) → Toggle Editing
+1. Select the road type's layer (**layer 10 - final → roads → highway / road / path / trail / railway**) → Toggle Editing
 2. Click **Add Line Feature** and draw the road
 3. `width`, `lanes`, `surface`, `speed_limit`… are pre-filled for that road type; override per feature if needed.
    A railway only asks for `tracks` (and `speed_limit`) — its bed width follows the track count.
@@ -698,15 +760,15 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 5. Save edits
 
 #### Place Points of Interest
-1. Select the **POI → poi** layer → Toggle Editing
+1. Select the **layer 10 - final → poi** layer → Toggle Editing
 2. Click **Add Point Feature** and click where you want to place a city, station, or spawn point
 3. Fill in: `name`, `poi_type` (city/station/landmark/spawn_point), `population`,
    `radius` (influence radius in metres) and `description`
 4. Save edits, then see the POI pipeline section above to get them into Godot
 
 #### Draw Water Bodies
-1. Select **Region → maritime river → ocean** (or `lake`, `delta`…; rivers are
-   lines under **Lines → maritime river → river**) → Toggle Editing
+1. Select **uncategorized → maritime river → ocean** (or `lake`, `delta`…; rivers are
+   the line layer **uncategorized → maritime river → river**) → Toggle Editing
 2. Click **Add Polygon Feature** and outline the area
 3. Fill in the optional fields (`name`, `water_color`, `salinity`…)
 4. Save edits
@@ -829,7 +891,7 @@ Planet (Node3D)  ← planet_body.gd, holds PlanetData resource
    ```
    x = radius × cos(lat_rad) × cos(lon_rad)
    y = radius × sin(lat_rad)
-   z = radius × cos(lat_rad) × sin(lon_rad)
+   z = −radius × cos(lat_rad) × sin(lon_rad)   (minus: east on the right seen from outside)
    ```
 
 6. **(Optional) Add an atmosphere** — instance

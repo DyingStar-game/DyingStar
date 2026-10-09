@@ -36,8 +36,11 @@ extends Resource
 ## How fast (1/s) the air brakes a dust grain. Higher = the cloud stops sooner and hangs where it was
 ## thrown; 0 = no air at all. Ignored on an airless body, which has none (see DustEmitter).
 @export_range(0.0, 10.0, 0.05) var air_drag: float = 2.2
-## How fast (m/s²) the dust settles back in air. Far below the planet's gravity on purpose: a fine
-## grain falls at a few centimetres per second, held up by the air. Airless, the real gravity applies.
+## How fast (m/s²) the dust settles back in air under an Earth gravity (9.81 m/s²), scaled by the body's
+## own (DustEmitter): a fine grain is held up by the air's VISCOSITY (Stokes), which barely depends on
+## the pressure, so a grain sinks the same in thin air as in thick, at a speed proportional to g. Far
+## below the gravity itself on purpose: a fine grain falls at a few centimetres per second. The air's
+## density (what slams a door, see DoorWind) does not enter here. Airless, the real gravity applies.
 @export_range(0.0, 10.0, 0.05) var air_settle: float = 0.6
 ## How much (×) a puff swells over its life in air, as it mixes with the air around it. Airless, a
 ## cloud of grains does not swell — it flies apart on ballistic arcs.

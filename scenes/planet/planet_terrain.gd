@@ -588,7 +588,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _mt_fp := data.mountain_fingerprint()
 		if _mt_fp != "":
 			_mt = "_mt%s" % _mt_fp
-		elif data.debug_mountain_enabled or data.debug_volcano_enabled:
+		elif data.debug_mountain_enabled or data.debug_volcano_enabled or data.debug_rock_enabled:
 			var _dbg: Array = [data.debug_mountain_lonlat,
 					data.debug_mountain_radius_km, data.debug_mountain_style,
 					data.debug_ridge_points, data.debug_ridge_style]
@@ -597,11 +597,17 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			if data.debug_volcano_enabled:
 				_dbg.append_array([data.debug_volcano_lonlat, data.debug_volcano_type,
 						data.debug_volcano_style])
+			if data.debug_rock_enabled:
+				_dbg.append_array([data.debug_rock_lonlat, data.debug_rock_radius_km,
+						data.debug_rock_style, data.debug_rock_overrides])
 			_mt = "_mtdbg%08x" % (hash(str(_dbg)) & 0xFFFFFFFF)
 		# Volcanoes: their fingerprint is in _mt; the relief ALGORITHM is keyed
 		# here, only when the planet has one (byte-identical key otherwise).
 		if data.volcano_fingerprint() != "" or data.debug_volcano_enabled:
 			_mt += "_vr%d" % VolcanoRelief.ALGO_VERSION
+		# Rocky terrain: same rule, its algorithm keyed only where it is.
+		if data.rocky_fingerprint() != "" or data.debug_rock_enabled:
+			_mt += "_rk%d" % RockFieldRelief.ALGO_VERSION
 		# Lava flows: their records and the constants of their crust and
 		# channel (LavaSettings), only when the planet has one.
 		if data.has_lava():
@@ -707,6 +713,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v57 → v58: a chunk border reads the tile across it even when that tile
 		# is pruned (it climbs to its ancestor): both sides used to fall back to
 		# their own tile and met with a step (PlanetData._pruned_tile_climbs).
+		# v58 → v59: longitude runs the other way round the Y axis
+		# (dir.z = -cos lat·sin lon): the planet was the QGIS map's mirror
+		# image, every baked vertex moves to its east-west mirror.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -715,13 +724,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
-		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v58%s%s%s%s%s%s" % [
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)
@@ -2119,7 +2128,7 @@ func _print_biome_locations() -> void:
 		var dir := Vector3(
 			cos(lat_rad) * cos(lon_rad),
 			sin(lat_rad),
-			cos(lat_rad) * sin(lon_rad)).normalized()
+			-cos(lat_rad) * sin(lon_rad)).normalized()
 		var world_pos := dir * (planet_data.radius + 50.0)
 		var lonlat := HEALPix.vec2lonlat(dir)
 		print("  %-25s  lon=%.4f  lat=%.4f  world_pos=(%d, %d, %d)" % [
@@ -2160,7 +2169,7 @@ func _populate_biome_entries() -> void:
 		var dir := Vector3(
 			cos(lat_rad) * cos(lon_rad),
 			sin(lat_rad),
-			cos(lat_rad) * sin(lon_rad)).normalized()
+			-cos(lat_rad) * sin(lon_rad)).normalized()
 		_editor_biome_entries.append({
 			"label": label,
 			"dir": dir,
@@ -4233,6 +4242,13 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		if fum:
 			_chunks_node.add_child(fum)
 			info["fumaroles"] = fum
+	# Rocky terrain scree: decoration of the finest LOD (RockFieldScree), placed
+	# by the chunk worker into the mesh's "rock_scree" meta.
+	if lod == 0 and not is_server and info.has("mesh_instance") and info.mesh_instance:
+		var _scree := RockFieldScree.build(info.mesh_instance.mesh, chunk_center)
+		if _scree:
+			_chunks_node.add_child(_scree)
+			info["rock_scree"] = _scree
 	_perf_end("asm:zones", _tk)
 	# Its own scope: road bridges AND railway viaducts are built here, on the
 	# main thread, and asm:zones alone could not tell them from the point-biome
@@ -4964,6 +4980,8 @@ func _remove_chunk(key: String) -> void:
 		info.cave.queue_free()
 	if info.has("fumaroles") and is_instance_valid(info.fumaroles):
 		info.fumaroles.queue_free()
+	if info.has("rock_scree") and is_instance_valid(info.rock_scree):
+		info.rock_scree.queue_free()
 	if info.has("meadow") and info.meadow:
 		info.meadow.queue_free()
 	if info.has("forest") and info.forest:
@@ -5117,7 +5135,7 @@ static func _zone_centroid_dir(zone: Dictionary) -> Vector3:
 	return Vector3(
 		cos(lat_rad) * cos(lon_rad),
 		sin(lat_rad),
-		cos(lat_rad) * sin(lon_rad)
+		-cos(lat_rad) * sin(lon_rad)
 	).normalized()
 
 

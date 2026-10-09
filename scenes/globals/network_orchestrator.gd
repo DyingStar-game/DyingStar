@@ -154,7 +154,9 @@ func start_client(changed_scene, ip = "127.0.0.1", port = 7051, server_changes: 
 ## the Horizon call leaves the prop floating/inert (it has no server body until a
 ## reconnect reloads it from persistence). Use this everywhere a prop is spawned
 ## server-side (mining depot crate, rock side2, ...). `data` must hold "uuid"+"type".
-func spawn_prop_authoritative(data: Dictionary) -> void:
+## [param immediate] false hands the node to the streaming instead (built only if someone is near):
+## for a caller that never reads the node back — a far village spawning its buildings.
+func spawn_prop_authoritative(data: Dictionary, immediate: bool = true) -> void:
 	if not GameOrchestrator.is_server():
 		return
 	# 1) Register in Horizon (GORC) for the other clients.
@@ -167,7 +169,7 @@ func spawn_prop_authoritative(data: Dictionary) -> void:
 	# 2) Create it locally on this game server (Horizon won't echo it back). Right away, not through
 	# the streaming queue: the caller stands next to it and may look the node up on its next line.
 	network_agent.create_generic_object({
-		"_immediate": true,
+		"_immediate": immediate,
 		"data": {
 			"object_uuid": data["uuid"],
 			"object_type": data["type"],

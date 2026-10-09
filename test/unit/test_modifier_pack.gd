@@ -57,6 +57,8 @@ const STRINGS := [
 	"fumarole_field",         # 22 FUMAROLE record type
 	"gas",                    # 23 fumarole prop key (string)
 	"sulfur",                 # 24 its value
+	"rocky_terrain",          # 25 ROCKY record type
+	"step_m",                 # 26 rocky prop key (f32)
 ]
 
 const SID_LINEAR_TYPE := 0
@@ -84,6 +86,8 @@ const SID_SOLID := 21
 const SID_FUMAROLE_FIELD := 22
 const SID_GAS := 23
 const SID_SULFUR := 24
+const SID_ROCKY_TERRAIN := 25
+const SID_STEP := 26
 
 var _levels: Array[int] = []
 ## ROAD record layout the fixture pack announces (2 = flags/max_slope tail).
@@ -880,6 +884,54 @@ func _block_fumarole() -> PackedByteArray:
 	_put_u8(b, 0)
 	_put_u32(b, SID_SULFUR)
 	return b
+
+
+func _block_rocky(lon: float, lat: float) -> PackedByteArray:
+	var b := PackedByteArray()
+	_put_u16(b, SID_ROCKY_TERRAIN)
+	_put_u8(b, ModifierPackScript.COVERAGE_PARTIAL)
+	_put_u8(b, 2)          # prop_count
+	_put_s32(b, 0)         # feature index
+	_put_u16(b, 4)         # vertex_count
+	_put_u16(b, 0)
+	_put_u16(b, SID_STEP)
+	_put_u8(b, 0)
+	_put_u8(b, 0)
+	_put_f32(b, 18.0)
+	_put_u16(b, SID_SEED)
+	_put_u8(b, 2)
+	_put_u8(b, 0)
+	_put_s32(b, 5)
+	for d in [Vector2(0.0, 0.0), Vector2(0.2, 0.0), Vector2(0.2, 0.2), Vector2(0.0, 0.2)]:
+		_put_s32(b, _e7(lon + d.x))
+		_put_s32(b, _e7(lat + d.y))
+	return b
+
+
+func test_decode_rocky_kind_builds_fields_in_the_mountain_set() -> void:
+	var pack = _open()
+	var blk := _block_rocky(10.0, 20.0)
+	var out := PackedByteArray()
+	_put_u16(out, 1)
+	_put_u16(out, 1)
+	_put_u8(out, ModifierPackScript.KIND_ROCKY)
+	_put_u8(out, 0)
+	_put_u16(out, 1)
+	_put_u32(out, blk.size())
+	out.append_array(blk)
+	assert_eq(ModifierPackScript.kind_name(ModifierPackScript.KIND_ROCKY), "rocky")
+	var t := pack.decode_tile(out, _m_per_deg)
+	assert_eq((t["rock_fields"] as Array).size(), 1)
+	var f: RockFieldRelief.Field = t["rock_fields"][0]
+	assert_eq(f.step_m, 18.0)
+	assert_eq(f.seed, 5)
+	assert_false(f.zone.full)
+	assert_eq(f.zone.polygon.size(), 4)
+	assert_true(t["mountain_set"] != null, "a rock field alone builds the C# set")
+	assert_eq(t["mountain_set"].RockCount(), 1)
+	var masked := pack.decode_tile(out, _m_per_deg,
+			ModifierPackScript.MASK_ALL & ~ModifierPackScript.MASK_ROCKY)
+	assert_eq((masked["rock_fields"] as Array).size(), 0, "the kind mask skips it")
 
 
 func test_decode_volcano_lava_and_fumarole_kinds() -> void:

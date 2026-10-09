@@ -120,12 +120,13 @@ const CORUNDUM_HIGHWAY_SIDE_MATERIAL_PATH := MATERIAL_DIR + "road_corundum_melte
 ## Road materials whose parallax the chunk emitter must keep — it strips
 ## heightmap_enabled from every other road material (flat overlay, no gain).
 const PARALLAX_MATERIAL_PATHS: PackedStringArray = [CORUNDUM_HIGHWAY_MATERIAL_PATH]
-## Vehicles keep to the RIGHT of their direction of travel. Mind the planet's
-## chirality: with dir = (cos lat·cos lon, sin lat, cos lat·sin lon) the frame
-## (east, north, up) is LEFT-handed — facing +along, the +perp side (positive
-## lateral offsets, see [method lane_layout] and [method perp_deg]) is on the
-## driver's RIGHT. So the +perp carriageway travels +along and the -perp one
-## -along. Decides which way each carriageway's road markings face.
+## Vehicles keep to the RIGHT of their direction of travel. With
+## dir = (cos lat·cos lon, sin lat, -cos lat·sin lon) the frame (east, north,
+## up) is right-handed, like the QGIS map seen from above — facing +along, the
+## +perp side (positive lateral offsets, see [method lane_layout] and
+## [method perp_deg]) is on the driver's LEFT. So the -perp carriageway travels
+## +along and the +perp one -along. Decides which way each carriageway's road
+## markings face.
 const RIGHT_HAND_TRAFFIC := true
 ## The engraved tile: one lane across, GAUFRAGE_ALONG_M along the road.
 const GAUFRAGE_ACROSS_M := LANE_WIDTH_M

@@ -117,9 +117,8 @@ static func pos_at(cl: PackedVector2Array, cum: PackedFloat64Array,
 ## 7.6 % smaller than the elevation's (plus a per-line cos(lat)), so 1.12 m
 ## modules stood 1.22 m apart: a 10 cm gap in every rail joint.
 ##
-## Longitude is atan2(z, x), so the naive (east, north, up) triple is
-## left-handed in Godot's Y-up world; building the frame from 3-D positions
-## sidesteps that trap (see BridgeDeck._frames).
+## The frame is built from 3-D positions, not from an east/north bearing, so it
+## does not depend on the longitude convention (see BridgeDeck._frames).
 static func frame_at(cl: PackedVector2Array, cum: PackedFloat64Array,
 		along: float, z_at: Callable, radius: float,
 		half_step_m: float = 0.5) -> Dictionary:
@@ -144,7 +143,7 @@ static func frame_at(cl: PackedVector2Array, cum: PackedFloat64Array,
 		k = 1.0
 	t = t.normalized()
 	up = (up - t * up.dot(t)).normalized()
-	return {"pos": pos, "up": up, "t": t, "n": t.cross(up).normalized(), "k": k}
+	return {"pos": pos, "up": up, "t": t, "n": up.cross(t).normalized(), "k": k}
 
 
 ## Range of module indices whose CENTRE `(i + 0.5) * len_m` lies in

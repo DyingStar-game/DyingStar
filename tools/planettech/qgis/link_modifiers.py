@@ -17,6 +17,7 @@ Reassemble <planet>_chunks/terrainmodifier.pack from the per-kind parts.
             volcanoes.dsmpart       written by export_volcanoes.py
             lava_flows.dsmpart      written by export_volcanoes.py
             fumaroles.dsmpart       written by export_volcanoes.py
+            rocky_terrain.dsmpart   written by export_rocky_terrain.py
 
 Each exporter rewrites only its own part and then calls link(), so exporting
 roads cannot disturb craters. That is the whole reason the pack is a derived
@@ -283,7 +284,8 @@ def link(planet_name, export_dir=None, verbose=True):
         # The railway / graded-road / lava profiles are baked from this pack
         # and the relief: a new pack leaves grade_profiles.pack stale, and the
         # game then profiles every line at run time (minutes on a long line).
-        if any(k in part_info for k in ("road", "lava", "mountain", "ridge", "volcano", "populate")):
+        if any(k in part_info for k in ("road", "lava", "mountain", "ridge", "volcano", "rocky",
+                                         "populate")):
             print("  ! re-bake the line profiles (tile service required):")
             print("      godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=%s"
                   % planet_name)
@@ -364,6 +366,7 @@ _PART_BASENAMES = {
     "volcano": "volcanoes",
     "lava": "lava_flows",
     "fumarole": "fumaroles",
+    "rocky": "rocky_terrain",
 }
 
 

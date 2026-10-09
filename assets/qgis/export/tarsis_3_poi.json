@@ -5,17 +5,6 @@
   "count": 89,
   "pois": [
     {
-      "id": 5,
-      "name": "factory_village_01",
-      "poi_type": "factory village",
-      "population": 1000,
-      "radius": 2500.0,
-      "description": "",
-      "lon": -39.53755926538008,
-      "lat": 24.698703012033132,
-      "elevation": null
-    },
-    {
       "id": 6,
       "name": "major_airport_city_01",
       "poi_type": "",
@@ -145,17 +134,6 @@
       "description": "",
       "lon": -72.24852211337031,
       "lat": 31.1105169985614,
-      "elevation": null
-    },
-    {
-      "id": 28,
-      "name": "village usine",
-      "poi_type": "factory village",
-      "population": 1000,
-      "radius": 2000.0,
-      "description": "",
-      "lon": -50.702660116291,
-      "lat": 10.851921681627385,
       "elevation": null
     },
     {
@@ -390,8 +368,30 @@
       "elevation": null
     },
     {
+      "id": 5,
+      "name": "F0001",
+      "poi_type": "factory village",
+      "population": 1000,
+      "radius": 2500.0,
+      "description": "",
+      "lon": -39.53755926538008,
+      "lat": 24.698703012033132,
+      "elevation": null
+    },
+    {
+      "id": 28,
+      "name": "F0012",
+      "poi_type": "factory village",
+      "population": 1000,
+      "radius": 2000.0,
+      "description": "",
+      "lon": -50.702660116291,
+      "lat": 10.851921681627385,
+      "elevation": null
+    },
+    {
       "id": 29,
-      "name": "village usine",
+      "name": "F0011",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -402,7 +402,7 @@
     },
     {
       "id": 30,
-      "name": "village usine",
+      "name": "F0010",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -413,7 +413,7 @@
     },
     {
       "id": 31,
-      "name": "village usine",
+      "name": "F0009",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -424,7 +424,7 @@
     },
     {
       "id": 32,
-      "name": "village usine",
+      "name": "F0008",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -435,7 +435,7 @@
     },
     {
       "id": 33,
-      "name": "village usine",
+      "name": "F0007",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -446,7 +446,7 @@
     },
     {
       "id": 34,
-      "name": "village usine",
+      "name": "F0006",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -457,7 +457,7 @@
     },
     {
       "id": 35,
-      "name": "village usine",
+      "name": "F0005",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -468,7 +468,7 @@
     },
     {
       "id": 36,
-      "name": "village usine",
+      "name": "F0004",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -479,7 +479,7 @@
     },
     {
       "id": 37,
-      "name": "village usine",
+      "name": "F0003",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,
@@ -490,7 +490,7 @@
     },
     {
       "id": 38,
-      "name": "village usine",
+      "name": "F0002",
       "poi_type": "factory village",
       "population": 1000,
       "radius": 2000.0,

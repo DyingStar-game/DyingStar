@@ -64,6 +64,9 @@ const REBIND_EVERY_FRAMES: int = 30
 ## How long a hand-over's velocity waits for a frozen truck to wake (ms): later, it is no longer
 ## the speed the truck had, and launching it would be worse than a stop.
 const ADOPTED_VELOCITY_MS: int = 1500
+## Below this speed (km/h) the drive axis pressed against the motion stops braking and drives the other
+## way: the vehicle has stopped, the key now backs it up (or pulls it forward). See _service_brake.
+const REVERSE_ENGAGE_KMH: float = 2.0
 
 # --- Driving ------------------------------------------------------------------
 @export_group("Drive")
@@ -77,11 +80,16 @@ const ADOPTED_VELOCITY_MS: int = 1500
 ## How fast the applied torque ramps to the throttle (1/s). Lower = gentler launch (keeps a
 ## heavy vehicle from leaping off the line).
 @export var torque_response: float = 2.5
-## Brake force per wheel (hand brake = jump action for now).
-@export var brake_force: float = 30.0
+## Full braking deceleration (m/s²): the brake key (Space) at full, and the decelerate key (S) against
+## the motion by how far it is pressed (see _service_brake). A deceleration, not a force: the brakes are
+## re-sized to the CURRENT mass every step (_full_brake), so the truck stops as hard loaded as empty —
+## a fixed force of 30 gave 5 m/s² empty and 1.6 loaded with 3 t, "too soft" (2026-10-06). Real trucks
+## are built for ~0.7 g at full load. The tyres' grip still caps it (wheel_friction_slip_default, under
+## the body's own gravity): ask more than they hold and the wheels lock and slide.
+@export_range(0.5, 15.0, 0.1) var brake_deceleration: float = 7.0
 ## Engine braking + rolling resistance: brake force applied per wheel when coasting (no throttle,
 ## no brake). VehicleWheel3D models neither, so without this the truck rolls forever on the flat.
-## Keep it well below brake_force — it should bleed speed off gently, not stop the truck dead.
+## Keep it well below the brakes (_full_brake) — it should bleed speed off gently, not stop the truck dead.
 @export var engine_brake: float = 6.0
 ## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
 ## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
@@ -653,6 +661,10 @@ var _roll_level: float = 0.0
 var _scrub_family: StringName = &""
 var _scrub_family_age: float = 999.0
 var _dust: VehicleDust = null  # client: the tyres' dust, built on first use (see VehicleDust)
+## Client: the speed (km/h, forward positive) the wheels are SHOWN rolling at, from the replica's own
+## motion (see _update_wheels_visual) — what the tyres' dust follows. It is the only speed a set piece
+## has: the menu's trucks are frozen and carried (StageDriver), their physics speed stays at zero.
+var shown_speed_kmh: float = 0.0
 var _scrub_last_sample: AudioStream = null
 var _wheels: Array[VehicleWheel3D] = []
 ## Tick counter for the grip diagnostic (see _log_wheel_contacts).
@@ -2257,6 +2269,7 @@ func _process(delta: float) -> void:
 	# Drawn as a replica that has not heard yet: the rest pose, rolling with the moves it is given.
 	if freeze and not _is_networked() and not GameOrchestrator.is_server():
 		_update_wheels_visual(delta)
+		_update_dust(delta)  # a carried truck still raises its dust: it is seen driving
 		return
 	if not _is_networked() or GameOrchestrator.is_server():
 		return
@@ -2432,6 +2445,7 @@ func _update_wheels_visual(delta: float) -> void:
 	var vel: Vector3 = position - _wheel_last_pos
 	_wheel_last_pos = position
 	var fwd_speed: float = vel.dot(-transform.basis.z) / maxf(delta, 0.0001)
+	shown_speed_kmh = fwd_speed * 3.6
 	var spin: float = fwd_speed / maxf(wheel_radius, 0.01) * delta
 	var index: int = 0
 	for wheel in _wheels:
@@ -3298,6 +3312,11 @@ func _apply_drive(delta: float) -> void:
 	# Hand brake holds the vehicle until the pilot presses the throttle again.
 	if _handbrake and absf(throttle_in) > 0.05:
 		set_handbrake(false)  # goes through the setter, so the release is heard too
+	# Pressed against the motion, the axis is the service brake, not a reverse gear: the engine stops
+	# pushing and the wheels brake, until the vehicle has (nearly) stopped and the same key backs it up.
+	var service: float = _service_brake(throttle_in, _forward_speed_kmh())
+	if service > 0.0:
+		throttle_in = 0.0
 	# Ramp the applied torque toward the throttle (tempers the launch on any powertrain).
 	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
 	var forward_kmh: float = _forward_speed_kmh()
@@ -3323,9 +3342,11 @@ func _apply_drive(delta: float) -> void:
 	# speed instead of rolling forever — VehicleWheel3D models neither on its own. Running over the
 	# speed limiter counts as a closed throttle, exactly like lifting the foot.
 	var throttle_closed: bool = absf(throttle_in) < 0.05 or limiter.overspeed(_throttle, forward_kmh)
-	var coasting: bool = throttle_closed and not braking
+	var coasting: bool = throttle_closed and not braking and service <= 0.0
 	if immobilized or braking or _handbrake:
-		brake = brake_force
+		brake = _full_brake(delta)
+	elif service > 0.0:
+		brake = _full_brake(delta) * service
 	elif coasting and absf(forward_kmh) > 0.1:
 		brake = engine_brake
 	else:
@@ -3495,7 +3516,7 @@ func _coast_no_driver() -> void:
 ## the wheel suspension so the wheels sink into the ground. The brake + drift cancel hold it just fine.
 func _hold_handbrake(_delta: float) -> void:
 	engine_force = 0.0
-	brake = brake_force
+	brake = _full_brake(_delta)
 
 ## Head lights — drop-in like seats: add any Light3D(s) to the group "vehicle_light" anywhere under
 ## the vehicle scene (no code). The driver toggles them (L); the state is replicated so every client
@@ -3540,6 +3561,30 @@ func is_headlights_on() -> bool:
 	return _headlights_on
 
 ## Forward speed in km/h (positive when driving toward the cab, -Z).
+## The full brake, as VehicleBody3D takes it: the most impulse (N·s) each wheel may apply in one step
+## of [param delta] s, so that all of them together decelerate the vehicle's CURRENT mass at
+## brake_deceleration.
+func _full_brake(delta: float) -> float:
+	return brake_impulse(brake_deceleration, mass, delta, _wheels.size())
+
+
+## The per-wheel, per-step impulse (N·s) that decelerates [param mass_kg] at [param deceleration] m/s²
+## over [param wheels] braked wheels. Static and pure: tested without a vehicle.
+static func brake_impulse(deceleration: float, mass_kg: float, delta: float, wheels: int) -> float:
+	return maxf(deceleration, 0.0) * maxf(mass_kg, 0.0) * maxf(delta, 0.0) / float(maxi(wheels, 1))
+
+
+## How hard (0..1) the drive axis brakes: pressed AGAINST the motion — decelerate while rolling forward,
+## accelerate while rolling back — it is the service brake, by how far it is pressed. Below
+## REVERSE_ENGAGE_KMH the same key drives the other way. It used to drive the other way at once: the
+## decelerate key reversed the engine's push, the brake force did not enter, and raising it changed
+## nothing a pilot could feel (2026-10-06). Static and pure: tested without a vehicle.
+static func _service_brake(throttle: float, forward_kmh: float) -> float:
+	if absf(forward_kmh) <= REVERSE_ENGAGE_KMH or throttle * forward_kmh >= 0.0:
+		return 0.0
+	return clampf(absf(throttle), 0.0, 1.0)
+
+
 func _forward_speed_kmh() -> float:
 	return -global_transform.basis.z.dot(linear_velocity) * 3.6
 

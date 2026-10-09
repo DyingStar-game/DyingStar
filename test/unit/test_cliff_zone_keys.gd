@@ -137,12 +137,12 @@ func test_injected_zone_is_visible_to_containment_test() -> void:
 	var lon_r := deg_to_rad(LON_C)
 	var lat_r := deg_to_rad(LAT_C)
 	var inside_dir := Vector3(
-		cos(lat_r) * cos(lon_r), sin(lat_r), cos(lat_r) * sin(lon_r))
+		cos(lat_r) * cos(lon_r), sin(lat_r), -cos(lat_r) * sin(lon_r))
 	assert_true(PlanetChunkScript._dir_in_populate_zone(inside_dir, zone),
 			"a direction at the zone centre must test as inside")
 
 	var out_lon_r := deg_to_rad(LON_C + 10.0)
 	var outside_dir := Vector3(
-		cos(lat_r) * cos(out_lon_r), sin(lat_r), cos(lat_r) * sin(out_lon_r))
+		cos(lat_r) * cos(out_lon_r), sin(lat_r), -cos(lat_r) * sin(out_lon_r))
 	assert_false(PlanetChunkScript._dir_in_populate_zone(outside_dir, zone),
 			"a direction 10° away must test as outside")

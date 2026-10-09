@@ -31,20 +31,20 @@ enum UvMode {
 ##
 ## LANE: the tile is a road marking, read by the driver — the image's
 ## bottom (uv.y = 1) toward them, its x toward their right. The frame
-## (along, perp, up) is LEFT-handed on this planet (see
-## RoadTerrain.RIGHT_HAND_TRAFFIC): facing +along, +perp is on the RIGHT.
-##   · traffic heading +along: u grows toward +perp, v = -along (the far
+## (along, perp, up) is right-handed (see RoadTerrain.RIGHT_HAND_TRAFFIC):
+## facing +along, +perp is on the LEFT.
+##   · traffic heading +along: u grows toward -perp, v = -along (the far
 ##     side, at larger along, is the image's top);
-##   · traffic heading -along: u grows toward -perp, v = +along.
+##   · traffic heading -along: u grows toward +perp, v = +along.
 ## Which carriageway heads which way follows RIGHT_HAND_TRAFFIC; a strip on
 ## the centerline reads for the +along direction.
 static func surface_uv(mode: int, along_m: float, off_m: float, strip: Vector2,
 		tile_m: float) -> Vector2:
 	if mode == UvMode.LANE:
 		if travels_along(strip):
-			return Vector2((off_m - strip.x) / RoadTerrain.GAUFRAGE_ACROSS_M,
+			return Vector2((strip.y - off_m) / RoadTerrain.GAUFRAGE_ACROSS_M,
 					-along_m / RoadTerrain.GAUFRAGE_ALONG_M)
-		return Vector2((strip.y - off_m) / RoadTerrain.GAUFRAGE_ACROSS_M,
+		return Vector2((off_m - strip.x) / RoadTerrain.GAUFRAGE_ACROSS_M,
 				along_m / RoadTerrain.GAUFRAGE_ALONG_M)
 	return Vector2(along_m / tile_m, off_m / tile_m)
 
@@ -54,7 +54,7 @@ static func travels_along(strip: Vector2) -> bool:
 	var centre := strip.x + strip.y
 	if absf(centre) < 1e-6:
 		return true
-	return (centre > 0.0) == RoadTerrain.RIGHT_HAND_TRAFFIC
+	return (centre < 0.0) == RoadTerrain.RIGHT_HAND_TRAFFIC
 
 
 ## Flank UV, [param drop_m] metres below the top edge.
@@ -209,14 +209,16 @@ static func emit_strip(cl: PackedVector2Array, cum: PackedFloat64Array,
 
 ## Two collision triangles for the quad (a0, a1) × (b0, b1), wound so the
 ## front faces [param outward] (or not) — the chunk grid's own convention.
+## The callers' a side is the +perp one, the LEFT of along (a1 - a0) in the
+## planet's right-handed frame, so (b0 - a0) × (a1 - a0) is the outward normal.
 static func quad_faces(faces: PackedVector3Array, a0: Vector3, a1: Vector3,
 		b0: Vector3, b1: Vector3, outward: bool) -> void:
 	if outward:
-		faces.append(a0); faces.append(a1); faces.append(b0)
-		faces.append(b0); faces.append(a1); faces.append(b1)
-	else:
 		faces.append(a0); faces.append(b0); faces.append(a1)
 		faces.append(b0); faces.append(b1); faces.append(a1)
+	else:
+		faces.append(a0); faces.append(a1); faces.append(b0)
+		faces.append(b0); faces.append(a1); faces.append(b1)
 
 
 ## Two visual triangles for the quad (a0, a1) × (b0, b1), as vertex indices,
@@ -225,9 +227,11 @@ static func quad_faces(faces: PackedVector3Array, a0: Vector3, a1: Vector3,
 ## (v1-v0)×(v2-v0) points AWAY from the viewer — INTO the slab for its top
 ## (the convention BridgeDeck documents and renders with). The road
 ## materials disable culling, and Godot then lights a back face with its
-## normal FLIPPED (DO_SIDE_CHECK): the old (a0, a1, b0) order was that back
-## face, and every road top was lit from below — black under any tint.
+## normal FLIPPED (DO_SIDE_CHECK): a wrong order lights every road top from
+## below — black under any tint. The callers' b side is the -perp one, on the
+## right of +along in the planet's right-handed (east, north, up) frame, which
+## makes (a0, a1, b0) the clockwise order seen from above.
 static func quad_indices(indices: PackedInt32Array, a0: int, a1: int,
 		b0: int, b1: int) -> void:
-	indices.append(a0); indices.append(b0); indices.append(a1)
-	indices.append(b0); indices.append(b1); indices.append(a1)
+	indices.append(a0); indices.append(a1); indices.append(b0)
+	indices.append(b0); indices.append(a1); indices.append(b1)

@@ -69,10 +69,14 @@ def _repo_root(start):
 
     Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
     d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
+    Sur le serveur web on ne copie que tools/, sans project.godot : le dossier qui
+    contient tools/planettech/ sert alors de racine.
     """
     d = start
     while d != os.path.dirname(d):
-        if os.path.exists(os.path.join(d, "project.godot")):
+        if os.path.exists(os.path.join(d, "project.godot")) or os.path.isdir(
+            os.path.join(d, "tools", "planettech")
+        ):
             return d
         d = os.path.dirname(d)
     return start

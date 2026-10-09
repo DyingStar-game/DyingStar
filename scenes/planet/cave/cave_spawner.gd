@@ -34,7 +34,7 @@ static func spawn(planet_data: PlanetData, chunk_info: Dictionary, zone: Diction
 	var cave_dir := Vector3(
 		cos(lat_rad) * cos(lon_rad),
 		sin(lat_rad),
-		cos(lat_rad) * sin(lon_rad)
+		-cos(lat_rad) * sin(lon_rad)
 	).normalized()
 	var surface_height: float
 	# Use per-chunk heightmap tiles for accurate elevation (the global

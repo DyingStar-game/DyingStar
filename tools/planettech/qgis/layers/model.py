@@ -27,6 +27,22 @@ FIELD_TYPES = ("string", "integer", "double", "datetime")
 KIND_BY_GEOM = {"Polygon": "Region", "Point": "POI", "LineString": "Lines"}
 KINDS = ("Region", "POI", "Lines")
 
+# Top-level QGIS groups of the layer tree — the order the layers apply in on
+# the ground (planet_data.sample_height_for_direction): the heightmap, the
+# bedrock biome, the massifs (zones, ridges and volcanoes summed in ONE pass,
+# so their order does not matter), the rocky terrain laid over them, and last
+# the graded modifiers (roads, lava flows) and the POIs.  Two-digit numbers so
+# the alphabetical order of the tree is the application order.  Layers whose
+# future is undecided (most biome categories) go to UNCATEGORIZED, last.
+STAGE_BASE = "layer 00 - base"
+STAGE_OUTCROP = "layer 01 - outcrop"
+STAGE_MASSIFS = "layer 02 - massifs"
+STAGE_ROCKY_TERRAIN = "layer 03 - rocky terrain"
+STAGE_FINAL = "layer 10 - final"
+UNCATEGORIZED = "uncategorized"
+STAGES = (STAGE_BASE, STAGE_OUTCROP, STAGE_MASSIFS, STAGE_ROCKY_TERRAIN,
+          STAGE_FINAL, UNCATEGORIZED)
+
 
 # ============================================================
 # Editor widgets
@@ -101,6 +117,13 @@ class Layer:
     # used INSTEAD of the simple symbol; falls back to it when the name is
     # unknown in the running QGIS.
     style_symbol: Optional[str] = None
+    # Called with the layer's QColor, returns the whole QgsSymbol — for a
+    # symbol the simple / library ones cannot express (the POI's radius
+    # circle).  Takes precedence over ``symbol`` and ``style_symbol``.
+    symbol_factory: Optional[Callable] = None
+    # Called with the QgsVectorLayer on every setup run to place its labels
+    # (the POI's, beside its offset icon).
+    labeling: Optional[Callable] = None
     # Line layers only: draw an arrow on the first vertex showing the drawing
     # direction — for layers whose meaning depends on it (roads, rivers with
     # width_start/width_end, cliffs with their high side on the left).
@@ -109,6 +132,9 @@ class Layer:
     on_created: Optional[Callable] = None
     # QGIS layer name; defaults to the slug with spaces.
     name: Optional[str] = None
+    # Top-level tree group (one of STAGES); None = the category's stage.  For
+    # a category whose layers apply at different steps (volcanoes).
+    stage: Optional[str] = None
     # PostGIS table; defaults to the slug.  Only for legacy tables whose name
     # does not follow the rule — do not use for new layers.
     table_name: Optional[str] = None
@@ -118,6 +144,8 @@ class Layer:
             raise ValueError(f"layer {self.slug!r}: unknown geom {self.geom!r}")
         if self.name is None:
             self.name = self.slug.replace("_", " ")
+        if self.stage is not None and self.stage not in STAGES:
+            raise ValueError(f"layer {self.slug!r}: unknown stage {self.stage!r}")
         self.fields = tuple(self.fields)
         seen = set()
         for f in self.fields:
@@ -148,9 +176,9 @@ class Layer:
 # ============================================================
 @dataclass
 class Category:
-    """A sub-group inside Region / POI / Lines.
+    """A sub-group inside a stage group (``layer NN - …``, see STAGES).
 
-    ``group=None`` puts the layers directly under the top-level group (no
+    ``group=None`` puts the layers directly under the stage group (no
     sub-group) — used for the handful of non-biome layers (contours, poi…).
     """
     slug: str
@@ -162,6 +190,20 @@ class Category:
     # Written on every layer as the ``ds_priority`` custom property, exported
     # by export_biomes.py, and applied by Godot as "first matching zone wins".
     priority: int = 0
+    # Top-level tree group of the category's layers (one of STAGES); a
+    # layer's own ``stage`` overrides it.
+    stage: str = UNCATEGORIZED
+    # True = in the layer tree, the layers sit directly in the stage group
+    # (the sub-group would only repeat the stage's name); the layer picker
+    # keeps the sub-group.
+    flat: bool = False
+
+    def __post_init__(self):
+        if self.stage not in STAGES:
+            raise ValueError(f"category {self.slug!r}: unknown stage {self.stage!r}")
+
+    def stage_of(self, layer):
+        return layer.stage or self.stage
 
     def add(self, layer):
         if any(l.slug == layer.slug for l in self.layers):
@@ -173,9 +215,10 @@ class Category:
 class BiomeCategory(Category):
     """A category whose layers are biomes: ``biome_type = f"{slug}-{biome_slug}"``."""
 
-    def __init__(self, slug, group=None, description="", priority=0):
+    def __init__(self, slug, group=None, description="", priority=0, stage=UNCATEGORIZED,
+                 flat=False):
         super().__init__(slug, group if group is not None else slug.replace("_", " "),
-                         [], description, priority)
+                         [], description, priority, stage, flat)
 
     def biome(self, index, slug, color, description, *, geom="Polygon", fields=(),
               planet_type=None, terrain_modifier=False, name_hint=None, **kwargs):
