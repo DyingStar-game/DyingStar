@@ -91,6 +91,12 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## no brake). VehicleWheel3D models neither, so without this the truck rolls forever on the flat.
 ## Keep it well below the brakes (_full_brake) — it should bleed speed off gently, not stop the truck dead.
 @export var engine_brake: float = 6.0
+## Throttle released: share of the speed lost per second on top of engine_brake (1/s; 0.1 = 10 %/s, a
+## drag that grows with speed). It stands in for Godot's global linear damping, switched off on the
+## vehicle (linear_damp_mode = Replace, linear_damp = 0) because that damping also held the truck back
+## with the pedal down: it capped top speed at force / (0.1 x mass), so the top speed followed the
+## number of engines instead of the drive model. 0 = only engine_brake slows a coasting vehicle.
+@export_range(0.0, 1.0, 0.01) var coast_drag: float = 0.1
 ## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
 ## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
 ## just re-settles). Kept dynamic, never frozen.
@@ -3325,7 +3331,7 @@ func _apply_drive(delta: float) -> void:
 	elif service > 0.0:
 		brake = _full_brake(delta) * service
 	elif coasting and absf(forward_kmh) > 0.1:
-		brake = engine_brake
+		brake = _coast_brake(delta)
 	else:
 		brake = 0.0
 
@@ -3482,7 +3488,7 @@ func _ground_clearance() -> float:
 ## resistance of its own). The hand-brake case is handled separately by the caller. From _physics_process.
 func _coast_no_driver() -> void:
 	engine_force = 0.0
-	brake = engine_brake if linear_velocity.length() > 0.1 else 0.0
+	brake = _coast_brake(get_physics_process_delta_time()) if linear_velocity.length() > 0.1 else 0.0
 
 ## Parked hand brake with no driver: kill the drive + brake the wheels. The truck is held still by the
 ## drift cancel in _integrate_forces — we do NOT freeze the body: freezing a VehicleBody3D collapses
@@ -3545,6 +3551,19 @@ func _full_brake(delta: float) -> float:
 ## over [param wheels] braked wheels. Static and pure: tested without a vehicle.
 static func brake_impulse(deceleration: float, mass_kg: float, delta: float, wheels: int) -> float:
 	return maxf(deceleration, 0.0) * maxf(mass_kg, 0.0) * maxf(delta, 0.0) / float(maxi(wheels, 1))
+
+
+## Throttle released: engine_brake plus the speed-proportional coast_drag, per wheel and per step.
+func _coast_brake(delta: float) -> float:
+	return coast_brake_impulse(engine_brake, coast_drag, linear_velocity.length(), mass, delta, _wheels.size())
+
+
+## The per-wheel, per-step impulse (N·s) of a released throttle: a fixed [param fixed_impulse] plus a
+## deceleration of [param drag_per_s] x [param speed_ms], the force Godot's linear damping used to
+## apply (mass x damp x speed). Static and pure: tested without a vehicle.
+static func coast_brake_impulse(fixed_impulse: float, drag_per_s: float, speed_ms: float, mass_kg: float,
+		delta: float, wheels: int) -> float:
+	return maxf(fixed_impulse, 0.0) + brake_impulse(drag_per_s * absf(speed_ms), mass_kg, delta, wheels)
 
 
 ## How hard (0..1) the drive axis brakes: pressed AGAINST the motion — decelerate while rolling forward,
