@@ -2768,6 +2768,25 @@ func active_chunk_count() -> int:
 	return _active_chunks.size()
 
 
+## The finest chunk drawn under [param dir] (a direction from the planet's centre), its mesh on
+## screen; null while nothing is drawn there yet. What stands on the ground must stand on THIS
+## surface: a height query (carved, crack-aware, plus the biome relief) is what the chunk was built
+## from, not what it shows — the outpost's plateau is drawn 20 cm above its relief query (2026-10-09),
+## and the figures sank by that much.
+func drawn_mesh_at(dir: Vector3) -> MeshInstance3D:
+	var best: Dictionary = {}
+	for rec: Dictionary in _active_chunks.values():
+		var mi: MeshInstance3D = rec.get("mesh_instance")
+		if mi == null or mi.mesh == null:
+			continue
+		var nside: int = int(rec.get("nside", 0))
+		if nside <= 0 or (not best.is_empty() and nside <= int(best["nside"])):
+			continue
+		if HEALPix.vec2pix_nest(nside, dir) == int(rec.get("ipix", -1)):
+			best = rec
+	return best.get("mesh_instance") if not best.is_empty() else null
+
+
 ## How many chunks the last LOD update asked for (the menu's loading bar: active / desired).
 func desired_chunk_count() -> int:
 	return _desired_count
