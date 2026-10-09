@@ -1367,7 +1367,7 @@ func _offer_play_hints() -> void:
 	PlayHints.provide(self, &"on_foot", [
 		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"jump"), PlayHints.row(&"sprint"),
 		PlayHints.row(&"crouch"), PlayHints.row(&"toggle_flashlight"), PlayHints.row(&"star_map"),
-		PlayHints.row(&"controls_help"),
+		PlayHints.row(&"toggle_services"), PlayHints.row(&"controls_help"),
 		PlayHints.row(&"prone", "", 1),
 		PlayHints.row([&"walk_speed_up", &"walk_speed_down"], "%%HINT_WALK_PACE", 1),
 		PlayHints.row(&"emote_wheel", "", 1), PlayHints.row(&"write_in_chat", "", 1),
