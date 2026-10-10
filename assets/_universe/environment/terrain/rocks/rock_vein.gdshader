@@ -15,6 +15,11 @@ uniform bool rock_use_normal = false;
 uniform sampler2D rock_normal_tex : hint_normal;
 uniform float rock_normal_strength = 1.0;
 uniform float rock_roughness : hint_range(0.0, 1.0) = 0.9;
+// Colour of the ground the rock was spawned on, multiplied over the exterior texture (white = none).
+// RAW, not source_color: the ground shader multiplies its texture by the raw vertex COLOR, and
+// linearising it here made the rock darker and far more saturated than the ground. RockMining also
+// folds in the brightness ratio between the ground's texture and this one.
+uniform vec3 ground_tint = vec3(1.0);
 
 // ── Ore ──────────────────────────────────────────────────────────────────────
 uniform vec3 ore_color : source_color = vec3(0.1, 0.8, 0.2);
@@ -85,6 +90,20 @@ float _fbm(vec3 p) {
 	return v;
 }
 
+// Triplanar normal map -> object-space normal around the surface normal [param n] (whiteout blend).
+// A normal-map texel is TANGENT space (~(0, 0, 1) on flat relief): each projection has to be
+// re-expressed on its own axis and bent around the real normal, not used as a local vector — that
+// pointed the whole rock along local +Z, so it lit up or went black depending on how it lay.
+vec3 _triplanar_normal(sampler2D tex, vec3 p, vec3 n, vec3 bw) {
+	vec3 tx = texture(tex, p.zy).xyz * 2.0 - 1.0;
+	vec3 ty = texture(tex, p.xz).xyz * 2.0 - 1.0;
+	vec3 tz = texture(tex, p.xy).xyz * 2.0 - 1.0;
+	tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
+	ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
+	tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
+	return normalize(tx.zyx * bw.x + ty.xzy * bw.y + tz.xyz * bw.z);
+}
+
 void fragment() {
 	// Local-space triplanar albedo.
 	vec3 bw = abs(normalize(v_normal));
@@ -93,6 +112,7 @@ void fragment() {
 	vec3 col = texture(albedo_tex, p.zy).rgb * bw.x
 	         + texture(albedo_tex, p.xz).rgb * bw.y
 	         + texture(albedo_tex, p.xy).rgb * bw.z;
+	col *= ground_tint;
 
 	// Ore pockets (3D noise; appears on the surface AND on cut faces). noise_offset shifts
 	// the pattern per rock so they don't all look identical.
@@ -145,22 +165,14 @@ void fragment() {
 	// the ore block below and faded out where the ore takes over (1.0 - ore), so on a rich pocket
 	// the ore's own relief wins instead of the two fighting.
 	if (rock_use_normal && rock_normal_strength > 0.0) {
-		vec3 rp = v_local * tex_scale;
-		vec3 rnx = texture(rock_normal_tex, rp.zy).xyz * 2.0 - 1.0;
-		vec3 rny = texture(rock_normal_tex, rp.xz).xyz * 2.0 - 1.0;
-		vec3 rnz = texture(rock_normal_tex, rp.xy).xyz * 2.0 - 1.0;
-		vec3 rn_local = normalize(rnx * bw.x + rny * bw.y + rnz * bw.z);
+		vec3 rn_local = _triplanar_normal(rock_normal_tex, v_local * tex_scale, normalize(v_normal), bw);
 		vec3 rn_view = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(rn_local, 0.0)).xyz);
 		NORMAL = normalize(mix(NORMAL, rn_view, clamp((1.0 - ore) * rock_normal_strength, 0.0, 1.0)));
 	}
 
 	// Ore relief: triplanar normal map (local space) blended in over the ore pockets.
 	if (ore_use_texture && ore > 0.001 && ore_normal_strength > 0.0) {
-		vec3 np = v_local * ore_tex_scale;
-		vec3 onx = texture(ore_normal_tex, np.zy).xyz * 2.0 - 1.0;
-		vec3 ony = texture(ore_normal_tex, np.xz).xyz * 2.0 - 1.0;
-		vec3 onz = texture(ore_normal_tex, np.xy).xyz * 2.0 - 1.0;
-		vec3 on_local = normalize(onx * bw.x + ony * bw.y + onz * bw.z);
+		vec3 on_local = _triplanar_normal(ore_normal_tex, v_local * ore_tex_scale, normalize(v_normal), bw);
 		vec3 on_view = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(on_local, 0.0)).xyz);
 		NORMAL = normalize(mix(NORMAL, on_view, clamp(ore * ore_normal_strength, 0.0, 1.0)));
 	}

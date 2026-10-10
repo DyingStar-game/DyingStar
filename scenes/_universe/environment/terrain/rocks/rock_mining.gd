@@ -24,7 +24,7 @@ const INERT_DENSITY_DEFAULT := 2700.0
 # Game-design weight reduction: every density (ore and host rock) is DIVIDED by this factor, so 4
 # turns a 2000 kg/m3 rock into 500 kg/m3. Higher = lighter pieces, carried (and no longer breakable)
 # sooner, so fewer cuts before CARRY_MAX_MASS. 1.0 = real densities.
-const WEIGHT_REDUCTION_FACTOR := 20.0
+const WEIGHT_REDUCTION_FACTOR := 25.0
 
 # Legacy ore look — FALLBACK only, used when no MineralDef is assigned (see `mineral`). The
 # real look now comes from MineralDef (.tres). Purity thresholds below drive ore_threshold:
@@ -93,6 +93,12 @@ var inert_density: float = INERT_DENSITY_DEFAULT
 ## texture, relief and finish. Null on a rock spawned without one, and then the exterior falls back
 ## to the ore mineral's own rock_* fields, which is what every rock did before host rocks existed.
 var host_rock: MineralDef = null
+
+## Colour of the ground the rock was spawned on, as an HTML hex ("" = none): MiningZone reads it with
+## PlanetData.ground_albedo_at and replicates it as "ground_color"; every piece cut off the rock
+## inherits it, so a rock carried elsewhere keeps the colour of where it came from. It multiplies
+## the exterior texture, the same way the ground shader multiplies its own texture by the colour.
+var ground_color: String = ""
 
 # variable to define if can be breakable. It's false if rock too small
 var can_be_breakable: bool = false
@@ -825,6 +831,8 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 		mat.set_shader_parameter("rock_normal_tex", host_rock.rock_normal_tex)
 		mat.set_shader_parameter("rock_normal_strength", host_rock.rock_normal_strength)
 		mat.set_shader_parameter("rock_roughness", host_rock.rock_roughness)
+	if ground_color != "" and Color.html_is_valid(ground_color):
+		_apply_ground_look(mat, rock_tex)
 	# Ore LOOK (texture / colour / metalness) comes from the mineral; the ore FIELD
 	# (amount, distribution) stays per-rock so fracture & purity behaviour is unchanged.
 	_apply_mineral(mat)
@@ -911,6 +919,12 @@ func apply_prop_data(data: Dictionary) -> void:
 		if _set_host_rock(str(data["host_rock_id"])):
 			run_ready = true
 
+	if data.has("ground_color"):
+		var colour: String = str(data["ground_color"])
+		if colour != ground_color:
+			ground_color = colour
+			run_ready = true
+
 
 	# `weight` is deliberately NOT applied here. The mass is DERIVED (real_mass) from inputs that
 	# are all replicated and deterministic, so a client reaches the same number on its own; taking
@@ -970,6 +984,66 @@ func _set_host_rock(id: String) -> bool:
 	host_rock = m
 	inert_density = m.density_kg_m3
 	return true
+
+
+## Make the exterior look like the ground it came from, the way the ground shader draws it
+## (planet_surface.gdshader: linear albedo texture × mix(1, raw COLOR, vertex_color_strength), and
+## its own roughness). The ground colour is replicated; the ground MATERIAL is read here, client-side,
+## under the rock. The tint carries the brightness ratio between the ground's texture and the
+## rock's, so a darker host-rock texture (sapphire 156 vs corundum ground 210) does not come out
+## darker and more saturated than the ground; the rock keeps its own texture for the detail.
+func _apply_ground_look(mat: ShaderMaterial, rock_tex: Texture2D) -> void:
+	var colour := Color.html(ground_color)
+	var tint := Vector3(colour.r, colour.g, colour.b)
+	var gain: float = 1.0
+	var ground: ShaderMaterial = null
+	var planet: Planet = SurfaceProbe.planet_of(self)
+	if planet != null and planet.planet_data != null:
+		ground = planet.planet_data.ground_material_at(planet.local_dir_of(global_position)) as ShaderMaterial
+	if ground != null:
+		var strength: Variant = ground.get_shader_parameter(&"vertex_color_strength")
+		if strength != null:
+			tint = Vector3.ONE.lerp(tint, float(strength))
+		var ground_tex: Variant = ground.get_shader_parameter(&"albedo_texture")
+		if ground_tex is Texture2D:
+			var rock_lum: float = _texture_mean(rock_tex, true).get_luminance()
+			if rock_lum > 0.001:
+				gain = _texture_mean(ground_tex, true).get_luminance() / rock_lum
+		var rough: Variant = ground.get_shader_parameter(&"roughness")
+		var rough_tex: Variant = ground.get_shader_parameter(&"roughness_texture")
+		if rough != null:
+			var r: float = float(rough)
+			if rough_tex is Texture2D:
+				r *= _texture_mean(rough_tex, false).r
+			mat.set_shader_parameter("rock_roughness", clampf(r, 0.0, 1.0))
+	mat.set_shader_parameter("ground_tint", tint * gain)
+
+
+## Mean colour of a texture, LINEAR when [param srgb] (an albedo), raw otherwise (a data map). Read
+## once per texture and cached: the few textures rocks and grounds use, not one read per rock.
+static var _texture_means: Dictionary = {}
+
+static func _texture_mean(tex: Texture2D, srgb: bool) -> Color:
+	var key := "%d|%s" % [tex.get_instance_id(), srgb]
+	if _texture_means.has(key):
+		return _texture_means[key]
+	var mean := Color(1, 1, 1)
+	var img: Image = tex.get_image()
+	if img != null:
+		if img.is_compressed():
+			img.decompress()
+		# Halve step by step: a bilinear halving averages each 2×2 block, while one big resize
+		# would only SAMPLE a few texels of a 2K texture.
+		while img.get_width() > 8 or img.get_height() > 8:
+			img.resize(maxi(img.get_width() / 2, 1), maxi(img.get_height() / 2, 1), Image.INTERPOLATE_BILINEAR)
+		var sum := Color(0, 0, 0)
+		for y in img.get_height():
+			for x in img.get_width():
+				var c: Color = img.get_pixel(x, y)
+				sum += c.srgb_to_linear() if srgb else c
+		mean = sum / float(img.get_width() * img.get_height())
+	_texture_means[key] = mean
+	return mean
 
 
 func _apply_mineral(mat: ShaderMaterial) -> void:
@@ -1309,6 +1383,7 @@ func _server_create_side2_rock(cut_index: int) -> void:
 		"mineral_id": str(mineral.id) if mineral != null else "",
 		"host_rock_id": str(host_rock.id) if host_rock != null else "",
 		"inert_density": inert_density,
+		"ground_color": ground_color,
 	})
 	# print("[mining] perforate %s CUT along plane %d (keep_side %d) -> %d fracture(s), breakable=%s"
 	# 	% [uuid, cut_i, keep_side, fractures.size(), can_be_breakable])

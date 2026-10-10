@@ -412,10 +412,14 @@ func _build_spawn_queue() -> void:
 		# lifts it, the same RockImpurity rule that darkens the terrain's own colour. Pure
 		# function of the ground point, so a re-run re-draws the same field.
 		var target: float = richness
+		# The rock wears the colour of the ground it sits on (multiplied over its exterior texture).
+		var ground_color: String = ""
 		if planet != null and planet.planet_data != null:
+			var ground_dir: Vector3 = planet.local_dir_of(ground)
 			target = RockImpurity.ore_richness(richness,
-				planet.planet_data.mountain_core(planet.local_dir_of(ground)),
+				planet.planet_data.mountain_core(ground_dir),
 				maxf(-planet.surface_altitude_of(ground), 0.0))
+			ground_color = planet.planet_data.ground_albedo_at(ground_dir).to_html(false)
 		var spawn_world: Vector3 = ground + normal.normalized() * SPAWN_CLEARANCE
 		var local_pos: Vector3 = to_parent_local * spawn_world
 		var local_rot: Vector3 = PropSpawn.surface_euler(
@@ -435,6 +439,7 @@ func _build_spawn_queue() -> void:
 			# that, and because it is what real_mass() reads on every tick.
 			"host_rock_id": _resolved_host_rock_id(),
 			"inert_density": _host_rock_density(),
+			"ground_color": ground_color,
 		})
 		index += 1
 	_last_poi_culled = culled
