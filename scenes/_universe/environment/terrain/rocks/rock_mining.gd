@@ -15,12 +15,16 @@ const FAULT_HIT_THRESHOLD := 0.05
 # mineral, whatever its density. Both must pass: a long thin flake is unwieldy even when it is
 # light.
 const CARRY_MAX_SIZE := 1.0    # metres, longest side of the piece
-const CARRY_MAX_MASS := 200.0  # kg
+const CARRY_MAX_MASS := 50.0  # kg
 # Fraction of a piece's bounding box that is actually solid: a rock does not fill its box, so the
 # raw AABB volume overestimates its mass by roughly a factor two.
 const VOLUME_FILL := 0.5
 # Fallback host-rock density (kg/m3, granite) for a rock whose spawner replicated no inert_density.
 const INERT_DENSITY_DEFAULT := 2700.0
+# Game-design weight reduction: every density (ore and host rock) is DIVIDED by this factor, so 4
+# turns a 2000 kg/m3 rock into 500 kg/m3. Higher = lighter pieces, carried (and no longer breakable)
+# sooner, so fewer cuts before CARRY_MAX_MASS. 1.0 = real densities.
+const WEIGHT_REDUCTION_FACTOR := 20.0
 
 # Legacy ore look — FALLBACK only, used when no MineralDef is assigned (see `mineral`). The
 # real look now comes from MineralDef (.tres). Purity thresholds below drive ore_threshold:
@@ -671,11 +675,12 @@ func get_gangue_volume() -> float:
 ## the `mass` set on the RigidBody in rock_mining_{sm,md,lg}.tscn is a placeholder that _refresh_mass
 ## overwrites at spawn. Every input is deterministic and replicated (mineral_id, ore_seed,
 ## inert_density, geometry), so server and clients reach the same number on their own.
+## Divided by WEIGHT_REDUCTION_FACTOR: the game mass, not the physical one.
 func real_mass() -> float:
 	var ore_density: float = 0.0
 	if mineral != null and not mineral.is_inert:
 		ore_density = mineral.density_kg_m3
-	return get_ore_volume() * ore_density + get_gangue_volume() * inert_density
+	return (get_ore_volume() * ore_density + get_gangue_volume() * inert_density) / WEIGHT_REDUCTION_FACTOR
 
 ## Can a player pick this piece up? Pure handling: small enough AND light enough, measured on the
 ## CURRENT geometry, so a piece qualifies only once it has actually been cut down to size. Every
