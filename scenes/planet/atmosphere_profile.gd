@@ -98,7 +98,9 @@ func has_atmosphere() -> bool:
 ## same profiles, the same coefficients. It cannot literally BE the same code —
 ## one is GLSL, the other GDScript — so the two are written to look alike, and
 ## the density functions below carry the same names as their shader twins.
-func transmittance_to_star(altitude: float, sin_elevation: float) -> Color:
+## [param mie_scale] multiplies the Mie (dust) coefficients: 0 gives the light after the AIR alone,
+## the veil left out (what the wind's dust is lit by before the dust over it, DustLight).
+func transmittance_to_star(altitude: float, sin_elevation: float, mie_scale: float = 1.0) -> Color:
 	if not has_atmosphere():
 		return Color.WHITE  # no air to cross
 	var top := planet_radius + atmosphere_top
@@ -113,7 +115,7 @@ func transmittance_to_star(altitude: float, sin_elevation: float) -> Color:
 	var exit := _ray_sphere(origin, dir, top).y
 	if exit <= 0.0:
 		return Color.WHITE
-	var depth := _optical_depth(origin, dir, exit, EXTINCTION_STEPS)
+	var depth := _optical_depth(origin, dir, exit, EXTINCTION_STEPS, mie_scale)
 	return Color(exp(-depth.x), exp(-depth.y), exp(-depth.z))
 
 
@@ -137,7 +139,7 @@ func _ray_sphere(origin: Vector3, dir: Vector3, radius: float) -> Vector2:
 ## entirely depending on the observer's altitude — measured 126 % error on the vertical transmittance
 ## at 2000 m, which read 0.90 instead of 0.40. Since the density always falls off away from the
 ## observer on these rays, spacing the samples by i^2 puts them where the extinction actually is.
-func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) -> Vector3:
+func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int, mie_scale: float = 1.0) -> Vector3:
 	var depth := Vector3.ZERO
 	var near := 0.0
 	for i in steps:
@@ -148,7 +150,7 @@ func _optical_depth(origin: Vector3, dir: Vector3, distance: float, steps: int) 
 		var altitude: float = maxf(0.0, point.length() - planet_radius)
 		depth += (
 			rayleigh_beta * rayleigh_density(altitude)
-			+ mie_beta * mie_density(altitude)
+			+ mie_beta * mie_scale * mie_density(altitude)
 			+ absorption_beta * absorption_density(altitude)
 		) * (far - near)
 		near = far

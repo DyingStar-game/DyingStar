@@ -18,6 +18,8 @@ uniform float drag = 2.2;
 uniform float growth = 3.0;
 // Lifetime spread (0..1) around LIFETIME, so a puff thins out instead of vanishing all at once.
 uniform float lifetime_spread = 0.35;
+// Wind (m/s) in the emitter's frame: the air the drag relaxes a puff toward. Zero = still air.
+uniform vec3 wind = vec3(0.0);
 
 float hash(uint n) {
 	n = (n << 13u) ^ n;
@@ -49,7 +51,8 @@ void process() {
 		ACTIVE = false;
 	}
 	VELOCITY.y -= settle * DELTA;
-	VELOCITY *= max(0.0, 1.0 - drag * DELTA);
+	// Drag relaxes the puff toward the air's own motion (the wind), not toward rest.
+	VELOCITY = mix(VELOCITY, wind, clamp(drag * DELTA, 0.0, 1.0));
 	TRANSFORM[3].xyz += VELOCITY * DELTA;
 	// Swells fast at first, then slower, the way a puff mixes into the air.
 	float t = clamp(CUSTOM.y / max(CUSTOM.w, 0.001), 0.0, 1.0);

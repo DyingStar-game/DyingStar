@@ -28,6 +28,8 @@ const DAYLIGHT_ALT_STEP_M := 2.0
 const DAYLIGHT_ELEV_STEP_DEG := 0.02
 ## Entries daylight_at keeps before starting over: a day's worth of star heights over a few villages.
 const DAYLIGHT_MEMO_MAX := 4096
+## The weather a planet has when none is set on it (weather_source): the same wind everywhere.
+const DEFAULT_WEATHER: WeatherSource = preload("res://scenes/planet/weather/uniform_weather.tres")
 
 ## Configuration of this body (radius, elevation data, LOD, biomes, atmosphere…). Assigning another
 ## one in the editor rebuilds the planet.
@@ -76,6 +78,10 @@ const DAYLIGHT_MEMO_MAX := 4096
 
 ## Backward compatibility — old scenes export these instead of planet_data.
 @export var planet_id: String = ""
+
+## Where this planet's weather comes from (WeatherSource): what weather_at and wind_world_at answer,
+## and so what the wind's dust follows. Empty = DEFAULT_WEATHER, the same wind everywhere.
+@export var weather_source: WeatherSource = null
 
 @export_group("Rotation")
 ## Sidereal rotation period in HOURS — 0 means the planet does not spin. Mirrors the `rotation_h`
@@ -746,6 +752,52 @@ func local_dir_of(world_pos: Vector3) -> Vector3:
 	if to_pos.length() < 0.001:
 		return Vector3.ZERO
 	return (global_basis.orthonormalized().inverse() * to_pos).normalized()
+
+
+## The weather at [param world_pos], as WeatherSource's keys: the one door every consumer of the
+## weather goes through (the wind's dust, the dust layer, the wind's sound). {} without air to carry it:
+## an airless body has no wind, whatever the source says. The air's density there
+## ("air_density_kg_m3") is the planet's own (AtmosphereProfile.air_density), unless the source says it.
+func weather_at(world_pos: Vector3) -> Dictionary:
+	var profile: AtmosphereProfile = planet_data.atmosphere_profile if planet_data != null else null
+	if profile == null or not profile.has_atmosphere():
+		return {}
+	var dir: Vector3 = local_dir_of(world_pos)
+	if dir.is_zero_approx():
+		return {}
+	var sample: Dictionary = current_weather_source().sample(self, dir)
+	if not sample.has("air_density_kg_m3"):
+		sample["air_density_kg_m3"] = profile.air_density(elevation_of(world_pos))
+	return sample
+
+
+## The weather source in use: the one set on this planet, or DEFAULT_WEATHER.
+func current_weather_source() -> WeatherSource:
+	return weather_source if weather_source != null else DEFAULT_WEATHER
+
+
+## The wind at [param world_pos] as a world vector (m/s), along the ground: the source's east and north
+## parts laid on the local axes there. ZERO in calm or airless places.
+func wind_world_at(world_pos: Vector3) -> Vector3:
+	var sample: Dictionary = weather_at(world_pos)
+	if sample.is_empty():
+		return Vector3.ZERO
+	var axes: Array = local_axes(local_dir_of(world_pos))
+	var local_wind: Vector3 = (axes[0] as Vector3) * float(sample.get("wind_east_m_s", 0.0)) \
+			+ (axes[1] as Vector3) * float(sample.get("wind_north_m_s", 0.0))
+	return global_basis.orthonormalized() * local_wind
+
+
+## The local [east, north] unit axes (planet frame) at the unit direction [param dir]: north toward the
+## planet's +Y pole along the ground, east = north x up (the direction of growing longitude,
+## lon = atan2(-z, x)). At a pole, where north is undefined, +X stands in for it.
+static func local_axes(dir: Vector3) -> Array:
+	var up: Vector3 = dir.normalized()
+	var north: Vector3 = Vector3.UP - up * up.y
+	if north.length_squared() < 1e-10:
+		north = Vector3.RIGHT - up * up.x
+	north = north.normalized()
+	return [north.cross(up), north]
 
 
 func surface_altitude_of(world_pos: Vector3) -> float:

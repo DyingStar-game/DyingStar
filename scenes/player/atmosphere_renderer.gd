@@ -93,6 +93,13 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## Altitude (m) the observer pretends to stand at when debug_pretend_lowlands is on.
 @export var debug_pretend_altitude: float = 380.0
 
+## The buildings the wind's dust stays out of (WeatherMasks), made with the renderer, and the dust
+## layer near the ground itself (WeatherSky, drawn by the aerial pass).
+var weather_masks: WeatherMasks = null
+var _weather_sky: WeatherSky = WeatherSky.new()
+## The lamps that light that dust (DustLights), made with the renderer.
+var _dust_lights: DustLights = null
+
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
@@ -275,11 +282,20 @@ func _apply_quality() -> void:
 	var steps : Vector2i = GraphicsOptions.ATMOSPHERE_STEPS[SettingsManager.render.effective("atmosphere_quality")]
 	view_steps = maxi(1, ClientConfig.get_int("debug_atmo_view_steps", steps.x))
 	light_steps = maxi(1, ClientConfig.get_int("debug_atmo_light_steps", steps.y))
+	# The wind's dust layer: as many steps as the sky's view march, 8 to 20; 8 and fewer far steps on the
+	# Low dust setting.
+	var low_dust: bool = wind_dust_level() == 1
+	set_dust_param(&"dust_steps", 8 if low_dust else clampi(view_steps, 8, 20))
+	set_dust_param(&"dust_far_steps", 5 if low_dust else 10)
 
 
 func _on_render_changed(keys: PackedStringArray) -> void:
 	if "atmosphere_quality" in keys:
 		_apply_quality()
+	if "wind_dust" in keys:
+		_apply_quality()
+		if not wind_dust_on():
+			_clear_wind_dust()
 
 
 ## The eye. Set on the WORLD alongside the Environment, so every camera in it adapts together —
@@ -341,6 +357,7 @@ func _process(_delta: float) -> void:
 	var star_direction: Vector3 = sun.star_direction
 	if star_direction == Vector3.ZERO:
 		return  # the sun has not found the star yet; leave last frame's sky rather than flash black
+	_update_wind_dust(_delta)
 	var profile: AtmosphereProfile = current_profile()
 	_show_star_mesh(profile == null)
 	if profile == null:
@@ -395,6 +412,58 @@ func current_profile() -> AtmosphereProfile:
 	if profile == null or not profile.has_atmosphere():
 		return null
 	return profile
+
+
+## The wind's dust near the ground (WeatherSky), before the profile: an airless body has no weather,
+## and the layer then goes out instead of keeping the last planet's.
+func _update_wind_dust(delta: float) -> void:
+	if not wind_dust_on():
+		return
+	if weather_masks == null:
+		weather_masks = WeatherMasks.new(player)
+		add_child(weather_masks)
+		_dust_lights = DustLights.new(self)
+		add_child(_dust_lights)
+	var body: Planet = current_body()
+	if body == null:
+		return
+	_weather_sky.update(self, body, player.global_position)
+	_weather_sky.animate_dust(self, body, player.camera, delta)
+
+
+## Graphics > Wind-blown dust: 0 off (the layer neither read, laid nor drawn), 1 low, 2 high.
+func wind_dust_level() -> int:
+	var value: Variant = SettingsManager.render.effective("wind_dust")
+	return int(value) if value != null else 2
+
+
+func wind_dust_on() -> bool:
+	return wind_dust_level() > 0
+
+
+## The dust layer gone at once (switched off in the Graphics page): no density, no lamp, near or far.
+func _clear_wind_dust() -> void:
+	set_dust_param(&"dust_density", 0.0)
+	set_dust_param(&"dust_far_density", 0.0)
+	set_dust_param(&"dust_light_count", 0)
+	_weather_sky = WeatherSky.new()
+
+
+## Set a uniform of the wind's dust layer (aerial_perspective.gdshader: dust_*), WeatherSky's hand.
+func set_dust_param(param: StringName, value: Variant) -> void:
+	if _aerial_material != null:
+		_aerial_material.set_shader_parameter(param, value)
+
+
+## The profile's veil over the eye as a vertical optical depth (0 without a slab, or over it): what dims
+## the star's beam before the wind's dust is lit by it (DustLight).
+func veil_tau_above() -> float:
+	var profile := current_profile()
+	if profile == null or profile.haze_top <= profile.haze_bottom:
+		return 0.0
+	var beta: float = profile.mie_beta.length() / sqrt(3.0)
+	var h: float = altitude_above_sphere() - _haze_lift()
+	return beta * clampf(profile.haze_top - h, 0.0, profile.haze_top - profile.haze_bottom)
 
 
 ## Height of the player above the body's REFERENCE SPHERE, which is the altitude the density profiles
