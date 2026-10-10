@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://ctqsn8cucwx35"]
+
+[ext_resource type="Script" uid="uid://qovevx165ywn" path="res://scenes/audio/weather/weather_audio.gd" id="1_audio"]
+[ext_resource type="Script" uid="uid://bw54dnd6c5c1f" path="res://scenes/audio/weather/weather_audio_layer.gd" id="2_layer"]
+[ext_resource type="AudioStream" uid="uid://djex6wq28dp6i" path="res://assets/_universe/audio/ambience/wind_strong_001.ogg" id="3_wind"]
+
+[sub_resource type="Resource" id="Resource_wind"]
+script = ExtResource("2_layer")
+stream = ExtResource("3_wind")
+parameter = &"wind_speed_m_s"
+from = 1.0
+to = 80.0
+fade_in = 0.076
+volume_db = -13.0
+
+[node name="WeatherAudio" type="AudioStreamPlayer" unique_id=1240800135]
+script = ExtResource("1_audio")
+layers = Array[ExtResource("2_layer")]([SubResource("Resource_wind")])

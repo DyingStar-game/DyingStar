@@ -44,6 +44,8 @@ var _particles: GPUParticles3D = null
 var _ground_color: Color = Color(0.55, 0.48, 0.4)
 var _airless: bool = false
 var _gravity: float = 9.8
+## The wind at the actor, world frame (m/s), read with the ground (Planet.wind_world_at); zero in calm.
+var _wind_world: Vector3 = Vector3.ZERO
 var _ground_read_at: float = -INF  # seconds (ticks); -INF = read at the next puff
 
 
@@ -196,6 +198,7 @@ func _refresh_ground(global_pos: Vector3) -> void:
 			_ground_color = GroundLook.at(data, radial.normalized(), _dust.fallback_color).color
 		_airless = data.atmosphere_profile == null
 		_gravity = data.surface_gravity
+		_wind_world = planet.wind_world_at(global_pos)
 	_configure()
 
 
@@ -221,3 +224,6 @@ func _configure() -> void:
 		process.set_shader_parameter(&"settle", settle_in_air(_dust.air_settle, _gravity))
 		process.set_shader_parameter(&"drag", _dust.air_drag)
 		process.set_shader_parameter(&"growth", _dust.air_growth)
+	# The wind in the particles' own frame (the anchor's, +Y up): a direction, small and safe in float.
+	process.set_shader_parameter(&"wind",
+			Vector3.ZERO if _airless else _particles.global_basis.inverse() * _wind_world)

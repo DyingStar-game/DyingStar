@@ -170,6 +170,12 @@ const OPTIONS : Array[Dictionary] = [
 	{"key": "debanding", "section": SEC_EFFECTS, "label": "%%MENU_GFX_DEBANDING",
 		"help": "%%MENU_GFX_HELP_DEBANDING", "kind": TOGGLE,
 		"default": false, "viewport": "use_debanding", "presets": [false, true, true, true]},
+	# The dust the wind blows near the ground, far over the land and in the lamps' beams (WeatherSky,
+	# dust_layer.gdshaderinc): a ray march over the whole screen. Low = fewer steps and no lamp beams.
+	{"key": "wind_dust", "section": SEC_EFFECTS, "label": "%%MENU_GFX_WIND_DUST",
+		"help": "%%MENU_GFX_HELP_WIND_DUST", "kind": CHOICE,
+		"choices": [[0, "%%MENU_OFF"], [1, "%%MENU_GFX_LOW"], [2, "%%MENU_GFX_HIGH"]],
+		"default": 2, "presets": [0, 1, 2, 2]},
 	# ── World quality ──
 	{"key": "atmosphere_quality", "section": SEC_WORLD, "label": "%%MENU_GFX_ATMOSPHERE",
 		"help": "%%MENU_GFX_HELP_ATMOSPHERE_QUALITY", "kind": CHOICE,

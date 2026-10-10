@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="UniformWeather" format=3 uid="uid://sdx2irlyu1m2"]
+
+[ext_resource type="Script" uid="uid://bjv0u7242n2om" path="res://scenes/planet/weather/uniform_weather.gd" id="1_uniform"]
+
+[resource]
+script = ExtResource("1_uniform")
+wind_speed_m_s = 7.0

@@ -105,6 +105,7 @@ var _step_last_sample: AudioStream = null  # last footstep played, so the librar
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
 var _dust: DustEmitter = null              # the dust our feet kick up, built on the first step
+var _weather_listener: WeatherListener = null  # the wind's sound at the owner (made in _process)
 ## The same sample with its reasoning ({family, source, detail}), for the debug panel's Ground section.
 var _surface_info: Dictionary = {}
 var _surface_age: float = 0.0              # seconds since that sample
@@ -335,6 +336,7 @@ func _process(_delta: float) -> void:
 	_update_controls_help(_delta)
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
+	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
@@ -499,6 +501,7 @@ func _physics_process(delta: float) -> void:
 	# probe silently answered "unknown". And remote avatars need it too: everyone hears everyone walk.
 	_sample_surface(delta)
 	if player.remote_player: return
+	_weather_listener_of().sample_shelter(delta)
 	# CLIENT-OWNER: the seated camera ride is done in _process; here we only relay drive input.
 	if is_instance_valid(player._seat_node):
 		# Seated: relay drive input (driver only) and skip walking. When input is locked (pause menu,
@@ -1931,3 +1934,10 @@ func _play_vault_sfx(key: String) -> void:
 		_:
 			Sfx3D.play(player, player.sfx_vault, player.sfx_vault_db, player.sfx_vault_falloff,
 					player.sfx_vault_distance, player.sfx_vault_attenuation)
+
+
+## The wind's sound at the owner (WeatherListener), made on first use.
+func _weather_listener_of() -> WeatherListener:
+	if _weather_listener == null:
+		_weather_listener = WeatherListener.new(player)
+	return _weather_listener
