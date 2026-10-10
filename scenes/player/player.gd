@@ -125,11 +125,13 @@ var stand_body_height: float = 1.8
 ## How long (s) the smooth glide ONTO a step takes. Short so walking barely pauses; 0 would snap.
 @export var step_up_duration: float = 0.12
 
+@export_subgroup("God mode (dev)")
+## God mode (dev free-flight) starting speed in m/s; the mouse wheel then doubles or halves it in flight
+## (GodMode). Toggled with the `god_mode` action ('$' by default, remappable in Settings > Controls).
+## A test aid to fly around a body and inspect its day/night faces: the server detaches the player from
+## gravity and flies it where the camera looks, ignoring collision. Not the real EVA (below).
+@export var god_mode_speed: float = 2000.0
 @export_subgroup("EVA / 0g")
-## EVA (dev free-flight) cruise speed in m/s. Toggled with the `toggle_eva` action ('$' by default,
-## remappable in Settings > Controls). A test aid to fly around a body and inspect its day/night faces:
-## the server detaches the player from gravity and flies it where the camera looks, ignoring collision.
-@export var eva_speed: float = 2000.0
 ## Weightless (no gravity area, or the dev EVA flight): the top roll rate of roll_left / roll_right about
 ## the view axis, in rad/s...
 @export var float_roll_speed: float = 1.2
@@ -300,7 +302,7 @@ var stance: int = 0
 ## Replicated STATE, owned by the server: true while nothing holds the body — no gravity area, or the dev
 ## EVA flight. Every client reads it for every avatar (its own and the others'): a body that floats
 ## takes no steps. The server is the only one that knows: a client neither tracks another avatar's
-## gravity areas nor is ever told about eva_mode.
+## gravity areas nor is ever told about god_mode.
 var floating: bool = false
 ## Shared belt attachment point (a BoneAttachment3D on the puppet's hip bone, created by CharacterAnimator):
 ## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
@@ -360,9 +362,9 @@ var active = false
 # never sets `active` true). Set by Vehicle.server_enter / server_exit.
 var piloting: bool = false
 
-# Server-authoritative: true while in EVA free-flight (dev test aid, toggled by the `toggle_eva`
-# action). The server flies the body where the camera looks, no gravity, no collision. See eva_speed.
-var eva_mode: bool = false
+# Server-authoritative: true while in god mode, the dev free-flight (toggled by the `god_mode`
+# action). The server flies the body where the camera looks, no gravity, no collision. See GodMode.
+var god_mode: bool = false
 
 var hands_item: Node3D = null
 

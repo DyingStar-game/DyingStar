@@ -167,7 +167,7 @@ func _read_context() -> MusicContext:
 	if body == null or body.planet_data == null or not body.within_ground_reach(where):
 		return context
 	# Near the ground of a body, the ground decides and `floating` is not asked: down here it is only
-	# ever true for the dev flight (toggle_eva), and flying over a town is still being in that town.
+	# ever true for the dev flight (god mode), and flying over a town is still being in that town.
 	# Seen in game: standing on Tarsis 3 after a dev flight, with the EVA music playing.
 	context.floating = false
 	context.on_ground = true
