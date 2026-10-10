@@ -107,6 +107,22 @@ func test_every_real_site_gets_the_right_picture() -> void:
 				icon.resource_path])
 
 
+## The four types the QGIS dropdown offers each land on their own picture once poi_type is filled in,
+## whatever the name says.
+func test_every_qgis_poi_type_gets_its_picture() -> void:
+	var expected: Dictionary = {
+		"city": "city.png",
+		"railway city": "railway_station.png",
+		"factory village": "industrial_village.png",
+		"mining village": "mining_village.png",
+	}
+	for kind: String in expected:
+		var icon: Texture2D = StarMapPoiLayer.ICONS.icon_for({"name": "X0001", "kind": kind})
+		assert_not_null(icon, "%s must get a picture" % kind)
+		assert_true(icon.resource_path.ends_with(str(expected[kind])),
+				"%s should be drawn as %s, not %s" % [kind, expected[kind], icon.resource_path])
+
+
 ## An unforeseen kind of site still gets a picture. A marker that silently fails to draw looks exactly
 ## like a hole in the export, and would be chased there instead of here.
 func test_an_unforeseen_site_still_gets_a_picture() -> void:

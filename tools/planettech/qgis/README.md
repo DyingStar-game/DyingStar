@@ -761,9 +761,11 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 
 #### Place Points of Interest
 1. Select the **layer 10 - final → poi** layer → Toggle Editing
-2. Click **Add Point Feature** and click where you want to place a city, station, or spawn point
-3. Fill in: `name`, `poi_type` (city/station/landmark/spawn_point), `population`,
-   `radius` (influence radius in metres) and `description`
+2. Click **Add Point Feature** and click where you want to place a city or a village
+3. Fill in: `name`, `poi_type` (city / railway city / factory village / mining village), `population`,
+   `radius` (influence radius in metres) and `description`. Picking `poi_type` fills `population` and
+   `radius` with the type's values (`POI_DEFAULTS` in `layers/poi.py`); a value typed by hand afterwards
+   is kept until the type changes again
 4. Save edits, then see the POI pipeline section above to get them into Godot
 
 #### Draw Water Bodies

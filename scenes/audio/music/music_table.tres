@@ -111,6 +111,26 @@ situation = 4
 only = "village usine"
 playlist = ExtResource("11")
 
+[sub_resource type="Resource" id="rule_poi_railway_city"]
+resource_name = "POI railway city → silence"
+script = ExtResource("2")
+situation = 4
+only = "railway city"
+
+[sub_resource type="Resource" id="rule_poi_mining_type"]
+resource_name = "POI mining village → villages"
+script = ExtResource("2")
+situation = 4
+only = "mining village"
+playlist = ExtResource("11")
+
+[sub_resource type="Resource" id="rule_poi_factory_type"]
+resource_name = "POI factory village → villages"
+script = ExtResource("2")
+situation = 4
+only = "factory village"
+playlist = ExtResource("11")
+
 [sub_resource type="Resource" id="rule_poi_city"]
 resource_name = "POI city → silence"
 script = ExtResource("2")
@@ -130,4 +150,4 @@ playlist = ExtResource("6")
 
 [resource]
 script = ExtResource("1")
-rules = Array[ExtResource("2")]([SubResource("rule_menu"), SubResource("rule_capital"), SubResource("rule_zone_shop"), SubResource("rule_zone_corpo_hall"), SubResource("rule_zone_combat"), SubResource("rule_zone_ship"), SubResource("rule_eva"), SubResource("rule_station"), SubResource("rule_poi_capital"), SubResource("rule_poi_spaceport"), SubResource("rule_poi_railway"), SubResource("rule_poi_mining"), SubResource("rule_poi_mining_fr"), SubResource("rule_poi_factory"), SubResource("rule_poi_factory_fr"), SubResource("rule_poi_city"), SubResource("rule_poi_any"), SubResource("rule_wild")])
+rules = Array[ExtResource("2")]([SubResource("rule_menu"), SubResource("rule_capital"), SubResource("rule_zone_shop"), SubResource("rule_zone_corpo_hall"), SubResource("rule_zone_combat"), SubResource("rule_zone_ship"), SubResource("rule_eva"), SubResource("rule_station"), SubResource("rule_poi_capital"), SubResource("rule_poi_spaceport"), SubResource("rule_poi_railway"), SubResource("rule_poi_mining"), SubResource("rule_poi_mining_fr"), SubResource("rule_poi_factory"), SubResource("rule_poi_factory_fr"), SubResource("rule_poi_railway_city"), SubResource("rule_poi_mining_type"), SubResource("rule_poi_factory_type"), SubResource("rule_poi_city"), SubResource("rule_poi_any"), SubResource("rule_wild")])
