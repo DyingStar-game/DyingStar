@@ -119,6 +119,13 @@ var _step_report_at: int = 0
 var _step_start: Vector3 = Vector3.ZERO
 var _step_end: Vector3 = Vector3.ZERO
 var _step_time: float = 0.0
+## The node the step / vault points above were sampled in (the parent at the glide's start). A glide
+## spans several ticks and a reparent can land in between: walking out of the spawn building, the
+## doorstep IS a step, and the building -> planet reparent fires on that very threshold. The building-
+## local points then read as planet-local ones — a body a few metres from the planet's CENTRE, which the
+## below-surface catch threw onto the ground thousands of km away, and the client watched from inside
+## the planet. See _keep_glide_in_frame.
+var _glide_frame: Node = null
 
 # Dialog — a "dialog" action does NOT go on the wire straight away: the AI can push a whole
 # conversation in one burst, and replicating it as fast as it arrives would leave only the last line
@@ -1322,6 +1329,7 @@ func _try_start_vault() -> bool:
 	elif key == "climb_1m":
 		_vault_duration = player.climb1_duration
 	var frame: Node = player.get_parent()
+	_glide_frame = frame
 	_vault_start = player.position  # parent-frame (local); the slide stays robust to a moving planet frame
 	var landing: Vector3 = p["landing"]
 	_vault_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
@@ -1351,6 +1359,10 @@ func _try_start_vault() -> bool:
 ## gravity/input/collision suspended (the position is written directly, like EVA). Replicates the pose each
 ## tick; on arrival, releases control and starts the cooldown. The clip plays client-side off the event.
 func _server_update_vault(delta: float) -> void:
+	if not _keep_glide_in_frame():
+		_vaulting = false
+		_vault_cooldown = player.vault_cooldown
+		return
 	_vault_time += delta
 	var s: float = clampf(_vault_time / maxf(_vault_duration, 0.01), 0.0, 1.0)
 	var pos: Vector3 = _vault_start.lerp(_vault_end, smoothstep(0.0, 1.0, s))
@@ -1376,6 +1388,7 @@ func _try_start_step_up(move_dir: Vector3) -> bool:
 	_report_step(p)
 	var landing: Vector3 = p["landing"]
 	var frame: Node = player.get_parent()
+	_glide_frame = frame
 	_step_start = player.position
 	_step_end = (frame as Node3D).to_local(landing) if frame is Node3D else landing
 	_step_time = 0.0
@@ -1467,6 +1480,9 @@ func _report_step(p: Dictionary) -> void:
 ## No clip and no cooldown (stairs climb freely); the velocity is left untouched, so walking resumes with
 ## its momentum the instant the glide ends.
 func _server_update_step(delta: float) -> void:
+	if not _keep_glide_in_frame():
+		_stepping = false  # the frame it was measured in is gone: let the normal walk take over
+		return
 	_step_time += delta
 	var s: float = clampf(_step_time / maxf(player.step_up_duration, 0.01), 0.0, 1.0)
 	player.position = _step_start.lerp(_step_end, smoothstep(0.0, 1.0, s))
@@ -1474,6 +1490,26 @@ func _server_update_step(delta: float) -> void:
 	if s >= 1.0:
 		_stepping = false
 		_drop_vertical_speed()
+
+## Keep the glide's points (step and vault) in the frame the body is in NOW. They are parent-local, so a
+## reparent since the glide began (see _glide_frame) re-expresses them through the two frames' global
+## transforms: the same world points, read from the new parent. False when that cannot be done — the old
+## frame was freed, or the new parent is no 3D node — and the caller then drops the glide.
+func _keep_glide_in_frame() -> bool:
+	var frame: Node = player.get_parent()
+	if frame == _glide_frame:
+		return true
+	var old: Node = _glide_frame
+	_glide_frame = frame
+	if not is_instance_valid(old) or not (old is Node3D) or not old.is_inside_tree() or not (frame is Node3D):
+		return false
+	var to_new: Transform3D = (frame as Node3D).global_transform.affine_inverse() * (old as Node3D).global_transform
+	_step_start = to_new * _step_start
+	_step_end = to_new * _step_end
+	_vault_start = to_new * _vault_start
+	_vault_end = to_new * _vault_end
+	_vault_up_local = (to_new.basis * _vault_up_local).normalized()
+	return true
 
 ## Network parent to attach to every replicated move while the origin rebase has this player
 ## parented DIRECTLY to a Planet (server.gd create_player routes unparented spawns there; every
