@@ -622,6 +622,15 @@
 			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wind_strong_001.ogg",
+			"path": "res://assets/_universe/audio/ambience/wind_strong_001.ogg",
+			"author": "Nox_Sound",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/591664/",
+			"license": "CC0"
 		}
 	],
 	"models": [
