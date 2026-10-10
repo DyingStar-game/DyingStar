@@ -157,6 +157,17 @@ if len(ROCK_BY_SLUG) != len(ROCKS):
     raise ValueError("duplicate rock slug")
 
 
+def map_color(slug):
+    """The rock's tint seen from afar: the middle of its colour range, as the
+    game's colour map draws it (RockCatalogue.tint(slug, 0.5)).  ``"#rrggbb"``,
+    or None for an unknown rock or one whose colours are not decided yet."""
+    rock = ROCK_BY_SLUG.get(slug)
+    if rock is None or not rock.colors:
+        return None
+    light, dark = (tuple(int(h.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)) for h in rock.colors)
+    return "#" + "".join(f"{round((a + b) / 2):02x}" for a, b in zip(light, dark))
+
+
 def rock_choices(underground=False):
     """``[(label, slug), …]`` for a dropdown — surface rocks only unless *underground*."""
     return [(r.label, r.slug) for r in ROCKS if r.surface or underground]

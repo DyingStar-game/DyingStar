@@ -193,6 +193,18 @@ func test_the_shipped_table_has_music_for_zones_and_villages() -> void:
 			assert_not_null(playlist.next_after(null), "with a track that loads")
 
 
+## The tarsis_3 export names its villages M0042, F0001: only their poi_type says what they are, so the
+## QGIS types have to be in the shipped table on their own, not just as name prefixes.
+func test_the_shipped_table_knows_the_qgis_poi_types() -> void:
+	var shipped: MusicTable = _shipped()
+	for kind: String in ["mining village", "factory village"]:
+		var village: MusicContext = _on_ground({"name": "M0042", "kind": kind, "radius_m": 1000.0})
+		assert_not_null(shipped.playlist_for(village), "a '%s' plays the village music" % kind)
+	for kind: String in ["city", "railway city"]:
+		var town: MusicContext = _on_ground({"name": "X0001", "kind": kind, "radius_m": 1000.0})
+		assert_null(shipped.playlist_for(town), "a '%s' is a chosen silence" % kind)
+
+
 func test_overlapping_zones_are_settled_by_priority() -> void:
 	var building: MusicZone = add_child_autofree(MusicZone.new())
 	var room: MusicZone = add_child_autofree(MusicZone.new())

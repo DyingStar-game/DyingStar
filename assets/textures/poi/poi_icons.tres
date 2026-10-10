@@ -74,6 +74,13 @@ poi_type = "railway station"
 tint = Color(0.8, 0.88, 0.96, 1)
 label_key = "%%POI_KIND_RAILWAY"
 
+[sub_resource type="Resource" id="railway_city_by_type"]
+script = ExtResource("script_rule")
+icon = ExtResource("tex_railway_station")
+poi_type = "railway city"
+tint = Color(0.8, 0.88, 0.96, 1)
+label_key = "%%POI_KIND_RAILWAY"
+
 [sub_resource type="Resource" id="mining_by_type"]
 script = ExtResource("script_rule")
 icon = ExtResource("tex_mining_village")
@@ -97,6 +104,6 @@ label_key = "%%POI_KIND_CITY"
 
 [resource]
 script = ExtResource("script_set")
-rules = Array[ExtResource("script_rule")]([SubResource("capital_by_name"), SubResource("spaceport_by_name"), SubResource("railway_by_name"), SubResource("mining_by_name"), SubResource("industrial_by_name"), SubResource("orbital_by_type"), SubResource("capital_by_type"), SubResource("spaceport_by_type"), SubResource("railway_by_type"), SubResource("mining_by_type"), SubResource("industrial_by_type"), SubResource("city_by_type")])
+rules = Array[ExtResource("script_rule")]([SubResource("capital_by_name"), SubResource("spaceport_by_name"), SubResource("railway_by_name"), SubResource("mining_by_name"), SubResource("industrial_by_name"), SubResource("orbital_by_type"), SubResource("capital_by_type"), SubResource("spaceport_by_type"), SubResource("railway_by_type"), SubResource("railway_city_by_type"), SubResource("mining_by_type"), SubResource("industrial_by_type"), SubResource("city_by_type")])
 fallback_icon = ExtResource("tex_city")
 cluster_icon = ExtResource("tex_waypoint")

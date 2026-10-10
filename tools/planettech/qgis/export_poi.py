@@ -30,7 +30,7 @@ Output
       "crs": "EPSG:4326",
       "count": 2,
       "pois": [
-        {"id": 1, "name": "Mine Village", "poi_type": "city",
+        {"id": 1, "name": "Mine Village", "poi_type": "mining village",
          "population": 1200, "radius": 200.0, "description": "…",
          "lon": -83.7, "lat": 11.5, "elevation": null}
       ]

@@ -29,9 +29,14 @@ from qgis.core import (
     QgsDataSourceUri,
     QgsProviderRegistry,
     QgsStyle,
+    QgsSingleSymbolRenderer,
+    QgsCategorizedSymbolRenderer,
+    QgsRendererCategory,
 )
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
+
+from .rocks import map_color
 
 CONNECTION_NAME = "DyingStar"
 
@@ -182,7 +187,7 @@ def _configure_fields(layer, fields_def):
         if f.widget is not None:
             layer.setEditorWidgetSetup(fidx, QgsEditorWidgetSetup(f.widget.kind, f.widget.config))
         if f.default is not None:
-            layer.setDefaultValueDefinition(fidx, QgsDefaultValue(f.default, False))
+            layer.setDefaultValueDefinition(fidx, QgsDefaultValue(f.default, f.default_on_update))
         if f.read_only:
             form.setReadOnly(fidx, True)
     layer.setEditFormConfig(form)
@@ -193,14 +198,14 @@ def _apply_symbol(layer, layer_def):
     color = QColor(r, g, b, 180)
     geom = int(layer.geometryType())
     if layer_def.symbol_factory is not None:
-        layer.renderer().setSymbol(layer_def.symbol_factory(color))
+        layer.setRenderer(QgsSingleSymbolRenderer(layer_def.symbol_factory(color)))
         layer.triggerRepaint()
         return
     sym = _library_symbol(layer_def, geom)
     if sym is not None:
         if geom == 1 and layer_def.direction_marker:
             sym.appendSymbolLayer(_direction_marker(color))
-        layer.renderer().setSymbol(sym)
+        layer.setRenderer(QgsSingleSymbolRenderer(sym))
         layer.triggerRepaint()
         return
     if geom == 0:       # Point
@@ -223,8 +228,37 @@ def _apply_symbol(layer, layer_def):
     # unless the definition overrode the colour (transparent world border…).
     if "color" not in layer_def.symbol:
         sym.setColor(color)
-    layer.renderer().setSymbol(sym)
+    rocks = _rock_options(layer_def) if geom == 2 else None
+    if rocks:
+        layer.setRenderer(_rock_renderer(sym, rocks))
+    else:
+        layer.setRenderer(QgsSingleSymbolRenderer(sym))
     layer.triggerRepaint()
+
+
+def _rock_options(layer_def):
+    """``[(label, slug), …]`` of the layer's ``rock_type`` dropdown, or None."""
+    for f in layer_def.fields:
+        if f.name == "rock_type" and f.widget is not None and f.widget.kind == "ValueMap":
+            return [item for entry in f.widget.config["map"] for item in entry.items()]
+    return None
+
+
+def _rock_renderer(sym, rocks):
+    """Each zone filled with its rock's colour (the colour map's tint), one
+    legend entry per rock; a zone with no rock keeps the layer colour."""
+    alpha = sym.color().alpha()
+    cats = []
+    for label, slug in rocks:
+        rock_sym = sym.clone()
+        hex_color = map_color(slug)
+        if hex_color is not None:
+            c = QColor(hex_color)
+            c.setAlpha(alpha)
+            rock_sym.setColor(c)
+        cats.append(QgsRendererCategory(slug, rock_sym, label))
+    cats.append(QgsRendererCategory(None, sym.clone(), "(no rock_type)"))
+    return QgsCategorizedSymbolRenderer("rock_type", cats)
 
 
 def _library_symbol(layer_def, geom):

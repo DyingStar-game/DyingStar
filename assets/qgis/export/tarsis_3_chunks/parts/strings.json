@@ -99,5 +99,10 @@
  "strata",
  "flat",
  "lump_m",
- "lump_wavelength_m"
+ "lump_wavelength_m",
+ "corundum_grey_blue",
+ "corundum_orange",
+ "corundum_pink",
+ "corundum_yellow",
+ "corundum_black"
 ]

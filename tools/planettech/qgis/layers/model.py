@@ -77,6 +77,9 @@ class Field:
     comment: str = ""           # shown as the column comment / form tooltip
     widget: Optional[Widget] = None
     default: Optional[str] = None   # QGIS default-value EXPRESSION, e.g. "6.0" or "'asphalt'"
+    # Re-evaluate *default* whenever the feature is edited (QGIS "Apply default
+    # value on update"); the expression then decides when to keep the value.
+    default_on_update: bool = False
     read_only: bool = False
     # Selectable value list ``[(label, value), …]`` (rock types…).  The setup
     # dialog lets the artist tick the subset valid for THIS planet; the ticked
