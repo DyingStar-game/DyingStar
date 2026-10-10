@@ -269,22 +269,22 @@ debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, -0.00206990235642834, 0.4319164637378363, 1.061855327619314)
 
 [node name="SlotFL" type="Marker3D" parent="." unique_id=740110021]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.69, 0.17, 0.04)
 script = ExtResource("91_slot")
 door_id = "hatch_fl"
 
 [node name="SlotFR" type="Marker3D" parent="." unique_id=740110022]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.69, 0.17, 0.04)
 script = ExtResource("91_slot")
 door_id = "hatch_fr"
 
 [node name="SlotRL" type="Marker3D" parent="." unique_id=740110023]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.74)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.69, 0.17, 0.74)
 script = ExtResource("91_slot")
 door_id = "hatch_rl"
 
 [node name="SlotRR" type="Marker3D" parent="." unique_id=740110024]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.74)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.69, 0.17, 0.74)
 script = ExtResource("91_slot")
 door_id = "hatch_rr"
 
