@@ -430,7 +430,12 @@ func _brand_logo() -> Control:
 ## The build the brand block shows under its name (the project's own version string).
 static func _build_version() -> String:
 	var version: String = str(ProjectSettings.get_setting("application/config/version", ""))
-	return version if version != "" else "?"
+	if version == "":
+		version = "?"
+	# An exported build also shows its own id (BuildInfo), to tell two builds of one version apart.
+	if BuildInfo.build_id() != "":
+		version += " · " + BuildInfo.build_id()
+	return version
 
 
 func _start_clock() -> void:

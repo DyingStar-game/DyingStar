@@ -58,3 +58,6 @@ heights.pack
 /screenshots/
 # In-game benchmark reports written while running from the editor (CapturePaths.benchmarks_dir)
 /benchmarks/
+
+# Written into the exported pack by addons/dyingstar/build_id_export.gd, never committed
+/build_id.json

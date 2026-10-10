@@ -6,6 +6,7 @@ const ServerPropsIO = preload("res://addons/dyingstar/server_props_io.gd")
 const PropSyncInspector = preload("res://addons/dyingstar/prop_sync_inspector.gd")
 const SharedMaterialRebuild = preload("res://addons/dyingstar/shared_material_rebuild.gd")
 const AtmosphereProfiles = preload("res://addons/dyingstar/build_atmosphere_profiles.gd")
+const BuildIdExport = preload("res://addons/dyingstar/build_id_export.gd")
 
 const ITEM_IMPORT := 0
 const ITEM_EXPORT := 1
@@ -41,6 +42,7 @@ var _defs_loading := false
 var _defs_ready := false  # whether Import/Export are allowed (items_def/ updated, or current accepted)
 var _defs_abort := false  # set by "Keep current defs" to stop the in-progress download
 var _inspector_plugin: EditorInspectorPlugin = null
+var _build_id_export: EditorExportPlugin = null
 
 
 func _enable_plugin() -> void:
@@ -60,6 +62,8 @@ func _enter_tree() -> void:
 	_install_menu()
 	_inspector_plugin = PropSyncInspector.new()
 	add_inspector_plugin(_inspector_plugin)
+	_build_id_export = BuildIdExport.new()
+	add_export_plugin(_build_id_export)
 	# Never update on our own: ask the developer first. Downloading on every editor start froze the
 	# editor for seconds, and every devmode/N-clients restart from the bottom panel re-triggered the
 	# whole thing. The items_def/ files alone decide whether Import/Export are usable — this MUST be
@@ -78,6 +82,9 @@ func _exit_tree() -> void:
 	if _inspector_plugin != null:
 		remove_inspector_plugin(_inspector_plugin)
 		_inspector_plugin = null
+	if _build_id_export != null:
+		remove_export_plugin(_build_id_export)
+		_build_id_export = null
 	if is_instance_valid(_file_dialog):
 		_file_dialog.queue_free()
 		_file_dialog = null
