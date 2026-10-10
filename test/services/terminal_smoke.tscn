@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://ca4ml1xdwblgd"]
 
-[ext_resource type="Script" path="res://test/services/terminal_smoke.gd" id="1"]
+[ext_resource type="Script" uid="uid://dj2005g6imfav" path="res://test/services/terminal_smoke.gd" id="1"]
 
-[node name="TerminalSmoke" type="Control"]
+[node name="TerminalSmoke" type="Control" unique_id=581768727]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

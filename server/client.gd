@@ -220,12 +220,26 @@ func _ready() -> void:
 	if not Performance.has_custom_monitor("network/events_sent"):
 		Performance.add_custom_monitor("network/events_sent", func() -> int: return network_events_sent)
 
+## The id this session plays under: the token's `sub` when we have one, so the player is the SAME
+## person to Horizon, to the persistence layer and to the services (social keys profiles, presence
+## and friendships on that sub). A random uuid per session gave them a second identity the contact
+## lists never matched, which is why presence never showed up — hence the fallback ONLY for a
+## token-less dev session, where there is no `sub` to use.
+func _identity_uuid() -> String:
+	var subject: String = PlayerServices.token_subject()
+	return subject if subject != "" else UUID_UTIL.v4()
+
+
 func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 	_load_client_ini_file()
 	universe_scene = receveid_universe_scene
 
 	if Globals.player_uuid == "":
-		Globals.player_uuid = UUID_UTIL.v4()
+		Globals.player_uuid = _identity_uuid()
+	if Globals.player_name == "" or Globals.player_name == "I am an idiot !":
+		var own_name: String = PlayerServices.token_display_name()
+		if own_name != "":
+			Globals.player_name = own_name
 
 	# initiate connection to the Horizon server
 	var err = socket.connect_to_url(websocket_url)

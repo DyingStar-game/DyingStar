@@ -516,6 +516,21 @@ func _set_nav_active(app: String) -> void:
 ## The chart's tab: one card, no chrome, the slot shown — and the chart asked for, once the slot is up.
 func _show_navigation() -> void:
 	if _active_id == NAVIGATION:
+## Open [param id] and land on [param segment] of its tab bar. The entry point a notification
+## uses to take the player where they can act on it — a friend request opens the contacts app on
+## the requests tab, so the toast is a shortcut rather than a dead end. [param segment] < 0 leaves
+## the app on whichever tab it was already showing.
+func open_app(id: String, segment: int = -1) -> void:
+	if not _built:
+		_ensure_built()
+	show()
+	_open_app(id)
+	if segment >= 0 and _panels.has(id):
+		(_panels[id] as ServicePanel).goto_segment(segment)
+
+
+func _open_app(id: String) -> void:
+	if not _panels.has(id):
 		return
 	_show_nothing()
 	_active_id = NAVIGATION

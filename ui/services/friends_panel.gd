@@ -342,10 +342,64 @@ func _detail_bio(profile: Dictionary) -> Control:
 
 func _detail_actions(profile: Dictionary) -> Control:
 	var player_id: String = str(profile.get("playerId", ""))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	column.add_child(_compose_box(profile, player_id))
 	var row := _row()
+	# Ouvre la messagerie privée avec ce contact : ChatNetwork épingle ce correspondant comme
+	# la conversation en cours et révèle le journal (fiche → "Message").
+	_action_button(row, tr("%%SVC_ACT_MESSAGE"), func() -> void: _message_player(profile, player_id))
 	_action_button(row, tr("%%SVC_ACT_REMOVE"), func() -> void: _remove_friend(player_id))
 	_action_button(row, tr("%%SVC_ACT_BLOCK"), func() -> void: _block_player(player_id))
-	return row
+	column.add_child(row)
+	return column
+
+
+## Write to this contact without leaving the card — the "sms" gesture: type, send, stay here.
+##
+## Publishing goes straight at the peer's topic ([method ChatNetwork.publish_dm_to]) rather than
+## through the pinned thread: answering someone here must not yank the player's own conversation
+## away from whoever they were writing to in the message box. Enter sends, like the chat input.
+func _compose_box(profile: Dictionary, player_id: String) -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel",
+			ServiceStyle.flat(ServiceStyle.PANEL, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 16.0, 12.0))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	card.add_child(column)
+	column.add_child(_label(tr("%%SVC_LBL_MESSAGE_TO") % str(profile.get("displayName", "—")),
+			ServiceStyle.TEXT))
+
+	var row := _row(8)
+	column.add_child(row)
+	var field := _field(tr("%%SVC_PLH_MESSAGE"), 220.0)
+	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(field)
+	var send := _action_button(row, tr("%%SVC_ACT_SEND_MESSAGE"),
+			func() -> void: _send_dm(player_id, field))
+	field.text_submitted.connect(func(_text: String) -> void: _send_dm(player_id, field))
+	send.tooltip_text = tr("%%SVC_TIP_SEND_MESSAGE")
+	return card
+
+
+## Send [param field]'s text to [param player_id] and clear it. Blank text is not sent, and a send
+## refused by the transport (not connected) leaves the text in place so nothing is lost.
+func _send_dm(player_id: String, field: LineEdit) -> void:
+	if player_id == "" or field.text.strip_edges() == "":
+		return
+	if not ChatNetwork.publish_dm_to(player_id, field.text):
+		push_warning("[friends] DM to %s dropped: chat not connected" % player_id)
+		return
+	field.clear()
+	field.release_focus()
+
+
+func _message_player(profile: Dictionary, player_id: String) -> void:
+	if player_id == "":
+		return
+	# The card already holds the name, so the pinned bar fills in at once instead of
+	# waiting on social to answer who this is.
+	ChatNetwork.start_dm(player_id, str(profile.get("displayName", "")))
 
 
 # ---------------------------------------------------------------------------------------------
