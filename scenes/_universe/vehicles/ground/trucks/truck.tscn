@@ -50,6 +50,7 @@ size = Vector2(0.56, 0.13)
 collision_layer = 4
 collision_mask = 15
 mass = 1425.0
+linear_damp_mode = 1
 script = ExtResource("1_vehicle")
 torque_response = 1.0
 brake_deceleration = 10.0
