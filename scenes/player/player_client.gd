@@ -75,6 +75,8 @@ var player
 var _name_tag: Label = null
 
 var _conversation_text: Label = null
+## Social notifications at the top of the screen (null on a remote avatar — see setup()).
+var _notifications: NotificationStack = null
 
 ## Remote LOD state (see _refresh_remote_lod): far avatars tick at half rate and cast no shadow.
 var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
@@ -233,6 +235,11 @@ func setup() -> void:
 	# Its NAVIGATION tab hands the screen over to the chart, the way F2 would: the tablet closes
 	# itself and asks, it never reaches for the chart on its own.
 	_services.navigation_requested.connect(_open_navigation)
+	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
+	# stack of lines at the top of the screen, clickable through to where they can be acted on.
+	_notifications = NotificationStack.new()
+	player.get_node("UserInterface").add_child(_notifications)
+	ChatNetwork.notification_received.connect(_on_notification)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -1931,3 +1938,69 @@ func _play_vault_sfx(key: String) -> void:
 		_:
 			Sfx3D.play(player, player.sfx_vault, player.sfx_vault_db, player.sfx_vault_falloff,
 					player.sfx_vault_distance, player.sfx_vault_attenuation)
+
+# ---------------------------------------------------------------------------------------------
+# Social notifications
+# ---------------------------------------------------------------------------------------------
+
+## A social notification arrived over MQTT. Print it, and offer the screen where it can be acted
+## on. The name is looked up in the background: a line the player can read the moment it lands
+## beats waiting on a request to find out who it is from.
+func _on_notification(envelope: Dictionary) -> void:
+	if _notifications == null:
+		return
+	var names: Dictionary = _resolved_peer_names()
+	var text: String = ChatNetwork.notification_text(envelope, names)
+	if text == "":
+		return
+	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+
+	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
+	# Resolve in the background so the NEXT notification about this player is spelled properly. The
+	# line on screen keeps its short id for its four seconds — rewriting a live line would cost more
+	# machinery than the win is worth.
+	var unknown: String = _unresolved_peer_id(data)
+	if unknown != "":
+		ChatNetwork.resolve_peer_name(unknown)
+
+
+## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is
+## [param app] of TerminalUI.APPS and [param segment] the tab to land on.
+func _on_notification_clicked(envelope: Dictionary) -> void:
+	if _services == null:
+		return
+	var type := str(envelope.get("type", ""))
+	match type:
+		"friend_request_received":
+			# Requests tab: where Accept / Decline are.
+			_services.open_app("contacts", 1)
+		"friend_request_accepted":
+			# Contacts tab: the list just gained them.
+			_services.open_app("contacts", 0)
+		"corporation_joined":
+			# No roster tab for us — the corporation app shows the members.
+			_services.open_app("corporations", -1)
+		_:
+			# A type we do not know has no screen behind it. Open the app whose area owns it rather
+			# than dropping the click: something is better than nothing, and it cannot be wrong in a
+			# harmful way (the app is merely opened, nothing is sent).
+			_services.open_app("contacts", -1)
+
+
+## Display names we already hold for social ids: ChatNetwork's own DM registry (a friend the player
+## has spoken to) plus the profiles the services tablet has fetched this session.
+func _resolved_peer_names() -> Dictionary:
+	var names: Dictionary = {}
+	for peer: Dictionary in ChatNetwork.dm_peers():
+		names[str(peer["id"])] = str(peer["name"])
+	return names
+
+
+## The id in [param data] we have no name for, or "" — the one worth a background lookup.
+func _unresolved_peer_id(data: Dictionary) -> String:
+	var player_id := str(data.get("fromPlayerId", ""))
+	if player_id == "":
+		player_id = str(data.get("playerId", ""))
+	if player_id == "":
+		return ""
+	return "" if ChatNetwork.display_name_of(player_id) != "" else player_id

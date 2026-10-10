@@ -166,6 +166,9 @@ var pending_freeze_objects: Array[Dictionary] = []
 ## (_zone_freeze_prop): activate_object adopts it like a prop driven in from another server.
 var _dormant_players: Dictionary = {}
 const DORMANT_META := "_dormant"
+## Body key -> star system name, for the social presence payload (see _system_key_for). Static data,
+## filled lazily once per body ever seen.
+var _system_by_body: Dictionary = {}
 var check_pending_objects_timer: int = 0
 var check_out_of_zone_after_split: int = 0
 
@@ -2099,6 +2102,11 @@ func create_player(event: Dictionary) -> void:
 ## [param adopted] = WE put it under a planet while Horizon still has parent "" (see the seed below).
 func _register_player(spawned_entity_instance: Node, player_uuid: String, adopted: bool) -> void:
 	players_list.set(player_uuid, spawned_entity_instance)
+	# Tell the social heartbeat this player is live: it upserts their profile, starts their
+	# playtime clock and asks for a presence batch ahead of the next scheduled beat. Dormant
+	# copies never reach here, so an asleep player stays out of social's online roster.
+	SocialHeartbeat.on_player_joined(player_uuid, str(spawned_entity_instance.name),
+			bool(spawned_entity_instance.get("is_npc")))
 	# Ask for the collision under this player on the NEXT frame rather than up to PIN_INTERVAL_MS from
 	# now: the body is held still until that chunk lands (PlayerServer._hold_until_ground), so every
 	# frame of pinning latency is a frame of frozen player. Not a sweep per player any more: a sweep
@@ -3542,6 +3550,39 @@ func _true_position(node: Node3D) -> Vector3:
 	return _planet_orbital_abs(planet) + node.global_position
 
 
+## Where [param node] is, for service-social's presence payload (see [SocialHeartbeat]): the true
+## universe position plus a readable {system, scene} pair — the star system and body key of the
+## planet it stands on ("tarsis", "tarsis_3"), or "" / "space" in open space. The UI renders the
+## pair as "system · scene" on a contact card.
+func social_presence_location(node: Node3D) -> Dictionary:
+	var planet := _planet_ancestor_of(node)
+	if planet == null:
+		return SocialHeartbeat.build_location("", "space", _true_position(node))
+	return SocialHeartbeat.build_location(_system_key_for(planet), _body_key_of(planet),
+			_true_position(node))
+
+
+## The body's key — "tarsis_3" — which is what SystemScenes and the services speak in.
+##
+## ⚠️ NOT str(planet.name): that is the name the node carries on the wire, which is the body's
+## NETWORK/celestial name ("SandBox"), never its key. Handing it to SystemScenes.system_of() matched
+## no scene file, so every presence reported an empty system and a scene nobody recognises.
+func _body_key_of(planet: Planet) -> String:
+	if planet.planet_data != null and planet.planet_data.planet_name != "":
+		return planet.planet_data.planet_name
+	return str(planet.name)
+
+
+## The star system [param planet] belongs to ("tarsis" for the body "tarsis_3"), memoised per body
+## key: SystemScenes.system_of() re-reads the system folders every call, which a per-minute beat
+## per player has no business doing.
+func _system_key_for(planet: Planet) -> String:
+	var body_key := _body_key_of(planet)
+	if not _system_by_body.has(body_key):
+		_system_by_body[body_key] = SystemScenes.system_of(body_key)
+	return str(_system_by_body[body_key])
+
+
 func _search_parent_node(parent_id: String) -> Node:
 	for proptype in props_list.keys():
 		if props_list[proptype].has(parent_id):
@@ -3587,6 +3628,11 @@ func remove_player(event: Dictionary) -> void:
 	if players_list.has(player_uuid):
 		var player = players_list[player_uuid]
 		print("player has quit the game: %s" % player_uuid)
+		# Flush the playtime earned since the last accepted delta and mark the player offline in
+		# social right away. Deliberately not on freeze_object: a transfer hands the player to
+		# another server whose own beat takes over, and racing it would flicker them offline
+		# mid-hand-over (the presence TTL covers the gap either way).
+		SocialHeartbeat.on_player_left(str(player_uuid))
 		players_list.erase(player_uuid)
 		# A player who quits while SEATED leaves the seat first, the same way as on foot: the seat
 		# is freed now (not by the vehicle noticing a dead reference a tick later), the body gets its

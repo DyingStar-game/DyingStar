@@ -329,6 +329,23 @@ var gravity_parents: Array[Area3D]
 
 var last_basis: Basis
 var remote_player: bool = false
+
+
+## The Player [param node] sits under, or null when it sits under none (the server-side bodies that
+## are not a Player, a node still being built, the scene root itself).
+##
+## ⚠️ NOT `node.owner`: a child of player.tscn — DirectChat, the wheels, the pause menu — is an
+## `instance=` of its own scene, and `Player.instantiate()` never propagates `owner` down the tree
+## (server/client.gd only sets it on the Player itself). `owner` therefore points at the scene root
+## for every one of them, so asking it "is my owner the Player?" is always false. Walking up and
+## testing the TYPE, like [method Planet.of], is what actually identifies the body. Same walk
+## [_screen_owner_of] needs, hence the same reason: `owner` is not dependable inside an editable
+## instance.
+static func of(node: Node) -> Player:
+	var walk: Node = node
+	while walk != null and not (walk is Player):
+		walk = walk.get_parent()
+	return walk as Player
 var input_from_server: Dictionary = {
 	"input_direction": Vector2.ZERO,
 	"rotation": Vector3.ZERO

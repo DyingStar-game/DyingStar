@@ -91,6 +91,22 @@ func is_configured() -> bool:
 	return _url != "" and _realm != "" and _client_id != "" and _client_secret != ""
 
 
+## Which of the four credentials are missing, by NAME (never value): "url", "realm", "client_id",
+## "client_secret". So a consumer can say exactly what to fill in without printing a secret.
+## The secret is only ever named, never read out.
+func missing_config() -> PackedStringArray:
+	var missing := PackedStringArray()
+	if _url == "":
+		missing.append("url")
+	if _realm == "":
+		missing.append("realm")
+	if _client_id == "":
+		missing.append("client_id")
+	if _client_secret == "":
+		missing.append("client_secret")
+	return missing
+
+
 ## The Keycloak token endpoint for this realm.
 func token_url() -> String:
 	return "%s/realms/%s/protocol/openid-connect/token" % [_url, _realm]

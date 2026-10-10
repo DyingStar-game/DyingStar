@@ -938,6 +938,28 @@ func token_seconds_left() -> int:
 	return expiry - int(Time.get_unix_time_from_system())
 
 
+## The player's own id: the token's `sub` claim, which is what every service resolves them by
+## (social keys profiles, presence and friendships on it). Empty without a token, or when the
+## token is not a readable JWT — a token-less local dev session.
+##
+## The game client uses this as [member Globals.player_uuid] so there is ONE identity per person:
+## the same id reaches Horizon, the persistence layer and the services. Generating a fresh random
+## uuid per session instead gave the player a second identity no contact list could ever match, so
+## their presence was published under an id nobody looked at.
+func token_subject() -> String:
+	return _jwt_sub(_player_token())
+
+
+## The player's own display name: `preferred_username`, falling back to `name`. What social shows
+## in the contacts list and on the profile. Empty without a token.
+func token_display_name() -> String:
+	var claims: Dictionary = _jwt_payload(_player_token())
+	var name_text: String = str(claims.get("preferred_username", ""))
+	if name_text == "":
+		name_text = str(claims.get("name", ""))
+	return name_text.strip_edges()
+
+
 static func _jwt_sub(token: String) -> String:
 	return str(_jwt_payload(token).get("sub", ""))
 

@@ -8,7 +8,7 @@ enum ChannelE {
 	GENERAL,
 	DIRECT_MESSAGE,
 	GROUP,
-	ALLIANCE,
+	CORPORATION,
 	REGION,
 	UNSPECIFIED
 }
@@ -18,7 +18,7 @@ const CHANNEL_LABELS : Dictionary = {
 	"GENERAL": "%%CHAT_GENERAL",
 	"DIRECT_MESSAGE": "%%CHAT_DIRECT_MESSAGE",
 	"GROUP": "%%CHAT_GROUP",
-	"ALLIANCE": "%%CHAT_ALLIANCE",
+	"CORPORATION": "%%CHAT_CORPORATION",
 	"REGION": "%%CHAT_REGION",
 	"UNSPECIFIED": "%%CHAT_UNSPECIFIED",
 }
@@ -43,7 +43,7 @@ var forced_colors := {
 	str(ChannelE.GENERAL): "FFFFFF",
 	str(ChannelE.UNSPECIFIED): "AAAAAA",
 	str(ChannelE.GROUP): "27C8F5",
-	str(ChannelE.ALLIANCE): "D327F5",
+	str(ChannelE.CORPORATION): "D327F5",
 	str(ChannelE.REGION): "F7F3B5",
 	str(ChannelE.DIRECT_MESSAGE): "79F25E"
 }
@@ -58,6 +58,17 @@ var _empty_bg: StyleBoxEmpty
 
 @onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
 @onready var input_bar: HBoxContainer = $MarginContainer/VBoxContainer/HBoxContainer
+## The pinned private conversation: who we are talking to. Its OWN bar rather than an entry in
+## the channel selector — there is one private thread at a time, and listing every correspondent
+## in the selector is what this bar replaces.
+@onready var dm_header: PanelContainer = $MarginContainer/VBoxContainer/DmHeader
+@onready var dm_peer_button: Button = $MarginContainer/VBoxContainer/DmHeader/DmHeaderRow/DmPeerName
+@onready var dm_close_button: Button = $MarginContainer/VBoxContainer/DmHeader/DmHeaderRow/DmClose
+## Background of that bar. The panel itself is transparent at rest (see _empty_bg), so a pinned
+## conversation needs a box of its own to be readable.
+var _dm_bg: StyleBoxFlat
+## The pinned peer whose thread the log is filtered on, or "" for no private conversation.
+var _dm_filter_peer: String = ""
 
 func _enter_tree() -> void:
 	if not OS.has_feature("dedicated_server"):
@@ -105,37 +116,155 @@ func _ready():
 		send_message.connect(ChatNetwork.publish_message)
 		ChatNetwork.message_received.connect(receive_message_from_server)
 		ChatNetwork.channels_changed.connect(_refresh_channels)
+		# Contacts app → "Message": the DM provider is already registered, just land on the
+		# channel (channels_changed has already refreshed the list by the time this fires)
+		# and reveal the log in case the player hid it with F12.
+		ChatNetwork.dm_requested.connect(_on_dm_requested)
+		ChatNetwork.dm_peer_changed.connect(_on_dm_peer_changed)
+		ChatNetwork.peer_name_resolved.connect(_on_peer_name_resolved)
+		ChatNetwork.pending_dm_peer.connect(_on_pending_dm_peer)
+		dm_peer_button.pressed.connect(_on_dm_peer_button)
+		dm_close_button.pressed.connect(_on_dm_close_button)
+		dm_close_button.tooltip_text = tr("%%CHAT_DM_CLOSE")
+		_dm_bg = StyleBoxFlat.new()
+		_dm_bg.bg_color = Color(0.0, 0.0, 0.0, 0.55)
+		_dm_bg.content_margin_left = 8.0
+		_dm_bg.content_margin_top = 4.0
+		_dm_bg.content_margin_right = 8.0
+		_dm_bg.content_margin_bottom = 4.0
+		_dm_bg.corner_radius_top_left = 4
+		_dm_bg.corner_radius_top_right = 4
+		_dm_bg.corner_radius_bottom_left = 4
+		_dm_bg.corner_radius_bottom_right = 4
+		dm_header.add_theme_stylebox_override("panel", _dm_bg)
+		_refresh_dm_header()
 		ChatNetwork.ensure_connected()
 
 ## True only for the local player's chat (not remote player copies, not the server).
+##
+## The body is found with [method Player.of], NOT `owner`: this node is an `instance=` of
+## direct_chat.tscn inside player.tscn, so `owner` is the scene root rather than the Player — the
+## test never passed, the chat was never wired to the transport and F12 did nothing.
 func _is_local() -> bool:
-	return not OS.has_feature("dedicated_server") and owner is Player and not owner.remote_player
+	if OS.has_feature("dedicated_server"):
+		return false
+	var player := Player.of(self)
+	return player != null and not player.remote_player
 
 func _on_visibility_changed() -> void:
 	pass
 
 ## Rebuild the channel dropdown: every channel is listed, but the ones with no
-## active topic (GROUP/ALLIANCE/REGION/DM, whose gameplay systems don't exist yet)
-## are greyed out. They light up automatically once ChatNetwork.set_id_provider()
-## is called for them — this is the multi-channel extension point.
+## active topic (GROUP/CORPORATION/REGION, whose context the transport resolves
+## from social) are greyed out. They light up automatically once ChatNetwork has a
+## non-empty id for them — this is the multi-channel extension point. The channel the player was
+## on survives a rebuild when it is still active, so a provider landing mid-session (group joined)
+## does not throw them back to GENERAL.
+##
+## DIRECT_MESSAGE is deliberately absent: the private thread is the pinned bar (see
+## _refresh_dm_header), so listing it here would put one more entry in a menu that the player
+## would otherwise have to open to find out who they are talking to.
 func _refresh_channels() -> void:
+	var previous: int = channel_selector.get_selected_id()
 	channel_selector.clear()
 	var active: Array = ChatNetwork.active_channels()
 	for channel in ChannelE.values():
-		if channel == ChannelE.UNSPECIFIED:
+		if channel == ChannelE.UNSPECIFIED or channel == ChannelE.DIRECT_MESSAGE:
 			continue
 		var index: int = channel_selector.item_count
 		# Use the enum value as the item id so get_selected_id() returns the channel.
-		# The enum name is an identifier ("DIRECT_MESSAGE"), not something to show a player. Falls
+		# The enum name is an identifier ("CORPORATION"), not something to show a player. Falls
 		# back to the raw name so a new channel is visible straight away rather than blank.
 		var name : String = str(ChannelE.keys()[channel])
 		channel_selector.add_item(str(CHANNEL_LABELS.get(name, name)), channel)
 		if not (channel in active):
 			channel_selector.set_item_disabled(index, true)
 			channel_selector.set_item_tooltip(index, tr("%%CHAT_SOON"))
-	var general_index: int = channel_selector.get_item_index(ChannelE.GENERAL)
-	if general_index != -1:
-		channel_selector.select(general_index)
+	var wanted: int = previous if previous in active else ChannelE.GENERAL
+	var wanted_index: int = channel_selector.get_item_index(wanted)
+	if wanted_index == -1:
+		wanted_index = channel_selector.get_item_index(ChannelE.GENERAL)
+	if wanted_index != -1:
+		channel_selector.select(wanted_index)
+	_refresh_dm_header()
+
+
+## The pinned bar: the correspondent's name, and nothing at all when no private thread is open.
+## The button is the switcher — it lists every thread the player has, so the pinned conversation
+## is reachable without opening the contacts app again.
+func _refresh_dm_header() -> void:
+	var peer: String = ChatNetwork.dm_peer()
+	_dm_filter_peer = peer
+	dm_header.visible = peer != ""
+	if peer == "":
+		return
+	var name_text: String = ChatNetwork.display_name_of(peer)
+	if name_text == "":
+		# We know the person exists (their message arrived), we just have not asked social yet.
+		name_text = tr("%%CHAT_DM_UNRESOLVED")
+	dm_peer_button.text = tr("%%CHAT_DM_HEADER") % name_text
+	var pending: int = 0
+	for entry: Dictionary in ChatNetwork.dm_peers():
+		if bool(entry["pending"]):
+			pending += 1
+	dm_peer_button.tooltip_text = tr("%%CHAT_DM_PICK") if pending > 0 else \
+			tr("%%CHAT_DM_PICK_PLAIN")
+
+
+## Pinning a different correspondent empties the log: what it holds belongs to the thread that was
+## on show, and leaving it there would show one person's conversation under another person's name.
+func _on_dm_peer_changed(peer_id: String, _display_name: String) -> void:
+	if peer_id != _dm_filter_peer:
+		messages_list.clear()
+		output_field.clear()
+	_refresh_dm_header()
+
+
+func _on_peer_name_resolved(peer_id: String, _display_name: String) -> void:
+	# Only redraw when it is the pinned one: a name landing for somebody else changes the picker,
+	# which is rebuilt when it is next opened.
+	if peer_id == _dm_filter_peer:
+		_refresh_dm_header()
+
+
+func _on_pending_dm_peer(_peer_id: String, _display_name: String) -> void:
+	if _dm_filter_peer == "":
+		_refresh_dm_header()
+
+
+## Unpin: the bar goes away and the log goes back to the shared channels, so the player can
+## post without a private thread being implied. The conversation is not forgotten — it stays
+## in the switcher.
+func _on_dm_close_button() -> void:
+	ChatNetwork.close_dm()
+
+
+## Open the switcher: every thread we have, the ones with something new first. Only people the
+## player has actually spoken to — this is a conversation list, not the whole contacts list.
+func _on_dm_peer_button() -> void:
+	var menu := PopupMenu.new()
+	add_child(menu)
+	for entry: Dictionary in ChatNetwork.dm_peers():
+		var name_text: String = str(entry["name"])
+		if name_text == "":
+			name_text = tr("%%CHAT_DM_UNRESOLVED")
+		if bool(entry["pending"]):
+			name_text = tr("%%CHAT_DM_HAS_NEW") % name_text
+		menu.add_item(name_text)
+		menu.set_item_metadata(menu.item_count - 1, str(entry["id"]))
+	menu.id_pressed.connect(func(id: int) -> void:
+		ChatNetwork.start_dm(str(menu.get_item_metadata(id)))
+		menu.queue_free())
+	menu.canceled.connect(menu.queue_free)
+	menu.popup_at_position(
+			dm_peer_button.get_screen_position() + Vector2(0.0, dm_peer_button.size.y))
+
+
+## A DM was opened from outside (contacts app → Message): land on the DM channel. The list
+## has already been refreshed by channels_changed (set_id_provider fires it before
+## dm_requested), so this only has to select — and reveal the log if it was hidden.
+func _on_dm_requested(_peer_id: String) -> void:
+	_show_chat()
 
 ## Select the next ACTIVE (non-greyed) channel, wrapping around. Inactive channels
 ## are skipped so the player never lands on a channel they cannot post to.
@@ -249,8 +378,33 @@ func _stop_writing() -> void:
 
 # Receives a message from the server
 func receive_message_from_server(receveid_message: ChatMessage) -> void:
+	# A private message belongs to its own thread. The log shows the pinned conversation only, so
+	# a DM from somebody else is not printed here: one log, one conversation, or three people
+	# talk over each other. It is NOT lost — ChatNetwork flagged that correspondent as pending,
+	# so the switcher offers their thread and opening it fills the log from what they sent.
+	if _is_dm(receveid_message) and receveid_message.peer_id != _dm_filter_peer:
+		return
 	messages_list.append(receveid_message)
 	parse_message(receveid_message)
+
+
+## True for a private message — one that belongs to a thread of its own.
+func _is_dm(message: ChatMessage) -> bool:
+	return message.channel == ChannelE.DIRECT_MESSAGE
+
+
+## What the log prints in parentheses for a message: the channel for a shared one, and the
+## correspondent's name for a private one. The enum name "DIRECT_MESSAGE" is an identifier,
+## not something a player should read.
+func _channel_tag(message: ChatMessage) -> String:
+	if message.channel == ChannelE.UNSPECIFIED:
+		return ""
+	if _is_dm(message):
+		var peer_name: String = ChatNetwork.display_name_of(message.peer_id)
+		if peer_name == "":
+			peer_name = tr("%%CHAT_DM_UNRESOLVED")
+		return tr("%%CHAT_DM_TO") % peer_name
+	return "(" + ChannelE.keys()[message.channel] + ") "
 
 
 # Parse a message for display, and memory management
@@ -271,7 +425,7 @@ func parse_message(message_to_parse: ChatMessage) -> void:
 		"[%s] [color=#%s]%s[/color][color=#%s]%s[/color]: %s\n" % [
 			gdh,
 			get_hexa_color_from_hash(str(message_to_parse.channel)),
-			("" if message_to_parse.channel == ChannelE.UNSPECIFIED else "(" + ChannelE.keys()[message_to_parse.channel] + ") "),
+			(_channel_tag(message_to_parse)),
 			get_hexa_color_from_hash(message_to_parse.author),
 			message_to_parse.author,
 			message_to_parse.content
