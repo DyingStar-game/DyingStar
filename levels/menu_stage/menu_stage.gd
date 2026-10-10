@@ -39,6 +39,7 @@ var _hour : float = 12.0
 var _live : bool = false
 var _resnap_left : float = 0.0
 var _resnap_tick : float = 0.0
+var _ground : DrawnGround = null
 
 @onready var _menu : MainPage = $MainPage
 
@@ -156,14 +157,20 @@ func _build() -> void:
 		"ready" if ground_ready[0] else "late"])
 
 
-## The ground as the chunks DRAW it, distance from the centre along `dir`: the relief a body stands on
-## (levelled under the pads, carved by the roads and rails) plus the biome's own relief, which the
-## chunks add and no ground query does — 15 to 25 cm on the outpost's plateau, the height the figures'
-## ankles were cut by. The relief's fade near roads is left out: no figure stands on one.
+## The ground as the chunks DRAW it, distance from the centre along `dir`: measured on the chunk's
+## own mesh (DrawnGround) — a height query is what the chunk was built from, and the outpost's plateau
+## is drawn 20 cm off its relief query (the figures' ankles were cut, then their shins). Before the
+## chunk is drawn, the query: the carved relief plus the biome's own, which no ground query adds.
 func _drawn_ground(dir: Vector3) -> float:
+	if _ground == null:
+		_ground = DrawnGround.new(_planet, _planet.planet_data.radius,
+				_planet.planet_terrain.drawn_mesh_at, _queried_ground)
+	return _ground.dist(dir)
+
+
+func _queried_ground(dir: Vector3) -> float:
 	var data : PlanetData = _planet.planet_data
-	var biome : BiomeDefinition = data.biome_at(dir)
-	return data.carved_surface_dist(dir) + BiomeRelief.offset(dir, data.radius, biome)
+	return data.carved_surface_dist(dir) + BiomeRelief.offset(dir, data.radius, data.biome_at(dir))
 
 
 ## The menu's light: the sun just risen (MENU_SUN_ELEVATION_DEG), whatever the season. Solved on
