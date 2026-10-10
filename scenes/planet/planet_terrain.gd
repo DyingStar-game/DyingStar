@@ -716,6 +716,8 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# v58 → v59: longitude runs the other way round the Y axis
 		# (dir.z = -cos lat·sin lon): the planet was the QGIS map's mirror
 		# image, every baked vertex moves to its east-west mirror.
+		# v59 → v60: roads re-exported — the road part has no fingerprint in
+		# the key. An exported build also keys on its own BuildInfo id (below).
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -724,13 +726,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v60%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
-		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v59%s%s%s%s%s%s" % [
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v60%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)
@@ -748,6 +750,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
 			# collision to re-bake.
 			_cache_version += "_far50km"
+		# An exported build starts from an empty cache: a change no field above captures (a road
+		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
+		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
+		# the editor, where the key stays the one above.
+		if BuildInfo.build_id() != "":
+			_cache_version += "_b" + BuildInfo.build_id()
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
